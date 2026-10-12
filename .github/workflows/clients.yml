@@ -8,6 +8,9 @@ on:
     paths: ["clients/**", "api/**", ".github/workflows/clients.yml"]
   workflow_dispatch:
 
+permissions:
+  contents: write  # publish screenshots to the ci-screenshots branch
+
 jobs:
   desktop:
     runs-on: ubuntu-latest
@@ -22,13 +25,20 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
       - name: Tests (incl. parsing api/examples)
-        run: ./gradlew test --no-daemon 2>&1 | tee ../gradle-test.log; exit ${PIPESTATUS[0]}
+        run: ./gradlew check --no-daemon 2>&1 | tee ../gradle-test.log; exit ${PIPESTATUS[0]}
       - name: Screenshots (charts and widgets, light and dark)
         run: ./gradlew :desktop:screenshots --no-daemon 2>&1 | tee ../gradle-shots.log; exit ${PIPESTATUS[0]}
       - uses: actions/upload-artifact@v4
         with:
           name: screenshots
           path: clients/desktop/build/screenshots/*.png
+      - name: Publish screenshots to the ci-screenshots branch (to review the look from anywhere)
+        working-directory: clients/desktop/build/screenshots
+        run: |
+          git init -q -b ci-screenshots
+          git add *.png
+          git -c user.name="boni-ci" -c user.email="ci@users.noreply.github.com" commit -qm "Screenshots of ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-screenshots
       - name: Report build errors as annotations
         if: failure()
         working-directory: .
