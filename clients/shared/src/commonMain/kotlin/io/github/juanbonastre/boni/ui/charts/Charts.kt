@@ -146,6 +146,17 @@ private fun barPath(r: Rect, radius: Float, horizontal: Boolean): Path {
     return Path().apply { addRoundRect(rr) }
 }
 
+/** Small label on a surface-colored pill (readable when it crosses bars or the line). */
+private fun DrawScope.pill(ink: Ink, s: String, x: Float, y: Float, alignX: Float) {
+    val r = ink.m.measure(s, ink.axis)
+    val padX = 4.dp.toPx()
+    val left = x - r.size.width * alignX
+    val top = y - r.size.height
+    drawRoundRect(ink.c.surface.copy(alpha = 0.92f), Offset(left - padX, top - 1.dp.toPx()),
+        Size(r.size.width + padX * 2, r.size.height + 2.dp.toPx()), CornerRadius(4.dp.toPx()))
+    drawText(r, topLeft = Offset(left, top))
+}
+
 private fun DrawScope.tooltip(ink: Ink, anchor: Offset, title: String, value: String) {
     val t = ink.m.measure(title, ink.tipTitle)
     val v = ink.m.measure(value, ink.tipValue)
@@ -205,7 +216,7 @@ private fun DrawScope.drawColumns(
     if (average != null && average > 0) {
         val ay = y(average)
         drawLine(ink.c.inkSecondary.copy(alpha = 0.7f), Offset(g.plot.left, ay), Offset(g.plot.right, ay), 1.dp.toPx())
-        if (!compact) text(ink, "media ${ChartMath.eurosAuto(average)}", ink.axis, g.plot.right, ay - 3.dp.toPx(), 1f, 1f)
+        if (!compact) pill(ink, "media ${ChartMath.eurosAuto(average)}", g.plot.right - 4.dp.toPx(), ay - 3.dp.toPx(), 1f)
     }
     // Direct label: the latest month with data only.
     points.indices.lastOrNull { !points[it].noData }?.let { i ->
@@ -299,13 +310,21 @@ private fun DrawScope.drawLineChart(
             area.close()
             drawPath(area, accent.copy(alpha = 0.10f))
             drawPath(line, accent, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+            // The month in progress is not comparable yet: its segment is faded.
+            if (run.size >= 2 && points[run.last()].partial) {
+                val a = run[run.size - 2]
+                val b = run.last()
+                drawLine(ink.c.surface, Offset(x(a), y(points[a].value)), Offset(x(b), y(points[b].value)), 3.dp.toPx(), cap = StrokeCap.Round)
+                drawLine(accent.copy(alpha = 0.4f), Offset(x(a), y(points[a].value)), Offset(x(b), y(points[b].value)),
+                    2.dp.toPx(), cap = StrokeCap.Round)
+            }
             if (run.size == 1) drawCircle(accent, 3.dp.toPx(), Offset(x(run[0]), y(points[run[0]].value)))
         }
     }
     if (average != null && average > 0) {
         val ay = y(average)
         drawLine(ink.c.inkSecondary.copy(alpha = 0.7f), Offset(g.plot.left, ay), Offset(g.plot.right, ay), 1.dp.toPx())
-        if (!compact) text(ink, "media ${ChartMath.eurosAuto(average)}", ink.axis, g.plot.left + 4.dp.toPx(), ay - 3.dp.toPx(), 0f, 1f)
+        if (!compact) pill(ink, "media ${ChartMath.eurosAuto(average)}", g.plot.left + 8.dp.toPx(), ay - 3.dp.toPx(), 0f)
     }
     val last = points.indices.lastOrNull { !points[it].noData }
     val hi = hover?.let { g.indexAt(it) }
@@ -313,6 +332,7 @@ private fun DrawScope.drawLineChart(
         val c = Offset(x(last), y(points[last].value))
         drawCircle(ink.c.surface, 6.dp.toPx(), c)
         drawCircle(accent, 4.dp.toPx(), c)
+        if (points[last].partial) drawCircle(ink.c.surface, 2.dp.toPx(), c) // hollow: month in progress
         if (hi == null) text(ink, ChartMath.eurosAuto(points[last].value), ink.value, c.x, c.y - 8.dp.toPx(), 0.5f, 1f)
     }
     if (hi != null) {
