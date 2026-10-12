@@ -22,13 +22,20 @@ jobs:
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
       - name: Tests (incl. parsing api/examples)
-        run: ./gradlew test --no-daemon --stacktrace
+        run: ./gradlew test --no-daemon 2>&1 | tee ../gradle-test.log; exit ${PIPESTATUS[0]}
       - name: Screenshots (charts and widgets, light and dark)
-        run: ./gradlew :desktop:screenshots --no-daemon --stacktrace
+        run: ./gradlew :desktop:screenshots --no-daemon 2>&1 | tee ../gradle-shots.log; exit ${PIPESTATUS[0]}
       - uses: actions/upload-artifact@v4
         with:
           name: screenshots
           path: clients/desktop/build/screenshots/*.png
+      - name: Report build errors as annotations
+        if: failure()
+        working-directory: .
+        run: |
+          # Compiler errors, failing tests and Gradle's "What went wrong" become annotations (readable via the API).
+          cat gradle-*.log 2>/dev/null | grep -E "^e: |What went wrong|FAILED|Exception|expected:|> " | grep -v "^> Task" \
+            | sed 's#file://.*/clients/##' | head -40 | while IFS= read -r line; do echo "::error::$line"; done
       - name: Package .deb
         run: ./gradlew :desktop:packageDeb --no-daemon --stacktrace -PboniVersion=0.1.${{ github.run_number }}
       - uses: actions/upload-artifact@v4
