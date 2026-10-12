@@ -78,8 +78,9 @@ object Demo {
     val all = listOf(byCategory, monthly, eatingOut)
 }
 
+/** [width] and [height] in dp; rendered at 2x. */
 private fun render(file: File, width: Int, height: Int, content: @Composable () -> Unit) {
-    val scene = ImageComposeScene(width, height, density = Density(2f)) {
+    val scene = ImageComposeScene(width * 2, height * 2, density = Density(2f)) {
         CompositionLocalProvider(LocalAnimateCharts provides false) { content() }
     }
     try {
@@ -112,7 +113,7 @@ private fun WidgetsPreview(offline: Boolean) {
     Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(Color(0xFF2E3B4E), Color(0xFF6B4F5C), Color(0xFFB07B5E))))) {
         Row(Modifier.padding(24.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Demo.all.forEach { d ->
-                ChartCardContent(d.title, ChartState(d, offline = offline), Modifier.width(380.dp).height(260.dp),
+                ChartCardContent(d.title, ChartState(d, offline = offline), Modifier.width(390.dp).height(260.dp),
                     chartHeight = 164.dp, compact = true)
             }
         }
@@ -139,14 +140,14 @@ fun main(args: Array<String>) {
     val examples = generateSequence(File("").absoluteFile) { it.parentFile }.map { File(it, "api/examples") }.firstOrNull { it.isDirectory }
     for (dark in listOf(false, true)) {
         val mode = if (dark) "dark" else "light"
-        render(File(out, "home-$mode.png"), 1200, 1060) { BoniTheme(dark = dark) { HomePreview() } }
-        render(File(out, "widgets-$mode.png"), 1250, 310) { BoniTheme(dark = dark) { WidgetsPreview(offline = false) } }
+        render(File(out, "home-$mode.png"), 1100, 1000) { BoniTheme(dark = dark) { HomePreview() } }
+        render(File(out, "widgets-$mode.png"), 1300, 310) { BoniTheme(dark = dark) { WidgetsPreview(offline = false) } }
     }
-    render(File(out, "widgets-offline-dark.png"), 1250, 310) { BoniTheme(dark = true) { WidgetsPreview(offline = true) } }
+    render(File(out, "widgets-offline-dark.png"), 1300, 310) { BoniTheme(dark = true) { WidgetsPreview(offline = true) } }
     if (examples != null) {
         // The real server answer for the form, from the contract examples.
         val screen = BoniJson.decodeFromString(Screen.serializer(), File(examples, "screen-capture-expense.json").readText())
         val form = screen.components.filterIsInstance<FormComponent>().first()
-        render(File(out, "form-light.png"), 640, 1180) { BoniTheme(dark = false) { FormPreview(form) } }
+        render(File(out, "form-light.png"), 600, 1250) { BoniTheme(dark = false) { FormPreview(form) } }
     }
 }

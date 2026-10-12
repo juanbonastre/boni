@@ -26,6 +26,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Tests (incl. parsing api/examples)
         run: ./gradlew check --no-daemon 2>&1 | tee ../gradle-test.log; exit ${PIPESTATUS[0]}
+      - name: Test count
+        run: |
+          n=$(cat */build/test-results/*/*.xml | grep -o 'tests="[0-9]*"' | grep -o '[0-9]*' | paste -sd+ | bc)
+          f=$(cat */build/test-results/*/*.xml | grep -o 'failures="[0-9]*"' | grep -o '[0-9]*' | paste -sd+ | bc)
+          echo "::notice::client tests run: $n, failures: $f"
       - name: Screenshots (charts and widgets, light and dark)
         run: ./gradlew :desktop:screenshots --no-daemon 2>&1 | tee ../gradle-shots.log; exit ${PIPESTATUS[0]}
       - uses: actions/upload-artifact@v4

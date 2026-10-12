@@ -79,8 +79,10 @@ fun Chart(
         .pointerInput(points, onSelect) {
             if (onSelect != null) {
                 detectTapGestures { pos ->
-                    val g = Geometry.of(data.kind, Size(size.width.toFloat(), size.height.toFloat()), points.size, density, compact)
-                    g.indexAt(pos)?.let { onSelect(points[it]) }
+                    val sz = Size(size.width.toFloat(), size.height.toFloat())
+                    val shown = if (data.kind == "hbar") hbarRows(points, sz, density, compact) else points
+                    val g = Geometry.of(data.kind, sz, shown.size, density, compact)
+                    g.indexAt(pos)?.let { i -> shown[i].takeIf { !it.key.startsWith("_") }?.let(onSelect) }
                 }
             }
         }
@@ -221,6 +223,16 @@ private fun DrawScope.drawColumns(
 }
 
 // ---------- horizontal bars (gasto del mes por categoria) ----------
+/** Rows that fit: if there are too many for the height, the smallest are folded into one "Resto" row (not tappable). */
+private fun hbarRows(points: List<ChartPoint>, size: Size, density: Float, compact: Boolean): List<ChartPoint> {
+    val plot = Geometry.of("hbar", size, points.size, density, compact).plot
+    val minBand = (if (compact) 20f else 28f) * density
+    val maxRows = max(2, (plot.height / minBand).toInt())
+    if (points.size <= maxRows) return points
+    val rest = points.drop(maxRows - 1)
+    return points.take(maxRows - 1) + ChartPoint("_rest", "Resto (${rest.size})", rest.sumOf { it.value })
+}
+
 private fun DrawScope.drawHBars(
     points: List<ChartPoint>, ink: Ink, accent: Color, progress: Float, hover: Offset?, compact: Boolean,
 ) {
@@ -228,12 +240,14 @@ private fun DrawScope.drawHBars(
         text(ink, "Sin gastos este mes", ink.label, size.width / 2, size.height / 2, 0.5f, 0.5f)
         return
     }
-    val g = Geometry.of("hbar", size, points.size, density, compact)
-    val top = max(points.maxOf { it.value }, 1.0)
+    val rows = hbarRows(points, size, density, compact)
+    val g = Geometry.of("hbar", size, rows.size, density, compact)
+    val top = max(rows.maxOf { it.value }, 1.0)
+    val decimals = top < 100
     val barH = min(if (compact) 14.dp.toPx() else 18.dp.toPx(), g.band * 0.7f)
     val hi = hover?.let { g.indexAt(it) }
     drawLine(ink.c.baseline, Offset(g.plot.left, g.plot.top), Offset(g.plot.left, g.plot.bottom), 1f)
-    points.forEachIndexed { i, p ->
+    rows.forEachIndexed { i, p ->
         val cy = g.plot.top + g.band * (i + 0.5f)
         val label = ink.m.measure(p.label, ink.label, maxLines = 1)
         val labelX = g.plot.left - 8.dp.toPx() - min(label.size.width.toFloat(), g.plot.left - 12.dp.toPx())
@@ -243,7 +257,7 @@ private fun DrawScope.drawHBars(
         val alpha = if (hi != null && hi != i) 0.45f else 1f
         if (r.width > 0.5f) drawPath(barPath(r, 4.dp.toPx(), true), accent.copy(alpha = alpha))
         if (progress > 0.6f) {
-            text(ink, ChartMath.eurosAuto(p.value), ink.value.copy(color = ink.c.ink.copy(alpha = alpha)),
+            text(ink, ChartMath.euros(p.value, decimals), ink.value.copy(color = ink.c.ink.copy(alpha = alpha)),
                 r.right + 6.dp.toPx(), cy, alignY = 0.5f)
         }
     }

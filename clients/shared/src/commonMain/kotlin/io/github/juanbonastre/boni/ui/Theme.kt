@@ -36,14 +36,16 @@ val LightColors = BoniColors(
     dark = false,
     page = Color(0xFFF9F9F7), surface = Color(0xFFFCFCFB), ink = Color(0xFF0B0B0B), inkSecondary = Color(0xFF52514E),
     muted = Color(0xFF898781), grid = Color(0xFFE1E0D9), baseline = Color(0xFFC3C2B7), border = Color(0x1A0B0B0B),
-    series1 = Color(0xFF2A78D6), series2 = Color(0xFFEB6834), good = Color(0xFF006300), critical = Color(0xFFD03B3B),
+    series1 = Color(0xFF2A78D6), series2 = Color(0xFFEB6834),
+    selection = Color(0xFFCDE2FB), onSelection = Color(0xFF0D366B), good = Color(0xFF006300), critical = Color(0xFFD03B3B),
 )
 
 val DarkColors = BoniColors(
     dark = true,
     page = Color(0xFF0D0D0D), surface = Color(0xFF1A1A19), ink = Color(0xFFF0EFEC), inkSecondary = Color(0xFFC3C2B7),
     muted = Color(0xFF898781), grid = Color(0xFF2C2C2A), baseline = Color(0xFF383835), border = Color(0x1AFFFFFF),
-    series1 = Color(0xFF3987E5), series2 = Color(0xFFD95926), good = Color(0xFF0CA30C), critical = Color(0xFFD03B3B),
+    series1 = Color(0xFF3987E5), series2 = Color(0xFFD95926),
+    selection = Color(0xFF184F95), onSelection = Color(0xFFF0EFEC), good = Color(0xFF0CA30C), critical = Color(0xFFD03B3B),
 )
 
 val LocalBoniColors = staticCompositionLocalOf { LightColors }
@@ -56,14 +58,18 @@ fun BoniTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> 
     val c = if (dark) DarkColors else LightColors
     val scheme = if (dark) {
         darkColorScheme(
-            primary = c.series1, onPrimary = Color.White, background = c.page, surface = c.surface,
-            onSurface = c.ink, onBackground = c.ink, surfaceVariant = c.grid, onSurfaceVariant = c.inkSecondary,
+            primary = c.series1, onPrimary = Color.White, primaryContainer = c.selection, onPrimaryContainer = c.onSelection,
+            secondary = c.series1, onSecondary = Color.White, secondaryContainer = c.selection, onSecondaryContainer = c.onSelection,
+            tertiary = c.series2, surfaceTint = Color.Transparent, surfaceVariant = c.grid, background = c.page, surface = c.surface,
+            onSurface = c.ink, onBackground = c.ink, onSurfaceVariant = c.inkSecondary,
             outline = c.baseline, error = c.critical,
         )
     } else {
         lightColorScheme(
-            primary = c.series1, onPrimary = Color.White, background = c.page, surface = c.surface,
-            onSurface = c.ink, onBackground = c.ink, surfaceVariant = c.grid, onSurfaceVariant = c.inkSecondary,
+            primary = c.series1, onPrimary = Color.White, primaryContainer = c.selection, onPrimaryContainer = c.onSelection,
+            secondary = c.series1, onSecondary = Color.White, secondaryContainer = c.selection, onSecondaryContainer = c.onSelection,
+            tertiary = c.series2, surfaceTint = Color.Transparent, surfaceVariant = c.grid, background = c.page, surface = c.surface,
+            onSurface = c.ink, onBackground = c.ink, onSurfaceVariant = c.inkSecondary,
             outline = c.baseline, error = c.critical,
         )
     }

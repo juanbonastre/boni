@@ -114,7 +114,7 @@ private fun FieldView(f: FormField, value: JsonElement?, error: String?, loadOpt
             is AmountField -> OutlinedTextField(
                 value = FormLogic.text(value),
                 onValueChange = { t -> if (t.all { it.isDigit() || it == ',' || it == '.' }) set(if (t.isEmpty()) JsonNull else JsonPrimitive(t)) },
-                label = { Text(f.label) },
+                label = { Text(f.label + if (f.required) " *" else "") },
                 suffix = { Text(if (f.currency == "EUR") "€" else f.currency) },
                 singleLine = true,
                 isError = error != null,
@@ -123,7 +123,7 @@ private fun FieldView(f: FormField, value: JsonElement?, error: String?, loadOpt
             is TextField -> OutlinedTextField(
                 value = FormLogic.text(value),
                 onValueChange = { t -> set(JsonPrimitive(f.maxLength?.let { t.take(it) } ?: t)) },
-                label = { Text(f.label) },
+                label = { Text(f.label + if (f.required) " *" else "") },
                 placeholder = f.placeholder?.let { p -> @Composable { Text(p) } },
                 singleLine = !f.multiline,
                 isError = error != null,

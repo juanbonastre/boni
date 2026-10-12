@@ -81,7 +81,8 @@ fun ChartCardContent(
         modifier = modifier.border(1.dp, c.border, RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
         color = c.surface,
-        tonalElevation = if (elevated) 1.dp else 0.dp,
+        tonalElevation = 0.dp,
+        shadowElevation = if (elevated && !compact) 1.dp else 0.dp,
     ) {
         Column(Modifier.padding(if (compact) 12.dp else 16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
