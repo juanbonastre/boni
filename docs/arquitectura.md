@@ -48,10 +48,18 @@ Resumen tecnico. Las decisiones y su historia estan en la nota del vault `proyec
 - Una grafica es una **definicion** (tipo, medida, agrupar por, periodo, filtros), no los datos: la calcula el servidor y el
   cliente la dibuja.
 
+## Pruebas y CI
+- Servidor (`server.yml`): ruff, pytest contra un vault-mcp falso hecho con el SDK real (en memoria y por HTTP con token) y
+  construccion de la imagen Docker. Comprueba tambien que `api/schema` y `api/examples` estan al dia.
+- Clientes (`clients.yml`): `gradlew check` (incluye leer todos los `api/examples`), capturas PNG en claro y oscuro (se
+  publican en la rama `ci-screenshots`) y el paquete `.deb`.
+
 ## Definicion de gasto
 La de `tools/finanzas.py` (repo `gastos-app`) y `registros/finanzas/README.md`: movimientos negativos de categorias de gasto
 (no `ingreso/`, `inversion`, `transferencia/`), usando `my_share` si existe, menos reembolsos (positivos de una categoria de
-gasto con `settles`). Pendiente: las deudas `perdonada` o `invitacion` aun no suman como gasto.
+gasto con `settles` al gasto; si `settles` apunta a una deuda es un amigo devolviendo su parte y no cuenta). Las deudas
+`perdonada` o `invitacion` suman como gasto de Juan en la fecha y categoria del gasto original. Codigo:
+`server/boni/stats/spending.py`.
 
 ## Escritorio: widgets
 Cada widget es una ventana pequena sin bordes ni barra de tareas, que recuerda su posicion. Boni arranca al iniciar sesion

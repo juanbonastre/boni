@@ -18,5 +18,6 @@ Diseno completo y decisiones: nota `proyectos/boni.md` del vault y `docs/arquite
 Reglas para IAs: `AGENTS.md`.
 
 ## Estado
-Version minima en construccion (2026-10-12): apuntar un gasto y tres graficas (gasto del mes por categoria, evolucion
-mensual, comida fuera) en el escritorio, con widgets que se ven al iniciar sesion.
+Version minima (2026-10-12): apuntar un gasto y tres graficas (gasto del mes por categoria, gasto por mes, comida fuera) en
+el escritorio, con widgets que se ven al iniciar sesion. Detalles: `server/README.md` y `clients/README.md`. Capturas de cada
+build en la rama `ci-screenshots`. Falta desplegar el servidor en el NAS.
