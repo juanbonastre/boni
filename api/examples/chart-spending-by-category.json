@@ -1,0 +1,41 @@
+{
+  "chart_id": "spending-by-category",
+  "title": "Gasto del mes",
+  "subtitle": "octubre 2026 - hasta hoy",
+  "kind": "hbar",
+  "unit": "EUR",
+  "series": [
+    {
+      "name": "Gasto del mes",
+      "points": [
+        {
+          "key": "comida",
+          "label": "Comida",
+          "value": 69.7,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "suscripciones",
+          "label": "Suscripciones",
+          "value": 10.99,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "bebida",
+          "label": "Bebida",
+          "value": 1.6,
+          "partial": false,
+          "no_data": false
+        }
+      ]
+    }
+  ],
+  "total": 82.29,
+  "average": null,
+  "drilldown": true,
+  "drill": null,
+  "computed_at": "2026-10-12T18:30:00+02:00",
+  "stale": false
+}

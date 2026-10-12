@@ -1,0 +1,104 @@
+{
+  "chart_id": "eating-out",
+  "title": "Comida fuera",
+  "subtitle": "nov 2025 - oct 2026",
+  "kind": "line",
+  "unit": "EUR",
+  "series": [
+    {
+      "name": "Comida fuera",
+      "points": [
+        {
+          "key": "2025-11",
+          "label": "nov",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2025-12",
+          "label": "dic",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-01",
+          "label": "ene",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-02",
+          "label": "feb",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-03",
+          "label": "mar",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-04",
+          "label": "abr",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-05",
+          "label": "may",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-06",
+          "label": "jun",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-07",
+          "label": "jul",
+          "value": 0.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-08",
+          "label": "ago",
+          "value": 40.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-09",
+          "label": "sep",
+          "value": 56.41,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-10",
+          "label": "oct",
+          "value": 26.1,
+          "partial": true,
+          "no_data": false
+        }
+      ]
+    }
+  ],
+  "total": 122.51,
+  "average": 32.14,
+  "drilldown": false,
+  "drill": null,
+  "computed_at": "2026-10-12T18:30:00+02:00",
+  "stale": false
+}

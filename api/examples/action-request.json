@@ -1,0 +1,18 @@
+{
+  "action": "expenses.capture",
+  "client_id": "0f8a4c9e-3b5d-4e1a-9c2f-7d6b5a4e3c21",
+  "values": {
+    "kind": "gasto",
+    "amount": 12.5,
+    "account": "revolut",
+    "category": "comida/restaurante",
+    "concept": "Menu con Lucia",
+    "merchant": "Bar Pepe",
+    "people": [
+      "lucia-ferri"
+    ],
+    "shared": false,
+    "date": "2026-10-12"
+  },
+  "created_at": "2026-10-12T18:30:00+02:00"
+}

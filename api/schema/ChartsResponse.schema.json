@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "ChartFilter": {
+      "description": "Category prefixes: a movement matches if it starts with one of `include` (all if empty) and none of `exclude`.",
+      "properties": {
+        "exclude": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "include": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Include",
+          "type": "array"
+        }
+      },
+      "title": "ChartFilter",
+      "type": "object"
+    },
+    "ChartSpec": {
+      "description": "A chart is a definition, not data. The server computes it; the client draws it.",
+      "properties": {
+        "drilldown": {
+          "default": false,
+          "description": "Points can be opened with GET /charts/{id}/data?drill=<key>",
+          "title": "Drilldown",
+          "type": "boolean"
+        },
+        "filter": {
+          "$ref": "#/$defs/ChartFilter",
+          "default": {
+            "exclude": [],
+            "include": []
+          }
+        },
+        "group_by": {
+          "enum": [
+            "category_group",
+            "category",
+            "month"
+          ],
+          "title": "Group By",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "bar",
+            "hbar",
+            "line"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "measure": {
+          "const": "spending",
+          "default": "spending",
+          "title": "Measure",
+          "type": "string"
+        },
+        "period": {
+          "$ref": "#/$defs/Period"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "kind",
+        "group_by",
+        "period"
+      ],
+      "title": "ChartSpec",
+      "type": "object"
+    },
+    "Period": {
+      "properties": {
+        "kind": {
+          "enum": [
+            "this_month",
+            "last_months"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "months": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For last_months: how many months, current one included",
+          "title": "Months"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Period",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "charts": {
+      "items": {
+        "$ref": "#/$defs/ChartSpec"
+      },
+      "title": "Charts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "charts"
+  ],
+  "title": "ChartsResponse",
+  "type": "object"
+}
