@@ -28,6 +28,9 @@ data class BoniColors(
     val border: Color,
     val series1: Color,
     val series2: Color,
+    /** Selected chips and toggles: a step of the blue ramp. */
+    val selection: Color,
+    val onSelection: Color,
     val good: Color,
     val critical: Color,
 )
