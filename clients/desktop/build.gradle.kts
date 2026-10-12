@@ -24,7 +24,8 @@ compose.desktop {
     application {
         mainClass = "io.github.juanbonastre.boni.desktop.MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Deb, TargetFormat.Dmg, TargetFormat.Msi)
+            // Dmg and Msi later (they also require a version >= 1.0.0); tested on Linux only for now.
+            targetFormats(TargetFormat.Deb)
             packageName = "boni"
             packageVersion = (findProperty("boniVersion") as String?) ?: "0.1.0"
             description = "Boni: graficas y capturas"
