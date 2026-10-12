@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+*.sqlite3
+*.db
+
+# Gradle / Kotlin
+.gradle/
+build/
+.kotlin/
+local.properties
+.idea/
+*.iml
+captures/
+
+# Secrets and local config
+.env
+*.env
+*.jks
+*.keystore
+
+.DS_Store
