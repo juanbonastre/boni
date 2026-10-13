@@ -144,3 +144,21 @@ def test_first_expense_of_a_new_month(service, vault):
     path = asyncio.run(service.fin.create_movement(date(2026, 11, 2), "2026-11-02-cafe", note, "t"))
     assert path == "registros/finanzas/movimientos/2026/11/2026-11-02-cafe.md"
     assert asyncio.run(service.fin.movements([(2026, 12)])) == []
+
+
+def test_warm_up_fills_the_cache(service, vault):
+    service.fin.ttl_s = 3600
+    asyncio.run(service.warm())
+    vault.down = True  # everything the clients ask for is now served from memory
+    from fastapi.testclient import TestClient as TC
+
+    from boni.app import create_app
+    from boni.config import Settings
+    token = service.store.add_device("warm-test")
+    app = create_app(Settings(), service=service, run_outbox=False)
+    with TC(app, headers={"Authorization": f"Bearer {token}"}) as c:
+        for chart in ("spending-by-category", "monthly-spending", "eating-out"):
+            d = c.get(f"/api/v1/charts/{chart}/data").json()
+            assert d["stale"] is False, chart
+        assert c.get("/api/v1/options/people").status_code == 200
+        assert c.get("/api/v1/options/categories").status_code == 200

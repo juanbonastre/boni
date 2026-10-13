@@ -58,11 +58,19 @@ def create_app(settings: Settings, service: Service | None = None, run_outbox: b
             except Exception:  # never let the loop die
                 log.exception("outbox round failed")
 
+    async def warm_loop() -> None:
+        while True:
+            try:
+                await svc.warm()
+            except Exception:  # never let the loop die
+                log.exception("warm-up round failed")
+            await asyncio.sleep(settings.warm_interval_s)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        task = asyncio.create_task(outbox_loop()) if run_outbox else None
+        tasks = [asyncio.create_task(outbox_loop()), asyncio.create_task(warm_loop())] if run_outbox else []
         yield
-        if task:
+        for task in tasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

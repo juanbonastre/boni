@@ -110,4 +110,50 @@ class ContractTest {
         assertEquals(1, controller.pending)
         assertFailsWith<OfflineException> { controller.home() }
     }
+
+    @Test
+    fun cardsAndWidgetsShareOneRequestPerRefresh() = runTest {
+        var calls = 0
+        val engine = MockEngine { request ->
+            calls++
+            respond(ex("chart-eating-out.json"), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val api = BoniApi(ServerConfig("https://boni.example", "tkn"), HttpClient(engine))
+        val repo = io.github.juanbonastre.boni.data.ChartRepository({ api }, MemoryTextStore())
+        // main window card + widget, same refresh tick: one request
+        repo.load("eating-out", generation = 0)
+        repo.load("eating-out", generation = 0)
+        assertEquals(1, calls)
+        // next refresh tick: one more request for everyone
+        repo.load("eating-out", generation = 1)
+        repo.load("eating-out", generation = 1)
+        assertEquals(2, calls)
+        repo.invalidate()
+        repo.load("eating-out", generation = 1)
+        assertEquals(3, calls)
+    }
+
+    @Test
+    fun prefetchLoadsTheFormAndItsOptionListsOnce() = runTest {
+        val paths = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            val path = request.url.encodedPath
+            paths += path
+            val body = when {
+                path.endsWith("/home") -> ex("home.json")
+                path.endsWith("/screens/capture-expense") -> ex("screen-capture-expense.json")
+                path.contains("/options/") -> """{"source":"x","options":[{"value":"tomas","label":"Tomas"}]}"""
+                else -> ex("error.json")
+            }
+            respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+        }
+        val controller = BoniController(ServerConfig("https://boni.example", "tkn"), MemoryTextStore(),
+            apiFactory = { BoniApi(it, HttpClient(engine)) })
+        controller.prefetch()
+        assertTrue(controller.cachedScreen("capture-expense") != null && controller.cachedScreen("home") != null)
+        assertTrue(paths.any { it.endsWith("/options/categories") } && paths.any { it.endsWith("/options/people") })
+        val before = paths.size
+        assertEquals("tomas", controller.optionList("people").single().value)
+        assertEquals(before, paths.size)  // served from memory
+    }
 }

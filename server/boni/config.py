@@ -15,6 +15,7 @@ class Settings:
     timezone: str = "Europe/Madrid"
     outbox_interval_s: float = 60.0
     cache_ttl_s: float = 120.0
+    warm_interval_s: float = 110.0  # background refresh, a bit below the cache TTL so requests rarely wait
 
     @property
     def tz(self) -> ZoneInfo:
@@ -30,4 +31,5 @@ class Settings:
             timezone=e.get("BONI_TZ", "Europe/Madrid"),
             outbox_interval_s=float(e.get("BONI_OUTBOX_INTERVAL", "60")),
             cache_ttl_s=float(e.get("BONI_CACHE_TTL", "120")),
+            warm_interval_s=float(e.get("BONI_WARM_INTERVAL", "110")),
         )

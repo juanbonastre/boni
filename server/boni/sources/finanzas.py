@@ -154,13 +154,14 @@ class FinanzasSource:
     """Reads movements, debts, categories and people; writes new movement notes. Caches reads for `ttl_s` seconds."""
 
     mcp: McpSource
-    ttl_s: float = 120.0
+    ttl_s: float = 120.0          # movements and debts
+    lists_ttl_s: float = 900.0    # categories and people change rarely
     _cache: dict[str, _Cached] = field(default_factory=dict)
 
     # ----- cache -----
-    def _get(self, key: str) -> Any | None:
+    def _get(self, key: str, ttl: float | None = None) -> Any | None:
         c = self._cache.get(key)
-        if c and time.monotonic() - c.at < self.ttl_s:
+        if c and time.monotonic() - c.at < (self.ttl_s if ttl is None else ttl):
             return c.value
         return None
 
@@ -192,12 +193,12 @@ class FinanzasSource:
             raise SourceError(f"query_notes: {len(rows)} results, limit reached ({kw.get('folder')})")
         return rows
 
-    async def movements(self, months: list[tuple[int, int]]) -> list[Movement]:
+    async def movements(self, months: list[tuple[int, int]], force: bool = False) -> list[Movement]:
         """Movements of the given (year, month) folders (cached per month)."""
         out: list[Movement] = []
         missing = []
         for y, m in months:
-            v = self._get(f"mov:{y:04d}-{m:02d}")
+            v = None if force else self._get(f"mov:{y:04d}-{m:02d}")
             if v is None:
                 missing.append((y, m))
             else:
@@ -221,8 +222,8 @@ class FinanzasSource:
             out.extend(v)
         return out
 
-    async def debts(self) -> list[Debt]:
-        v = self._get("debts")
+    async def debts(self, force: bool = False) -> list[Debt]:
+        v = None if force else self._get("debts")
         if v is not None:
             return v
         async with self.mcp.connect() as s:
@@ -232,8 +233,8 @@ class FinanzasSource:
     def cached_debts(self) -> list[Debt] | None:
         return self._stale("debts")
 
-    async def categories(self) -> list[str]:
-        v = self._get("categories")
+    async def categories(self, force: bool = False) -> list[str]:
+        v = None if force else self._get("categories", self.lists_ttl_s)
         if v is not None:
             return v
         async with self.mcp.connect() as s:
@@ -243,8 +244,8 @@ class FinanzasSource:
             raise SourceError("categorias.md: empty or unreadable")
         return self._put("categories", parse_categories(text))
 
-    async def people(self) -> list[Person]:
-        v = self._get("people")
+    async def people(self, force: bool = False) -> list[Person]:
+        v = None if force else self._get("people", self.lists_ttl_s)
         if v is not None:
             return v
         async with self.mcp.connect() as s:

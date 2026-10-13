@@ -33,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,7 +47,6 @@ import io.github.juanbonastre.boni.api.Option
 import io.github.juanbonastre.boni.api.TextField
 import io.github.juanbonastre.boni.api.ToggleField
 import io.github.juanbonastre.boni.api.UnknownField
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -194,20 +194,14 @@ private fun SearchList(
 ) {
     val c = LocalBoniColors.current
     var query by remember { mutableStateOf("") }
-    var options by remember { mutableStateOf(inline.orEmpty()) }
     var open by remember { mutableStateOf(false) }
-    val labels = remember { mutableStateMapOf<String, String>() }
-    LaunchedEffect(query, open) {
-        if (!open && query.isEmpty()) return@LaunchedEffect
-        if (source != null) {
-            delay(200)
-            options = runCatching { loadOptions(source, query) }.getOrDefault(options)
-        } else {
-            val q = query.lowercase()
-            options = inline.orEmpty().filter { q.isEmpty() || it.label.lowercase().contains(q) }
-        }
-        options.forEach { labels[it.value] = it.label }
+    // The whole list is loaded once (it comes prefetched from the controller) and filtered here as you type.
+    var all by remember(source) { mutableStateOf(inline.orEmpty()) }
+    LaunchedEffect(source) {
+        if (source != null) all = runCatching { loadOptions(source, "") }.getOrDefault(all)
     }
+    val labels = remember(all) { all.associate { it.value to it.label } }
+    val options = remember(all, query) { FormLogic.filterOptions(all, query) }
     if (selected.isNotEmpty()) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
             selected.forEach { v ->
@@ -220,7 +214,7 @@ private fun SearchList(
         onValueChange = { query = it; open = true },
         placeholder = { Text("Buscar...") },
         singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().onFocusChanged { if (it.isFocused) open = true },
     )
     if (open || query.isNotEmpty()) {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 200.dp)) {
@@ -228,7 +222,6 @@ private fun SearchList(
                 val isSel = o.value in selected
                 Row(
                     Modifier.fillMaxWidth().clickable {
-                        labels[o.value] = o.label
                         if (multi) onChange(if (isSel) selected - o.value else selected + o.value)
                         else { onChange(listOf(o.value)); open = false; query = "" }
                     }.padding(vertical = 6.dp, horizontal = 4.dp),

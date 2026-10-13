@@ -48,8 +48,11 @@ fun ChartCard(
     var drill by remember(chartId) { mutableStateOf<String?>(null) }
     var state by remember(chartId) { mutableStateOf(ChartState(data = repository.cached(chartId), loading = true)) }
     LaunchedEffect(chartId, drill, refreshTick) {
-        state = state.copy(loading = true, data = repository.cached(chartId, drill) ?: state.data.takeIf { drill == null })
-        state = repository.load(chartId, drill)
+        if (state.data == null || state.data?.drill != drill) {
+            state = state.copy(loading = true, data = repository.cached(chartId, drill) ?: state.data.takeIf { drill == null })
+        }
+        // Shared with every other card/widget of the same chart: one request per refresh tick.
+        state = repository.load(chartId, drill, generation = refreshTick)
     }
     ChartCardContent(
         title = title,

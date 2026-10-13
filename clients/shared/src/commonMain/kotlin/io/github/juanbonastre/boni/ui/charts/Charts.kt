@@ -10,6 +10,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -58,40 +59,89 @@ fun Chart(
 ) {
     val points = data.series.firstOrNull()?.points.orEmpty()
     val animate = LocalAnimateCharts.current
-    val progress = remember(data.chartId, data.drill) { Animatable(if (animate) 0f else 1f) }
-    LaunchedEffect(data) {
-        if (animate) {
-            progress.snapTo(min(progress.value, 0.35f))
-            progress.animateTo(1f, tween(durationMillis = 750, easing = FastOutSlowInEasing))
-        }
-    }
+    // Animate on first appearance and when the NUMBERS change. A refresh that brings the same values (every answer has a
+    // new computed_at) draws nothing new; changed values glide from the old ones instead of growing again from zero.
+    val anim = remember(data.chartId, data.drill) { ChartAnim(animate) }
+    val keys = points.map { it.key }
+    val values = points.map { it.value }
+    LaunchedEffect(keys, values) { anim.update(keys, values) }
     var hover by remember { mutableStateOf<Offset?>(null) }
     val measurer = rememberTextMeasurer()
+    val currentPoints by rememberUpdatedState(points)
+    val currentOnSelect by rememberUpdatedState(onSelect)
     val canvasModifier = modifier
         .pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) {
                     val ev = awaitPointerEvent()
-                    hover = if (ev.type == PointerEventType.Exit) null else ev.changes.firstOrNull()?.position
+                    val pos = if (ev.type == PointerEventType.Exit) null else ev.changes.firstOrNull()?.position
+                    if (pos != hover) hover = pos
                 }
             }
         }
-        .pointerInput(points, onSelect) {
-            if (onSelect != null) {
-                detectTapGestures { pos ->
-                    val sz = Size(size.width.toFloat(), size.height.toFloat())
-                    val shown = if (data.kind == "hbar") hbarRows(points, sz, density, compact) else points
-                    val g = Geometry.of(data.kind, sz, shown.size, density, compact)
-                    g.indexAt(pos)?.let { i -> shown[i].takeIf { !it.key.startsWith("_") }?.let(onSelect) }
-                }
+        .pointerInput(Unit) {
+            detectTapGestures { pos ->
+                val select = currentOnSelect ?: return@detectTapGestures
+                val pts = currentPoints
+                val sz = Size(size.width.toFloat(), size.height.toFloat())
+                val shown = if (data.kind == "hbar") hbarRows(pts, sz, density, compact) else pts
+                val g = Geometry.of(data.kind, sz, shown.size, density, compact)
+                g.indexAt(pos)?.let { i -> shown[i].takeIf { !it.key.startsWith("_") }?.let(select) }
             }
         }
     Canvas(canvasModifier) {
         val ink = Ink(colors, measurer, compact)
+        val shown = anim.apply(points)
+        val progress = anim.entry
         when (data.kind) {
-            "hbar" -> drawHBars(points, ink, accent, progress.value, hover, compact)
-            "line" -> drawLineChart(points, data.average, ink, accent, progress.value, hover, compact)
-            else -> drawColumns(points, data.average, ink, accent, progress.value, hover, compact)
+            "hbar" -> drawHBars(shown, ink, accent, progress, hover, compact)
+            "line" -> drawLineChart(shown, data.average, ink, accent, progress, hover, compact)
+            else -> drawColumns(shown, data.average, ink, accent, progress, hover, compact)
+        }
+    }
+}
+
+/**
+ * Animation state of one chart. `entry` (0..1) drives the first reveal (bars grow, line is drawn, labels appear at the
+ * end); later value changes interpolate each point from what was on screen to the new value.
+ */
+internal class ChartAnim(private val enabled: Boolean) {
+    private val t = Animatable(if (enabled) 0f else 1f)
+    private var entered by mutableStateOf(!enabled)
+    private var keys by mutableStateOf<List<String>?>(null)
+    private var start by mutableStateOf<List<Double>>(emptyList())
+    private var target by mutableStateOf<List<Double>>(emptyList())
+
+    val entry: Float get() = if (entered) 1f else t.value
+
+    private fun valueAt(i: Int, fallback: Double): Double {
+        if (i >= target.size) return fallback
+        val from = start.getOrElse(i) { 0.0 }
+        return if (entered) from + (target[i] - from) * t.value else target[i]  // entry: scaling is done by `entry`
+    }
+
+    fun apply(points: List<ChartPoint>): List<ChartPoint> =
+        if (keys != points.map { it.key }) points else points.mapIndexed { i, p -> p.copy(value = valueAt(i, p.value)) }
+
+    suspend fun update(newKeys: List<String>, newValues: List<Double>) {
+        if (newKeys == keys && newValues == target) return
+        val sameRows = newKeys == keys && entered
+        if (!enabled) {
+            keys = newKeys; start = newValues; target = newValues
+            return
+        }
+        if (sameRows) {
+            start = newValues.indices.map { valueAt(it, newValues[it]) }
+            target = newValues
+            t.snapTo(0f)
+            t.animateTo(1f, tween(durationMillis = 450, easing = FastOutSlowInEasing))
+        } else {
+            keys = newKeys; start = newValues; target = newValues
+            entered = false
+            t.snapTo(0f)
+            t.animateTo(1f, tween(durationMillis = 750, easing = FastOutSlowInEasing))
+            entered = true
+            start = newValues  // later changes start from here
         }
     }
 }

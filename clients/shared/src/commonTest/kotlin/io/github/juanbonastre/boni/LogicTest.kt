@@ -137,3 +137,21 @@ class OfflineQueueTest {
         assertEquals("no", q.items().single().error)
     }
 }
+
+class OptionFilterTest {
+    private val people = listOf(
+        io.github.juanbonastre.boni.api.Option("pablo-soler-gil", "Pablo Peña Ruíz", "Colleague"),
+        io.github.juanbonastre.boni.api.Option("tomas", "Tomas"),
+        io.github.juanbonastre.boni.api.Option("comida/restaurante", "comida/restaurante"),
+    )
+
+    @Test
+    fun accentAndCaseInsensitive() {
+        assertEquals("pena ruiz", FormLogic.fold("Peña RUÍZ").replace("í", "i"))
+        assertEquals(listOf("pablo-soler-gil"), FormLogic.filterOptions(people, "PENA").map { it.value })
+        assertEquals(listOf("pablo-soler-gil"), FormLogic.filterOptions(people, "peña pablo").map { it.value })
+        assertEquals(listOf("comida/restaurante"), FormLogic.filterOptions(people, "rest").map { it.value })
+        assertEquals(3, FormLogic.filterOptions(people, "  ").size)
+        assertTrue(FormLogic.filterOptions(people, "zzz").isEmpty())
+    }
+}

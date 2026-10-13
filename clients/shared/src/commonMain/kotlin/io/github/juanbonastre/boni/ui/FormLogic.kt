@@ -6,6 +6,7 @@ import io.github.juanbonastre.boni.api.DateField
 import io.github.juanbonastre.boni.api.FormComponent
 import io.github.juanbonastre.boni.api.FormField
 import io.github.juanbonastre.boni.api.MultiChoiceField
+import io.github.juanbonastre.boni.api.Option
 import io.github.juanbonastre.boni.api.TextField
 import io.github.juanbonastre.boni.api.ToggleField
 import io.github.juanbonastre.boni.api.UnknownField
@@ -86,4 +87,20 @@ object FormLogic {
     fun text(v: JsonElement?): String = (v as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull ?: ""
 
     fun list(v: JsonElement?): List<String> = (v as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList()
+
+    private val FOLD = mapOf(
+        '\u00e1' to 'a', '\u00e0' to 'a', '\u00e4' to 'a', '\u00e2' to 'a', '\u00e3' to 'a', '\u00e9' to 'e', '\u00e8' to 'e', '\u00eb' to 'e', '\u00ea' to 'e',
+        '\u00ed' to 'i', '\u00ec' to 'i', '\u00ef' to 'i', '\u00ee' to 'i', '\u00f3' to 'o', '\u00f2' to 'o', '\u00f6' to 'o', '\u00f4' to 'o', '\u00f5' to 'o',
+        '\u00fa' to 'u', '\u00f9' to 'u', '\u00fc' to 'u', '\u00fb' to 'u', '\u00f1' to 'n', '\u00e7' to 'c',
+    )
+
+    /** Lowercase without accents: "Pe\u00f1a" -> "pena" (same matching as the server's options search). */
+    fun fold(s: String): String = buildString(s.length) { for (c in s.lowercase()) append(FOLD[c] ?: c) }
+
+    /** Options whose label or value contain every word of [query] (accent and case insensitive). */
+    fun filterOptions(options: List<Option>, query: String): List<Option> {
+        val words = fold(query).split(' ', '/', '-').filter { it.isNotBlank() }
+        if (words.isEmpty()) return options
+        return options.filter { o -> val text = fold("${o.label} ${o.value} ${o.hint ?: ""}"); words.all { it in text } }
+    }
 }

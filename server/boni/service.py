@@ -92,6 +92,24 @@ class Service:
             opts = [o for o in opts if all(w in ascii_text(f"{o.label} {o.value}").lower() for w in words)]
         return opts[:limit]
 
+    # ----- background warm-up -----
+    async def warm(self) -> None:
+        """Refresh in the background what clients ask for, so their requests are served from memory: the months of every
+        chart, debts, categories and people. Errors are only logged (the next round tries again)."""
+        today = self.today()
+        months = sorted({m for spec in self.store.charts() for m in months_for(spec, today)})
+        try:
+            await self.fin.movements(months, force=True)
+            await self.fin.debts(force=True)
+            await self.fin.categories(force=True)
+            await self.fin.people(force=True)
+            self._mark(True)
+        except SourceUnavailable as e:
+            self._mark(False)
+            log.warning("warm-up: source unavailable: %s", e)
+        except SourceError as e:
+            log.warning("warm-up failed: %s", e)
+
     # ----- charts -----
     async def chart_data(self, chart_id: str, drill: str | None = None) -> ChartData:
         spec = self.store.chart(chart_id)

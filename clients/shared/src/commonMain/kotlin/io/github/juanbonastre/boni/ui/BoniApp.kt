@@ -62,14 +62,17 @@ private val OfflineHome = Screen(
 fun BoniApp(controller: BoniController, onOpenSettings: () -> Unit) {
     val c = LocalBoniColors.current
     var screenId by remember { mutableStateOf("home") }
-    var screen by remember { mutableStateOf<Screen?>(null) }
+    var screen by remember { mutableStateOf(controller.cachedScreen("home")) }
     var message by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(screenId, controller.refreshTick, controller.config) {
         loadError = null
-        screen = try {
+        // Show what we already have at once (prefetched), then refresh it in the background.
+        val cached = controller.cachedScreen(screenId)
+        if (cached != null) { if (cached != screen) screen = cached } else if (screen?.id != screenId) screen = null
+        val loaded = try {
             if (screenId == "home") controller.home() else controller.screen(screenId)
         } catch (e: OfflineException) {
             loadError = "Sin conexion con el servidor"
@@ -78,6 +81,9 @@ fun BoniApp(controller: BoniController, onOpenSettings: () -> Unit) {
             loadError = e.message
             if (screenId == "home") OfflineHome else null
         }
+        // Keep the cached screen when offline; replace only when the content really changed.
+        val next = if (loadError != null) controller.cachedScreen(screenId) ?: loaded else loaded
+        if (next != screen) screen = next
     }
     LaunchedEffect(message) {
         if (message != null) {
@@ -152,7 +158,7 @@ private fun OtherComponent(comp: Component, controller: BoniController, onNaviga
             FormView(
                 form = comp,
                 today = controller.today(),
-                loadOptions = { source, q -> controller.options(source, q).options },
+                loadOptions = { source, _ -> controller.optionList(source) },
                 onSubmit = { payload ->
                     when (val r = controller.submit(comp.submit.action, payload)) {
                         is SubmitOutcome.Done -> { onMessage(r.message); onNavigate("home"); emptyMap() }
@@ -190,7 +196,7 @@ private fun ChartGrid(charts: List<ChartCardComponent>, controller: BoniControll
 @Composable
 private fun ChartCell(card: ChartCardComponent, controller: BoniController, modifier: Modifier) {
     ChartCard(card.chartId, card.title, controller.charts, controller.refreshTick, modifier,
-        chartHeight = if (card.size == "wide") 240.dp else 220.dp)
+        chartHeight = if (card.size == "wide") 210.dp else 190.dp)
 }
 
 @Composable

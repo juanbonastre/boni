@@ -1,6 +1,10 @@
 package io.github.juanbonastre.boni.desktop
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -144,7 +148,7 @@ fun main(args: Array<String>) {
                 onCloseRequest = { mainOpen = false }, // closing the window keeps the widgets and the tray icon
                 title = "Boni",
                 icon = BoniIcon,
-                state = rememberWindowState(size = DpSize(1100.dp, 820.dp)),
+                state = rememberWindowState(position = WindowPosition(Alignment.Center), size = mainWindowSize()),
             ) {
                 ThemeFor(dark) {
                     BoniApp(controller, onOpenSettings = { settingsOpen = true })
@@ -157,7 +161,7 @@ fun main(args: Array<String>) {
                 onCloseRequest = { settingsOpen = false },
                 title = "Ajustes de Boni",
                 icon = BoniIcon,
-                state = rememberDialogState(size = DpSize(520.dp, 520.dp)),
+                state = rememberDialogState(position = WindowPosition(Alignment.Center), size = settingsWindowSize()),
             ) {
                 ThemeFor(dark) {
                     SettingsView(
@@ -182,12 +186,31 @@ fun ThemeFor(dark: Boolean?, content: @Composable () -> Unit) {
     if (dark == null) BoniTheme(content = content) else BoniTheme(dark = dark, content = content)
 }
 
-/** Widgets start stacked at the top right of the main screen. */
+/**
+ * Usable desktop area (screen minus panels) in the same units as window sizes (Compose dp = AWT user space, so
+ * display scaling is already applied).
+ */
+fun usableArea(): java.awt.Rectangle =
+    runCatching { java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().maximumWindowBounds }.getOrNull()
+        ?: java.awt.Rectangle(0, 0, 1920, 1040)
+
+/** Main window: as large as the content (about 1180 x 900) but never taller or wider than the free area. */
+fun mainWindowSize(): DpSize {
+    val a = usableArea()
+    return DpSize(minOf(1180, a.width - 60).dp, minOf(940, a.height - 30).dp)
+}
+
+fun settingsWindowSize(): DpSize {
+    val a = usableArea()
+    return DpSize(minOf(560, a.width - 40).dp, minOf(700, a.height - 40).dp)
+}
+
+/** Widgets start stacked at the top right of the usable area. */
 fun defaultPlacement(index: Int): WidgetPlacement {
-    val screen = runCatching { java.awt.Toolkit.getDefaultToolkit().screenSize }.getOrNull()
+    val a = usableArea()
     val width = 380
-    val x = (screen?.width ?: 1920) - width - 40
-    return WidgetPlacement(x = x, y = 60 + index * 280, width = width, height = 260)
+    val height = 260
+    return WidgetPlacement(x = a.x + a.width - width - 24, y = a.y + 24 + index * (height + 16), width = width, height = height)
 }
 
 @Composable
@@ -203,7 +226,11 @@ private fun SettingsView(
     var token by remember { mutableStateOf(settings.token) }
     var theme by remember { mutableStateOf(settings.theme) }
     Surface(color = c.page, modifier = Modifier.fillMaxSize()) {
-        Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+      Column(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
             Text("Servidor", color = c.ink, fontSize = 18.sp)
             OutlinedTextField(url, { url = it.trim() }, label = { Text("URL del servidor") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(
@@ -229,9 +256,12 @@ private fun SettingsView(
                 Text("Para que los widgets queden bajo las ventanas: sudo apt install wmctrl", color = c.muted, fontSize = 12.sp)
             }
             TextButton(onClick = onResetWidgets) { Text("Recolocar y mostrar todos los widgets") }
-            Button(onClick = { onSave(settings.copy(serverUrl = url, token = token, theme = theme)) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Guardar")
-            }
         }
+        Button(
+            onClick = { onSave(settings.copy(serverUrl = url, token = token, theme = theme)) },
+            enabled = url.isNotBlank() && token.isNotBlank(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp).height(46.dp),
+        ) { Text("Guardar") }
+      }
     }
 }

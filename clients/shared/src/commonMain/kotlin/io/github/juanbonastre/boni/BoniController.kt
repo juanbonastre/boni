@@ -7,6 +7,10 @@ import androidx.compose.runtime.setValue
 import io.github.juanbonastre.boni.api.ActionRequest
 import io.github.juanbonastre.boni.api.ApiException
 import io.github.juanbonastre.boni.api.BoniApi
+import io.github.juanbonastre.boni.api.ChoiceField
+import io.github.juanbonastre.boni.api.FormComponent
+import io.github.juanbonastre.boni.api.MultiChoiceField
+import io.github.juanbonastre.boni.api.Option
 import io.github.juanbonastre.boni.api.OfflineException
 import io.github.juanbonastre.boni.api.OptionsResponse
 import io.github.juanbonastre.boni.api.Screen
@@ -23,6 +27,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
+
+const val CAPTURE_SCREEN = "capture-expense"
+const val OPTION_LIST_LIMIT = 500
 
 sealed interface SubmitOutcome {
     data class Done(val message: String) : SubmitOutcome
@@ -59,9 +66,13 @@ class BoniController(
     fun today(): String = clock.today()
 
     fun configure(newConfig: ServerConfig) {
+        if (newConfig == config && api != null) return  // saving the settings without changes: nothing to reload
         api?.close()
         config = newConfig
         api = newConfig.takeIf { it.isComplete }?.let(apiFactory)
+        charts.invalidate()
+        screens.clear()
+        optionLists.clear()
         refresh()
     }
 
@@ -69,11 +80,32 @@ class BoniController(
         refreshTick++
     }
 
-    suspend fun home(): Screen = requireApi().home()
+    // Screens and option lists rarely change: kept in memory, shown at once, refreshed in the background (prefetch()).
+    private val screens = mutableMapOf<String, Screen>()
+    private val optionLists = mutableMapOf<String, List<Option>>()
 
-    suspend fun screen(id: String): Screen = requireApi().screen(id)
+    fun cachedScreen(id: String): Screen? = screens[id]
+
+    suspend fun home(): Screen = requireApi().home().also { screens["home"] = it }
+
+    suspend fun screen(id: String): Screen = requireApi().screen(id).also { screens[id] = it }
 
     suspend fun options(source: String, query: String): OptionsResponse = requireApi().options(source, query)
+
+    /** The whole list of a source (categories, people: tens of items), fetched once and filtered on the device. */
+    suspend fun optionList(source: String): List<Option> =
+        optionLists[source] ?: requireApi().options(source, "", limit = OPTION_LIST_LIMIT).options.also { optionLists[source] = it }
+
+    /** Load what the capture form needs before the user opens it. Errors are ignored (offline: next round). */
+    suspend fun prefetch() {
+        val client = api ?: return
+        runCatching { screens["home"] = client.home() }
+        val form = runCatching { client.screen(CAPTURE_SCREEN).also { screens[CAPTURE_SCREEN] = it } }.getOrNull()
+        val sources = form?.components.orEmpty().filterIsInstance<FormComponent>().flatMap { f ->
+            f.fields.mapNotNull { (it as? ChoiceField)?.source ?: (it as? MultiChoiceField)?.source }
+        }.toSet()
+        for (src in sources) runCatching { optionLists[src] = client.options(src, "", limit = OPTION_LIST_LIMIT).options }
+    }
 
     suspend fun widgetsList(): List<Widget> = requireApi().widgets().widgets
 
@@ -115,11 +147,12 @@ class BoniController(
         return n
     }
 
-    /** Background loop: queue every minute, charts every [chartsEveryMinutes] minutes. */
+    /** Background loop: queue every minute; charts, screens and option lists every [chartsEveryMinutes] minutes. */
     fun start(scope: CoroutineScope, chartsEveryMinutes: Int = 15): Job = scope.launch {
         var minute = 0
         while (isActive) {
             runCatching { sync() }
+            if (minute % chartsEveryMinutes == 0) prefetch()
             if (minute > 0 && minute % chartsEveryMinutes == 0) refresh()
             delay(60_000)
             minute++
