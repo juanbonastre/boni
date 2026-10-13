@@ -16,7 +16,7 @@ MOV = FIN + "/movimientos"
 DEBTS = FIN + "/deudas"
 CATEGORIES_NOTE = FIN + "/categorias.md"
 PEOPLE = "registros/personas"
-QUERY_LIMIT = 5000  # per month folder; a full result means it may be truncated -> error, never silently wrong numbers
+QUERY_LIMIT = 500  # vault-mcp caps query_notes at 500 (MAX_LIST); a full page may be truncated -> error
 MOVEMENT_FIELDS = ["time", "amount", "my_share", "category", "settles", "people", "invited", "merchant", "concept",
                    "account", "status"]
 DEBT_FIELDS = ["person", "movement", "amount", "direction", "status"]
@@ -178,7 +178,13 @@ class FinanzasSource:
 
     # ----- reads -----
     async def _query(self, s: Session, **kw: Any) -> list[dict[str, Any]]:
-        res = await s.call("query_notes", {"limit": QUERY_LIMIT, **kw})
+        try:
+            res = await s.call("query_notes", {"limit": QUERY_LIMIT, **kw})
+        except SourceError as e:
+            # vault-mcp answers "not found: <folder>" for a month without notes yet: that is an empty month.
+            if kw.get("folder") and f"not found: {kw['folder']}" in str(e):
+                return []
+            raise
         rows = res.get("result", res) if isinstance(res, dict) else res
         if not isinstance(rows, list):
             raise SourceError(f"query_notes: unexpected result {type(rows).__name__}")

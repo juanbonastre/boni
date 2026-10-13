@@ -44,8 +44,10 @@ class FakeVault:
                         where: dict[str, str] | None = None, date_field: str = "date", date_from: str | None = None,
                         date_to: str | None = None, fields: list[str] | None = None, limit: int = 50) -> dict:
             base = root / folder
+            if not base.exists():  # like vault-mcp's _resolve
+                raise ToolError(f"not found: {folder}")
             out = []
-            for p in sorted(base.rglob("*.md")) if base.exists() else []:
+            for p in sorted(base.rglob("*.md")):
                 fm = frontmatter(p.read_text())
                 if type and fm.get("type") != type:
                     continue
@@ -60,7 +62,7 @@ class FakeVault:
                         row[k] = fm[k]
                 out.append(row)
             out.sort(key=lambda r: str(r.get(date_field) or ""), reverse=True)
-            return {"result": out[:limit]}
+            return {"result": out[: max(1, min(limit, 500))]}  # MAX_LIST in vault-mcp
 
         @s.tool()
         def read_note(path: str, max_chars: int = 60000) -> dict:

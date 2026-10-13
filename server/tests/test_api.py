@@ -133,3 +133,14 @@ def test_chart_data_served_stale_when_source_down(client: TestClient, vault, ser
 def test_widgets_per_device(client: TestClient):
     w = client.get("/api/v1/widgets").json()["widgets"]
     assert [x["chart_id"] for x in w] == ["spending-by-category", "monthly-spending", "eating-out"]
+
+
+
+def test_first_expense_of_a_new_month(service, vault):
+    # November has no folder yet: vault-mcp answers "not found" for it; Boni treats it as an empty month and creates it.
+    from datetime import date
+
+    note = "---\ntype: movement\n---\n"
+    path = asyncio.run(service.fin.create_movement(date(2026, 11, 2), "2026-11-02-cafe", note, "t"))
+    assert path == "registros/finanzas/movimientos/2026/11/2026-11-02-cafe.md"
+    assert asyncio.run(service.fin.movements([(2026, 12)])) == []
