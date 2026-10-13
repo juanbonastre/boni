@@ -64,3 +64,25 @@ def test_unreachable_url_is_unavailable():
     fin = FinanzasSource(McpSource("vault", "http://127.0.0.1:9/mcp", TOKEN, timeout_s=2))
     with pytest.raises(SourceUnavailable):
         asyncio.run(fin.categories())
+
+
+def test_tool_errors_inside_the_body_stay_source_errors(http_url):
+    # Over HTTP the SDK wraps body exceptions in ExceptionGroups; Boni must still see a SourceError.
+    from boni.sources.mcp_client import SourceError
+
+    async def run():
+        async with McpSource("vault", http_url, TOKEN).connect() as s:
+            await s.call("read_note", {"path": "nope.md"})
+
+    with pytest.raises(SourceError, match="not found"):
+        asyncio.run(run())
+
+
+def test_capture_over_http_into_a_new_month_and_collision(http_url, vault):
+    from datetime import date
+
+    fin = FinanzasSource(McpSource("vault", http_url, TOKEN))
+    note = "---\ntype: movement\n---\n"
+    a = asyncio.run(fin.create_movement(date(2026, 12, 1), "2026-12-01-cafe", note, "t"))
+    b = asyncio.run(fin.create_movement(date(2026, 12, 1), "2026-12-01-cafe", note, "t"))
+    assert a.endswith("/2026/12/2026-12-01-cafe.md") and b.endswith("/2026/12/2026-12-01-cafe-2.md")

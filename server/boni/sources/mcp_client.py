@@ -63,10 +63,23 @@ class McpSource:
                     in_body = True
                     yield Session(self.name, c)
         except BaseException as e:
-            # Errors from the caller's `async with` body pass through untouched; only connecting is translated.
-            if in_body or not isinstance(e, Exception):
+            # Over HTTP the SDK's task groups wrap whatever leaves the body in an ExceptionGroup: unwrap it, so callers
+            # see the SourceError / SourceUnavailable they expect. Errors from the caller's body pass through; only
+            # connecting is translated.
+            inner = _unwrap(e)
+            if isinstance(inner, (SourceError, SourceUnavailable)) or (in_body and isinstance(inner, Exception)):
+                if inner is e:
+                    raise
+                raise inner from None
+            if not isinstance(inner, Exception):
                 raise
-            raise SourceUnavailable(f"{self.name}: {type(e).__name__}: {e}") from e
+            raise SourceUnavailable(f"{self.name}: {type(inner).__name__}: {inner}") from e
+
+
+def _unwrap(e: BaseException) -> BaseException:
+    while isinstance(e, BaseExceptionGroup) and len(e.exceptions) == 1:
+        e = e.exceptions[0]
+    return e
 
 
 class Session:
