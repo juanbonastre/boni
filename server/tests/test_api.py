@@ -135,6 +135,88 @@ def test_widgets_per_device(client: TestClient):
     assert [x["chart_id"] for x in w] == ["spending-by-category", "monthly-spending", "eating-out"]
 
 
+NEW_CHART = {"title": "Restaurantes por mes", "kind": "bar", "x": {"field": "date", "granularity": "month"},
+             "period": {"kind": "last_months", "months": 6},
+             "filters": [{"field": "category", "op": "in", "values": ["comida/restaurante"]}]}
+
+
+def test_chart_builder_crud(client: TestClient):
+    cat = client.get("/api/v1/charts/catalog").json()
+    assert {f["id"] for f in cat["fields"]} >= {"date", "group", "category", "merchant", "people", "amount"}
+    assert [k["id"] for k in cat["kinds"]][:3] == ["bar", "stacked_bar", "hbar"]
+
+    r = client.post("/api/v1/charts", json=NEW_CHART)
+    assert r.status_code == 201
+    chart = r.json()
+    assert chart["id"] == "restaurantes-por-mes" and chart["home"] is True
+    assert client.post("/api/v1/charts", json=NEW_CHART).json()["id"] == "restaurantes-por-mes-2"
+    d = client.get("/api/v1/charts/restaurantes-por-mes/data").json()
+    assert {p["key"]: p["value"] for p in d["series"][0]["points"]}["2026-09"] == 44.41  # 14.41 + 15 + 15 (forgiven)
+    home = [c["chart_id"] for c in client.get("/api/v1/home").json()["components"] if c["type"] == "chart_card"]
+    assert home[-2:] == ["restaurantes-por-mes", "restaurantes-por-mes-2"]
+
+    # edit: hide from home, change kind; the id stays
+    r = client.put("/api/v1/charts/restaurantes-por-mes-2", json=NEW_CHART | {"kind": "line", "home": False,
+                                                                          "id": "ignored"})
+    assert r.status_code == 200 and r.json()["id"] == "restaurantes-por-mes-2" and r.json()["kind"] == "line"
+    home = [c["chart_id"] for c in client.get("/api/v1/home").json()["components"] if c["type"] == "chart_card"]
+    assert "restaurantes-por-mes-2" not in home
+    assert client.get("/api/v1/charts/restaurantes-por-mes-2").json()["kind"] == "line"
+
+    # order: the given ids first
+    ids = [c["id"] for c in client.put("/api/v1/charts/order", json={"ids": ["eating-out", "restaurantes-por-mes",
+                                                                             "nope"]}).json()["charts"]]
+    assert ids == ["eating-out", "restaurantes-por-mes", "spending-by-category", "monthly-spending",
+                   "restaurantes-por-mes-2"]
+
+    # delete: the chart and the widgets showing it
+    w = client.post("/api/v1/widgets", json={"chart_id": "restaurantes-por-mes", "size": "large"}).json()
+    assert w == {"id": "w-restaurantes-por-mes", "chart_id": "restaurantes-por-mes", "size": "large"}
+    assert client.delete("/api/v1/charts/restaurantes-por-mes").status_code == 204
+    assert client.get("/api/v1/charts/restaurantes-por-mes/data").status_code == 404
+    assert "restaurantes-por-mes" not in [x["chart_id"] for x in client.get("/api/v1/widgets").json()["widgets"]]
+    assert client.delete("/api/v1/charts/restaurantes-por-mes").status_code == 404
+    assert client.put("/api/v1/charts/nope", json=NEW_CHART).status_code == 404
+
+
+def test_invalid_chart_is_rejected_with_a_message(client: TestClient):
+    bad = NEW_CHART | {"kind": "stacked_bar"}
+    r = client.post("/api/v1/charts", json=bad)
+    assert r.status_code == 422 and r.json()["error"] == {
+        "code": "invalid", "message": "Las barras apiladas necesitan un campo para separar en series"}
+    assert client.post("/api/v1/charts/preview", json={"spec": bad}).status_code == 422
+    assert client.post("/api/v1/charts", json={"title": "x"}).json()["error"]["code"] == "bad_request"
+
+
+def test_preview_does_not_save(client: TestClient):
+    spec = {"title": "Por comercio", "kind": "hbar", "x": {"field": "merchant"}, "period": {"kind": "all"},
+            "filters": [{"field": "merchant", "op": "not_empty"}]}
+    d = client.post("/api/v1/charts/preview", json={"spec": spec}).json()
+    assert [(p["label"], p["value"]) for p in d["series"][0]["points"]] == [("Ramen Kagura", 24.5), ("Kumo", 14.41)]
+    assert d["chart_id"] == "" and len(client.get("/api/v1/charts").json()["charts"]) == 3
+
+
+def test_widget_management(client: TestClient):
+    w = client.post("/api/v1/widgets", json={"chart_id": "eating-out"}).json()
+    assert w["id"] == "w-eating-out-2" and w["size"] == "medium"
+    r = client.put(f"/api/v1/widgets/{w['id']}", json={"chart_id": "monthly-spending", "size": "small"})
+    assert r.json() == {"id": "w-eating-out-2", "chart_id": "monthly-spending", "size": "small"}
+    assert client.post("/api/v1/widgets", json={"chart_id": "nope"}).status_code == 422
+    assert client.delete(f"/api/v1/widgets/{w['id']}").status_code == 204
+    assert client.delete(f"/api/v1/widgets/{w['id']}").status_code == 404
+    # widgets belong to the device: another device does not see this one's changes
+    assert len(client.get("/api/v1/widgets").json()["widgets"]) == 3
+
+
+def test_builder_option_sources(client: TestClient):
+    def values(source):
+        return [(o["value"], o["label"]) for o in client.get(f"/api/v1/options/{source}").json()["options"]]
+    assert values("groups")[:3] == [("comida", "Comida"), ("bebida", "Bebida"), ("suscripciones", "Suscripciones")]
+    assert values("accounts") == [("efectivo", "Efectivo"), ("revolut", "Revolut"), ("ing", "ING")]
+    assert ("Kumo", "Kumo") in values("merchants") and values("related") == [("cumple-tomas", "Cumple tomas")]
+    assert values("statuses")[0] == ("conciliado", "Conciliado")
+
+
 
 def test_first_expense_of_a_new_month(service, vault):
     # November has no folder yet: vault-mcp answers "not found" for it; Boni treats it as an empty month and creates it.

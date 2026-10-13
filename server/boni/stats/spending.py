@@ -44,15 +44,22 @@ def movement_spending(m: Movement, debt_names: set[str]) -> float:
     return 0.0
 
 
-def spending_items(movements: Iterable[Movement], debts: Iterable[Debt]) -> list[SpendingItem]:
-    movements = list(movements)
-    debts = list(debts)
-    debt_names = {d.name for d in debts}
+def forgiven(movements: Iterable[Movement], debts: Iterable[Debt]) -> list[tuple[Movement, float]]:
+    """Debts Juan decided not to collect, with the expense they came from: (expense, amount that becomes spending)."""
     by_name = {m.name: m for m in movements}
-    out = [SpendingItem(m.date, m.category, v) for m in movements if (v := movement_spending(m, debt_names)) != 0.0]
+    out = []
     for d in debts:
         if d.status in FORGIVEN and d.direction == "me-deben":
             m = by_name.get(d.movement)
             if m is not None and is_spending(m.category):
-                out.append(SpendingItem(m.date, m.category, d.amount))
+                out.append((m, d.amount))
+    return out
+
+
+def spending_items(movements: Iterable[Movement], debts: Iterable[Debt]) -> list[SpendingItem]:
+    movements = list(movements)
+    debts = list(debts)
+    debt_names = {d.name for d in debts}
+    out = [SpendingItem(m.date, m.category, v) for m in movements if (v := movement_spending(m, debt_names)) != 0.0]
+    out += [SpendingItem(m.date, m.category, amount) for m, amount in forgiven(movements, debts)]
     return out

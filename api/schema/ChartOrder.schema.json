@@ -1,0 +1,16 @@
+{
+  "properties": {
+    "ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "ids"
+  ],
+  "title": "ChartOrder",
+  "type": "object"
+}

@@ -1,0 +1,359 @@
+{
+  "$defs": {
+    "ChartFilter": {
+      "description": "Legacy (v1 charts): category prefixes. Converted into `filters` when a spec is read.",
+      "properties": {
+        "exclude": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude",
+          "type": "array"
+        },
+        "include": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Include",
+          "type": "array"
+        }
+      },
+      "title": "ChartFilter",
+      "type": "object"
+    },
+    "ChartFilterRule": {
+      "description": "One filter. Text ops compare accent/case-insensitively; `prefix` on category matches a whole group\n(\"comida/\" or \"comida\"); multi-valued fields (people, invited, related) match if ANY value matches.",
+      "properties": {
+        "field": {
+          "enum": [
+            "date",
+            "group",
+            "category",
+            "account",
+            "merchant",
+            "concept",
+            "people",
+            "invited",
+            "related",
+            "status",
+            "source",
+            "amount"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "in",
+            "not_in",
+            "prefix",
+            "not_prefix",
+            "contains",
+            "not_contains",
+            "gte",
+            "lte",
+            "empty",
+            "not_empty"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "values": {
+          "default": [],
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "field",
+        "op"
+      ],
+      "title": "ChartFilterRule",
+      "type": "object"
+    },
+    "Dimension": {
+      "description": "What the X axis (or the series split) is made of: a field, and for `date` a time granularity.",
+      "properties": {
+        "field": {
+          "enum": [
+            "date",
+            "group",
+            "category",
+            "account",
+            "merchant",
+            "concept",
+            "people",
+            "invited",
+            "related",
+            "status",
+            "source",
+            "amount"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "granularity": {
+          "anyOf": [
+            {
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "quarter",
+                "year",
+                "weekday"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Only for field=date (default month)",
+          "title": "Granularity"
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "Dimension",
+      "type": "object"
+    },
+    "Period": {
+      "properties": {
+        "days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For last_days: how many days, today included",
+          "title": "Days"
+        },
+        "end": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For range: ISO date",
+          "title": "End"
+        },
+        "kind": {
+          "enum": [
+            "this_month",
+            "last_month",
+            "last_months",
+            "this_year",
+            "last_year",
+            "last_days",
+            "range",
+            "all"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "months": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For last_months: how many months, current one included",
+          "title": "Months"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For range: ISO date",
+          "title": "Start"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "Period",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "compare": {
+      "default": "none",
+      "enum": [
+        "none",
+        "previous_period",
+        "previous_year"
+      ],
+      "title": "Compare",
+      "type": "string"
+    },
+    "drilldown": {
+      "default": false,
+      "description": "Points can be opened with GET /charts/{id}/data?drill=<key>",
+      "title": "Drilldown",
+      "type": "boolean"
+    },
+    "filter": {
+      "$ref": "#/$defs/ChartFilter",
+      "default": {
+        "exclude": [],
+        "include": []
+      }
+    },
+    "filters": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ChartFilterRule"
+      },
+      "title": "Filters",
+      "type": "array"
+    },
+    "group_by": {
+      "anyOf": [
+        {
+          "enum": [
+            "category_group",
+            "category",
+            "month"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Group By"
+    },
+    "home": {
+      "default": true,
+      "description": "Shown on the home screen",
+      "title": "Home",
+      "type": "boolean"
+    },
+    "id": {
+      "default": "",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "bar",
+        "stacked_bar",
+        "hbar",
+        "line",
+        "area",
+        "donut",
+        "number",
+        "table"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "measure": {
+      "default": "spending",
+      "enum": [
+        "spending",
+        "income",
+        "count",
+        "average"
+      ],
+      "title": "Measure",
+      "type": "string"
+    },
+    "period": {
+      "$ref": "#/$defs/Period"
+    },
+    "sort": {
+      "default": "auto",
+      "enum": [
+        "auto",
+        "value_desc",
+        "value_asc",
+        "label"
+      ],
+      "title": "Sort",
+      "type": "string"
+    },
+    "split": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Dimension"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "One series per value of this field (bar, stacked_bar, line, area, table)"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "top": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Categorical X: keep the N largest, fold the rest into 'Resto'",
+      "title": "Top"
+    },
+    "x": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Dimension"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "X axis / slices / rows. Ignored by kind=number"
+    }
+  },
+  "required": [
+    "title",
+    "kind",
+    "period"
+  ],
+  "title": "ChartSpec",
+  "type": "object"
+}

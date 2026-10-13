@@ -1,103 +1,109 @@
 {
   "chart_id": "monthly-spending",
   "title": "Gasto por mes",
-  "subtitle": "nov 2025 - oct 2026",
+  "subtitle": "nov 2025 - oct 2026 - hasta hoy",
   "kind": "bar",
+  "measure": "spending",
   "unit": "EUR",
   "series": [
     {
+      "key": "main",
       "name": "Gasto por mes",
       "points": [
         {
           "key": "2025-11",
-          "label": "nov",
+          "label": "nov 25",
           "value": 0.0,
           "partial": false,
           "no_data": true
         },
         {
           "key": "2025-12",
-          "label": "dic",
+          "label": "dic 25",
           "value": 0.0,
           "partial": false,
           "no_data": true
         },
         {
           "key": "2026-01",
-          "label": "ene",
+          "label": "ene 26",
           "value": 0.0,
           "partial": false,
           "no_data": true
         },
         {
           "key": "2026-02",
-          "label": "feb",
+          "label": "feb 26",
           "value": 0.0,
           "partial": false,
           "no_data": true
         },
         {
           "key": "2026-03",
-          "label": "mar",
+          "label": "mar 26",
           "value": 0.0,
           "partial": false,
           "no_data": true
         },
         {
           "key": "2026-04",
-          "label": "abr",
+          "label": "abr 26",
           "value": 0.0,
           "partial": false,
           "no_data": true
         },
         {
           "key": "2026-05",
-          "label": "may",
+          "label": "may 26",
           "value": 0.0,
           "partial": false,
           "no_data": true
         },
         {
           "key": "2026-06",
-          "label": "jun",
+          "label": "jun 26",
           "value": 0.0,
           "partial": false,
           "no_data": true
         },
         {
           "key": "2026-07",
-          "label": "jul",
+          "label": "jul 26",
           "value": 20.0,
           "partial": false,
           "no_data": false
         },
         {
           "key": "2026-08",
-          "label": "ago",
+          "label": "ago 26",
           "value": 90.0,
           "partial": false,
           "no_data": false
         },
         {
           "key": "2026-09",
-          "label": "sep",
+          "label": "sep 26",
           "value": 136.41,
           "partial": false,
           "no_data": false
         },
         {
           "key": "2026-10",
-          "label": "oct",
+          "label": "oct 26",
           "value": 82.29,
           "partial": true,
           "no_data": false
         }
-      ]
+      ],
+      "role": "main"
     }
   ],
   "total": 328.7,
+  "previous_total": null,
+  "delta_pct": null,
   "average": 82.14,
-  "drilldown": false,
+  "x_label": "Mes",
+  "drilldown": true,
   "drill": null,
   "computed_at": "2026-10-12T18:30:00+02:00",
   "stale": false

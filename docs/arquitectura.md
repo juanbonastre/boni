@@ -38,15 +38,28 @@ Resumen tecnico. Las decisiones y su historia estan en la nota del vault `proyec
 |---|---|
 | `GET /home` | Pantalla de inicio: tarjetas de graficas y boton "Apuntar gasto" |
 | `GET /screens/{id}` | Una pantalla descrita por el servidor (p. ej. `capture-expense`) |
-| `GET /options/{source}?q=` | Listas largas que rellena el servidor: `categories`, `people` |
+| `GET /options/{source}?q=` | Listas que rellena el servidor: `categories`, `people`, `groups`, `accounts`, `merchants`, `related`, `statuses`, `sources` |
 | `POST /actions` | `{action, client_id, values}` -> `ok`, `queued` o `invalid` (errores por campo). `client_id` (UUID) hace la llamada idempotente: la cola sin conexion no duplica gastos |
-| `GET /charts`, `GET /charts/{id}/data` | Definicion de cada grafica y su serie calculada |
-| `GET /widgets` | Widgets de este dispositivo (que grafica, tamano) |
+| `GET /charts`, `GET /charts/{id}`, `GET /charts/{id}/data?drill=` | Definiciones de las graficas y sus datos calculados |
+| `POST /charts`, `PUT /charts/{id}`, `DELETE /charts/{id}` | Crear, editar y borrar graficas (borrar quita tambien sus widgets) |
+| `PUT /charts/order` | Orden de las graficas (`{ids}`) |
+| `POST /charts/preview` | Calcula una definicion sin guardarla (vista previa del editor) |
+| `GET /charts/catalog` | Lo que ofrece el editor: campos, tipos, medidas, periodos, comparaciones |
+| `GET /widgets`, `POST /widgets`, `PUT /widgets/{id}`, `DELETE /widgets/{id}` | Widgets de este dispositivo (que grafica, tamano) |
 
 - Catalogo de componentes: `text`, `button`, `form` (campos `amount`, `text`, `date`, `choice`, `multi_choice`, `toggle`),
   `chart_card`. Un cliente que recibe un tipo que no conoce muestra "actualiza la app".
-- Una grafica es una **definicion** (tipo, medida, agrupar por, periodo, filtros), no los datos: la calcula el servidor y el
-  cliente la dibuja.
+- Una grafica es una **definicion** (`ChartSpec`), no los datos: la calcula el servidor (`server/boni/stats/engine.py`) y el
+  cliente la dibuja. El editor de la app construye la definicion:
+  - **Tipo**: barras, barras apiladas, barras horizontales, linea, area, anillo, cifra, tabla.
+  - **Medida**: gasto, ingresos, numero de gastos, gasto medio.
+  - **Eje** (`x`): cualquier campo del movimiento (fecha por dia, semana, mes, trimestre, ano o dia de la semana; grupo,
+    categoria, cuenta, comercio, concepto, con quien, invitados, proyecto o evento, estado, origen).
+  - **Series** (`split`): una serie por cada valor de otro campo (maximo 6, el resto en "Otros").
+  - **Periodo**: este mes, mes pasado, ultimos N meses o dias, este ano, ano pasado, entre fechas, todo.
+  - **Filtros**: cualquier campo, con es / no es / empieza por / contiene / vacio / mayor o igual / menor o igual.
+  - **Comparar** con el periodo anterior o el mismo del ano anterior (si el periodo no ha terminado, el mismo tramo).
+  - Los N primeros (el resto en "Resto"), orden, abrir un punto para ver su detalle, mostrar en inicio o no.
 
 ## Pruebas y CI
 - Servidor (`server.yml`): ruff, pytest contra un vault-mcp falso hecho con el SDK real (en memoria y por HTTP con token) y

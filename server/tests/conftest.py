@@ -68,7 +68,7 @@ def debt(name: str, date: str, movement_name: str, amount: float, status: str) -
 NOTES = [
     # October 2026 (current month)
     movement("2026-10-03-1400-mercadona", "2026-10-03", -45.20, "comida/supermercado"),
-    movement("2026-10-05-2130-ramen", "2026-10-05", -24.50, "comida/restaurante"),
+    movement("2026-10-05-2130-ramen", "2026-10-05", -24.50, "comida/restaurante", merchant="Ramen Kagura"),
     movement("2026-10-06-0900-spotify", "2026-10-06", -10.99, "suscripciones"),
     movement("2026-10-07-1000-traspaso", "2026-10-07", -500, "transferencia/interna"),
     movement("2026-10-08-0800-nomina", "2026-10-08", 2100, "ingreso/nomina"),
@@ -77,7 +77,8 @@ NOTES = [
     movement("2026-10-11-1200-devolucion-zapatos", "2026-10-11", 60, "compras/ropa",
              settles="[[2026-10-10-1200-zapatos]]"),
     # September 2026
-    movement("2026-09-18-2258-kumo", "2026-09-18", -94.10, "comida/restaurante", my_share=14.41),
+    movement("2026-09-18-2258-kumo", "2026-09-18", -94.10, "comida/restaurante", my_share=14.41,
+             merchant="Kumo", related="[[cumple-tomas]]"),
     movement("2026-09-18-2303-bizum-recibido", "2026-09-18", 16.67, "comida/restaurante",
              settles="[[2026-09-18-tomas-kumo]]"),
     movement("2026-09-20-2200-cena", "2026-09-20", -30, "comida/restaurante", my_share=15),

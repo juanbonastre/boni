@@ -1,0 +1,21 @@
+{
+  "spec": {
+    "title": "Reparto del ano",
+    "kind": "donut",
+    "x": {
+      "field": "category"
+    },
+    "period": {
+      "kind": "this_year"
+    },
+    "filters": [
+      {
+        "field": "category",
+        "op": "not_prefix",
+        "values": [
+          "compras"
+        ]
+      }
+    ]
+  }
+}

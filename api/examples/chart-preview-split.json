@@ -1,0 +1,131 @@
+{
+  "chart_id": "",
+  "title": "Gasto por grupo",
+  "subtitle": "ago 2026 - oct 2026 - hasta hoy",
+  "kind": "stacked_bar",
+  "measure": "spending",
+  "unit": "EUR",
+  "series": [
+    {
+      "key": "comida",
+      "name": "Comida",
+      "points": [
+        {
+          "key": "2026-08",
+          "label": "ago",
+          "value": 40.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-09",
+          "label": "sep",
+          "value": 124.41,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-10",
+          "label": "oct",
+          "value": 69.7,
+          "partial": true,
+          "no_data": false
+        }
+      ],
+      "role": "split"
+    },
+    {
+      "key": "transporte",
+      "name": "Transporte",
+      "points": [
+        {
+          "key": "2026-08",
+          "label": "ago",
+          "value": 50.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-09",
+          "label": "sep",
+          "value": 0.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-10",
+          "label": "oct",
+          "value": 0.0,
+          "partial": true,
+          "no_data": false
+        }
+      ],
+      "role": "split"
+    },
+    {
+      "key": "bebida",
+      "name": "Bebida",
+      "points": [
+        {
+          "key": "2026-08",
+          "label": "ago",
+          "value": 0.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-09",
+          "label": "sep",
+          "value": 12.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-10",
+          "label": "oct",
+          "value": 1.6,
+          "partial": true,
+          "no_data": false
+        }
+      ],
+      "role": "split"
+    },
+    {
+      "key": "suscripciones",
+      "name": "Suscripciones",
+      "points": [
+        {
+          "key": "2026-08",
+          "label": "ago",
+          "value": 0.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-09",
+          "label": "sep",
+          "value": 0.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-10",
+          "label": "oct",
+          "value": 10.99,
+          "partial": true,
+          "no_data": false
+        }
+      ],
+      "role": "split"
+    }
+  ],
+  "total": 308.7,
+  "previous_total": null,
+  "delta_pct": null,
+  "average": null,
+  "x_label": "Mes",
+  "drilldown": false,
+  "drill": null,
+  "computed_at": "2026-10-12T18:30:00+02:00",
+  "stale": false
+}

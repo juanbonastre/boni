@@ -3,9 +3,11 @@
   "title": "Gasto del mes",
   "subtitle": "octubre 2026 - hasta hoy",
   "kind": "hbar",
+  "measure": "spending",
   "unit": "EUR",
   "series": [
     {
+      "key": "main",
       "name": "Gasto del mes",
       "points": [
         {
@@ -29,11 +31,15 @@
           "partial": false,
           "no_data": false
         }
-      ]
+      ],
+      "role": "main"
     }
   ],
   "total": 82.29,
+  "previous_total": null,
+  "delta_pct": null,
   "average": null,
+  "x_label": null,
   "drilldown": true,
   "drill": null,
   "computed_at": "2026-10-12T18:30:00+02:00",

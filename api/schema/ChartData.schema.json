@@ -37,6 +37,11 @@
     },
     "ChartSeries": {
       "properties": {
+        "key": {
+          "default": "",
+          "title": "Key",
+          "type": "string"
+        },
         "name": {
           "title": "Name",
           "type": "string"
@@ -47,6 +52,16 @@
           },
           "title": "Points",
           "type": "array"
+        },
+        "role": {
+          "default": "main",
+          "enum": [
+            "main",
+            "split",
+            "compare"
+          ],
+          "title": "Role",
+          "type": "string"
         }
       },
       "required": [
@@ -80,6 +95,19 @@
       "title": "Computed At",
       "type": "string"
     },
+    "delta_pct": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "(total - previous_total) / previous_total * 100",
+      "title": "Delta Pct"
+    },
     "drill": {
       "anyOf": [
         {
@@ -101,11 +129,40 @@
     "kind": {
       "enum": [
         "bar",
+        "stacked_bar",
         "hbar",
-        "line"
+        "line",
+        "area",
+        "donut",
+        "number",
+        "table"
       ],
       "title": "Kind",
       "type": "string"
+    },
+    "measure": {
+      "default": "spending",
+      "enum": [
+        "spending",
+        "income",
+        "count",
+        "average"
+      ],
+      "title": "Measure",
+      "type": "string"
+    },
+    "previous_total": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Total of the compared period (compare != none)",
+      "title": "Previous Total"
     },
     "series": {
       "items": {
@@ -150,8 +207,21 @@
     },
     "unit": {
       "default": "EUR",
+      "description": "'EUR' or '' (counts)",
       "title": "Unit",
       "type": "string"
+    },
+    "x_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "X Label"
     }
   },
   "required": [

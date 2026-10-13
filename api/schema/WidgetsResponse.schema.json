@@ -14,7 +14,8 @@
           "default": "medium",
           "enum": [
             "small",
-            "medium"
+            "medium",
+            "large"
           ],
           "title": "Size",
           "type": "string"

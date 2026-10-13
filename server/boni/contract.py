@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Model(BaseModel):
@@ -148,29 +148,85 @@ class Screen(Model):
 
 
 # ---------- charts ----------
+# A chart is a DEFINITION (ChartSpec), never data: the server computes it, the client draws it, and later the AI edits
+# it from natural language. The builder works on generic records (one per money movement) and their fields:
+FieldId = Literal["date", "group", "category", "account", "merchant", "concept", "people", "invited", "related",
+                  "status", "source", "amount"]
+Granularity = Literal["day", "week", "month", "quarter", "year", "weekday"]
+ChartKind = Literal["bar", "stacked_bar", "hbar", "line", "area", "donut", "number", "table"]
+Measure = Literal["spending", "income", "count", "average"]
+
+
+class Dimension(Model):
+    """What the X axis (or the series split) is made of: a field, and for `date` a time granularity."""
+
+    field: FieldId
+    granularity: Granularity | None = Field(None, description="Only for field=date (default month)")
+
+
+class ChartFilterRule(Model):
+    """One filter. Text ops compare accent/case-insensitively; `prefix` on category matches a whole group
+    ("comida/" or "comida"); multi-valued fields (people, invited, related) match if ANY value matches."""
+
+    field: FieldId
+    op: Literal["in", "not_in", "prefix", "not_prefix", "contains", "not_contains", "gte", "lte", "empty", "not_empty"]
+    values: list[str | float] = []
+
+
 class Period(Model):
-    kind: Literal["this_month", "last_months"]
+    kind: Literal["this_month", "last_month", "last_months", "this_year", "last_year", "last_days", "range", "all"]
     months: int | None = Field(None, description="For last_months: how many months, current one included")
+    days: int | None = Field(None, description="For last_days: how many days, today included")
+    start: str | None = Field(None, description="For range: ISO date")
+    end: str | None = Field(None, description="For range: ISO date")
 
 
 class ChartFilter(Model):
-    """Category prefixes: a movement matches if it starts with one of `include` (all if empty) and none of `exclude`."""
+    """Legacy (v1 charts): category prefixes. Converted into `filters` when a spec is read."""
 
     include: list[str] = []
     exclude: list[str] = []
 
 
 class ChartSpec(Model):
-    """A chart is a definition, not data. The server computes it; the client draws it."""
-
-    id: str
+    id: str = ""
     title: str
-    kind: Literal["bar", "hbar", "line"]
-    measure: Literal["spending"] = "spending"
-    group_by: Literal["category_group", "category", "month"]
+    kind: ChartKind
+    measure: Measure = "spending"
+    x: Dimension | None = Field(None, description="X axis / slices / rows. Ignored by kind=number")
+    split: Dimension | None = Field(None, description="One series per value of this field "
+                                                      "(bar, stacked_bar, line, area, table)")
     period: Period
-    filter: ChartFilter = ChartFilter()
+    filters: list[ChartFilterRule] = []
+    compare: Literal["none", "previous_period", "previous_year"] = "none"
+    top: int | None = Field(None, description="Categorical X: keep the N largest, fold the rest into 'Resto'")
+    sort: Literal["auto", "value_desc", "value_asc", "label"] = "auto"
     drilldown: bool = Field(False, description="Points can be opened with GET /charts/{id}/data?drill=<key>")
+    home: bool = Field(True, description="Shown on the home screen")
+    # legacy v1 fields, kept so older specs (and older clients) keep working
+    group_by: Literal["category_group", "category", "month"] | None = None
+    filter: ChartFilter = ChartFilter()
+
+    @model_validator(mode="after")
+    def _upgrade_legacy(self) -> ChartSpec:
+        if self.x is None and self.group_by is not None:
+            self.x = {"category_group": Dimension(field="group"), "category": Dimension(field="category"),
+                      "month": Dimension(field="date", granularity="month")}[self.group_by]
+        if self.filter.include or self.filter.exclude:
+            if self.filter.include:
+                self.filters.append(ChartFilterRule(field="category", op="prefix", values=list(self.filter.include)))
+            if self.filter.exclude:
+                self.filters.append(ChartFilterRule(field="category", op="not_prefix",
+                                                    values=list(self.filter.exclude)))
+            self.filter = ChartFilter()
+        if self.x is not None and self.x.field == "date" and self.x.granularity is None:
+            self.x.granularity = "month"
+        if self.split is not None and self.split.field == "date" and self.split.granularity is None:
+            self.split.granularity = "month"
+        if self.group_by is None and self.x is not None:  # for v1 clients
+            self.group_by = ("category_group" if self.x.field == "group" else "category" if self.x.field == "category"
+                             else "month" if self.x.field == "date" and self.x.granularity == "month" else None)
+        return self
 
 
 class ChartPoint(Model):
@@ -182,19 +238,25 @@ class ChartPoint(Model):
 
 
 class ChartSeries(Model):
+    key: str = ""
     name: str
     points: list[ChartPoint]
+    role: Literal["main", "split", "compare"] = "main"
 
 
 class ChartData(Model):
     chart_id: str
     title: str
     subtitle: str | None = None
-    kind: Literal["bar", "hbar", "line"]
-    unit: str = "EUR"
+    kind: ChartKind
+    measure: Measure = "spending"
+    unit: str = Field("EUR", description="'EUR' or '' (counts)")
     series: list[ChartSeries]
     total: float | None = None
+    previous_total: float | None = Field(None, description="Total of the compared period (compare != none)")
+    delta_pct: float | None = Field(None, description="(total - previous_total) / previous_total * 100")
     average: float | None = Field(None, description="Reference line: mean of the complete periods")
+    x_label: str | None = None
     drilldown: bool = False
     drill: str | None = Field(None, description="Key this data was drilled into, if any")
     computed_at: datetime
@@ -205,15 +267,54 @@ class ChartsResponse(Model):
     charts: list[ChartSpec]
 
 
+class ChartOrder(Model):
+    ids: list[str]
+
+
+class ChartPreviewRequest(Model):
+    spec: ChartSpec
+    drill: str | None = None
+
+
+# ----- builder catalog: what the client's chart builder offers (labels in Spanish without accents) -----
+class FieldInfo(Model):
+    id: FieldId
+    label: str
+    kind: Literal["time", "set", "multi", "text", "number"]
+    ops: list[str]
+    source: str | None = Field(None, description="Options source for its values (GET /options/{source})")
+    can_group: bool = True
+
+
+class CatalogItem(Model):
+    id: str
+    label: str
+    help: str | None = None
+
+
+class ChartCatalog(Model):
+    fields: list[FieldInfo]
+    kinds: list[CatalogItem]
+    measures: list[CatalogItem]
+    granularities: list[CatalogItem]
+    periods: list[CatalogItem]
+    compares: list[CatalogItem]
+
+
 # ---------- widgets ----------
 class Widget(Model):
     id: str
     chart_id: str
-    size: Literal["small", "medium"] = "medium"
+    size: Literal["small", "medium", "large"] = "medium"
 
 
 class WidgetsResponse(Model):
     widgets: list[Widget]
+
+
+class WidgetRequest(Model):
+    chart_id: str
+    size: Literal["small", "medium", "large"] = "medium"
 
 
 # ---------- options ----------
@@ -288,6 +389,11 @@ def field_json_schema(f: AmountField | TextField | DateField | ChoiceField | Mul
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "Screen": Screen,
     "ChartsResponse": ChartsResponse,
+    "ChartSpec": ChartSpec,
+    "ChartCatalog": ChartCatalog,
+    "ChartPreviewRequest": ChartPreviewRequest,
+    "ChartOrder": ChartOrder,
+    "WidgetRequest": WidgetRequest,
     "ChartData": ChartData,
     "WidgetsResponse": WidgetsResponse,
     "OptionsResponse": OptionsResponse,

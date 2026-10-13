@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from boni.contract import ChartSpec, Widget
+from boni.expenses.note import slug
 from boni.stats.charts import DEFAULT_CHARTS
 
 SCHEMA = """
@@ -134,6 +135,47 @@ class Store:
         rows = self._q("SELECT spec FROM charts WHERE id = ?", (chart_id,))
         return ChartSpec.model_validate_json(rows[0]["spec"]) if rows else None
 
+    def _free_id(self, table: str, base: str, device: str | None = None) -> str:
+        where = " AND device = ?" if device is not None else ""
+        n = 1
+        while True:
+            cid = base if n == 1 else f"{base}-{n}"
+            args: tuple[Any, ...] = (cid, device) if device is not None else (cid,)
+            if not self._q(f"SELECT 1 FROM {table} WHERE id = ?{where}", args):
+                return cid
+            n += 1
+
+    def create_chart(self, spec: ChartSpec) -> ChartSpec:
+        """Stores a new chart at the end; its id comes from the title (unique)."""
+        spec = spec.model_copy(update={"id": self._free_id("charts", slug(spec.title) or "grafica")})
+        with self._lock:
+            pos = self._db.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM charts").fetchone()[0]
+            self._db.execute("INSERT INTO charts (id, spec, position) VALUES (?, ?, ?)",
+                             (spec.id, spec.model_dump_json(), pos))
+        return spec
+
+    def update_chart(self, chart_id: str, spec: ChartSpec) -> ChartSpec | None:
+        spec = spec.model_copy(update={"id": chart_id})
+        with self._lock:
+            n = self._db.execute("UPDATE charts SET spec = ? WHERE id = ?", (spec.model_dump_json(), chart_id)).rowcount
+        return spec if n else None
+
+    def delete_chart(self, chart_id: str) -> bool:
+        """Deletes a chart and the widgets showing it (on every device)."""
+        with self._lock:
+            n = self._db.execute("DELETE FROM charts WHERE id = ?", (chart_id,)).rowcount
+            self._db.execute("DELETE FROM widgets WHERE chart_id = ?", (chart_id,))
+        return n > 0
+
+    def order_charts(self, ids: list[str]) -> None:
+        """Puts the given charts first, in that order; the rest keep their relative order after them."""
+        current = [c.id for c in self.charts()]
+        wanted = [i for i in dict.fromkeys(ids) if i in current]
+        final = wanted + [i for i in current if i not in wanted]
+        with self._lock:
+            for pos, cid in enumerate(final):
+                self._db.execute("UPDATE charts SET position = ? WHERE id = ?", (pos, cid))
+
     def _seed_widgets(self, device: str) -> None:
         for i, spec in enumerate(self.charts()):
             self._q("INSERT OR IGNORE INTO widgets (device, id, chart_id, size, position) VALUES (?, ?, ?, ?, ?)",
@@ -142,6 +184,26 @@ class Store:
     def widgets(self, device: str) -> list[Widget]:
         rows = self._q("SELECT id, chart_id, size FROM widgets WHERE device = ? ORDER BY position", (device,))
         return [Widget(id=r["id"], chart_id=r["chart_id"], size=r["size"]) for r in rows]
+
+    def add_widget(self, device: str, chart_id: str, size: str) -> Widget:
+        wid = self._free_id("widgets", f"w-{chart_id}", device)
+        with self._lock:
+            pos = self._db.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM widgets WHERE device = ?",
+                                   (device,)).fetchone()[0]
+            self._db.execute("INSERT INTO widgets (device, id, chart_id, size, position) VALUES (?, ?, ?, ?, ?)",
+                             (device, wid, chart_id, size, pos))
+        return Widget(id=wid, chart_id=chart_id, size=size)  # type: ignore[arg-type]
+
+    def update_widget(self, device: str, widget_id: str, chart_id: str, size: str) -> Widget | None:
+        with self._lock:
+            n = self._db.execute("UPDATE widgets SET chart_id = ?, size = ? WHERE device = ? AND id = ?",
+                                 (chart_id, size, device, widget_id)).rowcount
+        return Widget(id=widget_id, chart_id=chart_id, size=size) if n else None  # type: ignore[arg-type]
+
+    def delete_widget(self, device: str, widget_id: str) -> bool:
+        with self._lock:
+            return self._db.execute("DELETE FROM widgets WHERE device = ? AND id = ?",
+                                    (device, widget_id)).rowcount > 0
 
     # ----- prefs -----
     def pref(self, device: str, key: str) -> str | None:

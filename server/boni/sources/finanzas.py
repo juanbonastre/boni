@@ -17,8 +17,8 @@ DEBTS = FIN + "/deudas"
 CATEGORIES_NOTE = FIN + "/categorias.md"
 PEOPLE = "registros/personas"
 QUERY_LIMIT = 500  # vault-mcp caps query_notes at 500 (MAX_LIST); a full page may be truncated -> error
-MOVEMENT_FIELDS = ["time", "amount", "my_share", "category", "settles", "people", "invited", "merchant", "concept",
-                   "account", "status"]
+MOVEMENT_FIELDS = ["time", "amount", "my_share", "category", "settles", "people", "invited", "related", "merchant",
+                   "concept", "account", "status", "source"]
 DEBT_FIELDS = ["person", "movement", "amount", "direction", "status"]
 
 
@@ -58,6 +58,13 @@ class Movement:
     my_share: float | None = None
     settles: str = ""
     people: tuple[str, ...] = ()
+    invited: tuple[str, ...] = ()
+    related: tuple[str, ...] = ()
+    account: str = ""
+    merchant: str = ""
+    concept: str = ""
+    status: str = ""
+    source: str = ""
 
 
 @dataclass(frozen=True)
@@ -97,6 +104,13 @@ def parse_movement(row: dict[str, Any]) -> Movement | None:
         my_share=to_float(row.get("my_share")),
         settles=link_name(row.get("settles")),
         people=tuple(link_name(p) for p in as_list(row.get("people"))),
+        invited=tuple(link_name(p) for p in as_list(row.get("invited"))),
+        related=tuple(link_name(p) for p in as_list(row.get("related"))),
+        account=str(row.get("account") or ""),
+        merchant=str(row.get("merchant") or "").strip(),
+        concept=str(row.get("concept") or "").strip(),
+        status=str(row.get("status") or ""),
+        source=str(row.get("source") or ""),
     )
 
 

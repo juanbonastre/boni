@@ -10,25 +10,32 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from boni import API_VERSION, VERSION
 from boni.config import Settings
 from boni.contract import (
     ActionRequest,
     ActionResult,
+    ChartCatalog,
     ChartData,
+    ChartOrder,
+    ChartPreviewRequest,
+    ChartSpec,
     ChartsResponse,
     ErrorBody,
     ErrorResponse,
     Health,
     OptionsResponse,
     Screen,
+    Widget,
+    WidgetRequest,
     WidgetsResponse,
 )
-from boni.service import NotFound, Service, Unavailable
+from boni.service import Invalid, NotFound, Service, Unavailable
 from boni.sources.finanzas import FinanzasSource
 from boni.sources.mcp_client import McpSource
+from boni.stats import engine
 from boni.store import Store
 
 log = logging.getLogger("boni")
@@ -94,6 +101,10 @@ def create_app(settings: Settings, service: Service | None = None, run_outbox: b
         log.warning("source unavailable: %s", e)
         return err(503, "source_unavailable", "No se puede llegar a los datos ahora mismo")
 
+    @app.exception_handler(Invalid)
+    async def _invalid(_r: Request, e: Invalid) -> JSONResponse:
+        return err(422, "invalid", str(e))
+
     @app.exception_handler(RequestValidationError)
     async def _bad_request(_r: Request, e: RequestValidationError) -> JSONResponse:
         return err(422, "bad_request", str(e.errors()[:3]))
@@ -130,16 +141,64 @@ def create_app(settings: Settings, service: Service | None = None, run_outbox: b
     async def actions(req: ActionRequest, d: Device) -> ActionResult:
         return await svc.action(req, d)
 
+    # ----- charts (fixed paths before /charts/{chart_id}) -----
     @app.get("/api/v1/charts", response_model=ChartsResponse)
     async def charts(_d: Device) -> ChartsResponse:
         return ChartsResponse(charts=svc.store.charts())
+
+    @app.post("/api/v1/charts", response_model=ChartSpec, status_code=201)
+    async def create_chart(spec: ChartSpec, _d: Device) -> ChartSpec:
+        return svc.create_chart(spec)
+
+    @app.get("/api/v1/charts/catalog", response_model=ChartCatalog)
+    async def chart_catalog(_d: Device) -> ChartCatalog:
+        return engine.catalog()
+
+    @app.post("/api/v1/charts/preview", response_model=ChartData)
+    async def chart_preview(req: ChartPreviewRequest, _d: Device) -> ChartData:
+        return await svc.compute(req.spec, req.drill)
+
+    @app.put("/api/v1/charts/order", response_model=ChartsResponse)
+    async def chart_order(order: ChartOrder, _d: Device) -> ChartsResponse:
+        svc.store.order_charts(order.ids)
+        return ChartsResponse(charts=svc.store.charts())
+
+    @app.get("/api/v1/charts/{chart_id}", response_model=ChartSpec)
+    async def chart(chart_id: str, _d: Device) -> ChartSpec:
+        spec = svc.store.chart(chart_id)
+        if spec is None:
+            raise NotFound(chart_id)
+        return spec
+
+    @app.put("/api/v1/charts/{chart_id}", response_model=ChartSpec)
+    async def update_chart(chart_id: str, spec: ChartSpec, _d: Device) -> ChartSpec:
+        return svc.update_chart(chart_id, spec)
+
+    @app.delete("/api/v1/charts/{chart_id}", status_code=204)
+    async def delete_chart(chart_id: str, _d: Device) -> Response:
+        svc.delete_chart(chart_id)
+        return Response(status_code=204)
 
     @app.get("/api/v1/charts/{chart_id}/data", response_model=ChartData)
     async def chart_data(chart_id: str, _d: Device, drill: str | None = None) -> ChartData:
         return await svc.chart_data(chart_id, drill)
 
+    # ----- widgets of the calling device -----
     @app.get("/api/v1/widgets", response_model=WidgetsResponse)
     async def widgets(d: Device) -> WidgetsResponse:
         return WidgetsResponse(widgets=svc.store.widgets(d))
+
+    @app.post("/api/v1/widgets", response_model=Widget, status_code=201)
+    async def add_widget(req: WidgetRequest, d: Device) -> Widget:
+        return svc.add_widget(d, req.chart_id, req.size)
+
+    @app.put("/api/v1/widgets/{widget_id}", response_model=Widget)
+    async def update_widget(widget_id: str, req: WidgetRequest, d: Device) -> Widget:
+        return svc.update_widget(d, widget_id, req.chart_id, req.size)
+
+    @app.delete("/api/v1/widgets/{widget_id}", status_code=204)
+    async def delete_widget(widget_id: str, d: Device) -> Response:
+        svc.delete_widget(d, widget_id)
+        return Response(status_code=204)
 
     return app
