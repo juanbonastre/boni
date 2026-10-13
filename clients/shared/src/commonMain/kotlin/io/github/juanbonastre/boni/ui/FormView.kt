@@ -184,7 +184,7 @@ private fun DateFieldView(f: DateField, value: String, error: String?, set: (Jso
 
 /** Searchable list of options (inline or from a server source); selected ones shown as removable chips. */
 @Composable
-private fun SearchList(
+internal fun SearchList(
     source: String?,
     inline: List<Option>?,
     multi: Boolean,

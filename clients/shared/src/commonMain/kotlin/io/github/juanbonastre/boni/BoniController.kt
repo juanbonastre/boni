@@ -7,6 +7,10 @@ import androidx.compose.runtime.setValue
 import io.github.juanbonastre.boni.api.ActionRequest
 import io.github.juanbonastre.boni.api.ApiException
 import io.github.juanbonastre.boni.api.BoniApi
+import io.github.juanbonastre.boni.api.BoniJson
+import io.github.juanbonastre.boni.api.ChartCatalog
+import io.github.juanbonastre.boni.api.ChartData
+import io.github.juanbonastre.boni.api.ChartSpec
 import io.github.juanbonastre.boni.api.ChoiceField
 import io.github.juanbonastre.boni.api.FormComponent
 import io.github.juanbonastre.boni.api.MultiChoiceField
@@ -16,6 +20,7 @@ import io.github.juanbonastre.boni.api.OptionsResponse
 import io.github.juanbonastre.boni.api.Screen
 import io.github.juanbonastre.boni.api.ServerConfig
 import io.github.juanbonastre.boni.api.Widget
+import io.github.juanbonastre.boni.api.WidgetsResponse
 import io.github.juanbonastre.boni.data.ChartRepository
 import io.github.juanbonastre.boni.data.Clock
 import io.github.juanbonastre.boni.data.OfflineQueue
@@ -30,6 +35,7 @@ import kotlinx.serialization.json.JsonElement
 
 const val CAPTURE_SCREEN = "capture-expense"
 const val OPTION_LIST_LIMIT = 500
+private const val WIDGETS_FILE = "widgets.json"
 
 sealed interface SubmitOutcome {
     data class Done(val message: String) : SubmitOutcome
@@ -73,6 +79,7 @@ class BoniController(
         charts.invalidate()
         screens.clear()
         optionLists.clear()
+        catalogCache = null
         refresh()
     }
 
@@ -105,9 +112,78 @@ class BoniController(
             f.fields.mapNotNull { (it as? ChoiceField)?.source ?: (it as? MultiChoiceField)?.source }
         }.toSet()
         for (src in sources) runCatching { optionLists[src] = client.options(src, "", limit = OPTION_LIST_LIMIT).options }
+        runCatching { chartSpecs = client.charts().charts }
     }
 
-    suspend fun widgetsList(): List<Widget> = requireApi().widgets().widgets
+    // ----- charts (definitions) and the chart builder -----
+    /** The chart definitions, as last loaded (titles for widgets, the list of the Graficas screen). */
+    var chartSpecs by mutableStateOf<List<ChartSpec>>(emptyList())
+        private set
+    private var catalogCache: ChartCatalog? = null
+
+    fun chartTitle(id: String): String? = chartSpecs.firstOrNull { it.id == id }?.title
+
+    suspend fun catalog(): ChartCatalog = catalogCache ?: requireApi().catalog().also { catalogCache = it }
+
+    suspend fun loadCharts(): List<ChartSpec> = requireApi().charts().charts.also { chartSpecs = it }
+
+    suspend fun preview(spec: ChartSpec, drill: String? = null): ChartData = requireApi().preview(spec, drill)
+
+    /** Creates (empty id) or updates a chart; everything showing charts reloads. */
+    suspend fun saveChart(spec: ChartSpec): ChartSpec {
+        val client = requireApi()
+        val saved = if (spec.id.isEmpty()) client.createChart(spec) else client.updateChart(spec)
+        chartsChanged()
+        return saved
+    }
+
+    suspend fun deleteChart(id: String) {
+        requireApi().deleteChart(id)
+        chartsChanged()
+        loadWidgets()  // its widgets are gone too
+    }
+
+    suspend fun orderCharts(ids: List<String>) {
+        chartSpecs = requireApi().orderCharts(ids).charts
+        screens.remove("home")
+        refresh()
+    }
+
+    private suspend fun chartsChanged() {
+        loadCharts()
+        charts.invalidate()
+        screens.remove("home")
+        refresh()
+    }
+
+    // ----- widgets of this device (kept on the device too: they must appear at login even without network) -----
+    var widgets by mutableStateOf(
+        store.read(WIDGETS_FILE)?.let { runCatching { BoniJson.decodeFromString(WidgetsResponse.serializer(), it).widgets }.getOrNull() }
+            ?: emptyList<Widget>()
+    )
+        private set
+
+    suspend fun loadWidgets(): List<Widget> {
+        val list = requireApi().widgets()
+        store.write(WIDGETS_FILE, BoniJson.encodeToString(WidgetsResponse.serializer(), list))
+        widgets = list.widgets
+        return list.widgets
+    }
+
+    suspend fun addWidget(chartId: String, size: String) {
+        requireApi().addWidget(chartId, size)
+        loadWidgets()
+    }
+
+    suspend fun updateWidget(id: String, chartId: String, size: String) {
+        requireApi().updateWidget(id, chartId, size)
+        loadWidgets()
+    }
+
+    suspend fun removeWidget(id: String) {
+        requireApi().deleteWidget(id)
+        loadWidgets()
+    }
 
     private fun requireApi(): BoniApi = api ?: throw ApiException(0, "not_configured", "Configura el servidor de Boni")
 

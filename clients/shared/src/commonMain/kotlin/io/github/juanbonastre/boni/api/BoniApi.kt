@@ -5,10 +5,12 @@ import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -52,6 +54,20 @@ class BoniApi(private val config: ServerConfig, engineClient: HttpClient? = null
     suspend fun chartData(id: String, drill: String? = null): ChartData =
         call { http.get("api/v1/charts/$id/data") { if (drill != null) parameter("drill", drill) } }
 
+    suspend fun chart(id: String): ChartSpec = get("api/v1/charts/$id")
+    suspend fun catalog(): ChartCatalog = get("api/v1/charts/catalog")
+    suspend fun createChart(spec: ChartSpec): ChartSpec = send("api/v1/charts", spec, put = false)
+    suspend fun updateChart(spec: ChartSpec): ChartSpec = send("api/v1/charts/${spec.id}", spec, put = true)
+    suspend fun deleteChart(id: String) { call<Unit>(decode = false) { http.delete("api/v1/charts/$id") } }
+    suspend fun orderCharts(ids: List<String>): ChartsResponse = send("api/v1/charts/order", ChartOrder(ids), put = true)
+    suspend fun preview(spec: ChartSpec, drill: String? = null): ChartData =
+        send("api/v1/charts/preview", ChartPreviewRequest(spec, drill), put = false)
+
+    suspend fun addWidget(chartId: String, size: String): Widget = send("api/v1/widgets", WidgetRequest(chartId, size), put = false)
+    suspend fun updateWidget(id: String, chartId: String, size: String): Widget =
+        send("api/v1/widgets/$id", WidgetRequest(chartId, size), put = true)
+    suspend fun deleteWidget(id: String) { call<Unit>(decode = false) { http.delete("api/v1/widgets/$id") } }
+
     suspend fun options(source: String, query: String = "", limit: Int = 50): OptionsResponse =
         call { http.get("api/v1/options/$source") { parameter("q", query); parameter("limit", limit) } }
 
@@ -65,7 +81,16 @@ class BoniApi(private val config: ServerConfig, engineClient: HttpClient? = null
 
     private suspend inline fun <reified T> get(path: String): T = call { http.get(path) }
 
-    private suspend inline fun <reified T> call(block: () -> HttpResponse): T {
+    private suspend inline fun <reified B, reified T> send(path: String, body: B, put: Boolean): T = call {
+        if (put) {
+            http.put(path) { contentType(ContentType.Application.Json); setBody(body) }
+        } else {
+            http.post(path) { contentType(ContentType.Application.Json); setBody(body) }
+        }
+    }
+
+    /** [decode] false: the answer has no body (204); T must be Unit. */
+    private suspend inline fun <reified T> call(decode: Boolean = true, block: () -> HttpResponse): T {
         val response = try {
             block()
         } catch (e: CancellationException) {
@@ -78,7 +103,8 @@ class BoniApi(private val config: ServerConfig, engineClient: HttpClient? = null
             val err = runCatching { BoniJson.decodeFromString(ErrorResponse.serializer(), text).error }.getOrNull()
             throw ApiException(response.status.value, err?.code ?: "http_${response.status.value}", err?.message ?: text.take(200))
         }
-        return response.body()
+        @Suppress("UNCHECKED_CAST")
+        return if (decode) response.body() else Unit as T
     }
 
     fun close() = http.close()

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonContentPolymorphicSerializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -210,7 +211,13 @@ data class ChartPoint(
 )
 
 @Serializable
-data class ChartSeries(val name: String, val points: List<ChartPoint>)
+data class ChartSeries(
+    val name: String,
+    val points: List<ChartPoint>,
+    val key: String = "",
+    /** "main", "split" (one value of the split field) or "compare" (the compared period). */
+    val role: String = "main",
+)
 
 @Serializable
 data class ChartData(
@@ -218,31 +225,86 @@ data class ChartData(
     val title: String,
     val subtitle: String? = null,
     val kind: String,
+    val measure: String = "spending",
+    /** "EUR" or "" (counts). */
     val unit: String = "EUR",
     val series: List<ChartSeries>,
     val total: Double? = null,
+    @SerialName("previous_total") val previousTotal: Double? = null,
+    @SerialName("delta_pct") val deltaPct: Double? = null,
     val average: Double? = null,
+    @SerialName("x_label") val xLabel: String? = null,
     val drilldown: Boolean = false,
     val drill: String? = null,
     @SerialName("computed_at") val computedAt: String,
     val stale: Boolean = false,
 )
 
+// ----- chart definitions (the builder edits these; the server computes them) -----
 @Serializable
-data class Period(val kind: String, val months: Int? = null)
+data class Period(
+    val kind: String,
+    val months: Int? = null,
+    val days: Int? = null,
+    val start: String? = null,
+    val end: String? = null,
+)
+
+@Serializable
+data class Dimension(val field: String, val granularity: String? = null)
+
+@Serializable
+data class ChartFilterRule(val field: String, val op: String, val values: List<JsonPrimitive> = emptyList())
 
 @Serializable
 data class ChartSpec(
-    val id: String,
+    val id: String = "",
     val title: String,
     val kind: String,
-    @SerialName("group_by") val groupBy: String,
+    val measure: String = "spending",
+    val x: Dimension? = null,
+    val split: Dimension? = null,
     val period: Period,
+    val filters: List<ChartFilterRule> = emptyList(),
+    val compare: String = "none",
+    val top: Int? = null,
+    val sort: String = "auto",
     val drilldown: Boolean = false,
+    val home: Boolean = true,
 )
 
 @Serializable
 data class ChartsResponse(val charts: List<ChartSpec>)
+
+@Serializable
+data class ChartOrder(val ids: List<String>)
+
+@Serializable
+data class ChartPreviewRequest(val spec: ChartSpec, val drill: String? = null)
+
+@Serializable
+data class FieldInfo(
+    val id: String,
+    val label: String,
+    /** "time", "set", "multi", "text" or "number". */
+    val kind: String,
+    val ops: List<String>,
+    val source: String? = null,
+    @SerialName("can_group") val canGroup: Boolean = true,
+)
+
+@Serializable
+data class CatalogItem(val id: String, val label: String, val help: String? = null)
+
+@Serializable
+data class ChartCatalog(
+    val fields: List<FieldInfo>,
+    val kinds: List<CatalogItem>,
+    val measures: List<CatalogItem>,
+    val granularities: List<CatalogItem>,
+    val periods: List<CatalogItem>,
+    val compares: List<CatalogItem>,
+)
 
 // ---------- widgets, options ----------
 @Serializable
@@ -250,6 +312,9 @@ data class Widget(val id: String, @SerialName("chart_id") val chartId: String, v
 
 @Serializable
 data class WidgetsResponse(val widgets: List<Widget>)
+
+@Serializable
+data class WidgetRequest(@SerialName("chart_id") val chartId: String, val size: String = "medium")
 
 @Serializable
 data class OptionsResponse(val source: String, val options: List<Option>)

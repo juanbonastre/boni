@@ -33,6 +33,10 @@ data class BoniColors(
     val onSelection: Color,
     val good: Color,
     val critical: Color,
+    /** Series of a split chart and donut slices, in order (validated categorical palette, 8 slots). */
+    val categorical: List<Color>,
+    /** The compared period (previous month, last year): neutral, behind the main series. */
+    val compare: Color,
 )
 
 val LightColors = BoniColors(
@@ -41,6 +45,9 @@ val LightColors = BoniColors(
     muted = Color(0xFF898781), grid = Color(0xFFE1E0D9), baseline = Color(0xFFC3C2B7), border = Color(0x1A0B0B0B),
     series1 = Color(0xFF2A78D6), series2 = Color(0xFFEB6834),
     selection = Color(0xFFCDE2FB), onSelection = Color(0xFF0D366B), good = Color(0xFF006300), critical = Color(0xFFD03B3B),
+    categorical = listOf(0xFF2A78D6, 0xFFEB6834, 0xFF1BAF7A, 0xFFEDA100, 0xFFE87BA4, 0xFF008300, 0xFF6250D6, 0xFFE34948)
+        .map { Color(it) },
+    compare = Color(0xFFA3A29A),
 )
 
 val DarkColors = BoniColors(
@@ -49,6 +56,9 @@ val DarkColors = BoniColors(
     muted = Color(0xFF898781), grid = Color(0xFF2C2C2A), baseline = Color(0xFF383835), border = Color(0x1AFFFFFF),
     series1 = Color(0xFF3987E5), series2 = Color(0xFFD95926),
     selection = Color(0xFF184F95), onSelection = Color(0xFFF0EFEC), good = Color(0xFF0CA30C), critical = Color(0xFFD03B3B),
+    categorical = listOf(0xFF3987E5, 0xFFD95926, 0xFF199E70, 0xFFC98500, 0xFFD55181, 0xFF008300, 0xFF9085E9, 0xFFE66767)
+        .map { Color(it) },
+    compare = Color(0xFF6B6A65),
 )
 
 val LocalBoniColors = staticCompositionLocalOf { LightColors }

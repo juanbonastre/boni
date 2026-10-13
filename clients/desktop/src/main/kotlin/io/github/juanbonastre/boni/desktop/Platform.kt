@@ -53,7 +53,7 @@ object DesktopLayer {
     val available: Boolean get() = wmctrl != null
 
     fun pin(windowTitle: String) {
-        val cmd = wmctrl ?: return
+        val cmd = wmctrl ?: return Log.info("wmctrl not available: widget $windowTitle stays a normal window")
         thread(isDaemon = true, name = "wmctrl") {
             // The window manager needs a moment to map the window; retry a few times.
             repeat(5) {
@@ -63,8 +63,12 @@ object DesktopLayer {
                         .redirectErrorStream(true).start()
                     p.waitFor(3, TimeUnit.SECONDS) && p.exitValue() == 0
                 }.getOrDefault(false)
-                if (ok) return@thread
+                if (ok) {
+                    Log.info("pinned $windowTitle to the desktop layer")
+                    return@thread
+                }
             }
+            Log.warn("wmctrl could not pin $windowTitle")
         }
     }
 }

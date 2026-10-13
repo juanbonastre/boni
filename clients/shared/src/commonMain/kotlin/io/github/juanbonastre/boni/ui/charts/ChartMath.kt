@@ -32,6 +32,28 @@ object ChartMath {
     /** Best format for a label: no decimals from 100 up. */
     fun eurosAuto(value: Double): String = euros(value, decimals = abs(value) < 100)
 
+    /** A value in the chart's unit: money ("EUR") or a plain count (""). */
+    fun format(value: Double, unit: String, decimals: Boolean = true): String =
+        if (unit == "EUR") euros(value, decimals) else number(value)
+
+    /** Best format for a label in the chart's unit. */
+    fun formatAuto(value: Double, unit: String): String = if (unit == "EUR") eurosAuto(value) else number(value)
+
+    /** Plain number, Spanish style: 1.234 or 2,5. */
+    fun number(value: Double): String {
+        val tenths = (abs(value) * 10).roundToLong()
+        val whole = (tenths / 10).toString().reversed().chunked(3).joinToString(".").reversed()
+        val dec = tenths % 10
+        return (if (value < 0) "-" else "") + whole + (if (dec != 0L) ",$dec" else "")
+    }
+
+    /** Signed percentage with one decimal: "+51,6 %", "-3 %". */
+    fun percent(value: Double): String = (if (value > 0) "+" else "") + number(value) + " %"
+
+    /** Show every [labelStep]-th axis label so that at most [maxLabels] fit (the last one is always shown). */
+    fun labelStep(count: Int, maxLabels: Int): Int =
+        if (maxLabels <= 0 || count <= maxLabels) 1 else ceil(count.toDouble() / maxLabels).toInt()
+
     /** Compact axis tick: 0, 50, 1K, 2,5K. */
     fun compact(value: Double): String = when {
         abs(value) >= 1000 -> {

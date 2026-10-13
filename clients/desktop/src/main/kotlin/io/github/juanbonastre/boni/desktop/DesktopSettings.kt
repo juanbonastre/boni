@@ -10,7 +10,7 @@ import java.nio.file.attribute.PosixFilePermissions
 /** Where Boni keeps its files on this computer (XDG on Linux, the usual folders on macOS and Windows). */
 object Paths {
     private val os = System.getProperty("os.name").lowercase()
-    private val home = File(System.getProperty("user.home"))
+    val home = File(System.getProperty("user.home"))
     val isLinux = os.contains("linux")
     val isMac = os.contains("mac")
     val isWindows = os.contains("win")
@@ -27,10 +27,16 @@ object Paths {
         else -> File(xdg("XDG_DATA_HOME", ".local/share"), "boni")
     }
     val autostartDir: File = File(xdg("XDG_CONFIG_HOME", ".config"), "autostart")
+    val cache: File = when {
+        isMac || isWindows -> File(config, "cache")
+        else -> File(xdg("XDG_CACHE_HOME", ".cache"), "boni")
+    }
+
 }
 
+/** Where a window widget is and how big; [size] is the server size it was made for (a new size resets width/height). */
 @Serializable
-data class WidgetPlacement(val x: Int, val y: Int, val width: Int = 360, val height: Int = 250)
+data class WidgetPlacement(val x: Int, val y: Int, val width: Int = 360, val height: Int = 250, val size: String? = null)
 
 @Serializable
 data class DesktopSettings(
@@ -41,7 +47,14 @@ data class DesktopSettings(
     val theme: String = "system",
     val widgets: Map<String, WidgetPlacement> = emptyMap(),
     val hiddenWidgets: Set<String> = emptySet(),
+    /** How widgets are shown: "windows" (Boni's own small windows) or "desklets" (Cinnamon desklets); "" = automatic. */
+    val widgetMode: String = "",
+    /** Start at login is switched on once, the first time the installed app runs (the user can switch it off). */
+    val autostartOffered: Boolean = false,
 ) {
+    /** Cinnamon has desklets, which behave better on its desktop than plain windows. */
+    fun effectiveWidgetMode(cinnamon: Boolean): String = widgetMode.ifEmpty { if (cinnamon) "desklets" else "windows" }
+
     val server: ServerConfig get() = ServerConfig(serverUrl.trim(), token.trim())
 }
 

@@ -6,7 +6,11 @@ import io.github.juanbonastre.boni.api.BoniApi
 import io.github.juanbonastre.boni.api.BoniJson
 import io.github.juanbonastre.boni.api.ButtonComponent
 import io.github.juanbonastre.boni.api.ChartCardComponent
+import io.github.juanbonastre.boni.api.ChartCatalog
 import io.github.juanbonastre.boni.api.ChartData
+import io.github.juanbonastre.boni.api.ChartPreviewRequest
+import io.github.juanbonastre.boni.api.ChartsResponse
+import io.github.juanbonastre.boni.api.Dimension
 import io.github.juanbonastre.boni.api.ChoiceField
 import io.github.juanbonastre.boni.api.ErrorResponse
 import io.github.juanbonastre.boni.api.FormComponent
@@ -56,10 +60,30 @@ class ContractTest {
         for (name in listOf("chart-spending-by-category.json", "chart-spending-by-category-drill.json",
             "chart-monthly-spending.json", "chart-eating-out.json")) {
             val d = BoniJson.decodeFromString(ChartData.serializer(), ex(name))
-            assertTrue(d.series.single().points.isNotEmpty(), name)
+            assertTrue(d.series.first().points.isNotEmpty(), name)
         }
         val monthly = BoniJson.decodeFromString(ChartData.serializer(), ex("chart-monthly-spending.json"))
         assertTrue(monthly.series[0].points.last().partial && monthly.series[0].points.first().noData)
+
+        val split = BoniJson.decodeFromString(ChartData.serializer(), ex("chart-preview-split.json"))
+        assertEquals("stacked_bar", split.kind)
+        assertTrue(split.series.size > 1 && split.series.all { it.role == "split" })
+        val cmp = BoniJson.decodeFromString(ChartData.serializer(), ex("chart-preview-compare.json"))
+        assertEquals("compare", cmp.series.last().role)
+        assertTrue(cmp.deltaPct != null && cmp.previousTotal != null)
+        val donut = BoniJson.decodeFromString(ChartData.serializer(), ex("chart-preview-donut.json"))
+        assertEquals("_rest", donut.series.single().points.last().key)
+
+        val charts = BoniJson.decodeFromString(ChartsResponse.serializer(), ex("charts.json")).charts
+        assertEquals(listOf("spending-by-category", "monthly-spending", "eating-out"), charts.map { it.id })
+        assertEquals("group", charts[0].x?.field)
+        assertEquals(2, charts[2].filters.size)
+        val catalog = BoniJson.decodeFromString(ChartCatalog.serializer(), ex("chart-catalog.json"))
+        assertTrue(catalog.fields.any { it.id == "merchant" && it.source == "merchants" })
+        assertTrue(catalog.kinds.map { it.id }.containsAll(listOf("bar", "stacked_bar", "hbar", "line", "area", "donut", "number", "table")))
+        // what the editor sends is what the server documents as a preview request
+        val req = BoniJson.decodeFromString(ChartPreviewRequest.serializer(), ex("chart-preview-split-request.json"))
+        assertEquals(Dimension("group"), req.spec.split)
 
         BoniJson.decodeFromString(OptionsResponse.serializer(), ex("options-people.json"))
         BoniJson.decodeFromString(WidgetsResponse.serializer(), ex("widgets.json"))
@@ -155,5 +179,48 @@ class ContractTest {
         val before = paths.size
         assertEquals("tomas", controller.optionList("people").single().value)
         assertEquals(before, paths.size)  // served from memory
+    }
+}
+
+class ChartApiTest {
+    private val examples: File = generateSequence(File("").absoluteFile) { it.parentFile }
+        .map { File(it, "api/examples") }.first { it.isDirectory }
+
+    @Test
+    fun builderCallsUseTheDocumentedRoutes() = runTest {
+        val seen = mutableListOf<String>()
+        val engine = MockEngine { request ->
+            seen += "${request.method.value} ${request.url.encodedPath}"
+            val json = headersOf(HttpHeaders.ContentType, "application/json")
+            when {
+                request.method.value == "DELETE" -> respond("", HttpStatusCode.NoContent)
+                request.url.encodedPath.endsWith("/preview") -> respond(File(examples, "chart-preview-split.json").readText(), HttpStatusCode.OK, json)
+                request.url.encodedPath.endsWith("/catalog") -> respond(File(examples, "chart-catalog.json").readText(), HttpStatusCode.OK, json)
+                request.url.encodedPath.endsWith("/widgets") && request.method.value == "GET" ->
+                    respond(File(examples, "widgets.json").readText(), HttpStatusCode.OK, json)
+                request.url.encodedPath.contains("/widgets") ->
+                    respond("""{"id":"w-x","chart_id":"x","size":"large"}""", HttpStatusCode.OK, json)
+                request.url.encodedPath.endsWith("/charts") && request.method.value == "GET" || request.url.encodedPath.endsWith("/order") ->
+                    respond(File(examples, "charts.json").readText(), HttpStatusCode.OK, json)
+                else -> respond("""{"id":"nueva","title":"Nueva","kind":"bar","period":{"kind":"this_month"}}""", HttpStatusCode.OK, json)
+            }
+        }
+        val store = MemoryTextStore()
+        val c = BoniController(ServerConfig("https://boni.example", "tkn"), store, apiFactory = { BoniApi(it, HttpClient(engine)) })
+        val spec = io.github.juanbonastre.boni.ui.ChartBuilder.newSpec()
+        assertEquals("stacked_bar", c.preview(spec).kind)
+        assertEquals("nueva", c.saveChart(spec).id)
+        c.saveChart(spec.copy(id = "nueva"))
+        c.orderCharts(listOf("eating-out"))
+        c.deleteChart("nueva")
+        c.addWidget("x", "large")
+        c.removeWidget("w-x")
+        assertTrue(c.catalog().fields.isNotEmpty())
+        assertTrue(listOf("POST /api/v1/charts/preview", "POST /api/v1/charts", "PUT /api/v1/charts/nueva", "PUT /api/v1/charts/order",
+            "DELETE /api/v1/charts/nueva", "POST /api/v1/widgets", "DELETE /api/v1/widgets/w-x", "GET /api/v1/charts/catalog").all { it in seen },
+            seen.toString())
+        // the widget list is kept on the device for starts without network
+        val again = BoniController(ServerConfig("https://boni.example", "tkn"), store, apiFactory = { BoniApi(it, HttpClient(engine)) })
+        assertEquals(3, again.widgets.size)
     }
 }

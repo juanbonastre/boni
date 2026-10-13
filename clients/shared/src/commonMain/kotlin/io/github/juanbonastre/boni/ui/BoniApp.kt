@@ -57,11 +57,19 @@ private val OfflineHome = Screen(
     ),
 )
 
-/** The main window content: home (buttons + chart cards) and server screens (forms). */
+const val CHARTS_SCREEN = "charts"
+const val CHART_EDIT_SCREEN = "chart-edit"
+
+/**
+ * The main window content: home (buttons + chart cards), server screens (forms) and the app's own chart screens
+ * (list and editor). [startScreen] lets the desktop open straight on the chart list (from a widget's menu).
+ */
 @Composable
-fun BoniApp(controller: BoniController, onOpenSettings: () -> Unit) {
+fun BoniApp(controller: BoniController, onOpenSettings: () -> Unit, startScreen: String = "home", startKey: Int = 0) {
     val c = LocalBoniColors.current
-    var screenId by remember { mutableStateOf("home") }
+    var screenId by remember(startScreen, startKey) { mutableStateOf(startScreen) }
+    var editing by remember { mutableStateOf<io.github.juanbonastre.boni.api.ChartSpec?>(null) }
+    val local = screenId == CHARTS_SCREEN || screenId == CHART_EDIT_SCREEN
     var screen by remember { mutableStateOf(controller.cachedScreen("home")) }
     var message by remember { mutableStateOf<String?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -69,6 +77,7 @@ fun BoniApp(controller: BoniController, onOpenSettings: () -> Unit) {
 
     LaunchedEffect(screenId, controller.refreshTick, controller.config) {
         loadError = null
+        if (local) return@LaunchedEffect
         // Show what we already have at once (prefetched), then refresh it in the background.
         val cached = controller.cachedScreen(screenId)
         if (cached != null) { if (cached != screen) screen = cached } else if (screen?.id != screenId) screen = null
@@ -92,16 +101,40 @@ fun BoniApp(controller: BoniController, onOpenSettings: () -> Unit) {
         }
     }
 
+    val title = when (screenId) {
+        CHARTS_SCREEN -> "Graficas"
+        CHART_EDIT_SCREEN -> if (editing?.id.isNullOrEmpty()) "Nueva grafica" else "Editar grafica"
+        else -> screen?.title ?: "Boni"
+    }
+    val header = @Composable {
+        Header(controller, title, showBack = screenId != "home",
+            backLabel = if (screenId == CHART_EDIT_SCREEN) "< Graficas" else "< Inicio",
+            onBack = { screenId = if (screenId == CHART_EDIT_SCREEN) CHARTS_SCREEN else "home" },
+            onCharts = if (screenId == "home") ({ screenId = CHARTS_SCREEN }) else null,
+            onSync = { scope.launch { controller.sync(); controller.refresh() } }, onOpenSettings = onOpenSettings)
+    }
     Box(Modifier.fillMaxSize().background(c.page)) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp)) {
-            Header(controller, screen?.title ?: "Boni", showBack = screenId != "home", onBack = { screenId = "home" },
-                onSync = { scope.launch { controller.sync(); controller.refresh() } }, onOpenSettings = onOpenSettings)
-            loadError?.let { Text(it, color = c.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
-            Spacer(Modifier.height(16.dp))
-            screen?.let { s ->
-                ScreenView(s, controller, onNavigate = { screenId = it }, onMessage = { message = it })
+        if (screenId == CHART_EDIT_SCREEN && editing != null) {
+            // The editor scrolls its own form and keeps the preview in view: no page scroll here.
+            Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp)) {
+                header()
+                Spacer(Modifier.height(12.dp))
+                ChartEditor(controller, editing!!, onClose = { screenId = CHARTS_SCREEN }, onMessage = { message = it })
             }
-            QueueNotes(controller)
+        } else {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 20.dp)) {
+                header()
+                loadError?.let { Text(it, color = c.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+                Spacer(Modifier.height(16.dp))
+                if (screenId == CHARTS_SCREEN) {
+                    ChartsScreen(controller, onEdit = { editing = it; screenId = CHART_EDIT_SCREEN }, onMessage = { message = it })
+                } else {
+                    screen?.let { s ->
+                        ScreenView(s, controller, onNavigate = { screenId = it }, onMessage = { message = it })
+                    }
+                }
+                QueueNotes(controller)
+            }
         }
         message?.let {
             Surface(
@@ -113,15 +146,17 @@ fun BoniApp(controller: BoniController, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun Header(
-    controller: BoniController, title: String, showBack: Boolean, onBack: () -> Unit, onSync: () -> Unit, onOpenSettings: () -> Unit,
+    controller: BoniController, title: String, showBack: Boolean, backLabel: String, onBack: () -> Unit, onCharts: (() -> Unit)?,
+    onSync: () -> Unit, onOpenSettings: () -> Unit,
 ) {
     val c = LocalBoniColors.current
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        if (showBack) TextButton(onClick = onBack) { Text("< Inicio") }
+        if (showBack) TextButton(onClick = onBack) { Text(backLabel) }
         Text(title, color = c.ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         if (controller.pending > 0) {
             Text("${controller.pending} sin enviar", color = c.inkSecondary, fontSize = 12.sp, modifier = Modifier.padding(end = 8.dp))
         }
+        if (onCharts != null) TextButton(onClick = onCharts) { Text("Graficas") }
         TextButton(onClick = onSync) { Text("Actualizar") }
         TextButton(onClick = onOpenSettings) { Text("Ajustes") }
     }

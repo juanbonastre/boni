@@ -1,9 +1,13 @@
 package io.github.juanbonastre.boni.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +36,7 @@ import io.github.juanbonastre.boni.data.ChartRepository
 import io.github.juanbonastre.boni.data.ChartState
 import io.github.juanbonastre.boni.ui.charts.Chart
 import io.github.juanbonastre.boni.ui.charts.ChartMath
+import io.github.juanbonastre.boni.ui.charts.seriesColors
 
 /** A chart card that loads its own data; used by the home screen and by desktop widgets. */
 @Composable
@@ -97,11 +102,19 @@ fun ChartCardContent(
                         Text(sub, color = c.muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                if (data?.total != null) {
+                if (data?.total != null && data.kind != "number") {
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(ChartMath.eurosAuto(data.total), color = c.ink, fontWeight = FontWeight.SemiBold,
+                        Text(ChartMath.formatAuto(data.total, data.unit), color = c.ink, fontWeight = FontWeight.SemiBold,
                             fontSize = if (compact) 15.sp else 20.sp)
-                        Text(if (data.kind == "hbar") "total" else "en el periodo", color = c.muted, fontSize = 10.sp)
+                        val delta = data.deltaPct
+                        if (delta != null) {
+                            val up = delta > 0
+                            val bad = if (data.measure == "income") !up else up
+                            Text(ChartMath.percent(delta), color = if (data.measure == "count") c.inkSecondary else if (bad) c.critical else c.good,
+                                fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        } else {
+                            Text(if (data.kind == "hbar" || data.kind == "donut") "total" else "en el periodo", color = c.muted, fontSize = 10.sp)
+                        }
                     }
                 }
             }
@@ -120,10 +133,11 @@ fun ChartCardContent(
                     else -> Text("Cargando...", color = c.muted, fontSize = 12.sp)
                 }
             }
+            if (data != null) Legend(data, c, compact)
             val note = when {
                 state.offline && data != null -> "Sin conexion - ultimos datos guardados"
                 data?.stale == true -> "El servidor no llega a los datos - datos guardados"
-                data?.drilldown == true && !compact -> "Toca una barra para ver el detalle"
+                data?.drilldown == true && !compact -> "Toca un punto para ver el detalle"
                 else -> null
             }
             if (note != null) {
@@ -134,6 +148,23 @@ fun ChartCardContent(
                     }
                     Text(note, color = c.muted, fontSize = 11.sp)
                 }
+            }
+        }
+    }
+}
+
+/** Names of the series (split values, compared period) with their colors; nothing for a single series or a donut. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Legend(data: ChartData, c: BoniColors, compact: Boolean) {
+    if (data.series.size < 2 || data.kind == "donut" || data.kind == "number" || data.kind == "table") return
+    val palette = seriesColors(data, c, c.accentFor(data.chartId))
+    FlowRow(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        data.series.forEachIndexed { i, s ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(8.dp).height(8.dp).background(palette[i], CircleShape))
+                Text(if (s.role == "main") data.title else s.name, color = c.inkSecondary, fontSize = if (compact) 10.sp else 11.sp,
+                    modifier = Modifier.padding(start = 4.dp), maxLines = 1)
             }
         }
     }
