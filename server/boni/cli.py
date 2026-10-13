@@ -36,6 +36,9 @@ def main(argv: list[str] | None = None) -> int:
         from boni.app import create_app
 
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        # One line per MCP HTTP request (the warm-up makes ~15 every 2 minutes) is noise: only warnings from clients.
+        for noisy in ("httpx", "httpx2", "mcp", "mcp.client"):
+            logging.getLogger(noisy).setLevel(logging.WARNING)
         if not settings.vault_mcp_url:
             logging.warning("BONI_VAULT_MCP_URL not set: the vault source is disabled")
         uvicorn.run(create_app(settings), host=a.host, port=a.port, proxy_headers=True)
