@@ -1,0 +1,490 @@
+{
+  "chrome": {
+    "engine": "chromium",
+    "viewport": "1600x900",
+    "idleFrameMs": 16.7,
+    "phases": [
+      {
+        "name": "week scroll (wheel notches)",
+        "frames": 194,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "maxMs": 16.8,
+        "jank": 0
+      },
+      {
+        "name": "week scroll (touchpad stream)",
+        "frames": 195,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 16.8,
+        "maxMs": 16.8,
+        "jank": 0
+      },
+      {
+        "name": "week ctrl+wheel zoom",
+        "frames": 191,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 33.4,
+        "maxMs": 50.1,
+        "jank": 3
+      },
+      {
+        "name": "week shift+wheel days",
+        "frames": 195,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 16.8,
+        "maxMs": 16.8,
+        "jank": 0
+      },
+      {
+        "name": "14 days: scroll + zoom",
+        "frames": 195,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "maxMs": 16.8,
+        "jank": 0
+      },
+      {
+        "name": "month scroll (wheel notches)",
+        "frames": 193,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "maxMs": 33.4,
+        "jank": 1
+      }
+    ]
+  },
+  "electron-1": {
+    "engine": "electron",
+    "viewport": "1600x900",
+    "idleFrameMs": 16.7,
+    "phases": [
+      {
+        "name": "week scroll (wheel notches)",
+        "frames": 194,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 16.8,
+        "maxMs": 16.8,
+        "jank": 0
+      },
+      {
+        "name": "week scroll (touchpad stream)",
+        "frames": 194,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "maxMs": 16.8,
+        "jank": 0
+      },
+      {
+        "name": "week ctrl+wheel zoom",
+        "frames": 181,
+        "p50": 16.7,
+        "p95": 33.3,
+        "p99": 50.1,
+        "maxMs": 66.7,
+        "jank": 11
+      },
+      {
+        "name": "week shift+wheel days",
+        "frames": 193,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 33.3,
+        "maxMs": 33.4,
+        "jank": 2
+      },
+      {
+        "name": "14 days: scroll + zoom",
+        "frames": 193,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 33.3,
+        "maxMs": 33.3,
+        "jank": 2
+      },
+      {
+        "name": "month scroll (wheel notches)",
+        "frames": 194,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "maxMs": 33.3,
+        "jank": 1
+      }
+    ]
+  },
+  "electron-2": {
+    "engine": "electron",
+    "viewport": "1600x900",
+    "idleFrameMs": 16.7,
+    "phases": [
+      {
+        "name": "week scroll (wheel notches)",
+        "frames": 194,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "maxMs": 16.8,
+        "jank": 0
+      },
+      {
+        "name": "week scroll (touchpad stream)",
+        "frames": 195,
+        "p50": 16.7,
+        "p95": 16.7,
+        "p99": 16.8,
+        "maxMs": 16.8,
+        "jank": 0
+      },
+      {
+        "name": "week ctrl+wheel zoom",
+        "frames": 187,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 33.4,
+        "maxMs": 33.4,
+        "jank": 8
+      },
+      {
+        "name": "week shift+wheel days",
+        "frames": 194,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 16.8,
+        "maxMs": 33.4,
+        "jank": 1
+      },
+      {
+        "name": "14 days: scroll + zoom",
+        "frames": 194,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 16.8,
+        "maxMs": 33.3,
+        "jank": 1
+      },
+      {
+        "name": "month scroll (wheel notches)",
+        "frames": 190,
+        "p50": 16.7,
+        "p95": 16.8,
+        "p99": 33.4,
+        "maxMs": 33.4,
+        "jank": 5
+      }
+    ]
+  },
+  "tauri-1": {
+    "engine": "webkit",
+    "viewport": "1600x900",
+    "idleFrameMs": 32,
+    "phases": [
+      {
+        "name": "week scroll (wheel notches)",
+        "frames": 66,
+        "p50": 33,
+        "p95": 87,
+        "p99": 91,
+        "maxMs": 91,
+        "jank": 65
+      },
+      {
+        "name": "week scroll (touchpad stream)",
+        "frames": 73,
+        "p50": 38,
+        "p95": 71,
+        "p99": 79,
+        "maxMs": 79,
+        "jank": 71
+      },
+      {
+        "name": "week ctrl+wheel zoom",
+        "frames": 71,
+        "p50": 44,
+        "p95": 76,
+        "p99": 102,
+        "maxMs": 102,
+        "jank": 69
+      },
+      {
+        "name": "week shift+wheel days",
+        "frames": 89,
+        "p50": 34,
+        "p95": 61,
+        "p99": 70,
+        "maxMs": 70,
+        "jank": 69
+      },
+      {
+        "name": "14 days: scroll + zoom",
+        "frames": 70,
+        "p50": 40,
+        "p95": 85,
+        "p99": 88,
+        "maxMs": 88,
+        "jank": 65
+      },
+      {
+        "name": "month scroll (wheel notches)",
+        "frames": 110,
+        "p50": 30,
+        "p95": 53,
+        "p99": 67,
+        "maxMs": 67,
+        "jank": 72
+      }
+    ]
+  },
+  "tauri-2": {
+    "engine": "webkit",
+    "viewport": "1600x900",
+    "idleFrameMs": 32,
+    "phases": [
+      {
+        "name": "week scroll (wheel notches)",
+        "frames": 74,
+        "p50": 33,
+        "p95": 88,
+        "p99": 91,
+        "maxMs": 91,
+        "jank": 72
+      },
+      {
+        "name": "week scroll (touchpad stream)",
+        "frames": 68,
+        "p50": 44,
+        "p95": 76,
+        "p99": 80,
+        "maxMs": 80,
+        "jank": 64
+      },
+      {
+        "name": "week ctrl+wheel zoom",
+        "frames": 82,
+        "p50": 33,
+        "p95": 74,
+        "p99": 90,
+        "maxMs": 90,
+        "jank": 82
+      },
+      {
+        "name": "week shift+wheel days",
+        "frames": 88,
+        "p50": 37,
+        "p95": 56,
+        "p99": 70,
+        "maxMs": 70,
+        "jank": 72
+      },
+      {
+        "name": "14 days: scroll + zoom",
+        "frames": 85,
+        "p50": 32,
+        "p95": 76,
+        "p99": 97,
+        "maxMs": 97,
+        "jank": 83
+      },
+      {
+        "name": "month scroll (wheel notches)",
+        "frames": 105,
+        "p50": 30,
+        "p95": 57,
+        "p99": 65,
+        "maxMs": 70,
+        "jank": 73
+      }
+    ]
+  },
+  "tauri-nodmabuf": {
+    "engine": "webkit",
+    "viewport": "1600x900",
+    "idleFrameMs": 32,
+    "phases": [
+      {
+        "name": "week scroll (wheel notches)",
+        "frames": 73,
+        "p50": 33,
+        "p95": 88,
+        "p99": 92,
+        "maxMs": 92,
+        "jank": 72
+      },
+      {
+        "name": "week scroll (touchpad stream)",
+        "frames": 61,
+        "p50": 49,
+        "p95": 80,
+        "p99": 83,
+        "maxMs": 83,
+        "jank": 61
+      },
+      {
+        "name": "week ctrl+wheel zoom",
+        "frames": 68,
+        "p50": 33,
+        "p95": 88,
+        "p99": 99,
+        "maxMs": 99,
+        "jank": 68
+      },
+      {
+        "name": "week shift+wheel days",
+        "frames": 106,
+        "p50": 29,
+        "p95": 55,
+        "p99": 62,
+        "maxMs": 63,
+        "jank": 80
+      },
+      {
+        "name": "14 days: scroll + zoom",
+        "frames": 82,
+        "p50": 33,
+        "p95": 82,
+        "p99": 87,
+        "maxMs": 87,
+        "jank": 82
+      },
+      {
+        "name": "month scroll (wheel notches)",
+        "frames": 120,
+        "p50": 26,
+        "p95": 58,
+        "p99": 64,
+        "maxMs": 64,
+        "jank": 61
+      }
+    ]
+  },
+  "tauri-nocomposite": {
+    "engine": "webkit",
+    "viewport": "1600x900",
+    "idleFrameMs": 32,
+    "phases": [
+      {
+        "name": "week scroll (wheel notches)",
+        "frames": 68,
+        "p50": 33,
+        "p95": 86,
+        "p99": 93,
+        "maxMs": 93,
+        "jank": 66
+      },
+      {
+        "name": "week scroll (touchpad stream)",
+        "frames": 75,
+        "p50": 32,
+        "p95": 78,
+        "p99": 86,
+        "maxMs": 86,
+        "jank": 75
+      },
+      {
+        "name": "week ctrl+wheel zoom",
+        "frames": 80,
+        "p50": 33,
+        "p95": 83,
+        "p99": 91,
+        "maxMs": 91,
+        "jank": 79
+      },
+      {
+        "name": "week shift+wheel days",
+        "frames": 106,
+        "p50": 30,
+        "p95": 55,
+        "p99": 58,
+        "maxMs": 65,
+        "jank": 76
+      },
+      {
+        "name": "14 days: scroll + zoom",
+        "frames": 87,
+        "p50": 34,
+        "p95": 66,
+        "p99": 90,
+        "maxMs": 90,
+        "jank": 87
+      },
+      {
+        "name": "month scroll (wheel notches)",
+        "frames": 115,
+        "p50": 28,
+        "p95": 48,
+        "p99": 57,
+        "maxMs": 59,
+        "jank": 70
+      }
+    ]
+  },
+  "tauri-nvidia": {
+    "engine": "webkit",
+    "viewport": "1600x900",
+    "idleFrameMs": 32,
+    "phases": [
+      {
+        "name": "week scroll (wheel notches)",
+        "frames": 68,
+        "p50": 33,
+        "p95": 89,
+        "p99": 101,
+        "maxMs": 101,
+        "jank": 64
+      },
+      {
+        "name": "week scroll (touchpad stream)",
+        "frames": 88,
+        "p50": 34,
+        "p95": 52,
+        "p99": 82,
+        "maxMs": 82,
+        "jank": 87
+      },
+      {
+        "name": "week ctrl+wheel zoom",
+        "frames": 75,
+        "p50": 40,
+        "p95": 81,
+        "p99": 89,
+        "maxMs": 89,
+        "jank": 74
+      },
+      {
+        "name": "week shift+wheel days",
+        "frames": 107,
+        "p50": 30,
+        "p95": 53,
+        "p99": 61,
+        "maxMs": 66,
+        "jank": 70
+      },
+      {
+        "name": "14 days: scroll + zoom",
+        "frames": 96,
+        "p50": 32,
+        "p95": 42,
+        "p99": 95,
+        "maxMs": 95,
+        "jank": 95
+      },
+      {
+        "name": "month scroll (wheel notches)",
+        "frames": 108,
+        "p50": 32,
+        "p95": 49,
+        "p99": 55,
+        "maxMs": 57,
+        "jank": 75
+      }
+    ]
+  }
+}

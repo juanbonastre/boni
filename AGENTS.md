@@ -14,7 +14,7 @@ apps/web/        React 19 + Vite UI. Runs in any browser and inside the desktop 
   src/engine/    Viewport (smooth scroll / zoom / horizontal motion) and the per-day event index.
   src/components/ TimeGrid (day, week, N days), MonthView, Sidebar, EventDetail, Modals, ...
   src/store.ts   zustand store: data, settings, view, selection, drag, undo history.
-apps/desktop-*/  Thin shells (Electron / Tauri). Only the chosen one is kept after the benchmark.
+apps/desktop-electron/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage).
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status.
 ```
@@ -23,7 +23,8 @@ docs/            decisions and status.
 
 - `make setup` install dependencies · `make dev` UI dev server · `make check` lint + types + unit tests
 - `make e2e` Playwright (uses the system Chrome; screenshots land in `e2e/screenshots/`)
-- `make bench-chrome` smoothness benchmark in a real Chrome window (see `docs/rendimiento.md`)
+- `make desktop` run the Electron app · `make package` build `.deb` + AppImage into `release/`
+- `make bench-chrome` / `make bench-electron` smoothness benchmark in a real window (see `docs/rendimiento.md`)
 
 ## Rules
 

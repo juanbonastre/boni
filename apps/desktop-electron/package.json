@@ -1,0 +1,58 @@
+{
+  "name": "boni-calendar-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Boni Calendar desktop app (Electron shell)",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "prepare-web": "node scripts/copy-web.mjs",
+    "dist": "node scripts/copy-web.mjs && electron-builder --linux deb AppImage --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "author": "Juan Bonastre <juanbonastre@users.noreply.github.com>",
+  "homepage": "https://github.com/juanbonastre/boni-calendar",
+  "build": {
+    "appId": "dev.boni.calendar",
+    "productName": "Boni Calendar",
+    "directories": {
+      "output": "../../release"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "icon.png",
+      "web/**/*"
+    ],
+    "linux": {
+      "target": [
+        "deb",
+        "AppImage"
+      ],
+      "category": "Office",
+      "icon": "icon.png",
+      "maintainer": "Juan Bonastre <juanbonastre@users.noreply.github.com>",
+      "synopsis": "Calendar app",
+      "description": "Boni Calendar: day, week, month and N-day views with per-calendar properties.",
+      "executableName": "boni-calendar",
+      "syncDesktopName": true
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0"
+      ]
+    }
+  },
+  "desktopName": "boni-calendar.desktop"
+}
