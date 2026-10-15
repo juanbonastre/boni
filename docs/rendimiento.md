@@ -42,3 +42,13 @@ mientras WebKitGTK siga asi; si se revisa, el banco ya esta hecho (`bench/`).
   de ~190 (con filas llenas de eventos: las series continuan para siempre, antes las filas lejanas estaban vacias).
 - Repeticiones: los objetos de ocurrencia se cachean por serie y dia (`OccurrenceCache`) para no recalcular segmentos, y
   el desfase horario de cada zona se cachea por tramos de 15 minutos (`Intl` es lo mas lento de toda la expansion).
+
+## Texto nitido (2026-10-15)
+Juan noto el texto algo difuminado. Causa: los contenedores con capa de GPU (`will-change: transform`) se movian a posiciones
+con fracciones de pixel (desplazamiento horizontal con el ancho de columna `ancho/7`, altura de hora fraccionaria,
+`translateY(-50%)` sobre una caja de altura impar) y la capa se remuestrea. Ademas, el texto de cada evento tenia su propia
+capa permanente. Cambios: desplazamientos en pixeles enteros, ancho de columna y alto de fila del mes en pixeles de
+dispositivo enteros, altura de hora multiplo de 4 px, cajas de etiqueta con altura par y capas de texto solo mientras dura
+el zoom. Medido (gradiente maximo del borde del texto, mayor = mas nitido): cabecera de dias 108 a 166, tarjetas 112 a 132,
+etiquetas de hora 107 a 112. Coste: con la rueda y Ctrl pulsado el zoom queda igual (8-11 fotogramas perdidos de ~185); con el
+gesto de pellizco del touchpad (que no pulsa Ctrl) las capas se crean en el primer fotograma y hay un tiron de ~100 ms al empezar.

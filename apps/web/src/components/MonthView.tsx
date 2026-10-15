@@ -68,8 +68,11 @@ export function MonthView() {
     const strip = stripRef.current;
     const x = pos.current.x;
     const wk = (x - w0) / 7;
-    if (strip)
-      strip.style.transform = `translate3d(0, ${-(wk - epochRef.current) * rowHRef.current}px, 0)`;
+    if (strip) {
+      const dpr = window.devicePixelRatio || 1;
+      const y = Math.round(-(wk - epochRef.current) * rowHRef.current * dpr) / dpr; // whole pixels keep text sharp
+      strip.style.transform = `translate3d(0, ${y}px, 0)`;
+    }
     const nb = Math.floor(wk);
     if (nb !== blockRef.current) {
       blockRef.current = nb;
@@ -111,7 +114,15 @@ export function MonthView() {
   useLayoutEffect(() => {
     const body = bodyRef.current;
     if (!body) return;
-    const measure = () => setRowH(body.clientHeight / ROWS);
+    const measure = () => {
+      const dpr = window.devicePixelRatio || 1;
+      // Whole device pixels for rows and columns: fractional boxes soften the text inside them.
+      setRowH(Math.floor((body.clientHeight * dpr) / ROWS) / dpr);
+      (body.parentElement ?? body).style.setProperty(
+        "--mcol",
+        `${Math.floor((body.clientWidth * dpr) / 7) / dpr}px`,
+      );
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(body);

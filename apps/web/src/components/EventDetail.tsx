@@ -104,8 +104,8 @@ function Popover({ ev }: { ev: CalEvent }) {
     let top = a.top;
     if (top + h > maxBottom) top = maxBottom - h;
     top = Math.max(minTop, top);
-    pop.style.left = `${left}px`;
-    pop.style.top = `${top}px`;
+    pop.style.left = `${Math.round(left)}px`;
+    pop.style.top = `${Math.round(top)}px`;
     const offscreen = a.bottom < (body?.top ?? 0) || a.top > (body?.bottom ?? window.innerHeight);
     setHidden(offscreen);
   }, [ev.id]);

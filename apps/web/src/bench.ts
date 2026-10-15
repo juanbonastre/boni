@@ -132,9 +132,16 @@ export async function runBench(only = ""): Promise<BenchResult> {
   await run("week scroll (touchpad stream)", 3000, 8, (i, el) =>
     wheel(el, { deltaY: (Math.floor(i / 150) % 2 ? -1 : 1) * 6 }),
   );
-  await run("week ctrl+wheel zoom", 3000, 40, (i, el) =>
+  await run("week ctrl+wheel zoom (pinch, no key)", 3000, 40, (i, el) =>
     wheel(el, { deltaY: (Math.floor(i / 25) % 2 ? 1 : -1) * 100, ctrlKey: true }),
   );
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", ctrlKey: true }));
+  await sleep(150);
+  await run("week ctrl+wheel zoom (Ctrl held)", 3000, 40, (i, el) =>
+    wheel(el, { deltaY: (Math.floor(i / 25) % 2 ? 1 : -1) * 100, ctrlKey: true }),
+  );
+  window.dispatchEvent(new KeyboardEvent("keyup", { key: "Control" }));
+
   await run("week shift+wheel days", 3000, 60, (_i, el) =>
     wheel(el, { deltaY: 100, shiftKey: true }),
   );

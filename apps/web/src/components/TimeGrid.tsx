@@ -37,6 +37,11 @@ const BLOCK = 1;
 const ZOOM_STRETCH_LIMIT = 0.5;
 const GUTTER = 64;
 
+const snapPx = (v: number): number => {
+  const dpr = window.devicePixelRatio || 1;
+  return Math.round(v * dpr) / dpr;
+};
+
 export function TimeGrid() {
   const vp = useViewport();
   const view = useApp((s) => s.view);
@@ -69,6 +74,22 @@ export function TimeGrid() {
   const lastHh = useRef(-1);
   const lastVisible = useRef(Number.NaN);
 
+  // Text that must keep its size while a zoom stretches the strip sits on its own layers, but only while
+  // zooming (or while Ctrl is held, which arms them early): layers at rest would soften the text.
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ctrlHeld = useRef(false);
+  const arm = () => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.classList.add("zoom-armed");
+    if (armTimer.current) clearTimeout(armTimer.current);
+    armTimer.current = setTimeout(() => {
+      armTimer.current = null;
+      if (ctrlHeld.current || vp.isZooming) arm();
+      else rootRef.current?.classList.remove("zoom-armed");
+    }, 700);
+  };
+
   const apply = (hh: number, scrollY: number, viewX: number) => {
     const root = rootRef.current;
     if (!root) return;
@@ -91,13 +112,16 @@ export function TimeGrid() {
       root.classList.toggle("zoom-coarse", hh < 34);
       lastHh.current = hh;
     }
-    const x = -(viewX - renderStartRef.current) * vp.colW;
+    // Whole device pixels only: a fractional offset on a GPU layer resamples (blurs) the text inside it.
+    const x = snapPx(-(viewX - renderStartRef.current) * vp.colW);
+    const y = snapPx(-scrollY);
     const stretch = hh === lastHh.current ? 1 : hh / lastHh.current;
     const scale = stretch === 1 ? "" : ` scaleY(${stretch})`;
     const inv = stretch === 1 ? "1" : String(1 / stretch);
     const cs = colsStripRef.current;
     if (cs) {
-      cs.style.transform = `translate3d(${x}px, ${-scrollY}px, 0)${scale}`;
+      cs.style.transform = `translate3d(${x}px, ${y}px, 0)${scale}`;
+      if (stretch !== 1) arm();
       cs.style.setProperty("--inv", inv);
     }
     const hs = headStripRef.current;
@@ -106,14 +130,14 @@ export function TimeGrid() {
     if (as) as.style.transform = `translate3d(${x}px, 0, 0)`;
     const g = gutterInnerRef.current;
     if (g) {
-      g.style.transform = `translate3d(0, ${-scrollY}px, 0)${scale}`;
+      g.style.transform = `translate3d(0, ${y}px, 0)${scale}`;
       g.style.setProperty("--inv", inv);
     }
     const ln2 = linesRef.current;
-    if (ln2) ln2.style.transform = `translate3d(0, ${-scrollY}px, 0)${scale}`;
+    if (ln2) ln2.style.transform = `translate3d(0, ${y}px, 0)${scale}`;
     const g2 = gutter2InnerRef.current;
     if (g2) {
-      g2.style.transform = `translate3d(0, ${-scrollY}px, 0)${scale}`;
+      g2.style.transform = `translate3d(0, ${y}px, 0)${scale}`;
       g2.style.setProperty("--inv", inv);
     }
 
@@ -147,7 +171,8 @@ export function TimeGrid() {
       const w = cols.clientWidth;
       const h = body.clientHeight;
       if (w === 0 || h === 0) return;
-      const colW = w / n;
+      const dpr = window.devicePixelRatio || 1;
+      const colW = Math.floor((w * dpr) / n) / dpr; // whole device pixels: crisp column edges and text
       root.style.setProperty("--colw", `${colW}px`);
       vp.setSize(h, colW, n);
     };
@@ -185,6 +210,7 @@ export function TimeGrid() {
   const wheelHandler = useRef<(e: WheelEvent) => void>(() => {});
   wheelHandler.current = (e) => {
     e.preventDefault();
+    if (e.ctrlKey || e.metaKey) arm();
     const rect = bodyRef.current?.getBoundingClientRect();
     vp.wheel(e, rect ? e.clientY - rect.top : 0);
   };
@@ -194,6 +220,22 @@ export function TimeGrid() {
     const h = (e: WheelEvent) => wheelHandler.current(e);
     el.addEventListener("wheel", h, { passive: false });
     return () => el.removeEventListener("wheel", h);
+  }, []);
+
+  useEffect(() => {
+    const sync = (e: KeyboardEvent) => {
+      const held = e.ctrlKey || e.metaKey;
+      ctrlHeld.current = held;
+      if (held) arm();
+    };
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      if (armTimer.current) clearTimeout(armTimer.current);
+    };
+    // biome-ignore lint/correctness/useExhaustiveDependencies: arm only touches refs
   }, []);
 
   const pointer = useGridPointer({ bodyRef, colsRef, index });

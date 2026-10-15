@@ -733,6 +733,8 @@ kbd {
 .hour-label {
   position: absolute;
   right: 10px;
+  height: 14px;
+  line-height: 14px;
   transform: translateY(-50%) scaleY(var(--inv, 1));
   font-size: 10.5px;
   color: var(--muted);
@@ -742,12 +744,14 @@ kbd {
 .now-label {
   position: absolute;
   right: 10px;
+  height: 16px;
+  line-height: 16px;
   transform: translateY(-50%) scaleY(var(--inv, 1));
   font-size: 10.5px;
   color: var(--now);
   font-weight: 650;
   background: var(--bg);
-  padding: 1px 0 1px 3px;
+  padding: 0 0 0 3px;
   font-variant-numeric: tabular-nums;
 }
 .cols-strip {
@@ -850,10 +854,11 @@ kbd {
   transform: scaleY(var(--inv, 1));
   transform-origin: 0 0;
 }
-.ev-body,
-.hour-label,
-.now-label {
-  /* Own compositor layers: the counter-scale during a zoom then costs no repaint (measured, see docs/rendimiento.md). */
+.grid.zoom-armed .ev-body,
+.grid.zoom-armed .hour-label,
+.grid.zoom-armed .now-label {
+  /* Own compositor layers only while zooming: the counter-scale then costs no repaint, and text at rest
+     is painted straight into the (pixel-aligned) strip so it stays sharp. */
   will-change: transform;
 }
 .ev-title {
@@ -947,7 +952,7 @@ kbd {
 }
 .month-dow {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, var(--mcol, 1fr));
   flex: none;
   height: 30px;
   border-bottom: 1px solid var(--line);
@@ -974,9 +979,9 @@ kbd {
 .week-row {
   position: absolute;
   left: 0;
-  right: 0;
+  width: calc(7 * var(--mcol));
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, var(--mcol));
   border-top: 1px solid var(--line);
 }
 .mcell {
