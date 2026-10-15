@@ -6,7 +6,7 @@ what Boni Calendar does. Changes to the look or the behaviour start in Boni Cale
 request, and then propagate to the other apps. A deviation needs a written reason in the deviating app's docs.
 
 Authoritative sources: this file, the tokens in `apps/web/src/styles.css` (`:root` and `:root[data-theme="light"]`), and the
-behaviour covered by `e2e/`. Validated by Juan on the desktop app up to version 0.3.2; the mobile section is a proposal.
+behaviour covered by `e2e/`. Validated by Juan on the desktop app up to version 0.3.2; the mobile section is a proposal for later.
 
 ## 1. Principles
 - Calm and dense: graphite surfaces, one accent colour, thin lines, no decoration. Colour means *which calendar*.
@@ -93,9 +93,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 - **Boni desktop / Android clients (Compose):** same hex tokens, radii, type scale and event-card recipe. Until there is a
   second web consumer, copy the values from section 2; when it exists, move them to a shared tokens file (JSON) that both
   the CSS and the Compose theme are generated from.
-- **Obsidian plugin:** use these tokens scoped to the plugin's own container so it looks like Boni Calendar inside Obsidian;
-  following Obsidian's theme variables is an option to decide later.
-- **Mobile (proposal, not yet validated by Juan):** same tokens and card recipe. The popover becomes a bottom sheet that
+- **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
+  (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables).
+- **Mobile (proposal, accepted in principle by Juan but deferred until the desktop apps are finished):** same tokens and card recipe. The popover becomes a bottom sheet that
   expands to a full-screen detail; the sidebar becomes a drawer; "new event" is a floating button. Long press = context
   menu; drag to create, move and resize works like desktop with touch targets of at least 44 dp; pinch zooms the hours;
   vertical swipe scrolls and horizontal swipe moves days; no keyboard shortcuts, so every one needs a visible control;
