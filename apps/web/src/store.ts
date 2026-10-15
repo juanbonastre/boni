@@ -1,18 +1,32 @@
 import {
+  type Account,
   addMonths,
   type CalEvent,
   type CalendarData,
   type CalendarDef,
+  type CalendarView,
   type CivilDay,
+  type Collection,
+  type CollectionProvider,
+  type CollectionSnapshot,
+  calendarDefs,
+  diffRows,
   editOccurrence,
   eventsInDays,
   expandAll,
   type FirstDay,
-  generateSample,
+  generateCollectionSample,
   type Locale,
+  makeModel,
+  makeProjector,
+  memoryProvider,
   type OccurrenceCache,
+  type Projector,
   type PropertyDef,
   parseOccurrenceId,
+  projectsOf,
+  type Row,
+  reconcileRows,
   resolveOccurrence,
   type Scope,
   startOfMonth,
@@ -20,6 +34,7 @@ import {
   systemTimeZone,
   todayIn,
   type When,
+  withSchema,
 } from "@boni-calendar/core";
 import { create } from "zustand";
 import { nowMs } from "./clock.ts";
@@ -109,6 +124,16 @@ interface UiPersist {
 }
 
 export interface AppState {
+  /**
+   * Rows are the only truth. `data` is derived from them (events are the projection of the rows
+   * through each calendar's mapping): read it, never write it; edit through the store actions.
+   */
+  accounts: Account[];
+  collections: Collection[];
+  views: CalendarView[];
+  rows: Row[];
+  projector: Projector;
+  provider: CollectionProvider;
   data: CalendarData;
   settings: Settings;
   view: ViewKind;
@@ -122,8 +147,8 @@ export interface AppState {
   detailMode: "popover" | "panel";
   drag: DragState | null;
   nav: { seq: number; day: CivilDay; animate: boolean };
-  past: CalEvent[][];
-  future: CalEvent[][];
+  past: Row[][];
+  future: Row[][];
   toast: Toast | null;
   settingsOpen: boolean;
   paletteOpen: boolean;
@@ -186,12 +211,48 @@ export interface AppState {
   set: (patch: Partial<AppState>) => void;
 }
 
-function makeData(settings: Settings, hidden: Set<string>): CalendarData {
-  const data = generateSample({ anchorDay: todayIn(settings.tz, nowMs()), tz: settings.tz });
+function makeSnapshot(settings: Settings, hidden: Set<string>): CollectionSnapshot {
+  const snap = generateCollectionSample({
+    anchorDay: todayIn(settings.tz, nowMs()),
+    tz: settings.tz,
+  });
   return {
-    ...data,
-    calendars: data.calendars.map((c) => (hidden.has(c.id) ? { ...c, visible: false } : c)),
+    ...snap,
+    views: snap.views.map((v) => (hidden.has(v.id) ? { ...v, visible: false } : v)),
   };
+}
+
+type Source = Pick<AppState, "accounts" | "collections" | "views" | "rows">;
+
+/** Everything derived from the stored collections, views and rows. */
+function derive(src: Source, tz: string, keep?: Projector): Pick<AppState, "projector" | "data"> {
+  const projector = keep ?? makeProjector(makeModel(src.collections, src.views, { defaultTz: tz }));
+  return {
+    projector,
+    data: {
+      accounts: src.accounts,
+      calendars: calendarDefs(src.collections, src.views),
+      projects: projectsOf(src.rows),
+      events: projector.project(src.rows),
+    },
+  };
+}
+
+/** The projector can be kept when no view changed in a way that affects how rows read or write. */
+function sameProjection(a: readonly CalendarView[], b: readonly CalendarView[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((v, i) => {
+      const w = b[i];
+      return (
+        w &&
+        v.id === w.id &&
+        v.collectionId === w.collectionId &&
+        v.mapping === w.mapping &&
+        v.tz === w.tz
+      );
+    })
+  );
 }
 
 const newEventId = (now: number): string =>
@@ -239,6 +300,7 @@ export const useApp = create<AppState>((set, get) => {
   const ui = load<UiPersist>(UI_KEY);
   const hidden = new Set(ui.hiddenCalendars ?? []);
   setLocale(settings.locale);
+  const snapshot = makeSnapshot(settings, hidden);
 
   const persistUi = () => {
     const s = get();
@@ -250,18 +312,52 @@ export const useApp = create<AppState>((set, get) => {
     } satisfies UiPersist);
   };
 
-  /** Applies an event-list change with undo history. */
-  const commit = (next: CalEvent[]) => {
+  /** Stores new rows (and tells the provider what changed). `history: false` for undo and redo. */
+  const setRows = (rows: Row[], history = true) => {
     const s = get();
     set({
-      data: { ...s.data, events: next },
-      past: [...s.past.slice(-99), s.data.events],
-      future: [],
+      rows,
+      data: { ...s.data, events: s.projector.project(rows) },
+      ...(history ? { past: [...s.past.slice(-99), s.rows], future: [] } : {}),
+    });
+    void s.provider.apply(diffRows(s.rows, rows)).catch((e) => console.error("save failed", e));
+  };
+
+  /** Applies an edited event list as row changes, with undo history. */
+  const commit = (next: CalEvent[]) => {
+    const s = get();
+    setRows(reconcileRows(s.projector.model, s.rows, s.data.events, next));
+  };
+
+  /** Replaces collections, views or accounts; the derived data follows. */
+  const setDefinitions = (patch: Partial<Pick<Source, "accounts" | "collections" | "views">>) => {
+    const s = get();
+    const next: Source = {
+      accounts: patch.accounts ?? s.accounts,
+      collections: patch.collections ?? s.collections,
+      views: patch.views ?? s.views,
+      rows: s.rows,
+    };
+    const keep =
+      next.collections === s.collections && sameProjection(s.views, next.views)
+        ? s.projector
+        : undefined;
+    const d = derive(next, s.settings.tz, keep);
+    // Only calendars changed: keep the very same events array so nothing that reads events re-renders.
+    set({
+      ...next,
+      projector: d.projector,
+      data: keep ? { ...s.data, calendars: d.data.calendars, accounts: next.accounts } : d.data,
     });
   };
 
+  const mapViews = (fn: (v: CalendarView) => CalendarView) =>
+    setDefinitions({ views: get().views.map(fn) });
+
   return {
-    data: makeData(settings, hidden),
+    ...snapshot,
+    ...derive(snapshot, settings.tz),
+    provider: memoryProvider(snapshot),
     settings,
     view: ui.view ?? "week",
     nDays: ui.nDays ?? 7,
@@ -295,6 +391,8 @@ export const useApp = create<AppState>((set, get) => {
       if (patch.locale) setLocale(patch.locale);
       save(SETTINGS_KEY, next);
       set({ settings: next });
+      // Rows without their own timezone follow the app's.
+      if (patch.tz !== undefined) setDefinitions({ collections: [...get().collections] });
       if (patch.firstDay !== undefined) {
         // Re-align the visible range (week/month rows) to the new first day of the week.
         const vis = useVisible.getState().start;
@@ -350,30 +448,30 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     toggleCalendar: (id) => {
-      set((s) => ({
-        data: {
-          ...s.data,
-          calendars: s.data.calendars.map((c) => (c.id === id ? { ...c, visible: !c.visible } : c)),
-        },
-      }));
+      mapViews((v) => (v.id === id ? { ...v, visible: !v.visible } : v));
       persistUi();
     },
 
-    updateCalendar: (id, patch) =>
-      set((s) => ({
-        data: {
-          ...s.data,
-          calendars: s.data.calendars.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-        },
-      })),
+    updateCalendar: (id, patch) => {
+      const { name, schema, id: _id, ...viewPatch } = patch;
+      const s = get();
+      const view = s.views.find((v) => v.id === id);
+      if (!view) return;
+      let collections = s.collections;
+      if (name !== undefined || schema) {
+        collections = collections.map((c) => {
+          if (c.id !== view.collectionId) return c;
+          const renamed = name !== undefined ? { ...c, name } : c;
+          return schema ? withSchema(renamed, view, schema) : renamed;
+        });
+      }
+      setDefinitions({
+        collections,
+        views: s.views.map((v) => (v.id === id ? { ...v, ...viewPatch } : v)),
+      });
+    },
 
-    setSchema: (id, schema) =>
-      set((s) => ({
-        data: {
-          ...s.data,
-          calendars: s.data.calendars.map((c) => (c.id === id ? { ...c, schema } : c)),
-        },
-      })),
+    setSchema: (id, schema) => get().updateCalendar(id, { schema }),
 
     select: (id, popover = true) =>
       set({
@@ -566,19 +664,12 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     showOnlyCalendar: (id) => {
-      set((s) => ({
-        data: {
-          ...s.data,
-          calendars: s.data.calendars.map((c) => ({ ...c, visible: c.id === id })),
-        },
-      }));
+      mapViews((v) => ({ ...v, visible: v.id === id }));
       persistUi();
     },
 
     showAllCalendars: () => {
-      set((s) => ({
-        data: { ...s.data, calendars: s.data.calendars.map((c) => ({ ...c, visible: true })) },
-      }));
+      mapViews((v) => ({ ...v, visible: true }));
       persistUi();
     },
 
@@ -616,10 +707,10 @@ export const useApp = create<AppState>((set, get) => {
       const s = get();
       const prev = s.past[s.past.length - 1];
       if (!prev) return;
+      setRows(prev, false);
       set({
-        data: { ...s.data, events: prev },
         past: s.past.slice(0, -1),
-        future: [s.data.events, ...s.future],
+        future: [s.rows, ...s.future],
         popoverId: null,
         selectedId: null,
         selectedIds: [],
@@ -631,11 +722,8 @@ export const useApp = create<AppState>((set, get) => {
       const s = get();
       const next = s.future[0];
       if (!next) return;
-      set({
-        data: { ...s.data, events: next },
-        past: [...s.past, s.data.events],
-        future: s.future.slice(1),
-      });
+      setRows(next, false);
+      set({ past: [...s.past, s.rows], future: s.future.slice(1) });
     },
 
     showToast: (text, undo, params) => {
@@ -650,8 +738,11 @@ export const useApp = create<AppState>((set, get) => {
 
     resetData: () => {
       const s = get();
+      const snap = makeSnapshot(s.settings, new Set());
       set({
-        data: makeData(s.settings, new Set()),
+        ...snap,
+        ...derive(snap, s.settings.tz),
+        provider: memoryProvider(snap),
         past: [],
         future: [],
         selectedId: null,

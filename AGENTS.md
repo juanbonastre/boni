@@ -53,6 +53,10 @@ docs/            decisions and status.
   device pixels, the committed hour height is a multiple of `HH_STEP` (4 px, so a 15-minute slot is whole pixels), boxes that
   are centred with `translateY(-50%)` have an even explicit height, popover positions are rounded, and text layers
   (`will-change`) exist only while zooming (`.zoom-armed`). `e2e/interactions.spec.ts` ("layout sits on whole pixels") guards it.
+- **Rows are the truth (phase 2):** the store keeps `collections`, `views` and `rows`; `data.events`, `data.calendars` and
+  `data.projects` are *derived* (events are the projection of rows through each calendar's mapping, memoised per row
+  object). Never write them: edit through the store actions, which turn event changes into row changes (`reconcileRows`)
+  and hand them to the `CollectionProvider`. `isTask`/`done` come from the calendar's task column (`supportsTasks`).
 - **Recurring events:** a series is ONE stored event (the "master": `recurrence`, `exdates`) and is never rendered
   directly. `expandAll` (core) turns it into occurrences (`id = "<master>~<day>"`, `seriesId`, `occurrenceDay`) for the
   window the views publish (`store.win`, with hysteresis). All edits and deletions go through `editOccurrence` with a
