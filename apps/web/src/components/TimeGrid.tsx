@@ -204,7 +204,7 @@ export function TimeGrid() {
   const today = useApp.getState().today();
   const tz = settings.tz;
   const nowLocal = toLocal(now, tz);
-  const selectedId = useApp((s) => s.selectedId);
+  const selectedIds = useApp((s) => s.selectedIds);
   const dragId = useApp((s) => s.drag?.id ?? null);
   const showNow = useVisibleHasToday(today);
 
@@ -307,7 +307,7 @@ export function TimeGrid() {
                   type="button"
                   key={s.id}
                   data-id={s.id}
-                  className={`bar ${selectedId === s.id ? "selected" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""}`}
+                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""}`}
                   style={
                     {
                       "--c": cal?.color ?? "#888",
@@ -361,7 +361,7 @@ export function TimeGrid() {
                 calMap={calMap}
                 isToday={d === today}
                 nowMinute={nowLocal.minute}
-                selectedId={selectedId}
+                selectedIds={selectedIds}
                 dragId={dragId}
                 h24={settings.h24}
                 weekend={isWeekend(d)}
@@ -465,7 +465,7 @@ interface DayColumnProps {
   calMap: Map<string, CalendarDef>;
   isToday: boolean;
   nowMinute: number;
-  selectedId: string | null;
+  selectedIds: string[];
   dragId: string | null;
   h24: boolean;
   weekend: boolean;
@@ -502,7 +502,7 @@ const DayColumn = memo(function DayColumn(p: DayColumnProps) {
             cols={l.cols}
             span={l.span}
             color={p.calMap.get(ev.calendarId)?.color ?? "#888"}
-            selected={p.selectedId === ev.id}
+            selected={p.selectedIds.includes(ev.id)}
             dragging={p.dragId === ev.id}
             h24={p.h24}
           />

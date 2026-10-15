@@ -146,7 +146,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
   const cal = app.data.calendars.find((c) => c.id === ev.calendarId);
   const [menu, setMenu] = useState(false);
   const isNew = app.newEventId === ev.id;
-  const close = () => app.set({ popoverId: null, selectedId: null, newEventId: null });
+  const close = () => app.clearSelection();
   const update = (patch: Partial<CalEvent>) => app.updateEvent(ev.id, patch);
   const setProp = (id: string, v: PropValue) => update({ props: { ...ev.props, [id]: v } });
   const h24 = app.settings.h24;

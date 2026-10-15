@@ -561,7 +561,7 @@ kbd {
   height: 100%;
   position: relative;
   user-select: none;
-  overflow: hidden;
+  overflow: clip; /* clip, unlike hidden, can never be scrolled by focus or scrollIntoView */
   --colw: 200px;
   --hh: 48px;
 }
@@ -597,7 +597,7 @@ kbd {
   position: relative;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  overflow: clip; /* clip, unlike hidden, can never be scrolled by focus or scrollIntoView */
 }
 .strip {
   position: absolute;
@@ -719,7 +719,7 @@ kbd {
   position: relative;
   width: var(--gutter);
   flex: none;
-  overflow: hidden;
+  overflow: clip; /* clip, unlike hidden, can never be scrolled by focus or scrollIntoView */
 }
 .gutter-inner {
   transform-origin: 0 0;
@@ -962,7 +962,7 @@ kbd {
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip; /* clip, unlike hidden, can never be scrolled by focus or scrollIntoView */
 }
 .month-strip {
   position: absolute;
@@ -1553,4 +1553,47 @@ textarea.field-input {
 .ctx-colors .swatch {
   width: 18px;
   height: 18px;
+}
+
+/* ---------------------------------------------------------------- selection bar */
+.selbar {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px 6px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.selbar-count {
+  font-weight: 600;
+}
+.selbar-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.selbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+}
+.selbar-btn:hover {
+  background: var(--hover);
+}
+.selbar-btn.danger {
+  color: #ff7b7b;
+}
+
+.mod-select .popover {
+  pointer-events: none;
+  opacity: 0.3;
 }

@@ -35,7 +35,7 @@ export function MonthView() {
   const calMap = useCalendarMap();
   const first = settings.firstDay;
   const today = useApp.getState().today();
-  const selectedId = useApp((s) => s.selectedId);
+  const selectedIds = useApp((s) => s.selectedIds);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
@@ -179,7 +179,7 @@ export function MonthView() {
               today={today}
               index={index}
               calMap={calMap}
-              selectedId={selectedId}
+              selectedIds={selectedIds}
               h24={settings.h24}
               locale={settings.locale}
             />
@@ -197,7 +197,7 @@ const WeekRow = memo(function WeekRow(p: {
   today: CivilDay;
   index: DayIndex;
   calMap: Map<string, { color: string }>;
-  selectedId: string | null;
+  selectedIds: string[];
   h24: boolean;
   locale: "es" | "en";
 }) {
@@ -262,9 +262,13 @@ const WeekRow = memo(function WeekRow(p: {
                   type="button"
                   key={`${seg.eventId}:${day}`}
                   data-id={ev.id}
-                  className={`mchip ${p.selectedId === ev.id ? "selected" : ""} ${ev.done ? "done" : ""}`}
+                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.done ? "done" : ""}`}
                   style={{ "--c": p.calMap.get(ev.calendarId)?.color ?? "#888" } as CSSProperties}
-                  onClick={() => useApp.getState().select(ev.id, true)}
+                  onClick={(e) =>
+                    useApp
+                      .getState()
+                      .clickSelect(ev.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
+                  }
                 >
                   <span className="dot" />
                   <span className="mchip-time">{formatMinute(seg.start, p.h24)}</span>
@@ -296,7 +300,7 @@ const WeekRow = memo(function WeekRow(p: {
             type="button"
             key={b.id}
             data-id={b.id}
-            className={`bar ${p.selectedId === b.id ? "selected" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""}`}
+            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""}`}
             style={
               {
                 "--c": p.calMap.get(ev.calendarId)?.color ?? "#888",
@@ -306,7 +310,11 @@ const WeekRow = memo(function WeekRow(p: {
                 height: `${LANE - 2}px`,
               } as CSSProperties
             }
-            onClick={() => useApp.getState().select(b.id, true)}
+            onClick={(e) =>
+              useApp
+                .getState()
+                .clickSelect(b.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
+            }
           >
             <span className="bar-title">{ev.title || t("event.untitled")}</span>
           </button>

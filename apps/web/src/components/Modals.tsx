@@ -629,6 +629,7 @@ export function HelpModal() {
     ["Supr", t("shortcuts.delete")],
     ["[", t("shortcuts.sidebar")],
     ["Ctrl ,", t("shortcuts.settings")],
+    ["Ctrl A", t("shortcuts.selectAll")],
     ["Esc", t("shortcuts.close")],
   ];
   return (
@@ -646,6 +647,7 @@ export function HelpModal() {
         <li>{t("shortcuts.ctrlWheel")}</li>
         <li>{t("shortcuts.shiftWheel")}</li>
         <li>{t("shortcuts.drag")}</li>
+        <li>{t("shortcuts.multi")}</li>
       </ul>
     </Modal>
   );

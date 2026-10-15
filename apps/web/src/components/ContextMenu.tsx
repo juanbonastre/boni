@@ -41,7 +41,8 @@ export function useContextMenuTrigger() {
       const cell = el.closest<HTMLElement>(".mcell[data-day]");
       if (ev?.dataset.id) {
         target = { kind: "event", id: ev.dataset.id };
-        app.select(ev.dataset.id, false);
+        const keep = app.selectedIds.includes(ev.dataset.id) && app.selectedIds.length > 1;
+        if (!keep) app.select(ev.dataset.id, false);
       } else if (cal?.dataset.cal) {
         target = { kind: "calendar", id: cal.dataset.cal };
       } else if (col?.dataset.day) {
@@ -160,12 +161,23 @@ function Item({
 }
 
 function EventItems({ id, close }: { id: string; close: () => void }) {
-  const ev = useApp((s) => s.data.events.find((e) => e.id === id));
+  const events = useApp((s) => s.data.events);
   const calendars = useApp((s) => s.data.calendars);
+  const selectedIds = useApp((s) => s.selectedIds);
   const [sub, setSub] = useState(false);
-  if (!ev) return null;
+  // Right-clicking one of several selected events acts on the whole selection.
+  const ids = selectedIds.includes(id) && selectedIds.length > 1 ? selectedIds : [id];
+  const multi = ids.length > 1;
+  const targets = events.filter((e) => ids.includes(e.id));
+  const ev = events.find((e) => e.id === id);
+  if (!ev || targets.length === 0) return null;
   const cal = calendars.find((c) => c.id === ev.calendarId);
-  const locked = cal?.readOnly === true;
+  const locked = targets.some(
+    (e) => calendars.find((c) => c.id === e.calendarId)?.readOnly === true,
+  );
+  const allTasks = targets.every((e) => e.isTask);
+  const allDone = targets.every((e) => e.done);
+  const suffix = multi ? ` (${ids.length})` : "";
   const app = useApp.getState();
   const run = (fn: () => void) => () => {
     close();
@@ -173,37 +185,41 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
   };
   return (
     <>
-      <Item icon={<Maximize2 size={14} />} onClick={run(() => app.select(id, true))}>
-        {t("ctx.open")}
-      </Item>
-      <div className="menu-sep" />
-      {ev.isTask && (
+      {!multi && (
+        <>
+          <Item icon={<Maximize2 size={14} />} onClick={run(() => app.select(id, true))}>
+            {t("ctx.open")}
+          </Item>
+          <div className="menu-sep" />
+        </>
+      )}
+      {allTasks && (
         <Item
-          icon={ev.done ? <Square size={14} /> : <CheckSquare size={14} />}
+          icon={allDone ? <Square size={14} /> : <CheckSquare size={14} />}
           disabled={locked}
-          onClick={run(() => app.updateEvent(id, { done: !ev.done }))}
+          onClick={run(() => app.updateEvents(ids, { done: !allDone }))}
         >
-          {ev.done ? t("ctx.markUndone") : t("ctx.markDone")}
+          {(allDone ? t("ctx.markUndone") : t("ctx.markDone")) + suffix}
         </Item>
       )}
       <Item
         icon={<CalendarDays size={14} />}
         disabled={locked}
         onClick={run(() =>
-          app.updateEvent(id, ev.isTask ? { isTask: false, done: false } : { isTask: true }),
+          app.updateEvents(ids, allTasks ? { isTask: false, done: false } : { isTask: true }),
         )}
       >
-        {ev.isTask ? t("ctx.makeEvent") : t("ctx.makeTask")}
+        {(allTasks ? t("ctx.makeEvent") : t("ctx.makeTask")) + suffix}
       </Item>
       <Item
         icon={<Copy size={14} />}
         disabled={locked}
         onClick={run(() => {
-          const copy = app.duplicateEvent(id);
-          if (copy) app.select(copy, true);
+          const copies = app.duplicateEvents(ids);
+          if (copies.length === 1 && copies[0]) app.select(copies[0], true);
         })}
       >
-        {t("ctx.duplicate")}
+        {t("ctx.duplicate") + suffix}
       </Item>
       <div
         className="ctx-sub-wrap"
@@ -215,7 +231,7 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
           disabled={locked}
           onClick={() => setSub((v) => !v)}
         >
-          <span className="grow">{t("ctx.moveTo")}</span>
+          <span className="grow">{t("ctx.moveTo") + suffix}</span>
           <ChevronRight size={14} />
         </Item>
         {sub && !locked && (
@@ -226,10 +242,8 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
                 <Item
                   key={c.id}
                   icon={<span className="swatch sm" style={{ "--c": c.color } as CSSProperties} />}
-                  onClick={run(
-                    () => c.id !== ev.calendarId && app.updateEvent(id, { calendarId: c.id }),
-                  )}
-                  hint={c.id === ev.calendarId ? "✓" : undefined}
+                  onClick={run(() => app.updateEvents(ids, { calendarId: c.id }))}
+                  hint={targets.every((e) => e.calendarId === c.id) ? "✓" : undefined}
                 >
                   {c.name}
                 </Item>
@@ -242,10 +256,10 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
         icon={<Trash2 size={14} />}
         danger
         disabled={locked}
-        onClick={run(() => app.deleteEvent(id))}
+        onClick={run(() => app.deleteEvents(ids))}
         hint="Supr"
       >
-        {t("ctx.delete")}
+        {t("ctx.delete") + suffix}
       </Item>
       {locked && <div className="ctx-note">{t("ctx.readOnly")}</div>}
     </>

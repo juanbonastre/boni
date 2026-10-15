@@ -3,6 +3,7 @@ import { ContextMenu, useContextMenuTrigger } from "./components/ContextMenu.tsx
 import { EventDetail } from "./components/EventDetail.tsx";
 import { HelpModal, Palette, SchemaEditor, SettingsModal } from "./components/Modals.tsx";
 import { MonthView } from "./components/MonthView.tsx";
+import { SelectionBar } from "./components/SelectionBar.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { TimeGrid } from "./components/TimeGrid.tsx";
 import { TopBar } from "./components/TopBar.tsx";
@@ -35,6 +36,23 @@ function isTyping(e: KeyboardEvent): boolean {
       el.tagName === "SELECT" ||
       el.isContentEditable)
   );
+}
+
+/** While Ctrl, Shift or Meta is held the popover lets clicks through, so events under it can be added to a selection. */
+function useModifierClass() {
+  useEffect(() => {
+    const sync = (e: KeyboardEvent) =>
+      document.body.classList.toggle("mod-select", e.ctrlKey || e.shiftKey || e.metaKey);
+    const clear = () => document.body.classList.remove("mod-select");
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", clear);
+    };
+  }, []);
 }
 
 /** Clicking anywhere outside the detail popover (and the events that open it) closes it. */
@@ -78,10 +96,15 @@ function useShortcuts() {
         s.redo();
         return;
       }
+      if (mod && e.key.toLowerCase() === "a" && !isTyping(e)) {
+        e.preventDefault();
+        s.selectAllVisible();
+        return;
+      }
       if (e.key === "Escape") {
         if (s.paletteOpen || s.settingsOpen || s.helpOpen || s.schemaCalendarId) return; // modals handle it
-        if (s.popoverId || s.selectedId) {
-          s.set({ popoverId: null, selectedId: null, newEventId: null });
+        if (s.popoverId || s.selectedId || s.selectedIds.length > 0) {
+          s.clearSelection();
           (document.activeElement as HTMLElement | null)?.blur?.();
         }
         return;
@@ -105,9 +128,9 @@ function useShortcuts() {
         s.set({ paletteOpen: true });
       } else if (k === "?") s.set({ helpOpen: true });
       else if (k === "[") s.toggleSidebar();
-      else if ((k === "Delete" || k === "Backspace") && s.selectedId) {
+      else if ((k === "Delete" || k === "Backspace") && s.selectedIds.length > 0) {
         e.preventDefault();
-        s.deleteEvent(s.selectedId);
+        s.deleteEvents(s.selectedIds);
       } else return;
     };
     window.addEventListener("keydown", onKey);
@@ -119,6 +142,7 @@ export function App() {
   useTheme();
   useShortcuts();
   useClickAway();
+  useModifierClass();
   useContextMenuTrigger();
   const view = useApp((s) => s.view);
   const sidebarOpen = useApp((s) => s.sidebarOpen);
@@ -143,13 +167,14 @@ export function App() {
       </main>
       <EventDetail />
       <ContextMenu />
+      <SelectionBar />
       {settingsOpen && <SettingsModal />}
       {schemaId && <SchemaEditor calendarId={schemaId} />}
       {paletteOpen && <Palette />}
       {helpOpen && <HelpModal />}
       {toast && (
         <div className="toast" role="status">
-          <span>{t(toast.text as never)}</span>
+          <span>{t(toast.text as never, toast.params)}</span>
           {toast.undo && (
             <button
               type="button"
