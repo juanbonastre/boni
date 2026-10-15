@@ -9,3 +9,6 @@ bench/results/
 *.log
 .DS_Store
 target/
+*.tmp.mjs
+*.tmp.py
+.preview.pid
