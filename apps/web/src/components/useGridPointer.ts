@@ -24,14 +24,26 @@ type Gesture =
   | {
       type: "move";
       id: string;
-      grab: number;
+      /** Wall-clock minutes (day * 1440 + minute) under the pointer when the drag began. */
+      pressTotal: number;
+      pressDay: CivilDay;
+      /** Same for the event's own start. */
+      origTotal: number;
+      origDay: CivilDay;
       durMs: number;
       tz: string;
       origStart: number;
       /** Other selected events that travel with it. */
       group: { id: string; when: When }[];
     }
-  | { type: "resize"; id: string; day: CivilDay; tz: string; startMs: number; segDay: CivilDay }
+  | {
+      type: "resize";
+      id: string;
+      edge: "start" | "end";
+      tz: string;
+      startMs: number;
+      endMs: number;
+    }
   | {
       type: "allday-move";
       id: string;
@@ -162,8 +174,12 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
       }
       app.setDrag({ kind: "create", id: NEW_ID, when: timedWhen(g.day, s, e, tz) });
     } else if (g.type === "move") {
-      const startMin = clampMin(roundSnap(pos.minute - g.grab));
-      const start = fromLocal(pos.day, startMin, g.tz);
+      // Follow the pointer in wall-clock minutes, so events spanning midnight move as a whole.
+      const delta = pos.day * 1440 + pos.minute - g.pressTotal;
+      const dayStart = (g.origDay + (pos.day - g.pressDay)) * 1440;
+      const total = Math.min(dayStart + 1440, Math.max(dayStart, roundSnap(g.origTotal + delta)));
+      const startDay = Math.floor(total / 1440);
+      const start = fromLocal(startDay, total - startDay * 1440, g.tz);
       let group: Record<string, When> | undefined;
       if (g.group.length > 0) {
         const delta = start - g.origStart;
@@ -187,16 +203,27 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
         group,
       });
     } else if (g.type === "resize") {
+      // The edge follows the pointer in both axes, so an event can be stretched past midnight
+      // by dragging into the next (or previous) day's column.
       const snap = snapOf();
-      const startLocal = toLocal(g.startMs, g.tz);
-      const sameDay = g.segDay === startLocal.day;
-      const lowest = sameDay ? startLocal.minute + snap : snap;
-      const endMin = Math.max(lowest, clampMin(roundSnap(pos.minute)));
-      const end = fromLocal(g.segDay, endMin, g.tz);
+      const a = toLocal(g.startMs, g.tz);
+      const b = toLocal(g.endMs, g.tz);
+      const pointer = pos.day * 1440 + clampMin(roundSnap(pos.minute));
+      let startMs = g.startMs;
+      let endMs = g.endMs;
+      if (g.edge === "end") {
+        const t = Math.max(pointer, a.day * 1440 + a.minute + snap);
+        const d = Math.floor(t / 1440);
+        endMs = fromLocal(d, t - d * 1440, g.tz);
+      } else {
+        const t = Math.min(pointer, b.day * 1440 + b.minute - snap);
+        const d = Math.floor(t / 1440);
+        startMs = fromLocal(d, t - d * 1440, g.tz);
+      }
       app.setDrag({
         kind: "resize",
         id: g.id,
-        when: { kind: "timed", start: g.startMs, end, tz: g.tz },
+        when: { kind: "timed", start: startMs, end: endMs, tz: g.tz },
       });
     }
   };
@@ -234,15 +261,13 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     if (resize) {
       const ev = app.getEvent(resize.dataset.resize ?? "");
       if (ev && ev.when.kind === "timed" && !app.isLocked(ev.id)) {
-        const segs = daySegments(ev);
-        const last_ = segs[segs.length - 1];
         gesture.current = {
           type: "resize",
           id: ev.id,
-          day: last_?.day ?? 0,
+          edge: resize.dataset.edge === "start" ? "start" : "end",
           tz: ev.when.tz,
           startMs: ev.when.start,
-          segDay: last_?.day ?? 0,
+          endMs: ev.when.end,
         };
         e.currentTarget.setPointerCapture(e.pointerId);
         app.select(ev.id, false);
@@ -327,12 +352,14 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
         };
       } else {
         const pos = toGrid(g.x, g.y);
-        const segs = daySegments(ev);
-        const seg = segs.find((s) => s.day === pos?.day) ?? segs[0];
+        const origStart = toLocal(ev.when.start, ev.when.tz);
         gesture.current = {
           type: "move",
           id: ev.id,
-          grab: pos && seg ? pos.minute - seg.start : 0,
+          pressTotal: pos ? pos.day * 1440 + pos.minute : 0,
+          pressDay: pos?.day ?? origStart.day,
+          origTotal: origStart.day * 1440 + origStart.minute,
+          origDay: origStart.day,
           durMs: ev.when.end - ev.when.start,
           tz: ev.when.tz,
           origStart: ev.when.start,
