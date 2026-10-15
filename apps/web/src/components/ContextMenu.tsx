@@ -175,6 +175,7 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
   const locked = targets.some(
     (e) => calendars.find((c) => c.id === e.calendarId)?.readOnly === true,
   );
+  const canTask = targets.every((e) => useApp.getState().supportsTasks(e.calendarId));
   const allTasks = targets.every((e) => e.isTask);
   const allDone = targets.every((e) => e.done);
   const suffix = multi ? ` (${ids.length})` : "";
@@ -193,7 +194,7 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
           <div className="menu-sep" />
         </>
       )}
-      {allTasks && (
+      {canTask && allTasks && (
         <Item
           icon={allDone ? <Square size={14} /> : <CheckSquare size={14} />}
           disabled={locked}
@@ -202,15 +203,17 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
           {(allDone ? t("ctx.markUndone") : t("ctx.markDone")) + suffix}
         </Item>
       )}
-      <Item
-        icon={<CalendarDays size={14} />}
-        disabled={locked}
-        onClick={run(() =>
-          app.editEvents(ids, allTasks ? { isTask: false, done: false } : { isTask: true }),
-        )}
-      >
-        {(allTasks ? t("ctx.makeEvent") : t("ctx.makeTask")) + suffix}
-      </Item>
+      {canTask && (
+        <Item
+          icon={<CalendarDays size={14} />}
+          disabled={locked}
+          onClick={run(() =>
+            app.editEvents(ids, allTasks ? { isTask: false, done: false } : { isTask: true }),
+          )}
+        >
+          {(allTasks ? t("ctx.makeEvent") : t("ctx.makeTask")) + suffix}
+        </Item>
+      )}
       <Item
         icon={<Copy size={14} />}
         disabled={locked}

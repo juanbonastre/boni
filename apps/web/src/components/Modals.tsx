@@ -1,20 +1,26 @@
 import {
+  assignRole,
+  candidateColumns,
+  columnOfRole,
   formatMinute,
   fromLocal,
+  isRequired,
   occurrenceDays,
   occurrenceId,
   PALETTE,
   type PropertyDef,
   type PropertyType,
   parseQuickEvent,
+  rolesOf,
   type SelectOption,
+  setDoneValues,
   toLocal,
 } from "@boni-calendar/core";
 import { Plus, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type Key, t } from "../i18n.ts";
 import { useApp } from "../store.ts";
-import { DraftInput } from "./fields.tsx";
+import { ChoicePicker, DraftInput } from "./fields.tsx";
 
 function Modal({
   title,
@@ -286,6 +292,8 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
           ))}
         </div>
       </Field>
+      <ViewMapping calendarId={cal.id} />
+      <h3 className="schema-head">{t("schema.props")}</h3>
       <div className="schema-list">
         {schema.map((d) => (
           <div key={d.id} className="schema-row">
@@ -345,6 +353,65 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
         <Plus size={14} /> {t("schema.add")}
       </button>
     </Modal>
+  );
+}
+
+/** Which column of each row plays which role in the calendar (date, times, tasks). */
+function ViewMapping({ calendarId }: { calendarId: string }) {
+  const view = useApp((s) => s.views.find((v) => v.id === calendarId));
+  const coll = useApp((s) => s.collections.find((c) => c.id === view?.collectionId));
+  const setMapping = useApp((s) => s.setMapping);
+  if (!view || !coll) return null;
+  const m = view.mapping;
+  const taskCol = coll.columns.find((c) => c.id === m.task?.column);
+  return (
+    <>
+      <h3 className="schema-head">{t("schema.view")}</h3>
+      <p className="muted">{t("schema.viewHint")}</p>
+      {rolesOf(m).map((role) => (
+        <Field key={role} label={t(`schema.map.${role}` as Key)}>
+          <select
+            className="select"
+            aria-label={t(`schema.map.${role}` as Key)}
+            value={columnOfRole(m, role) ?? ""}
+            onChange={(e) =>
+              setMapping(view.id, assignRole(m, coll, role, e.target.value || undefined))
+            }
+          >
+            {!isRequired(role) && (
+              <option value="">
+                {role === "task" ? t("schema.map.noTasks") : t("schema.map.none")}
+              </option>
+            )}
+            {candidateColumns(coll, m, role).map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      ))}
+      {taskCol?.type === "select" && m.task && (
+        <Field label={t("schema.map.doneWhen")}>
+          <ChoicePicker
+            multi
+            choices={(taskCol.options ?? []).map((o) => ({
+              id: o.id,
+              label: o.label,
+              color: o.color,
+            }))}
+            selected={m.task.doneValues ?? []}
+            placeholder="—"
+            onChange={(ids) => {
+              // At least one done state and one open state must remain.
+              if (ids.length > 0 && ids.length < (taskCol.options?.length ?? 0)) {
+                setMapping(view.id, setDoneValues(m, ids));
+              }
+            }}
+          />
+        </Field>
+      )}
+    </>
   );
 }
 
