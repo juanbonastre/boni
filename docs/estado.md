@@ -41,5 +41,11 @@ Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincron
 - Repeticiones mensuales "el segundo martes" y zonas horarias distintas por evento recurrente.
 - Revisar con Juan colores, densidad y atajos.
 
-## Fase 2 (no empezada)
-Almacen de datos, migracion de `agenda/`, otros calendarios, MCP y avisos (ver la nota del proyecto en el vault).
+## Fase 2 (en marcha)
+Plan aprobado: la verdad son notas del vault con propiedades; colecciones con esquema, vistas con mapeo de columnas y
+repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un servidor son anfitriones.
+- **Paso 1, nucleo de colecciones** (en curso). PR 1 hecho: `Collection`, `Row`, `CalendarView` con mapeo (fecha y hora
+  separadas o inicio/fin ISO, tarea por casilla o estado, repeticion como texto RRULE), proyeccion fila a evento y
+  vuelta, `reconcileRows`, `CollectionProvider`, validacion y la muestra como colecciones. La app aun usa los eventos
+  directamente: el PR 2 la pasa a filas y el PR 3 anade la interfaz de columnas y mapeo.
+- Pasos 2 a 5: la app lee y escribe el vault, plugin de Obsidian, servidor en el NAS, SQLite solo si hay un caso real.

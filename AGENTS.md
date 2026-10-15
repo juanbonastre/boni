@@ -9,7 +9,9 @@ calendars come in phase 2. Project notes live in Juan's vault (`proyectos/boni-c
 ```
 packages/core/   Pure TypeScript, no DOM: civil-day/timezone math (time.ts), data model (model.ts), overlap and
                  lane layout (layout.ts), per-day segments (queries.ts), quick-create text parser (quick.ts),
-                 deterministic sample data (sample.ts). Vitest.
+                 deterministic sample data (sample.ts). Collections (phase 2): typed tables, calendar views with
+                 column mappings and row providers (collections.ts, projection.ts, codec.ts, provider.ts,
+                 validate.ts, sampleCollections.ts). Vitest.
 apps/web/        React 19 + Vite UI. Runs in any browser and inside the desktop shell.
   src/engine/    Viewport (smooth scroll / zoom / horizontal motion) and the per-day event index.
   src/components/ TimeGrid (day, week, N days), MonthView, Sidebar, EventDetail, Modals, ...
