@@ -28,7 +28,11 @@ export function useEffectiveEvents(): CalEvent[] {
       };
       return [...events, ghost];
     }
-    return events.map((e) => (e.id === drag.id ? { ...e, when: drag.when } : e));
+    return events.map((e) => {
+      if (e.id === drag.id) return { ...e, when: drag.when };
+      const w = drag.group?.[e.id];
+      return w ? { ...e, when: w } : e;
+    });
   }, [events, drag, calendars]);
 }
 

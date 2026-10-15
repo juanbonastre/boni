@@ -1,4 +1,11 @@
-import { type CivilDay, daySegments, fromLocal, MS_MIN, toLocal } from "@boni-calendar/core";
+import {
+  type CivilDay,
+  daySegments,
+  fromLocal,
+  MS_MIN,
+  toLocal,
+  type When,
+} from "@boni-calendar/core";
 import { type RefObject, type PointerEvent as RPE, useEffect, useRef } from "react";
 import type { DayIndex } from "../engine/dayIndex.ts";
 import { useApp } from "../store.ts";
@@ -11,7 +18,16 @@ type Gesture =
   | { type: "press"; id: string; x: number; y: number; pointerId: number }
   | { type: "create-press"; x: number; y: number; day: CivilDay; anchor: number; pointerId: number }
   | { type: "create"; day: CivilDay; anchor: number }
-  | { type: "move"; id: string; grab: number; durMs: number; tz: string }
+  | {
+      type: "move";
+      id: string;
+      grab: number;
+      durMs: number;
+      tz: string;
+      origStart: number;
+      /** Other selected events that travel with it. */
+      group: { id: string; when: When }[];
+    }
   | { type: "resize"; id: string; day: CivilDay; tz: string; startMs: number; segDay: CivilDay };
 
 interface Args {
@@ -112,10 +128,27 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     } else if (g.type === "move") {
       const startMin = clampMin(roundSnap(pos.minute - g.grab));
       const start = fromLocal(pos.day, startMin, g.tz);
+      let group: Record<string, When> | undefined;
+      if (g.group.length > 0) {
+        const delta = start - g.origStart;
+        const dayDelta = toLocal(start, g.tz).day - toLocal(g.origStart, g.tz).day;
+        group = {};
+        for (const o of g.group) {
+          group[o.id] =
+            o.when.kind === "timed"
+              ? { ...o.when, start: o.when.start + delta, end: o.when.end + delta }
+              : {
+                  kind: "allday",
+                  startDay: o.when.startDay + dayDelta,
+                  endDay: o.when.endDay + dayDelta,
+                };
+        }
+      }
       app.setDrag({
         kind: "move",
         id: g.id,
         when: { kind: "timed", start, end: start + g.durMs, tz: g.tz },
+        group,
       });
     } else if (g.type === "resize") {
       const snap = snapOf();
@@ -207,14 +240,24 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
       const segs = daySegments(ev);
       const seg = segs.find((s) => s.day === pos?.day) ?? segs[0];
       const grab = pos && seg ? pos.minute - seg.start : 0;
+      // Dragging one of several selected events moves the whole selection; otherwise just this one.
+      const inSelection = app.selectedIds.includes(ev.id) && app.selectedIds.length > 1;
+      const group = inSelection
+        ? app.data.events
+            .filter((x) => x.id !== ev.id && app.selectedIds.includes(x.id))
+            .map((x) => ({ id: x.id, when: x.when }))
+        : [];
       gesture.current = {
         type: "move",
         id: ev.id,
         grab,
         durMs: ev.when.end - ev.when.start,
         tz: ev.when.tz,
+        origStart: ev.when.start,
+        group,
       };
-      app.select(ev.id, false);
+      if (!inSelection) app.select(ev.id, false);
+      else app.set({ popoverId: null });
       startEdge();
     } else if (g.type === "create-press") {
       if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < THRESHOLD) return;
@@ -239,9 +282,10 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     }
     const app = useApp.getState();
     if (g.type === "press") {
-      app.select(g.id, true);
+      app.clickSelect(g.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
     } else if (g.type === "create-press") {
-      app.select(null);
+      // A click on empty space clears the selection, unless the user is building one with Ctrl/Shift.
+      if (!(e.ctrlKey || e.metaKey || e.shiftKey)) app.clearSelection();
     } else if (g.type === "create") {
       const d = app.drag;
       app.setDrag(null);
@@ -251,7 +295,7 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
       }
     } else if (g.type === "move" || g.type === "resize") {
       app.commitDrag();
-      app.select(g.id, false);
+      if (g.type === "resize" || g.group.length === 0) app.select(g.id, false);
     }
   };
 

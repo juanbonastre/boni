@@ -4,6 +4,7 @@ import {
   type CalendarData,
   type CalendarDef,
   type CivilDay,
+  eventsInDays,
   type FirstDay,
   generateSample,
   type Locale,
@@ -17,6 +18,7 @@ import {
 import { create } from "zustand";
 import { nowMs } from "./clock.ts";
 import { setLocale } from "./i18n.ts";
+import { clickSelection, orderedVisibleIds } from "./selection.ts";
 
 export type ViewKind = "day" | "week" | "days" | "month";
 export type Theme = "dark" | "light" | "system";
@@ -38,6 +40,8 @@ export interface DragState {
   kind: "move" | "resize" | "create";
   id: string;
   when: When;
+  /** Other selected events moving together with `id` (kind "move"). */
+  group?: Record<string, When>;
 }
 
 export type CtxTarget =
@@ -48,6 +52,7 @@ export type CtxTarget =
 export interface Toast {
   id: number;
   text: string;
+  params?: Record<string, string | number>;
   undo?: boolean;
 }
 
@@ -97,7 +102,10 @@ export interface AppState {
   view: ViewKind;
   nDays: number;
   sidebarOpen: boolean;
+  /** The single selected event, or null when none or several are selected. */
   selectedId: string | null;
+  selectedIds: string[];
+  anchorId: string | null;
   popoverId: string | null;
   detailMode: "popover" | "panel";
   drag: DragState | null;
@@ -123,18 +131,24 @@ export interface AppState {
   updateCalendar: (id: string, patch: Partial<CalendarDef>) => void;
   setSchema: (id: string, schema: PropertyDef[]) => void;
   select: (id: string | null, popover?: boolean) => void;
+  clickSelect: (id: string, mods: { ctrl: boolean; shift: boolean }) => void;
+  clearSelection: () => void;
+  selectAllVisible: () => void;
   setDetailMode: (m: "popover" | "panel") => void;
   addEvent: (e: Partial<CalEvent> & { when: When }) => string;
   updateEvent: (id: string, patch: Partial<CalEvent>) => void;
+  updateEvents: (ids: string[], patch: Partial<CalEvent>) => void;
   deleteEvent: (id: string) => void;
+  deleteEvents: (ids: string[]) => void;
   duplicateEvent: (id: string) => string | null;
+  duplicateEvents: (ids: string[]) => string[];
   showOnlyCalendar: (id: string) => void;
   showAllCalendars: () => void;
   setDrag: (d: DragState | null) => void;
   commitDrag: () => void;
   undo: () => void;
   redo: () => void;
-  showToast: (text: string, undo?: boolean) => void;
+  showToast: (text: string, undo?: boolean, params?: Record<string, string | number>) => void;
   clearToast: () => void;
   resetData: () => void;
   set: (patch: Partial<AppState>) => void;
@@ -189,6 +203,8 @@ export const useApp = create<AppState>((set, get) => {
     nDays: ui.nDays ?? 7,
     sidebarOpen: ui.sidebarOpen ?? true,
     selectedId: null,
+    selectedIds: [],
+    anchorId: null,
     popoverId: null,
     detailMode: "popover",
     drag: null,
@@ -290,7 +306,55 @@ export const useApp = create<AppState>((set, get) => {
         },
       })),
 
-    select: (id, popover = true) => set({ selectedId: id, popoverId: popover ? id : null }),
+    select: (id, popover = true) =>
+      set({
+        selectedId: id,
+        selectedIds: id ? [id] : [],
+        anchorId: id,
+        popoverId: popover ? id : null,
+      }),
+
+    clearSelection: () =>
+      set({ selectedId: null, selectedIds: [], anchorId: null, popoverId: null, newEventId: null }),
+
+    clickSelect: (id, mods) => {
+      const s = get();
+      const visible = new Set(s.data.calendars.filter((c) => c.visible).map((c) => c.id));
+      const calOf = new Map(s.data.events.map((e) => [e.id, e.calendarId]));
+      const r = clickSelection({
+        current: s.selectedIds,
+        anchor: s.anchorId,
+        clicked: id,
+        ordered: orderedVisibleIds(s.data.events, visible, s.settings.tz),
+        calendarOf: (x) => calOf.get(x),
+        ctrl: mods.ctrl,
+        shift: mods.shift,
+      });
+      set({
+        selectedIds: r.ids,
+        selectedId: r.ids.length === 1 ? (r.ids[0] ?? null) : null,
+        anchorId: r.anchor,
+        popoverId: r.popover ? id : null,
+      });
+    },
+
+    selectAllVisible: () => {
+      const s = get();
+      const vis = useVisible.getState().start;
+      const n = visibleDays(s.view, s.nDays);
+      const [from, to] =
+        s.view === "month"
+          ? [startOfMonth(vis), startOfMonth(addMonths(vis, 1)) - 1]
+          : [vis, vis + n - 1];
+      const visible = new Set(s.data.calendars.filter((c) => c.visible).map((c) => c.id));
+      const ids = eventsInDays(s.data.events, visible, from, to, s.settings.tz).map((e) => e.id);
+      set({
+        selectedIds: ids,
+        selectedId: ids.length === 1 ? (ids[0] ?? null) : null,
+        anchorId: ids[0] ?? null,
+        popoverId: null,
+      });
+    },
 
     setDetailMode: (m) => set({ detailMode: m }),
 
@@ -314,7 +378,7 @@ export const useApp = create<AppState>((set, get) => {
         updated: now,
       };
       commit([...s.data.events, ev]);
-      set({ selectedId: id, newEventId: id });
+      set({ selectedId: id, selectedIds: [id], anchorId: id, newEventId: id });
       return id;
     },
 
@@ -323,17 +387,51 @@ export const useApp = create<AppState>((set, get) => {
       commit(s.data.events.map((e) => (e.id === id ? { ...e, ...patch, updated: nowMs() } : e)));
     },
 
-    deleteEvent: (id) => {
+    updateEvents: (ids, patch) => {
       const s = get();
-      commit(s.data.events.filter((e) => e.id !== id));
-      set({ selectedId: null, popoverId: null });
-      get().showToast("event.deleted", true);
+      const set_ = new Set(ids);
+      const now = nowMs();
+      commit(s.data.events.map((e) => (set_.has(e.id) ? { ...e, ...patch, updated: now } : e)));
     },
 
-    duplicateEvent: (id) => {
-      const e = get().data.events.find((x) => x.id === id);
-      if (!e) return null;
-      return get().addEvent({ ...e, title: e.title ? `${e.title} (2)` : "" });
+    deleteEvent: (id) => get().deleteEvents([id]),
+
+    deleteEvents: (ids) => {
+      const s = get();
+      const gone = new Set(ids);
+      commit(s.data.events.filter((e) => !gone.has(e.id)));
+      get().clearSelection();
+      if (ids.length === 1) get().showToast("event.deleted", true);
+      else get().showToast("events.deleted", true, { n: ids.length });
+    },
+
+    duplicateEvent: (id) => get().duplicateEvents([id])[0] ?? null,
+
+    duplicateEvents: (ids) => {
+      const s = get();
+      const now = nowMs();
+      const copies: CalEvent[] = [];
+      for (const id of ids) {
+        const e = s.data.events.find((x) => x.id === id);
+        if (!e) continue;
+        copies.push({
+          ...e,
+          id: `ev-${now.toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          title: e.title ? `${e.title} (2)` : "",
+          created: now,
+          updated: now,
+        });
+      }
+      if (copies.length === 0) return [];
+      commit([...s.data.events, ...copies]);
+      const newIds = copies.map((c) => c.id);
+      set({
+        selectedIds: newIds,
+        selectedId: newIds.length === 1 ? (newIds[0] ?? null) : null,
+        anchorId: newIds[0] ?? null,
+        newEventId: newIds.length === 1 ? (newIds[0] ?? null) : null,
+      });
+      return newIds;
     },
 
     showOnlyCalendar: (id) => {
@@ -359,8 +457,16 @@ export const useApp = create<AppState>((set, get) => {
       const { drag, data } = get();
       if (!drag) return;
       set({ drag: null });
-      if (data.events.some((e) => e.id === drag.id))
-        get().updateEvent(drag.id, { when: drag.when });
+      const whens: Record<string, When> = { ...drag.group, [drag.id]: drag.when };
+      const now = nowMs();
+      if (data.events.some((e) => whens[e.id])) {
+        commit(
+          data.events.map((e) => {
+            const when = whens[e.id];
+            return when ? { ...e, when, updated: now } : e;
+          }),
+        );
+      }
     },
 
     undo: () => {
@@ -373,6 +479,8 @@ export const useApp = create<AppState>((set, get) => {
         future: [s.data.events, ...s.future],
         popoverId: null,
         selectedId: null,
+        selectedIds: [],
+        anchorId: null,
       });
     },
 
@@ -387,9 +495,9 @@ export const useApp = create<AppState>((set, get) => {
       });
     },
 
-    showToast: (text, undo) => {
+    showToast: (text, undo, params) => {
       const id = ++toastSeq;
-      set({ toast: { id, text, undo } });
+      set({ toast: { id, text, undo, params } });
       setTimeout(() => {
         if (get().toast?.id === id) set({ toast: null });
       }, 5000);
@@ -404,6 +512,8 @@ export const useApp = create<AppState>((set, get) => {
         past: [],
         future: [],
         selectedId: null,
+        selectedIds: [],
+        anchorId: null,
         popoverId: null,
       });
     },

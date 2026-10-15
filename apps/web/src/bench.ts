@@ -108,7 +108,7 @@ export async function runBench(only = ""): Promise<BenchResult> {
   const phases: PhaseResult[] = [];
   const grid = () => document.querySelector(".grid, .month") as Element;
 
-  app.set({ popoverId: null, selectedId: null });
+  app.clearSelection();
   app.setView("week");
   await sleep(800);
   const idle = await sample(1000, () => {}, 1000);

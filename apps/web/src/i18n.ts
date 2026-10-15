@@ -52,6 +52,11 @@ const es = {
   "event.new": "Nuevo evento",
   "event.deleted": "Evento eliminado",
   "event.undo": "Deshacer",
+  "events.deleted": "{n} eventos eliminados",
+  "sel.count": "{n} seleccionados",
+  "sel.clear": "Quitar selección",
+  "sel.delete": "Eliminar",
+  "sel.hint": "Ctrl: añadir · Mayús: rango",
   "prop.addOption": "Añadir opción",
   "prop.none": "Ninguno",
   "prop.type.text": "Texto",
@@ -148,6 +153,9 @@ const es = {
   "shortcuts.ctrlWheel": "Ctrl + rueda: zoom de las horas",
   "shortcuts.shiftWheel": "Mayús + rueda: moverse por los días",
   "shortcuts.drag": "Arrastrar en vacío: crear",
+  "shortcuts.multi":
+    "Ctrl+clic: añadir · Mayús+clic: rango · Ctrl+Mayús+clic: rango del mismo calendario",
+  "shortcuts.selectAll": "Seleccionar todo lo visible",
 } as const;
 
 export type Key = keyof typeof es;
@@ -204,6 +212,11 @@ const en: Record<Key, string> = {
   "event.new": "New event",
   "event.deleted": "Event deleted",
   "event.undo": "Undo",
+  "events.deleted": "{n} events deleted",
+  "sel.count": "{n} selected",
+  "sel.clear": "Clear selection",
+  "sel.delete": "Delete",
+  "sel.hint": "Ctrl: add · Shift: range",
   "prop.addOption": "Add option",
   "prop.none": "None",
   "prop.type.text": "Text",
@@ -300,6 +313,9 @@ const en: Record<Key, string> = {
   "shortcuts.ctrlWheel": "Ctrl + wheel: zoom the hours",
   "shortcuts.shiftWheel": "Shift + wheel: move across days",
   "shortcuts.drag": "Drag on empty space: create",
+  "shortcuts.multi":
+    "Ctrl+click: add · Shift+click: range · Ctrl+Shift+click: range in the same calendar",
+  "shortcuts.selectAll": "Select everything visible",
 };
 
 const dicts: Record<Locale, Record<Key, string>> = { es, en };
