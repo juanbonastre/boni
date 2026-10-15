@@ -60,28 +60,70 @@ const FILES: Record<string, string> = {
   ),
 };
 
-/** A desktop bridge backed by memory, installed before the app starts. */
+/**
+ * A desktop bridge backed by memory, installed before the app starts. `window.__vault` lets a test
+ * change a note "from outside" (like Obsidian would) and announce it as the watcher would; the saved
+ * index lives in localStorage so it survives a reload like the file in userData does.
+ */
 async function openWithVault(page: Page, files: Record<string, string> = FILES) {
   await page.addInitScript(
     ({ files, settings }) => {
-      localStorage.setItem("boni-calendar:settings", JSON.stringify(settings));
+      if (!localStorage.getItem("boni-calendar:settings")) {
+        localStorage.setItem("boni-calendar:settings", JSON.stringify(settings));
+      }
       const ok = (value: unknown) => ({ ok: true, value });
+      const versions: Record<string, number> = {};
+      const listeners: (() => void)[] = [];
+      const state = {
+        files: { ...files } as Record<string, string>,
+        reads: [] as string[],
+        watched: [] as string[][],
+        fire: () => {
+          for (const l of listeners) l();
+        },
+        set(path: string, text: string | null) {
+          if (text === null) delete state.files[path];
+          else state.files[path] = text;
+          versions[path] = (versions[path] ?? 1) + 1;
+        },
+      };
+      // biome-ignore lint/suspicious/noExplicitAny: test hooks
+      (window as any).__vault = state;
       // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge
       (window as any).boniVault = {
         getRoot: async () => ok("/vault/ejemplo"),
         chooseRoot: async () => ok("/vault/ejemplo"),
         scan: async (dir: string) =>
           ok(
-            Object.keys(files)
+            Object.keys(state.files)
               .filter((p) => p.startsWith(`${dir}/`))
-              .map((path) => ({ path, mtimeMs: 1, size: 1 })),
+              .map((path) => ({
+                path,
+                mtimeMs: versions[path] ?? 1,
+                size: state.files[path]?.length,
+              })),
           ),
-        read: async (path: string) =>
-          path in files
-            ? ok({ text: files[path], mtimeMs: 1 })
-            : { ok: false, code: "not-found", message: path },
+        read: async (path: string) => {
+          state.reads.push(path);
+          return path in state.files
+            ? ok({ text: state.files[path], mtimeMs: versions[path] ?? 1 })
+            : { ok: false, code: "not-found", message: path };
+        },
         write: async () => ({ ok: false, code: "no", message: "read only" }),
         create: async () => ({ ok: false, code: "no", message: "read only" }),
+        watch: async (dirs: string[]) => {
+          state.watched.push(dirs);
+          return ok(null);
+        },
+        onChanged: (cb: () => void) => {
+          listeners.push(cb);
+          return () => listeners.splice(listeners.indexOf(cb), 1);
+        },
+        cacheRead: async () => ok(localStorage.getItem("test-vault-cache")),
+        cacheWrite: async (text: string) => {
+          localStorage.setItem("test-vault-cache", text);
+          return ok(null);
+        },
       };
     },
     { files, settings: { dataSource: "vault" } },
@@ -168,4 +210,108 @@ test("without the desktop bridge the app keeps using the sample data", async ({ 
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
   await page.waitForSelector(".ev");
   await expect(page.locator(".ev", { hasText: "Clase FUP" }).first()).toBeVisible();
+});
+
+test("changes made outside the app show up after the watcher fires, and nothing else is rebuilt", async ({
+  page,
+}) => {
+  await openWithVault(page);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as never as { __vault: { watched: string[][] } }).__vault.watched.length,
+      ),
+    )
+    .toBe(1);
+  const watched = await page.evaluate(
+    () => (window as never as { __vault: { watched: string[][] } }).__vault.watched[0],
+  );
+  expect(watched).toEqual(["_system/colecciones", "agenda/docencia", "agenda/planes"]);
+
+  // select the lesson and remember the events by identity
+  await page.locator(".ev", { hasText: "Clase de ejemplo" }).click();
+  await page.evaluate(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: test hooks
+    const w = window as any;
+    w.__before = new Map(w.__app.getState().data.events.map((e: { id: string }) => [e.id, e]));
+    w.__readsBefore = w.__vault.reads.length;
+  });
+
+  await page.evaluate(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: test hooks
+    const v = (window as any).__vault;
+    v.set(
+      "agenda/planes/2025-09-19 Cena de ejemplo.md",
+      '---\ntitle: "Cena cambiada"\ndate: "2025-09-19"\nstartTime: "20:00"\nendTime: "22:00"\n---\n',
+    );
+    v.set(
+      "agenda/planes/2025-09-16 Nueva.md",
+      '---\ntitle: "Nota nueva"\ndate: "2025-09-16"\nstartTime: "09:00"\nendTime: "10:00"\n---\n',
+    );
+    v.set("agenda/docencia/2025-09-18 Entregar actas.md", null);
+    v.fire();
+  });
+  await expect(page.locator(".ev", { hasText: "Nota nueva" })).toHaveCount(1);
+  await expect(page.getByText("Entregar actas")).toHaveCount(0);
+
+  const r = await page.evaluate(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: test hooks
+    const w = window as any;
+    const s = w.__app.getState();
+    const lesson = s.data.events.find((e: { title: string }) => e.title === "Clase de ejemplo");
+    const dinner = s.data.events.find((e: { title: string }) => e.title === "Cena cambiada");
+    return {
+      lessonSame: lesson === w.__before.get(lesson.id),
+      dinnerFound: !!dinner,
+      selected: s.selectedIds,
+      reads: w.__vault.reads.slice(w.__readsBefore).filter((p: string) => p.startsWith("agenda")),
+    };
+  });
+  expect(r.lessonSame).toBe(true);
+  expect(r.dinnerFound).toBe(true);
+  expect(r.selected).toHaveLength(1);
+  // only the changed and the new note were read again; the deleted one needs no read
+  expect([...r.reads].sort()).toEqual([
+    "agenda/planes/2025-09-16 Nueva.md",
+    "agenda/planes/2025-09-19 Cena de ejemplo.md",
+  ]);
+  await expect(page.locator(".popover")).toBeVisible();
+});
+
+test("a second start reads no note at all: the saved index is enough", async ({ page }) => {
+  await openWithVault(page);
+  const cold = await page.evaluate(
+    () =>
+      (window as never as { __vault: { reads: string[] } }).__vault.reads.filter((p) =>
+        p.startsWith("agenda"),
+      ).length,
+  );
+  expect(cold).toBe(4);
+  await page.reload();
+  await page.waitForSelector(".ev");
+  const warm = await page.evaluate(
+    () =>
+      (window as never as { __vault: { reads: string[] } }).__vault.reads.filter((p) =>
+        p.startsWith("agenda"),
+      ).length,
+  );
+  expect(warm).toBe(0);
+  await expect(page.locator(".ev", { hasText: "Clase de ejemplo" })).toHaveCount(1);
+});
+
+test("hiding a calendar survives a refresh of the vault", async ({ page }) => {
+  await openWithVault(page);
+  await page.locator(".cal-row", { hasText: "Docencia" }).getByTitle("Ocultar").first().click();
+  await expect(page.locator(".ev", { hasText: "Clase de ejemplo" })).toHaveCount(0);
+  await page.evaluate(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: test hooks
+    const v = (window as any).__vault;
+    v.set(
+      "agenda/planes/2025-09-16 Nueva.md",
+      '---\ntitle: "Otra nota"\ndate: "2025-09-16"\nstartTime: "09:00"\nendTime: "10:00"\n---\n',
+    );
+    v.fire();
+  });
+  await expect(page.locator(".ev", { hasText: "Otra nota" })).toHaveCount(1);
+  await expect(page.locator(".ev", { hasText: "Clase de ejemplo" })).toHaveCount(0);
 });

@@ -11,6 +11,7 @@ import {
   unplaceableRows,
 } from "@boni-calendar/core";
 import type { VaultBridge } from "../vaultBridge.ts";
+import type { IndexEntry, VaultIndex } from "./index.ts";
 
 /** Where the collection definitions live in the vault: one note per collection. */
 export const DEFINITIONS_DIR = "_system/colecciones";
@@ -27,6 +28,12 @@ export interface VaultLoad {
   /** Definitions or folders that could not be read (the rest still loads). */
   problems: string[];
   notes: number;
+  /** Folders to watch for changes: every collection's folder and the definitions folder. */
+  folders: string[];
+  /** Every note seen, ready to be passed back in so unchanged notes are not read again. */
+  index: VaultIndex;
+  /** How many notes had to be read and parsed (the rest came from the index). */
+  read: number;
 }
 
 /** Runs `fn` over `items` with at most `limit` calls in flight. */
@@ -55,6 +62,7 @@ async function mapLimit<T, R>(
 export async function loadVault(
   bridge: VaultBridge,
   opts: { readOnly: boolean },
+  prev: VaultIndex = new Map(),
 ): Promise<VaultLoad> {
   const problems: string[] = [];
   const ignored: IgnoredNote[] = [];
@@ -94,6 +102,8 @@ export async function loadVault(
   });
 
   const rows: Row[] = [];
+  const index: VaultIndex = new Map();
+  let read = 0;
   for (const def of unique) {
     const scan = await bridge.scan(def.folder);
     if (!scan.ok) {
@@ -102,23 +112,48 @@ export async function loadVault(
     }
     // A folder's README.md is its index, not a row.
     const files = scan.value.filter((n) => !/(^|\/)readme\.md$/i.test(n.path));
-    const loaded = await mapLimit(files, 64, async (n) => ({
-      n,
-      r: await bridge.read(n.path),
-    }));
-    for (const { n, r } of loaded) {
-      if (!r.ok) {
-        ignored.push({ path: n.path, reason: r.message });
+    const loaded = await mapLimit(files, 64, async (n) => {
+      const hit = prev.get(n.path);
+      if (hit && hit.mtimeMs === n.mtimeMs && hit.size === n.size) return { n, hit };
+      return { n, r: await bridge.read(n.path) };
+    });
+    for (const { n, hit, r } of loaded) {
+      let entry: IndexEntry;
+      if (hit) entry = hit;
+      else if (r?.ok) {
+        read++;
+        entry = { mtimeMs: n.mtimeMs, size: n.size, note: parseNote(r.value.text) };
+      } else {
+        ignored.push({ path: n.path, reason: r?.ok === false ? r.message : "unreadable" });
         continue;
       }
-      const note = parseNote(r.value.text);
-      if (note.error) ignored.push({ path: n.path, reason: note.error });
-      else rows.push(noteToRow(def, n.path, note, r.value.mtimeMs));
+      if (entry.note.error) {
+        ignored.push({ path: n.path, reason: entry.note.error });
+        index.set(n.path, entry);
+        continue;
+      }
+      if (!entry.row || entry.collectionId !== def.id) {
+        entry = {
+          ...entry,
+          collectionId: def.id,
+          row: noteToRow(def, n.path, entry.note, entry.mtimeMs),
+        };
+      }
+      index.set(n.path, entry);
+      rows.push(entry.row as Row);
     }
   }
 
   const parts = defsToModel(unique, opts);
   const model = makeModel(parts.collections, parts.views);
   for (const u of unplaceableRows(model, rows)) ignored.push({ path: u.id, reason: u.reason });
-  return { snapshot: { ...parts, rows }, ignored, problems, notes: rows.length };
+  return {
+    snapshot: { ...parts, rows },
+    ignored,
+    problems,
+    notes: rows.length,
+    folders: [DEFINITIONS_DIR, ...unique.map((d) => d.folder)],
+    index,
+    read,
+  };
 }

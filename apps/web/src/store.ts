@@ -43,7 +43,14 @@ import { create } from "zustand";
 import { nowMs } from "./clock.ts";
 import { setLocale } from "./i18n.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
-import { type IgnoredNote, loadVault } from "./vault/loadVault.ts";
+import type { IgnoredNote, VaultLoad } from "./vault/loadVault.ts";
+import {
+  readVault,
+  resetVaultIndex,
+  serialized,
+  stopWatchingVault,
+  watchVault,
+} from "./vault/sync.ts";
 import { vaultBridge } from "./vaultBridge.ts";
 
 export type ViewKind = "day" | "week" | "days" | "month";
@@ -383,6 +390,75 @@ export const useApp = create<AppState>((set, get) => {
       ...next,
       projector: d.projector,
       data: keep ? { ...s.data, calendars: d.data.calendars, accounts: next.accounts } : d.data,
+    });
+  };
+
+  /**
+   * Shows what a read of the vault found. When nothing that matters changed this only refreshes the
+   * counts; otherwise unchanged notes keep their row (and event) objects, a calendar keeps being
+   * visible or hidden as the user left it, and a selection survives if its event still exists.
+   */
+  const applyVault = (r: VaultLoad, root: string | null) => {
+    const s = get();
+    const hidden = new Set(load<UiPersist>(UI_KEY).hiddenCalendars ?? []);
+    const wasVisible = new Map(s.views.map((v) => [v.id, v.visible]));
+    // Definitions are read again on every refresh: keep the previous objects when nothing changed in
+    // them, so everything that compares them by identity (the projector, the calendar list) stays put.
+    const prevView = new Map(s.views.map((v) => [v.id, v]));
+    const prevColl = new Map(s.collections.map((c) => [c.id, c]));
+    const same = <T>(a: T | undefined, b: T): T =>
+      a && JSON.stringify(a) === JSON.stringify(b) ? a : b;
+    const collections = r.snapshot.collections.map((c) => same(prevColl.get(c.id), c));
+    const views = r.snapshot.views.map((v) => {
+      const old = prevView.get(v.id);
+      return {
+        ...v,
+        mapping: same(old?.mapping, v.mapping),
+        visible: wasVisible.get(v.id) ?? !hidden.has(v.id),
+      };
+    });
+    const vault: VaultState = {
+      status: "ready",
+      root,
+      notes: r.notes,
+      ignored: r.ignored,
+      problems: r.problems,
+    };
+    const sameRows =
+      s.source === "vault" &&
+      s.rows.length === r.snapshot.rows.length &&
+      s.rows.every((row, i) => row === r.snapshot.rows[i]);
+    const sameDefs =
+      JSON.stringify(s.collections) === JSON.stringify(collections) &&
+      JSON.stringify(s.views) === JSON.stringify(views) &&
+      JSON.stringify(s.accounts) === JSON.stringify(r.snapshot.accounts);
+    if (sameRows && sameDefs) {
+      if (JSON.stringify(s.vault) !== JSON.stringify(vault)) set({ vault });
+      return;
+    }
+    const sameCollections =
+      collections.every((c, i) => c === s.collections[i]) &&
+      collections.length === s.collections.length;
+    const snap: CollectionSnapshot = {
+      ...r.snapshot,
+      collections: sameCollections ? s.collections : collections,
+      views,
+    };
+    const keep = sameCollections && sameProjection(s.views, views) ? s.projector : undefined;
+    const d = derive(snap, s.settings.tz, keep);
+    const ids = new Set(d.data.events.map((e) => e.id));
+    const selectedIds = s.selectedIds.filter((id) => ids.has(id));
+    set({
+      ...snap,
+      ...d,
+      source: "vault",
+      provider: s.source === "vault" ? s.provider : memoryProvider(snap),
+      ...(s.source === "vault" ? {} : { past: [], future: [] }),
+      selectedIds,
+      selectedId: selectedIds.length === 1 ? (selectedIds[0] ?? null) : null,
+      anchorId: s.anchorId && ids.has(s.anchorId) ? s.anchorId : null,
+      popoverId: s.popoverId && ids.has(s.popoverId) ? s.popoverId : null,
+      vault,
     });
   };
 
@@ -809,45 +885,26 @@ export const useApp = create<AppState>((set, get) => {
     loadVault: async () => {
       const bridge = vaultBridge();
       if (!bridge) return;
-      set((s) => ({ vault: { ...s.vault, status: "loading", message: undefined } }));
-      try {
-        const root = await bridge.getRoot();
-        if (root.ok && !root.value) {
-          set((st) => ({ vault: { ...st.vault, status: "error", message: "no-root" } }));
-          return;
+      await serialized(async () => {
+        if (get().collections.length === 0) {
+          set((s) => ({ vault: { ...s.vault, status: "loading", message: undefined } }));
         }
-        // Writing is not switched on yet: the vault is shown read-only.
-        const r = await loadVault(bridge, { readOnly: true });
-        const hiddenIds = new Set(load<UiPersist>(UI_KEY).hiddenCalendars ?? []);
-        const snap: CollectionSnapshot = {
-          ...r.snapshot,
-          views: r.snapshot.views.map((v) => (hiddenIds.has(v.id) ? { ...v, visible: false } : v)),
-        };
-        const tz = get().settings.tz;
-        set({
-          ...snap,
-          ...derive(snap, tz),
-          source: "vault",
-          provider: memoryProvider(snap),
-          past: [],
-          future: [],
-          selectedId: null,
-          selectedIds: [],
-          anchorId: null,
-          popoverId: null,
-          vault: {
-            status: "ready",
-            root: root.ok ? root.value : null,
-            notes: r.notes,
-            ignored: r.ignored,
-            problems: r.problems,
-          },
-        });
-      } catch (e) {
-        set((s) => ({
-          vault: { ...s.vault, status: "error", message: String((e as Error).message ?? e) },
-        }));
-      }
+        try {
+          const root = await bridge.getRoot();
+          if (root.ok && !root.value) {
+            set((st) => ({ vault: { ...st.vault, status: "error", message: "no-root" } }));
+            return;
+          }
+          // Writing is not switched on yet: the vault is shown read-only.
+          const r = await readVault(bridge, { readOnly: true });
+          applyVault(r, root.ok ? root.value : null);
+          watchVault(bridge, r.folders, () => void get().loadVault());
+        } catch (e) {
+          set((s) => ({
+            vault: { ...s.vault, status: "error", message: String((e as Error).message ?? e) },
+          }));
+        }
+      });
     },
 
     chooseVaultRoot: async () => {
@@ -858,7 +915,10 @@ export const useApp = create<AppState>((set, get) => {
         set((s) => ({ vault: { ...s.vault, status: "error", message: r.message } }));
         return false;
       }
-      if (r.value) set((s) => ({ vault: { ...s.vault, root: r.value } }));
+      if (r.value) {
+        resetVaultIndex();
+        set((s) => ({ vault: { ...s.vault, root: r.value } }));
+      }
       return !!r.value;
     },
 
@@ -873,6 +933,7 @@ export const useApp = create<AppState>((set, get) => {
         return;
       }
       get().setSettings({ dataSource: "sample" });
+      stopWatchingVault(bridge);
       const s = get();
       const snap = makeSnapshot(s.settings, new Set());
       set({

@@ -158,3 +158,42 @@ test("a root that is not a folder is rejected", () => {
     (e) => e.code === "bad-root",
   );
 });
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("watch reports one change per burst, for notes only, and stops when closed", async () => {
+  const { root, vault } = makeVault();
+  let calls = 0;
+  const stop = vault.watch(["agenda"], () => calls++, 80);
+  await wait(100);
+  const file = path.join(root, "agenda", "planes", "2026-11-01 Plan.md");
+  fs.writeFileSync(file, "a");
+  fs.writeFileSync(file, "b");
+  fs.writeFileSync(path.join(root, "agenda", "planes", "nuevo.md"), "c");
+  await wait(400);
+  assert.equal(calls, 1);
+
+  fs.writeFileSync(path.join(root, "agenda", "planes", "notes.txt"), "not a note");
+  fs.writeFileSync(path.join(root, "agenda", "planes", ".hidden.tmp"), "temp");
+  await wait(300);
+  assert.equal(calls, 1);
+
+  fs.rmSync(file);
+  await wait(300);
+  assert.equal(calls, 2);
+
+  stop();
+  fs.writeFileSync(file, "after");
+  await wait(300);
+  assert.equal(calls, 2);
+});
+
+test("watch skips folders that do not exist and refuses reserved ones", () => {
+  const { vault } = makeVault();
+  const stop = vault.watch(["agenda/nope"], () => {}, 10);
+  stop();
+  assert.equal(
+    code(() => vault.watch(["private"], () => {}, 10)),
+    "denied",
+  );
+});

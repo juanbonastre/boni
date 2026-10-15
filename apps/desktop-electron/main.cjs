@@ -5,6 +5,7 @@
 //   BONI_SCREENSHOT   file where a PNG of the window is written after load (the app then quits)
 const { app, BrowserWindow, dialog, ipcMain, Menu, screen } = require("electron");
 const fs = require("node:fs");
+const crypto = require("node:crypto");
 const path = require("node:path");
 const { openVault, VaultError } = require("./vault-fs.cjs");
 
@@ -74,8 +75,11 @@ function createWindow() {
 // ---- vault (the folder of Markdown notes the calendar reads and writes) ----
 const vaultFile = () => path.join(app.getPath("userData"), "vault.json");
 let vault = null;
+let stopWatching = null;
 
 function useVault(root) {
+  stopWatching?.();
+  stopWatching = null;
   vault = openVault(root);
   fs.writeFileSync(vaultFile(), JSON.stringify({ root: vault.root }));
   return vault.root;
@@ -91,11 +95,11 @@ function restoreVault() {
 
 /** Handlers answer `{ ok: true, value }` or `{ ok: false, code, message }`; errors never cross IPC as exceptions. */
 function handle(channel, fn) {
-  ipcMain.handle(channel, (_e, ...args) => {
+  ipcMain.handle(channel, (e, ...args) => {
     try {
       if (channel !== "vault:choose-root" && !vault)
         throw new VaultError("no-vault", "No vault chosen");
-      return { ok: true, value: fn(...args) };
+      return { ok: true, value: fn.apply({ sender: e.sender }, args) };
     } catch (e) {
       return { ok: false, code: e.code ?? "error", message: String(e.message ?? e) };
     }
@@ -106,6 +110,35 @@ handle("vault:get-root", () => vault?.root ?? null);
 handle("vault:scan", (dir) => vault.scan(dir));
 handle("vault:read", (rel) => vault.read(rel));
 handle("vault:write", (rel, text, expectedMtimeMs) => vault.write(rel, text, expectedMtimeMs));
+handle("vault:watch", function (dirs) {
+  stopWatching?.();
+  const sender = this.sender;
+  stopWatching = vault.watch(dirs, () => {
+    if (sender && !sender.isDestroyed()) sender.send("vault:changed");
+  });
+  return null;
+});
+// The cache holds parsed notes so the next start does not parse them again. It lives in userData
+// (never in the vault or the repo) and is keyed by the vault folder.
+const cacheFile = () =>
+  path.join(
+    app.getPath("userData"),
+    `vault-index-${crypto.createHash("sha1").update(vault.root).digest("hex").slice(0, 12)}.json`,
+  );
+handle("vault:cache-read", () => {
+  try {
+    return fs.readFileSync(cacheFile(), "utf8");
+  } catch {
+    return null;
+  }
+});
+handle("vault:cache-write", (text) => {
+  if (typeof text !== "string") throw new VaultError("bad-path", "Bad cache");
+  const tmp = `${cacheFile()}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, cacheFile());
+  return null;
+});
 handle("vault:create", (rel, text) => vault.create(rel, text));
 ipcMain.handle("vault:choose-root", async (e) => {
   try {

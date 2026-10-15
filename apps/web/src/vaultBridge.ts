@@ -19,6 +19,12 @@ export interface VaultBridge {
     text: string,
     expectedMtimeMs: number | null,
   ): Promise<VaultResult<{ conflict: boolean; mtimeMs: number }>>;
+  /** Starts watching these folders (replacing any earlier set); `onChanged` fires after a burst of changes. */
+  watch?(dirs: string[]): Promise<VaultResult<null>>;
+  onChanged?(callback: () => void): () => void;
+  /** The saved index of parsed notes (kept outside the vault), or null on a cold start. */
+  cacheRead?(): Promise<VaultResult<string | null>>;
+  cacheWrite?(text: string): Promise<VaultResult<null>>;
   /** `exists: true` means a note with that path is already there and nothing was written. */
   create(
     path: string,
