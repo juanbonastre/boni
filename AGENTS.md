@@ -39,6 +39,8 @@ docs/            decisions and status.
     elements directly (no React state, no CSS variables that cascade over the events).
   - Event and label positions are percentages of the column height, never `calc(var(--hh) ...)` per element.
   - Zoom is a compositor `scaleY` while animating and one real re-layout when it settles (`ZOOM_STRETCH_LIMIT`).
+    Text (`.ev-body`, hour labels, now label) is counter-scaled with `--inv` and sits on its own layers
+    (`will-change: transform`) so letters keep their size during the animation.
   - Only a few days around the viewport are rendered (`BLOCK` in `TimeGrid.tsx`).
   - Re-run `make bench-chrome` after touching the grid and compare with `bench/results/`.
 - **Tests:** pure logic in `packages/core` and `apps/web/src/engine` gets unit tests; user-visible behaviour gets a

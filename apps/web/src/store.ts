@@ -40,6 +40,11 @@ export interface DragState {
   when: When;
 }
 
+export type CtxTarget =
+  | { kind: "event"; id: string }
+  | { kind: "slot"; day: CivilDay; minute: number | null }
+  | { kind: "calendar"; id: string };
+
 export interface Toast {
   id: number;
   text: string;
@@ -105,6 +110,7 @@ export interface AppState {
   helpOpen: boolean;
   schemaCalendarId: string | null;
   newEventId: string | null;
+  ctxMenu: { x: number; y: number; target: CtxTarget } | null;
 
   today: () => CivilDay;
   setSettings: (patch: Partial<Settings>) => void;
@@ -121,7 +127,9 @@ export interface AppState {
   addEvent: (e: Partial<CalEvent> & { when: When }) => string;
   updateEvent: (id: string, patch: Partial<CalEvent>) => void;
   deleteEvent: (id: string) => void;
-  duplicateEvent: (id: string) => void;
+  duplicateEvent: (id: string) => string | null;
+  showOnlyCalendar: (id: string) => void;
+  showAllCalendars: () => void;
   setDrag: (d: DragState | null) => void;
   commitDrag: () => void;
   undo: () => void;
@@ -193,6 +201,7 @@ export const useApp = create<AppState>((set, get) => {
     helpOpen: false,
     schemaCalendarId: null,
     newEventId: null,
+    ctxMenu: null,
 
     today: () => todayIn(get().settings.tz, nowMs()),
 
@@ -323,8 +332,25 @@ export const useApp = create<AppState>((set, get) => {
 
     duplicateEvent: (id) => {
       const e = get().data.events.find((x) => x.id === id);
-      if (!e) return;
-      get().addEvent({ ...e, title: e.title ? `${e.title} (2)` : "" });
+      if (!e) return null;
+      return get().addEvent({ ...e, title: e.title ? `${e.title} (2)` : "" });
+    },
+
+    showOnlyCalendar: (id) => {
+      set((s) => ({
+        data: {
+          ...s.data,
+          calendars: s.data.calendars.map((c) => ({ ...c, visible: c.id === id })),
+        },
+      }));
+      persistUi();
+    },
+
+    showAllCalendars: () => {
+      set((s) => ({
+        data: { ...s.data, calendars: s.data.calendars.map((c) => ({ ...c, visible: true })) },
+      }));
+      persistUi();
     },
 
     setDrag: (d) => set({ drag: d }),

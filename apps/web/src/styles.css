@@ -733,7 +733,7 @@ kbd {
 .hour-label {
   position: absolute;
   right: 10px;
-  transform: translateY(-50%);
+  transform: translateY(-50%) scaleY(var(--inv, 1));
   font-size: 10.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -742,7 +742,7 @@ kbd {
 .now-label {
   position: absolute;
   right: 10px;
-  transform: translateY(-50%);
+  transform: translateY(-50%) scaleY(var(--inv, 1));
   font-size: 10.5px;
   color: var(--now);
   font-weight: 650;
@@ -795,6 +795,7 @@ kbd {
   background: var(--now);
   z-index: 3;
   pointer-events: none;
+  transform: scaleY(var(--inv, 1));
 }
 .now-line::before {
   content: "";
@@ -845,6 +846,15 @@ kbd {
   font-size: 12px;
   line-height: 1.25;
   pointer-events: none;
+  /* While zooming the strip is stretched on the compositor; this cancels it so the text keeps its size. */
+  transform: scaleY(var(--inv, 1));
+  transform-origin: 0 0;
+}
+.ev-body,
+.hour-label,
+.now-label {
+  /* Own compositor layers: the counter-scale during a zoom then costs no repaint (measured, see docs/rendimiento.md). */
+  will-change: transform;
 }
 .ev-title {
   font-weight: 600;
@@ -1475,4 +1485,72 @@ textarea.field-input {
   height: 100%;
   opacity: 0;
   pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- context menu */
+.ctx {
+  position: fixed;
+  z-index: 95;
+  min-width: 232px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.ctx .menu-item {
+  height: 30px;
+}
+.ctx .menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ctx .menu-item:disabled:hover {
+  background: none;
+}
+.ctx-icon {
+  width: 18px;
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+  flex: none;
+}
+.ctx .danger .ctx-icon {
+  color: inherit;
+}
+.ctx .grow {
+  flex: 1;
+}
+.ctx-note {
+  padding: 6px 10px 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.ctx-sub-wrap {
+  position: relative;
+}
+.ctx-sub {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: -6px;
+  min-width: 200px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.ctx.flip .ctx-sub {
+  left: auto;
+  right: calc(100% + 4px);
+}
+.ctx-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 10px 6px;
+}
+.ctx-colors .swatch {
+  width: 18px;
+  height: 18px;
 }

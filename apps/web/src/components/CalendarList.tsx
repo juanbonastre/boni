@@ -33,7 +33,7 @@ export function CalendarList() {
             </button>
             {!closed &&
               cals.map((c) => (
-                <div key={c.id} className={`cal-row ${c.visible ? "" : "off"}`}>
+                <div key={c.id} data-cal={c.id} className={`cal-row ${c.visible ? "" : "off"}`}>
                   <button
                     type="button"
                     className="cal-main"

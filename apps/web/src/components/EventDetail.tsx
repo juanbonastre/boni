@@ -175,7 +175,8 @@ function DetailBody({ ev }: { ev: CalEvent }) {
               type="button"
               className="menu-item"
               onClick={() => {
-                app.duplicateEvent(ev.id);
+                const copy = app.duplicateEvent(ev.id);
+                if (copy) app.select(copy, true);
                 setMenu(false);
               }}
             >

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { ContextMenu, useContextMenuTrigger } from "./components/ContextMenu.tsx";
 import { EventDetail } from "./components/EventDetail.tsx";
 import { HelpModal, Palette, SchemaEditor, SettingsModal } from "./components/Modals.tsx";
 import { MonthView } from "./components/MonthView.tsx";
@@ -118,6 +119,7 @@ export function App() {
   useTheme();
   useShortcuts();
   useClickAway();
+  useContextMenuTrigger();
   const view = useApp((s) => s.view);
   const sidebarOpen = useApp((s) => s.sidebarOpen);
   const detailMode = useApp((s) => s.detailMode);
@@ -140,6 +142,7 @@ export function App() {
         <div className="stage">{view === "month" ? <MonthView /> : <TimeGrid />}</div>
       </main>
       <EventDetail />
+      <ContextMenu />
       {settingsOpen && <SettingsModal />}
       {schemaId && <SchemaEditor calendarId={schemaId} />}
       {paletteOpen && <Palette />}
