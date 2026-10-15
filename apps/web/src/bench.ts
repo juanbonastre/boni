@@ -120,6 +120,7 @@ export async function runBench(only = ""): Promise<BenchResult> {
     interval: number,
     tick: (i: number, el: Element) => void,
   ) => {
+    if (only && !name.includes(only)) return;
     const r = await sample(ms, (i) => tick(i, grid()), interval);
     phases.push(summarize(name, r.deltas, r.longTasks));
     await sleep(400);

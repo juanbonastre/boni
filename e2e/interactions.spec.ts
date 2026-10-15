@@ -160,3 +160,34 @@ test("eye icon hides a calendar and month view renders", async ({ page }) => {
   await page.keyboard.press("w");
   await page.waitForSelector(".grid");
 });
+
+test("text keeps its size while the hours are being zoomed", async ({ page }) => {
+  await open(page);
+  const { x, y } = await bodyCenter(page);
+  await page.mouse.move(x, y);
+  const measure = () =>
+    page.evaluate(() => {
+      const title = document.querySelector(".ev .ev-title")?.getBoundingClientRect();
+      const label = document.querySelector(".hour-label")?.getBoundingClientRect();
+      const card = document.querySelector(".ev")?.getBoundingClientRect();
+      return { title: title?.height ?? 0, label: label?.height ?? 0, card: card?.height ?? 0 };
+    });
+  const before = await measure();
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -200);
+  await page.keyboard.up("Control");
+  let maxCardChange = 0;
+  let maxTextChange = 0;
+  for (let i = 0; i < 8; i++) {
+    await page.waitForTimeout(25);
+    const m = await measure();
+    maxCardChange = Math.max(maxCardChange, Math.abs(m.card - before.card));
+    maxTextChange = Math.max(
+      maxTextChange,
+      Math.abs(m.title - before.title),
+      Math.abs(m.label - before.label),
+    );
+  }
+  expect(maxCardChange).toBeGreaterThan(5); // the cards were really stretching in that window
+  expect(maxTextChange).toBeLessThan(0.6); // ...while the text did not
+});

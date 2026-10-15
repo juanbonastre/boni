@@ -33,3 +33,6 @@ mientras WebKitGTK siga asi; si se revisa, el banco ya esta hecho (`bench/`).
 - Zoom: mientras dura la animacion la rejilla se escala en el compositor (`scaleY`) y se recalcula el diseno real una
   vez al terminar (o si el estiramiento pasa del 50 %). Recalcular el diseno en cada fotograma costaba 27-35 fotogramas
   perdidos por escenario; con el escalado, 2-4.
+- El texto no se estira durante el zoom: el cuerpo de cada evento y las etiquetas de hora se contraescalan (`--inv`) y
+  tienen capa propia (`will-change: transform`). Sin capa propia (o activandola solo durante el zoom) costaba 20-23
+  fotogramas perdidos por escenario y un pico de 233 ms al crear las capas; con capa permanente, 8-9 (igual que antes).

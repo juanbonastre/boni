@@ -92,19 +92,30 @@ export function TimeGrid() {
       lastHh.current = hh;
     }
     const x = -(viewX - renderStartRef.current) * vp.colW;
-    const scale = hh === lastHh.current ? "" : ` scaleY(${hh / lastHh.current})`;
+    const stretch = hh === lastHh.current ? 1 : hh / lastHh.current;
+    const scale = stretch === 1 ? "" : ` scaleY(${stretch})`;
+    const inv = stretch === 1 ? "1" : String(1 / stretch);
     const cs = colsStripRef.current;
-    if (cs) cs.style.transform = `translate3d(${x}px, ${-scrollY}px, 0)${scale}`;
+    if (cs) {
+      cs.style.transform = `translate3d(${x}px, ${-scrollY}px, 0)${scale}`;
+      cs.style.setProperty("--inv", inv);
+    }
     const hs = headStripRef.current;
     if (hs) hs.style.transform = `translate3d(${x}px, 0, 0)`;
     const as = alldayStripRef.current;
     if (as) as.style.transform = `translate3d(${x}px, 0, 0)`;
     const g = gutterInnerRef.current;
-    if (g) g.style.transform = `translate3d(0, ${-scrollY}px, 0)${scale}`;
+    if (g) {
+      g.style.transform = `translate3d(0, ${-scrollY}px, 0)${scale}`;
+      g.style.setProperty("--inv", inv);
+    }
     const ln2 = linesRef.current;
     if (ln2) ln2.style.transform = `translate3d(0, ${-scrollY}px, 0)${scale}`;
     const g2 = gutter2InnerRef.current;
-    if (g2) g2.style.transform = `translate3d(0, ${-scrollY}px, 0)${scale}`;
+    if (g2) {
+      g2.style.transform = `translate3d(0, ${-scrollY}px, 0)${scale}`;
+      g2.style.setProperty("--inv", inv);
+    }
 
     const nb = Math.floor(viewX / BLOCK) * BLOCK;
     if (nb !== blockRef.current) {
