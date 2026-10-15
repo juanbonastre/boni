@@ -6,6 +6,7 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
+    "test": "node --test",
     "prepare-web": "node scripts/copy-web.mjs",
     "dist": "node scripts/copy-web.mjs && electron-builder --linux deb AppImage --publish never"
   },
@@ -24,6 +25,7 @@
     "files": [
       "main.cjs",
       "preload.cjs",
+      "vault-fs.cjs",
       "icon.png",
       "web/**/*"
     ],

@@ -3,9 +3,10 @@
 //   BONI_START_QUERY  query string appended to the page URL, e.g. "bench=auto"
 //   BONI_BENCH_OUT    file where the benchmark result is written (the app then quits)
 //   BONI_SCREENSHOT   file where a PNG of the window is written after load (the app then quits)
-const { app, BrowserWindow, ipcMain, Menu, screen } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, screen } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const { openVault, VaultError } = require("./vault-fs.cjs");
 
 const PACKAGED_UI = path.join(__dirname, "web", "index.html");
 const DEV_UI = path.join(__dirname, "..", "web", "dist", "index.html");
@@ -70,6 +71,53 @@ function createWindow() {
   }
 }
 
+// ---- vault (the folder of Markdown notes the calendar reads and writes) ----
+const vaultFile = () => path.join(app.getPath("userData"), "vault.json");
+let vault = null;
+
+function useVault(root) {
+  vault = openVault(root);
+  fs.writeFileSync(vaultFile(), JSON.stringify({ root: vault.root }));
+  return vault.root;
+}
+
+function restoreVault() {
+  try {
+    vault = openVault(JSON.parse(fs.readFileSync(vaultFile(), "utf8")).root);
+  } catch {
+    vault = null; // nothing chosen yet, or the folder is gone
+  }
+}
+
+/** Handlers answer `{ ok: true, value }` or `{ ok: false, code, message }`; errors never cross IPC as exceptions. */
+function handle(channel, fn) {
+  ipcMain.handle(channel, (_e, ...args) => {
+    try {
+      if (channel !== "vault:choose-root" && !vault)
+        throw new VaultError("no-vault", "No vault chosen");
+      return { ok: true, value: fn(...args) };
+    } catch (e) {
+      return { ok: false, code: e.code ?? "error", message: String(e.message ?? e) };
+    }
+  });
+}
+
+handle("vault:get-root", () => vault?.root ?? null);
+handle("vault:scan", (dir) => vault.scan(dir));
+handle("vault:read", (rel) => vault.read(rel));
+handle("vault:write", (rel, text, expectedMtimeMs) => vault.write(rel, text, expectedMtimeMs));
+handle("vault:create", (rel, text) => vault.create(rel, text));
+ipcMain.handle("vault:choose-root", async (e) => {
+  try {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
+    if (r.canceled || !r.filePaths[0]) return { ok: true, value: null };
+    return { ok: true, value: useVault(r.filePaths[0]) };
+  } catch (err) {
+    return { ok: false, code: err.code ?? "error", message: String(err.message ?? err) };
+  }
+});
+
 ipcMain.on("save-bench", (_e, json) => {
   const out = process.env.BONI_BENCH_OUT;
   if (out) fs.writeFileSync(out, json);
@@ -92,6 +140,7 @@ if (
   });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
+    restoreVault();
     createWindow();
     app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
   });

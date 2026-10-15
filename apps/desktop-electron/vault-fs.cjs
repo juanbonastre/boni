@@ -1,0 +1,134 @@
+// File access to the user's vault (a folder of Markdown notes). Used by the main process only; the
+// UI reaches it through IPC. Everything is relative to the vault root and confined to it.
+const fs = require("node:fs");
+const path = require("node:path");
+
+/** Top-level folders the app never reads or writes (zones the vault reserves for the owner). */
+const DENIED_TOP = new Set(["private", "restricted"]);
+
+class VaultError extends Error {
+  constructor(code, message) {
+    super(message ?? code);
+    this.code = code;
+  }
+}
+
+function openVault(root) {
+  let real;
+  try {
+    real = fs.realpathSync(root);
+    if (!fs.statSync(real).isDirectory()) throw new Error("not a directory");
+  } catch {
+    throw new VaultError("bad-root", `Not a folder: ${root}`);
+  }
+
+  /** Absolute path of a relative note path, or a VaultError if it leaves the allowed area. */
+  function resolve(rel, { markdown = true } = {}) {
+    if (typeof rel !== "string" || rel === "" || path.isAbsolute(rel) || rel.includes("\0")) {
+      throw new VaultError("bad-path", `Bad path: ${rel}`);
+    }
+    const parts = rel.split(/[\\/]+/).filter(Boolean);
+    if (parts.some((p) => p === ".." || p.startsWith("."))) {
+      throw new VaultError("bad-path", `Not allowed: ${rel}`);
+    }
+    if (DENIED_TOP.has(parts[0])) throw new VaultError("denied", `Not allowed: ${rel}`);
+    if (markdown && !rel.toLowerCase().endsWith(".md")) {
+      throw new VaultError("bad-path", `Only Markdown notes: ${rel}`);
+    }
+    const abs = path.join(real, ...parts);
+    return abs;
+  }
+
+  /** Checks that the real location (after symlinks) is still inside the vault. */
+  function confined(abs) {
+    const target = fs.realpathSync(abs);
+    if (target !== real && !target.startsWith(real + path.sep)) {
+      throw new VaultError("bad-path", "Outside the vault");
+    }
+  }
+
+  const statOf = (abs) => {
+    try {
+      return fs.statSync(abs);
+    } catch {
+      return null;
+    }
+  };
+
+  return {
+    root: real,
+
+    /** Every `.md` under `dir` (a folder relative to the root): path, mtime and size. */
+    scan(dir) {
+      const base = resolve(dir, { markdown: false });
+      const st = statOf(base);
+      if (!st?.isDirectory()) throw new VaultError("not-found", `No such folder: ${dir}`);
+      confined(base);
+      const out = [];
+      const walk = (abs, rel) => {
+        for (const e of fs.readdirSync(abs, { withFileTypes: true })) {
+          if (e.name.startsWith(".")) continue;
+          const childAbs = path.join(abs, e.name);
+          const childRel = `${rel}/${e.name}`;
+          if (e.isDirectory()) walk(childAbs, childRel);
+          else if (e.isFile() && e.name.toLowerCase().endsWith(".md")) {
+            const s = fs.statSync(childAbs);
+            out.push({ path: childRel, mtimeMs: s.mtimeMs, size: s.size });
+          }
+        }
+      };
+      walk(base, dir.replace(/[\\/]+$/, ""));
+      return out;
+    },
+
+    read(rel) {
+      const abs = resolve(rel);
+      const st = statOf(abs);
+      if (!st?.isFile()) throw new VaultError("not-found", `No such note: ${rel}`);
+      confined(abs);
+      return { text: fs.readFileSync(abs, "utf8"), mtimeMs: st.mtimeMs };
+    },
+
+    /**
+     * Replaces a note. `expectedMtimeMs` is the modification time the caller read; when the file
+     * changed since (Obsidian, sync), nothing is written and `{ conflict: true }` comes back.
+     */
+    write(rel, text, expectedMtimeMs) {
+      const abs = resolve(rel);
+      const st = statOf(abs);
+      if (!st?.isFile()) throw new VaultError("not-found", `No such note: ${rel}`);
+      confined(abs);
+      if (expectedMtimeMs != null && Math.abs(st.mtimeMs - expectedMtimeMs) > 1) {
+        return { conflict: true, mtimeMs: st.mtimeMs };
+      }
+      const tmp = path.join(path.dirname(abs), `.${path.basename(abs)}.${process.pid}.tmp`);
+      try {
+        fs.writeFileSync(tmp, text, { mode: st.mode });
+        fs.renameSync(tmp, abs);
+      } catch (e) {
+        fs.rmSync(tmp, { force: true });
+        throw e;
+      }
+      return { conflict: false, mtimeMs: fs.statSync(abs).mtimeMs };
+    },
+
+    /** Creates a note that must not exist yet (parent folders are created). */
+    create(rel, text) {
+      const abs = resolve(rel);
+      // The nearest folder that already exists must be inside the vault before anything is created below it.
+      let anchor = path.dirname(abs);
+      while (!statOf(anchor)) anchor = path.dirname(anchor);
+      confined(anchor);
+      fs.mkdirSync(path.dirname(abs), { recursive: true });
+      try {
+        fs.writeFileSync(abs, text, { flag: "wx" });
+      } catch (e) {
+        if (e.code === "EEXIST") return { exists: true };
+        throw e;
+      }
+      return { exists: false, mtimeMs: fs.statSync(abs).mtimeMs };
+    },
+  };
+}
+
+module.exports = { openVault, VaultError };
