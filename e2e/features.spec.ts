@@ -8,8 +8,7 @@ async function open(page: Page, extra = "") {
   await page.waitForTimeout(400);
 }
 
-const headNumbers = (page: Page) =>
-  page.locator(".head-viewport .day-head .dh-num").allTextContents();
+page.locator(".head-viewport .day-head .dh-num").allTextContents();
 
 async function visibleDays(page: Page): Promise<string[]> {
   return page.evaluate(() => {

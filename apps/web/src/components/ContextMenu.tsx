@@ -338,7 +338,7 @@ function CalendarItems({ id, close }: { id: string; close: () => void }) {
       {!cal.readOnly && (
         <>
           <div className="menu-sep" />
-          <div className="ctx-colors" aria-label={t("ctx.color")}>
+          <div className="ctx-colors" role="group" aria-label={t("ctx.color")}>
             {Object.values(PALETTE).map((c) => (
               <button
                 type="button"
