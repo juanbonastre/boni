@@ -13,7 +13,11 @@ class VaultError extends Error {
   }
 }
 
-function openVault(root) {
+/**
+ * `trashItem(absPath)` moves a file to the system trash (Electron's `shell.trashItem`); without it
+ * deleted notes go to a `.trash` folder inside the vault, like Obsidian's own trash.
+ */
+function openVault(root, { trashItem } = {}) {
   let real;
   try {
     real = fs.realpathSync(root);
@@ -109,7 +113,8 @@ function openVault(root) {
         fs.rmSync(tmp, { force: true });
         throw e;
       }
-      return { conflict: false, mtimeMs: fs.statSync(abs).mtimeMs };
+      const after = fs.statSync(abs);
+      return { conflict: false, mtimeMs: after.mtimeMs, size: after.size };
     },
 
     /**
@@ -146,6 +151,45 @@ function openVault(root) {
       };
     },
 
+    /** Moves a note to another path (parent folders are created); never overwrites. */
+    rename(from, to) {
+      const src = resolve(from);
+      const dst = resolve(to);
+      if (!statOf(src)?.isFile()) throw new VaultError("not-found", `No such note: ${from}`);
+      confined(src);
+      if (statOf(dst)) return { exists: true };
+      let anchor = path.dirname(dst);
+      while (!statOf(anchor)) anchor = path.dirname(anchor);
+      confined(anchor);
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.renameSync(src, dst);
+      const moved = fs.statSync(dst);
+      return { exists: false, mtimeMs: moved.mtimeMs, size: moved.size };
+    },
+
+    /** Sends a note to the trash (never deletes it for good). */
+    async trash(rel) {
+      const abs = resolve(rel);
+      if (!statOf(abs)?.isFile()) throw new VaultError("not-found", `No such note: ${rel}`);
+      confined(abs);
+      if (trashItem) return void (await trashItem(abs));
+      const dir = path.join(real, ".trash");
+      fs.mkdirSync(dir, { recursive: true });
+      let target = path.join(dir, path.basename(abs));
+      for (let i = 2; statOf(target); i++) {
+        target = path.join(dir, path.basename(abs).replace(/(\.md)$/i, ` ${i}$1`));
+      }
+      fs.renameSync(abs, target);
+    },
+
+    /** The absolute path of a note that exists (for opening it in another app). */
+    locate(rel) {
+      const abs = resolve(rel);
+      if (!statOf(abs)?.isFile()) throw new VaultError("not-found", `No such note: ${rel}`);
+      confined(abs);
+      return abs;
+    },
+
     /** Creates a note that must not exist yet (parent folders are created). */
     create(rel, text) {
       const abs = resolve(rel);
@@ -160,7 +204,8 @@ function openVault(root) {
         if (e.code === "EEXIST") return { exists: true };
         throw e;
       }
-      return { exists: false, mtimeMs: fs.statSync(abs).mtimeMs };
+      const made = fs.statSync(abs);
+      return { exists: false, mtimeMs: made.mtimeMs, size: made.size };
     },
   };
 }

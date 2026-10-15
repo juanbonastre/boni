@@ -64,6 +64,12 @@ docs/            decisions and status.
   `userData/vault-index-*.json`, never in the vault or the repo): a note is read and parsed again only when its mtime or
   size changed, an unchanged note keeps the very same row object, and a watcher (`vault-fs.cjs`, plus window focus)
   triggers a cheap re-scan. Anything that compares definitions must keep object identity when they did not change. Never put real titles, paths or note contents in the repo (tests use invented notes).
+  **Writing** (opt-in, `settings.vaultWrite`): `vault/provider.ts` turns row changes into note changes: only differing
+  properties are patched (`patchNote`), a new row becomes a note once it has a title (name from `newNote.name`, counter on the
+  file name only), a row that changes collection moves its file (and its `Area:` line), a removed row goes to the system
+  trash (text kept in memory so Undo can restore it), existing notes are never renamed, and a note whose mtime changed since
+  it was read is never overwritten (`VaultWriteError` conflict -> toast and reload). Reads and writes share one lock
+  (`withLock` in `vault/sync.ts`). A new row keeps its temporary id for the session (`aliases` maps it to the path).
 - **Rows are the truth (phase 2):** the store keeps `collections`, `views` and `rows`; `data.events`, `data.calendars` and
   `data.projects` are *derived* (events are the projection of rows through each calendar's mapping, memoised per row
   object). Never write them: edit through the store actions, which turn event changes into row changes (`reconcileRows`)

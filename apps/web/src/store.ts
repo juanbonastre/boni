@@ -44,7 +44,10 @@ import { nowMs } from "./clock.ts";
 import { setLocale } from "./i18n.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
 import type { IgnoredNote, VaultLoad } from "./vault/loadVault.ts";
+import { makeVaultProvider, VaultWriteError } from "./vault/provider.ts";
 import {
+  aliases,
+  noteOf,
   readVault,
   resetVaultIndex,
   serialized,
@@ -69,6 +72,8 @@ export interface Settings {
   density: "compact" | "comfortable";
   /** Where the calendars come from: invented sample data, or the notes of the user's vault (desktop app). */
   dataSource: "sample" | "vault";
+  /** Lets the app change the vault's notes. Off until the user turns it on in Settings. */
+  vaultWrite: boolean;
 }
 
 export interface VaultState {
@@ -123,6 +128,7 @@ const DEFAULT_SETTINGS: Settings = {
   snap: 15,
   density: "comfortable",
   dataSource: "sample",
+  vaultWrite: false,
 };
 
 function load<T>(key: string): Partial<T> {
@@ -203,6 +209,11 @@ export interface AppState {
   setMapping: (id: string, mapping: CalendarMapping) => void;
   /** Whether events of this calendar can be tasks (it maps a task column). */
   supportsTasks: (calendarId: string) => boolean;
+  /** Whether events of this calendar can repeat (it maps a recurrence column). */
+  supportsRecurrence: (calendarId: string) => boolean;
+  /** The note of an event in the vault, or null (sample data, or not saved yet). */
+  noteOfEvent: (id: string) => string | null;
+  openNote: (id: string) => Promise<void>;
   select: (id: string | null, popover?: boolean) => void;
   clickSelect: (id: string, mods: { ctrl: boolean; shift: boolean }) => void;
   clearSelection: () => void;
@@ -326,6 +337,12 @@ export function expandedCache(
 }
 
 let toastSeq = 0;
+/** One writer for the whole session, so notes it sent to the trash can still be brought back by Undo. */
+let vaultProvider: CollectionProvider | null = null;
+function vaultWriter(bridge: Parameters<typeof makeVaultProvider>[0]): CollectionProvider {
+  vaultProvider = vaultProvider ?? makeVaultProvider(bridge);
+  return vaultProvider;
+}
 
 export const useApp = create<AppState>((set, get) => {
   const urlTz =
@@ -362,7 +379,15 @@ export const useApp = create<AppState>((set, get) => {
       data: { ...s.data, events: s.projector.project(rows) },
       ...(history ? { past: [...s.past.slice(-99), s.rows], future: [] } : {}),
     });
-    void s.provider.apply(diffRows(s.rows, rows)).catch((e) => console.error("save failed", e));
+    void s.provider.apply(diffRows(s.rows, rows)).catch(writeFailed);
+  };
+
+  /** A write to the vault did not happen: say so and show what the notes really say. */
+  const writeFailed = (e: unknown) => {
+    console.error("vault write failed", e);
+    const conflict = e instanceof VaultWriteError && e.kind === "conflict";
+    get().showToast(conflict ? "vault.conflict" : "vault.saveFailed");
+    void get().loadVault();
   };
 
   /** Applies an edited event list as row changes, with undo history. */
@@ -398,7 +423,11 @@ export const useApp = create<AppState>((set, get) => {
    * counts; otherwise unchanged notes keep their row (and event) objects, a calendar keeps being
    * visible or hidden as the user left it, and a selection survives if its event still exists.
    */
-  const applyVault = (r: VaultLoad, root: string | null) => {
+  const applyVault = (
+    r: VaultLoad,
+    root: string | null,
+    bridge: NonNullable<ReturnType<typeof vaultBridge>>,
+  ) => {
     const s = get();
     const hidden = new Set(load<UiPersist>(UI_KEY).hiddenCalendars ?? []);
     const wasVisible = new Map(s.views.map((v) => [v.id, v.visible]));
@@ -447,17 +476,20 @@ export const useApp = create<AppState>((set, get) => {
     const keep = sameCollections && sameProjection(s.views, views) ? s.projector : undefined;
     const d = derive(snap, s.settings.tz, keep);
     const ids = new Set(d.data.events.map((e) => e.id));
-    const selectedIds = s.selectedIds.filter((id) => ids.has(id));
+    // A new event is first known by a temporary id; once its note exists the row carries the path.
+    const now = (id: string) => (ids.has(id) ? id : (aliases.get(id) ?? id));
+    const selectedIds = s.selectedIds.map(now).filter((id) => ids.has(id));
     set({
       ...snap,
       ...d,
       source: "vault",
-      provider: s.source === "vault" ? s.provider : memoryProvider(snap),
+      provider: vaultWriter(bridge),
       ...(s.source === "vault" ? {} : { past: [], future: [] }),
       selectedIds,
       selectedId: selectedIds.length === 1 ? (selectedIds[0] ?? null) : null,
-      anchorId: s.anchorId && ids.has(s.anchorId) ? s.anchorId : null,
-      popoverId: s.popoverId && ids.has(s.popoverId) ? s.popoverId : null,
+      anchorId: s.anchorId && ids.has(now(s.anchorId)) ? now(s.anchorId) : null,
+      popoverId: s.popoverId && ids.has(now(s.popoverId)) ? now(s.popoverId) : null,
+      newEventId: s.newEventId ? now(s.newEventId) : null,
       vault,
     });
   };
@@ -512,6 +544,8 @@ export const useApp = create<AppState>((set, get) => {
       set({ settings: next });
       // Rows without their own timezone follow the app's.
       if (patch.tz !== undefined) setDefinitions({ collections: [...get().collections] });
+      // Turning writing on or off changes which calendars are read-only.
+      if (patch.vaultWrite !== undefined && get().source === "vault") void get().loadVault();
       if (patch.firstDay !== undefined) {
         // Re-align the visible range (week/month rows) to the new first day of the week.
         const vis = useVisible.getState().start;
@@ -601,6 +635,17 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     supportsTasks: (calendarId) => supportsTasks(get().projector.model, calendarId),
+
+    supportsRecurrence: (calendarId) =>
+      !!get().views.find((v) => v.id === calendarId)?.mapping.recurrence,
+
+    noteOfEvent: (id) => (get().source === "vault" ? noteOf(id) : null),
+
+    openNote: async (id) => {
+      const path = get().noteOfEvent(id);
+      const r = path ? await vaultBridge()?.openNote?.(path) : null;
+      if (r && !r.ok) get().showToast("vault.openFailed");
+    },
 
     select: (id, popover = true) =>
       set({
@@ -896,8 +941,8 @@ export const useApp = create<AppState>((set, get) => {
             return;
           }
           // Writing is not switched on yet: the vault is shown read-only.
-          const r = await readVault(bridge, { readOnly: true });
-          applyVault(r, root.ok ? root.value : null);
+          const r = await readVault(bridge, { readOnly: !get().settings.vaultWrite });
+          applyVault(r, root.ok ? root.value : null, bridge);
           watchVault(bridge, r.folders, () => void get().loadVault());
         } catch (e) {
           set((s) => ({

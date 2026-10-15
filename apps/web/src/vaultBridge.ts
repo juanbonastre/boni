@@ -18,18 +18,27 @@ export interface VaultBridge {
     path: string,
     text: string,
     expectedMtimeMs: number | null,
-  ): Promise<VaultResult<{ conflict: boolean; mtimeMs: number }>>;
+  ): Promise<VaultResult<{ conflict: boolean; mtimeMs: number; size: number }>>;
+  /** `exists: true` means a note with that path is already there and nothing was written. */
+  create(
+    path: string,
+    text: string,
+  ): Promise<VaultResult<{ exists: true } | { exists: false; mtimeMs: number; size: number }>>;
+  /** Moves a note (to another folder); `exists: true` means the target is taken and nothing moved. */
+  rename?(
+    from: string,
+    to: string,
+  ): Promise<VaultResult<{ exists: true } | { exists: false; mtimeMs: number; size: number }>>;
+  /** Sends a note to the system trash. */
+  trash?(path: string): Promise<VaultResult<null>>;
+  /** Opens a note in Obsidian. */
+  openNote?(path: string): Promise<VaultResult<null>>;
   /** Starts watching these folders (replacing any earlier set); `onChanged` fires after a burst of changes. */
   watch?(dirs: string[]): Promise<VaultResult<null>>;
   onChanged?(callback: () => void): () => void;
   /** The saved index of parsed notes (kept outside the vault), or null on a cold start. */
   cacheRead?(): Promise<VaultResult<string | null>>;
   cacheWrite?(text: string): Promise<VaultResult<null>>;
-  /** `exists: true` means a note with that path is already there and nothing was written. */
-  create(
-    path: string,
-    text: string,
-  ): Promise<VaultResult<{ exists: true } | { exists: false; mtimeMs: number }>>;
 }
 
 export function vaultBridge(): VaultBridge | null {

@@ -54,7 +54,7 @@ slate `#94a3b8`.
 - Top bar: title (month in bold, year muted), view picker, "Today", previous/next, detail-panel toggle.
 - Sidebar: mini month whose highlighted band is exactly the visible days, calendars grouped by account with colour
   swatch, eye (and a properties gear on hover), search and new-event buttons on top, settings at the bottom.
-- Event detail: a popover anchored to the event; the expand button turns it into a right side panel. Fields in order:
+- Event detail header: (open note in Obsidian, only for events that have a note), more, expand, close. The detail is a popover anchored to the event; the expand button turns it into a right side panel. Fields in order:
   title, date and times, repeat, calendar, type (Event / Task) and done (only when the calendar maps a task column),
   calendar properties, location, description, read-only id and timestamps.
 - Context menus (right click or long press) on events, empty time slots, month cells and calendars; the same actions as
@@ -89,6 +89,12 @@ slate `#94a3b8`.
   calendar offers this only if its view maps a task column: a checkbox column (empty = event, unchecked = open task,
   checked = done) or a status column with chosen done states. Calendars without one show no Event / Task controls.
 - **Read-only calendars** can be selected but not edited or dragged.
+- **Data in the vault** (desktop app, Settings → Data): writing is opt-in ("Read only" / "Read and write"). With it on, the
+  gestures above change the notes: only the edited properties are rewritten (unknown ones, comments and the body stay as
+  they were), a new event becomes a note when it has a title (file `{date} {title}.md`, with a counter on the file name if
+  taken), moving it to another calendar moves its file, deleting sends it to the trash and Undo brings it back. If a note
+  changed outside the app since it was read, nothing is written: a toast says so and the notes are reloaded. Notes the
+  calendar cannot place are listed in Settings, never hidden.
 - Every edit is optimistic and undoable; one gesture is one undo step.
 
 ## 5. Language and copy

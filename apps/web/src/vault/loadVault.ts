@@ -34,6 +34,8 @@ export interface VaultLoad {
   index: VaultIndex;
   /** How many notes had to be read and parsed (the rest came from the index). */
   read: number;
+  /** The definitions that loaded (what a writer needs to name, place and fill new notes). */
+  defs: CollectionDef[];
 }
 
 /** Runs `fn` over `items` with at most `limit` calls in flight. */
@@ -155,5 +157,6 @@ export async function loadVault(
     folders: [DEFINITIONS_DIR, ...unique.map((d) => d.folder)],
     index,
     read,
+    defs: unique,
   };
 }

@@ -24,6 +24,7 @@ import {
   CheckSquare,
   Clock,
   Copy,
+  ExternalLink,
   Globe,
   Hash,
   Link as LinkIcon,
@@ -171,6 +172,16 @@ function DetailBody({ ev }: { ev: CalEvent }) {
       <div className="detail-head">
         <span className="detail-kind">{t("event.page")}</span>
         <span className="spacer" />
+        {app.noteOfEvent(ev.id) && (
+          <button
+            type="button"
+            className="icon-btn"
+            title={t("event.openNote")}
+            onClick={() => void app.openNote(ev.id)}
+          >
+            <ExternalLink size={15} />
+          </button>
+        )}
         <div className="menu-anchor">
           <button
             type="button"
@@ -250,7 +261,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
 
       <div className="detail-section">
         <WhenEditor ev={ev} fmt={fmt} />
-        <RepeatRow ev={ev} />
+        {app.supportsRecurrence(ev.calendarId) && <RepeatRow ev={ev} />}
       </div>
 
       <div className="detail-section">

@@ -5,11 +5,14 @@ import {
   frontmatterData,
   makeModel,
   makeProjector,
+  noteFileName,
   noteToRow,
   parseCollectionDef,
   parseNote,
+  uniqueNotePath,
   unplaceableRows,
   validateModel,
+  withAreaLine,
 } from "./index.ts";
 
 // A definition note as it would sit in the vault (all data invented).
@@ -150,5 +153,51 @@ describe("notes as rows", () => {
       { id: "agenda/docencia/b.md", reason: "no-date" },
       { id: "agenda/docencia/c.md", reason: "no-date" },
     ]);
+  });
+});
+
+describe("names of new notes", () => {
+  const def = load();
+
+  it("expand the pattern with the row's values and clean what files do not allow", () => {
+    expect(noteFileName(def, { date: "2026-12-22", title: "Clase de ejemplo" })).toBe(
+      "2026-12-22 Clase de ejemplo",
+    );
+    expect(noteFileName(def, { date: "2026-12-22", title: 'A/B: "C"? [x] #1' })).toBe(
+      "2026-12-22 A-B- -C-- x 1",
+    );
+    expect(noteFileName(def, { date: "2026-12-22", title: "  mucho   espacio.  " })).toBe(
+      "2026-12-22 mucho espacio",
+    );
+    expect(
+      noteFileName(def, { date: "2026-12-22", title: "x".repeat(300) }).length,
+    ).toBeLessThanOrEqual(120);
+    expect(noteFileName({ ...def, newNote: undefined }, { title: "Solo título" })).toBe(
+      "Solo título",
+    );
+  });
+
+  it("get a counter on the file name when the name is taken", () => {
+    const taken = new Set([
+      "agenda/docencia/2026-12-22 Clase.md",
+      "agenda/docencia/2026-12-22 Clase 2.md",
+    ]);
+    expect(uniqueNotePath("agenda/docencia", "2026-12-22 Clase", (p) => taken.has(p))).toBe(
+      "agenda/docencia/2026-12-22 Clase 3.md",
+    );
+    expect(uniqueNotePath("agenda/docencia", "2026-12-23 Otra", (p) => taken.has(p))).toBe(
+      "agenda/docencia/2026-12-23 Otra.md",
+    );
+    expect(uniqueNotePath("agenda/docencia", "", () => false)).toBe(
+      "agenda/docencia/Sin título.md",
+    );
+  });
+
+  it("switch the Area line when a note moves to another collection", () => {
+    expect(
+      withAreaLine("Area: [[docencia]]\n\n## Notas\nTexto\n", "Area: [[planes]]\n\n## Notas\n"),
+    ).toBe("Area: [[planes]]\n\n## Notas\nTexto\n");
+    expect(withAreaLine("Sin línea de área\n", "Area: [[planes]]\n")).toBe("Sin línea de área\n");
+    expect(withAreaLine("Area: [[docencia]]\n", "Sin área\n")).toBe("Area: [[docencia]]\n");
   });
 });
