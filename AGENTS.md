@@ -17,6 +17,12 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   both server and client tests. Change contract, server and clients in the same PR. Additive changes only within `/api/v1`;
   clients must ignore unknown fields and show a placeholder for unknown component types.
 
+## Design
+- **Look and interaction follow Boni Calendar**, which is the reference app for every Boni client (desktop, widgets, Android).
+  Tokens, patterns and interaction rules: `docs/design-guide.md` in the `juanbonastre/boni-calendar` repo (vault note
+  `wiki/temas/guia-de-diseno-boni.md`). Read it before touching any UI and match it; a deviation needs a written reason here.
+  Server-described screens must be renderable with those tokens, so do not add colours or styles on the server side.
+
 ## Language
 - Code, comments, this file and `api/` in English.
 - What Juan reads in Spanish **without accents or n-tilde**: `README.md`, `docs/`, UI labels sent by the server.
