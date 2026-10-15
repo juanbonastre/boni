@@ -75,6 +75,7 @@ test("dragging one selected event moves the whole selection", async ({ page }) =
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2, box.y + 14 - 90, { steps: 8 });
   await page.mouse.up();
+  await page.getByRole("button", { name: "Todos los eventos" }).click(); // Gimnasio is a weekly series
   const after = [await startMinute(ev(page, "Dentista")), await startMinute(ev(page, "Gimnasio"))];
   const d0 = (after[0] ?? 0) - (before[0] ?? 0);
   const d1 = (after[1] ?? 0) - (before[1] ?? 0);
@@ -94,6 +95,7 @@ test("Delete removes the selection, undo brings it back, Esc and empty clicks cl
   await ev(page, "Dentista").click();
   await clickWith(page, ev(page, "Gimnasio"), ["Control"]);
   await page.keyboard.press("Delete");
+  await page.getByRole("button", { name: "Solo este evento" }).click(); // Gimnasio is a weekly series
   await expect(page.locator(".ev")).toHaveCount(count - 2);
   await expect(page.locator(".toast")).toContainText("2 eventos eliminados");
   await page.locator(".toast button").click();

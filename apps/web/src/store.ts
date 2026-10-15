@@ -4,11 +4,17 @@ import {
   type CalendarData,
   type CalendarDef,
   type CivilDay,
+  editOccurrence,
   eventsInDays,
+  expandAll,
   type FirstDay,
   generateSample,
   type Locale,
+  type OccurrenceCache,
   type PropertyDef,
+  parseOccurrenceId,
+  resolveOccurrence,
+  type Scope,
   startOfMonth,
   startOfWeek,
   systemTimeZone,
@@ -42,6 +48,12 @@ export interface DragState {
   when: When;
   /** Other selected events moving together with `id` (kind "move"). */
   group?: Record<string, When>;
+}
+
+export interface ScopePrompt {
+  kind: "edit" | "delete";
+  onChoose: (scope: Scope) => void;
+  onCancel: () => void;
 }
 
 export type CtxTarget =
@@ -119,6 +131,9 @@ export interface AppState {
   schemaCalendarId: string | null;
   newEventId: string | null;
   ctxMenu: { x: number; y: number; target: CtxTarget } | null;
+  /** Days around the view that recurring events are expanded for. */
+  win: { from: CivilDay; to: CivilDay };
+  scopePrompt: ScopePrompt | null;
 
   today: () => CivilDay;
   setSettings: (patch: Partial<Settings>) => void;
@@ -136,16 +151,33 @@ export interface AppState {
   selectAllVisible: () => void;
   setDetailMode: (m: "popover" | "panel") => void;
   addEvent: (e: Partial<CalEvent> & { when: When }) => string;
-  updateEvent: (id: string, patch: Partial<CalEvent>) => void;
-  updateEvents: (ids: string[], patch: Partial<CalEvent>) => void;
+  setWindow: (from: CivilDay, to: CivilDay) => void;
+  /** Visible-window events with recurring series expanded into occurrences. */
+  expanded: () => CalEvent[];
+  getEvent: (id: string) => CalEvent | null;
+  /** True when the event belongs to a read-only calendar (it can be selected but not edited). */
+  isLocked: (id: string) => boolean;
+  updateEvent: (id: string, patch: Partial<CalEvent>, scope?: Scope) => void;
+  updateEvents: (ids: string[], patch: Partial<CalEvent>, scope?: Scope) => void;
+  /** Like updateEvents, but asks "this / following / all" first when a recurring event is involved. */
+  editEvents: (ids: string[], patch: Partial<CalEvent>) => void;
   deleteEvent: (id: string) => void;
-  deleteEvents: (ids: string[]) => void;
+  deleteEvents: (ids: string[], scope?: Scope) => void;
+  removeEvents: (ids: string[]) => void;
+  setScopePrompt: (p: ScopePrompt | null) => void;
+  askScope: (
+    ids: string[],
+    kind: "edit" | "delete",
+    run: (scope: Scope) => void,
+    onCancel?: () => void,
+  ) => void;
   duplicateEvent: (id: string) => string | null;
   duplicateEvents: (ids: string[]) => string[];
   showOnlyCalendar: (id: string) => void;
   showAllCalendars: () => void;
   setDrag: (d: DragState | null) => void;
-  commitDrag: () => void;
+  commitDrag: (scope?: Scope) => void;
+  finishDrag: () => void;
   undo: () => void;
   redo: () => void;
   showToast: (text: string, undo?: boolean, params?: Record<string, string | number>) => void;
@@ -160,6 +192,38 @@ function makeData(settings: Settings, hidden: Set<string>): CalendarData {
     ...data,
     calendars: data.calendars.map((c) => (hidden.has(c.id) ? { ...c, visible: false } : c)),
   };
+}
+
+const newEventId = (now: number): string =>
+  `ev-${now.toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+
+/** Applies a list of per-event changes (patches or removals) in one pass, honouring recurrence scope. */
+function applyEdits(
+  events: CalEvent[],
+  items: { id: string; change: { patch?: Partial<CalEvent>; remove?: boolean } }[],
+  scope: Scope,
+  now: number,
+): CalEvent[] {
+  let out = events;
+  for (const it of items) {
+    out = editOccurrence(out, it.id, scope, it.change, { newId: () => newEventId(now), now });
+  }
+  return out;
+}
+
+const occurrenceCache: OccurrenceCache = new WeakMap();
+let expandedKey: { events: CalEvent[]; from: CivilDay; to: CivilDay } | null = null;
+let expandedValue: CalEvent[] = [];
+/** Expansion is memoised on the events array and the window, so repeated reads are free. */
+export function expandedCache(
+  events: CalEvent[],
+  win: { from: CivilDay; to: CivilDay },
+): CalEvent[] {
+  const k = expandedKey;
+  if (k && k.events === events && k.from === win.from && k.to === win.to) return expandedValue;
+  expandedKey = { events, from: win.from, to: win.to };
+  expandedValue = expandAll(events, win.from, win.to, occurrenceCache);
+  return expandedValue;
 }
 
 let toastSeq = 0;
@@ -218,6 +282,11 @@ export const useApp = create<AppState>((set, get) => {
     schemaCalendarId: null,
     newEventId: null,
     ctxMenu: null,
+    win: {
+      from: todayIn(settings.tz, nowMs()) - 21,
+      to: todayIn(settings.tz, nowMs()) + 35,
+    },
+    scopePrompt: null,
 
     today: () => todayIn(get().settings.tz, nowMs()),
 
@@ -320,12 +389,13 @@ export const useApp = create<AppState>((set, get) => {
     clickSelect: (id, mods) => {
       const s = get();
       const visible = new Set(s.data.calendars.filter((c) => c.visible).map((c) => c.id));
-      const calOf = new Map(s.data.events.map((e) => [e.id, e.calendarId]));
+      const expanded = s.expanded();
+      const calOf = new Map(expanded.map((e) => [e.id, e.calendarId]));
       const r = clickSelection({
         current: s.selectedIds,
         anchor: s.anchorId,
         clicked: id,
-        ordered: orderedVisibleIds(s.data.events, visible, s.settings.tz),
+        ordered: orderedVisibleIds(expanded, visible, s.settings.tz),
         calendarOf: (x) => calOf.get(x),
         ctrl: mods.ctrl,
         shift: mods.shift,
@@ -347,7 +417,7 @@ export const useApp = create<AppState>((set, get) => {
           ? [startOfMonth(vis), startOfMonth(addMonths(vis, 1)) - 1]
           : [vis, vis + n - 1];
       const visible = new Set(s.data.calendars.filter((c) => c.visible).map((c) => c.id));
-      const ids = eventsInDays(s.data.events, visible, from, to, s.settings.tz).map((e) => e.id);
+      const ids = eventsInDays(s.expanded(), visible, from, to, s.settings.tz).map((e) => e.id);
       set({
         selectedIds: ids,
         selectedId: ids.length === 1 ? (ids[0] ?? null) : null,
@@ -382,27 +452,85 @@ export const useApp = create<AppState>((set, get) => {
       return id;
     },
 
-    updateEvent: (id, patch) => {
-      const s = get();
-      commit(s.data.events.map((e) => (e.id === id ? { ...e, ...patch, updated: nowMs() } : e)));
+    // The window only moves when a view gets near its edge, and then by a wide margin, so scrolling
+    // does not re-expand the series (and re-render every row) on each step.
+    setWindow: (from, to) => {
+      const w = get().win;
+      if (from >= w.from && to <= w.to) return;
+      set({ win: { from: from - 56, to: to + 56 } });
     },
 
-    updateEvents: (ids, patch) => {
-      const s = get();
-      const set_ = new Set(ids);
+    expanded: () => expandedCache(get().data.events, get().win),
+
+    getEvent: (id) => resolveOccurrence(get().data.events, id),
+
+    isLocked: (id) => {
+      const ev = get().getEvent(id);
+      return !!ev && get().data.calendars.find((c) => c.id === ev.calendarId)?.readOnly === true;
+    },
+
+    updateEvent: (id, patch, scope = "all") => get().updateEvents([id], patch, scope),
+
+    updateEvents: (ids, patch, scope = "all") => {
       const now = nowMs();
-      commit(s.data.events.map((e) => (set_.has(e.id) ? { ...e, ...patch, updated: now } : e)));
+      commit(
+        applyEdits(
+          get().data.events,
+          ids.map((id) => ({ id, change: { patch } })),
+          scope,
+          now,
+        ),
+      );
     },
 
-    deleteEvent: (id) => get().deleteEvents([id]),
+    editEvents: (ids, patch) => {
+      // Changing the repetition rule itself always applies to the whole series.
+      if ("recurrence" in patch) return get().updateEvents(ids, patch, "all");
+      get().askScope(ids, "edit", (scope) => get().updateEvents(ids, patch, scope));
+    },
 
-    deleteEvents: (ids) => {
-      const s = get();
-      const gone = new Set(ids);
-      commit(s.data.events.filter((e) => !gone.has(e.id)));
+    deleteEvent: (id) => get().removeEvents([id]),
+
+    deleteEvents: (ids, scope = "all") => {
+      const now = nowMs();
+      commit(
+        applyEdits(
+          get().data.events,
+          ids.map((id) => ({ id, change: { remove: true } })),
+          scope,
+          now,
+        ),
+      );
       get().clearSelection();
       if (ids.length === 1) get().showToast("event.deleted", true);
       else get().showToast("events.deleted", true, { n: ids.length });
+    },
+
+    removeEvents: (ids) => {
+      get().askScope(ids, "delete", (scope) => get().deleteEvents(ids, scope));
+    },
+
+    setScopePrompt: (p) => set({ scopePrompt: p }),
+
+    askScope: (ids, kind, run, onCancel) => {
+      const recurring = ids.some((id) => {
+        const p = parseOccurrenceId(id);
+        return !!p && get().data.events.some((e) => e.id === p.seriesId && e.recurrence);
+      });
+      if (!recurring) return run("all");
+      set({
+        scopePrompt: {
+          kind,
+          onChoose: (scope) => {
+            set({ scopePrompt: null });
+            run(scope);
+          },
+          onCancel: () => {
+            set({ scopePrompt: null });
+            onCancel?.();
+          },
+        },
+      });
     },
 
     duplicateEvent: (id) => get().duplicateEvents([id])[0] ?? null,
@@ -412,11 +540,14 @@ export const useApp = create<AppState>((set, get) => {
       const now = nowMs();
       const copies: CalEvent[] = [];
       for (const id of ids) {
-        const e = s.data.events.find((x) => x.id === id);
+        const e = resolveOccurrence(s.data.events, id);
         if (!e) continue;
+        // A copy of an occurrence is a plain, single event.
+        const { seriesId: _a, occurrenceDay: _b, exdates: _c, ...rest } = e;
         copies.push({
-          ...e,
-          id: `ev-${now.toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          ...rest,
+          recurrence: null,
+          id: newEventId(now),
           title: e.title ? `${e.title} (2)` : "",
           created: now,
           updated: now,
@@ -453,20 +584,32 @@ export const useApp = create<AppState>((set, get) => {
 
     setDrag: (d) => set({ drag: d }),
 
-    commitDrag: () => {
+    commitDrag: (scope = "all") => {
       const { drag, data } = get();
       if (!drag) return;
       set({ drag: null });
       const whens: Record<string, When> = { ...drag.group, [drag.id]: drag.when };
-      const now = nowMs();
-      if (data.events.some((e) => whens[e.id])) {
-        commit(
-          data.events.map((e) => {
-            const when = whens[e.id];
-            return when ? { ...e, when, updated: now } : e;
-          }),
-        );
-      }
+      commit(
+        applyEdits(
+          data.events,
+          Object.entries(whens).map(([id, when]) => ({ id, change: { patch: { when } } })),
+          scope,
+          nowMs(),
+        ),
+      );
+    },
+
+    /** Ends a drag: asks for the scope first when a recurring event moved, keeping the preview on screen. */
+    finishDrag: () => {
+      const { drag } = get();
+      if (!drag) return;
+      const ids = [drag.id, ...Object.keys(drag.group ?? {})];
+      get().askScope(
+        ids,
+        "edit",
+        (scope) => get().commitDrag(scope),
+        () => set({ drag: null }),
+      );
     },
 
     undo: () => {

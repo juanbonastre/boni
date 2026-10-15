@@ -3,6 +3,7 @@ import { ContextMenu, useContextMenuTrigger } from "./components/ContextMenu.tsx
 import { EventDetail } from "./components/EventDetail.tsx";
 import { HelpModal, Palette, SchemaEditor, SettingsModal } from "./components/Modals.tsx";
 import { MonthView } from "./components/MonthView.tsx";
+import { ScopeModal } from "./components/RecurrenceModals.tsx";
 import { SelectionBar } from "./components/SelectionBar.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { TimeGrid } from "./components/TimeGrid.tsx";
@@ -102,7 +103,8 @@ function useShortcuts() {
         return;
       }
       if (e.key === "Escape") {
-        if (s.paletteOpen || s.settingsOpen || s.helpOpen || s.schemaCalendarId) return; // modals handle it
+        if (s.paletteOpen || s.settingsOpen || s.helpOpen || s.schemaCalendarId || s.scopePrompt)
+          return; // modals handle it
         if (s.popoverId || s.selectedId || s.selectedIds.length > 0) {
           s.clearSelection();
           (document.activeElement as HTMLElement | null)?.blur?.();
@@ -110,7 +112,8 @@ function useShortcuts() {
         return;
       }
       if (isTyping(e) || mod || e.altKey) return;
-      if (s.paletteOpen || s.settingsOpen || s.helpOpen || s.schemaCalendarId) return;
+      if (s.paletteOpen || s.settingsOpen || s.helpOpen || s.schemaCalendarId || s.scopePrompt)
+        return;
       const k = e.key;
       if (k === "t" || k === "T") s.goToday();
       else if (k === "d" || k === "D") s.setView("day");
@@ -130,7 +133,7 @@ function useShortcuts() {
       else if (k === "[") s.toggleSidebar();
       else if ((k === "Delete" || k === "Backspace") && s.selectedIds.length > 0) {
         e.preventDefault();
-        s.deleteEvents(s.selectedIds);
+        s.removeEvents(s.selectedIds);
       } else return;
     };
     window.addEventListener("keydown", onKey);
@@ -168,6 +171,7 @@ export function App() {
       <EventDetail />
       <ContextMenu />
       <SelectionBar />
+      <ScopeModal />
       {settingsOpen && <SettingsModal />}
       {schemaId && <SchemaEditor calendarId={schemaId} />}
       {paletteOpen && <Palette />}

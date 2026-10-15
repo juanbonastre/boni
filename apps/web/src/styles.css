@@ -1037,7 +1037,8 @@ kbd {
 .mchip.selected {
   box-shadow: 0 0 0 1.5px var(--accent);
 }
-.mchip .dot {
+.mchip::before {
+  content: "";
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -1596,4 +1597,110 @@ textarea.field-input {
 .mod-select .popover {
   pointer-events: none;
   opacity: 0.3;
+}
+
+/* ---------------------------------------------------------------- recurrence */
+.scope {
+  width: min(440px, 92vw);
+}
+.scope-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+}
+.scope-options .btn {
+  justify-content: center;
+  height: 36px;
+}
+.btn.ghost {
+  background: none;
+  border-color: transparent;
+  color: var(--muted);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+}
+.rec-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.field-input.num {
+  width: 64px;
+  text-align: center;
+  border-color: var(--line-strong);
+}
+.field-input.date {
+  width: auto;
+  border-color: var(--line-strong);
+  margin-left: 8px;
+}
+.rec-ends {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.rec-ends label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.weekday-pick {
+  display: inline-flex;
+  gap: 4px;
+}
+.weekday-pick button {
+  width: 32px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+}
+.weekday-pick button.on {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--accent);
+}
+.rep {
+  flex: none;
+  opacity: 0.75;
+}
+.ev-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.ev-head .ev-title {
+  min-width: 0;
+}
+
+.bar-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+.bar-handle.start {
+  left: 0;
+}
+.bar-handle.end {
+  right: 0;
+}
+.bar {
+  cursor: grab;
+}
+.date-field.disabled .date-btn {
+  opacity: 0.5;
 }

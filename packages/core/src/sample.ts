@@ -338,20 +338,31 @@ export function generateSample(opts: {
   };
 
   const monday = opts.anchorDay - ((((opts.anchorDay + 4) % 7) + 6) % 7);
+  const slot = (t: Template, day: number) => ({
+    kind: "timed" as const,
+    start: fromLocal(day, hhmm(t.from), tz),
+    end: fromLocal(day, hhmm(t.to), tz),
+    tz,
+  });
+  // Fixed weekly slots are real recurring series; the "sometimes" ones are loose single events.
+  for (const t of TEMPLATES) {
+    if (t.p !== undefined) continue;
+    push({
+      calendarId: t.calendarId,
+      title: t.title,
+      when: slot(t, monday - before * 7 + (t.dow - 1)),
+      location: t.location ?? "",
+      props: t.props ?? {},
+      recurrence: { freq: "weekly", interval: 1 },
+    });
+  }
   for (let w = -before; w <= after; w++) {
-    const weekStart = monday + w * 7;
     for (const t of TEMPLATES) {
-      if (t.p !== undefined && random() > t.p) continue;
-      const day = weekStart + (t.dow - 1);
+      if (t.p === undefined || random() > t.p) continue;
       push({
         calendarId: t.calendarId,
         title: t.title,
-        when: {
-          kind: "timed",
-          start: fromLocal(day, hhmm(t.from), tz),
-          end: fromLocal(day, hhmm(t.to), tz),
-          tz,
-        },
+        when: slot(t, monday + w * 7 + (t.dow - 1)),
         location: t.location ?? "",
         props: t.props ?? {},
       });

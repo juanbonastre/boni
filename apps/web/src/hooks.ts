@@ -2,11 +2,13 @@ import type { CalEvent, DaySegment } from "@boni-calendar/core";
 import { useEffect, useMemo, useState } from "react";
 import { nowMs } from "./clock.ts";
 import { buildDayIndex, type DayIndex } from "./engine/dayIndex.ts";
-import { useApp } from "./store.ts";
+import { expandedCache, useApp } from "./store.ts";
 
 /** Events with the in-flight drag applied (moved/resized event, or the ghost of a new one). */
 export function useEffectiveEvents(): CalEvent[] {
-  const events = useApp((s) => s.data.events);
+  const stored = useApp((s) => s.data.events);
+  const win = useApp((s) => s.win);
+  const events = useMemo(() => expandedCache(stored, win), [stored, win]);
   const drag = useApp((s) => s.drag);
   const calendars = useApp((s) => s.data.calendars);
   return useMemo(() => {

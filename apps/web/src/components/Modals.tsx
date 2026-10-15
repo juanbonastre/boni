@@ -1,6 +1,8 @@
 import {
   formatMinute,
   fromLocal,
+  occurrenceDays,
+  occurrenceId,
   PALETTE,
   type PropertyDef,
   type PropertyType,
@@ -513,15 +515,19 @@ export function Palette() {
       .sort((a, b) => Math.abs(startOf(a) - now) - Math.abs(startOf(b) - now))
       .slice(0, 8)
       .map((e) => {
-        const day =
+        const first =
           e.when.kind === "timed" ? toLocal(e.when.start, e.when.tz).day : e.when.startDay;
+        // For a series, jump to its next occurrence from today (or its first one).
+        const today = st.today();
+        const day = e.recurrence ? (occurrenceDays(e, today, today + 400)[0] ?? first) : first;
+        const target = e.recurrence ? occurrenceId(e.id, day) : e.id;
         return {
           id: `ev-${e.id}`,
           label: `${e.title} · ${dayLabel(day)}`,
           run: () => {
             const s2 = useApp.getState();
             s2.goTo(day);
-            s2.select(e.id, true);
+            s2.select(target, true);
           },
         };
       });

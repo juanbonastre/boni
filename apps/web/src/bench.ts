@@ -150,6 +150,9 @@ export async function runBench(only = ""): Promise<BenchResult> {
   app.setView("month");
   await sleep(800);
   await run("month scroll (wheel notches)", 3000, 45, (_i, el) => wheel(el, { deltaY: 100 }));
+  await run("month scroll (steady, 1 notch / 120 ms)", 3000, 120, (_i, el) =>
+    wheel(el, { deltaY: 100 }),
+  );
 
   app.setView("week");
   const ua = navigator.userAgent;

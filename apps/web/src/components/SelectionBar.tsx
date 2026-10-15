@@ -13,7 +13,7 @@ export function SelectionBar() {
       <button
         type="button"
         className="selbar-btn danger"
-        onClick={() => useApp.getState().deleteEvents(ids)}
+        onClick={() => useApp.getState().removeEvents(ids)}
       >
         <Trash2 size={14} /> {t("sel.delete")}
       </button>

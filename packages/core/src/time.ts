@@ -110,8 +110,10 @@ export function systemTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
-/** Offset of `tz` from UTC at instant `ms`, in milliseconds. */
-export function tzOffsetMs(ms: number, tz: string): number {
+const OFFSET_BUCKET_MS = 15 * MS_MIN;
+const offsetCache = new Map<string, Map<number, number>>();
+
+function computeOffset(ms: number, tz: string): number {
   const p: Record<string, number> = {};
   for (const part of dtf(tz).formatToParts(new Date(ms))) {
     if (part.type !== "literal") p[part.type] = Number(part.value);
@@ -125,6 +127,28 @@ export function tzOffsetMs(ms: number, tz: string): number {
     p.second ?? 0,
   );
   return asUtc - Math.floor(ms / 1000) * 1000;
+}
+
+/**
+ * Offset of `tz` from UTC at instant `ms`, in milliseconds. Offsets only change on 15-minute
+ * boundaries (DST switches), so they are cached per 15-minute bucket: Intl is slow and this runs for
+ * every event of every expansion.
+ */
+export function tzOffsetMs(ms: number, tz: string): number {
+  const bucket = Math.floor(ms / OFFSET_BUCKET_MS);
+  let byBucket = offsetCache.get(tz);
+  if (!byBucket) {
+    byBucket = new Map();
+    offsetCache.set(tz, byBucket);
+  } else if (byBucket.size > 20_000) {
+    byBucket.clear();
+  }
+  let off = byBucket.get(bucket);
+  if (off === undefined) {
+    off = computeOffset(bucket * OFFSET_BUCKET_MS, tz);
+    byBucket.set(bucket, off);
+  }
+  return off;
 }
 
 export interface LocalTime {

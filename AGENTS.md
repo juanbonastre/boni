@@ -43,6 +43,14 @@ docs/            decisions and status.
     (`will-change: transform`) so letters keep their size during the animation.
   - Only a few days around the viewport are rendered (`BLOCK` in `TimeGrid.tsx`).
   - Re-run `make bench-chrome` after touching the grid and compare with `bench/results/`.
+- **Recurring events:** a series is ONE stored event (the "master": `recurrence`, `exdates`) and is never rendered
+  directly. `expandAll` (core) turns it into occurrences (`id = "<master>~<day>"`, `seriesId`, `occurrenceDay`) for the
+  window the views publish (`store.win`, with hysteresis). All edits and deletions go through `editOccurrence` with a
+  scope (`this` / `following` / `all`) via the store (`editEvents`, `removeEvents`, `finishDrag`), which ask the user
+  when a series is involved. Never write to `data.events` directly with an occurrence id.
+  Keep occurrence objects stable (`OccurrenceCache`) - segments and layouts are cached on object identity.
+- **Month view rows** are positioned relative to an epoch (`EPOCH_WEEKS`) so scrolling never moves existing rows
+  (moving them repaints the whole layer). Keep row props stable so `WeekRow` stays memoised.
 - **Tests:** pure logic in `packages/core` and `apps/web/src/engine` gets unit tests; user-visible behaviour gets a
   Playwright test and, when the look changes, a screenshot check by eye.
 - Biome is the linter/formatter; React hook dependency lint is off on purpose (the grid is an imperative engine).

@@ -36,3 +36,9 @@ mientras WebKitGTK siga asi; si se revisa, el banco ya esta hecho (`bench/`).
 - El texto no se estira durante el zoom: el cuerpo de cada evento y las etiquetas de hora se contraescalan (`--inv`) y
   tienen capa propia (`will-change: transform`). Sin capa propia (o activandola solo durante el zoom) costaba 20-23
   fotogramas perdidos por escenario y un pico de 233 ms al crear las capas; con capa permanente, 8-9 (igual que antes).
+- Vista mes: las filas se colocan respecto a una "epoca" que solo cambia cada 26 semanas y su `top` no depende de la
+  posicion en la lista; si una fila cambia de posicion, el navegador repinta toda la capa en cada paso y las filas
+  vuelven a renderizarse todas. Con eso el desplazamiento constante de la rueda paso de 16-19 a 6-7 fotogramas perdidos
+  de ~190 (con filas llenas de eventos: las series continuan para siempre, antes las filas lejanas estaban vacias).
+- Repeticiones: los objetos de ocurrencia se cachean por serie y dia (`OccurrenceCache`) para no recalcular segmentos, y
+  el desfase horario de cada zona se cachea por tramos de 15 minutos (`Intl` es lo mas lento de toda la expansion).
