@@ -46,6 +46,11 @@ docs/            decisions and status.
     (`will-change: transform`) so letters keep their size during the animation.
   - Only a few days around the viewport are rendered (`BLOCK` in `TimeGrid.tsx`).
   - Re-run `make bench-chrome` after touching the grid and compare with `bench/results/`.
+- **Sharp text (pixel alignment):** anything that sits on a GPU layer must sit on whole device pixels, or its text is
+  resampled and looks soft. So: strip translations are snapped (`snapPx`), column width and month row height are whole
+  device pixels, the committed hour height is a multiple of `HH_STEP` (4 px, so a 15-minute slot is whole pixels), boxes that
+  are centred with `translateY(-50%)` have an even explicit height, popover positions are rounded, and text layers
+  (`will-change`) exist only while zooming (`.zoom-armed`). `e2e/interactions.spec.ts` ("layout sits on whole pixels") guards it.
 - **Recurring events:** a series is ONE stored event (the "master": `recurrence`, `exdates`) and is never rendered
   directly. `expandAll` (core) turns it into occurrences (`id = "<master>~<day>"`, `seriesId`, `occurrenceDay`) for the
   window the views publish (`store.win`, with hysteresis). All edits and deletions go through `editOccurrence` with a

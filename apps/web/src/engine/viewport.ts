@@ -10,6 +10,11 @@
 
 export const MIN_HH = 12;
 export const MAX_HH = 320;
+/**
+ * Committed hour heights are multiples of this, so a 15-minute slot is a whole number of pixels: event cards, hour
+ * lines and labels then sit on whole pixels, which keeps text sharp (fractional offsets blur text on GPU layers).
+ */
+export const HH_STEP = 4;
 const EPS_PX = 0.05;
 const EPS_DAY = 0.0005;
 
@@ -49,6 +54,8 @@ export class Viewport {
   viewX = 0;
   private tScrollY = 0;
   private tHh = 56;
+  /** Unquantised zoom target: tiny pinch steps accumulate here and only snap when they add up to a step. */
+  private rawHh = 56;
   private tViewX = 0;
   private anchor: { min: number; py: number } | null = null;
 
@@ -90,7 +97,11 @@ export class Viewport {
   }
 
   get minHh(): number {
-    return Math.max(MIN_HH, this.bodyHeight / 24);
+    return Math.max(MIN_HH, Math.ceil(this.bodyHeight / 24 / HH_STEP) * HH_STEP);
+  }
+
+  private quantize(hh: number): number {
+    return clamp(Math.round(hh / HH_STEP) * HH_STEP, this.minHh, MAX_HH);
   }
 
   get maxScroll(): number {
@@ -106,6 +117,7 @@ export class Viewport {
     this.colW = colW;
     this.nDays = nDays;
     this.tHh = clamp(this.tHh, this.minHh, MAX_HH);
+    this.rawHh = clamp(this.rawHh, this.minHh, MAX_HH);
     this.hh = clamp(this.hh, this.minHh, MAX_HH);
     this.scrollY = clamp(this.scrollY, 0, this.maxScroll);
     this.tScrollY = clamp(this.tScrollY, 0, Math.max(0, 24 * this.tHh - bodyHeight));
@@ -115,7 +127,11 @@ export class Viewport {
   /** Jump (no animation) to a state; used for initial position. */
   reset(f: Partial<Frame>): void {
     this.initialized = true;
-    if (f.hh !== undefined) this.hh = this.tHh = clamp(f.hh, this.minHh, MAX_HH);
+    if (f.hh !== undefined) {
+      this.tHh = this.quantize(f.hh);
+      this.hh = this.tHh;
+      this.rawHh = this.tHh;
+    }
     if (f.scrollY !== undefined) this.scrollY = this.tScrollY = clamp(f.scrollY, 0, this.maxScroll);
     if (f.viewX !== undefined) this.viewX = this.tViewX = f.viewX;
     this.anchor = null;
@@ -186,7 +202,8 @@ export class Viewport {
   }
 
   zoomBy(factor: number, py: number): void {
-    const nextHh = clamp(this.tHh * factor, this.minHh, MAX_HH);
+    this.rawHh = clamp(this.rawHh * factor, this.minHh, MAX_HH);
+    const nextHh = this.quantize(this.rawHh);
     if (nextHh === this.tHh) return;
     // Keep the instant under the pointer fixed, measured from what is on screen right now.
     this.anchor = { min: ((this.scrollY + py) / this.hh) * 60, py };
@@ -204,7 +221,8 @@ export class Viewport {
       min: ((this.scrollY + this.bodyHeight / 2) / this.hh) * 60,
       py: this.bodyHeight / 2,
     };
-    this.tHh = clamp(hh, this.minHh, MAX_HH);
+    this.rawHh = clamp(hh, this.minHh, MAX_HH);
+    this.tHh = this.quantize(hh);
     this.tScrollY = clamp(
       (this.anchor.min / 60) * this.tHh - this.bodyHeight / 2,
       0,

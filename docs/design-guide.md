@@ -16,7 +16,8 @@ behaviour covered by `e2e/`. Validated by Juan on the desktop app up to version 
 - Keyboard first, but never keyboard only: everything also has a visible control or a context menu. Nothing is
   hover-only.
 - Smooth: 60 fps while scrolling, zooming and dragging is a requirement, not a nice-to-have (`docs/rendimiento.md`).
-- Text never stretches or jumps when the layout moves (zoom keeps letter sizes).
+- Text never stretches or jumps when the layout moves (zoom keeps letter sizes), and it is always pixel-sharp: boxes, offsets
+  and column or row sizes are whole device pixels (see `AGENTS.md`, "Sharp text").
 
 ## 2. Visual tokens
 | Token | Dark (default) | Light |

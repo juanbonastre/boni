@@ -79,7 +79,11 @@ test("shift+wheel moves across days and settles on a whole day", async ({ page }
   await page.keyboard.up("Shift");
   await page.waitForTimeout(900);
   const s = await state(page);
-  const colw = (await page.locator(".cols-viewport").boundingBox())!.width / 7;
+  const colw = await page.evaluate(() =>
+    Number.parseFloat(
+      getComputedStyle(document.querySelector(".grid") as Element).getPropertyValue("--colw"),
+    ),
+  );
   // x = -(viewX - renderStart) * colW and viewX settles on an integer day.
   expect(Math.abs((s.x / colw) % 1)).toBeLessThan(0.01);
   const vis = await page.evaluate(
@@ -190,4 +194,38 @@ test("text keeps its size while the hours are being zoomed", async ({ page }) =>
   }
   expect(maxCardChange).toBeGreaterThan(5); // the cards were really stretching in that window
   expect(maxTextChange).toBeLessThan(0.6); // ...while the text did not
+});
+
+test("layout sits on whole pixels so the text stays sharp", async ({ page }) => {
+  await open(page);
+  const geometry = () =>
+    page.evaluate(() => {
+      const cs = getComputedStyle(document.querySelector(".cols-strip") as Element).transform;
+      const m = /matrix\(([^)]+)\)/.exec(cs)?.[1]?.split(",").map(Number) ?? [];
+      const colw = Number.parseFloat(
+        getComputedStyle(document.querySelector(".grid") as Element).getPropertyValue("--colw"),
+      );
+      const hh =
+        Number.parseFloat((document.querySelector(".gutter-inner") as HTMLElement).style.height) /
+        24;
+      return { x: m[4] ?? 0, y: m[5] ?? 0, colw, hh };
+    });
+  const check = (g: { x: number; y: number; colw: number; hh: number }) => {
+    expect(Number.isInteger(g.x)).toBe(true);
+    expect(Number.isInteger(g.y)).toBe(true);
+    expect(Number.isInteger(g.colw)).toBe(true);
+    expect(g.hh % 4).toBe(0); // a 15-minute slot is a whole number of pixels
+  };
+  check(await geometry());
+  const { x, y } = await bodyCenter(page);
+  await page.mouse.move(x, y);
+  await page.mouse.wheel(0, 137); // an awkward amount
+  await page.waitForTimeout(700);
+  check(await geometry());
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -90);
+  await page.keyboard.up("Control");
+  await page.waitForTimeout(900);
+  check(await geometry());
+  await expect(page.locator(".grid")).not.toHaveClass(/zoom-armed/); // layers are gone again once at rest
 });

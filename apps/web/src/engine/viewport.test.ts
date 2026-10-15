@@ -74,11 +74,19 @@ describe("Viewport", () => {
     expect(vp.hh).toBeGreaterThan(60);
     expect(Math.abs(((vp.scrollY + py) / vp.hh) * 60 - minuteBefore)).toBeLessThan(0.5);
   });
+  it("keeps the committed hour height a multiple of 4 px, even for tiny pinch steps", () => {
+    const { vp, run } = harness();
+    vp.reset({ hh: 60 });
+    for (let i = 0; i < 12; i++) vp.wheel(ev({ deltaY: -3, ctrlKey: true }), 100); // 12 tiny steps add up
+    run(300);
+    expect(vp.hh % 4).toBe(0);
+    expect(vp.hh).toBeGreaterThan(60);
+  });
   it("never zooms out beyond fitting 24 hours", () => {
     const { vp, run } = harness();
     vp.wheel(ev({ deltaY: 100000, ctrlKey: true }), 0);
     run(300);
-    expect(vp.hh).toBeCloseTo(600 / 24, 5);
+    expect(vp.hh).toBe(28); // 600 / 24 = 25, rounded up to a multiple of the 4 px step
   });
   it("moves horizontally with Shift and snaps to a whole day", async () => {
     const { vp, run } = harness();
