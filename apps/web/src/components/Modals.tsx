@@ -125,6 +125,7 @@ const TIMEZONES = [
 /** Where the data comes from (desktop app only): the sample, or the notes of the user's vault. */
 function VaultSettings() {
   const dataSource = useApp((s) => s.settings.dataSource);
+  const writeOn = useApp((s) => s.settings.vaultWrite);
   const source = useApp((s) => s.source);
   const vault = useApp((s) => s.vault);
   const app = useApp.getState();
@@ -157,10 +158,17 @@ function VaultSettings() {
       </Field>
       {source === "vault" && (
         <>
-          <Field
-            label={t("settings.vaultStatus", { n: vault.notes, m: vault.ignored.length })}
-            hint={t("settings.vaultReadOnly")}
-          >
+          <Field label={t("settings.vaultWrite")} hint={t("settings.vaultWriteHint")}>
+            <Segmented
+              value={writeOn}
+              onChange={(v) => useApp.getState().setSettings({ vaultWrite: v })}
+              options={[
+                { v: false, label: t("settings.vaultWrite.off") },
+                { v: true, label: t("settings.vaultWrite.on") },
+              ]}
+            />
+          </Field>
+          <Field label={t("settings.vaultStatus", { n: vault.notes, m: vault.ignored.length })}>
             <button type="button" className="btn" onClick={() => void app.loadVault()}>
               {t("settings.vaultReload")}
             </button>

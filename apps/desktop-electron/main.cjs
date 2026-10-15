@@ -3,7 +3,7 @@
 //   BONI_START_QUERY  query string appended to the page URL, e.g. "bench=auto"
 //   BONI_BENCH_OUT    file where the benchmark result is written (the app then quits)
 //   BONI_SCREENSHOT   file where a PNG of the window is written after load (the app then quits)
-const { app, BrowserWindow, dialog, ipcMain, Menu, screen } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } = require("electron");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
@@ -80,14 +80,16 @@ let stopWatching = null;
 function useVault(root) {
   stopWatching?.();
   stopWatching = null;
-  vault = openVault(root);
+  vault = openVault(root, { trashItem: (p) => shell.trashItem(p) });
   fs.writeFileSync(vaultFile(), JSON.stringify({ root: vault.root }));
   return vault.root;
 }
 
 function restoreVault() {
   try {
-    vault = openVault(JSON.parse(fs.readFileSync(vaultFile(), "utf8")).root);
+    vault = openVault(JSON.parse(fs.readFileSync(vaultFile(), "utf8")).root, {
+      trashItem: (p) => shell.trashItem(p),
+    });
   } catch {
     vault = null; // nothing chosen yet, or the folder is gone
   }
@@ -95,11 +97,11 @@ function restoreVault() {
 
 /** Handlers answer `{ ok: true, value }` or `{ ok: false, code, message }`; errors never cross IPC as exceptions. */
 function handle(channel, fn) {
-  ipcMain.handle(channel, (e, ...args) => {
+  ipcMain.handle(channel, async (e, ...args) => {
     try {
       if (channel !== "vault:choose-root" && !vault)
         throw new VaultError("no-vault", "No vault chosen");
-      return { ok: true, value: fn.apply({ sender: e.sender }, args) };
+      return { ok: true, value: await fn.apply({ sender: e.sender }, args) };
     } catch (e) {
       return { ok: false, code: e.code ?? "error", message: String(e.message ?? e) };
     }
@@ -137,6 +139,17 @@ handle("vault:cache-write", (text) => {
   const tmp = `${cacheFile()}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, text);
   fs.renameSync(tmp, cacheFile());
+  return null;
+});
+handle("vault:rename", (from, to) => vault.rename(from, to));
+handle("vault:trash", async (rel) => {
+  await vault.trash(rel);
+  return null;
+});
+handle("vault:open-note", (rel) => {
+  // Obsidian opens a note given its absolute path; the URL is built here, never taken from the UI.
+  const abs = vault.locate(rel);
+  void shell.openExternal(`obsidian://open?path=${encodeURIComponent(abs)}`);
   return null;
 });
 handle("vault:create", (rel, text) => vault.create(rel, text));

@@ -197,3 +197,63 @@ test("watch skips folders that do not exist and refuses reserved ones", () => {
     "denied",
   );
 });
+
+test("rename moves a note across folders without overwriting", () => {
+  const { root, vault } = makeVault();
+  const from = "agenda/docencia/2026-12-22 Clase de ejemplo.md";
+  const to = "agenda/salud/2026-12-22 Clase de ejemplo.md";
+  const r = vault.rename(from, to);
+  assert.equal(r.exists, false);
+  assert.ok(!fs.existsSync(path.join(root, from)));
+  assert.ok(fs.existsSync(path.join(root, to)));
+  assert.deepEqual(vault.rename(to, "agenda/planes/2026-11-01 Plan.md"), { exists: true });
+  assert.equal(
+    code(() => vault.rename("agenda/nope.md", "agenda/x.md")),
+    "not-found",
+  );
+  assert.equal(
+    code(() => vault.rename(to, "private/x.md")),
+    "denied",
+  );
+});
+
+test("trash sends a note away and refuses what is not a note", async () => {
+  const { root, vault } = makeVault();
+  const rel = "agenda/planes/2026-11-01 Plan.md";
+  await vault.trash(rel);
+  assert.ok(!fs.existsSync(path.join(root, rel)));
+  assert.ok(fs.existsSync(path.join(root, ".trash", "2026-11-01 Plan.md")));
+  // a second note with the same name does not overwrite the first one in the trash
+  fs.writeFileSync(path.join(root, rel), "again");
+  await vault.trash(rel);
+  assert.ok(fs.existsSync(path.join(root, ".trash", "2026-11-01 Plan 2.md")));
+  await assert.rejects(
+    () => vault.trash("private/secret.md"),
+    (e) => e.code === "denied",
+  );
+  await assert.rejects(
+    () => vault.trash("agenda/nope.md"),
+    (e) => e.code === "not-found",
+  );
+
+  const sent = [];
+  const other = openVault(makeVault().root, { trashItem: async (p) => sent.push(p) });
+  await other.trash("agenda/planes/2026-11-01 Plan.md");
+  assert.equal(sent.length, 1);
+});
+
+test("locate gives the absolute path of an existing note only", () => {
+  const { root, vault } = makeVault();
+  assert.equal(
+    vault.locate("agenda/planes/2026-11-01 Plan.md"),
+    path.join(fs.realpathSync(root), "agenda/planes/2026-11-01 Plan.md"),
+  );
+  assert.equal(
+    code(() => vault.locate("agenda/planes/nope.md")),
+    "not-found",
+  );
+  assert.equal(
+    code(() => vault.locate("private/secret.md")),
+    "denied",
+  );
+});

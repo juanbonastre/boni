@@ -7,7 +7,7 @@ import type {
   Model,
   Row,
 } from "./collections.ts";
-import type { Account } from "./model.ts";
+import type { Account, PropValue } from "./model.ts";
 import type { ParsedNote } from "./notes.ts";
 import { makeProjector } from "./projection.ts";
 import { validateModel } from "./validate.ts";
@@ -271,4 +271,52 @@ export function unplaceableRows(
     }
   }
   return out;
+}
+
+const FORBIDDEN = /[\\/:*?"<>|]/g;
+const OBSIDIAN_UNSAFE = /[[\]#^]/g;
+
+/**
+ * The file name (without ".md") a new note gets: the definition's `newNote.name` pattern with
+ * `{column}` replaced by the row's values, cleaned so every file system and Obsidian accept it.
+ */
+export function noteFileName(def: CollectionDef, values: Record<string, PropValue>): string {
+  const pattern = def.newNote?.name ?? "{title}";
+  const raw = pattern.replace(/\{(\w+)\}/g, (_, k: string) => {
+    const v = values[k];
+    return v === null || v === undefined ? "" : Array.isArray(v) ? v.join(" ") : String(v);
+  });
+  return raw
+    .replace(FORBIDDEN, "-")
+    .replace(OBSIDIAN_UNSAFE, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/, "")
+    .slice(0, 120)
+    .trim();
+}
+
+/**
+ * `folder/name.md`, or `folder/name 2.md`, `folder/name 3.md`... for the first one `taken` says is free.
+ * The counter goes on the file name only; the note's `title` stays as typed.
+ */
+export function uniqueNotePath(
+  folder: string,
+  name: string,
+  taken: (path: string) => boolean,
+): string {
+  const base = name || "Sin título";
+  let path = `${folder}/${base}.md`;
+  for (let n = 2; taken(path); n++) path = `${folder}/${base} ${n}.md`;
+  return path;
+}
+
+/**
+ * Moves a note to another collection: its "Area: [[x]]" line becomes the one of the new collection's
+ * template (when both have one), the rest of the body is untouched.
+ */
+export function withAreaLine(body: string, templateBody: string): string {
+  const area = /^Area: \[\[[^\]]*\]\][ \t]*$/m;
+  const target = area.exec(templateBody);
+  return target && area.test(body) ? body.replace(area, target[0]) : body;
 }

@@ -4,6 +4,7 @@ import {
   CheckSquare,
   ChevronRight,
   Copy,
+  ExternalLink,
   Eye,
   EyeOff,
   Maximize2,
@@ -193,6 +194,11 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
           </Item>
           <div className="menu-sep" />
         </>
+      )}
+      {!multi && app.noteOfEvent(id) && (
+        <Item icon={<ExternalLink size={14} />} onClick={run(() => void app.openNote(id))}>
+          {t("ctx.openNote")}
+        </Item>
       )}
       {canTask && allTasks && (
         <Item

@@ -1,5 +1,6 @@
+import type { CollectionDef } from "@boni-calendar/core";
 import type { VaultBridge } from "../vaultBridge.ts";
-import { parseIndex, serializeIndex, type VaultIndex } from "./index.ts";
+import { type IndexEntry, parseIndex, serializeIndex, type VaultIndex } from "./index.ts";
 import { loadVault, type VaultLoad } from "./loadVault.ts";
 
 /**
@@ -8,8 +9,46 @@ import { loadVault, type VaultLoad } from "./loadVault.ts";
  * read and parsed. A watcher (and window focus, which also covers synced changes) triggers re-reads.
  */
 let index: VaultIndex | null = null;
-let busy = false;
+let defs: CollectionDef[] = [];
+let refreshing = false;
 let again = false;
+let lock: Promise<unknown> = Promise.resolve();
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Ids the app gave to rows before their note existed, and the path the note got. */
+export const aliases = new Map<string, string>();
+
+/** Runs `task` after everything before it finished: reads and writes of the vault never overlap. */
+export function withLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = lock.then(task, task);
+  lock = run.catch(() => undefined);
+  return run;
+}
+
+export const currentDefs = (): CollectionDef[] => defs;
+/** The path of the note an event id stands for (it may be a temporary id), if that note exists. */
+export function noteOf(id: string): string | null {
+  const path = aliases.get(id) ?? id;
+  return index?.has(path) ? path : null;
+}
+
+export const vaultEntries = (): VaultIndex => index ?? new Map();
+
+/** Records what a write left on disk so the next scan sees nothing new. */
+export function setEntry(path: string, entry: IndexEntry): void {
+  index?.set(path, entry);
+}
+export function dropEntry(path: string): void {
+  index?.delete(path);
+}
+
+/** Saves the index a moment after the last change (writes come in bursts). */
+export function persistSoon(bridge: VaultBridge): void {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    if (index) void bridge.cacheWrite?.(serializeIndex(index));
+  }, 800);
+}
 let stopListening: (() => void) | null = null;
 let watched = "";
 
@@ -32,27 +71,28 @@ export async function readVault(
   const r = await loadVault(bridge, opts, prev);
   const changed = r.read > 0 || r.index.size !== prev.size || index === null;
   index = r.index;
+  defs = r.defs;
   if (changed) void bridge.cacheWrite?.(serializeIndex(r.index));
   return r;
 }
 
 /**
- * Runs `task` now, or after the running one finishes if there is one (changes that arrive meanwhile
- * must not be lost, and two reads must not overlap).
+ * Runs a refresh now, or once more after the running one finishes if there is one (changes that arrive
+ * meanwhile must not be lost). Refreshes also wait for any write in progress.
  */
 export async function serialized(task: () => Promise<void>): Promise<void> {
-  if (busy) {
+  if (refreshing) {
     again = true;
     return;
   }
-  busy = true;
+  refreshing = true;
   try {
     do {
       again = false;
-      await task();
+      await withLock(task);
     } while (again);
   } finally {
-    busy = false;
+    refreshing = false;
   }
 }
 
