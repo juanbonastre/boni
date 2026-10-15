@@ -1,8 +1,7 @@
 packages:
   - packages/*
   - apps/*
-onlyBuiltDependencies:
-  - esbuild
-  - electron
-ignoredBuiltDependencies:
-  - electron-winstaller
+allowBuilds:
+  esbuild: true
+  electron: true
+  electron-winstaller: false
