@@ -1,3 +1,4 @@
+import { PROJECTS_COLLECTION, propertyToColumn } from "./calendars.ts";
 import type {
   CalendarMapping,
   CalendarView,
@@ -15,14 +16,7 @@ import type { CivilDay } from "./time.ts";
 /** Calendars whose rows keep date and time in separate columns (the shape of `agenda/` notes). */
 const SPLIT_CALENDARS = new Set(["teaching", "health", "plans", "study"]);
 
-export const PROJECTS_COLLECTION = "projects";
-
 const col = (id: string, name: string, type: Column["type"]): Column => ({ id, name, type });
-
-const toColumn = (p: PropertyDef): Column =>
-  p.type === "project"
-    ? { id: p.id, name: p.name, type: "relation", target: PROJECTS_COLLECTION }
-    : { id: p.id, name: p.name, type: p.type, ...(p.options ? { options: p.options } : {}) };
 
 function collectionAndMapping(
   id: string,
@@ -49,7 +43,7 @@ function collectionAndMapping(
     col("description", "Descripción", "text"),
     col("recurrence", "Repetición", "text"),
     { id: "exdates", name: "Excepciones", type: "dates" },
-    ...schema.map(toColumn),
+    ...schema.map(propertyToColumn),
   ];
   const mapping: CalendarMapping = {
     title: "title",
