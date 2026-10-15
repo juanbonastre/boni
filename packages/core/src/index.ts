@@ -2,6 +2,7 @@ export * from "./calendars.ts";
 export * from "./codec.ts";
 export * from "./collections.ts";
 export * from "./layout.ts";
+export * from "./mappingRoles.ts";
 export * from "./model.ts";
 export * from "./projection.ts";
 export * from "./provider.ts";

@@ -156,6 +156,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
   const [menu, setMenu] = useState(false);
   const isNew = app.newEventId === ev.id;
   const close = () => app.clearSelection();
+  const tasks = app.supportsTasks(ev.calendarId);
   const update = (patch: Partial<CalEvent>) => app.editEvents([ev.id], patch);
   const setProp = (id: string, v: PropValue) => update({ props: { ...ev.props, [id]: v } });
   const h24 = app.settings.h24;
@@ -220,7 +221,8 @@ function DetailBody({ ev }: { ev: CalEvent }) {
         <button
           type="button"
           className="task-toggle"
-          title={ev.isTask ? t("event.done") : t("event.task")}
+          disabled={!tasks}
+          title={tasks ? (ev.isTask ? t("event.done") : t("event.task")) : undefined}
           style={{ "--c": cal?.color ?? "#888" } as CSSProperties}
           onClick={() => (ev.isTask ? update({ done: !ev.done }) : update({ isTask: true }))}
         >
@@ -268,35 +270,37 @@ function DetailBody({ ev }: { ev: CalEvent }) {
             />
           </div>
         </div>
-        <div className="prop-row">
-          <span className="prop-icon">
-            <CheckSquare size={15} strokeWidth={1.8} />
-          </span>
-          <span className="prop-name">{t("event.type")}</span>
-          <div className="prop-value">
-            <div className="segmented small" role="radiogroup" aria-label={t("event.type")}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={!ev.isTask}
-                className={ev.isTask ? "" : "on"}
-                onClick={() => ev.isTask && update({ isTask: false, done: false })}
-              >
-                {t("event.typeEvent")}
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={ev.isTask}
-                className={ev.isTask ? "on" : ""}
-                onClick={() => !ev.isTask && update({ isTask: true })}
-              >
-                {t("event.typeTask")}
-              </button>
+        {tasks && (
+          <div className="prop-row">
+            <span className="prop-icon">
+              <CheckSquare size={15} strokeWidth={1.8} />
+            </span>
+            <span className="prop-name">{t("event.type")}</span>
+            <div className="prop-value">
+              <div className="segmented small" role="radiogroup" aria-label={t("event.type")}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!ev.isTask}
+                  className={ev.isTask ? "" : "on"}
+                  onClick={() => ev.isTask && update({ isTask: false, done: false })}
+                >
+                  {t("event.typeEvent")}
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={ev.isTask}
+                  className={ev.isTask ? "on" : ""}
+                  onClick={() => !ev.isTask && update({ isTask: true })}
+                >
+                  {t("event.typeTask")}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-        {ev.isTask && (
+        )}
+        {tasks && ev.isTask && (
           <div className="prop-row">
             <span className="prop-icon" />
             <span className="prop-name">{t("event.done")}</span>

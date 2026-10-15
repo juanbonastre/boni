@@ -55,10 +55,14 @@ slate `#94a3b8`.
 - Sidebar: mini month whose highlighted band is exactly the visible days, calendars grouped by account with colour
   swatch, eye (and a properties gear on hover), search and new-event buttons on top, settings at the bottom.
 - Event detail: a popover anchored to the event; the expand button turns it into a right side panel. Fields in order:
-  title, date and times, repeat, calendar, type (Event / Task) and done, calendar properties, location, description,
-  read-only id and timestamps.
+  title, date and times, repeat, calendar, type (Event / Task) and done (only when the calendar maps a task column),
+  calendar properties, location, description, read-only id and timestamps.
 - Context menus (right click or long press) on events, empty time slots, month cells and calendars; the same actions as
   the detail where they exist. Several selected events: actions apply to all and show "(n)".
+- Calendar properties dialog (sidebar gear, context menu): name, colour, **Calendar view** (which column of each row plays
+  date, start and end time, end date and tasks; a status column also asks "Done when"), then **Other properties** (the
+  columns the view does not use, each with its type and options). Mapped columns never appear twice: they are controls of
+  the event (date, times, task), not properties. A calendar is a view of a collection of rows; rows are the truth.
 - Command palette (`Ctrl+K`): commands, event search, "go to date" and natural-language quick create
   ("clase FUP manana 10-12 #docencia").
 - Toasts at the bottom centre with an Undo action. A floating selection bar appears with two or more selected events.
@@ -81,7 +85,9 @@ slate `#94a3b8`.
   popover lets clicks through.
 - **Recurrence:** editing, moving or deleting an occurrence asks "Only this event / This and following events / All
   events" (cancel is always possible). Changing the repetition rule itself applies to the whole series.
-- **Tasks:** an event can be switched to Task in the detail or the context menu; tasks show a checkbox in the card.
+- **Tasks:** an event can be switched to Task in the detail or the context menu; tasks show a checkbox in the card. A
+  calendar offers this only if its view maps a task column: a checkbox column (empty = event, unchecked = open task,
+  checked = done) or a status column with chosen done states. Calendars without one show no Event / Task controls.
 - **Read-only calendars** can be selected but not edited or dragged.
 - Every edit is optimistic and undoable; one gesture is one undo step.
 

@@ -4,6 +4,7 @@ import {
   type CalEvent,
   type CalendarData,
   type CalendarDef,
+  type CalendarMapping,
   type CalendarView,
   type CivilDay,
   type Collection,
@@ -31,8 +32,10 @@ import {
   type Scope,
   startOfMonth,
   startOfWeek,
+  supportsTasks,
   systemTimeZone,
   todayIn,
+  validateModel,
   type When,
   withSchema,
 } from "@boni-calendar/core";
@@ -170,6 +173,10 @@ export interface AppState {
   toggleCalendar: (id: string) => void;
   updateCalendar: (id: string, patch: Partial<CalendarDef>) => void;
   setSchema: (id: string, schema: PropertyDef[]) => void;
+  /** Which columns a calendar reads (date, times, task...). Ignored when the result would be invalid. */
+  setMapping: (id: string, mapping: CalendarMapping) => void;
+  /** Whether events of this calendar can be tasks (it maps a task column). */
+  supportsTasks: (calendarId: string) => boolean;
   select: (id: string | null, popover?: boolean) => void;
   clickSelect: (id: string, mods: { ctrl: boolean; shift: boolean }) => void;
   clearSelection: () => void;
@@ -472,6 +479,16 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     setSchema: (id, schema) => get().updateCalendar(id, { schema }),
+
+    setMapping: (id, mapping) => {
+      const s = get();
+      const views = s.views.map((v) => (v.id === id ? { ...v, mapping } : v));
+      const errors = validateModel(s.collections, views).filter((i) => i.severity === "error");
+      if (errors.length > 0) return console.warn("mapping rejected", errors);
+      setDefinitions({ views });
+    },
+
+    supportsTasks: (calendarId) => supportsTasks(get().projector.model, calendarId),
 
     select: (id, popover = true) =>
       set({

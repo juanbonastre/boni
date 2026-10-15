@@ -48,5 +48,5 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   separadas o inicio/fin ISO, tarea por casilla o estado, repeticion como texto RRULE), proyeccion fila a evento y
   vuelta, `reconcileRows`, `CollectionProvider`, validacion y la muestra como colecciones. PR 2: la app guarda filas y
   deriva eventos, calendarios y proyectos de ellas (todos los e2e anteriores pasan sin cambios); cada cambio se entrega a
-  un `CollectionProvider` (en memoria por ahora). PR 3: interfaz de columnas y mapeo.
+  un `CollectionProvider` (en memoria por ahora). PR 3: el dialogo de propiedades del calendario gana la seccion "Vista de calendario" (columnas de fecha, horas y tareas; estado con "Hecha cuando"); los calendarios sin columna de tarea no ofrecen Evento / Tarea.
 - Pasos 2 a 5: la app lee y escribe el vault, plugin de Obsidian, servidor en el NAS, SQLite solo si hay un caso real.
