@@ -67,6 +67,21 @@ export function parseNote(text: string): ParsedNote {
   return { values, body: s.body, hasFrontmatter: true };
 }
 
+/** The whole properties block as plain data (nested maps included), for notes that hold structured definitions. */
+export function frontmatterData(
+  text: string,
+): { data: Record<string, unknown> } | { error: string } {
+  const s = split(text);
+  if (!s.has) return { data: {} };
+  const doc = parseDocument(s.yaml);
+  const first = doc.errors[0];
+  if (first) return { error: first.message };
+  const js = doc.toJS();
+  if (js === null || js === undefined) return { data: {} };
+  if (typeof js !== "object" || Array.isArray(js)) return { error: "properties are not a map" };
+  return { data: js as Record<string, unknown> };
+}
+
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /** A node for a new value: strings are always double-quoted ("09:30", "[[link]]"), lists use flow style. */

@@ -31,6 +31,7 @@ async function boot() {
     </StrictMode>,
   );
   (window as unknown as { __app: unknown }).__app = useApp;
+  if (useApp.getState().source === "vault") void useApp.getState().loadVault();
   if (params.has("bench")) {
     const { autoBench, runBench } = await import("./bench.ts");
     (window as unknown as { __runBench: unknown }).__runBench = runBench;

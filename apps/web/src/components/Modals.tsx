@@ -20,6 +20,7 @@ import { Plus, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type Key, t } from "../i18n.ts";
 import { useApp } from "../store.ts";
+import { vaultBridge } from "../vaultBridge.ts";
 import { ChoicePicker, DraftInput } from "./fields.tsx";
 
 function Modal({
@@ -121,8 +122,85 @@ const TIMEZONES = [
   "UTC",
 ];
 
+/** Where the data comes from (desktop app only): the sample, or the notes of the user's vault. */
+function VaultSettings() {
+  const dataSource = useApp((s) => s.settings.dataSource);
+  const source = useApp((s) => s.source);
+  const vault = useApp((s) => s.vault);
+  const app = useApp.getState();
+  useEffect(() => {
+    void vaultBridge()
+      ?.getRoot()
+      .then((r) => r.ok && useApp.setState((s) => ({ vault: { ...s.vault, root: r.value } })));
+  }, []);
+  const reason = (r: string) => (r === "no-date" ? t("vault.reason.no-date") : r);
+  return (
+    <>
+      <h3>{t("settings.data")}</h3>
+      <Field label={t("settings.source")}>
+        <Segmented
+          value={dataSource}
+          onChange={(v) => void app.setDataSource(v)}
+          options={[
+            { v: "sample", label: t("settings.source.sample") },
+            { v: "vault", label: t("settings.source.vault") },
+          ]}
+        />
+      </Field>
+      <Field label={t("settings.vaultFolder")}>
+        <span className="vault-path" title={vault.root ?? undefined}>
+          {vault.root ?? t("settings.vaultNone")}
+        </span>
+        <button type="button" className="btn" onClick={() => void app.chooseVaultRoot()}>
+          {t("settings.vaultChoose")}
+        </button>
+      </Field>
+      {source === "vault" && (
+        <>
+          <Field
+            label={t("settings.vaultStatus", { n: vault.notes, m: vault.ignored.length })}
+            hint={t("settings.vaultReadOnly")}
+          >
+            <button type="button" className="btn" onClick={() => void app.loadVault()}>
+              {t("settings.vaultReload")}
+            </button>
+          </Field>
+          {vault.ignored.length > 0 && (
+            <details className="vault-list">
+              <summary>
+                {t("settings.vaultIgnored")} ({vault.ignored.length})
+              </summary>
+              <ul>
+                {vault.ignored.map((n) => (
+                  <li key={n.path}>
+                    <span className="vault-note-path">{n.path}</span>
+                    <span className="muted">{reason(n.reason)}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {vault.problems.length > 0 && (
+            <details className="vault-list" open>
+              <summary>
+                {t("settings.vaultProblems")} ({vault.problems.length})
+              </summary>
+              <ul>
+                {vault.problems.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 export function SettingsModal() {
   const settings = useApp((s) => s.settings);
+  const source = useApp((s) => s.source);
   const set = useApp((s) => s.setSettings);
   const close = () => useApp.getState().set({ settingsOpen: false });
   const tzs = TIMEZONES.includes(settings.tz) ? TIMEZONES : [settings.tz, ...TIMEZONES];
@@ -232,12 +310,17 @@ export function SettingsModal() {
           options={[5, 10, 15, 30].map((v) => ({ v, label: String(v) }))}
         />
       </Field>
-      <h3>{t("settings.general")}</h3>
-      <Field label={t("settings.reset")} hint={t("settings.resetHint")}>
-        <button type="button" className="btn" onClick={() => useApp.getState().resetData()}>
-          {t("settings.reset")}
-        </button>
-      </Field>
+      {vaultBridge() && <VaultSettings />}
+      {source !== "vault" && (
+        <>
+          <h3>{t("settings.general")}</h3>
+          <Field label={t("settings.reset")} hint={t("settings.resetHint")}>
+            <button type="button" className="btn" onClick={() => useApp.getState().resetData()}>
+              {t("settings.reset")}
+            </button>
+          </Field>
+        </>
+      )}
     </Modal>
   );
 }
