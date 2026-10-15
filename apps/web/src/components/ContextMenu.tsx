@@ -161,7 +161,7 @@ function Item({
 }
 
 function EventItems({ id, close }: { id: string; close: () => void }) {
-  const events = useApp((s) => s.data.events);
+  const events = useApp((s) => s.expanded());
   const calendars = useApp((s) => s.data.calendars);
   const selectedIds = useApp((s) => s.selectedIds);
   const [sub, setSub] = useState(false);
@@ -197,7 +197,7 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
         <Item
           icon={allDone ? <Square size={14} /> : <CheckSquare size={14} />}
           disabled={locked}
-          onClick={run(() => app.updateEvents(ids, { done: !allDone }))}
+          onClick={run(() => app.editEvents(ids, { done: !allDone }))}
         >
           {(allDone ? t("ctx.markUndone") : t("ctx.markDone")) + suffix}
         </Item>
@@ -206,7 +206,7 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
         icon={<CalendarDays size={14} />}
         disabled={locked}
         onClick={run(() =>
-          app.updateEvents(ids, allTasks ? { isTask: false, done: false } : { isTask: true }),
+          app.editEvents(ids, allTasks ? { isTask: false, done: false } : { isTask: true }),
         )}
       >
         {(allTasks ? t("ctx.makeEvent") : t("ctx.makeTask")) + suffix}
@@ -242,7 +242,7 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
                 <Item
                   key={c.id}
                   icon={<span className="swatch sm" style={{ "--c": c.color } as CSSProperties} />}
-                  onClick={run(() => app.updateEvents(ids, { calendarId: c.id }))}
+                  onClick={run(() => app.editEvents(ids, { calendarId: c.id }))}
                   hint={targets.every((e) => e.calendarId === c.id) ? "✓" : undefined}
                 >
                   {c.name}
@@ -256,7 +256,7 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
         icon={<Trash2 size={14} />}
         danger
         disabled={locked}
-        onClick={run(() => app.deleteEvents(ids))}
+        onClick={run(() => app.removeEvents(ids))}
         hint="Supr"
       >
         {t("ctx.delete") + suffix}

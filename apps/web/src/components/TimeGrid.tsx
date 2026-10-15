@@ -15,7 +15,7 @@ import {
   tzOffsetMs,
   weekdayNames,
 } from "@boni-calendar/core";
-import { Check, Plus } from "lucide-react";
+import { Check, Plus, Repeat } from "lucide-react";
 import {
   type CSSProperties,
   memo,
@@ -133,6 +133,7 @@ export function TimeGrid() {
   // Keep the committed render window in sync with the transform, right after React commits.
   useLayoutEffect(() => {
     renderStartRef.current = renderStart;
+    useApp.getState().setWindow(renderStart - 2, renderStart + renderCount + 2);
     apply(vp.hh, vp.scrollY, vp.viewX);
   });
 
@@ -317,7 +318,14 @@ export function TimeGrid() {
                     } as CSSProperties
                   }
                 >
+                  {!s.clippedStart && (
+                    <span className="bar-handle start" data-bar-edge="start" data-bar-id={s.id} />
+                  )}
                   <span className="bar-title">{ev.title || t("event.untitled")}</span>
+                  {ev.recurrence && <Repeat size={10} className="rep" />}
+                  {!s.clippedEnd && (
+                    <span className="bar-handle end" data-bar-edge="end" data-bar-id={s.id} />
+                  )}
                 </button>
               );
             })}
@@ -552,7 +560,10 @@ const EventBlock = memo(function EventBlock(p: {
             {ev.done && <Check size={9} strokeWidth={3.5} />}
           </span>
         )}
-        <span className="ev-title">{ev.title || t("event.untitled")}</span>
+        <span className="ev-head">
+          <span className="ev-title">{ev.title || t("event.untitled")}</span>
+          {ev.recurrence && <Repeat size={10} className="rep" />}
+        </span>
         <span className="ev-time">{evTime(ev, seg, p.h24)}</span>
       </div>
       {!seg.continuesAfter && <div className="ev-resize" data-resize={ev.id} />}

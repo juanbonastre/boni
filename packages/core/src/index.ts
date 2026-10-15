@@ -2,5 +2,8 @@ export * from "./layout.ts";
 export * from "./model.ts";
 export * from "./queries.ts";
 export * from "./quick.ts";
+export * from "./recurrence.ts";
+export * from "./recurrenceEdit.ts";
 export * from "./sample.ts";
+export * from "./shift.ts";
 export * from "./time.ts";

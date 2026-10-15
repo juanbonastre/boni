@@ -1,8 +1,11 @@
 import {
+  allDaySpan,
   type CivilDay,
   daySegments,
   fromLocal,
   MS_MIN,
+  resizeAllDay,
+  shiftWhenByDays,
   toLocal,
   type When,
 } from "@boni-calendar/core";
@@ -28,7 +31,22 @@ type Gesture =
       /** Other selected events that travel with it. */
       group: { id: string; when: When }[];
     }
-  | { type: "resize"; id: string; day: CivilDay; tz: string; startMs: number; segDay: CivilDay };
+  | { type: "resize"; id: string; day: CivilDay; tz: string; startMs: number; segDay: CivilDay }
+  | {
+      type: "allday-move";
+      id: string;
+      grabDay: CivilDay;
+      orig: When;
+      group: { id: string; when: When }[];
+    }
+  | {
+      type: "bar-resize";
+      id: string;
+      edge: "start" | "end";
+      orig: Extract<When, { kind: "allday" }>;
+    }
+  | { type: "allday-create-press"; x: number; y: number; day: CivilDay; pointerId: number }
+  | { type: "allday-create"; anchorDay: CivilDay };
 
 interface Args {
   bodyRef: RefObject<HTMLDivElement | null>;
@@ -112,7 +130,25 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     if (!g || !pos) return;
     const app = useApp.getState();
     const tz = app.settings.tz;
-    if (g.type === "create") {
+    if (g.type === "allday-create") {
+      app.setDrag({ kind: "create", id: NEW_ID, when: allDaySpan(g.anchorDay, pos.day) });
+    } else if (g.type === "allday-move") {
+      const dayDelta = pos.day - g.grabDay;
+      const group: Record<string, When> = {};
+      for (const o of g.group) group[o.id] = shiftWhenByDays(o.when, dayDelta);
+      app.setDrag({
+        kind: "move",
+        id: g.id,
+        when: shiftWhenByDays(g.orig, dayDelta),
+        group: g.group.length ? group : undefined,
+      });
+    } else if (g.type === "bar-resize") {
+      app.setDrag({
+        kind: "resize",
+        id: g.id,
+        when: resizeAllDay(g.orig, g.edge, pos.day),
+      });
+    } else if (g.type === "create") {
       const cur = clampMin(pos.minute);
       const snap = snapOf();
       let s = g.anchor;
@@ -171,17 +207,33 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     const app = useApp.getState();
     if (target.closest("[data-check]")) {
       const id = (target.closest("[data-check]") as HTMLElement).dataset.check;
-      const ev = app.data.events.find((x) => x.id === id);
-      if (ev) app.updateEvent(ev.id, { done: !ev.done });
+      const ev = app.getEvent(id ?? "");
+      if (ev) app.editEvents([ev.id], { done: !ev.done });
       e.stopPropagation();
       return;
     }
     last.current = { x: e.clientX, y: e.clientY };
+    const edge = target.closest<HTMLElement>("[data-bar-edge]");
+    if (edge?.dataset.barId) {
+      const ev = app.getEvent(edge.dataset.barId);
+      if (ev?.when.kind === "allday" && !app.isLocked(ev.id)) {
+        gesture.current = {
+          type: "bar-resize",
+          id: ev.id,
+          edge: edge.dataset.barEdge === "start" ? "start" : "end",
+          orig: ev.when,
+        };
+        e.currentTarget.setPointerCapture(e.pointerId);
+        app.select(ev.id, false);
+        e.preventDefault();
+      }
+      return;
+    }
     const resize = target.closest("[data-resize]") as HTMLElement | null;
     const evEl = target.closest(".ev, .bar") as HTMLElement | null;
     if (resize) {
-      const ev = app.data.events.find((x) => x.id === resize.dataset.resize);
-      if (ev && ev.when.kind === "timed") {
+      const ev = app.getEvent(resize.dataset.resize ?? "");
+      if (ev && ev.when.kind === "timed" && !app.isLocked(ev.id)) {
         const segs = daySegments(ev);
         const last_ = segs[segs.length - 1];
         gesture.current = {
@@ -209,6 +261,19 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
       e.currentTarget.setPointerCapture(e.pointerId);
       return;
     }
+    if (target.closest(".allday-viewport")) {
+      const pos = toGrid(e.clientX, e.clientY);
+      if (!pos) return;
+      gesture.current = {
+        type: "allday-create-press",
+        x: e.clientX,
+        y: e.clientY,
+        day: pos.day,
+        pointerId: e.pointerId,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+      return;
+    }
     if (target.closest(".cols-viewport")) {
       const pos = toGrid(e.clientX, e.clientY);
       if (!pos) return;
@@ -224,46 +289,69 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     }
   };
 
+  /** Other selected events that travel with `primary` when it is dragged. */
+  const groupOf = (primaryId: string) => {
+    const app = useApp.getState();
+    const inSelection = app.selectedIds.includes(primaryId) && app.selectedIds.length > 1;
+    const group = inSelection
+      ? app
+          .expanded()
+          .filter((x) => x.id !== primaryId && app.selectedIds.includes(x.id))
+          .map((x) => ({ id: x.id, when: x.when }))
+      : [];
+    return { inSelection, group };
+  };
+
   const onPointerMove = (e: RPE<HTMLDivElement>) => {
     const g = gesture.current;
     if (!g) return;
     last.current = { x: e.clientX, y: e.clientY };
     const app = useApp.getState();
+    const moved = (x: number, y: number) => Math.hypot(e.clientX - x, e.clientY - y) >= THRESHOLD;
+
     if (g.type === "press") {
-      if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < THRESHOLD) return;
-      const ev = indexRef.current.byId.get(g.id) ?? app.data.events.find((x) => x.id === g.id);
-      if (ev?.when.kind !== "timed") {
+      if (!moved(g.x, g.y)) return;
+      const ev = indexRef.current.byId.get(g.id) ?? app.getEvent(g.id);
+      if (!ev || app.isLocked(ev.id)) {
         gesture.current = null;
         return;
       }
-      const pos = toGrid(g.x, g.y);
-      const segs = daySegments(ev);
-      const seg = segs.find((s) => s.day === pos?.day) ?? segs[0];
-      const grab = pos && seg ? pos.minute - seg.start : 0;
+      const { inSelection, group } = groupOf(ev.id);
+      if (ev.when.kind === "allday") {
+        gesture.current = {
+          type: "allday-move",
+          id: ev.id,
+          grabDay: toGrid(g.x, g.y)?.day ?? 0,
+          orig: ev.when,
+          group,
+        };
+      } else {
+        const pos = toGrid(g.x, g.y);
+        const segs = daySegments(ev);
+        const seg = segs.find((s) => s.day === pos?.day) ?? segs[0];
+        gesture.current = {
+          type: "move",
+          id: ev.id,
+          grab: pos && seg ? pos.minute - seg.start : 0,
+          durMs: ev.when.end - ev.when.start,
+          tz: ev.when.tz,
+          origStart: ev.when.start,
+          group,
+        };
+        startEdge();
+      }
       // Dragging one of several selected events moves the whole selection; otherwise just this one.
-      const inSelection = app.selectedIds.includes(ev.id) && app.selectedIds.length > 1;
-      const group = inSelection
-        ? app.data.events
-            .filter((x) => x.id !== ev.id && app.selectedIds.includes(x.id))
-            .map((x) => ({ id: x.id, when: x.when }))
-        : [];
-      gesture.current = {
-        type: "move",
-        id: ev.id,
-        grab,
-        durMs: ev.when.end - ev.when.start,
-        tz: ev.when.tz,
-        origStart: ev.when.start,
-        group,
-      };
       if (!inSelection) app.select(ev.id, false);
       else app.set({ popoverId: null });
-      startEdge();
     } else if (g.type === "create-press") {
-      if (Math.hypot(e.clientX - g.x, e.clientY - g.y) < THRESHOLD) return;
+      if (!moved(g.x, g.y)) return;
       gesture.current = { type: "create", day: g.day, anchor: g.anchor };
       app.select(null);
       startEdge();
+    } else if (g.type === "allday-create-press") {
+      if (!moved(g.x, g.y)) return;
+      gesture.current = { type: "allday-create", anchorDay: g.day };
+      app.select(null);
     } else if (g.type === "resize") {
       startEdge();
     }
@@ -281,21 +369,25 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
       // pointer already released
     }
     const app = useApp.getState();
+    const mods = { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey };
     if (g.type === "press") {
-      app.clickSelect(g.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
-    } else if (g.type === "create-press") {
+      app.clickSelect(g.id, mods);
+    } else if (g.type === "create-press" || g.type === "allday-create-press") {
       // A click on empty space clears the selection, unless the user is building one with Ctrl/Shift.
-      if (!(e.ctrlKey || e.metaKey || e.shiftKey)) app.clearSelection();
-    } else if (g.type === "create") {
+      if (!(mods.ctrl || mods.shift)) app.clearSelection();
+    } else if (g.type === "create" || g.type === "allday-create") {
       const d = app.drag;
       app.setDrag(null);
       if (d) {
         const id = app.addEvent({ when: d.when });
         app.select(id, true);
       }
-    } else if (g.type === "move" || g.type === "resize") {
-      app.commitDrag();
-      if (g.type === "resize" || g.group.length === 0) app.select(g.id, false);
+    } else if (g.type === "move" || g.type === "allday-move") {
+      app.finishDrag();
+      if (g.group.length === 0) app.select(g.id, false);
+    } else if (g.type === "resize" || g.type === "bar-resize") {
+      app.finishDrag();
+      app.select(g.id, false);
     }
   };
 

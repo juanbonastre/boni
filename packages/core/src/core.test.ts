@@ -130,7 +130,8 @@ describe("sample data and segments", () => {
   it("is deterministic and has plenty of events", () => {
     const again = generateSample({ anchorDay: anchor });
     expect(again.events).toEqual(data.events);
-    expect(data.events.length).toBeGreaterThan(800);
+    expect(data.events.length).toBeGreaterThan(100);
+    expect(data.events.filter((e) => e.recurrence).length).toBeGreaterThan(8);
     expect(new Set(data.events.map((e) => e.id)).size).toBe(data.events.length);
   });
   it("splits events that cross midnight", () => {

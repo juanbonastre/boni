@@ -7,11 +7,15 @@ import {
   fromLocal,
   gmtLabel,
   monthNames,
+  occurrenceId,
   type PropertyDef,
   type PropValue,
+  type Recurrence,
+  resolveOccurrence,
   toLocal,
   type When,
   weekdayNames,
+  whenStartDay,
 } from "@boni-calendar/core";
 import {
   AlignLeft,
@@ -28,6 +32,7 @@ import {
   Maximize2,
   Minimize2,
   MoreHorizontal,
+  Repeat,
   Square,
   Tag,
   Trash2,
@@ -39,14 +44,17 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import { t } from "../i18n.ts";
+import { presetOf, type RecPreset, recurrenceLabel, ruleOf } from "../recurrence.ts";
 import { useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
 import { ChoicePicker, DateField, DraftInput, TimeInput } from "./fields.tsx";
 import { Menu } from "./Menu.tsx";
+import { RecurrenceModal } from "./RecurrenceModals.tsx";
 
 const DETAIL_W = 340;
 
@@ -55,7 +63,8 @@ export function EventDetail() {
   const selectedId = useApp((s) => s.selectedId);
   const mode = useApp((s) => s.detailMode);
   const id = mode === "panel" ? selectedId : popoverId;
-  const ev = useApp((s) => s.data.events.find((e) => e.id === id));
+  const stored = useApp((s) => s.data.events);
+  const ev = useMemo(() => (id ? resolveOccurrence(stored, id) : null), [stored, id]);
   const drag = useApp((s) => s.drag);
   if (!ev || (drag && drag.kind !== "create" && drag.id === ev.id && mode === "popover"))
     return null;
@@ -147,7 +156,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
   const [menu, setMenu] = useState(false);
   const isNew = app.newEventId === ev.id;
   const close = () => app.clearSelection();
-  const update = (patch: Partial<CalEvent>) => app.updateEvent(ev.id, patch);
+  const update = (patch: Partial<CalEvent>) => app.editEvents([ev.id], patch);
   const setProp = (id: string, v: PropValue) => update({ props: { ...ev.props, [id]: v } });
   const h24 = app.settings.h24;
   const fmt = useCallback((m: number) => formatMinute(m, h24), [h24]);
@@ -187,7 +196,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
               className="menu-item danger"
               onClick={() => {
                 setMenu(false);
-                app.deleteEvent(ev.id);
+                app.removeEvents([ev.id]);
               }}
             >
               <Trash2 size={14} /> {t("event.delete")}
@@ -239,6 +248,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
 
       <div className="detail-section">
         <WhenEditor ev={ev} fmt={fmt} />
+        <RepeatRow ev={ev} />
       </div>
 
       <div className="detail-section">
@@ -319,6 +329,66 @@ function DetailBody({ ev }: { ev: CalEvent }) {
   );
 }
 
+function RepeatRow({ ev }: { ev: CalEvent }) {
+  const locale = useApp((s) => s.settings.locale);
+  const [custom, setCustom] = useState(false);
+  const preset = presetOf(ev.recurrence);
+  const startDay = ev.occurrenceDay ?? whenStartDay(ev.when);
+  const seriesId = ev.seriesId ?? ev.id;
+
+  const apply = (rule: Recurrence | null) => {
+    const app = useApp.getState();
+    app.editEvents([ev.id], { recurrence: rule });
+    // The event's id changes shape when it becomes (or stops being) a series: follow it.
+    app.select(rule ? occurrenceId(seriesId, startDay) : seriesId, true);
+  };
+  const choices = (
+    ["none", "daily", "weekly", "monthly", "yearly", "weekdays", "custom"] as const
+  ).map((p) => ({
+    id: p,
+    label: p === "custom" ? t("rec.custom") : t(`rec.${p}` as "rec.none"),
+  }));
+
+  return (
+    <>
+      <div className="prop-row">
+        <span className="prop-icon">
+          <Repeat size={15} strokeWidth={1.8} />
+        </span>
+        <span className="prop-name">{t("rec.title")}</span>
+        <div className="prop-value">
+          <ChoicePicker
+            choices={choices}
+            selected={[preset === "custom" ? "custom" : preset]}
+            placeholder={t("rec.none")}
+            trigger={
+              <span className={ev.recurrence ? "" : "muted"}>
+                {recurrenceLabel(ev.recurrence, locale)}
+              </span>
+            }
+            onChange={(ids) => {
+              const p = (ids[0] ?? "none") as RecPreset;
+              if (p === "custom") setCustom(true);
+              else apply(ruleOf(p));
+            }}
+          />
+        </div>
+      </div>
+      {custom && (
+        <RecurrenceModal
+          initial={ev.recurrence ?? null}
+          startDay={startDay}
+          onClose={() => setCustom(false)}
+          onSave={(r) => {
+            setCustom(false);
+            apply(r);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
 function stamp(ms: number, tz: string, locale: "es" | "en", h24: boolean): string {
   const l = toLocal(ms, tz);
   const { m, d } = civilFromDays(l.day);
@@ -346,7 +416,7 @@ const fromIso = (s: string) => {
 
 function WhenEditor({ ev, fmt }: { ev: CalEvent; fmt: (m: number) => string }) {
   const settings = useApp((s) => s.settings);
-  const update = (when: When) => useApp.getState().updateEvent(ev.id, { when });
+  const update = (when: When) => useApp.getState().editEvents([ev.id], { when });
   const w = ev.when;
   const dateLabel = (day: number) => {
     const { y, m, d } = civilFromDays(day);

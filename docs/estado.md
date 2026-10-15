@@ -20,10 +20,20 @@ Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincron
   ajuste al arrastrar, densidad.
 - **Paquetes**: `.deb` y AppImage (`make package`).
 
-## Pendiente de la fase 1
-- Arrastrar y estirar eventos de todo el dia y mover eventos en la vista mes.
-- Eventos recurrentes en la interfaz (el modelo ya los admite como ampliacion; hoy los datos de ejemplo son sueltos).
-- Revisar con Juan: colores, densidad, textos, atajos.
+## Cerrado en esta ronda
+- **Todo el dia**: mover por dias arrastrando, estirar por cualquiera de los dos extremos y crear arrastrando por la fila
+  de todo el dia (semana, dia y N dias) y por las celdas del mes. Los calendarios de solo lectura no se pueden mover.
+- **Mes**: mover chips y barras a otro dia (conservando la hora), estirar barras, crear arrastrando por las celdas,
+  Esc cancela. Con varios seleccionados se mueven todos.
+- **Repeticiones**: diaria, semanal (con dias), mensual y anual, cada N, hasta una fecha o N veces; ajustes rapidos y
+  editor personalizado en el detalle ("Repetir"). Al editar o borrar una repeticion se pregunta si afecta a este evento,
+  a este y los siguientes, o a todos. Duplicar una ocurrencia crea un evento suelto. Los datos de ejemplo usan series
+  reales para las clases fijas.
+
+## Pendiente
+- Excepciones por ocurrencia mas finas (hoy "solo este" separa el evento de la serie, no la modifica dentro de ella).
+- Repeticiones mensuales "el segundo martes" y zonas horarias distintas por evento recurrente.
+- Revisar con Juan colores, densidad y atajos.
 
 ## Fase 2 (no empezada)
 Almacen de datos, migracion de `agenda/`, otros calendarios, MCP y avisos (ver la nota del proyecto en el vault).

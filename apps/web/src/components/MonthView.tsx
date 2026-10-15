@@ -8,6 +8,7 @@ import {
   startOfWeek,
   weekdayNames,
 } from "@boni-calendar/core";
+import { Repeat } from "lucide-react";
 import {
   type CSSProperties,
   memo,
@@ -22,11 +23,14 @@ import { clamp, looksLikeNotch, wheelPixels } from "../engine/viewport.ts";
 import { useCalendarMap, useDayIndex } from "../hooks.ts";
 import { t } from "../i18n.ts";
 import { useApp, useVisible } from "../store.ts";
+import { useMonthPointer } from "./useMonthPointer.ts";
 
 const ROWS = 6;
 const LANE = 19;
 const HEAD = 26;
-const BUFFER = 4;
+const BUFFER = 3;
+/** Rows are positioned relative to an epoch that only moves every this many weeks, so scrolling never shifts existing rows. */
+const EPOCH_WEEKS = 26;
 
 export function MonthView() {
   const settings = useApp((s) => s.settings);
@@ -37,6 +41,7 @@ export function MonthView() {
   const today = useApp.getState().today();
   const selectedIds = useApp((s) => s.selectedIds);
 
+  const pointer = useMonthPointer();
   const bodyRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const [rowH, setRowH] = useState(120);
@@ -55,7 +60,8 @@ export function MonthView() {
   rowHRef.current = rowH;
   const [block, setBlock] = useState(() => Math.floor((pos.current.x - w0) / 7));
   const blockRef = useRef(block);
-  const firstRowRef = useRef(block - BUFFER);
+  const epoch = Math.floor(block / EPOCH_WEEKS) * EPOCH_WEEKS;
+  const epochRef = useRef(epoch);
   const lastVis = useRef(Number.NaN);
 
   const apply = () => {
@@ -63,7 +69,7 @@ export function MonthView() {
     const x = pos.current.x;
     const wk = (x - w0) / 7;
     if (strip)
-      strip.style.transform = `translate3d(0, ${-(wk - firstRowRef.current) * rowHRef.current}px, 0)`;
+      strip.style.transform = `translate3d(0, ${-(wk - epochRef.current) * rowHRef.current}px, 0)`;
     const nb = Math.floor(wk);
     if (nb !== blockRef.current) {
       blockRef.current = nb;
@@ -96,7 +102,9 @@ export function MonthView() {
   };
 
   useLayoutEffect(() => {
-    firstRowRef.current = block - BUFFER;
+    epochRef.current = epoch;
+    const from = w0 + 7 * (block - BUFFER) - 7;
+    useApp.getState().setWindow(from, from + 7 * (ROWS + 2 * BUFFER + 3));
     apply();
   });
 
@@ -168,13 +176,18 @@ export function MonthView() {
           <span key={i}>{dow[(first + i) % 7]}</span>
         ))}
       </div>
-      <div className="month-body" ref={bodyRef} style={{ "--rowh": `${rowH}px` } as CSSProperties}>
+      <div
+        className="month-body"
+        ref={bodyRef}
+        style={{ "--rowh": `${rowH}px` } as CSSProperties}
+        {...pointer}
+      >
         <div className="month-strip" ref={stripRef}>
-          {rows.map((r, i) => (
+          {rows.map((r) => (
             <WeekRow
               key={r}
               weekStart={w0 + 7 * r}
-              top={i}
+              top={r - epoch}
               rowH={rowH}
               today={today}
               index={index}
@@ -192,6 +205,7 @@ export function MonthView() {
 
 const WeekRow = memo(function WeekRow(p: {
   weekStart: CivilDay;
+  /** Row position inside the strip, relative to the current epoch (stable while scrolling). */
   top: number;
   rowH: number;
   today: CivilDay;
@@ -238,10 +252,6 @@ const WeekRow = memo(function WeekRow(p: {
               const id = s.addEvent({ when: { kind: "allday", startDay: day, endDay: day } });
               s.select(id, true);
             }}
-            onClick={(e) => {
-              if ((e.target as HTMLElement).closest(".mchip, .mnum, .more")) return;
-              useApp.getState().select(null);
-            }}
           >
             <button
               type="button"
@@ -264,15 +274,10 @@ const WeekRow = memo(function WeekRow(p: {
                   data-id={ev.id}
                   className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.done ? "done" : ""}`}
                   style={{ "--c": p.calMap.get(ev.calendarId)?.color ?? "#888" } as CSSProperties}
-                  onClick={(e) =>
-                    useApp
-                      .getState()
-                      .clickSelect(ev.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
-                  }
                 >
-                  <span className="dot" />
                   <span className="mchip-time">{formatMinute(seg.start, p.h24)}</span>
                   <span className="mchip-title">{ev.title || t("event.untitled")}</span>
+                  {ev.recurrence && <Repeat size={10} className="rep" />}
                 </button>
               );
             })}
@@ -310,13 +315,15 @@ const WeekRow = memo(function WeekRow(p: {
                 height: `${LANE - 2}px`,
               } as CSSProperties
             }
-            onClick={(e) =>
-              useApp
-                .getState()
-                .clickSelect(b.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })
-            }
           >
+            {!b.clippedStart && (
+              <span className="bar-handle start" data-bar-edge="start" data-bar-id={b.id} />
+            )}
             <span className="bar-title">{ev.title || t("event.untitled")}</span>
+            {ev.recurrence && <Repeat size={10} className="rep" />}
+            {!b.clippedEnd && (
+              <span className="bar-handle end" data-bar-edge="end" data-bar-id={b.id} />
+            )}
           </button>
         );
       })}

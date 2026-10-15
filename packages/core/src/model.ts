@@ -51,6 +51,20 @@ export type When =
   | { kind: "timed"; start: number; end: number; tz: string }
   | { kind: "allday"; startDay: CivilDay; endDay: CivilDay }; // endDay inclusive
 
+export type Freq = "daily" | "weekly" | "monthly" | "yearly";
+
+export interface Recurrence {
+  freq: Freq;
+  /** Every N days/weeks/months/years (>= 1). */
+  interval: number;
+  /** Weekly only: weekdays (0 = Sunday .. 6 = Saturday). Defaults to the start day's weekday. */
+  byWeekday?: number[];
+  /** Last day (inclusive) an occurrence may start on. */
+  until?: CivilDay | null;
+  /** Total number of occurrences, deleted ones included. */
+  count?: number | null;
+}
+
 export interface CalEvent {
   id: string;
   calendarId: string;
@@ -64,6 +78,14 @@ export interface CalEvent {
   done: boolean;
   created: number;
   updated: number;
+  /** Present on a series master and on every occurrence expanded from it. */
+  recurrence?: Recurrence | null;
+  /** Days of the series that were deleted or detached (only on the master). */
+  exdates?: CivilDay[];
+  /** Occurrences only: id of the master this one was expanded from. */
+  seriesId?: string;
+  /** Occurrences only: the day (of the series' start) this occurrence belongs to. */
+  occurrenceDay?: CivilDay;
 }
 
 export interface CalendarData {
