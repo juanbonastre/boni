@@ -268,6 +268,48 @@ function DetailBody({ ev }: { ev: CalEvent }) {
             />
           </div>
         </div>
+        <div className="prop-row">
+          <span className="prop-icon">
+            <CheckSquare size={15} strokeWidth={1.8} />
+          </span>
+          <span className="prop-name">{t("event.type")}</span>
+          <div className="prop-value">
+            <div className="segmented small" role="radiogroup" aria-label={t("event.type")}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!ev.isTask}
+                className={ev.isTask ? "" : "on"}
+                onClick={() => ev.isTask && update({ isTask: false, done: false })}
+              >
+                {t("event.typeEvent")}
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={ev.isTask}
+                className={ev.isTask ? "on" : ""}
+                onClick={() => !ev.isTask && update({ isTask: true })}
+              >
+                {t("event.typeTask")}
+              </button>
+            </div>
+          </div>
+        </div>
+        {ev.isTask && (
+          <div className="prop-row">
+            <span className="prop-icon" />
+            <span className="prop-name">{t("event.done")}</span>
+            <div className="prop-value">
+              <input
+                type="checkbox"
+                className="check"
+                checked={ev.done}
+                onChange={(e) => update({ done: e.target.checked })}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="detail-section props">

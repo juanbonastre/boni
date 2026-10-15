@@ -566,7 +566,10 @@ const EventBlock = memo(function EventBlock(p: {
         </span>
         <span className="ev-time">{evTime(ev, seg, p.h24)}</span>
       </div>
-      {!seg.continuesAfter && <div className="ev-resize" data-resize={ev.id} />}
+      {!seg.continuesBefore && (
+        <div className="ev-resize top" data-resize={ev.id} data-edge="start" />
+      )}
+      {!seg.continuesAfter && <div className="ev-resize" data-resize={ev.id} data-edge="end" />}
     </div>
   );
 });

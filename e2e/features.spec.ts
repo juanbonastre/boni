@@ -82,7 +82,7 @@ test("double click creates an event and resize changes the end", async ({ page }
   await expect(ev).toHaveCount(1);
   const before = await ev.boundingBox();
   if (!before) throw new Error("no event");
-  const handle = ev.locator(".ev-resize");
+  const handle = ev.locator(".ev-resize:not(.top)");
   const hb = await handle.boundingBox();
   if (!hb) throw new Error("no handle");
   await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);

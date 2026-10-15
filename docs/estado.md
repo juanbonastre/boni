@@ -30,6 +30,12 @@ Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincron
   a este y los siguientes, o a todos. Duplicar una ocurrencia crea un evento suelto. Los datos de ejemplo usan series
   reales para las clases fijas.
 
+## Ajustes tras probarlo (0.3.1)
+- Los textos largos de los desplegables ya no saltan de linea ni se salen de su fila o del detalle.
+- Un evento con hora se puede estirar mas alla de medianoche (y hacia atras) arrastrando su borde inferior o superior a la
+  columna del dia siguiente o anterior; los eventos que cruzan medianoche se mueven enteros desde cualquiera de sus dos partes.
+- El detalle (ventana y panel) tiene "Tipo: Evento / Tarea" y la casilla "Hecha".
+
 ## Pendiente
 - Excepciones por ocurrencia mas finas (hoy "solo este" separa el evento de la serie, no la modifica dentro de ella).
 - Repeticiones mensuales "el segundo martes" y zonas horarias distintas por evento recurrente.
