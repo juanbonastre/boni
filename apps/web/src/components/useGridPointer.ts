@@ -161,18 +161,27 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
         when: resizeAllDay(g.orig, g.edge, pos.day),
       });
     } else if (g.type === "create") {
-      const cur = clampMin(pos.minute);
+      // Both ends follow the pointer in wall-clock minutes (day * 1440 + minute), so dragging into
+      // the next or previous day's column creates an event that crosses midnight.
       const snap = snapOf();
-      let s = g.anchor;
-      let e = g.anchor + snap;
-      if (cur >= g.anchor) e = Math.max(g.anchor + snap, clampMin(Math.ceil(cur / snap) * snap));
-      else s = clampMin(floorSnap(cur));
-      if (cur < g.anchor) e = g.anchor + snap;
-      if (e > 1440) {
-        e = 1440;
-        s = Math.min(s, 1440 - snap);
-      }
-      app.setDrag({ kind: "create", id: NEW_ID, when: timedWhen(g.day, s, e, tz) });
+      const anchorTotal = g.day * 1440 + g.anchor;
+      const pointer = pos.day * 1440 + clampMin(pos.minute);
+      let s = anchorTotal;
+      let e = anchorTotal + snap;
+      if (pointer >= anchorTotal) e = Math.max(e, Math.ceil(pointer / snap) * snap);
+      else s = Math.floor(pointer / snap) * snap;
+      const sd = Math.floor(s / 1440);
+      const ed = Math.floor(e / 1440);
+      app.setDrag({
+        kind: "create",
+        id: NEW_ID,
+        when: {
+          kind: "timed",
+          start: fromLocal(sd, s - sd * 1440, tz),
+          end: fromLocal(ed, e - ed * 1440, tz),
+          tz,
+        },
+      });
     } else if (g.type === "move") {
       // Follow the pointer in wall-clock minutes, so events spanning midnight move as a whole.
       const delta = pos.day * 1440 + pos.minute - g.pressTotal;

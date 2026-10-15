@@ -158,3 +158,26 @@ test("a newly created event can be made a task right away", async ({ page }) => 
   });
   expect(newest).toBe(true);
 });
+
+test("dragging to create can run into the next or the previous day's column", async ({ page }) => {
+  await open(page);
+  const cols = await box(page.locator(".cols-viewport"));
+  const cw = cols.width / 7;
+  const startX = cols.x + cw * 4.5; // Friday column
+  const y = cols.y + 150;
+
+  await drag(page, startX, y, cw, 110); // down-right: ends in Saturday
+  await page.keyboard.type("Guardia");
+  await page.keyboard.press("Enter");
+  const a = (await whenOf(page, "Guardia")) as Timed;
+  expect(a.end - a.start).toBeGreaterThan(DAY); // crosses midnight: more than a day apart in wall clock
+  await page.keyboard.press("Escape");
+
+  await drag(page, cols.x + cw * 6.5, cols.y + 60, -cw, 30); // Sunday, dragged left: starts in Saturday
+  await page.keyboard.type("Reten");
+  await page.keyboard.press("Enter");
+  const b = (await whenOf(page, "Reten")) as Timed;
+  expect(b.end - b.start).toBeGreaterThan(DAY - 3 * 3_600_000);
+  expect(b.end - b.start).toBeLessThan(DAY + 3 * 3_600_000);
+  await page.screenshot({ path: "e2e/screenshots/create-across-days.png" });
+});
