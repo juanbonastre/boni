@@ -141,6 +141,36 @@ function useShortcuts() {
   }, []);
 }
 
+/** Shown over the grid while the vault loads, or when there is nothing to show because it failed. */
+function VaultNotice() {
+  const source = useApp((s) => s.source);
+  const vault = useApp((s) => s.vault);
+  const empty = useApp((s) => s.collections.length === 0);
+  if (source !== "vault" || !empty || vault.status === "idle") return null;
+  const text =
+    vault.status === "loading"
+      ? t("vault.loading")
+      : vault.status === "error"
+        ? vault.message === "no-root"
+          ? t("vault.noRoot")
+          : `${t("vault.error")}: ${vault.message ?? ""}`
+        : t("vault.empty");
+  return (
+    <div className="vault-notice" role="status">
+      <span>{text}</span>
+      {vault.status !== "loading" && (
+        <button
+          type="button"
+          className="btn"
+          onClick={() => useApp.getState().set({ settingsOpen: true })}
+        >
+          {t("vault.openSettings")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function App() {
   useTheme();
   useShortcuts();
@@ -166,7 +196,10 @@ export function App() {
       {sidebarOpen && <Sidebar />}
       <main className="main">
         <TopBar />
-        <div className="stage">{view === "month" ? <MonthView /> : <TimeGrid />}</div>
+        <div className="stage">
+          {view === "month" ? <MonthView /> : <TimeGrid />}
+          <VaultNotice />
+        </div>
       </main>
       <EventDetail />
       <ContextMenu />

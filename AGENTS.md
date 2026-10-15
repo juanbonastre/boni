@@ -56,6 +56,11 @@ docs/            decisions and status.
   device pixels, the committed hour height is a multiple of `HH_STEP` (4 px, so a 15-minute slot is whole pixels), boxes that
   are centred with `translateY(-50%)` have an even explicit height, popover positions are rounded, and text layers
   (`will-change`) exist only while zooming (`.zoom-armed`). `e2e/interactions.spec.ts` ("layout sits on whole pixels") guards it.
+- **The vault (phase 2, step 2):** the app reads `_system/colecciones/*.md` (one definition per collection: folder, columns,
+  mapping; `collectionDef.ts`) and then every note of each folder (`apps/web/src/vault/loadVault.ts`, through
+  `window.boniVault`). Row id = note path; every property of a note is kept in the row, the columns only choose what the
+  calendar shows, so unknown keys survive an edit. The vault is shown read-only until writing lands. Notes it cannot place
+  are listed in Settings, never hidden. Never put real titles, paths or note contents in the repo (tests use invented notes).
 - **Rows are the truth (phase 2):** the store keeps `collections`, `views` and `rows`; `data.events`, `data.calendars` and
   `data.projects` are *derived* (events are the projection of rows through each calendar's mapping, memoised per row
   object). Never write them: edit through the store actions, which turn event changes into row changes (`reconcileRows`)

@@ -26,6 +26,7 @@ bench-chrome: build ## Smoothness benchmark in a real Chrome window
 	node bench/run-chrome.mjs; kill `cat .preview.pid`; rm -f .preview.pid
 
 desktop: build ## Run the desktop app (Electron) from the build
+	pnpm --filter boni-calendar-desktop prepare-web
 	pnpm --filter boni-calendar-desktop start
 
 package: build ## Build the .deb and AppImage into release/

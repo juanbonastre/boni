@@ -43,6 +43,8 @@ import { create } from "zustand";
 import { nowMs } from "./clock.ts";
 import { setLocale } from "./i18n.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
+import { type IgnoredNote, loadVault } from "./vault/loadVault.ts";
+import { vaultBridge } from "./vaultBridge.ts";
 
 export type ViewKind = "day" | "week" | "days" | "month";
 export type Theme = "dark" | "light" | "system";
@@ -58,6 +60,19 @@ export interface Settings {
   defaultDuration: number;
   snap: number;
   density: "compact" | "comfortable";
+  /** Where the calendars come from: invented sample data, or the notes of the user's vault (desktop app). */
+  dataSource: "sample" | "vault";
+}
+
+export interface VaultState {
+  status: "idle" | "loading" | "ready" | "error";
+  root: string | null;
+  notes: number;
+  /** Notes the calendar cannot show (broken properties, no date), and why. */
+  ignored: IgnoredNote[];
+  /** Definitions or folders that could not be read. */
+  problems: string[];
+  message?: string;
 }
 
 export interface DragState {
@@ -100,6 +115,7 @@ const DEFAULT_SETTINGS: Settings = {
   defaultDuration: 60,
   snap: 15,
   density: "comfortable",
+  dataSource: "sample",
 };
 
 function load<T>(key: string): Partial<T> {
@@ -135,6 +151,9 @@ export interface AppState {
   collections: Collection[];
   views: CalendarView[];
   rows: Row[];
+  /** What `rows` were read from. */
+  source: "sample" | "vault";
+  vault: VaultState;
   projector: Projector;
   provider: CollectionProvider;
   data: CalendarData;
@@ -215,6 +234,11 @@ export interface AppState {
   showToast: (text: string, undo?: boolean, params?: Record<string, string | number>) => void;
   clearToast: () => void;
   resetData: () => void;
+  /** Reads the vault (definitions and notes) and shows it. */
+  loadVault: () => Promise<void>;
+  /** Asks for the vault folder (desktop app); true when one is set. */
+  chooseVaultRoot: () => Promise<boolean>;
+  setDataSource: (source: "sample" | "vault") => Promise<void>;
   set: (patch: Partial<AppState>) => void;
 }
 
@@ -307,7 +331,11 @@ export const useApp = create<AppState>((set, get) => {
   const ui = load<UiPersist>(UI_KEY);
   const hidden = new Set(ui.hiddenCalendars ?? []);
   setLocale(settings.locale);
-  const snapshot = makeSnapshot(settings, hidden);
+  // With the vault as the source the first picture is empty (no flash of sample data) until it loads.
+  const wantVault = settings.dataSource === "vault" && !!vaultBridge();
+  const snapshot: CollectionSnapshot = wantVault
+    ? { accounts: [], collections: [], views: [], rows: [] }
+    : makeSnapshot(settings, hidden);
 
   const persistUi = () => {
     const s = get();
@@ -364,6 +392,14 @@ export const useApp = create<AppState>((set, get) => {
   return {
     ...snapshot,
     ...derive(snapshot, settings.tz),
+    source: wantVault ? "vault" : "sample",
+    vault: {
+      status: wantVault ? "loading" : "idle",
+      root: null,
+      notes: 0,
+      ignored: [],
+      problems: [],
+    },
     provider: memoryProvider(snapshot),
     settings,
     view: ui.view ?? "week",
@@ -755,6 +791,7 @@ export const useApp = create<AppState>((set, get) => {
 
     resetData: () => {
       const s = get();
+      if (s.source === "vault") return void get().loadVault();
       const snap = makeSnapshot(s.settings, new Set());
       set({
         ...snap,
@@ -766,6 +803,90 @@ export const useApp = create<AppState>((set, get) => {
         selectedIds: [],
         anchorId: null,
         popoverId: null,
+      });
+    },
+
+    loadVault: async () => {
+      const bridge = vaultBridge();
+      if (!bridge) return;
+      set((s) => ({ vault: { ...s.vault, status: "loading", message: undefined } }));
+      try {
+        const root = await bridge.getRoot();
+        if (root.ok && !root.value) {
+          set((st) => ({ vault: { ...st.vault, status: "error", message: "no-root" } }));
+          return;
+        }
+        // Writing is not switched on yet: the vault is shown read-only.
+        const r = await loadVault(bridge, { readOnly: true });
+        const hiddenIds = new Set(load<UiPersist>(UI_KEY).hiddenCalendars ?? []);
+        const snap: CollectionSnapshot = {
+          ...r.snapshot,
+          views: r.snapshot.views.map((v) => (hiddenIds.has(v.id) ? { ...v, visible: false } : v)),
+        };
+        const tz = get().settings.tz;
+        set({
+          ...snap,
+          ...derive(snap, tz),
+          source: "vault",
+          provider: memoryProvider(snap),
+          past: [],
+          future: [],
+          selectedId: null,
+          selectedIds: [],
+          anchorId: null,
+          popoverId: null,
+          vault: {
+            status: "ready",
+            root: root.ok ? root.value : null,
+            notes: r.notes,
+            ignored: r.ignored,
+            problems: r.problems,
+          },
+        });
+      } catch (e) {
+        set((s) => ({
+          vault: { ...s.vault, status: "error", message: String((e as Error).message ?? e) },
+        }));
+      }
+    },
+
+    chooseVaultRoot: async () => {
+      const bridge = vaultBridge();
+      if (!bridge) return false;
+      const r = await bridge.chooseRoot();
+      if (!r.ok) {
+        set((s) => ({ vault: { ...s.vault, status: "error", message: r.message } }));
+        return false;
+      }
+      if (r.value) set((s) => ({ vault: { ...s.vault, root: r.value } }));
+      return !!r.value;
+    },
+
+    setDataSource: async (source) => {
+      const bridge = vaultBridge();
+      if (source === "vault") {
+        if (!bridge) return;
+        const root = await bridge.getRoot();
+        if (!(root.ok && root.value) && !(await get().chooseVaultRoot())) return;
+        get().setSettings({ dataSource: "vault" });
+        await get().loadVault();
+        return;
+      }
+      get().setSettings({ dataSource: "sample" });
+      const s = get();
+      const snap = makeSnapshot(s.settings, new Set());
+      set({
+        ...snap,
+        ...derive(snap, s.settings.tz),
+        source: "sample",
+        provider: memoryProvider(snap),
+        past: [],
+        future: [],
+        selectedId: null,
+        selectedIds: [],
+        anchorId: null,
+        popoverId: null,
+        vault: { ...s.vault, status: "idle" },
       });
     },
 
