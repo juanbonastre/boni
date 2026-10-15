@@ -25,8 +25,10 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
 
 ## Language
 - Code, comments, this file and `api/` in English.
-- What Juan reads in Spanish **without accents or n-tilde**: `README.md`, `docs/`, UI labels sent by the server.
-- Never accents or n-tilde in anything generated (labels, file names, categories, docs).
+- What Juan reads in Spanish: `README.md`, `docs/`, UI labels sent by the server. Accents and n-tilde are fine there and the
+  UI uses correct Spanish (Juan, 2026-10-15; same as Boni Calendar). Labels already written without accents are fixed when touched.
+- Keep ASCII (no accents or n-tilde) only in file and folder names and in keys that tools match literally: ids, API field names,
+  category paths, statuses, tags.
 
 ## Secrets
 - Never commit tokens, passwords or keys. The server reads them from environment variables (see `server/README.md`);
