@@ -28,6 +28,9 @@ docs/            decisions and status.
 
 ## Rules
 
+- **Design consistency:** `docs/design-guide.md` is the visual and interaction reference for *all* Boni apps (this one is
+  the reference). Read it before touching the UI and update it in the same PR as any visual or behavioural change.
+
 - **Language:** code, comments, commits and AI-facing docs in English. UI strings only through `src/i18n.ts`
   (Spanish first, English second, real accents in the UI). Docs for Juan in `docs/` are Spanish.
 - **No personal data, ever.** The repo is public. Sample data is invented (`ejemplo.*@example.*`); no hostnames,
