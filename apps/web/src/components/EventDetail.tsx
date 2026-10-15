@@ -1,0 +1,586 @@
+import {
+  type CalEvent,
+  civilFromDays,
+  eventDurationMinutes,
+  formatDuration,
+  formatMinute,
+  fromLocal,
+  gmtLabel,
+  monthNames,
+  type PropertyDef,
+  type PropValue,
+  toLocal,
+  type When,
+  weekdayNames,
+} from "@boni-calendar/core";
+import {
+  AlignLeft,
+  ArrowRight,
+  Calendar as CalendarIcon,
+  CheckSquare,
+  Clock,
+  Copy,
+  Globe,
+  Hash,
+  Link as LinkIcon,
+  ListChecks,
+  MapPin,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  Square,
+  Tag,
+  Trash2,
+  Type,
+  X,
+} from "lucide-react";
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { t } from "../i18n.ts";
+import { useApp } from "../store.ts";
+import { useViewport } from "../ViewportContext.tsx";
+import { ChoicePicker, DateField, DraftInput, TimeInput } from "./fields.tsx";
+import { Menu } from "./Menu.tsx";
+
+const DETAIL_W = 340;
+
+export function EventDetail() {
+  const popoverId = useApp((s) => s.popoverId);
+  const selectedId = useApp((s) => s.selectedId);
+  const mode = useApp((s) => s.detailMode);
+  const id = mode === "panel" ? selectedId : popoverId;
+  const ev = useApp((s) => s.data.events.find((e) => e.id === id));
+  const drag = useApp((s) => s.drag);
+  if (!ev || (drag && drag.kind !== "create" && drag.id === ev.id && mode === "popover"))
+    return null;
+  return mode === "panel" ? (
+    <aside className="detail-panel">
+      <DetailBody ev={ev} />
+    </aside>
+  ) : (
+    <Popover ev={ev} />
+  );
+}
+
+function Popover({ ev }: { ev: CalEvent }) {
+  const vp = useViewport();
+  const ref = useRef<HTMLDivElement>(null);
+  const [hidden, setHidden] = useState(true);
+
+  const place = useCallback(() => {
+    const pop = ref.current;
+    if (!pop) return;
+    const id = CSS.escape(ev.id);
+    const anchor = document.querySelector<HTMLElement>(
+      `.ev[data-id="${id}"], .bar[data-id="${id}"], .mchip[data-id="${id}"]`,
+    );
+    if (!anchor) {
+      setHidden(true);
+      return;
+    }
+    const a = anchor.getBoundingClientRect();
+    const body = document.querySelector(".stage")?.getBoundingClientRect();
+    const h = pop.offsetHeight;
+    const maxBottom = (body?.bottom ?? window.innerHeight) - 8;
+    const minTop = (body?.top ?? 0) + 8;
+    let left = a.right + 10;
+    if (left + DETAIL_W > window.innerWidth - 8) left = a.left - DETAIL_W - 10;
+    if (left < 8) left = Math.max(8, Math.min(window.innerWidth - DETAIL_W - 8, a.left + 12));
+    let top = a.top;
+    if (top + h > maxBottom) top = maxBottom - h;
+    top = Math.max(minTop, top);
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+    const offscreen = a.bottom < (body?.top ?? 0) || a.top > (body?.bottom ?? window.innerHeight);
+    setHidden(offscreen);
+  }, [ev.id]);
+
+  useLayoutEffect(() => {
+    place();
+    const raf = requestAnimationFrame(place);
+    return () => cancelAnimationFrame(raf);
+  });
+  useEffect(() => vp.subscribe(place), [vp, place]);
+  useEffect(() => {
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [place]);
+
+  return (
+    <div ref={ref} className={`popover ${hidden ? "is-hidden" : ""}`} style={{ width: DETAIL_W }}>
+      <DetailBody ev={ev} />
+    </div>
+  );
+}
+
+function PropertyIcon({ type }: { type: PropertyDef["type"] }) {
+  const p = { size: 15, strokeWidth: 1.8 };
+  switch (type) {
+    case "number":
+      return <Hash {...p} />;
+    case "select":
+    case "multiselect":
+      return <Tag {...p} />;
+    case "checkbox":
+      return <ListChecks {...p} />;
+    case "date":
+      return <CalendarIcon {...p} />;
+    case "url":
+      return <LinkIcon {...p} />;
+    case "project":
+      return <Globe {...p} />;
+    default:
+      return <Type {...p} />;
+  }
+}
+
+function DetailBody({ ev }: { ev: CalEvent }) {
+  const app = useApp();
+  const mode = app.detailMode;
+  const cal = app.data.calendars.find((c) => c.id === ev.calendarId);
+  const [menu, setMenu] = useState(false);
+  const isNew = app.newEventId === ev.id;
+  const close = () => app.set({ popoverId: null, selectedId: null, newEventId: null });
+  const update = (patch: Partial<CalEvent>) => app.updateEvent(ev.id, patch);
+  const setProp = (id: string, v: PropValue) => update({ props: { ...ev.props, [id]: v } });
+  const h24 = app.settings.h24;
+  const fmt = useCallback((m: number) => formatMinute(m, h24), [h24]);
+
+  return (
+    <div
+      className="detail"
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <div className="detail-head">
+        <span className="detail-kind">{t("event.page")}</span>
+        <span className="spacer" />
+        <div className="menu-anchor">
+          <button
+            type="button"
+            className="icon-btn"
+            title={t("event.more")}
+            onClick={() => setMenu((m) => !m)}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          <Menu open={menu} onClose={() => setMenu(false)} className="detail-menu">
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                app.duplicateEvent(ev.id);
+                setMenu(false);
+              }}
+            >
+              <Copy size={14} /> {t("event.duplicate")}
+            </button>
+            <button
+              type="button"
+              className="menu-item danger"
+              onClick={() => {
+                setMenu(false);
+                app.deleteEvent(ev.id);
+              }}
+            >
+              <Trash2 size={14} /> {t("event.delete")}
+            </button>
+          </Menu>
+        </div>
+        <button
+          type="button"
+          className="icon-btn"
+          title={mode === "panel" ? t("event.collapse") : t("event.expand")}
+          onClick={() => app.setDetailMode(mode === "panel" ? "popover" : "panel")}
+        >
+          {mode === "panel" ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+        </button>
+        <button type="button" className="icon-btn" title={t("event.close")} onClick={close}>
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="detail-title">
+        <button
+          type="button"
+          className="task-toggle"
+          title={ev.isTask ? t("event.done") : t("event.task")}
+          style={{ "--c": cal?.color ?? "#888" } as CSSProperties}
+          onClick={() => (ev.isTask ? update({ done: !ev.done }) : update({ isTask: true }))}
+        >
+          {ev.isTask ? (
+            ev.done ? (
+              <CheckSquare size={18} />
+            ) : (
+              <Square size={18} />
+            )
+          ) : (
+            <span className="cal-dot" />
+          )}
+        </button>
+        <DraftInput
+          className="title-input"
+          value={ev.title}
+          placeholder={t("event.title")}
+          autoFocus={isNew}
+          onCommit={(v) => {
+            update({ title: v });
+            if (isNew) app.set({ newEventId: null });
+          }}
+        />
+      </div>
+
+      <div className="detail-section">
+        <WhenEditor ev={ev} fmt={fmt} />
+      </div>
+
+      <div className="detail-section">
+        <div className="prop-row">
+          <span className="prop-icon">
+            <span className="swatch sm" style={{ "--c": cal?.color } as CSSProperties} />
+          </span>
+          <span className="prop-name">{t("event.calendar")}</span>
+          <div className="prop-value">
+            <ChoicePicker
+              choices={app.data.calendars
+                .filter((c) => !c.readOnly)
+                .map((c) => ({ id: c.id, label: c.name, color: c.color }))}
+              selected={[ev.calendarId]}
+              onChange={(ids) => ids[0] && update({ calendarId: ids[0] })}
+              placeholder="—"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="detail-section props">
+        {cal?.schema.map((p) => (
+          <PropEditor
+            key={p.id}
+            def={p}
+            value={ev.props[p.id] ?? null}
+            onChange={(v) => setProp(p.id, v)}
+          />
+        ))}
+        <div className="prop-row">
+          <span className="prop-icon">
+            <MapPin size={15} strokeWidth={1.8} />
+          </span>
+          <span className="prop-name">{t("event.location")}</span>
+          <div className="prop-value">
+            <DraftInput
+              value={ev.location}
+              placeholder={t("event.empty")}
+              onCommit={(v) => update({ location: v })}
+            />
+          </div>
+        </div>
+        <div className="prop-row top">
+          <span className="prop-icon">
+            <AlignLeft size={15} strokeWidth={1.8} />
+          </span>
+          <span className="prop-name">{t("event.description")}</span>
+          <div className="prop-value">
+            <DraftInput
+              multiline
+              value={ev.description}
+              placeholder={t("event.empty")}
+              onCommit={(v) => update({ description: v })}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="detail-section meta">
+        <MetaRow
+          icon={<Hash size={15} strokeWidth={1.8} />}
+          name={t("event.id")}
+          value={ev.id.toUpperCase()}
+        />
+        <MetaRow
+          icon={<Clock size={15} strokeWidth={1.8} />}
+          name={t("event.updated")}
+          value={stamp(ev.updated, app.settings.tz, app.settings.locale, h24)}
+        />
+        <MetaRow
+          icon={<Clock size={15} strokeWidth={1.8} />}
+          name={t("event.created")}
+          value={stamp(ev.created, app.settings.tz, app.settings.locale, h24)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function stamp(ms: number, tz: string, locale: "es" | "en", h24: boolean): string {
+  const l = toLocal(ms, tz);
+  const { m, d } = civilFromDays(l.day);
+  return `${monthNames(locale, "long")[m - 1]} ${d}, ${formatMinute(l.minute, h24)}`;
+}
+
+function MetaRow({ icon, name, value }: { icon: React.ReactNode; name: string; value: string }) {
+  return (
+    <div className="prop-row">
+      <span className="prop-icon">{icon}</span>
+      <span className="prop-name">{name}</span>
+      <span className="prop-value ro">{value}</span>
+    </div>
+  );
+}
+
+const toIso = (day: number) => {
+  const { y, m, d } = civilFromDays(day);
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+};
+const fromIso = (s: string) => {
+  const [y, m, d] = s.split("-").map(Number);
+  return y && m && d ? Math.floor(Date.UTC(y, m - 1, d) / 86_400_000) : null;
+};
+
+function WhenEditor({ ev, fmt }: { ev: CalEvent; fmt: (m: number) => string }) {
+  const settings = useApp((s) => s.settings);
+  const update = (when: When) => useApp.getState().updateEvent(ev.id, { when });
+  const w = ev.when;
+  const dateLabel = (day: number) => {
+    const { y, m, d } = civilFromDays(day);
+    const wd = weekdayNames(settings.locale, "short")[(((day + 4) % 7) + 7) % 7];
+    return `${wd} ${d} ${monthNames(settings.locale, "short")[m - 1]} ’${String(y).slice(2)}`;
+  };
+
+  if (w.kind === "allday") {
+    return (
+      <>
+        <div className="prop-row">
+          <span className="prop-icon">
+            <CalendarIcon size={15} strokeWidth={1.8} />
+          </span>
+          <span className="prop-name">{t("event.date")}</span>
+        </div>
+        <div className="when-row">
+          <DateField
+            label={dateLabel(w.startDay)}
+            iso={toIso(w.startDay)}
+            onChange={(iso) => {
+              const d = fromIso(iso);
+              if (d !== null)
+                update({ kind: "allday", startDay: d, endDay: d + (w.endDay - w.startDay) });
+            }}
+          />
+          <ArrowRight size={14} className="muted" />
+          <DateField
+            label={dateLabel(w.endDay)}
+            iso={toIso(w.endDay)}
+            min={toIso(w.startDay)}
+            onChange={(iso) => {
+              const d = fromIso(iso);
+              if (d !== null)
+                update({ kind: "allday", startDay: w.startDay, endDay: Math.max(d, w.startDay) });
+            }}
+          />
+        </div>
+        <div className="when-row flags">
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked
+              onChange={() => {
+                const start = fromLocal(w.startDay, 9 * 60, settings.tz);
+                update({
+                  kind: "timed",
+                  start,
+                  end: start + settings.defaultDuration * 60_000,
+                  tz: settings.tz,
+                });
+              }}
+            />
+            {t("event.allDay")}
+          </label>
+        </div>
+      </>
+    );
+  }
+
+  const a = toLocal(w.start, w.tz);
+  const b = toLocal(w.end, w.tz);
+  const dur = eventDurationMinutes(ev);
+  const crosses = b.day !== a.day;
+  const setStart = (min: number) => {
+    const start = fromLocal(a.day, min, w.tz);
+    update({ kind: "timed", start, end: start + (w.end - w.start), tz: w.tz });
+  };
+  const setEnd = (min: number) => {
+    let end = fromLocal(b.day, min, w.tz);
+    if (end <= w.start) end = fromLocal(a.day + 1, min, w.tz);
+    if (end <= w.start) end = w.start + 15 * 60_000;
+    update({ kind: "timed", start: w.start, end, tz: w.tz });
+  };
+  const setDay = (day: number) => {
+    const start = fromLocal(day, a.minute, w.tz);
+    update({ kind: "timed", start, end: start + (w.end - w.start), tz: w.tz });
+  };
+  return (
+    <>
+      <div className="prop-row">
+        <span className="prop-icon">
+          <CalendarIcon size={15} strokeWidth={1.8} />
+        </span>
+        <span className="prop-name">{t("event.date")}</span>
+      </div>
+      <div className="when-row">
+        <TimeInput minute={a.minute} format={fmt} onCommit={setStart} />
+        <ArrowRight size={14} className="muted" />
+        <TimeInput minute={b.minute} format={fmt} onCommit={setEnd} />
+        <span className="duration">{formatDuration(dur)}</span>
+      </div>
+      <div className="when-row date-line">
+        <DateField
+          label={dateLabel(a.day)}
+          iso={toIso(a.day)}
+          onChange={(iso) => {
+            const d = fromIso(iso);
+            if (d !== null) setDay(d);
+          }}
+        />
+        {crosses && <span className="muted small">→ {dateLabel(b.day)}</span>}
+      </div>
+      <div className="when-row flags">
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={false}
+            onChange={() =>
+              update({
+                kind: "allday",
+                startDay: a.day,
+                endDay: b.day - (b.minute === 0 && crosses ? 1 : 0),
+              })
+            }
+          />
+          {t("event.allDay")}
+        </label>
+        <span className="muted small tz-chip" title={t("event.timezone")}>
+          <Globe size={12} /> {w.tz.replace("_", " ")} · {gmtLabel(w.start, w.tz)}
+        </span>
+      </div>
+    </>
+  );
+}
+
+function PropEditor({
+  def,
+  value,
+  onChange,
+}: {
+  def: PropertyDef;
+  value: PropValue;
+  onChange: (v: PropValue) => void;
+}) {
+  const projects = useApp((s) => s.data.projects);
+  const locale = useApp((s) => s.settings.locale);
+  let control: React.ReactNode;
+  switch (def.type) {
+    case "number":
+      control = (
+        <DraftInput
+          type="number"
+          value={value === null ? "" : String(value)}
+          placeholder={t("event.empty")}
+          onCommit={(v) => onChange(v === "" ? null : Number(v))}
+        />
+      );
+      break;
+    case "checkbox":
+      control = (
+        <input
+          type="checkbox"
+          className="check"
+          checked={value === true}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+      );
+      break;
+    case "select":
+      control = (
+        <ChoicePicker
+          choices={def.options ?? []}
+          selected={typeof value === "string" ? [value] : []}
+          onChange={(ids) => onChange(ids[0] ?? null)}
+          placeholder={t("event.empty")}
+          noneLabel={t("prop.none")}
+        />
+      );
+      break;
+    case "multiselect":
+      control = (
+        <ChoicePicker
+          multi
+          choices={def.options ?? []}
+          selected={Array.isArray(value) ? value : []}
+          onChange={(ids) => onChange(ids)}
+          placeholder={t("event.empty")}
+        />
+      );
+      break;
+    case "project":
+      control = (
+        <ChoicePicker
+          choices={projects.map((p) => ({ id: p.id, label: p.name }))}
+          selected={typeof value === "string" ? [value] : []}
+          onChange={(ids) => onChange(ids[0] ?? null)}
+          placeholder={t("event.empty")}
+          noneLabel={t("prop.none")}
+        />
+      );
+      break;
+    case "date": {
+      const iso = typeof value === "string" ? value : "";
+      const day = iso ? fromIso(iso) : null;
+      control = (
+        <DateField
+          label={
+            day === null
+              ? t("event.empty")
+              : `${weekdayNames(locale, "short")[(((day + 4) % 7) + 7) % 7]} ${civilFromDays(day).d} ${monthNames(locale, "short")[civilFromDays(day).m - 1]}`
+          }
+          iso={iso}
+          onChange={(v) => onChange(v)}
+          className={day === null ? "empty" : ""}
+        />
+      );
+      break;
+    }
+    case "url":
+      control = (
+        <DraftInput
+          type="url"
+          value={typeof value === "string" ? value : ""}
+          placeholder={t("event.empty")}
+          onCommit={(v) => onChange(v || null)}
+        />
+      );
+      break;
+    default:
+      control = (
+        <DraftInput
+          value={typeof value === "string" ? value : ""}
+          placeholder={t("event.empty")}
+          onCommit={(v) => onChange(v || null)}
+        />
+      );
+  }
+  return (
+    <div className="prop-row">
+      <span className="prop-icon">
+        <PropertyIcon type={def.type} />
+      </span>
+      <span className="prop-name">{def.name}</span>
+      <div className="prop-value">{control}</div>
+    </div>
+  );
+}
