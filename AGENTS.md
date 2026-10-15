@@ -11,12 +11,15 @@ packages/core/   Pure TypeScript, no DOM: civil-day/timezone math (time.ts), dat
                  lane layout (layout.ts), per-day segments (queries.ts), quick-create text parser (quick.ts),
                  deterministic sample data (sample.ts). Collections (phase 2): typed tables, calendar views with
                  column mappings and row providers (collections.ts, projection.ts, codec.ts, provider.ts,
-                 validate.ts, sampleCollections.ts). Vitest.
+                 validate.ts, sampleCollections.ts). Notes with YAML properties (notes.ts: `parseNote`, `patchNote` change only
+                 the edited lines, `formatNote`). Vitest.
 apps/web/        React 19 + Vite UI. Runs in any browser and inside the desktop shell.
   src/engine/    Viewport (smooth scroll / zoom / horizontal motion) and the per-day event index.
   src/components/ TimeGrid (day, week, N days), MonthView, Sidebar, EventDetail, Modals, ...
   src/store.ts   zustand store: data, settings, view, selection, drag, undo history.
-apps/desktop-electron/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage).
+apps/desktop-electron/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage). `vault-fs.cjs` is the
+                 only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
+                 atomic writes with a conflict check); the UI reaches it through `window.boniVault` (`vaultBridge.ts`).
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status.
 ```

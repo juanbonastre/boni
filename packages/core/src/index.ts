@@ -4,6 +4,7 @@ export * from "./collections.ts";
 export * from "./layout.ts";
 export * from "./mappingRoles.ts";
 export * from "./model.ts";
+export * from "./notes.ts";
 export * from "./projection.ts";
 export * from "./provider.ts";
 export * from "./queries.ts";

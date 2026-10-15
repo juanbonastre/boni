@@ -49,4 +49,7 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   vuelta, `reconcileRows`, `CollectionProvider`, validacion y la muestra como colecciones. PR 2: la app guarda filas y
   deriva eventos, calendarios y proyectos de ellas (todos los e2e anteriores pasan sin cambios); cada cambio se entrega a
   un `CollectionProvider` (en memoria por ahora). PR 3: el dialogo de propiedades del calendario gana la seccion "Vista de calendario" (columnas de fecha, horas y tareas; estado con "Hecha cuando"); los calendarios sin columna de tarea no ofrecen Evento / Tarea.
-- Pasos 2 a 5: la app lee y escribe el vault, plugin de Obsidian, servidor en el NAS, SQLite solo si hay un caso real.
+- **Paso 2, la app lee y escribe el vault** (en curso, 5 PR): (1) puente de archivos y lector/editor de notas (`notes.ts`,
+  `vault-fs.cjs`, `window.boniVault`), sin interfaz nueva; (2) proveedor del vault y definiciones de coleccion; (3) indice
+  local y vigilancia; (4) "Abrir nota", ajustes y escritura; (5) series como notas individuales enlazadas por `series`.
+- Pasos 3 a 5: la app lee y escribe el vault, plugin de Obsidian, servidor en el NAS, SQLite solo si hay un caso real.
