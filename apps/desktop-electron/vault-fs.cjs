@@ -112,6 +112,40 @@ function openVault(root) {
       return { conflict: false, mtimeMs: fs.statSync(abs).mtimeMs };
     },
 
+    /**
+     * Calls `onChange` (once per burst of changes, after `delayMs` of quiet) when a note below any of
+     * `dirs` is created, changed or removed. Returns a function that stops watching.
+     */
+    watch(dirs, onChange, delayMs = 300) {
+      let timer = null;
+      const fire = () => {
+        clearTimeout(timer);
+        timer = setTimeout(onChange, delayMs);
+      };
+      const watchers = [];
+      for (const dir of dirs) {
+        const abs = resolve(dir, { markdown: false });
+        if (!statOf(abs)?.isDirectory()) continue;
+        confined(abs);
+        try {
+          const w = fs.watch(abs, { recursive: true, persistent: false }, (_ev, name) => {
+            const file = name ? String(name) : "";
+            if (file.split(/[\\/]/).some((p) => p.startsWith("."))) return; // temp files and dot folders
+            if (file && !file.toLowerCase().endsWith(".md") && file.includes(".")) return;
+            fire();
+          });
+          w.on("error", () => {});
+          watchers.push(w);
+        } catch {
+          // A folder that cannot be watched is still refreshed when the window gets focus.
+        }
+      }
+      return () => {
+        clearTimeout(timer);
+        for (const w of watchers) w.close();
+      };
+    },
+
     /** Creates a note that must not exist yet (parent folders are created). */
     create(rel, text) {
       const abs = resolve(rel);

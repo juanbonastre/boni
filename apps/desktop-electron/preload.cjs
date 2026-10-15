@@ -13,4 +13,12 @@ contextBridge.exposeInMainWorld("boniVault", {
   write: (path, text, expectedMtimeMs) =>
     ipcRenderer.invoke("vault:write", path, text, expectedMtimeMs),
   create: (path, text) => ipcRenderer.invoke("vault:create", path, text),
+  watch: (dirs) => ipcRenderer.invoke("vault:watch", dirs),
+  onChanged: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on("vault:changed", listener);
+    return () => ipcRenderer.removeListener("vault:changed", listener);
+  },
+  cacheRead: () => ipcRenderer.invoke("vault:cache-read"),
+  cacheWrite: (text) => ipcRenderer.invoke("vault:cache-write", text),
 });

@@ -4,9 +4,9 @@ import type {
   Collection,
   Column,
   ColumnType,
+  Model,
   Row,
 } from "./collections.ts";
-import { type Model, makeModel } from "./collections.ts";
 import type { Account } from "./model.ts";
 import type { ParsedNote } from "./notes.ts";
 import { makeProjector } from "./projection.ts";
@@ -67,7 +67,7 @@ export function parseCollectionDef(data: unknown): DefResult {
     errors.push("id: use lowercase letters, digits and dashes");
   const name = str("name");
   const folder = str("folder")?.replace(/^\/+|\/+$/g, "");
-  if (folder && folder.split("/").some((p) => p === ".." || p.startsWith("."))) {
+  if (folder?.split("/").some((p) => p === ".." || p.startsWith("."))) {
     errors.push("folder: not allowed");
   }
   const account = str("account");
