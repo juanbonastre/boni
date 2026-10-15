@@ -256,18 +256,30 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
   };
 
   const onDoubleClick = (e: RPE<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    if (target.closest(".ev, .bar")) return;
+    // The grid captures the pointer on press, so e.target is the grid itself: locate by coordinates.
+    const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    if (!under || under.closest(".ev, .bar")) return;
     const app = useApp.getState();
     const tz = app.settings.tz;
-    if (target.closest(".allday-viewport")) {
-      const rect = (target.closest(".allday-viewport") as HTMLElement).getBoundingClientRect();
+    const inside = (el: Element | null) => {
+      const r = el?.getBoundingClientRect();
+      return (
+        !!r &&
+        e.clientX >= r.left &&
+        e.clientX <= r.right &&
+        e.clientY >= r.top &&
+        e.clientY <= r.bottom
+      );
+    };
+    const allDayRect = e.currentTarget.querySelector(".allday-viewport");
+    if (inside(allDayRect) && allDayRect) {
+      const rect = allDayRect.getBoundingClientRect();
       const day = Math.floor(vp.viewX + (e.clientX - rect.left) / vp.colW);
       const id = app.addEvent({ when: { kind: "allday", startDay: day, endDay: day } });
       app.select(id, true);
       return;
     }
-    if (!target.closest(".cols-viewport")) return;
+    if (!inside(colsRef.current)) return;
     const pos = toGrid(e.clientX, e.clientY);
     if (!pos) return;
     const start = clampMin(floorSnap(pos.minute));

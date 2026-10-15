@@ -14,6 +14,8 @@ export interface QuickEvent {
   start: number | null;
   end: number | null;
   calendarId: string | null;
+  /** True when the text contained a date (so it can also be used as "go to date"). */
+  hasDate: boolean;
   /** Human tokens that were understood (for the preview chips). */
   matched: string[];
 }
@@ -247,7 +249,7 @@ export function parseQuickEvent(input: string, ctx: QuickContext): QuickEvent {
   }
 
   const title = text.replace(/\s+/g, " ").trim();
-  return { title, day, allDay, start, end, calendarId, matched };
+  return { title, day, allDay, start, end, calendarId, hasDate, matched };
 }
 
 function civilYear(day: CivilDay): number {

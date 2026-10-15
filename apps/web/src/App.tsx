@@ -36,6 +36,21 @@ function isTyping(e: KeyboardEvent): boolean {
   );
 }
 
+/** Clicking anywhere outside the detail popover (and the events that open it) closes it. */
+function useClickAway() {
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      const s = useApp.getState();
+      if (!s.popoverId) return;
+      const el = e.target as HTMLElement | null;
+      if (el?.closest(".popover, .menu, .ev, .bar, .mchip, .scrim, .toast")) return;
+      s.set({ popoverId: null });
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, []);
+}
+
 function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -77,6 +92,7 @@ function useShortcuts() {
       else if (k === "d" || k === "D") s.setView("day");
       else if (k === "w" || k === "W") s.setView("week");
       else if (k === "m" || k === "M") s.setView("month");
+      else if (k === "1") s.setView("day");
       else if (/^[2-9]$/.test(k)) s.setView("days", Number(k));
       else if (k === "ArrowLeft" || k === "j" || k === "J") s.step(-1);
       else if (k === "ArrowRight" || k === "k" || k === "K") s.step(1);
@@ -101,6 +117,7 @@ function useShortcuts() {
 export function App() {
   useTheme();
   useShortcuts();
+  useClickAway();
   const view = useApp((s) => s.view);
   const sidebarOpen = useApp((s) => s.sidebarOpen);
   const detailMode = useApp((s) => s.detailMode);

@@ -439,7 +439,7 @@ const HourLabels = memo(function HourLabels({
       {labels}
       {showNow && shift === 0 && (
         <span className="now-label" style={{ top: `${(nowMinute / 1440) * 100}%` }}>
-          {formatMinute(nowMinute, true)}
+          {formatMinute(nowMinute, h24)}
         </span>
       )}
     </>

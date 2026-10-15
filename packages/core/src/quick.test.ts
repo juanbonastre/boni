@@ -51,6 +51,10 @@ describe("parseQuickEvent", () => {
     });
     expect(parseQuickEvent("cumple 24 de diciembre", ctx).day).toBe(daysFromCivil(2025, 12, 24));
   });
+  it("reports whether a date was found", () => {
+    expect(parseQuickEvent("viernes", ctx).hasDate).toBe(true);
+    expect(parseQuickEvent("estudiar", ctx).hasDate).toBe(false);
+  });
   it("weekday means the next one, strictly after today", () => {
     expect(parseQuickEvent("correr miercoles", ctx).day).toBe(today + 7);
   });

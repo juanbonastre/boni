@@ -870,6 +870,11 @@ kbd {
     flex: none;
   }
 }
+@container (max-width: 74px) {
+  .ev-time {
+    display: none;
+  }
+}
 @container (max-height: 22px) {
   .ev-time {
     display: none;
@@ -1068,7 +1073,8 @@ kbd {
   box-shadow: var(--shadow);
 }
 .popover.is-hidden {
-  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 .detail-panel {
   background: var(--surface);

@@ -6,6 +6,7 @@ import {
   type PropertyType,
   parseQuickEvent,
   type SelectOption,
+  toLocal,
 } from "@boni-calendar/core";
 import { Plus, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -492,7 +493,45 @@ export function Palette() {
         },
       }
     : null;
-  const items = createItem ? [createItem, ...commands] : commands;
+  const needle = q.trim().toLowerCase();
+  const gotoItem: Command | null = parsed?.hasDate
+    ? {
+        id: "goto",
+        label: `${t("cmd.gotoDate")} ${dayLabel(parsed.day)}`,
+        run: () => useApp.getState().goTo(parsed.day),
+      }
+    : null;
+  const eventItems: Command[] = useMemo(() => {
+    if (needle.length < 2) return [];
+    const st = useApp.getState();
+    const visible = new Set(st.data.calendars.filter((c) => c.visible).map((c) => c.id));
+    const now = Date.now();
+    const startOf = (e: (typeof st.data.events)[number]) =>
+      e.when.kind === "timed" ? e.when.start : e.when.startDay * 86_400_000;
+    return st.data.events
+      .filter((e) => visible.has(e.calendarId) && e.title.toLowerCase().includes(needle))
+      .sort((a, b) => Math.abs(startOf(a) - now) - Math.abs(startOf(b) - now))
+      .slice(0, 8)
+      .map((e) => {
+        const day =
+          e.when.kind === "timed" ? toLocal(e.when.start, e.when.tz).day : e.when.startDay;
+        return {
+          id: `ev-${e.id}`,
+          label: `${e.title} · ${dayLabel(day)}`,
+          run: () => {
+            const s2 = useApp.getState();
+            s2.goTo(day);
+            s2.select(e.id, true);
+          },
+        };
+      });
+  }, [needle]);
+  const items = [
+    ...(createItem ? [createItem] : []),
+    ...(gotoItem ? [gotoItem] : []),
+    ...eventItems,
+    ...commands,
+  ];
   const run = (c: Command | undefined) => {
     if (!c) return;
     close();

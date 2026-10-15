@@ -20,7 +20,7 @@ export default defineConfig({
   webServer: {
     command: `pnpm --filter @boni-calendar/web build && pnpm --filter @boni-calendar/web exec vite preview --port ${PORT} --strictPort`,
     port: PORT,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

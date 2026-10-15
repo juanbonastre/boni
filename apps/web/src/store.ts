@@ -201,6 +201,12 @@ export const useApp = create<AppState>((set, get) => {
       if (patch.locale) setLocale(patch.locale);
       save(SETTINGS_KEY, next);
       set({ settings: next });
+      if (patch.firstDay !== undefined) {
+        // Re-align the visible range (week/month rows) to the new first day of the week.
+        const vis = useVisible.getState().start;
+        const center = get().view === "month" ? vis : vis + 3;
+        get().goTo(center, false);
+      }
     },
 
     setView: (view, nDays) => {

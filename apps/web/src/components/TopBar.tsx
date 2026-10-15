@@ -1,4 +1,4 @@
-import { civilFromDays, isoWeek, monthNames } from "@boni-calendar/core";
+import { civilFromDays, monthNames } from "@boni-calendar/core";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, PanelLeft, PanelRight } from "lucide-react";
 import { useState } from "react";
 import { t } from "../i18n.ts";
@@ -47,9 +47,6 @@ export function TopBar() {
       )}
       <h1 className="title">
         {monthNames(settings.locale, "long")[m - 1]} <span className="title-year">{y}</span>
-        {settings.weekNumbers && view !== "month" && (
-          <span className="title-week">{t("grid.week", { n: isoWeek(start) })}</span>
-        )}
       </h1>
       <span className="spacer" />
       <div className="view-picker">
