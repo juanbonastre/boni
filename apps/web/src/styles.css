@@ -143,6 +143,32 @@ kbd {
 .pill:hover {
   border-color: var(--line-strong);
 }
+/* Text in controls stays on one line, everywhere (docs/design-guide.md, "Text never wraps inside a
+   control"). Layout makes room instead: rows that pair a label with a control wrap the control under
+   the label, and a control that still does not fit cuts its label with an ellipsis. */
+button,
+select,
+.btn,
+.mini-btn,
+.chip,
+.select,
+.menu-item,
+.segmented > button {
+  white-space: nowrap;
+}
+.btn,
+.mini-btn,
+.chip,
+.segmented > button {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.segmented {
+  max-width: 100%;
+  min-width: 0;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -1314,9 +1340,10 @@ textarea.field-input {
 }
 .setting {
   display: flex;
+  flex-wrap: wrap; /* a control that does not fit beside its label goes under it, never squeezed */
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 6px 16px;
   min-height: 40px;
   border-bottom: 1px solid var(--line-soft);
   padding: 4px 0;
@@ -1324,6 +1351,17 @@ textarea.field-input {
 .setting-label {
   display: flex;
   flex-direction: column;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.setting-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
 }
 .segmented {
   display: inline-flex;
@@ -1785,8 +1823,13 @@ textarea.field-input {
   padding: 3px 0;
 }
 .vault-note-path {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vault-list li > .muted {
+  flex: none;
   white-space: nowrap;
 }
 .vault-notice {

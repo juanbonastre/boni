@@ -150,7 +150,8 @@ function VaultSettings() {
       </Field>
       <Field label={t("settings.vaultFolder")}>
         <span className="vault-path" title={vault.root ?? undefined}>
-          {vault.root ?? t("settings.vaultNone")}
+          {/* bdi keeps the path's own direction inside the right-to-left box that cuts it from the left */}
+          <bdi>{vault.root ?? t("settings.vaultNone")}</bdi>
         </span>
         <button type="button" className="btn" onClick={() => void app.chooseVaultRoot()}>
           {t("settings.vaultChoose")}
