@@ -1,6 +1,6 @@
 # Estado de Boni Calendar
 
-Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincronizacion). Actualizado: 2026-10-15.
+Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincronizacion). Actualizado: 2026-10-16.
 
 ## Hecho
 - **Contenedor**: Electron (medido contra Tauri en el portatil, ver `rendimiento.md`).
@@ -44,15 +44,22 @@ Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincron
 ## Fase 2 (en marcha)
 Plan aprobado: la verdad son notas del vault con propiedades; colecciones con esquema, vistas con mapeo de columnas y
 repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un servidor son anfitriones.
-- **Paso 1, nucleo de colecciones** (en curso). PR 1 (#9): `Collection`, `Row`, `CalendarView` con mapeo (fecha y hora
+- **Paso 1, nucleo de colecciones** (hecho, PR 9 a 11). PR 1 (#9): `Collection`, `Row`, `CalendarView` con mapeo (fecha y hora
   separadas o inicio/fin ISO, tarea por casilla o estado, repeticion como texto RRULE), proyeccion fila a evento y
   vuelta, `reconcileRows`, `CollectionProvider`, validacion y la muestra como colecciones. PR 2: la app guarda filas y
   deriva eventos, calendarios y proyectos de ellas (todos los e2e anteriores pasan sin cambios); cada cambio se entrega a
   un `CollectionProvider` (en memoria por ahora). PR 3: el dialogo de propiedades del calendario gana la seccion "Vista de calendario" (columnas de fecha, horas y tareas; estado con "Hecha cuando"); los calendarios sin columna de tarea no ofrecen Evento / Tarea.
-- **Paso 2, la app lee y escribe el vault** (en curso, 5 PR): (1) puente de archivos y lector/editor de notas (`notes.ts`,
+- **Paso 2, la app lee y escribe el vault** (hecho, PR 12 a 16): (1) puente de archivos y lector/editor de notas (`notes.ts`,
   `vault-fs.cjs`, `window.boniVault`), sin interfaz nueva; (2) lectura del vault: definiciones de coleccion en
   `_system/colecciones/`, carga de las notas de `agenda/` (solo lectura), Ajustes → Datos y lista de notas ignoradas
   (medido con el vault real: ~2.750 notas en ~1,1 s sin indice); (3) indice
   local y vigilancia (hecho: arranque en caliente con ~2.750 notas en ~0,24 s frente a ~0,64 s en frio, y un cambio hecho
   fuera de la app se ve en ~0,3 s); (4) escritura en el vault (opcional en Ajustes), "Abrir nota en Obsidian", notas nuevas con contador en el nombre del archivo, mover entre calendarios, borrar a la papelera con deshacer y aviso si la nota cambio fuera (hecho); (5) series como notas individuales enlazadas por `series` (hecho: crear con "Repetir", 12 meses por delante, ampliar al leer con la escritura activada, ambito este/siguientes/todos).
-- Pasos 3 a 5 de la fase 2: plugin de Obsidian, servidor en el NAS, SQLite solo si hay un caso real.
+- Texto que no cabe (PR 17): una regla general en `styles.css` y la guarda `e2e/overflow.spec.ts` para todas las superficies.
+- **Paso 3, plugin de Obsidian** (plan aprobado el 2026-10-16, sin empezar): la misma app en una pestana de Obsidian con un
+  puente sobre la API de Obsidian; solo escritorio, escritura activada por defecto, instalacion con un comando que copia el
+  plugin a `.obsidian/plugins/boni-calendar/`. PRs: (1) preparar la app para otro anfitrion (puente inyectado, atajos solo con
+  el foco en el calendario, ventanas y menus dentro del contenedor, CSS encerrable); (2) el plugin en `apps/obsidian-plugin/`;
+  (3) pruebas en un Obsidian real con perfil y vault temporales, medidas e instalacion. Full Calendar ya esta desactivado en el
+  portatil.
+- Pasos 4 y 5 de la fase 2: servidor en el NAS y SQLite, solo si hay un caso real.
