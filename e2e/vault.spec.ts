@@ -395,6 +395,18 @@ test("with writing on, editing an event changes only its lines in the note", asy
   await expect(page.locator(".popover .title-input")).toHaveValue("Clase renombrada");
 });
 
+test("Ctrl+click on an event opens its note instead of selecting it", async ({ page }) => {
+  await openWithVault(page);
+  await page.locator(".ev", { hasText: "Clase de ejemplo" }).click({ modifiers: ["Control"] });
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as never as { __vault: { opened: string[] } }).__vault.opened),
+    )
+    .toEqual(["agenda/docencia/2025-09-17 Clase de ejemplo.md"]);
+  await expect(page.locator(".popover")).toHaveCount(0);
+  await expect(page.locator(".ev.selected")).toHaveCount(0);
+});
+
 test("marking a task done writes the checkbox; undo writes it back", async ({ page }) => {
   await openWithVault(page);
   await writeOn(page);

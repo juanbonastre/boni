@@ -21,15 +21,15 @@ const startMinute = async (l: Locator) => {
   return h * 60 + m;
 };
 
-test("Ctrl+click adds and removes events from the selection", async ({ page }) => {
+test("Ctrl+Shift+click adds and removes events from the selection", async ({ page }) => {
   await open(page);
   await ev(page, "Clase IPM").click();
   await expect(page.locator(".popover")).toBeVisible();
-  await clickWith(page, ev(page, "Dentista"), ["Control"]);
+  await clickWith(page, ev(page, "Dentista"), ["Control", "Shift"]);
   await expect(selected(page)).toHaveCount(2);
   await expect(page.locator(".popover")).toHaveCount(0);
   await expect(page.locator(".selbar-count")).toHaveText("2 seleccionados");
-  await clickWith(page, ev(page, "Dentista"), ["Control"]);
+  await clickWith(page, ev(page, "Dentista"), ["Control", "Shift"]);
   await expect(selected(page)).toHaveCount(1);
   await expect(page.locator(".selbar")).toHaveCount(0);
 });
@@ -53,13 +53,32 @@ test("Shift+click adds every event between the anchor and the clicked one", asyn
   await page.screenshot({ path: "e2e/screenshots/multi-range.png" });
 });
 
-test("Ctrl+Shift+click adds the range but only for the clicked calendar", async ({ page }) => {
+test("Ctrl+click on an event without a note just selects it (with a note it opens the note)", async ({
+  page,
+}) => {
   await open(page);
   await ev(page, "Clase FUP").click();
-  await clickWith(page, ev(page, "Clase IPM"), ["Control", "Shift"]);
-  await expect(selected(page)).toHaveCount(3); // two FUP classes and IPM, all in Docencia
-  await expect(ev(page, "Dentista")).not.toHaveClass(/selected/);
-  await expect(ev(page, "Clase de yoga")).not.toHaveClass(/selected/);
+  await clickWith(page, ev(page, "Dentista"), ["Control"]);
+  await expect(selected(page)).toHaveCount(1);
+  await expect(ev(page, "Dentista")).toHaveClass(/selected/);
+  await expect(page.locator(".popover")).toBeVisible();
+});
+
+test("holding Shift fades the detail so events under it can be clicked, but not while typing", async ({
+  page,
+}) => {
+  await open(page);
+  await ev(page, "Dentista").click();
+  const root = page.locator("#root");
+  await page.locator(".popover .title-input").focus();
+  await page.keyboard.down("Shift");
+  await expect(root).not.toHaveClass(/mod-select/);
+  await page.keyboard.up("Shift");
+  await page.locator(".popover .title-input").blur();
+  await page.keyboard.down("Shift");
+  await expect(root).toHaveClass(/mod-select/);
+  await page.keyboard.up("Shift");
+  await expect(root).not.toHaveClass(/mod-select/);
 });
 
 test("dragging one selected event moves the whole selection", async ({ page }) => {
@@ -68,7 +87,7 @@ test("dragging one selected event moves the whole selection", async ({ page }) =
   const gym = ev(page, "Gimnasio");
   const before = [await startMinute(dentist), await startMinute(gym)];
   await dentist.click();
-  await gym.click({ modifiers: ["Control"] });
+  await gym.click({ modifiers: ["Control", "Shift"] });
   const box = await gym.boundingBox();
   if (!box) throw new Error("no box");
   await page.mouse.move(box.x + box.width / 2, box.y + 14);
@@ -93,7 +112,7 @@ test("Delete removes the selection, undo brings it back, Esc and empty clicks cl
   await open(page);
   const count = await page.locator(".ev").count();
   await ev(page, "Dentista").click();
-  await clickWith(page, ev(page, "Gimnasio"), ["Control"]);
+  await clickWith(page, ev(page, "Gimnasio"), ["Control", "Shift"]);
   await page.keyboard.press("Delete");
   await page.getByRole("button", { name: "Solo este evento" }).click(); // Gimnasio is a weekly series
   await expect(page.locator(".ev")).toHaveCount(count - 2);
@@ -102,12 +121,12 @@ test("Delete removes the selection, undo brings it back, Esc and empty clicks cl
   await expect(page.locator(".ev")).toHaveCount(count);
 
   await ev(page, "Dentista").click();
-  await clickWith(page, ev(page, "Gimnasio"), ["Control"]);
+  await clickWith(page, ev(page, "Gimnasio"), ["Control", "Shift"]);
   await page.keyboard.press("Escape");
   await expect(selected(page)).toHaveCount(0);
 
   await ev(page, "Dentista").click();
-  await clickWith(page, ev(page, "Gimnasio"), ["Control"]);
+  await clickWith(page, ev(page, "Gimnasio"), ["Control", "Shift"]);
   const cols = await page.locator(".cols-viewport").boundingBox();
   if (!cols) throw new Error("no grid");
   await page.mouse.click(cols.x + (cols.width / 7) * 5.5, cols.y + 300); // empty space
@@ -132,7 +151,7 @@ test("multi-selection works in the month view too", async ({ page }) => {
   await page.waitForSelector(".mchip");
   await page.waitForTimeout(600);
   await page.locator(".mchip", { hasText: "Dentista" }).click();
-  await clickWith(page, page.locator(".mchip", { hasText: "Clase de yoga" }), ["Control"]);
+  await clickWith(page, page.locator(".mchip", { hasText: "Clase de yoga" }), ["Control", "Shift"]);
   await expect(page.locator(".mchip.selected")).toHaveCount(2);
   await expect(page.locator(".selbar-count")).toHaveText("2 seleccionados");
 });

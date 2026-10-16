@@ -143,7 +143,11 @@ test("edits change the notes with the calendar's rules", async () => {
   await expect.poll(() => existsSync(join(obs.vault.dir, lesson))).toBe(true);
   expect(note(lesson)).toContain('title: "Clase de hoy"');
 
-  // "Open note" opens it in Obsidian.
+  // Ctrl+click (like a link) and "Open note" in the context menu open it in a tab.
+  await page.locator(".boni .ev", { hasText: "Clase de hoy" }).click({ modifiers: ["Control"] });
+  await expect.poll(() => app((a) => a.workspace.getActiveFile()?.path)).toBe(lesson);
+  await app((a) => a.workspace.detachLeavesOfType("markdown"));
+  await app((a) => a.commands.executeCommandById("boni-calendar:open"));
   await page.locator(".boni .ev", { hasText: "Clase de hoy" }).click({ button: "right" });
   await page
     .locator(".boni .ctx")
