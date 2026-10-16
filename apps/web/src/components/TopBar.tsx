@@ -33,6 +33,7 @@ export function TopBar() {
           ? t("view.month")
           : t("view.days", { n: nDays });
 
+  const compact = useApp((s) => s.compact);
   return (
     <header className="topbar">
       {!sidebarOpen && (
@@ -119,17 +120,19 @@ export function TopBar() {
       >
         <ChevronRight size={17} />
       </button>
-      <button
-        type="button"
-        className={`icon-btn ${detailMode === "panel" && (popoverId || selectedId) ? "active" : ""}`}
-        title={t("panel.toggle")}
-        onClick={() => {
-          const s = useApp.getState();
-          s.setDetailMode(s.detailMode === "panel" ? "popover" : "panel");
-        }}
-      >
-        <PanelRight size={16} />
-      </button>
+      {!compact && (
+        <button
+          type="button"
+          className={`icon-btn ${detailMode === "panel" && (popoverId || selectedId) ? "active" : ""}`}
+          title={t("panel.toggle")}
+          onClick={() => {
+            const s = useApp.getState();
+            s.setDetailMode(s.detailMode === "panel" ? "popover" : "panel");
+          }}
+        >
+          <PanelRight size={16} />
+        </button>
+      )}
     </header>
   );
 }

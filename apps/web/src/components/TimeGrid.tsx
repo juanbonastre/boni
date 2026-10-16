@@ -31,6 +31,7 @@ import { t } from "../i18n.ts";
 import { alignForView, useApp, useVisible, visibleDays } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
 import { useGridPointer } from "./useGridPointer.ts";
+import { useTouchGestures } from "./useTouch.ts";
 
 const BLOCK = 1;
 /** While zooming, scale the committed layout on the compositor up to this stretch, then re-layout. */
@@ -238,7 +239,19 @@ export function TimeGrid() {
     // biome-ignore lint/correctness/useExhaustiveDependencies: arm only touches refs
   }, []);
 
-  const pointer = useGridPointer({ bodyRef, colsRef, index });
+  const mouse = useGridPointer({ bodyRef, colsRef, index });
+  // Fingers pan, fling and pinch; a long press hands over to the mouse gestures (create, move, resize).
+  const pointer = {
+    ...mouse,
+    ...useTouchGestures(mouse, {
+      pan: (dx, dy) => vp.panBy(dx, dy),
+      fling: (vx, vy) => vp.fling(vx, vy),
+      pinch: (factor, _x, y) => {
+        const top = bodyRef.current?.getBoundingClientRect().top ?? 0;
+        vp.zoomBy(factor, y - top);
+      },
+    }),
+  };
 
   const days = useMemo(
     () => Array.from({ length: renderCount }, (_, i) => renderStart + i),

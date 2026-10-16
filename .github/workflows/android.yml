@@ -9,6 +9,11 @@ on:
     paths: ["apps/android/**", "apps/web/**", "packages/core/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
+# Signed releases (for Obtainium) need four repository secrets: KEYSTORE_BASE64, KEYSTORE_PASSWORD,
+# KEY_ALIAS, KEY_PASSWORD. Without them the APK is debug-signed and only kept as an artifact.
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-24.04
@@ -33,8 +38,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.11.1"
+      - name: Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "SIGNED=true" >> "$GITHUB_ENV"
+          else
+            echo "No KEYSTORE_BASE64 secret: debug-signed APK as an artifact only, no release."
+          fi
       - name: Build APK
         working-directory: apps/android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon --stacktrace
       - name: Name APK
         run: cp apps/android/app/build/outputs/apk/release/app-release.apk "boni-calendar-0.1.${{ github.run_number }}.apk"
@@ -42,3 +62,11 @@ jobs:
         with:
           name: boni-calendar-apk
           path: boni-calendar-*.apk
+      # A signed build of main becomes a GitHub release that Obtainium installs (filter: titles with "Android").
+      - name: Release
+        if: env.SIGNED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-v0.1.${{ github.run_number }}
+          name: Boni Calendar Android 0.1.${{ github.run_number }}
+          files: boni-calendar-*.apk

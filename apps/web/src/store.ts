@@ -61,7 +61,7 @@ import {
   readFeed,
   saveFeed,
 } from "./external.ts";
-import { getHost } from "./host.ts";
+import { appRoot, getHost } from "./host.ts";
 import { setLocale } from "./i18n.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
 import type { IgnoredNote, VaultLoad } from "./vault/loadVault.ts";
@@ -136,6 +136,8 @@ export interface Toast {
 }
 
 const SETTINGS_KEY = "boni-calendar:settings";
+/** Below this width (CSS px) the app uses its phone layout. */
+export const COMPACT_WIDTH = 640;
 const UI_KEY = "boni-calendar:ui";
 
 const DEFAULT_SETTINGS: Settings = {
@@ -227,6 +229,9 @@ export interface AppState {
   goToday: () => void;
   step: (dir: 1 | -1) => void;
   toggleSidebar: () => void;
+  /** The app is as narrow as a phone: drawer, bottom sheet, floating button (docs/design-guide.md, mobile). */
+  compact: boolean;
+  setCompact: (compact: boolean) => void;
   toggleCalendar: (id: string) => void;
   updateCalendar: (id: string, patch: Partial<CalendarDef>) => void;
   setSchema: (id: string, schema: PropertyDef[]) => void;
@@ -429,6 +434,7 @@ export const useApp = create<AppState>((set, get) => {
     ...(urlTz ? { tz: urlTz } : {}),
   };
   const ui = load<UiPersist>(UI_KEY);
+  const narrowAtStart = (appRoot()?.clientWidth ?? 1024) < COMPACT_WIDTH;
   const hidden = new Set(ui.hiddenCalendars ?? []);
   setLocale(settings.locale);
   // With the vault as the source the first picture is empty (no flash of sample data) until it loads.
@@ -625,9 +631,11 @@ export const useApp = create<AppState>((set, get) => {
     provider: memoryProvider(snapshot),
     external: { byCal: {}, status: {} },
     settings,
-    view: ui.view ?? "week",
-    nDays: ui.nDays ?? 7,
-    sidebarOpen: ui.sidebarOpen ?? true,
+    // A phone starts on three days, with the sidebar (a drawer there) closed.
+    view: ui.view ?? (narrowAtStart ? "days" : "week"),
+    nDays: ui.nDays ?? (narrowAtStart ? 3 : 7),
+    sidebarOpen: narrowAtStart ? false : (ui.sidebarOpen ?? true),
+    compact: narrowAtStart,
     selectedId: null,
     selectedIds: [],
     anchorId: null,
@@ -709,6 +717,12 @@ export const useApp = create<AppState>((set, get) => {
       const cur = useVisible.getState().start;
       if (view === "month") get().goTo(addMonths(startOfMonth(cur), dir));
       else get().goTo(cur + dir * (view === "day" ? 1 : view === "week" ? 7 : nDays));
+    },
+
+    setCompact: (compact) => {
+      if (compact === get().compact) return;
+      // The drawer starts closed whenever the app turns narrow.
+      set(compact ? { compact, sidebarOpen: false } : { compact });
     },
 
     toggleSidebar: () => {

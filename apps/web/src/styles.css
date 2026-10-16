@@ -592,6 +592,9 @@ select,
   height: 100%;
   position: relative;
   user-select: none;
+  /* Fingers are handled by the calendar (useTouch.ts): the browser neither scrolls nor zooms here. */
+  touch-action: none;
+  -webkit-touch-callout: none;
   overflow: clip; /* clip, unlike hidden, can never be scrolled by focus or scrollIntoView */
   --colw: 200px;
   --hh: 48px;
@@ -1895,4 +1898,76 @@ textarea.field-input {
   margin: 0;
   padding: 0;
   min-width: 0;
+}
+
+/* ---------------------------------------------------------------- phone layout (.app.compact) */
+.app.compact,
+.app.compact.no-sidebar,
+.app.compact.with-panel {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* The sidebar is a drawer over the calendar. */
+.app.compact .sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 85;
+  width: min(300px, 86cqw);
+  box-shadow: var(--shadow);
+}
+.drawer-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 84;
+  background: rgba(5, 6, 8, 0.45);
+}
+/* The detail is a sheet at the bottom; expanded, it takes the whole screen. */
+.app.compact .popover {
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: 0;
+  max-height: 72cqh;
+  border-radius: 14px 14px 0 0;
+  border-bottom: 0;
+}
+.app.compact .detail-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+}
+.app.compact .title {
+  font-size: 18px;
+}
+.app.compact .toast,
+.app.compact .selbar {
+  bottom: 88px;
+}
+.fab {
+  position: absolute;
+  right: 16px;
+  bottom: 20px;
+  z-index: 55;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: var(--shadow);
+}
+.month-body {
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+/* Fingers: nothing is hover-only, and edges to resize are big enough to hold. */
+@media (pointer: coarse) {
+  .row-btn {
+    opacity: 1;
+  }
+  .ev-resize {
+    height: 14px;
+  }
 }

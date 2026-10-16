@@ -8,9 +8,14 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.webkit.WebView
+import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewClientCompat
 import java.io.File
@@ -56,7 +61,23 @@ class MainActivity : ComponentActivity() {
             }
         }
         web.addJavascriptInterface(HostBridge(), "hostBridge")
-        setContentView(web)
+        // The calendar stays clear of the status bar, the navigation bar, the camera cut-out and the
+        // keyboard: the window draws edge to edge, so a frame around the page takes their space.
+        val frame = FrameLayout(this).apply {
+            setBackgroundColor(getColor(R.color.bg))
+            addView(web, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(frame) { v, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or
+                    WindowInsetsCompat.Type.ime(),
+            )
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+        setContentView(frame)
+        // Light icons on the graphite bars.
+        WindowCompat.getInsetsController(window, frame).isAppearanceLightStatusBars = false
 
         val query = intent.getStringExtra("query")?.let { "?$it" } ?: ""
         web.loadUrl("https://appassets.androidplatform.net/assets/web/index.html$query")
