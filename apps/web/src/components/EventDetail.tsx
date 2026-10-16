@@ -389,7 +389,10 @@ function DetailBody({ ev }: { ev: CalEvent }) {
 function RepeatRow({ ev }: { ev: CalEvent }) {
   const locale = useApp((s) => s.settings.locale);
   const [custom, setCustom] = useState(false);
-  const preset = presetOf(ev.recurrence);
+  // A series kept as separate notes carries its rule on every note; otherwise the event is the master.
+  const asNotes = useApp((s) => s.supportsSeries(ev.calendarId));
+  const rule = asNotes ? (ev.series?.rule ?? null) : (ev.recurrence ?? null);
+  const preset = presetOf(rule);
   const startDay = ev.occurrenceDay ?? whenStartDay(ev.when);
   const seriesId = ev.seriesId ?? ev.id;
 
@@ -397,7 +400,7 @@ function RepeatRow({ ev }: { ev: CalEvent }) {
     const app = useApp.getState();
     app.editEvents([ev.id], { recurrence: rule });
     // The event's id changes shape when it becomes (or stops being) a series: follow it.
-    app.select(rule ? occurrenceId(seriesId, startDay) : seriesId, true);
+    if (!asNotes) app.select(rule ? occurrenceId(seriesId, startDay) : seriesId, true);
   };
   const choices = (
     ["none", "daily", "weekly", "monthly", "yearly", "weekdays", "custom"] as const
@@ -418,11 +421,7 @@ function RepeatRow({ ev }: { ev: CalEvent }) {
             choices={choices}
             selected={[preset === "custom" ? "custom" : preset]}
             placeholder={t("rec.none")}
-            trigger={
-              <span className={ev.recurrence ? "" : "muted"}>
-                {recurrenceLabel(ev.recurrence, locale)}
-              </span>
-            }
+            trigger={<span className={rule ? "" : "muted"}>{recurrenceLabel(rule, locale)}</span>}
             onChange={(ids) => {
               const p = (ids[0] ?? "none") as RecPreset;
               if (p === "custom") setCustom(true);
@@ -433,7 +432,7 @@ function RepeatRow({ ev }: { ev: CalEvent }) {
       </div>
       {custom && (
         <RecurrenceModal
-          initial={ev.recurrence ?? null}
+          initial={rule}
           startDay={startDay}
           onClose={() => setCustom(false)}
           onSave={(r) => {

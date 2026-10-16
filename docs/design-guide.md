@@ -83,6 +83,10 @@ slate `#94a3b8`.
   from the anchor in chronological order; `Ctrl+Shift`+click adds that range but only for the clicked event's calendar.
   Dragging one selected event moves all of them. Click on empty space or `Esc` clears. While `Ctrl`/`Shift` is held the
   popover lets clicks through.
+- **Series in the vault:** repeating an event creates one note per occurrence (up to 12 months ahead; open-ended series are
+  topped up whenever the vault is read with writing on, with a toast saying how many were created). The same "this / this and
+  following / all" question applies; "all" on a deletion keeps the past notes (the dialog says so); marking a task done only
+  changes that note; changing the repetition rule replaces the later notes with the ones the new rule makes.
 - **Recurrence:** editing, moving or deleting an occurrence asks "Only this event / This and following events / All
   events" (cancel is always possible). Changing the repetition rule itself applies to the whole series.
 - **Tasks:** an event can be switched to Task in the detail or the context menu; tasks show a checkbox in the card. A

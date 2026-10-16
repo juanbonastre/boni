@@ -36,6 +36,9 @@ export function ScopeModal() {
         </div>
         <div className="modal-body">
           <p className="muted">{t("scope.hint")}</p>
+          {prompt.notes && prompt.kind === "delete" && (
+            <p className="muted">{t("scope.keepPast")}</p>
+          )}
           <div className="scope-options">
             <button type="button" className="btn" onClick={() => prompt.onChoose("this")}>
               {t("scope.this")}

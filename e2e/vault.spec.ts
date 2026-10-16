@@ -23,11 +23,14 @@ collection:
     - { id: completed, name: Hecha, type: checkbox }
     - { id: location, name: Lugar, type: text }
     - { id: estimate_h, name: Estimación (h), type: number }
+    - { id: series, name: Serie, type: text }
+    - { id: series_rule, name: Regla de la serie, type: text }
   mapping:
     title: title
     location: location
     when: { kind: split, date: date, startTime: startTime, endTime: endTime, endDate: endDate, allDay: allDay, timezone: timezone }
     task: { column: completed }
+    series: { id: series, rule: series_rule }
   newNote:
     name: "{date} {title}"
     body: "Area: [[${id}]]\\n\\n## Notas\\n"
@@ -81,7 +84,11 @@ const FILES: Record<string, string> = {
  * change a note "from outside" (like Obsidian would) and announce it as the watcher would; the saved
  * index lives in localStorage so it survives a reload like the file in userData does.
  */
-async function openWithVault(page: Page, files: Record<string, string> = FILES) {
+async function openWithVault(
+  page: Page,
+  files: Record<string, string> = FILES,
+  settings: Record<string, unknown> = { dataSource: "vault" },
+) {
   await page.addInitScript(
     ({ files, settings }) => {
       if (!localStorage.getItem("boni-calendar:settings")) {
@@ -179,7 +186,7 @@ async function openWithVault(page: Page, files: Record<string, string> = FILES) 
         },
       };
     },
-    { files, settings: { dataSource: "vault" } },
+    { files, settings },
   );
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
   await page.waitForSelector(".ev");
@@ -503,8 +510,127 @@ test("a note changed outside the app is not overwritten: the app says so and rel
   await expect(page.locator(".ev", { hasText: "Editada en Obsidian" })).toHaveCount(1);
 });
 
-test("vault calendars offer no repetition (series are separate notes, later)", async ({ page }) => {
+const seriesNotes = (files: Record<string, string>, id = "s-test") =>
+  Object.entries(files).filter(([, text]) => text.includes(`series: "${id}"`));
+
+test("repeating an event in the vault makes one note per occurrence, up to twelve months ahead", async ({
+  page,
+}) => {
   await openWithVault(page);
+  await writeOn(page);
   await page.locator(".ev", { hasText: "Clase de ejemplo" }).click();
-  await expect(page.locator(".popover").getByText("Repetir", { exact: true })).toHaveCount(0);
+  await page.locator(".popover .prop-row", { hasText: "Repetir" }).locator(".choice-btn").click();
+  await page.getByText("Cada semana", { exact: true }).first().click();
+  await expect
+    .poll(
+      async () =>
+        Object.keys(await vaultFiles(page)).filter((p) => p.includes("Clase de ejemplo")).length,
+    )
+    .toBeGreaterThan(50);
+  const files = await vaultFiles(page);
+  const all = Object.entries(files).filter(([p]) => p.includes("Clase de ejemplo"));
+  expect(all.length).toBeLessThanOrEqual(54);
+  for (const [, text] of all) {
+    expect(text).toMatch(/series: "s-[\w-]+"/);
+    expect(text).toContain('series_rule: "FREQ=WEEKLY"');
+  }
+  const names = all.map(([p]) => p).sort();
+  expect(names[0]).toBe("agenda/docencia/2025-09-17 Clase de ejemplo.md");
+  expect(names).toContain("agenda/docencia/2025-09-24 Clase de ejemplo.md");
+  // one id for all of them
+  expect(new Set(all.map(([, t]) => /series: "([^"]+)"/.exec(t)?.[1])).size).toBe(1);
+});
+
+test("editing and deleting a series asks for a scope and touches the notes of that scope", async ({
+  page,
+}) => {
+  await openWithVault(page);
+  await writeOn(page);
+  await page.locator(".ev", { hasText: "Clase de ejemplo" }).click();
+  await page.locator(".popover .prop-row", { hasText: "Repetir" }).locator(".choice-btn").click();
+  await page.getByText("Cada semana", { exact: true }).first().click();
+  await expect
+    .poll(
+      async () =>
+        Object.keys(await vaultFiles(page)).filter((p) => p.includes("Clase de ejemplo")).length,
+    )
+    .toBeGreaterThan(50);
+  await page.waitForTimeout(800);
+
+  // go to the next week and rename "this and following"
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("k");
+  await page.waitForTimeout(500);
+  await page.locator(".ev", { hasText: "Clase de ejemplo" }).first().click();
+  await page.locator(".popover .title-input").fill("Clase nueva");
+  await page.locator(".popover .title-input").press("Enter");
+  await page.getByRole("button", { name: "Este y los siguientes" }).click();
+  await expect
+    .poll(
+      async () =>
+        Object.values(await vaultFiles(page)).filter((t) => t.includes('title: "Clase nueva"'))
+          .length,
+    )
+    .toBeGreaterThan(50);
+  const files = await vaultFiles(page);
+  expect(files["agenda/docencia/2025-09-17 Clase de ejemplo.md"]).toContain(
+    'title: "Clase de ejemplo"',
+  );
+  expect(files["agenda/docencia/2025-09-24 Clase de ejemplo.md"]).toContain('title: "Clase nueva"');
+
+  // delete "this and following" from the same note: the series ends before it
+  await page.waitForTimeout(600);
+  await page.locator(".ev", { hasText: "Clase nueva" }).first().click();
+  await page.keyboard.press("Delete");
+  await expect(page.getByText("Los eventos pasados se conservan.")).toBeVisible();
+  await page.getByRole("button", { name: "Este y los siguientes" }).click();
+  await expect
+    .poll(
+      async () =>
+        Object.keys(await vaultFiles(page)).filter((p) => p.includes("Clase de ejemplo")).length,
+    )
+    .toBe(1);
+  const left = await vaultFiles(page);
+  expect(left["agenda/docencia/2025-09-17 Clase de ejemplo.md"]).toContain("UNTIL=2025-09-23");
+  const trashed = await page.evaluate(
+    () => (window as never as { __vault: { trashed: string[] } }).__vault.trashed,
+  );
+  expect(trashed.length).toBeGreaterThan(50);
+});
+
+test("an open-ended series gets the notes it is missing when the vault is read with writing on", async ({
+  page,
+}) => {
+  const weekly = (day: string) =>
+    `---\ntitle: "Revisión semanal"\ndate: "${day}"\nstartTime: "09:00"\nendTime: "09:30"\nseries: "s-test"\nseries_rule: "FREQ=WEEKLY"\n---\nArea: [[docencia]]\n`;
+  const files = {
+    ...FILES,
+    "agenda/docencia/2025-08-25 Revisión semanal.md": weekly("2025-08-25"),
+    "agenda/docencia/2025-09-01 Revisión semanal.md": weekly("2025-09-01"),
+    "agenda/docencia/2025-09-08 Revisión semanal.md": weekly("2025-09-08"),
+    "agenda/docencia/2025-09-15 Revisión semanal.md": weekly("2025-09-15"),
+  };
+  await openWithVault(page, files, { dataSource: "vault", vaultWrite: true });
+  await expect.poll(async () => seriesNotes(await vaultFiles(page)).length).toBeGreaterThan(50);
+  const names = seriesNotes(await vaultFiles(page))
+    .map(([p]) => p)
+    .sort();
+  expect(names[0]).toBe("agenda/docencia/2025-08-25 Revisión semanal.md");
+  expect(names).toContain("agenda/docencia/2025-09-22 Revisión semanal.md");
+  expect(names.at(-1) as string).toMatch(/2026-09-(14|21)/);
+  await expect(page.getByText(/Se crearon \d+ eventos más/)).toBeVisible();
+  // nothing more is created on the next refresh
+  const before = names.length;
+  await page.evaluate(() => (window as never as { __vault: { fire: () => void } }).__vault.fire());
+  await page.waitForTimeout(600);
+  expect(seriesNotes(await vaultFiles(page)).length).toBe(before);
+});
+
+test("without writing on, series are not extended and nothing is created", async ({ page }) => {
+  await openWithVault(page, {
+    ...FILES,
+    "agenda/docencia/2025-09-15 Revisión semanal.md": `---\ntitle: "Revisión semanal"\ndate: "2025-09-15"\nstartTime: "09:00"\nendTime: "09:30"\nseries: "s-test"\nseries_rule: "FREQ=WEEKLY"\n---\n`,
+  });
+  await page.waitForTimeout(500);
+  expect(seriesNotes(await vaultFiles(page))).toHaveLength(1);
 });

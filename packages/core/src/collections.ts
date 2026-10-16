@@ -93,6 +93,11 @@ export interface CalendarMapping {
   recurrence?: string;
   /** `dates` column with the days of the series that were deleted or detached. */
   exdates?: string;
+  /**
+   * A series kept as one note per occurrence: the text column shared by the notes of a series, and the
+   * text column with its repetition rule. Mutually exclusive with `recurrence` (one master that expands).
+   */
+  series?: { id: string; rule: string };
 }
 
 export interface CalendarView {
@@ -154,6 +159,8 @@ export function mappedColumns(m: CalendarMapping): Set<string> {
   add(m.task?.column);
   add(m.recurrence);
   add(m.exdates);
+  add(m.series?.id);
+  add(m.series?.rule);
   const w = m.when;
   if (w.kind === "split") {
     add(w.date);

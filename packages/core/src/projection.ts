@@ -138,6 +138,10 @@ export function rowToEvent(model: Model, row: Row): CalEvent | null {
     created: row.created,
     updated: row.updated,
   };
+  if (m.series) {
+    const id = str(v[m.series.id]).trim();
+    if (id) ev.series = { id, rule: parseRule(v[m.series.rule]) };
+  }
   const rule = m.recurrence ? parseRule(v[m.recurrence]) : null;
   if (rule) {
     ev.recurrence = rule;
@@ -217,6 +221,10 @@ export function eventToRow(model: Model, prev: Row | null, ev: CalEvent): Row {
   if (m.recurrence) {
     set(m.recurrence, ev.recurrence ? formatRule(ev.recurrence) : null);
     set(m.exdates, ev.recurrence && ev.exdates?.length ? ev.exdates.map(dayToIso) : null);
+  }
+  if (m.series) {
+    set(m.series.id, ev.series?.id ?? null);
+    set(m.series.rule, ev.series?.rule ? formatRule(ev.series.rule) : null);
   }
   const mapped = mappedColumns(m);
   for (const c of coll.columns) {

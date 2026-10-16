@@ -201,3 +201,33 @@ describe("names of new notes", () => {
     expect(withAreaLine("Area: [[docencia]]\n", "Sin área\n")).toBe("Area: [[docencia]]\n");
   });
 });
+
+describe("series in a definition", () => {
+  it("reads mapping.series and keeps its columns out of the free properties", () => {
+    const text = definitionNote
+      .replace(
+        "    - { id: estimate_h, name: Estimación (h), type: number }\n",
+        "    - { id: estimate_h, name: Estimación (h), type: number }\n    - { id: series, name: Serie, type: text }\n    - { id: series_rule, name: Regla, type: text }\n",
+      )
+      .replace(
+        "    task: { column: completed }\n",
+        "    task: { column: completed }\n    series: { id: series, rule: series_rule }\n",
+      );
+    const def = load(text);
+    expect(def.mapping.series).toEqual({ id: "series", rule: "series_rule" });
+    const { collections, views } = defsToModel([def], { readOnly: false });
+    const model = makeModel(collections, views);
+    const ev = makeProjector(model).event(
+      noteToRow(
+        def,
+        "agenda/docencia/a.md",
+        parseNote(
+          '---\ntitle: "X"\ndate: "2026-12-22"\nseries: "s-1"\nseries_rule: "FREQ=DAILY"\n---\n',
+        ),
+        1,
+      ),
+    );
+    expect(ev?.series?.id).toBe("s-1");
+    expect(ev?.props).toEqual({});
+  });
+});

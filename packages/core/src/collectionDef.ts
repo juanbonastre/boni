@@ -191,6 +191,13 @@ function parseMapping(m: unknown, errors: string[]): CalendarMapping | null {
       };
     } else errors.push("mapping.task: needs a column");
   }
+  let series: CalendarMapping["series"];
+  if (m.series !== undefined) {
+    const sr = m.series;
+    if (isObj(sr) && typeof sr.id === "string" && typeof sr.rule === "string") {
+      series = { id: sr.id, rule: sr.rule };
+    } else errors.push("mapping.series: needs id and rule columns");
+  }
   if (typeof m.title !== "string" || !when) return null;
   return {
     title: m.title,
@@ -202,6 +209,7 @@ function parseMapping(m: unknown, errors: string[]): CalendarMapping | null {
     }),
     when,
     ...(task ? { task } : {}),
+    ...(series ? { series } : {}),
   };
 }
 

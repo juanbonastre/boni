@@ -70,6 +70,13 @@ docs/            decisions and status.
   trash (text kept in memory so Undo can restore it), existing notes are never renamed, and a note whose mtime changed since
   it was read is never overwritten (`VaultWriteError` conflict -> toast and reload). Reads and writes share one lock
   (`withLock` in `vault/sync.ts`). A new row keeps its temporary id for the session (`aliases` maps it to the path).
+  **Series in the vault are separate notes, never a master** (`series.ts` in core; the calendar's mapping has
+  `series: { id, rule }`, two text columns): every note of a series is a plain event with the same `series` id and the rule.
+  Repeating an event creates one note per occurrence up to 12 months ahead (`makeSeries`); on every read with writing on,
+  open-ended series are topped up after their last note (`extendSeries`, never refilling gaps); edits and deletions go through
+  `editSeries` with the same this/following/all scope (marking done only touches that note; deleting "all" only removes notes
+  from today on; a deletion that takes the end ends the series with an `until`); changing the rule replaces the later notes.
+  A calendar maps `series` or `recurrence`, not both.
 - **Rows are the truth (phase 2):** the store keeps `collections`, `views` and `rows`; `data.events`, `data.calendars` and
   `data.projects` are *derived* (events are the projection of rows through each calendar's mapping, memoised per row
   object). Never write them: edit through the store actions, which turn event changes into row changes (`reconcileRows`)

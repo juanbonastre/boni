@@ -86,6 +86,11 @@ export interface CalEvent {
   seriesId?: string;
   /** Occurrences only: the day (of the series' start) this occurrence belongs to. */
   occurrenceDay?: CivilDay;
+  /**
+   * A series stored as separate notes: every note of the series is a plain event carrying the same
+   * `id` and the rule it was made with (unlike `recurrence`, which is one master that expands).
+   */
+  series?: { id: string; rule: Recurrence | null };
 }
 
 export interface CalendarData {

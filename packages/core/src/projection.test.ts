@@ -590,3 +590,79 @@ describe("validateModel", () => {
     ).toBe(true);
   });
 });
+
+describe("series kept as separate notes", () => {
+  const seriesColl: Collection = {
+    id: "notes",
+    name: "Notas",
+    columns: [
+      { id: "title", name: "Título", type: "text" },
+      { id: "date", name: "Fecha", type: "date" },
+      { id: "startTime", name: "Inicio", type: "time" },
+      { id: "endTime", name: "Fin", type: "time" },
+      { id: "series", name: "Serie", type: "text" },
+      { id: "series_rule", name: "Regla", type: "text" },
+    ],
+  };
+  const seriesView: CalendarView = {
+    id: "notes",
+    collectionId: "notes",
+    accountId: "acc",
+    color: "#60a5fa",
+    visible: true,
+    mapping: {
+      title: "title",
+      when: { kind: "split", date: "date", startTime: "startTime", endTime: "endTime" },
+      series: { id: "series", rule: "series_rule" },
+    },
+  };
+  const m = makeModel([seriesColl], [seriesView], { defaultTz: TZ });
+  const r = row("notes", "n1", {
+    title: "Revisión",
+    date: "2026-10-19",
+    startTime: "09:00",
+    endTime: "09:30",
+    series: "s-1",
+    series_rule: "FREQ=WEEKLY;COUNT=4",
+  });
+
+  it("reads the series and its rule, never as an expanding master", () => {
+    const ev = rowToEvent(m, r);
+    expect(ev?.series).toEqual({ id: "s-1", rule: { freq: "weekly", interval: 1, count: 4 } });
+    expect(ev?.recurrence).toBeUndefined();
+    expect(ev?.props).toEqual({});
+  });
+
+  it("writes it back, and clears it", () => {
+    const ev = rowToEvent(m, r) as CalEvent;
+    expect(eventToRow(m, r, ev).values).toMatchObject({
+      series: "s-1",
+      series_rule: "FREQ=WEEKLY;COUNT=4",
+    });
+    const plain = eventToRow(m, r, { ...ev, series: undefined });
+    expect(plain.values.series).toBeNull();
+    expect(plain.values.series_rule).toBeNull();
+    expect(rowToEvent(m, plain)?.series).toBeUndefined();
+    // a note that never had a series gets no empty keys
+    const fresh = eventToRow(m, null, { ...ev, series: undefined });
+    expect("series" in fresh.values).toBe(false);
+  });
+
+  it("is validated: both columns must be text, and it excludes a master recurrence", () => {
+    expect(validateModel([seriesColl], [seriesView]).filter((i) => i.severity === "error")).toEqual(
+      [],
+    );
+    const bad: CalendarView = {
+      ...seriesView,
+      mapping: {
+        ...seriesView.mapping,
+        series: { id: "date", rule: "nope" },
+        recurrence: "series_rule",
+      },
+    };
+    const msgs = validateModel([seriesColl], [bad]).map((i) => i.where);
+    expect(msgs).toContain('view "notes" / series.id');
+    expect(msgs).toContain('view "notes" / series.rule');
+    expect(msgs).toContain('view "notes" / series');
+  });
+});
