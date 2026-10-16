@@ -1,3 +1,4 @@
+import { findInApp } from "./host.ts";
 /**
  * Built-in smoothness benchmark, run with `?bench=1`. It drives the real wheel pipeline (synthetic
  * WheelEvents on the grid) and records requestAnimationFrame deltas per scenario, so the same
@@ -106,7 +107,7 @@ function wheel(target: Element, init: WheelEventInit) {
 export async function runBench(only = ""): Promise<BenchResult> {
   const app = useApp.getState();
   const phases: PhaseResult[] = [];
-  const grid = () => document.querySelector(".grid, .month") as Element;
+  const grid = () => findInApp(".grid, .month") as Element;
 
   app.clearSelection();
   app.setView("week");

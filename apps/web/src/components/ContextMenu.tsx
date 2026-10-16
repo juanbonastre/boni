@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { appRect, appRoot, eventTarget, findInApp, onKeys } from "../host.ts";
 import { t } from "../i18n.ts";
 import { type CtxTarget, useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
@@ -30,7 +31,7 @@ export function useContextMenuTrigger() {
   const vp = useViewport();
   useEffect(() => {
     const onContext = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null;
+      const el = eventTarget(e);
       if (!el) return;
       if (el.closest("input, textarea, select, .popover, .scrim, .menu, .ctx")) return;
       const app = useApp.getState();
@@ -47,7 +48,7 @@ export function useContextMenuTrigger() {
       } else if (cal?.dataset.cal) {
         target = { kind: "calendar", id: cal.dataset.cal };
       } else if (col?.dataset.day) {
-        const body = document.querySelector(".body")?.getBoundingClientRect();
+        const body = findInApp(".body")?.getBoundingClientRect();
         const snap = app.settings.snap;
         const raw = body ? ((vp.scrollY + (e.clientY - body.top)) / vp.hh) * 60 : 540;
         const minute = Math.min(1440 - snap, Math.max(0, Math.floor(raw / snap) * snap));
@@ -59,8 +60,11 @@ export function useContextMenuTrigger() {
       e.preventDefault();
       app.set({ popoverId: null, ctxMenu: { x: e.clientX, y: e.clientY, target } });
     };
-    window.addEventListener("contextmenu", onContext);
-    return () => window.removeEventListener("contextmenu", onContext);
+    // Only right clicks inside the app: around it (another host) the native menu stays.
+    const target = appRoot() ?? window;
+    const h = onContext as EventListener;
+    target.addEventListener("contextmenu", h);
+    return () => target.removeEventListener("contextmenu", h);
   }, [vp]);
 }
 
@@ -73,7 +77,7 @@ export function ContextMenu() {
   useEffect(() => {
     if (!menu) return;
     const down = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement).closest(".ctx")) close();
+      if (!eventTarget(e)?.closest(".ctx")) close();
     };
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -82,13 +86,13 @@ export function ContextMenu() {
       }
     };
     window.addEventListener("pointerdown", down, true);
-    window.addEventListener("keydown", key, true);
+    const offKeys = onKeys(key, true);
     window.addEventListener("wheel", close, { passive: true });
     window.addEventListener("blur", close);
     window.addEventListener("resize", close);
     return () => {
       window.removeEventListener("pointerdown", down, true);
-      window.removeEventListener("keydown", key, true);
+      offKeys();
       window.removeEventListener("wheel", close);
       window.removeEventListener("blur", close);
       window.removeEventListener("resize", close);
@@ -103,14 +107,16 @@ export function ContextMenu() {
     const el = ref.current;
     const w = el?.offsetWidth ?? 240;
     const h = el?.offsetHeight ?? 200;
+    // The menu is placed inside the app's box (its containing block), in coordinates relative to it.
+    const box = appRect();
     setPos({
-      left: Math.max(8, Math.min(menu.x, window.innerWidth - w - 8)),
-      top: Math.max(8, Math.min(menu.y, window.innerHeight - h - 8)),
+      left: Math.max(8, Math.min(menu.x - box.left, box.right - box.left - w - 8)),
+      top: Math.max(8, Math.min(menu.y - box.top, box.bottom - box.top - h - 8)),
     });
   }, [menu]);
 
   if (!menu) return null;
-  const flip = menu.x > window.innerWidth - 520;
+  const flip = menu.x > appRect().right - 520;
   return (
     <div
       ref={ref}

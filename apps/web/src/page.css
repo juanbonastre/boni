@@ -1,0 +1,12 @@
+/* The standalone page around the app (a browser tab or the desktop shell); the app's own styles are
+   in styles.css and stay inside the app's root. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: #16171a;
+  overflow: hidden;
+}

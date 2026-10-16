@@ -1,5 +1,6 @@
 import { civilFromDays, monthNames, type Recurrence, weekdayNames } from "@boni-calendar/core";
 import { useEffect, useState } from "react";
+import { onKeys } from "../host.ts";
 import { t } from "../i18n.ts";
 import { useApp } from "../store.ts";
 import { DateField } from "./fields.tsx";
@@ -13,8 +14,7 @@ function useEscape(onClose: () => void, active = true) {
         onClose();
       }
     };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
+    return onKeys(key, true);
   }, [onClose, active]);
 }
 

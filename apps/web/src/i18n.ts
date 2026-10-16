@@ -1,4 +1,5 @@
 import type { Locale } from "@boni-calendar/core";
+import { appRoot } from "./host.ts";
 
 const es = {
   "app.name": "Boni Calendar",
@@ -479,7 +480,9 @@ let current: Locale = "es";
 
 export function setLocale(l: Locale): void {
   current = l;
-  document.documentElement.lang = l;
+  const root = appRoot();
+  if (root) root.lang = l;
+  else document.documentElement.lang = l;
 }
 
 export function t(

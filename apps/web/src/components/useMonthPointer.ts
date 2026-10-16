@@ -6,6 +6,7 @@ import {
   type When,
 } from "@boni-calendar/core";
 import { type PointerEvent as RPE, useEffect, useRef } from "react";
+import { elementsAt, onKeys } from "../host.ts";
 import { useApp } from "../store.ts";
 import { NEW_ID } from "./useGridPointer.ts";
 
@@ -26,7 +27,7 @@ type Gesture =
 
 /** The month cell under a screen point (bars and chips sit on top of the cells, hence elementsFromPoint). */
 function dayAt(x: number, y: number): CivilDay | null {
-  for (const el of document.elementsFromPoint(x, y)) {
+  for (const el of elementsAt(x, y)) {
     const cell = (el as HTMLElement).closest<HTMLElement>(".mcell[data-day]");
     if (cell?.dataset.day) return Number(cell.dataset.day);
   }
@@ -49,8 +50,7 @@ export function useMonthPointer() {
         cancel();
       }
     };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    return onKeys(onKey, true);
   }, []);
 
   const applyMove = (x: number, y: number) => {

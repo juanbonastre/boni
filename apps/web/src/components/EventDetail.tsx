@@ -49,6 +49,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { appRect, appRoot, findInApp } from "../host.ts";
 import { t } from "../i18n.ts";
 import { presetOf, type RecPreset, recurrenceLabel, ruleOf } from "../recurrence.ts";
 import { useApp } from "../store.ts";
@@ -87,7 +88,7 @@ function Popover({ ev }: { ev: CalEvent }) {
     const pop = ref.current;
     if (!pop) return;
     const id = CSS.escape(ev.id);
-    const anchor = document.querySelector<HTMLElement>(
+    const anchor = findInApp<HTMLElement>(
       `.ev[data-id="${id}"], .bar[data-id="${id}"], .mchip[data-id="${id}"]`,
     );
     if (!anchor) {
@@ -95,19 +96,22 @@ function Popover({ ev }: { ev: CalEvent }) {
       return;
     }
     const a = anchor.getBoundingClientRect();
-    const body = document.querySelector(".stage")?.getBoundingClientRect();
+    // Viewport coordinates, kept inside the app's box; the popover is positioned relative to that box.
+    const box = appRect();
+    const body = findInApp(".stage")?.getBoundingClientRect();
     const h = pop.offsetHeight;
-    const maxBottom = (body?.bottom ?? window.innerHeight) - 8;
-    const minTop = (body?.top ?? 0) + 8;
+    const maxBottom = (body?.bottom ?? box.bottom) - 8;
+    const minTop = (body?.top ?? box.top) + 8;
     let left = a.right + 10;
-    if (left + DETAIL_W > window.innerWidth - 8) left = a.left - DETAIL_W - 10;
-    if (left < 8) left = Math.max(8, Math.min(window.innerWidth - DETAIL_W - 8, a.left + 12));
+    if (left + DETAIL_W > box.right - 8) left = a.left - DETAIL_W - 10;
+    if (left < box.left + 8)
+      left = Math.max(box.left + 8, Math.min(box.right - DETAIL_W - 8, a.left + 12));
     let top = a.top;
     if (top + h > maxBottom) top = maxBottom - h;
     top = Math.max(minTop, top);
-    pop.style.left = `${Math.round(left)}px`;
-    pop.style.top = `${Math.round(top)}px`;
-    const offscreen = a.bottom < (body?.top ?? 0) || a.top > (body?.bottom ?? window.innerHeight);
+    pop.style.left = `${Math.round(left - box.left)}px`;
+    pop.style.top = `${Math.round(top - box.top)}px`;
+    const offscreen = a.bottom < (body?.top ?? box.top) || a.top > (body?.bottom ?? box.bottom);
     setHidden(offscreen);
   }, [ev.id]);
 
@@ -118,8 +122,15 @@ function Popover({ ev }: { ev: CalEvent }) {
   });
   useEffect(() => vp.subscribe(place), [vp, place]);
   useEffect(() => {
-    window.addEventListener("resize", place);
-    return () => window.removeEventListener("resize", place);
+    // The app's box can change size without the window doing so (a pane resized inside a host).
+    const root = appRoot();
+    if (!root) {
+      window.addEventListener("resize", place);
+      return () => window.removeEventListener("resize", place);
+    }
+    const ro = new ResizeObserver(() => place());
+    ro.observe(root);
+    return () => ro.disconnect();
   }, [place]);
 
   return (

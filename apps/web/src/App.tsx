@@ -8,6 +8,7 @@ import { SelectionBar } from "./components/SelectionBar.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { TimeGrid } from "./components/TimeGrid.tsx";
 import { TopBar } from "./components/TopBar.tsx";
+import { appRoot, eventTarget, getHost, onKeys, releaseFocus } from "./host.ts";
 import { t } from "./i18n.ts";
 import { useApp } from "./store.ts";
 
@@ -15,7 +16,7 @@ function useTheme() {
   const theme = useApp((s) => s.settings.theme);
   const density = useApp((s) => s.settings.density);
   useEffect(() => {
-    const root = document.documentElement;
+    const root = appRoot() ?? document.documentElement;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
       const dark = theme === "dark" || (theme === "system" && mq.matches);
@@ -29,7 +30,7 @@ function useTheme() {
 }
 
 function isTyping(e: KeyboardEvent): boolean {
-  const el = e.target as HTMLElement | null;
+  const el = eventTarget(e);
   return (
     !!el &&
     (el.tagName === "INPUT" ||
@@ -43,8 +44,8 @@ function isTyping(e: KeyboardEvent): boolean {
 function useModifierClass() {
   useEffect(() => {
     const sync = (e: KeyboardEvent) =>
-      document.body.classList.toggle("mod-select", e.ctrlKey || e.shiftKey || e.metaKey);
-    const clear = () => document.body.classList.remove("mod-select");
+      appRoot()?.classList.toggle("mod-select", e.ctrlKey || e.shiftKey || e.metaKey);
+    const clear = () => appRoot()?.classList.remove("mod-select");
     window.addEventListener("keydown", sync);
     window.addEventListener("keyup", sync);
     window.addEventListener("blur", clear);
@@ -62,7 +63,7 @@ function useClickAway() {
     const onDown = (e: PointerEvent) => {
       const s = useApp.getState();
       if (!s.popoverId) return;
-      const el = e.target as HTMLElement | null;
+      const el = eventTarget(e);
       if (el?.closest(".popover, .menu, .ev, .bar, .mchip, .scrim, .toast")) return;
       s.set({ popoverId: null });
     };
@@ -107,7 +108,7 @@ function useShortcuts() {
           return; // modals handle it
         if (s.popoverId || s.selectedId || s.selectedIds.length > 0) {
           s.clearSelection();
-          (document.activeElement as HTMLElement | null)?.blur?.();
+          releaseFocus();
         }
         return;
       }
@@ -136,8 +137,32 @@ function useShortcuts() {
         s.removeEvents(s.selectedIds);
       } else return;
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return onKeys(onKey);
+  }, []);
+}
+
+/**
+ * When the app shares the window, a press inside it moves the focus into it (unless the press already
+ * focused something of ours), so its shortcuts work and keys typed elsewhere never reach them.
+ */
+function useFocusOnPress() {
+  useEffect(() => {
+    const root = appRoot();
+    if (!root || getHost().keys !== "root") return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onDown = () => {
+      clearTimeout(timer);
+      // After the press: its own default action (focusing an input, a button...) goes first.
+      timer = setTimeout(() => {
+        const active = (root.getRootNode() as Document | ShadowRoot).activeElement;
+        if (!active || !root.contains(active)) root.focus({ preventScroll: true });
+      });
+    };
+    root.addEventListener("pointerdown", onDown, true);
+    return () => {
+      clearTimeout(timer);
+      root.removeEventListener("pointerdown", onDown, true);
+    };
   }, []);
 }
 
@@ -176,6 +201,7 @@ export function App() {
   useShortcuts();
   useClickAway();
   useModifierClass();
+  useFocusOnPress();
   useContextMenuTrigger();
   const view = useApp((s) => s.view);
   const sidebarOpen = useApp((s) => s.sidebarOpen);

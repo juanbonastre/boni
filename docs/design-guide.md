@@ -115,7 +115,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   second web consumer, copy the values from section 2; when it exists, move them to a shared tokens file (JSON) that both
   the CSS and the Compose theme are generated from.
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
-  (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables).
+  (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
+  menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a
+  click anywhere in it gives it the focus; `Esc` keeps it there), so typing in a note never reaches the calendar.
 - **Mobile (proposal, accepted in principle by Juan but deferred until the desktop apps are finished):** same tokens and card recipe. The popover becomes a bottom sheet that
   expands to a full-screen detail; the sidebar becomes a drawer; "new event" is a floating button. Long press = context
   menu; drag to create, move and resize works like desktop with touch targets of at least 44 dp; pinch zooms the hours;

@@ -11,6 +11,7 @@ import {
 } from "@boni-calendar/core";
 import { type RefObject, type PointerEvent as RPE, useEffect, useRef } from "react";
 import type { DayIndex } from "../engine/dayIndex.ts";
+import { elementsAt, onKeys } from "../host.ts";
 import { useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
 
@@ -121,9 +122,9 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
         cancel();
       }
     };
-    window.addEventListener("keydown", onKey, true);
+    const offKeys = onKeys(onKey, true);
     return () => {
-      window.removeEventListener("keydown", onKey, true);
+      offKeys();
       stopEdge();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,7 +430,7 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
 
   const onDoubleClick = (e: RPE<HTMLDivElement>) => {
     // The grid captures the pointer on press, so e.target is the grid itself: locate by coordinates.
-    const under = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+    const under = (elementsAt(e.clientX, e.clientY)[0] ?? null) as HTMLElement | null;
     if (!under || under.closest(".ev, .bar")) return;
     const app = useApp.getState();
     const tz = app.settings.tz;

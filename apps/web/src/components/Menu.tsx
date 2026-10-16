@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef } from "react";
+import { eventTarget, onKeys } from "../host.ts";
 
 /** Minimal popup menu: closes on outside click and on Escape. */
 export function Menu({
@@ -16,7 +17,8 @@ export function Menu({
   useEffect(() => {
     if (!open) return;
     const down = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = eventTarget(e);
+      if (ref.current && !(target && ref.current.contains(target))) onClose();
     };
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -25,10 +27,10 @@ export function Menu({
       }
     };
     document.addEventListener("mousedown", down, true);
-    window.addEventListener("keydown", key, true);
+    const offKeys = onKeys(key, true);
     return () => {
       document.removeEventListener("mousedown", down, true);
-      window.removeEventListener("keydown", key, true);
+      offKeys();
     };
   }, [open, onClose]);
   if (!open) return null;
