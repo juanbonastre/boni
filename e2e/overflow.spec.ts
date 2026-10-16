@@ -12,7 +12,7 @@ const NOW = "2025-09-17T14:29";
 
 /** Containers that hold interface text (the grid's event cards truncate on purpose and are left out). */
 const SURFACES =
-  ".modal, .popover, .detail-panel, .ctx, .menu, .palette, .toast, .sidebar, .topbar, .selection-bar, .grid-head";
+  ".modal, .popover, .detail-panel, .ctx, .menu, .palette, .toast, .sidebar, .topbar, .selection-bar, .grid-head, .month-dow";
 /** Controls whose label must stay on one line. */
 const SINGLE_LINE =
   "button, .btn, .chip, .menu-item, .segmented > *, .select, select, .mini-btn, .swatch-label, .tab";
@@ -270,3 +270,32 @@ for (const locale of ["es", "en"] as const) {
     });
   }
 }
+
+/** The phone layout (a narrow touch screen): top bar, drawer, sheet, menus, month, settings. */
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 412, height: 860 }, hasTouch: true, isMobile: true });
+  for (const locale of ["es", "en"] as const) {
+    test(`no text overflows its box (${locale}, phone)`, async ({ page }) => {
+      await open(page, locale);
+      const issues: string[] = [];
+      const check = async (where: string) => issues.push(...(await audit(page, `phone ${where}`)));
+      await check("top bar");
+      await page.locator(".topbar .icon-btn").first().tap();
+      await check("drawer");
+      await page.locator(".drawer-scrim").tap({ position: { x: 390, y: 400 } });
+      await page.locator(".ev", { hasText: "Clase FUP" }).last().tap();
+      await page.waitForTimeout(200);
+      await check("sheet");
+      await page.keyboard.press("Escape");
+      await page.locator(".view-picker .pill").tap();
+      await check("view menu");
+      await page.locator(".view-menu .menu-item").nth(2).tap();
+      await page.waitForSelector(".mchip");
+      await check("month");
+      await page.keyboard.press("Control+,");
+      await page.waitForTimeout(200);
+      await check("settings");
+      expect(issues, issues.join("\n")).toEqual([]);
+    });
+  }
+});

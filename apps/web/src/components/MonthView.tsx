@@ -24,6 +24,7 @@ import { useCalendarMap, useDayIndex } from "../hooks.ts";
 import { t } from "../i18n.ts";
 import { useApp, useVisible } from "../store.ts";
 import { useMonthPointer } from "./useMonthPointer.ts";
+import { useTouchGestures } from "./useTouch.ts";
 
 const ROWS = 6;
 const LANE = 19;
@@ -174,6 +175,24 @@ export function MonthView() {
     };
   }, []);
 
+  // Fingers: the weeks follow a vertical swipe and glide on to a whole week; a long press hands over
+  // to the mouse gestures (move, resize, create).
+  const touch = useTouchGestures(pointer, {
+    pan: (_dx, dy) => {
+      const p = pos.current;
+      if (p.snap) clearTimeout(p.snap);
+      p.x -= (dy / rowHRef.current) * 7;
+      p.target = p.x;
+      apply();
+    },
+    fling: (_vx, vy) => {
+      const p = pos.current;
+      const ahead = p.x - ((vy * 320) / rowHRef.current) * 7;
+      p.target = w0 + Math.round((ahead - w0) / 7) * 7;
+      kick();
+    },
+  });
+
   const rows = useMemo(
     () => Array.from({ length: ROWS + 2 * BUFFER + 1 }, (_, i) => block - BUFFER + i),
     [block],
@@ -192,6 +211,7 @@ export function MonthView() {
         ref={bodyRef}
         style={{ "--rowh": `${rowH}px` } as CSSProperties}
         {...pointer}
+        {...touch}
       >
         <div className="month-strip" ref={stripRef}>
           {rows.map((r) => (

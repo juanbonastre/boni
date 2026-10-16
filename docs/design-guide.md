@@ -137,11 +137,14 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   calendar always shows the vault it runs in (Settings → Data offers no folder to choose) and writes to it from
   the start, with the same rules as the desktop app; "Open note" opens the note in a tab, or brings forward the tab
   that already shows it. Installed by hand (`make install-obsidian VAULT=...`), not from the community catalogue.
-- **Mobile (proposal, accepted in principle by Juan but deferred until the desktop apps are finished):** same tokens and card recipe. The popover becomes a bottom sheet that
-  expands to a full-screen detail; the sidebar becomes a drawer; "new event" is a floating button. Long press = context
-  menu; drag to create, move and resize works like desktop with touch targets of at least 44 dp; pinch zooms the hours;
-  vertical swipe scrolls and horizontal swipe moves days; no keyboard shortcuts, so every one needs a visible control;
-  Undo through a snackbar.
+- **Mobile** (the Android app, `apps/android`: the same web app in a WebView, so the look is the desktop's by construction;
+  also any pane narrower than 640 px): same tokens and card recipe. It opens on three days. The sidebar is a drawer over
+  the calendar (top-left button; it closes on a tap outside or once a day is chosen); the detail is a sheet at the bottom
+  (expanded, full screen); "new event" is a floating button (next whole hour, today). Fingers: a swipe scrolls the hours
+  and glides on, a sideways swipe moves days and settles on a whole day, two fingers zoom the hours; a tap selects and
+  opens the detail; a long press then a drag creates, moves or resizes exactly like the mouse; a long press without moving
+  opens the context menu. Nothing is hover-only on a touch screen, resize edges are taller, the system Back button closes
+  what is open, and the calendar keeps clear of the status and navigation bars. Undo through the toast.
 
 ## 7. Keeping it consistent
 - A pull request that changes look or behaviour in Boni Calendar updates this file.

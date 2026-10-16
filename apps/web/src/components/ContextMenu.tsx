@@ -26,12 +26,18 @@ import { t } from "../i18n.ts";
 import { type CtxTarget, useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
 import { propertiesOf } from "./CalendarList.tsx";
+import { lastPointerWasTouch } from "./useTouch.ts";
 
 /** Opens the right-click menu for events, empty grid space, month cells and calendars. */
 export function useContextMenuTrigger() {
   const vp = useViewport();
   useEffect(() => {
     const onContext = (e: MouseEvent) => {
+      // The browser's own long-press menu: the touch gestures open ours (only if the finger did not drag).
+      if (e.isTrusted && lastPointerWasTouch()) {
+        e.preventDefault();
+        return;
+      }
       const el = eventTarget(e);
       if (!el) return;
       if (el.closest("input, textarea, select, .popover, .scrim, .menu, .ctx")) return;

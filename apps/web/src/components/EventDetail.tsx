@@ -81,12 +81,20 @@ export function EventDetail() {
 
 function Popover({ ev }: { ev: CalEvent }) {
   const vp = useViewport();
+  const compact = useApp((s) => s.compact);
   const ref = useRef<HTMLDivElement>(null);
   const [hidden, setHidden] = useState(true);
 
   const place = useCallback(() => {
     const pop = ref.current;
     if (!pop) return;
+    // On a phone the detail is a sheet at the bottom (CSS), whatever the event's place.
+    if (useApp.getState().compact) {
+      pop.style.left = "";
+      pop.style.top = "";
+      setHidden(false);
+      return;
+    }
     const id = CSS.escape(ev.id);
     const anchor = findInApp<HTMLElement>(
       `.ev[data-id="${id}"], .bar[data-id="${id}"], .mchip[data-id="${id}"]`,
@@ -134,7 +142,11 @@ function Popover({ ev }: { ev: CalEvent }) {
   }, [place]);
 
   return (
-    <div ref={ref} className={`popover ${hidden ? "is-hidden" : ""}`} style={{ width: DETAIL_W }}>
+    <div
+      ref={ref}
+      className={`popover ${hidden ? "is-hidden" : ""}`}
+      style={{ width: compact ? undefined : DETAIL_W }}
+    >
       <DetailBody ev={ev} />
     </div>
   );

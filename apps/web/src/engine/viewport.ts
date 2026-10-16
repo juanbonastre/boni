@@ -16,6 +16,8 @@ export const MAX_HH = 320;
  */
 export const HH_STEP = 4;
 const EPS_PX = 0.05;
+/** A released swipe keeps going for about this long at the speed it had (touch). */
+const FLING_MS = 320;
 const EPS_DAY = 0.0005;
 
 export const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
@@ -198,6 +200,52 @@ export class Viewport {
     const max = Math.max(0, 24 * this.tHh - this.bodyHeight);
     this.tScrollY = clamp(this.tScrollY + dy, 0, max);
     this.anchor = null;
+    this.kick();
+  }
+
+  /**
+   * Touch: the content follows the finger at once (no easing). `dx`/`dy` are how far the finger moved
+   * (px, positive = right/down), so the view moves the other way.
+   */
+  panBy(dx: number, dy: number): void {
+    if (this.snapTimer) {
+      clearTimeout(this.snapTimer);
+      this.snapTimer = null;
+    }
+    this.anchor = null;
+    if (dy) {
+      this.scrollY = clamp(this.scrollY - dy, 0, this.maxScroll);
+      this.tScrollY = this.scrollY;
+    }
+    if (dx) {
+      this.viewX -= dx / this.colW;
+      this.tViewX = this.viewX;
+    }
+    this.emit();
+  }
+
+  /**
+   * Touch released with a velocity (px/ms, finger direction): a vertical swipe glides on and slows
+   * down; a horizontal one settles on a whole day, further along the faster it was.
+   */
+  fling(vx: number, vy: number): void {
+    if (vy) {
+      this.tScrollY = clamp(
+        this.scrollY - vy * FLING_MS,
+        0,
+        Math.max(0, 24 * this.tHh - this.bodyHeight),
+      );
+    }
+    if (vx || !Number.isInteger(this.viewX)) {
+      const ahead = this.viewX - (vx * FLING_MS) / this.colW;
+      // A flick, even a short one, turns at least to the next day in its direction.
+      this.tViewX =
+        Math.abs(vx) > 0.25
+          ? vx < 0
+            ? Math.max(Math.ceil(this.viewX), Math.round(ahead))
+            : Math.min(Math.floor(this.viewX), Math.round(ahead))
+          : Math.round(this.viewX);
+    }
     this.kick();
   }
 

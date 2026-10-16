@@ -76,3 +76,6 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   (3) pruebas en un Obsidian real con perfil y vault temporales, medidas e instalacion. Full Calendar ya esta desactivado en el
   portatil.
 - Pasos 4 y 5 de la fase 2: servidor en el NAS y SQLite, solo si hay un caso real.
+- **App de Android** (2026-10-16, en marcha): cascaron Kotlin con la misma app web (`apps/android`), medida a 60 fps en el
+  Pixel. Interfaz movil y gestos tactiles hechos (3 dias, menu lateral, detalle abajo, boton flotante, deslizar, pellizcar,
+  pulsacion larga). Pendiente: el vault en el movil (SAF), avisos por calendario, primera version firmada para Obtainium.

@@ -109,3 +109,43 @@ describe("Viewport", () => {
     expect(vp.viewX).toBe(7);
   });
 });
+
+describe("touch", () => {
+  it("follows the finger at once, both ways", () => {
+    const { vp } = harness();
+    vp.reset({ scrollY: 300, viewX: 10 });
+    vp.panBy(0, -100); // finger up: content scrolls down
+    expect(vp.scrollY).toBe(400);
+    vp.panBy(100, 0); // finger right by half a column: earlier days
+    expect(vp.viewX).toBe(9.5);
+    expect(vp.animating).toBe(false);
+  });
+
+  it("a vertical swipe glides on and stops within the day", () => {
+    const { vp, run } = harness();
+    vp.reset({ scrollY: 300 });
+    vp.fling(0, -1); // 1 px/ms upwards
+    run(60);
+    expect(vp.scrollY).toBeGreaterThan(500);
+    vp.fling(0, -50);
+    run(80);
+    expect(vp.scrollY).toBe(vp.maxScroll);
+  });
+
+  it("a horizontal swipe settles on a whole day in its direction", () => {
+    const { vp, run } = harness();
+    vp.reset({ viewX: 10 });
+    vp.panBy(-40, 0); // a little to the left: 10.2
+    vp.fling(-0.5, 0); // flicked left: next day
+    run(80);
+    expect(vp.viewX).toBe(11);
+    vp.panBy(30, 0); // 10.85, released without speed: nearest day
+    vp.fling(0, 0);
+    run(80);
+    expect(vp.viewX).toBe(11);
+    vp.fling(3, 0); // a fast flick right goes back several days
+    run(80);
+    expect(vp.viewX).toBeLessThan(8);
+    expect(Number.isInteger(vp.viewX)).toBe(true);
+  });
+});

@@ -1,4 +1,7 @@
+import { fromLocal, toLocal } from "@boni-calendar/core";
+import { Plus } from "lucide-react";
 import { useEffect } from "react";
+import { nowMs } from "./clock.ts";
 import { ContextMenu, useContextMenuTrigger } from "./components/ContextMenu.tsx";
 import { EventDetail } from "./components/EventDetail.tsx";
 import { HelpModal, Palette, SchemaEditor, SettingsModal } from "./components/Modals.tsx";
@@ -10,7 +13,7 @@ import { TimeGrid } from "./components/TimeGrid.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import { appRoot, eventTarget, getHost, onKeys, releaseFocus } from "./host.ts";
 import { t } from "./i18n.ts";
-import { useApp } from "./store.ts";
+import { COMPACT_WIDTH, useApp } from "./store.ts";
 
 function useTheme() {
   const theme = useApp((s) => s.settings.theme);
@@ -204,6 +207,44 @@ function VaultNotice() {
   );
 }
 
+/** The phone layout follows the app's own width (a pane of another app can be narrow too). */
+function useCompact() {
+  useEffect(() => {
+    const root = appRoot();
+    if (!root) return;
+    const sync = () => useApp.getState().setCompact(root.clientWidth < COMPACT_WIDTH);
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, []);
+  // On a phone the drawer closes once a day is chosen in it.
+  const seq = useApp((s) => s.nav.seq);
+  useEffect(() => {
+    const s = useApp.getState();
+    if (s.compact && s.sidebarOpen) s.set({ sidebarOpen: false });
+  }, [seq]);
+}
+
+/** New event at the next whole hour today (phone: the floating button). */
+function newEventNow() {
+  const s = useApp.getState();
+  const tz = s.settings.tz;
+  const now = toLocal(nowMs(), tz);
+  const start = Math.min(23 * 60, Math.ceil(now.minute / 60) * 60);
+  const end = Math.min(1440, start + s.settings.defaultDuration);
+  const id = s.addEvent({
+    when: {
+      kind: "timed",
+      start: fromLocal(now.day, start, tz),
+      end: fromLocal(now.day, end, tz),
+      tz,
+    },
+  });
+  s.goTo(now.day);
+  s.select(id, true);
+}
+
 /** External calendars: read when the app starts and again every half hour. */
 function useExternalRefresh() {
   useEffect(() => {
@@ -215,6 +256,7 @@ function useExternalRefresh() {
 
 export function App() {
   useTheme();
+  useCompact();
   useExternalRefresh();
   useShortcuts();
   useClickAway();
@@ -223,8 +265,11 @@ export function App() {
   useContextMenuTrigger();
   const view = useApp((s) => s.view);
   const sidebarOpen = useApp((s) => s.sidebarOpen);
+  const compact = useApp((s) => s.compact);
   const detailMode = useApp((s) => s.detailMode);
   const selectedId = useApp((s) => s.selectedId);
+  const popoverId = useApp((s) => s.popoverId);
+  const selectedIds = useApp((s) => s.selectedIds);
   const settingsOpen = useApp((s) => s.settingsOpen);
   const paletteOpen = useApp((s) => s.paletteOpen);
   const helpOpen = useApp((s) => s.helpOpen);
@@ -235,9 +280,17 @@ export function App() {
 
   return (
     <div
-      className={`app ${sidebarOpen ? "" : "no-sidebar"} ${detailMode === "panel" && selectedId ? "with-panel" : ""}`}
+      className={`app ${sidebarOpen ? "" : "no-sidebar"} ${detailMode === "panel" && selectedId ? "with-panel" : ""} ${compact ? "compact" : ""}`}
     >
       {sidebarOpen && <Sidebar />}
+      {compact && sidebarOpen && (
+        <div className="drawer-scrim" onClick={() => useApp.getState().toggleSidebar()} />
+      )}
+      {compact && !popoverId && !selectedIds.length && (
+        <button type="button" className="fab" title={t("sidebar.newEvent")} onClick={newEventNow}>
+          <Plus size={24} />
+        </button>
+      )}
       <main className="main">
         <TopBar />
         <div className="stage">
