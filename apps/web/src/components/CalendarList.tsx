@@ -1,7 +1,14 @@
 import { ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
+import { EXTERNAL_ACCOUNT, isExternalCalendar } from "../external.ts";
 import { t } from "../i18n.ts";
-import { useApp } from "../store.ts";
+import { type AppState, useApp } from "../store.ts";
+
+/** What "properties" opens for a calendar: its schema, or for an external one its Settings section. */
+export const propertiesOf = (id: string): Partial<AppState> =>
+  isExternalCalendar(id)
+    ? { settingsOpen: true, settingsFocus: "external" }
+    : { schemaCalendarId: id };
 
 export function CalendarList() {
   const accounts = useApp((s) => s.data.accounts);
@@ -28,7 +35,13 @@ export function CalendarList() {
                 })
               }
             >
-              <span className="account-name">{acc.email.includes("@") ? acc.email : acc.name}</span>
+              <span className="account-name">
+                {acc.id === EXTERNAL_ACCOUNT
+                  ? t("external.account")
+                  : acc.email.includes("@")
+                    ? acc.email
+                    : acc.name}
+              </span>
               <ChevronDown size={13} className={closed ? "chev closed" : "chev"} />
             </button>
             {!closed &&
@@ -47,7 +60,7 @@ export function CalendarList() {
                     type="button"
                     className="icon-btn row-btn gear"
                     title={t("sidebar.properties")}
-                    onClick={() => useApp.getState().set({ schemaCalendarId: c.id })}
+                    onClick={() => useApp.getState().set(propertiesOf(c.id))}
                   >
                     <SlidersHorizontal size={13} />
                   </button>
@@ -64,7 +77,11 @@ export function CalendarList() {
           </section>
         );
       })}
-      <button type="button" className="add-account" title={t("sidebar.addAccountSoon")} disabled>
+      <button
+        type="button"
+        className="add-account"
+        onClick={() => useApp.getState().set({ settingsOpen: true, settingsFocus: "external" })}
+      >
         <Plus size={15} />
         <span>{t("sidebar.addAccount")}</span>
       </button>

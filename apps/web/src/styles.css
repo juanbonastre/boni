@@ -1863,3 +1863,36 @@ textarea.field-input {
   color: var(--muted);
   background: var(--bg);
 }
+
+/* ---------------------------------------------------------------- external calendars (Settings) */
+.ext-hint {
+  margin: -4px 0 10px;
+}
+.ext-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ext-form {
+  margin: 4px 0 12px;
+  padding: 4px 12px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+}
+.ext-form .field-input {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+.ext-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.detail-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}

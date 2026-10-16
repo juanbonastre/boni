@@ -169,6 +169,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
   const isNew = app.newEventId === ev.id;
   const close = () => app.clearSelection();
   const tasks = app.supportsTasks(ev.calendarId);
+  const locked = app.isLocked(ev.id);
   const update = (patch: Partial<CalEvent>) => app.editEvents([ev.id], patch);
   const setProp = (id: string, v: PropValue) => update({ props: { ...ev.props, [id]: v } });
   const h24 = app.settings.h24;
@@ -239,142 +240,145 @@ function DetailBody({ ev }: { ev: CalEvent }) {
         </button>
       </div>
 
-      <div className="detail-title">
-        <button
-          type="button"
-          className="task-toggle"
-          disabled={!tasks}
-          title={tasks ? (ev.isTask ? t("event.done") : t("event.task")) : undefined}
-          style={{ "--c": cal?.color ?? "#888" } as CSSProperties}
-          onClick={() => (ev.isTask ? update({ done: !ev.done }) : update({ isTask: true }))}
-        >
-          {ev.isTask ? (
-            ev.done ? (
-              <CheckSquare size={18} />
+      {/* A read-only calendar (a subscription): everything shows, nothing can be changed. */}
+      <fieldset className="detail-fields" disabled={locked}>
+        <div className="detail-title">
+          <button
+            type="button"
+            className="task-toggle"
+            disabled={!tasks}
+            title={tasks ? (ev.isTask ? t("event.done") : t("event.task")) : undefined}
+            style={{ "--c": cal?.color ?? "#888" } as CSSProperties}
+            onClick={() => (ev.isTask ? update({ done: !ev.done }) : update({ isTask: true }))}
+          >
+            {ev.isTask ? (
+              ev.done ? (
+                <CheckSquare size={18} />
+              ) : (
+                <Square size={18} />
+              )
             ) : (
-              <Square size={18} />
-            )
-          ) : (
-            <span className="cal-dot" />
-          )}
-        </button>
-        <DraftInput
-          className="title-input"
-          value={ev.title}
-          placeholder={t("event.title")}
-          autoFocus={isNew}
-          onCommit={(v) => {
-            update({ title: v });
-            if (isNew) app.set({ newEventId: null });
-          }}
-        />
-      </div>
-
-      <div className="detail-section">
-        <WhenEditor ev={ev} fmt={fmt} />
-        {app.supportsRecurrence(ev.calendarId) && <RepeatRow ev={ev} />}
-      </div>
-
-      <div className="detail-section">
-        <div className="prop-row">
-          <span className="prop-icon">
-            <span className="swatch sm" style={{ "--c": cal?.color } as CSSProperties} />
-          </span>
-          <span className="prop-name">{t("event.calendar")}</span>
-          <div className="prop-value">
-            <ChoicePicker
-              choices={app.data.calendars
-                .filter((c) => !c.readOnly)
-                .map((c) => ({ id: c.id, label: c.name, color: c.color }))}
-              selected={[ev.calendarId]}
-              onChange={(ids) => ids[0] && update({ calendarId: ids[0] })}
-              placeholder="—"
-            />
-          </div>
+              <span className="cal-dot" />
+            )}
+          </button>
+          <DraftInput
+            className="title-input"
+            value={ev.title}
+            placeholder={t("event.title")}
+            autoFocus={isNew}
+            onCommit={(v) => {
+              update({ title: v });
+              if (isNew) app.set({ newEventId: null });
+            }}
+          />
         </div>
-        {tasks && (
+
+        <div className="detail-section">
+          <WhenEditor ev={ev} fmt={fmt} />
+          {app.supportsRecurrence(ev.calendarId) && <RepeatRow ev={ev} />}
+        </div>
+
+        <div className="detail-section">
           <div className="prop-row">
             <span className="prop-icon">
-              <CheckSquare size={15} strokeWidth={1.8} />
+              <span className="swatch sm" style={{ "--c": cal?.color } as CSSProperties} />
             </span>
-            <span className="prop-name">{t("event.type")}</span>
+            <span className="prop-name">{t("event.calendar")}</span>
             <div className="prop-value">
-              <div className="segmented small" role="radiogroup" aria-label={t("event.type")}>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={!ev.isTask}
-                  className={ev.isTask ? "" : "on"}
-                  onClick={() => ev.isTask && update({ isTask: false, done: false })}
-                >
-                  {t("event.typeEvent")}
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={ev.isTask}
-                  className={ev.isTask ? "on" : ""}
-                  onClick={() => !ev.isTask && update({ isTask: true })}
-                >
-                  {t("event.typeTask")}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        {tasks && ev.isTask && (
-          <div className="prop-row">
-            <span className="prop-icon" />
-            <span className="prop-name">{t("event.done")}</span>
-            <div className="prop-value">
-              <input
-                type="checkbox"
-                className="check"
-                checked={ev.done}
-                onChange={(e) => update({ done: e.target.checked })}
+              <ChoicePicker
+                choices={app.data.calendars
+                  .filter((c) => !c.readOnly || c.id === ev.calendarId)
+                  .map((c) => ({ id: c.id, label: c.name, color: c.color }))}
+                selected={[ev.calendarId]}
+                onChange={(ids) => ids[0] && update({ calendarId: ids[0] })}
+                placeholder="—"
               />
             </div>
           </div>
-        )}
-      </div>
+          {tasks && (
+            <div className="prop-row">
+              <span className="prop-icon">
+                <CheckSquare size={15} strokeWidth={1.8} />
+              </span>
+              <span className="prop-name">{t("event.type")}</span>
+              <div className="prop-value">
+                <div className="segmented small" role="radiogroup" aria-label={t("event.type")}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={!ev.isTask}
+                    className={ev.isTask ? "" : "on"}
+                    onClick={() => ev.isTask && update({ isTask: false, done: false })}
+                  >
+                    {t("event.typeEvent")}
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={ev.isTask}
+                    className={ev.isTask ? "on" : ""}
+                    onClick={() => !ev.isTask && update({ isTask: true })}
+                  >
+                    {t("event.typeTask")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {tasks && ev.isTask && (
+            <div className="prop-row">
+              <span className="prop-icon" />
+              <span className="prop-name">{t("event.done")}</span>
+              <div className="prop-value">
+                <input
+                  type="checkbox"
+                  className="check"
+                  checked={ev.done}
+                  onChange={(e) => update({ done: e.target.checked })}
+                />
+              </div>
+            </div>
+          )}
+        </div>
 
-      <div className="detail-section props">
-        {cal?.schema.map((p) => (
-          <PropEditor
-            key={p.id}
-            def={p}
-            value={ev.props[p.id] ?? null}
-            onChange={(v) => setProp(p.id, v)}
-          />
-        ))}
-        <div className="prop-row">
-          <span className="prop-icon">
-            <MapPin size={15} strokeWidth={1.8} />
-          </span>
-          <span className="prop-name">{t("event.location")}</span>
-          <div className="prop-value">
-            <DraftInput
-              value={ev.location}
-              placeholder={t("event.empty")}
-              onCommit={(v) => update({ location: v })}
+        <div className="detail-section props">
+          {cal?.schema.map((p) => (
+            <PropEditor
+              key={p.id}
+              def={p}
+              value={ev.props[p.id] ?? null}
+              onChange={(v) => setProp(p.id, v)}
             />
+          ))}
+          <div className="prop-row">
+            <span className="prop-icon">
+              <MapPin size={15} strokeWidth={1.8} />
+            </span>
+            <span className="prop-name">{t("event.location")}</span>
+            <div className="prop-value">
+              <DraftInput
+                value={ev.location}
+                placeholder={t("event.empty")}
+                onCommit={(v) => update({ location: v })}
+              />
+            </div>
+          </div>
+          <div className="prop-row top">
+            <span className="prop-icon">
+              <AlignLeft size={15} strokeWidth={1.8} />
+            </span>
+            <span className="prop-name">{t("event.description")}</span>
+            <div className="prop-value">
+              <DraftInput
+                multiline
+                value={ev.description}
+                placeholder={t("event.empty")}
+                onCommit={(v) => update({ description: v })}
+              />
+            </div>
           </div>
         </div>
-        <div className="prop-row top">
-          <span className="prop-icon">
-            <AlignLeft size={15} strokeWidth={1.8} />
-          </span>
-          <span className="prop-name">{t("event.description")}</span>
-          <div className="prop-value">
-            <DraftInput
-              multiline
-              value={ev.description}
-              placeholder={t("event.empty")}
-              onCommit={(v) => update({ description: v })}
-            />
-          </div>
-        </div>
-      </div>
+      </fieldset>
 
       <div className="detail-section meta">
         <MetaRow
@@ -385,12 +389,12 @@ function DetailBody({ ev }: { ev: CalEvent }) {
         <MetaRow
           icon={<Clock size={15} strokeWidth={1.8} />}
           name={t("event.updated")}
-          value={stamp(ev.updated, app.settings.tz, app.settings.locale, h24)}
+          value={ev.updated ? stamp(ev.updated, app.settings.tz, app.settings.locale, h24) : "—"}
         />
         <MetaRow
           icon={<Clock size={15} strokeWidth={1.8} />}
           name={t("event.created")}
-          value={stamp(ev.created, app.settings.tz, app.settings.locale, h24)}
+          value={ev.created ? stamp(ev.created, app.settings.tz, app.settings.locale, h24) : "—"}
         />
       </div>
     </div>

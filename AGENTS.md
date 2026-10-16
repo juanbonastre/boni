@@ -12,7 +12,7 @@ packages/core/   Pure TypeScript, no DOM: civil-day/timezone math (time.ts), dat
                  deterministic sample data (sample.ts). Collections (phase 2): typed tables, calendar views with
                  column mappings and row providers (collections.ts, projection.ts, codec.ts, provider.ts,
                  validate.ts, sampleCollections.ts). Notes with YAML properties (notes.ts: `parseNote`, `patchNote` change only
-                 the edited lines, `formatNote`). Vitest.
+                 the edited lines, `formatNote`). iCalendar feeds into read-only events (ical.ts, `parseIcal`). Vitest.
 apps/web/        React 19 + Vite UI. Runs in any browser and inside the desktop shell.
   src/engine/    Viewport (smooth scroll / zoom / horizontal motion) and the per-day event index.
   src/components/ TimeGrid (day, week, N days), MonthView, Sidebar, EventDetail, Modals, ...
@@ -56,6 +56,12 @@ docs/            decisions and status.
   root is their containing block) and `cqh`/`cqw` instead of `vh`/`vw`. `styles.css` is scoped at build time
   (`scopeCss.ts`): `:root` there means the app's root (theme, `mod-select`), every other selector ends up under it.
   `e2e/embed.spec.ts` mounts the app inside a stand-in host page (`embed.html`, built only for the tests).
+  Network downloads go through `host.fetchText` (desktop: the main process, `net:fetch-text`; Obsidian: `requestUrl`).
+
+- **External calendars** (`src/external.ts`): subscriptions by iCal address, read-only. Their address lives in
+  `settings.externals` (device storage, never the vault: a private address is a secret), the last copy in IndexedDB.
+  The store merges them into `data` (`withExternal`) but they are never rows: `reconcileRows` only ever sees the own
+  events (`isExternalEvent` filters them out), so nothing of them can reach a provider or the vault.
 
 - **Language:** code, comments, commits and AI-facing docs in English. UI strings only through `src/i18n.ts`
   (Spanish first, English second, real accents in the UI). Docs for Juan in `docs/` are Spanish.

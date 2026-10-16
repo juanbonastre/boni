@@ -25,6 +25,7 @@ import { appRect, appRoot, eventTarget, findInApp, onKeys } from "../host.ts";
 import { t } from "../i18n.ts";
 import { type CtxTarget, useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
+import { propertiesOf } from "./CalendarList.tsx";
 
 /** Opens the right-click menu for events, empty grid space, month cells and calendars. */
 export function useContextMenuTrigger() {
@@ -358,10 +359,7 @@ function CalendarItems({ id, close }: { id: string; close: () => void }) {
       >
         {onlyThis ? t("ctx.showAll") : t("ctx.onlyThis")}
       </Item>
-      <Item
-        icon={<SlidersHorizontal size={14} />}
-        onClick={run(() => app.set({ schemaCalendarId: id }))}
-      >
+      <Item icon={<SlidersHorizontal size={14} />} onClick={run(() => app.set(propertiesOf(id)))}>
         {t("ctx.properties")}
       </Item>
       {!cal.readOnly && (
