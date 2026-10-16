@@ -63,6 +63,8 @@ slate `#94a3b8`.
   date, start and end time, end date and tasks; a status column also asks "Done when"), then **Other properties** (the
   columns the view does not use, each with its type and options). Mapped columns never appear twice: they are controls of
   the event (date, times, task), not properties. A calendar is a view of a collection of rows; rows are the truth.
+- Day headers show the weekday and the number; when a column is too narrow for both (a side panel, a pane of
+  another app) only the number stays.
 - Command palette (`Ctrl+K`): commands, event search, "go to date" and natural-language quick create
   ("clase FUP manana 10-12 #docencia").
 - Toasts at the bottom centre with an Undo action. A floating selection bar appears with two or more selected events.
@@ -117,7 +119,13 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
   menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a
-  click anywhere in it gives it the focus; `Esc` keeps it there), so typing in a note never reaches the calendar.
+  click anywhere in it gives it the focus; `Esc` keeps it there), so typing in a note never reaches the calendar. While it
+  has the focus, the calendar's `Ctrl` shortcuts (`Ctrl+K`, `Ctrl+,`, `Ctrl+Z`...) are its own, not Obsidian's. It opens
+  from the ribbon icon (calendar) or the command "Abrir Boni Calendar", in one tab (the command brings that tab
+  forward), and lives in a shadow root so neither Obsidian's theme nor its class names reach it. In Obsidian the
+  calendar always shows the vault it runs in (Settings → Data offers no sample data or folder) and writes to it from
+  the start, with the same rules as the desktop app; "Open note" opens the note in a tab, or brings forward the tab
+  that already shows it.
 - **Mobile (proposal, accepted in principle by Juan but deferred until the desktop apps are finished):** same tokens and card recipe. The popover becomes a bottom sheet that
   expands to a full-screen detail; the sidebar becomes a drawer; "new event" is a floating button. Long press = context
   menu; drag to create, move and resize works like desktop with touch targets of at least 44 dp; pinch zooms the hours;

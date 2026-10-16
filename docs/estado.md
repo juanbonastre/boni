@@ -59,7 +59,10 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
 - **Paso 3, plugin de Obsidian** (plan aprobado el 2026-10-16; PR 1 hecho: la app acepta otro anfitrion sin cambiar
   nada visible: `host.ts` y `mountApp` inyectan el puente, el almacenamiento de ajustes y donde escuchan los atajos; menus,
   ventanas y avisos quedan dentro del contenedor; el CSS se encierra bajo `.boni` al compilar; prueba `e2e/embed.spec.ts`
-  con la app dentro de una pagina ajena, tambien en shadow DOM): la misma app en una pestana de Obsidian con un
+  con la app dentro de una pagina ajena, tambien en shadow DOM. PR 2: el plugin en `apps/obsidian-plugin/` (`make plugin`):
+  pestana con icono y comando "Abrir Boni Calendar", la app dentro de un shadow DOM, puente sobre la API de Obsidian
+  con tests contra una API falsa, escritura activada, indice en IndexedDB del dispositivo; probado a mano en un Obsidian
+  real con perfil y vault temporales. Las cabeceras de dia ya caben en columnas estrechas): la misma app en una pestana de Obsidian con un
   puente sobre la API de Obsidian; solo escritorio, escritura activada por defecto, instalacion con un comando que copia el
   plugin a `.obsidian/plugins/boni-calendar/`. PRs: (1) preparar la app para otro anfitrion (puente inyectado, atajos solo con
   el foco en el calendario, ventanas y menus dentro del contenedor, CSS encerrable); (2) el plugin en `apps/obsidian-plugin/`;

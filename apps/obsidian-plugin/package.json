@@ -1,0 +1,22 @@
+{
+  "name": "boni-calendar-obsidian",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Boni Calendar as an Obsidian plugin: the same app in a pane, over Obsidian's vault API",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@boni-calendar/core": "workspace:*",
+    "@boni-calendar/web": "workspace:*"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "obsidian": "1.14.4",
+    "postcss": "8.5.30",
+    "vitest": "5.0.4"
+  }
+}

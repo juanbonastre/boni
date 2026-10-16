@@ -19,6 +19,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      - run: pnpm --filter boni-calendar-obsidian build
 
   e2e:
     runs-on: ubuntu-24.04

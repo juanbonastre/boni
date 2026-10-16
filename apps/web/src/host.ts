@@ -24,6 +24,11 @@ export interface Host {
   keys: "window" | "root";
   /** Settings the app starts with until the user changes them. */
   settings?: Partial<Settings>;
+  /**
+   * The host always shows its own vault (the Obsidian plugin): no sample data and no folder to
+   * choose, so Settings does not offer them.
+   */
+  vaultOnly?: boolean;
 }
 
 export const localStorageStore: HostStorage = {
