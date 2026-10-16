@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import { clickSelection } from "./selection.ts";
 
 const ordered = ["a", "b", "c", "d", "e", "f"];
-const cal: Record<string, string> = { a: "x", b: "y", c: "x", d: "y", e: "x", f: "y" };
-const base = { ordered, calendarOf: (id: string) => cal[id], ctrl: false, shift: false };
+const base = { ordered, ctrl: false, shift: false };
 
 describe("clickSelection", () => {
   it("plain click selects only that event and opens it", () => {
@@ -13,12 +12,13 @@ describe("clickSelection", () => {
       popover: true,
     });
   });
-  it("Ctrl+click adds and toggles", () => {
-    const r1 = clickSelection({ ...base, ctrl: true, current: ["a"], anchor: "a", clicked: "c" });
+  it("Ctrl+Shift+click adds and toggles", () => {
+    const mods = { ctrl: true, shift: true };
+    const r1 = clickSelection({ ...base, ...mods, current: ["a"], anchor: "a", clicked: "c" });
     expect(r1).toEqual({ ids: ["a", "c"], anchor: "c", popover: false });
     const r2 = clickSelection({
       ...base,
-      ctrl: true,
+      ...mods,
       current: r1.ids,
       anchor: r1.anchor,
       clicked: "a",
@@ -52,15 +52,13 @@ describe("clickSelection", () => {
       clickSelection({ ...base, shift: true, current: [], anchor: null, clicked: "c" }).ids,
     ).toEqual(["c"]);
   });
-  it("Ctrl+Shift+click adds the range but only for the clicked calendar", () => {
-    const r = clickSelection({
-      ...base,
-      ctrl: true,
-      shift: true,
-      current: ["a"],
-      anchor: "a",
-      clicked: "e",
+  it("Ctrl+click alone (an event without a note) is a plain click", () => {
+    expect(
+      clickSelection({ ...base, ctrl: true, current: ["a"], anchor: "a", clicked: "c" }),
+    ).toEqual({
+      ids: ["c"],
+      anchor: "c",
+      popover: true,
     });
-    expect(r.ids).toEqual(["a", "c", "e"]);
   });
 });

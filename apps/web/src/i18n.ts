@@ -234,7 +234,7 @@ const es = {
   "shortcuts.shiftWheel": "Mayús + rueda: moverse por los días",
   "shortcuts.drag": "Arrastrar en vacío: crear",
   "shortcuts.multi":
-    "Ctrl+clic: añadir · Mayús+clic: rango · Ctrl+Mayús+clic: rango del mismo calendario",
+    "Ctrl+clic: abrir la nota · Mayús+clic: rango · Ctrl+Mayús+clic: añadir o quitar",
   "shortcuts.selectAll": "Seleccionar todo lo visible",
 } as const;
 
@@ -474,7 +474,7 @@ const en: Record<Key, string> = {
   "shortcuts.shiftWheel": "Shift + wheel: move across days",
   "shortcuts.drag": "Drag on empty space: create",
   "shortcuts.multi":
-    "Ctrl+click: add · Shift+click: range · Ctrl+Shift+click: range in the same calendar",
+    "Ctrl+click: open the note · Shift+click: range · Ctrl+Shift+click: add or remove",
   "shortcuts.selectAll": "Select everything visible",
 };
 

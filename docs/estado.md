@@ -12,8 +12,8 @@ Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincron
 - **Interaccion**: arrastrar para crear, mover y estirar (pasos configurables), Esc cancela, doble clic crea, deshacer y
   rehacer, borrar con aviso para deshacer, autodesplazamiento al arrastrar cerca de los bordes.
 - **Clic derecho**: menu para eventos, huecos de la rejilla, celdas del mes y calendarios.
-- **Seleccion multiple**: Ctrl+clic anade o quita, Mayus+clic anade el rango cronologico desde el ultimo evento
-  pulsado, Ctrl+Mayus+clic anade el rango solo del calendario del evento pulsado. Ctrl+A selecciona lo visible, Esc o clic
+- **Seleccion multiple**: Mayus+clic anade el rango cronologico desde el ultimo evento pulsado, Ctrl+Mayus+clic anade o
+  quita uno (desde el 2026-10-16; Ctrl+clic abre la nota del evento). Ctrl+A selecciona lo visible, Esc o clic
   en vacio la quitan. Arrastrar uno mueve todos; Supr, el menu contextual y la barra inferior actuan sobre todos.
 - **Paleta (Ctrl+K)**: comandos, buscar eventos, ir a una fecha y creacion rapida ("clase FUP manana 10-12 #docencia").
 - **Ajustes**: tema, idioma (es/en), formato 12/24 h, zona horaria y segunda zona, numero de semana, duracion por defecto,

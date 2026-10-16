@@ -226,6 +226,7 @@ export interface AppState {
   noteOfEvent: (id: string) => string | null;
   openNote: (id: string) => Promise<void>;
   select: (id: string | null, popover?: boolean) => void;
+  /** A click on an event: selects it (Shift, Ctrl+Shift: several), or with Ctrl alone opens its note. */
   clickSelect: (id: string, mods: { ctrl: boolean; shift: boolean }) => void;
   clearSelection: () => void;
   selectAllVisible: () => void;
@@ -713,15 +714,14 @@ export const useApp = create<AppState>((set, get) => {
 
     clickSelect: (id, mods) => {
       const s = get();
+      // Ctrl+click opens the event's note (like a link in Obsidian); an event without one is just selected.
+      if (mods.ctrl && !mods.shift && s.noteOfEvent(id)) return void s.openNote(id);
       const visible = new Set(s.data.calendars.filter((c) => c.visible).map((c) => c.id));
-      const expanded = s.expanded();
-      const calOf = new Map(expanded.map((e) => [e.id, e.calendarId]));
       const r = clickSelection({
         current: s.selectedIds,
         anchor: s.anchorId,
         clicked: id,
-        ordered: orderedVisibleIds(expanded, visible, s.settings.tz),
-        calendarOf: (x) => calOf.get(x),
+        ordered: orderedVisibleIds(s.expanded(), visible, s.settings.tz),
         ctrl: mods.ctrl,
         shift: mods.shift,
       });

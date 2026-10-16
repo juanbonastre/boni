@@ -40,11 +40,17 @@ function isTyping(e: KeyboardEvent): boolean {
   );
 }
 
-/** While Ctrl, Shift or Meta is held the popover lets clicks through, so events under it can be added to a selection. */
+/**
+ * While Ctrl, Shift or Meta is held the popover lets clicks through, so events under it can be
+ * added to a selection. Not while typing: Shift for a capital letter must not fade the popover.
+ */
 function useModifierClass() {
   useEffect(() => {
     const sync = (e: KeyboardEvent) =>
-      appRoot()?.classList.toggle("mod-select", e.ctrlKey || e.shiftKey || e.metaKey);
+      appRoot()?.classList.toggle(
+        "mod-select",
+        (e.ctrlKey || e.shiftKey || e.metaKey) && !isTyping(e),
+      );
     const clear = () => appRoot()?.classList.remove("mod-select");
     window.addEventListener("keydown", sync);
     window.addEventListener("keyup", sync);

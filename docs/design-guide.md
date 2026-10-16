@@ -85,10 +85,13 @@ slate `#94a3b8`.
   bottom edge to resize. Edges follow the pointer in both axes, so dragging into the next or previous day's column
   makes an event cross midnight. All-day events move and resize by whole days, in the all-day row and in the month.
   Dragging near the top or bottom edge auto-scrolls.
-- **Selection:** click selects one and opens its detail; `Ctrl`+click adds or removes; `Shift`+click adds the range
-  from the anchor in chronological order; `Ctrl+Shift`+click adds that range but only for the clicked event's calendar.
-  Dragging one selected event moves all of them. Click on empty space or `Esc` clears. While `Ctrl`/`Shift` is held the
-  popover lets clicks through.
+- **Selection:** click selects one and opens its detail; `Shift`+click adds the range from the anchor in chronological
+  order; `Ctrl+Shift`+click adds or removes one event. Dragging one selected event moves all of them. Click on empty space
+  or `Esc` clears. While `Ctrl`/`Shift` is held the popover lets clicks through, except while typing in a field (`Shift`
+  for a capital letter must not fade it).
+- **Ctrl+click opens the event's note** (like a link in Obsidian): in Obsidian in a tab, from the desktop app in
+  Obsidian. An event without a note (sample data, not saved yet) is just selected. Decided by Juan, 2026-10-16; until
+  then `Ctrl`+click toggled the selection and `Ctrl+Shift`+click added a range of one calendar.
 - **Series in the vault:** repeating an event creates one note per occurrence (up to 12 months ahead; open-ended series are
   topped up whenever the vault is read with writing on, with a toast saying how many were created). The same "this / this and
   following / all" question applies; "all" on a deletion keeps the past notes (the dialog says so); marking a task done only
