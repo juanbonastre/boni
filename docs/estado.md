@@ -54,5 +54,5 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   `_system/colecciones/`, carga de las notas de `agenda/` (solo lectura), Ajustes → Datos y lista de notas ignoradas
   (medido con el vault real: ~2.750 notas en ~1,1 s sin indice); (3) indice
   local y vigilancia (hecho: arranque en caliente con ~2.750 notas en ~0,24 s frente a ~0,64 s en frio, y un cambio hecho
-  fuera de la app se ve en ~0,3 s); (4) escritura en el vault (opcional en Ajustes), "Abrir nota en Obsidian", notas nuevas con contador en el nombre del archivo, mover entre calendarios, borrar a la papelera con deshacer y aviso si la nota cambio fuera (hecho); (5) series como notas individuales enlazadas por `series`.
+  fuera de la app se ve en ~0,3 s); (4) escritura en el vault (opcional en Ajustes), "Abrir nota en Obsidian", notas nuevas con contador en el nombre del archivo, mover entre calendarios, borrar a la papelera con deshacer y aviso si la nota cambio fuera (hecho); (5) series como notas individuales enlazadas por `series` (hecho: crear con "Repetir", 12 meses por delante, ampliar al leer con la escritura activada, ambito este/siguientes/todos).
 - Pasos 3 a 5 de la fase 2: plugin de Obsidian, servidor en el NAS, SQLite solo si hay un caso real.

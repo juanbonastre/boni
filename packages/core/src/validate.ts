@@ -74,6 +74,16 @@ export function validateModel(
     need("description", m.description, ["text"]);
     need("recurrence", m.recurrence, ["text"]);
     need("exdates", m.exdates, ["dates"]);
+    if (m.series) {
+      need("series.id", m.series.id, ["text"], false);
+      need("series.rule", m.series.rule, ["text"], false);
+      if (m.recurrence) {
+        err(
+          `${where} / series`,
+          "a calendar keeps series either as one master (recurrence) or as separate notes (series)",
+        );
+      }
+    }
     const w = m.when;
     if (w.kind === "split") {
       need("when.date", w.date, ["date"], false);

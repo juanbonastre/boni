@@ -102,11 +102,14 @@ collection:
     - { id: timezone, name: Zona, type: text }
     - { id: completed, name: Hecha, type: checkbox }
     - { id: location, name: Lugar, type: text }
+    - { id: series, name: Serie, type: text }
+    - { id: series_rule, name: Regla, type: text }
   mapping:
     title: title
     location: location
     when: { kind: split, date: date, startTime: startTime, endTime: endTime, endDate: endDate, allDay: allDay, timezone: timezone }
     task: { column: completed }
+    series: { id: series, rule: series_rule }
   newNote:
     name: "{date} {title}"
     body: "Area: [[${area}]]\\n\\n## Notas\\n"

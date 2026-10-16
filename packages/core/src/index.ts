@@ -14,6 +14,7 @@ export * from "./recurrence.ts";
 export * from "./recurrenceEdit.ts";
 export * from "./sample.ts";
 export * from "./sampleCollections.ts";
+export * from "./series.ts";
 export * from "./shift.ts";
 export * from "./time.ts";
 export * from "./validate.ts";

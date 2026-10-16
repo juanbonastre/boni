@@ -13,10 +13,13 @@ import {
   calendarDefs,
   diffRows,
   editOccurrence,
+  editSeries,
   eventsInDays,
   expandAll,
+  extendSeries,
   type FirstDay,
   generateCollectionSample,
+  inSeries,
   type Locale,
   makeModel,
   makeProjector,
@@ -26,10 +29,13 @@ import {
   type PropertyDef,
   parseOccurrenceId,
   projectsOf,
+  type Recurrence,
   type Row,
   reconcileRows,
   resolveOccurrence,
   type Scope,
+  type SeriesContext,
+  setSeriesRule as setSeriesRuleOn,
   startOfMonth,
   startOfWeek,
   supportsTasks,
@@ -97,6 +103,8 @@ export interface DragState {
 
 export interface ScopePrompt {
   kind: "edit" | "delete";
+  /** The events are a series kept as separate notes (a deletion keeps the past ones). */
+  notes?: boolean;
   onChoose: (scope: Scope) => void;
   onCancel: () => void;
 }
@@ -209,8 +217,14 @@ export interface AppState {
   setMapping: (id: string, mapping: CalendarMapping) => void;
   /** Whether events of this calendar can be tasks (it maps a task column). */
   supportsTasks: (calendarId: string) => boolean;
-  /** Whether events of this calendar can repeat (it maps a recurrence column). */
+  /** Whether events of this calendar can repeat (a recurrence column, or series kept as separate notes). */
   supportsRecurrence: (calendarId: string) => boolean;
+  /** Whether repeating an event creates one note per occurrence (the calendar maps a series). */
+  supportsSeries: (calendarId: string) => boolean;
+  /** Gives an event a repetition rule as separate notes (or ends its series with a null rule). */
+  setSeriesRule: (id: string, rule: Recurrence | null) => void;
+  /** Creates the notes that open-ended series are missing; the number created. */
+  extendSeries: () => number;
   /** The note of an event in the vault, or null (sample data, or not saved yet). */
   noteOfEvent: (id: string) => string | null;
   openNote: (id: string) => Promise<void>;
@@ -313,13 +327,21 @@ function applyEdits(
   items: { id: string; change: { patch?: Partial<CalEvent>; remove?: boolean } }[],
   scope: Scope,
   now: number,
+  today: CivilDay,
 ): CalEvent[] {
   let out = events;
+  const ctx: SeriesContext = { newId: () => newEventId(now), now, today };
   for (const it of items) {
-    out = editOccurrence(out, it.id, scope, it.change, { newId: () => newEventId(now), now });
+    // A note of a series kept as separate notes is a plain event with a `series`; anything else may be an occurrence.
+    out = out.find((e) => e.id === it.id)?.series
+      ? editSeries(out, it.id, scope, it.change, ctx)
+      : editOccurrence(out, it.id, scope, it.change, ctx);
   }
   return out;
 }
+
+const newSeriesId = (now: number): string =>
+  `s-${Math.floor(now).toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
 const occurrenceCache: OccurrenceCache = new WeakMap();
 let expandedKey: { events: CalEvent[]; from: CivilDay; to: CivilDay } | null = null;
@@ -636,8 +658,41 @@ export const useApp = create<AppState>((set, get) => {
 
     supportsTasks: (calendarId) => supportsTasks(get().projector.model, calendarId),
 
-    supportsRecurrence: (calendarId) =>
-      !!get().views.find((v) => v.id === calendarId)?.mapping.recurrence,
+    supportsRecurrence: (calendarId) => {
+      const m = get().views.find((v) => v.id === calendarId)?.mapping;
+      return !!m && !!(m.recurrence || m.series);
+    },
+
+    supportsSeries: (calendarId) => !!get().views.find((v) => v.id === calendarId)?.mapping.series,
+
+    setSeriesRule: (id, rule) => {
+      const s = get();
+      const now = nowMs();
+      commit(
+        setSeriesRuleOn(s.data.events, id, rule, newSeriesId(now), {
+          newId: () => newEventId(now),
+          now,
+          today: s.today(),
+        }),
+      );
+    },
+
+    extendSeries: () => {
+      const s = get();
+      const now = nowMs();
+      const more = extendSeries(s.data.events, {
+        newId: () => newEventId(now),
+        now,
+        today: s.today(),
+      });
+      if (more.length === 0) return 0;
+      // Upkeep, not an edit of the user: no undo step.
+      setRows(
+        reconcileRows(s.projector.model, s.rows, s.data.events, [...s.data.events, ...more]),
+        false,
+      );
+      return more.length;
+    },
 
     noteOfEvent: (id) => (get().source === "vault" ? noteOf(id) : null),
 
@@ -751,11 +806,22 @@ export const useApp = create<AppState>((set, get) => {
           ids.map((id) => ({ id, change: { patch } })),
           scope,
           now,
+          get().today(),
         ),
       );
     },
 
     editEvents: (ids, patch) => {
+      const first = ids[0] ? get().getEvent(ids[0]) : null;
+      // A series kept as notes: the rule is handled by creating or replacing the later notes.
+      if (
+        "recurrence" in patch &&
+        first &&
+        ids.length === 1 &&
+        get().supportsSeries(first.calendarId)
+      ) {
+        return get().setSeriesRule(first.id, patch.recurrence ?? null);
+      }
       // Changing the repetition rule itself always applies to the whole series.
       if ("recurrence" in patch) return get().updateEvents(ids, patch, "all");
       get().askScope(ids, "edit", (scope) => get().updateEvents(ids, patch, scope));
@@ -771,6 +837,7 @@ export const useApp = create<AppState>((set, get) => {
           ids.map((id) => ({ id, change: { remove: true } })),
           scope,
           now,
+          get().today(),
         ),
       );
       get().clearSelection();
@@ -785,14 +852,17 @@ export const useApp = create<AppState>((set, get) => {
     setScopePrompt: (p) => set({ scopePrompt: p }),
 
     askScope: (ids, kind, run, onCancel) => {
+      const events = get().data.events;
+      const notes = ids.some((id) => inSeries(events, id));
       const recurring = ids.some((id) => {
         const p = parseOccurrenceId(id);
-        return !!p && get().data.events.some((e) => e.id === p.seriesId && e.recurrence);
+        return !!p && events.some((e) => e.id === p.seriesId && e.recurrence);
       });
-      if (!recurring) return run("all");
+      if (!recurring && !notes) return run("all");
       set({
         scopePrompt: {
           kind,
+          notes,
           onChoose: (scope) => {
             set({ scopePrompt: null });
             run(scope);
@@ -815,7 +885,7 @@ export const useApp = create<AppState>((set, get) => {
         const e = resolveOccurrence(s.data.events, id);
         if (!e) continue;
         // A copy of an occurrence is a plain, single event.
-        const { seriesId: _a, occurrenceDay: _b, exdates: _c, ...rest } = e;
+        const { seriesId: _a, occurrenceDay: _b, exdates: _c, series: _d, ...rest } = e;
         copies.push({
           ...rest,
           recurrence: null,
@@ -860,6 +930,7 @@ export const useApp = create<AppState>((set, get) => {
           Object.entries(whens).map(([id, when]) => ({ id, change: { patch: { when } } })),
           scope,
           nowMs(),
+          get().today(),
         ),
       );
     },
@@ -944,6 +1015,11 @@ export const useApp = create<AppState>((set, get) => {
           const r = await readVault(bridge, { readOnly: !get().settings.vaultWrite });
           applyVault(r, root.ok ? root.value : null, bridge);
           watchVault(bridge, r.folders, () => void get().loadVault());
+          // Series kept as notes keep going as time passes (only when writing is on).
+          if (get().settings.vaultWrite) {
+            const n = get().extendSeries();
+            if (n > 0) get().showToast("vault.seriesExtended", false, { n });
+          }
         } catch (e) {
           set((s) => ({
             vault: { ...s.vault, status: "error", message: String((e as Error).message ?? e) },
