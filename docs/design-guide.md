@@ -66,7 +66,11 @@ slate `#94a3b8`.
 - Command palette (`Ctrl+K`): commands, event search, "go to date" and natural-language quick create
   ("clase FUP manana 10-12 #docencia").
 - Toasts at the bottom centre with an Undo action. A floating selection bar appears with two or more selected events.
-- Option labels never wrap; menus align to stay inside their popover.
+- **Text never wraps inside a control** (buttons, segmented options, chips, menu items, selects) and never sticks out of
+  its box. Layout makes room instead: a row that pairs a label with a control (settings, properties) puts the control under
+  the label when both do not fit, and a control that still does not fit cuts its label with an ellipsis. Menus align to stay
+  inside their popover. One rule in `styles.css`, guarded by `e2e/overflow.spec.ts` on every surface, in both languages
+  and at a narrow window.
 
 ## 4. Interaction rules
 - **Wheel:** vertical scroll; `Ctrl` + wheel zooms the hours around the pointer; `Shift` + wheel moves across days and

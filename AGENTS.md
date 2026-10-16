@@ -89,6 +89,9 @@ docs/            decisions and status.
   Keep occurrence objects stable (`OccurrenceCache`) - segments and layouts are cached on object identity.
 - **Month view rows** are positioned relative to an epoch (`EPOCH_WEEKS`) so scrolling never moves existing rows
   (moving them repaints the whole layer). Keep row props stable so `WeekRow` stays memoised.
+- **Text fits its box:** labels of controls never wrap and nothing sticks out of its box. Fix it with the general layout
+  rule in `styles.css` (rows wrap the control under the label; controls ellipsize), never with a per-element patch.
+  `e2e/overflow.spec.ts` walks every surface in both languages and at a narrow window: a new surface must be added there.
 - **Tests:** pure logic in `packages/core` and `apps/web/src/engine` gets unit tests; user-visible behaviour gets a
   Playwright test and, when the look changes, a screenshot check by eye.
 - Biome is the linter/formatter; React hook dependency lint is off on purpose (the grid is an imperative engine).
