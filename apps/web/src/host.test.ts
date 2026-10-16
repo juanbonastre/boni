@@ -28,13 +28,12 @@ describe("host", () => {
       vault: bridge,
       storage,
       keys: "root",
-      settings: { dataSource: "vault", vaultWrite: true },
+      settings: { vaultWrite: true },
     });
     const { vaultBridge } = await import("./vaultBridge.ts");
     const { useApp } = await import("./store.ts");
     expect(vaultBridge()).toBe(bridge);
     const s = useApp.getState();
-    expect(s.settings.dataSource).toBe("vault");
     expect(s.settings.vaultWrite).toBe(true);
     expect(s.source).toBe("vault");
     s.setSettings({ h24: false });

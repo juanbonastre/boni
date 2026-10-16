@@ -88,52 +88,43 @@ async function audit(page: Page, where: string): Promise<string[]> {
   );
 }
 
-/** A minimal desktop bridge so Settings shows the vault section (where long labels live). */
-async function withVault(page: Page, locale: "es" | "en") {
+async function open(page: Page, locale: "es" | "en") {
   await page.addInitScript(
-    ({ locale }) => {
-      localStorage.setItem(
-        "boni-calendar:settings",
-        JSON.stringify({ dataSource: "sample", vaultWrite: true, locale }),
-      );
-      const ok = (value: unknown) => ({ ok: true, value });
-      // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge
-      (window as any).boniVault = {
-        getRoot: async () => ok("/una/ruta/bastante/larga/hasta/el/vault/de/ejemplo"),
-        chooseRoot: async () => ok(null),
-        scan: async () => ok([]),
-        read: async () => ({ ok: false, code: "not-found", message: "x" }),
-      };
-    },
+    ({ locale }) => localStorage.setItem("boni-calendar:settings", JSON.stringify({ locale })),
     { locale },
   );
-}
-
-async function open(page: Page, locale: "es" | "en") {
-  await withVault(page, locale);
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
   await page.waitForSelector(".ev");
   await page.waitForTimeout(400);
 }
 
-async function walkEverything(page: Page): Promise<string[]> {
-  const issues: string[] = [];
-  const check = async (where: string) => issues.push(...(await audit(page, where)));
-
-  await check("sidebar and top bar");
-
-  // view picker
-  await page.locator(".view-picker button[aria-haspopup=menu]").click();
-  await check("view menu");
-  await page.keyboard.press("Escape");
-
-  // settings, with the vault section and writing on
+/**
+ * Settings with the vault section (where long labels live): only with a vault, so the page is opened
+ * again with a minimal desktop bridge (an empty vault: the calendar shows its notice).
+ */
+async function vaultSettings(page: Page, locale: "es" | "en"): Promise<string[]> {
+  await page.addInitScript(() => {
+    const ok = (value: unknown) => ({ ok: true, value });
+    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge
+    (window as any).boniVault = {
+      getRoot: async () => ok("/una/ruta/bastante/larga/hasta/el/vault/de/ejemplo"),
+      chooseRoot: async () => ok(null),
+      scan: async () => ok([]),
+      read: async () => ({ ok: false, code: "not-found", message: "x" }),
+    };
+  });
+  await page.addInitScript(
+    ({ locale }) =>
+      localStorage.setItem("boni-calendar:settings", JSON.stringify({ vaultWrite: true, locale })),
+    { locale },
+  );
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await page.locator(".vault-notice").waitFor();
   await page.keyboard.press("Control+,");
   await page.waitForTimeout(200);
   await page.evaluate(() => {
     // biome-ignore lint/suspicious/noExplicitAny: test hook exposed by main.tsx
     (window as any).__app.setState({
-      source: "vault",
       vault: {
         status: "ready",
         root: "/x",
@@ -150,13 +141,31 @@ async function walkEverything(page: Page): Promise<string[]> {
   });
   await page.waitForTimeout(200);
   await page.locator(".vault-list summary").first().click();
-  await check("settings");
+  const issues = await audit(page, "settings with the vault");
   await page.locator(".modal-body").evaluate((el) => {
     el.scrollTop = el.scrollHeight;
   });
   await page.locator(".modal").screenshot({
     path: `e2e/screenshots/settings-data-${await page.evaluate(() => window.innerWidth)}.png`,
   });
+  return issues;
+}
+
+async function walkEverything(page: Page): Promise<string[]> {
+  const issues: string[] = [];
+  const check = async (where: string) => issues.push(...(await audit(page, where)));
+
+  await check("sidebar and top bar");
+
+  // view picker
+  await page.locator(".view-picker button[aria-haspopup=menu]").click();
+  await check("view menu");
+  await page.keyboard.press("Escape");
+
+  // settings (without a vault: the vault section is checked by vaultSettings)
+  await page.keyboard.press("Control+,");
+  await page.waitForTimeout(200);
+  await check("settings");
   await page.keyboard.press("Escape");
 
   // event detail popover and side panel
@@ -233,6 +242,7 @@ for (const locale of ["es", "en"] as const) {
       await page.setViewportSize({ width: w, height: h });
       await open(page, locale);
       const issues = await walkEverything(page);
+      issues.push(...(await vaultSettings(page, locale)));
       expect(issues, issues.join("\n")).toEqual([]);
     });
   }
