@@ -54,6 +54,15 @@ export default class BoniCalendarPlugin extends Plugin {
     };
   }
 
+  /**
+   * The in-app smoothness benchmark on the open calendar (used by `make bench-obsidian`); loaded only
+   * when called.
+   */
+  async bench(only = ""): Promise<unknown> {
+    const { runBench } = await import("@boni-calendar/web/src/bench.ts");
+    return runBench(only);
+  }
+
   /** The app is mounted in one view at a time; false when another view already has it. */
   claim(view: CalendarView): boolean {
     if (this.owner && this.owner !== view) return false;

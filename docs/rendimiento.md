@@ -52,3 +52,21 @@ dispositivo enteros, altura de hora multiplo de 4 px, cajas de etiqueta con altu
 el zoom. Medido (gradiente maximo del borde del texto, mayor = mas nitido): cabecera de dias 108 a 166, tarjetas 112 a 132,
 etiquetas de hora 107 a 112. Coste: con la rueda y Ctrl pulsado el zoom queda igual (8-11 fotogramas perdidos de ~185); con el
 gesto de pellizco del touchpad (que no pulsa Ctrl) las capas se crean en el primer fotograma y hay un tiron de ~100 ms al empezar.
+
+## Plugin de Obsidian (2026-10-16)
+Medido con `make e2e-obsidian` y `make bench-obsidian`: el Obsidian 1.14.4 instalado, con un perfil y un vault temporales e
+inventados (2.800 notas de agenda repartidas en cinco anos, como la agenda real), ventana de 1600x900, pantalla a 144 Hz.
+Resultados en `bench/results/obsidian-open.json` y `bench/results/obsidian.json` (no se suben al repo).
+
+| Que | Tiempo |
+|---|---|
+| Arranque de Obsidian hasta el diseno listo, con el plugin activo | 1,2-1,8 s |
+| Cargar el plugin (solo registra pestana, icono y comando; no lee nada) | 9-15 ms |
+| Abrir el calendario la primera vez (lee y analiza las 2.800 notas) | ~0,9 s |
+| Abrirlo otra vez (indice en IndexedDB) | ~0,04 s |
+
+Fluidez dentro de Obsidian (fotogramas de mas de 25 ms): rueda 0 de ~467; Ctrl+rueda 1-6 de ~300; Shift+rueda 8 de 320;
+14 dias 1 de 341; mes 3-6 de ~170. Del orden de Chrome con los datos de ejemplo (`make bench-chrome`): la app no pierde
+fluidez por vivir dentro de Obsidian ni de un shadow DOM. Ojo: con un vault mucho mas denso (2.800 notas en un solo ano,
+unos 8 eventos por dia) el zoom y "14 dias" pierden bastantes mas fotogramas (21-45), igual en Obsidian que fuera; si la
+agenda real llegara a esa densidad habria que revisarlo.
