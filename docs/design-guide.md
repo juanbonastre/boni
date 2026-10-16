@@ -125,7 +125,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   forward), and lives in a shadow root so neither Obsidian's theme nor its class names reach it. In Obsidian the
   calendar always shows the vault it runs in (Settings → Data offers no sample data or folder) and writes to it from
   the start, with the same rules as the desktop app; "Open note" opens the note in a tab, or brings forward the tab
-  that already shows it.
+  that already shows it. Installed by hand (`make install-obsidian VAULT=...`), not from the community catalogue.
 - **Mobile (proposal, accepted in principle by Juan but deferred until the desktop apps are finished):** same tokens and card recipe. The popover becomes a bottom sheet that
   expands to a full-screen detail; the sidebar becomes a drawer; "new event" is a floating button. Long press = context
   menu; drag to create, move and resize works like desktop with touch targets of at least 44 dp; pinch zooms the hours;

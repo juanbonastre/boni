@@ -38,6 +38,9 @@ docs/            decisions and status.
 - `make e2e` Playwright (uses the system Chrome; screenshots land in `e2e/screenshots/`)
 - `make desktop` run the Electron app · `make package` build `.deb` + AppImage into `release/`
 - `make bench-chrome` / `make bench-electron` smoothness benchmark in a real window (see `docs/rendimiento.md`)
+- `make plugin` build the Obsidian plugin · `make install-obsidian VAULT=/path/to/vault` copy it into a vault
+- `make e2e-obsidian` / `make bench-obsidian` the plugin in the Obsidian installed here (`OBSIDIAN_BIN`, default
+  `/opt/Obsidian/obsidian`), always on a temporary profile and an invented vault (`e2e-obsidian/obsidian.ts`); not in CI
 
 ## Rules
 

@@ -1,8 +1,9 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup dev build check test e2e bench-chrome desktop package bench-electron plugin
+.PHONY: help setup dev build check test e2e bench-chrome desktop package bench-electron plugin \
+	install-obsidian e2e-obsidian bench-obsidian
 
 help: ## List available commands
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 setup: ## Install dependencies
 	pnpm install
@@ -31,6 +32,16 @@ desktop: build ## Run the desktop app (Electron) from the build
 
 plugin: ## Build the Obsidian plugin into apps/obsidian-plugin/dist (main.js + manifest.json)
 	pnpm --filter boni-calendar-obsidian build
+
+install-obsidian: plugin ## Copy the plugin into a vault: make install-obsidian VAULT=/path/to/vault
+	@test -n "$(VAULT)" || (echo "Usage: make install-obsidian VAULT=/path/to/vault" && exit 1)
+	node apps/obsidian-plugin/install.mjs "$(VAULT)"
+
+e2e-obsidian: plugin ## The plugin in the installed Obsidian (temporary profile and invented vault)
+	pnpm exec playwright test -c playwright.obsidian.config.ts plugin.spec.ts
+
+bench-obsidian: plugin ## Smoothness benchmark inside the installed Obsidian (opens a window)
+	BONI_BENCH=1 pnpm exec playwright test -c playwright.obsidian.config.ts bench.spec.ts
 
 package: build ## Build the .deb and AppImage into release/
 	pnpm --filter boni-calendar-desktop dist
