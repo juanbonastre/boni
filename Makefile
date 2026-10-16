@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup dev build check test e2e bench-chrome desktop package bench-electron
+.PHONY: help setup dev build check test e2e bench-chrome desktop package bench-electron plugin
 
 help: ## List available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -28,6 +28,9 @@ bench-chrome: build ## Smoothness benchmark in a real Chrome window
 desktop: build ## Run the desktop app (Electron) from the build
 	pnpm --filter boni-calendar-desktop prepare-web
 	pnpm --filter boni-calendar-desktop start
+
+plugin: ## Build the Obsidian plugin into apps/obsidian-plugin/dist (main.js + manifest.json)
+	pnpm --filter boni-calendar-obsidian build
 
 package: build ## Build the .deb and AppImage into release/
 	pnpm --filter boni-calendar-desktop dist

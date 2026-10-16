@@ -12,7 +12,7 @@ const NOW = "2025-09-17T14:29";
 
 /** Containers that hold interface text (the grid's event cards truncate on purpose and are left out). */
 const SURFACES =
-  ".modal, .popover, .detail-panel, .ctx, .menu, .palette, .toast, .sidebar, .topbar, .selection-bar";
+  ".modal, .popover, .detail-panel, .ctx, .menu, .palette, .toast, .sidebar, .topbar, .selection-bar, .grid-head";
 /** Controls whose label must stay on one line. */
 const SINGLE_LINE =
   "button, .btn, .chip, .menu-item, .segmented > *, .select, select, .mini-btn, .swatch-label, .tab";
@@ -226,6 +226,8 @@ for (const locale of ["es", "en"] as const) {
   for (const [w, h] of [
     [1440, 900],
     [900, 640],
+    // A pane of another app (the Obsidian plugin) is often this narrow.
+    [720, 640],
   ] as const) {
     test(`no text overflows its box (${locale}, ${w}x${h})`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: h });

@@ -20,6 +20,14 @@ apps/web/        React 19 + Vite UI. Runs in any browser and inside the desktop 
 apps/desktop-electron/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage). `vault-fs.cjs` is the
                  only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
                  atomic writes with a conflict check); the UI reaches it through `window.boniVault` (`vaultBridge.ts`).
+apps/obsidian-plugin/  The same app as an Obsidian plugin (desktop only, `make plugin`): `main.ts` registers a tab, a
+                 ribbon icon and a command and reads nothing until the tab opens (after `onLayoutReady`);
+                 `view.ts` mounts the app in a shadow root (Obsidian's CSS and ours never meet) and leaves the
+                 calendar's Mod shortcuts to it through the view's `Scope`; `bridge.ts` is the `VaultBridge`
+                 over Obsidian's API (`vault.process`, `fileManager.renameFile` / `trashFile`, vault events),
+                 unit-tested against `fakeObsidian.ts`. Writing is on by default there; one calendar tab at a
+                 time (the store is a singleton). The index lives in IndexedDB (`cache.ts`), settings in
+                 `app.saveLocalStorage`: per device, never in `.obsidian/` (Syncthing carries it).
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status.
 ```

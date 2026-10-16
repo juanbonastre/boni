@@ -18,7 +18,7 @@ import {
 } from "@boni-calendar/core";
 import { Plus, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { onKeys } from "../host.ts";
+import { getHost, onKeys } from "../host.ts";
 import { type Key, t } from "../i18n.ts";
 import { useApp } from "../store.ts";
 import { vaultBridge } from "../vaultBridge.ts";
@@ -135,27 +135,32 @@ function VaultSettings() {
       .then((r) => r.ok && useApp.setState((s) => ({ vault: { ...s.vault, root: r.value } })));
   }, []);
   const reason = (r: string) => (r === "no-date" ? t("vault.reason.no-date") : r);
+  const vaultOnly = !!getHost().vaultOnly;
   return (
     <>
       <h3>{t("settings.data")}</h3>
-      <Field label={t("settings.source")}>
-        <Segmented
-          value={dataSource}
-          onChange={(v) => void app.setDataSource(v)}
-          options={[
-            { v: "sample", label: t("settings.source.sample") },
-            { v: "vault", label: t("settings.source.vault") },
-          ]}
-        />
-      </Field>
+      {!vaultOnly && (
+        <Field label={t("settings.source")}>
+          <Segmented
+            value={dataSource}
+            onChange={(v) => void app.setDataSource(v)}
+            options={[
+              { v: "sample", label: t("settings.source.sample") },
+              { v: "vault", label: t("settings.source.vault") },
+            ]}
+          />
+        </Field>
+      )}
       <Field label={t("settings.vaultFolder")}>
         <span className="vault-path" title={vault.root ?? undefined}>
           {/* bdi keeps the path's own direction inside the right-to-left box that cuts it from the left */}
           <bdi>{vault.root ?? t("settings.vaultNone")}</bdi>
         </span>
-        <button type="button" className="btn" onClick={() => void app.chooseVaultRoot()}>
-          {t("settings.vaultChoose")}
-        </button>
+        {!vaultOnly && (
+          <button type="button" className="btn" onClick={() => void app.chooseVaultRoot()}>
+            {t("settings.vaultChoose")}
+          </button>
+        )}
       </Field>
       {source === "vault" && (
         <>

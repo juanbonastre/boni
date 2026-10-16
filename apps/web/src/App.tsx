@@ -104,6 +104,8 @@ function useShortcuts() {
         return;
       }
       if (e.key === "Escape") {
+        // Sharing the window, Esc in the calendar is the calendar's (the other app must not act on it too).
+        if (getHost().keys === "root") e.preventDefault();
         if (s.paletteOpen || s.settingsOpen || s.helpOpen || s.schemaCalendarId || s.scopePrompt)
           return; // modals handle it
         if (s.popoverId || s.selectedId || s.selectedIds.length > 0) {

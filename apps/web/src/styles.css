@@ -649,16 +649,31 @@ select,
   display: flex;
   align-items: flex-end;
   gap: 7px;
-  padding: 0 0 8px 12px;
+  /* Narrow columns (a side panel, a pane of another app) give up the padding first. */
+  padding: 0 0 8px min(12px, 12%);
   color: var(--muted);
   font-size: 12.5px;
   text-align: left;
   border-left: 1px solid var(--line-soft);
+  overflow: hidden;
+  container-type: inline-size;
+}
+.dh-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* When the name and the number do not both fit, the number stays. */
+@container (max-width: 64px) {
+  .dh-name {
+    display: none;
+  }
 }
 .day-head:hover {
   color: var(--text);
 }
 .dh-num {
+  flex: none;
   font-weight: 600;
   color: var(--text);
   font-size: 15px;
