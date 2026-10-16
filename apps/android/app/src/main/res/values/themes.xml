@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The calendar draws everything itself; the window only needs its background (graphite, the app's bg token). -->
+    <style name="Theme.BoniCalendar" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+    </style>
+    <color name="bg">#16171A</color>
+    <color name="accent">#7B8CFF</color>
+</resources>
