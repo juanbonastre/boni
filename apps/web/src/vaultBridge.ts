@@ -1,4 +1,9 @@
-/** The vault bridge the desktop shell exposes as `window.boniVault` (absent in a plain browser). */
+import { getHost } from "./host.ts";
+
+/**
+ * The notes of the vault, as the host provides them: the desktop shell exposes this as
+ * `window.boniVault` (absent in a plain browser); another host passes its own (see `host.ts`).
+ */
 export type VaultResult<T> = { ok: true; value: T } | { ok: false; code: string; message: string };
 
 export interface NoteStat {
@@ -42,5 +47,5 @@ export interface VaultBridge {
 }
 
 export function vaultBridge(): VaultBridge | null {
-  return (window as unknown as { boniVault?: VaultBridge }).boniVault ?? null;
+  return getHost().vault;
 }

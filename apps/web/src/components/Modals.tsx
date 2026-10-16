@@ -18,6 +18,7 @@ import {
 } from "@boni-calendar/core";
 import { Plus, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { onKeys } from "../host.ts";
 import { type Key, t } from "../i18n.ts";
 import { useApp } from "../store.ts";
 import { vaultBridge } from "../vaultBridge.ts";
@@ -41,8 +42,7 @@ function Modal({
         onClose();
       }
     };
-    window.addEventListener("keydown", key, true);
-    return () => window.removeEventListener("keydown", key, true);
+    return onKeys(key, true);
   }, [onClose]);
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>

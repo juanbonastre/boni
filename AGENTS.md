@@ -36,6 +36,16 @@ docs/            decisions and status.
 - **Design consistency:** `docs/design-guide.md` is the visual and interaction reference for *all* Boni apps (this one is
   the reference). Read it before touching the UI and update it in the same PR as any visual or behavioural change.
 
+- **Hosts:** the app runs standalone (browser tab, desktop shell) or inside another app (the Obsidian plugin). Everything
+  it needs from where it runs comes through `src/host.ts` (`mountApp` in `mount.tsx`): the vault bridge, a small storage
+  for settings and UI state, and whether it owns the window. So in UI code: no `window.boniVault` or `localStorage`
+  (use the host), no `document.querySelector` / `elementFromPoint` (use `findInApp` / `elementsAt`), `eventTarget(e)`
+  instead of `e.target` in window listeners (shadow roots retarget it), keyboard listeners only through `onKeys` (in
+  another app shortcuts work only while the calendar has the focus), overlays positioned inside `appRect()` (the app's
+  root is their containing block) and `cqh`/`cqw` instead of `vh`/`vw`. `styles.css` is scoped at build time
+  (`scopeCss.ts`): `:root` there means the app's root (theme, `mod-select`), every other selector ends up under it.
+  `e2e/embed.spec.ts` mounts the app inside a stand-in host page (`embed.html`, built only for the tests).
+
 - **Language:** code, comments, commits and AI-facing docs in English. UI strings only through `src/i18n.ts`
   (Spanish first, English second, real accents in the UI). Docs for Juan in `docs/` are Spanish.
 - **No personal data, ever.** The repo is public. Sample data is invented (`ejemplo.*@example.*`); no hostnames,

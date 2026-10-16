@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Boni Calendar inside another app (test page)</title>
+    <!-- A stand-in for another app (Obsidian) with global rules and class names that clash with ours. -->
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font: 15px / 1.6 Georgia, serif;
+        color: rgb(20, 20, 20);
+        background: rgb(240, 236, 228);
+      }
+      body {
+        display: grid;
+        grid-template-columns: 220px 1fr;
+        grid-template-rows: 60px 1fr;
+      }
+      button {
+        background: rgb(255, 0, 0);
+        color: rgb(255, 255, 255);
+        padding: 6px 12px;
+        border-radius: 0;
+      }
+      .menu,
+      .modal,
+      .popover,
+      .toast,
+      .btn {
+        background: rgb(0, 255, 0);
+        font-size: 30px;
+      }
+      * {
+        box-sizing: content-box;
+      }
+      .host-top {
+        grid-column: 1 / 3;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 0 12px;
+      }
+      .host-side {
+        padding: 12px;
+      }
+      .host-pane {
+        position: relative;
+        margin: 0 24px 24px 0;
+        min-height: 0;
+      }
+      #pane {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="host-top">
+      <button type="button" id="host-button">Host button</button>
+      <input id="host-input" placeholder="Host input" />
+    </div>
+    <div class="host-side" id="host-side">Another app's sidebar</div>
+    <div class="host-pane"><div id="pane"></div></div>
+    <script type="module" src="/src/embed.tsx"></script>
+  </body>
+</html>

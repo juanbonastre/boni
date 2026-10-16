@@ -47,6 +47,7 @@ import {
 } from "@boni-calendar/core";
 import { create } from "zustand";
 import { nowMs } from "./clock.ts";
+import { getHost } from "./host.ts";
 import { setLocale } from "./i18n.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
 import type { IgnoredNote, VaultLoad } from "./vault/loadVault.ts";
@@ -141,7 +142,7 @@ const DEFAULT_SETTINGS: Settings = {
 
 function load<T>(key: string): Partial<T> {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = getHost().storage.get(key);
     return raw ? (JSON.parse(raw) as Partial<T>) : {};
   } catch {
     return {};
@@ -149,11 +150,7 @@ function load<T>(key: string): Partial<T> {
 }
 
 function save(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage can be unavailable (private windows, previews); the app works without it.
-  }
+  getHost().storage.set(key, JSON.stringify(value));
 }
 
 interface UiPersist {
@@ -371,6 +368,7 @@ export const useApp = create<AppState>((set, get) => {
     typeof location === "undefined" ? null : new URLSearchParams(location.search).get("tz");
   const settings: Settings = {
     ...DEFAULT_SETTINGS,
+    ...getHost().settings,
     ...load<Settings>(SETTINGS_KEY),
     ...(urlTz ? { tz: urlTz } : {}),
   };

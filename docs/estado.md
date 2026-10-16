@@ -56,7 +56,10 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   local y vigilancia (hecho: arranque en caliente con ~2.750 notas en ~0,24 s frente a ~0,64 s en frio, y un cambio hecho
   fuera de la app se ve en ~0,3 s); (4) escritura en el vault (opcional en Ajustes), "Abrir nota en Obsidian", notas nuevas con contador en el nombre del archivo, mover entre calendarios, borrar a la papelera con deshacer y aviso si la nota cambio fuera (hecho); (5) series como notas individuales enlazadas por `series` (hecho: crear con "Repetir", 12 meses por delante, ampliar al leer con la escritura activada, ambito este/siguientes/todos).
 - Texto que no cabe (PR 17): una regla general en `styles.css` y la guarda `e2e/overflow.spec.ts` para todas las superficies.
-- **Paso 3, plugin de Obsidian** (plan aprobado el 2026-10-16, sin empezar): la misma app en una pestana de Obsidian con un
+- **Paso 3, plugin de Obsidian** (plan aprobado el 2026-10-16; PR 1 hecho: la app acepta otro anfitrion sin cambiar
+  nada visible: `host.ts` y `mountApp` inyectan el puente, el almacenamiento de ajustes y donde escuchan los atajos; menus,
+  ventanas y avisos quedan dentro del contenedor; el CSS se encierra bajo `.boni` al compilar; prueba `e2e/embed.spec.ts`
+  con la app dentro de una pagina ajena, tambien en shadow DOM): la misma app en una pestana de Obsidian con un
   puente sobre la API de Obsidian; solo escritorio, escritura activada por defecto, instalacion con un comando que copia el
   plugin a `.obsidian/plugins/boni-calendar/`. PRs: (1) preparar la app para otro anfitrion (puente inyectado, atajos solo con
   el foco en el calendario, ventanas y menus dentro del contenedor, CSS encerrable); (2) el plugin en `apps/obsidian-plugin/`;
