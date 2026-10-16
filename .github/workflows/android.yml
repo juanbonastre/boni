@@ -1,0 +1,44 @@
+name: android
+
+# The Android app: the web UI built into the APK's assets, in a WebView shell (apps/android).
+on:
+  pull_request:
+    paths: ["apps/android/**", "apps/web/**", "packages/core/**", ".github/workflows/android.yml"]
+  push:
+    branches: [main]
+    paths: ["apps/android/**", "apps/web/**", "packages/core/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Web UI into the APK's assets
+        run: |
+          pnpm build
+          rm -rf apps/android/app/src/main/assets/web
+          mkdir -p apps/android/app/src/main/assets
+          cp -r apps/web/dist apps/android/app/src/main/assets/web
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build APK
+        working-directory: apps/android
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
+      - name: Name APK
+        run: cp apps/android/app/build/outputs/apk/release/app-release.apk "boni-calendar-0.1.${{ github.run_number }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boni-calendar-apk
+          path: boni-calendar-*.apk
