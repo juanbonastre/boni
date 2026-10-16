@@ -26,6 +26,13 @@ export interface Host {
   settings?: Partial<Settings>;
   /** The host always shows the vault it runs in (the Obsidian plugin): there is no folder to choose. */
   fixedVault?: boolean;
+  /**
+   * Downloads a text over the network (external calendars). The desktop shell and Obsidian do it
+   * outside the page, so the browser's cross-origin rules do not apply; without it, `fetch`.
+   */
+  fetchText?: (
+    url: string,
+  ) => Promise<{ ok: true; value: string } | { ok: false; code: string; message: string }>;
 }
 
 export const localStorageStore: HostStorage = {

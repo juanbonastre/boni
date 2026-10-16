@@ -22,6 +22,7 @@ import { getHost, onKeys } from "../host.ts";
 import { type Key, t } from "../i18n.ts";
 import { useApp } from "../store.ts";
 import { vaultBridge } from "../vaultBridge.ts";
+import { ExternalSettings } from "./ExternalSettings.tsx";
 import { ChoicePicker, DraftInput } from "./fields.tsx";
 
 function Modal({
@@ -312,6 +313,7 @@ export function SettingsModal() {
         />
       </Field>
       {vaultBridge() && <VaultSettings />}
+      <ExternalSettings />
       {source !== "vault" && (
         <>
           <h3>{t("settings.general")}</h3>

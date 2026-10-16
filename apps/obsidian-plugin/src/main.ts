@@ -1,6 +1,6 @@
 import type { Host } from "@boni-calendar/web/src/host.ts";
 import { t } from "@boni-calendar/web/src/i18n.ts";
-import { getLanguage, Plugin } from "obsidian";
+import { getLanguage, Plugin, requestUrl } from "obsidian";
 import { type ObsidianBridge, obsidianBridge } from "./bridge.ts";
 import { indexedDbCache } from "./cache.ts";
 import { obsidianStorage } from "./storage.ts";
@@ -51,6 +51,16 @@ export default class BoniCalendarPlugin extends Plugin {
       // Decided by Juan (2026-10-16): in Obsidian the calendar writes to the vault from the start.
       settings: { vaultWrite: true },
       fixedVault: true,
+      // External calendars: Obsidian's requestUrl is not bound by the page's cross-origin rules.
+      fetchText: async (url) => {
+        try {
+          const r = await requestUrl({ url, throw: false });
+          if (r.status >= 400) return { ok: false, code: "fetch", message: `HTTP ${r.status}` };
+          return { ok: true, value: r.text };
+        } catch (e) {
+          return { ok: false, code: "fetch", message: e instanceof Error ? e.message : String(e) };
+        }
+      },
     };
   }
 

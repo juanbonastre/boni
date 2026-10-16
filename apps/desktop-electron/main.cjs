@@ -3,7 +3,7 @@
 //   BONI_START_QUERY  query string appended to the page URL, e.g. "bench=auto"
 //   BONI_BENCH_OUT    file where the benchmark result is written (the app then quits)
 //   BONI_SCREENSHOT   file where a PNG of the window is written after load (the app then quits)
-const { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, net, screen, shell } = require("electron");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
@@ -107,6 +107,24 @@ function handle(channel, fn) {
     }
   });
 }
+
+// External calendars: the page asks, the main process downloads (no cross-origin rules here). Only
+// http(s), with a time limit and a size limit; the answer is the text.
+const FETCH_LIMIT = 20 * 1024 * 1024;
+ipcMain.handle("net:fetch-text", async (_e, url) => {
+  try {
+    const u = new URL(String(url));
+    if (u.protocol !== "https:" && u.protocol !== "http:")
+      throw new Error("Only http(s) addresses");
+    const r = await net.fetch(u.href, { signal: AbortSignal.timeout(20_000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const text = await r.text();
+    if (text.length > FETCH_LIMIT) throw new Error("Too large");
+    return { ok: true, value: text };
+  } catch (e) {
+    return { ok: false, code: "fetch", message: String(e.message ?? e) };
+  }
+});
 
 handle("vault:get-root", () => vault?.root ?? null);
 handle("vault:scan", (dir) => vault.scan(dir));

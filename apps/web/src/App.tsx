@@ -204,8 +204,18 @@ function VaultNotice() {
   );
 }
 
+/** External calendars: read when the app starts and again every half hour. */
+function useExternalRefresh() {
+  useEffect(() => {
+    void useApp.getState().loadExternal();
+    const id = setInterval(() => void useApp.getState().loadExternal(), 30 * 60_000);
+    return () => clearInterval(id);
+  }, []);
+}
+
 export function App() {
   useTheme();
+  useExternalRefresh();
   useShortcuts();
   useClickAway();
   useModifierClass();

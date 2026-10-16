@@ -66,7 +66,10 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   Obsidian instalado (`make e2e-obsidian`, perfil y vault temporales e inventados), medidas de apertura y fluidez
   (`make bench-obsidian`, ver `rendimiento.md`) e instalacion con `make install-obsidian VAULT=...`)
 - Desde el 2026-10-16 la app de escritorio y el plugin muestran siempre el vault: ya no hay opcion de datos de ejemplo
-  (solo salen en un navegador sin vault, para desarrollo y pruebas). Ctrl+clic en un evento abre su nota.: la misma app en una pestana de Obsidian con un
+  (solo salen en un navegador sin vault, para desarrollo y pruebas). Ctrl+clic en un evento abre su nota.
+- **Calendarios externos** (2026-10-16): Ajustes → Calendarios externos, por direccion iCal (Google Calendar u otros),
+  solo lectura, en las dos apps. La direccion se guarda solo en el dispositivo; la ultima copia se ve sin red; se
+  actualizan al abrir y cada media hora. Repeticiones tipo "segundo martes" se ven una vez (y Ajustes lo dice).: la misma app en una pestana de Obsidian con un
   puente sobre la API de Obsidian; solo escritorio, escritura activada por defecto, instalacion con un comando que copia el
   plugin a `.obsidian/plugins/boni-calendar/`. PRs: (1) preparar la app para otro anfitrion (puente inyectado, atajos solo con
   el foco en el calendario, ventanas y menus dentro del contenedor, CSS encerrable); (2) el plugin en `apps/obsidian-plugin/`;

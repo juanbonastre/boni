@@ -1,6 +1,6 @@
 import { fromLocal, systemTimeZone } from "@boni-calendar/core";
 import { initClock } from "./clock.ts";
-import { localStorageStore } from "./host.ts";
+import { type Host, localStorageStore } from "./host.ts";
 import { mountApp } from "./mount.tsx";
 import type { VaultBridge } from "./vaultBridge.ts";
 import "./page.css";
@@ -20,10 +20,13 @@ async function boot() {
   initClock(location.search, params.get("tz") ?? systemTimeZone(), parseIso);
   const root = document.getElementById("root");
   if (!root) return;
+  const w = window as unknown as { boniVault?: VaultBridge; boniNet?: Pick<Host, "fetchText"> };
   await mountApp(root, {
-    vault: (window as unknown as { boniVault?: VaultBridge }).boniVault ?? null,
+    vault: w.boniVault ?? null,
     storage: localStorageStore,
     keys: "window",
+    // The desktop shell downloads external calendars itself; a plain browser uses fetch.
+    fetchText: w.boniNet?.fetchText,
   });
   const { useApp } = await import("./store.ts");
   (window as unknown as { __app: unknown }).__app = useApp;

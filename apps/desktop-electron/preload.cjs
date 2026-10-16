@@ -4,6 +4,11 @@ contextBridge.exposeInMainWorld("hostBridge", {
   saveBench: (json) => ipcRenderer.send("save-bench", json),
 });
 
+// Downloads for external calendars (done by the main process).
+contextBridge.exposeInMainWorld("boniNet", {
+  fetchText: (url) => ipcRenderer.invoke("net:fetch-text", url),
+});
+
 // Notes of the user's vault. Every call resolves to { ok: true, value } or { ok: false, code, message }.
 contextBridge.exposeInMainWorld("boniVault", {
   getRoot: () => ipcRenderer.invoke("vault:get-root"),

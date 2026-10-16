@@ -47,6 +47,20 @@ import {
 } from "@boni-calendar/core";
 import { create } from "zustand";
 import { nowMs } from "./clock.ts";
+import {
+  cachedFeed,
+  downloadFeed,
+  EXTERNAL_ACCOUNT,
+  type ExternalCal,
+  type ExternalStatus,
+  externalDef,
+  forgetFeed,
+  isExternalCalendar,
+  isExternalEvent,
+  newExternalId,
+  readFeed,
+  saveFeed,
+} from "./external.ts";
 import { getHost } from "./host.ts";
 import { setLocale } from "./i18n.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
@@ -78,6 +92,8 @@ export interface Settings {
   density: "compact" | "comfortable";
   /** Lets the app change the vault's notes. Off until the user turns it on in Settings. */
   vaultWrite: boolean;
+  /** Calendars of other services read by their iCal address (kept on this device only). */
+  externals: ExternalCal[];
 }
 
 export interface VaultState {
@@ -134,6 +150,7 @@ const DEFAULT_SETTINGS: Settings = {
   snap: 15,
   density: "comfortable",
   vaultWrite: false,
+  externals: [],
 };
 
 function load<T>(key: string): Partial<T> {
@@ -167,6 +184,11 @@ export interface AppState {
   rows: Row[];
   /** What `rows` were read from. */
   source: "sample" | "vault";
+  /**
+   * External calendars (read-only, by iCal address): merged into `data` but never rows, so they are
+   * never written anywhere. `events` per calendar, in the order of `settings.externals`.
+   */
+  external: { byCal: Record<string, CalEvent[]>; status: Record<string, ExternalStatus> };
   vault: VaultState;
   projector: Projector;
   provider: CollectionProvider;
@@ -187,6 +209,8 @@ export interface AppState {
   future: Row[][];
   toast: Toast | null;
   settingsOpen: boolean;
+  /** A part of Settings to show when it opens ("external": the external calendars, to add one). */
+  settingsFocus: "external" | null;
   paletteOpen: boolean;
   helpOpen: boolean;
   schemaCalendarId: string | null;
@@ -264,6 +288,11 @@ export interface AppState {
   loadVault: () => Promise<void>;
   /** Asks for the vault folder (desktop app) and reads it; true when one is set. */
   chooseVaultRoot: () => Promise<boolean>;
+  /** Downloads external calendars again (all, or one), showing the last copy until it arrives. */
+  loadExternal: (id?: string) => Promise<void>;
+  addExternal: (c: Omit<ExternalCal, "id">) => string;
+  updateExternal: (id: string, patch: Partial<Omit<ExternalCal, "id">>) => void;
+  removeExternal: (id: string) => void;
   set: (patch: Partial<AppState>) => void;
 }
 
@@ -291,6 +320,37 @@ function derive(src: Source, tz: string, keep?: Projector): Pick<AppState, "proj
       projects: projectsOf(src.rows),
       events: projector.project(src.rows),
     },
+  };
+}
+
+type ExternalSlice = AppState["external"];
+
+/**
+ * `data` with the external calendars added (after the vault's or the sample's own). Idempotent:
+ * whatever external data `own` already had is replaced.
+ */
+function withExternal(
+  own: CalendarData,
+  ext: ExternalSlice,
+  externals: readonly ExternalCal[],
+  hidden: (id: string) => boolean,
+): CalendarData {
+  const cals = own.calendars.filter((c) => !isExternalCalendar(c.id));
+  const accounts = own.accounts.filter((a) => a.id !== EXTERNAL_ACCOUNT);
+  const ownEvents = own.events.some(isExternalEvent)
+    ? own.events.filter((e) => !isExternalEvent(e))
+    : own.events;
+  const extEvents = externals.flatMap((c) => ext.byCal[c.id] ?? []);
+  if (externals.length === 0) {
+    return cals.length === own.calendars.length && ownEvents === own.events
+      ? own
+      : { ...own, accounts, calendars: cals, events: ownEvents };
+  }
+  return {
+    ...own,
+    accounts: [...accounts, { id: EXTERNAL_ACCOUNT, name: "", email: "" }],
+    calendars: [...cals, ...externals.map((c) => externalDef(c, !hidden(c.id)))],
+    events: extEvents.length ? [...ownEvents, ...extEvents] : ownEvents,
   };
 }
 
@@ -389,12 +449,25 @@ export const useApp = create<AppState>((set, get) => {
     } satisfies UiPersist);
   };
 
+  /** `own` (the vault's or the sample's data) with the external calendars as they are now. */
+  const merge = (own: CalendarData): CalendarData => {
+    const s = get();
+    const hidden = new Set(load<UiPersist>(UI_KEY).hiddenCalendars ?? []);
+    const shown = new Map(s.data.calendars.map((c) => [c.id, c.visible]));
+    return withExternal(own, s.external, s.settings.externals, (id) =>
+      shown.has(id) ? !shown.get(id) : hidden.has(id),
+    );
+  };
+  /** Only the vault's or the sample's events: what rows are made of. */
+  const own = (events: readonly CalEvent[]): CalEvent[] =>
+    events.filter((e) => !isExternalEvent(e));
+
   /** Stores new rows (and tells the provider what changed). `history: false` for undo and redo. */
   const setRows = (rows: Row[], history = true) => {
     const s = get();
     set({
       rows,
-      data: { ...s.data, events: s.projector.project(rows) },
+      data: merge({ ...s.data, events: s.projector.project(rows) }),
       ...(history ? { past: [...s.past.slice(-99), s.rows], future: [] } : {}),
     });
     void s.provider.apply(diffRows(s.rows, rows)).catch(writeFailed);
@@ -411,7 +484,7 @@ export const useApp = create<AppState>((set, get) => {
   /** Applies an edited event list as row changes, with undo history. */
   const commit = (next: CalEvent[]) => {
     const s = get();
-    setRows(reconcileRows(s.projector.model, s.rows, s.data.events, next));
+    setRows(reconcileRows(s.projector.model, s.rows, own(s.data.events), own(next)));
   };
 
   /** Replaces collections, views or accounts; the derived data follows. */
@@ -432,7 +505,9 @@ export const useApp = create<AppState>((set, get) => {
     set({
       ...next,
       projector: d.projector,
-      data: keep ? { ...s.data, calendars: d.data.calendars, accounts: next.accounts } : d.data,
+      data: merge(
+        keep ? { ...s.data, calendars: d.data.calendars, accounts: next.accounts } : d.data,
+      ),
     });
   };
 
@@ -493,6 +568,7 @@ export const useApp = create<AppState>((set, get) => {
     };
     const keep = sameCollections && sameProjection(s.views, views) ? s.projector : undefined;
     const d = derive(snap, s.settings.tz, keep);
+    d.data = merge(d.data);
     const ids = new Set(d.data.events.map((e) => e.id));
     // A new event is first known by a temporary id; once its note exists the row carries the path.
     const now = (id: string) => (ids.has(id) ? id : (aliases.get(id) ?? id));
@@ -515,6 +591,26 @@ export const useApp = create<AppState>((set, get) => {
   const mapViews = (fn: (v: CalendarView) => CalendarView) =>
     setDefinitions({ views: get().views.map(fn) });
 
+  /** Shows or hides external calendars (they are not views: their visibility lives in `data`). */
+  const mapExternalVisible = (fn: (c: CalendarDef) => boolean) => {
+    const s = get();
+    if (!s.data.calendars.some((c) => isExternalCalendar(c.id))) return;
+    set({
+      data: {
+        ...s.data,
+        calendars: s.data.calendars.map((c) =>
+          isExternalCalendar(c.id) ? { ...c, visible: fn(c) } : c,
+        ),
+      },
+    });
+  };
+
+  /** Replaces the external slice and what `data` shows of it. */
+  const setExternal = (patch: Partial<ExternalSlice>) => {
+    set((s) => ({ external: { ...s.external, ...patch } }));
+    set((s) => ({ data: merge(s.data) }));
+  };
+
   return {
     ...snapshot,
     ...derive(snapshot, settings.tz),
@@ -527,6 +623,7 @@ export const useApp = create<AppState>((set, get) => {
       problems: [],
     },
     provider: memoryProvider(snapshot),
+    external: { byCal: {}, status: {} },
     settings,
     view: ui.view ?? "week",
     nDays: ui.nDays ?? 7,
@@ -542,6 +639,7 @@ export const useApp = create<AppState>((set, get) => {
     future: [],
     toast: null,
     settingsOpen: false,
+    settingsFocus: null,
     paletteOpen: false,
     helpOpen: false,
     schemaCalendarId: null,
@@ -619,7 +717,8 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     toggleCalendar: (id) => {
-      mapViews((v) => (v.id === id ? { ...v, visible: !v.visible } : v));
+      if (isExternalCalendar(id)) mapExternalVisible((c) => (c.id === id ? !c.visible : c.visible));
+      else mapViews((v) => (v.id === id ? { ...v, visible: !v.visible } : v));
       persistUi();
     },
 
@@ -684,7 +783,10 @@ export const useApp = create<AppState>((set, get) => {
       if (more.length === 0) return 0;
       // Upkeep, not an edit of the user: no undo step.
       setRows(
-        reconcileRows(s.projector.model, s.rows, s.data.events, [...s.data.events, ...more]),
+        reconcileRows(s.projector.model, s.rows, own(s.data.events), [
+          ...own(s.data.events),
+          ...more,
+        ]),
         false,
       );
       return more.length;
@@ -793,7 +895,10 @@ export const useApp = create<AppState>((set, get) => {
 
     updateEvent: (id, patch, scope = "all") => get().updateEvents([id], patch, scope),
 
-    updateEvents: (ids, patch, scope = "all") => {
+    updateEvents: (all, patch, scope = "all") => {
+      // Read-only calendars (subscriptions) are never edited, whatever the selection holds.
+      const ids = all.filter((id) => !get().isLocked(id));
+      if (ids.length === 0) return;
       const now = nowMs();
       commit(
         applyEdits(
@@ -824,7 +929,9 @@ export const useApp = create<AppState>((set, get) => {
 
     deleteEvent: (id) => get().removeEvents([id]),
 
-    deleteEvents: (ids, scope = "all") => {
+    deleteEvents: (all, scope = "all") => {
+      const ids = all.filter((id) => !get().isLocked(id));
+      if (ids.length === 0) return;
       const now = nowMs();
       commit(
         applyEdits(
@@ -840,7 +947,10 @@ export const useApp = create<AppState>((set, get) => {
       else get().showToast("events.deleted", true, { n: ids.length });
     },
 
-    removeEvents: (ids) => {
+    removeEvents: (all) => {
+      // Read-only calendars (subscriptions) keep their events: nothing to ask about them.
+      const ids = all.filter((id) => !get().isLocked(id));
+      if (ids.length === 0) return get().showToast("ctx.readOnly");
       get().askScope(ids, "delete", (scope) => get().deleteEvents(ids, scope));
     },
 
@@ -904,11 +1014,13 @@ export const useApp = create<AppState>((set, get) => {
 
     showOnlyCalendar: (id) => {
       mapViews((v) => ({ ...v, visible: v.id === id }));
+      mapExternalVisible((c) => c.id === id);
       persistUi();
     },
 
     showAllCalendars: () => {
       mapViews((v) => ({ ...v, visible: true }));
+      mapExternalVisible(() => true);
       persistUi();
     },
 
@@ -980,9 +1092,11 @@ export const useApp = create<AppState>((set, get) => {
       const s = get();
       if (s.source === "vault") return void get().loadVault();
       const snap = makeSnapshot(s.settings, new Set());
+      const d = derive(snap, s.settings.tz);
       set({
         ...snap,
-        ...derive(snap, s.settings.tz),
+        ...d,
+        data: merge(d.data),
         provider: memoryProvider(snap),
         past: [],
         future: [],
@@ -1037,6 +1151,85 @@ export const useApp = create<AppState>((set, get) => {
         await get().loadVault();
       }
       return !!r.value;
+    },
+
+    loadExternal: async (only) => {
+      const list = get().settings.externals.filter((c) => !only || c.id === only);
+      await Promise.all(
+        list.map(async (c) => {
+          const tz = get().settings.tz;
+          const status = (st: ExternalStatus) =>
+            setExternal({ status: { ...get().external.status, [c.id]: st } });
+          const show = (text: string, at: number) => {
+            const r = readFeed(c, text, tz);
+            setExternal({ byCal: { ...get().external.byCal, [c.id]: r.events } });
+            return {
+              state: "ok" as const,
+              at,
+              events: r.events.length,
+              unsupported: r.unsupported,
+            };
+          };
+          // The last copy first (instant, and works offline), then the network.
+          let shown: ExternalStatus | null = null;
+          if (!get().external.byCal[c.id]) {
+            const cached = await cachedFeed(c.id);
+            if (cached) {
+              try {
+                shown = show(cached.text, cached.at);
+              } catch {
+                shown = null;
+              }
+            }
+          }
+          status({ ...(shown ?? get().external.status[c.id] ?? {}), state: "loading" });
+          try {
+            const text = await downloadFeed(c.url);
+            const at = nowMs();
+            // The calendar may have been removed or changed meanwhile.
+            const now = get().settings.externals.find((x) => x.id === c.id);
+            if (!now || now.url !== c.url) return;
+            status(show(text, at));
+            void saveFeed(c.id, text, at);
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            const prev = shown ?? get().external.status[c.id];
+            status({ ...prev, state: "error", message });
+          }
+        }),
+      );
+    },
+
+    addExternal: (c) => {
+      const id = newExternalId();
+      get().setSettings({ externals: [...get().settings.externals, { ...c, id }] });
+      setExternal({});
+      void get().loadExternal(id);
+      return id;
+    },
+
+    updateExternal: (id, patch) => {
+      const s = get();
+      const before = s.settings.externals.find((c) => c.id === id);
+      if (!before) return;
+      s.setSettings({
+        externals: s.settings.externals.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+      });
+      if (patch.url !== undefined && patch.url !== before.url) {
+        const { [id]: _drop, ...byCal } = get().external.byCal;
+        setExternal({ byCal });
+        void forgetFeed(id);
+        void get().loadExternal(id);
+      } else setExternal({});
+    },
+
+    removeExternal: (id) => {
+      const s = get();
+      s.setSettings({ externals: s.settings.externals.filter((c) => c.id !== id) });
+      const { [id]: _a, ...byCal } = get().external.byCal;
+      const { [id]: _b, ...status } = get().external.status;
+      setExternal({ byCal, status });
+      void forgetFeed(id);
     },
 
     set: (patch) => set(patch),

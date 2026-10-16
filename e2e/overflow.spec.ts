@@ -93,6 +93,17 @@ async function open(page: Page, locale: "es" | "en") {
     ({ locale }) => localStorage.setItem("boni-calendar:settings", JSON.stringify({ locale })),
     { locale },
   );
+  // External calendars download through this stand-in: always a long error (the longest status).
+  await page.addInitScript(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: test double of the desktop shell's downloader
+    (window as any).boniNet = {
+      fetchText: async () => ({
+        ok: false,
+        code: "fetch",
+        message: "getaddrinfo ENOTFOUND calendario-con-un-nombre-muy-largo.example.com",
+      }),
+    };
+  });
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
   await page.waitForSelector(".ev");
   await page.waitForTimeout(400);
@@ -162,10 +173,22 @@ async function walkEverything(page: Page): Promise<string[]> {
   await check("view menu");
   await page.keyboard.press("Escape");
 
-  // settings (without a vault: the vault section is checked by vaultSettings)
+  // settings (without a vault: the vault section is checked by vaultSettings), with the form of a
+  // new external calendar, then with one that failed to download
   await page.keyboard.press("Control+,");
   await page.waitForTimeout(200);
   await check("settings");
+  await page.locator(".ext-settings .btn.add").click();
+  await check("external calendar form");
+  const form = page.locator(".ext-form");
+  await form.locator("input").first().fill("Un calendario externo con un nombre bastante largo");
+  await form
+    .locator("input")
+    .nth(1)
+    .fill("https://calendario-con-un-nombre-muy-largo.example.com/x.ics");
+  await form.locator(".btn.primary").click();
+  await page.locator(".ext-settings .setting small", { hasText: /descargar|download/ }).waitFor();
+  await check("external calendar with an error");
   await page.keyboard.press("Escape");
 
   // event detail popover and side panel

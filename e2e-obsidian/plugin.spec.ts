@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { launchObsidian, type Obsidian } from "./obsidian.ts";
@@ -185,4 +186,42 @@ test("Obsidian's styles and the calendar's stay apart", async () => {
     modSelect: document.body.classList.contains("mod-select"),
   }));
   expect(html).toEqual({ theme: null, modSelect: false });
+});
+
+test("an external calendar is downloaded through Obsidian and shows read-only", async () => {
+  // An invented feed served on this machine (the real ones are Google's).
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const feed = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "BEGIN:VEVENT",
+    "UID:externo@example.com",
+    `DTSTART;TZID=Europe/Madrid:${ymd}T160000`,
+    `DTEND;TZID=Europe/Madrid:${ymd}T170000`,
+    "SUMMARY:Evento externo inventado",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/calendar" });
+    res.end(feed);
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const port = (server.address() as { port: number }).port;
+  try {
+    await page.locator(".boni .add-account").click();
+    const form = page.locator(".boni .ext-form");
+    await form.locator("input").first().fill("Externo de prueba");
+    await form.locator("input").nth(1).fill(`http://127.0.0.1:${port}/ejemplo.ics`);
+    await form.locator(".btn.primary").click();
+    const row = page.locator(".boni .ext-settings .setting", { hasText: "Externo de prueba" });
+    await expect(row).toContainText(/1 eventos|No se pudo|Could not/, { timeout: 15_000 });
+    const status = (await row.textContent()) ?? "";
+    expect(status, "the download failed (a firewall blocking Obsidian?)").toContain("1 eventos");
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".boni .ev", { hasText: "Evento externo inventado" })).toHaveCount(1);
+  } finally {
+    server.close();
+  }
 });

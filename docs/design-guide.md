@@ -101,7 +101,14 @@ slate `#94a3b8`.
 - **Tasks:** an event can be switched to Task in the detail or the context menu; tasks show a checkbox in the card. A
   calendar offers this only if its view maps a task column: a checkbox column (empty = event, unchecked = open task,
   checked = done) or a status column with chosen done states. Calendars without one show no Event / Task controls.
-- **Read-only calendars** can be selected but not edited or dragged.
+- **Read-only calendars** can be selected but not edited or dragged: their detail shows every field disabled, and
+  `Delete` on them only says "Read-only calendar" (no scope question).
+- **External calendars** (Settings → External calendars, or "Add external calendar" under the sidebar's calendars):
+  other services' calendars (Google Calendar...) by their iCal address, read-only, in their own sidebar group with
+  colour and eye like any other. Each row in Settings shows how many events came and when, or why the download
+  failed (refresh, edit, remove next to it). The last copy shows without a connection; they refresh when the app
+  opens and every half hour. The address of a private calendar is a secret: it stays on the device, never in the
+  vault. A repetition the app cannot repeat (e.g. "second Tuesday") shows once and Settings says how many.
 - **Data in the vault** (desktop app, Settings → Data): the calendars are always the vault's notes (the invented sample
   data only shows in a plain browser, for development and tests); writing is opt-in ("Read only" / "Read and write"). With it on, the
   gestures above change the notes: only the edited properties are rewritten (unknown ones, comments and the body stay as
