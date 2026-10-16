@@ -70,3 +70,20 @@ Fluidez dentro de Obsidian (fotogramas de mas de 25 ms): rueda 0 de ~467; Ctrl+r
 fluidez por vivir dentro de Obsidian ni de un shadow DOM. Ojo: con un vault mucho mas denso (2.800 notas en un solo ano,
 unos 8 eventos por dia) el zoom y "14 dias" pierden bastantes mas fotogramas (21-45), igual en Obsidian que fuera; si la
 agenda real llegara a esa densidad habria que revisarlo.
+
+## Android: la app web en un WebView (2026-10-16)
+Antes de construir la app de Android se midio si el WebView del movil mueve la rejilla con fluidez (decision de Juan: un
+cascaron Kotlin con la misma app web, `apps/android`). Pixel 9a, GrapheneOS (Android 17), WebView Vanadium 155 (Chromium),
+pantalla a 60 Hz, 411x923 dp, datos de ejemplo, el mismo banco integrado (`?bench=auto`, lanzado por adb):
+
+| Escenario | Perdidos |
+|---|---|
+| Fotograma en reposo | 16,7 ms |
+| Rueda, saltos y flujo continuo | 0 de ~194 |
+| Ctrl+rueda (zoom) | 1-5 de ~185 (un tiron de 167 ms al empezar el pellizco sin Ctrl, el coste conocido de crear las capas) |
+| Shift+rueda (dias) | 0 de 194 |
+| 14 dias, scroll + zoom | 2 de 191 |
+| Mes | 0-1 de 194 |
+
+Igual que Chrome y Electron en el portatil: el WebView no es un limite. Falta medir los gestos tactiles cuando existan
+(arrastrar con el dedo, pellizcar), que usan el mismo motor de la rejilla.
