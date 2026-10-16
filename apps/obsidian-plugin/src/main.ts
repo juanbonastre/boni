@@ -49,8 +49,8 @@ export default class BoniCalendarPlugin extends Plugin {
       storage: obsidianStorage(this.app),
       keys: "root",
       // Decided by Juan (2026-10-16): in Obsidian the calendar writes to the vault from the start.
-      settings: { dataSource: "vault", vaultWrite: true },
-      vaultOnly: true,
+      settings: { vaultWrite: true },
+      fixedVault: true,
     };
   }
 

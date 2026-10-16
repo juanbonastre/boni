@@ -122,9 +122,8 @@ const TIMEZONES = [
   "UTC",
 ];
 
-/** Where the data comes from (desktop app only): the sample, or the notes of the user's vault. */
+/** The vault the calendars come from (desktop app, Obsidian): its folder, writing, what was read. */
 function VaultSettings() {
-  const dataSource = useApp((s) => s.settings.dataSource);
   const writeOn = useApp((s) => s.settings.vaultWrite);
   const source = useApp((s) => s.source);
   const vault = useApp((s) => s.vault);
@@ -135,28 +134,16 @@ function VaultSettings() {
       .then((r) => r.ok && useApp.setState((s) => ({ vault: { ...s.vault, root: r.value } })));
   }, []);
   const reason = (r: string) => (r === "no-date" ? t("vault.reason.no-date") : r);
-  const vaultOnly = !!getHost().vaultOnly;
+  const fixedVault = !!getHost().fixedVault;
   return (
     <>
       <h3>{t("settings.data")}</h3>
-      {!vaultOnly && (
-        <Field label={t("settings.source")}>
-          <Segmented
-            value={dataSource}
-            onChange={(v) => void app.setDataSource(v)}
-            options={[
-              { v: "sample", label: t("settings.source.sample") },
-              { v: "vault", label: t("settings.source.vault") },
-            ]}
-          />
-        </Field>
-      )}
       <Field label={t("settings.vaultFolder")}>
         <span className="vault-path" title={vault.root ?? undefined}>
           {/* bdi keeps the path's own direction inside the right-to-left box that cuts it from the left */}
           <bdi>{vault.root ?? t("settings.vaultNone")}</bdi>
         </span>
-        {!vaultOnly && (
+        {!fixedVault && (
           <button type="button" className="btn" onClick={() => void app.chooseVaultRoot()}>
             {t("settings.vaultChoose")}
           </button>

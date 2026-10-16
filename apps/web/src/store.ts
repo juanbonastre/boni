@@ -58,7 +58,6 @@ import {
   readVault,
   resetVaultIndex,
   serialized,
-  stopWatchingVault,
   watchVault,
 } from "./vault/sync.ts";
 import { vaultBridge } from "./vaultBridge.ts";
@@ -77,8 +76,6 @@ export interface Settings {
   defaultDuration: number;
   snap: number;
   density: "compact" | "comfortable";
-  /** Where the calendars come from: invented sample data, or the notes of the user's vault (desktop app). */
-  dataSource: "sample" | "vault";
   /** Lets the app change the vault's notes. Off until the user turns it on in Settings. */
   vaultWrite: boolean;
 }
@@ -136,7 +133,6 @@ const DEFAULT_SETTINGS: Settings = {
   defaultDuration: 60,
   snap: 15,
   density: "comfortable",
-  dataSource: "sample",
   vaultWrite: false,
 };
 
@@ -266,9 +262,8 @@ export interface AppState {
   resetData: () => void;
   /** Reads the vault (definitions and notes) and shows it. */
   loadVault: () => Promise<void>;
-  /** Asks for the vault folder (desktop app); true when one is set. */
+  /** Asks for the vault folder (desktop app) and reads it; true when one is set. */
   chooseVaultRoot: () => Promise<boolean>;
-  setDataSource: (source: "sample" | "vault") => Promise<void>;
   set: (patch: Partial<AppState>) => void;
 }
 
@@ -377,7 +372,9 @@ export const useApp = create<AppState>((set, get) => {
   const hidden = new Set(ui.hiddenCalendars ?? []);
   setLocale(settings.locale);
   // With the vault as the source the first picture is empty (no flash of sample data) until it loads.
-  const wantVault = settings.dataSource === "vault" && !!vaultBridge();
+  // With a vault (desktop app, Obsidian) the calendars are its notes; invented sample data only
+  // in a plain browser (development, tests).
+  const wantVault = !!vaultBridge();
   const snapshot: CollectionSnapshot = wantVault
     ? { accounts: [], collections: [], views: [], rows: [] }
     : makeSnapshot(settings, hidden);
@@ -1037,37 +1034,9 @@ export const useApp = create<AppState>((set, get) => {
       if (r.value) {
         resetVaultIndex();
         set((s) => ({ vault: { ...s.vault, root: r.value } }));
+        await get().loadVault();
       }
       return !!r.value;
-    },
-
-    setDataSource: async (source) => {
-      const bridge = vaultBridge();
-      if (source === "vault") {
-        if (!bridge) return;
-        const root = await bridge.getRoot();
-        if (!(root.ok && root.value) && !(await get().chooseVaultRoot())) return;
-        get().setSettings({ dataSource: "vault" });
-        await get().loadVault();
-        return;
-      }
-      get().setSettings({ dataSource: "sample" });
-      stopWatchingVault(bridge);
-      const s = get();
-      const snap = makeSnapshot(s.settings, new Set());
-      set({
-        ...snap,
-        ...derive(snap, s.settings.tz),
-        source: "sample",
-        provider: memoryProvider(snap),
-        past: [],
-        future: [],
-        selectedId: null,
-        selectedIds: [],
-        anchorId: null,
-        popoverId: null,
-        vault: { ...s.vault, status: "idle" },
-      });
     },
 
     set: (patch) => set(patch),

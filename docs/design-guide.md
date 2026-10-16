@@ -102,7 +102,8 @@ slate `#94a3b8`.
   calendar offers this only if its view maps a task column: a checkbox column (empty = event, unchecked = open task,
   checked = done) or a status column with chosen done states. Calendars without one show no Event / Task controls.
 - **Read-only calendars** can be selected but not edited or dragged.
-- **Data in the vault** (desktop app, Settings → Data): writing is opt-in ("Read only" / "Read and write"). With it on, the
+- **Data in the vault** (desktop app, Settings → Data): the calendars are always the vault's notes (the invented sample
+  data only shows in a plain browser, for development and tests); writing is opt-in ("Read only" / "Read and write"). With it on, the
   gestures above change the notes: only the edited properties are rewritten (unknown ones, comments and the body stay as
   they were), a new event becomes a note when it has a title (file `{date} {title}.md`, with a counter on the file name if
   taken), moving it to another calendar moves its file, deleting sends it to the trash and Undo brings it back. If a note
@@ -126,7 +127,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   has the focus, the calendar's `Ctrl` shortcuts (`Ctrl+K`, `Ctrl+,`, `Ctrl+Z`...) are its own, not Obsidian's. It opens
   from the ribbon icon (calendar) or the command "Abrir Boni Calendar", in one tab (the command brings that tab
   forward), and lives in a shadow root so neither Obsidian's theme nor its class names reach it. In Obsidian the
-  calendar always shows the vault it runs in (Settings → Data offers no sample data or folder) and writes to it from
+  calendar always shows the vault it runs in (Settings → Data offers no folder to choose) and writes to it from
   the start, with the same rules as the desktop app; "Open note" opens the note in a tab, or brings forward the tab
   that already shows it. Installed by hand (`make install-obsidian VAULT=...`), not from the community catalogue.
 - **Mobile (proposal, accepted in principle by Juan but deferred until the desktop apps are finished):** same tokens and card recipe. The popover becomes a bottom sheet that

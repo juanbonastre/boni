@@ -64,7 +64,9 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   con tests contra una API falsa, escritura activada, indice en IndexedDB del dispositivo; probado a mano en un Obsidian
   real con perfil y vault temporales. Las cabeceras de dia ya caben en columnas estrechas. PR 3: pruebas automaticas en el
   Obsidian instalado (`make e2e-obsidian`, perfil y vault temporales e inventados), medidas de apertura y fluidez
-  (`make bench-obsidian`, ver `rendimiento.md`) e instalacion con `make install-obsidian VAULT=...`): la misma app en una pestana de Obsidian con un
+  (`make bench-obsidian`, ver `rendimiento.md`) e instalacion con `make install-obsidian VAULT=...`)
+- Desde el 2026-10-16 la app de escritorio y el plugin muestran siempre el vault: ya no hay opcion de datos de ejemplo
+  (solo salen en un navegador sin vault, para desarrollo y pruebas). Ctrl+clic en un evento abre su nota.: la misma app en una pestana de Obsidian con un
   puente sobre la API de Obsidian; solo escritorio, escritura activada por defecto, instalacion con un comando que copia el
   plugin a `.obsidian/plugins/boni-calendar/`. PRs: (1) preparar la app para otro anfitrion (puente inyectado, atajos solo con
   el foco en el calendario, ventanas y menus dentro del contenedor, CSS encerrable); (2) el plugin en `apps/obsidian-plugin/`;
