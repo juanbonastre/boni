@@ -85,6 +85,20 @@
     },
     "ChartSpec": {
       "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9a-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The chart's colour, from Boni Calendar's palette (PALETTE); null = the accent",
+          "title": "Color"
+        },
         "compare": {
           "default": "none",
           "enum": [

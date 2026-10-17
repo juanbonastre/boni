@@ -13,7 +13,7 @@
     },
     {
       "id": "group",
-      "label": "Grupo de categoria",
+      "label": "Grupo de categor\u00eda",
       "kind": "set",
       "ops": [
         "in",
@@ -24,7 +24,7 @@
     },
     {
       "id": "category",
-      "label": "Categoria",
+      "label": "Categor\u00eda",
       "kind": "set",
       "ops": [
         "in",
@@ -76,7 +76,7 @@
     },
     {
       "id": "people",
-      "label": "Con quien",
+      "label": "Con qui\u00e9n",
       "kind": "multi",
       "ops": [
         "in",
@@ -154,7 +154,7 @@
     {
       "id": "bar",
       "label": "Barras",
-      "help": "Comparar valores; con fechas, la evolucion"
+      "help": "Comparar valores; con fechas, la evoluci\u00f3n"
     },
     {
       "id": "stacked_bar",
@@ -164,17 +164,17 @@
     {
       "id": "hbar",
       "label": "Barras horizontales",
-      "help": "Rankings: categorias, comercios, personas"
+      "help": "Rankings: categor\u00edas, comercios, personas"
     },
     {
       "id": "line",
-      "label": "Linea",
-      "help": "Evolucion en el tiempo"
+      "label": "L\u00ednea",
+      "help": "Evoluci\u00f3n en el tiempo"
     },
     {
       "id": "area",
-      "label": "Area",
-      "help": "Evolucion en el tiempo, con relleno"
+      "label": "\u00c1rea",
+      "help": "Evoluci\u00f3n en el tiempo, con relleno"
     },
     {
       "id": "donut",
@@ -184,7 +184,7 @@
     {
       "id": "number",
       "label": "Cifra",
-      "help": "Un numero grande, con la diferencia frente a otro periodo"
+      "help": "Un n\u00famero grande, con la diferencia frente a otro periodo"
     },
     {
       "id": "table",
@@ -205,19 +205,19 @@
     },
     {
       "id": "count",
-      "label": "Numero de gastos",
+      "label": "N\u00famero de gastos",
       "help": null
     },
     {
       "id": "average",
       "label": "Gasto medio",
-      "help": "Gasto dividido entre numero de gastos"
+      "help": "Gasto dividido entre n\u00famero de gastos"
     }
   ],
   "granularities": [
     {
       "id": "day",
-      "label": "Dia",
+      "label": "D\u00eda",
       "help": null
     },
     {
@@ -237,12 +237,12 @@
     },
     {
       "id": "year",
-      "label": "Ano",
+      "label": "A\u00f1o",
       "help": null
     },
     {
       "id": "weekday",
-      "label": "Dia de la semana",
+      "label": "D\u00eda de la semana",
       "help": null
     }
   ],
@@ -259,22 +259,22 @@
     },
     {
       "id": "last_months",
-      "label": "Ultimos meses",
+      "label": "\u00daltimos meses",
       "help": null
     },
     {
       "id": "this_year",
-      "label": "Este ano",
+      "label": "Este a\u00f1o",
       "help": null
     },
     {
       "id": "last_year",
-      "label": "Ano pasado",
+      "label": "A\u00f1o pasado",
       "help": null
     },
     {
       "id": "last_days",
-      "label": "Ultimos dias",
+      "label": "\u00daltimos d\u00edas",
       "help": null
     },
     {
@@ -301,7 +301,7 @@
     },
     {
       "id": "previous_year",
-      "label": "Mismo periodo del ano anterior",
+      "label": "Mismo periodo del a\u00f1o anterior",
       "help": null
     }
   ]

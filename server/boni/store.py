@@ -1,4 +1,5 @@
-"""Boni's own SQLite database: devices, the capture outbox, chart definitions, widgets, device preferences.
+"""Boni's own SQLite database: accounts and sessions (and the old device tokens), the capture outbox, chart definitions,
+widgets and preferences per device.
 The real data stays in its sources (the vault); this file only holds what is Boni's."""
 
 from __future__ import annotations
@@ -8,11 +9,13 @@ import json
 import secrets
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from boni.contract import ChartSpec, Widget
+from boni import auth
+from boni.contract import PALETTE, ChartSpec, Widget
 from boni.expenses.note import slug
 from boni.stats.charts import DEFAULT_CHARTS
 
@@ -23,6 +26,19 @@ CREATE TABLE IF NOT EXISTS devices (
     token_hash TEXT NOT NULL UNIQUE,
     created TEXT NOT NULL,
     last_seen TEXT
+);
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    pass TEXT NOT NULL,
+    created TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    device TEXT NOT NULL,
+    created TEXT NOT NULL,
+    last_seen REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS captures (
     client_id TEXT PRIMARY KEY,
@@ -87,8 +103,10 @@ class Store:
         self._lock = threading.Lock()
         with self._lock:
             self._db.execute("PRAGMA journal_mode=WAL")
+            self._db.execute("PRAGMA foreign_keys=ON")
             self._db.executescript(SCHEMA)
         self._seed_charts()
+        self._colour_old_charts()
 
     def close(self) -> None:
         self._db.close()
@@ -121,12 +139,81 @@ class Store:
         self._q("UPDATE devices SET last_seen = ? WHERE name = ?", (_now(), rows[0]["name"]))
         return rows[0]["name"]
 
+    # ----- accounts and sessions -----
+    def add_user(self, name: str, password: str) -> None:
+        if not auth.USER_NAME.match(name):
+            raise ValueError("A user name is 2-32 letters, digits, . _ -")
+        if len(password) < auth.MIN_PASSWORD:
+            raise ValueError(f"The password needs at least {auth.MIN_PASSWORD} characters")
+        self._q("INSERT INTO users (name, pass, created) VALUES (?, ?, ?)",
+                (name, auth.hash_password(password), _now()))
+
+    def set_password(self, name: str, password: str) -> bool:
+        """A new password; every session of that user ends."""
+        if len(password) < auth.MIN_PASSWORD:
+            raise ValueError(f"The password needs at least {auth.MIN_PASSWORD} characters")
+        with self._lock:
+            n = self._db.execute("UPDATE users SET pass = ? WHERE name = ?",
+                                 (auth.hash_password(password), name)).rowcount
+            self._db.execute("DELETE FROM sessions WHERE user_id = (SELECT id FROM users WHERE name = ?)", (name,))
+        return n > 0
+
+    def remove_user(self, name: str) -> bool:
+        with self._lock:
+            return self._db.execute("DELETE FROM users WHERE name = ?", (name,)).rowcount > 0
+
+    def users(self) -> list[dict[str, Any]]:
+        rows = self._q("SELECT u.name, u.created, COUNT(s.token_hash) AS sessions FROM users u "
+                       "LEFT JOIN sessions s ON s.user_id = u.id GROUP BY u.id ORDER BY u.name")
+        return [dict(r) for r in rows]
+
+    def login(self, name: str, password: str, device: str) -> tuple[str, str] | None:
+        """A new session for `device`, or None when the name or the password is wrong. Returns (token, user name)."""
+        rows = self._q("SELECT id, name, pass FROM users WHERE name = ?", (name,))
+        if not auth.check(password, rows[0]["pass"] if rows else None):
+            return None
+        token = secrets.token_urlsafe(32)
+        self._q("INSERT INTO sessions (token_hash, user_id, device, created, last_seen) VALUES (?, ?, ?, ?, ?)",
+                (hash_token(token), rows[0]["id"], device, _now(), time.time()))
+        return token, rows[0]["name"]
+
+    def logout(self, token: str) -> None:
+        self._q("DELETE FROM sessions WHERE token_hash = ?", (hash_token(token),))
+
+    def account_for_token(self, token: str, now: float | None = None) -> tuple[str | None, str] | None:
+        """(user, device) of a session, or (None, device) of an old device token; None if neither. A session unused for
+        90 days ends here."""
+        now = time.time() if now is None else now
+        h = hash_token(token)
+        rows = self._q("SELECT s.device, s.last_seen, u.name FROM sessions s JOIN users u ON u.id = s.user_id "
+                       "WHERE s.token_hash = ?", (h,))
+        if rows:
+            if now - rows[0]["last_seen"] > auth.SESSION_IDLE_S:
+                self._q("DELETE FROM sessions WHERE token_hash = ?", (h,))
+                return None
+            if now - rows[0]["last_seen"] > 60:  # one write a minute at most
+                self._q("UPDATE sessions SET last_seen = ? WHERE token_hash = ?", (now, h))
+            return rows[0]["name"], rows[0]["device"]
+        device = self.device_for_token(token)
+        return (None, device) if device is not None else None
+
     # ----- charts and widgets -----
     def _seed_charts(self) -> None:
         if self._q("SELECT 1 FROM charts LIMIT 1"):
             return
         for i, spec in enumerate(DEFAULT_CHARTS):
             self._q("INSERT INTO charts (id, spec, position) VALUES (?, ?, ?)", (spec.id, spec.model_dump_json(), i))
+
+    def _colour_old_charts(self) -> None:
+        """Charts saved before charts had a colour get one, once: the seeds their usual one, the rest from the palette
+        by position (the first clients chose a colour by chart id)."""
+        seeds = {c.id: c.color for c in DEFAULT_CHARTS}
+        for i, r in enumerate(self._q("SELECT id, spec FROM charts ORDER BY position")):
+            raw = json.loads(r["spec"])
+            if "color" in raw:
+                continue
+            raw["color"] = seeds.get(r["id"]) or PALETTE[i % len(PALETTE)]
+            self._q("UPDATE charts SET spec = ? WHERE id = ?", (json.dumps(raw), r["id"]))
 
     def charts(self) -> list[ChartSpec]:
         return [ChartSpec.model_validate_json(r["spec"]) for r in self._q("SELECT spec FROM charts ORDER BY position")]

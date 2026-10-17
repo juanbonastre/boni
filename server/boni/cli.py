@@ -1,14 +1,17 @@
-"""Command line: run the server and manage devices.
+"""Command line: run the server and manage accounts.
 
   boni serve [--host 0.0.0.0] [--port 8100]
-  boni device add NAME        prints the device token ONCE (only its hash is stored)
-  boni device list
-  boni device remove NAME
+  boni user add NAME          asks for the password twice (at least 12 characters); devices log in with it
+  boni user list
+  boni user passwd NAME       a new password; every session of that user ends
+  boni user remove NAME
+  boni device list|remove     the old device tokens (before accounts): remove them once every device has logged in
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import logging
 import sys
 
@@ -22,6 +25,12 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("serve")
     s.add_argument("--host", default="0.0.0.0")
     s.add_argument("--port", type=int, default=8100)
+    u = sub.add_parser("user")
+    usub = u.add_subparsers(dest="ucmd", required=True)
+    usub.add_parser("add").add_argument("name")
+    usub.add_parser("list")
+    usub.add_parser("passwd").add_argument("name")
+    usub.add_parser("remove").add_argument("name")
     d = sub.add_parser("device")
     dsub = d.add_subparsers(dest="dcmd", required=True)
     dsub.add_parser("add").add_argument("name")
@@ -45,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     store = Store(settings.db_path)
+    if a.cmd == "user":
+        return user_command(store, a)
     if a.dcmd == "add":
         token = store.add_device(a.name)
         print(f"Device '{a.name}' created. Token (shown only once, save it in Vaultwarden):\n{token}")
@@ -53,6 +64,31 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{dev['name']}\tcreated {dev['created']}\tlast seen {dev['last_seen'] or '-'}")
     elif a.dcmd == "remove":
         print("removed" if store.remove_device(a.name) else "no such device")
+    return 0
+
+
+def ask_password() -> str:
+    first = getpass.getpass("Password (at least 12 characters): ")
+    if first != getpass.getpass("Again: "):
+        raise SystemExit("The passwords do not match")
+    return first
+
+
+def user_command(store: Store, a: argparse.Namespace) -> int:
+    try:
+        if a.ucmd == "add":
+            store.add_user(a.name, ask_password())
+            print(f"User '{a.name}' created. Log in from Boni: Settings > Account.")
+        elif a.ucmd == "list":
+            for u in store.users():
+                print(f"{u['name']}\tcreated {u['created']}\tsessions {u['sessions']}")
+        elif a.ucmd == "passwd":
+            changed = store.set_password(a.name, ask_password())
+            print("password changed; its sessions ended" if changed else "no such user")
+        elif a.ucmd == "remove":
+            print("removed" if store.remove_user(a.name) else "no such user")
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
     return 0
 
 

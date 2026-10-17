@@ -23,6 +23,7 @@
       "sort": "auto",
       "drilldown": true,
       "home": true,
+      "color": "#60a5fa",
       "group_by": "category_group",
       "filter": {
         "include": [],
@@ -52,6 +53,7 @@
       "sort": "auto",
       "drilldown": true,
       "home": true,
+      "color": "#a78bfa",
       "group_by": "month",
       "filter": {
         "include": [],
@@ -98,6 +100,7 @@
       "sort": "auto",
       "drilldown": false,
       "home": true,
+      "color": "#fb923c",
       "group_by": "month",
       "filter": {
         "include": [],

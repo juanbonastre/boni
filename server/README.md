@@ -21,13 +21,25 @@ Python 3.12, FastAPI, SDK oficial de MCP (`mcp==2.3.0`, protocolo 2026-07-28, el
 | `BONI_DB` | Archivo SQLite (en la imagen: `/data/boni.sqlite3`) |
 | `BONI_TZ` | Zona horaria (por defecto `Europe/Madrid`) |
 
-## Dispositivos
-Cada cliente usa su propio token. Se crea en el servidor y se muestra **una sola vez** (solo se guarda su hash):
+## Cuentas y sesiones (como el servidor de Boni Calendar)
+Las cuentas las crea el administrador en el servidor (no hay registro). Cada equipo entra una vez desde Ajustes con
+usuario, contrasena y un nombre para el equipo, y guarda un token de sesion (el servidor solo guarda su hash). Los widgets
+y preferencias son de cada equipo (por su nombre). Una sesion sin usar 90 dias se cierra; cambiar la contrasena cierra
+todas las de ese usuario. Intentos fallidos limitados: 5 por usuario y 10 por direccion en 15 minutos, 30 por minuto en
+total.
 ```
-boni device add portatil      # imprime el token: guardalo en Vaultwarden y en el cliente
-boni device list
-boni device remove portatil
+boni user add juan            # pide la contrasena dos veces (12 caracteres minimo)
+boni user list
+boni user passwd juan
+boni user remove juan
 ```
+Los tokens de dispositivo de antes (`boni device add`) siguen valiendo hasta borrarlos: `boni device list`,
+`boni device remove portatil` cuando todos los equipos hayan entrado con usuario.
+
+## En directo
+`GET /api/v1/events` (server-sent events): `event: changed` con `{"what": "charts" | "widgets" | "data"}` cuando cambian
+las graficas, los widgets o los datos (un gasto escrito, o cambios en el vault que detecta el refresco de cada 2 minutos).
+Los clientes recargan solo lo que cambio.
 
 ## Desarrollo
 ```

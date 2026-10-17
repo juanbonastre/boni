@@ -23,6 +23,11 @@ class Model(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+# Boni Calendar's palette (docs/design-guide.md in juanbonastre/boni-calendar): the colours a chart can have.
+PALETTE = ["#a78bfa", "#fb923c", "#f87171", "#fbbf24", "#4ade80", "#2dd4bf", "#38bdf8", "#60a5fa", "#f472b6",
+           "#ef4444", "#94a3b8"]
+
+
 # ---------- common ----------
 class Option(Model):
     value: str
@@ -203,6 +208,9 @@ class ChartSpec(Model):
     sort: Literal["auto", "value_desc", "value_asc", "label"] = "auto"
     drilldown: bool = Field(False, description="Points can be opened with GET /charts/{id}/data?drill=<key>")
     home: bool = Field(True, description="Shown on the home screen")
+    color: str | None = Field(None, pattern=r"^#[0-9a-f]{6}$",
+                              description="The chart's colour, from Boni Calendar's palette (PALETTE); "
+                                          "null = the accent")
     # legacy v1 fields, kept so older specs (and older clients) keep working
     group_by: Literal["category_group", "category", "month"] | None = None
     filter: ChartFilter = ChartFilter()
@@ -317,6 +325,30 @@ class WidgetRequest(Model):
     size: Literal["small", "medium", "large"] = "medium"
 
 
+# ---------- accounts (as Boni Calendar's server: accounts made by the admin, one session per device) ----------
+class LoginRequest(Model):
+    user: str
+    password: str = Field(repr=False)
+    device: str = Field(description="This device's name (widgets and preferences are per device)")
+
+
+class LoginResult(Model):
+    token: str = Field(description="The session token; the server keeps only its hash")
+    user: str
+    device: str
+
+
+class Account(Model):
+    user: str | None = Field(None, description="null for an old device token (before accounts)")
+    device: str
+
+
+class ChangeEvent(Model):
+    """One event of `GET /api/v1/events` (server-sent events, `event: changed`): what to load again."""
+    what: Literal["charts", "widgets", "data"]
+    at: datetime
+
+
 # ---------- options ----------
 class OptionsResponse(Model):
     source: str
@@ -401,6 +433,10 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "ActionResult": ActionResult,
     "ErrorResponse": ErrorResponse,
     "Health": Health,
+    "LoginRequest": LoginRequest,
+    "LoginResult": LoginResult,
+    "Account": Account,
+    "ChangeEvent": ChangeEvent,
 }
 
 

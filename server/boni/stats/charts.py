@@ -12,9 +12,9 @@ EATING_OUT = [
 
 DEFAULT_CHARTS = [
     ChartSpec(id="spending-by-category", title="Gasto del mes", kind="hbar", x=Dimension(field="group"),
-              period=Period(kind="this_month"), drilldown=True),
+              period=Period(kind="this_month"), drilldown=True, color="#60a5fa"),
     ChartSpec(id="monthly-spending", title="Gasto por mes", kind="bar", x=Dimension(field="date", granularity="month"),
-              period=Period(kind="last_months", months=12), drilldown=True),
+              period=Period(kind="last_months", months=12), drilldown=True, color="#a78bfa"),
     ChartSpec(id="eating-out", title="Comida fuera", kind="line", x=Dimension(field="date", granularity="month"),
-              period=Period(kind="last_months", months=12), filters=EATING_OUT),
+              period=Period(kind="last_months", months=12), filters=EATING_OUT, color="#fb923c"),
 ]

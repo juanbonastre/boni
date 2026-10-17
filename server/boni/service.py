@@ -19,6 +19,7 @@ from boni.contract import (
     Screen,
     Widget,
 )
+from boni.events import Events
 from boni.expenses import capture as expense_capture
 from boni.expenses.note import ascii_text, base_name, render
 from boni.sources.finanzas import FinanzasSource
@@ -54,6 +55,8 @@ class Service:
         self.tz = tz
         self._now = now or (lambda: datetime.now(UTC))
         self._write_lock = asyncio.Lock()
+        self.events = Events()
+        self._data_print: int | None = None
         self.source_state: dict[str, str] = {"vault": "ok" if finanzas.mcp.configured else "not_configured"}
 
     def now(self) -> datetime:
@@ -142,11 +145,16 @@ class Service:
         months |= set(engine.months_between(engine.shift_months(today.replace(day=1), -(VALUES_MONTHS - 1)), today))
         months = sorted(months)
         try:
-            await self.fin.movements(months, force=True)
-            await self.fin.debts(force=True)
+            movements = await self.fin.movements(months, force=True)
+            debts = await self.fin.debts(force=True)
             await self.fin.categories(force=True)
             await self.fin.people(force=True)
             self._mark(True)
+            # Something changed in the vault (a capture from the phone, the monthly reconciliation...): tell clients.
+            fingerprint = hash((tuple(movements), tuple(debts)))
+            if self._data_print is not None and fingerprint != self._data_print:
+                self.events.publish("data")
+            self._data_print = fingerprint
         except SourceUnavailable as e:
             self._mark(False)
             log.warning("warm-up: source unavailable: %s", e)
@@ -192,17 +200,26 @@ class Service:
         return spec.model_copy(update={"title": spec.title.strip()})
 
     def create_chart(self, spec: ChartSpec) -> ChartSpec:
-        return self.store.create_chart(self._checked(spec))
+        saved = self.store.create_chart(self._checked(spec))
+        self.events.publish("charts")
+        return saved
 
     def update_chart(self, chart_id: str, spec: ChartSpec) -> ChartSpec:
         saved = self.store.update_chart(chart_id, self._checked(spec))
         if saved is None:
             raise NotFound(chart_id)
+        self.events.publish("charts")
         return saved
 
     def delete_chart(self, chart_id: str) -> None:
         if not self.store.delete_chart(chart_id):
             raise NotFound(chart_id)
+        self.events.publish("charts")
+        self.events.publish("widgets")
+
+    def order_charts(self, ids: list[str]) -> None:
+        self.store.order_charts(ids)
+        self.events.publish("charts")
 
     # ----- widgets -----
     def _known_chart(self, chart_id: str) -> None:
@@ -211,18 +228,22 @@ class Service:
 
     def add_widget(self, device: str, chart_id: str, size: str) -> Widget:
         self._known_chart(chart_id)
-        return self.store.add_widget(device, chart_id, size)
+        w = self.store.add_widget(device, chart_id, size)
+        self.events.publish("widgets")
+        return w
 
     def update_widget(self, device: str, widget_id: str, chart_id: str, size: str) -> Widget:
         self._known_chart(chart_id)
         w = self.store.update_widget(device, widget_id, chart_id, size)
         if w is None:
             raise NotFound(widget_id)
+        self.events.publish("widgets")
         return w
 
     def delete_widget(self, device: str, widget_id: str) -> None:
         if not self.store.delete_widget(device, widget_id):
             raise NotFound(widget_id)
+        self.events.publish("widgets")
 
     # ----- actions -----
     async def action(self, req: ActionRequest, device: str) -> ActionResult:
@@ -306,4 +327,5 @@ class Service:
                                       attempt=True)
             self.store.set_pref(cap.device, "last_account", draft.account)
             log.info("capture %s written to %s", cap.client_id, path)
+            self.events.publish("data")
             return res

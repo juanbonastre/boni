@@ -10,11 +10,13 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from boni import API_VERSION, VERSION
+from boni.auth import LoginGuard
 from boni.config import Settings
 from boni.contract import (
+    Account,
     ActionRequest,
     ActionResult,
     ChartCatalog,
@@ -26,6 +28,8 @@ from boni.contract import (
     ErrorBody,
     ErrorResponse,
     Health,
+    LoginRequest,
+    LoginResult,
     OptionsResponse,
     Screen,
     Widget,
@@ -110,15 +114,55 @@ def create_app(settings: Settings, service: Service | None = None, run_outbox: b
         return err(422, "bad_request", str(e.errors()[:3]))
 
     # No `from __future__ import annotations` in this file: FastAPI must resolve the local `Device` alias.
-    def device(authorization: Annotated[str | None, Header()] = None) -> str:
+    def bearer(authorization: str | None) -> str:
         if not authorization or not authorization.startswith("Bearer "):
-            raise ApiError(401, "unauthorized", "Falta el token del dispositivo")
-        name = svc.store.device_for_token(authorization.removeprefix("Bearer ").strip())
-        if name is None:
-            raise ApiError(401, "unauthorized", "Token no valido")
-        return name
+            raise ApiError(401, "unauthorized", "Falta la sesión: entra con tu usuario")
+        return authorization.removeprefix("Bearer ").strip()
+
+    def account(authorization: Annotated[str | None, Header()] = None) -> Account:
+        found = svc.store.account_for_token(bearer(authorization))
+        if found is None:
+            raise ApiError(401, "unauthorized", "La sesión ha terminado: vuelve a entrar")
+        return Account(user=found[0], device=found[1])
+
+    def device(acc: Annotated[Account, Depends(account)]) -> str:
+        return acc.device
 
     Device = Annotated[str, Depends(device)]
+    guard = LoginGuard()
+
+    # ----- accounts (as Boni Calendar's server) -----
+    @app.post("/api/v1/login", response_model=LoginResult)
+    async def login(req: LoginRequest, request: Request) -> LoginResult:
+        name = req.user.strip()
+        address = request.client.host if request.client else "unknown"
+        if not guard.allow(name, address):
+            log.warning("login refused (too many attempts): %r from %s", name, address)
+            raise ApiError(429, "too_many", "Demasiados intentos: espera unos minutos")
+        device_name = req.device.strip()[:80] or "equipo"
+        # scrypt takes a moment: off the event loop
+        found = await asyncio.to_thread(svc.store.login, name, req.password, device_name)
+        if found is None:
+            guard.failed(name, address)
+            log.warning("login failed: %r from %s", name, address)
+            raise ApiError(401, "bad_login", "Usuario o contraseña incorrectos")
+        guard.succeeded(name)
+        log.info("login: %s on %s", found[1], device_name)
+        return LoginResult(token=found[0], user=found[1], device=device_name)
+
+    @app.post("/api/v1/logout", status_code=204)
+    async def logout(authorization: Annotated[str | None, Header()] = None) -> Response:
+        svc.store.logout(bearer(authorization))
+        return Response(status_code=204)
+
+    @app.get("/api/v1/me", response_model=Account)
+    async def me(acc: Annotated[Account, Depends(account)]) -> Account:
+        return acc
+
+    @app.get("/api/v1/events")
+    async def events(_d: Device) -> StreamingResponse:
+        return StreamingResponse(svc.events.stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     @app.get("/healthz", response_model=Health)
     async def healthz() -> Health:
@@ -160,7 +204,7 @@ def create_app(settings: Settings, service: Service | None = None, run_outbox: b
 
     @app.put("/api/v1/charts/order", response_model=ChartsResponse)
     async def chart_order(order: ChartOrder, _d: Device) -> ChartsResponse:
-        svc.store.order_charts(order.ids)
+        svc.order_charts(order.ids)
         return ChartsResponse(charts=svc.store.charts())
 
     @app.get("/api/v1/charts/{chart_id}", response_model=ChartSpec)

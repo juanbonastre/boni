@@ -1,6 +1,6 @@
 {
   "error": {
     "code": "unauthorized",
-    "message": "Token no valido"
+    "message": "La sesi\u00f3n ha terminado: vuelve a entrar"
   }
 }

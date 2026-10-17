@@ -1,0 +1,25 @@
+{
+  "description": "One event of `GET /api/v1/events` (server-sent events, `event: changed`): what to load again.",
+  "properties": {
+    "at": {
+      "format": "date-time",
+      "title": "At",
+      "type": "string"
+    },
+    "what": {
+      "enum": [
+        "charts",
+        "widgets",
+        "data"
+      ],
+      "title": "What",
+      "type": "string"
+    }
+  },
+  "required": [
+    "what",
+    "at"
+  ],
+  "title": "ChangeEvent",
+  "type": "object"
+}
