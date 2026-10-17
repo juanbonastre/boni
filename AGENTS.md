@@ -33,6 +33,11 @@ apps/android/    The same app on Android (Kotlin shell, `make`-less: CI builds i
                  fetched with `take`; web side `src/android.ts`): the vault through the Storage Access Framework
                  (`VaultSaf.kt`, folder chosen once; same rules as vault-fs.cjs, trash = the vault's `.trash`), index
                  in the app's files, downloads for external calendars. Signed releases (secrets) for Obtainium.
+apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeScript directly, no build. Reuses
+                 packages/core, the web's vault loader (`loadVault`) and the desktop's `vault-fs.cjs`, so it reads (and
+                 later writes) the vault with the apps' rules; the vault stays the truth. SQLite (`node:sqlite`) only for
+                 accounts (made by the admin, `src/cli.ts`), sessions (token hashes) and per-account data. API: snapshot,
+                 changes since a version, live stream (SSE); serves the web app. Dockerfile for the NAS.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status.
 ```

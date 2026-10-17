@@ -1,0 +1,24 @@
+{
+  "name": "boni-calendar-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Boni Calendar server: the vault on the NAS, accounts and live changes for every device",
+  "scripts": {
+    "start": "node src/main.ts",
+    "cli": "node src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@boni-calendar/core": "workspace:*",
+    "@boni-calendar/web": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "vitest": "5.0.4"
+  }
+}
