@@ -40,6 +40,9 @@ Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincron
 - Excepciones por ocurrencia mas finas (hoy "solo este" separa el evento de la serie, no la modifica dentro de ella).
 - Repeticiones mensuales "el segundo martes" y zonas horarias distintas por evento recurrente.
 - Revisar con Juan colores, densidad y atajos.
+- Futuro (idea de Juan, 2026-10-17): un indice con id propio por evento en el servidor, independiente del nombre del archivo,
+  para poder trabajar con varias fuentes de verdad (el vault, Boni avanzado replicando a Notion...). Hoy el id de una fila es
+  la ruta de su nota y las notas nunca se renombran.
 
 ## Fase 2 (en marcha)
 Plan aprobado: la verdad son notas del vault con propiedades; colecciones con esquema, vistas con mapeo de columnas y

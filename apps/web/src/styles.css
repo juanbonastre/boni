@@ -877,6 +877,23 @@ select,
 .ev:hover {
   background: color-mix(in srgb, var(--c) calc(var(--ev-mix) + 8%), var(--bg));
 }
+/* A new event without a title yet: only its range, lightly highlighted, while its detail is open. */
+.ev.draft,
+.bar.draft,
+.mchip.draft,
+.mchip.draft:hover,
+.mchip.draft.selected {
+  border-left-color: transparent;
+  background: color-mix(in srgb, var(--c) 22%, transparent);
+  box-shadow: none;
+}
+.ev.draft .ev-body,
+.bar.draft > .bar-title,
+.bar.draft > .rep,
+.mchip.draft > *,
+.mchip.draft::before {
+  visibility: hidden;
+}
 .ev.dragging {
   opacity: 0.92;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);

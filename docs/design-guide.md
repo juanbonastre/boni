@@ -85,6 +85,11 @@ slate `#94a3b8`.
   bottom edge to resize. Edges follow the pointer in both axes, so dragging into the next or previous day's column
   makes an event cross midnight. All-day events move and resize by whole days, in the all-day row and in the month.
   Dragging near the top or bottom edge auto-scrolls.
+- **A new event is a draft until it has a title** (like Notion Calendar): however it is made (drag, double click, menu,
+  the phone's button), the grid shows only its range, lightly tinted in its calendar's colour with no text, and its detail
+  opens on the title. It can be moved or resized with the detail still open. Closing the detail without a title (`Esc`, a
+  click elsewhere, the close button, another selection) drops it with no undo step; with a title it becomes an ordinary
+  event (and, with a vault or a server, its note). So untitled notes are never made, and notes are never renamed.
 - **Selection:** click selects one and opens its detail; `Shift`+click adds the range from the anchor in chronological
   order; `Ctrl+Shift`+click adds or removes one event. Dragging one selected event moves all of them. Click on empty space
   or `Esc` clears. While `Ctrl`/`Shift` is held the popover lets clicks through, except while typing in a field (`Shift`
