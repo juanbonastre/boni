@@ -30,6 +30,13 @@ const MIGRATIONS = [
      updated INTEGER NOT NULL,
      PRIMARY KEY (user_id, key)
    );`,
+  // Phase 5: where to tell a device that its reminders changed (UnifiedPush), one address per session.
+  `CREATE TABLE push (
+     token_hash TEXT PRIMARY KEY REFERENCES sessions(token_hash) ON DELETE CASCADE,
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     endpoint TEXT NOT NULL,
+     updated INTEGER NOT NULL
+   );`,
 ];
 
 /** Opens (and if needed creates or upgrades) the database at `path` (":memory:" for tests). */

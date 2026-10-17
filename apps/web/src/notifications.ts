@@ -31,27 +31,31 @@ export const NOTICE_HOURS = 48;
 
 /** "Today", "Tomorrow" or "Mon 20 Oct". */
 function dayWord(day: number, today: number, locale: "es" | "en"): string {
-  if (day === today) return t("notice.today");
-  if (day === today + 1) return t("notice.tomorrow");
+  if (day === today) return t("notice.today", undefined, locale);
+  if (day === today + 1) return t("notice.tomorrow", undefined, locale);
   const d = civilFromDays(day);
   const wd = weekdayNames(locale, "short")[weekday(day)] ?? "";
   return `${wd} ${d.d} ${monthNames(locale, "short")[d.m - 1] ?? ""}`;
 }
 
-/** The notices due from `now` on, for events (series already stored as masters, expanded here). */
+/**
+ * The notices due in the next `hours` (48 by default) from `now`, for events (series kept as masters are
+ * expanded here). Worded in `locale` (also on the server, which has no page language).
+ */
 export function noticesFor(
   events: readonly CalEvent[],
   defaultsOf: (calendarId: string) => ReminderDefaults | undefined,
-  opts: { now: number; tz: string; h24: boolean; locale: "es" | "en" },
+  opts: { now: number; tz: string; h24: boolean; locale: "es" | "en"; hours?: number },
 ): Notice[] {
   const { now, tz, h24, locale } = opts;
+  const hours = opts.hours ?? NOTICE_HOURS;
   const today = todayIn(tz, now);
-  const to = now + NOTICE_HOURS * 3_600_000;
+  const to = now + hours * 3_600_000;
   // Days whose events can remind inside the window (reminders up to a few days before).
   const expanded = expandAll(
     events.filter((e) => e.title.trim() !== ""),
     today - 1,
-    today + Math.ceil(NOTICE_HOURS / 24) + 30,
+    today + Math.ceil(hours / 24) + 30,
   );
   return upcomingAlerts(expanded, defaultsOf, now, to, tz).map((a) => {
     const ev = expanded.find((e) => e.id === a.eventId);
@@ -61,7 +65,7 @@ export function noticesFor(
       const s = toLocal(ev.when.start, tz);
       const e = toLocal(ev.when.end, tz);
       when += `, ${formatMinute(s.minute, h24)}–${formatMinute(e.minute, h24)}`;
-    } else when += `, ${t("notice.allDay")}`;
+    } else when += `, ${t("notice.allDay", undefined, locale)}`;
     return {
       id: a.id,
       eventId: a.eventId,

@@ -34,6 +34,8 @@ export function verifyPassword(password: string, stored: string): boolean {
 }
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+/** How a session token is stored (never the token itself). */
+export const tokenHash = sha;
 
 export function addUser(db: Db, name: string, password: string, vault: string): User {
   if (!/^[a-z0-9._-]{2,32}$/i.test(name))

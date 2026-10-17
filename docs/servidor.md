@@ -35,6 +35,8 @@ Todo en JSON bajo `/api`; salvo el inicio de sesion, con `Authorization: Bearer 
 | `PUT /api/account/externals` `{ externals }` | Guarda la lista de calendarios externos (cifrada) |
 | `GET /api/external?id=X[&fresh=1]` | Ese calendario externo, descargado por el servidor: `{ text, at }` |
 | `PUT /api/collections/reminders` `{ collectionId, reminders?, eventColumn? }` | Avisos de un calendario, escritos en su definicion (fase 5, con `BONI_WRITE`) |
+| `GET /api/reminders?tz=&hours=&locale=&h24=` | Los avisos de la cuenta de las proximas horas, ya redactados para el dispositivo (fase 5) |
+| `PUT /api/push` `{ endpoint }` / `DELETE /api/push` | Direccion UnifiedPush de este dispositivo (solo en los hosts de `BONI_PUSH_HOSTS`) |
 | Cualquier otra ruta | La app web (para abrir el calendario desde un navegador) |
 
 Una nota sin cambios conserva la misma fila, asi que el servidor sabe exactamente que cambio comparando filas. El vigilante del
@@ -101,5 +103,10 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
   propiedad `avisos` de su nota ("1h, 10m", "none"); la columna se anade a la definicion la primera vez.
 - Los calendarios externos guardan sus avisos en la cuenta (junto a su direccion).
 - Hecho: configuracion (Ajustes, Avisos; detalle del evento), notificaciones en la app de escritorio mientras esta abierta.
-- Pendiente: el servidor calcula los proximos avisos de la cuenta y avisa por UnifiedPush; la app de Android los programa
-  como alarmas del sistema.
+- El servidor calcula los avisos de la cuenta de los proximos dias (`GET /api/reminders`), redactados en la zona horaria e
+  idioma del dispositivo, incluidos los calendarios externos que avisan (los descarga el).
+- UnifiedPush: cada sesion de un dispositivo puede registrar la direccion que le dio su distribuidor (la app ntfy). Cuando
+  cambia el vault o la cuenta, el servidor publica ahi un mensaje corto ("reminders") y el dispositivo pide sus avisos otra
+  vez. Solo se aceptan direcciones de `BONI_PUSH_HOSTS` (el servidor ntfy); `BONI_PUSH_TOKEN` es el token de una cuenta de
+  ntfy con permiso de escritura en los temas `up*`. Si el distribuidor responde 404 o 410, la direccion se olvida.
+- Pendiente: la app de Android programa los avisos como alarmas del sistema y recibe UnifiedPush.
