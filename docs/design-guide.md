@@ -161,8 +161,18 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 - **Desktop widgets** (Boni): a chart card alone in a small transparent window that sits on the desktop, below every
   window (on X11 a "dock" window kept below by the window manager; it survives "show desktop"). It keeps the card look
   (`--surface`, 10 px radius, `--line-strong` border) and is fully interactive: hover for values, click for a detail;
-  dragging anywhere moves it, the bottom-right corner resizes it, right click opens its menu (open the app, change charts
-  and widgets, refresh, hide here, remove).
+  dragging anywhere moves it, the bottom-right corner resizes it; on hover it shows its period and its menu (the chart
+  controls below, compact), and right click opens the same menu (open or edit in the app, refresh, hide here, remove).
+- **Boni's main window** is laid out as this app: the sidebar (home; the charts, each with a colour from the calendar
+  palette, eye = on the home screen, a properties button, drag to reorder; this computer's widgets with an eye; settings
+  and the user at the bottom), the main area and the right side panel. The home screen's chart cards fill the main area
+  (rows share its height; no empty band), and capturing or editing a chart happens in the side panel with the cards in
+  view (the card being edited shows the preview and an accent ring).
+- **Chart controls** (Boni; like a Notion view's): when the pointer is over a chart card, a small bar of controls appears
+  in its header before the total: period (a menu of usual periods), filters (a box, saved when it closes), order and
+  "only the N largest", kind, colour (the calendar palette) and "…" (edit, duplicate, on home, on the desktop, delete).
+  28 px controls, Lucide icons, `--surface` bar with a `--line-strong` border, 8 px radius; the period's label is cut
+  before anything else. Each change applies at once with Undo in the toast; deleting waits for that Undo.
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
   menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a
