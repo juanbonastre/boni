@@ -93,7 +93,8 @@ slate `#94a3b8`.
   "2 days before at 09:00"); by default no calendar reminds. They are chosen in Settings → Reminders (one block per
   calendar, also external ones), reached too from a calendar's menu ("Reminders…"). An event's detail has a Reminders row:
   "As the calendar (…)", "No reminders", or its own list. The desktop app shows them as system notifications while it runs
-  (a click brings the window up on that event); the Android app as notifications even when closed (exact alarms; a tap
+  (a click brings the window up on that event; with Settings → Desktop → "Keep running in the background", on by
+  default, closing the window leaves it in the system tray, and "Open at login" starts it there); the Android app as notifications even when closed (exact alarms; a tap
   opens the calendar on that event; it asks for the notification permission the first time there is something to remind).
 - **A new event is a draft until it has a title** (like Notion Calendar): however it is made (drag, double click, menu,
   the phone's button), the grid shows only its range, lightly tinted in its calendar's colour with no text, and its detail

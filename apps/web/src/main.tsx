@@ -25,6 +25,7 @@ async function boot() {
     boniVault?: VaultBridge;
     boniNet?: Pick<Host, "fetchText">;
     boniNotify?: Host["notify"];
+    boniDesktop?: Host["desktop"];
     boniAndroid?: AndroidNative;
   };
   await mountApp(
@@ -45,6 +46,8 @@ async function boot() {
           fetchText: w.boniNet?.fetchText,
           // ...and shows reminders as system notifications while it runs.
           ...(w.boniNotify ? { notify: w.boniNotify } : {}),
+          // ...and can keep running in the tray and start with the session.
+          ...(w.boniDesktop ? { desktop: w.boniDesktop } : {}),
         },
   );
   const { useApp } = await import("./store.ts");

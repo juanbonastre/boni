@@ -123,6 +123,13 @@ async function vaultSettings(page: Page, locale: "es" | "en"): Promise<string[]>
       scan: async () => ok([]),
       read: async () => ({ ok: false, code: "not-found", message: "x" }),
     };
+    // The desktop app's own section (keep running in the tray, open at login).
+    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge
+    (window as any).boniDesktop = {
+      getPrefs: async () => ({ background: true, autostart: false }),
+      setPrefs: async () => ({ ok: true, value: { background: true, autostart: false } }),
+      setLabels: () => {},
+    };
   });
   await page.addInitScript(
     ({ locale }) =>

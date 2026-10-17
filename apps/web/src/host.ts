@@ -11,6 +11,11 @@ export interface ServerSync {
   h24: boolean;
 }
 
+export interface DesktopPrefs {
+  background: boolean;
+  autostart: boolean;
+}
+
 /** Small per-device key-value storage for settings and UI state. */
 export interface HostStorage {
   get(key: string): string | null;
@@ -62,6 +67,17 @@ export interface Host {
      * host gets no lists from the page.
      */
     server?(cfg: ServerSync | null): void;
+  };
+  /**
+   * The desktop app only: keep running in the system tray when the window closes, and start with the
+   * session (hidden), so its reminders always arrive. `setLabels` gives the tray menu the app's words.
+   */
+  desktop?: {
+    getPrefs(): Promise<DesktopPrefs>;
+    setPrefs(
+      patch: Partial<DesktopPrefs>,
+    ): Promise<{ ok: true; value: DesktopPrefs } | { ok: false; message: string }>;
+    setLabels(labels: { open: string; quit: string }): void;
   };
 }
 

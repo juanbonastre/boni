@@ -10,14 +10,17 @@ const {
   ipcMain,
   Menu,
   Notification,
+  nativeImage,
   net,
   screen,
   shell,
+  Tray,
 } = require("electron");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
 const { openVault, VaultError } = require("./vault-fs.cjs");
+const { autostartDir, loadPrefs, savePrefs, setAutostart } = require("./desktop-prefs.cjs");
 
 const PACKAGED_UI = path.join(__dirname, "web", "index.html");
 const DEV_UI = path.join(__dirname, "..", "web", "dist", "index.html");
@@ -43,7 +46,79 @@ function saveState(win) {
   }
 }
 
-function createWindow() {
+// ---- running in the background (Settings → Desktop): the tray, closing hides, starting with the session ----
+const prefsFile = () => path.join(app.getPath("userData"), "desktop.json");
+let prefs = { background: true, autostart: false };
+let tray = null;
+let quitting = false;
+let trayLabels = { open: "Abrir Boni Calendar", quit: "Salir" };
+
+function showWindow() {
+  const [win] = BrowserWindow.getAllWindows();
+  if (!win) return createWindow(false);
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function updateTray() {
+  if (!prefs.background) {
+    tray?.destroy();
+    tray = null;
+    return;
+  }
+  if (!tray) {
+    const icon = nativeImage.createFromPath(path.join(__dirname, "icon.png")).resize({ width: 22 });
+    tray = new Tray(icon);
+    tray.setToolTip("Boni Calendar");
+    tray.on("click", showWindow);
+  }
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: trayLabels.open, click: showWindow },
+      { type: "separator" },
+      {
+        label: trayLabels.quit,
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+}
+
+/** The program a session starts: the AppImage when it runs as one, otherwise the installed app. */
+const execPath = () => process.env.APPIMAGE || process.execPath;
+
+function applyPrefs(next) {
+  prefs = next;
+  savePrefs(prefsFile(), prefs);
+  setAutostart(autostartDir(), prefs.autostart, execPath());
+  updateTray();
+}
+
+ipcMain.handle("desktop:get-prefs", () => prefs);
+ipcMain.handle("desktop:set-prefs", (_e, patch) => {
+  const next = { ...prefs };
+  if (typeof patch?.background === "boolean") next.background = patch.background;
+  if (typeof patch?.autostart === "boolean") next.autostart = patch.autostart;
+  try {
+    applyPrefs(next);
+    return { ok: true, value: prefs };
+  } catch (e) {
+    return { ok: false, code: "prefs", message: String(e.message ?? e) };
+  }
+});
+// The tray's menu speaks the app's language (the page tells it).
+ipcMain.on("desktop:labels", (_e, labels) => {
+  if (typeof labels?.open === "string" && typeof labels?.quit === "string") {
+    trayLabels = { open: labels.open, quit: labels.quit };
+    updateTray();
+  }
+});
+
+function createWindow(hidden = false) {
   const bench = Boolean(process.env.BONI_BENCH_OUT || process.env.BONI_SCREENSHOT);
   const saved = bench ? {} : loadState();
   const area = screen.getPrimaryDisplay().workAreaSize;
@@ -55,6 +130,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "Boni Calendar",
+    show: !hidden,
     icon: path.join(__dirname, "icon.png"),
     backgroundColor: "#16171a",
     autoHideMenuBar: true,
@@ -77,7 +153,14 @@ function createWindow() {
     });
   }
   if (!bench) {
-    win.on("close", () => saveState(win));
+    win.on("close", (e) => {
+      saveState(win);
+      // In the background the window only hides: the calendar keeps running for its reminders.
+      if (prefs.background && !quitting) {
+        e.preventDefault();
+        win.hide();
+      }
+    });
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   }
 }
@@ -247,18 +330,24 @@ if (
 ) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    const [win] = BrowserWindow.getAllWindows();
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
-    }
+  // Opening the app again (the menu, the dock) shows the one that runs, also from the tray.
+  app.on("second-instance", showWindow);
+  app.on("before-quit", () => {
+    quitting = true;
   });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
     restoreVault();
-    createWindow();
+    const bench = Boolean(process.env.BONI_BENCH_OUT || process.env.BONI_SCREENSHOT);
+    if (!bench) {
+      prefs = loadPrefs(prefsFile());
+      updateTray();
+    }
+    // Started with the session: in the tray, the window comes when asked for.
+    createWindow(!bench && process.argv.includes("--hidden") && prefs.background);
     app.on("activate", () => BrowserWindow.getAllWindows().length === 0 && createWindow());
   });
-  app.on("window-all-closed", () => app.quit());
+  app.on("window-all-closed", () => {
+    if (!prefs.background || quitting) app.quit();
+  });
 }

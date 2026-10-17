@@ -356,6 +356,15 @@ function useNotifications() {
   }, []);
 }
 
+/** The desktop app's tray menu speaks the app's language. */
+function useTrayLabels() {
+  const locale = useApp((s) => s.settings.locale);
+  useEffect(() => {
+    void locale;
+    getHost().desktop?.setLabels({ open: t("desktop.trayOpen"), quit: t("desktop.trayQuit") });
+  }, [locale]);
+}
+
 /** External calendars: read when the app starts and again every half hour. */
 function useExternalRefresh() {
   useEffect(() => {
@@ -370,6 +379,7 @@ export function App() {
   useCompact();
   useExternalRefresh();
   useNotifications();
+  useTrayLabels();
   useShortcuts();
   useClickAway();
   useModifierClass();

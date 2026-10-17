@@ -15,6 +15,13 @@ contextBridge.exposeInMainWorld("boniNotify", {
   onOpen: (cb) => ipcRenderer.on("notify:open", (_e, eventId) => cb(String(eventId))),
 });
 
+// Running in the background (Settings → Desktop): keep running in the tray, start with the session.
+contextBridge.exposeInMainWorld("boniDesktop", {
+  getPrefs: () => ipcRenderer.invoke("desktop:get-prefs"),
+  setPrefs: (patch) => ipcRenderer.invoke("desktop:set-prefs", patch),
+  setLabels: (labels) => ipcRenderer.send("desktop:labels", labels),
+});
+
 // Notes of the user's vault. Every call resolves to { ok: true, value } or { ok: false, code, message }.
 contextBridge.exposeInMainWorld("boniVault", {
   getRoot: () => ipcRenderer.invoke("vault:get-root"),

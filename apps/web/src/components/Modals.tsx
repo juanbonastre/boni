@@ -22,6 +22,7 @@ import { getHost, onKeys } from "../host.ts";
 import { type Key, t } from "../i18n.ts";
 import { useApp } from "../store.ts";
 import { vaultBridge } from "../vaultBridge.ts";
+import { DesktopSettings } from "./DesktopSettings.tsx";
 import { ExternalSettings } from "./ExternalSettings.tsx";
 import { ChoicePicker, DraftInput } from "./fields.tsx";
 import { RemindersSettings } from "./Reminders.tsx";
@@ -362,6 +363,7 @@ export function SettingsModal() {
       <DataSettings />
       <ExternalSettings />
       <RemindersSettings />
+      <DesktopSettings />
       {source === "sample" && (
         <>
           <h3>{t("settings.general")}</h3>
