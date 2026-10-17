@@ -110,7 +110,8 @@ docs/            decisions and status.
   size changed, an unchanged note keeps the very same row object, and a watcher (`vault-fs.cjs`, plus window focus)
   triggers a cheap re-scan. Anything that compares definitions must keep object identity when they did not change. Never put real titles, paths or note contents in the repo (tests use invented notes).
   **Writing** (opt-in, `settings.vaultWrite`): `vault/provider.ts` turns row changes into note changes: only differing
-  properties are patched (`patchNote`), a new row becomes a note once it has a title (name from `newNote.name`, counter on the
+  properties are patched (`patchNote`), a new row becomes a note once it has a title (until then the UI shows it as a
+  draft, `newEventId`: a tinted range only, dropped by `discardDraft` when its detail closes untitled) (name from `newNote.name`, counter on the
   file name only), a row that changes collection moves its file (and its `Area:` line), a removed row goes to the system
   trash (text kept in memory so Undo can restore it), existing notes are never renamed, and a note whose mtime changed since
   it was read is never overwritten (`VaultWriteError` conflict -> toast and reload). Reads and writes share one lock

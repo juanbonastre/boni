@@ -41,6 +41,7 @@ export function MonthView() {
   const first = settings.firstDay;
   const today = useApp.getState().today();
   const selectedIds = useApp((s) => s.selectedIds);
+  const newId = useApp((s) => s.newEventId);
 
   const pointer = useMonthPointer();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -224,6 +225,7 @@ export function MonthView() {
               index={index}
               calMap={calMap}
               selectedIds={selectedIds}
+              newId={newId}
               h24={settings.h24}
               locale={settings.locale}
             />
@@ -243,6 +245,8 @@ const WeekRow = memo(function WeekRow(p: {
   index: DayIndex;
   calMap: Map<string, { color: string }>;
   selectedIds: string[];
+  /** The event just created: without a title it shows only as a highlighted range. */
+  newId: string | null;
   h24: boolean;
   locale: "es" | "en";
 }) {
@@ -303,7 +307,7 @@ const WeekRow = memo(function WeekRow(p: {
                   type="button"
                   key={`${seg.eventId}:${day}`}
                   data-id={ev.id}
-                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.done ? "done" : ""}`}
+                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.id === p.newId && !ev.title ? "draft" : ""} ${ev.done ? "done" : ""}`}
                   style={{ "--c": p.calMap.get(ev.calendarId)?.color ?? "#888" } as CSSProperties}
                 >
                   <span className="mchip-time">{formatMinute(seg.start, p.h24)}</span>
@@ -336,7 +340,7 @@ const WeekRow = memo(function WeekRow(p: {
             type="button"
             key={b.id}
             data-id={b.id}
-            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""}`}
+            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.id === p.newId && !ev.title ? "draft" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""}`}
             style={
               {
                 "--c": p.calMap.get(ev.calendarId)?.color ?? "#888",

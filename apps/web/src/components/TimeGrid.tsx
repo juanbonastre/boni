@@ -262,6 +262,7 @@ export function TimeGrid() {
   const nowLocal = toLocal(now, tz);
   const selectedIds = useApp((s) => s.selectedIds);
   const dragId = useApp((s) => s.drag?.id ?? null);
+  const newId = useApp((s) => s.newEventId);
   const showNow = useVisibleHasToday(today);
 
   const allDay = useMemo(() => {
@@ -363,7 +364,7 @@ export function TimeGrid() {
                   type="button"
                   key={s.id}
                   data-id={s.id}
-                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""}`}
+                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.id === newId && !ev.title ? "draft" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""}`}
                   style={
                     {
                       "--c": cal?.color ?? "#888",
@@ -426,6 +427,7 @@ export function TimeGrid() {
                 nowMinute={nowLocal.minute}
                 selectedIds={selectedIds}
                 dragId={dragId}
+                newId={newId}
                 h24={settings.h24}
                 weekend={isWeekend(d)}
               />
@@ -530,6 +532,8 @@ interface DayColumnProps {
   nowMinute: number;
   selectedIds: string[];
   dragId: string | null;
+  /** The event just created: without a title it shows only as a highlighted range. */
+  newId: string | null;
   h24: boolean;
   weekend: boolean;
 }
@@ -567,6 +571,7 @@ const DayColumn = memo(function DayColumn(p: DayColumnProps) {
             color={p.calMap.get(ev.calendarId)?.color ?? "#888"}
             selected={p.selectedIds.includes(ev.id)}
             dragging={p.dragId === ev.id}
+            draft={p.newId === ev.id && !ev.title}
             h24={p.h24}
           />
         );
@@ -592,6 +597,7 @@ const EventBlock = memo(function EventBlock(p: {
   color: string;
   selected: boolean;
   dragging: boolean;
+  draft: boolean;
   h24: boolean;
 }) {
   const { ev, seg } = p;
@@ -605,7 +611,7 @@ const EventBlock = memo(function EventBlock(p: {
   } as CSSProperties;
   return (
     <div
-      className={`ev ${p.selected ? "selected" : ""} ${p.dragging ? "dragging" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${seg.continuesBefore ? "cut-top" : ""} ${seg.continuesAfter ? "cut-bottom" : ""}`}
+      className={`ev ${p.selected ? "selected" : ""} ${p.dragging ? "dragging" : ""} ${p.draft ? "draft" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${seg.continuesBefore ? "cut-top" : ""} ${seg.continuesAfter ? "cut-bottom" : ""}`}
       data-id={ev.id}
       style={style}
     >

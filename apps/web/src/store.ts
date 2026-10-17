@@ -261,6 +261,10 @@ export interface AppState {
   paletteOpen: boolean;
   helpOpen: boolean;
   schemaCalendarId: string | null;
+  /**
+   * The event just created. While it has no title it is a draft: the grid shows only its range, highlighted,
+   * and it is dropped (with its undo history) when its detail closes without a title.
+   */
   newEventId: string | null;
   ctxMenu: { x: number; y: number; target: CtxTarget } | null;
   /** Days around the view that recurring events are expanded for. */
@@ -302,6 +306,8 @@ export interface AppState {
   selectAllVisible: () => void;
   setDetailMode: (m: "popover" | "panel") => void;
   addEvent: (e: Partial<CalEvent> & { when: When }) => string;
+  /** Drops a new event that never got a title, as if it had not been made. */
+  discardDraft: (id: string) => void;
   setWindow: (from: CivilDay, to: CivilDay) => void;
   /** Visible-window events with recurring series expanded into occurrences. */
   expanded: () => CalEvent[];
@@ -468,6 +474,8 @@ export function expandedCache(
 }
 
 let toastSeq = 0;
+/** Length of the undo history when the current new event was made (a discarded draft goes back to it). */
+let draftMark = 0;
 
 /** The live connection to the server (one per app). `snap` holds the server's rows as it sent them. */
 const server: {
@@ -998,7 +1006,8 @@ export const useApp = create<AppState>((set, get) => {
         selectedId: id,
         selectedIds: id ? [id] : [],
         anchorId: id,
-        popoverId: popover ? id : null,
+        // Moving or resizing a new event keeps its detail open (closing it would drop the draft).
+        popoverId: popover || (id !== null && id === get().newEventId) ? id : null,
       }),
 
     clearSelection: () =>
@@ -1064,9 +1073,25 @@ export const useApp = create<AppState>((set, get) => {
         created: now,
         updated: now,
       };
+      draftMark = s.past.length;
       commit([...s.data.events, ev]);
-      set({ selectedId: id, selectedIds: [id], anchorId: id, newEventId: id });
+      set({ selectedId: id, selectedIds: [id], anchorId: id, popoverId: id, newEventId: id });
       return id;
+    },
+
+    discardDraft: (id) => {
+      const s = get();
+      const ev = s.data.events.find((e) => e.id === id);
+      if (!ev || ev.title) return;
+      setRows(
+        s.rows.filter((r) => r.id !== id),
+        false,
+      );
+      set({
+        past: s.past.slice(0, Math.min(draftMark, s.past.length)),
+        future: [],
+        ...(s.newEventId === id ? { newEventId: null } : {}),
+      });
     },
 
     // The window only moves when a view gets near its edge, and then by a wide margin, so scrolling
@@ -1589,6 +1614,20 @@ export const useApp = create<AppState>((set, get) => {
 
     set: (patch) => set(patch),
   };
+});
+
+/**
+ * A new event without a title goes away when its detail closes (Escape, a click elsewhere, the close button,
+ * another selection) or when its title is left empty: it never was more than a highlighted range.
+ */
+useApp.subscribe((s, prev) => {
+  const id = prev.newEventId;
+  if (!id) return;
+  const open = (st: AppState) =>
+    st.popoverId === id || (st.detailMode === "panel" && st.selectedId === id);
+  if (s.newEventId === id && (open(s) || !open(prev))) return;
+  const ev = s.data.events.find((e) => e.id === id);
+  if (ev && !ev.title) s.discardDraft(id);
 });
 
 /** Coarse "what is on screen" published by the grid (rounded to whole days). */

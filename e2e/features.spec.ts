@@ -93,6 +93,55 @@ test("double click creates an event and resize changes the end", async ({ page }
   expect(after && after.height).toBeGreaterThan(before.height + 40);
 });
 
+test("a new event is only a highlighted range until it has a title; closing it untitled drops it", async ({
+  page,
+}) => {
+  await open(page);
+  const count = () => page.locator(".ev").count();
+  const before = await count();
+  const cols = await page.locator(".cols-viewport").boundingBox();
+  if (!cols) throw new Error("no grid");
+  const x = cols.x + (cols.width / 7) * 5.5;
+  // Dragged out: the range shows, without title or time, and the detail opens on its title.
+  await page.mouse.move(x, cols.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(x, cols.y + 280, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  const draft = page.locator(".ev.draft");
+  await expect(draft).toHaveCount(1);
+  await expect(draft.locator(".ev-body")).toBeHidden();
+  await page.screenshot({ path: "e2e/screenshots/new-event-draft.png" });
+
+  // Moved while still untitled: it stays a draft with its detail open.
+  const box = await draft.boundingBox();
+  if (!box) throw new Error("no draft");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 60, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".ev.draft")).toHaveCount(1);
+  await expect(page.locator(".popover")).toBeVisible();
+
+  // Closed without a title: gone, and nothing to undo.
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".ev.draft")).toHaveCount(0);
+  expect(await count()).toBe(before);
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(200);
+  expect(await count()).toBe(before);
+
+  // With a title it is an ordinary event.
+  await page.mouse.dblclick(x, cols.y + 200);
+  await expect(page.locator(".ev.draft")).toHaveCount(1);
+  await page.keyboard.type("Con título");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".ev.draft")).toHaveCount(0);
+  await expect(page.locator(".ev", { hasText: "Con título" })).toHaveCount(1);
+  await page.locator(".sidebar-top").click();
+  await expect(page.locator(".ev", { hasText: "Con título" })).toHaveCount(1);
+});
+
 test("popover closes when clicking elsewhere and delete offers undo", async ({ page }) => {
   await open(page);
   await page.locator(".ev", { hasText: "Dentista" }).first().click();
