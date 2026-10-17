@@ -66,7 +66,8 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
 - El cliente (`apps/web/src/serverWriter.ts`) aplica el cambio en pantalla al momento y lo guarda en una cola del
   dispositivo (IndexedDB); la envia en orden, en una sola peticion, ahora o al volver la conexion (tambien tras cerrar y
   abrir la app). Lo pendiente se sigue viendo encima de lo que manda el servidor hasta que llega su version. Un evento
-  nuevo se conoce por un id temporal hasta que el servidor dice la ruta de su nota (`aliases`).
+  nuevo se conoce por un id temporal hasta que el servidor dice la ruta de su nota (`aliases`); mientras no tiene titulo
+  no es nota, asi que vive solo en el dispositivo (no desaparece al responder el servidor).
 - Si el servidor rechaza un lote (conflicto u otro error), la app lo dice ("La nota cambio fuera de la app...") y recarga
   la foto del servidor; ese cambio se pierde.
 - Cerrar sesion intenta enviar lo pendiente; si no hay conexion, queda en el dispositivo para la proxima vez.

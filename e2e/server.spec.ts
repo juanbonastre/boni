@@ -209,6 +209,12 @@ test("edits go to the notes through the server: only the edited line, new events
   await page.mouse.down();
   await page.mouse.move(x, cols.y + 560, { steps: 6 });
   await page.mouse.up();
+  // Still without a title it is no note yet: it stays on this device (not lost when the server answers).
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  await page.waitForTimeout(1500);
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  await page.locator(".popover .title-input").pressSequentially("Tutoría", { delay: 80 });
+  await page.waitForTimeout(800);
   await page.locator(".popover .title-input").fill("Tutoría inventada");
   await page.locator(".popover .title-input").press("Enter");
   const made = "agenda/docencia/2025-09-18 Tutoría inventada.md";

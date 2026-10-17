@@ -51,6 +51,13 @@ export class ServerWriter implements CollectionProvider {
   outbox: Outbox[];
   /** Sent and taken, but the server's stream has not brought that version yet: still shown on top. */
   private taken: { version: number; changes: RowChange[] }[] = [];
+  /**
+   * New rows the server took but made no note of (no title yet): they live only on this device until
+   * a later change gives them one (then the server says their path) or removes them.
+   */
+  private drafts = new Map<string, Row>();
+  /** Ids of the server's rows in the last `over` (to tell a draft from an edit). */
+  private serverIds = new Set<string>();
   private sending: Promise<void> | null = null;
   private readonly hooks: WriterHooks;
 
@@ -73,7 +80,10 @@ export class ServerWriter implements CollectionProvider {
   /** The server's rows (at `version`) with what this device changed and that version lacks on top. */
   over(rows: readonly Row[], version: number): Row[] {
     this.taken = this.taken.filter((t) => t.version > version);
+    this.serverIds = new Set(rows.map((r) => r.id));
+    for (const id of this.drafts.keys()) if (this.serverIds.has(id)) this.drafts.delete(id);
     const mine = [
+      ...[...this.drafts.values()].map((row): RowChange => ({ op: "upsert", row })),
       ...this.taken.flatMap((t) => t.changes),
       ...this.outbox.flatMap((b) => b.changes),
     ];
@@ -100,6 +110,12 @@ export class ServerWriter implements CollectionProvider {
         const r = await remote.apply(first.base, changes);
         for (const [id, path] of Object.entries(r.aliases)) aliases.set(id, path);
         this.taken.push({ version: r.version, changes });
+        for (const c of changes) {
+          if (c.op === "remove") this.drafts.delete(c.id);
+          else if (aliases.has(c.row.id) || this.serverIds.has(c.row.id))
+            this.drafts.delete(c.row.id);
+          else this.drafts.set(c.row.id, c.row);
+        }
       } catch (e) {
         // No connection or no session: kept for when there is one again.
         if (e instanceof RemoteError && (e.kind === "network" || e.kind === "unauthorized")) return;
