@@ -112,6 +112,27 @@ describe("ServerWriter", () => {
     expect(w.over(server8, 8)).toBe(server8);
   });
 
+  it("keeps a new row without a note (no title yet) on the device until it gets one", async () => {
+    const { remote } = fakeServer((_, changes) => ({
+      version: 7, // nothing changed on the server
+      aliases: changes.some((c) => c.op === "upsert" && c.row.values.title)
+        ? { "ev-2": "c.md" }
+        : {},
+    }));
+    const { w } = writer(remote);
+    const server = [row("a.md", "Uno")];
+    w.over(server, 7);
+    await w.apply([up({ ...row("ev-2", ""), values: { title: "" } })]);
+    await w.flush();
+    expect(w.over(server, 7).map((r) => r.id)).toEqual(["a.md", "ev-2"]);
+    expect(w.over(server, 9).map((r) => r.id)).toEqual(["a.md", "ev-2"]); // also after newer versions
+
+    await w.apply([up(row("ev-2", "Ya tiene título"))]);
+    await w.flush();
+    const withNote = [row("a.md", "Uno"), row("c.md", "Ya tiene título")];
+    expect(w.over(withNote, 10)).toBe(withNote); // the note's row replaces the draft, never both
+  });
+
   it("drops a batch the server refuses and says why", async () => {
     const { remote } = fakeServer(() => new RemoteError("conflict", "a.md"));
     const { w, rejected } = writer(remote);
