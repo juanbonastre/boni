@@ -1,5 +1,13 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,11 +23,14 @@ const PASSWORD = "una contraseña larga de ejemplo";
 test.describe.configure({ mode: "serial" });
 
 const note = (title: string, date: string, start: string) =>
-  `---\ntitle: "${title}"\ndate: "${date}"\nstartTime: "${start}"\nendTime: "${start.replace(/^(\d\d)/, (h) => String(Number(h) + 1).padStart(2, "0"))}"\ncompleted:\n---\nArea: [[docencia]]\n`;
+  `---\ntitle: "${title}"\ndate: "${date}"\nstartTime: "${start}"\nendTime: "${start.replace(/^(\d\d)/, (h) => String(Number(h) + 1).padStart(2, "0"))}"\ntimezone: "Europe/Madrid"\ncompleted:\n---\nArea: [[docencia]]\n`;
 
 let dir: string;
 let proc: ChildProcess | null = null;
 let url: string;
+
+const read = (rel: string) =>
+  existsSync(join(dir, "vault", rel)) ? readFileSync(join(dir, "vault", rel), "utf8") : null;
 
 function write(rel: string, text: string) {
   mkdirSync(dirname(join(dir, "vault", rel)), { recursive: true });
@@ -43,7 +54,12 @@ async function startServer() {
     process.execPath,
     ["--disable-warning=ExperimentalWarning", "apps/server/src/main.ts"],
     {
-      env: { ...process.env, BONI_DB: join(dir, "db.sqlite"), BONI_PORT: String(port) },
+      env: {
+        ...process.env,
+        BONI_DB: join(dir, "db.sqlite"),
+        BONI_PORT: String(port),
+        BONI_WRITE: "1",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -166,4 +182,77 @@ test("with a vault folder, the device chooses between the folder and a server", 
   await expect(page.locator(".modal")).toContainText("Carpeta del vault");
   await origin.getByRole("radio", { name: "Servidor" }).click();
   await expect(page.locator(".modal .server-form")).toBeVisible();
+});
+
+test("edits go to the notes through the server: only the edited line, new events, deletions", async ({
+  page,
+}) => {
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await connect(page);
+  await expect(page.locator(".modal")).toContainText("En directo");
+  await page.keyboard.press("Escape");
+  const path = "agenda/docencia/2025-09-17 Clase del servidor.md";
+  const before = read(path) as string;
+  await page.locator(".ev", { hasText: "Clase del servidor" }).click();
+  await page.locator(".popover .title-input").fill("Clase renombrada");
+  await page.locator(".popover .title-input").press("Enter");
+  await expect.poll(() => read(path)).toContain('title: "Clase renombrada"');
+  const changed = (read(path) as string).split("\n").filter((l, i) => l !== before.split("\n")[i]);
+  expect(changed).toEqual(['title: "Clase renombrada"']);
+  await page.keyboard.press("Escape");
+
+  // A new event becomes a note once it has a title; the server's copy replaces the device's one.
+  const cols = await page.locator(".cols-viewport").boundingBox();
+  if (!cols) throw new Error("no grid");
+  const x = cols.x + (cols.width / 7) * 3.5; // Thursday 18
+  await page.mouse.move(x, cols.y + 500);
+  await page.mouse.down();
+  await page.mouse.move(x, cols.y + 560, { steps: 6 });
+  await page.mouse.up();
+  await page.locator(".popover .title-input").fill("Tutoría inventada");
+  await page.locator(".popover .title-input").press("Enter");
+  const made = "agenda/docencia/2025-09-18 Tutoría inventada.md";
+  await expect.poll(() => read(made)).toContain('title: "Tutoría inventada"');
+  expect(read(made)).toContain("Area: [[docencia]]");
+  await page.waitForTimeout(1000);
+  await expect(page.locator(".ev", { hasText: "Tutoría inventada" })).toHaveCount(1);
+  await expect(page.locator(".popover .title-input")).toHaveValue("Tutoría inventada");
+
+  await page.keyboard.press("Escape");
+  await page.locator(".ev", { hasText: "Tutoría inventada" }).click();
+  await page.keyboard.press("Escape");
+  await page.locator(".ev", { hasText: "Tutoría inventada" }).click();
+  await page.keyboard.press("Delete");
+  await expect.poll(() => read(made)).toBeNull();
+  expect(readdirSync(join(dir, "vault", ".trash"))).toContain("2025-09-18 Tutoría inventada.md");
+  await expect(page.locator(".ev", { hasText: "Tutoría inventada" })).toHaveCount(0);
+});
+
+test("without a connection, edits wait on the device (also over a restart) and go when it is back", async ({
+  page,
+}) => {
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await connect(page);
+  await expect(page.locator(".modal")).toContainText("En directo");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(2500); // the copy is saved a moment after the last change
+
+  stopServer();
+  const path = "agenda/docencia/2025-09-18 Llegada en vivo.md";
+  await page.locator(".ev", { hasText: "Llegada en vivo" }).click();
+  await page.locator(".popover .title-input").fill("Cambiada sin conexión");
+  await page.locator(".popover .title-input").press("Enter");
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(500);
+  expect(read(path)).toContain('title: "Llegada en vivo"');
+
+  // Closed and opened again without a connection: the change is still there.
+  await page.reload();
+  await expect(page.locator(".ev", { hasText: "Cambiada sin conexión" })).toHaveCount(1);
+
+  await startServer();
+  await expect
+    .poll(() => read(path), { timeout: 15_000 })
+    .toContain('title: "Cambiada sin conexión"');
+  await expect(page.locator(".ev", { hasText: "Cambiada sin conexión" })).toHaveCount(1);
 });

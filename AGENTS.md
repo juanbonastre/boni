@@ -34,13 +34,18 @@ apps/android/    The same app on Android (Kotlin shell, `make`-less: CI builds i
                  (`VaultSaf.kt`, folder chosen once; same rules as vault-fs.cjs, trash = the vault's `.trash`), index
                  in the app's files, downloads for external calendars. Signed releases (secrets) for Obtainium.
 apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeScript directly, no build. Reuses
-                 packages/core, the web's vault loader (`loadVault`) and the desktop's `vault-fs.cjs`, so it reads (and
-                 later writes) the vault with the apps' rules; the vault stays the truth. SQLite (`node:sqlite`) only for
+                 packages/core, the web's vault loader (`loadVault`), writer (`vault/provider.ts`) and the desktop's
+                 `vault-fs.cjs`, so it reads and writes the vault with the apps' rules; the vault stays the truth.
+                 Node only strips types there: no parameter properties or enums in any file the server imports
+                 (`write.test.ts` loads the server the way its container does). SQLite (`node:sqlite`) only for
                  accounts (made by the admin, `src/cli.ts`), sessions (token hashes) and per-account data. API: snapshot,
-                 changes since a version, live stream (SSE); serves the web app; CORS open (bearer tokens, no cookies).
+                 changes since a version, live stream (SSE), `POST /api/apply` (only with `BONI_WRITE=1`; per-row
+                 version check, a session's own writes are not conflicts); serves the web app; CORS open.
                  Client side: `apps/web/src/remote.ts` (login, snapshot, changes, live stream with reconnection, last
                  snapshot in IndexedDB) and the store's `source: "server"` (`connectServer`, `loadServer`), which applies
-                 server data through the same path as a vault read (`applyLoad`). Dockerfile for the NAS.
+                 server data through the same path as a vault read (`applyLoad`). Writes: `serverWriter.ts` is the store's
+                 provider there (optimistic, outbox in IndexedDB sent in order, pending changes shown over the server's
+                 rows until its stream brings that version, temporary ids mapped through `aliases`). Dockerfile for the NAS.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status.
 ```

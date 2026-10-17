@@ -12,8 +12,8 @@ Servidor propio para que todos los dispositivos usen el mismo calendario, como N
 
 ## Fases
 1. Servidor de solo lectura: cuentas, foto del calendario, cambios por version y en vivo, app web servida (hecho).
-2. Clientes en modo servidor (Ajustes, Datos), con copia sin conexion (hecho: solo lectura hasta la fase 3).
-3. Escritura a traves del servidor (cola de cambios, conflictos).
+2. Clientes en modo servidor (Ajustes, Datos), con copia sin conexion (hecho).
+3. Escritura a traves del servidor (cola de cambios, conflictos) (hecho).
 4. Ajustes y calendarios externos por cuenta en el servidor.
 5. Avisos: los muestra la app; el servidor la mantiene al dia (sincronizacion en segundo plano y UnifiedPush).
 6. Funnel, limites de intentos, copias de SQLite, varios usuarios.
@@ -28,10 +28,13 @@ Todo en JSON bajo `/api`; salvo el inicio de sesion, con `Authorization: Bearer 
 | `GET /api/snapshot` | El calendario ahora: definiciones, filas, `version`, notas que no se pueden colocar |
 | `GET /api/changes?since=N` | Filas cambiadas o quitadas despues de la version N (o `full: true`: pedir foto nueva) |
 | `GET /api/stream` | Eventos en vivo (Server-Sent Events): un `changes` por version nueva |
+| `GET /api/me` | `{ user, write }`: la cuenta y si el servidor escribe en el vault |
+| `POST /api/apply` `{ base, changes }` | Escribe cambios de filas (fase 3, con `BONI_WRITE=1`): `{ version, aliases }`, 409 `{ conflict }` si alguna nota cambio en otro sitio despues de `base`, 403 si el servidor es de solo lectura |
 | Cualquier otra ruta | La app web (para abrir el calendario desde un navegador) |
 
 Una nota sin cambios conserva la misma fila, asi que el servidor sabe exactamente que cambio comparando filas. El vigilante del
-vault (el mismo del escritorio) detecta lo que llega por Syncthing.
+vault (el mismo del escritorio) detecta lo que llega por Syncthing. Las versiones parten del reloj al arrancar, asi que siguen
+creciendo tras un reinicio: un dispositivo con una version anterior pide una foto nueva.
 
 ## Funcionamiento
 - Arrancar en local: `make server` (vault y base de datos segun las variables de `apps/server/src/main.ts`).
@@ -50,3 +53,22 @@ vault (el mismo del escritorio) detecta lo que llega por Syncthing.
 - Si la sesion se revoca (`cli.ts revoke`), la app lo dice y pide volver a iniciarla. "Cerrar sesion" vuelve a la carpeta
   local (o a los datos de ejemplo en un navegador).
 - El servidor admite peticiones de cualquier origen (CORS): las apps de escritorio y Android no se sirven desde el.
+
+## Escritura (fase 3)
+- Solo si el servidor arranca con `BONI_WRITE=1` (y el vault montado con escritura); si no, los calendarios llegan de solo
+  lectura y `POST /api/apply` responde 403.
+- El servidor escribe con el mismo escritor que las apps (`apps/web/src/vault/provider.ts`): solo las propiedades cambiadas,
+  notas nuevas con el nombre de la definicion, mover entre calendarios, papelera `.trash` del vault, nunca encima de una
+  nota que cambio en disco desde que se leyo.
+- Conflictos: cada lote lleva la version que tenia el dispositivo (`base`). Si una de sus notas cambio despues por otra via
+  (Obsidian por Syncthing, otro dispositivo), no se escribe nada y responde 409; lo que escribio la propia sesion no cuenta.
+  Limitacion: lo que cambio mientras el servidor estaba parado no se detecta asi (solo la comprobacion de disco).
+- El cliente (`apps/web/src/serverWriter.ts`) aplica el cambio en pantalla al momento y lo guarda en una cola del
+  dispositivo (IndexedDB); la envia en orden, en una sola peticion, ahora o al volver la conexion (tambien tras cerrar y
+  abrir la app). Lo pendiente se sigue viendo encima de lo que manda el servidor hasta que llega su version. Un evento
+  nuevo se conoce por un id temporal hasta que el servidor dice la ruta de su nota (`aliases`).
+- Si el servidor rechaza un lote (conflicto u otro error), la app lo dice ("La nota cambio fuera de la app...") y recarga
+  la foto del servidor; ese cambio se pierde.
+- Cerrar sesion intenta enviar lo pendiente; si no hay conexion, queda en el dispositivo para la proxima vez.
+- Pendiente: las series abiertas todavia no se prolongan solas en modo servidor (en modo carpeta lo hace la app al leer);
+  lo hara el propio servidor, para que dos dispositivos no creen las mismas notas.

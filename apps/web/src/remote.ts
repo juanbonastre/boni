@@ -1,4 +1,4 @@
-import type { CollectionSnapshot, Row } from "@boni-calendar/core";
+import type { CollectionSnapshot, Row, RowChange } from "@boni-calendar/core";
 import { kvStore } from "./idb.ts";
 
 /**
@@ -21,7 +21,7 @@ export interface RemoteChanges {
 
 export class RemoteError extends Error {
   constructor(
-    readonly kind: "unauthorized" | "network" | "server",
+    readonly kind: "unauthorized" | "network" | "server" | "conflict",
     message: string,
   ) {
     super(message);
@@ -38,6 +38,11 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
     throw new RemoteError("network", e instanceof Error ? e.message : String(e));
   }
   if (r.status === 401) throw new RemoteError("unauthorized", "unauthorized");
+  if (r.status === 409)
+    throw new RemoteError(
+      "conflict",
+      ((await r.json()) as { conflict?: string[] }).conflict?.join(", ") ?? "conflict",
+    );
   if (!r.ok) throw new RemoteError("server", `HTTP ${r.status}`);
   return (await r.json()) as T;
 }
@@ -76,6 +81,18 @@ export class Remote {
 
   changes(since: number): Promise<RemoteChanges> {
     return request(`${this.url}/api/changes?since=${since}`, { headers: this.auth() });
+  }
+
+  /** Writes row changes; `base` is the version this device had. New rows come back with their path. */
+  apply(
+    base: number,
+    changes: readonly RowChange[],
+  ): Promise<{ version: number; aliases: Record<string, string> }> {
+    return request(`${this.url}/api/apply`, {
+      method: "POST",
+      headers: { ...this.auth(), "content-type": "application/json" },
+      body: JSON.stringify({ base, changes }),
+    });
   }
 
   async logout(): Promise<void> {
@@ -155,6 +172,15 @@ const saved = kvStore<RemoteSnapshot>("boni-calendar-server", "snapshots");
 export const savedSnapshot = (key: string) => saved.get(key);
 export const saveSnapshot = (key: string, s: RemoteSnapshot) => saved.put(key, s);
 export const forgetSnapshot = (key: string) => saved.delete(key);
+
+/** Changes this device made that the server has not taken yet (sent in order when it can). */
+export interface Outbox {
+  base: number;
+  changes: RowChange[];
+}
+const outboxes = kvStore<Outbox[]>("boni-calendar-server-outbox", "outbox");
+export const savedOutbox = async (key: string) => (await outboxes.get(key)) ?? [];
+export const saveOutbox = (key: string, o: Outbox[]) => outboxes.put(key, o);
 
 /** Applies a set of changes to rows: changed and new rows replace theirs, removed ones go. */
 export function applyChanges(rows: readonly Row[], c: RemoteChanges): Row[] {
