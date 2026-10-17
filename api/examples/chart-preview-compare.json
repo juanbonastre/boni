@@ -1,0 +1,47 @@
+{
+  "chart_id": "",
+  "title": "Septiembre",
+  "subtitle": "septiembre 2026 - frente a agosto 2026",
+  "kind": "number",
+  "measure": "spending",
+  "unit": "EUR",
+  "series": [
+    {
+      "key": "total",
+      "name": "Septiembre",
+      "points": [
+        {
+          "key": "total",
+          "label": "Total",
+          "value": 136.41,
+          "partial": false,
+          "no_data": false
+        }
+      ],
+      "role": "main"
+    },
+    {
+      "key": "previous",
+      "name": "agosto 2026",
+      "points": [
+        {
+          "key": "total",
+          "label": "Total",
+          "value": 90.0,
+          "partial": false,
+          "no_data": false
+        }
+      ],
+      "role": "compare"
+    }
+  ],
+  "total": 136.41,
+  "previous_total": 90.0,
+  "delta_pct": 51.6,
+  "average": null,
+  "x_label": null,
+  "drilldown": false,
+  "drill": null,
+  "computed_at": "2026-10-12T18:30:00+02:00",
+  "stale": false
+}

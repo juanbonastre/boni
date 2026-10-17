@@ -1,0 +1,19 @@
+{
+  "widgets": [
+    {
+      "id": "w-spending-by-category",
+      "chart_id": "spending-by-category",
+      "size": "medium"
+    },
+    {
+      "id": "w-monthly-spending",
+      "chart_id": "monthly-spending",
+      "size": "medium"
+    },
+    {
+      "id": "w-eating-out",
+      "chart_id": "eating-out",
+      "size": "medium"
+    }
+  ]
+}

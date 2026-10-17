@@ -1,0 +1,40 @@
+{
+  "chart_id": "spending-by-category",
+  "title": "Gasto del mes",
+  "subtitle": "Comida - octubre 2026 - hasta hoy",
+  "kind": "hbar",
+  "measure": "spending",
+  "unit": "EUR",
+  "series": [
+    {
+      "key": "main",
+      "name": "Gasto del mes",
+      "points": [
+        {
+          "key": "comida/supermercado",
+          "label": "Supermercado",
+          "value": 45.2,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "comida/restaurante",
+          "label": "Restaurante",
+          "value": 24.5,
+          "partial": false,
+          "no_data": false
+        }
+      ],
+      "role": "main"
+    }
+  ],
+  "total": 69.7,
+  "previous_total": null,
+  "delta_pct": null,
+  "average": null,
+  "x_label": null,
+  "drilldown": false,
+  "drill": "comida",
+  "computed_at": "2026-10-12T18:30:00+02:00",
+  "stale": false
+}

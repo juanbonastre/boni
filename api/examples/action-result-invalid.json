@@ -1,0 +1,10 @@
+{
+  "status": "invalid",
+  "message": "Revisa los campos marcados",
+  "field_errors": {
+    "amount": "Pon un importe mayor que 0",
+    "account": "Elige una cuenta",
+    "category": "Elige una categoria"
+  },
+  "navigate": null
+}

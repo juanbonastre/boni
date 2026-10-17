@@ -1,0 +1,59 @@
+name: clients
+
+on:
+  push:
+    branches: [main]
+    paths: ["clients/**", "api/**", ".github/workflows/clients.yml"]
+  pull_request:
+    paths: ["clients/**", "api/**", ".github/workflows/clients.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # publish screenshots to the ci-screenshots branch
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: clients
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Tests (incl. parsing api/examples)
+        run: ./gradlew check --no-daemon 2>&1 | tee ../gradle-test.log; exit ${PIPESTATUS[0]}
+      - name: Test count
+        run: |
+          n=$(cat */build/test-results/*/*.xml | grep -o 'tests="[0-9]*"' | grep -o '[0-9]*' | paste -sd+ | bc)
+          f=$(cat */build/test-results/*/*.xml | grep -o 'failures="[0-9]*"' | grep -o '[0-9]*' | paste -sd+ | bc)
+          echo "::notice::client tests run: $n, failures: $f"
+      - name: Screenshots (charts and widgets, light and dark)
+        run: ./gradlew :desktop:screenshots --no-daemon 2>&1 | tee ../gradle-shots.log; exit ${PIPESTATUS[0]}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: clients/desktop/build/screenshots/*.png
+      - name: Publish screenshots to the ci-screenshots branch (to review the look from anywhere)
+        working-directory: clients/desktop/build/screenshots
+        run: |
+          git init -q -b ci-screenshots
+          git add *.png
+          git -c user.name="boni-ci" -c user.email="ci@users.noreply.github.com" commit -qm "Screenshots of ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-screenshots
+      - name: Report build errors as annotations
+        if: failure()
+        working-directory: .
+        run: |
+          # Compiler errors, failing tests and Gradle's "What went wrong" become annotations (readable via the API).
+          cat gradle-*.log 2>/dev/null | grep -E "^e: |What went wrong|FAILED|Exception|expected:|> " | grep -v "^> Task" \
+            | sed 's#file://.*/clients/##' | head -40 | while IFS= read -r line; do echo "::error::$line"; done
+      - name: Package .deb
+        run: ./gradlew :desktop:packageDeb --no-daemon --stacktrace -PboniVersion=0.1.${{ github.run_number }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boni-deb
+          path: clients/desktop/build/compose/binaries/main/deb/*.deb

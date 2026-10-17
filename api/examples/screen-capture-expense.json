@@ -1,0 +1,179 @@
+{
+  "api_version": "1",
+  "id": "capture-expense",
+  "title": "Apuntar gasto",
+  "components": [
+    {
+      "type": "form",
+      "id": "expense",
+      "fields": [
+        {
+          "id": "kind",
+          "label": "Tipo",
+          "required": true,
+          "help": null,
+          "visible_when": null,
+          "type": "choice",
+          "options": [
+            {
+              "value": "gasto",
+              "label": "Gasto",
+              "hint": null
+            },
+            {
+              "value": "ingreso",
+              "label": "Ingreso",
+              "hint": null
+            }
+          ],
+          "source": null,
+          "searchable": false,
+          "style": "chips",
+          "default": "gasto"
+        },
+        {
+          "id": "amount",
+          "label": "Importe",
+          "required": true,
+          "help": null,
+          "visible_when": null,
+          "type": "amount",
+          "currency": "EUR",
+          "default": null,
+          "min": 0.01,
+          "max": 100000.0
+        },
+        {
+          "id": "account",
+          "label": "Cuenta",
+          "required": true,
+          "help": null,
+          "visible_when": null,
+          "type": "choice",
+          "options": [
+            {
+              "value": "efectivo",
+              "label": "Efectivo",
+              "hint": null
+            },
+            {
+              "value": "revolut",
+              "label": "Revolut",
+              "hint": null
+            },
+            {
+              "value": "ing",
+              "label": "ING",
+              "hint": null
+            }
+          ],
+          "source": null,
+          "searchable": false,
+          "style": "chips",
+          "default": "efectivo"
+        },
+        {
+          "id": "category",
+          "label": "Categoria",
+          "required": true,
+          "help": null,
+          "visible_when": null,
+          "type": "choice",
+          "options": null,
+          "source": "categories",
+          "searchable": true,
+          "style": "dropdown",
+          "default": null
+        },
+        {
+          "id": "concept",
+          "label": "Concepto",
+          "required": false,
+          "help": null,
+          "visible_when": null,
+          "type": "text",
+          "default": null,
+          "max_length": 200,
+          "multiline": false,
+          "placeholder": "Que fue"
+        },
+        {
+          "id": "merchant",
+          "label": "Comercio",
+          "required": false,
+          "help": null,
+          "visible_when": null,
+          "type": "text",
+          "default": null,
+          "max_length": 120,
+          "multiline": false,
+          "placeholder": null
+        },
+        {
+          "id": "people",
+          "label": "Con quien",
+          "required": false,
+          "help": null,
+          "visible_when": null,
+          "type": "multi_choice",
+          "options": null,
+          "source": "people",
+          "searchable": true,
+          "default": []
+        },
+        {
+          "id": "shared",
+          "label": "Pague yo por otros",
+          "required": false,
+          "help": null,
+          "visible_when": null,
+          "type": "toggle",
+          "default": false
+        },
+        {
+          "id": "invited",
+          "label": "A quien he invitado",
+          "required": false,
+          "help": "No te devuelven nada",
+          "visible_when": {
+            "field": "shared",
+            "equals": true
+          },
+          "type": "multi_choice",
+          "options": null,
+          "source": "people",
+          "searchable": true,
+          "default": []
+        },
+        {
+          "id": "my_share",
+          "label": "Mi parte",
+          "required": false,
+          "help": "Vacio: se calcula (importe x (1 + invitados) / (personas + 1))",
+          "visible_when": {
+            "field": "shared",
+            "equals": true
+          },
+          "type": "amount",
+          "currency": "EUR",
+          "default": null,
+          "min": 0.01,
+          "max": null
+        },
+        {
+          "id": "date",
+          "label": "Fecha",
+          "required": true,
+          "help": null,
+          "visible_when": null,
+          "type": "date",
+          "default": "today"
+        }
+      ],
+      "submit": {
+        "action": "expenses.capture",
+        "label": "Guardar"
+      }
+    }
+  ]
+}

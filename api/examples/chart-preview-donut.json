@@ -1,0 +1,68 @@
+{
+  "chart_id": "",
+  "title": "Reparto del ano",
+  "subtitle": "2026 - hasta hoy",
+  "kind": "donut",
+  "measure": "spending",
+  "unit": "EUR",
+  "series": [
+    {
+      "key": "main",
+      "name": "Reparto del ano",
+      "points": [
+        {
+          "key": "comida/supermercado",
+          "label": "Supermercado (comida)",
+          "value": 125.2,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "comida/restaurante",
+          "label": "Restaurante (comida)",
+          "value": 108.91,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "transporte/gasolina",
+          "label": "Gasolina (transporte)",
+          "value": 50.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "gestiones",
+          "label": "Gestiones",
+          "value": 20.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "bebida/alcohol",
+          "label": "Alcohol (bebida)",
+          "value": 12.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "_rest",
+          "label": "Resto (2)",
+          "value": 12.59,
+          "partial": false,
+          "no_data": false
+        }
+      ],
+      "role": "main"
+    }
+  ],
+  "total": 328.7,
+  "previous_total": null,
+  "delta_pct": null,
+  "average": null,
+  "x_label": null,
+  "drilldown": false,
+  "drill": null,
+  "computed_at": "2026-10-12T18:30:00+02:00",
+  "stale": false
+}

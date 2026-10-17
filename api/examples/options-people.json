@@ -1,0 +1,25 @@
+{
+  "source": "people",
+  "options": [
+    {
+      "value": "tomas",
+      "label": "Tomas",
+      "hint": "Friend"
+    },
+    {
+      "value": "mario-vidal",
+      "label": "Mario Vidal",
+      "hint": "Friend"
+    },
+    {
+      "value": "lucia-ferri",
+      "label": "Lucia Ferri",
+      "hint": "Friend from Italy"
+    },
+    {
+      "value": "pablo-soler-gil",
+      "label": "Pablo Soler Gil",
+      "hint": "Colleague"
+    }
+  ]
+}

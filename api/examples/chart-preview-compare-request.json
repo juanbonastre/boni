@@ -1,0 +1,12 @@
+{
+  "spec": {
+    "title": "Septiembre",
+    "kind": "number",
+    "compare": "previous_period",
+    "period": {
+      "kind": "range",
+      "start": "2026-09-01",
+      "end": "2026-09-30"
+    }
+  }
+}

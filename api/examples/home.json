@@ -1,0 +1,32 @@
+{
+  "api_version": "1",
+  "id": "home",
+  "title": "Boni",
+  "components": [
+    {
+      "type": "button",
+      "label": "Apuntar gasto",
+      "screen": "capture-expense",
+      "icon": "add",
+      "style": "primary"
+    },
+    {
+      "type": "chart_card",
+      "chart_id": "spending-by-category",
+      "title": "Gasto del mes",
+      "size": "wide"
+    },
+    {
+      "type": "chart_card",
+      "chart_id": "monthly-spending",
+      "title": "Gasto por mes",
+      "size": "medium"
+    },
+    {
+      "type": "chart_card",
+      "chart_id": "eating-out",
+      "title": "Comida fuera",
+      "size": "medium"
+    }
+  ]
+}
