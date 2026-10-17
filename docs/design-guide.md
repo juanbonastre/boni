@@ -119,7 +119,11 @@ slate `#94a3b8`.
   server live; Settings says "Live", "Offline: showing the last copy" or "The session ended: log in again". When the server
   writes, the gestures change the notes through it exactly as in a local vault, also offline: changes show at once and wait
   on the device until the connection is back. A change the server refuses (the note changed elsewhere) shows the vault's
-  conflict toast and the server's copy. A read-only server sends its calendars read-only.
+  conflict toast and the server's copy. A read-only server sends its calendars read-only. External calendars and the
+  shared preferences (language, clock, first day, second timezone, week numbers, default duration, snap) belong to the
+  account: every device shows the same, changes reach the others live, and the server downloads the calendars (the hint
+  under External calendars says so). Theme, density and timezone stay per device. The first time a device joins, its own
+  external calendars join the account's, with a toast saying how many.
 - **Data in the vault** (desktop app, Settings → Data): the calendars are always the vault's notes (the invented sample
   data only shows in a plain browser, for development and tests); writing is opt-in ("Read only" / "Read and write"). With it on, the
   gestures above change the notes: only the edited properties are rewritten (unknown ones, comments and the body stay as
