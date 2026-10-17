@@ -72,6 +72,9 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
 - Clients: `make setup`, `make check` (Biome, types, unit tests incl. every `api/examples` file), `make e2e` (Playwright
   against a fake server answering with `api/examples`; `e2e/overflow.spec.ts` checks that text fits its box on every
   surface in both languages: a new surface must be added there), `make desktop`, `make package` (`.deb` in `release/`).
+- The `.deb` holds only what `build.files` in `apps/desktop/package.json` lists (`package.test.cjs` checks every module
+  the shell loads is there): before handing a build to Juan, extract it (`dpkg-deb -x`) and start that binary with
+  temporary `XDG_CONFIG_HOME`/`XDG_DATA_HOME` (0.3.0 shipped without `live.cjs` and hung at start; the repo run was fine).
 - Test it the way Juan uses it before asking him: the real app against the real server with temporary
   `XDG_CONFIG_HOME`/`XDG_DATA_HOME` (a copy of his settings), and synthetic pointer input only in a nested X server
   (Xephyr + muffin), never on his screen.

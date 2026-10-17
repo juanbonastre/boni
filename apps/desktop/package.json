@@ -1,6 +1,6 @@
 {
   "name": "boni",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Boni: gráficas y capturas",
   "main": "main.cjs",
@@ -23,11 +23,8 @@
       "output": "../../release"
     },
     "files": [
-      "main.cjs",
-      "preload.cjs",
-      "settings.cjs",
-      "widgets.cjs",
-      "autostart.cjs",
+      "*.cjs",
+      "!*.test.cjs",
       "icon.png",
       "tray.png",
       "web/**/*"
