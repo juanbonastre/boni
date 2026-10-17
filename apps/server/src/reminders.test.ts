@@ -134,9 +134,7 @@ describe("the account's reminders", () => {
         at: at(9, 50),
       }),
     ]);
-    expect((await notices(t, "&locale=en&h24=0"))[0]?.body).toBe(
-      "Tomorrow, 10 AM–11 AM · Aula 1",
-    );
+    expect((await notices(t, "&locale=en&h24=0"))[0]?.body).toBe("Tomorrow, 10 AM–11 AM · Aula 1");
 
     const ext = {
       id: "ext-trabajo",
