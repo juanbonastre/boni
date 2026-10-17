@@ -81,4 +81,4 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   pulsacion larga). Versiones firmadas publicadas para Obtainium (0.1.7 la primera). El vault en el movil: se elige una vez la
   carpeta (permiso de carpeta de Android), mismas reglas que el escritorio, papelera = `.trash` del vault, escritura activada.
   Pendiente: avisos por calendario.
-- **Servidor** (2026-10-17, plan aprobado): `docs/servidor.md`. Fase 1 hecha (solo lectura: cuentas, foto, cambios en vivo, app web).
+- **Servidor** (2026-10-17, plan aprobado): `docs/servidor.md`. Fases 1 y 2 hechas (servidor de solo lectura; las apps se conectan desde Ajustes, Datos, con copia sin conexion).

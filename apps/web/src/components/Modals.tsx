@@ -24,6 +24,7 @@ import { useApp } from "../store.ts";
 import { vaultBridge } from "../vaultBridge.ts";
 import { ExternalSettings } from "./ExternalSettings.tsx";
 import { ChoicePicker, DraftInput } from "./fields.tsx";
+import { ServerSettings } from "./ServerSettings.tsx";
 
 function Modal({
   title,
@@ -123,6 +124,52 @@ const TIMEZONES = [
   "UTC",
 ];
 
+/**
+ * Settings → Data: where the calendars come from. With a vault folder (desktop, Android) the device
+ * chooses between that folder and a Boni Calendar Server; a plain browser can only use a server; the
+ * Obsidian plugin always shows its own vault.
+ */
+function DataSettings() {
+  const source = useApp((s) => s.source);
+  const hasServer = useApp((s) => !!s.settings.server);
+  const folder = !!vaultBridge();
+  const fixed = !!getHost().fixedVault;
+  const [mode, setMode] = useState<"local" | "server">(
+    source === "server" || hasServer || !folder ? "server" : "local",
+  );
+  if (fixed) {
+    return (
+      <>
+        <h3>{t("settings.data")}</h3>
+        <VaultSettings />
+      </>
+    );
+  }
+  const choose = (m: "local" | "server") => {
+    setMode(m);
+    if (m === "local" && useApp.getState().settings.server)
+      void useApp.getState().disconnectServer();
+  };
+  return (
+    <>
+      <h3>{t("settings.data")}</h3>
+      {folder && (
+        <Field label={t("settings.origin")}>
+          <Segmented
+            value={mode}
+            onChange={choose}
+            options={[
+              { v: "local", label: t("settings.origin.local") },
+              { v: "server", label: t("settings.origin.server") },
+            ]}
+          />
+        </Field>
+      )}
+      {mode === "server" ? <ServerSettings /> : <VaultSettings />}
+    </>
+  );
+}
+
 /** The vault the calendars come from (desktop app, Obsidian): its folder, writing, what was read. */
 function VaultSettings() {
   const writeOn = useApp((s) => s.settings.vaultWrite);
@@ -138,7 +185,6 @@ function VaultSettings() {
   const fixedVault = !!getHost().fixedVault;
   return (
     <>
-      <h3>{t("settings.data")}</h3>
       <Field label={t("settings.vaultFolder")}>
         <span className="vault-path" title={vault.root ?? undefined}>
           {/* bdi keeps the path's own direction inside the right-to-left box that cuts it from the left */}
@@ -312,9 +358,9 @@ export function SettingsModal() {
           options={[5, 10, 15, 30].map((v) => ({ v, label: String(v) }))}
         />
       </Field>
-      {vaultBridge() && <VaultSettings />}
+      <DataSettings />
       <ExternalSettings />
-      {source !== "vault" && (
+      {source === "sample" && (
         <>
           <h3>{t("settings.general")}</h3>
           <Field label={t("settings.reset")} hint={t("settings.resetHint")}>

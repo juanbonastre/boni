@@ -63,6 +63,17 @@ import {
 } from "./external.ts";
 import { appRoot, getHost } from "./host.ts";
 import { setLocale } from "./i18n.ts";
+import {
+  applyChanges,
+  forgetSnapshot,
+  login,
+  Remote,
+  type RemoteChanges,
+  RemoteError,
+  type RemoteSnapshot,
+  savedSnapshot,
+  saveSnapshot,
+} from "./remote.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
 import type { IgnoredNote, VaultLoad } from "./vault/loadVault.ts";
 import { makeVaultProvider, VaultWriteError } from "./vault/provider.ts";
@@ -72,6 +83,7 @@ import {
   readVault,
   resetVaultIndex,
   serialized,
+  stopWatchingVault,
   watchVault,
 } from "./vault/sync.ts";
 import { vaultBridge } from "./vaultBridge.ts";
@@ -94,6 +106,8 @@ export interface Settings {
   vaultWrite: boolean;
   /** Calendars of other services read by their iCal address (kept on this device only). */
   externals: ExternalCal[];
+  /** Boni Calendar Server this device uses instead of a vault folder (the session token is kept apart). */
+  server: { url: string; user: string } | null;
 }
 
 export interface VaultState {
@@ -104,6 +118,12 @@ export interface VaultState {
   ignored: IgnoredNote[];
   /** Definitions or folders that could not be read. */
   problems: string[];
+  message?: string;
+}
+
+export interface RemoteState {
+  /** "login": the session ended (or was revoked) and the device must log in again. */
+  status: "off" | "connecting" | "live" | "offline" | "login";
   message?: string;
 }
 
@@ -136,6 +156,8 @@ export interface Toast {
 }
 
 const SETTINGS_KEY = "boni-calendar:settings";
+/** The session token of this device on the server (device storage, never in settings or the vault). */
+const SERVER_TOKEN_KEY = "boni-calendar:server-token";
 /** Below this width (CSS px) the app uses its phone layout. */
 export const COMPACT_WIDTH = 640;
 const UI_KEY = "boni-calendar:ui";
@@ -153,6 +175,7 @@ const DEFAULT_SETTINGS: Settings = {
   density: "comfortable",
   vaultWrite: false,
   externals: [],
+  server: null,
 };
 
 function load<T>(key: string): Partial<T> {
@@ -185,7 +208,9 @@ export interface AppState {
   views: CalendarView[];
   rows: Row[];
   /** What `rows` were read from. */
-  source: "sample" | "vault";
+  source: "sample" | "vault" | "server";
+  /** The connection to Boni Calendar Server (source "server"). */
+  remote: RemoteState;
   /**
    * External calendars (read-only, by iCal address): merged into `data` but never rows, so they are
    * never written anywhere. `events` per calendar, in the order of `settings.externals`.
@@ -293,6 +318,12 @@ export interface AppState {
   loadVault: () => Promise<void>;
   /** Asks for the vault folder (desktop app) and reads it; true when one is set. */
   chooseVaultRoot: () => Promise<boolean>;
+  /** Logs this device in to a Boni Calendar Server and shows its calendar; throws on a bad login. */
+  connectServer: (url: string, user: string, password: string) => Promise<void>;
+  /** Leaves the server (ends this device's session) and goes back to the vault folder or the sample. */
+  disconnectServer: () => Promise<void>;
+  /** Shows the server's calendar (the last copy first) and follows its changes live. */
+  loadServer: () => Promise<void>;
   /** Downloads external calendars again (all, or one), showing the last copy until it arrives. */
   loadExternal: (id?: string) => Promise<void>;
   addExternal: (c: Omit<ExternalCal, "id">) => string;
@@ -417,6 +448,21 @@ export function expandedCache(
 }
 
 let toastSeq = 0;
+
+/** The live connection to the server (one per app). */
+const server: {
+  version: number;
+  snap: RemoteSnapshot | null;
+  stop: (() => void) | null;
+  saveTimer: ReturnType<typeof setTimeout> | undefined;
+} = { version: 0, snap: null, stop: null, saveTimer: undefined };
+function stopFollowing() {
+  server.stop?.();
+  server.stop = null;
+  server.snap = null;
+  server.version = 0;
+}
+const serverKey = (c: { url: string; user: string }) => `${c.url}|${c.user}`;
 /** One writer for the whole session, so notes it sent to the trash can still be brought back by Undo. */
 let vaultProvider: CollectionProvider | null = null;
 function vaultWriter(bridge: Parameters<typeof makeVaultProvider>[0]): CollectionProvider {
@@ -441,9 +487,12 @@ export const useApp = create<AppState>((set, get) => {
   // With a vault (desktop app, Obsidian) the calendars are its notes; invented sample data only
   // in a plain browser (development, tests).
   const wantVault = !!vaultBridge();
-  const snapshot: CollectionSnapshot = wantVault
-    ? { accounts: [], collections: [], views: [], rows: [] }
-    : makeSnapshot(settings, hidden);
+  // A device logged in to a server shows the server's calendar (the last copy until it connects).
+  const wantServer = !!settings.server && !!getHost().storage.get(SERVER_TOKEN_KEY);
+  const snapshot: CollectionSnapshot =
+    wantVault || wantServer
+      ? { accounts: [], collections: [], views: [], rows: [] }
+      : makeSnapshot(settings, hidden);
 
   const persistUi = () => {
     const s = get();
@@ -522,10 +571,11 @@ export const useApp = create<AppState>((set, get) => {
    * counts; otherwise unchanged notes keep their row (and event) objects, a calendar keeps being
    * visible or hidden as the user left it, and a selection survives if its event still exists.
    */
-  const applyVault = (
-    r: VaultLoad,
+  const applyLoad = (
+    r: Pick<VaultLoad, "snapshot" | "notes" | "ignored" | "problems">,
     root: string | null,
-    bridge: NonNullable<ReturnType<typeof vaultBridge>>,
+    source: "vault" | "server",
+    provider: () => CollectionProvider,
   ) => {
     const s = get();
     const hidden = new Set(load<UiPersist>(UI_KEY).hiddenCalendars ?? []);
@@ -553,7 +603,7 @@ export const useApp = create<AppState>((set, get) => {
       problems: r.problems,
     };
     const sameRows =
-      s.source === "vault" &&
+      s.source === source &&
       s.rows.length === r.snapshot.rows.length &&
       s.rows.every((row, i) => row === r.snapshot.rows[i]);
     const sameDefs =
@@ -582,9 +632,9 @@ export const useApp = create<AppState>((set, get) => {
     set({
       ...snap,
       ...d,
-      source: "vault",
-      provider: vaultWriter(bridge),
-      ...(s.source === "vault" ? {} : { past: [], future: [] }),
+      source,
+      provider: provider(),
+      ...(s.source === source ? {} : { past: [], future: [] }),
       selectedIds,
       selectedId: selectedIds.length === 1 ? (selectedIds[0] ?? null) : null,
       anchorId: s.anchorId && ids.has(now(s.anchorId)) ? now(s.anchorId) : null,
@@ -620,9 +670,10 @@ export const useApp = create<AppState>((set, get) => {
   return {
     ...snapshot,
     ...derive(snapshot, settings.tz),
-    source: wantVault ? "vault" : "sample",
+    source: wantServer ? "server" : wantVault ? "vault" : "sample",
+    remote: { status: wantServer ? "connecting" : "off" },
     vault: {
-      status: wantVault ? "loading" : "idle",
+      status: wantVault || wantServer ? "loading" : "idle",
       root: null,
       notes: 0,
       ignored: [],
@@ -1136,7 +1187,7 @@ export const useApp = create<AppState>((set, get) => {
           }
           // Writing is not switched on yet: the vault is shown read-only.
           const r = await readVault(bridge, { readOnly: !get().settings.vaultWrite });
-          applyVault(r, root.ok ? root.value : null, bridge);
+          applyLoad(r, root.ok ? root.value : null, "vault", () => vaultWriter(bridge));
           watchVault(bridge, r.folders, () => void get().loadVault());
           // Series kept as notes keep going as time passes (only when writing is on).
           if (get().settings.vaultWrite) {
@@ -1165,6 +1216,129 @@ export const useApp = create<AppState>((set, get) => {
         await get().loadVault();
       }
       return !!r.value;
+    },
+
+    connectServer: async (url, user, password) => {
+      const device = navigator.userAgent.includes("Android")
+        ? "Android"
+        : vaultBridge()
+          ? "Escritorio"
+          : "Navegador";
+      const token = await login(url, user, password, device);
+      getHost().storage.set(SERVER_TOKEN_KEY, token);
+      stopFollowing();
+      stopWatchingVault(vaultBridge());
+      get().setSettings({ server: { url: url.trim().replace(/\/+$/, ""), user } });
+      set({ remote: { status: "connecting" } });
+      await get().loadServer();
+    },
+
+    disconnectServer: async () => {
+      const cfg = get().settings.server;
+      const token = getHost().storage.get(SERVER_TOKEN_KEY);
+      stopFollowing();
+      if (cfg && token) {
+        await new Remote(cfg.url, token).logout();
+        void forgetSnapshot(serverKey(cfg));
+      }
+      getHost().storage.set(SERVER_TOKEN_KEY, "");
+      get().setSettings({ server: null });
+      set({ remote: { status: "off" } });
+      // Back to the vault folder (desktop, Android) or to the sample (a plain browser).
+      if (vaultBridge()) {
+        set({ source: "vault", collections: [], views: [], rows: [] });
+        await get().loadVault();
+      } else {
+        set({ source: "sample" });
+        get().resetData();
+      }
+    },
+
+    loadServer: async () => {
+      const cfg = get().settings.server;
+      const token = getHost().storage.get(SERVER_TOKEN_KEY);
+      if (!cfg || !token) return;
+      const remote = new Remote(cfg.url, token);
+      const key = serverKey(cfg);
+      const label = `${cfg.user} · ${remote.url}`;
+      // Read-only until writing through the server exists (phase 3).
+      const show = (snap: RemoteSnapshot) => {
+        server.version = snap.version;
+        server.snap = snap;
+        applyLoad(
+          {
+            snapshot: snap,
+            notes: snap.rows.length,
+            ignored: snap.ignored,
+            problems: snap.problems,
+          },
+          label,
+          "server",
+          () => memoryProvider(snap),
+        );
+      };
+      const fail = (e: unknown) => {
+        if (e instanceof RemoteError && e.kind === "unauthorized") {
+          stopFollowing();
+          set({ remote: { status: "login" } });
+        } else {
+          set({
+            remote: { status: "offline", message: e instanceof Error ? e.message : String(e) },
+          });
+        }
+      };
+      // The last copy first: the calendar opens at once, also without a connection.
+      if (get().source !== "server" || get().rows.length === 0) {
+        const cached = await savedSnapshot(key);
+        if (cached) show(cached);
+      }
+      try {
+        const snap = await remote.snapshot();
+        show(snap);
+        void saveSnapshot(key, snap);
+      } catch (e) {
+        fail(e);
+        if (e instanceof RemoteError && e.kind === "unauthorized") return;
+      }
+      if (server.stop) return;
+      /** New rows, or a new snapshot when the server says so (definitions changed, too far behind). */
+      const apply = async (c: RemoteChanges) => {
+        if (c.version <= server.version) return;
+        if (c.full || !server.snap) {
+          const snap = await remote.snapshot();
+          show(snap);
+          void saveSnapshot(key, snap);
+          return;
+        }
+        const snap: RemoteSnapshot = {
+          ...server.snap,
+          version: c.version,
+          rows: applyChanges(get().source === "server" ? get().rows : server.snap.rows, c),
+        };
+        show(snap);
+        clearTimeout(server.saveTimer);
+        server.saveTimer = setTimeout(() => void saveSnapshot(key, snap), 2000);
+      };
+      let behind = false;
+      server.stop = remote.follow(
+        (c) => {
+          // A version skipped (the connection dropped between two) is caught up from the log.
+          if (c.version > server.version + 1 && !c.full) {
+            void remote.changes(server.version).then(apply).catch(fail);
+          } else void apply(c).catch(fail);
+        },
+        (live, error) => {
+          if (error?.kind === "unauthorized") return fail(error);
+          if (live) {
+            set({ remote: { status: "live" } });
+            if (behind) void remote.changes(server.version).then(apply).catch(fail);
+            behind = false;
+          } else {
+            behind = true;
+            set({ remote: { status: "offline", message: error?.message } });
+          }
+        },
+      );
     },
 
     loadExternal: async (only) => {

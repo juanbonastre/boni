@@ -12,7 +12,7 @@ Servidor propio para que todos los dispositivos usen el mismo calendario, como N
 
 ## Fases
 1. Servidor de solo lectura: cuentas, foto del calendario, cambios por version y en vivo, app web servida (hecho).
-2. Clientes en modo servidor (Ajustes, Datos), con copia sin conexion.
+2. Clientes en modo servidor (Ajustes, Datos), con copia sin conexion (hecho: solo lectura hasta la fase 3).
 3. Escritura a traves del servidor (cola de cambios, conflictos).
 4. Ajustes y calendarios externos por cuenta en el servidor.
 5. Avisos: los muestra la app; el servidor la mantiene al dia (sincronizacion en segundo plano y UnifiedPush).
@@ -40,3 +40,13 @@ vault (el mismo del escritorio) detecta lo que llega por Syncthing.
 - Contenedor: `docker build -f apps/server/Dockerfile -t boni-calendar-server .` desde la raiz del repo. Datos en `/data`
   (SQLite); el vault se monta donde diga la cuenta. En el NAS va detras de su propio nodo de Tailscale, como el resto de
   servicios; los ficheros de despliegue viven en el vault (`wiki/infra/configs/`), no en este repo.
+
+## Clientes (fase 2)
+- Ajustes, Datos: con carpeta del vault (escritorio, Android) se elige "Origen: Carpeta local | Servidor"; en un navegador
+  solo hay servidor; el plugin de Obsidian usa siempre su vault. Con servidor: direccion, usuario y contrasena; el
+  dispositivo guarda solo su token de sesion (nunca la contrasena), en su propio almacenamiento.
+- La app muestra la ultima copia al abrirse (IndexedDB del dispositivo) y luego la del servidor; sigue los cambios en vivo y,
+  si se corta la conexion, se reconecta sola (esperando cada vez mas, hasta un minuto) y pide lo que se perdio.
+- Si la sesion se revoca (`cli.ts revoke`), la app lo dice y pide volver a iniciarla. "Cerrar sesion" vuelve a la carpeta
+  local (o a los datos de ejemplo en un navegador).
+- El servidor admite peticiones de cualquier origen (CORS): las apps de escritorio y Android no se sirven desde el.

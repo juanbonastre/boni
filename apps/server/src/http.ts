@@ -34,9 +34,22 @@ const MIME: Record<string, string> = {
   ".map": "application/json",
 };
 
+/**
+ * The desktop and Android apps are not served from here (another origin), so the API allows any
+ * origin. That is safe because access is by a bearer token the app holds, never by cookies a browser
+ * would send on its own.
+ */
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, content-type",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-max-age": "600",
+};
+
 function send(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
   res.writeHead(status, {
+    ...CORS,
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "content-length": Buffer.byteLength(text),
@@ -72,6 +85,10 @@ export function makeServer(opts: ServerOptions): Server {
   };
 
   const api = async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> => {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204, CORS);
+      return void res.end();
+    }
     const route = `${req.method} ${url.pathname}`;
     if (route === "POST /api/login") {
       const b = await bodyOf(req);
@@ -99,6 +116,7 @@ export function makeServer(opts: ServerOptions): Server {
       case "GET /api/stream": {
         await vault.snapshot();
         res.writeHead(200, {
+          ...CORS,
           "content-type": "text/event-stream; charset=utf-8",
           "cache-control": "no-store",
           connection: "keep-alive",

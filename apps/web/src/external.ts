@@ -1,5 +1,6 @@
 import { type CalEvent, type CalendarDef, parseIcal } from "@boni-calendar/core";
 import { getHost } from "./host.ts";
+import { kvStore } from "./idb.ts";
 
 /**
  * Calendars of other services (Google Calendar...) subscribed by their iCal address, read-only.
@@ -45,61 +46,22 @@ export function externalDef(c: ExternalCal, visible: boolean): CalendarDef {
   };
 }
 
-const DB = "boni-calendar-external";
-const STORE = "feeds";
-
-function withStore<T>(
-  mode: IDBTransactionMode,
-  op: (s: IDBObjectStore) => IDBRequest<T>,
-): Promise<T | null> {
-  return new Promise((resolve) => {
-    let req: IDBOpenDBRequest;
-    try {
-      req = indexedDB.open(DB, 1);
-    } catch {
-      return resolve(null);
-    }
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-    req.onerror = () => resolve(null);
-    req.onsuccess = () => {
-      const db = req.result;
-      try {
-        const tx = db.transaction(STORE, mode);
-        const r = op(tx.objectStore(STORE));
-        tx.oncomplete = () => {
-          db.close();
-          resolve(r.result);
-        };
-        tx.onerror = tx.onabort = () => {
-          db.close();
-          resolve(null);
-        };
-      } catch {
-        db.close();
-        resolve(null);
-      }
-    };
-  });
-}
-
 interface Cached {
   text: string;
   at: number;
 }
+const feeds = kvStore<Cached>("boni-calendar-external", "feeds");
 
 /** The last copy downloaded for a calendar, or null. */
 export async function cachedFeed(id: string): Promise<Cached | null> {
-  const v = await withStore("readonly", (s) => s.get(id) as IDBRequest<Cached | undefined>);
+  const v = await feeds.get(id);
   return v && typeof v.text === "string" ? v : null;
 }
 
-export async function saveFeed(id: string, text: string, at: number): Promise<void> {
-  await withStore("readwrite", (s) => s.put({ text, at } satisfies Cached, id));
-}
+export const saveFeed = (id: string, text: string, at: number): Promise<void> =>
+  feeds.put(id, { text, at });
 
-export async function forgetFeed(id: string): Promise<void> {
-  await withStore("readwrite", (s) => s.delete(id));
-}
+export const forgetFeed = (id: string): Promise<void> => feeds.delete(id);
 
 /** Downloads a feed through the host (the desktop shell or Obsidian: no browser CORS rules). */
 export async function downloadFeed(url: string): Promise<string> {

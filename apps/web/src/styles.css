@@ -1877,13 +1877,15 @@ textarea.field-input {
   gap: 8px;
   min-width: 0;
 }
-.ext-form {
+.ext-form,
+.server-form {
   margin: 4px 0 12px;
   padding: 4px 12px 12px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
 }
-.ext-form .field-input {
+.ext-form .field-input,
+.server-form .field-input {
   border-color: var(--line-strong);
   background: var(--surface-2);
 }
@@ -1970,4 +1972,8 @@ textarea.field-input {
   .ev-resize {
     height: 14px;
   }
+}
+.server-error {
+  color: var(--now);
+  margin: 4px 0 0;
 }

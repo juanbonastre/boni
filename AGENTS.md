@@ -37,7 +37,10 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  packages/core, the web's vault loader (`loadVault`) and the desktop's `vault-fs.cjs`, so it reads (and
                  later writes) the vault with the apps' rules; the vault stays the truth. SQLite (`node:sqlite`) only for
                  accounts (made by the admin, `src/cli.ts`), sessions (token hashes) and per-account data. API: snapshot,
-                 changes since a version, live stream (SSE); serves the web app. Dockerfile for the NAS.
+                 changes since a version, live stream (SSE); serves the web app; CORS open (bearer tokens, no cookies).
+                 Client side: `apps/web/src/remote.ts` (login, snapshot, changes, live stream with reconnection, last
+                 snapshot in IndexedDB) and the store's `source: "server"` (`connectServer`, `loadServer`), which applies
+                 server data through the same path as a vault read (`applyLoad`). Dockerfile for the NAS.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status.
 ```
