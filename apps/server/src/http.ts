@@ -3,9 +3,10 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, normalize, resolve } from "node:path";
 import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni-calendar/core";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
-import { login, logout, type User, userOf } from "./auth.ts";
+import { login, logout, tokenHash, type User, userOf } from "./auth.ts";
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
+import { noticesOfAccount, type Push } from "./reminders.ts";
 import type { SecretKey } from "./secret.ts";
 import type { Vaults } from "./vaults.ts";
 
@@ -25,6 +26,8 @@ import type { Vaults } from "./vaults.ts";
  *   GET  /api/external?id=X[&fresh=1] -> { text, at }: that external calendar, downloaded by the server
  *   PUT  /api/collections/reminders { collectionId, reminders?, eventColumn? } -> {} (with BONI_WRITE):
  *        a calendar's reminders, written in its definition note
+ *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
+ *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change)
  * The stream also sends an "account" event ({ updated }) when the account's prefs or calendars change.
  * Anything else is the web app (static files of apps/web/dist), so a browser can open the calendar.
  */
@@ -35,6 +38,8 @@ export interface ServerOptions {
   key: SecretKey;
   /** Downloads external calendars for the accounts (feeds.ts). */
   feeds: Feeds;
+  /** Tells devices by UnifiedPush when their reminders may have changed (reminders.ts); off without it. */
+  push?: Push;
   /** The built web app to serve, if any. */
   webDir?: string | null;
 }
@@ -58,7 +63,7 @@ const MIME: Record<string, string> = {
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "authorization, content-type",
-  "access-control-allow-methods": "GET, POST, PUT, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
   "access-control-max-age": "600",
 };
 
@@ -91,12 +96,36 @@ const tokenOf = (req: IncomingMessage): string | null => {
 };
 
 export function makeServer(opts: ServerOptions): Server {
-  const { db, vaults, key, feeds } = opts;
+  const { db, vaults, key, feeds, push } = opts;
   /** Live streams of each account, told when its prefs or calendars change. */
   const accountListeners = new Map<number, Set<(updated: number) => void>>();
   const accountChanged = (userId: number, updated: number) => {
     for (const l of accountListeners.get(userId) ?? []) l(updated);
+    push?.changed([userId]);
   };
+  /** With push on, a change in a vault tells the devices of every account that uses it. */
+  const watched = new Set<string>();
+  const watchVault = (root: string) => {
+    if (!push || watched.has(root)) return;
+    watched.add(root);
+    const v = vaults.get(root);
+    v.subscribe(() => {
+      const users = db.prepare("SELECT id FROM users WHERE vault = ?").all(root) as {
+        id: number;
+      }[];
+      push.changed(users.map((u) => u.id));
+    });
+    void v.snapshot().catch((e) => console.warn("vault", e));
+  };
+  if (push) {
+    for (const u of db.prepare("SELECT DISTINCT vault FROM users").all() as { vault: string }[]) {
+      try {
+        watchVault(u.vault);
+      } catch (e) {
+        console.warn("vault", e instanceof Error ? e.message : e);
+      }
+    }
+  }
   const webRoot = opts.webDir ? resolve(opts.webDir) : null;
 
   const authed = (req: IncomingMessage, res: ServerResponse): User | null => {
@@ -120,6 +149,7 @@ export function makeServer(opts: ServerOptions): Server {
     const user = authed(req, res);
     if (!user) return;
     const vault = vaults.get(user.vault);
+    watchVault(user.vault);
     switch (route) {
       case "POST /api/logout":
         logout(db, tokenOf(req) ?? "");
@@ -188,6 +218,39 @@ export function makeServer(opts: ServerOptions): Server {
         });
         return r === "ok" ? send(res, 200, {}) : send(res, 409, { error: "conflict" });
       }
+      case "GET /api/reminders": {
+        const q = url.searchParams;
+        const tz = q.get("tz") ?? "UTC";
+        try {
+          new Intl.DateTimeFormat("en", { timeZone: tz });
+        } catch {
+          return send(res, 400, { error: "tz" });
+        }
+        const hours = Math.min(14 * 24, Math.max(1, Number(q.get("hours")) || 7 * 24));
+        const notices = await noticesOfAccount(
+          vault,
+          readAccount(db, key, user.id),
+          feeds,
+          user.id,
+          {
+            tz,
+            hours,
+            locale: q.get("locale") === "en" ? "en" : "es",
+            h24: q.get("h24") !== "0",
+          },
+        );
+        return send(res, 200, { notices });
+      }
+      case "PUT /api/push": {
+        const endpoint = String((await bodyOf(req)).endpoint ?? "");
+        if (!push) return send(res, 404, { error: "no-push" });
+        if (!push.allowed(endpoint)) return send(res, 400, { error: "push-host" });
+        push.register(tokenHash(tokenOf(req) ?? ""), user.id, endpoint);
+        return send(res, 200, {});
+      }
+      case "DELETE /api/push":
+        push?.unregister(tokenHash(tokenOf(req) ?? ""));
+        return send(res, 200, {});
       case "GET /api/snapshot":
         return send(res, 200, await vault.snapshot());
       case "GET /api/changes": {
