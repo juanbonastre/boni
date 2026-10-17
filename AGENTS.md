@@ -17,7 +17,9 @@ apps/web/        React 19 + Vite UI. Runs in any browser and inside the desktop 
   src/engine/    Viewport (smooth scroll / zoom / horizontal motion) and the per-day event index.
   src/components/ TimeGrid (day, week, N days), MonthView, Sidebar, EventDetail, Modals, ...
   src/store.ts   zustand store: data, settings, view, selection, drag, undo history.
-apps/desktop-electron/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage). `vault-fs.cjs` is the
+apps/desktop-electron/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage).
+                 Background mode (`desktop-prefs.cjs`, `window.boniDesktop`): closing hides to the tray, optional
+                 autostart entry (`--hidden`), so reminders arrive with the window closed. `vault-fs.cjs` is the
                  only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
                  atomic writes with a conflict check); the UI reaches it through `window.boniVault` (`vaultBridge.ts`).
 apps/obsidian-plugin/  The same app as an Obsidian plugin (desktop only, `make plugin`): `main.ts` registers a tab, a

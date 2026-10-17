@@ -20,6 +20,14 @@ const es = {
   "external.account": "Calendarios externos",
   "settings.external": "Calendarios externos",
   "settings.reminders": "Avisos",
+  "settings.desktop": "Escritorio",
+  "desktop.background": "Seguir en segundo plano",
+  "desktop.backgroundHint":
+    "Al cerrar la ventana, la app sigue en la bandeja del sistema y los avisos llegan igual",
+  "desktop.autostart": "Abrir al iniciar sesión",
+  "desktop.autostartHint": "Arranca en la bandeja, sin ventana",
+  "desktop.trayOpen": "Abrir Boni Calendar",
+  "desktop.trayQuit": "Salir",
   "reminders.hint":
     "Cada calendario avisa de sus eventos con lo que elijas aquí; un evento puede tener los suyos desde su detalle. Por defecto ningún calendario avisa. Avisan la app de Android y la de escritorio (mientras está abierta).",
   "reminders.timed": "Eventos con hora",
@@ -320,6 +328,14 @@ const en: Record<Key, string> = {
   "external.account": "External calendars",
   "settings.external": "External calendars",
   "settings.reminders": "Reminders",
+  "settings.desktop": "Desktop",
+  "desktop.background": "Keep running in the background",
+  "desktop.backgroundHint":
+    "When the window closes, the app stays in the system tray and reminders still arrive",
+  "desktop.autostart": "Open at login",
+  "desktop.autostartHint": "Starts in the tray, without a window",
+  "desktop.trayOpen": "Open Boni Calendar",
+  "desktop.trayQuit": "Quit",
   "reminders.hint":
     "Each calendar reminds of its events with what you choose here; an event can have its own from its detail. By default no calendar reminds. The Android app and the desktop app (while open) show them.",
   "reminders.timed": "Timed events",
