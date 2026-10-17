@@ -1,7 +1,8 @@
 import { createRequire } from "node:module";
-import type { CollectionSnapshot, Row } from "@boni-calendar/core";
-import type { VaultIndex } from "@boni-calendar/web/src/vault/index.ts";
-import { type IgnoredNote, loadVault } from "@boni-calendar/web/src/vault/loadVault.ts";
+import type { CollectionProvider, CollectionSnapshot, Row, RowChange } from "@boni-calendar/core";
+import type { IgnoredNote } from "@boni-calendar/web/src/vault/loadVault.ts";
+import { makeVaultProvider, VaultWriteError } from "@boni-calendar/web/src/vault/provider.ts";
+import { aliases, readVault, withLock } from "@boni-calendar/web/src/vault/sync.ts";
 import type { VaultBridge, VaultResult } from "@boni-calendar/web/src/vaultBridge.ts";
 
 /**
@@ -71,6 +72,11 @@ export interface Changes {
 
 const KEEP = 500;
 
+/** What a write through the server came to. */
+export type ApplyResult =
+  | { ok: true; version: number; aliases: Record<string, string> }
+  | { ok: false; conflict: string[] };
+
 /**
  * One vault on the server: read once, then kept current by its watcher. Unchanged notes keep their
  * very same row object (the loader's index), so what changed is found by comparing row identity.
@@ -78,7 +84,10 @@ const KEEP = 500;
 export class VaultService {
   readonly bridge: VaultBridge;
   private fs: VaultFs;
-  private index: VaultIndex = new Map();
+  private readonly write: boolean;
+  private provider: CollectionProvider | null = null;
+  /** The version each row last changed in, and which session changed it (null: outside the server). */
+  private changedAt = new Map<string, { version: number; by: string | null }>();
   private rows = new Map<string, Row>();
   private defsKey = "";
   private current: Snapshot | null = null;
@@ -90,9 +99,50 @@ export class VaultService {
   private again = false;
   private listeners = new Set<(c: Changes) => void>();
 
-  constructor(root: string) {
+  constructor(root: string, opts: { write?: boolean } = {}) {
     this.fs = openVault(root);
     this.bridge = bridgeOver(this.fs);
+    this.write = !!opts.write;
+  }
+
+  get writable(): boolean {
+    return this.write;
+  }
+
+  /**
+   * Writes a device's row changes to the notes, with the apps' writer (only edited properties, new
+   * notes named from the definition, moves, trash; never over a note that changed on disk). `base` is
+   * the version the device had: a row that changed after it, by someone else (Obsidian, another
+   * device), is a conflict and nothing is written. New rows come back with their note path (`aliases`).
+   */
+  async apply(base: number, changes: readonly RowChange[], who: string): Promise<ApplyResult> {
+    if (!this.write) throw new Error("This server does not write to the vault (BONI_WRITE)");
+    await this.refresh();
+    const idOf = (c: RowChange) => (c.op === "upsert" ? c.row.id : c.id);
+    const pathOf = (id: string) => aliases.get(id) ?? id;
+    const conflict = changes.map(idOf).filter((id) => {
+      const c = this.changedAt.get(pathOf(id));
+      return !!c && c.version > base && c.by !== who;
+    });
+    if (conflict.length > 0) return { ok: false, conflict: [...new Set(conflict)] };
+    this.provider ??= makeVaultProvider(this.bridge);
+    try {
+      await this.provider.apply(changes);
+    } catch (e) {
+      if (e instanceof VaultWriteError && e.kind === "conflict")
+        return { ok: false, conflict: [e.message] };
+      throw e;
+    }
+    await this.refresh();
+    const out: Record<string, string> = {};
+    for (const id of changes.map(idOf)) {
+      const path = pathOf(id);
+      if (path !== id) out[id] = path;
+      // What this device just wrote is not a conflict for its next write.
+      const c = this.changedAt.get(path);
+      if (c) c.by = who;
+    }
+    return { ok: true, version: this.version, aliases: out };
   }
 
   /** The calendar as it is now (reads the vault the first time). */
@@ -152,17 +202,25 @@ export class VaultService {
   }
 
   private async readOnce(): Promise<void> {
-    const r = await loadVault(this.bridge, { readOnly: true }, this.index);
-    this.index = r.index;
+    // The apps' reader, with its index of parsed notes (shared with the writer, under the same lock).
+    const r = await withLock(() => readVault(this.bridge, { readOnly: !this.write }));
     const defsKey = JSON.stringify([r.snapshot.collections, r.snapshot.views, r.snapshot.accounts]);
     const next = new Map(r.snapshot.rows.map((row) => [row.id, row]));
     const upserts = r.snapshot.rows.filter((row) => this.rows.get(row.id) !== row);
     const removes = [...this.rows.keys()].filter((id) => !next.has(id));
     const full = this.current !== null && defsKey !== this.defsKey;
-    const changed = this.current === null || full || upserts.length > 0 || removes.length > 0;
+    const first = this.current === null;
+    const changed = first || full || upserts.length > 0 || removes.length > 0;
     this.rows = next;
     this.defsKey = defsKey;
-    if (changed) this.version++;
+    // Versions start from the clock, so they keep growing over restarts: a device that had a version
+    // of an earlier run is behind (takes a new snapshot), never "ahead" and stuck.
+    if (changed) this.version = first ? Math.max(Date.now(), this.version + 1) : this.version + 1;
+    if (changed && !first) {
+      for (const row of full ? r.snapshot.rows : upserts)
+        this.changedAt.set(row.id, { version: this.version, by: null });
+      for (const id of removes) this.changedAt.set(id, { version: this.version, by: null });
+    }
     this.current = {
       ...r.snapshot,
       version: this.version,
@@ -175,7 +233,7 @@ export class VaultService {
       this.stopWatch?.();
       this.stopWatch = this.fs.watch(r.folders, () => void this.refresh());
     }
-    if (!changed || this.version === 1) return;
+    if (!changed || first) return;
     this.log.push({ version: this.version, upserts, removes, full });
     if (this.log.length > KEEP) this.log.shift();
     const c: Changes = full
@@ -191,13 +249,21 @@ export class VaultService {
   }
 }
 
-/** One service per vault folder, shared by the users of that vault. */
+/**
+ * The vault the server serves, shared by its users. One vault per server for now: the apps' reader and
+ * writer keep their index in module state (several vaults per server come with multi-user, phase 6).
+ */
 export class Vaults {
   private byRoot = new Map<string, VaultService>();
+  private readonly opts: { write?: boolean };
+  constructor(opts: { write?: boolean } = {}) {
+    this.opts = opts;
+  }
   get(root: string): VaultService {
     let v = this.byRoot.get(root);
     if (!v) {
-      v = new VaultService(root);
+      if (this.byRoot.size > 0) throw new Error("This server serves a single vault");
+      v = new VaultService(root, this.opts);
       this.byRoot.set(root, v);
     }
     return v;

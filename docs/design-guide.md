@@ -111,8 +111,10 @@ slate `#94a3b8`.
   vault. A repetition the app cannot repeat (e.g. "second Tuesday") shows once and Settings says how many.
 - **Data from a server** (Settings → Data → Source: Local folder | Server; a plain browser only has Server): address, user,
   password; the device keeps only a session token. The calendar opens on the last copy kept on the device, then follows the
-  server live; Settings says "Live", "Offline: showing the last copy" or "The session ended: log in again". Read-only until
-  writing through the server lands.
+  server live; Settings says "Live", "Offline: showing the last copy" or "The session ended: log in again". When the server
+  writes, the gestures change the notes through it exactly as in a local vault, also offline: changes show at once and wait
+  on the device until the connection is back. A change the server refuses (the note changed elsewhere) shows the vault's
+  conflict toast and the server's copy. A read-only server sends its calendars read-only.
 - **Data in the vault** (desktop app, Settings → Data): the calendars are always the vault's notes (the invented sample
   data only shows in a plain browser, for development and tests); writing is opt-in ("Read only" / "Read and write"). With it on, the
   gestures above change the notes: only the edited properties are rewritten (unknown ones, comments and the body stay as

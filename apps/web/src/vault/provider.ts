@@ -24,11 +24,11 @@ import {
 
 /** A write that did not happen. `conflict`: the note changed outside the app since it was read. */
 export class VaultWriteError extends Error {
-  constructor(
-    readonly kind: "conflict" | "failed",
-    message: string,
-  ) {
+  // A plain field (no parameter property): the server runs this file with Node's type stripping.
+  readonly kind: "conflict" | "failed";
+  constructor(kind: "conflict" | "failed", message: string) {
     super(message);
+    this.kind = kind;
   }
 }
 

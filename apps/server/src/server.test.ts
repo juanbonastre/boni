@@ -17,6 +17,7 @@ let db: Db;
 let vaults: Vaults;
 let base: string;
 let close: () => Promise<void>;
+const started = Date.now();
 
 function write(rel: string, text: string) {
   mkdirSync(dirname(join(dir, "vault", rel)), { recursive: true });
@@ -82,7 +83,7 @@ describe("accounts", () => {
     const { status, body } = await loginAs();
     expect(status).toBe(200);
     const me = await get("/api/me", body.token);
-    expect(await me.json()).toEqual({ user: { name: "juan" } });
+    expect(await me.json()).toEqual({ user: { name: "juan" }, write: false });
     await fetch(`${base}/api/logout`, {
       method: "POST",
       headers: { authorization: `Bearer ${body.token}` },
@@ -104,7 +105,8 @@ describe("the calendar from the server", () => {
       collections: { id: string }[];
       rows: { id: string; values: Record<string, unknown> }[];
     };
-    expect(snap.version).toBe(1);
+    // Versions start from the clock: they keep growing when the server starts again.
+    expect(snap.version).toBeGreaterThanOrEqual(started);
     expect(snap.collections.map((c) => c.id)).toEqual(["docencia"]);
     expect(snap.rows.map((r) => r.id).sort()).toEqual([
       "agenda/docencia/2026-10-19 Clase de ejemplo.md",
@@ -116,7 +118,8 @@ describe("the calendar from the server", () => {
   it("tells what changed since a version, and streams it live", async () => {
     const { body } = await loginAs();
     const token = body.token as string;
-    await get("/api/snapshot", token);
+    const first = ((await (await get("/api/snapshot", token)).json()) as { version: number })
+      .version;
 
     // Live: read the event stream while a note changes and another appears outside the server.
     const ctrl = new AbortController();
@@ -140,7 +143,7 @@ describe("the calendar from the server", () => {
     ctrl.abort();
     expect(text).toContain("event: changes");
 
-    const changes = (await (await get("/api/changes?since=1", token)).json()) as {
+    const changes = (await (await get(`/api/changes?since=${first}`, token)).json()) as {
       version: number;
       full?: boolean;
       upserts: { id: string; values: { title: string } }[];
@@ -157,7 +160,9 @@ describe("the calendar from the server", () => {
       await get(`/api/changes?since=${changes.version}`, token)
     ).json()) as Changes;
     expect(later.removes).toEqual(["agenda/docencia/2026-10-21 Nueva.md"]);
-    const lost = (await (await get("/api/changes?since=999", token)).json()) as Changes;
+    const lost = (await (
+      await get(`/api/changes?since=${later.version + 999}`, token)
+    ).json()) as Changes;
     expect(lost.full).toBe(true);
   });
 

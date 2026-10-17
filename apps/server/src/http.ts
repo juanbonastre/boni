@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
+import type { RowChange } from "@boni-calendar/core";
 import { login, logout, type User, userOf } from "./auth.ts";
 import type { Db } from "./db.ts";
 import type { Vaults } from "./vaults.ts";
@@ -14,6 +15,7 @@ import type { Vaults } from "./vaults.ts";
  *   GET  /api/snapshot  -> the calendar now (definitions, rows, version, ignored notes)
  *   GET  /api/changes?since=N -> rows changed or removed after version N (or { full: true })
  *   GET  /api/stream    -> Server-Sent Events: one "changes" event per new version
+ *   POST /api/apply     { base, changes } -> { version, aliases } | 409 { conflict } (with BONI_WRITE)
  * Anything else is the web app (static files of apps/web/dist), so a browser can open the calendar.
  */
 export interface ServerOptions {
@@ -62,7 +64,7 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
   let size = 0;
   for await (const c of req) {
     size += (c as Buffer).length;
-    if (size > 1_000_000) throw new Error("too large");
+    if (size > 8_000_000) throw new Error("too large");
     chunks.push(c as Buffer);
   }
   const text = Buffer.concat(chunks).toString("utf8");
@@ -104,7 +106,18 @@ export function makeServer(opts: ServerOptions): Server {
         logout(db, tokenOf(req) ?? "");
         return send(res, 200, {});
       case "GET /api/me":
-        return send(res, 200, { user: { name: user.name } });
+        return send(res, 200, { user: { name: user.name }, write: vault.writable });
+      case "POST /api/apply": {
+        if (!vault.writable) return send(res, 403, { error: "read-only" });
+        const b = await bodyOf(req);
+        const base = Number(b.base);
+        if (!Number.isInteger(base) || !Array.isArray(b.changes))
+          return send(res, 400, { error: "bad-request" });
+        const r = await vault.apply(base, b.changes as RowChange[], tokenOf(req) ?? "");
+        return r.ok
+          ? send(res, 200, r)
+          : send(res, 409, { error: "conflict", conflict: r.conflict });
+      }
       case "GET /api/snapshot":
         return send(res, 200, await vault.snapshot());
       case "GET /api/changes": {

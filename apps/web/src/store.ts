@@ -71,10 +71,13 @@ import {
   type RemoteChanges,
   RemoteError,
   type RemoteSnapshot,
+  savedOutbox,
   savedSnapshot,
+  saveOutbox,
   saveSnapshot,
 } from "./remote.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
+import { ServerWriter } from "./serverWriter.ts";
 import type { IgnoredNote, VaultLoad } from "./vault/loadVault.ts";
 import { makeVaultProvider, VaultWriteError } from "./vault/provider.ts";
 import {
@@ -449,18 +452,22 @@ export function expandedCache(
 
 let toastSeq = 0;
 
-/** The live connection to the server (one per app). */
+/** The live connection to the server (one per app). `snap` holds the server's rows as it sent them. */
 const server: {
   version: number;
   snap: RemoteSnapshot | null;
   stop: (() => void) | null;
   saveTimer: ReturnType<typeof setTimeout> | undefined;
-} = { version: 0, snap: null, stop: null, saveTimer: undefined };
+  remote: Remote | null;
+  writer: ServerWriter | null;
+} = { version: 0, snap: null, stop: null, saveTimer: undefined, remote: null, writer: null };
 function stopFollowing() {
   server.stop?.();
   server.stop = null;
   server.snap = null;
   server.version = 0;
+  server.remote = null;
+  server.writer = null;
 }
 const serverKey = (c: { url: string; user: string }) => `${c.url}|${c.user}`;
 /** One writer for the whole session, so notes it sent to the trash can still be brought back by Undo. */
@@ -1236,6 +1243,8 @@ export const useApp = create<AppState>((set, get) => {
     disconnectServer: async () => {
       const cfg = get().settings.server;
       const token = getHost().storage.get(SERVER_TOKEN_KEY);
+      // What is still queued is sent first if it can be (otherwise it waits for the next login).
+      await server.writer?.flush();
       stopFollowing();
       if (cfg && token) {
         await new Remote(cfg.url, token).logout();
@@ -1261,21 +1270,44 @@ export const useApp = create<AppState>((set, get) => {
       const remote = new Remote(cfg.url, token);
       const key = serverKey(cfg);
       const label = `${cfg.user} · ${remote.url}`;
-      // Read-only until writing through the server exists (phase 3).
+      // Changes go through the server (when it lets this account write: otherwise its calendars come
+      // read-only); what was not sent yet is kept on the device and shown on top of the server's rows.
+      const writer = new ServerWriter(
+        {
+          remote: () => server.remote,
+          version: () => server.version,
+          save: (o) => saveOutbox(key, o),
+          sent: () => server.snap && show(server.snap),
+          rejected: (why, e) => {
+            console.error("server write failed", e);
+            get().showToast(why === "conflict" ? "vault.conflict" : "vault.saveFailed");
+            void remote.snapshot().then(reload).catch(fail);
+          },
+        },
+        await savedOutbox(key),
+      );
+      server.remote = remote;
+      server.writer = writer;
       const show = (snap: RemoteSnapshot) => {
+        if (server.writer !== writer) return; // logged out or connected again meanwhile
         server.version = snap.version;
         server.snap = snap;
+        const rows = writer.over(snap.rows, snap.version);
         applyLoad(
           {
-            snapshot: snap,
+            snapshot: { ...snap, rows },
             notes: snap.rows.length,
             ignored: snap.ignored,
             problems: snap.problems,
           },
           label,
           "server",
-          () => memoryProvider(snap),
+          () => writer,
         );
+      };
+      const reload = (snap: RemoteSnapshot) => {
+        show(snap);
+        void saveSnapshot(key, snap);
       };
       const fail = (e: unknown) => {
         if (e instanceof RemoteError && e.kind === "unauthorized") {
@@ -1293,9 +1325,8 @@ export const useApp = create<AppState>((set, get) => {
         if (cached) show(cached);
       }
       try {
-        const snap = await remote.snapshot();
-        show(snap);
-        void saveSnapshot(key, snap);
+        reload(await remote.snapshot());
+        void writer.flush();
       } catch (e) {
         fail(e);
         if (e instanceof RemoteError && e.kind === "unauthorized") return;
@@ -1304,16 +1335,11 @@ export const useApp = create<AppState>((set, get) => {
       /** New rows, or a new snapshot when the server says so (definitions changed, too far behind). */
       const apply = async (c: RemoteChanges) => {
         if (c.version <= server.version) return;
-        if (c.full || !server.snap) {
-          const snap = await remote.snapshot();
-          show(snap);
-          void saveSnapshot(key, snap);
-          return;
-        }
+        if (c.full || !server.snap) return reload(await remote.snapshot());
         const snap: RemoteSnapshot = {
           ...server.snap,
           version: c.version,
-          rows: applyChanges(get().source === "server" ? get().rows : server.snap.rows, c),
+          rows: applyChanges(server.snap.rows, c),
         };
         show(snap);
         clearTimeout(server.saveTimer);
@@ -1331,6 +1357,7 @@ export const useApp = create<AppState>((set, get) => {
           if (error?.kind === "unauthorized") return fail(error);
           if (live) {
             set({ remote: { status: "live" } });
+            void writer.flush();
             if (behind) void remote.changes(server.version).then(apply).catch(fail);
             behind = false;
           } else {
