@@ -150,6 +150,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   opens the context menu. Nothing is hover-only on a touch screen, resize edges are taller, the system Back button closes
   what is open, and the calendar keeps clear of the status and navigation bars. Undo through the toast. On Android the vault's
   folder is chosen once (Settings → Data → Choose, the system folder picker); "Open note" opens it in Obsidian.
+  GrapheneOS lets the user take network access away from an app (its "Network" permission, which no dialog can ask for);
+  when it is off, Settings says so where the network is needed (server, external calendars) with a button that opens the
+  app's permissions.
 
 ## 7. Keeping it consistent
 - A pull request that changes look or behaviour in Boni Calendar updates this file.

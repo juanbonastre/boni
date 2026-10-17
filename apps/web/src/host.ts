@@ -33,6 +33,16 @@ export interface Host {
   fetchText?: (
     url: string,
   ) => Promise<{ ok: true; value: string } | { ok: false; code: string; message: string }>;
+  /**
+   * Network access that the user can switch off per app (GrapheneOS's "Network" permission, which no
+   * dialog can ask for): whether the app has it, and the settings page where it is turned on.
+   */
+  network?: { allowed(): Promise<boolean>; openSettings(): void };
+}
+
+/** False only when the host says this app may not use the network (the user must allow it). */
+export async function networkAllowed(): Promise<boolean> {
+  return (await host.network?.allowed().catch(() => true)) ?? true;
 }
 
 export const localStorageStore: HostStorage = {

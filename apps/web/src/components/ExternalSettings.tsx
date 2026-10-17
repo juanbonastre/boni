@@ -4,6 +4,7 @@ import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from 
 import type { ExternalCal, ExternalStatus } from "../external.ts";
 import { t } from "../i18n.ts";
 import { useApp } from "../store.ts";
+import { NetworkHint } from "./NetworkHint.tsx";
 
 const COLORS = Object.values(PALETTE);
 
@@ -141,6 +142,7 @@ export function ExternalSettings() {
     <div ref={ref} className="ext-settings">
       <h3>{t("settings.external")}</h3>
       <p className="muted small ext-hint">{t("external.hint")}</p>
+      {externals.length > 0 && <NetworkHint />}
       {externals.map((c) =>
         editing === c.id ? (
           <ExternalForm key={c.id} initial={c} onDone={() => setEditing(null)} />

@@ -19,6 +19,9 @@ const es = {
   "sidebar.addAccount": "Añadir calendario externo",
   "external.account": "Calendarios externos",
   "settings.external": "Calendarios externos",
+  "network.blocked":
+    "Boni Calendar no tiene permiso de red: actívalo en los ajustes de la app (Permisos → Red).",
+  "network.openSettings": "Abrir permisos",
   "settings.origin": "Origen",
   "settings.origin.local": "Carpeta local",
   "settings.origin.server": "Servidor",
@@ -291,6 +294,9 @@ const en: Record<Key, string> = {
   "sidebar.addAccount": "Add external calendar",
   "external.account": "External calendars",
   "settings.external": "External calendars",
+  "network.blocked":
+    "Boni Calendar may not use the network: allow it in the app's settings (Permissions → Network).",
+  "network.openSettings": "Open permissions",
   "settings.origin": "Source",
   "settings.origin.local": "Local folder",
   "settings.origin.server": "Server",
