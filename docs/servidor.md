@@ -109,4 +109,10 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
   cambia el vault o la cuenta, el servidor publica ahi un mensaje corto ("reminders") y el dispositivo pide sus avisos otra
   vez. Solo se aceptan direcciones de `BONI_PUSH_HOSTS` (el servidor ntfy); `BONI_PUSH_TOKEN` es el token de una cuenta de
   ntfy con permiso de escritura en los temas `up*`. Si el distribuidor responde 404 o 410, la direccion se olvida.
-- Pendiente: la app de Android programa los avisos como alarmas del sistema y recibe UnifiedPush.
+- App de Android: los avisos son alarmas exactas del sistema que muestran una notificacion aunque la app este cerrada
+  (canal "Avisos"; pide permiso de notificaciones la primera vez); al tocarla se abre el calendario en ese evento. Con
+  carpeta local, la pagina le pasa la lista de las proximas 48 h. Con servidor, la app la pide ella misma
+  (`GET /api/reminders`, 7 dias): al llegar un mensaje UnifiedPush (la app ntfy como distribuidor, si esta instalada),
+  al reiniciar el movil y cada pocas horas por si se perdio alguno. Las alarmas se vuelven a poner tras reiniciar.
+- Para UnifiedPush en el NAS: `BONI_PUSH_HOSTS` con el host de ntfy y `BONI_PUSH_TOKEN` (cuenta de ntfy con escritura en
+  `up*`); en ntfy, la cuenta del movil necesita lectura en `up*`.

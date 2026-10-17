@@ -56,5 +56,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.activity)
+    implementation(libs.unifiedpush.connector)
     testImplementation(libs.junit)
 }

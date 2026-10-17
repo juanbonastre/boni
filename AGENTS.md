@@ -33,6 +33,9 @@ apps/android/    The same app on Android (Kotlin shell, `make`-less: CI builds i
                  fetched with `take`; web side `src/android.ts`): the vault through the Storage Access Framework
                  (`VaultSaf.kt`, folder chosen once; same rules as vault-fs.cjs, trash = the vault's `.trash`), index
                  in the app's files, downloads for external calendars. Signed releases (secrets) for Obtainium.
+                 Reminders: `Notices.kt` (exact alarms + notifications, re-armed at boot), `ServerSync.kt` (with a
+                 server the app fetches `/api/reminders` itself: on a UnifiedPush message via `BoniPushService.kt`,
+                 connector 3.0.x, at boot and every few hours).
 apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeScript directly, no build. Reuses
                  packages/core, the web's vault loader (`loadVault`), writer (`vault/provider.ts`) and the desktop's
                  `vault-fs.cjs`, so it reads and writes the vault with the apps' rules; the vault stays the truth.

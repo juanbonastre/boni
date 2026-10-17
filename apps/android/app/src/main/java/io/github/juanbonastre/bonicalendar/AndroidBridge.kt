@@ -10,6 +10,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import org.json.JSONArray
 import org.json.JSONObject
+import org.unifiedpush.android.connector.UnifiedPush
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -101,6 +102,27 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
             }
             null
         }
+        // Reminders (phase 5): the page's notices become alarms; with a server the app fetches them itself.
+        "scheduleNotices" -> {
+            Notices.schedule(activity, a.getString(0))
+            activity.runOnUiThread { activity.askNotificationPermission() }
+            null
+        }
+        "serverSync" -> {
+            val cfg = if (a.isNull(0)) null else a.getString(0)
+            ServerSync.configure(activity, cfg)
+            if (cfg != null) {
+                activity.runOnUiThread {
+                    activity.askNotificationPermission()
+                    // The distributor (ntfy) if there is one; without it the app still syncs every few hours.
+                    UnifiedPush.tryUseCurrentOrDefaultDistributor(activity) { ok ->
+                        if (ok) UnifiedPush.register(activity)
+                    }
+                }
+            }
+            null
+        }
+        "takeOpenEvent" -> activity.takeOpenEvent()
         else -> throw VaultError("unknown", "Unknown call: $method")
     }
 

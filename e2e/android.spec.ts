@@ -42,3 +42,66 @@ test("without network permission, Settings says so and opens the app's permissio
     .toContain("openAppSettings");
   await page.screenshot({ path: "e2e/screenshots/android-network.png" });
 });
+
+/** The Android app's stand-in, recording every call and its arguments. */
+async function fakeAndroid(
+  page: import("@playwright/test").Page,
+  answers: Record<string, unknown>,
+) {
+  await page.addInitScript((answers) => {
+    const box = new Map<string, string>();
+    const calls: [string, unknown[]][] = [];
+    // biome-ignore lint/suspicious/noExplicitAny: test hooks
+    (window as any).__calls = calls;
+    // biome-ignore lint/suspicious/noExplicitAny: stand-in for the Android app's bridge
+    (window as any).boniAndroid = {
+      call(id: string, method: string, args: string) {
+        calls.push([method, JSON.parse(args)]);
+        box.set(id, JSON.stringify({ ok: true, value: answers[method] ?? null }));
+        // biome-ignore lint/suspicious/noExplicitAny: test hooks
+        setTimeout(() => (window as any).__boniReply(id));
+      },
+      take: (id: string) => box.get(id) ?? "",
+    };
+  }, answers);
+}
+const calls = (page: import("@playwright/test").Page) =>
+  // biome-ignore lint/suspicious/noExplicitAny: test hooks
+  page.evaluate(() => (window as any).__calls as [string, unknown[]][]);
+
+test("on Android the page hands its reminders to the app, and asks which notification opened it", async ({
+  page,
+}) => {
+  await fakeAndroid(page, { getRoot: null, networkAllowed: true });
+  await page.goto("/?now=2025-09-17T14:29&tz=Europe/Madrid");
+  await expect
+    .poll(async () => (await calls(page)).find(([m]) => m === "scheduleNotices")?.[1])
+    .toEqual(["[]"]);
+  expect((await calls(page)).map(([m]) => m)).toContain("takeOpenEvent");
+});
+
+test("on Android with a server, the app is told how to fetch its reminders itself", async ({
+  page,
+}) => {
+  await fakeAndroid(page, { getRoot: null, networkAllowed: true });
+  await page.addInitScript(() => {
+    localStorage.setItem(
+      "boni-calendar:settings",
+      JSON.stringify({ server: { url: "http://127.0.0.1:9", user: "juan" }, h24: true }),
+    );
+    localStorage.setItem("boni-calendar:server-token", "token-inventado");
+  });
+  await page.goto("/?now=2025-09-17T14:29&tz=Europe/Madrid");
+  await expect
+    .poll(async () => (await calls(page)).find(([m]) => m === "serverSync")?.[1]?.[0])
+    .toBe(
+      JSON.stringify({
+        url: "http://127.0.0.1:9",
+        token: "token-inventado",
+        tz: "Europe/Madrid",
+        locale: "es",
+        h24: true,
+      }),
+    );
+  expect((await calls(page)).map(([m]) => m)).not.toContain("scheduleNotices");
+});

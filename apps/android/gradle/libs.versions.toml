@@ -5,12 +5,15 @@ coreKtx = "1.15.0"
 webkit = "1.12.1"
 activity = "1.9.3"
 junit = "4.13.2"
+# Kept at 3.0.x: built with Kotlin 2.0 and compileSdk 35 like this app (3.1+ need newer tools).
+unifiedpush = "3.0.10"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-activity = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpush" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
