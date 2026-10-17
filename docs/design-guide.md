@@ -97,8 +97,10 @@ slate `#94a3b8`.
   opens the calendar on that event; it asks for the notification permission the first time there is something to remind).
 - **A new event is a draft until it has a title** (like Notion Calendar): however it is made (drag, double click, menu,
   the phone's button), the grid shows only its range, lightly tinted in its calendar's colour with no text, and its detail
-  opens on the title. It can be moved or resized with the detail still open. Closing the detail without a title (`Esc`, a
-  click elsewhere, the close button, another selection) drops it with no undo step; with a title it becomes an ordinary
+  opens on the title (it looks like that from the first moment of the drag). It can be moved or resized with the detail
+  still open. A title typed and then a click elsewhere is kept (no Enter needed: any press outside the detail first saves
+  what is being typed). Closing the detail without a title (`Esc`, a click elsewhere, the close button, another
+  selection) drops it with no undo step; with a title it becomes an ordinary
   event (and, with a vault or a server, its note). So untitled notes are never made, and notes are never renamed.
 - **Selection:** click selects one and opens its detail; `Shift`+click adds the range from the anchor in chronological
   order; `Ctrl+Shift`+click adds or removes one event. Dragging one selected event moves all of them. Click on empty space

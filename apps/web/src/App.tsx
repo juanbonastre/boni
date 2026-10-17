@@ -67,13 +67,21 @@ function useModifierClass() {
   }, []);
 }
 
-/** Clicking anywhere outside the detail popover (and the events that open it) closes it. */
+/**
+ * Clicking anywhere outside the detail popover (and the events that open it) closes it. First, a press
+ * outside the detail saves what is being typed in it: its fields save when they lose the focus, and the
+ * press could close the detail (or select something else, or drop a new event as an untitled draft)
+ * before that happens, and the text would be lost.
+ */
 function useClickAway() {
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
+      const el = eventTarget(e);
+      const active = ((appRoot()?.getRootNode() ?? document) as Document | ShadowRoot)
+        ?.activeElement as HTMLElement | null | undefined;
+      if (active?.closest(".detail") && !el?.closest(".detail")) active.blur();
       const s = useApp.getState();
       if (!s.popoverId) return;
-      const el = eventTarget(e);
       if (el?.closest(".popover, .menu, .ev, .bar, .mchip, .scrim, .toast")) return;
       s.set({ popoverId: null });
     };
