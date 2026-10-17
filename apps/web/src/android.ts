@@ -18,6 +18,7 @@ export function androidHost(native: AndroidNative): {
   vault: VaultBridge;
   fetchText: NonNullable<Host["fetchText"]>;
   network: NonNullable<Host["network"]>;
+  notify: NonNullable<Host["notify"]>;
 } {
   let seq = 0;
   const pending = new Map<string, (a: Answer) => void>();
@@ -62,6 +63,18 @@ export function androidHost(native: AndroidNative): {
         return !r.ok || r.value !== false;
       },
       openSettings: () => void call("openAppSettings"),
+    },
+    // Reminders become system alarms and notifications, also with the app closed.
+    notify: {
+      schedule: (list) => void call("scheduleNotices", JSON.stringify(list)),
+      server: (cfg) => void call("serverSync", cfg ? JSON.stringify(cfg) : null),
+      onOpen: (cb) => {
+        // A tapped notification: now (the app was running) or the one that started the app.
+        (window as unknown as { __boniOpenNotice: (id: string) => void }).__boniOpenNotice = cb;
+        void call<string | null>("takeOpenEvent").then((r) => {
+          if (r.ok && r.value) cb(r.value);
+        });
+      },
     },
   };
 }

@@ -1,6 +1,10 @@
 package io.github.juanbonastre.bonicalendar
 
+import android.Manifest
 import android.annotation.SuppressLint
+import android.content.pm.PackageManager
+import android.os.Build
+import org.json.JSONObject
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -83,6 +87,7 @@ class MainActivity : ComponentActivity() {
         // Light icons on the graphite bars.
         WindowCompat.getInsetsController(window, frame).isAppearanceLightStatusBars = false
 
+        pendingOpen = intent.getStringExtra(EXTRA_OPEN_EVENT)
         val query = intent.getStringExtra("query")?.let { "?$it" } ?: ""
         web.loadUrl("https://appassets.androidplatform.net/assets/web/index.html$query")
 
@@ -115,6 +120,31 @@ class MainActivity : ComponentActivity() {
         pickTree.launch(null)
     }
 
+    /** The event of the notification that opened the app, until the page asks for it. */
+    @Volatile private var pendingOpen: String? = null
+
+    fun takeOpenEvent(): String? = pendingOpen.also { pendingOpen = null }
+
+    /** A notification tapped while the app was running: the page shows that event. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val id = intent.getStringExtra(EXTRA_OPEN_EVENT) ?: return
+        web.evaluateJavascript(
+            "window.__boniOpenNotice ? (window.__boniOpenNotice(${JSONObject.quote(id)}), true) : false",
+        ) { done -> if (done != "true") pendingOpen = id }
+    }
+
+    /** Notifications need the user's yes since Android 13 (asked once, when there is something to remind). */
+    fun askNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !getSharedPreferences("notices", MODE_PRIVATE).getBoolean("asked", false)
+        ) {
+            getSharedPreferences("notices", MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+    }
+
     /** Coming back to the app: the calendar checks the vault for changes (Syncthing may have brought some). */
     override fun onResume() {
         super.onResume()
@@ -133,6 +163,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val TAG = "BoniCalendar"
+        const val EXTRA_OPEN_EVENT = "openEvent"
 
         /** True when something was open (and Escape closed it): then Back stays in the app. */
         private const val BACK_JS = """(() => {

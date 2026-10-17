@@ -167,7 +167,7 @@ export interface Toast {
 
 const SETTINGS_KEY = "boni-calendar:settings";
 /** The session token of this device on the server (device storage, never in settings or the vault). */
-const SERVER_TOKEN_KEY = "boni-calendar:server-token";
+export const SERVER_TOKEN_KEY = "boni-calendar:server-token";
 /**
  * Preferences shared by all the devices of a server account (phase 4). The theme, the density and the
  * timezone stay per device (a phone and a laptop, a trip).

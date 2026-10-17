@@ -14,7 +14,7 @@ import { TopBar } from "./components/TopBar.tsx";
 import { appRoot, eventTarget, getHost, onKeys, releaseFocus } from "./host.ts";
 import { t } from "./i18n.ts";
 import { noticesFor } from "./notifications.ts";
-import { COMPACT_WIDTH, useApp } from "./store.ts";
+import { COMPACT_WIDTH, SERVER_TOKEN_KEY, useApp } from "./store.ts";
 
 function useTheme() {
   const theme = useApp((s) => s.settings.theme);
@@ -280,8 +280,27 @@ function useNotifications() {
     const notify = getHost().notify;
     if (!notify) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let lastServer = "";
     const send = () => {
       const s = useApp.getState();
+      // A host that asks the server itself (Android) only needs to know how; the page lists nothing then.
+      if (notify.server) {
+        const token = getHost().storage.get(SERVER_TOKEN_KEY);
+        const cfg =
+          s.source === "server" && s.settings.server && token
+            ? {
+                url: s.settings.server.url,
+                token,
+                tz: s.settings.tz,
+                locale: s.settings.locale,
+                h24: s.settings.h24,
+              }
+            : null;
+        const key = JSON.stringify(cfg);
+        if (key !== lastServer) notify.server(cfg);
+        lastServer = key;
+        if (cfg) return;
+      }
       notify.schedule(
         noticesFor(s.data.events, (id) => s.remindersOf(id), {
           now: nowMs(),
@@ -296,7 +315,12 @@ function useNotifications() {
       timer = setTimeout(send, 1500);
     };
     const off = useApp.subscribe((s, p) => {
-      if (s.data.events !== p.data.events || s.views !== p.views || s.settings !== p.settings)
+      if (
+        s.data.events !== p.data.events ||
+        s.views !== p.views ||
+        s.settings !== p.settings ||
+        s.source !== p.source
+      )
         soon();
     });
     notify.onOpen?.((eventId) => {

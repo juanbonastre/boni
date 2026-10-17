@@ -2,6 +2,15 @@ import type { Notice } from "./notifications.ts";
 import type { Settings } from "./store.ts";
 import type { VaultBridge } from "./vaultBridge.ts";
 
+/** What a host needs to ask Boni Calendar Server for this device's reminders (`GET /api/reminders`). */
+export interface ServerSync {
+  url: string;
+  token: string;
+  tz: string;
+  locale: "es" | "en";
+  h24: boolean;
+}
+
 /** Small per-device key-value storage for settings and UI state. */
 export interface HostStorage {
   get(key: string): string | null;
@@ -44,7 +53,16 @@ export interface Host {
    * its time, even with the calendar in the background; a new list replaces the previous one. `onOpen`
    * tells which event's notification was clicked.
    */
-  notify?: { schedule(list: Notice[]): void; onOpen?(cb: (eventId: string) => void): void };
+  notify?: {
+    schedule(list: Notice[]): void;
+    onOpen?(cb: (eventId: string) => void): void;
+    /**
+     * A host that can ask the server for the reminders itself, also with the app closed (Android, by
+     * UnifiedPush and now and then): how to reach it, or null without a server. In server mode such a
+     * host gets no lists from the page.
+     */
+    server?(cfg: ServerSync | null): void;
+  };
 }
 
 /** False only when the host says this app may not use the network (the user must allow it). */
