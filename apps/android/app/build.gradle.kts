@@ -56,4 +56,5 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.activity)
+    testImplementation(libs.junit)
 }

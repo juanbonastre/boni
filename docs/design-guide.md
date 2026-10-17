@@ -144,7 +144,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   and glides on, a sideways swipe moves days and settles on a whole day, two fingers zoom the hours; a tap selects and
   opens the detail; a long press then a drag creates, moves or resizes exactly like the mouse; a long press without moving
   opens the context menu. Nothing is hover-only on a touch screen, resize edges are taller, the system Back button closes
-  what is open, and the calendar keeps clear of the status and navigation bars. Undo through the toast.
+  what is open, and the calendar keeps clear of the status and navigation bars. Undo through the toast. On Android the vault's
+  folder is chosen once (Settings → Data → Choose, the system folder picker); "Open note" opens it in Obsidian.
 
 ## 7. Keeping it consistent
 - A pull request that changes look or behaviour in Boni Calendar updates this file.

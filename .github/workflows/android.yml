@@ -49,6 +49,9 @@ jobs:
           else
             echo "No KEYSTORE_BASE64 secret: debug-signed APK as an artifact only, no release."
           fi
+      - name: Unit tests
+        working-directory: apps/android
+        run: gradle :app:testReleaseUnitTest --no-daemon --stacktrace
       - name: Build APK
         working-directory: apps/android
         env:

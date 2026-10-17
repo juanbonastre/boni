@@ -28,6 +28,11 @@ apps/obsidian-plugin/  The same app as an Obsidian plugin (desktop only, `make p
                  unit-tested against `fakeObsidian.ts`. Writing is on by default there; one calendar tab at a
                  time (the store is a singleton). The index lives in IndexedDB (`cache.ts`), settings in
                  `app.saveLocalStorage`: per device, never in `.obsidian/` (Syncthing carries it).
+apps/android/    The same app on Android (Kotlin shell, `make`-less: CI builds it, android.yml): the built web UI in a
+                 WebView from the APK's assets. `AndroidBridge.kt` is `window.boniAndroid` (async calls, answers
+                 fetched with `take`; web side `src/android.ts`): the vault through the Storage Access Framework
+                 (`VaultSaf.kt`, folder chosen once; same rules as vault-fs.cjs, trash = the vault's `.trash`), index
+                 in the app's files, downloads for external calendars. Signed releases (secrets) for Obtainium.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status.
 ```
