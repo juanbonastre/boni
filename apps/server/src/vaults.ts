@@ -1,5 +1,18 @@
 import { createRequire } from "node:module";
-import type { CollectionProvider, CollectionSnapshot, Row, RowChange } from "@boni-calendar/core";
+import {
+  type CalEvent,
+  type CollectionProvider,
+  type CollectionSnapshot,
+  diffRows,
+  extendSeries,
+  makeModel,
+  type Row,
+  type RowChange,
+  reconcileRows,
+  rowToEvent,
+  systemTimeZone,
+  todayIn,
+} from "@boni-calendar/core";
 import { patchCollectionReminders } from "@boni-calendar/web/src/vault/definitions.ts";
 import type { IgnoredNote } from "@boni-calendar/web/src/vault/loadVault.ts";
 import { makeVaultProvider, VaultWriteError } from "@boni-calendar/web/src/vault/provider.ts";
@@ -99,11 +112,57 @@ export class VaultService {
   private running: Promise<void> | null = null;
   private again = false;
   private listeners = new Set<(c: Changes) => void>();
+  private topUpTimer: ReturnType<typeof setTimeout> | null = null;
+  private daily: ReturnType<typeof setInterval> | null = null;
 
   constructor(root: string, opts: { write?: boolean } = {}) {
     this.fs = openVault(root);
     this.bridge = bridgeOver(this.fs);
     this.write = !!opts.write;
+    if (this.write) {
+      // Series keep going as time passes, also on days nothing changes in the vault.
+      this.daily = setInterval(() => this.scheduleTopUp(), 6 * 3_600_000);
+      this.daily.unref?.();
+    }
+  }
+
+  /**
+   * Open-ended series kept as separate notes get the notes they are missing, up to the apps' horizon
+   * (the same rule as the desktop app with a vault folder: never refilling gaps). Done here once for
+   * every device, so phones and browsers in server mode do not have to (and two of them never make the
+   * same notes). Returns how many notes were made.
+   */
+  async topUpSeries(): Promise<number> {
+    if (!this.write) return 0;
+    const snap = await this.snapshot();
+    const tz = systemTimeZone();
+    const model = makeModel(snap.collections, snap.views, { defaultTz: tz });
+    const events: CalEvent[] = [];
+    for (const row of snap.rows) {
+      const ev = rowToEvent(model, row);
+      if (ev) events.push(ev);
+    }
+    const now = Date.now();
+    const more = extendSeries(events, {
+      newId: () => `ev-${now.toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      now,
+      today: todayIn(tz, now),
+    });
+    if (more.length === 0) return 0;
+    const rows = reconcileRows(model, snap.rows, events, [...events, ...more]);
+    this.provider ??= makeVaultProvider(this.bridge);
+    await this.provider.apply(diffRows(snap.rows, rows));
+    await this.refresh();
+    return more.length;
+  }
+
+  private scheduleTopUp(): void {
+    if (!this.write || this.topUpTimer) return;
+    this.topUpTimer = setTimeout(() => {
+      this.topUpTimer = null;
+      this.topUpSeries().catch((e) => console.warn("series", e instanceof Error ? e.message : e));
+    }, 2000);
+    this.topUpTimer.unref?.();
   }
 
   get writable(): boolean {
@@ -254,6 +313,7 @@ export class VaultService {
       this.stopWatch?.();
       this.stopWatch = this.fs.watch(r.folders, () => void this.refresh());
     }
+    if (changed) this.scheduleTopUp();
     if (!changed || first) return;
     this.log.push({ version: this.version, upserts, removes, full });
     if (this.log.length > KEEP) this.log.shift();
@@ -267,6 +327,8 @@ export class VaultService {
     this.stopWatch?.();
     this.stopWatch = null;
     this.listeners.clear();
+    if (this.topUpTimer) clearTimeout(this.topUpTimer);
+    if (this.daily) clearInterval(this.daily);
   }
 }
 
