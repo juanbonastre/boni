@@ -27,7 +27,9 @@ export async function mountApp(container: HTMLElement, host: Host): Promise<{ un
       </ViewportProvider>
     </StrictMode>,
   );
-  if (useApp.getState().source === "vault") void useApp.getState().loadVault();
+  const app = useApp.getState();
+  if (app.source === "server") void app.loadServer();
+  else if (app.source === "vault") void app.loadVault();
   return {
     unmount() {
       stopWatchingVault(host.vault);

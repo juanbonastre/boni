@@ -161,6 +161,16 @@ describe("the calendar from the server", () => {
     expect(lost.full).toBe(true);
   });
 
+  it("lets the apps call it from their own origin (token, no cookies)", async () => {
+    const pre = await fetch(`${base}/api/snapshot`, {
+      method: "OPTIONS",
+      headers: { origin: "app://example", "access-control-request-headers": "authorization" },
+    });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get("access-control-allow-headers")).toContain("authorization");
+    expect((await get("/api/me")).headers.get("access-control-allow-origin")).toBe("*");
+  });
+
   it("serves the web app to a browser, and nothing outside it", async () => {
     expect(await (await get("/")).text()).toContain("Boni Calendar");
     expect((await get("/../../etc/passwd")).status).toBe(404);

@@ -109,6 +109,10 @@ slate `#94a3b8`.
   failed (refresh, edit, remove next to it). The last copy shows without a connection; they refresh when the app
   opens and every half hour. The address of a private calendar is a secret: it stays on the device, never in the
   vault. A repetition the app cannot repeat (e.g. "second Tuesday") shows once and Settings says how many.
+- **Data from a server** (Settings → Data → Source: Local folder | Server; a plain browser only has Server): address, user,
+  password; the device keeps only a session token. The calendar opens on the last copy kept on the device, then follows the
+  server live; Settings says "Live", "Offline: showing the last copy" or "The session ended: log in again". Read-only until
+  writing through the server lands.
 - **Data in the vault** (desktop app, Settings → Data): the calendars are always the vault's notes (the invented sample
   data only shows in a plain browser, for development and tests); writing is opt-in ("Read only" / "Read and write"). With it on, the
   gestures above change the notes: only the edited properties are rewritten (unknown ones, comments and the body stay as
