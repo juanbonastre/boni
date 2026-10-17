@@ -23,6 +23,7 @@ import { clamp, looksLikeNotch, wheelPixels } from "../engine/viewport.ts";
 import { useCalendarMap, useDayIndex } from "../hooks.ts";
 import { t } from "../i18n.ts";
 import { useApp, useVisible } from "../store.ts";
+import { NEW_ID } from "./useGridPointer.ts";
 import { useMonthPointer } from "./useMonthPointer.ts";
 import { useTouchGestures } from "./useTouch.ts";
 
@@ -41,7 +42,8 @@ export function MonthView() {
   const first = settings.firstDay;
   const today = useApp.getState().today();
   const selectedIds = useApp((s) => s.selectedIds);
-  const newId = useApp((s) => s.newEventId);
+  // The event being dragged out is a draft too, from the first moment (only its range shows).
+  const newId = useApp((s) => (s.drag?.kind === "create" ? NEW_ID : s.newEventId));
 
   const pointer = useMonthPointer();
   const bodyRef = useRef<HTMLDivElement>(null);

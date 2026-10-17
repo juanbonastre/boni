@@ -102,10 +102,13 @@ test("a new event is only a highlighted range until it has a title; closing it u
   const cols = await page.locator(".cols-viewport").boundingBox();
   if (!cols) throw new Error("no grid");
   const x = cols.x + (cols.width / 7) * 5.5;
-  // Dragged out: the range shows, without title or time, and the detail opens on its title.
+  // Dragged out: the range shows, without title or time (already while dragging), and the detail opens
+  // on its title.
   await page.mouse.move(x, cols.y + 200);
   await page.mouse.down();
   await page.mouse.move(x, cols.y + 280, { steps: 6 });
+  await expect(page.locator(".ev.draft")).toHaveCount(1);
+  await expect(page.locator(".ev.draft .ev-body")).toBeHidden();
   await page.mouse.up();
   await expect(page.locator(".popover .title-input")).toBeFocused();
   const draft = page.locator(".ev.draft");
@@ -131,8 +134,16 @@ test("a new event is only a highlighted range until it has a title; closing it u
   await page.waitForTimeout(200);
   expect(await count()).toBe(before);
 
-  // With a title it is an ordinary event.
+  // A title typed and then a click elsewhere (no Enter): it is kept, not dropped.
   await page.mouse.dblclick(x, cols.y + 200);
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  await page.keyboard.type("Sin pulsar Enter");
+  await page.mouse.click(cols.x + 20, cols.y + 600);
+  await expect(page.locator(".ev", { hasText: "Sin pulsar Enter" })).toHaveCount(1);
+  await expect(page.locator(".ev.draft")).toHaveCount(0);
+
+  // With a title it is an ordinary event.
+  await page.mouse.dblclick(x, cols.y + 420);
   await expect(page.locator(".ev.draft")).toHaveCount(1);
   await page.keyboard.type("Con título");
   await page.keyboard.press("Enter");

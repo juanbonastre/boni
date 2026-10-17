@@ -30,7 +30,7 @@ import { useCalendarMap, useDayIndex, useNow } from "../hooks.ts";
 import { t } from "../i18n.ts";
 import { alignForView, useApp, useVisible, visibleDays } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
-import { useGridPointer } from "./useGridPointer.ts";
+import { NEW_ID, useGridPointer } from "./useGridPointer.ts";
 import { useTouchGestures } from "./useTouch.ts";
 
 const BLOCK = 1;
@@ -262,7 +262,8 @@ export function TimeGrid() {
   const nowLocal = toLocal(now, tz);
   const selectedIds = useApp((s) => s.selectedIds);
   const dragId = useApp((s) => s.drag?.id ?? null);
-  const newId = useApp((s) => s.newEventId);
+  // The event being dragged out is a draft too, from the first moment (only its range shows).
+  const newId = useApp((s) => (s.drag?.kind === "create" ? NEW_ID : s.newEventId));
   const showNow = useVisibleHasToday(today);
 
   const allDay = useMemo(() => {
