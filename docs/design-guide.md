@@ -37,6 +37,9 @@ Calendar palette (colour of a calendar, always from this list): violet `#a78bfa`
 amber `#fbbf24`, green `#4ade80`, teal `#2dd4bf`, sky `#38bdf8`, blue `#60a5fa`, pink `#f472b6`, red `#ef4444`,
 slate `#94a3b8`.
 
+- **App icon:** Juan's logo (a graphite frame with a star, on a cream edge `#FFFCF3`): `apps/desktop-electron/icon.png`
+  (512 px), the web favicon (`apps/web/public/favicon.png`) and Android's adaptive icon (the logo inside the safe zone on a
+  cream background). Generated from one source image; keep the three in step.
 - **Type:** Inter, then the system stack. Base 13 px / 1.4. Month title 22 px, weight 650, year in `--muted`. Small text
   11 to 12.5 px. Times and numbers use tabular figures.
 - **Radii:** 6 (small controls, event cards), 7 to 8 (buttons, pills, inputs), 10 (menus, cards), 12 (popover), 14 (modals).
