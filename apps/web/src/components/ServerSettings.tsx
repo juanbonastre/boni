@@ -45,7 +45,9 @@ export function ServerSettings() {
       setError(
         e instanceof RemoteError && e.kind === "unauthorized"
           ? t("server.badLogin")
-          : t("server.unreachable", { message: e instanceof Error ? e.message : String(e) }),
+          : e instanceof RemoteError && e.kind === "too-many"
+            ? t("server.tooMany")
+            : t("server.unreachable", { message: e instanceof Error ? e.message : String(e) }),
       );
     } finally {
       setBusy(false);

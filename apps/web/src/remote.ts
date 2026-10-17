@@ -30,7 +30,7 @@ export interface RemoteAccount {
 
 export class RemoteError extends Error {
   constructor(
-    readonly kind: "unauthorized" | "network" | "server" | "conflict",
+    readonly kind: "unauthorized" | "network" | "server" | "conflict" | "too-many",
     message: string,
   ) {
     super(message);
@@ -47,6 +47,8 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
     throw new RemoteError("network", e instanceof Error ? e.message : String(e));
   }
   if (r.status === 401) throw new RemoteError("unauthorized", "unauthorized");
+  // Too many failed logins: the server makes new ones wait a while (phase 6).
+  if (r.status === 429) throw new RemoteError("too-many", "too-many");
   if (r.status === 409)
     throw new RemoteError(
       "conflict",

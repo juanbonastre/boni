@@ -16,7 +16,7 @@ Servidor propio para que todos los dispositivos usen el mismo calendario, como N
 3. Escritura a traves del servidor (cola de cambios, conflictos) (hecho).
 4. Ajustes y calendarios externos por cuenta en el servidor (hecho).
 5. Avisos: los muestra la app; el servidor la mantiene al dia (sincronizacion en segundo plano y UnifiedPush).
-6. Funnel, limites de intentos, copias de SQLite, varios usuarios.
+6. Funnel, limites de intentos, copias de SQLite (en marcha; varios usuarios: no por ahora, decision de Juan).
 
 ## API (fase 1)
 Todo en JSON bajo `/api`; salvo el inicio de sesion, con `Authorization: Bearer <token>`.
@@ -116,3 +116,23 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
   al reiniciar el movil y cada pocas horas por si se perdio alguno. Las alarmas se vuelven a poner tras reiniciar.
 - Para UnifiedPush en el NAS: `BONI_PUSH_HOSTS` con el host de ntfy y `BONI_PUSH_TOKEN` (cuenta de ntfy con escritura en
   `up*`); en ntfy, la cuenta del movil necesita lectura en `up*`.
+
+## Abierto a internet (fase 6)
+Decision de Juan (2026-10-17): Funnel con protecciones, un solo vault (sin varios usuarios por ahora).
+- **Limites al iniciar sesion** (`limits.ts`): 5 fallos de un usuario en 15 min hacen esperar 15 min a los nuevos inicios
+  de ese usuario (las sesiones ya abiertas siguen funcionando: el movil no se queda fuera); 10 fallos desde una direccion
+  en 15 min, lo mismo para esa direccion; como mucho 30 intentos por minuto en total. Responde 429 con `retry-after`. La
+  direccion es la de `X-Forwarded-For` solo si la peticion llega del proxy local (Tailscale serve); cada fallo queda en el
+  log con su direccion, para comprobar que Funnel la pasa.
+- **Sesiones:** una sesion que no se usa en 90 dias deja de valer. `cli.ts revoke <usuario>` cierra todas al momento.
+- **Cabeceras:** CSP estricta para la app web (solo sus scripts; no se puede incrustar en otra pagina), `nosniff`,
+  `no-referrer`, HSTS. Tiempo maximo para recibir una peticion (30 s).
+- **Copias de la base de datos** (`backups.ts`): una al dia en `backups/` junto a la base de datos, coherente aunque el
+  servidor este escribiendo (`VACUUM INTO`), se guardan las ultimas `BONI_BACKUPS` (14). La clave `secret.key` no se copia
+  ahi: guardala aparte (Vaultwarden).
+- Revision de seguridad hecha antes de abrirlo: tokens solo como hash y comparacion en tiempo constante; mismas respuestas
+  y tiempos para usuario inexistente o contrasena mala; CORS abierto pero sin cookies (token bearer); el servidor nunca
+  descarga direcciones privadas (tampoco tras redirecciones) ni publica en hosts no permitidos; los cambios de filas solo
+  tocan notas que el indice conoce o notas nuevas en la carpeta de su coleccion, siempre dentro del vault y nunca en
+  `private/` ni `restricted/`; consultas SQL preparadas; tamano maximo de peticion 8 MB. Riesgo residual: un fallo de
+  Node o del servidor seria alcanzable desde internet; mantener la imagen al dia.
