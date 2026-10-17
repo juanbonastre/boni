@@ -152,9 +152,17 @@ Spanish first, English second, all through `src/i18n.ts` (no hard-coded text). T
 dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 
 ## 6. Adapting it to other platforms
-- **Boni desktop / Android clients (Compose):** same hex tokens, radii, type scale and event-card recipe. Until there is a
-  second web consumer, copy the values from section 2; when it exists, move them to a shared tokens file (JSON) that both
-  the CSS and the Compose theme are generated from.
+- **Boni desktop (and later its Android app):** since 2026-10-17 the same architecture as this app (a React web UI in
+  Electron, a WebView on Android), so it uses the same tokens, controls (buttons, pills, segmented options, menus, the
+  settings modal, toasts) and the "text fits its box" rule, with its own overflow test. Its `styles.css` copies the tokens
+  of section 2 (the repos are separate): change them here first, then there. Charts add their own colours (a categorical
+  palette checked for colour blindness on these surfaces) and draw in SVG: hairline grid, 4 px rounded data ends, the
+  latest value as a label and the rest in a hover tooltip (`--surface-2` box, 8 px radius).
+- **Desktop widgets** (Boni): a chart card alone in a small transparent window that sits on the desktop, below every
+  window (on X11 a "dock" window kept below by the window manager; it survives "show desktop"). It keeps the card look
+  (`--surface`, 10 px radius, `--line-strong` border) and is fully interactive: hover for values, click for a detail;
+  dragging anywhere moves it, the bottom-right corner resizes it, right click opens its menu (open the app, change charts
+  and widgets, refresh, hide here, remove).
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
   menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a
