@@ -1,6 +1,8 @@
 package io.github.juanbonastre.bonicalendar
 
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
@@ -13,6 +15,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -61,6 +64,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         web.addJavascriptInterface(HostBridge(), "hostBridge")
+        web.addJavascriptInterface(AndroidBridge(this, web), "boniAndroid")
         // The calendar stays clear of the status bar, the navigation bar, the camera cut-out and the
         // keyboard: the window draws edge to edge, so a frame around the page takes their space.
         val frame = FrameLayout(this).apply {
@@ -90,6 +94,31 @@ class MainActivity : ComponentActivity() {
                 }
             }
         })
+    }
+
+    private var onVaultPicked: ((Uri?) -> Unit)? = null
+    private val pickTree = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
+        if (tree != null) {
+            // Keep the access across restarts.
+            contentResolver.takePersistableUriPermission(
+                tree,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }
+        onVaultPicked?.invoke(tree)
+        onVaultPicked = null
+    }
+
+    /** Asks for the vault's folder (once: the access is kept). */
+    fun pickVault(done: (Uri?) -> Unit) {
+        onVaultPicked = done
+        pickTree.launch(null)
+    }
+
+    /** Coming back to the app: the calendar checks the vault for changes (Syncthing may have brought some). */
+    override fun onResume() {
+        super.onResume()
+        if (::web.isInitialized) web.evaluateJavascript("window.dispatchEvent(new Event('focus'))", null)
     }
 
     /** What the page can ask of the app (the same names as the desktop shell's `hostBridge`). */

@@ -1,4 +1,5 @@
 import { fromLocal, systemTimeZone } from "@boni-calendar/core";
+import { type AndroidNative, androidHost } from "./android.ts";
 import { initClock } from "./clock.ts";
 import { type Host, localStorageStore } from "./host.ts";
 import { mountApp } from "./mount.tsx";
@@ -20,14 +21,29 @@ async function boot() {
   initClock(location.search, params.get("tz") ?? systemTimeZone(), parseIso);
   const root = document.getElementById("root");
   if (!root) return;
-  const w = window as unknown as { boniVault?: VaultBridge; boniNet?: Pick<Host, "fetchText"> };
-  await mountApp(root, {
-    vault: w.boniVault ?? null,
-    storage: localStorageStore,
-    keys: "window",
-    // The desktop shell downloads external calendars itself; a plain browser uses fetch.
-    fetchText: w.boniNet?.fetchText,
-  });
+  const w = window as unknown as {
+    boniVault?: VaultBridge;
+    boniNet?: Pick<Host, "fetchText">;
+    boniAndroid?: AndroidNative;
+  };
+  await mountApp(
+    root,
+    w.boniAndroid
+      ? // The Android app: the vault through the phone's storage, writing on from the start (Juan).
+        {
+          ...androidHost(w.boniAndroid),
+          storage: localStorageStore,
+          keys: "window",
+          settings: { vaultWrite: true },
+        }
+      : {
+          vault: w.boniVault ?? null,
+          storage: localStorageStore,
+          keys: "window",
+          // The desktop shell downloads external calendars itself; a plain browser uses fetch.
+          fetchText: w.boniNet?.fetchText,
+        },
+  );
   const { useApp } = await import("./store.ts");
   (window as unknown as { __app: unknown }).__app = useApp;
   if (params.has("bench")) {

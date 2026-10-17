@@ -78,4 +78,6 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
 - Pasos 4 y 5 de la fase 2: servidor en el NAS y SQLite, solo si hay un caso real.
 - **App de Android** (2026-10-16, en marcha): cascaron Kotlin con la misma app web (`apps/android`), medida a 60 fps en el
   Pixel. Interfaz movil y gestos tactiles hechos (3 dias, menu lateral, detalle abajo, boton flotante, deslizar, pellizcar,
-  pulsacion larga). Pendiente: el vault en el movil (SAF), avisos por calendario, primera version firmada para Obtainium.
+  pulsacion larga). Versiones firmadas publicadas para Obtainium (0.1.7 la primera). El vault en el movil: se elige una vez la
+  carpeta (permiso de carpeta de Android), mismas reglas que el escritorio, papelera = `.trash` del vault, escritura activada.
+  Pendiente: avisos por calendario.
