@@ -45,7 +45,10 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  snapshot in IndexedDB) and the store's `source: "server"` (`connectServer`, `loadServer`), which applies
                  server data through the same path as a vault read (`applyLoad`). Writes: `serverWriter.ts` is the store's
                  provider there (optimistic, outbox in IndexedDB sent in order, pending changes shown over the server's
-                 rows until its stream brings that version, temporary ids mapped through `aliases`). Dockerfile for the NAS.
+                 rows until its stream brings that version, temporary ids mapped through `aliases`). Phase 4: the
+                 account's prefs (`ACCOUNT_PREFS` in store.ts) and external calendars live on the server
+                 (`account.ts`, the list encrypted with `secret.ts`; `feeds.ts` downloads them, public addresses
+                 only); the store syncs them (`syncAccount`, `pushAccount`, "account" stream event). Dockerfile for the NAS.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status.
 ```
@@ -77,7 +80,8 @@ docs/            decisions and status.
   Network downloads go through `host.fetchText` (desktop: the main process, `net:fetch-text`; Obsidian: `requestUrl`).
 
 - **External calendars** (`src/external.ts`): subscriptions by iCal address, read-only. Their address lives in
-  `settings.externals` (device storage, never the vault: a private address is a secret), the last copy in IndexedDB.
+  `settings.externals` (device storage, never the vault: a private address is a secret; with a server, the account
+  keeps them encrypted and downloads them), the last copy in IndexedDB.
   The store merges them into `data` (`withExternal`) but they are never rows: `reconcileRows` only ever sees the own
   events (`isExternalEvent` filters them out), so nothing of them can reach a provider or the vault.
 

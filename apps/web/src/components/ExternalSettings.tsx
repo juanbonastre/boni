@@ -129,6 +129,7 @@ export function ExternalSettings() {
   const status = useApp((s) => s.external.status);
   const locale = useApp((s) => s.settings.locale);
   const tz = useApp((s) => s.settings.tz);
+  const source = useApp((s) => s.source);
   const focus = useApp((s) => s.settingsFocus);
   const [editing, setEditing] = useState<string | null>(focus === "external" ? "new" : null);
   const ref = useRef<HTMLDivElement>(null);
@@ -141,7 +142,10 @@ export function ExternalSettings() {
   return (
     <div ref={ref} className="ext-settings">
       <h3>{t("settings.external")}</h3>
-      <p className="muted small ext-hint">{t("external.hint")}</p>
+      <p className="muted small ext-hint">
+        {t("external.hint")}{" "}
+        {t(source === "server" ? "external.where.server" : "external.where.device")}
+      </p>
       {externals.length > 0 && <NetworkHint />}
       {externals.map((c) =>
         editing === c.id ? (

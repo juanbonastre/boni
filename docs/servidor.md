@@ -14,7 +14,7 @@ Servidor propio para que todos los dispositivos usen el mismo calendario, como N
 1. Servidor de solo lectura: cuentas, foto del calendario, cambios por version y en vivo, app web servida (hecho).
 2. Clientes en modo servidor (Ajustes, Datos), con copia sin conexion (hecho).
 3. Escritura a traves del servidor (cola de cambios, conflictos) (hecho).
-4. Ajustes y calendarios externos por cuenta en el servidor.
+4. Ajustes y calendarios externos por cuenta en el servidor (hecho).
 5. Avisos: los muestra la app; el servidor la mantiene al dia (sincronizacion en segundo plano y UnifiedPush).
 6. Funnel, limites de intentos, copias de SQLite, varios usuarios.
 
@@ -30,6 +30,10 @@ Todo en JSON bajo `/api`; salvo el inicio de sesion, con `Authorization: Bearer 
 | `GET /api/stream` | Eventos en vivo (Server-Sent Events): un `changes` por version nueva |
 | `GET /api/me` | `{ user, write }`: la cuenta y si el servidor escribe en el vault |
 | `POST /api/apply` `{ base, changes }` | Escribe cambios de filas (fase 3, con `BONI_WRITE=1`): `{ version, aliases }`, 409 `{ conflict }` si alguna nota cambio en otro sitio despues de `base`, 403 si el servidor es de solo lectura |
+| `GET /api/account` | Lo que la cuenta comparte entre sus dispositivos: `{ prefs, externals, updated }` (fase 4) |
+| `PUT /api/account/prefs` `{ prefs }` | Guarda las preferencias de la cuenta |
+| `PUT /api/account/externals` `{ externals }` | Guarda la lista de calendarios externos (cifrada) |
+| `GET /api/external?id=X[&fresh=1]` | Ese calendario externo, descargado por el servidor: `{ text, at }` |
 | Cualquier otra ruta | La app web (para abrir el calendario desde un navegador) |
 
 Una nota sin cambios conserva la misma fila, asi que el servidor sabe exactamente que cambio comparando filas. El vigilante del
@@ -73,3 +77,19 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
 - Cerrar sesion intenta enviar lo pendiente; si no hay conexion, queda en el dispositivo para la proxima vez.
 - Pendiente: las series abiertas todavia no se prolongan solas en modo servidor (en modo carpeta lo hace la app al leer);
   lo hara el propio servidor, para que dos dispositivos no creen las mismas notas.
+
+## Cuenta: preferencias y calendarios externos (fase 4)
+- Con servidor, los calendarios externos y algunas preferencias son de la cuenta, no del dispositivo: se ven y se cambian
+  igual desde todos. Preferencias de la cuenta: idioma, reloj de 24 horas, primer dia de la semana, segunda zona horaria,
+  numeros de semana, duracion por defecto e intervalo al arrastrar. Se quedan en cada dispositivo: tema, densidad y zona
+  horaria (un movil y un portatil, un viaje).
+- Las direcciones de los calendarios son secretas: el servidor guarda la lista cifrada (AES-256-GCM) en SQLite. La clave es
+  `BONI_SECRET_KEY` (32 bytes en base64) o, sin ella, `secret.key` junto a la base de datos, creada al primer arranque
+  (permisos 600). **Guarda una copia de la clave aparte de las copias de la base de datos**: sin ella no se pueden leer.
+- El servidor descarga los calendarios (los dispositivos solo hablan con el): guarda una copia unos minutos y el boton de
+  actualizar pide una nueva. Solo descarga direcciones publicas: nunca la red local, el NAS ni la tailnet (comprobado tambien
+  en cada redireccion), con limite de tamano y de tiempo.
+- La primera vez que un dispositivo se conecta a la cuenta, sus propios calendarios externos se unen a los de la cuenta
+  (por direccion; la app avisa de cuantos), y si la cuenta no tenia nada toma sus preferencias. Despues manda la cuenta,
+  salvo lo cambiado sin conexion en ese dispositivo, que se envia al volver.
+- Los cambios llegan en vivo a los demas dispositivos (evento `account` del flujo).

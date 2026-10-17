@@ -38,7 +38,11 @@ const es = {
   "server.badLogin": "Usuario o contraseña incorrectos",
   "server.unreachable": "No se pudo conectar: {message}",
   "external.hint":
-    "Calendarios de Google u otros servicios, por su dirección iCal y solo para ver. En Google Calendar: configuración del calendario → Integrar el calendario → Dirección secreta en formato iCal (o la pública). La dirección se guarda solo en este dispositivo.",
+    "Calendarios de Google u otros servicios, por su dirección iCal y solo para ver. En Google Calendar: configuración del calendario → Integrar el calendario → Dirección secreta en formato iCal (o la pública).",
+  "external.where.device": "La dirección se guarda solo en este dispositivo.",
+  "external.joined": "Calendarios externos de este dispositivo añadidos a tu cuenta: {n}",
+  "external.where.server":
+    "Se guardan cifrados en tu cuenta del servidor: aparecen en todos tus dispositivos y los descarga el servidor.",
   "external.name": "Nombre",
   "external.namePlaceholder": "Festivos, Trabajo…",
   "external.url": "Dirección iCal",
@@ -313,7 +317,11 @@ const en: Record<Key, string> = {
   "server.badLogin": "Wrong user or password",
   "server.unreachable": "Could not connect: {message}",
   "external.hint":
-    "Calendars of Google or other services, by their iCal address and read-only. In Google Calendar: the calendar's settings → Integrate calendar → Secret address in iCal format (or the public one). The address is kept on this device only.",
+    "Calendars of Google or other services, by their iCal address and read-only. In Google Calendar: the calendar's settings → Integrate calendar → Secret address in iCal format (or the public one).",
+  "external.where.device": "The address is kept on this device only.",
+  "external.joined": "External calendars of this device added to your account: {n}",
+  "external.where.server":
+    "Kept encrypted in your server account: they show on all your devices and the server downloads them.",
   "external.name": "Name",
   "external.namePlaceholder": "Holidays, Work…",
   "external.url": "iCal address",

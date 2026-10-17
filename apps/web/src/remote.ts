@@ -1,4 +1,5 @@
 import type { CollectionSnapshot, Row, RowChange } from "@boni-calendar/core";
+import type { ExternalCal } from "./external.ts";
 import { kvStore } from "./idb.ts";
 
 /**
@@ -17,6 +18,14 @@ export interface RemoteChanges {
   full?: boolean;
   upserts: Row[];
   removes: string[];
+}
+
+/** What the account shares among its devices (phase 4): preferences and external calendars. */
+export interface RemoteAccount {
+  prefs: Record<string, string | number | boolean | null>;
+  externals: ExternalCal[];
+  /** 0 when the account never stored anything. */
+  updated: number;
 }
 
 export class RemoteError extends Error {
@@ -43,7 +52,11 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
       "conflict",
       ((await r.json()) as { conflict?: string[] }).conflict?.join(", ") ?? "conflict",
     );
-  if (!r.ok) throw new RemoteError("server", `HTTP ${r.status}`);
+  if (!r.ok) {
+    // The server says why when it can (e.g. an external calendar it could not download).
+    const why = ((await r.json().catch(() => ({}))) as { message?: string }).message;
+    throw new RemoteError("server", why ?? `HTTP ${r.status}`);
+  }
   return (await r.json()) as T;
 }
 
@@ -95,6 +108,32 @@ export class Remote {
     });
   }
 
+  account(): Promise<RemoteAccount> {
+    return request(`${this.url}/api/account`, { headers: this.auth() });
+  }
+
+  putPrefs(prefs: RemoteAccount["prefs"]): Promise<{ updated: number }> {
+    return this.put("/api/account/prefs", { prefs });
+  }
+
+  putExternals(externals: readonly ExternalCal[]): Promise<{ updated: number }> {
+    return this.put("/api/account/externals", { externals });
+  }
+
+  /** An external calendar of the account, downloaded by the server (`fresh`: not its recent copy). */
+  feed(id: string, fresh = false): Promise<{ text: string; at: number }> {
+    const q = `id=${encodeURIComponent(id)}${fresh ? "&fresh=1" : ""}`;
+    return request(`${this.url}/api/external?${q}`, { headers: this.auth() });
+  }
+
+  private put<T>(path: string, body: unknown): Promise<T> {
+    return request(`${this.url}${path}`, {
+      method: "PUT",
+      headers: { ...this.auth(), "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
   async logout(): Promise<void> {
     await request(`${this.url}/api/logout`, { method: "POST", headers: this.auth() }).catch(
       () => {},
@@ -109,6 +148,7 @@ export class Remote {
   follow(
     onChanges: (c: RemoteChanges) => void,
     onState: (live: boolean, error?: RemoteError) => void,
+    onAccount: () => void = () => {},
   ): () => void {
     let stopped = false;
     let ctrl: AbortController | null = null;
@@ -146,6 +186,7 @@ export class Remote {
                 .join("\n");
               if (data && /^event: changes$/m.test(block))
                 onChanges(JSON.parse(data) as RemoteChanges);
+              else if (/^event: account$/m.test(block)) onAccount();
               cut = buf.indexOf("\n\n");
             }
           }
