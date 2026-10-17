@@ -349,3 +349,20 @@ test("external calendars and preferences belong to the account: every device see
   });
   feed.close();
 });
+
+test("after too many failed logins the server makes new ones wait, and the app says so", async ({
+  page,
+}) => {
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await page.waitForSelector(".ev");
+  await page.keyboard.press("Control+,");
+  const form = page.locator(".modal .server-form");
+  await form.locator("input").nth(0).fill(url);
+  await form.locator("input").nth(1).fill("nadie");
+  for (let i = 0; i < 6; i++) {
+    await form.locator("input").nth(2).fill(`mal-${i}`);
+    await form.getByRole("button", { name: "Conectar" }).click();
+    await expect(page.locator(".modal .server-error")).toBeVisible();
+  }
+  await expect(page.locator(".modal .server-error")).toContainText("Demasiados intentos fallidos");
+});

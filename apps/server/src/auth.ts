@@ -72,14 +72,21 @@ export function login(
   return { token, user: { id: row.id, name: row.name, vault: row.vault } };
 }
 
+/** A session not used for this long ends (a lost or forgotten device stops being a way in). */
+export const SESSION_IDLE_MS = 90 * 86_400_000;
+
 export function userOf(db: Db, token: string | null | undefined): User | null {
   if (!token) return null;
   const row = db
     .prepare(
-      "SELECT u.id, u.name, u.vault FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?",
+      "SELECT u.id, u.name, u.vault, s.last_seen FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?",
     )
-    .get(sha(token)) as User | undefined;
+    .get(sha(token)) as (User & { last_seen: number }) | undefined;
   if (!row) return null;
+  if (Date.now() - row.last_seen > SESSION_IDLE_MS) {
+    db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(sha(token));
+    return null;
+  }
   db.prepare("UPDATE sessions SET last_seen = ? WHERE token_hash = ?").run(Date.now(), sha(token));
   return { id: row.id, name: row.name, vault: row.vault };
 }

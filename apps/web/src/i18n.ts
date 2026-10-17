@@ -56,6 +56,7 @@ const es = {
   "server.status.offline": "Sin conexión: se ve la última copia",
   "server.status.login": "La sesión ha terminado: vuelve a iniciarla",
   "server.badLogin": "Usuario o contraseña incorrectos",
+  "server.tooMany": "Demasiados intentos fallidos: espera 15 minutos y vuelve a probar",
   "server.unreachable": "No se pudo conectar: {message}",
   "external.hint":
     "Calendarios de Google u otros servicios, por su dirección iCal y solo para ver. En Google Calendar: configuración del calendario → Integrar el calendario → Dirección secreta en formato iCal (o la pública).",
@@ -355,6 +356,7 @@ const en: Record<Key, string> = {
   "server.status.offline": "Offline: showing the last copy",
   "server.status.login": "The session ended: log in again",
   "server.badLogin": "Wrong user or password",
+  "server.tooMany": "Too many failed attempts: wait 15 minutes and try again",
   "server.unreachable": "Could not connect: {message}",
   "external.hint":
     "Calendars of Google or other services, by their iCal address and read-only. In Google Calendar: the calendar's settings → Integrate calendar → Secret address in iCal format (or the public one).",

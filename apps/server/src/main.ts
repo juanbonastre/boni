@@ -1,3 +1,5 @@
+import { dirname, join } from "node:path";
+import { startBackups } from "./backups.ts";
 import { openDb } from "./db.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeServer } from "./http.ts";
@@ -17,10 +19,16 @@ import { Vaults } from "./vaults.ts";
  *   BONI_PUSH_HOSTS  hosts devices may register as UnifiedPush addresses, comma separated (e.g. the ntfy
  *                    server); push is off without it
  *   BONI_PUSH_TOKEN  sent as a bearer token when posting to them (an ntfy account that may write up* topics)
+ *   BONI_BACKUPS     daily copies of the database to keep in backups/ next to it   default 14 (0: none)
  */
 const dbPath = process.env.BONI_DB ?? "./data/boni-calendar.db";
 const db = openDb(dbPath);
 const key = loadKey(dbPath);
+const keep = Number(process.env.BONI_BACKUPS ?? 14);
+const stopBackups =
+  dbPath !== ":memory:" && keep > 0
+    ? startBackups(db, join(dirname(dbPath), "backups"), keep)
+    : () => {};
 const feeds = new Feeds(
   makeFetcher({ allowPrivate: process.env.BONI_FEEDS_ALLOW_PRIVATE === "1" }),
 );
@@ -48,6 +56,7 @@ const host = process.env.BONI_HOST ?? "127.0.0.1";
 server.listen(port, host, () => console.log(`boni-calendar-server on http://${host}:${port}`));
 
 const stop = () => {
+  stopBackups();
   server.close();
   vaults.close();
   db.close();

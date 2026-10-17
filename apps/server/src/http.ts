@@ -1,11 +1,12 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni-calendar/core";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { login, logout, tokenHash, type User, userOf } from "./auth.ts";
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
+import { clientAddress, LoginGuard } from "./limits.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
 import type { SecretKey } from "./secret.ts";
 import type { Vaults } from "./vaults.ts";
@@ -40,6 +41,8 @@ export interface ServerOptions {
   feeds: Feeds;
   /** Tells devices by UnifiedPush when their reminders may have changed (reminders.ts); off without it. */
   push?: Push;
+  /** Limits on logging in (limits.ts); the defaults when missing. */
+  guard?: LoginGuard;
   /** The built web app to serve, if any. */
   webDir?: string | null;
 }
@@ -67,10 +70,31 @@ const CORS = {
   "access-control-max-age": "600",
 };
 
+/** On every answer: no guessing of types, no referrer, HTTPS from now on (Funnel and serve are HTTPS). */
+const SAFE = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "strict-transport-security": "max-age=31536000",
+};
+
+/**
+ * The web app's own files: only its scripts and styles run (inline style attributes are React's), it
+ * talks to this server or to https (external calendars without a server), and no other site may frame it.
+ */
+const PAGE = {
+  ...SAFE,
+  "content-security-policy":
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+    "connect-src 'self' https:; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; " +
+    "frame-ancestors 'none'",
+  "x-frame-options": "DENY",
+};
+
 function send(res: ServerResponse, status: number, body: unknown): void {
   const text = JSON.stringify(body);
   res.writeHead(status, {
     ...CORS,
+    ...SAFE,
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "content-length": Buffer.byteLength(text),
@@ -90,6 +114,11 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
   return text ? (JSON.parse(text) as Record<string, unknown>) : {};
 }
 
+const header = (req: IncomingMessage, name: string): string | undefined => {
+  const v = req.headers[name];
+  return Array.isArray(v) ? v[0] : v;
+};
+
 const tokenOf = (req: IncomingMessage): string | null => {
   const h = req.headers.authorization;
   return h?.startsWith("Bearer ") ? h.slice(7).trim() : null;
@@ -97,6 +126,7 @@ const tokenOf = (req: IncomingMessage): string | null => {
 
 export function makeServer(opts: ServerOptions): Server {
   const { db, vaults, key, feeds, push } = opts;
+  const guard = opts.guard ?? new LoginGuard();
   /** Live streams of each account, told when its prefs or calendars change. */
   const accountListeners = new Map<number, Set<(updated: number) => void>>();
   const accountChanged = (userId: number, updated: number) => {
@@ -142,8 +172,20 @@ export function makeServer(opts: ServerOptions): Server {
     const route = `${req.method} ${url.pathname}`;
     if (route === "POST /api/login") {
       const b = await bodyOf(req);
-      const r = login(db, String(b.user ?? ""), String(b.password ?? ""), String(b.device ?? ""));
-      if (!r) return send(res, 401, { error: "bad-login" });
+      const name = String(b.user ?? "").slice(0, 64);
+      const from = clientAddress(req.socket.remoteAddress, header(req, "x-forwarded-for"));
+      if (!guard.allow(name, from)) {
+        console.warn(`login refused (too many attempts): ${JSON.stringify(name)} from ${from}`);
+        res.setHeader("retry-after", "900");
+        return send(res, 429, { error: "too-many" });
+      }
+      const r = login(db, name, String(b.password ?? ""), String(b.device ?? ""));
+      if (!r) {
+        console.warn(`login failed: ${JSON.stringify(name)} from ${from}`);
+        guard.failed(name, from);
+        return send(res, 401, { error: "bad-login" });
+      }
+      guard.succeeded(name);
       return send(res, 200, { token: r.token, user: { name: r.user.name } });
     }
     const user = authed(req, res);
@@ -263,6 +305,7 @@ export function makeServer(opts: ServerOptions): Server {
         await vault.snapshot();
         res.writeHead(200, {
           ...CORS,
+          ...SAFE,
           "content-type": "text/event-stream; charset=utf-8",
           "cache-control": "no-store",
           connection: "keep-alive",
@@ -294,11 +337,14 @@ export function makeServer(opts: ServerOptions): Server {
     if (!webRoot) return send(res, 404, { error: "not-found" });
     const rel = normalize(decodeURIComponent(pathname)).replace(/^([/\\])+/, "");
     let file = join(webRoot, rel || "index.html");
-    if (!file.startsWith(webRoot)) return send(res, 404, { error: "not-found" });
+    // Inside the web app's folder only (not a sibling that merely starts with the same name).
+    if (file !== webRoot && !file.startsWith(webRoot + sep))
+      return send(res, 404, { error: "not-found" });
     try {
       if ((await stat(file)).isDirectory()) file = join(file, "index.html");
       const data = await readFile(file);
       res.writeHead(200, {
+        ...PAGE,
         "content-type": MIME[extname(file)] ?? "application/octet-stream",
         "cache-control": rel.startsWith("assets/")
           ? "public, max-age=31536000, immutable"
@@ -310,7 +356,7 @@ export function makeServer(opts: ServerOptions): Server {
     }
   };
 
-  return createServer((req, res) => {
+  const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const handle = url.pathname.startsWith("/api/")
       ? api(req, res, url)
@@ -321,4 +367,9 @@ export function makeServer(opts: ServerOptions): Server {
       else res.end();
     });
   });
+  // A slow client cannot hold a connection open forever while sending its request (the live stream's
+  // answer is long, its request is not).
+  server.requestTimeout = 30_000;
+  server.headersTimeout = 15_000;
+  return server;
 }
