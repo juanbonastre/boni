@@ -57,6 +57,7 @@ import { useViewport } from "../ViewportContext.tsx";
 import { ChoicePicker, DateField, DraftInput, TimeInput } from "./fields.tsx";
 import { Menu } from "./Menu.tsx";
 import { RecurrenceModal } from "./RecurrenceModals.tsx";
+import { EventReminders } from "./Reminders.tsx";
 
 const DETAIL_W = 340;
 
@@ -375,6 +376,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
               />
             </div>
           </div>
+          <EventReminders ev={ev} locked={locked} />
           <div className="prop-row top">
             <span className="prop-icon">
               <AlignLeft size={15} strokeWidth={1.8} />

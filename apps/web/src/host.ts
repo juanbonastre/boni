@@ -1,3 +1,4 @@
+import type { Notice } from "./notifications.ts";
 import type { Settings } from "./store.ts";
 import type { VaultBridge } from "./vaultBridge.ts";
 
@@ -38,6 +39,12 @@ export interface Host {
    * dialog can ask for): whether the app has it, and the settings page where it is turned on.
    */
   network?: { allowed(): Promise<boolean>; openSettings(): void };
+  /**
+   * Shows reminders as the system's notifications (phase 5): the host keeps the list and shows each at
+   * its time, even with the calendar in the background; a new list replaces the previous one. `onOpen`
+   * tells which event's notification was clicked.
+   */
+  notify?: { schedule(list: Notice[]): void; onOpen?(cb: (eventId: string) => void): void };
 }
 
 /** False only when the host says this app may not use the network (the user must allow it). */

@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
-import type { RowChange } from "@boni-calendar/core";
+import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni-calendar/core";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { login, logout, type User, userOf } from "./auth.ts";
 import type { Db } from "./db.ts";
@@ -23,6 +23,8 @@ import type { Vaults } from "./vaults.ts";
  *   PUT  /api/account/prefs     { prefs }      -> { updated }
  *   PUT  /api/account/externals { externals }  -> { updated } (stored encrypted)
  *   GET  /api/external?id=X[&fresh=1] -> { text, at }: that external calendar, downloaded by the server
+ *   PUT  /api/collections/reminders { collectionId, reminders?, eventColumn? } -> {} (with BONI_WRITE):
+ *        a calendar's reminders, written in its definition note
  * The stream also sends an "account" event ({ updated }) when the account's prefs or calendars change.
  * Anything else is the web app (static files of apps/web/dist), so a browser can open the calendar.
  */
@@ -168,6 +170,23 @@ export function makeServer(opts: ServerOptions): Server {
             message: e instanceof Error ? e.message : String(e),
           });
         }
+      }
+      case "PUT /api/collections/reminders": {
+        if (!vault.writable) return send(res, 403, { error: "read-only" });
+        const b = await bodyOf(req);
+        if (typeof b.collectionId !== "string") return send(res, 400, { error: "bad-request" });
+        // Only what parses as reminders is written (never free text into a definition).
+        const reminders =
+          b.reminders === null
+            ? null
+            : b.reminders === undefined
+              ? undefined
+              : formatReminderDefaults(parseReminderDefaults(b.reminders));
+        const r = await vault.setReminders(b.collectionId, {
+          ...(reminders !== undefined ? { reminders } : {}),
+          ...(b.eventColumn === true ? { eventColumn: true } : {}),
+        });
+        return r === "ok" ? send(res, 200, {}) : send(res, 409, { error: "conflict" });
       }
       case "GET /api/snapshot":
         return send(res, 200, await vault.snapshot());

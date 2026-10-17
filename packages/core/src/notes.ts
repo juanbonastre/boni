@@ -166,3 +166,50 @@ export function formatNote(
   const yamlText = keys.length ? doc.toString(OPTIONS).replace(/\n$/, "") : "";
   return `---\n${yamlText}${yamlText ? "\n" : ""}---\n${body}`;
 }
+
+/**
+ * A definition note (`collection:` in its properties) with its reminders changed, touching only those
+ * lines: `reminders` sets `collection.reminders` (null removes it); `eventColumn` adds a text column with
+ * that id and name and maps it as the events' own reminders (when the definition does not map one yet).
+ * Returns `text` itself when nothing changes. Throws `NoteError` when the properties cannot be parsed.
+ */
+export function patchDefinitionReminders(
+  text: string,
+  edit: {
+    reminders?: { timed: string; allDay: string } | null;
+    eventColumn?: { id: string; name: string };
+  },
+): string {
+  const s = split(text);
+  if (!s.has) throw new NoteError("not a definition note");
+  const doc = parseDocument(s.yaml);
+  const first = doc.errors[0];
+  if (first) throw new NoteError(first.message);
+  if (!doc.hasIn(["collection"])) throw new NoteError("not a definition note");
+  // Definitions are written by hand: keep the spacing their flow maps already use ("{ a: b }").
+  const opts = { ...OPTIONS, flowCollectionPadding: /\{ \S/.test(s.yaml) };
+  const before = doc.toString(opts);
+  if (edit.reminders === null) doc.deleteIn(["collection", "reminders"]);
+  else if (edit.reminders) {
+    const node = doc.createNode(edit.reminders);
+    node.flow = true;
+    doc.setIn(["collection", "reminders"], node);
+  }
+  if (edit.eventColumn && !doc.hasIn(["collection", "mapping", "reminders"])) {
+    const { id, name } = edit.eventColumn;
+    const columns = doc.getIn(["collection", "columns"], true);
+    const has =
+      columns instanceof YAMLSeq &&
+      columns.items.some((c) => (c as { get?: (k: string) => unknown }).get?.("id") === id);
+    if (!has) {
+      const col = doc.createNode({ id, name, type: "text" });
+      col.flow = true;
+      doc.addIn(["collection", "columns"], col);
+    }
+    doc.setIn(["collection", "mapping", "reminders"], id);
+  }
+  const after = doc.toString(opts);
+  if (after === before) return text;
+  const out = `---\n${after.replace(/\n$/, "")}\n---\n${s.body}`;
+  return s.eol === "\r\n" ? out.replace(/\r?\n/g, "\r\n") : out;
+}

@@ -34,6 +34,7 @@ Todo en JSON bajo `/api`; salvo el inicio de sesion, con `Authorization: Bearer 
 | `PUT /api/account/prefs` `{ prefs }` | Guarda las preferencias de la cuenta |
 | `PUT /api/account/externals` `{ externals }` | Guarda la lista de calendarios externos (cifrada) |
 | `GET /api/external?id=X[&fresh=1]` | Ese calendario externo, descargado por el servidor: `{ text, at }` |
+| `PUT /api/collections/reminders` `{ collectionId, reminders?, eventColumn? }` | Avisos de un calendario, escritos en su definicion (fase 5, con `BONI_WRITE`) |
 | Cualquier otra ruta | La app web (para abrir el calendario desde un navegador) |
 
 Una nota sin cambios conserva la misma fila, asi que el servidor sabe exactamente que cambio comparando filas. El vigilante del
@@ -93,3 +94,12 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
   (por direccion; la app avisa de cuantos), y si la cuenta no tenia nada toma sus preferencias. Despues manda la cuenta,
   salvo lo cambiado sin conexion en ese dispositivo, que se envia al volver.
 - Los cambios llegan en vivo a los demas dispositivos (evento `account` del flujo).
+
+## Avisos (fase 5, en marcha)
+- Cada calendario tiene avisos por defecto (uno para eventos con hora y otro para los de todo el dia) en su definicion:
+  `reminders: { timed: "10m", allDay: "0d@09:00" }`. Por defecto ninguno avisa. Un evento puede tener los suyos en la
+  propiedad `avisos` de su nota ("1h, 10m", "none"); la columna se anade a la definicion la primera vez.
+- Los calendarios externos guardan sus avisos en la cuenta (junto a su direccion).
+- Hecho: configuracion (Ajustes, Avisos; detalle del evento), notificaciones en la app de escritorio mientras esta abierta.
+- Pendiente: el servidor calcula los proximos avisos de la cuenta y avisa por UnifiedPush; la app de Android los programa
+  como alarmas del sistema.

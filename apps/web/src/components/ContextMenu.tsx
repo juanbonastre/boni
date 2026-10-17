@@ -1,5 +1,6 @@
 import { fromLocal, PALETTE } from "@boni-calendar/core";
 import {
+  Bell,
   CalendarDays,
   CheckSquare,
   ChevronRight,
@@ -21,6 +22,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { isExternalCalendar } from "../external.ts";
 import { appRect, appRoot, eventTarget, findInApp, onKeys } from "../host.ts";
 import { t } from "../i18n.ts";
 import { type CtxTarget, useApp } from "../store.ts";
@@ -368,6 +370,14 @@ function CalendarItems({ id, close }: { id: string; close: () => void }) {
       <Item icon={<SlidersHorizontal size={14} />} onClick={run(() => app.set(propertiesOf(id)))}>
         {t("ctx.properties")}
       </Item>
+      {(!cal.readOnly || isExternalCalendar(id)) && (
+        <Item
+          icon={<Bell size={14} />}
+          onClick={run(() => app.set({ settingsOpen: true, settingsFocus: "reminders" }))}
+        >
+          {t("ctx.reminders")}
+        </Item>
+      )}
       {!cal.readOnly && (
         <>
           <div className="menu-sep" />

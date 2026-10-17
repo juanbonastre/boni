@@ -10,6 +10,7 @@ import type {
 import type { Account, PropValue } from "./model.ts";
 import type { ParsedNote } from "./notes.ts";
 import { makeProjector } from "./projection.ts";
+import { hasReminders, parseReminderDefaults, type ReminderDefaults } from "./reminders.ts";
 import { validateModel } from "./validate.ts";
 
 /**
@@ -31,6 +32,8 @@ export interface CollectionDef {
   mapping: CalendarMapping;
   /** How a note created by the app is named and what it starts with. */
   newNote?: { name: string; body: string };
+  /** Default reminders of its events: `reminders: { timed: "10m", allDay: "0d@09:00" }` (none when missing). */
+  reminders?: ReminderDefaults;
 }
 
 export type DefResult = { ok: true; def: CollectionDef } | { ok: false; errors: string[] };
@@ -132,6 +135,9 @@ export function parseCollectionDef(data: unknown): DefResult {
     columns,
     mapping,
     ...(newNote ? { newNote } : {}),
+    ...(hasReminders(parseReminderDefaults(data.reminders))
+      ? { reminders: parseReminderDefaults(data.reminders) }
+      : {}),
   };
   const issues = validateModel([{ id, name, columns }], [viewOf(def, false)]).filter(
     (i) => i.severity === "error",
@@ -206,6 +212,7 @@ function parseMapping(m: unknown, errors: string[]): CalendarMapping | null {
       description: opt("description"),
       recurrence: opt("recurrence"),
       exdates: opt("exdates"),
+      reminders: opt("reminders"),
     }),
     when,
     ...(task ? { task } : {}),
@@ -227,6 +234,7 @@ const viewOf = (def: CollectionDef, readOnly: boolean): CalendarView => ({
   ...(readOnly || def.readOnly ? { readOnly: true } : {}),
   ...(def.tz ? { tz: def.tz } : {}),
   mapping: def.mapping,
+  ...(def.reminders ? { reminders: def.reminders } : {}),
 });
 
 /** Collections, calendar views and sidebar accounts for a set of definitions. */

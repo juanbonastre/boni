@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatNote, NoteError, parseNote, patchNote } from "./index.ts";
+import { formatNote, NoteError, parseNote, patchDefinitionReminders, patchNote } from "./index.ts";
 
 // Invented notes shaped like the ones Full Calendar writes.
 const timed = `---
@@ -172,5 +172,45 @@ describe("formatNote", () => {
 
   it("makes a note with only a body", () => {
     expect(formatNote({}, "hola\n")).toBe("---\n---\nhola\n");
+  });
+});
+
+describe("patchDefinitionReminders", () => {
+  const def = `---
+type: wiki
+# a comment that stays
+collection:
+  id: docencia
+  name: Docencia
+  columns:
+    - { id: title, name: Título, type: text }
+    - { id: date, name: Fecha, type: date }
+  mapping:
+    title: title
+    when: { kind: split, date: date }
+---
+Cuerpo.
+`;
+  it("sets and removes a calendar's reminders, touching only those lines", () => {
+    const on = patchDefinitionReminders(def, { reminders: { timed: "10m", allDay: "none" } });
+    expect(on).toBe(
+      def.replace(
+        "    when: { kind: split, date: date }\n",
+        "    when: { kind: split, date: date }\n  reminders: { timed: 10m, allDay: none }\n",
+      ),
+    );
+    expect(patchDefinitionReminders(on, { reminders: null })).toBe(def);
+    expect(patchDefinitionReminders(def, { reminders: null })).toBe(def);
+  });
+  it("adds the column for an event's own reminders once", () => {
+    const col = { id: "avisos", name: "Avisos" };
+    const once = patchDefinitionReminders(def, { eventColumn: col });
+    expect(once).toContain("    - { id: avisos, name: Avisos, type: text }\n");
+    expect(once).toContain("    reminders: avisos\n");
+    expect(once).toContain("# a comment that stays");
+    expect(patchDefinitionReminders(once, { eventColumn: col })).toBe(once);
+  });
+  it("refuses a note that is not a definition", () => {
+    expect(() => patchDefinitionReminders("---\ntitle: x\n---\n", { reminders: null })).toThrow();
   });
 });

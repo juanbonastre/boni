@@ -13,6 +13,7 @@ export * from "./queries.ts";
 export * from "./quick.ts";
 export * from "./recurrence.ts";
 export * from "./recurrenceEdit.ts";
+export * from "./reminders.ts";
 export * from "./sample.ts";
 export * from "./sampleCollections.ts";
 export * from "./series.ts";

@@ -24,6 +24,7 @@ async function boot() {
   const w = window as unknown as {
     boniVault?: VaultBridge;
     boniNet?: Pick<Host, "fetchText">;
+    boniNotify?: Host["notify"];
     boniAndroid?: AndroidNative;
   };
   await mountApp(
@@ -42,6 +43,8 @@ async function boot() {
           keys: "window",
           // The desktop shell downloads external calendars itself; a plain browser uses fetch.
           fetchText: w.boniNet?.fetchText,
+          // ...and shows reminders as system notifications while it runs.
+          ...(w.boniNotify ? { notify: w.boniNotify } : {}),
         },
   );
   const { useApp } = await import("./store.ts");

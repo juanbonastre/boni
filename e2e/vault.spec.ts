@@ -486,7 +486,8 @@ test("moving an event to another calendar moves its file and its Area line", asy
   const from = "agenda/docencia/2025-09-17 Clase de ejemplo.md";
   await page.locator(".ev", { hasText: "Clase de ejemplo" }).click();
   await page
-    .locator(".popover .prop-row", { hasText: "Calendario" })
+    .locator(".popover .prop-row")
+    .filter({ has: page.locator(".prop-name", { hasText: /^Calendario$/ }) })
     .locator(".choice-btn")
     .click();
   await page
@@ -645,4 +646,39 @@ test("without writing on, series are not extended and nothing is created", async
   });
   await page.waitForTimeout(500);
   expect(seriesNotes(await vaultFiles(page))).toHaveLength(1);
+});
+
+test("reminders are written in the calendar's definition, and an event's own in its note", async ({
+  page,
+}) => {
+  await openWithVault(page);
+  await writeOn(page);
+  const def = "_system/colecciones/docencia.md";
+  const before = (await vaultFiles(page))[def] as string;
+  await page.keyboard.press("Control+,");
+  const block = page.locator(".reminder-cal", { hasText: "Docencia" });
+  await block.locator(".setting", { hasText: "Eventos con hora" }).locator(".choice-btn").click();
+  await page.locator(".choice-menu .menu-item", { hasText: "10 min antes" }).click();
+  await block.locator(".reminder-cal-name").click();
+  await expect
+    .poll(async () => (await vaultFiles(page))[def])
+    .toContain("reminders: { timed: 10m, allDay: none }");
+  const after = (await vaultFiles(page))[def] as string;
+  expect(after.split("\n").filter((l) => !before.split("\n").includes(l))).toEqual([
+    "  reminders: { timed: 10m, allDay: none }",
+  ]);
+  await page.keyboard.press("Escape");
+
+  // An event of its own: the definition gets the column for it, the note the property.
+  const path = "agenda/docencia/2025-09-17 Clase de ejemplo.md";
+  await page.locator(".ev", { hasText: "Clase de ejemplo" }).click();
+  const row = page.locator(".popover .prop-row", { hasText: "Avisos" });
+  await expect(row).toContainText("Como el calendario (10 min antes)");
+  await row.locator(".choice-btn").click();
+  await page.locator(".choice-menu .menu-item", { hasText: "Sin avisos" }).click();
+  await expect.poll(async () => (await vaultFiles(page))[path]).toContain('avisos: "none"');
+  const d = (await vaultFiles(page))[def] as string;
+  expect(d).toContain("    - { id: avisos, name: Avisos, type: text }");
+  expect(d).toContain("    reminders: avisos");
+  await expect(row).toContainText("Sin avisos");
 });

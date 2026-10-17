@@ -13,6 +13,8 @@ export interface ExternalCal {
   name: string;
   url: string;
   color: string;
+  /** Its reminders, as text (`{ timed: "10m", allDay: "none" }`); none when missing. */
+  reminders?: { timed: string; allDay: string };
 }
 
 export interface ExternalStatus {

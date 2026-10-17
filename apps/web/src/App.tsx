@@ -13,6 +13,7 @@ import { TimeGrid } from "./components/TimeGrid.tsx";
 import { TopBar } from "./components/TopBar.tsx";
 import { appRoot, eventTarget, getHost, onKeys, releaseFocus } from "./host.ts";
 import { t } from "./i18n.ts";
+import { noticesFor } from "./notifications.ts";
 import { COMPACT_WIDTH, useApp } from "./store.ts";
 
 function useTheme() {
@@ -270,6 +271,59 @@ function newEventNow() {
   s.select(id, true);
 }
 
+/**
+ * Reminders as system notifications, where the host shows them (desktop shell, Android): the list of the
+ * next hours is handed over a moment after anything that changes it, and again every quarter of an hour.
+ */
+function useNotifications() {
+  useEffect(() => {
+    const notify = getHost().notify;
+    if (!notify) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const send = () => {
+      const s = useApp.getState();
+      notify.schedule(
+        noticesFor(s.data.events, (id) => s.remindersOf(id), {
+          now: nowMs(),
+          tz: s.settings.tz,
+          h24: s.settings.h24,
+          locale: s.settings.locale,
+        }),
+      );
+    };
+    const soon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(send, 1500);
+    };
+    const off = useApp.subscribe((s, p) => {
+      if (s.data.events !== p.data.events || s.views !== p.views || s.settings !== p.settings)
+        soon();
+    });
+    notify.onOpen?.((eventId) => {
+      // An occurrence of a series is "<master>~<day>": the master tells the calendar, the id the day.
+      const s = useApp.getState();
+      const [masterId = eventId, occ] = eventId.split("~");
+      const ev = s.data.events.find((e) => e.id === masterId);
+      if (!ev) return;
+      const day =
+        occ !== undefined
+          ? Number(occ)
+          : ev.when.kind === "timed"
+            ? toLocal(ev.when.start, s.settings.tz).day
+            : ev.when.startDay;
+      s.goTo(day);
+      s.select(eventId, true);
+    });
+    soon();
+    const every = setInterval(send, 15 * 60_000);
+    return () => {
+      off();
+      clearTimeout(timer);
+      clearInterval(every);
+    };
+  }, []);
+}
+
 /** External calendars: read when the app starts and again every half hour. */
 function useExternalRefresh() {
   useEffect(() => {
@@ -283,6 +337,7 @@ export function App() {
   useTheme();
   useCompact();
   useExternalRefresh();
+  useNotifications();
   useShortcuts();
   useClickAway();
   useModifierClass();
