@@ -124,9 +124,14 @@ class Store:
         return token
 
     def remove_device(self, name: str) -> bool:
+        """Revokes an old device token. Its widgets and preferences stay while a session uses the same device name (the
+        device logged in with an account and kept its name); otherwise they go too."""
         with self._lock:
             n = self._db.execute("DELETE FROM devices WHERE name = ?", (name,)).rowcount
-            self._db.execute("DELETE FROM widgets WHERE device = ?", (name,))
+            in_use = self._db.execute("SELECT 1 FROM sessions WHERE device = ? LIMIT 1", (name,)).fetchone()
+            if not in_use:
+                self._db.execute("DELETE FROM widgets WHERE device = ?", (name,))
+                self._db.execute("DELETE FROM prefs WHERE device = ?", (name,))
         return n > 0
 
     def devices(self) -> list[dict[str, Any]]:

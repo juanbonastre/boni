@@ -177,3 +177,19 @@ def test_charts_saved_before_colours_get_one_once(tmp_path):
     colours = {c.id: c.color for c in Store(path).charts()}
     assert colours["eating-out"] == "#fb923c" and colours["mia"] in PALETTE
     assert NOW.year == 2026
+
+
+def test_removing_an_old_token_keeps_the_widgets_of_a_device_that_logged_in(service: Service):
+    store = service.store
+    store.add_user("ejemplo", PASSWORD)
+    store.add_device("portatil")
+    store.add_widget("portatil", "eating-out", "medium")
+    before = store.widgets("portatil")
+    store.login("ejemplo", PASSWORD, "portatil")  # the same computer, now with an account
+    assert store.remove_device("portatil")
+    assert store.widgets("portatil") == before and len(before) > 0
+    # a device that never logged in loses them with its token
+    store.add_device("viejo")
+    store.add_widget("viejo", "eating-out", "medium")
+    store.remove_device("viejo")
+    assert store.widgets("viejo") == []
