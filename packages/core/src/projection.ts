@@ -19,6 +19,7 @@ import {
   type TaskMapping,
 } from "./collections.ts";
 import type { CalEvent, PropValue, When } from "./model.ts";
+import { formatReminders, parseReminders } from "./reminders.ts";
 import { fromLocal, MS_MIN, toLocal } from "./time.ts";
 
 /** Length given to a timed row that has a start but no end. */
@@ -142,6 +143,10 @@ export function rowToEvent(model: Model, row: Row): CalEvent | null {
     const id = str(v[m.series.id]).trim();
     if (id) ev.series = { id, rule: parseRule(v[m.series.rule]) };
   }
+  if (m.reminders) {
+    const own = parseReminders(v[m.reminders]);
+    if (own) ev.reminders = own;
+  }
   const rule = m.recurrence ? parseRule(v[m.recurrence]) : null;
   if (rule) {
     ev.recurrence = rule;
@@ -226,6 +231,7 @@ export function eventToRow(model: Model, prev: Row | null, ev: CalEvent): Row {
     set(m.series.id, ev.series?.id ?? null);
     set(m.series.rule, ev.series?.rule ? formatRule(ev.series.rule) : null);
   }
+  if (m.reminders) set(m.reminders, ev.reminders ? formatReminders(ev.reminders) : null);
   const mapped = mappedColumns(m);
   for (const c of coll.columns) {
     if (mapped.has(c.id)) continue;

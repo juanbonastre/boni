@@ -1,4 +1,5 @@
 import type { Account, PropValue, SelectOption } from "./model.ts";
+import type { ReminderDefaults } from "./reminders.ts";
 
 /**
  * Collections: typed tables of rows. They are plain, serialisable data (no functions) because
@@ -98,6 +99,8 @@ export interface CalendarMapping {
    * text column with its repetition rule. Mutually exclusive with `recurrence` (one master that expands).
    */
   series?: { id: string; rule: string };
+  /** Text column with the event's own reminders ("10m, 1h"; "none"; empty: the calendar's). */
+  reminders?: string;
 }
 
 export interface CalendarView {
@@ -111,6 +114,8 @@ export interface CalendarView {
   /** Timezone for rows that do not carry their own. Falls back to the model default. */
   tz?: string;
   mapping: CalendarMapping;
+  /** Reminders of its events unless an event has its own (none when missing). */
+  reminders?: ReminderDefaults;
 }
 
 export interface CollectionSnapshot {
@@ -161,6 +166,7 @@ export function mappedColumns(m: CalendarMapping): Set<string> {
   add(m.exdates);
   add(m.series?.id);
   add(m.series?.rule);
+  add(m.reminders);
   const w = m.when;
   if (w.kind === "split") {
     add(w.date);

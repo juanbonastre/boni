@@ -71,6 +71,7 @@ export function validateModel(
     };
     need("title", m.title, ["text"], false);
     need("location", m.location, ["text"]);
+    need("reminders", m.reminders, ["text"]);
     need("description", m.description, ["text"]);
     need("recurrence", m.recurrence, ["text"]);
     need("exdates", m.exdates, ["dates"]);

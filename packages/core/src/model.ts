@@ -1,3 +1,4 @@
+import type { Reminder } from "./reminders.ts";
 import type { CivilDay } from "./time.ts";
 
 export type PropertyType =
@@ -91,6 +92,8 @@ export interface CalEvent {
    * `id` and the rule it was made with (unlike `recurrence`, which is one master that expands).
    */
   series?: { id: string; rule: Recurrence | null };
+  /** This event's own reminders (`[]`: none); missing or null: its calendar's (reminders.ts). */
+  reminders?: Reminder[] | null;
 }
 
 export interface CalendarData {
