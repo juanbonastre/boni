@@ -2,6 +2,7 @@ import { type ReactNode, useState } from "react";
 import { t } from "../i18n.ts";
 import { RemoteError } from "../remote.ts";
 import { useApp } from "../store.ts";
+import { NetworkHint } from "./NetworkHint.tsx";
 
 function Row({
   label,
@@ -62,20 +63,24 @@ export function ServerSettings() {
 
   if (cfg && remote.status !== "login") {
     return (
-      <Row label={t("server.connected", { user: cfg.user })} hint={`${cfg.url} · ${status}`}>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => void useApp.getState().disconnectServer()}
-        >
-          {t("server.disconnect")}
-        </button>
-      </Row>
+      <>
+        <NetworkHint />
+        <Row label={t("server.connected", { user: cfg.user })} hint={`${cfg.url} · ${status}`}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void useApp.getState().disconnectServer()}
+          >
+            {t("server.disconnect")}
+          </button>
+        </Row>
+      </>
     );
   }
   const ready = /^https?:\/\/\S+$/i.test(url.trim()) && user.trim() !== "" && password !== "";
   return (
     <div className="server-form">
+      <NetworkHint />
       {remote.status === "login" && <p className="muted small">{t("server.status.login")}</p>}
       <Row label={t("server.url")}>
         <input

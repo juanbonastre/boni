@@ -17,6 +17,7 @@ type Answer = VaultResult<unknown>;
 export function androidHost(native: AndroidNative): {
   vault: VaultBridge;
   fetchText: NonNullable<Host["fetchText"]>;
+  network: NonNullable<Host["network"]>;
 } {
   let seq = 0;
   const pending = new Map<string, (a: Answer) => void>();
@@ -52,5 +53,15 @@ export function androidHost(native: AndroidNative): {
     cacheRead: () => call("cacheRead"),
     cacheWrite: (text) => call("cacheWrite", text),
   };
-  return { vault, fetchText: (url) => call<string>("fetchText", url) };
+  return {
+    vault,
+    fetchText: (url) => call<string>("fetchText", url),
+    network: {
+      allowed: async () => {
+        const r = await call<boolean>("networkAllowed");
+        return !r.ok || r.value !== false;
+      },
+      openSettings: () => void call("openAppSettings"),
+    },
+  };
 }

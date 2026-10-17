@@ -1,6 +1,9 @@
 package io.github.juanbonastre.bonicalendar
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.provider.Settings
 import android.content.Intent
 import android.net.Uri
 import android.webkit.JavascriptInterface
@@ -86,6 +89,18 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
         "cacheRead" -> VaultSaf.cacheFile(activity).takeIf { it.exists() }?.readText()
         "cacheWrite" -> VaultSaf.cacheFile(activity).writeText(a.getString(0)).let { null }
         "fetchText" -> fetchText(a.getString(0))
+        // GrapheneOS turns network access into a per-app permission ("Network") that apps cannot ask for
+        // with a dialog: it is set at install time and changed in the app's settings. The page asks
+        // whether it has it, and can open that settings page.
+        "networkAllowed" -> activity.checkSelfPermission(Manifest.permission.INTERNET) == PackageManager.PERMISSION_GRANTED
+        "openAppSettings" -> {
+            activity.runOnUiThread {
+                activity.startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", activity.packageName, null)),
+                )
+            }
+            null
+        }
         else -> throw VaultError("unknown", "Unknown call: $method")
     }
 
