@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+release
+e2e/screenshots
+test-results
+playwright-report
+bench/results
+apps/desktop-electron/web
+apps/obsidian-plugin/dist
+apps/android
+.git
