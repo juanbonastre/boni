@@ -123,6 +123,33 @@ test("the last copy shows without a connection, and a failed download says so", 
   await expect(page.locator(".ext-settings")).toContainText(/\d+ eventos/);
   await page.keyboard.press("Escape");
   await expect(taller(page).first()).toBeVisible();
+  // The copy is saved a moment after the download: wait for it before starting again.
+  await expect
+    .poll(() =>
+      page.evaluate(async () => {
+        const dbs = await indexedDB.databases();
+        if (!dbs.some((d) => d.name === "boni-calendar-external")) return 0;
+        return new Promise<number>((resolve) => {
+          const req = indexedDB.open("boni-calendar-external");
+          req.onerror = () => resolve(0);
+          req.onsuccess = () => {
+            const db = req.result;
+            try {
+              const n = db.transaction("feeds").objectStore("feeds").count();
+              n.onsuccess = () => {
+                db.close();
+                resolve(n.result);
+              };
+              n.onerror = () => resolve(0);
+            } catch {
+              db.close();
+              resolve(0);
+            }
+          };
+        });
+      }),
+    )
+    .toBeGreaterThan(0);
 
   // Offline on the next start: the saved copy is shown and Settings tells why it is not fresh.
   await page.addInitScript(() => {
