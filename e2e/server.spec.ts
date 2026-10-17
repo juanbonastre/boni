@@ -301,8 +301,11 @@ test("external calendars and preferences belong to the account: every device see
       }),
     );
   }, feedUrl);
+  // Before it connects, the device downloads its calendar itself (a plain browser: blocked by CORS here).
+  const direct = laptop.waitForRequest((r) => r.url().includes("ejemplo.ics"));
   await laptop.goto(`/?now=${NOW}&tz=Europe/Madrid`);
   await laptop.waitForSelector(".ev");
+  await direct;
   const asked: string[] = [];
   laptop.on("request", (r) => r.url().includes("ejemplo.ics") && asked.push(r.url()));
   await connect(laptop);
