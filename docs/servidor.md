@@ -78,8 +78,9 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
 - Si el servidor rechaza un lote (conflicto u otro error), la app lo dice ("La nota cambio fuera de la app...") y recarga
   la foto del servidor; ese cambio se pierde.
 - Cerrar sesion intenta enviar lo pendiente; si no hay conexion, queda en el dispositivo para la proxima vez.
-- Pendiente: las series abiertas todavia no se prolongan solas en modo servidor (en modo carpeta lo hace la app al leer);
-  lo hara el propio servidor, para que dos dispositivos no creen las mismas notas.
+- Las series abiertas (una nota por repeticion) las prolonga el propio servidor, con la misma regla que la app en modo
+  carpeta (hasta unos 12 meses, sin rellenar huecos): cada vez que cambia el vault y cada pocas horas. Asi ningun
+  dispositivo en modo servidor tiene que hacerlo y dos de ellos nunca crean las mismas notas.
 
 ## Cuenta: preferencias y calendarios externos (fase 4)
 - Con servidor, los calendarios externos y algunas preferencias son de la cuenta, no del dispositivo: se ven y se cambian

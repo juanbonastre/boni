@@ -44,6 +44,7 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  accounts (made by the admin, `src/cli.ts`), sessions (token hashes) and per-account data. API: snapshot,
                  changes since a version, live stream (SSE), `POST /api/apply` (only with `BONI_WRITE=1`; per-row
                  version check, a session's own writes are not conflicts); serves the web app; CORS open.
+                 With writing on it tops up open-ended series itself (`topUpSeries`, after changes and every 6 h).
                  Client side: `apps/web/src/remote.ts` (login, snapshot, changes, live stream with reconnection, last
                  snapshot in IndexedDB) and the store's `source: "server"` (`connectServer`, `loadServer`), which applies
                  server data through the same path as a vault read (`applyLoad`). Writes: `serverWriter.ts` is the store's
