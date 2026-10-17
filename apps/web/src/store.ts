@@ -161,6 +161,23 @@ export interface Toast {
 const SETTINGS_KEY = "boni-calendar:settings";
 /** The session token of this device on the server (device storage, never in settings or the vault). */
 const SERVER_TOKEN_KEY = "boni-calendar:server-token";
+/**
+ * Preferences shared by all the devices of a server account (phase 4). The theme, the density and the
+ * timezone stay per device (a phone and a laptop, a trip).
+ */
+const ACCOUNT_PREFS = [
+  "locale",
+  "h24",
+  "firstDay",
+  "secondTz",
+  "weekNumbers",
+  "defaultDuration",
+  "snap",
+] as const satisfies readonly (keyof Settings)[];
+/** Device storage: changes to the account made without a connection, still to be sent. */
+const ACCOUNT_PENDING_KEY = "boni-calendar:account-pending";
+/** Device storage: the server account this device already merged its own calendars with. */
+const ACCOUNT_SYNCED_KEY = "boni-calendar:account-synced";
 /** Below this width (CSS px) the app uses its phone layout. */
 export const COMPACT_WIDTH = 640;
 const UI_KEY = "boni-calendar:ui";
@@ -674,6 +691,102 @@ export const useApp = create<AppState>((set, get) => {
     set((s) => ({ data: merge(s.data) }));
   };
 
+  // ---- The server account (phase 4): preferences and external calendars shared by its devices ----
+  type Pending = { prefs?: boolean; externals?: boolean };
+  const pending = (): Pending => load<Pending>(ACCOUNT_PENDING_KEY);
+  const setPending = (p: Pending) => save(ACCOUNT_PENDING_KEY, p);
+  const accountPrefs = (st: Settings) =>
+    Object.fromEntries(ACCOUNT_PREFS.map((k) => [k, st[k]])) as Record<
+      string,
+      string | number | boolean | null
+    >;
+  /** Settings changed because the account changed: not sent back. */
+  let applyingAccount = false;
+  /** The last sending of the external calendars (a new one is downloaded by the server after it). */
+  let externalsSent: Promise<void> = Promise.resolve();
+  let prefsTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Sends prefs or calendars to the account now, or marks them to be sent when there is a connection. */
+  const pushAccount = (what: "prefs" | "externals"): Promise<void> => {
+    if (get().source !== "server") return Promise.resolve();
+    setPending({ ...pending(), [what]: true });
+    const remote = server.remote;
+    if (!remote) return Promise.resolve();
+    const st = get().settings;
+    const sent =
+      what === "prefs" ? remote.putPrefs(accountPrefs(st)) : remote.putExternals(st.externals);
+    return sent.then(
+      () => setPending({ ...pending(), [what]: false }),
+      (e) => console.warn("account not saved yet", e),
+    );
+  };
+
+  /** Shows what the account has: its preferences and its calendars (downloading new or changed ones). */
+  const applyAccount = (prefs: Record<string, unknown>, externals: ExternalCal[]) => {
+    const st = get().settings;
+    const patch: Partial<Settings> = {};
+    for (const k of ACCOUNT_PREFS) {
+      const v = prefs[k];
+      const cur = st[k];
+      if (v === undefined || v === cur) continue;
+      if (cur === null || v === null || typeof v === typeof cur)
+        (patch as Record<string, unknown>)[k] = v;
+    }
+    const before = new Map(st.externals.map((c) => [c.id, c]));
+    if (JSON.stringify(externals) !== JSON.stringify(st.externals)) patch.externals = externals;
+    if (Object.keys(patch).length === 0) return;
+    applyingAccount = true;
+    try {
+      get().setSettings(patch);
+    } finally {
+      applyingAccount = false;
+    }
+    if (!patch.externals) return;
+    const ids = new Set(externals.map((c) => c.id));
+    const { byCal, status } = get().external;
+    setExternal({
+      byCal: Object.fromEntries(Object.entries(byCal).filter(([id]) => ids.has(id))),
+      status: Object.fromEntries(Object.entries(status).filter(([id]) => ids.has(id))),
+    });
+    for (const c of externals) {
+      const was = before.get(c.id);
+      if (!was || was.url !== c.url) void get().loadExternal(c.id);
+    }
+  };
+
+  /**
+   * Brings the account and this device together. The first time this device meets the account, its own
+   * calendars join the account's (and an account that never stored anything takes this device's
+   * preferences); afterwards the account wins, except for changes this device made offline.
+   */
+  const syncAccount = async (remote: Remote, key: string) => {
+    const acc = await remote.account();
+    const storage = getHost().storage;
+    if (storage.get(ACCOUNT_SYNCED_KEY) !== key || acc.updated === 0) {
+      const known = new Set(acc.externals.map((c) => c.url));
+      const ids = new Set(acc.externals.map((c) => c.id));
+      const mine = get().settings.externals.filter((c) => !known.has(c.url));
+      const merged = [
+        ...acc.externals,
+        ...mine.map((c) => (ids.has(c.id) ? { ...c, id: newExternalId() } : c)),
+      ];
+      applyAccount(acc.updated === 0 ? accountPrefs(get().settings) : acc.prefs, merged);
+      if (mine.length > 0) await remote.putExternals(merged);
+      if (acc.updated === 0) await remote.putPrefs(accountPrefs(get().settings));
+      if (mine.length > 0) get().showToast("external.joined", false, { n: mine.length });
+      storage.set(ACCOUNT_SYNCED_KEY, key);
+      setPending({});
+      return;
+    }
+    const p = pending();
+    applyAccount(
+      p.prefs ? accountPrefs(get().settings) : acc.prefs,
+      p.externals ? get().settings.externals : acc.externals,
+    );
+    if (p.prefs) await pushAccount("prefs");
+    if (p.externals) await pushAccount("externals");
+  };
+
   return {
     ...snapshot,
     ...derive(snapshot, settings.tz),
@@ -724,6 +837,14 @@ export const useApp = create<AppState>((set, get) => {
       if (patch.locale) setLocale(patch.locale);
       save(SETTINGS_KEY, next);
       set({ settings: next });
+      // With a server, what the account shares goes to it (the calendars at once, preferences shortly).
+      if (!applyingAccount && get().source === "server") {
+        if (patch.externals) externalsSent = pushAccount("externals");
+        if (ACCOUNT_PREFS.some((k) => k in patch)) {
+          clearTimeout(prefsTimer);
+          prefsTimer = setTimeout(() => void pushAccount("prefs"), 400);
+        }
+      }
       // Rows without their own timezone follow the app's.
       if (patch.tz !== undefined) setDefinitions({ collections: [...get().collections] });
       // Turning writing on or off changes which calendars are read-only.
@@ -1327,6 +1448,10 @@ export const useApp = create<AppState>((set, get) => {
       try {
         reload(await remote.snapshot());
         void writer.flush();
+        // Then the account's calendars, downloaded by the server (the app's start could not yet).
+        void syncAccount(remote, key)
+          .catch((e) => console.warn("account", e))
+          .then(() => get().loadExternal());
       } catch (e) {
         fail(e);
         if (e instanceof RemoteError && e.kind === "unauthorized") return;
@@ -1358,13 +1483,18 @@ export const useApp = create<AppState>((set, get) => {
           if (live) {
             set({ remote: { status: "live" } });
             void writer.flush();
-            if (behind) void remote.changes(server.version).then(apply).catch(fail);
+            if (behind) {
+              void remote.changes(server.version).then(apply).catch(fail);
+              void syncAccount(remote, key).catch((e) => console.warn("account", e));
+            }
             behind = false;
           } else {
             behind = true;
             set({ remote: { status: "offline", message: error?.message } });
           }
         },
+        // The account changed on another device: its calendars or preferences.
+        () => void syncAccount(remote, key).catch((e) => console.warn("account", e)),
       );
     },
 
@@ -1397,10 +1527,20 @@ export const useApp = create<AppState>((set, get) => {
               }
             }
           }
+          // With a server it downloads the calendar (the device only talks to it); without a connection
+          // to it, the last copy stays.
+          const viaServer = get().source === "server";
+          if (viaServer && !server.remote) return;
           status({ ...(shown ?? get().external.status[c.id] ?? {}), state: "loading" });
           try {
-            const text = await downloadFeed(c.url);
-            const at = nowMs();
+            let text: string;
+            let at = nowMs();
+            if (viaServer && server.remote) {
+              await externalsSent;
+              const r = await server.remote.feed(c.id, !!only);
+              text = r.text;
+              at = r.at;
+            } else text = await downloadFeed(c.url);
             // The calendar may have been removed or changed meanwhile.
             const now = get().settings.externals.find((x) => x.id === c.id);
             if (!now || now.url !== c.url) return;

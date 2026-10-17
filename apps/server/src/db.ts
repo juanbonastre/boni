@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 
 /**
  * The server's own data (never the calendar's: events and tasks are notes of the vault). Accounts,
- * device sessions and, later, per-account settings and secrets.
+ * device sessions, per-account settings and secrets.
  */
 export type Db = DatabaseSync;
 
@@ -20,6 +20,15 @@ const MIGRATIONS = [
      device TEXT NOT NULL,
      created INTEGER NOT NULL,
      last_seen INTEGER NOT NULL
+   );`,
+  // Phase 4: what an account keeps on the server (account.ts): its preferences and, encrypted, its
+  // external calendars.
+  `CREATE TABLE account_data (
+     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     key TEXT NOT NULL,
+     value TEXT NOT NULL,
+     updated INTEGER NOT NULL,
+     PRIMARY KEY (user_id, key)
    );`,
 ];
 

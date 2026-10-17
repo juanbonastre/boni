@@ -2,8 +2,11 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 import type { RowChange } from "@boni-calendar/core";
+import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { login, logout, type User, userOf } from "./auth.ts";
 import type { Db } from "./db.ts";
+import type { Feeds } from "./feeds.ts";
+import type { SecretKey } from "./secret.ts";
 import type { Vaults } from "./vaults.ts";
 
 /**
@@ -16,11 +19,20 @@ import type { Vaults } from "./vaults.ts";
  *   GET  /api/changes?since=N -> rows changed or removed after version N (or { full: true })
  *   GET  /api/stream    -> Server-Sent Events: one "changes" event per new version
  *   POST /api/apply     { base, changes } -> { version, aliases } | 409 { conflict } (with BONI_WRITE)
+ *   GET  /api/account   -> { prefs, externals, updated }: what the account shares among its devices
+ *   PUT  /api/account/prefs     { prefs }      -> { updated }
+ *   PUT  /api/account/externals { externals }  -> { updated } (stored encrypted)
+ *   GET  /api/external?id=X[&fresh=1] -> { text, at }: that external calendar, downloaded by the server
+ * The stream also sends an "account" event ({ updated }) when the account's prefs or calendars change.
  * Anything else is the web app (static files of apps/web/dist), so a browser can open the calendar.
  */
 export interface ServerOptions {
   db: Db;
   vaults: Vaults;
+  /** Encrypts the account's secrets (secret.ts). */
+  key: SecretKey;
+  /** Downloads external calendars for the accounts (feeds.ts). */
+  feeds: Feeds;
   /** The built web app to serve, if any. */
   webDir?: string | null;
 }
@@ -44,7 +56,7 @@ const MIME: Record<string, string> = {
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers": "authorization, content-type",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-methods": "GET, POST, PUT, OPTIONS",
   "access-control-max-age": "600",
 };
 
@@ -77,7 +89,12 @@ const tokenOf = (req: IncomingMessage): string | null => {
 };
 
 export function makeServer(opts: ServerOptions): Server {
-  const { db, vaults } = opts;
+  const { db, vaults, key, feeds } = opts;
+  /** Live streams of each account, told when its prefs or calendars change. */
+  const accountListeners = new Map<number, Set<(updated: number) => void>>();
+  const accountChanged = (userId: number, updated: number) => {
+    for (const l of accountListeners.get(userId) ?? []) l(updated);
+  };
   const webRoot = opts.webDir ? resolve(opts.webDir) : null;
 
   const authed = (req: IncomingMessage, res: ServerResponse): User | null => {
@@ -118,6 +135,40 @@ export function makeServer(opts: ServerOptions): Server {
           ? send(res, 200, r)
           : send(res, 409, { error: "conflict", conflict: r.conflict });
       }
+      case "GET /api/account":
+        return send(res, 200, readAccount(db, key, user.id));
+      case "PUT /api/account/prefs": {
+        const prefs = validPrefs((await bodyOf(req)).prefs);
+        if (!prefs) return send(res, 400, { error: "bad-request" });
+        const updated = savePrefs(db, user.id, prefs);
+        accountChanged(user.id, updated);
+        return send(res, 200, { updated });
+      }
+      case "PUT /api/account/externals": {
+        const list = validExternals((await bodyOf(req)).externals);
+        if (!list) return send(res, 400, { error: "bad-request" });
+        const updated = saveExternals(db, key, user.id, list);
+        feeds.keepOnly(
+          user.id,
+          list.map((c) => c.id),
+        );
+        accountChanged(user.id, updated);
+        return send(res, 200, { updated });
+      }
+      case "GET /api/external": {
+        const id = url.searchParams.get("id");
+        const cal = readAccount(db, key, user.id).externals.find((c) => c.id === id);
+        if (!cal) return send(res, 404, { error: "not-found" });
+        try {
+          const copy = await feeds.get(user.id, cal.id, cal.url, url.searchParams.has("fresh"));
+          return send(res, 200, copy);
+        } catch (e) {
+          return send(res, 502, {
+            error: "feed",
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
       case "GET /api/snapshot":
         return send(res, 200, await vault.snapshot());
       case "GET /api/changes": {
@@ -138,10 +189,16 @@ export function makeServer(opts: ServerOptions): Server {
         const off = vault.subscribe((c) =>
           res.write(`event: changes\ndata: ${JSON.stringify(c)}\n\n`),
         );
+        const onAccount = (updated: number) =>
+          res.write(`event: account\ndata: ${JSON.stringify({ updated })}\n\n`);
+        const mine = accountListeners.get(user.id) ?? new Set();
+        accountListeners.set(user.id, mine);
+        mine.add(onAccount);
         // A comment now and then keeps proxies and phones from dropping a quiet connection.
         const ping = setInterval(() => res.write(": ping\n\n"), 25_000);
         req.on("close", () => {
           off();
+          mine.delete(onAccount);
           clearInterval(ping);
         });
         return;

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -16,6 +17,7 @@ import { definitionNote } from "@boni-calendar/web/src/vault/testing.ts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
+import { Feeds } from "./feeds.ts";
 import { makeServer } from "./http.ts";
 import { Vaults } from "./vaults.ts";
 
@@ -45,7 +47,7 @@ beforeAll(async () => {
   db = openDb(":memory:");
   addUser(db, "juan", "una contraseña larga de ejemplo", join(dir, "vault"));
   vaults = new Vaults({ write: true });
-  const server = makeServer({ db, vaults });
+  const server = makeServer({ db, vaults, key: randomBytes(32), feeds: new Feeds(async () => "") });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   close = () =>
@@ -200,7 +202,12 @@ describe("the server's code", () => {
 describe("a read-only server", () => {
   it("says so and refuses writes", async () => {
     const ro = new Vaults();
-    const server = makeServer({ db, vaults: ro });
+    const server = makeServer({
+      db,
+      vaults: ro,
+      key: randomBytes(32),
+      feeds: new Feeds(async () => ""),
+    });
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const token = await session();

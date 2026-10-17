@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createServer as createHttp } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -59,6 +60,7 @@ async function startServer() {
         BONI_DB: join(dir, "db.sqlite"),
         BONI_PORT: String(port),
         BONI_WRITE: "1",
+        BONI_FEEDS_ALLOW_PRIVATE: "1", // the invented calendar is served from this machine
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -261,4 +263,86 @@ test("without a connection, edits wait on the device (also over a restart) and g
     .poll(() => read(path), { timeout: 15_000 })
     .toContain('title: "Cambiada sin conexión"');
   await expect(page.locator(".ev", { hasText: "Cambiada sin conexión" })).toHaveCount(1);
+});
+
+/** An invented external calendar, served from this machine (the server downloads it). */
+const FEED = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  "BEGIN:VEVENT",
+  "UID:taller@example.com",
+  "DTSTART;TZID=Europe/Madrid:20250916T190000",
+  "DTEND;TZID=Europe/Madrid:20250916T200000",
+  "SUMMARY:Taller de la cuenta",
+  "END:VEVENT",
+  "END:VCALENDAR",
+].join("\r\n");
+
+test("external calendars and preferences belong to the account: every device sees them, the server downloads them", async ({
+  browser,
+}) => {
+  let served = 0;
+  const feed = createHttp((_, res) => {
+    served++;
+    res.end(FEED);
+  });
+  await new Promise<void>((r) => feed.listen(0, "127.0.0.1", () => r()));
+  const feedUrl = `http://127.0.0.1:${(feed.address() as { port: number }).port}/ejemplo.ics`;
+
+  // The laptop had the calendar on its own, from before (kept on the device).
+  const laptop = await (await browser.newContext()).newPage();
+  await laptop.addInitScript((url) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem(
+      "boni-calendar:settings",
+      JSON.stringify({
+        externals: [{ id: "ext-portatil", name: "Talleres", url, color: "#3b82f6" }],
+      }),
+    );
+  }, feedUrl);
+  await laptop.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await laptop.waitForSelector(".ev");
+  const asked: string[] = [];
+  laptop.on("request", (r) => r.url().includes("ejemplo.ics") && asked.push(r.url()));
+  await connect(laptop);
+  await expect(laptop.locator(".modal")).toContainText("En directo");
+  await expect(laptop.getByText("añadidos a tu cuenta: 1")).toBeVisible();
+  await laptop.keyboard.press("Escape");
+  await expect(laptop.locator(".ev", { hasText: "Taller de la cuenta" })).toHaveCount(1);
+  expect(asked).toEqual([]); // downloaded by the server, not by the device
+  expect(served).toBeGreaterThan(0);
+
+  // The phone, a new device: nothing to add, the account's calendar is there.
+  const phone = await (await browser.newContext()).newPage();
+  await phone.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await connect(phone);
+  await expect(phone.locator(".modal")).toContainText("En directo");
+  await expect(phone.locator(".ext-hint")).toContainText("cifrados en tu cuenta");
+  await expect(phone.locator(".ext-settings")).toContainText("Talleres");
+  await phone.keyboard.press("Escape");
+  await expect(phone.locator(".ev", { hasText: "Taller de la cuenta" })).toHaveCount(1);
+
+  // A preference changed on the phone reaches the laptop live; the theme stays per device.
+  const settingsOf = (p: typeof phone) =>
+    // biome-ignore lint/suspicious/noExplicitAny: test hooks
+    p.evaluate(() => (window as any).__app.getState().settings);
+  await phone.evaluate(() =>
+    // biome-ignore lint/suspicious/noExplicitAny: test hooks
+    (window as any).__app.getState().setSettings({ h24: false, theme: "light" }),
+  );
+  await expect.poll(async () => (await settingsOf(laptop)).h24).toBe(false);
+  expect((await settingsOf(laptop)).theme).toBe("dark");
+
+  // Removed on the laptop: gone from the phone too.
+  await laptop.keyboard.press("Control+,");
+  await laptop
+    .locator(".ext-settings .setting", { hasText: "Talleres" })
+    .getByTitle("Quitar")
+    .click();
+  await laptop.keyboard.press("Escape");
+  await expect(phone.locator(".ev", { hasText: "Taller de la cuenta" })).toHaveCount(0, {
+    timeout: 5000,
+  });
+  feed.close();
 });

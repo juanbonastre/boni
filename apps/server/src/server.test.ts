@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -6,6 +7,7 @@ import { definitionNote } from "@boni-calendar/web/src/vault/testing.ts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { addUser, hashPassword, verifyPassword } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
+import { Feeds } from "./feeds.ts";
 import { makeServer } from "./http.ts";
 import { Vaults } from "./vaults.ts";
 
@@ -39,7 +41,13 @@ beforeEach(async () => {
   addUser(db, "juan", "una contraseña larga de ejemplo", join(dir, "vault"));
   addUser(db, "otra", "otra contraseña larga de ejemplo", join(dir, "vault"));
   vaults = new Vaults();
-  const server = makeServer({ db, vaults, webDir: join(dir, "web") });
+  const server = makeServer({
+    db,
+    vaults,
+    key: randomBytes(32),
+    feeds: new Feeds(async () => ""),
+    webDir: join(dir, "web"),
+  });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   close = () =>
