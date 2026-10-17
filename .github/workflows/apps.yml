@@ -1,0 +1,80 @@
+name: apps
+
+# The clients (apps/web, apps/desktop): the same architecture as Boni Calendar.
+on:
+  push:
+    branches: [main]
+    paths: ["apps/**", "e2e/**", "api/**", "package.json", "pnpm-lock.yaml", "playwright.config.ts", ".github/workflows/apps.yml"]
+  pull_request:
+    paths: ["apps/**", "e2e/**", "api/**", "package.json", "pnpm-lock.yaml", "playwright.config.ts", ".github/workflows/apps.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # screenshots on the ci-screenshots branch
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+  e2e:
+    runs-on: ubuntu-24.04
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test
+        env:
+          CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: e2e/screenshots
+      - name: Publish screenshots to the ci-screenshots branch (to review the look from anywhere)
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: e2e/screenshots
+        run: |
+          git init -q -b ci-screenshots
+          git add *.png
+          git -c user.name="boni-ci" -c user.email="ci@users.noreply.github.com" commit -qm "Screenshots of ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-screenshots
+
+  package:
+    runs-on: ubuntu-24.04
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Package .deb (version 0.2.<run>)
+        working-directory: apps/desktop
+        run: |
+          node scripts/copy-web.mjs
+          pnpm exec electron-builder --linux deb --publish never -c.extraMetadata.version=0.2.${{ github.run_number }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boni-deb
+          path: release/*.deb

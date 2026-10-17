@@ -1,0 +1,63 @@
+{
+  "name": "boni",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Boni: gráficas y capturas",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "prepare-web": "node scripts/copy-web.mjs",
+    "dist": "node scripts/copy-web.mjs && electron-builder --linux deb --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "author": "Juan Bonastre <juanbonastre@users.noreply.github.com>",
+  "homepage": "https://github.com/juanbonastre/boni",
+  "build": {
+    "appId": "dev.boni.app",
+    "productName": "Boni",
+    "directories": {
+      "output": "../../release"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "settings.cjs",
+      "widgets.cjs",
+      "autostart.cjs",
+      "icon.png",
+      "tray.png",
+      "web/**/*"
+    ],
+    "linux": {
+      "target": [
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "icon.png",
+      "maintainer": "Juan Bonastre <juanbonastre@users.noreply.github.com>",
+      "synopsis": "Boni: gráficas y capturas",
+      "description": "Boni: gráficas, capturas y widgets de escritorio, cliente del servidor de Boni.",
+      "executableName": "boni",
+      "syncDesktopName": true
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "wmctrl"
+      ]
+    }
+  },
+  "desktopName": "boni.desktop"
+}

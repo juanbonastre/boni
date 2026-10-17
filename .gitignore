@@ -24,3 +24,12 @@ captures/
 *.keystore
 
 .DS_Store
+
+# JS clients (apps/)
+node_modules/
+dist/
+apps/desktop/web/
+release/
+test-results/
+playwright-report/
+e2e/screenshots/

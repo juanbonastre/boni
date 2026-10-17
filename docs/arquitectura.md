@@ -4,7 +4,7 @@ Resumen tecnico. Las decisiones y su historia estan en la nota del vault `proyec
 
 ## Piezas
 ```
- escritorio / Android (Kotlin, Compose Multiplatform)
+ escritorio (Electron + React) / Android (WebView, mas adelante)
         |  HTTP + JSON  /api/v1   (token por dispositivo; SSE mas adelante para el chat)
         v
  servidor Boni (Python 3.12, NAS, solo tailnet) -- SQLite propio (dispositivos, cola de salida, graficas, widgets)
@@ -15,8 +15,9 @@ Resumen tecnico. Las decisiones y su historia estan en la nota del vault `proyec
 - **Servidor**: modulos `sources/` (cliente MCP generico + adaptador de finanzas, el unico que conoce el formato de las notas),
   `expenses/` (formulario y nota de movimiento), `stats/` (definicion de "gasto", graficas), `store` (SQLite), `api` (FastAPI).
   Mas adelante: servidor MCP hacia las IAs y el agente (Hermes, perfil `boni`).
-- **Clientes**: `shared/` dibuja pantallas, formularios y graficas a partir de lo que manda el servidor; `desktop/` es la
-  ventana principal, los widgets y el icono de la bandeja.
+- **Clientes** (misma arquitectura que Boni Calendar): `apps/web` dibuja pantallas, formularios y graficas a partir de lo
+  que manda el servidor; `apps/desktop` (Electron) es la ventana principal, los widgets y el icono de la bandeja, y hace las
+  peticiones al servidor (el token no llega nunca a la pagina).
 
 ## Por que una API propia y no MCP hasta el cliente (revisado 2026-10-12)
 - **Elicitation** (spec 2026-07-28): el servidor pide datos con un formulario plano (texto, numero, si/no, una o varias
@@ -64,8 +65,9 @@ Resumen tecnico. Las decisiones y su historia estan en la nota del vault `proyec
 ## Pruebas y CI
 - Servidor (`server.yml`): ruff, pytest contra un vault-mcp falso hecho con el SDK real (en memoria y por HTTP con token) y
   construccion de la imagen Docker. Comprueba tambien que `api/schema` y `api/examples` estan al dia.
-- Clientes (`clients.yml`): `gradlew check` (incluye leer todos los `api/examples`), capturas PNG en claro y oscuro (se
-  publican en la rama `ci-screenshots`) y el paquete `.deb`.
+- Clientes (`apps.yml`): Biome, tipos y pruebas unitarias (incluye leer todos los `api/examples`), pruebas de la interfaz
+  con Playwright contra un servidor falso que responde con `api/examples` (capturas en la rama `ci-screenshots`) y el
+  paquete `.deb`.
 
 ## Definicion de gasto
 La de `tools/finanzas.py` (repo `gastos-app`) y `registros/finanzas/README.md`: movimientos negativos de categorias de gasto
@@ -75,7 +77,19 @@ gasto con `settles` al gasto; si `settles` apunta a una deuda es un amigo devolv
 `server/boni/stats/spending.py`.
 
 ## Escritorio: widgets
-Cada widget es una ventana pequena sin bordes ni barra de tareas, que recuerda su posicion. Boni arranca al iniciar sesion
-(Linux: `~/.config/autostart/boni.desktop`) con los widgets y un icono en la bandeja. En Linux con X11 (Cinnamon) los widgets
-se quedan debajo de las demas ventanas; en Wayland, Mac y Windows de momento son ventanas normales sin bordes. Sin conexion
-muestran los ultimos datos guardados.
+Cada widget es una ventana pequena, sin bordes y transparente, con una grafica interactiva: al pasar el raton se ve el valor,
+al tocar un punto su detalle; se mueve arrastrandola, se cambia de tamano desde la esquina y tiene su menu con el boton
+derecho. En Linux con X11 es una ventana de tipo "dock" que el gestor de ventanas mantiene debajo de las demas y en todos los
+escritorios (`wmctrl -b add,below,sticky`): queda justo encima del fondo, sobrevive a "Mostrar escritorio" y a los clics en el
+escritorio, y no sale en la barra ni en Alt+Tab. Se probo en muffin (el gestor de Cinnamon) el 2026-10-17: una ventana de tipo
+"desktop" se queda detras del fondo al hacer clic en el escritorio y una normal "debajo" se oculta con Super+D. Sin wmctrl, o
+en Wayland, son ventanas normales sin bordes.
+
+Boni arranca al iniciar sesion (`~/.config/autostart/boni.desktop`, con `--background`) con los widgets y el icono de la
+bandeja; cerrar la ventana principal la libera y Boni sigue en la bandeja. Una sola pagina (la ventana principal, o el primer
+widget si no esta abierta) envia la cola sin conexion cada minuto y recarga todo cada 15. Sin conexion los widgets muestran los
+ultimos datos guardados. Coste medido (2026-10-17, tres widgets sin la ventana principal): 334 MB en total (unos 35 MB por
+widget mas lo comun de Electron), frente a 373 MB del primer cliente, y un 0,4 % de CPU en reposo.
+
+Los ajustes son el mismo archivo que usaba el primer cliente (`~/.config/boni/settings.json`): al cambiar de app se conservan
+servidor, token y posiciones; la primera vez los widgets aparecen donde estaban los desklets de Cinnamon del primer cliente.

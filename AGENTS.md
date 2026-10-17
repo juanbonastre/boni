@@ -35,12 +35,36 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   device tokens are stored hashed in SQLite. Client config lives in the user's config folder, never in the repo.
 - Don't write secrets in the vault either; write where they live (Vaultwarden entry name).
 
+## Clients (apps/): the same architecture as Boni Calendar
+- `apps/web/` (React 19 + Vite + zustand, TypeScript) is the whole client: `src/core/` is pure logic with unit tests
+  (contract types and parsing, chart math, form logic, offline queue, chart repository, chart builder), `src/store.ts`
+  the app state, `src/components/` the screens and the SVG charts, `src/i18n.ts` every text (Spanish first, English).
+- Everything the UI needs from where it runs goes through `src/host.ts`: the desktop shell's bridge
+  (`window.boniDesktop`) or, in a plain browser (dev, e2e), same-origin requests and localStorage. No `fetch` or
+  `localStorage` elsewhere in UI code.
+- `apps/desktop/` is the Electron shell: `main.cjs` owns the settings (`~/.config/boni/settings.json`, 0600, the same file
+  and keys as the first Kotlin client), the device token (never sent to a page), every request to the server (the API has
+  no CORS), the small files in `~/.local/share/boni/store/`, the tray, start at login (`autostart.cjs`) and the widget
+  windows (`widgets.cjs`). One page per window: the main window, or one widget (`?widget=<id>&chart=<id>`). One page gets
+  the minute ticks (the coordinator: main window, else the first widget) and sends the offline queue.
+- **Desktop widgets** are windows of type "dock" kept below the others with `wmctrl -b add,below,sticky` (X11): just above
+  the desktop background, below every window, they survive "show desktop" and clicks on the desktop, stay out of the
+  taskbar and Alt+Tab, and are fully interactive (tested on Cinnamon's window manager, 2026-10-17). Dragging and resizing
+  follow the real pointer (`screen.getCursorScreenPoint`), not page coordinates. Without wmctrl (or on Wayland) they are
+  plain frameless windows. The `.deb` depends on wmctrl.
+- `clients/` (Kotlin + Compose) is the first client, replaced by `apps/`; it is removed once the new one is in use.
+
 ## Building and testing
 - Server: `cd server && uv venv -p 3.12 && uv pip install -e '.[dev]' && pytest` (tests use an in-process fake vault-mcp
   built with the real MCP SDK; no network). Lint: `ruff check`.
-- Clients: `cd clients && gradle test` (JDK 17+). `gradle :desktop:run` starts the app; `gradle :desktop:screenshots`
-  renders PNGs of charts and widgets with sample data (CI uploads them as an artifact).
-- CI: one workflow per part (`server.yml`, `clients.yml`), each runs only when its folder or `api/` changes.
+- Clients: `make setup`, `make check` (Biome, types, unit tests incl. every `api/examples` file), `make e2e` (Playwright
+  against a fake server answering with `api/examples`; `e2e/overflow.spec.ts` checks that text fits its box on every
+  surface in both languages: a new surface must be added there), `make desktop`, `make package` (`.deb` in `release/`).
+- Test it the way Juan uses it before asking him: the real app against the real server with temporary
+  `XDG_CONFIG_HOME`/`XDG_DATA_HOME` (a copy of his settings), and synthetic pointer input only in a nested X server
+  (Xephyr + muffin), never on his screen.
+- CI: one workflow per part (`server.yml`, `apps.yml`), each runs only when its folders or `api/` change. `apps.yml` publishes
+  the e2e screenshots on the `ci-screenshots` branch and the `.deb` as the `boni-deb` artifact (version 0.2.<run>).
 
 ## Workflow
 - Small PRs; tests for pure logic (server modules, chart math, queue, contract parsing).

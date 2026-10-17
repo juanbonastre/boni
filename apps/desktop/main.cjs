@@ -1,0 +1,546 @@
+// Electron shell for Boni (same architecture as Boni Calendar's): the built web UI in a main window and in one
+// small window per desktop widget, a tray icon, start at login. The main process owns the settings (with the
+// device token), the files in ~/.local/share/boni and every request to the server (the API has no CORS, and the
+// token never reaches a page). Pages ask through preload.cjs (`window.boniDesktop`).
+//
+// Env vars (tests): BONI_SCREENSHOT=<file> writes a PNG of the main window after load and quits.
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, net, screen, Tray } = require("electron");
+const { execFile } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const S = require("./settings.cjs");
+const W = require("./widgets.cjs");
+const autostart = require("./autostart.cjs");
+
+const PACKAGED_UI = path.join(__dirname, "web", "index.html");
+const DEV_UI = path.join(__dirname, "..", "web", "dist", "index.html");
+const UI = fs.existsSync(PACKAGED_UI) ? PACKAGED_UI : DEV_UI;
+const ICON = path.join(__dirname, "icon.png");
+
+const P = S.paths();
+let settings = S.loadSettings(P.settings);
+// Chromium's own controls (date fields) follow the app's language: 17/10/2026, not 10/17/2026.
+app.commandLine.appendSwitch("lang", settings.language === "en" ? "en-GB" : "es-ES");
+let widgetList = [];
+let mainWindow = null;
+let tray = null;
+let quitting = false;
+let labels = {
+  open: "Abrir Boni",
+  charts: "Gráficas y widgets",
+  widgets: "Mostrar widgets",
+  autostart: "Abrir al iniciar sesión",
+  refresh: "Actualizar",
+  settings: "Ajustes",
+  quit: "Salir",
+};
+const widgetWindows = new Map(); // widget id -> { win, widget }
+let lastShown = "";
+const layer = W.layerTool();
+
+// ---------- log: a small file to understand what happened on this computer (never the token) ----------
+function log(msg) {
+  try {
+    fs.mkdirSync(P.data, { recursive: true });
+    if (fs.existsSync(P.log) && fs.statSync(P.log).size > 200_000) {
+      const lines = fs.readFileSync(P.log, "utf8").split("\n");
+      fs.writeFileSync(P.log, `${lines.slice(-500).join("\n")}\n`);
+    }
+    const d = new Date();
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+    fs.appendFileSync(P.log, `${local.replace("T", " ")} ${msg}\n`);
+  } catch {
+    // logging is best effort
+  }
+}
+
+function save() {
+  S.saveSettings(P.settings, settings);
+}
+
+/** The program a session starts: the AppImage when it runs as one, otherwise the installed app. */
+const execPath = () => process.env.APPIMAGE || process.execPath;
+const packaged = () => app.isPackaged;
+
+function clientSettings() {
+  return S.clientView(settings, {
+    autostart: autostart.isOn(P.autostart),
+    layerAvailable: Boolean(layer),
+  });
+}
+
+function broadcast(event, except) {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed() && w.webContents !== except) w.webContents.send("boni:event", event);
+  }
+}
+
+// ---------- main window ----------
+function openMain(screenId) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    const area = screen.getPrimaryDisplay().workArea;
+    mainWindow = new BrowserWindow({
+      width: Math.min(1180, area.width - 60),
+      height: Math.min(940, area.height - 30),
+      minWidth: 560,
+      minHeight: 420,
+      title: "Boni",
+      icon: ICON,
+      backgroundColor: "#16171a",
+      autoHideMenuBar: true,
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.cjs"),
+        contextIsolation: true,
+        sandbox: true,
+      },
+    });
+    mainWindow.loadFile(UI);
+    mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    mainWindow.once("ready-to-show", () => mainWindow?.show());
+    // Closing the window frees it; Boni goes on in the tray with its widgets.
+    mainWindow.on("closed", () => {
+      mainWindow = null;
+    });
+    if (screenId) {
+      mainWindow.webContents.once("did-finish-load", () =>
+        mainWindow?.webContents.send("boni:event", { type: "navigate", screen: screenId }),
+      );
+    }
+    if (process.env.BONI_SCREENSHOT) {
+      mainWindow.webContents.once("did-finish-load", () =>
+        setTimeout(async () => {
+          const image = await mainWindow.webContents.capturePage();
+          fs.writeFileSync(process.env.BONI_SCREENSHOT, image.toPNG());
+          quitting = true;
+          app.quit();
+        }, 2500),
+      );
+    }
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  if (screenId) mainWindow.webContents.send("boni:event", { type: "navigate", screen: screenId });
+}
+
+// ---------- widget windows ----------
+function workArea() {
+  return screen.getPrimaryDisplay().workArea;
+}
+
+function onScreen(p) {
+  return screen.getAllDisplays().some((d) => {
+    const a = d.workArea;
+    return (
+      p.x + 40 > a.x && p.y + 20 > a.y && p.x < a.x + a.width - 40 && p.y < a.y + a.height - 20
+    );
+  });
+}
+
+function widgetUrl(widget) {
+  return { query: { widget: widget.id, chart: widget.chart_id } };
+}
+
+function createWidgetWindow(widget, place) {
+  const win = new BrowserWindow({
+    x: place.x,
+    y: place.y,
+    width: place.width,
+    height: place.height,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    hasShadow: false,
+    // Resizable, with limits: a non-resizable window gets min = max = its size in the X11 hints at every setSize,
+    // so it could grow but never shrink. A frameless dock window has no edges the window manager would resize.
+    resizable: true,
+    minWidth: W.MIN.width,
+    minHeight: W.MIN.height,
+    maxWidth: W.MAX.width,
+    maxHeight: W.MAX.height,
+    skipTaskbar: true,
+    show: false,
+    title: `boni-widget-${widget.id}`,
+    icon: ICON,
+    ...(layer ? { type: "dock" } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+      backgroundThrottling: true,
+    },
+  });
+  win.loadFile(UI, widgetUrl(widget));
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.once("ready-to-show", () => {
+    win.setVisibleOnAllWorkspaces(true);
+    win.showInactive();
+    if (layer) W.keepBelow(layer, win.getNativeWindowHandle().readUInt32LE(0), log);
+  });
+  win.on("closed", () => {
+    const entry = widgetWindows.get(widget.id);
+    if (entry?.win === win) widgetWindows.delete(widget.id);
+  });
+  return win;
+}
+
+/** Opens, updates and closes widget windows so they match the list and the settings. */
+function reconcileWidgets() {
+  const visible = W.visibleWidgets(widgetList, settings);
+  const keep = new Set(visible.map((w) => w.id));
+  for (const [id, entry] of widgetWindows) {
+    if (!keep.has(id)) {
+      entry.win.destroy();
+      widgetWindows.delete(id);
+    }
+  }
+  visible.forEach((widget, i) => {
+    const place = W.placementFor(widget, i, settings.widgets[widget.id], workArea(), onScreen);
+    const entry = widgetWindows.get(widget.id);
+    if (!entry) {
+      widgetWindows.set(widget.id, { win: createWidgetWindow(widget, place), widget });
+      return;
+    }
+    if (entry.widget.chart_id !== widget.chart_id) entry.win.loadFile(UI, widgetUrl(widget));
+    if (entry.widget.size !== widget.size) entry.win.setBounds(place);
+    entry.widget = widget;
+  });
+  const shown = visible.map((w) => w.id).join(", ") || "none";
+  if (shown !== lastShown) log(`widgets: ${shown}`);
+  lastShown = shown;
+}
+
+function widgetOf(sender) {
+  for (const [id, entry] of widgetWindows)
+    if (entry.win.webContents === sender) return { id, ...entry };
+  return null;
+}
+
+function rememberPlace(id, win) {
+  const b = win.getBounds();
+  const widget = widgetWindows.get(id)?.widget;
+  settings = {
+    ...settings,
+    widgets: {
+      ...settings.widgets,
+      [id]: { x: b.x, y: b.y, width: b.width, height: b.height, size: widget?.size ?? null },
+    },
+  };
+  save();
+}
+
+// ---------- the coordinator's minute: one page sends the offline queue and reloads every 15 minutes ----------
+let minute = 0;
+function coordinator() {
+  if (mainWindow && !mainWindow.isDestroyed()) return mainWindow.webContents;
+  for (const { win } of widgetWindows.values()) if (!win.isDestroyed()) return win.webContents;
+  return null;
+}
+function tick() {
+  const target = coordinator();
+  if (target) target.send("boni:event", { type: "tick", minute });
+  minute++;
+}
+
+// ---------- tray ----------
+function updateTray() {
+  if (!tray) {
+    tray = new Tray(
+      nativeImage.createFromPath(path.join(__dirname, "tray.png")).resize({ width: 22 }),
+    );
+    tray.setToolTip("Boni");
+    tray.on("click", () => openMain());
+  }
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: labels.open, click: () => openMain() },
+      { label: labels.charts, click: () => openMain("charts") },
+      { type: "separator" },
+      {
+        label: labels.widgets,
+        type: "checkbox",
+        checked: settings.showWidgets,
+        click: (item) => setSettings({ showWidgets: item.checked }),
+      },
+      ...(packaged()
+        ? [
+            {
+              label: labels.autostart,
+              type: "checkbox",
+              checked: autostart.isOn(P.autostart),
+              click: (item) => setSettings({ autostart: item.checked }),
+            },
+          ]
+        : []),
+      { label: labels.refresh, click: () => broadcast({ type: "refresh" }) },
+      { label: labels.settings, click: () => openMain("settings") },
+      { type: "separator" },
+      {
+        label: labels.quit,
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+}
+
+function setSettings(patch) {
+  const before = settings;
+  settings = S.applyPatch(settings, patch);
+  save();
+  if (typeof patch?.autostart === "boolean" && packaged()) {
+    try {
+      autostart.setOn(P.autostart, patch.autostart, execPath());
+    } catch (e) {
+      log(`autostart: ${e.message}`);
+    }
+  }
+  if (
+    before.showWidgets !== settings.showWidgets ||
+    before.hiddenWidgets !== settings.hiddenWidgets ||
+    patch?.resetWidgets
+  ) {
+    if (patch?.resetWidgets) for (const entry of widgetWindows.values()) entry.win.destroy();
+    if (patch?.resetWidgets) widgetWindows.clear();
+    reconcileWidgets();
+  }
+  updateTray();
+  broadcast({ type: "settings", settings: clientSettings() });
+  return clientSettings();
+}
+
+// ---------- requests to the server (the page never sees the token) ----------
+const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
+const API_PATH = /^api\/v1\/[A-Za-z0-9_\-./%]*(\?[A-Za-z0-9_\-.=&%+]*)?$/;
+const MAX_BODY = 10 * 1024 * 1024;
+
+ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
+  if (
+    !METHODS.has(method) ||
+    typeof apiPath !== "string" ||
+    !API_PATH.test(apiPath) ||
+    apiPath.includes("..")
+  ) {
+    return { ok: false, offline: true, message: "bad request" };
+  }
+  if (!settings.serverUrl || !settings.token)
+    return { ok: false, offline: false, notConfigured: true };
+  try {
+    const url = new URL(apiPath, `${settings.serverUrl}/`);
+    const r = await net.fetch(url.href, {
+      method,
+      headers: {
+        Authorization: `Bearer ${settings.token}`,
+        "X-Boni-Client": "boni-desktop",
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const text = await r.text();
+    return { ok: true, status: r.status, body: text.length > MAX_BODY ? "" : text };
+  } catch (e) {
+    return { ok: false, offline: true, message: String(e.message ?? e) };
+  }
+});
+
+// ---------- small files of the page (queue, last chart answers, widget list) ----------
+const STORE_NAME = /^[A-Za-z0-9._-]+\.json$/;
+const storeFile = (name) => {
+  if (typeof name !== "string" || !STORE_NAME.test(name) || name.startsWith("."))
+    throw new Error("bad name");
+  return path.join(P.store, name);
+};
+ipcMain.handle("store:read", (_e, name) => {
+  try {
+    return fs.readFileSync(storeFile(name), "utf8");
+  } catch {
+    return null;
+  }
+});
+ipcMain.handle("store:write", (_e, name, text) => {
+  if (typeof text !== "string") return;
+  const file = storeFile(name);
+  fs.mkdirSync(P.store, { recursive: true });
+  const tmp = path.join(P.store, `.${name}.${process.pid}.tmp`);
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, file);
+  if (name === "widgets.json") {
+    // The page loaded the list from the server: windows follow it.
+    try {
+      widgetList = JSON.parse(text).widgets ?? [];
+    } catch {
+      widgetList = [];
+    }
+  }
+});
+ipcMain.handle("store:remove", (_e, name) => {
+  fs.rmSync(storeFile(name), { force: true });
+});
+
+// ---------- settings and shell actions ----------
+ipcMain.handle("settings:get", () => clientSettings());
+ipcMain.handle("settings:set", (_e, patch) => setSettings(patch));
+ipcMain.on("shell:set-widgets", (_e, list) => {
+  if (!Array.isArray(list)) return;
+  widgetList = list.filter((w) => w && typeof w.id === "string" && typeof w.chart_id === "string");
+  reconcileWidgets();
+});
+ipcMain.on("shell:broadcast-refresh", (e) => broadcast({ type: "refresh" }, e.sender));
+ipcMain.on("shell:open-main", (_e, screenId) =>
+  openMain(typeof screenId === "string" ? screenId : undefined),
+);
+ipcMain.on("shell:labels", (_e, next) => {
+  if (next && typeof next === "object") {
+    labels = {
+      ...labels,
+      ...Object.fromEntries(Object.entries(next).filter(([, v]) => typeof v === "string")),
+    };
+    updateTray();
+  }
+});
+// Dragging and resizing follow the real pointer (where the cursor is on the screen), not coordinates from the page:
+// those shift as the window moves under the pointer.
+const drags = new Map(); // webContents id -> { kind, cursor, bounds }
+ipcMain.on("widget:drag-start", (e, kind) => {
+  const w = widgetOf(e.sender);
+  if (!w || (kind !== "move" && kind !== "resize")) return;
+  drags.set(e.sender.id, {
+    kind,
+    cursor: screen.getCursorScreenPoint(),
+    bounds: w.win.getBounds(),
+  });
+});
+ipcMain.on("widget:drag-move", (e) => {
+  const w = widgetOf(e.sender);
+  const d = drags.get(e.sender.id);
+  if (!w || !d) return;
+  const c = screen.getCursorScreenPoint();
+  const dx = c.x - d.cursor.x;
+  const dy = c.y - d.cursor.y;
+  if (d.kind === "move") w.win.setPosition(d.bounds.x + dx, d.bounds.y + dy);
+  else {
+    w.win.setSize(
+      W.clamp(d.bounds.width + dx, W.MIN.width, W.MAX.width),
+      W.clamp(d.bounds.height + dy, W.MIN.height, W.MAX.height),
+    );
+  }
+});
+ipcMain.on("widget:drag-end", (e) => {
+  const w = widgetOf(e.sender);
+  const d = drags.get(e.sender.id);
+  drags.delete(e.sender.id);
+  if (!w || !d) return;
+  const b = w.win.getBounds();
+  if (
+    b.x !== d.bounds.x ||
+    b.y !== d.bounds.y ||
+    b.width !== d.bounds.width ||
+    b.height !== d.bounds.height
+  ) {
+    rememberPlace(w.id, w.win);
+  }
+});
+ipcMain.on("widget:hide", (e) => {
+  const w = widgetOf(e.sender);
+  if (!w) return;
+  settings = { ...settings, hiddenWidgets: [...new Set([...settings.hiddenWidgets, w.id])] };
+  save();
+  reconcileWidgets();
+});
+
+// ---------- first run of this client: what the old one left ----------
+function readJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** Where the first client's Cinnamon desklets were (read-only; Boni never changes Cinnamon's settings). */
+function oldDesklets(done) {
+  execFile(
+    "gsettings",
+    ["get", "org.cinnamon", "enabled-desklets"],
+    { timeout: 3000 },
+    (err, out) => {
+      if (err) return done(new Map());
+      const entries =
+        String(out)
+          .match(/'[^']*'/g)
+          ?.map((s) => s.slice(1, -1)) ?? [];
+      const spices = path.join(path.dirname(P.config), "cinnamon", "spices", "boni@juanbonastre");
+      done(
+        W.deskletPlaces(entries, (instance) =>
+          Number(readJson(path.join(spices, `${instance}.json`))?.slot?.value),
+        ),
+      );
+    },
+  );
+}
+
+function start() {
+  Menu.setApplicationMenu(null);
+  const cached = readJson(path.join(P.store, "widgets.json"));
+  widgetList = Array.isArray(cached?.widgets) ? cached.widgets : [];
+  const background = process.argv.includes("--background");
+  log(
+    `start ${app.getVersion()} ${background ? "in background" : "with window"}; desktop=${process.env.XDG_CURRENT_DESKTOP} ` +
+      `session=${process.env.XDG_SESSION_TYPE} layer=${layer ?? "none"} configured=${Boolean(settings.serverUrl && settings.token)}`,
+  );
+  const go = () => {
+    if (packaged()) {
+      try {
+        autostart.refresh(P.autostart, execPath());
+        if (!settings.autostartOffered) {
+          // Widgets are meant to be there at login: switched on once (Settings and the tray switch it off).
+          autostart.setOn(P.autostart, true, execPath());
+          settings = { ...settings, autostartOffered: true };
+          save();
+        }
+      } catch (e) {
+        log(`autostart: ${e.message}`);
+      }
+    }
+    updateTray();
+    reconcileWidgets();
+    if (!background || !settings.serverUrl || !settings.token || process.env.BONI_SCREENSHOT)
+      openMain();
+    setTimeout(tick, 3000);
+    setInterval(tick, 60_000);
+  };
+  if (settings.version < S.VERSION) {
+    oldDesklets((places) => {
+      settings = S.migrate(
+        settings,
+        widgetList.map((w) => w.id),
+        places,
+      );
+      save();
+      log(`settings migrated (desklet places: ${places.size})`);
+      go();
+    });
+  } else go();
+}
+
+if (!process.env.BONI_SCREENSHOT && !app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  // Opening Boni again (the menu) shows the one that runs in the tray; the autostart's second start does nothing.
+  app.on("second-instance", (_e, argv) => {
+    if (!argv.includes("--background")) openMain();
+  });
+  app.on("before-quit", () => {
+    quitting = true;
+  });
+  app.whenReady().then(start);
+  // Windows come and go; Boni lives in the tray until "Quit".
+  app.on("window-all-closed", () => {
+    if (quitting) app.quit();
+  });
+}
