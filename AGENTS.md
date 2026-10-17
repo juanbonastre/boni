@@ -156,4 +156,10 @@ docs/            decisions and status.
   `e2e/overflow.spec.ts` walks every surface in both languages and at a narrow window: a new surface must be added there.
 - **Tests:** pure logic in `packages/core` and `apps/web/src/engine` gets unit tests; user-visible behaviour gets a
   Playwright test and, when the look changes, a screenshot check by eye.
+- **Test it the way Juan uses it** (vault `AGENTS.md`, "Working with Juan") before asking him: the server locally with the built
+  web app (`BONI_WEB=apps/web/dist BONI_WRITE=1`, an invented vault in the scratchpad), phone-sized viewports, and the real
+  desktop app on his X11 screen with Playwright's `_electron` (`--user-data-dir` and `XDG_CONFIG_HOME` temporary, never his
+  config). The desktop shell loads `apps/desktop-electron/web/` (the copy from the last `make package`) when it exists: run
+  `node scripts/copy-web.mjs` there first. Screenshots on his screen: the app window (`page.screenshot`) or a crop, never the
+  full screen; delete them afterwards. Tests type at a person's pace where timing matters (a fast `fill` hid a bug).
 - Biome is the linter/formatter; React hook dependency lint is off on purpose (the grid is an imperative engine).
