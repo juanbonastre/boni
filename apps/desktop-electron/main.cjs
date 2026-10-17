@@ -3,7 +3,17 @@
 //   BONI_START_QUERY  query string appended to the page URL, e.g. "bench=auto"
 //   BONI_BENCH_OUT    file where the benchmark result is written (the app then quits)
 //   BONI_SCREENSHOT   file where a PNG of the window is written after load (the app then quits)
-const { app, BrowserWindow, dialog, ipcMain, Menu, net, screen, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  Notification,
+  net,
+  screen,
+  shell,
+} = require("electron");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
@@ -123,6 +133,48 @@ ipcMain.handle("net:fetch-text", async (_e, url) => {
     return { ok: true, value: text };
   } catch (e) {
     return { ok: false, code: "fetch", message: String(e.message ?? e) };
+  }
+});
+
+// Reminders: the page hands over the notices of the next hours; each shows at its time as a system
+// notification, and a click brings the window up on that event. A new list replaces the timers.
+const noticeTimers = new Map();
+const shown = new Set();
+ipcMain.on("notify:schedule", (e, list) => {
+  for (const t of noticeTimers.values()) clearTimeout(t);
+  noticeTimers.clear();
+  if (!Array.isArray(list) || !Notification.isSupported()) return;
+  const sender = e.sender;
+  const now = Date.now();
+  for (const n of list.slice(0, 500)) {
+    const at = Number(n?.at);
+    const id = String(n?.id ?? "");
+    // A minute late still shows (the app was busy); already shown ones never twice.
+    if (!id || shown.has(id) || !(at > now - 60_000) || at > now + 3 * 86_400_000) continue;
+    noticeTimers.set(
+      id,
+      setTimeout(
+        () => {
+          noticeTimers.delete(id);
+          shown.add(id);
+          const note = new Notification({
+            title: String(n.title ?? ""),
+            body: String(n.body ?? ""),
+          });
+          note.on("click", () => {
+            const win = BrowserWindow.fromWebContents(sender);
+            if (win) {
+              if (win.isMinimized()) win.restore();
+              win.show();
+              win.focus();
+            }
+            if (!sender.isDestroyed()) sender.send("notify:open", String(n.eventId ?? ""));
+          });
+          note.show();
+        },
+        Math.max(0, at - now),
+      ),
+    );
   }
 });
 

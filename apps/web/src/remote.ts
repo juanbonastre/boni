@@ -126,6 +126,14 @@ export class Remote {
     return request(`${this.url}/api/external?${q}`, { headers: this.auth() });
   }
 
+  /** A calendar's reminders, written by the server in its definition note (phase 5). */
+  setCollectionReminders(
+    collectionId: string,
+    edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
+  ): Promise<unknown> {
+    return this.put("/api/collections/reminders", { collectionId, ...edit });
+  }
+
   private put<T>(path: string, body: unknown): Promise<T> {
     return request(`${this.url}${path}`, {
       method: "PUT",

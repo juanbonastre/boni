@@ -182,6 +182,40 @@ describe("writing through the server", () => {
   });
 });
 
+describe("a calendar's reminders", () => {
+  it("are written in its definition note, only those lines, and devices see them", async () => {
+    const token = await session();
+    const path = "_system/colecciones/docencia.md";
+    const before = readFileSync(vaultPath(path), "utf8");
+    const put = (body: unknown) =>
+      fetch(`${base}/api/collections/reminders`, {
+        method: "PUT",
+        headers: auth(token),
+        body: JSON.stringify(body),
+      });
+    expect(
+      (await put({ collectionId: "docencia", reminders: { timed: "10m, nada", allDay: "" } }))
+        .status,
+    ).toBe(200);
+    const after = readFileSync(vaultPath(path), "utf8");
+    expect(after.split("\n").filter((l) => !before.split("\n").includes(l))).toEqual([
+      "  reminders: { timed: 10m, allDay: none }",
+    ]);
+    const snap = (await snapshot(token)) as unknown as {
+      views: { id: string; reminders?: { timed: unknown[] } }[];
+    };
+    expect(snap.views.find((v) => v.id === "docencia")?.reminders?.timed).toEqual([
+      { kind: "before", minutes: 10 },
+    ]);
+    // The column for an event's own reminders, once.
+    expect((await put({ collectionId: "docencia", eventColumn: true })).status).toBe(200);
+    expect(readFileSync(vaultPath(path), "utf8")).toContain("reminders: avisos");
+    expect((await put({ collectionId: "docencia", reminders: null })).status).toBe(200);
+    expect(readFileSync(vaultPath(path), "utf8")).not.toContain("timed:");
+    expect((await put({ collectionId: "nada", reminders: null })).status).toBe(500);
+  });
+});
+
 describe("the server's code", () => {
   it("runs with Node's type stripping, like in its container (no TypeScript-only syntax)", () => {
     // Vitest compiles TypeScript itself; Node only strips types, so check the real loader too.

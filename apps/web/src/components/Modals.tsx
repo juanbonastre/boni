@@ -24,6 +24,7 @@ import { useApp } from "../store.ts";
 import { vaultBridge } from "../vaultBridge.ts";
 import { ExternalSettings } from "./ExternalSettings.tsx";
 import { ChoicePicker, DraftInput } from "./fields.tsx";
+import { RemindersSettings } from "./Reminders.tsx";
 import { ServerSettings } from "./ServerSettings.tsx";
 
 function Modal({
@@ -360,6 +361,7 @@ export function SettingsModal() {
       </Field>
       <DataSettings />
       <ExternalSettings />
+      <RemindersSettings />
       {source === "sample" && (
         <>
           <h3>{t("settings.general")}</h3>

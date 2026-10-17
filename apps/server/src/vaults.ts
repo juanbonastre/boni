@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import type { CollectionProvider, CollectionSnapshot, Row, RowChange } from "@boni-calendar/core";
+import { patchCollectionReminders } from "@boni-calendar/web/src/vault/definitions.ts";
 import type { IgnoredNote } from "@boni-calendar/web/src/vault/loadVault.ts";
 import { makeVaultProvider, VaultWriteError } from "@boni-calendar/web/src/vault/provider.ts";
 import { aliases, readVault, withLock } from "@boni-calendar/web/src/vault/sync.ts";
@@ -143,6 +144,26 @@ export class VaultService {
       if (c) c.by = who;
     }
     return { ok: true, version: this.version, aliases: out };
+  }
+
+  /**
+   * Changes a calendar's reminders in its definition note (phase 5), with the apps' writer: its defaults
+   * (`null`: none) and, if asked, the column for an event's own reminders. Devices get the new definition
+   * through the stream (a definition change asks them for a new snapshot).
+   */
+  async setReminders(
+    collectionId: string,
+    edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
+  ): Promise<"ok" | "conflict"> {
+    if (!this.write) throw new Error("This server does not write to the vault (BONI_WRITE)");
+    try {
+      await patchCollectionReminders(this.bridge, collectionId, edit);
+    } catch (e) {
+      if (e instanceof VaultWriteError && e.kind === "conflict") return "conflict";
+      throw e;
+    }
+    await this.refresh();
+    return "ok";
   }
 
   /** The calendar as it is now (reads the vault the first time). */

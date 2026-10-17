@@ -85,6 +85,12 @@ slate `#94a3b8`.
   bottom edge to resize. Edges follow the pointer in both axes, so dragging into the next or previous day's column
   makes an event cross midnight. All-day events move and resize by whole days, in the all-day row and in the month.
   Dragging near the top or bottom edge auto-scrolls.
+- **Reminders** (like Notion Calendar): every calendar has default reminders, one list for timed events ("When it starts",
+  5/10/15/30 min, 1/2 h, 1 day before) and one for all-day events ("On the day at 09:00", "The day before at 09:00 / 18:00",
+  "2 days before at 09:00"); by default no calendar reminds. They are chosen in Settings → Reminders (one block per
+  calendar, also external ones), reached too from a calendar's menu ("Reminders…"). An event's detail has a Reminders row:
+  "As the calendar (…)", "No reminders", or its own list. The desktop app shows them as system notifications while it runs
+  (a click brings the window up on that event); the Android app as notifications even when closed.
 - **A new event is a draft until it has a title** (like Notion Calendar): however it is made (drag, double click, menu,
   the phone's button), the grid shows only its range, lightly tinted in its calendar's colour with no text, and its detail
   opens on the title. It can be moved or resized with the detail still open. Closing the detail without a title (`Esc`, a

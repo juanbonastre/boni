@@ -186,7 +186,9 @@ export function patchDefinitionReminders(
   const first = doc.errors[0];
   if (first) throw new NoteError(first.message);
   if (!doc.hasIn(["collection"])) throw new NoteError("not a definition note");
-  const before = doc.toString(OPTIONS);
+  // Definitions are written by hand: keep the spacing their flow maps already use ("{ a: b }").
+  const opts = { ...OPTIONS, flowCollectionPadding: /\{ \S/.test(s.yaml) };
+  const before = doc.toString(opts);
   if (edit.reminders === null) doc.deleteIn(["collection", "reminders"]);
   else if (edit.reminders) {
     const node = doc.createNode(edit.reminders);
@@ -206,7 +208,7 @@ export function patchDefinitionReminders(
     }
     doc.setIn(["collection", "mapping", "reminders"], id);
   }
-  const after = doc.toString(OPTIONS);
+  const after = doc.toString(opts);
   if (after === before) return text;
   const out = `---\n${after.replace(/\n$/, "")}\n---\n${s.body}`;
   return s.eol === "\r\n" ? out.replace(/\r?\n/g, "\r\n") : out;

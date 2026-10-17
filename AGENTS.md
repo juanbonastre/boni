@@ -127,6 +127,12 @@ docs/            decisions and status.
   `editSeries` with the same this/following/all scope (marking done only touches that note; deleting "all" only removes notes
   from today on; a deletion that takes the end ends the series with an `until`); changing the rule replaces the later notes.
   A calendar maps `series` or `recurrence`, not both.
+  **Reminders** (phase 5, `reminders.ts` in core): a definition's `reminders: { timed: "10m", allDay: "0d@09:00" }` are its
+  calendar's defaults (`CalendarView.reminders`); an event's own list lives in a text column mapped as `reminders`
+  ("1h, 10m", "none"; empty = the calendar's), added to the definition the first time an event needs it. Definitions are
+  changed only through `vault/definitions.ts` (`patchCollectionReminders`, those lines only; the server does the same via
+  `PUT /api/collections/reminders`). `upcomingAlerts` (core) and `noticesFor` (web) make the notifications; hosts show them
+  through `host.notify` (desktop: `boniNotify`, main-process timers).
 - **Rows are the truth (phase 2):** the store keeps `collections`, `views` and `rows`; `data.events`, `data.calendars` and
   `data.projects` are *derived* (events are the projection of rows through each calendar's mapping, memoised per row
   object). Never write them: edit through the store actions, which turn event changes into row changes (`reconcileRows`)

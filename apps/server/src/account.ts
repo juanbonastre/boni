@@ -1,3 +1,4 @@
+import { formatReminderDefaults, parseReminderDefaults } from "@boni-calendar/core";
 import type { Db } from "./db.ts";
 import { decrypt, encrypt, type SecretKey } from "./secret.ts";
 
@@ -11,6 +12,8 @@ export interface External {
   name: string;
   url: string;
   color: string;
+  /** Its reminders (phase 5), as text: `{ timed: "10m", allDay: "none" }`. */
+  reminders?: { timed: string; allDay: string };
 }
 
 export type Prefs = Record<string, string | number | boolean | null>;
@@ -71,12 +74,20 @@ export function validExternals(v: unknown): External[] | null {
   const out: External[] = [];
   for (const x of v) {
     if (!x || typeof x !== "object") return null;
-    const { id, name, url, color } = x as Record<string, unknown>;
+    const { id, name, url, color, reminders } = x as Record<string, unknown>;
     if (typeof id !== "string" || !/^ext-[a-z0-9]{1,32}$/.test(id)) return null;
     if (typeof name !== "string" || name.length > 200) return null;
     if (typeof color !== "string" || color.length > 40) return null;
     if (typeof url !== "string" || url.length > 2000 || !/^https?:\/\//i.test(url)) return null;
-    out.push({ id, name, url, color });
+    out.push({
+      id,
+      name,
+      url,
+      color,
+      ...(reminders !== undefined
+        ? { reminders: formatReminderDefaults(parseReminderDefaults(reminders)) }
+        : {}),
+    });
   }
   return out;
 }

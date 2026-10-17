@@ -18,18 +18,24 @@ import {
   expandAll,
   extendSeries,
   type FirstDay,
+  formatReminderDefaults,
   generateCollectionSample,
+  hasReminders,
   inSeries,
   type Locale,
   makeModel,
   makeProjector,
   memoryProvider,
+  NO_REMINDERS,
   type OccurrenceCache,
   type Projector,
   type PropertyDef,
   parseOccurrenceId,
+  parseReminderDefaults,
   projectsOf,
   type Recurrence,
+  type Reminder,
+  type ReminderDefaults,
   type Row,
   reconcileRows,
   resolveOccurrence,
@@ -78,6 +84,7 @@ import {
 } from "./remote.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
 import { ServerWriter } from "./serverWriter.ts";
+import { EVENT_REMINDERS_COLUMN, patchCollectionReminders } from "./vault/definitions.ts";
 import type { IgnoredNote, VaultLoad } from "./vault/loadVault.ts";
 import { makeVaultProvider, VaultWriteError } from "./vault/provider.ts";
 import {
@@ -257,7 +264,7 @@ export interface AppState {
   toast: Toast | null;
   settingsOpen: boolean;
   /** A part of Settings to show when it opens ("external": the external calendars, to add one). */
-  settingsFocus: "external" | null;
+  settingsFocus: "external" | "reminders" | null;
   paletteOpen: boolean;
   helpOpen: boolean;
   schemaCalendarId: string | null;
@@ -318,6 +325,12 @@ export interface AppState {
   updateEvents: (ids: string[], patch: Partial<CalEvent>, scope?: Scope) => void;
   /** Like updateEvents, but asks "this / following / all" first when a recurring event is involved. */
   editEvents: (ids: string[], patch: Partial<CalEvent>) => void;
+  /** A calendar's default reminders (none when it has none), own or external. */
+  remindersOf: (calendarId: string) => ReminderDefaults;
+  /** Sets a calendar's default reminders: in its definition (vault or server), or in the account for an external one. */
+  setCalendarReminders: (calendarId: string, d: ReminderDefaults) => Promise<void>;
+  /** An event's own reminders (`null`: its calendar's). Adds the column for them to the definition if needed. */
+  setEventReminders: (id: string, list: Reminder[] | null) => Promise<void>;
   deleteEvent: (id: string) => void;
   deleteEvents: (ids: string[], scope?: Scope) => void;
   removeEvents: (ids: string[]) => void;
@@ -697,6 +710,24 @@ export const useApp = create<AppState>((set, get) => {
   const setExternal = (patch: Partial<ExternalSlice>) => {
     set((s) => ({ external: { ...s.external, ...patch } }));
     set((s) => ({ data: merge(s.data) }));
+  };
+
+  /** Writes a calendar's reminders where its definition lives: the vault folder or the server. */
+  const persistReminders = async (
+    collectionId: string,
+    edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
+  ) => {
+    const s = get();
+    try {
+      if (s.source === "server") {
+        await server.remote?.setCollectionReminders(collectionId, edit);
+      } else if (s.source === "vault") {
+        const bridge = vaultBridge();
+        if (bridge) await patchCollectionReminders(bridge, collectionId, edit);
+      }
+    } catch (e) {
+      writeFailed(e);
+    }
   };
 
   // ---- The server account (phase 4): preferences and external calendars shared by its devices ----
@@ -1127,6 +1158,59 @@ export const useApp = create<AppState>((set, get) => {
           get().today(),
         ),
       );
+    },
+
+    remindersOf: (calendarId) => {
+      if (isExternalCalendar(calendarId)) {
+        const c = get().settings.externals.find((x) => x.id === calendarId);
+        return parseReminderDefaults(c?.reminders);
+      }
+      return get().views.find((v) => v.id === calendarId)?.reminders ?? NO_REMINDERS;
+    },
+
+    setCalendarReminders: async (calendarId, d) => {
+      if (isExternalCalendar(calendarId)) {
+        get().updateExternal(calendarId, { reminders: formatReminderDefaults(d) });
+        return;
+      }
+      const s = get();
+      const view = s.views.find((v) => v.id === calendarId);
+      if (!view || view.readOnly) return;
+      const { reminders: _old, ...rest } = view;
+      setDefinitions({
+        views: s.views.map((v) =>
+          v.id === calendarId ? { ...rest, ...(hasReminders(d) ? { reminders: d } : {}) } : v,
+        ),
+      });
+      await persistReminders(view.collectionId, {
+        reminders: hasReminders(d) ? formatReminderDefaults(d) : null,
+      });
+    },
+
+    setEventReminders: async (id, list) => {
+      const s = get();
+      const ev = s.data.events.find((e) => e.id === (id.includes("~") ? id.split("~")[0] : id));
+      const view = ev && s.views.find((v) => v.id === ev.calendarId);
+      if (!ev || !view || view.readOnly) return;
+      if (!view.mapping.reminders) {
+        // The first event with reminders of its own: its calendar gets the column for them.
+        const col = EVENT_REMINDERS_COLUMN;
+        setDefinitions({
+          collections: s.collections.map((c) =>
+            c.id === view.collectionId && !c.columns.some((x) => x.id === col.id)
+              ? {
+                  ...c,
+                  columns: [...c.columns, { id: col.id, name: col.name, type: "text" as const }],
+                }
+              : c,
+          ),
+          views: s.views.map((v) =>
+            v.id === view.id ? { ...v, mapping: { ...v.mapping, reminders: col.id } } : v,
+          ),
+        });
+        await persistReminders(view.collectionId, { eventColumn: true });
+      }
+      get().editEvents([id], { reminders: list });
     },
 
     editEvents: (ids, patch) => {
