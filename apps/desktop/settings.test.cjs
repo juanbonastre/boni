@@ -76,6 +76,8 @@ test("the page never gets the token, and its patches are checked", () => {
   const view = S.clientView(s, { autostart: false, layerAvailable: true });
   assert.equal(view.hasToken, true);
   assert.ok(!JSON.stringify(view).includes("secreto"));
+  assert.equal(view.legacyToken, true); // a token without a user: the first clients' device token
+  assert.equal(S.clientView({ ...s, user: "ejemplo", device: "portatil" }, {}).legacyToken, false);
   const p = S.applyPatch(s, {
     serverUrl: "https://b.example/",
     token: "  nuevo ",
@@ -83,7 +85,7 @@ test("the page never gets the token, and its patches are checked", () => {
     language: "en",
   });
   assert.equal(p.serverUrl, "https://b.example");
-  assert.equal(p.token, "nuevo");
+  assert.equal(p.token, "secreto"); // a token only comes from a login, never from the page
   assert.equal(p.theme, "system");
   assert.equal(p.language, "en");
   assert.equal(
@@ -91,6 +93,13 @@ test("the page never gets the token, and its patches are checked", () => {
     "https://a.example",
   );
   assert.equal(S.applyPatch(s, { token: "" }).token, "secreto");
+  const hid = S.applyPatch(s, { widgetHidden: { id: "w-a", hidden: true } });
+  assert.deepEqual(hid.hiddenWidgets, ["w-a"]);
+  assert.deepEqual(
+    S.applyPatch(hid, { widgetHidden: { id: "w-a", hidden: false } }).hiddenWidgets,
+    [],
+  );
+  assert.deepEqual(S.clientView(hid, {}).hiddenWidgets, ["w-a"]);
   const reset = S.applyPatch(
     { ...s, widgets: { a: { x: 1, y: 2 } }, hiddenWidgets: ["a"] },
     { resetWidgets: true },
@@ -109,4 +118,15 @@ test("autostart: an entry that starts in the background, rewritten to point at t
   assert.match(text, /^Exec="\/opt\/Boni\/boni" --background$/m);
   autostart.setOn(dir, false, "x");
   assert.equal(autostart.isOn(dir), false);
+});
+
+test("the device's name offered at login, and the server addresses the shell talks to", () => {
+  assert.equal(S.suggestedDevice("portatil", "EJEMPLO-PC"), "portatil");
+  assert.equal(S.suggestedDevice("", "EJEMPLO-PC"), "ejemplo-pc");
+  assert.equal(S.suggestedDevice("", ""), "equipo");
+  assert.equal(S.serverUrl(" https://boni.example.ts.net/ "), "https://boni.example.ts.net");
+  assert.equal(S.serverUrl("http://127.0.0.1:8100"), "http://127.0.0.1:8100");
+  assert.equal(S.serverUrl("file:///etc/passwd"), null);
+  assert.equal(S.serverUrl("https://user:pass@boni.example"), null);
+  assert.equal(S.serverUrl("no es una url"), null);
 });

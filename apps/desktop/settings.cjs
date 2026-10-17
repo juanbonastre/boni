@@ -33,6 +33,9 @@ const DEFAULTS = {
   version: VERSION,
   serverUrl: "",
   token: "",
+  // who the token belongs to (from the login); empty with an old device token
+  user: "",
+  device: "",
   theme: "system",
   language: "es",
   showWidgets: true,
@@ -76,6 +79,8 @@ function loadSettings(file) {
     version: Number(raw.version) || 1,
     serverUrl: typeof s.serverUrl === "string" ? s.serverUrl.trim() : "",
     token: typeof s.token === "string" ? s.token.trim() : "",
+    user: typeof s.user === "string" ? s.user : "",
+    device: typeof s.device === "string" ? s.device : "",
     theme: THEMES.has(s.theme) ? s.theme : "system",
     language: LANGS.has(s.language) ? s.language : "es",
     showWidgets: s.showWidgets !== false,
@@ -119,14 +124,19 @@ function clientView(settings, extra) {
   return {
     serverUrl: settings.serverUrl,
     hasToken: Boolean(settings.token),
+    user: settings.user,
+    device: settings.device,
+    // a token of the first clients (`boni device add`), from before accounts: the page asks to log in
+    legacyToken: Boolean(settings.token) && !settings.user,
     theme: settings.theme,
     language: settings.language,
     showWidgets: settings.showWidgets,
+    hiddenWidgets: settings.hiddenWidgets,
     ...extra,
   };
 }
 
-/** Applies a patch from the page, checking every value. Returns the new settings. */
+/** Applies a patch from the page, checking every value (the token only comes from a login). */
 function applyPatch(settings, patch) {
   const next = { ...settings };
   if (!patch || typeof patch !== "object") return next;
@@ -135,10 +145,14 @@ function applyPatch(settings, patch) {
     if (url === "" || /^https?:\/\/[^\s/]+(\/[^\s]*)?$/i.test(url))
       next.serverUrl = url.replace(/\/+$/, "");
   }
-  if (typeof patch.token === "string" && patch.token.trim()) next.token = patch.token.trim();
   if (THEMES.has(patch.theme)) next.theme = patch.theme;
   if (LANGS.has(patch.language)) next.language = patch.language;
   if (typeof patch.showWidgets === "boolean") next.showWidgets = patch.showWidgets;
+  const h = patch.widgetHidden;
+  if (h && typeof h.id === "string" && typeof h.hidden === "boolean") {
+    const others = settings.hiddenWidgets.filter((id) => id !== h.id);
+    next.hiddenWidgets = h.hidden ? [...others, h.id] : others;
+  }
   if (patch.resetWidgets === true) {
     next.widgets = {};
     next.hiddenWidgets = [];
@@ -146,7 +160,30 @@ function applyPatch(settings, patch) {
   return next;
 }
 
+/** The device's name offered at the first login: the old token's device, or the computer's name. */
+function suggestedDevice(oldDevice, hostname) {
+  const clean = (v) =>
+    String(v ?? "")
+      .trim()
+      .slice(0, 80);
+  return clean(oldDevice) || clean(hostname).toLowerCase() || "equipo";
+}
+
+/** A server address the main process may talk to: http(s), no credentials, no trailing slash. */
+function serverUrl(raw) {
+  try {
+    const u = new URL(String(raw).trim());
+    if ((u.protocol !== "https:" && u.protocol !== "http:") || u.username || u.password)
+      return null;
+    return u.href.replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
 module.exports = {
+  suggestedDevice,
+  serverUrl,
   VERSION,
   DEFAULTS,
   paths,

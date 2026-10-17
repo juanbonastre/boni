@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld("boniDesktop", {
   storeWrite: (name, text) => ipcRenderer.invoke("store:write", name, text),
   storeRemove: (name) => ipcRenderer.invoke("store:remove", name),
   getSettings: () => ipcRenderer.invoke("settings:get"),
+  login: (form) => ipcRenderer.invoke("account:login", form),
+  logout: () => ipcRenderer.invoke("account:logout"),
+  suggestedDevice: () => ipcRenderer.invoke("account:suggested-device"),
   setSettings: (patch) => ipcRenderer.invoke("settings:set", patch),
   onEvent: (cb) => {
     const listener = (_e, event) => cb(event);

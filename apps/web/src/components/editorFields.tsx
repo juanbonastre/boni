@@ -1,8 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { OfflineError } from "../core/api.ts";
 import * as B from "../core/chartBuilder.ts";
-import type { ChartState } from "../core/charts.ts";
 import type {
   ChartCatalog,
   ChartFilterRule,
@@ -11,131 +9,14 @@ import type {
   FieldInfo,
 } from "../core/contract.ts";
 import { isIsoDate, parseAmount } from "../core/formLogic.ts";
-import {
-  CHARTS,
-  deleteChart,
-  errorText,
-  go,
-  loadCatalog,
-  optionList,
-  preview,
-  saveChart,
-  toast,
-  useStore,
-} from "../store.ts";
-import { ChartCardContent } from "./ChartCard.tsx";
+import { optionList, useStore } from "../store.ts";
 import { SearchList } from "./FormView.tsx";
 import { Choices, MenuButton } from "./Menu.tsx";
 
-/** The editor: options on one side, a live preview (computed by the server, not saved) on the other. */
-export function ChartEditor({ initial }: { initial: ChartSpec }) {
-  const t = useStore((s) => s.t);
-  const catalog = useStore((s) => s.catalog);
-  const [spec, setSpec] = useState(() => B.normalize(initial));
-  const [drill, setDrill] = useState<string | null>(null);
-  const [state, setState] = useState<ChartState>({
-    data: null,
-    loading: true,
-    offline: false,
-    error: null,
-  });
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    loadCatalog().catch(() => undefined);
-  }, []);
-  // The preview follows the definition once it settles (typing a title must not send a request per key).
-  useEffect(() => {
-    let live = true;
-    const timer = setTimeout(() => {
-      setState((s) => ({ ...s, loading: true }));
-      preview(spec, drill)
-        .then((data) => live && setState({ data, loading: false, offline: false, error: null }))
-        .catch(
-          (e) =>
-            live &&
-            setState({
-              data: null,
-              loading: false,
-              offline: e instanceof OfflineError,
-              error: errorText(t, e),
-            }),
-        );
-    }, 350);
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [spec, drill]);
-
-  const edit = (change: (s: ChartSpec) => ChartSpec) => {
-    setSpec((s) => B.normalize(change(s)));
-    setDrill(null);
-  };
-  const save = async () => {
-    setSaving(true);
-    try {
-      await saveChart(spec);
-      toast(t("charts.saved"));
-      go(CHARTS);
-    } catch (e) {
-      toast(errorText(t, e));
-    } finally {
-      setSaving(false);
-    }
-  };
-  const remove = async () => {
-    try {
-      await deleteChart(spec.id);
-      toast(t("charts.deleted"));
-      go(CHARTS);
-    } catch (e) {
-      toast(errorText(t, e));
-    }
-  };
-
-  return (
-    <div className="editor">
-      <div className="editor-form">
-        {catalog ? (
-          <EditorForm spec={spec} cat={catalog} edit={edit} />
-        ) : (
-          <p className="muted">{t("editor.loading")}</p>
-        )}
-      </div>
-      <div className="editor-preview">
-        <ChartCardContent
-          title={spec.title}
-          state={state}
-          className="preview"
-          onDrill={(key) => setDrill(key)}
-          onBack={drill ? () => setDrill(null) : undefined}
-        />
-        <div className="row">
-          <button
-            type="button"
-            className="btn primary"
-            disabled={saving || !spec.title.trim()}
-            onClick={() => void save()}
-          >
-            {spec.id ? t("editor.save") : t("editor.create")}
-          </button>
-          <button type="button" className="btn ghost" onClick={() => go(CHARTS)}>
-            {t("editor.cancel")}
-          </button>
-          <span className="spacer" />
-          {spec.id && (
-            // No confirmation dialogs (design guide): the chart can be made again from the list's duplicate.
-            <button type="button" className="btn ghost danger" onClick={() => void remove()}>
-              <Trash2 size={14} strokeWidth={1.8} />
-              {t("editor.delete")}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+/**
+ * The fields of a chart definition (the side panel's editor), and the filters on their own (a chart's filter
+ * control). They only change a definition; saving is up to whoever shows them.
+ */
 
 function Section({
   title,
@@ -255,7 +136,7 @@ function DateInput({
   );
 }
 
-function EditorForm({
+export function EditorForm({
   spec,
   cat,
   edit,
@@ -397,7 +278,7 @@ function EditorForm({
   );
 }
 
-function FiltersEditor({
+export function FiltersEditor({
   spec,
   cat,
   edit,

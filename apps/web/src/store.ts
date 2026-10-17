@@ -1,81 +1,114 @@
+import { useMemo } from "react";
 import { create } from "zustand";
 import { ApiError, BoniApi, NotConfiguredError, OfflineError } from "./core/api.ts";
-import { ChartRepository } from "./core/charts.ts";
+import { normalize } from "./core/chartBuilder.ts";
+import { ChartRepository, type ChartState } from "./core/charts.ts";
 import { newId, nowIso, today } from "./core/clock.ts";
-import type {
-  ChartCatalog,
-  ChartSpec,
-  FormComponent,
-  Json,
-  Option,
-  Screen,
-  Widget,
+import {
+  type ChartCatalog,
+  type ChartSpec,
+  type FormComponent,
+  type Json,
+  type Option,
+  parseScreen,
+  parseSpec,
+  type Screen,
+  type Widget,
 } from "./core/contract.ts";
 import { OfflineQueue, type QueuedAction } from "./core/queue.ts";
-import { readJson } from "./core/storage.ts";
-import { type ClientSettings, host as defaultHost, type Host, type SettingsPatch } from "./host.ts";
+import { readJson, type TextStore } from "./core/storage.ts";
+import {
+  type ClientSettings,
+  host as defaultHost,
+  type Host,
+  type LoginAnswer,
+  type LoginForm,
+  type SettingsPatch,
+} from "./host.ts";
 import { type T, translator } from "./i18n.ts";
 
 /**
- * App state shared by the main window and each widget window (one store per page). No business logic: the server
- * decides, this only moves data, keeps the offline queue and the last answers on the device.
+ * App state, one store per page (the main window, each widget). No business logic: the server decides; this moves
+ * data, keeps the offline queue and the last answers on the device (the app opens on them, also without network),
+ * and follows the server's live changes.
  */
 
-export const HOME = "home";
-export const CHARTS = "charts";
-export const CHART_EDIT = "chart-edit";
-export const CAPTURE = "capture-expense";
-const WIDGETS_FILE = "widgets.json";
+export const CAPTURE_SCREEN = "capture-expense";
+const FILES = {
+  widgets: "widgets.json",
+  charts: "charts.json",
+  catalog: "catalog.json",
+  home: "home.json",
+  screens: "screens.json",
+};
 const OPTION_LIST_LIMIT = 500;
-const REFRESH_EVERY_MINUTES = 15;
+const RELOAD_EVERY_MINUTES = 15;
+const DELETE_AFTER_MS = 6000;
+
+export type View = { kind: "home" } | { kind: "chart"; id: string };
+/** The right side panel: a server screen (the capture form) or the chart editor. */
+export type Panel =
+  | null
+  | { kind: "screen"; id: string }
+  | { kind: "edit"; spec: ChartSpec; isNew: boolean };
 
 export type SubmitOutcome =
   | { kind: "done" | "queued"; message: string }
   | { kind: "invalid"; message: string; fieldErrors: Record<string, string> }
   | { kind: "failed"; message: string };
 
+export interface Toast {
+  id: number;
+  text: string;
+  action?: { label: string; run: () => void };
+}
+
 interface State {
   ready: boolean;
   settings: ClientSettings;
   t: T;
-  screen: string;
-  editing: ChartSpec | null;
+  view: View;
+  panel: Panel;
+  sidebarOpen: boolean;
+  settingsOpen: boolean;
+  /** The server's home screen (its buttons: what can be captured) and the screens it opens (forms). */
+  home: Screen | null;
   screens: Record<string, Screen>;
-  screenError: string | null;
+  /** The editor's live preview: the card being edited shows it ("" for a new chart). */
+  editPreview: { id: string; state: ChartState } | null;
   options: Record<string, Option[]>;
   chartSpecs: ChartSpec[];
+  /** Charts deleted a moment ago: hidden while their toast offers Undo. */
+  deleting: string[];
   catalog: ChartCatalog | null;
   widgets: Widget[];
   /** Incremented to make every chart card reload (one request per chart per tick). */
   refreshTick: number;
   pending: number;
   rejected: QueuedAction[];
-  toast: { text: string; id: number } | null;
-  settingsOpen: boolean;
+  loadError: string | null;
+  toast: Toast | null;
 }
 
 export const configured = (s: ClientSettings) => Boolean(s.serverUrl && s.hasToken);
 
 let hostRef: Host = defaultHost;
-const api = new BoniApi({ request: (m, p, b) => hostRef.transport.request(m, p, b) });
-const queue = new OfflineQueue({
+const store: TextStore = {
   read: (n) => hostRef.store.read(n),
   write: (n, t) => hostRef.store.write(n, t),
   remove: (n) => hostRef.store.remove(n),
-});
+};
+const api = new BoniApi({ request: (m, p, b) => hostRef.transport.request(m, p, b) });
+const queue = new OfflineQueue(store);
 export const charts = new ChartRepository(
   () => (configured(useStore.getState().settings) ? api : null),
-  {
-    read: (n) => hostRef.store.read(n),
-    write: (n, t) => hostRef.store.write(n, t),
-    remove: (n) => hostRef.store.remove(n),
-  },
+  store,
 );
 
 export function errorText(t: T, e: unknown): string {
   if (e instanceof OfflineError) return t("error.offline");
   if (e instanceof NotConfiguredError) return t("error.notConfigured");
-  if (e instanceof ApiError) return e.message;
+  if (e instanceof ApiError) return e.status === 401 ? t("error.session") : e.message;
   return (e as Error)?.message || t("error.generic");
 }
 
@@ -84,46 +117,59 @@ export const useStore = create<State>(() => ({
   settings: {
     serverUrl: "",
     hasToken: false,
-    theme: "system",
+    user: "",
+    device: "",
+    legacyToken: false,
+    sessionEnded: false,
+    live: false,
+    theme: "dark",
     language: "es",
     showWidgets: false,
+    hiddenWidgets: [],
     autostart: false,
     layerAvailable: false,
   },
   t: translator("es"),
-  screen: HOME,
-  editing: null,
+  view: { kind: "home" },
+  panel: null,
+  sidebarOpen: true,
+  settingsOpen: false,
+  home: null,
   screens: {},
-  screenError: null,
+  editPreview: null,
   options: {},
   chartSpecs: [],
+  deleting: [],
   catalog: null,
   widgets: [],
   refreshTick: 0,
   pending: 0,
   rejected: [],
+  loadError: null,
   toast: null,
-  settingsOpen: false,
 }));
 
 const set = useStore.setState;
 const get = useStore.getState;
 
+// ---------- toasts (bottom centre, with Undo, as Boni Calendar) ----------
 let toastSeq = 0;
-export function toast(text: string) {
+export function toast(text: string, action?: Toast["action"]) {
   const id = ++toastSeq;
-  set({ toast: { text, id } });
+  set({ toast: { id, text, action } });
   setTimeout(() => {
     if (get().toast?.id === id) set({ toast: null });
-  }, 5000);
+  }, DELETE_AFTER_MS);
 }
+export const dismissToast = () => set({ toast: null });
 
+// ---------- start ----------
 function applySettings(settings: ClientSettings) {
   set({ settings, t: translator(settings.language) });
   const t = get().t;
   hostRef.desktop?.setLabels(
     Object.fromEntries(
-      ["open", "charts", "widgets", "autostart", "refresh", "settings", "quit"].map((k) => [
+      ["open", "capture", "widgets", "autostart", "refresh", "settings", "quit"].map((k) => [
         k,
         t(`tray.${k}`),
       ]),
@@ -136,57 +182,113 @@ async function countQueue() {
   set({ pending: items.filter((i) => !i.error).length, rejected: items.filter((i) => i.error) });
 }
 
-/** Starts the page: settings, cached widget list, shell events. `role` "widget" pages do less. */
+/** Starts the page: settings, what the device kept, shell events. Widget pages load less. */
 export async function init(role: "main" | "widget", h: Host = defaultHost) {
   hostRef = h;
   applySettings(await h.getSettings());
-  const cached = await readJson<{ widgets: Widget[] }>(h.store, WIDGETS_FILE);
-  set({ widgets: cached?.widgets ?? [], ready: true });
+  const [widgets, specs, catalog, home, screens] = await Promise.all([
+    readJson<{ widgets: Widget[] }>(h.store, FILES.widgets),
+    readJson<{ charts: unknown[] }>(h.store, FILES.charts),
+    readJson<ChartCatalog>(h.store, FILES.catalog),
+    readJson<unknown>(h.store, FILES.home),
+    readJson<Record<string, unknown>>(h.store, FILES.screens),
+  ]);
+  set({
+    widgets: widgets?.widgets ?? [],
+    chartSpecs: (specs?.charts ?? []).map(parseSpec),
+    catalog,
+    home: home ? parseScreen(home) : null,
+    screens: Object.fromEntries(Object.entries(screens ?? {}).map(([k, v]) => [k, parseScreen(v)])),
+    ready: true,
+  });
   h.onEvent((e) => {
-    if (e.type === "tick") void onTick(e.minute);
-    else if (e.type === "refresh") refresh();
-    else if (e.type === "navigate") {
-      if (e.screen === "settings") openSettings();
-      else go(e.screen);
-    } else if (e.type === "settings") onSettingsChanged(e.settings);
+    if (e.type === "tick") void onTick(e.minute, role);
+    else if (e.type === "changed") void onChanged(e.what, role);
+    else if (e.type === "refresh") void onChanged("all", role);
+    else if (e.type === "navigate") navigate(e.screen);
+    else if (e.type === "settings") onSettingsChanged(e.settings);
   });
   if (role === "main") {
     void countQueue();
-    void prefetch();
-    if (configured(get().settings)) void loadWidgets().catch(() => undefined);
+    void reloadAll();
     if (!h.desktop) {
       // A plain browser has no shell sending ticks: keep its own minute.
       let minute = 0;
-      setInterval(() => void onTick(++minute), 60_000);
+      setInterval(() => void onTick(++minute, role), 60_000);
     }
+  } else {
+    void loadCharts().catch(() => undefined);
   }
+}
+
+/** What the tray or a widget asks the main window to show. */
+export function navigate(screen: string) {
+  if (screen === "settings") openSettings();
+  else if (screen === "capture") openScreen(CAPTURE_SCREEN);
+  else if (screen.startsWith("chart:")) showChart(screen.slice(6));
+  else if (screen.startsWith("edit:")) {
+    const spec = get().chartSpecs.find((c) => c.id === screen.slice(5));
+    if (spec) openEditor(spec);
+  } else showHome();
 }
 
 function onSettingsChanged(s: ClientSettings) {
   const before = get().settings;
   applySettings(s);
-  if (before.serverUrl !== s.serverUrl || before.hasToken !== s.hasToken) {
+  if (
+    before.serverUrl !== s.serverUrl ||
+    before.user !== s.user ||
+    before.hasToken !== s.hasToken
+  ) {
     charts.invalidate();
-    set({ screens: {}, options: {}, catalog: null });
+    set({ options: {} });
+    if (configured(s)) void reloadAll();
+  }
+}
+
+async function reloadAll() {
+  if (!configured(get().settings)) return;
+  set({ loadError: null });
+  await Promise.all([
+    loadCharts().catch((e) => set({ loadError: errorText(get().t, e) })),
+    loadWidgets().catch(() => undefined),
+    loadCatalog(true).catch(() => undefined),
+    prefetch(),
+  ]);
+  charts.invalidate();
+  refresh();
+}
+
+/** The server said something changed (live), or everything after a (re)connection. */
+async function onChanged(what: string, role: "main" | "widget") {
+  if (!configured(get().settings)) return;
+  if (what === "charts") {
+    await loadCharts().catch(() => undefined);
+    charts.invalidate();
+    refresh();
+  } else if (what === "widgets") {
+    if (role === "main") await loadWidgets().catch(() => undefined);
+  } else if (what === "data") {
+    charts.invalidate();
+    refresh();
+  } else if (role === "main") {
+    await reloadAll();
+  } else {
+    await loadCharts().catch(() => undefined);
+    charts.invalidate();
     refresh();
   }
 }
 
-let widgetsLoaded = false;
-
 /**
- * The coordinator's minute (only one page gets ticks): the offline queue every minute; the widget list until the
- * server first answers (at login the network may take a while), then with everything else every 15 minutes.
+ * The coordinator's minute (one page gets ticks): the offline queue; and, only while there is no live connection,
+ * everything again every 15 minutes (with it, changes arrive by themselves).
  */
-async function onTick(minute: number) {
+async function onTick(minute: number, role: "main" | "widget") {
   await sync().catch(() => 0);
-  const due = minute % REFRESH_EVERY_MINUTES === 0;
-  if (configured(get().settings) && (due || !widgetsLoaded)) {
-    await loadWidgets().catch(() => undefined);
-  }
-  if (due) {
-    await prefetch();
-    refresh();
+  if (!get().settings.live && minute % RELOAD_EVERY_MINUTES === 0) {
+    await onChanged("all", role);
+    if (role === "widget") await loadWidgets().catch(() => undefined);
   }
 }
 
@@ -194,20 +296,26 @@ export function refresh() {
   set((s) => ({ refreshTick: s.refreshTick + 1 }));
 }
 
-export function go(screen: string, editing: ChartSpec | null = null) {
-  set({ screen, editing, screenError: null });
-}
-
+// ---------- navigation ----------
+export const showHome = () => set({ view: { kind: "home" } });
+export const showChart = (id: string) => set({ view: { kind: "chart", id } });
+export const openScreen = (id: string) => {
+  set({ panel: { kind: "screen", id }, editPreview: null });
+  if (!get().screens[id]) void loadScreen(id);
+};
+export const openEditor = (spec: ChartSpec, isNew = false) =>
+  set({ panel: { kind: "edit", spec: normalize(spec), isNew }, editPreview: null });
+export const closePanel = () => set({ panel: null, editPreview: null });
+export const setEditPreview = (p: State["editPreview"]) => set({ editPreview: p });
+/** The editor's draft as it is typed: the card being edited shows its title and colour at once. */
+export const setEditDraft = (spec: ChartSpec) =>
+  set((s) => (s.panel?.kind === "edit" ? { panel: { ...s.panel, spec } } : {}));
 export const openSettings = (open = true) => set({ settingsOpen: open });
+export const toggleSidebar = () => set((s) => ({ sidebarOpen: !s.sidebarOpen }));
 
-// ---------- server screens ----------
-export async function loadScreen(id: string): Promise<void> {
-  try {
-    const screen = id === HOME ? await api.home() : await api.screen(id);
-    set((s) => ({ screens: { ...s.screens, [id]: screen }, screenError: null }));
-  } catch (e) {
-    set({ screenError: errorText(get().t, e) });
-  }
+// ---------- the server's screens and lists ----------
+async function keep(file: string, value: unknown) {
+  await store.write(file, JSON.stringify(value)).catch(() => undefined);
 }
 
 /** The whole list of a source (categories, people: tens of items), fetched once and filtered here. */
@@ -219,32 +327,39 @@ export async function optionList(source: string): Promise<Option[]> {
   return list;
 }
 
-/** Loads what the capture form needs before it is opened. Errors are ignored (offline: next round). */
-export async function prefetch() {
-  if (!configured(get().settings)) return;
-  await loadScreen(HOME);
-  const form = await api.screen(CAPTURE).catch(() => null);
-  if (!form) return;
-  set((s) => ({ screens: { ...s.screens, [CAPTURE]: form } }));
-  const sources = new Set<string>();
-  for (const c of form.components) {
-    if (c.type !== "form") continue;
-    for (const f of c.fields) {
-      if ((f.type === "choice" || f.type === "multi_choice") && f.source) sources.add(f.source);
+/** A server screen (a form), kept on the device for the next time. */
+export async function loadScreen(id: string) {
+  const screen = await api.screen(id);
+  set((s) => ({ screens: { ...s.screens, [id]: screen } }));
+  await keep(FILES.screens, get().screens);
+  return screen;
+}
+
+/** The home screen (what can be captured), the capture form and its lists, ahead of use. */
+async function prefetch() {
+  try {
+    const home = await api.home();
+    set({ home });
+    await keep(FILES.home, home);
+    const capture = await loadScreen(CAPTURE_SCREEN);
+    const sources = new Set<string>();
+    for (const c of capture.components) {
+      if (c.type !== "form") continue;
+      for (const f of c.fields) {
+        if ((f.type === "choice" || f.type === "multi_choice") && f.source) sources.add(f.source);
+      }
     }
+    await Promise.all(
+      [...sources].map((src) =>
+        api
+          .options(src, "", OPTION_LIST_LIMIT)
+          .then((list) => set((s) => ({ options: { ...s.options, [src]: list } })))
+          .catch(() => undefined),
+      ),
+    );
+  } catch {
+    // offline: what the device kept is shown; next round
   }
-  for (const src of sources) {
-    try {
-      const list = await api.options(src, "", OPTION_LIST_LIMIT);
-      set((s) => ({ options: { ...s.options, [src]: list } }));
-    } catch {
-      // next round
-    }
-  }
-  api
-    .charts()
-    .then((chartSpecs) => set({ chartSpecs }))
-    .catch(() => undefined);
 }
 
 // ---------- captures and the offline queue ----------
@@ -253,7 +368,12 @@ export async function submit(
   values: Record<string, Json>,
 ): Promise<SubmitOutcome> {
   const t = get().t;
-  const request = { action: form.submit.action, client_id: newId(), values, created_at: nowIso() };
+  const request = {
+    action: form.submit.action,
+    client_id: newId(),
+    values,
+    created_at: nowIso(),
+  };
   if (!configured(get().settings)) {
     await queue.add(request);
     await countQueue();
@@ -262,6 +382,7 @@ export async function submit(
   try {
     const r = await api.action(request);
     if (r.status === "ok") {
+      charts.invalidate();
       refresh();
       hostRef.desktop?.broadcastRefresh();
       return { kind: "done", message: r.message || t("submit.done") };
@@ -292,6 +413,7 @@ export async function sync(): Promise<number> {
   const n = await queue.flush((r) => api.action(r));
   await countQueue();
   if (n > 0) {
+    charts.invalidate();
     refresh();
     hostRef.desktop?.broadcastRefresh();
   }
@@ -303,81 +425,190 @@ export async function dismissRejected(clientId: string) {
   await countQueue();
 }
 
-// ---------- chart definitions and the editor ----------
+// ---------- charts ----------
 export async function loadCharts() {
   const chartSpecs = await api.charts();
   set({ chartSpecs });
+  await keep(FILES.charts, { charts: chartSpecs });
   return chartSpecs;
 }
 
-export async function loadCatalog(): Promise<ChartCatalog> {
+export async function loadCatalog(force = false): Promise<ChartCatalog> {
   const known = get().catalog;
-  if (known) return known;
+  if (known && !force) return known;
   const catalog = await api.catalog();
   set({ catalog });
+  await keep(FILES.catalog, catalog);
   return catalog;
 }
 
 export const preview = (spec: ChartSpec, drill?: string | null) => api.preview(spec, drill);
 
-async function chartsChanged() {
-  await loadCharts();
+/** The charts shown (without those being deleted). A new array only when one of them changes. */
+export function useVisibleCharts(): ChartSpec[] {
+  const specs = useStore((s) => s.chartSpecs);
+  const deleting = useStore((s) => s.deleting);
+  return useMemo(() => specs.filter((c) => !deleting.includes(c.id)), [specs, deleting]);
+}
+
+function afterChartChange() {
   charts.invalidate();
-  set((s) => {
-    const { [HOME]: _home, ...screens } = s.screens;
-    return { screens };
-  });
   refresh();
   hostRef.desktop?.broadcastRefresh();
 }
 
+/**
+ * A quick change from a chart's controls (period, filters, order, kind, colour, on home): shown at once, saved,
+ * and undoable from the toast (as every edit in Boni Calendar).
+ */
+export async function changeChart(next: ChartSpec, label?: string) {
+  const t = get().t;
+  const before = get().chartSpecs.find((c) => c.id === next.id);
+  if (!before) return;
+  const spec = normalize(next);
+  set((s) => ({ chartSpecs: s.chartSpecs.map((c) => (c.id === spec.id ? spec : c)) }));
+  try {
+    await api.updateChart(spec);
+    await keep(FILES.charts, { charts: get().chartSpecs });
+    afterChartChange();
+    toast(label ?? t("charts.changed"), {
+      label: t("toast.undo"),
+      run: () => void changeChart(before, t("charts.restored")),
+    });
+  } catch (e) {
+    set((s) => ({ chartSpecs: s.chartSpecs.map((c) => (c.id === before.id ? before : c)) }));
+    toast(errorText(t, e));
+  }
+}
+
+/** Saves the editor's chart (new or edited). */
 export async function saveChart(spec: ChartSpec) {
   const saved = spec.id ? await api.updateChart(spec) : await api.createChart(spec);
-  await chartsChanged();
+  await loadCharts();
+  afterChartChange();
   return saved;
 }
 
-export async function deleteChart(id: string) {
-  await api.deleteChart(id);
-  await chartsChanged();
-  await loadWidgets(); // its widgets are gone too
+export async function duplicateChart(spec: ChartSpec) {
+  const t = get().t;
+  try {
+    const saved = await api.createChart({
+      ...spec,
+      id: "",
+      title: `${spec.title} (${t("charts.copy")})`,
+    });
+    await loadCharts();
+    afterChartChange();
+    toast(t("charts.duplicated"));
+    return saved;
+  } catch (e) {
+    toast(errorText(t, e));
+    return null;
+  }
 }
 
+/** Deleting waits a few seconds (Undo in the toast) before it reaches the server. */
+export function deleteChart(id: string) {
+  const t = get().t;
+  set((s) => ({ deleting: [...s.deleting, id] }));
+  const v = get().view;
+  if (v.kind === "chart" && v.id === id) showHome();
+  const finish = async () => {
+    if (!get().deleting.includes(id)) return; // undone
+    try {
+      await api.deleteChart(id);
+      await loadCharts();
+      await loadWidgets(); // its widgets are gone too
+      afterChartChange();
+    } catch (e) {
+      toast(errorText(t, e));
+    } finally {
+      set((s) => ({ deleting: s.deleting.filter((d) => d !== id) }));
+    }
+  };
+  const timer = setTimeout(() => void finish(), DELETE_AFTER_MS);
+  toast(t("charts.deleted"), {
+    label: t("toast.undo"),
+    run: () => {
+      clearTimeout(timer);
+      set((s) => ({ deleting: s.deleting.filter((d) => d !== id) }));
+    },
+  });
+}
+
+/** A new order (dragged in the sidebar): at once, then saved. */
 export async function orderCharts(ids: string[]) {
-  set({ chartSpecs: await api.orderCharts(ids) });
-  await chartsChanged();
+  const t = get().t;
+  const before = get().chartSpecs;
+  const byId = new Map(before.map((c) => [c.id, c]));
+  set({ chartSpecs: ids.map((id) => byId.get(id)).filter((c): c is ChartSpec => Boolean(c)) });
+  try {
+    set({ chartSpecs: await api.orderCharts(ids) });
+    await keep(FILES.charts, { charts: get().chartSpecs });
+    hostRef.desktop?.broadcastRefresh();
+  } catch (e) {
+    set({ chartSpecs: before });
+    toast(errorText(t, e));
+  }
 }
 
-// ---------- widgets of this device (kept on the device too: they appear at login without network) ----------
+// ---------- widgets of this computer (kept on the device too: they appear at login without network) ----------
 export async function loadWidgets(): Promise<Widget[]> {
   const widgets = await api.widgets();
-  widgetsLoaded = true;
-  await hostRef.store.write(WIDGETS_FILE, JSON.stringify({ widgets }));
+  await keep(FILES.widgets, { widgets });
   set({ widgets });
   hostRef.desktop?.setWidgets(widgets);
   return widgets;
 }
 
-export async function addWidget(chartId: string, size: string) {
-  await api.addWidget(chartId, size);
-  await loadWidgets();
-}
-
-export async function updateWidget(id: string, chartId: string, size: string) {
-  await api.updateWidget(id, chartId, size);
-  await loadWidgets();
+export async function addWidget(chartId: string) {
+  const t = get().t;
+  try {
+    await api.addWidget(chartId, "medium");
+    await loadWidgets();
+    toast(t("widgets.added"));
+  } catch (e) {
+    toast(errorText(t, e));
+  }
 }
 
 export async function removeWidget(id: string) {
-  await api.deleteWidget(id);
-  await loadWidgets();
+  const t = get().t;
+  const w = get().widgets.find((x) => x.id === id);
+  try {
+    await api.deleteWidget(id);
+    await loadWidgets();
+    if (w) {
+      toast(t("widgets.removed"), {
+        label: t("toast.undo"),
+        run: () => void addWidget(w.chart_id),
+      });
+    }
+  } catch (e) {
+    toast(errorText(t, e));
+  }
 }
 
-// ---------- settings ----------
+export const setWidgetHidden = (id: string, hidden: boolean) =>
+  saveSettings({ widgetHidden: { id, hidden } });
+
+// ---------- settings and account ----------
 export async function saveSettings(patch: SettingsPatch) {
   const next = await hostRef.setSettings(patch);
   onSettingsChanged(next);
   return next;
 }
+
+export async function login(form: LoginForm): Promise<LoginAnswer> {
+  const r = await hostRef.login(form);
+  if (r.ok) onSettingsChanged(r.settings);
+  return r;
+}
+
+export async function logout() {
+  onSettingsChanged(await hostRef.logout());
+}
+
+export const suggestedDevice = () => hostRef.suggestedDevice();
 
 export const todayIso = () => today();

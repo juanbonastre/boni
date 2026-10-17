@@ -69,11 +69,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Package .deb (version 0.2.<run>)
+      - name: Package .deb (version 0.3.<run>)
         working-directory: apps/desktop
         run: |
           node scripts/copy-web.mjs
-          pnpm exec electron-builder --linux deb --publish never -c.extraMetadata.version=0.2.${{ github.run_number }}
+          pnpm exec electron-builder --linux deb --publish never -c.extraMetadata.version=0.3.${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:
           name: boni-deb

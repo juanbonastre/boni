@@ -21,6 +21,8 @@ export interface Options {
   /** Every request fails as if there were no network. */
   offline?: boolean;
   configured?: boolean;
+  /** Configured with a device token of the first clients (no user): the page asks to log in. */
+  legacy?: boolean;
   language?: "es" | "en";
   /** Files on the device (store), by name. */
   files?: Record<string, string>;
@@ -44,13 +46,19 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       let settings = {
         serverUrl: opts.configured === false ? "" : "https://boni.example.ts.net",
         hasToken: opts.configured !== false,
+        user: opts.configured === false || opts.legacy ? "" : "ejemplo",
+        device: opts.configured === false ? "" : "portatil",
+        legacyToken: Boolean(opts.legacy),
+        sessionEnded: false,
+        live: true,
         theme: "dark",
         language: opts.language ?? "es",
         showWidgets: true,
+        hiddenWidgets: [] as string[],
         autostart: true,
         layerAvailable: true,
       };
-      const answer = (method: string, path: string): [number, string] | null => {
+      const answer = (method: string, path: string, body?: unknown): [number, string] | null => {
         const p = path.split("?")[0]!;
         const ok = (name: string): [number, string] => [200, examples[name]!];
         if (method === "DELETE") return [204, ""];
@@ -81,10 +89,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             opts.action === "invalid" ? "action-result-invalid.json" : "action-result-ok.json",
           );
         }
-        if (p.includes("/charts"))
+        // a saved chart comes back as it was sent (a new one gets an id)
+        if (p.includes("/charts") && body !== undefined)
           return [
             200,
-            '{"id":"nueva","title":"Nueva","kind":"bar","period":{"kind":"this_month"}}',
+            JSON.stringify({ ...(body as object), id: (body as { id?: string }).id || "nueva" }),
           ];
         return [404, examples["error.json"]!];
       };
@@ -96,7 +105,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           );
           if (!settings.serverUrl || !settings.hasToken)
             return { ok: false, offline: false, notConfigured: true };
-          const a = opts.offline ? null : answer(method, path);
+          const a = opts.offline ? null : answer(method, path, body);
           await new Promise((r) => setTimeout(r, 20));
           if (!a) return { ok: false, offline: true, message: "refused" };
           return { ok: true, status: a[0], body: a[1] };
@@ -106,12 +115,43 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         storeRemove: async (name: string) => void files.delete(name),
         getSettings: async () => settings,
         async setSettings(patch: Record<string, unknown>) {
-          const { token, resetWidgets, ...rest } = patch;
+          const {
+            resetWidgets: _r,
+            widgetHidden,
+            ...rest
+          } = patch as {
+            resetWidgets?: boolean;
+            widgetHidden?: { id: string; hidden: boolean };
+          };
           record("__calls", `setSettings ${JSON.stringify(patch)}`);
-          settings = { ...settings, ...rest, ...(token ? { hasToken: true } : {}) };
+          let hidden = settings.hiddenWidgets.filter((id) => id !== widgetHidden?.id);
+          if (widgetHidden?.hidden) hidden = [...hidden, widgetHidden.id];
+          settings = { ...settings, ...rest, hiddenWidgets: hidden };
           for (const l of listeners) l({ type: "settings", settings });
           return settings;
         },
+        async login(form: { serverUrl: string; user: string; password: string; device: string }) {
+          record("__calls", `login ${form.serverUrl} ${form.user} ${form.device}`);
+          await new Promise((r) => setTimeout(r, 50));
+          if (form.password !== "una-contrasena-larga") return { ok: false, code: "bad-login" };
+          settings = {
+            ...settings,
+            serverUrl: form.serverUrl,
+            hasToken: true,
+            user: form.user,
+            device: form.device,
+            legacyToken: false,
+            sessionEnded: false,
+          };
+          for (const l of listeners) l({ type: "settings", settings });
+          return { ok: true, settings };
+        },
+        async logout() {
+          record("__calls", "logout");
+          settings = { ...settings, hasToken: false, user: "" };
+          return settings;
+        },
+        suggestedDevice: async () => "portatil",
         onEvent(cb: (e: unknown) => void) {
           listeners.add(cb);
           (w as Record<string, unknown>).__emit = (e: unknown) => {

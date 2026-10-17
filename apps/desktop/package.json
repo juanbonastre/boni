@@ -1,6 +1,6 @@
 {
   "name": "boni",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Boni: gráficas y capturas",
   "main": "main.cjs",

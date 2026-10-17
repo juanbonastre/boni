@@ -76,18 +76,30 @@ gasto con `settles` al gasto; si `settles` apunta a una deuda es un amigo devolv
 `perdonada` o `invitacion` suman como gasto de Juan en la fecha y categoria del gasto original. Codigo:
 `server/boni/stats/spending.py`.
 
+## Ventana principal (como Boni Calendar)
+- Barra lateral: Inicio, tus graficas (punto de color, ojo = en la pantalla de inicio, ajustes = editar, arrastrar para
+  ordenar), los widgets de este equipo (ojo = mostrar aqui) y, abajo, Ajustes y el usuario.
+- Zona principal: las graficas de inicio llenan la ventana (sin hueco abajo; con muchas, se desplaza), o una grafica sola
+  al pulsar su titulo.
+- Panel derecho: apuntar un gasto (el formulario del servidor; tecla N) y el editor de graficas (la tarjeta que se edita
+  muestra la vista previa; una grafica nueva tiene su tarjeta provisional).
+- Controles de cada grafica al pasar el raton, como en Notion: periodo, filtros, orden, tipo, color y menu (editar,
+  duplicar, en inicio, al escritorio, borrar). Se guardan al momento y se pueden deshacer desde el aviso.
+- Cuenta como en Boni Calendar: direccion, usuario, contrasena y nombre del equipo; el equipo guarda solo un token de sesion.
+
 ## Escritorio: widgets
-Cada widget es una ventana pequena, sin bordes y transparente, con una grafica interactiva: al pasar el raton se ve el valor,
-al tocar un punto su detalle; se mueve arrastrandola, se cambia de tamano desde la esquina y tiene su menu con el boton
-derecho. En Linux con X11 es una ventana de tipo "dock" que el gestor de ventanas mantiene debajo de las demas y en todos los
+Cada widget es una ventana pequena, sin bordes y transparente, con una grafica interactiva: al pasar el raton se ve el valor y
+sus controles (periodo y menu), al tocar un punto su detalle; se mueve arrastrandola, se cambia de tamano desde la esquina y
+el boton derecho abre el mismo menu (abrir o editar en Boni, actualizar, ocultar aqui, quitar). En Linux con X11 es una ventana de tipo "dock" que el gestor de ventanas mantiene debajo de las demas y en todos los
 escritorios (`wmctrl -b add,below,sticky`): queda justo encima del fondo, sobrevive a "Mostrar escritorio" y a los clics en el
 escritorio, y no sale en la barra ni en Alt+Tab. Se probo en muffin (el gestor de Cinnamon) el 2026-10-17: una ventana de tipo
 "desktop" se queda detras del fondo al hacer clic en el escritorio y una normal "debajo" se oculta con Super+D. Sin wmctrl, o
 en Wayland, son ventanas normales sin bordes.
 
 Boni arranca al iniciar sesion (`~/.config/autostart/boni.desktop`, con `--background`) con los widgets y el icono de la
-bandeja; cerrar la ventana principal la libera y Boni sigue en la bandeja. Una sola pagina (la ventana principal, o el primer
-widget si no esta abierta) envia la cola sin conexion cada minuto y recarga todo cada 15. Sin conexion los widgets muestran los
+bandeja; cerrar la ventana principal la libera y Boni sigue en la bandeja. Los cambios llegan en directo (`/api/v1/events`, una
+conexion para toda la app); sin ella, una sola pagina (la ventana principal, o el primer widget si no esta abierta) recarga
+todo cada 15 minutos. Esa misma pagina envia la cola sin conexion cada minuto. Sin conexion los widgets muestran los
 ultimos datos guardados. Coste medido (2026-10-17, tres widgets sin la ventana principal): 334 MB en total (unos 35 MB por
 widget mas lo comun de Electron), frente a 373 MB del primer cliente, y un 0,4 % de CPU en reposo.
 

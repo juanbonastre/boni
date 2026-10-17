@@ -1,236 +1,247 @@
-import { BarChart3, ChevronLeft, Plus, RefreshCw, Settings } from "lucide-react";
-import { useEffect } from "react";
-import { ChartCard } from "./components/ChartCard.tsx";
-import { ChartEditor } from "./components/ChartEditor.tsx";
-import { ChartsScreen } from "./components/ChartsScreen.tsx";
-import { FormView } from "./components/FormView.tsx";
+import { PanelLeft, Plus, WifiOff } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChartCard, ChartCardContent } from "./components/ChartCard.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
-import type { ButtonComponent, ChartCardComponent, Component, Screen } from "./core/contract.ts";
+import { Sidebar } from "./components/Sidebar.tsx";
+import { SidePanel } from "./components/SidePanel.tsx";
+import { isCategoryKind } from "./core/chartBuilder.ts";
+import { emptyState } from "./core/charts.ts";
 import {
-  CHART_EDIT,
-  CHARTS,
+  CAPTURE_SCREEN,
   configured,
   dismissRejected,
-  go,
-  HOME,
-  loadScreen,
+  dismissToast,
+  openScreen,
   openSettings,
-  optionList,
-  refresh,
-  submit,
-  sync,
-  toast,
-  todayIso,
+  showHome,
+  toggleSidebar,
   useStore,
+  useVisibleCharts,
 } from "./store.ts";
 import { useTheme } from "./theme.ts";
 
-/** Home when the server can't be reached and nothing is saved yet: the starting charts. */
-const OFFLINE_HOME: Screen = {
-  id: HOME,
-  title: "Boni",
-  components: [
-    {
-      type: "button",
-      label: "Apuntar gasto",
-      screen: "capture-expense",
-      icon: "add",
-      style: "primary",
-    },
-    { type: "chart_card", chart_id: "spending-by-category", title: "Gasto del mes", size: "wide" },
-    { type: "chart_card", chart_id: "monthly-spending", title: "Gasto por mes" },
-    { type: "chart_card", chart_id: "eating-out", title: "Comida fuera" },
-  ],
-};
-
+/**
+ * The main window, laid out as Boni Calendar: the sidebar, the main area (the home screen's charts filling the
+ * window, or one chart on its own) and the side panel (capture, chart editor) next to it.
+ */
 export function App() {
   useTheme();
-  const t = useStore((s) => s.t);
-  const screenId = useStore((s) => s.screen);
-  const editing = useStore((s) => s.editing);
-  const screens = useStore((s) => s.screens);
-  const screenError = useStore((s) => s.screenError);
-  const tick = useStore((s) => s.refreshTick);
-  const settings = useStore((s) => s.settings);
-  const pending = useStore((s) => s.pending);
-  const toastMsg = useStore((s) => s.toast);
+  useShortcuts();
   const settingsOpen = useStore((s) => s.settingsOpen);
-  const ready = configured(settings);
-  const local = screenId === CHARTS || screenId === CHART_EDIT;
+  const sidebarOpen = useStore((s) => s.sidebarOpen);
+  const panelOpen = useStore((s) => s.panel != null);
+  const toast = useStore((s) => s.toast);
+  // In a narrow window the side panel takes the sidebar's room while it is open (the charts keep theirs).
+  const narrow = useMedia("(max-width: 1100px)");
+  const showSidebar = sidebarOpen && !(narrow && panelOpen);
+  return (
+    <div className={`app${showSidebar ? "" : " no-sidebar"}`}>
+      {showSidebar && <Sidebar />}
+      <div className="main">
+        <TopBar />
+        <Content />
+      </div>
+      <SidePanel />
+      {settingsOpen && <SettingsModal />}
+      {toast && (
+        <div className="toast" role="status" key={toast.id}>
+          <span>{toast.text}</span>
+          {toast.action && (
+            <button
+              type="button"
+              onClick={() => {
+                toast.action?.run();
+                dismissToast();
+              }}
+            >
+              {toast.action.label}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
+function useMedia(query: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia?.(query).matches ?? false);
   useEffect(() => {
-    if (!local && ready) void loadScreen(screenId);
-  }, [screenId, tick, ready]);
+    const m = window.matchMedia?.(query);
+    if (!m) return;
+    const update = () => setOn(m.matches);
+    m.addEventListener("change", update);
+    return () => m.removeEventListener("change", update);
+  }, [query]);
+  return on;
+}
+
+/** N new capture, [ the sidebar, Ctrl+, settings, Esc back to the home screen (panels close first). */
+function useShortcuts() {
   useEffect(() => {
-    // Esc goes back one level, as everywhere in Boni.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented || settingsOpen) return;
-      const target = e.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [role=menu]")) return;
-      if (screenId === CHART_EDIT) go(CHARTS);
-      else if (screenId !== HOME) go(HOME);
+      const s = useStore.getState();
+      const typing = (e.target as HTMLElement | null)?.closest(
+        "input, textarea, select, [contenteditable]",
+      );
+      if (e.key === "," && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        openSettings(!s.settingsOpen);
+        return;
+      }
+      if (typing || e.ctrlKey || e.metaKey || e.altKey || s.settingsOpen) return;
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        openScreen(CAPTURE_SCREEN);
+      } else if (e.key === "[") {
+        e.preventDefault();
+        toggleSidebar();
+      } else if (e.key === "Escape" && !e.defaultPrevented && !s.panel && s.view.kind !== "home") {
+        showHome();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [screenId, settingsOpen]);
-
-  const screen =
-    screens[screenId] ?? (screenId === HOME && (screenError || !ready) ? OFFLINE_HOME : null);
-  const title =
-    screenId === CHARTS
-      ? t("charts.title")
-      : screenId === CHART_EDIT
-        ? editing?.id
-          ? t("charts.editTitle")
-          : t("charts.newTitle")
-        : (screen?.title ?? "Boni");
-
-  return (
-    <div className="app">
-      <header className="topbar">
-        {screenId !== HOME && (
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => go(screenId === CHART_EDIT ? CHARTS : HOME)}
-            title={t("top.back")}
-            aria-label={t("top.back")}
-          >
-            <ChevronLeft size={18} strokeWidth={1.8} />
-          </button>
-        )}
-        <h1 className="title">{title}</h1>
-        {screenError && <span className="status muted small">{screenError}</span>}
-        <span className="spacer" />
-        {pending > 0 && <span className="pending">{t("top.pending", { n: pending })}</span>}
-        {screenId === HOME && (
-          <button type="button" className="pill" onClick={() => go(CHARTS)}>
-            <BarChart3 size={15} strokeWidth={1.8} />
-            {t("top.charts")}
-          </button>
-        )}
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => {
-            void sync();
-            refresh();
-          }}
-          title={t("top.refresh")}
-          aria-label={t("top.refresh")}
-        >
-          <RefreshCw size={16} strokeWidth={1.8} />
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          onClick={() => openSettings()}
-          title={t("top.settings")}
-          aria-label={t("top.settings")}
-        >
-          <Settings size={16} strokeWidth={1.8} />
-        </button>
-      </header>
-      <main className="main">
-        {!ready && screenId === HOME && (
-          <div className="setup-hint">
-            <span>{t("home.setup")}</span>
-            <button type="button" className="btn primary" onClick={() => openSettings()}>
-              {t("home.setupButton")}
-            </button>
-          </div>
-        )}
-        {screenId === CHARTS ? (
-          <ChartsScreen />
-        ) : screenId === CHART_EDIT && editing ? (
-          <ChartEditor key={editing.id || "new"} initial={editing} />
-        ) : (
-          screen && <ScreenView screen={screen} />
-        )}
-        <QueueNotes />
-      </main>
-      {settingsOpen && <SettingsModal />}
-      {toastMsg && (
-        <div className="toast" role="status" key={toastMsg.id}>
-          {toastMsg.text}
-        </div>
-      )}
-    </div>
-  );
+  }, []);
 }
 
-function ScreenView({ screen }: { screen: Screen }) {
-  const buttons = screen.components.filter((c): c is ButtonComponent => c.type === "button");
-  const cards = screen.components.filter((c): c is ChartCardComponent => c.type === "chart_card");
-  const others = screen.components.filter((c) => c.type !== "button" && c.type !== "chart_card");
-  return (
-    <div className="page">
-      {buttons.length > 0 && (
-        <div className="row">
-          {buttons.map((b) => (
-            <button
-              key={b.screen}
-              type="button"
-              className={b.style === "secondary" ? "btn" : "btn primary big"}
-              onClick={() => go(b.screen)}
-            >
-              {b.icon === "add" && <Plus size={16} strokeWidth={2} />}
-              {b.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {others.map((c, i) => (
-        <Other key={i} component={c} />
-      ))}
-      {cards.length > 0 && (
-        <div className="chart-grid">
-          {cards.map((c) => (
-            <ChartCard
-              key={c.chart_id}
-              chartId={c.chart_id}
-              title={c.title}
-              className={c.size === "wide" ? "wide" : undefined}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Other({ component: c }: { component: Component }) {
+function TopBar() {
   const t = useStore((s) => s.t);
-  switch (c.type) {
-    case "text":
-      return <p className={`text-${c.style ?? "body"}`}>{c.text}</p>;
-    case "form":
-      return (
-        <div className="card form-card">
-          <FormView
-            form={c}
-            today={todayIso()}
-            loadOptions={optionList}
-            onSubmit={async (values) => {
-              const r = await submit(c, values);
-              if (r.kind === "done" || r.kind === "queued") {
-                toast(r.message);
-                go(HOME);
-                return {};
-              }
-              if (r.kind === "invalid")
-                return Object.keys(r.fieldErrors).length ? r.fieldErrors : { _: r.message };
-              toast(r.message);
-              return { _: r.message };
-            }}
-          />
+  const view = useStore((s) => s.view);
+  const spec = useStore((s) =>
+    s.view.kind === "chart"
+      ? s.chartSpecs.find((c) => c.id === (s.view as { id: string }).id)
+      : null,
+  );
+  const home = useStore((s) => s.home);
+  const pending = useStore((s) => s.pending);
+  const settings = useStore((s) => s.settings);
+  const sidebarOpen = useStore((s) => s.sidebarOpen);
+  const ready = configured(settings);
+  const buttons = (home?.components ?? []).filter((c) => c.type === "button");
+  // Without the server's home yet, capture is still offered (the form comes from the device's copy).
+  const actions = buttons.length
+    ? buttons
+    : [{ type: "button" as const, label: t("capture.title"), screen: CAPTURE_SCREEN, icon: "add" }];
+  const offline =
+    ready && Boolean(window.boniDesktop) && !settings.live && !settings.liveUnsupported;
+  return (
+    <header className="topbar">
+      {!sidebarOpen && (
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={toggleSidebar}
+          title={t("sidebar.show")}
+          aria-label={t("sidebar.show")}
+        >
+          <PanelLeft size={16} strokeWidth={1.8} />
+        </button>
+      )}
+      <h1 className="title">
+        {view.kind === "chart" && spec ? (
+          <>
+            <button type="button" className="title-crumb" onClick={showHome}>
+              {t("top.home")}
+            </button>
+            <span className="title-sep">/</span>
+            <span className="title-name">{spec.title}</span>
+          </>
+        ) : (
+          t("top.home")
+        )}
+      </h1>
+      <span className="spacer" />
+      {pending > 0 && <span className="status">{t("top.pending", { n: pending })}</span>}
+      {offline && (
+        <span className="status" title={t("top.offlineHelp")}>
+          <WifiOff size={14} strokeWidth={1.8} />
+          {t("top.offline")}
+        </span>
+      )}
+      {(settings.sessionEnded || settings.legacyToken) && (
+        <button type="button" className="pill warn" onClick={() => openSettings()}>
+          {settings.sessionEnded ? t("account.ended") : t("account.legacy")}
+        </button>
+      )}
+      {actions.map((b) =>
+        b.type === "button" ? (
+          <button
+            key={b.screen}
+            type="button"
+            className={b.style === "secondary" ? "pill" : "btn primary"}
+            onClick={() => openScreen(b.screen)}
+            title={`${b.label} (N)`}
+          >
+            {b.icon === "add" && <Plus size={15} strokeWidth={2} />}
+            {b.label}
+          </button>
+        ) : null,
+      )}
+    </header>
+  );
+}
+
+function Content() {
+  const t = useStore((s) => s.t);
+  const view = useStore((s) => s.view);
+  const settings = useStore((s) => s.settings);
+  const specs = useVisibleCharts();
+  const loadError = useStore((s) => s.loadError);
+  const ready = configured(settings);
+
+  if (!ready) {
+    return (
+      <div className="content center">
+        <div className="empty-state">
+          <img src="./favicon.png" alt="" width={56} height={56} />
+          <p>{t("home.setup")}</p>
+          <button type="button" className="btn primary" onClick={() => openSettings()}>
+            {t("home.setupButton")}
+          </button>
         </div>
-      );
-    case "unknown":
-      return <p className="muted small">{t("home.updateApp", { type: c.original })}</p>;
-    default:
-      return null;
+      </div>
+    );
   }
+  if (view.kind === "chart") {
+    return (
+      <div className="content">
+        <ChartCard key={view.id} chartId={view.id} focused className="focus" />
+      </div>
+    );
+  }
+  const onHome = specs.filter((s) => s.home);
+  return (
+    <div className="content">
+      {loadError && specs.length === 0 && <p className="form-error">{loadError}</p>}
+      <div className="dashboard">
+        {onHome.map((s) => (
+          <ChartCard
+            key={s.id}
+            chartId={s.id}
+            className={isCategoryKind(s.kind) && s.kind !== "donut" ? "wide" : undefined}
+          />
+        ))}
+        <NewChartPreview />
+      </div>
+      {onHome.length === 0 && <p className="muted center-note">{t("charts.noneHome")}</p>}
+      <QueueNotes />
+    </div>
+  );
+}
+
+/** The card of a chart being created in the side panel, with the editor's preview. */
+function NewChartPreview() {
+  const panel = useStore((s) => s.panel);
+  const preview = useStore((s) => (s.editPreview?.id === "" ? s.editPreview.state : null));
+  if (panel?.kind !== "edit" || !panel.isNew) return null;
+  return (
+    <ChartCardContent
+      title={panel.spec.title}
+      color={panel.spec.color}
+      state={preview ?? emptyState()}
+      className="editing new"
+    />
+  );
 }
 
 function QueueNotes() {
@@ -238,25 +249,23 @@ function QueueNotes() {
   const rejected = useStore((s) => s.rejected);
   if (!rejected.length) return null;
   return (
-    <div className="page">
-      <div className="card rejected">
-        <h3>{t("queue.rejected")}</h3>
-        {rejected.map((item) => (
-          <div key={item.request.client_id} className="list-row">
-            <span className="list-main small">
-              {String(item.request.values.concept ?? "")} {String(item.request.values.amount ?? "")}
-              : {item.error}
-            </span>
-            <button
-              type="button"
-              className="btn ghost"
-              onClick={() => void dismissRejected(item.request.client_id)}
-            >
-              {t("queue.dismiss")}
-            </button>
-          </div>
-        ))}
-      </div>
+    <div className="card rejected">
+      <h3>{t("queue.rejected")}</h3>
+      {rejected.map((item) => (
+        <div key={item.request.client_id} className="list-row">
+          <span className="list-main small">
+            {String(item.request.values.concept ?? "")} {String(item.request.values.amount ?? "")}:{" "}
+            {item.error}
+          </span>
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => void dismissRejected(item.request.client_id)}
+          >
+            {t("queue.dismiss")}
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

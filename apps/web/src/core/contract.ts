@@ -199,6 +199,8 @@ export interface ChartSpec {
   sort: string;
   drilldown: boolean;
   home: boolean;
+  /** The chart's colour, from Boni Calendar's palette (`#rrggbb`); null = the accent. */
+  color: string | null;
 }
 
 export interface FieldInfo {
@@ -307,5 +309,6 @@ export function parseSpec(raw: unknown): ChartSpec {
     sort: String(o.sort ?? "auto"),
     drilldown: Boolean(o.drilldown),
     home: o.home === undefined ? true : Boolean(o.home),
+    color: typeof o.color === "string" && /^#[0-9a-f]{6}$/.test(o.color) ? o.color : null,
   };
 }

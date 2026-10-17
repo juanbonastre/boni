@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ChartCard } from "./components/ChartCard.tsx";
+import { MenuRow } from "./components/Popover.tsx";
 import { host } from "./host.ts";
-import { CHARTS, errorText, refresh, removeWidget, toast, useStore } from "./store.ts";
+import { refresh, removeWidget, useStore } from "./store.ts";
 import { useTheme } from "./theme.ts";
 
 const DRAG_THRESHOLD = 4;
@@ -9,7 +10,8 @@ const DRAG_THRESHOLD = 4;
 /**
  * One desktop widget: a chart card in its own small window that sits on the desktop, below the other windows
  * (the shell makes it a "dock" window kept below, see apps/desktop/widgets.cjs). It is fully interactive: hover
- * for values, click to see a detail; drag anywhere to move it, the corner to resize it, right click for the menu.
+ * for values, click to see a detail; its controls show under the pointer (the period, a menu); drag anywhere to move
+ * it, the corner to resize it; right click opens the same menu.
  */
 export function WidgetPage({ widgetId, chartId }: { widgetId: string; chartId: string }) {
   useTheme();
@@ -35,7 +37,8 @@ export function WidgetPage({ widgetId, chartId }: { widgetId: string; chartId: s
   // once it has moved a few pixels (a plain click stays a click on the chart).
   const onPointerDown = (e: React.PointerEvent, resize: boolean) => {
     if (e.button !== 0 || drag.current) return;
-    if (!resize && (e.target as HTMLElement).closest("button, .menu")) return;
+    if (!resize && (e.target as HTMLElement).closest("button, .menu, .pop-box, .card-controls"))
+      return;
     drag.current = { x: e.clientX, y: e.clientY, moved: false, resize };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     desk.widget.dragStart(resize ? "resize" : "move");
@@ -58,17 +61,26 @@ export function WidgetPage({ widgetId, chartId }: { widgetId: string; chartId: s
   };
 
   const items: [string, () => void][] = [
-    [t("widget.open"), () => desk.openMain()],
-    [t("widget.manage"), () => desk.openMain(CHARTS)],
+    [t("widget.open"), () => desk.openMain(`chart:${chartId}`)],
+    [t("widget.edit"), () => desk.openMain(`edit:${chartId}`)],
     [t("widget.refresh"), () => refresh()],
     [t("widget.hide"), () => desk.widget.hide()],
-    [
-      t("widget.remove"),
-      () => {
-        removeWidget(widgetId).catch((e) => toast(errorText(t, e)));
-      },
-    ],
+    [t("widget.remove"), () => void removeWidget(widgetId)],
   ];
+  const widgetMenu = (close: () => void) => (
+    <div className="menu-list" role="menu">
+      {items.map(([label, run]) => (
+        <MenuRow
+          key={label}
+          label={label}
+          onClick={() => {
+            close();
+            run();
+          }}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div
@@ -87,7 +99,7 @@ export function WidgetPage({ widgetId, chartId }: { widgetId: string; chartId: s
         setMenu({ x: e.clientX, y: e.clientY });
       }}
     >
-      <ChartCard chartId={chartId} title="Boni" compact className="widget-card" />
+      <ChartCard chartId={chartId} compact className="widget-card" widgetMenu={widgetMenu} />
       <div
         className="widget-resize"
         onPointerDown={(e) => onPointerDown(e, true)}

@@ -2,19 +2,26 @@ import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { host, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
-import { openSettings, saveSettings, toast, useStore } from "../store.ts";
+import {
+  configured,
+  login,
+  logout,
+  openSettings,
+  saveSettings,
+  suggestedDevice,
+  toast,
+  useStore,
+} from "../store.ts";
 
-/** Settings (calendar-style modal): server, appearance and, on the desktop, the tray and the widgets. */
+/** Settings (Boni Calendar's modal): account, appearance and, on the desktop, the tray and the widgets. */
 export function SettingsModal() {
   const t = useStore((s) => s.t);
   const settings = useStore((s) => s.settings);
-  const [url, setUrl] = useState(settings.serverUrl);
-  const [token, setToken] = useState("");
   const close = () => openSettings(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !e.defaultPrevented) {
         e.preventDefault();
         close();
       }
@@ -22,13 +29,6 @@ export function SettingsModal() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-
-  const saveServer = async () => {
-    await saveSettings({ serverUrl: url.trim(), ...(token.trim() ? { token: token.trim() } : {}) });
-    setToken("");
-    toast(t("settings.saved"));
-  };
-  const serverChanged = url.trim() !== settings.serverUrl || token.trim() !== "";
 
   return (
     <div className="scrim" onMouseDown={(e) => e.target === e.currentTarget && close()}>
@@ -46,52 +46,15 @@ export function SettingsModal() {
           </button>
         </div>
         <div className="modal-body">
-          <h3>{t("settings.server")}</h3>
-          <form
-            className="server-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void saveServer();
-            }}
-          >
-            <label className="field">
-              <span className="field-label">{t("settings.url")}</span>
-              <input
-                className="input"
-                value={url}
-                placeholder="https://boni.example.ts.net"
-                onChange={(e) => setUrl(e.target.value)}
-              />
-            </label>
-            <label className="field">
-              <span className="field-label">{t("settings.token")}</span>
-              <input
-                className="input"
-                type="password"
-                autoComplete="off"
-                value={token}
-                placeholder={settings.hasToken ? t("settings.tokenKept") : ""}
-                onChange={(e) => setToken(e.target.value)}
-              />
-            </label>
-            <p className="field-help">{t("settings.tokenHelp")}</p>
-            <div className="modal-actions">
-              <button
-                type="submit"
-                className="btn primary"
-                disabled={!url.trim() || (!settings.hasToken && !token.trim()) || !serverChanged}
-              >
-                {t("settings.save")}
-              </button>
-            </div>
-          </form>
+          <h3>{t("settings.account")}</h3>
+          <Account />
 
           <h3>{t("settings.appearance")}</h3>
           <div className="setting">
             <div className="setting-label">{t("settings.theme")}</div>
             <div className="setting-control">
               <div className="segmented">
-                {(["system", "dark", "light"] as Theme[]).map((th) => (
+                {(["dark", "light", "system"] as Theme[]).map((th) => (
                   <button
                     key={th}
                     type="button"
@@ -148,9 +111,11 @@ export function SettingsModal() {
               <div className="setting">
                 <div className="setting-label">
                   <span>{t("settings.showWidgets")}</span>
-                  {!settings.layerAvailable && (
-                    <span className="muted small">{t("settings.layerMissing")}</span>
-                  )}
+                  <span className="muted small">
+                    {settings.layerAvailable
+                      ? t("settings.widgetsHelp")
+                      : t("settings.layerMissing")}
+                  </span>
                 </div>
                 <div className="setting-control">
                   <input
@@ -179,5 +144,127 @@ export function SettingsModal() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The account, as Boni Calendar's "Data → Server": logged in ("Logged in as juan · portatil", live or not, Log out),
+ * or the login form (address, user, password, this device's name). An old device token works, but asks to log in.
+ */
+function Account() {
+  const t = useStore((s) => s.t);
+  const settings = useStore((s) => s.settings);
+  const loggedIn = configured(settings) && Boolean(settings.user) && !settings.sessionEnded;
+  const [form, setForm] = useState({
+    serverUrl: settings.serverUrl,
+    user: settings.user,
+    password: "",
+    device: settings.device,
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (loggedIn || form.device) return;
+    void suggestedDevice().then((device) => setForm((f) => (f.device ? f : { ...f, device })));
+  }, [loggedIn]);
+
+  if (loggedIn) {
+    return (
+      <div className="setting">
+        <div className="setting-label">
+          <span>{t("account.as", { user: settings.user, device: settings.device })}</span>
+          <span className="muted small">
+            {settings.serverUrl}
+            {host.desktop ? ` · ${settings.live ? t("account.live") : t("account.notLive")}` : ""}
+          </span>
+        </div>
+        <div className="setting-control">
+          <button type="button" className="btn" onClick={() => void logout()}>
+            {t("account.logout")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await login(form);
+    setBusy(false);
+    if (r.ok) {
+      setForm((f) => ({ ...f, password: "" }));
+      toast(t("account.welcome", { user: r.settings.user }));
+    } else setError(t(`account.error.${r.code}`));
+  };
+  return (
+    <form
+      className="server-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      {(settings.legacyToken || settings.sessionEnded) && (
+        <p className="notice">
+          {settings.sessionEnded ? t("account.endedHelp") : t("account.legacyHelp")}
+        </p>
+      )}
+      <label className="field">
+        <span className="field-label">{t("settings.url")}</span>
+        <input
+          className="input"
+          value={form.serverUrl}
+          placeholder="https://boni.example.ts.net"
+          autoComplete="url"
+          onChange={set("serverUrl")}
+        />
+      </label>
+      <div className="field-pair">
+        <label className="field">
+          <span className="field-label">{t("account.user")}</span>
+          <input
+            className="input"
+            value={form.user}
+            autoComplete="username"
+            onChange={set("user")}
+          />
+        </label>
+        <label className="field">
+          <span className="field-label">{t("account.password")}</span>
+          <input
+            className="input"
+            type="password"
+            value={form.password}
+            autoComplete="current-password"
+            onChange={set("password")}
+          />
+        </label>
+      </div>
+      <label className="field">
+        <span className="field-label">{t("account.device")}</span>
+        <input className="input" value={form.device} onChange={set("device")} />
+        <span className="field-help">{t("account.deviceHelp")}</span>
+      </label>
+      {error && <p className="form-error">{error}</p>}
+      <div className="modal-actions">
+        <button
+          type="submit"
+          className="btn primary"
+          disabled={
+            busy ||
+            !form.serverUrl.trim() ||
+            !form.user.trim() ||
+            !form.password ||
+            !form.device.trim()
+          }
+        >
+          {busy ? t("account.loggingIn") : t("account.login")}
+        </button>
+      </div>
+    </form>
   );
 }

@@ -25,17 +25,16 @@ const CATEGORICAL = [
 ];
 
 /** The colour of a chart's own series: stable per chart (it follows the chart, never its position). */
-export const accentFor = (chartId: string) =>
-  chartId === "eating-out" ? "var(--c2)" : "var(--accent)";
+export const ACCENT = "var(--accent)";
 
 /** Colours of each series in order: main = the chart's accent, split = categorical ("Otros" grey), compare = neutral. */
-export function seriesColors(data: ChartData): string[] {
+export function seriesColors(data: ChartData, accent: string = ACCENT): string[] {
   let slot = 0;
   return data.series.map((s) => {
     if (s.role === "compare") return "var(--compare)";
     if (s.role === "split" && s.key === OTHER) return "var(--muted)";
     if (s.role === "split") return CATEGORICAL[slot++ % CATEGORICAL.length]!;
-    return accentFor(data.chart_id);
+    return accent;
   });
 }
 
@@ -106,7 +105,7 @@ function geometry(kind: string, w: number, h: number, n: number, compact: boolea
   const horizontal = kind === "hbar";
   const plot: Rect = horizontal
     ? { left: compact ? 92 : 120, top: 4, right: w - (compact ? 64 : 76), bottom: h - 4 }
-    : { left: compact ? 30 : 38, top: 14, right: w - (compact ? 8 : 12), bottom: h - 22 };
+    : { left: compact ? 30 : 38, top: 20, right: w - (compact ? 8 : 12), bottom: h - 22 };
   const band = n === 0 ? 0 : (horizontal ? height(plot) : width(plot)) / n;
   const indexAt = (x: number, y: number): number | null => {
     if (n === 0) return null;
@@ -175,24 +174,26 @@ function tipLines(
 
 interface ChartProps {
   data: ChartData;
+  /** The chart's own colour (its main series); the accent when it has none. */
+  color?: string | null;
   compact?: boolean;
   onSelect?: (p: ChartPoint) => void;
 }
 
-export function Chart({ data, compact = false, onSelect }: ChartProps) {
+export function Chart({ data, color, compact = false, onSelect }: ChartProps) {
   if (data.kind === "number") return <NumberTile data={data} compact={compact} />;
   if (data.kind === "table")
-    return <ChartTable data={data} compact={compact} onSelect={onSelect} />;
-  return <SvgChart data={data} compact={compact} onSelect={onSelect} />;
+    return <ChartTable data={data} color={color} compact={compact} onSelect={onSelect} />;
+  return <SvgChart data={data} color={color} compact={compact} onSelect={onSelect} />;
 }
 
-function SvgChart({ data, compact = false, onSelect }: ChartProps) {
+function SvgChart({ data, color, compact = false, onSelect }: ChartProps) {
   const t = useStore((s) => s.t);
   const uid = useId();
   const [ref, { w, h }] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const { series, entry } = useChartAnim(data);
-  const colors = seriesColors(data);
+  const colors = seriesColors(data, color ?? ACCENT);
   const unit = data.unit ?? "EUR";
 
   const local = (e: React.PointerEvent | React.MouseEvent) => {
@@ -1083,9 +1084,9 @@ function NumberTile({ data, compact }: { data: ChartData; compact: boolean }) {
 }
 
 // ---------- table: the exact values ----------
-function ChartTable({ data, compact = false, onSelect }: ChartProps) {
+function ChartTable({ data, color, compact = false, onSelect }: ChartProps) {
   const t = useStore((s) => s.t);
-  const colors = seriesColors(data);
+  const colors = seriesColors(data, color ?? ACCENT);
   const main = data.series[0]?.points ?? [];
   const unit = data.unit ?? "EUR";
   return (

@@ -3,14 +3,15 @@ import { openApp } from "./fixtures.ts";
 
 /**
  * Text fits its box, everywhere (Boni Calendar's rule): no control breaks its label over two lines and nothing
- * sticks out of a box that does not clip or scroll. Every surface, in Spanish and English, at a normal and a
- * narrow window. A new surface must be added here.
+ * sticks out of a box that does not clip or scroll. Every surface (sidebar, top bar, cards and their controls,
+ * floating boxes, side panel, settings, toast, a widget), in Spanish and English, at a normal and a narrow window.
+ * A new surface must be added here.
  */
 
 const SURFACES =
-  ".topbar, .chart-card, .list-row, .section-head, .modal, .menu, .toast, .form, .editor-form, .setup-hint";
+  ".sidebar, .topbar, .chart-card, .card-controls, .pop-box, .side-panel, .modal, .toast, .empty-state";
 const SINGLE_LINE =
-  "button, .btn, .pill, .choice, .menu-item, .segmented > *, .picked-chip, .card-title, .list-title";
+  "button, .btn, .pill, .ctl, .choice, .menu-item, .segmented > *, .picked-chip, .card-title, .nav-name";
 
 async function audit(page: Page, where: string): Promise<string[]> {
   return page.evaluate(
@@ -69,43 +70,83 @@ async function audit(page: Page, where: string): Promise<string[]> {
   );
 }
 
+const L = {
+  es: {
+    period: "Periodo",
+    filters: "Filtros",
+    addFilter: "Añadir filtro",
+    more: "Más",
+    edit: /^Editar…/,
+    settings: "Ajustes",
+  },
+  en: {
+    period: "Period",
+    filters: "Filters",
+    addFilter: "Add filter",
+    more: "More",
+    edit: /^Edit…/,
+    settings: "Settings",
+  },
+};
+
 for (const language of ["es", "en"] as const) {
-  for (const width of [1280, 560]) {
+  for (const width of [1440, 900]) {
     test(`every surface fits (${language}, ${width} px)`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
-      const back = language === "es" ? "Volver" : "Back";
+      const l = L[language];
+      await page.setViewportSize({ width, height: 860 });
       const issues: string[] = [];
       await openApp(page, "/?still", { language });
-      await page.locator(".chart-card svg").first().waitFor();
+      await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
+      await page.locator(".chart-card .chart svg").first().waitFor();
       issues.push(...(await audit(page, "home")));
-      await page
-        .getByRole("button", { name: language === "es" ? "Apuntar gasto" : "Apuntar gasto" })
-        .click();
-      await page.locator(".form").waitFor();
-      issues.push(...(await audit(page, "capture")));
-      await page.getByRole("button", { name: back }).click();
-      await page.getByRole("button", { name: language === "es" ? "Gráficas" : "Charts" }).click();
-      await page.locator(".list-row").first().waitFor();
-      issues.push(...(await audit(page, "charts")));
-      await page
-        .getByRole("button", { name: language === "es" ? "Añadir widget" : "Add widget" })
-        .click();
-      issues.push(...(await audit(page, "add widget menu")));
+
+      const card = page.locator(".dashboard .chart-card").nth(1);
+      await card.hover();
+      issues.push(...(await audit(page, "card controls")));
+      await card.getByRole("button", { name: l.period }).click();
+      issues.push(...(await audit(page, "period menu")));
       await page.keyboard.press("Escape");
-      await page
-        .getByRole("button", { name: language === "es" ? "Editar" : "Edit" })
-        .first()
-        .click();
-      await page.locator(".editor-form .choices").first().waitFor();
-      await page
-        .getByRole("button", { name: language === "es" ? "Añadir filtro" : "Add filter" })
-        .click();
-      issues.push(...(await audit(page, "editor + filter menu")));
+      await card.hover();
+      await card.getByRole("button", { name: l.filters }).click();
+      await page.locator(".pop-box").getByRole("button", { name: l.addFilter }).click();
+      await page.getByRole("menuitem").nth(2).click();
+      issues.push(...(await audit(page, "filters box")));
       await page.keyboard.press("Escape");
-      await page.getByRole("button", { name: language === "es" ? "Ajustes" : "Settings" }).click();
+      await card.hover();
+      await card.getByRole("button", { name: l.more }).click();
+      issues.push(...(await audit(page, "chart menu")));
+      await page.keyboard.press("Escape");
+
+      await page.keyboard.press("n");
+      await page.locator(".side-panel .form").waitFor();
+      issues.push(...(await audit(page, "capture panel")));
+      await page.keyboard.press("Escape");
+
+      const row = page.locator(".nav-list").first().locator(".chart-row").first();
+      await row.hover();
+      await row.getByRole("button", { name: l.edit }).click();
+      await page.locator(".side-panel .editor-form .choices").first().waitFor();
+      issues.push(...(await audit(page, "editor panel")));
+      await page.keyboard.press("Escape");
+
+      await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
       await page.locator(".modal").waitFor();
       issues.push(...(await audit(page, "settings")));
       expect(issues).toEqual([]);
     });
   }
+
+  test(`the login form and a widget fit (${language})`, async ({ page }) => {
+    const issues: string[] = [];
+    await openApp(page, "/?still", { language, legacy: true });
+    await page.locator(".topbar .pill.warn").click();
+    await page.locator(".modal .server-form").waitFor();
+    issues.push(...(await audit(page, "login form")));
+    await page.setViewportSize({ width: 300, height: 200 });
+    await openApp(page, "/?widget=w-monthly-spending&chart=monthly-spending&still", { language });
+    await page.locator(".widget .card-title").waitFor();
+    await page.locator(".widget").hover();
+    issues.push(...(await audit(page, "widget")));
+    expect(issues).toEqual([]);
+  });
 }

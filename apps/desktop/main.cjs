@@ -7,7 +7,9 @@
 const { app, BrowserWindow, ipcMain, Menu, nativeImage, net, screen, Tray } = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
+const { createLive } = require("./live.cjs");
 const S = require("./settings.cjs");
 const W = require("./widgets.cjs");
 const autostart = require("./autostart.cjs");
@@ -27,6 +29,7 @@ let tray = null;
 let quitting = false;
 let labels = {
   open: "Abrir Boni",
+  capture: "Apuntar gasto",
   charts: "Gráficas y widgets",
   widgets: "Mostrar widgets",
   autostart: "Abrir al iniciar sesión",
@@ -62,10 +65,16 @@ function save() {
 const execPath = () => process.env.APPIMAGE || process.execPath;
 const packaged = () => app.isPackaged;
 
+let sessionEnded = false;
+let liveUnsupported = false; // a server from before live changes (0.2.x)
+
 function clientSettings() {
   return S.clientView(settings, {
     autostart: autostart.isOn(P.autostart),
     layerAvailable: Boolean(layer),
+    live: live.live,
+    liveUnsupported,
+    sessionEnded,
   });
 }
 
@@ -75,15 +84,70 @@ function broadcast(event, except) {
   }
 }
 
-// ---------- main window ----------
+// ---------- the server's live changes: one connection for every window ----------
+const live = createLive({
+  fetch: (url, init) => net.fetch(url, init),
+  target: () =>
+    settings.serverUrl && settings.token
+      ? { serverUrl: settings.serverUrl, token: settings.token }
+      : null,
+  onChange: (what) => {
+    if (what === "unsupported" || (what === "all" && liveUnsupported)) {
+      liveUnsupported = what === "unsupported";
+      broadcast({ type: "settings", settings: clientSettings() });
+      if (what === "unsupported") return;
+    }
+    if (what === "session") {
+      sessionEnded = true;
+      broadcast({ type: "settings", settings: clientSettings() });
+      return;
+    }
+    broadcast({ type: "changed", what });
+  },
+  onState: () => broadcast({ type: "settings", settings: clientSettings() }),
+  log,
+});
+
+// ---------- main window (its size and place are remembered, as Boni Calendar's) ----------
+const windowStateFile = () => path.join(P.config, "window-state.json");
+
+function windowState() {
+  const area = screen.getPrimaryDisplay().workArea;
+  const saved = readJson(windowStateFile()) ?? {};
+  const width = Math.min(Number(saved.width) || 1440, area.width);
+  const height = Math.min(Number(saved.height) || 900, area.height);
+  const fits =
+    Number.isFinite(saved.x) && Number.isFinite(saved.y) && onScreen({ x: saved.x, y: saved.y });
+  return {
+    width,
+    height,
+    ...(fits ? { x: saved.x, y: saved.y } : {}),
+    maximized: Boolean(saved.maximized),
+  };
+}
+
+function saveWindowState(win) {
+  if (win.isDestroyed()) return;
+  try {
+    fs.mkdirSync(P.config, { recursive: true });
+    fs.writeFileSync(
+      windowStateFile(),
+      JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() }),
+    );
+  } catch {
+    // a convenience: ignore write errors
+  }
+}
+
 function openMain(screenId) {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    const area = screen.getPrimaryDisplay().workArea;
+    const state = windowState();
     mainWindow = new BrowserWindow({
-      width: Math.min(1180, area.width - 60),
-      height: Math.min(940, area.height - 30),
-      minWidth: 560,
-      minHeight: 420,
+      width: state.width,
+      height: state.height,
+      ...(state.x !== undefined ? { x: state.x, y: state.y } : {}),
+      minWidth: 640,
+      minHeight: 480,
       title: "Boni",
       icon: ICON,
       backgroundColor: "#16171a",
@@ -95,8 +159,11 @@ function openMain(screenId) {
         sandbox: true,
       },
     });
+    if (state.maximized) mainWindow.maximize();
     mainWindow.loadFile(UI);
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    const win = mainWindow;
+    win.on("close", () => saveWindowState(win));
     mainWindow.once("ready-to-show", () => mainWindow?.show());
     // Closing the window frees it; Boni goes on in the tray with its widgets.
     mainWindow.on("closed", () => {
@@ -256,7 +323,7 @@ function updateTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: labels.open, click: () => openMain() },
-      { label: labels.charts, click: () => openMain("charts") },
+      { label: labels.capture, click: () => openMain("capture") },
       { type: "separator" },
       {
         label: labels.widgets,
@@ -291,7 +358,9 @@ function updateTray() {
 function setSettings(patch) {
   const before = settings;
   settings = S.applyPatch(settings, patch);
+  if (settings.serverUrl !== before.serverUrl) settings = { ...settings, token: "", user: "" };
   save();
+  if (settings.serverUrl !== before.serverUrl) live.restart();
   if (typeof patch?.autostart === "boolean" && packaged()) {
     try {
       autostart.setOn(P.autostart, patch.autostart, execPath());
@@ -312,6 +381,101 @@ function setSettings(patch) {
   broadcast({ type: "settings", settings: clientSettings() });
   return clientSettings();
 }
+
+// ---------- account: log in and out (as Boni Calendar), done here so the password and the token stay here ----------
+async function postJson(url, body, token) {
+  const r = await net.fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Boni-Client": "boni-desktop",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body ?? {}),
+    signal: AbortSignal.timeout(20_000),
+  });
+  let json = null;
+  try {
+    json = await r.json();
+  } catch {
+    json = null;
+  }
+  return { status: r.status, json };
+}
+
+ipcMain.handle("account:suggested-device", async () => {
+  // An old device token knows its device's name: logging in with it keeps that device's widgets.
+  let old = "";
+  if (settings.token && !settings.user && settings.serverUrl) {
+    try {
+      const r = await net.fetch(new URL("api/v1/me", `${settings.serverUrl}/`).href, {
+        headers: { Authorization: `Bearer ${settings.token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (r.ok) old = (await r.json())?.device ?? "";
+    } catch {
+      old = "";
+    }
+  }
+  return S.suggestedDevice(old || settings.device, os.hostname());
+});
+
+ipcMain.handle("account:login", async (_e, form) => {
+  const url = S.serverUrl(form?.serverUrl);
+  const user = String(form?.user ?? "").trim();
+  const device = String(form?.device ?? "")
+    .trim()
+    .slice(0, 80);
+  if (!url) return { ok: false, code: "bad-url" };
+  if (!user || !form?.password || !device) return { ok: false, code: "missing" };
+  let r;
+  try {
+    r = await postJson(new URL("api/v1/login", `${url}/`).href, {
+      user,
+      password: String(form.password),
+      device,
+    });
+  } catch (e) {
+    log(`login: ${e.message}`);
+    return { ok: false, code: "offline" };
+  }
+  if (r.status === 401) return { ok: false, code: "bad-login" };
+  if (r.status === 429) return { ok: false, code: "too-many" };
+  if (r.status === 404) return { ok: false, code: "old-server" };
+  if (r.status !== 200 || typeof r.json?.token !== "string") return { ok: false, code: "server" };
+  const old = settings.token && !settings.user ? settings.token : null;
+  settings = {
+    ...settings,
+    serverUrl: url,
+    token: r.json.token,
+    user: r.json.user,
+    device: r.json.device,
+  };
+  sessionEnded = false;
+  save();
+  log(
+    `logged in as ${r.json.user} on ${r.json.device}${old ? " (the old device token is no longer used)" : ""}`,
+  );
+  live.restart();
+  broadcast({ type: "settings", settings: clientSettings() });
+  broadcast({ type: "changed", what: "all" });
+  return { ok: true, settings: clientSettings() };
+});
+
+ipcMain.handle("account:logout", async () => {
+  if (settings.token && settings.user && settings.serverUrl) {
+    try {
+      await postJson(new URL("api/v1/logout", `${settings.serverUrl}/`).href, {}, settings.token);
+    } catch {
+      // offline: the session ends by itself after 90 idle days
+    }
+  }
+  settings = { ...settings, token: "", user: "" };
+  save();
+  live.stop();
+  broadcast({ type: "settings", settings: clientSettings() });
+  return clientSettings();
+});
 
 // ---------- requests to the server (the page never sees the token) ----------
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
@@ -342,6 +506,10 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
       signal: AbortSignal.timeout(30_000),
     });
     const text = await r.text();
+    if (r.status === 401 && !sessionEnded) {
+      sessionEnded = true;
+      broadcast({ type: "settings", settings: clientSettings() });
+    }
     return { ok: true, status: r.status, body: text.length > MAX_BODY ? "" : text };
   } catch (e) {
     return { ok: false, offline: true, message: String(e.message ?? e) };
@@ -509,6 +677,7 @@ function start() {
     }
     updateTray();
     reconcileWidgets();
+    live.restart();
     if (!background || !settings.serverUrl || !settings.token || process.env.BONI_SCREENSHOT)
       openMain();
     setTimeout(tick, 3000);

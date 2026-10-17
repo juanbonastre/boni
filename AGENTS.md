@@ -37,21 +37,33 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
 
 ## Clients (apps/): the same architecture as Boni Calendar
 - `apps/web/` (React 19 + Vite + zustand, TypeScript) is the whole client: `src/core/` is pure logic with unit tests
-  (contract types and parsing, chart math, form logic, offline queue, chart repository, chart builder), `src/store.ts`
-  the app state, `src/components/` the screens and the SVG charts, `src/i18n.ts` every text (Spanish first, English).
+  (contract types and parsing, chart math, form logic, offline queue, chart repository, chart builder, palette),
+  `src/store.ts` the app state, `src/components/` the UI and the SVG charts, `src/i18n.ts` every text (Spanish first,
+  English). The main window is laid out as Boni Calendar's: `Sidebar` (home, the charts with colour, eye = on the home
+  screen, drag to reorder; this computer's widgets; settings and the user), the main area (the home screen's charts
+  filling the window, or one chart on its own) and `SidePanel` (the capture form from the server, the chart editor; the
+  card being edited shows the preview). A chart's own controls show when the pointer is over its card (`CardControls`:
+  period, filters, order, kind, colour, menu), like a Notion view's; each change is saved at once with Undo in the toast.
+  Deleting waits for the toast's Undo before it reaches the server. Zustand selectors return existing objects (a selector
+  that builds a new array loops forever: use `useVisibleCharts` and the like).
 - Everything the UI needs from where it runs goes through `src/host.ts`: the desktop shell's bridge
   (`window.boniDesktop`) or, in a plain browser (dev, e2e), same-origin requests and localStorage. No `fetch` or
   `localStorage` elsewhere in UI code.
 - `apps/desktop/` is the Electron shell: `main.cjs` owns the settings (`~/.config/boni/settings.json`, 0600, the same file
-  and keys as the first Kotlin client), the device token (never sent to a page), every request to the server (the API has
-  no CORS), the small files in `~/.local/share/boni/store/`, the tray, start at login (`autostart.cjs`) and the widget
-  windows (`widgets.cjs`). One page per window: the main window, or one widget (`?widget=<id>&chart=<id>`). One page gets
-  the minute ticks (the coordinator: main window, else the first widget) and sends the offline queue.
+  and keys as the first Kotlin client), the login (as Boni Calendar's: address, user, password, device name; the password
+  and the session token never reach a page), every request to the server (the API has no CORS), the live changes
+  (`live.cjs`: one `/api/v1/events` connection for every window, reconnecting with backoff; pages get "changed" events),
+  the small files in `~/.local/share/boni/store/`, the remembered window size, the tray, start at login (`autostart.cjs`)
+  and the widget windows (`widgets.cjs`). One page per window: the main window, or one widget
+  (`?widget=<id>&chart=<id>`). One page gets the minute ticks (the coordinator: main window, else the first widget): it
+  sends the offline queue, and reloads every 15 minutes only while there is no live connection. An old device token
+  (from before accounts) keeps working; the page asks to log in.
 - **Desktop widgets** are windows of type "dock" kept below the others with `wmctrl -b add,below,sticky` (X11): just above
   the desktop background, below every window, they survive "show desktop" and clicks on the desktop, stay out of the
   taskbar and Alt+Tab, and are fully interactive (tested on Cinnamon's window manager, 2026-10-17). Dragging and resizing
-  follow the real pointer (`screen.getCursorScreenPoint`), not page coordinates. Without wmctrl (or on Wayland) they are
-  plain frameless windows. The `.deb` depends on wmctrl.
+  follow the real pointer (`screen.getCursorScreenPoint`), not page coordinates. They are resizable windows with explicit
+  limits (a non-resizable Electron window gets min = max = its size at every `setSize`, so it never shrinks). Without
+  wmctrl (or on Wayland) they are plain frameless windows. The `.deb` depends on wmctrl.
 - `clients/` (Kotlin + Compose) is the first client, replaced by `apps/`; it is removed once the new one is in use.
 
 ## Building and testing
@@ -64,7 +76,7 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   `XDG_CONFIG_HOME`/`XDG_DATA_HOME` (a copy of his settings), and synthetic pointer input only in a nested X server
   (Xephyr + muffin), never on his screen.
 - CI: one workflow per part (`server.yml`, `apps.yml`), each runs only when its folders or `api/` change. `apps.yml` publishes
-  the e2e screenshots on the `ci-screenshots` branch and the `.deb` as the `boni-deb` artifact (version 0.2.<run>).
+  the e2e screenshots on the `ci-screenshots` branch and the `.deb` as the `boni-deb` artifact (version 0.3.<run>).
 
 ## Workflow
 - Small PRs; tests for pure logic (server modules, chart math, queue, contract parsing).
