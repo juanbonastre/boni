@@ -16,6 +16,7 @@ import {
   goBack,
   openScreen,
   openSettings,
+  setChartDrill,
   showHome,
   toggleSidebar,
   useStore,
@@ -112,7 +113,9 @@ function useShortcuts(mobile: boolean) {
         e.preventDefault();
         toggleSidebar();
       } else if (e.key === "Escape" && !e.defaultPrevented && !s.panel && s.view.kind !== "home") {
-        showHome();
+        e.preventDefault();
+        if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
+        else showHome();
       }
     };
     window.addEventListener("keydown", onKey);

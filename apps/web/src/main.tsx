@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { PicturePage } from "./Picture.tsx";
-import { goBack, init } from "./store.ts";
+import { androidBack, init } from "./store.ts";
 import { WidgetPage } from "./Widget.tsx";
 import "./styles.css";
 
@@ -36,7 +36,7 @@ if (pictureId) {
   );
 } else {
   // Android's Back button asks the page what to close (false: nothing open, the app goes to the background).
-  (window as unknown as { __boniBack: () => boolean }).__boniBack = goBack;
+  (window as unknown as { __boniBack: () => boolean }).__boniBack = androidBack;
   void init("main").then(() =>
     root.render(
       <StrictMode>

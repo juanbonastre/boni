@@ -50,8 +50,9 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   components, made for capturing rather than watching charts (Juan, 2026-10-18). Tab "Apuntar" (the server's capture
   buttons and the **shortcuts**) and tab "Gráficas" (a list with each total; one chart on the whole screen with period
   chips; the editor in a sheet). Forms and editors are full-screen sheets whose buttons stay at the bottom; the form folds
-  the optional fields under "Más detalles". `goBack()` in the store is Back (Esc now, Android's button later). A tap on a
-  chart shows the value, a second tap the detail. Written deviation from Boni Calendar's guide: base text 16 px, touch
+  the optional fields under "Más detalles". Back is Esc: what a component opened (a menu, a list) closes on its own
+  Esc, then `goBack()` in the store (settings, the panel, a chart's detail, the chart, the charts tab), so the detail of
+  the chart on its own is navigation (`view.drill`). A tap on a chart shows the value, a second tap the detail. Written deviation from Boni Calendar's guide: base text 16 px, touch
   targets 48 px and icons 20-24 px (the guide's 13 px and 28 px controls are for a mouse; 16 px also keeps Android from
   zooming into a field). Styles are under `.m-app` in `styles.css`.
 - **Shortcuts** (`Shortcut` in the contract, `core/shortcuts.ts`): a server screen plus values for its form, `open` (the
@@ -78,7 +79,7 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   api/v1), the small files in the app's `files/store/`, the live stream while the app is in front (`Live.kt`) and the
   minute ticks. `QueueWorker.kt` (WorkManager, needs network) sends `queue.json` with the app closed, with the page's
   rules (`QueueLogic.kt` = `core/queue.ts`, unit-tested on the same cases; keep them in step); while the app is in front
-  the page sends it. Back asks the page (`window.__boniBack` = `goBack`). Cleartext http only to localhost (a server on
+  the page sends it. Back asks the page (`window.__boniBack` = `androidBack`: an Esc, so it closes exactly what Esc closes). Cleartext http only to localhost (a server on
   the laptop through `adb reverse`). Signed releases need four repository secrets (see `android.yml`).
   Home-screen shortcuts (`Launcher.kt`, Juan's step 3): the page's shortcut and chart menus offer "Añadir a la pantalla
   de inicio" (`host.phone.pin`, Android's `requestPinShortcut`); an entry only names its target (`shortcut:<id>`,

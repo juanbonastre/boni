@@ -44,6 +44,12 @@ async function openAndroid(
         if (p.endsWith("/shortcuts") && method === "GET") return ok("shortcuts.json");
         if (p.endsWith("/widgets")) return ok("widgets.json");
         if (p.endsWith("/actions")) return ok("action-result-ok.json");
+        if (p.includes("spending-by-category") && p.includes("/data"))
+          return ok(
+            path.includes("drill=")
+              ? "chart-spending-by-category-drill.json"
+              : "chart-spending-by-category.json",
+          );
         if (p.includes("/data")) return ok("chart-eating-out.json");
         return [404, examples["error.json"]!];
       };
@@ -177,6 +183,26 @@ test("Back asks the page: it closes one thing at a time, then lets the app go to
   expect(await back()).toBe(true);
   await expect(page.locator(".m-sheet")).toHaveCount(0);
   await page.getByRole("button", { name: "Gráficas" }).tap();
+
+  // A chart's detail with its menu open: the menu, the detail, the chart, then the charts tab
+  await page.locator(".m-chart-row", { hasText: "Gasto del mes" }).tap();
+  await page.locator(".m-chart-body .chart svg").waitFor();
+  await page.waitForTimeout(300);
+  const ranking = (await page.locator(".m-chart-body .chart").boundingBox())!;
+  await page.touchscreen.tap(ranking.x + ranking.width / 2, ranking.y + 20);
+  const detailBack = page.locator(".m-chart-body").getByRole("button", { name: "Volver" });
+  await expect(detailBack).toBeVisible();
+  await page.getByRole("button", { name: "Opciones de la gráfica" }).tap();
+  await expect(page.getByRole("menu")).toBeVisible();
+  expect(await back()).toBe(true);
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(detailBack).toBeVisible();
+  expect(await back()).toBe(true);
+  await expect(detailBack).toHaveCount(0);
+  await expect(page.locator(".m-title")).toHaveText("Gasto del mes");
+  expect(await back()).toBe(true);
+  await expect(page.locator(".m-title")).toHaveText("Gráficas");
+
   expect(await back()).toBe(true);
   await expect(page.locator(".m-title")).toHaveText("Apuntar");
   expect(await back()).toBe(false);

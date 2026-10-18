@@ -50,7 +50,7 @@ const OPTION_LIST_LIMIT = 500;
 const RELOAD_EVERY_MINUTES = 15;
 const DELETE_AFTER_MS = 6000;
 
-export type View = { kind: "home" } | { kind: "chart"; id: string };
+export type View = { kind: "home" } | { kind: "chart"; id: string; drill?: string | null };
 /**
  * The right side panel (on the phone, a sheet over the whole screen): a server screen (the capture form, maybe
  * filled in by a shortcut), the chart editor or the shortcut editor.
@@ -337,6 +337,9 @@ export function refresh() {
 // ---------- navigation ----------
 export const showHome = () => set({ view: { kind: "home" } });
 export const showChart = (id: string) => set({ view: { kind: "chart", id } });
+/** The detail of one bar or slice of the chart on its own: navigation, so Back leaves it before the chart. */
+export const setChartDrill = (drill: string | null) =>
+  set((s) => (s.view.kind === "chart" ? { view: { ...s.view, drill } } : {}));
 /** A server screen in the panel; `values` fill its form (a shortcut's), `shortcut` names the one that did. */
 export const openScreen = (id: string, values?: F.Values, shortcut?: string) => {
   set({ panel: { kind: "screen", id, values, shortcut }, editPreview: null });
@@ -353,17 +356,28 @@ export const setEditDraft = (spec: ChartSpec) =>
 export const openSettings = (open = true) => set({ settingsOpen: open });
 
 /**
- * The phone's Back (Android's button, Esc): closes the top thing, one at a time: settings, the panel, a chart on
- * its own, then the charts tab. False when there was nothing to close (the shell then leaves the app).
+ * The phone's Back (Esc): closes the top thing, one at a time: settings, the panel, a chart's detail, a chart on
+ * its own, then the charts tab. False when there was nothing to close. Menus and lists that components open close
+ * on Esc before this runs; Android's button is Esc too (`androidBack`).
  */
 export function goBack(): boolean {
   const s = get();
   if (s.settingsOpen) openSettings(false);
   else if (s.panel) closePanel();
+  else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
   else if (s.view.kind === "chart") showHome();
   else if (s.tab !== "capture") showTab("capture");
   else return false;
   return true;
+}
+/**
+ * Android's Back button: the same as Esc, so whatever a component opened (a menu, a list of options) closes first,
+ * then `goBack`. False when nothing took it (the app then goes to the background).
+ */
+export function androidBack(): boolean {
+  const e = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+  (document.activeElement ?? document.body).dispatchEvent(e);
+  return e.defaultPrevented;
 }
 export const toggleSidebar = () => set((s) => ({ sidebarOpen: !s.sidebarOpen }));
 

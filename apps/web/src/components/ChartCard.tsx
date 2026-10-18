@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import * as M from "../core/chartMath.ts";
 import { type ChartState, emptyState } from "../core/charts.ts";
 import type { ChartData } from "../core/contract.ts";
-import { charts, showChart, useStore } from "../store.ts";
+import { charts, setChartDrill, showChart, useStore } from "../store.ts";
 import { CardControls } from "./CardControls.tsx";
 import { ACCENT, Chart, seriesColors } from "./Chart.tsx";
 
@@ -34,7 +34,13 @@ export function ChartCard({
     s.panel?.kind === "edit" && !s.panel.isNew && s.panel.spec.id === chartId ? s.panel.spec : null,
   );
   const editing = draft != null;
-  const [drill, setDrill] = useState<string | null>(null);
+  // The chart on its own keeps its detail in the store (Back leaves it); a card elsewhere keeps its own.
+  const [ownDrill, setOwnDrill] = useState<string | null>(null);
+  const viewDrill = useStore((s) =>
+    s.view.kind === "chart" && s.view.id === chartId ? (s.view.drill ?? null) : null,
+  );
+  const drill = focused ? viewDrill : ownDrill;
+  const setDrill = focused ? setChartDrill : setOwnDrill;
   const state = useChartData(chartId, drill);
   const [controlsOpen, setControlsOpen] = useState(false);
 
