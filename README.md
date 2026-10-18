@@ -15,7 +15,6 @@ Diseno completo y decisiones: nota `proyectos/boni.md` del vault y `docs/arquite
 | `apps/web/` | La interfaz (React + TypeScript): inicio, apuntar gasto, graficas, editor, ajustes, widgets |
 | `apps/desktop/` | App de escritorio (Electron): ventana, widgets en el escritorio, bandeja, arranque al iniciar sesion, paquete `.deb` |
 | `e2e/` | Pruebas de la interfaz (Playwright) |
-| `clients/` | El primer cliente (Kotlin + Compose), sustituido por `apps/`; se borrara |
 | `api/` | El contrato entre servidor y clientes: esquemas JSON y ejemplos |
 | `docs/` | Documentacion para Juan (espanol) |
 

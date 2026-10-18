@@ -64,7 +64,7 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   follow the real pointer (`screen.getCursorScreenPoint`), not page coordinates. They are resizable windows with explicit
   limits (a non-resizable Electron window gets min = max = its size at every `setSize`, so it never shrinks). Without
   wmctrl (or on Wayland) they are plain frameless windows. The `.deb` depends on wmctrl.
-- `clients/` (Kotlin + Compose) is the first client, replaced by `apps/`; it is removed once the new one is in use.
+- The first client (Kotlin + Compose, `clients/`) was replaced by `apps/` and removed (2026-10-18); its history is in git.
 
 ## Building and testing
 - Server: `cd server && uv venv -p 3.12 && uv pip install -e '.[dev]' && pytest` (tests use an in-process fake vault-mcp

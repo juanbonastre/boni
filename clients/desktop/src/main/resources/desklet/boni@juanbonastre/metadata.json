@@ -1,8 +1,0 @@
-{
-    "uuid": "boni@juanbonastre",
-    "name": "Boni",
-    "description": "Graficas de Boni en el escritorio. La app Boni dibuja las imagenes; cada desklet muestra uno de los widgets de este equipo.",
-    "version": "1",
-    "max-instances": "10",
-    "prevent-decorations": true
-}
