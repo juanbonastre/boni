@@ -377,7 +377,7 @@ function YAxis({
   );
 }
 
-/** X labels that fit: every k-th one, always including the last. */
+/** X labels that fit: every k-th one, always including the last; a long one is cut to its room. */
 function XLabels({
   c,
   plot,
@@ -391,6 +391,8 @@ function XLabels({
 }) {
   const maxLabels = Math.max(2, Math.floor(width(plot) / (c.compact ? 36 : 44)));
   const step = M.labelStep(points.length, maxLabels);
+  const size = axisSize(c);
+  const room = band * step - 6;
   return (
     <g>
       {points.map((p, i) =>
@@ -402,9 +404,9 @@ function XLabels({
             textAnchor="middle"
             dominantBaseline="hanging"
             className="t-axis"
-            fontSize={axisSize(c)}
+            fontSize={size}
           >
-            {p.label}
+            {fitText(p.label, room, size)}
           </text>
         ) : null,
       )}

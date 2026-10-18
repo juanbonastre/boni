@@ -10,7 +10,12 @@ test.use({ viewport: { width: 412, height: 860 }, hasTouch: true, isMobile: true
 
 async function openAndroid(
   page: Page,
-  opts: { configured?: boolean; launch?: string; url?: string } = {},
+  opts: {
+    configured?: boolean;
+    launch?: string;
+    url?: string;
+    examples?: Record<string, string>;
+  } = {},
 ) {
   await page.addInitScript(
     ({ examples, configured, launch }) => {
@@ -136,7 +141,11 @@ async function openAndroid(
         (w.__boniEvent as (j: string) => void)(JSON.stringify({ type: "settings", settings }));
       };
     },
-    { examples: EXAMPLES, configured: opts.configured ?? true, launch: opts.launch ?? null },
+    {
+      examples: { ...EXAMPLES, ...opts.examples },
+      configured: opts.configured ?? true,
+      launch: opts.launch ?? null,
+    },
   );
   await page.goto(opts.url ?? "/?still");
 }
@@ -316,4 +325,36 @@ test("a home-screen widget's picture: the chart card alone, and the app is told 
   expect(box.width).toBeGreaterThan(350);
   expect(box.height).toBeGreaterThan(210);
   await page.screenshot({ path: "e2e/screenshots/phone-widget.png" });
+});
+
+test("a narrow widget cuts long axis labels instead of running them together", async ({ page }) => {
+  const chart = JSON.parse(EXAMPLES["chart-spending-by-category.json"]!);
+  const point = (label: string, value: number) => ({
+    key: label.toLowerCase(),
+    label,
+    value,
+    partial: false,
+    no_data: false,
+  });
+  chart.kind = "bar";
+  chart.series[0].points = [
+    point("Otros", 690),
+    point("Comida", 115),
+    point("Suscripciones", 21),
+    point("Transporte", 15),
+  ];
+  await page.setViewportSize({ width: 300, height: 220 });
+  await openAndroid(page, {
+    url: "/?picture=spending-by-category&still",
+    examples: { "chart-spending-by-category.json": JSON.stringify(chart) },
+  });
+  const labels = page.locator(".picture .chart text[dominant-baseline=hanging]");
+  await expect(labels).toHaveCount(4);
+  const boxes = (await labels.evaluateAll((els) =>
+    els.map((e) => e.getBoundingClientRect()).map((r) => ({ left: r.left, right: r.right })),
+  )) as { left: number; right: number }[];
+  for (let i = 1; i < boxes.length; i++) {
+    expect(boxes[i]!.left).toBeGreaterThanOrEqual(boxes[i - 1]!.right + 2);
+  }
+  await expect(labels.nth(2)).toHaveText(/…$/);
 });
