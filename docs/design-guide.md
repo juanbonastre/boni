@@ -158,6 +158,13 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   of section 2 (the repos are separate): change them here first, then there. Charts add their own colours (a categorical
   palette checked for colour blindness on these surfaces) and draw in SVG: hairline grid, 4 px rounded data ends, the
   latest value as a label and the rest in a hover tooltip (`--surface-2` box, 8 px radius).
+- **Boni on a phone** (narrower than 640 px, and its Android app; Juan, 2026-10-18): not the desktop window made small.
+  It is for capturing: two tabs at the bottom, "Apuntar" (the capture buttons, then the user's shortcuts: a saved form
+  with its values, which a tap opens filled in or saves at once with Undo in the toast) and "Gráficas" (a list with each
+  chart's total; one chart on the whole screen with period chips). Forms and editors are full-screen sheets with their
+  buttons fixed at the bottom; optional fields fold under "Más detalles"; menus come from the bottom; a tap on a chart
+  shows the value and a second tap opens the detail. Same tokens and card recipe; written deviation for the thumb:
+  16 px text, 48 px touch targets, 20 to 24 px icons. Back closes the top thing.
 - **Desktop widgets** (Boni): a chart card alone in a small transparent window that sits on the desktop, below every
   window (on X11 a "dock" window kept below by the window manager; it survives "show desktop"). It keeps the card look
   (`--surface`, 10 px radius, `--line-strong` border) and is fully interactive: hover for values, click for a detail;
