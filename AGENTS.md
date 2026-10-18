@@ -85,6 +85,12 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   `chart:<id>`) and the page decides what it does (`navigate` in the store: a shortcut runs as if tapped). The page
   publishes every target (`setTargets`): pinned entries follow renames, those whose target is gone are disabled, and
   the first four shortcuts are the menu of the app's icon.
+  Home-screen widgets (Juan's step 4): `ChartWidget.kt` shows a picture of one chart (chosen in
+  `WidgetConfigActivity.kt` from the charts kept on the phone); `WidgetRenderer.kt` draws it with the app's own page
+  (`?picture=<chart id>`, `Picture.tsx`: the compact card) in a WebView that is never shown, sized to the widget, and
+  takes the picture when the page calls `pictureReady` (a timer, not animation frames: an unshown WebView may get
+  none). `WidgetWorker.kt` redraws them when the app comes to the front or the server says data or charts changed,
+  after the queue worker delivered something, and every 30 minutes. A tap opens that chart (`chart:<id>`).
 - **Desktop widgets** are windows of type "dock" kept below the others with `wmctrl -b add,below,sticky` (X11): just above
   the desktop background, below every window, they survive "show desktop" and clicks on the desktop, stay out of the
   taskbar and Alt+Tab, and are fully interactive (tested on Cinnamon's window manager, 2026-10-17). Dragging and resizing

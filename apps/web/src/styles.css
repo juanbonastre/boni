@@ -2139,3 +2139,14 @@ html.widget-page body {
   width: 22px;
   height: 22px;
 }
+
+/* An Android home-screen widget's picture: the compact card filling the page (the app sizes it to the widget). */
+.picture {
+  position: fixed;
+  inset: 0;
+  display: flex;
+}
+.picture > .chart-card {
+  flex: 1;
+  min-height: 0;
+}

@@ -37,6 +37,7 @@ class Shell private constructor(context: Context) {
                     emitSettings()
                 }
                 else -> {
+                    if (what == "data" || what == "charts" || what == "all") WidgetWorker.refresh(app)
                     if (liveUnsupported) {
                         liveUnsupported = false
                         emitSettings()

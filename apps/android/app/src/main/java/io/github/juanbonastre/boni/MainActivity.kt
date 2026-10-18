@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
                 return true
             }
         }
-        web.addJavascriptInterface(AndroidBridge(this, web, shell), "boniAndroid")
+        web.addJavascriptInterface(AndroidBridge(this, web, shell, this), "boniAndroid")
         // The page stays clear of the status bar, the navigation bar, the camera cut-out and the keyboard: the
         // window draws edge to edge, so a frame around the page takes their space.
         val frame = FrameLayout(this).apply {

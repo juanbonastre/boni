@@ -97,6 +97,7 @@ export function androidHost(native: AndroidNative): Host {
       setTargets: (entries, menu) =>
         void call("setTargets", JSON.stringify(entries), menu).catch(() => undefined),
       takeLaunch: () => call<string | null>("takeLaunch").catch(() => null),
+      pictureReady: () => void call("pictureReady").catch(() => undefined),
     },
     live: true,
   };

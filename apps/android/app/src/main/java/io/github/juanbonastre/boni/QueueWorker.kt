@@ -30,7 +30,8 @@ class QueueWorker(context: Context, params: WorkerParameters) : Worker(context, 
             } catch (e: Exception) {
                 return Result.success() // not a queue: leave it to the page
             }
-            val (remaining, _) = QueueLogic.flush(items, now) { shell.sendAction(it) }
+            val (remaining, delivered) = QueueLogic.flush(items, now) { shell.sendAction(it) }
+            if (delivered > 0) WidgetWorker.refresh(applicationContext) // the widgets show the new numbers
             if (remaining.length() == 0) file.delete() else file.writeText(remaining.toString())
             remaining
         }

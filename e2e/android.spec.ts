@@ -8,7 +8,10 @@ import { EXAMPLES } from "./fixtures.ts";
  */
 test.use({ viewport: { width: 412, height: 860 }, hasTouch: true, isMobile: true });
 
-async function openAndroid(page: Page, opts: { configured?: boolean; launch?: string } = {}) {
+async function openAndroid(
+  page: Page,
+  opts: { configured?: boolean; launch?: string; url?: string } = {},
+) {
   await page.addInitScript(
     ({ examples, configured, launch }) => {
       const w = window as unknown as Record<string, unknown>;
@@ -87,6 +90,9 @@ async function openAndroid(page: Page, opts: { configured?: boolean; launch?: st
           case "setTargets":
             w.__targets = { entries: JSON.parse(a[0] as string), menu: a[1] };
             return null;
+          case "pictureReady":
+            w.__pictureReady = ((w.__pictureReady as number | undefined) ?? 0) + 1;
+            return null;
           case "takeLaunch": {
             const l = launch;
             launch = null;
@@ -126,7 +132,7 @@ async function openAndroid(page: Page, opts: { configured?: boolean; launch?: st
     },
     { examples: EXAMPLES, configured: opts.configured ?? true, launch: opts.launch ?? null },
   );
-  await page.goto("/?still");
+  await page.goto(opts.url ?? "/?still");
 }
 
 const calls = (page: Page) =>
@@ -247,4 +253,24 @@ test("a home-screen shortcut opens what it points to: at start, and while the ap
     ),
   );
   await expect(page.locator(".toast")).toHaveText("Ese atajo ya no existe");
+});
+
+test("a home-screen widget's picture: the chart card alone, and the app is told when it is drawn", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 220 });
+  await openAndroid(page, { url: "/?picture=monthly-spending&still" });
+  const card = page.locator(".picture .chart-card");
+  await expect(card).toBeVisible();
+  await expect(card.locator(".card-title")).toHaveText("Gasto por mes");
+  await expect(card.locator(".chart svg")).toBeVisible();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { __pictureReady?: number }).__pictureReady),
+    )
+    .toBe(1);
+  const box = (await card.boundingBox())!;
+  expect(box.width).toBeGreaterThan(350);
+  expect(box.height).toBeGreaterThan(210);
+  await page.screenshot({ path: "e2e/screenshots/phone-widget.png" });
 });

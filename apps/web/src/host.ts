@@ -113,6 +113,8 @@ export interface PhoneHost {
   setTargets(entries: LaunchTarget[], menu: number): void;
   /** What a launcher entry opened when it started the app (once). Later ones arrive as "navigate" events. */
   takeLaunch(): Promise<string | null>;
+  /** A picture page (a home-screen widget) has drawn its chart: the app takes the picture now. */
+  pictureReady(): void;
 }
 
 export interface Host {

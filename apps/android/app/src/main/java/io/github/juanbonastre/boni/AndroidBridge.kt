@@ -1,5 +1,8 @@
 package io.github.juanbonastre.boni
 
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import org.json.JSONArray
@@ -13,7 +16,16 @@ import java.util.concurrent.Executors
  * (`__boniReply(id)`) and fetches the answer with `take(id)`. Every answer is `{ ok: true, value }` or
  * `{ ok: false, code, message }`.
  */
-class AndroidBridge(private val activity: MainActivity, private val web: WebView, private val shell: Shell) {
+class AndroidBridge(
+    private val context: Context,
+    private val web: WebView,
+    private val shell: Shell,
+    /** The app's window (launcher entries that started it); null for a widget's picture page. */
+    private val activity: MainActivity?,
+    /** A widget's picture page has drawn its chart. */
+    private val onPicture: (() -> Unit)? = null,
+) {
+    private val ui = Handler(Looper.getMainLooper())
     private val pool = Executors.newFixedThreadPool(4)
     private val answers = ConcurrentHashMap<String, String>()
 
@@ -26,7 +38,7 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
                 fail("failed", e.message ?: e.toString())
             }
             answers[id] = out
-            activity.runOnUiThread {
+            ui.post {
                 web.evaluateJavascript("window.__boniReply && window.__boniReply(${JSONObject.quote(id)})", null)
             }
         }
@@ -53,9 +65,10 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
         "login" -> shell.login(JSONObject(a.getString(0)))
         "logout" -> shell.logout()
         "suggestedDevice" -> shell.suggestedDevice()
-        "pin" -> Launcher.pin(activity, JSONObject(a.getString(0)))
-        "setTargets" -> Launcher.setTargets(activity, JSONArray(a.getString(0)), a.getInt(1)).let { null }
-        "takeLaunch" -> activity.takeLaunch()
+        "pin" -> Launcher.pin(context, JSONObject(a.getString(0)))
+        "setTargets" -> Launcher.setTargets(context, JSONArray(a.getString(0)), a.getInt(1)).let { null }
+        "takeLaunch" -> activity?.takeLaunch()
+        "pictureReady" -> onPicture?.let { ui.post(it) }.let { null }
         else -> throw IllegalArgumentException("Unknown call: $method")
     }
 }
