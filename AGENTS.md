@@ -80,6 +80,11 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   rules (`QueueLogic.kt` = `core/queue.ts`, unit-tested on the same cases; keep them in step); while the app is in front
   the page sends it. Back asks the page (`window.__boniBack` = `goBack`). Cleartext http only to localhost (a server on
   the laptop through `adb reverse`). Signed releases need four repository secrets (see `android.yml`).
+  Home-screen shortcuts (`Launcher.kt`, Juan's step 3): the page's shortcut and chart menus offer "Añadir a la pantalla
+  de inicio" (`host.phone.pin`, Android's `requestPinShortcut`); an entry only names its target (`shortcut:<id>`,
+  `chart:<id>`) and the page decides what it does (`navigate` in the store: a shortcut runs as if tapped). The page
+  publishes every target (`setTargets`): pinned entries follow renames, those whose target is gone are disabled, and
+  the first four shortcuts are the menu of the app's icon.
 - **Desktop widgets** are windows of type "dock" kept below the others with `wmctrl -b add,below,sticky` (X11): just above
   the desktop background, below every window, they survive "show desktop" and clicks on the desktop, stay out of the
   taskbar and Alt+Tab, and are fully interactive (tested on Cinnamon's window manager, 2026-10-17). Dragging and resizing

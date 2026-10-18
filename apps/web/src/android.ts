@@ -92,6 +92,12 @@ export function androidHost(native: AndroidNative): Host {
       return () => listeners.delete(cb);
     },
     desktop: null,
+    phone: {
+      pin: (entry) => call<boolean>("pin", JSON.stringify(entry)).catch(() => false),
+      setTargets: (entries, menu) =>
+        void call("setTargets", JSON.stringify(entries), menu).catch(() => undefined),
+      takeLaunch: () => call<string | null>("takeLaunch").catch(() => null),
+    },
     live: true,
   };
 }

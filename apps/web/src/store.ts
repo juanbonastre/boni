@@ -235,7 +235,9 @@ export async function init(role: "main" | "widget", h: Host = defaultHost) {
   if (role === "main") {
     void countQueue();
     void reloadAll();
-    if (!h.desktop) {
+    void h.phone?.takeLaunch().then((target) => target && navigate(target));
+    publishTargets();
+    if (!h.desktop && !h.phone) {
       // A plain browser has no shell sending ticks: keep its own minute.
       let minute = 0;
       setInterval(() => void onTick(++minute, role), 60_000);
@@ -245,12 +247,21 @@ export async function init(role: "main" | "widget", h: Host = defaultHost) {
   }
 }
 
-/** What the tray or a widget asks the main window to show. */
+/** What the tray, a widget or a phone's launcher shortcut asks the main window to show. */
 export function navigate(screen: string) {
   if (screen === "settings") openSettings();
   else if (screen === "capture") openScreen(CAPTURE_SCREEN);
-  else if (screen.startsWith("chart:")) showChart(screen.slice(6));
-  else if (screen.startsWith("edit:")) {
+  else if (screen.startsWith("shortcut:")) {
+    const sc = get().shortcuts.find((x) => x.id === screen.slice(9));
+    set({ panel: null, view: { kind: "home" }, tab: "capture" });
+    if (sc) void runShortcut(sc);
+    else toast(get().t("shortcut.gone"));
+  } else if (screen.startsWith("chart:")) {
+    const id = screen.slice(6);
+    set({ panel: null, tab: "charts" });
+    if (get().chartSpecs.some((c) => c.id === id)) showChart(id);
+    else toast(get().t("shortcut.chartGone"));
+  } else if (screen.startsWith("edit:")) {
     const spec = get().chartSpecs.find((c) => c.id === screen.slice(5));
     if (spec) openEditor(spec);
   } else showHome();
@@ -473,6 +484,7 @@ export async function loadCharts() {
   const chartSpecs = await api.charts();
   set({ chartSpecs });
   await keep(FILES.charts, { charts: chartSpecs });
+  publishTargets();
   return chartSpecs;
 }
 
@@ -600,7 +612,32 @@ export async function loadShortcuts(): Promise<Shortcut[]> {
   const shortcuts = await api.shortcuts();
   set({ shortcuts });
   await keep(FILES.shortcuts, { shortcuts });
+  publishTargets();
   return shortcuts;
+}
+
+/** How many shortcuts show when the app's icon is held (launchers show four or five). */
+const LAUNCHER_MENU = 4;
+
+/** The phone's launcher entries follow the shortcuts and charts (names, colours, which still exist). */
+function publishTargets() {
+  const phone = hostRef.phone;
+  if (!phone) return;
+  const s = get();
+  phone.setTargets(
+    [
+      ...s.shortcuts.map((x) => ({ target: `shortcut:${x.id}`, label: x.label, color: x.color })),
+      ...s.chartSpecs.map((c) => ({ target: `chart:${c.id}`, label: c.title, color: c.color })),
+    ],
+    Math.min(LAUNCHER_MENU, s.shortcuts.length),
+  );
+}
+
+/** A shortcut or a chart on the phone's home screen. */
+export async function pinToHome(entry: { target: string; label: string; color: string | null }) {
+  const t = get().t;
+  const ok = (await hostRef.phone?.pin(entry)) ?? false;
+  if (!ok) toast(t("shortcut.pinUnsupported"));
 }
 
 /** The shortcuts shown (without those being deleted). A new array only when one of them changes. */

@@ -95,6 +95,26 @@ export interface DesktopHost {
   };
 }
 
+/** A launcher entry: what it opens ("shortcut:<id>", "chart:<id>"), its name and colour. */
+export interface LaunchTarget {
+  target: string;
+  label: string;
+  color: string | null;
+}
+
+/** What only a phone has (the Android app): home-screen shortcuts. */
+export interface PhoneHost {
+  /** Asks the launcher to pin a shortcut to `target` on the home screen; false if it cannot. */
+  pin(entry: LaunchTarget): Promise<boolean>;
+  /**
+   * Every shortcut and chart, so pinned entries keep their names and those whose target is gone stop working;
+   * the first `menu` of them also show when the app's icon is held.
+   */
+  setTargets(entries: LaunchTarget[], menu: number): void;
+  /** What a launcher entry opened when it started the app (once). Later ones arrive as "navigate" events. */
+  takeLaunch(): Promise<string | null>;
+}
+
 export interface Host {
   transport: Transport;
   store: TextStore;
@@ -106,6 +126,7 @@ export interface Host {
   suggestedDevice(): Promise<string>;
   onEvent(cb: (e: ShellEvent) => void): () => void;
   desktop: DesktopHost | null;
+  phone: PhoneHost | null;
   /** The host holds a live connection to the server (desktop, Android): without it, "offline" means nothing. */
   live: boolean;
 }
@@ -162,6 +183,7 @@ function desktopHost(b: NonNullable<Window["boniDesktop"]>): Host {
         hide: () => b.widgetHide(),
       },
     },
+    phone: null,
     live: true,
   };
 }
@@ -297,6 +319,7 @@ export function browserHost(): Host {
       return () => listeners.delete(cb);
     },
     desktop: null,
+    phone: null,
     live: false,
   };
 }

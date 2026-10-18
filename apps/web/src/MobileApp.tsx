@@ -9,6 +9,7 @@ import {
   PenLine,
   Plus,
   Settings,
+  Smartphone,
   Trash2,
   WifiOff,
   X,
@@ -44,6 +45,7 @@ import {
   openSettings,
   openShortcutEditor,
   optionList,
+  pinToHome,
   runShortcut,
   saveShortcut,
   showChart,
@@ -257,6 +259,20 @@ function CaptureTab({ openMenu }: { openMenu: (m: Menu) => void }) {
                   icon: <Pencil size={20} strokeWidth={1.8} />,
                   run: () => openShortcutEditor(sc),
                 },
+                ...(host.phone
+                  ? [
+                      {
+                        label: t("shortcut.pin"),
+                        icon: <Smartphone size={20} strokeWidth={1.8} />,
+                        run: () =>
+                          void pinToHome({
+                            target: `shortcut:${sc.id}`,
+                            label: sc.label,
+                            color: sc.color,
+                          }),
+                      },
+                    ]
+                  : []),
                 {
                   label: t("shortcut.delete"),
                   icon: <Trash2 size={20} strokeWidth={1.8} />,
@@ -385,6 +401,20 @@ function ChartScreen({ id, openMenu }: { id: string; openMenu: (m: Menu) => void
         icon: <Pencil size={20} strokeWidth={1.8} />,
         run: () => openEditor(spec),
       },
+      ...(host.phone
+        ? [
+            {
+              label: t("shortcut.pin"),
+              icon: <Smartphone size={20} strokeWidth={1.8} />,
+              run: () =>
+                void pinToHome({
+                  target: `chart:${spec.id}`,
+                  label: spec.title,
+                  color: spec.color,
+                }),
+            },
+          ]
+        : []),
       {
         label: t("mobile.duplicateChart"),
         icon: <Copy size={20} strokeWidth={1.8} />,

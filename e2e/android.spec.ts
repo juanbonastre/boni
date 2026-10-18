@@ -8,9 +8,9 @@ import { EXAMPLES } from "./fixtures.ts";
  */
 test.use({ viewport: { width: 412, height: 860 }, hasTouch: true, isMobile: true });
 
-async function openAndroid(page: Page, opts: { configured?: boolean } = {}) {
+async function openAndroid(page: Page, opts: { configured?: boolean; launch?: string } = {}) {
   await page.addInitScript(
-    ({ examples, configured }) => {
+    ({ examples, configured, launch }) => {
       const w = window as unknown as Record<string, unknown>;
       const calls: string[] = [];
       const files = new Map<string, string>();
@@ -82,6 +82,16 @@ async function openAndroid(page: Page, opts: { configured?: boolean } = {}) {
             return settings;
           case "suggestedDevice":
             return "pixel 8";
+          case "pin":
+            return true;
+          case "setTargets":
+            w.__targets = { entries: JSON.parse(a[0] as string), menu: a[1] };
+            return null;
+          case "takeLaunch": {
+            const l = launch;
+            launch = null;
+            return l;
+          }
           default:
             throw new Error(`Unknown call: ${method}`);
         }
@@ -114,7 +124,7 @@ async function openAndroid(page: Page, opts: { configured?: boolean } = {}) {
         (w.__boniEvent as (j: string) => void)(JSON.stringify({ type: "settings", settings }));
       };
     },
-    { examples: EXAMPLES, configured: opts.configured ?? true },
+    { examples: EXAMPLES, configured: opts.configured ?? true, launch: opts.launch ?? null },
   );
   await page.goto("/?still");
 }
@@ -179,4 +189,62 @@ test("the first start logs in through the app (the password never stays in the p
   await form.locator("button[type=submit]").tap();
   await expect(page.locator(".modal")).toContainText("ejemplo");
   expect((await calls(page)).filter((c) => c.startsWith("login"))).toEqual(["login (form)"]);
+});
+
+test("home-screen shortcuts: pinned from a shortcut's or a chart's menu; the launcher's list follows them", async ({
+  page,
+}) => {
+  await openAndroid(page);
+  await expect(page.locator(".m-shortcut")).toHaveCount(2);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __targets?: { menu: number; entries: { target: string }[] } })
+            .__targets,
+      ),
+    )
+    .toMatchObject({
+      menu: 2,
+      entries: expect.arrayContaining([
+        expect.objectContaining({ target: "shortcut:cafe", label: "Café", color: "#fb923c" }),
+        expect.objectContaining({ target: "chart:eating-out" }),
+      ]),
+    });
+  await page.getByRole("button", { name: "Opciones de Café" }).tap();
+  await page.getByRole("menuitem", { name: "Añadir a la pantalla de inicio" }).tap();
+  const pins = (await calls(page)).filter((c) => c.startsWith("pin "));
+  expect(pins).toHaveLength(1);
+  expect(pins[0]).toContain("shortcut:cafe");
+  await page.getByRole("button", { name: "Gráficas" }).tap();
+  await page.locator(".m-chart-row", { hasText: "Comida fuera" }).tap();
+  await page.getByRole("button", { name: "Opciones de la gráfica" }).tap();
+  await page.getByRole("menuitem", { name: "Añadir a la pantalla de inicio" }).tap();
+  expect((await calls(page)).filter((c) => c.startsWith("pin ")).at(-1)).toContain(
+    "chart:eating-out",
+  );
+});
+
+test("a home-screen shortcut opens what it points to: at start, and while the app runs", async ({
+  page,
+}) => {
+  await openAndroid(page, { launch: "shortcut:comida-con-pablo" });
+  await expect(page.locator(".m-sheet .m-title")).toHaveText("Comida con Pablo");
+  await page.evaluate(() =>
+    (window as unknown as { __boniEvent: (j: string) => void }).__boniEvent(
+      JSON.stringify({ type: "navigate", screen: "chart:eating-out" }),
+    ),
+  );
+  await expect(page.locator(".m-sheet")).toHaveCount(0);
+  await expect(page.locator(".m-title")).toHaveText("Comida fuera");
+  const back = () =>
+    page.evaluate(() => (window as unknown as { __boniBack: () => boolean }).__boniBack());
+  expect(await back()).toBe(true);
+  await expect(page.locator(".m-title")).toHaveText("Gráficas");
+  await page.evaluate(() =>
+    (window as unknown as { __boniEvent: (j: string) => void }).__boniEvent(
+      JSON.stringify({ type: "navigate", screen: "shortcut:nope" }),
+    ),
+  );
+  await expect(page.locator(".toast")).toHaveText("Ese atajo ya no existe");
 });

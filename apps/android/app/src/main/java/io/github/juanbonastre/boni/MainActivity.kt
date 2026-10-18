@@ -1,6 +1,7 @@
 package io.github.juanbonastre.boni
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
         }
         setContentView(frame)
         WindowCompat.getInsetsController(window, frame).isAppearanceLightStatusBars = false
+        pendingLaunch = intent.launchTarget()
         web.loadUrl("https://appassets.androidplatform.net/assets/web/index.html")
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -100,6 +102,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         })
+    }
+
+    /** What a home-screen shortcut opened when it started the app, until the page asks for it. */
+    @Volatile private var pendingLaunch: String? = null
+
+    fun takeLaunch(): String? = pendingLaunch.also { pendingLaunch = null }
+
+    private fun Intent.launchTarget(): String? = getStringExtra(Launcher.EXTRA_TARGET)?.takeIf { Launcher.valid(it) }
+
+    /** A home-screen shortcut tapped while the app was running: the page opens it. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val target = intent.launchTarget() ?: return
+        send(JSONObject().put("type", "navigate").put("screen", target))
     }
 
     /** One event for the page (`ShellEvent` in host.ts). */

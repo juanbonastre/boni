@@ -108,6 +108,10 @@ red con los últimos datos guardados. La app (Kotlin) hace lo que en el escritor
 servidor (no tiene CORS), los ajustes, los archivos de la cola y las copias, el directo mientras está delante y el
 "minuto". Con la app cerrada, la cola sin conexión la envía WorkManager en cuanto hay red (mismas reglas que la web,
 también la espera del "Deshacer"). Atrás cierra lo de encima; sin nada abierto, la app pasa a segundo plano.
+**Accesos en la pantalla de inicio:** en el menú de un atajo o de una gráfica, "Añadir a la pantalla de inicio" crea un
+acceso directo (Android lo confirma). Al tocarlo, Boni se abre y hace lo mismo que tocar el atajo dentro (abrir el
+formulario relleno o guardar con "Deshacer"), o abre esa gráfica. Los cuatro primeros atajos salen también al mantener
+pulsado el icono de Boni. Si se renombra un atajo, su acceso cambia de nombre; si se borra, queda desactivado.
 El CI (`android.yml`) compila el APK; con los secretos del keystore, cada cambio en `main` publica una release
 `android-v0.1.N` que instala Obtainium.
 

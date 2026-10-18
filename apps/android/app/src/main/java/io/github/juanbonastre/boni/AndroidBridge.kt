@@ -53,6 +53,9 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
         "login" -> shell.login(JSONObject(a.getString(0)))
         "logout" -> shell.logout()
         "suggestedDevice" -> shell.suggestedDevice()
+        "pin" -> Launcher.pin(activity, JSONObject(a.getString(0)))
+        "setTargets" -> Launcher.setTargets(activity, JSONArray(a.getString(0)), a.getInt(1)).let { null }
+        "takeLaunch" -> activity.takeLaunch()
         else -> throw IllegalArgumentException("Unknown call: $method")
     }
 }
