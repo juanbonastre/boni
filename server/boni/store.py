@@ -1,5 +1,5 @@
 """Boni's own SQLite database: accounts and sessions (and the old device tokens), the capture outbox, chart definitions,
-widgets and preferences per device.
+shortcuts, widgets and preferences per device.
 The real data stays in its sources (the vault); this file only holds what is Boni's."""
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from boni import auth
-from boni.contract import PALETTE, ChartSpec, Widget
+from boni.contract import PALETTE, ChartSpec, Shortcut, Widget
 from boni.expenses.note import slug
 from boni.stats.charts import DEFAULT_CHARTS
 
@@ -65,6 +65,11 @@ CREATE TABLE IF NOT EXISTS widgets (
     size TEXT NOT NULL,
     position INTEGER NOT NULL,
     PRIMARY KEY (device, id)
+);
+CREATE TABLE IF NOT EXISTS shortcuts (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL,             -- the Shortcut JSON
+    position INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS prefs (
     device TEXT NOT NULL,
@@ -296,6 +301,40 @@ class Store:
         with self._lock:
             return self._db.execute("DELETE FROM widgets WHERE device = ? AND id = ?",
                                     (device, widget_id)).rowcount > 0
+
+    # ----- shortcuts (shared by every device, like charts) -----
+    def shortcuts(self) -> list[Shortcut]:
+        rows = self._q("SELECT data FROM shortcuts ORDER BY position")
+        return [Shortcut.model_validate_json(r["data"]) for r in rows]
+
+    def create_shortcut(self, sc: Shortcut) -> Shortcut:
+        """Stores a new shortcut at the end; its id comes from the label (unique)."""
+        sc = sc.model_copy(update={"id": self._free_id("shortcuts", slug(sc.label) or "atajo")})
+        with self._lock:
+            pos = self._db.execute("SELECT COALESCE(MAX(position) + 1, 0) FROM shortcuts").fetchone()[0]
+            self._db.execute("INSERT INTO shortcuts (id, data, position) VALUES (?, ?, ?)",
+                             (sc.id, sc.model_dump_json(), pos))
+        return sc
+
+    def update_shortcut(self, shortcut_id: str, sc: Shortcut) -> Shortcut | None:
+        sc = sc.model_copy(update={"id": shortcut_id})
+        with self._lock:
+            n = self._db.execute("UPDATE shortcuts SET data = ? WHERE id = ?",
+                                 (sc.model_dump_json(), shortcut_id)).rowcount
+        return sc if n else None
+
+    def delete_shortcut(self, shortcut_id: str) -> bool:
+        with self._lock:
+            return self._db.execute("DELETE FROM shortcuts WHERE id = ?", (shortcut_id,)).rowcount > 0
+
+    def order_shortcuts(self, ids: list[str]) -> None:
+        """Puts the given shortcuts first, in that order; the rest keep their relative order after them."""
+        current = [s.id for s in self.shortcuts()]
+        wanted = [i for i in dict.fromkeys(ids) if i in current]
+        final = wanted + [i for i in current if i not in wanted]
+        with self._lock:
+            for pos, sid in enumerate(final):
+                self._db.execute("UPDATE shortcuts SET position = ? WHERE id = ?", (pos, sid))
 
     # ----- prefs -----
     def pref(self, device: str, key: str) -> str | None:

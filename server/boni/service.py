@@ -9,14 +9,17 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from boni.contract import (
+    PALETTE,
     ActionRequest,
     ActionResult,
     ButtonComponent,
     ChartCardComponent,
     ChartData,
     ChartSpec,
+    FormComponent,
     Option,
     Screen,
+    Shortcut,
     Widget,
 )
 from boni.events import Events
@@ -244,6 +247,47 @@ class Service:
         if not self.store.delete_widget(device, widget_id):
             raise NotFound(widget_id)
         self.events.publish("widgets")
+
+    # ----- shortcuts -----
+    def _checked_shortcut(self, sc: Shortcut, device: str) -> Shortcut:
+        """A shortcut fills the form of a screen this server has: its values must be fields of that form."""
+        label = sc.label.strip()
+        if not label:
+            raise Invalid("El atajo necesita un nombre")
+        try:
+            screen = self.screen(sc.screen, device)
+        except NotFound as e:
+            raise Invalid(f"No existe la pantalla {sc.screen}") from e
+        form = next((c for c in screen.components if isinstance(c, FormComponent)), None)
+        if form is None:
+            raise Invalid(f"La pantalla {sc.screen} no tiene formulario")
+        unknown = sorted(set(sc.values) - {f.id for f in form.fields})
+        if unknown:
+            raise Invalid(f"Campos que el formulario no tiene: {', '.join(unknown)}")
+        if sc.color is not None and sc.color not in PALETTE:
+            raise Invalid(f"Color desconocido: {sc.color}")
+        return sc.model_copy(update={"label": label})
+
+    def create_shortcut(self, sc: Shortcut, device: str) -> Shortcut:
+        saved = self.store.create_shortcut(self._checked_shortcut(sc, device))
+        self.events.publish("shortcuts")
+        return saved
+
+    def update_shortcut(self, shortcut_id: str, sc: Shortcut, device: str) -> Shortcut:
+        saved = self.store.update_shortcut(shortcut_id, self._checked_shortcut(sc, device))
+        if saved is None:
+            raise NotFound(shortcut_id)
+        self.events.publish("shortcuts")
+        return saved
+
+    def delete_shortcut(self, shortcut_id: str) -> None:
+        if not self.store.delete_shortcut(shortcut_id):
+            raise NotFound(shortcut_id)
+        self.events.publish("shortcuts")
+
+    def order_shortcuts(self, ids: list[str]) -> None:
+        self.store.order_shortcuts(ids)
+        self.events.publish("shortcuts")
 
     # ----- actions -----
     async def action(self, req: ActionRequest, device: str) -> ActionResult:

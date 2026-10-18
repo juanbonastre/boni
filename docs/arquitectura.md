@@ -47,6 +47,7 @@ Resumen tecnico. Las decisiones y su historia estan en la nota del vault `proyec
 | `POST /charts/preview` | Calcula una definicion sin guardarla (vista previa del editor) |
 | `GET /charts/catalog` | Lo que ofrece el editor: campos, tipos, medidas, periodos, comparaciones |
 | `GET /widgets`, `POST /widgets`, `PUT /widgets/{id}`, `DELETE /widgets/{id}` | Widgets de este dispositivo (que grafica, tamano) |
+| `GET /shortcuts`, `POST /shortcuts`, `PUT /shortcuts/{id}`, `PUT /shortcuts/order`, `DELETE /shortcuts/{id}` | Atajos: una pantalla del servidor con valores para su formulario (`open` = abrir el formulario relleno, `save` = guardar directamente); compartidos por todos los equipos, como las gráficas |
 
 - Catalogo de componentes: `text`, `button`, `form` (campos `amount`, `text`, `date`, `choice`, `multi_choice`, `toggle`),
   `chart_card`. Un cliente que recibe un tipo que no conoce muestra "actualiza la app".

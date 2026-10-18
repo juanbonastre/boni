@@ -10,7 +10,8 @@
       "enum": [
         "charts",
         "widgets",
-        "data"
+        "data",
+        "shortcuts"
       ],
       "title": "What",
       "type": "string"

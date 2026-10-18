@@ -32,6 +32,9 @@ from boni.contract import (
     LoginResult,
     OptionsResponse,
     Screen,
+    Shortcut,
+    ShortcutOrder,
+    ShortcutsResponse,
     Widget,
     WidgetRequest,
     WidgetsResponse,
@@ -226,6 +229,29 @@ def create_app(settings: Settings, service: Service | None = None, run_outbox: b
     @app.get("/api/v1/charts/{chart_id}/data", response_model=ChartData)
     async def chart_data(chart_id: str, _d: Device, drill: str | None = None) -> ChartData:
         return await svc.chart_data(chart_id, drill)
+
+    # ----- shortcuts (fixed paths before /shortcuts/{shortcut_id}) -----
+    @app.get("/api/v1/shortcuts", response_model=ShortcutsResponse)
+    async def shortcuts(_d: Device) -> ShortcutsResponse:
+        return ShortcutsResponse(shortcuts=svc.store.shortcuts())
+
+    @app.post("/api/v1/shortcuts", response_model=Shortcut, status_code=201)
+    async def create_shortcut(sc: Shortcut, d: Device) -> Shortcut:
+        return svc.create_shortcut(sc, d)
+
+    @app.put("/api/v1/shortcuts/order", response_model=ShortcutsResponse)
+    async def shortcut_order(order: ShortcutOrder, _d: Device) -> ShortcutsResponse:
+        svc.order_shortcuts(order.ids)
+        return ShortcutsResponse(shortcuts=svc.store.shortcuts())
+
+    @app.put("/api/v1/shortcuts/{shortcut_id}", response_model=Shortcut)
+    async def update_shortcut(shortcut_id: str, sc: Shortcut, d: Device) -> Shortcut:
+        return svc.update_shortcut(shortcut_id, sc, d)
+
+    @app.delete("/api/v1/shortcuts/{shortcut_id}", status_code=204)
+    async def delete_shortcut(shortcut_id: str, _d: Device) -> Response:
+        svc.delete_shortcut(shortcut_id)
+        return Response(status_code=204)
 
     # ----- widgets of the calling device -----
     @app.get("/api/v1/widgets", response_model=WidgetsResponse)

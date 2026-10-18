@@ -234,6 +234,19 @@ export interface Widget {
   size: string;
 }
 
+/**
+ * Something to capture again with one tap: a server screen and the values for its form. `open` shows the form
+ * filled in, `save` sends it at once. Shared by every device, like charts.
+ */
+export interface Shortcut {
+  id: string;
+  label: string;
+  screen: string;
+  values: Record<string, Json>;
+  mode: "open" | "save";
+  color: string | null;
+}
+
 export interface ActionRequest {
   action: string;
   client_id: string;
@@ -309,6 +322,19 @@ export function parseSpec(raw: unknown): ChartSpec {
     sort: String(o.sort ?? "auto"),
     drilldown: Boolean(o.drilldown),
     home: o.home === undefined ? true : Boolean(o.home),
+    color: typeof o.color === "string" && /^#[0-9a-f]{6}$/.test(o.color) ? o.color : null,
+  };
+}
+
+/** A shortcut with every field present (the server may omit defaults; a newer one may add modes). */
+export function parseShortcut(raw: unknown): Shortcut {
+  const o = isObject(raw) ? raw : {};
+  return {
+    id: String(o.id ?? ""),
+    label: String(o.label ?? ""),
+    screen: String(o.screen ?? ""),
+    values: isObject(o.values) ? (o.values as Record<string, Json>) : {},
+    mode: o.mode === "save" ? "save" : "open",
     color: typeof o.color === "string" && /^#[0-9a-f]{6}$/.test(o.color) ? o.color : null,
   };
 }

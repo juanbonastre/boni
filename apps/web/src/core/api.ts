@@ -6,8 +6,10 @@ import {
   type ChartSpec,
   type Option,
   parseScreen,
+  parseShortcut,
   parseSpec,
   type Screen,
+  type Shortcut,
   type Widget,
 } from "./contract.ts";
 
@@ -109,6 +111,19 @@ export class BoniApi {
   updateWidget = (id: string, chartId: string, size: string) =>
     this.call<Widget>("PUT", `widgets/${encodeURIComponent(id)}`, { chart_id: chartId, size });
   deleteWidget = (id: string) => this.call<null>("DELETE", `widgets/${encodeURIComponent(id)}`);
+  shortcuts = async (): Promise<Shortcut[]> =>
+    ((await this.call<{ shortcuts: unknown[] }>("GET", "shortcuts")).shortcuts ?? []).map(
+      parseShortcut,
+    );
+  createShortcut = async (s: Shortcut) =>
+    parseShortcut(await this.call("POST", "shortcuts", { ...s, id: "" }));
+  updateShortcut = async (s: Shortcut) =>
+    parseShortcut(await this.call("PUT", `shortcuts/${encodeURIComponent(s.id)}`, s));
+  deleteShortcut = (id: string) => this.call<null>("DELETE", `shortcuts/${encodeURIComponent(id)}`);
+  orderShortcuts = async (ids: string[]) =>
+    (
+      (await this.call<{ shortcuts: unknown[] }>("PUT", "shortcuts/order", { ids })).shortcuts ?? []
+    ).map(parseShortcut);
   options = async (source: string, query = "", limit = 50) =>
     (
       await this.call<{ options: Option[] }>(

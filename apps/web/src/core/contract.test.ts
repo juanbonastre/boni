@@ -10,6 +10,7 @@ import {
   type ChartData,
   type FormComponent,
   parseScreen,
+  parseShortcut,
   parseSpec,
   type Widget,
 } from "./contract.ts";
@@ -80,6 +81,13 @@ describe("contract", () => {
       parseSpec(json<{ spec: unknown }>("chart-preview-split-request.json").spec).split,
     ).toEqual({ field: "group" });
     expect(json<{ widgets: Widget[] }>("widgets.json").widgets).toHaveLength(3);
+    const shortcuts = json<{ shortcuts: unknown[] }>("shortcuts.json").shortcuts.map(parseShortcut);
+    expect(shortcuts.map((s) => [s.id, s.mode, s.color])).toEqual([
+      ["cafe", "save", "#fb923c"],
+      ["comida-con-pablo", "open", null],
+    ]);
+    expect(shortcuts[0]!.values.amount).toBe(1.6);
+    expect(parseShortcut({ label: "X", screen: "s", mode: "later" }).mode).toBe("open");
     expect(
       json<{ field_errors: Record<string, string> }>("action-result-invalid.json").field_errors,
     ).toHaveProperty("amount");
@@ -125,6 +133,16 @@ function fakeServer(
       if (p.endsWith("/catalog")) return { ok: true, status: 200, body: ex("chart-catalog.json") };
       if (p.endsWith("/widgets") && method === "GET")
         return { ok: true, status: 200, body: ex("widgets.json") };
+      if (p.endsWith("/shortcuts") && method === "GET")
+        return { ok: true, status: 200, body: ex("shortcuts.json") };
+      if (p.endsWith("/shortcuts/order"))
+        return { ok: true, status: 200, body: ex("shortcuts.json") };
+      if (p.includes("/shortcuts"))
+        return {
+          ok: true,
+          status: 200,
+          body: '{"id":"cafe","label":"Café","screen":"capture-expense"}',
+        };
       if (p.includes("/widgets"))
         return { ok: true, status: 200, body: '{"id":"w-x","chart_id":"x","size":"large"}' };
       if ((p.endsWith("/charts") && method === "GET") || p.endsWith("/order"))
@@ -171,6 +189,19 @@ describe("api", () => {
     expect((await api.catalog()).fields.length).toBeGreaterThan(0);
     await api.options("people", "ped ro", 500);
     await api.chartData("spending-by-category", "comida");
+    expect(await api.shortcuts()).toHaveLength(2);
+    const sc = await api.createShortcut({
+      id: "ignored",
+      label: "Café",
+      screen: "capture-expense",
+      values: {},
+      mode: "open",
+      color: null,
+    });
+    expect(sc.id).toBe("cafe");
+    await api.updateShortcut(sc);
+    expect((await api.orderShortcuts(["comida-con-pablo"]))[0]!.id).toBe("cafe");
+    await api.deleteShortcut("cafe");
     expect(seen).toEqual(
       expect.arrayContaining([
         "POST /api/v1/charts/preview",
@@ -183,6 +214,11 @@ describe("api", () => {
         "GET /api/v1/charts/catalog",
         "GET /api/v1/options/people?q=ped%20ro&limit=500",
         "GET /api/v1/charts/spending-by-category/data?drill=comida",
+        "GET /api/v1/shortcuts",
+        "POST /api/v1/shortcuts",
+        "PUT /api/v1/shortcuts/cafe",
+        "PUT /api/v1/shortcuts/order",
+        "DELETE /api/v1/shortcuts/cafe",
       ]),
     );
   });

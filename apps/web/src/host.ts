@@ -68,7 +68,7 @@ export type ShellEvent =
   /** Every minute to one page (the coordinator): send the offline queue; reload when there is no live connection. */
   | { type: "tick"; minute: number }
   /** The server changed something (live): load that again. "all" after a (re)connection or a login. */
-  | { type: "changed"; what: "charts" | "widgets" | "data" | "all" }
+  | { type: "changed"; what: "charts" | "widgets" | "data" | "shortcuts" | "all" }
   /** Reload charts and lists (tray "Refresh", a change made in another window). */
   | { type: "refresh" }
   /** Open something in the main window (tray, widget menu): "capture", "settings", "chart:<id>", "edit:<id>". */

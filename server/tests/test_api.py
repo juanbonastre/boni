@@ -244,3 +244,44 @@ def test_warm_up_fills_the_cache(service, vault):
             assert d["stale"] is False, chart
         assert c.get("/api/v1/options/people").status_code == 200
         assert c.get("/api/v1/options/categories").status_code == 200
+
+
+COFFEE = {"label": "Café", "screen": "capture-expense", "mode": "save", "color": "#fb923c",
+          "values": {"kind": "gasto", "amount": 1.6, "account": "efectivo", "category": "bebida/cafe"}}
+
+
+def test_shortcuts_crud(client: TestClient, service):
+    assert client.get("/api/v1/shortcuts").json() == {"shortcuts": []}
+    a = client.post("/api/v1/shortcuts", json=COFFEE)
+    assert a.status_code == 201 and a.json()["id"] == "cafe" and a.json()["values"]["amount"] == 1.6
+    b = client.post("/api/v1/shortcuts", json={"label": " Café ", "screen": "capture-expense"}).json()
+    assert b["id"] == "cafe-2" and b["label"] == "Café" and b["mode"] == "open" and b["values"] == {}
+    # order, update, delete
+    ids = [s["id"] for s in client.put("/api/v1/shortcuts/order", json={"ids": ["cafe-2"]}).json()["shortcuts"]]
+    assert ids == ["cafe-2", "cafe"]
+    r = client.put("/api/v1/shortcuts/cafe", json=COFFEE | {"label": "Café con leche", "id": "other"}).json()
+    assert r["id"] == "cafe" and r["label"] == "Café con leche"
+    assert client.delete("/api/v1/shortcuts/cafe-2").status_code == 204
+    assert client.delete("/api/v1/shortcuts/cafe-2").status_code == 404
+    assert client.put("/api/v1/shortcuts/nope", json=COFFEE).status_code == 404
+    assert [s["label"] for s in client.get("/api/v1/shortcuts").json()["shortcuts"]] == ["Café con leche"]
+
+
+def test_invalid_shortcut_is_rejected_with_a_message(client: TestClient):
+    bad = [COFFEE | {"screen": "nope"}, COFFEE | {"screen": "home"}, COFFEE | {"values": {"tip": 1}},
+           COFFEE | {"color": "#123456"}, COFFEE | {"label": "  "}]
+    for body in bad:
+        r = client.post("/api/v1/shortcuts", json=body)
+        assert r.status_code == 422 and r.json()["error"]["message"], body
+    assert client.post("/api/v1/shortcuts", json=COFFEE | {"label": ""}).status_code == 422
+    assert client.get("/api/v1/shortcuts").json() == {"shortcuts": []}
+
+
+def test_shortcut_changes_reach_the_live_stream(client: TestClient, service):
+    seen: list[str] = []
+    service.events.publish = seen.append  # type: ignore[method-assign]
+    sc = client.post("/api/v1/shortcuts", json=COFFEE).json()
+    client.put(f"/api/v1/shortcuts/{sc['id']}", json=COFFEE)
+    client.put("/api/v1/shortcuts/order", json={"ids": []})
+    client.delete(f"/api/v1/shortcuts/{sc['id']}")
+    assert seen == ["shortcuts"] * 4

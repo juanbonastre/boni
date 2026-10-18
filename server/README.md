@@ -37,8 +37,8 @@ Los tokens de dispositivo de antes (`boni device add`) siguen valiendo hasta bor
 `boni device remove portatil` cuando todos los equipos hayan entrado con usuario.
 
 ## En directo
-`GET /api/v1/events` (server-sent events): `event: changed` con `{"what": "charts" | "widgets" | "data"}` cuando cambian
-las graficas, los widgets o los datos (un gasto escrito, o cambios en el vault que detecta el refresco de cada 2 minutos).
+`GET /api/v1/events` (server-sent events): `event: changed` con `{"what": "charts" | "widgets" | "data" | "shortcuts"}` cuando
+cambian las graficas, los widgets, los datos o los atajos (un gasto escrito, o cambios en el vault que detecta el refresco de cada 2 minutos).
 Los clientes recargan solo lo que cambio.
 
 ## Desarrollo

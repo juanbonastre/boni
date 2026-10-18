@@ -325,6 +325,27 @@ class WidgetRequest(Model):
     size: Literal["small", "medium", "large"] = "medium"
 
 
+# ---------- shortcuts ----------
+class Shortcut(Model):
+    """Something to capture again with one tap: a server screen and the values to put in its form. Generic: clients
+    know nothing of what it captures. Shared by every device of the server, like charts."""
+
+    id: str = Field("", description="Given by the server from the label; ignored when creating")
+    label: str = Field(min_length=1, max_length=60)
+    screen: str = Field(description="The server screen whose form it fills, e.g. 'capture-expense'")
+    values: dict[str, Any] = Field({}, description="Field id -> value, as the form would send it")
+    mode: Literal["open", "save"] = Field("open", description="open: show the form filled in; save: send it at once")
+    color: str | None = Field(None, description="One of PALETTE; null = the accent")
+
+
+class ShortcutsResponse(Model):
+    shortcuts: list[Shortcut]
+
+
+class ShortcutOrder(Model):
+    ids: list[str]
+
+
 # ---------- accounts (as Boni Calendar's server: accounts made by the admin, one session per device) ----------
 class LoginRequest(Model):
     user: str
@@ -345,7 +366,7 @@ class Account(Model):
 
 class ChangeEvent(Model):
     """One event of `GET /api/v1/events` (server-sent events, `event: changed`): what to load again."""
-    what: Literal["charts", "widgets", "data"]
+    what: Literal["charts", "widgets", "data", "shortcuts"]
     at: datetime
 
 
@@ -428,6 +449,9 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "WidgetRequest": WidgetRequest,
     "ChartData": ChartData,
     "WidgetsResponse": WidgetsResponse,
+    "Shortcut": Shortcut,
+    "ShortcutsResponse": ShortcutsResponse,
+    "ShortcutOrder": ShortcutOrder,
     "OptionsResponse": OptionsResponse,
     "ActionRequest": ActionRequest,
     "ActionResult": ActionResult,

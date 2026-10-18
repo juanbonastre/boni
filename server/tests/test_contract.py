@@ -23,6 +23,7 @@ from boni.contract import (
     Option,
     OptionsResponse,
     Screen,
+    ShortcutsResponse,
     WidgetsResponse,
     api_dir,
     field_json_schema,
@@ -53,6 +54,11 @@ REQUEST = {"action": "expenses.capture", "client_id": "0f8a4c9e-3b5d-4e1a-9c2f-7
                       "concept": "Menu con Lucia", "merchant": "Bar Pepe", "people": ["lucia-ferri"],
                       "shared": False, "date": "2026-10-12"},
            "created_at": "2026-10-12T18:30:00+02:00"}
+
+
+SHORTCUT = {"label": "Café", "screen": "capture-expense", "mode": "save", "color": "#fb923c",
+            "values": {"kind": "gasto", "amount": 1.6, "account": "efectivo", "category": "bebida/cafe",
+                       "concept": "Cafe"}}
 
 
 PREVIEWS = {
@@ -89,6 +95,12 @@ def test_examples(client: TestClient):
         data = client.post("/api/v1/charts/preview", json={"spec": spec}).json()
         ChartData.model_validate(data)
         check_example(f"{name}.json", data)
+    client.post("/api/v1/shortcuts", json=SHORTCUT)
+    client.post("/api/v1/shortcuts", json={"label": "Comida con Pablo", "screen": "capture-expense",
+                                           "values": {"people": ["pablo-soler-gil"], "shared": True}})
+    data = client.get("/api/v1/shortcuts").json()
+    ShortcutsResponse.model_validate(data)
+    check_example("shortcuts.json", data)
     ActionRequest.model_validate(REQUEST)
     check_example("action-request.json", REQUEST)
     ok = client.post("/api/v1/actions", json=REQUEST).json()
