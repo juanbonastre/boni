@@ -6,11 +6,13 @@ import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
 import { isCategoryKind } from "./core/chartBuilder.ts";
 import { emptyState } from "./core/charts.ts";
+import { MobileApp } from "./MobileApp.tsx";
 import {
   CAPTURE_SCREEN,
   configured,
   dismissRejected,
   dismissToast,
+  goBack,
   openScreen,
   openSettings,
   showHome,
@@ -26,7 +28,9 @@ import { useTheme } from "./theme.ts";
  */
 export function App() {
   useTheme();
-  useShortcuts();
+  // Narrower than 640 px (a phone, the Android app): its own layout, made for capturing (MobileApp).
+  const mobile = useMedia(`(max-width: ${MOBILE_WIDTH - 1}px)`);
+  useShortcuts(mobile);
   const settingsOpen = useStore((s) => s.settingsOpen);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const panelOpen = useStore((s) => s.panel != null);
@@ -34,6 +38,7 @@ export function App() {
   // In a narrow window the side panel takes the sidebar's room while it is open (the charts keep theirs).
   const narrow = useMedia("(max-width: 1100px)");
   const showSidebar = sidebarOpen && !(narrow && panelOpen);
+  if (mobile) return <MobileApp />;
   return (
     <div className={`app${showSidebar ? "" : " no-sidebar"}`}>
       {showSidebar && <Sidebar />}
@@ -63,6 +68,9 @@ export function App() {
   );
 }
 
+/** Below this width (CSS px) the app uses its phone layout, as Boni Calendar. */
+const MOBILE_WIDTH = 640;
+
 function useMedia(query: string): boolean {
   const [on, setOn] = useState(() => window.matchMedia?.(query).matches ?? false);
   useEffect(() => {
@@ -75,11 +83,18 @@ function useMedia(query: string): boolean {
   return on;
 }
 
-/** N new capture, [ the sidebar, Ctrl+, settings, Esc back to the home screen (panels close first). */
-function useShortcuts() {
+/**
+ * N new capture, [ the sidebar, Ctrl+, settings, Esc back to the home screen (panels close first). On the phone
+ * Esc is Back: it closes the top thing (`goBack`).
+ */
+function useShortcuts(mobile: boolean) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const s = useStore.getState();
+      if (mobile) {
+        if (e.key === "Escape" && !e.defaultPrevented && goBack()) e.preventDefault();
+        return;
+      }
       const typing = (e.target as HTMLElement | null)?.closest(
         "input, textarea, select, [contenteditable]",
       );
@@ -101,7 +116,7 @@ function useShortcuts() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [mobile]);
 }
 
 function TopBar() {

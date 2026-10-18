@@ -122,7 +122,7 @@ function ScreenPanel({ screen }: { screen: Screen }) {
  * The chart editor: every option of the definition. The card of the chart (a new card for a new chart) shows the
  * preview computed by the server as the options change; nothing is saved until "Save".
  */
-function EditorPanel({ initial, isNew }: { initial: ChartSpec; isNew: boolean }) {
+export function EditorPanel({ initial, isNew }: { initial: ChartSpec; isNew: boolean }) {
   const t = useStore((s) => s.t);
   const catalog = useStore((s) => s.catalog);
   const [spec, setSpec] = useState(initial);

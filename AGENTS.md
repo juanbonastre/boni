@@ -46,6 +46,18 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   period, filters, order, kind, colour, menu), like a Notion view's; each change is saved at once with Undo in the toast.
   Deleting waits for the toast's Undo before it reaches the server. Zustand selectors return existing objects (a selector
   that builds a new array loops forever: use `useVisibleCharts` and the like).
+- **The phone** (narrower than 640 px, and the Android app): `MobileApp.tsx`, its own layout over the same store and
+  components, made for capturing rather than watching charts (Juan, 2026-10-18). Tab "Apuntar" (the server's capture
+  buttons and the **shortcuts**) and tab "Gráficas" (a list with each total; one chart on the whole screen with period
+  chips; the editor in a sheet). Forms and editors are full-screen sheets whose buttons stay at the bottom; the form folds
+  the optional fields under "Más detalles". `goBack()` in the store is Back (Esc now, Android's button later). A tap on a
+  chart shows the value, a second tap the detail. Written deviation from Boni Calendar's guide: base text 16 px, touch
+  targets 48 px and icons 20-24 px (the guide's 13 px and 28 px controls are for a mouse; 16 px also keeps Android from
+  zooming into a field). Styles are under `.m-app` in `styles.css`.
+- **Shortcuts** (`Shortcut` in the contract, `core/shortcuts.ts`): a server screen plus values for its form, `open` (the
+  form filled in) or `save` (sent at once). Generic: the client reads only the form's fields, never what it captures. A
+  `save` goes into the offline queue held back (`hold_until`) while its toast offers Undo, so it survives closing the app.
+  Shared by every device (like charts), kept on the device too.
 - Everything the UI needs from where it runs goes through `src/host.ts`: the desktop shell's bridge
   (`window.boniDesktop`) or, in a plain browser (dev, e2e), same-origin requests and localStorage. No `fetch` or
   `localStorage` elsewhere in UI code.

@@ -1,5 +1,5 @@
-import { Check, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, X } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormComponent, FormField, Json, Option } from "../core/contract.ts";
 import * as F from "../core/formLogic.ts";
 import { useStore } from "../store.ts";
@@ -9,22 +9,47 @@ export type OptionsLoader = (source: string) => Promise<Option[]>;
 /**
  * A server-described form. `onSubmit` returns the server's field errors (empty = done; the form is then left by
  * the caller). Values stay while the form is open, so a rejected or failed save loses nothing.
+ *
+ * `initial` fills it (a shortcut's values). `collapse` (the phone) shows the required fields and those filled in,
+ * and folds the rest under "More details". `mode: "values"` edits a shortcut's values: nothing is required and
+ * dates are left out (a shortcut uses the day it is tapped). `extra` adds buttons next to the submit button and
+ * gets the values as they are now.
  */
 export function FormView({
   form,
   today,
   loadOptions,
   onSubmit,
+  initial,
+  collapse = false,
+  mode = "capture",
+  submitLabel,
+  extra,
 }: {
   form: FormComponent;
   today: string;
   loadOptions: OptionsLoader;
   onSubmit: (values: F.Values) => Promise<Record<string, string>>;
+  initial?: F.Values;
+  collapse?: boolean;
+  mode?: "capture" | "values";
+  submitLabel?: string;
+  extra?: (values: F.Values) => ReactNode;
 }) {
   const t = useStore((s) => s.t);
-  const [values, setValues] = useState<F.Values>(() => F.initialValues(form, today));
+  const [values, setValues] = useState<F.Values>(() => ({
+    ...F.initialValues(form, today),
+    ...initial,
+  }));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
+  const [more, setMore] = useState(false);
+  const fields = form.fields.filter((f) => mode === "capture" || f.type !== "date");
+  // Folded: neither required nor filled in by `initial`; an error in one of them unfolds them.
+  const folded = (f: FormField) =>
+    collapse && !f.required && F.isEmpty(initial?.[f.id] ?? null) && f.type !== "unknown";
+  const foldedCount = fields.filter((f) => folded(f) && F.isVisible(f, values)).length;
+  const showMore = more || fields.some((f) => folded(f) && errors[f.id]);
 
   const set = (id: string, v: Json) => {
     setValues((vs) => ({ ...vs, [id]: v }));
@@ -32,7 +57,7 @@ export function FormView({
   };
 
   const send = async () => {
-    const local = F.clientErrors(form, values);
+    const local = mode === "values" ? {} : F.clientErrors(form, values);
     if (Object.keys(local).length) {
       setErrors(
         Object.fromEntries(Object.entries(local).map(([k, code]) => [k, t(`form.${code}`)])),
@@ -55,8 +80,8 @@ export function FormView({
         void send();
       }}
     >
-      {form.fields.map((f) =>
-        F.isVisible(f, values) ? (
+      {fields.map((f) =>
+        F.isVisible(f, values) && !folded(f) ? (
           <FieldView
             key={f.id}
             field={f}
@@ -68,13 +93,41 @@ export function FormView({
           />
         ) : null,
       )}
+      {foldedCount > 0 && (
+        <button
+          type="button"
+          className={`more-toggle${showMore ? " open" : ""}`}
+          aria-expanded={showMore}
+          onClick={() => setMore(!showMore)}
+        >
+          <ChevronDown size={18} strokeWidth={1.8} />
+          {t("form.more", { n: foldedCount })}
+        </button>
+      )}
+      {showMore &&
+        fields.map((f) =>
+          F.isVisible(f, values) && folded(f) ? (
+            <FieldView
+              key={f.id}
+              field={f}
+              value={values[f.id] ?? null}
+              error={errors[f.id]}
+              loadOptions={loadOptions}
+              today={today}
+              set={(v) => set(f.id, v)}
+            />
+          ) : null,
+        )}
       {errors._ && <p className="form-error">{errors._}</p>}
-      <button type="submit" className="btn primary wide" disabled={sending}>
-        {sending ? t("form.saving") : form.submit.label}
-      </button>
       {Object.keys(errors).length > 0 && !errors._ && (
         <p className="form-error">{t("form.check")}</p>
       )}
+      <div className="form-foot">
+        {extra?.(values)}
+        <button type="submit" className="btn primary wide" disabled={sending}>
+          {sending ? t("form.saving") : (submitLabel ?? form.submit.label)}
+        </button>
+      </div>
     </form>
   );
 }
@@ -105,7 +158,13 @@ function FieldView({
 }) {
   const t = useStore((s) => s.t);
   const id = `f-${f.id}`;
-  const text = value == null ? "" : String(value);
+  // A number from a shortcut shows as typed in Spanish ("1,6"), the way the amount field takes it.
+  const text =
+    value == null
+      ? ""
+      : f.type === "amount" && typeof value === "number"
+        ? String(value).replace(".", ",")
+        : String(value);
   let control: React.ReactNode;
   switch (f.type) {
     case "amount":

@@ -80,6 +80,14 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           if (p.includes("monthly-spending")) return ok("chart-monthly-spending.json");
           return ok("chart-eating-out.json");
         }
+        if (p.endsWith("/shortcuts") && method === "GET") return ok("shortcuts.json");
+        if (p.endsWith("/shortcuts/order")) return ok("shortcuts.json");
+        // a saved shortcut comes back as it was sent (a new one gets an id)
+        if (p.includes("/shortcuts") && body !== undefined)
+          return [
+            200,
+            JSON.stringify({ ...(body as object), id: (body as { id?: string }).id || "nuevo" }),
+          ];
         if (p.endsWith("/widgets") && method === "GET") return ok("widgets.json");
         if (p.includes("/widgets"))
           return [200, '{"id":"w-new","chart_id":"eating-out","size":"medium"}'];

@@ -11,11 +11,15 @@ import {
   type Json,
   type Option,
   parseScreen,
+  parseShortcut,
   parseSpec,
   type Screen,
+  type Shortcut,
   type Widget,
 } from "./core/contract.ts";
-import { OfflineQueue, type QueuedAction } from "./core/queue.ts";
+import * as F from "./core/formLogic.ts";
+import { isPending, OfflineQueue, type QueuedAction } from "./core/queue.ts";
+import { canSaveDirectly, filledValues, formOf } from "./core/shortcuts.ts";
 import { readJson, type TextStore } from "./core/storage.ts";
 import {
   type ClientSettings,
@@ -40,17 +44,24 @@ const FILES = {
   catalog: "catalog.json",
   home: "home.json",
   screens: "screens.json",
+  shortcuts: "shortcuts.json",
 };
 const OPTION_LIST_LIMIT = 500;
 const RELOAD_EVERY_MINUTES = 15;
 const DELETE_AFTER_MS = 6000;
 
 export type View = { kind: "home" } | { kind: "chart"; id: string };
-/** The right side panel: a server screen (the capture form) or the chart editor. */
+/**
+ * The right side panel (on the phone, a sheet over the whole screen): a server screen (the capture form, maybe
+ * filled in by a shortcut), the chart editor or the shortcut editor.
+ */
 export type Panel =
   | null
-  | { kind: "screen"; id: string }
-  | { kind: "edit"; spec: ChartSpec; isNew: boolean };
+  | { kind: "screen"; id: string; values?: F.Values; shortcut?: string }
+  | { kind: "edit"; spec: ChartSpec; isNew: boolean }
+  | { kind: "shortcut"; shortcut: Shortcut; isNew: boolean };
+/** The phone's two tabs: capturing (shortcuts) and the charts. */
+export type Tab = "capture" | "charts";
 
 export type SubmitOutcome =
   | { kind: "done" | "queued"; message: string }
@@ -69,6 +80,7 @@ interface State {
   t: T;
   view: View;
   panel: Panel;
+  tab: Tab;
   sidebarOpen: boolean;
   settingsOpen: boolean;
   /** The server's home screen (its buttons: what can be captured) and the screens it opens (forms). */
@@ -80,6 +92,10 @@ interface State {
   chartSpecs: ChartSpec[];
   /** Charts deleted a moment ago: hidden while their toast offers Undo. */
   deleting: string[];
+  /** Saved captures to repeat with one tap (shared by every device). */
+  shortcuts: Shortcut[];
+  /** Shortcuts deleted a moment ago: hidden while their toast offers Undo. */
+  deletingShortcuts: string[];
   catalog: ChartCatalog | null;
   widgets: Widget[];
   /** Incremented to make every chart card reload (one request per chart per tick). */
@@ -132,6 +148,7 @@ export const useStore = create<State>(() => ({
   t: translator("es"),
   view: { kind: "home" },
   panel: null,
+  tab: "capture",
   sidebarOpen: true,
   settingsOpen: false,
   home: null,
@@ -140,6 +157,8 @@ export const useStore = create<State>(() => ({
   options: {},
   chartSpecs: [],
   deleting: [],
+  shortcuts: [],
+  deletingShortcuts: [],
   catalog: null,
   widgets: [],
   refreshTick: 0,
@@ -179,23 +198,28 @@ function applySettings(settings: ClientSettings) {
 
 async function countQueue() {
   const items = await queue.items();
-  set({ pending: items.filter((i) => !i.error).length, rejected: items.filter((i) => i.error) });
+  set({
+    pending: items.filter((i) => isPending(i)).length,
+    rejected: items.filter((i) => i.error),
+  });
 }
 
 /** Starts the page: settings, what the device kept, shell events. Widget pages load less. */
 export async function init(role: "main" | "widget", h: Host = defaultHost) {
   hostRef = h;
   applySettings(await h.getSettings());
-  const [widgets, specs, catalog, home, screens] = await Promise.all([
+  const [widgets, specs, catalog, home, screens, shortcuts] = await Promise.all([
     readJson<{ widgets: Widget[] }>(h.store, FILES.widgets),
     readJson<{ charts: unknown[] }>(h.store, FILES.charts),
     readJson<ChartCatalog>(h.store, FILES.catalog),
     readJson<unknown>(h.store, FILES.home),
     readJson<Record<string, unknown>>(h.store, FILES.screens),
+    readJson<{ shortcuts: unknown[] }>(h.store, FILES.shortcuts),
   ]);
   set({
     widgets: widgets?.widgets ?? [],
     chartSpecs: (specs?.charts ?? []).map(parseSpec),
+    shortcuts: (shortcuts?.shortcuts ?? []).map(parseShortcut),
     catalog,
     home: home ? parseScreen(home) : null,
     screens: Object.fromEntries(Object.entries(screens ?? {}).map(([k, v]) => [k, parseScreen(v)])),
@@ -253,6 +277,7 @@ async function reloadAll() {
     loadCharts().catch((e) => set({ loadError: errorText(get().t, e) })),
     loadWidgets().catch(() => undefined),
     loadCatalog(true).catch(() => undefined),
+    loadShortcuts().catch(() => undefined),
     prefetch(),
   ]);
   charts.invalidate();
@@ -271,6 +296,8 @@ async function onChanged(what: string, role: "main" | "widget") {
   } else if (what === "data") {
     charts.invalidate();
     refresh();
+  } else if (what === "shortcuts") {
+    if (role === "main") await loadShortcuts().catch(() => undefined);
   } else if (role === "main") {
     await reloadAll();
   } else {
@@ -299,10 +326,12 @@ export function refresh() {
 // ---------- navigation ----------
 export const showHome = () => set({ view: { kind: "home" } });
 export const showChart = (id: string) => set({ view: { kind: "chart", id } });
-export const openScreen = (id: string) => {
-  set({ panel: { kind: "screen", id }, editPreview: null });
+/** A server screen in the panel; `values` fill its form (a shortcut's), `shortcut` names the one that did. */
+export const openScreen = (id: string, values?: F.Values, shortcut?: string) => {
+  set({ panel: { kind: "screen", id, values, shortcut }, editPreview: null });
   if (!get().screens[id]) void loadScreen(id);
 };
+export const showTab = (tab: Tab) => set({ tab, view: { kind: "home" } });
 export const openEditor = (spec: ChartSpec, isNew = false) =>
   set({ panel: { kind: "edit", spec: normalize(spec), isNew }, editPreview: null });
 export const closePanel = () => set({ panel: null, editPreview: null });
@@ -311,6 +340,20 @@ export const setEditPreview = (p: State["editPreview"]) => set({ editPreview: p 
 export const setEditDraft = (spec: ChartSpec) =>
   set((s) => (s.panel?.kind === "edit" ? { panel: { ...s.panel, spec } } : {}));
 export const openSettings = (open = true) => set({ settingsOpen: open });
+
+/**
+ * The phone's Back (Android's button, Esc): closes the top thing, one at a time: settings, the panel, a chart on
+ * its own, then the charts tab. False when there was nothing to close (the shell then leaves the app).
+ */
+export function goBack(): boolean {
+  const s = get();
+  if (s.settingsOpen) openSettings(false);
+  else if (s.panel) closePanel();
+  else if (s.view.kind === "chart") showHome();
+  else if (s.tab !== "capture") showTab("capture");
+  else return false;
+  return true;
+}
 export const toggleSidebar = () => set((s) => ({ sidebarOpen: !s.sidebarOpen }));
 
 // ---------- the server's screens and lists ----------
@@ -550,6 +593,105 @@ export async function orderCharts(ids: string[]) {
     set({ chartSpecs: before });
     toast(errorText(t, e));
   }
+}
+
+// ---------- shortcuts (kept on the device too: the phone opens on them without network) ----------
+export async function loadShortcuts(): Promise<Shortcut[]> {
+  const shortcuts = await api.shortcuts();
+  set({ shortcuts });
+  await keep(FILES.shortcuts, { shortcuts });
+  return shortcuts;
+}
+
+/** The shortcuts shown (without those being deleted). A new array only when one of them changes. */
+export function useVisibleShortcuts(): Shortcut[] {
+  const list = useStore((s) => s.shortcuts);
+  const deleting = useStore((s) => s.deletingShortcuts);
+  return useMemo(() => list.filter((c) => !deleting.includes(c.id)), [list, deleting]);
+}
+
+export const openShortcutEditor = (shortcut: Shortcut, isNew = false) =>
+  set({ panel: { kind: "shortcut", shortcut, isNew }, editPreview: null });
+
+/** Saves the shortcut editor's shortcut (new or edited). */
+export async function saveShortcut(sc: Shortcut): Promise<Shortcut> {
+  const saved = sc.id ? await api.updateShortcut(sc) : await api.createShortcut(sc);
+  await loadShortcuts();
+  return saved;
+}
+
+/** Deleting waits a few seconds (Undo in the toast) before it reaches the server, as a chart. */
+export function deleteShortcut(id: string) {
+  const t = get().t;
+  set((s) => ({ deletingShortcuts: [...s.deletingShortcuts, id] }));
+  const finish = async () => {
+    if (!get().deletingShortcuts.includes(id)) return; // undone
+    try {
+      await api.deleteShortcut(id);
+      await loadShortcuts();
+    } catch (e) {
+      toast(errorText(t, e));
+    } finally {
+      set((s) => ({ deletingShortcuts: s.deletingShortcuts.filter((d) => d !== id) }));
+    }
+  };
+  const timer = setTimeout(() => void finish(), DELETE_AFTER_MS);
+  toast(t("shortcut.deleted"), {
+    label: t("toast.undo"),
+    run: () => {
+      clearTimeout(timer);
+      set((s) => ({ deletingShortcuts: s.deletingShortcuts.filter((d) => d !== id) }));
+    },
+  });
+}
+
+/** A new order (dragged): at once, then saved. */
+export async function orderShortcuts(ids: string[]) {
+  const t = get().t;
+  const before = get().shortcuts;
+  const byId = new Map(before.map((c) => [c.id, c]));
+  set({ shortcuts: ids.map((id) => byId.get(id)).filter((c): c is Shortcut => Boolean(c)) });
+  try {
+    set({ shortcuts: await api.orderShortcuts(ids) });
+    await keep(FILES.shortcuts, { shortcuts: get().shortcuts });
+  } catch (e) {
+    set({ shortcuts: before });
+    toast(errorText(t, e));
+  }
+}
+
+/**
+ * A tap on a shortcut. `open` (or a form it cannot fill completely): the form filled in. `save`: the capture goes
+ * at once, through the offline queue, held back while its toast offers Undo; it survives closing the app.
+ */
+export async function runShortcut(sc: Shortcut) {
+  const t = get().t;
+  const form = formOf(get().screens[sc.screen]);
+  if (sc.mode === "open" || !form) {
+    openScreen(sc.screen, sc.values, sc.id);
+    return;
+  }
+  if (!canSaveDirectly(form, sc.values, today())) {
+    openScreen(sc.screen, sc.values, sc.id);
+    toast(t("shortcut.incomplete"));
+    return;
+  }
+  const request = {
+    action: form.submit.action,
+    client_id: newId(),
+    values: F.payload(form, filledValues(form, sc.values, today())),
+    created_at: nowIso(),
+  };
+  await queue.add(request, Date.now() + DELETE_AFTER_MS);
+  await countQueue();
+  const timer = setTimeout(() => void sync().catch(() => 0), DELETE_AFTER_MS + 100);
+  toast(t("shortcut.saving", { label: sc.label }), {
+    label: t("toast.undo"),
+    run: () => {
+      clearTimeout(timer);
+      void queue.dismiss(request.client_id).then(countQueue);
+    },
+  });
 }
 
 // ---------- widgets of this computer (kept on the device too: they appear at login without network) ----------

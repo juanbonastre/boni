@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import * as M from "../core/chartMath.ts";
 import type { ChartData, ChartPoint, ChartSeries } from "../core/contract.ts";
 import type { T } from "../i18n.ts";
@@ -192,6 +192,21 @@ function SvgChart({ data, color, compact = false, onSelect }: ChartProps) {
   const uid = useId();
   const [ref, { w, h }] = useSize<HTMLDivElement>();
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
+  // Fingers have no hover: a tap shows the value (it stays until a tap elsewhere), a second tap on the same bar
+  // or slice opens its detail (at once where the values are already written, as horizontal bars).
+  const pointer = useRef("mouse");
+  const tapped = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hover || pointer.current === "mouse") return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) {
+        tapped.current = null;
+        setHover(null);
+      }
+    };
+    window.addEventListener("pointerdown", away, true);
+    return () => window.removeEventListener("pointerdown", away, true);
+  }, [hover]);
   const { series, entry } = useChartAnim(data);
   const colors = seriesColors(data, color ?? ACCENT);
   const unit = data.unit ?? "EUR";
@@ -244,12 +259,26 @@ function SvgChart({ data, color, compact = false, onSelect }: ChartProps) {
     <div
       ref={ref}
       className={`chart${clickable ? " clickable" : ""}`}
-      onPointerMove={(e) => setHover(local(e))}
-      onPointerLeave={() => setHover(null)}
+      onPointerDown={(e) => {
+        pointer.current = e.pointerType;
+        if (e.pointerType !== "mouse") setHover(local(e));
+      }}
+      onPointerMove={(e) => {
+        if (e.pointerType === "mouse" || e.buttons) setHover(local(e));
+      }}
+      onPointerLeave={(e) => {
+        if (e.pointerType === "mouse") setHover(null);
+      }}
       onClick={(e) => {
-        if (!onSelect) return;
         const p = hit(local(e));
-        if (p && !p.key.startsWith("_")) onSelect(p);
+        // Horizontal bars already show every value: a tap opens the detail at once.
+        const shown = data.kind === "hbar" && !data.series.some((x) => x.role === "compare");
+        if (pointer.current !== "mouse" && !shown) {
+          const again = p != null && tapped.current === p.key;
+          tapped.current = p?.key ?? null;
+          if (!again) return;
+        }
+        if (onSelect && p && !p.key.startsWith("_")) onSelect(p);
       }}
     >
       <svg width={w} height={h} role="img" aria-label={data.title}>

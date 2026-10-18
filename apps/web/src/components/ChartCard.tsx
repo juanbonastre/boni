@@ -15,6 +15,7 @@ export function ChartCard({
   chartId,
   compact = false,
   focused = false,
+  bare = false,
   className,
   widgetMenu,
 }: {
@@ -22,10 +23,11 @@ export function ChartCard({
   compact?: boolean;
   /** The chart on its own (the main area): no "open" control. */
   focused?: boolean;
+  /** Without the card's own controls (the phone has them outside the card). */
+  bare?: boolean;
   className?: string;
   widgetMenu?: (close: () => void) => ReactNode;
 }) {
-  const tick = useStore((s) => s.refreshTick);
   const spec = useStore((s) => s.chartSpecs.find((c) => c.id === chartId));
   const preview = useStore((s) => (s.editPreview?.id === chartId ? s.editPreview.state : null));
   const draft = useStore((s) =>
@@ -33,8 +35,38 @@ export function ChartCard({
   );
   const editing = draft != null;
   const [drill, setDrill] = useState<string | null>(null);
-  const [state, setState] = useState<ChartState>(emptyState());
+  const state = useChartData(chartId, drill);
   const [controlsOpen, setControlsOpen] = useState(false);
+
+  return (
+    <ChartCardContent
+      title={(draft ?? spec)?.title ?? state.data?.title ?? ""}
+      color={(draft ?? spec)?.color}
+      state={preview ?? state}
+      compact={compact}
+      className={`${className ?? ""}${editing ? " editing" : ""}${controlsOpen ? " controls-open" : ""}`}
+      onTitle={!compact && !focused ? () => showChart(chartId) : undefined}
+      onDrill={preview ? undefined : (key) => setDrill(key)}
+      onBack={drill && !preview ? () => setDrill(null) : undefined}
+      controls={
+        spec && !editing && !bare ? (
+          <CardControls
+            spec={spec}
+            compact={compact}
+            focused={focused}
+            onOpenChange={setControlsOpen}
+            widgetMenu={widgetMenu}
+          />
+        ) : null
+      }
+    />
+  );
+}
+
+/** A chart's data: the device's last copy at once, then the server's (one request per chart per refresh). */
+export function useChartData(chartId: string, drill: string | null = null): ChartState {
+  const tick = useStore((s) => s.refreshTick);
+  const [state, setState] = useState<ChartState>(emptyState());
 
   useEffect(() => {
     let live = true;
@@ -50,30 +82,7 @@ export function ChartCard({
       live = false;
     };
   }, [chartId, drill, tick]);
-
-  return (
-    <ChartCardContent
-      title={(draft ?? spec)?.title ?? state.data?.title ?? ""}
-      color={(draft ?? spec)?.color}
-      state={preview ?? state}
-      compact={compact}
-      className={`${className ?? ""}${editing ? " editing" : ""}${controlsOpen ? " controls-open" : ""}`}
-      onTitle={!compact && !focused ? () => showChart(chartId) : undefined}
-      onDrill={preview ? undefined : (key) => setDrill(key)}
-      onBack={drill && !preview ? () => setDrill(null) : undefined}
-      controls={
-        spec && !editing ? (
-          <CardControls
-            spec={spec}
-            compact={compact}
-            focused={focused}
-            onOpenChange={setControlsOpen}
-            widgetMenu={widgetMenu}
-          />
-        ) : null
-      }
-    />
-  );
+  return state;
 }
 
 /** The card body without loading (a new chart's preview passes its own state). */

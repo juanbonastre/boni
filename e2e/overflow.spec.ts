@@ -9,9 +9,11 @@ import { openApp } from "./fixtures.ts";
  */
 
 const SURFACES =
-  ".sidebar, .topbar, .chart-card, .card-controls, .pop-box, .side-panel, .modal, .toast, .empty-state";
+  ".sidebar, .topbar, .chart-card, .card-controls, .pop-box, .side-panel, .modal, .toast, .empty-state, " +
+  ".m-top, .m-scroll, .m-tabs, .m-sheet, .m-action-sheet, .m-periods";
 const SINGLE_LINE =
-  "button, .btn, .pill, .ctl, .choice, .menu-item, .segmented > *, .picked-chip, .card-title, .nav-name";
+  "button, .btn, .pill, .ctl, .choice, .menu-item, .segmented > *, .picked-chip, .card-title, .nav-name, " +
+  ".m-title, .m-shortcut-name, .m-shortcut-sub, .m-chart-row-name, .m-chart-row-sub, .m-tab-label";
 
 async function audit(page: Page, where: string): Promise<string[]> {
   return page.evaluate(
@@ -150,3 +152,61 @@ for (const language of ["es", "en"] as const) {
     expect(issues).toEqual([]);
   });
 }
+
+/** The phone (MobileApp): every surface at a small phone's width, with real taps. */
+const P = {
+  es: {
+    more: /^Más detalles/,
+    menu: "Opciones de Café",
+    edit: "Editar",
+    charts: "Gráficas",
+    chartMenu: "Opciones de la gráfica",
+    settings: "Ajustes",
+  },
+  en: {
+    more: /^More details/,
+    menu: "Options of Café",
+    edit: "Edit",
+    charts: "Charts",
+    chartMenu: "Chart options",
+    settings: "Settings",
+  },
+};
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 360, height: 740 }, hasTouch: true, isMobile: true });
+  for (const language of ["es", "en"] as const) {
+    test(`every phone surface fits (${language})`, async ({ page }) => {
+      const l = P[language];
+      const issues: string[] = [];
+      await openApp(page, "/?still", { language });
+      await expect(page.locator(".m-shortcut")).toHaveCount(2);
+      issues.push(...(await audit(page, "phone log")));
+      await page.locator(".m-capture").tap();
+      await page.getByRole("button", { name: l.more }).tap();
+      issues.push(...(await audit(page, "phone form")));
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: l.menu }).tap();
+      issues.push(...(await audit(page, "phone shortcut menu")));
+      await page.getByRole("menuitem", { name: l.edit }).tap();
+      await page.locator(".m-sheet .form").waitFor();
+      issues.push(...(await audit(page, "phone shortcut editor")));
+      await page.keyboard.press("Escape");
+      await page.locator(".m-tab").nth(1).tap();
+      await expect(page.locator(".m-chart-row")).toHaveCount(3);
+      issues.push(...(await audit(page, "phone charts")));
+      await page.locator(".m-chart-row").nth(1).tap();
+      await page.locator(".m-chart-body .chart svg").waitFor();
+      issues.push(...(await audit(page, "phone chart")));
+      await page.getByRole("button", { name: l.chartMenu }).tap();
+      await page.getByRole("menuitem", { name: l.edit }).tap();
+      await page.locator(".m-sheet .editor-form .choices").first().waitFor();
+      issues.push(...(await audit(page, "phone chart editor")));
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: l.settings }).tap();
+      await page.locator(".modal").waitFor();
+      issues.push(...(await audit(page, "phone settings")));
+      expect(issues).toEqual([]);
+    });
+  }
+});

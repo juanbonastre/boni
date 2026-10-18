@@ -6,7 +6,13 @@ import { readJson, Serial, type TextStore } from "./storage.ts";
 export interface QueuedAction {
   request: ActionRequest;
   error?: string | null;
+  /** Not sent before this time (epoch ms): a capture whose toast still offers Undo. */
+  hold_until?: number | null;
 }
+
+/** Waiting to be sent (not rejected, not held back for its Undo). */
+export const isPending = (i: QueuedAction, now = Date.now()) =>
+  !i.error && !((i.hold_until ?? 0) > now);
 
 /**
  * Captures that could not reach the server. Every request keeps its `client_id`, so sending it twice never
@@ -28,7 +34,7 @@ export class OfflineQueue {
   }
 
   async pending(): Promise<number> {
-    return (await this.items()).filter((i) => !i.error).length;
+    return (await this.items()).filter((i) => isPending(i)).length;
   }
 
   private save(items: QueuedAction[]) {
@@ -37,8 +43,10 @@ export class OfflineQueue {
       : this.store.remove(this.file);
   }
 
-  add(request: ActionRequest) {
-    return this.serial.run(async () => this.save([...(await this.items()), { request }]));
+  /** `holdUntil`: kept back until then (epoch ms), so Undo can take it out before it is sent. */
+  add(request: ActionRequest, holdUntil?: number) {
+    const item: QueuedAction = holdUntil ? { request, hold_until: holdUntil } : { request };
+    return this.serial.run(async () => this.save([...(await this.items()), item]));
   }
 
   dismiss(clientId: string) {
@@ -50,15 +58,16 @@ export class OfflineQueue {
   /**
    * Sends pending items in order through `send`, stopping at the first one that can't reach the server.
    * Accepted (`ok`, or `queued` = the server keeps it in its own outbox): removed. Rejected (`invalid`,
-   * `error`, a 4xx): kept with its message so the user can see what failed. Returns how many were delivered.
+   * `error`, a 4xx): kept with its message so the user can see what failed. Held items stay for a later flush.
+   * Returns how many were delivered.
    */
-  flush(send: (r: ActionRequest) => Promise<ActionResult>): Promise<number> {
+  flush(send: (r: ActionRequest) => Promise<ActionResult>, now = Date.now()): Promise<number> {
     return this.serial.run(async () => {
       let delivered = 0;
       let offline = false;
       const remaining: QueuedAction[] = [];
       for (const item of await this.items()) {
-        if (offline || item.error) {
+        if (offline || !isPending(item, now)) {
           remaining.push(item);
           continue;
         }

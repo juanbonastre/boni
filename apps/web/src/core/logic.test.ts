@@ -1,12 +1,15 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { translator } from "../i18n.ts";
 import { ApiError, OfflineError } from "./api.ts";
 import * as B from "./chartBuilder.ts";
 import * as M from "./chartMath.ts";
 import { nowIso, today } from "./clock.ts";
-import type { ActionRequest, ChartSpec, FormComponent } from "./contract.ts";
+import { type ActionRequest, type ChartSpec, type FormComponent, parseScreen } from "./contract.ts";
 import * as F from "./formLogic.ts";
 import { OfflineQueue } from "./queue.ts";
+import * as S from "./shortcuts.ts";
 import { MemoryStore } from "./storage.ts";
 
 const t = translator("es");
@@ -157,6 +160,27 @@ describe("offline queue", () => {
     expect(await q.pending()).toBe(0);
     expect((await q.items())[0]!.error).toBe("no");
   });
+  it("a held capture waits for its Undo: not sent, not pending, until its time", async () => {
+    const q = new OfflineQueue(new MemoryStore());
+    const now = Date.now();
+    await q.add(req("held"), now + 10_000);
+    await q.add(req("now"));
+    const sent: string[] = [];
+    const send = async (r: ActionRequest) => {
+      sent.push(r.client_id);
+      return { status: "ok" as const };
+    };
+    expect(await q.flush(send, now + 5_000)).toBe(1);
+    expect(sent).toEqual(["now"]);
+    expect(await q.pending()).toBe(0); // held for 10 s: not counted as pending
+    expect(await q.flush(send, now + 10_001)).toBe(1);
+    expect(sent).toEqual(["now", "held"]);
+    expect(await q.items()).toEqual([]);
+    // Undo takes it out before it is sent
+    await q.add(req("undone"), Date.now() + 60_000);
+    await q.dismiss("undone");
+    expect(await q.items()).toEqual([]);
+  });
   it("reads the first client's queue file", async () => {
     const store = new MemoryStore();
     store.files.set(
@@ -241,5 +265,70 @@ describe("chart builder", () => {
     const copy = B.duplicate({ ...base, id: "x" }, "copia");
     expect(copy.title).toBe("Nueva gráfica (copia)");
     expect(copy.id).toBe("");
+  });
+});
+
+describe("shortcuts", () => {
+  const form = parseScreen(
+    JSON.parse(
+      readFileSync(
+        join(
+          import.meta.dirname,
+          "..",
+          "..",
+          "..",
+          "..",
+          "api",
+          "examples",
+          "screen-capture-expense.json",
+        ),
+        "utf8",
+      ),
+    ),
+  ).components[0] as FormComponent;
+  const options = { categories: [{ value: "bebida/cafe", label: "bebida/cafe" }] };
+
+  it("keep what was chosen or typed, never the date, empty fields or hidden ones", () => {
+    const values = {
+      ...F.initialValues(form, "2026-10-18"),
+      amount: "1,60",
+      category: "bebida/cafe",
+      concept: "Café",
+      invited: ["nadie"], // hidden: "shared" is off
+    };
+    expect(S.shortcutValues(form, values)).toEqual({
+      kind: "gasto",
+      amount: "1,60",
+      account: "efectivo",
+      category: "bebida/cafe",
+      concept: "Café",
+    });
+  });
+
+  it("summary: most telling first, labels from the field or the loaded lists", () => {
+    const values = {
+      kind: "gasto",
+      amount: 1.6,
+      account: "efectivo",
+      category: "bebida/cafe",
+      shared: true,
+    };
+    expect(S.summary(form, values, options)).toEqual([
+      "1,60 €",
+      "bebida/cafe",
+      "Pagué yo por otros",
+      "Gasto",
+      "Efectivo",
+    ]);
+    expect(S.suggestedLabel(form, { ...values, concept: "Café" }, options)).toBe("Café");
+    expect(S.suggestedLabel(form, values, options)).toBe("1,60 € · bebida/cafe");
+  });
+
+  it("saved directly only when every required field has a value (the date is today's)", () => {
+    expect(S.canSaveDirectly(form, { amount: 1.6, category: "bebida/cafe" }, "2026-10-18")).toBe(
+      true,
+    );
+    expect(S.canSaveDirectly(form, { amount: 1.6 }, "2026-10-18")).toBe(false);
+    expect(S.filledValues(form, { amount: 1.6 }, "2026-10-18").date).toBe("2026-10-18");
   });
 });

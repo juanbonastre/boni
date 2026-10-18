@@ -88,6 +88,19 @@ gasto con `settles` al gasto; si `settles` apunta a una deuda es un amigo devolv
   duplicar, en inicio, al escritorio, borrar). Se guardan al momento y se pueden deshacer desde el aviso.
 - Cuenta como en Boni Calendar: direccion, usuario, contrasena y nombre del equipo; el equipo guarda solo un token de sesion.
 
+## Móvil (y la app Android)
+Por debajo de 640 px la app usa otra disposición (`MobileApp.tsx`), pensada para apuntar y no para mirar gráficas
+(Juan, 2026-10-18). Dos pestañas abajo: **Apuntar** (los botones de captura del servidor y los atajos) y **Gráficas**
+(lista con la cifra de cada una; al tocar, la gráfica a pantalla completa con su periodo; crear y editar en una hoja).
+Formularios y editores son hojas a pantalla completa con los botones fijos abajo; los campos opcionales quedan bajo
+"Más detalles". Letra de 16 px y zonas táctiles de 48 px (desviación escrita de la guía de Boni Calendar, pensada para el
+ratón). Atrás (Esc ahora, el botón de Android después) cierra lo de encima.
+
+**Atajos**: una pantalla del servidor más unos valores para su formulario. Al tocarlo, o se abre el formulario relleno o
+se guarda directamente (pasa por la cola sin conexión y espera los segundos del "Deshacer"). Se crean desde el aviso de un
+gasto guardado ("Guardar como atajo"), desde el propio formulario o con "Nuevo atajo"; se editan y borran desde su menú o
+manteniéndolo pulsado. Se guardan en el servidor (`/api/v1/shortcuts`), compartidos por todos los equipos.
+
 ## Escritorio: widgets
 Cada widget es una ventana pequena, sin bordes y transparente, con una grafica interactiva: al pasar el raton se ve el valor y
 sus controles (periodo y menu), al tocar un punto su detalle; se mueve arrastrandola, se cambia de tamano desde la esquina y
