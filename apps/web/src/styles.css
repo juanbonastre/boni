@@ -1981,6 +1981,8 @@ html.widget-page body {
 .m-app .field-error,
 .m-app .form-error {
   font-size: 13px;
+  /* brought into view above the sticky buttons, not under them */
+  scroll-margin-bottom: calc(96px + env(safe-area-inset-bottom));
 }
 .m-app .segmented {
   border-radius: 12px;

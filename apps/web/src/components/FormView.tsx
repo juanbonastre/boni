@@ -51,6 +51,13 @@ export function FormView({
   const foldedCount = fields.filter((f) => folded(f) && F.isVisible(f, values)).length;
   const showMore = more || fields.some((f) => folded(f) && errors[f.id]);
 
+  // The form's own message sits under the last field: brought into view, or on a phone it is below the screen.
+  const formError = errors._ ?? (Object.keys(errors).length > 0 ? t("form.check") : null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    errorRef.current?.scrollIntoView({ block: "nearest" });
+  }, [formError]);
+
   const set = (id: string, v: Json) => {
     setValues((vs) => ({ ...vs, [id]: v }));
     markPanelEdited();
@@ -119,9 +126,10 @@ export function FormView({
             />
           ) : null,
         )}
-      {errors._ && <p className="form-error">{errors._}</p>}
-      {Object.keys(errors).length > 0 && !errors._ && (
-        <p className="form-error">{t("form.check")}</p>
+      {formError && (
+        <p ref={errorRef} className="form-error">
+          {formError}
+        </p>
       )}
       <div className="form-foot">
         {extra?.(values)}

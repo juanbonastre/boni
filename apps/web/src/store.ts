@@ -128,7 +128,12 @@ export const charts = new ChartRepository(
 export function errorText(t: T, e: unknown): string {
   if (e instanceof OfflineError) return t("error.offline");
   if (e instanceof NotConfiguredError) return t("error.notConfigured");
-  if (e instanceof ApiError) return e.status === 401 ? t("error.session") : e.message;
+  if (e instanceof ApiError) {
+    if (e.status === 401) return t("error.session");
+    // A route the server does not have (its own errors carry a code): it is older than this app.
+    if (e.status === 404 && e.code === "http_404") return t("error.serverOld");
+    return e.message;
+  }
   return (e as Error)?.message || t("error.generic");
 }
 

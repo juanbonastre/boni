@@ -15,10 +15,12 @@ async function openAndroid(
     launch?: string;
     url?: string;
     examples?: Record<string, string>;
+    /** Routes this server does not have yet (an older version): FastAPI's own 404. */
+    missing?: string[];
   } = {},
 ) {
   await page.addInitScript(
-    ({ examples, configured, launch }) => {
+    ({ examples, configured, launch, missing }) => {
       const w = window as unknown as Record<string, unknown>;
       const calls: string[] = [];
       const files = new Map<string, string>();
@@ -40,6 +42,7 @@ async function openAndroid(
       };
       const answer = (method: string, path: string): [number, string] => {
         const p = path.split("?")[0]!;
+        if (missing.some((m) => p.endsWith(m))) return [404, '{"detail":"Not Found"}'];
         const ok = (n: string): [number, string] => [200, examples[n]!];
         if (p.endsWith("/home")) return ok("home.json");
         if (p.endsWith("/screens/capture-expense")) return ok("screen-capture-expense.json");
@@ -145,6 +148,7 @@ async function openAndroid(
       examples: { ...EXAMPLES, ...opts.examples },
       configured: opts.configured ?? true,
       launch: opts.launch ?? null,
+      missing: opts.missing ?? [],
     },
   );
   await page.goto(opts.url ?? "/?still");
@@ -325,6 +329,24 @@ test("a home-screen widget's picture: the chart card alone, and the app is told 
   expect(box.width).toBeGreaterThan(350);
   expect(box.height).toBeGreaterThan(210);
   await page.screenshot({ path: "e2e/screenshots/phone-widget.png" });
+});
+
+test("a server older than a feature says so instead of showing its raw answer", async ({
+  page,
+}) => {
+  await openAndroid(page, { missing: ["/shortcuts"] });
+  await page.locator(".m-capture").tap();
+  await page.locator(".m-sheet .form input").first().pressSequentially("1", { delay: 80 });
+  await page.getByRole("button", { name: "Guardar como atajo" }).tap();
+  await page.getByRole("button", { name: "Crear atajo" }).tap();
+  const message = page.getByText("Tu servidor de Boni es anterior a esta función: actualízalo");
+  await expect(message).toBeInViewport();
+  // above the sticky buttons, not hidden under them
+  await page.waitForTimeout(400);
+  const shown = (await message.boundingBox())!;
+  const foot = (await page.locator(".m-sheet .form-foot").boundingBox())!;
+  expect(shown.y + shown.height).toBeLessThanOrEqual(foot.y);
+  await expect(page.getByText("Not Found")).toHaveCount(0);
 });
 
 test("a narrow widget cuts long axis labels instead of running them together", async ({ page }) => {
