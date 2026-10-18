@@ -19,7 +19,7 @@ const {
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
-const { openVault, VaultError } = require("./vault-fs.cjs");
+const { notePath, openVault, VaultError } = require("./vault-fs.cjs");
 const { autostartDir, loadPrefs, savePrefs, setAutostart } = require("./desktop-prefs.cjs");
 
 const PACKAGED_UI = path.join(__dirname, "web", "index.html");
@@ -188,11 +188,13 @@ function restoreVault() {
   }
 }
 
+const NO_VAULT_NEEDED = new Set(["vault:choose-root", "vault:open-note"]);
+
 /** Handlers answer `{ ok: true, value }` or `{ ok: false, code, message }`; errors never cross IPC as exceptions. */
 function handle(channel, fn) {
   ipcMain.handle(channel, async (e, ...args) => {
     try {
-      if (channel !== "vault:choose-root" && !vault)
+      if (!NO_VAULT_NEEDED.has(channel) && !vault)
         throw new VaultError("no-vault", "No vault chosen");
       return { ok: true, value: await fn.apply({ sender: e.sender }, args) };
     } catch (e) {
@@ -300,9 +302,12 @@ handle("vault:trash", async (rel) => {
   return null;
 });
 handle("vault:open-note", (rel) => {
-  // Obsidian opens a note given its absolute path; the URL is built here, never taken from the UI.
-  const abs = vault.locate(rel);
-  void shell.openExternal(`obsidian://open?path=${encodeURIComponent(abs)}`);
+  // Obsidian opens a note given its absolute path; the URL is built here, never taken from the UI. Without a
+  // vault folder on this device (the calendar comes from a server) it opens the path in Obsidian's open vault.
+  const url = vault
+    ? `obsidian://open?path=${encodeURIComponent(vault.locate(rel))}`
+    : `obsidian://open?file=${encodeURIComponent(notePath(rel).join("/").replace(/\.md$/i, ""))}`;
+  void shell.openExternal(url);
   return null;
 });
 handle("vault:create", (rel, text) => vault.create(rel, text));

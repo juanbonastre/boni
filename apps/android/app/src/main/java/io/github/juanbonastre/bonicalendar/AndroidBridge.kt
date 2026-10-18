@@ -126,12 +126,15 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
         else -> throw VaultError("unknown", "Unknown call: $method")
     }
 
-    /** Opens the note in Obsidian (its vault is known by the folder's name). */
+    /**
+     * Opens the note in Obsidian (its vault is known by the folder's name). Without a folder chosen here (the
+     * calendar comes from a server) Obsidian opens the path in the vault it has open.
+     */
     private fun openNote(path: String): Any? {
-        val vault = v()
-        val rel = vault.requireNote(path)
+        val chosen = vault
+        val rel = chosen?.requireNote(path) ?: VaultPaths.check(path)
         val uri = Uri.Builder().scheme("obsidian").authority("open")
-            .appendQueryParameter("vault", vault.name)
+            .apply { if (chosen != null) appendQueryParameter("vault", chosen.name) }
             .appendQueryParameter("file", rel.removeSuffix(".md"))
             .build()
         activity.runOnUiThread {

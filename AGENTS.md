@@ -49,8 +49,10 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  With writing on it tops up open-ended series itself (`topUpSeries`, after changes and every 6 h).
                  Client side: `apps/web/src/remote.ts` (login, snapshot, changes, live stream with reconnection, last
                  snapshot in IndexedDB) and the store's `source: "server"` (`connectServer`, `loadServer`), which applies
-                 server data through the same path as a vault read (`applyLoad`). Writes: `serverWriter.ts` is the store's
-                 provider there (optimistic, outbox in IndexedDB sent in order, pending changes shown over the server's
+                 server data through the same path as a vault read (`applyLoad`). Its rows are notes too (id = path),
+                 so "Open note in Obsidian" works there as well (a host without a vault folder opens
+                 `obsidian://open?file=`, Obsidian's open vault). Writes: `serverWriter.ts` is the store's provider
+                 there (optimistic, outbox in IndexedDB sent in order, pending changes shown over the server's
                  rows until its stream brings that version, temporary ids mapped through `aliases`). Phase 4: the
                  account's prefs (`ACCOUNT_PREFS` in store.ts) and external calendars live on the server
                  (`account.ts`, the list encrypted with `secret.ts`; `feeds.ts` downloads them, public addresses
