@@ -186,6 +186,48 @@ test("with a vault folder, the device chooses between the folder and a server", 
   await expect(page.locator(".modal .server-form")).toBeVisible();
 });
 
+test("with a server, an event still opens its note in Obsidian on a device that can", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const ok = (value: unknown) => ({ ok: true, value });
+    const opened: string[] = [];
+    // biome-ignore lint/suspicious/noExplicitAny: what the test double below recorded
+    (window as any).__opened = opened;
+    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge (an empty folder)
+    (window as any).boniVault = {
+      getRoot: async () => ok("/vault/ejemplo"),
+      chooseRoot: async () => ok("/vault/ejemplo"),
+      scan: async () => ok([]),
+      read: async () => ({ ok: false, code: "not-found", message: "x" }),
+      openNote: async (path: string) => {
+        opened.push(path);
+        return ok(null);
+      },
+    };
+  });
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await page.locator(".vault-notice").waitFor();
+  await page.keyboard.press("Control+,");
+  await page
+    .locator(".modal .setting", { hasText: "Origen" })
+    .getByRole("radio", { name: "Servidor" })
+    .click();
+  const form = page.locator(".modal .server-form");
+  await form.locator("input").nth(0).fill(url);
+  await form.locator("input").nth(1).fill("juan");
+  await form.locator("input").nth(2).fill(PASSWORD);
+  await form.getByRole("button", { name: "Conectar" }).click();
+  await expect(page.locator(".modal")).toContainText("En directo");
+  await page.keyboard.press("Escape");
+  await page.locator(".ev", { hasText: "Clase del servidor" }).click();
+  await page.locator(".popover").getByRole("button", { name: "Abrir nota en Obsidian" }).click();
+  // biome-ignore lint/suspicious/noExplicitAny: reads what the test double recorded
+  expect(await page.evaluate(() => (window as any).__opened)).toEqual([
+    "agenda/docencia/2025-09-17 Clase del servidor.md",
+  ]);
+});
+
 test("edits go to the notes through the server: only the edited line, new events, deletions", async ({
   page,
 }) => {

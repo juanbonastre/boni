@@ -13,6 +13,22 @@ class VaultError extends Error {
   }
 }
 
+/** The parts of a vault-relative note path, or a VaultError if it leaves the allowed area. */
+function notePath(rel, { markdown = true } = {}) {
+  if (typeof rel !== "string" || rel === "" || path.isAbsolute(rel) || rel.includes("\0")) {
+    throw new VaultError("bad-path", `Bad path: ${rel}`);
+  }
+  const parts = rel.split(/[\\/]+/).filter(Boolean);
+  if (parts.some((p) => p === ".." || p.startsWith("."))) {
+    throw new VaultError("bad-path", `Not allowed: ${rel}`);
+  }
+  if (DENIED_TOP.has(parts[0])) throw new VaultError("denied", `Not allowed: ${rel}`);
+  if (markdown && !rel.toLowerCase().endsWith(".md")) {
+    throw new VaultError("bad-path", `Only Markdown notes: ${rel}`);
+  }
+  return parts;
+}
+
 /**
  * `trashItem(absPath)` moves a file to the system trash (Electron's `shell.trashItem`); without it
  * deleted notes go to a `.trash` folder inside the vault, like Obsidian's own trash.
@@ -28,19 +44,7 @@ function openVault(root, { trashItem } = {}) {
 
   /** Absolute path of a relative note path, or a VaultError if it leaves the allowed area. */
   function resolve(rel, { markdown = true } = {}) {
-    if (typeof rel !== "string" || rel === "" || path.isAbsolute(rel) || rel.includes("\0")) {
-      throw new VaultError("bad-path", `Bad path: ${rel}`);
-    }
-    const parts = rel.split(/[\\/]+/).filter(Boolean);
-    if (parts.some((p) => p === ".." || p.startsWith("."))) {
-      throw new VaultError("bad-path", `Not allowed: ${rel}`);
-    }
-    if (DENIED_TOP.has(parts[0])) throw new VaultError("denied", `Not allowed: ${rel}`);
-    if (markdown && !rel.toLowerCase().endsWith(".md")) {
-      throw new VaultError("bad-path", `Only Markdown notes: ${rel}`);
-    }
-    const abs = path.join(real, ...parts);
-    return abs;
+    return path.join(real, ...notePath(rel, { markdown }));
   }
 
   /** Checks that the real location (after symlinks) is still inside the vault. */
@@ -210,4 +214,4 @@ function openVault(root, { trashItem } = {}) {
   };
 }
 
-module.exports = { openVault, VaultError };
+module.exports = { notePath, openVault, VaultError };

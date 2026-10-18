@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { openVault, VaultError } = require("./vault-fs.cjs");
+const { notePath, openVault, VaultError } = require("./vault-fs.cjs");
 
 function makeVault() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "boni-vault-"));
@@ -90,6 +90,30 @@ test("paths cannot leave the vault or reach reserved folders and dot folders", (
   assert.equal(
     code(() => vault.scan("agenda/nope")),
     "not-found",
+  );
+});
+
+test("a note path is checked the same without a vault folder (opening a server's note)", () => {
+  assert.deepEqual(notePath("agenda/docencia/2025-09-17 Clase.md"), [
+    "agenda",
+    "docencia",
+    "2025-09-17 Clase.md",
+  ]);
+  assert.equal(
+    code(() => notePath("../fuera.md")),
+    "bad-path",
+  );
+  assert.equal(
+    code(() => notePath("private/x.md")),
+    "denied",
+  );
+  assert.equal(
+    code(() => notePath(".obsidian/app.md")),
+    "bad-path",
+  );
+  assert.equal(
+    code(() => notePath("agenda/imagen.png")),
+    "bad-path",
   );
 });
 

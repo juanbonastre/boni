@@ -303,7 +303,7 @@ export interface AppState {
   setSeriesRule: (id: string, rule: Recurrence | null) => void;
   /** Creates the notes that open-ended series are missing; the number created. */
   extendSeries: () => number;
-  /** The note of an event in the vault, or null (sample data, or not saved yet). */
+  /** The note of an event in the vault (read here or through the server), or null (sample data, not saved yet). */
   noteOfEvent: (id: string) => string | null;
   openNote: (id: string) => Promise<void>;
   select: (id: string | null, popover?: boolean) => void;
@@ -1024,7 +1024,14 @@ export const useApp = create<AppState>((set, get) => {
       return more.length;
     },
 
-    noteOfEvent: (id) => (get().source === "vault" ? noteOf(id) : null),
+    noteOfEvent: (id) => {
+      const s = get();
+      if (s.source === "vault") return noteOf(id);
+      // With a server the rows are its notes too (id = path); the device opens them when its host can.
+      if (s.source !== "server" || !vaultBridge()?.openNote) return null;
+      const path = aliases.get(id) ?? id;
+      return path.endsWith(".md") && s.rows.some((r) => r.id === id) ? path : null;
+    },
 
     openNote: async (id) => {
       const path = get().noteOfEvent(id);
