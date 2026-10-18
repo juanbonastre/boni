@@ -52,9 +52,11 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   chips; the editor in a sheet). Forms and editors are full-screen sheets whose buttons stay at the bottom; the form folds
   the optional fields under "Más detalles". Back is Esc: what a component opened (a menu, a list) closes on its own
   Esc, then `goBack()` in the store (settings, the panel, a chart's detail, the chart, the charts tab), so the detail of
-  the chart on its own is navigation (`view.drill`). A tap on a chart shows the value, a second tap the detail. Written deviation from Boni Calendar's guide: base text 16 px, touch
-  targets 48 px and icons 20-24 px (the guide's 13 px and 28 px controls are for a mouse; 16 px also keeps Android from
-  zooming into a field). Styles are under `.m-app` in `styles.css`.
+  the chart on its own is navigation (`view.drill`). Closing a sheet by hand (Back, its X) after something was typed or
+  chosen in it asks first (`panelEdited`, `dismissPanel`); saving closes it without asking. A tap on a chart shows the
+  value, a second tap the detail. Written deviation from Boni Calendar's guide: base text 16 px, touch targets 48 px
+  and icons 20-24 px (the guide's 13 px and 28 px controls are for a mouse; 16 px also keeps Android from zooming into
+  a field). Styles are under `.m-app` in `styles.css`.
 - **Shortcuts** (`Shortcut` in the contract, `core/shortcuts.ts`): a server screen plus values for its form, `open` (the
   form filled in) or `save` (sent at once). Generic: the client reads only the form's fields, never what it captures. A
   `save` goes into the offline queue held back (`hold_until`) while its toast offers Undo, so it survives closing the app.

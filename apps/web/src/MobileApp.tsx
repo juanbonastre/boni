@@ -35,11 +35,14 @@ import {
   configured,
   deleteChart,
   deleteShortcut,
+  dismissPanel,
   dismissRejected,
   dismissToast,
   duplicateChart,
   errorText,
+  keepEditing,
   loadScreen,
+  markPanelEdited,
   openEditor,
   openScreen,
   openSettings,
@@ -71,6 +74,7 @@ export function MobileApp() {
   const view = useStore((s) => s.view);
   const panel = useStore((s) => s.panel);
   const settingsOpen = useStore((s) => s.settingsOpen);
+  const discardAsk = useStore((s) => s.discardAsk);
   const toastState = useStore((s) => s.toast);
   const [menu, setMenu] = useState<Menu | null>(null);
   const chartOpen = view.kind === "chart";
@@ -88,6 +92,23 @@ export function MobileApp() {
       {panel && <Sheet />}
       {settingsOpen && <SettingsModal />}
       {menu && <ActionSheet menu={menu} close={() => setMenu(null)} />}
+      {discardAsk && (
+        <ActionSheet
+          menu={{
+            title: t("mobile.discardTitle"),
+            items: [
+              {
+                label: t("mobile.discard"),
+                icon: <Trash2 size={20} strokeWidth={1.8} />,
+                danger: true,
+                run: closePanel,
+              },
+            ],
+            cancel: t("mobile.keepEditing"),
+          }}
+          close={keepEditing}
+        />
+      )}
       {toastState && (
         <div className={`toast${chartOpen ? "" : " over-tabs"}`} role="status" key={toastState.id}>
           <span>{toastState.text}</span>
@@ -111,6 +132,8 @@ export function MobileApp() {
 interface Menu {
   title: string;
   items: { label: string; icon: ReactNode; danger?: boolean; run: () => void }[];
+  /** The last row's label (it closes the menu): "Cancelar" unless a question needs another. */
+  cancel?: string;
 }
 
 function MobileTop({ title }: { title: string }) {
@@ -513,7 +536,7 @@ function Sheet() {
         <button
           type="button"
           className="m-icon"
-          onClick={closePanel}
+          onClick={dismissPanel}
           title={t("settings.close")}
           aria-label={t("settings.close")}
         >
@@ -611,6 +634,10 @@ function ShortcutEditor({ initial, isNew }: { initial: Shortcut; isNew: boolean 
   const [label, setLabel] = useState(initial.label);
   const [mode, setMode] = useState(initial.mode);
   const [color, setColor] = useState(initial.color);
+  useEffect(() => {
+    if (label !== initial.label || mode !== initial.mode || color !== initial.color)
+      markPanelEdited();
+  }, [label, mode, color]);
   const form = formOf(screen);
   useEffect(() => {
     if (!screen) void loadScreen(initial.screen).catch(() => undefined);
@@ -774,7 +801,7 @@ function ActionSheet({ menu, close }: { menu: Menu; close: () => void }) {
           </button>
         ))}
         <button type="button" className="m-action cancel" onClick={close}>
-          {t("mobile.cancel")}
+          {menu.cancel ?? t("mobile.cancel")}
         </button>
       </div>
     </div>

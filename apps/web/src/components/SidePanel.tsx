@@ -8,6 +8,7 @@ import {
   deleteChart,
   errorText,
   loadCatalog,
+  markPanelEdited,
   optionList,
   preview,
   saveChart,
@@ -133,7 +134,10 @@ export function EditorPanel({ initial, isNew }: { initial: ChartSpec; isNew: boo
   }, []);
   // The card shows the draft's title and colour at once, and the preview once the definition settles (typing a
   // title must not send a request per key).
-  useEffect(() => setEditDraft(spec), [spec]);
+  useEffect(() => {
+    setEditDraft(spec);
+    if (spec !== initial) markPanelEdited();
+  }, [spec]);
   useEffect(() => {
     let live = true;
     const id = isNew ? "" : spec.id;

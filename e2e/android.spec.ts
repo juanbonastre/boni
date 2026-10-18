@@ -182,6 +182,23 @@ test("Back asks the page: it closes one thing at a time, then lets the app go to
   await expect(page.locator(".m-sheet")).toBeVisible();
   expect(await back()).toBe(true);
   await expect(page.locator(".m-sheet")).toHaveCount(0);
+
+  // Something typed: Back asks first; Back again keeps editing; the close button asks too; "Descartar" closes
+  await page.locator(".m-capture").tap();
+  const amount = page.locator(".m-sheet .form input").first();
+  await amount.pressSequentially("12", { delay: 80 });
+  expect(await back()).toBe(true);
+  const question = page.getByRole("menu", { name: "¿Descartar lo que has escrito?" });
+  await expect(question).toBeVisible();
+  expect(await back()).toBe(true);
+  await expect(question).toHaveCount(0);
+  await expect(amount).toHaveValue("12");
+  await page.locator(".m-sheet .m-top .m-icon").tap();
+  await question.getByRole("button", { name: "Seguir editando" }).tap();
+  await expect(amount).toHaveValue("12");
+  await page.locator(".m-sheet .m-top .m-icon").tap();
+  await question.getByRole("menuitem", { name: "Descartar" }).tap();
+  await expect(page.locator(".m-sheet")).toHaveCount(0);
   await page.getByRole("button", { name: "Gráficas" }).tap();
 
   // A chart's detail with its menu open: the menu, the detail, the chart, then the charts tab

@@ -276,6 +276,9 @@ const es = {
   "mobile.duplicateChart": "Duplicar",
   "mobile.deleteChart": "Borrar",
   "mobile.cancel": "Cancelar",
+  "mobile.discardTitle": "¿Descartar lo que has escrito?",
+  "mobile.discard": "Descartar",
+  "mobile.keepEditing": "Seguir editando",
 };
 
 type Key = keyof typeof es;
@@ -551,6 +554,9 @@ const en: Record<Key, string> = {
   "mobile.duplicateChart": "Duplicate",
   "mobile.deleteChart": "Delete",
   "mobile.cancel": "Cancel",
+  "mobile.discardTitle": "Discard what you typed?",
+  "mobile.discard": "Discard",
+  "mobile.keepEditing": "Keep editing",
 };
 
 const dictionaries: Record<Lang, Record<string, string>> = { es, en };

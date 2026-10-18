@@ -162,6 +162,7 @@ const P = {
     charts: "Gráficas",
     chartMenu: "Opciones de la gráfica",
     settings: "Ajustes",
+    discard: "Descartar",
   },
   en: {
     more: /^More details/,
@@ -170,6 +171,7 @@ const P = {
     charts: "Charts",
     chartMenu: "Chart options",
     settings: "Settings",
+    discard: "Discard",
   },
 };
 test.describe("on a phone", () => {
@@ -184,7 +186,11 @@ test.describe("on a phone", () => {
       await page.locator(".m-capture").tap();
       await page.getByRole("button", { name: l.more }).tap();
       issues.push(...(await audit(page, "phone form")));
+      await page.locator(".m-sheet .form input").first().fill("12");
       await page.keyboard.press("Escape");
+      await page.locator(".m-action-sheet").waitFor();
+      issues.push(...(await audit(page, "phone discard question")));
+      await page.getByRole("menuitem", { name: l.discard }).tap();
       await page.getByRole("button", { name: l.menu }).tap();
       issues.push(...(await audit(page, "phone shortcut menu")));
       await page.getByRole("menuitem", { name: l.edit }).tap();

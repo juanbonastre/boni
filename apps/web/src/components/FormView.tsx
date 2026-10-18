@@ -2,7 +2,7 @@ import { Check, ChevronDown, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormComponent, FormField, Json, Option } from "../core/contract.ts";
 import * as F from "../core/formLogic.ts";
-import { useStore } from "../store.ts";
+import { markPanelEdited, useStore } from "../store.ts";
 
 export type OptionsLoader = (source: string) => Promise<Option[]>;
 
@@ -53,6 +53,7 @@ export function FormView({
 
   const set = (id: string, v: Json) => {
     setValues((vs) => ({ ...vs, [id]: v }));
+    markPanelEdited();
     if (errors[id]) setErrors(({ [id]: _gone, ...rest }) => rest);
   };
 

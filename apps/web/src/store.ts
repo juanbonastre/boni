@@ -80,6 +80,10 @@ interface State {
   t: T;
   view: View;
   panel: Panel;
+  /** Something was typed or chosen in the open panel: closing it by hand asks first (`dismissPanel`). */
+  panelEdited: boolean;
+  /** The phone asks whether to discard what the open panel holds. */
+  discardAsk: boolean;
   tab: Tab;
   sidebarOpen: boolean;
   settingsOpen: boolean;
@@ -148,6 +152,8 @@ export const useStore = create<State>(() => ({
   t: translator("es"),
   view: { kind: "home" },
   panel: null,
+  panelEdited: false,
+  discardAsk: false,
   tab: "capture",
   sidebarOpen: true,
   settingsOpen: false,
@@ -335,6 +341,7 @@ export function refresh() {
 }
 
 // ---------- navigation ----------
+const FRESH_PANEL = { editPreview: null, panelEdited: false, discardAsk: false };
 export const showHome = () => set({ view: { kind: "home" } });
 export const showChart = (id: string) => set({ view: { kind: "chart", id } });
 /** The detail of one bar or slice of the chart on its own: navigation, so Back leaves it before the chart. */
@@ -342,13 +349,22 @@ export const setChartDrill = (drill: string | null) =>
   set((s) => (s.view.kind === "chart" ? { view: { ...s.view, drill } } : {}));
 /** A server screen in the panel; `values` fill its form (a shortcut's), `shortcut` names the one that did. */
 export const openScreen = (id: string, values?: F.Values, shortcut?: string) => {
-  set({ panel: { kind: "screen", id, values, shortcut }, editPreview: null });
+  set({ panel: { kind: "screen", id, values, shortcut }, ...FRESH_PANEL });
   if (!get().screens[id]) void loadScreen(id);
 };
 export const showTab = (tab: Tab) => set({ tab, view: { kind: "home" } });
 export const openEditor = (spec: ChartSpec, isNew = false) =>
-  set({ panel: { kind: "edit", spec: normalize(spec), isNew }, editPreview: null });
-export const closePanel = () => set({ panel: null, editPreview: null });
+  set({ panel: { kind: "edit", spec: normalize(spec), isNew }, ...FRESH_PANEL });
+export const closePanel = () => set({ panel: null, ...FRESH_PANEL });
+export const markPanelEdited = () => {
+  if (get().panel && !get().panelEdited) set({ panelEdited: true });
+};
+/** The user closes the panel (its close button, Back): with something typed in it the phone asks first. */
+export const dismissPanel = () => {
+  if (get().panelEdited) set({ discardAsk: true });
+  else closePanel();
+};
+export const keepEditing = () => set({ discardAsk: false });
 export const setEditPreview = (p: State["editPreview"]) => set({ editPreview: p });
 /** The editor's draft as it is typed: the card being edited shows its title and colour at once. */
 export const setEditDraft = (spec: ChartSpec) =>
@@ -356,14 +372,15 @@ export const setEditDraft = (spec: ChartSpec) =>
 export const openSettings = (open = true) => set({ settingsOpen: open });
 
 /**
- * The phone's Back (Esc): closes the top thing, one at a time: settings, the panel, a chart's detail, a chart on
- * its own, then the charts tab. False when there was nothing to close. Menus and lists that components open close
- * on Esc before this runs; Android's button is Esc too (`androidBack`).
+ * The phone's Back (Esc): closes the top thing, one at a time: settings, the panel (asking first when something was
+ * typed in it), a chart's detail, a chart on its own, then the charts tab. False when there was nothing to close.
+ * Menus and lists that components open close on Esc before this runs; Android's button is Esc too (`androidBack`).
  */
 export function goBack(): boolean {
   const s = get();
   if (s.settingsOpen) openSettings(false);
-  else if (s.panel) closePanel();
+  else if (s.discardAsk) keepEditing();
+  else if (s.panel) dismissPanel();
   else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
   else if (s.view.kind === "chart") showHome();
   else if (s.tab !== "capture") showTab("capture");
@@ -662,7 +679,7 @@ export function useVisibleShortcuts(): Shortcut[] {
 }
 
 export const openShortcutEditor = (shortcut: Shortcut, isNew = false) =>
-  set({ panel: { kind: "shortcut", shortcut, isNew }, editPreview: null });
+  set({ panel: { kind: "shortcut", shortcut, isNew }, ...FRESH_PANEL });
 
 /** Saves the shortcut editor's shortcut (new or edited). */
 export async function saveShortcut(sc: Shortcut): Promise<Shortcut> {
