@@ -115,8 +115,7 @@ function MobileTop({ title }: { title: string }) {
   const t = useStore((s) => s.t);
   const pending = useStore((s) => s.pending);
   const settings = useStore((s) => s.settings);
-  const offline =
-    configured(settings) && Boolean(host.desktop) && !settings.live && !settings.liveUnsupported;
+  const offline = configured(settings) && host.live && !settings.live && !settings.liveUnsupported;
   return (
     <header className="m-top">
       <h1 className="m-title">{title}</h1>

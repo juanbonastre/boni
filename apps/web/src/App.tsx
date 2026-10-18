@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
 import { isCategoryKind } from "./core/chartBuilder.ts";
 import { emptyState } from "./core/charts.ts";
+import { host } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
   CAPTURE_SCREEN,
@@ -137,8 +138,7 @@ function TopBar() {
   const actions = buttons.length
     ? buttons
     : [{ type: "button" as const, label: t("capture.title"), screen: CAPTURE_SCREEN, icon: "add" }];
-  const offline =
-    ready && Boolean(window.boniDesktop) && !settings.live && !settings.liveUnsupported;
+  const offline = ready && host.live && !settings.live && !settings.liveUnsupported;
   return (
     <header className="topbar">
       {!sidebarOpen && (

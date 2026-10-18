@@ -14,6 +14,7 @@ Diseno completo y decisiones: nota `proyectos/boni.md` del vault y `docs/arquite
 | `server/` | Servidor en Python 3.12: API para los clientes, cliente MCP de las fuentes, estadisticas, SQLite, `Dockerfile` |
 | `apps/web/` | La interfaz (React + TypeScript): inicio, apuntar gasto, graficas, editor, ajustes, widgets |
 | `apps/desktop/` | App de escritorio (Electron): ventana, widgets en el escritorio, bandeja, arranque al iniciar sesion, paquete `.deb` |
+| `apps/android/` | App Android: la misma interfaz en un WebView, con login, peticiones, cola sin conexión (WorkManager) y directo nativos; APK firmado en el CI para Obtainium |
 | `e2e/` | Pruebas de la interfaz (Playwright) |
 | `api/` | El contrato entre servidor y clientes: esquemas JSON y ejemplos |
 | `docs/` | Documentacion para Juan (espanol) |

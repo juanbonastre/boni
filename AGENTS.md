@@ -70,6 +70,16 @@ vault-mcp) and in `docs/arquitectura.md` here. The vault's own rules (`AGENTS.md
   (`?widget=<id>&chart=<id>`). One page gets the minute ticks (the coordinator: main window, else the first widget): it
   sends the offline queue, and reloads every 15 minutes only while there is no live connection. An old device token
   (from before accounts) keeps working; the page asks to log in.
+- `apps/android/` is the Android shell (Kotlin, as Boni Calendar's; CI builds it, `android.yml`): the built web UI in a
+  WebView from the APK's assets (`appassets.androidplatform.net`, works without network). `AndroidBridge.kt` is
+  `window.boniAndroid` (async `call`, answers fetched with `take`; web side `src/android.ts`), over `Shell.kt`, which
+  owns what the desktop's main process owns, with the same answers: settings, the login (the session token encrypted by
+  a key in the Android Keystore, `TokenVault.kt`; the page never sees it), every request (`Paths.apiRequest`: only
+  api/v1), the small files in the app's `files/store/`, the live stream while the app is in front (`Live.kt`) and the
+  minute ticks. `QueueWorker.kt` (WorkManager, needs network) sends `queue.json` with the app closed, with the page's
+  rules (`QueueLogic.kt` = `core/queue.ts`, unit-tested on the same cases; keep them in step); while the app is in front
+  the page sends it. Back asks the page (`window.__boniBack` = `goBack`). Cleartext http only to localhost (a server on
+  the laptop through `adb reverse`). Signed releases need four repository secrets (see `android.yml`).
 - **Desktop widgets** are windows of type "dock" kept below the others with `wmctrl -b add,below,sticky` (X11): just above
   the desktop background, below every window, they survive "show desktop" and clicks on the desktop, stay out of the
   taskbar and Alt+Tab, and are fully interactive (tested on Cinnamon's window manager, 2026-10-17). Dragging and resizing

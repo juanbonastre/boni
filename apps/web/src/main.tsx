@@ -1,7 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
-import { init } from "./store.ts";
+import { goBack, init } from "./store.ts";
 import { WidgetPage } from "./Widget.tsx";
 import "./styles.css";
 
@@ -21,6 +21,8 @@ if (widgetId && chartId) {
     ),
   );
 } else {
+  // Android's Back button asks the page what to close (false: nothing open, the app goes to the background).
+  (window as unknown as { __boniBack: () => boolean }).__boniBack = goBack;
   void init("main").then(() =>
     root.render(
       <StrictMode>

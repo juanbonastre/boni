@@ -1,3 +1,4 @@
+import { type AndroidNative, androidHost } from "./android.ts";
 import type { Transport, TransportAnswer } from "./core/api.ts";
 import type { Widget } from "./core/contract.ts";
 import type { TextStore } from "./core/storage.ts";
@@ -7,8 +8,8 @@ import type { Lang } from "./i18n.ts";
  * Everything the interface needs from where it runs (as `host.ts` in Boni Calendar). The desktop app (Electron)
  * provides it through `window.boniDesktop` (preload.cjs): the login, every request and the live changes go through
  * the main process (the server has no CORS, and the password and the token never reach the page), files live in the
- * user's folders. A plain browser (development, e2e tests) talks to the same origin and keeps everything in
- * localStorage.
+ * user's folders. The Android app does the same through `window.boniAndroid` (android.ts). A plain browser
+ * (development, e2e tests) talks to the same origin and keeps everything in localStorage.
  */
 
 export type Theme = "system" | "dark" | "light";
@@ -105,10 +106,13 @@ export interface Host {
   suggestedDevice(): Promise<string>;
   onEvent(cb: (e: ShellEvent) => void): () => void;
   desktop: DesktopHost | null;
+  /** The host holds a live connection to the server (desktop, Android): without it, "offline" means nothing. */
+  live: boolean;
 }
 
 declare global {
   interface Window {
+    boniAndroid?: AndroidNative;
     boniDesktop?: {
       request(method: string, path: string, body?: unknown): Promise<TransportAnswer>;
       storeRead(name: string): Promise<string | null>;
@@ -158,6 +162,7 @@ function desktopHost(b: NonNullable<Window["boniDesktop"]>): Host {
         hide: () => b.widgetHide(),
       },
     },
+    live: true,
   };
 }
 
@@ -292,10 +297,15 @@ export function browserHost(): Host {
       return () => listeners.delete(cb);
     },
     desktop: null,
+    live: false,
   };
 }
 
 export const host: Host =
-  typeof window !== "undefined" && window.boniDesktop
-    ? desktopHost(window.boniDesktop)
-    : browserHost();
+  typeof window === "undefined"
+    ? browserHost()
+    : window.boniDesktop
+      ? desktopHost(window.boniDesktop)
+      : window.boniAndroid
+        ? androidHost(window.boniAndroid)
+        : browserHost();

@@ -31,3 +31,6 @@ release/
 test-results/
 playwright-report/
 e2e/screenshots/
+
+# The Android app: the web UI is copied into its assets at build time (CI)
+apps/android/app/src/main/assets/

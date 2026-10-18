@@ -101,6 +101,16 @@ se guarda directamente (pasa por la cola sin conexión y espera los segundos del
 gasto guardado ("Guardar como atajo"), desde el propio formulario o con "Nuevo atajo"; se editan y borran desde su menú o
 manteniéndolo pulsado. Se guardan en el servidor (`/api/v1/shortcuts`), compartidos por todos los equipos.
 
+## Android (`apps/android`)
+La misma web en un WebView, como la app Android de Boni Calendar: se sirve desde los assets del APK, así que abre sin
+red con los últimos datos guardados. La app (Kotlin) hace lo que en el escritorio hace el proceso principal: el login
+(el token de sesión cifrado con una clave del Keystore de Android; la página nunca lo ve), todas las peticiones al
+servidor (no tiene CORS), los ajustes, los archivos de la cola y las copias, el directo mientras está delante y el
+"minuto". Con la app cerrada, la cola sin conexión la envía WorkManager en cuanto hay red (mismas reglas que la web,
+también la espera del "Deshacer"). Atrás cierra lo de encima; sin nada abierto, la app pasa a segundo plano.
+El CI (`android.yml`) compila el APK; con los secretos del keystore, cada cambio en `main` publica una release
+`android-v0.1.N` que instala Obtainium.
+
 ## Escritorio: widgets
 Cada widget es una ventana pequena, sin bordes y transparente, con una grafica interactiva: al pasar el raton se ve el valor y
 sus controles (periodo y menu), al tocar un punto su detalle; se mueve arrastrandola, se cambia de tamano desde la esquina y
