@@ -1,6 +1,7 @@
 # Núcleo de Boni: diseño técnico
 
-**Estado: PROPUESTO (2026-10-19), pendiente de aprobación de Juan.** No se escribe código del núcleo hasta que lo apruebe.
+**Estado: APROBADO por Juan el 2026-10-19** ("apruebo el diseño"), después de la revisión adversarial de la sección 16.
+Lo marcado como Propuesto dentro del documento se aplica con el diseño; lo Abierto se decide en el PR que lo necesite.
 El plan de producto y su motivación están en el vault (`proyectos/boni-plan.md`, secciones 0, 3 y 9); este documento es
 el diseño técnico que lo concreta. Cada punto lleva su estado: **Decidido** (por Juan, con fecha), **Propuesto** (por la
 IA, pendiente) o **Abierto**. Lo que no se ha comprobado lleva `UNVERIFIED`.
@@ -685,11 +686,13 @@ interface ViewSpec {
     `[hermes]`, por ejemplo). El planificador lo ve, pero nunca vale como destino ni como autoridad. Es un repo aparte,
     así que va en un PR posterior.
   - Sensibilidad: finanzas, salud, diario y el registro de sueño `sensitive`; personas `personal` y `thirdParty`.
-- **Secretos y números de identidad no se importan.** El changelog del vault cuenta que en `NotionImport/` hubo claves
-  de API y contraseñas de aplicación (borradas el 2026-10-09) y que aún quedan números de DNI. Antes de importar, el
-  código busca patrones de secretos (claves de API, tokens, contraseñas de aplicación, claves privadas) y de documentos
-  de identidad (DNI/NIE, IBAN completos, números de tarjeta). Lo que encuentra no entra: queda "fuera de alcance", la
-  nota se importa sin esa línea y el informe dice dónde estaba, para que Juan lo borre del vault.
+- **Los secretos de acceso no se importan.** El changelog del vault cuenta que en `NotionImport/` hubo claves de API y
+  contraseñas de aplicación (borradas el 2026-10-09). Antes de importar, el código busca patrones de secretos (claves de
+  API, tokens, contraseñas de aplicación, claves privadas). Lo que encuentra no entra: queda "fuera de alcance", la nota
+  se importa sin esa línea y el informe dice dónde estaba, para que Juan lo borre del vault.
+- **Los números de identidad sí se importan, como dato sensible** (decidido, Juan, 2026-10-19: los DNI que quedan en
+  `NotionImport/` se quedan como están). El mismo análisis los detecta (DNI/NIE, IBAN, tarjetas) y marca esos campos o
+  notas como `sensitive`, así que P3 impide que salgan hacia internet sin confirmación.
 - **Repetible:** la tabla `vault_map (path, entity, sha256, mtime)` hace que importar dos veces no duplique nada.
 - **Una colección tiene un modo:**
   - **`vault`:** la verdad sigue en el vault; el núcleo la indexa y escribe en él con las reglas de hoy, como el
@@ -899,7 +902,7 @@ sin que el modelo tuviera que hacer nada raro, o daban control total.
 | A18 | **Texto ajeno en el vault tomado como propio:** recortes web, notas escritas por otros agentes | Solo se distinguía por carpeta (y `NotionImport/`, que es de Juan, se trataba como externo) | Por autoría: `external` para recortes, `model` para lo escrito por otros agentes (9.1) | Media |
 | A19 | **Sesión robada que confirma** | Una sesión personal podía confirmar todo | Confirmación reforzada con clave del dispositivo, para pagos y envíos (7.5, propuesto) | Media (cuando haya envíos) |
 | A20 | **Reutilizar un plan guardado** para citar una petición antigua | No dicho | El plan se ata al turno (7.2) | Baja |
-| A21 | **Secretos dentro de los datos:** una clave o un DNI que quedó en una nota importada, que el planificador ve y que podría acabar en un envío | No contemplado | Búsqueda de secretos y números de identidad antes de importar (9.1) | Media |
+| A21 | **Secretos dentro de los datos:** una clave o un DNI que quedó en una nota importada, que el planificador ve y que podría acabar en un envío | No contemplado | Los secretos de acceso no se importan; los números de identidad se importan marcados como sensibles (9.1) | Media |
 
 **Lo que sigue abierto después de la revisión (riesgo aceptado o pendiente):**
 - **Texto pegado a mano:** si Juan copia un correo en una nota, ese texto pasa a `user` y el planificador lo ve. No hay
