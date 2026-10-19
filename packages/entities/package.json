@@ -1,0 +1,19 @@
+{
+  "name": "@boni/entities",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Boni's entity model: types, fields, values, provenance labels and schema operations (pure, no I/O)",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "5.0.4"
+  }
+}
