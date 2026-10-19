@@ -38,6 +38,13 @@ packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accou
                  `import-accounts` moves their accounts and sessions and devices stay logged in), account data,
                  push addresses, and each account's data key, wrapped (`wrappedKeysIn` for @boni/store). The
                  servers still use their own accounts until the server moves onto it (plan PR 6).
+packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed catalogue (`viewErrors` checks every
+                 field it names, `viewRows` filters/sorts/limits) and the chart engine `computeChart`, ported function
+                 by function from the first Boni's Python engine over a `Profile` (money movements: `moneyProfile`
+                 with the single definition of spending; any type: `entityProfile`, count/sum/avg). It must give
+                 the Python numbers exactly (Python's round to even and CPython 3.12's compensated sum included):
+                 `golden/cases.json` comes from the original engine (`golden/make_golden.py`); a change to the
+                 engine changes them only on purpose.
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
