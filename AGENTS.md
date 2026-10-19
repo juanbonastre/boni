@@ -58,7 +58,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  (`account.ts`, the list encrypted with `secret.ts`; `feeds.ts` downloads them, public addresses
                  only); the store syncs them (`syncAccount`, `pushAccount`, "account" stream event). Dockerfile for the NAS.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
-docs/            decisions and status.
+docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.
+legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, real names replaced. Reference only:
+                 not built, linted or tested here; delete each piece once it is ported to the core.
 ```
 
 ## Commands (use the Makefile)

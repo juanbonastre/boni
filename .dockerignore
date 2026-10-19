@@ -9,3 +9,4 @@ apps/desktop-electron/web
 apps/obsidian-plugin/dist
 apps/android
 .git
+legacy

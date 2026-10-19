@@ -12,7 +12,8 @@
       "!**/node_modules",
       "!**/test-results",
       "!**/playwright-report",
-      "!pnpm-lock.yaml"
+      "!pnpm-lock.yaml",
+      "!legacy"
     ]
   },
   "formatter": {
