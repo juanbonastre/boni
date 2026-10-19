@@ -1,5 +1,5 @@
 {
-  "name": "boni-calendar-server",
+  "name": "@boni/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -14,8 +14,8 @@
     "node": ">=24"
   },
   "dependencies": {
-    "@boni-calendar/core": "workspace:*",
-    "@boni-calendar/web": "workspace:*"
+    "@boni/calendar": "workspace:*",
+    "@boni/calendar-web": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

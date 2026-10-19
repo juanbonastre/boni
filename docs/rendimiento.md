@@ -73,7 +73,7 @@ agenda real llegara a esa densidad habria que revisarlo.
 
 ## Android: la app web en un WebView (2026-10-16)
 Antes de construir la app de Android se midio si el WebView del movil mueve la rejilla con fluidez (decision de Juan: un
-cascaron Kotlin con la misma app web, `apps/android`). Pixel 9a, GrapheneOS (Android 17), WebView Vanadium 155 (Chromium),
+cascaron Kotlin con la misma app web, `apps/calendar-android`). Pixel 9a, GrapheneOS (Android 17), WebView Vanadium 155 (Chromium),
 pantalla a 60 Hz, 411x923 dp, datos de ejemplo, el mismo banco integrado (`?bench=auto`, lanzado por adb):
 
 | Escenario | Perdidos |

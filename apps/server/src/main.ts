@@ -12,7 +12,7 @@ import { Vaults } from "./vaults.ts";
  *   BONI_DB     the SQLite file (accounts, sessions)          default ./data/boni-calendar.db
  *   BONI_PORT   port to listen on (behind Tailscale serve)    default 8787
  *   BONI_HOST   address to listen on                          default 127.0.0.1
- *   BONI_WEB    the built web app to serve (apps/web/dist)     optional
+ *   BONI_WEB    the built web app to serve (apps/calendar-web/dist)     optional
  *   BONI_WRITE  "1": devices may change the notes (the vault must be mounted writable)   default read-only
  *   BONI_SECRET_KEY  32 bytes in base64 to encrypt accounts' secrets   default: secret.key next to the DB
  *   BONI_FEEDS_ALLOW_PRIVATE  "1": external calendars may be on private addresses (tests only)

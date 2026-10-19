@@ -1,7 +1,7 @@
-import { type CalEvent, eventToRow, makeModel, makeProjector, type Row } from "@boni-calendar/core";
-import { makeVaultProvider } from "@boni-calendar/web/src/vault/provider.ts";
-import { aliases, readVault, resetVaultIndex } from "@boni-calendar/web/src/vault/sync.ts";
-import { definitionNote } from "@boni-calendar/web/src/vault/testing.ts";
+import { type CalEvent, eventToRow, makeModel, makeProjector, type Row } from "@boni/calendar";
+import { makeVaultProvider } from "@boni/calendar-web/src/vault/provider.ts";
+import { aliases, readVault, resetVaultIndex } from "@boni/calendar-web/src/vault/sync.ts";
+import { definitionNote } from "@boni/calendar-web/src/vault/testing.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { obsidianBridge } from "./bridge.ts";
 import { fakeObsidian } from "./fakeObsidian.ts";

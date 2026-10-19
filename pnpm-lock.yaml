@@ -176,7 +176,7 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
-  apps/desktop-electron:
+  apps/calendar-desktop:
     devDependencies:
       electron:
         specifier: 44.7.2
@@ -185,49 +185,11 @@ importers:
         specifier: 26.15.3
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)(supports-color@7.2.0)
 
-  apps/obsidian-plugin:
+  apps/calendar-web:
     dependencies:
-      '@boni-calendar/core':
+      '@boni/calendar':
         specifier: workspace:*
-        version: link:../../packages/core
-      '@boni-calendar/web':
-        specifier: workspace:*
-        version: link:../web
-    devDependencies:
-      esbuild:
-        specifier: 0.28.2
-        version: 0.28.2
-      obsidian:
-        specifier: 1.14.4
-        version: 1.14.4(@codemirror/state@6.7.6)(@codemirror/view@6.43.13)
-      postcss:
-        specifier: 8.5.30
-        version: 8.5.30
-      vitest:
-        specifier: 5.0.4
-        version: 5.0.4(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-
-  apps/server:
-    dependencies:
-      '@boni-calendar/core':
-        specifier: workspace:*
-        version: link:../../packages/core
-      '@boni-calendar/web':
-        specifier: workspace:*
-        version: link:../web
-    devDependencies:
-      '@types/node':
-        specifier: 24.19.2
-        version: 24.19.2
-      vitest:
-        specifier: 5.0.4
-        version: 5.0.4(@types/node@24.19.2)(happy-dom@21.0.1)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-
-  apps/web:
-    dependencies:
-      '@boni-calendar/core':
-        specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/calendar
       lucide-react:
         specifier: 1.57.0
         version: 1.57.0(@types/react@19.3.0)(react@19.3.0)
@@ -263,7 +225,45 @@ importers:
         specifier: 5.0.4
         version: 5.0.4(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
-  packages/core:
+  apps/obsidian-plugin:
+    dependencies:
+      '@boni/calendar':
+        specifier: workspace:*
+        version: link:../../packages/calendar
+      '@boni/calendar-web':
+        specifier: workspace:*
+        version: link:../calendar-web
+    devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
+      obsidian:
+        specifier: 1.14.4
+        version: 1.14.4(@codemirror/state@6.7.6)(@codemirror/view@6.43.13)
+      postcss:
+        specifier: 8.5.30
+        version: 8.5.30
+      vitest:
+        specifier: 5.0.4
+        version: 5.0.4(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+
+  apps/server:
+    dependencies:
+      '@boni/calendar':
+        specifier: workspace:*
+        version: link:../../packages/calendar
+      '@boni/calendar-web':
+        specifier: workspace:*
+        version: link:../calendar-web
+    devDependencies:
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      vitest:
+        specifier: 5.0.4
+        version: 5.0.4(@types/node@24.19.2)(happy-dom@21.0.1)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+
+  packages/calendar:
     dependencies:
       yaml:
         specifier: ^2.9.1
@@ -2494,7 +2494,7 @@ snapshots:
     dependencies:
       '@types/http-cache-semantics': 4.2.0
       '@types/keyv': 3.1.4
-      '@types/node': 26.6.5
+      '@types/node': 24.19.2
       '@types/responselike': 1.0.3
 
   '@types/chai@5.2.3':
@@ -2516,13 +2516,13 @@ snapshots:
 
   '@types/fs-extra@9.0.13':
     dependencies:
-      '@types/node': 26.6.5
+      '@types/node': 24.19.2
 
   '@types/http-cache-semantics@4.2.0': {}
 
   '@types/keyv@3.1.4':
     dependencies:
-      '@types/node': 26.6.5
+      '@types/node': 24.19.2
 
   '@types/ms@2.1.0': {}
 
@@ -2533,6 +2533,7 @@ snapshots:
   '@types/node@26.6.5':
     dependencies:
       undici-types: 8.9.0
+    optional: true
 
   '@types/react-dom@19.3.0(@types/react@19.3.0)':
     dependencies:
@@ -2544,7 +2545,7 @@ snapshots:
 
   '@types/responselike@1.0.3':
     dependencies:
-      '@types/node': 26.6.5
+      '@types/node': 24.19.2
 
   '@types/tern@0.23.9':
     dependencies:
@@ -2554,7 +2555,7 @@ snapshots:
 
   '@types/ws@8.18.2':
     dependencies:
-      '@types/node': 26.6.5
+      '@types/node': 24.19.2
 
   '@typescript/typescript-aix-ppc64@7.0.2':
     optional: true
@@ -2756,7 +2757,7 @@ snapshots:
 
   buffer-image-size@0.6.4:
     dependencies:
-      '@types/node': 26.6.5
+      '@types/node': 24.19.2
 
   builder-util-runtime@9.7.0(supports-color@7.2.0):
     dependencies:
@@ -3198,7 +3199,7 @@ snapshots:
 
   happy-dom@21.0.1:
     dependencies:
-      '@types/node': 26.6.5
+      '@types/node': 24.19.2
       '@types/whatwg-mimetype': 3.0.2
       '@types/ws': 8.18.2
       buffer-image-size: 0.6.4
@@ -3777,7 +3778,8 @@ snapshots:
 
   undici-types@7.24.6: {}
 
-  undici-types@8.9.0: {}
+  undici-types@8.9.0:
+    optional: true
 
   undici@6.29.0: {}
 

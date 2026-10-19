@@ -119,7 +119,7 @@ utilidad, nunca a la seguridad.
 
 ```
 packages/
-  calendar/    el actual packages/core (tiempo, colecciones, proyección, series, iCal, avisos) → @boni/calendar
+  calendar/    antes packages/core (tiempo, colecciones, proyección, series, iCal, avisos) → @boni/calendar (hecho, PR 54)
   entities/    tipos, campos, valores, etiquetas de procedencia, operaciones de esquema (puro, sin E/S)
   store/       SQLite por usuario: migraciones, entidades, enlaces, FTS, registro de operaciones, deshacer, claves
   views/       ViewSpec, compilador de consultas, motor de gráficas (puerto del de Boni), formularios
@@ -773,6 +773,7 @@ distinguidas por **dónde llegan** y nunca por cabeceras que se puedan falsifica
 |---|---|---|
 | 0 | **Este diseño** (`docs/nucleo.md`) | — |
 | 1 | Renombrado y monorepo (T1): `@boni/*`, carpetas `apps/calendar-*`, prefijos de etiqueta, workflows por app; `legacy/boni/` con historial (`git subtree`). Ningún cambio de comportamiento | Todo el CI actual pasa igual; un APK y un `.deb` de prueba con los nombres nuevos |
+|  | **Hecho (2026-10-19):** repos renombrados en GitHub; 1a, `legacy/boni/` con historial limpio (PR 53); 1b, carpetas y paquetes `@boni/*`, etiqueta `calendar-android-v…` (PR 54). Se quedan como estaban los nombres de los que dependen los dispositivos (`AGENTS.md`). Los workflows por app llegan con la primera app nueva | |
 | 2 | `packages/net`: `netSafety` (sección 13) y `feeds.ts` encima de él | Rebinding de DNS, redirecciones, CGNAT, IPv4 dentro de IPv6, metadatos, parámetros con credenciales, tamaño y tiempo |
 | 3 | `packages/entities`: tipos, valores, validación, etiquetas y su combinación, operaciones de esquema (puro) | Unitarias y por propiedades (`fast-check`): la combinación de etiquetas nunca sube la integridad ni baja la sensibilidad |
 | 4 | `packages/store`: SQLite por usuario, migraciones, CRUD, enlaces, FTS, `field_prov`, `ops`, deshacer, `KeyProvider` del NAS, copias cifradas | Deshacer(hacer(x)) = x por propiedades; autorizador de solo lectura; migraciones desde vacío y desde la versión anterior |

@@ -5,7 +5,7 @@ Boni Calendar mobile app, the Obsidian plugin) must look and behave like it. Whe
 what Boni Calendar does. Changes to the look or the behaviour start in Boni Calendar, are recorded here in the same pull
 request, and then propagate to the other apps. A deviation needs a written reason in the deviating app's docs.
 
-Authoritative sources: this file, the tokens in `apps/web/src/styles.css` (`:root` and `:root[data-theme="light"]`), and the
+Authoritative sources: this file, the tokens in `apps/calendar-web/src/styles.css` (`:root` and `:root[data-theme="light"]`), and the
 behaviour covered by `e2e/`. Validated by Juan on the desktop app up to version 0.3.2; the mobile section is a proposal for later.
 
 ## 1. Principles
@@ -37,8 +37,8 @@ Calendar palette (colour of a calendar, always from this list): violet `#a78bfa`
 amber `#fbbf24`, green `#4ade80`, teal `#2dd4bf`, sky `#38bdf8`, blue `#60a5fa`, pink `#f472b6`, red `#ef4444`,
 slate `#94a3b8`.
 
-- **App icon:** Juan's logo (a graphite frame with a star, on a cream edge `#FFFCF3`): `apps/desktop-electron/icon.png`
-  (512 px), the web favicon (`apps/web/public/favicon.png`) and Android's adaptive icon (the logo inside the safe zone on a
+- **App icon:** Juan's logo (a graphite frame with a star, on a cream edge `#FFFCF3`): `apps/calendar-desktop/icon.png`
+  (512 px), the web favicon (`apps/calendar-web/public/favicon.png`) and Android's adaptive icon (the logo inside the safe zone on a
   cream background). Generated from one source image; keep the three in step.
 - **Type:** Inter, then the system stack. Base 13 px / 1.4. Month title 22 px, weight 650, year in `--muted`. Small text
   11 to 12.5 px. Times and numbers use tabular figures.
@@ -190,7 +190,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   calendar always shows the vault it runs in (Settings → Data offers no folder to choose) and writes to it from
   the start, with the same rules as the desktop app; "Open note" opens the note in a tab, or brings forward the tab
   that already shows it. Installed by hand (`make install-obsidian VAULT=...`), not from the community catalogue.
-- **Mobile** (the Android app, `apps/android`: the same web app in a WebView, so the look is the desktop's by construction;
+- **Mobile** (the Android app, `apps/calendar-android`: the same web app in a WebView, so the look is the desktop's by construction;
   also any pane narrower than 640 px): same tokens and card recipe. It opens on three days. The sidebar is a drawer over
   the calendar (top-left button; it closes on a tap outside or once a day is chosen); the detail is a sheet at the bottom
   (expanded, full screen); "new event" is a floating button (next whole hour, today). Fingers: a swipe scrolls the hours

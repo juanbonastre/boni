@@ -1,5 +1,5 @@
-import type { Host } from "@boni-calendar/web/src/host.ts";
-import { t } from "@boni-calendar/web/src/i18n.ts";
+import type { Host } from "@boni/calendar-web/src/host.ts";
+import { t } from "@boni/calendar-web/src/i18n.ts";
 import { getLanguage, Plugin, requestUrl } from "obsidian";
 import { type ObsidianBridge, obsidianBridge } from "./bridge.ts";
 import { indexedDbCache } from "./cache.ts";
@@ -69,7 +69,7 @@ export default class BoniCalendarPlugin extends Plugin {
    * when called.
    */
   async bench(only = ""): Promise<unknown> {
-    const { runBench } = await import("@boni-calendar/web/src/bench.ts");
+    const { runBench } = await import("@boni/calendar-web/src/bench.ts");
     return runBench(only);
   }
 

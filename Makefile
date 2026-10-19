@@ -23,7 +23,7 @@ e2e: ## Run Playwright tests (system Chrome)
 	pnpm exec playwright test
 
 bench-chrome: build ## Smoothness benchmark in a real Chrome window
-	@(pnpm --filter @boni-calendar/web exec vite preview --port 4173 --strictPort >/dev/null 2>&1 & echo $$! > .preview.pid); sleep 3; \
+	@(pnpm --filter @boni/calendar-web exec vite preview --port 4173 --strictPort >/dev/null 2>&1 & echo $$! > .preview.pid); sleep 3; \
 	node bench/run-chrome.mjs; kill `cat .preview.pid`; rm -f .preview.pid
 
 desktop: build ## Run the desktop app (Electron) from the build
@@ -31,10 +31,10 @@ desktop: build ## Run the desktop app (Electron) from the build
 	pnpm --filter boni-calendar-desktop start
 
 plugin: ## Build the Obsidian plugin into apps/obsidian-plugin/dist (main.js + manifest.json)
-	pnpm --filter boni-calendar-obsidian build
+	pnpm --filter @boni/obsidian-plugin build
 
 server: ## Run the server locally (BONI_DB, BONI_PORT, BONI_WEB: see apps/server/src/main.ts)
-	pnpm --filter boni-calendar-server start
+	pnpm --filter @boni/server start
 
 install-obsidian: plugin ## Copy the plugin into a vault: make install-obsidian VAULT=/path/to/vault
 	@test -n "$(VAULT)" || (echo "Usage: make install-obsidian VAULT=/path/to/vault" && exit 1)

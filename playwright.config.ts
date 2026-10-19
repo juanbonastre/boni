@@ -18,7 +18,7 @@ export default defineConfig({
     timezoneId: "Europe/Madrid",
   },
   webServer: {
-    command: `BONI_TEST_PAGES=1 pnpm --filter @boni-calendar/web build && pnpm --filter @boni-calendar/web exec vite preview --port ${PORT} --strictPort`,
+    command: `BONI_TEST_PAGES=1 pnpm --filter @boni/calendar-web build && pnpm --filter @boni/calendar-web exec vite preview --port ${PORT} --strictPort`,
     port: PORT,
     reuseExistingServer: false,
     timeout: 120_000,

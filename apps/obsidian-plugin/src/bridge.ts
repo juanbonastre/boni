@@ -1,4 +1,4 @@
-import type { NoteStat, VaultBridge, VaultResult } from "@boni-calendar/web/src/vaultBridge.ts";
+import type { NoteStat, VaultBridge, VaultResult } from "@boni/calendar-web/src/vaultBridge.ts";
 import type { App, EventRef, TAbstractFile, TFile, TFolder } from "obsidian";
 
 /** Top-level folders the calendar never reads or writes (zones the vault reserves for its owner). */

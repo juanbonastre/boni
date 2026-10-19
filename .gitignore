@@ -12,8 +12,8 @@ target/
 *.tmp.mjs
 *.tmp.py
 .preview.pid
-# Android (apps/android): build output, Gradle state, and the web UI copied in at build time
-apps/android/.gradle/
-apps/android/**/build/
-apps/android/local.properties
-apps/android/app/src/main/assets/web/
+# Android (apps/calendar-android): build output, Gradle state, and the web UI copied in at build time
+apps/calendar-android/.gradle/
+apps/calendar-android/**/build/
+apps/calendar-android/local.properties
+apps/calendar-android/app/src/main/assets/web/

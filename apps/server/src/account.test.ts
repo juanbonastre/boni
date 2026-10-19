@@ -4,7 +4,7 @@ import { createServer as createHttp, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { definitionNote } from "@boni-calendar/web/src/vault/testing.ts";
+import { definitionNote } from "@boni/calendar-web/src/vault/testing.ts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";

@@ -9,7 +9,7 @@ import esbuild from "esbuild";
 import postcss from "postcss";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const web = join(here, "..", "web");
+const web = join(here, "..", "calendar-web");
 const { scopeCss } = await import(join(web, "scopeCss.ts"));
 
 const cssFile = join(web, "src", "styles.css");

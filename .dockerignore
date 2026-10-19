@@ -5,8 +5,8 @@ e2e/screenshots
 test-results
 playwright-report
 bench/results
-apps/desktop-electron/web
+apps/calendar-desktop/web
 apps/obsidian-plugin/dist
-apps/android
+apps/calendar-android
 .git
 legacy

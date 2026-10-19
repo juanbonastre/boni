@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { systemTimeZone, todayIn } from "@boni-calendar/core";
-import { definitionNote } from "@boni-calendar/web/src/vault/testing.ts";
+import { systemTimeZone, todayIn } from "@boni/calendar";
+import { definitionNote } from "@boni/calendar-web/src/vault/testing.ts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Vaults } from "./vaults.ts";
 

@@ -13,7 +13,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { definitionNote } from "../apps/web/src/vault/testing.ts";
+import { definitionNote } from "../apps/calendar-web/src/vault/testing.ts";
 
 /**
  * The app with Boni Calendar Server: a real server (apps/server) on an invented vault and account,
