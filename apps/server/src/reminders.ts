@@ -80,7 +80,7 @@ export class Push {
   register(tokenHash: string, userId: number, endpoint: string): void {
     this.db
       .prepare(
-        `INSERT INTO push (token_hash, user_id, endpoint, updated) VALUES (?, ?, ?, ?)
+        `INSERT INTO push (token_hash, account_id, endpoint, updated) VALUES (?, ?, ?, ?)
          ON CONFLICT (token_hash) DO UPDATE SET endpoint = excluded.endpoint, updated = excluded.updated`,
       )
       .run(tokenHash, userId, endpoint, Date.now());
@@ -106,7 +106,7 @@ export class Push {
 
   private async send(userId: number): Promise<void> {
     const rows = this.db
-      .prepare("SELECT token_hash, endpoint FROM push WHERE user_id = ?")
+      .prepare("SELECT token_hash, endpoint FROM push WHERE account_id = ?")
       .all(userId) as { token_hash: string; endpoint: string }[];
     await Promise.all(
       rows.map(async (r) => {

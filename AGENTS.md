@@ -32,6 +32,19 @@ packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native mo
                  stored (same as a missing key). `readQuery` runs SELECTs under an authorizer (readable tables only,
                  no pragmas but `data_version`, no `load_extension`). Keys: a data key per user, stored only wrapped
                  (`wrappedKeyProvider`); backups are `VACUUM INTO` sealed with it (AES-256-GCM).
+packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
+                 devices with a trust level (personal / shared / ambient; only another personal device raises it),
+                 sessions stored as sha256 of the token (same scrypt and token hashing as both old servers, so
+                 `import-accounts` moves their accounts and sessions and devices stay logged in), account data,
+                 push addresses, and each account's data key, wrapped (`wrappedKeysIn` for @boni/store). The
+                 servers still use their own accounts until the server moves onto it (plan PR 6).
+packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed catalogue (`viewErrors` checks every
+                 field it names, `viewRows` filters/sorts/limits) and the chart engine `computeChart`, ported function
+                 by function from the first Boni's Python engine over a `Profile` (money movements: `moneyProfile`
+                 with the single definition of spending; any type: `entityProfile`, count/sum/avg). It must give
+                 the Python numbers exactly (Python's round to even and CPython 3.12's compensated sum included):
+                 `golden/cases.json` comes from the original engine (`golden/make_golden.py`); a change to the
+                 engine changes them only on purpose.
 packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `src/cli.ts --vault --store [--apply]`,
                  dry run by default; never writes the vault). Zones as everywhere (`scan.ts`: no private/, restricted/,
                  dot folders, _system/ notes, symlinks). Type by folder (agenda by `_system/colecciones`), fields
@@ -72,7 +85,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `vault-fs.cjs`, so it reads and writes the vault with the apps' rules; the vault stays the truth.
                  Node only strips types there: no parameter properties or enums in any file the server imports
                  (`write.test.ts` loads the server the way its container does). SQLite (`node:sqlite`) only for
-                 accounts (made by the admin, `src/cli.ts`), sessions (token hashes) and per-account data. API: snapshot,
+                 the single Boni account's system.db (@boni/identity, next to BONI_DB: accounts made by the admin,
+                 `src/cli.ts`, devices, sessions as token hashes, per-account data); on its first start it imports
+                 the old boni-calendar.db's accounts and sessions once (`startup.ts`), leaving that file as it was. API: snapshot,
                  changes since a version, live stream (SSE), `POST /api/apply` (only with `BONI_WRITE=1`; per-row
                  version check, a session's own writes are not conflicts); serves the web app; CORS open.
                  With writing on it tops up open-ended series itself (`topUpSeries`, after changes and every 6 h).
@@ -86,6 +101,10 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  account's prefs (`ACCOUNT_PREFS` in store.ts) and external calendars live on the server
                  (`account.ts`, the list encrypted with `secret.ts`; `feeds.ts` downloads them, public addresses
                  only); the store syncs them (`syncAccount`, `pushAccount`, "account" stream event). Dockerfile for the NAS.
+                 Two entries over one app (`makeApp` + `serve`): the tailnet's has every route, the public one
+                 (`BONI_PUBLIC_PORT`, for Funnel) only the allow-list of `routes.ts`, answering 404 for anything else
+                 before authentication. Every route must be listed there (`routes.test.ts` reads http.ts); a new
+                 route is `tailnet` unless it is deliberately made public.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.
 legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, real names replaced. Reference only:

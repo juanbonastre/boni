@@ -1,17 +1,20 @@
 import { dirname, join } from "node:path";
 import { startBackups } from "./backups.ts";
-import { openDb } from "./db.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
-import { makeServer } from "./http.ts";
+import { makeApp, serve } from "./http.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
+import { databasePaths, openServerDb } from "./startup.ts";
 import { Vaults } from "./vaults.ts";
 
 /**
  * Boni Calendar server. Environment:
- *   BONI_DB     the SQLite file (accounts, sessions)          default ./data/boni-calendar.db
+ *   BONI_DB     the old calendar database: its accounts and sessions move to system.db once   default ./data/boni-calendar.db
+ *   BONI_SYSTEM_DB  the single Boni account's system.db (accounts, devices, sessions)   default: next to BONI_DB
  *   BONI_PORT   port to listen on (behind Tailscale serve)    default 8787
  *   BONI_HOST   address to listen on                          default 127.0.0.1
+ *   BONI_PUBLIC_PORT  a second entry serving only the public allow-list (routes.ts), for Funnel   optional
+ *   BONI_PUBLIC_HOST  address of that entry                    default 0.0.0.0
  *   BONI_WEB    the built web app to serve (apps/calendar-web/dist)     optional
  *   BONI_WRITE  "1": devices may change the notes (the vault must be mounted writable)   default read-only
  *   BONI_SECRET_KEY  32 bytes in base64 to encrypt accounts' secrets   default: secret.key next to the DB
@@ -21,9 +24,10 @@ import { Vaults } from "./vaults.ts";
  *   BONI_PUSH_TOKEN  sent as a bearer token when posting to them (an ntfy account that may write up* topics)
  *   BONI_BACKUPS     daily copies of the database to keep in backups/ next to it   default 14 (0: none)
  */
-const dbPath = process.env.BONI_DB ?? "./data/boni-calendar.db";
-const db = openDb(dbPath);
-const key = loadKey(dbPath);
+const paths = databasePaths();
+const dbPath = paths.system;
+const { db } = openServerDb(paths);
+const key = loadKey(dbPath); // secret.key next to the databases, as before
 const keep = Number(process.env.BONI_BACKUPS ?? 14);
 const stopBackups =
   dbPath !== ":memory:" && keep > 0
@@ -43,7 +47,7 @@ const push = hosts.length
       ...(process.env.BONI_PUSH_TOKEN ? { token: process.env.BONI_PUSH_TOKEN } : {}),
     })
   : undefined;
-const server = makeServer({
+const app = makeApp({
   db,
   vaults,
   key,
@@ -53,11 +57,25 @@ const server = makeServer({
 });
 const port = Number(process.env.BONI_PORT ?? 8787);
 const host = process.env.BONI_HOST ?? "127.0.0.1";
+// The whole API (the tailnet's entry). The log line is what the NAS notes check for.
+const server = serve(app, "tailnet");
 server.listen(port, host, () => console.log(`boni-calendar-server on http://${host}:${port}`));
+// The public entry (behind Funnel): the same app, only the allow-list.
+const publicPort = process.env.BONI_PUBLIC_PORT ? Number(process.env.BONI_PUBLIC_PORT) : null;
+const publicServer = publicPort === null ? null : serve(app, "public");
+if (publicServer && publicPort !== null) {
+  const publicHost = process.env.BONI_PUBLIC_HOST ?? "0.0.0.0";
+  publicServer.listen(publicPort, publicHost, () =>
+    console.log(
+      `boni-calendar-server public entry (allow-list) on http://${publicHost}:${publicPort}`,
+    ),
+  );
+}
 
 const stop = () => {
   stopBackups();
   server.close();
+  publicServer?.close();
   vaults.close();
   db.close();
   process.exit(0);

@@ -3,8 +3,8 @@ import { join } from "node:path";
 import type { Db } from "./db.ts";
 
 /**
- * Copies of the server's database (phase 6): accounts, sessions, the accounts' settings and their
- * encrypted calendars. One a day into `dir` (a consistent copy even while the server writes: SQLite's
+ * Copies of the server's database (phase 6; system.db since the single account): accounts, devices,
+ * sessions, the accounts' settings and their encrypted calendars. The file names stay as they were. One a day into `dir` (a consistent copy even while the server writes: SQLite's
  * `VACUUM INTO`), keeping the last `keep`. The calendar itself is the vault, backed up on its own.
  * The key that decrypts the secrets (secret.key) is not copied: keep it apart from these copies.
  */

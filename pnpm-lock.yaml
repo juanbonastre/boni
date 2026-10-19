@@ -255,6 +255,9 @@ importers:
       '@boni/calendar-web':
         specifier: workspace:*
         version: link:../calendar-web
+      '@boni/identity':
+        specifier: workspace:*
+        version: link:../../packages/identity
       '@boni/net':
         specifier: workspace:*
         version: link:../../packages/net
@@ -281,6 +284,19 @@ importers:
       vitest:
         specifier: 5.0.4
         version: 5.0.4(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+
+  packages/identity:
+    dependencies:
+      '@boni/store':
+        specifier: workspace:*
+        version: link:../store
+    devDependencies:
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      vitest:
+        specifier: 5.0.4
+        version: 5.0.4(@types/node@24.19.2)(happy-dom@21.0.1)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
   packages/net:
     devDependencies:
@@ -315,6 +331,19 @@ importers:
       '@boni/store':
         specifier: workspace:*
         version: link:../store
+    devDependencies:
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
+      vitest:
+        specifier: 5.0.4
+        version: 5.0.4(@types/node@24.19.2)(happy-dom@21.0.1)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+
+  packages/views:
+    dependencies:
+      '@boni/entities':
+        specifier: workspace:*
+        version: link:../entities
     devDependencies:
       '@types/node':
         specifier: 24.19.2

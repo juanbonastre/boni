@@ -8,6 +8,7 @@ import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
+import { allowed, type Listener, ROUTES } from "./routes.ts";
 import type { SecretKey } from "./secret.ts";
 import type { Vaults } from "./vaults.ts";
 
@@ -45,6 +46,10 @@ export interface ServerOptions {
   guard?: LoginGuard;
   /** The built web app to serve, if any. */
   webDir?: string | null;
+  /** Which entry this server is (routes.ts); "tailnet" (everything) when missing. */
+  listener?: Listener;
+  /** The allow-list (tests only; ROUTES when missing). */
+  routes?: Readonly<Record<string, "public" | "tailnet">>;
 }
 
 const MIME: Record<string, string> = {
@@ -124,8 +129,33 @@ const tokenOf = (req: IncomingMessage): string | null => {
   return h?.startsWith("Bearer ") ? h.slice(7).trim() : null;
 };
 
+/** One server per entry, all sharing one app (login limits, live streams): see `makeApp`. */
 export function makeServer(opts: ServerOptions): Server {
+  return serve(makeApp(opts), opts.listener ?? "tailnet");
+}
+
+export interface App {
+  handler(listener: Listener): (req: IncomingMessage, res: ServerResponse) => void;
+}
+
+/** An HTTP server for one entry of `app`. */
+export function serve(app: App, listener: Listener): Server {
+  const server = createServer(app.handler(listener));
+  // A slow client cannot hold a connection open forever while sending its request (the live stream's
+  // answer is long, its request is not).
+  server.requestTimeout = 30_000;
+  server.headersTimeout = 15_000;
+  return server;
+}
+
+/**
+ * The server's state and routes. The tailnet entry and the public one are two servers over the same
+ * app, so a failed login on one counts on the other and a change made through one reaches the live
+ * streams of the other.
+ */
+export function makeApp(opts: ServerOptions): App {
   const { db, vaults, key, feeds, push } = opts;
+  const routes = opts.routes ?? ROUTES;
   const guard = opts.guard ?? new LoginGuard();
   /** Live streams of each account, told when its prefs or calendars change. */
   const accountListeners = new Map<number, Set<(updated: number) => void>>();
@@ -140,7 +170,7 @@ export function makeServer(opts: ServerOptions): Server {
     watched.add(root);
     const v = vaults.get(root);
     v.subscribe(() => {
-      const users = db.prepare("SELECT id FROM users WHERE vault = ?").all(root) as {
+      const users = db.prepare("SELECT id FROM accounts WHERE vault = ?").all(root) as {
         id: number;
       }[];
       push.changed(users.map((u) => u.id));
@@ -148,7 +178,9 @@ export function makeServer(opts: ServerOptions): Server {
     void v.snapshot().catch((e) => console.warn("vault", e));
   };
   if (push) {
-    for (const u of db.prepare("SELECT DISTINCT vault FROM users").all() as { vault: string }[]) {
+    for (const u of db
+      .prepare("SELECT DISTINCT vault FROM accounts WHERE vault IS NOT NULL")
+      .all() as { vault: string }[]) {
       try {
         watchVault(u.vault);
       } catch (e) {
@@ -164,12 +196,19 @@ export function makeServer(opts: ServerOptions): Server {
     return user;
   };
 
-  const api = async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> => {
+  const api = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    listener: Listener,
+  ): Promise<void> => {
     if (req.method === "OPTIONS") {
       res.writeHead(204, CORS);
       return void res.end();
     }
     const route = `${req.method} ${url.pathname}`;
+    // Before anything else, login included: on the public entry only the allow-list exists.
+    if (!allowed(route, listener, routes)) return send(res, 404, { error: "not-found" });
     if (route === "POST /api/login") {
       const b = await bodyOf(req);
       const name = String(b.user ?? "").slice(0, 64);
@@ -179,7 +218,7 @@ export function makeServer(opts: ServerOptions): Server {
         res.setHeader("retry-after", "900");
         return send(res, 429, { error: "too-many" });
       }
-      const r = login(db, name, String(b.password ?? ""), String(b.device ?? ""));
+      const r = login(db, name, String(b.password ?? ""), String(b.device ?? ""), listener);
       if (!r) {
         console.warn(`login failed: ${JSON.stringify(name)} from ${from}`);
         guard.failed(name, from);
@@ -190,6 +229,8 @@ export function makeServer(opts: ServerOptions): Server {
     }
     const user = authed(req, res);
     if (!user) return;
+    // An account without a vault (Boni only) has no calendar here.
+    if (!user.vault) return send(res, 403, { error: "no-calendar" });
     const vault = vaults.get(user.vault);
     watchVault(user.vault);
     switch (route) {
@@ -356,20 +397,17 @@ export function makeServer(opts: ServerOptions): Server {
     }
   };
 
-  const server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
-    const handle = url.pathname.startsWith("/api/")
-      ? api(req, res, url)
-      : staticFile(res, url.pathname);
-    handle.catch((e) => {
-      console.error(e);
-      if (!res.headersSent) send(res, 500, { error: "server" });
-      else res.end();
-    });
-  });
-  // A slow client cannot hold a connection open forever while sending its request (the live stream's
-  // answer is long, its request is not).
-  server.requestTimeout = 30_000;
-  server.headersTimeout = 15_000;
-  return server;
+  return {
+    handler: (listener) => (req, res) => {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const handle = url.pathname.startsWith("/api/")
+        ? api(req, res, url, listener)
+        : staticFile(res, url.pathname);
+      handle.catch((e) => {
+        console.error(e);
+        if (!res.headersSent) send(res, 500, { error: "server" });
+        else res.end();
+      });
+    },
+  };
 }

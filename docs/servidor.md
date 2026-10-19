@@ -139,3 +139,22 @@ Decision de Juan (2026-10-17): Funnel con protecciones, un solo vault (sin vario
   tocan notas que el indice conoce o notas nuevas en la carpeta de su coleccion, siempre dentro del vault y nunca en
   `private/` ni `restricted/`; consultas SQL preparadas; tamano maximo de peticion 8 MB. Riesgo residual: un fallo de
   Node o del servidor seria alcanzable desde internet; mantener la imagen al dia.
+
+## Dos entradas (2026-10-20)
+Decision de Juan (2026-10-19): el nucleo entero por la tailnet y, por Funnel, solo una lista blanca. El servidor puede
+escuchar por dos entradas que comparten todo (limites de inicio de sesion, cambios en vivo):
+- `BONI_PORT` / `BONI_HOST` (por defecto `127.0.0.1:8787`): todas las rutas. Es la entrada de la tailnet.
+- `BONI_PUBLIC_PORT` / `BONI_PUBLIC_HOST` (opcional; por defecto `0.0.0.0`): solo las rutas que `apps/server/src/routes.ts`
+  marca como publicas. Cualquier otra responde 404 antes de mirar la sesion. Es la entrada para Funnel.
+Hoy todas las rutas son las del calendario y estan marcadas como publicas, asi que sin `BONI_PUBLIC_PORT` el servidor hace
+lo mismo que antes. Las rutas del agente seran solo de la tailnet; antes de que existan, el NAS tendra que llevar Funnel a la
+entrada publica (se prepara en el PR de despliegue).
+
+## Cuenta unica (2026-10-20)
+Las cuentas, dispositivos y sesiones viven en `system.db` (`@boni/identity`, la cuenta unica de todas las apps de Boni),
+junto a la base antigua (`BONI_DB`; o donde diga `BONI_SYSTEM_DB`), asi que `secret.key` se sigue encontrando donde
+estaba. El primer arranque con `system.db` vacio importa las cuentas, sesiones, datos de cuenta y direcciones de push de
+`boni-calendar.db` y lo dice en el log ("accounts moved to ..."); la base antigua no se toca. Los dispositivos siguen
+conectados con su mismo token. La CLI tiene los mismos comandos y, ademas, `devices <usuario>` y `revoke <usuario>
+<dispositivo>` (cerrar solo un dispositivo). Una cuenta sin carpeta del vault (solo Boni) recibe 403 en el calendario.
+

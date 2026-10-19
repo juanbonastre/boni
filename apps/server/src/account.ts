@@ -30,7 +30,7 @@ const MAX_PREFS = 16_000;
 
 function row(db: Db, userId: number, key: string): { value: string; updated: number } | undefined {
   return db
-    .prepare("SELECT value, updated FROM account_data WHERE user_id = ? AND key = ?")
+    .prepare("SELECT value, updated FROM account_data WHERE account_id = ? AND key = ?")
     .get(userId, key) as { value: string; updated: number } | undefined;
 }
 
@@ -42,8 +42,8 @@ function put(db: Db, userId: number, key: string, value: string): number {
   );
   const updated = Math.max(Date.now(), last + 1);
   db.prepare(
-    `INSERT INTO account_data (user_id, key, value, updated) VALUES (?, ?, ?, ?)
-     ON CONFLICT (user_id, key) DO UPDATE SET value = excluded.value, updated = excluded.updated`,
+    `INSERT INTO account_data (account_id, key, value, updated) VALUES (?, ?, ?, ?)
+     ON CONFLICT (account_id, key) DO UPDATE SET value = excluded.value, updated = excluded.updated`,
   ).run(userId, key, value, updated);
   return updated;
 }
