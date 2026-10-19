@@ -20,6 +20,11 @@ packages/calendar/ Pure TypeScript, no DOM: civil-day/timezone math (time.ts), d
                  column mappings and row providers (collections.ts, projection.ts, codec.ts, provider.ts,
                  validate.ts, sampleCollections.ts). Notes with YAML properties (notes.ts: `parseNote`, `patchNote` change only
                  the edited lines, `formatNote`). iCalendar feeds into read-only events (ical.ts, `parseIcal`). Vitest.
+packages/entities/ The core's data model (pure, no I/O; docs/nucleo.md, 4): types, fields and values (`checkValue`,
+                 `convertValue`), provenance labels (`join` keeps the lowest integrity and the highest sensitivity;
+                 `derive` marks values a plan computed, which `canBeDestination` refuses) and schema operations
+                 (`applySchemaOp`: each returns its inverse; Boni's own types only with `{ system: true }`). Values are
+                 kept by field id; keys are ASCII. Property tests use a seeded generator (`random.test-util.ts`).
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
