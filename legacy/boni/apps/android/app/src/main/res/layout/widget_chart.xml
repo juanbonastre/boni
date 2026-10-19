@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A home-screen widget: the picture of a chart card (drawn by the app's page), or a short text while there is none. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/widget_picture"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/widget_description"
+        android:scaleType="fitXY"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_text"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/widget_background"
+        android:gravity="center"
+        android:padding="12dp"
+        android:text="@string/widget_loading"
+        android:textColor="#8B8F99"
+        android:textSize="14sp" />
+</FrameLayout>

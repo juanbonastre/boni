@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Boni</string>
+    <string name="widget_description">Una gráfica de Boni</string>
+    <string name="widget_loading">Cargando…</string>
+    <string name="widget_failed">No se pudo dibujar la gráfica</string>
+    <string name="widget_pick">Mantén pulsado para elegir una gráfica</string>
+    <string name="widget_pick_title">Elige una gráfica</string>
+    <string name="widget_no_charts">Abre Boni y entra con tu usuario: aquí saldrán tus gráficas.</string>
+</resources>

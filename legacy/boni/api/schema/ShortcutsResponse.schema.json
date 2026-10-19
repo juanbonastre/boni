@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "Shortcut": {
+      "description": "Something to capture again with one tap: a server screen and the values to put in its form. Generic: clients\nknow nothing of what it captures. Shared by every device of the server, like charts.",
+      "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "One of PALETTE; null = the accent",
+          "title": "Color"
+        },
+        "id": {
+          "default": "",
+          "description": "Given by the server from the label; ignored when creating",
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 60,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "mode": {
+          "default": "open",
+          "description": "open: show the form filled in; save: send it at once",
+          "enum": [
+            "open",
+            "save"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "screen": {
+          "description": "The server screen whose form it fills, e.g. 'capture-expense'",
+          "title": "Screen",
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": true,
+          "default": {},
+          "description": "Field id -> value, as the form would send it",
+          "title": "Values",
+          "type": "object"
+        }
+      },
+      "required": [
+        "label",
+        "screen"
+      ],
+      "title": "Shortcut",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "shortcuts": {
+      "items": {
+        "$ref": "#/$defs/Shortcut"
+      },
+      "title": "Shortcuts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "shortcuts"
+  ],
+  "title": "ShortcutsResponse",
+  "type": "object"
+}

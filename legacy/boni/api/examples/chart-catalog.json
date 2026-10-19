@@ -1,0 +1,308 @@
+{
+  "fields": [
+    {
+      "id": "date",
+      "label": "Fecha",
+      "kind": "time",
+      "ops": [
+        "gte",
+        "lte"
+      ],
+      "source": null,
+      "can_group": true
+    },
+    {
+      "id": "group",
+      "label": "Grupo de categor\u00eda",
+      "kind": "set",
+      "ops": [
+        "in",
+        "not_in"
+      ],
+      "source": "groups",
+      "can_group": true
+    },
+    {
+      "id": "category",
+      "label": "Categor\u00eda",
+      "kind": "set",
+      "ops": [
+        "in",
+        "not_in",
+        "prefix",
+        "not_prefix"
+      ],
+      "source": "categories",
+      "can_group": true
+    },
+    {
+      "id": "account",
+      "label": "Cuenta",
+      "kind": "set",
+      "ops": [
+        "in",
+        "not_in"
+      ],
+      "source": "accounts",
+      "can_group": true
+    },
+    {
+      "id": "merchant",
+      "label": "Comercio",
+      "kind": "text",
+      "ops": [
+        "in",
+        "not_in",
+        "contains",
+        "not_contains",
+        "empty",
+        "not_empty"
+      ],
+      "source": "merchants",
+      "can_group": true
+    },
+    {
+      "id": "concept",
+      "label": "Concepto",
+      "kind": "text",
+      "ops": [
+        "contains",
+        "not_contains",
+        "empty",
+        "not_empty"
+      ],
+      "source": null,
+      "can_group": true
+    },
+    {
+      "id": "people",
+      "label": "Con qui\u00e9n",
+      "kind": "multi",
+      "ops": [
+        "in",
+        "not_in",
+        "contains",
+        "empty",
+        "not_empty"
+      ],
+      "source": "people",
+      "can_group": true
+    },
+    {
+      "id": "invited",
+      "label": "Invitados",
+      "kind": "multi",
+      "ops": [
+        "in",
+        "not_in",
+        "contains",
+        "empty",
+        "not_empty"
+      ],
+      "source": "people",
+      "can_group": true
+    },
+    {
+      "id": "related",
+      "label": "Proyecto o evento",
+      "kind": "multi",
+      "ops": [
+        "in",
+        "not_in",
+        "contains",
+        "empty",
+        "not_empty"
+      ],
+      "source": "related",
+      "can_group": true
+    },
+    {
+      "id": "status",
+      "label": "Estado",
+      "kind": "set",
+      "ops": [
+        "in",
+        "not_in"
+      ],
+      "source": "statuses",
+      "can_group": true
+    },
+    {
+      "id": "source",
+      "label": "Origen",
+      "kind": "set",
+      "ops": [
+        "in",
+        "not_in"
+      ],
+      "source": "sources",
+      "can_group": true
+    },
+    {
+      "id": "amount",
+      "label": "Importe",
+      "kind": "number",
+      "ops": [
+        "gte",
+        "lte"
+      ],
+      "source": null,
+      "can_group": false
+    }
+  ],
+  "kinds": [
+    {
+      "id": "bar",
+      "label": "Barras",
+      "help": "Comparar valores; con fechas, la evoluci\u00f3n"
+    },
+    {
+      "id": "stacked_bar",
+      "label": "Barras apiladas",
+      "help": "Cada barra repartida entre las series"
+    },
+    {
+      "id": "hbar",
+      "label": "Barras horizontales",
+      "help": "Rankings: categor\u00edas, comercios, personas"
+    },
+    {
+      "id": "line",
+      "label": "L\u00ednea",
+      "help": "Evoluci\u00f3n en el tiempo"
+    },
+    {
+      "id": "area",
+      "label": "\u00c1rea",
+      "help": "Evoluci\u00f3n en el tiempo, con relleno"
+    },
+    {
+      "id": "donut",
+      "label": "Anillo",
+      "help": "Reparto de un total entre pocas partes"
+    },
+    {
+      "id": "number",
+      "label": "Cifra",
+      "help": "Un n\u00famero grande, con la diferencia frente a otro periodo"
+    },
+    {
+      "id": "table",
+      "label": "Tabla",
+      "help": "Los valores exactos"
+    }
+  ],
+  "measures": [
+    {
+      "id": "spending",
+      "label": "Gasto",
+      "help": "Tu parte, sin reembolsos ni traspasos"
+    },
+    {
+      "id": "income",
+      "label": "Ingresos",
+      "help": null
+    },
+    {
+      "id": "count",
+      "label": "N\u00famero de gastos",
+      "help": null
+    },
+    {
+      "id": "average",
+      "label": "Gasto medio",
+      "help": "Gasto dividido entre n\u00famero de gastos"
+    }
+  ],
+  "granularities": [
+    {
+      "id": "day",
+      "label": "D\u00eda",
+      "help": null
+    },
+    {
+      "id": "week",
+      "label": "Semana",
+      "help": null
+    },
+    {
+      "id": "month",
+      "label": "Mes",
+      "help": null
+    },
+    {
+      "id": "quarter",
+      "label": "Trimestre",
+      "help": null
+    },
+    {
+      "id": "year",
+      "label": "A\u00f1o",
+      "help": null
+    },
+    {
+      "id": "weekday",
+      "label": "D\u00eda de la semana",
+      "help": null
+    }
+  ],
+  "periods": [
+    {
+      "id": "this_month",
+      "label": "Este mes",
+      "help": null
+    },
+    {
+      "id": "last_month",
+      "label": "Mes pasado",
+      "help": null
+    },
+    {
+      "id": "last_months",
+      "label": "\u00daltimos meses",
+      "help": null
+    },
+    {
+      "id": "this_year",
+      "label": "Este a\u00f1o",
+      "help": null
+    },
+    {
+      "id": "last_year",
+      "label": "A\u00f1o pasado",
+      "help": null
+    },
+    {
+      "id": "last_days",
+      "label": "\u00daltimos d\u00edas",
+      "help": null
+    },
+    {
+      "id": "range",
+      "label": "Entre fechas",
+      "help": null
+    },
+    {
+      "id": "all",
+      "label": "Todo",
+      "help": null
+    }
+  ],
+  "compares": [
+    {
+      "id": "none",
+      "label": "Sin comparar",
+      "help": null
+    },
+    {
+      "id": "previous_period",
+      "label": "Periodo anterior",
+      "help": null
+    },
+    {
+      "id": "previous_year",
+      "label": "Mismo periodo del a\u00f1o anterior",
+      "help": null
+    }
+  ]
+}
