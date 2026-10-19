@@ -79,6 +79,10 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  account's prefs (`ACCOUNT_PREFS` in store.ts) and external calendars live on the server
                  (`account.ts`, the list encrypted with `secret.ts`; `feeds.ts` downloads them, public addresses
                  only); the store syncs them (`syncAccount`, `pushAccount`, "account" stream event). Dockerfile for the NAS.
+                 Two entries over one app (`makeApp` + `serve`): the tailnet's has every route, the public one
+                 (`BONI_PUBLIC_PORT`, for Funnel) only the allow-list of `routes.ts`, answering 404 for anything else
+                 before authentication. Every route must be listed there (`routes.test.ts` reads http.ts); a new
+                 route is `tailnet` unless it is deliberately made public.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.
 legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, real names replaced. Reference only:
