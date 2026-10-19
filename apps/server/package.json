@@ -16,6 +16,7 @@
   "dependencies": {
     "@boni/calendar": "workspace:*",
     "@boni/calendar-web": "workspace:*",
+    "@boni/identity": "workspace:*",
     "@boni/net": "workspace:*"
   },
   "devDependencies": {

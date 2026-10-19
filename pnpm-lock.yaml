@@ -255,6 +255,9 @@ importers:
       '@boni/calendar-web':
         specifier: workspace:*
         version: link:../calendar-web
+      '@boni/identity':
+        specifier: workspace:*
+        version: link:../../packages/identity
       '@boni/net':
         specifier: workspace:*
         version: link:../../packages/net

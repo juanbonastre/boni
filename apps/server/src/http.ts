@@ -170,7 +170,7 @@ export function makeApp(opts: ServerOptions): App {
     watched.add(root);
     const v = vaults.get(root);
     v.subscribe(() => {
-      const users = db.prepare("SELECT id FROM users WHERE vault = ?").all(root) as {
+      const users = db.prepare("SELECT id FROM accounts WHERE vault = ?").all(root) as {
         id: number;
       }[];
       push.changed(users.map((u) => u.id));
@@ -178,7 +178,9 @@ export function makeApp(opts: ServerOptions): App {
     void v.snapshot().catch((e) => console.warn("vault", e));
   };
   if (push) {
-    for (const u of db.prepare("SELECT DISTINCT vault FROM users").all() as { vault: string }[]) {
+    for (const u of db
+      .prepare("SELECT DISTINCT vault FROM accounts WHERE vault IS NOT NULL")
+      .all() as { vault: string }[]) {
       try {
         watchVault(u.vault);
       } catch (e) {
@@ -216,7 +218,7 @@ export function makeApp(opts: ServerOptions): App {
         res.setHeader("retry-after", "900");
         return send(res, 429, { error: "too-many" });
       }
-      const r = login(db, name, String(b.password ?? ""), String(b.device ?? ""));
+      const r = login(db, name, String(b.password ?? ""), String(b.device ?? ""), listener);
       if (!r) {
         console.warn(`login failed: ${JSON.stringify(name)} from ${from}`);
         guard.failed(name, from);
@@ -227,6 +229,8 @@ export function makeApp(opts: ServerOptions): App {
     }
     const user = authed(req, res);
     if (!user) return;
+    // An account without a vault (Boni only) has no calendar here.
+    if (!user.vault) return send(res, 403, { error: "no-calendar" });
     const vault = vaults.get(user.vault);
     watchVault(user.vault);
     switch (route) {

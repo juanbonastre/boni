@@ -150,3 +150,11 @@ Hoy todas las rutas son las del calendario y estan marcadas como publicas, asi q
 lo mismo que antes. Las rutas del agente seran solo de la tailnet; antes de que existan, el NAS tendra que llevar Funnel a la
 entrada publica (se prepara en el PR de despliegue).
 
+## Cuenta unica (2026-10-20)
+Las cuentas, dispositivos y sesiones viven en `system.db` (`@boni/identity`, la cuenta unica de todas las apps de Boni),
+junto a la base antigua (`BONI_DB`; o donde diga `BONI_SYSTEM_DB`), asi que `secret.key` se sigue encontrando donde
+estaba. El primer arranque con `system.db` vacio importa las cuentas, sesiones, datos de cuenta y direcciones de push de
+`boni-calendar.db` y lo dice en el log ("accounts moved to ..."); la base antigua no se toca. Los dispositivos siguen
+conectados con su mismo token. La CLI tiene los mismos comandos y, ademas, `devices <usuario>` y `revoke <usuario>
+<dispositivo>` (cerrar solo un dispositivo). Una cuenta sin carpeta del vault (solo Boni) recibe 403 en el calendario.
+

@@ -135,7 +135,7 @@ describe("backups", () => {
     ]);
     expect(backupNow(db, out, 3, new Date(Date.UTC(2026, 9, 5)))).toBeNull(); // already made today
     const copy = openDb(join(out, "boni-calendar-2026-10-05.db"));
-    expect((copy.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n).toBe(2);
+    expect((copy.prepare("SELECT COUNT(*) AS n FROM accounts").get() as { n: number }).n).toBe(2);
     copy.close();
     expect(existsSync(join(out, "secret.key"))).toBe(false);
   });
