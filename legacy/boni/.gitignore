@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+.venv
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+*.sqlite3
+*.db
+
+# Gradle (apps/android later)
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+
+# Secrets and local config
+.env
+*.env
+*.jks
+*.keystore
+
+.DS_Store
+
+# JS clients (apps/)
+node_modules/
+dist/
+apps/desktop/web/
+release/
+test-results/
+playwright-report/
+e2e/screenshots/
+
+# The Android app: the web UI is copied into its assets at build time (CI)
+apps/android/app/src/main/assets/

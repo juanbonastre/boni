@@ -1,0 +1,23 @@
+[versions]
+agp = "8.7.3"
+kotlin = "2.0.21"
+coreKtx = "1.15.0"
+webkit = "1.12.1"
+activity = "1.9.3"
+# 2.9.x: built for compileSdk 34/35 and Kotlin 2.0 like this app (2.10+ need newer tools).
+work = "2.9.1"
+junit = "4.13.2"
+json = "20240303"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
+androidx-activity = { group = "androidx.activity", name = "activity-ktx", version.ref = "activity" }
+androidx-work = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+# org.json for the JVM unit tests (Android's own is a stub there).
+json = { group = "org.json", name = "json", version.ref = "json" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

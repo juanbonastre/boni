@@ -1,0 +1,24 @@
+{
+  "properties": {
+    "device": {
+      "title": "Device",
+      "type": "string"
+    },
+    "token": {
+      "description": "The session token; the server keeps only its hash",
+      "title": "Token",
+      "type": "string"
+    },
+    "user": {
+      "title": "User",
+      "type": "string"
+    }
+  },
+  "required": [
+    "token",
+    "user",
+    "device"
+  ],
+  "title": "LoginResult",
+  "type": "object"
+}

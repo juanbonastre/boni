@@ -1,0 +1,17 @@
+{
+  "spec": {
+    "title": "Gasto por grupo",
+    "kind": "stacked_bar",
+    "x": {
+      "field": "date",
+      "granularity": "month"
+    },
+    "split": {
+      "field": "group"
+    },
+    "period": {
+      "kind": "last_months",
+      "months": 3
+    }
+  }
+}

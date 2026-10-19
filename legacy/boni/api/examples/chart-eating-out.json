@@ -1,0 +1,110 @@
+{
+  "chart_id": "eating-out",
+  "title": "Comida fuera",
+  "subtitle": "nov 2025 - oct 2026 - hasta hoy",
+  "kind": "line",
+  "measure": "spending",
+  "unit": "EUR",
+  "series": [
+    {
+      "key": "main",
+      "name": "Comida fuera",
+      "points": [
+        {
+          "key": "2025-11",
+          "label": "nov 25",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2025-12",
+          "label": "dic 25",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-01",
+          "label": "ene 26",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-02",
+          "label": "feb 26",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-03",
+          "label": "mar 26",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-04",
+          "label": "abr 26",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-05",
+          "label": "may 26",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-06",
+          "label": "jun 26",
+          "value": 0.0,
+          "partial": false,
+          "no_data": true
+        },
+        {
+          "key": "2026-07",
+          "label": "jul 26",
+          "value": 0.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-08",
+          "label": "ago 26",
+          "value": 40.0,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-09",
+          "label": "sep 26",
+          "value": 56.41,
+          "partial": false,
+          "no_data": false
+        },
+        {
+          "key": "2026-10",
+          "label": "oct 26",
+          "value": 26.1,
+          "partial": true,
+          "no_data": false
+        }
+      ],
+      "role": "main"
+    }
+  ],
+  "total": 122.51,
+  "previous_total": null,
+  "delta_pct": null,
+  "average": 32.14,
+  "x_label": "Mes",
+  "drilldown": false,
+  "drill": null,
+  "computed_at": "2026-10-12T18:30:00+02:00",
+  "stale": false
+}
