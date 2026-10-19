@@ -22,7 +22,7 @@ Este repo pasará a llamarse `boni` (decisión de Juan, 2026-10-19), así que la
   cuarentena** (modelos sin herramientas, con salida de esquema fijo). Lo que devuelven sigue etiquetado como externo.
 - **Lo que el código no puede garantizar lo decide una persona.** Las confirmaciones se pintan desde los argumentos
   reales. Lo que se deriva de contenido externo va a una **bandeja de propuestas**. Todo lo reversible se puede deshacer.
-- **Revisado como lo haría un atacante** (sección 16): 20 ataques, 6 de gravedad alta corregidos en el diseño (destinos
+- **Revisado como lo haría un atacante** (sección 16): 21 ataques, 6 de gravedad alta corregidos en el diseño (destinos
   armados a trozos, elecciones que lavan valores, flujos implícitos, XSS, salidas por el espejo, rendijas hacia el
   planificador).
 - **Las pruebas suponen un modelo totalmente comprometido** (planificador y lectores maliciosos). Así el corpus de
@@ -43,6 +43,7 @@ Este repo pasará a llamarse `boni` (decisión de Juan, 2026-10-19), así que la
 | **Obsidian:** espejo Markdown de solo lectura; una edición a mano del espejo se convierte en propuesta; el plugin pasa a ser cliente del núcleo; migración colección a colección, la agenda la última | Decidido (Juan, 2026-10-19) |
 | **El modelo puede leer y modificar el contenido de las notas**, como Claude con el vault. La seguridad la da la arquitectura, no esconderle los datos al proveedor. Matiza "las notas propias no deben salir" (plan, sección 1) para la fase del NAS | Decidido (Juan, 2026-10-19) |
 | Cada app (Boni y Boni Calendar, en móvil y escritorio) se sigue publicando por separado desde el mismo repo | Decidido (Juan, 2026-10-19) |
+| **Contenido externo = texto escrito por otros** (no una carpeta); `NotionImport/` son notas de Juan | Decidido (Juan, 2026-10-19) |
 
 Consecuencia de la última fila de privacidad: en el NAS, el proveedor del modelo (Anthropic) recibe el texto que el
 agente necesita. Lo que el diseño impide es que ese texto **salga hacia terceros** (un correo enviado, una URL, una
@@ -675,17 +676,20 @@ interface ViewSpec {
   que no es Juan ni el código de Boni, llegue por donde llegue: un correo, una web, o también una página web guardada
   en una nota, un documento de otra persona o una nota que escribió otro agente después de leer una web. El agente lo
   encuentra en el vault, pero quien lo escribió puede haber metido una inyección.
-  - Por defecto, integridad `imported`, con fuente `vault:path@sha256`. Incluye `NotionImport/`, que son notas de Juan
-    aún sin integrar: registros, gestión, música (propuesto, pendiente de que Juan lo confirme).
-  - `external`: las notas que son recortes o copias de otros. Se detectan por propiedades de origen (`source`, `url`)
-    o porque Juan marca una carpeta o una nota. En `NotionImport/` hay 6 notas con una propiedad de URL y 38 con algún
-    enlace en el texto (contado el 2026-10-19). Se listan en el informe de importación para que Juan decida.
+  - Por defecto, integridad `imported`, con fuente `vault:path@sha256`. **`NotionImport/` también: son notas de Juan**
+    aún sin integrar (decidido, Juan, 2026-10-19: "todo es mío"; el `AGENTS.md` del vault ya no lo llama "untrusted").
+  - `external`: las notas que sean recortes o copias de textos de otros. Hoy Juan no tiene ninguna; si aparecen, se
+    marcan por nota o por carpeta, y las que lleven una propiedad de origen (`source`, `url`) salen en el informe de
+    importación para que Juan decida.
   - `model`: lo último que escribió otro agente según el historial de git del vault en el NAS (commits `mcp:` con
     `[hermes]`, por ejemplo). El planificador lo ve, pero nunca vale como destino ni como autoridad. Es un repo aparte,
     así que va en un PR posterior.
   - Sensibilidad: finanzas, salud, diario y el registro de sueño `sensitive`; personas `personal` y `thirdParty`.
-- **Nota:** el `AGENTS.md` del vault llama hoy a `NotionImport/` "untrusted". Si Juan confirma que son notas suyas, esa
-  línea se puede precisar (es un cambio de reglas del vault, así que antes necesita su visto bueno).
+- **Secretos y números de identidad no se importan.** El changelog del vault cuenta que en `NotionImport/` hubo claves
+  de API y contraseñas de aplicación (borradas el 2026-10-09) y que aún quedan números de DNI. Antes de importar, el
+  código busca patrones de secretos (claves de API, tokens, contraseñas de aplicación, claves privadas) y de documentos
+  de identidad (DNI/NIE, IBAN completos, números de tarjeta). Lo que encuentra no entra: queda "fuera de alcance", la
+  nota se importa sin esa línea y el informe dice dónde estaba, para que Juan lo borre del vault.
 - **Repetible:** la tabla `vault_map (path, entity, sha256, mtime)` hace que importar dos veces no duplique nada.
 - **Una colección tiene un modo:**
   - **`vault`:** la verdad sigue en el vault; el núcleo la indexa y escribe en él con las reglas de hoy, como el
@@ -849,8 +853,7 @@ Leído en `NousResearch/hermes-agent` (rama `main`, commit `b4170e73`, 2026-10-1
 - **Abierto:** cifrado de páginas de SQLite (5.2) y si el `KeyProvider` del producto alojado desenvuelve la clave en el
   dispositivo o en un KMS con atestación.
 - **Abierto:** tipos con muchísimas entidades (tabla física por tipo), solo si aparece el caso.
-- **Abierto (Juan):** si `NotionImport/` son todas notas suyas (propuesto: `imported`, salvo los recortes que liste el
-  informe) y qué otras notas o carpetas son recortes o textos de otros (`external`).
+- **Decidido (Juan, 2026-10-19):** `NotionImport/` son notas suyas (`imported`); hoy no hay carpetas de recortes.
 - **Abierto:** modelos definitivos por papel. Se mide con una evaluación pequeña antes de fijarlos (gasto aprobado por
   Juan).
 - **UNVERIFIED:** retención, retención cero y región UE de la API de Anthropic para esta cuenta; detalles de Tailscale
@@ -870,7 +873,7 @@ Leído en `NousResearch/hermes-agent` (rama `main`, commit `b4170e73`, 2026-10-1
   cuenta no importa; la migración (6) los asigna a la cuenta.
 
 ## 16. Revisión adversarial (2026-10-19)
-Revisión pedida por Juan: volver a leer el diseño como lo leería alguien que quiere manipular el agente. Para cada
+Revisión pedida por Juan: volver a leer el diseño como lo leería alguien que quiere manipular el agente (21 ataques). Para cada
 ataque: qué permitía la primera versión (PR 52, primer commit) y qué cambia. Los que tienen "Alta" rompían una regla base
 sin que el modelo tuviera que hacer nada raro, o daban control total.
 
@@ -893,9 +896,10 @@ sin que el modelo tuviera que hacer nada raro, o daban control total.
 | A15 | **Coste:** inundar de correos para disparar llamadas a lectores | Solo límites por ejecución | Límites diarios y por remitente (P13) | Media |
 | A16 | **Herramientas de terceros:** descripciones MCP con instrucciones, o que cambian después de aprobarlas | No contemplado | Descripciones propias, esquemas fijados por hash (7.10b) | Media (cuando haya MCP ajenos) |
 | A17 | **Phishing a Juan desde la conversación:** "tu sesión caducó, escribe tu contraseña" | No contemplado | Sin campos de secreto en `ask`; texto `model` sin enlaces activos (7.5, 7.14) | Media |
-| A18 | **Texto ajeno en el vault tomado como propio:** recortes web, notas escritas por otros agentes | Solo se distinguía por carpeta | Por autoría: `external` para recortes, `model` para lo escrito por otros agentes (9.1) | Media |
+| A18 | **Texto ajeno en el vault tomado como propio:** recortes web, notas escritas por otros agentes | Solo se distinguía por carpeta (y `NotionImport/`, que es de Juan, se trataba como externo) | Por autoría: `external` para recortes, `model` para lo escrito por otros agentes (9.1) | Media |
 | A19 | **Sesión robada que confirma** | Una sesión personal podía confirmar todo | Confirmación reforzada con clave del dispositivo, para pagos y envíos (7.5, propuesto) | Media (cuando haya envíos) |
 | A20 | **Reutilizar un plan guardado** para citar una petición antigua | No dicho | El plan se ata al turno (7.2) | Baja |
+| A21 | **Secretos dentro de los datos:** una clave o un DNI que quedó en una nota importada, que el planificador ve y que podría acabar en un envío | No contemplado | Búsqueda de secretos y números de identidad antes de importar (9.1) | Media |
 
 **Lo que sigue abierto después de la revisión (riesgo aceptado o pendiente):**
 - **Texto pegado a mano:** si Juan copia un correo en una nota, ese texto pasa a `user` y el planificador lo ve. No hay
