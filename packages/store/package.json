@@ -1,0 +1,26 @@
+{
+  "name": "@boni/store",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Boni's per-user store: one SQLite per user with entities, provenance per field, an operation log and undo",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@boni/entities": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "vitest": "5.0.4"
+  }
+}
