@@ -47,6 +47,53 @@ test("number keys set N-day views and the mini month highlights exactly those da
   expect(await visibleDays(page)).toEqual(["17"]);
 });
 
+test("back from the month, the week is today's when today is in that month", async ({ page }) => {
+  // A Monday whose week is not the month's middle row (found by the Obsidian suite on 2026-10-19).
+  await page.goto("/?now=2026-10-19T20:14&tz=Europe/Madrid");
+  await page.waitForSelector(".ev");
+  await page.waitForTimeout(400);
+  const week = ["19", "20", "21", "22", "23", "24", "25"];
+  expect(await visibleDays(page)).toEqual(week);
+  await page.keyboard.press("m");
+  await page.waitForSelector(".week-row");
+  await page.keyboard.press("w");
+  await page.waitForSelector(".grid");
+  await page.waitForTimeout(400);
+  expect(await visibleDays(page)).toEqual(week);
+  // In a month without today, the week is one of that month (the one in the middle of what the
+  // month showed; which one depends on where its scrolling was), never today's.
+  await page.keyboard.press("m");
+  await page.waitForSelector(".week-row");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".title")).toContainText(/noviembre/i);
+  await page.keyboard.press("w");
+  await page.waitForSelector(".grid");
+  await page.waitForTimeout(400);
+  await expect(page.locator(".title")).toContainText(/noviembre/i);
+  expect(await visibleDays(page)).not.toEqual(week);
+});
+
+test("the sidebar comes back as it was when a narrow window is wide again", async ({ page }) => {
+  // A split pane in Obsidian or a resized window: narrow, the sidebar is a closed drawer; wide again,
+  // it is as it was before.
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await open(page);
+  const sidebar = page.locator(".sidebar");
+  await expect(sidebar).toBeVisible();
+  await page.setViewportSize({ width: 500, height: 900 });
+  await expect(sidebar).toHaveCount(0);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await expect(sidebar).toBeVisible();
+  // Closed by hand while wide, it stays closed after a narrow spell.
+  await page.locator(".title").click();
+  await page.keyboard.press("[");
+  await expect(sidebar).toHaveCount(0);
+  await page.setViewportSize({ width: 500, height: 900 });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.waitForTimeout(300);
+  await expect(sidebar).toHaveCount(0);
+});
+
 test("next/previous and Today navigate by the visible span", async ({ page }) => {
   await open(page);
   await page.locator(".topbar").getByRole("button", { name: "Siguiente" }).click();
