@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * The page inside the Android app (a stand-in for `window.boniAndroid`, apps/android/AndroidBridge.kt):
+ * The page inside the Android app (a stand-in for `window.boniAndroid`, apps/calendar-android/AndroidBridge.kt):
  * without GrapheneOS's "Network" permission, Settings says so and opens the app's permissions.
  */
 test("without network permission, Settings says so and opens the app's permissions", async ({

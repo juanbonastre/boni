@@ -1,4 +1,4 @@
-import type { HostStorage } from "@boni-calendar/web/src/host.ts";
+import type { HostStorage } from "@boni/calendar-web/src/host.ts";
 import type { App } from "obsidian";
 
 /**

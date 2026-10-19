@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * The desktop app's own settings (a stand-in for `window.boniDesktop`, apps/desktop-electron/preload.cjs):
+ * The desktop app's own settings (a stand-in for `window.boniDesktop`, apps/calendar-desktop/preload.cjs):
  * keep running in the tray when the window closes, open at login; the tray menu gets the app's words.
  */
 test("Settings → Desktop keeps running in the tray and can open at login", async ({ page }) => {

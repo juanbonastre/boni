@@ -1,4 +1,4 @@
-import { t } from "@boni-calendar/web/src/i18n.ts";
+import { t } from "@boni/calendar-web/src/i18n.ts";
 import { ItemView, type Modifier, Scope, type WorkspaceLeaf } from "obsidian";
 import type BoniCalendarPlugin from "./main.ts";
 
@@ -76,7 +76,7 @@ export class CalendarView extends ItemView {
       root.style.cssText = "height:100%;display:grid;place-items:center;font:13px system-ui";
       return;
     }
-    const { mountApp } = await import("@boni-calendar/web/src/mount.tsx");
+    const { mountApp } = await import("@boni/calendar-web/src/mount.tsx");
     if (!this.shown) return void this.plugin.release(this);
     this.mounted = await mountApp(root, this.plugin.host());
   }

@@ -1,7 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 /**
- * The app mounted inside another app (`apps/web/embed.html`), the way the Obsidian plugin mounts it:
+ * The app mounted inside another app (`apps/calendar-web/embed.html`), the way the Obsidian plugin mounts it:
  * in a pane that is smaller than the window, next to the other app's own controls, by default inside
  * a shadow root. The other app's page has global rules and class names that clash with ours.
  */

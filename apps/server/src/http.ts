@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni-calendar/core";
+import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni/calendar";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { login, logout, tokenHash, type User, userOf } from "./auth.ts";
 import type { Db } from "./db.ts";
@@ -30,7 +30,7 @@ import type { Vaults } from "./vaults.ts";
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
  *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change)
  * The stream also sends an "account" event ({ updated }) when the account's prefs or calendars change.
- * Anything else is the web app (static files of apps/web/dist), so a browser can open the calendar.
+ * Anything else is the web app (static files of apps/calendar-web/dist), so a browser can open the calendar.
  */
 export interface ServerOptions {
   db: Db;

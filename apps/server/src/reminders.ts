@@ -6,8 +6,8 @@ import {
   parseReminderDefaults,
   type ReminderDefaults,
   rowToEvent,
-} from "@boni-calendar/core";
-import { type Notice, noticesFor } from "@boni-calendar/web/src/notifications.ts";
+} from "@boni/calendar";
+import { type Notice, noticesFor } from "@boni/calendar-web/src/notifications.ts";
 import type { Account } from "./account.ts";
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";

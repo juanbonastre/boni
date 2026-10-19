@@ -1,12 +1,12 @@
 name: android
 
-# The Android app: the web UI built into the APK's assets, in a WebView shell (apps/android).
+# The Android app: the web UI built into the APK's assets, in a WebView shell (apps/calendar-android).
 on:
   pull_request:
-    paths: ["apps/android/**", "apps/web/**", "packages/core/**", ".github/workflows/android.yml"]
+    paths: ["apps/calendar-android/**", "apps/calendar-web/**", "packages/calendar/**", ".github/workflows/android.yml"]
   push:
     branches: [main]
-    paths: ["apps/android/**", "apps/web/**", "packages/core/**", ".github/workflows/android.yml"]
+    paths: ["apps/calendar-android/**", "apps/calendar-web/**", "packages/calendar/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 # Signed releases (for Obtainium) need four repository secrets: KEYSTORE_BASE64, KEYSTORE_PASSWORD,
@@ -28,9 +28,9 @@ jobs:
       - name: Web UI into the APK's assets
         run: |
           pnpm build
-          rm -rf apps/android/app/src/main/assets/web
-          mkdir -p apps/android/app/src/main/assets
-          cp -r apps/web/dist apps/android/app/src/main/assets/web
+          rm -rf apps/calendar-android/app/src/main/assets/web
+          mkdir -p apps/calendar-android/app/src/main/assets
+          cp -r apps/calendar-web/dist apps/calendar-android/app/src/main/assets/web
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -50,26 +50,26 @@ jobs:
             echo "No KEYSTORE_BASE64 secret: debug-signed APK as an artifact only, no release."
           fi
       - name: Unit tests
-        working-directory: apps/android
+        working-directory: apps/calendar-android
         run: gradle :app:testReleaseUnitTest --no-daemon --stacktrace
       - name: Build APK
-        working-directory: apps/android
+        working-directory: apps/calendar-android
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon --stacktrace
       - name: Name APK
-        run: cp apps/android/app/build/outputs/apk/release/app-release.apk "boni-calendar-0.1.${{ github.run_number }}.apk"
+        run: cp apps/calendar-android/app/build/outputs/apk/release/app-release.apk "boni-calendar-0.1.${{ github.run_number }}.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: boni-calendar-apk
           path: boni-calendar-*.apk
-      # A signed build of main becomes a GitHub release that Obtainium installs (filter: titles with "Android").
+      # A signed build of main becomes a GitHub release that Obtainium installs (filter: titles starting with "Boni Calendar Android"; tags calendar-android-v…).
       - name: Release
         if: env.SIGNED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-v0.1.${{ github.run_number }}
+          tag_name: calendar-android-v0.1.${{ github.run_number }}
           name: Boni Calendar Android 0.1.${{ github.run_number }}
           files: boni-calendar-*.apk

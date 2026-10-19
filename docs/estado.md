@@ -46,7 +46,7 @@ Fase 1: interfaz de escritorio con datos de ejemplo (sin datos reales ni sincron
 
 ## Fase 2 (en marcha)
 Plan aprobado: la verdad son notas del vault con propiedades; colecciones con esquema, vistas con mapeo de columnas y
-repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un servidor son anfitriones.
+repeticiones en `packages/calendar`; la app, un plugin de Obsidian y mas adelante un servidor son anfitriones.
 - **Paso 1, nucleo de colecciones** (hecho, PR 9 a 11). PR 1 (#9): `Collection`, `Row`, `CalendarView` con mapeo (fecha y hora
   separadas o inicio/fin ISO, tarea por casilla o estado, repeticion como texto RRULE), proyeccion fila a evento y
   vuelta, `reconcileRows`, `CollectionProvider`, validacion y la muestra como colecciones. PR 2: la app guarda filas y
@@ -79,7 +79,7 @@ repeticiones en `packages/core`; la app, un plugin de Obsidian y mas adelante un
   (3) pruebas en un Obsidian real con perfil y vault temporales, medidas e instalacion. Full Calendar ya esta desactivado en el
   portatil.
 - Pasos 4 y 5 de la fase 2: servidor en el NAS y SQLite, solo si hay un caso real.
-- **App de Android** (2026-10-16, en marcha): cascaron Kotlin con la misma app web (`apps/android`), medida a 60 fps en el
+- **App de Android** (2026-10-16, en marcha): cascaron Kotlin con la misma app web (`apps/calendar-android`), medida a 60 fps en el
   Pixel. Interfaz movil y gestos tactiles hechos (3 dias, menu lateral, detalle abajo, boton flotante, deslizar, pellizcar,
   pulsacion larga). Versiones firmadas publicadas para Obtainium (0.1.7 la primera). El vault en el movil: se elige una vez la
   carpeta (permiso de carpeta de Android), mismas reglas que el escritorio, papelera = `.trash` del vault, escritura activada.

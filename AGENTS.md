@@ -1,23 +1,30 @@
-# AGENTS.md — Boni Calendar
+# AGENTS.md — Boni
 
-Desktop calendar app with the UX of a modern day/week/month calendar, built for one user (Juan) and separate from the
-Boni project. Phase 1 is the polished interface running on invented sample data; real data, sync and external
-calendars come in phase 2. Project notes live in Juan's vault (`proyectos/boni-calendar.md`).
+The Boni monorepo (`juanbonastre/boni`, renamed from `boni-calendar` on 2026-10-19). Today it holds **Boni Calendar**:
+a desktop and phone calendar app with the UX of a modern day/week/month calendar, built for one user (Juan), and its
+server. It is growing into the Boni core (entities, agent, views) and the Boni apps, following the approved design in
+`docs/nucleo.md`: one server, one account, several apps published separately (each with its own release tag prefix).
+Project notes live in Juan's vault (`proyectos/boni-plan.md`, `proyectos/boni-calendar.md`).
+
+Names that devices depend on stay as they were when folders moved: the desktop package `boni-calendar-desktop` (its
+userData folder and the `.deb`), the Android `applicationId` and the workflow file `android.yml` (its run number is the
+`versionCode`), the Obsidian plugin id `boni-calendar`, the IndexedDB stores `boni-calendar-server*`, the server's start
+log line and the Docker image tag on the NAS.
 
 ## Layout
 
 ```
-packages/core/   Pure TypeScript, no DOM: civil-day/timezone math (time.ts), data model (model.ts), overlap and
+packages/calendar/ Pure TypeScript, no DOM: civil-day/timezone math (time.ts), data model (model.ts), overlap and
                  lane layout (layout.ts), per-day segments (queries.ts), quick-create text parser (quick.ts),
                  deterministic sample data (sample.ts). Collections (phase 2): typed tables, calendar views with
                  column mappings and row providers (collections.ts, projection.ts, codec.ts, provider.ts,
                  validate.ts, sampleCollections.ts). Notes with YAML properties (notes.ts: `parseNote`, `patchNote` change only
                  the edited lines, `formatNote`). iCalendar feeds into read-only events (ical.ts, `parseIcal`). Vitest.
-apps/web/        React 19 + Vite UI. Runs in any browser and inside the desktop shell.
+apps/calendar-web/ React 19 + Vite UI. Runs in any browser and inside the desktop shell.
   src/engine/    Viewport (smooth scroll / zoom / horizontal motion) and the per-day event index.
   src/components/ TimeGrid (day, week, N days), MonthView, Sidebar, EventDetail, Modals, ...
   src/store.ts   zustand store: data, settings, view, selection, drag, undo history.
-apps/desktop-electron/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage).
+apps/calendar-desktop/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage).
                  Background mode (`desktop-prefs.cjs`, `window.boniDesktop`): closing hides to the tray, optional
                  autostart entry (`--hidden`), so reminders arrive with the window closed. `vault-fs.cjs` is the
                  only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
@@ -30,7 +37,7 @@ apps/obsidian-plugin/  The same app as an Obsidian plugin (desktop only, `make p
                  unit-tested against `fakeObsidian.ts`. Writing is on by default there; one calendar tab at a
                  time (the store is a singleton). The index lives in IndexedDB (`cache.ts`), settings in
                  `app.saveLocalStorage`: per device, never in `.obsidian/` (Syncthing carries it).
-apps/android/    The same app on Android (Kotlin shell, `make`-less: CI builds it, android.yml): the built web UI in a
+apps/calendar-android/ The same app on Android (Kotlin shell, `make`-less: CI builds it, android.yml): the built web UI in a
                  WebView from the APK's assets. `AndroidBridge.kt` is `window.boniAndroid` (async calls, answers
                  fetched with `take`; web side `src/android.ts`): the vault through the Storage Access Framework
                  (`VaultSaf.kt`, folder chosen once; same rules as vault-fs.cjs, trash = the vault's `.trash`), index
@@ -39,7 +46,7 @@ apps/android/    The same app on Android (Kotlin shell, `make`-less: CI builds i
                  server the app fetches `/api/reminders` itself: on a UnifiedPush message via `BoniPushService.kt`,
                  connector 3.0.x, at boot and every few hours).
 apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeScript directly, no build. Reuses
-                 packages/core, the web's vault loader (`loadVault`), writer (`vault/provider.ts`) and the desktop's
+                 packages/calendar, the web's vault loader (`loadVault`), writer (`vault/provider.ts`) and the desktop's
                  `vault-fs.cjs`, so it reads and writes the vault with the apps' rules; the vault stays the truth.
                  Node only strips types there: no parameter properties or enums in any file the server imports
                  (`write.test.ts` loads the server the way its container does). SQLite (`node:sqlite`) only for
@@ -47,7 +54,7 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  changes since a version, live stream (SSE), `POST /api/apply` (only with `BONI_WRITE=1`; per-row
                  version check, a session's own writes are not conflicts); serves the web app; CORS open.
                  With writing on it tops up open-ended series itself (`topUpSeries`, after changes and every 6 h).
-                 Client side: `apps/web/src/remote.ts` (login, snapshot, changes, live stream with reconnection, last
+                 Client side: `apps/calendar-web/src/remote.ts` (login, snapshot, changes, live stream with reconnection, last
                  snapshot in IndexedDB) and the store's `source: "server"` (`connectServer`, `loadServer`), which applies
                  server data through the same path as a vault read (`applyLoad`). Its rows are notes too (id = path),
                  so "Open note in Obsidian" works there as well (a host without a vault folder opens
@@ -100,7 +107,7 @@ legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, 
 - **No personal data, ever.** The repo is public. Sample data is invented (`ejemplo.*@example.*`); no hostnames,
   tokens or paths of Juan's machines. Secrets never go in the repo.
 - **Time:** events store instants (epoch ms) + an IANA timezone, all-day events store civil days. All wall-clock
-  math goes through `packages/core/src/time.ts`. Never use `Date` local getters in UI code.
+  math goes through `packages/calendar/src/time.ts`. Never use `Date` local getters in UI code.
 - **Performance rules for the grid (they are what keeps it at 60 fps):**
   - Wheel input only moves targets in `Viewport`; per-frame work writes `transform` / `height` to a handful of
     elements directly (no React state, no CSS variables that cascade over the events).
@@ -116,7 +123,7 @@ legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, 
   are centred with `translateY(-50%)` have an even explicit height, popover positions are rounded, and text layers
   (`will-change`) exist only while zooming (`.zoom-armed`). `e2e/interactions.spec.ts` ("layout sits on whole pixels") guards it.
 - **The vault (phase 2, step 2):** the app reads `_system/colecciones/*.md` (one definition per collection: folder, columns,
-  mapping; `collectionDef.ts`) and then every note of each folder (`apps/web/src/vault/loadVault.ts`, through
+  mapping; `collectionDef.ts`) and then every note of each folder (`apps/calendar-web/src/vault/loadVault.ts`, through
   `window.boniVault`). Row id = note path; every property of a note is kept in the row, the columns only choose what the
   calendar shows, so unknown keys survive an edit. The vault is shown read-only until writing lands. Notes it cannot place
   are listed in Settings, never hidden. `vault/sync.ts` keeps an index of parsed notes (kept in memory and in
@@ -158,12 +165,12 @@ legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, 
 - **Text fits its box:** labels of controls never wrap and nothing sticks out of its box. Fix it with the general layout
   rule in `styles.css` (rows wrap the control under the label; controls ellipsize), never with a per-element patch.
   `e2e/overflow.spec.ts` walks every surface in both languages and at a narrow window: a new surface must be added there.
-- **Tests:** pure logic in `packages/core` and `apps/web/src/engine` gets unit tests; user-visible behaviour gets a
+- **Tests:** pure logic in `packages/calendar` and `apps/calendar-web/src/engine` gets unit tests; user-visible behaviour gets a
   Playwright test and, when the look changes, a screenshot check by eye.
 - **Test it the way Juan uses it** (vault `AGENTS.md`, "Working with Juan") before asking him: the server locally with the built
-  web app (`BONI_WEB=apps/web/dist BONI_WRITE=1`, an invented vault in the scratchpad), phone-sized viewports, and the real
+  web app (`BONI_WEB=apps/calendar-web/dist BONI_WRITE=1`, an invented vault in the scratchpad), phone-sized viewports, and the real
   desktop app on his X11 screen with Playwright's `_electron` (`--user-data-dir` and `XDG_CONFIG_HOME` temporary, never his
-  config). The desktop shell loads `apps/desktop-electron/web/` (the copy from the last `make package`) when it exists: run
+  config). The desktop shell loads `apps/calendar-desktop/web/` (the copy from the last `make package`) when it exists: run
   `node scripts/copy-web.mjs` there first. Screenshots on his screen: the app window (`page.screenshot`) or a crop, never the
   full screen; delete them afterwards. Tests type at a person's pace where timing matters (a fast `fill` hid a bug).
 - Biome is the linter/formatter; React hook dependency lint is off on purpose (the grid is an imperative engine).

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Browser, chromium, type Page } from "@playwright/test";
-import { definitionNote } from "../apps/web/src/vault/testing.ts";
+import { definitionNote } from "../apps/calendar-web/src/vault/testing.ts";
 
 /**
  * Drives the Obsidian installed on this machine with a profile and a vault made for the test in a

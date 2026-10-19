@@ -1,5 +1,5 @@
 {
-  "name": "boni-calendar-obsidian",
+  "name": "@boni/obsidian-plugin",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,8 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@boni-calendar/core": "workspace:*",
-    "@boni-calendar/web": "workspace:*"
+    "@boni/calendar": "workspace:*",
+    "@boni/calendar-web": "workspace:*"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

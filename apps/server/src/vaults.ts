@@ -12,12 +12,12 @@ import {
   rowToEvent,
   systemTimeZone,
   todayIn,
-} from "@boni-calendar/core";
-import { patchCollectionReminders } from "@boni-calendar/web/src/vault/definitions.ts";
-import type { IgnoredNote } from "@boni-calendar/web/src/vault/loadVault.ts";
-import { makeVaultProvider, VaultWriteError } from "@boni-calendar/web/src/vault/provider.ts";
-import { aliases, readVault, withLock } from "@boni-calendar/web/src/vault/sync.ts";
-import type { VaultBridge, VaultResult } from "@boni-calendar/web/src/vaultBridge.ts";
+} from "@boni/calendar";
+import { patchCollectionReminders } from "@boni/calendar-web/src/vault/definitions.ts";
+import type { IgnoredNote } from "@boni/calendar-web/src/vault/loadVault.ts";
+import { makeVaultProvider, VaultWriteError } from "@boni/calendar-web/src/vault/provider.ts";
+import { aliases, readVault, withLock } from "@boni/calendar-web/src/vault/sync.ts";
+import type { VaultBridge, VaultResult } from "@boni/calendar-web/src/vaultBridge.ts";
 
 /**
  * The vault access of the desktop shell, reused as is: confined to the vault, never `private/` or
@@ -25,7 +25,7 @@ import type { VaultBridge, VaultResult } from "@boni-calendar/web/src/vaultBridg
  * vault's own `.trash` (there is no system trash on a server).
  */
 const require = createRequire(import.meta.url);
-const { openVault } = require("../../desktop-electron/vault-fs.cjs") as {
+const { openVault } = require("../../calendar-desktop/vault-fs.cjs") as {
   openVault: (root: string) => VaultFs;
 };
 

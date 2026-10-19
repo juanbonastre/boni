@@ -5,7 +5,7 @@ Servidor propio para que todos los dispositivos usen el mismo calendario, como N
 
 ## Principios
 - **La verdad son las notas del vault.** El servidor lee y escribe el vault con las mismas reglas que las apps (reutiliza
-  `packages/core`, el lector del vault de la web y el acceso a archivos del escritorio). No hay base de datos paralela de eventos.
+  `packages/calendar`, el lector del vault de la web y el acceso a archivos del escritorio). No hay base de datos paralela de eventos.
 - **SQLite solo para lo que no son datos del calendario:** cuentas, sesiones y, mas adelante, ajustes y secretos por cuenta.
 - **El modo local sigue existiendo:** las apps pueden trabajar con una carpeta del vault sin servidor.
 - **Cuentas creadas por el administrador** (sin registro abierto). Primero solo por Tailscale; Funnel en la fase 6.
@@ -64,13 +64,13 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
 ## Escritura (fase 3)
 - Solo si el servidor arranca con `BONI_WRITE=1` (y el vault montado con escritura); si no, los calendarios llegan de solo
   lectura y `POST /api/apply` responde 403.
-- El servidor escribe con el mismo escritor que las apps (`apps/web/src/vault/provider.ts`): solo las propiedades cambiadas,
+- El servidor escribe con el mismo escritor que las apps (`apps/calendar-web/src/vault/provider.ts`): solo las propiedades cambiadas,
   notas nuevas con el nombre de la definicion, mover entre calendarios, papelera `.trash` del vault, nunca encima de una
   nota que cambio en disco desde que se leyo.
 - Conflictos: cada lote lleva la version que tenia el dispositivo (`base`). Si una de sus notas cambio despues por otra via
   (Obsidian por Syncthing, otro dispositivo), no se escribe nada y responde 409; lo que escribio la propia sesion no cuenta.
   Limitacion: lo que cambio mientras el servidor estaba parado no se detecta asi (solo la comprobacion de disco).
-- El cliente (`apps/web/src/serverWriter.ts`) aplica el cambio en pantalla al momento y lo guarda en una cola del
+- El cliente (`apps/calendar-web/src/serverWriter.ts`) aplica el cambio en pantalla al momento y lo guarda en una cola del
   dispositivo (IndexedDB); la envia en orden, en una sola peticion, ahora o al volver la conexion (tambien tras cerrar y
   abrir la app). Lo pendiente se sigue viendo encima de lo que manda el servidor hasta que llega su version. Un evento
   nuevo se conoce por un id temporal hasta que el servidor dice la ruta de su nota (`aliases`); mientras no tiene titulo

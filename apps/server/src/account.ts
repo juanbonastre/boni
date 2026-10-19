@@ -1,4 +1,4 @@
-import { formatReminderDefaults, parseReminderDefaults } from "@boni-calendar/core";
+import { formatReminderDefaults, parseReminderDefaults } from "@boni/calendar";
 import type { Db } from "./db.ts";
 import { decrypt, encrypt, type SecretKey } from "./secret.ts";
 
