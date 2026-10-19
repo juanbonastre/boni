@@ -1,0 +1,29 @@
+{
+  "name": "@boni/vault-import",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The vault as Boni's first import: notes into typed entities with their provenance (dry run by default)",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "cli": "node src/cli.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@boni/calendar": "workspace:*",
+    "@boni/entities": "workspace:*",
+    "@boni/store": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "vitest": "5.0.4"
+  }
+}
