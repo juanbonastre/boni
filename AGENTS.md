@@ -20,6 +20,9 @@ packages/calendar/ Pure TypeScript, no DOM: civil-day/timezone math (time.ts), d
                  column mappings and row providers (collections.ts, projection.ts, codec.ts, provider.ts,
                  validate.ts, sampleCollections.ts). Notes with YAML properties (notes.ts: `parseNote`, `patchNote` change only
                  the edited lines, `formatNote`). iCalendar feeds into read-only events (ical.ts, `parseIcal`). Vitest.
+packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
+                 (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
+                 Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
 apps/calendar-web/ React 19 + Vite UI. Runs in any browser and inside the desktop shell.
   src/engine/    Viewport (smooth scroll / zoom / horizontal motion) and the per-day event index.
   src/components/ TimeGrid (day, week, N days), MonthView, Sidebar, EventDetail, Modals, ...
