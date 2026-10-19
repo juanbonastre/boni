@@ -92,7 +92,9 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
   (permisos 600). **Guarda una copia de la clave aparte de las copias de la base de datos**: sin ella no se pueden leer.
 - El servidor descarga los calendarios (los dispositivos solo hablan con el): guarda una copia unos minutos y el boton de
   actualizar pide una nueva. Solo descarga direcciones publicas: nunca la red local, el NAS ni la tailnet (comprobado tambien
-  en cada redireccion), con limite de tamano y de tiempo.
+  en cada redireccion), con limite de tamano y de tiempo. Desde el 2026-10-19 (`packages/net`) la comprobacion se hace al
+  conectar, con la misma resolucion del nombre que usa la conexion: un nombre no puede pasar la comprobacion y despues
+  apuntar a una direccion interna (DNS rebinding). Una IPv4 escondida dentro de una IPv6 cuenta como esa IPv4.
 - La primera vez que un dispositivo se conecta a la cuenta, sus propios calendarios externos se unen a los de la cuenta
   (por direccion; la app avisa de cuantos), y si la cuenta no tenia nada toma sus preferencias. Despues manda la cuenta,
   salvo lo cambiado sin conexion en ese dispositivo, que se envia al volver.
