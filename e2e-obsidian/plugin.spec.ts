@@ -141,8 +141,10 @@ test("edits change the notes with the calendar's rules", async () => {
   await expect.poll(() => existsSync(join(obs.vault.dir, lesson))).toBe(false);
   expect(existsSync(join(obs.vault.dir, ".trash"))).toBe(true);
   await page.keyboard.press("Control+z");
-  await expect.poll(() => existsSync(join(obs.vault.dir, lesson))).toBe(true);
-  expect(note(lesson)).toContain('title: "Clase de hoy"');
+  // Obsidian creates the file and then writes it: wait for the text, not only for the file.
+  await expect
+    .poll(() => (existsSync(join(obs.vault.dir, lesson)) ? note(lesson) : ""))
+    .toContain('title: "Clase de hoy"');
 
   // Ctrl+click (like a link) and "Open note" in the context menu open it in a tab.
   await page.locator(".boni .ev", { hasText: "Clase de hoy" }).click({ modifiers: ["Control"] });

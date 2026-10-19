@@ -81,6 +81,11 @@ slate `#94a3b8`.
 - **Wheel:** vertical scroll; `Ctrl` + wheel zooms the hours around the pointer; `Shift` + wheel moves across days and
   settles on a whole day. Motion is exponentially smoothed (about 70 to 85 ms time constants) and never snaps.
 - **Views:** day, week, N days (2 to 14), month. First weekday and 12/24 h are settings (default Monday, 24 h).
+- **Switching views keeps the place:** to day or N days, today when it is on screen (from the month: in the month
+  shown), otherwise the first visible day (from the month: the month's first day); to the week, today's week when today
+  is in the month shown (from the month), otherwise the week in the middle of what was shown; to the month, the month of
+  the middle of what was shown. A pane or window narrower than 640 px closes the sidebar (a drawer there); wide again,
+  the sidebar is as it was.
 - **Shortcuts:** `T` today, `D` `W` `M` views, `1` to `9` N days, arrows or `J`/`K` previous and next, `N` or `/` palette,
   `Ctrl+Z` / `Ctrl+Shift+Z` undo and redo, `Delete` delete selection, `Ctrl+A` select visible, `[` sidebar, `Ctrl+,`
   settings, `?` help, `Esc` closes or cancels.

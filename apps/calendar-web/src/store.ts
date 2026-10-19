@@ -526,6 +526,9 @@ export const useApp = create<AppState>((set, get) => {
   };
   const ui = load<UiPersist>(UI_KEY);
   const narrowAtStart = (appRoot()?.clientWidth ?? 1024) < COMPACT_WIDTH;
+  // The sidebar as it is (or would be) when the app is wide: a narrow pane closes it (it becomes a
+  // drawer), and widening again brings it back as it was (a split pane in Obsidian, a resized window).
+  let wideSidebar = ui.sidebarOpen ?? true;
   const hidden = new Set(ui.hiddenCalendars ?? []);
   setLocale(settings.locale);
   // With the vault as the source the first picture is empty (no flash of sample data) until it loads.
@@ -544,7 +547,7 @@ export const useApp = create<AppState>((set, get) => {
     save(UI_KEY, {
       view: s.view,
       nDays: s.nDays,
-      sidebarOpen: s.sidebarOpen,
+      sidebarOpen: s.compact ? wideSidebar : s.sidebarOpen,
       hiddenCalendars: s.data.calendars.filter((c) => !c.visible).map((c) => c.id),
     } satisfies UiPersist);
   };
@@ -910,9 +913,14 @@ export const useApp = create<AppState>((set, get) => {
             : [vis, vis + prevN - 1];
         focus =
           today >= from && today <= to ? today : prev.view === "month" ? startOfMonth(vis) : vis;
+      } else if (view === "week" && prev.view === "month") {
+        // Back from the month: today's week when today is in the month shown, otherwise the week of
+        // the month's middle row (the month publishes that row's middle day as `vis`).
+        const from = startOfMonth(vis);
+        const to = startOfMonth(addMonths(vis, 1)) - 1;
+        focus = today >= from && today <= to ? today : vis;
       } else if (view === "month" || view === "week") {
         focus = prev.view === "month" ? vis : vis + Math.floor(prevN / 2);
-        if (prev.view !== "month" && view === "month") focus = vis + Math.floor(prevN / 2);
       }
       const animate = prev.view !== "month" && view !== "month";
       set({
@@ -939,12 +947,13 @@ export const useApp = create<AppState>((set, get) => {
 
     setCompact: (compact) => {
       if (compact === get().compact) return;
-      // The drawer starts closed whenever the app turns narrow.
-      set(compact ? { compact, sidebarOpen: false } : { compact });
+      // The drawer starts closed whenever the app turns narrow; wide again, the sidebar is as it was.
+      set(compact ? { compact, sidebarOpen: false } : { compact, sidebarOpen: wideSidebar });
     },
 
     toggleSidebar: () => {
       set((s) => ({ sidebarOpen: !s.sidebarOpen }));
+      if (!get().compact) wideSidebar = get().sidebarOpen;
       persistUi();
     },
 
