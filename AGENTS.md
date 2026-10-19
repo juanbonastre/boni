@@ -32,6 +32,12 @@ packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native mo
                  stored (same as a missing key). `readQuery` runs SELECTs under an authorizer (readable tables only,
                  no pragmas but `data_version`, no `load_extension`). Keys: a data key per user, stored only wrapped
                  (`wrappedKeyProvider`); backups are `VACUUM INTO` sealed with it (AES-256-GCM).
+packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
+                 devices with a trust level (personal / shared / ambient; only another personal device raises it),
+                 sessions stored as sha256 of the token (same scrypt and token hashing as both old servers, so
+                 `import-accounts` moves their accounts and sessions and devices stay logged in), account data,
+                 push addresses, and each account's data key, wrapped (`wrappedKeysIn` for @boni/store). The
+                 servers still use their own accounts until the server moves onto it (plan PR 6).
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
