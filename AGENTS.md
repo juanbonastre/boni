@@ -45,6 +45,13 @@ packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed
                  the Python numbers exactly (Python's round to even and CPython 3.12's compensated sum included):
                  `golden/cases.json` comes from the original engine (`golden/make_golden.py`); a change to the
                  engine changes them only on purpose.
+packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `src/cli.ts --vault --store [--apply]`,
+                 dry run by default; never writes the vault). Zones as everywhere (`scan.ts`: no private/, restricted/,
+                 dot folders, _system/ notes, symlinks). Type by folder (agenda by `_system/colecciones`), fields
+                 inferred from all values (names kept, keys ASCII), `[[links]]` that all resolve to one type become
+                 relations, every value `imported` with its note as the source; access secrets are left out
+                 (`secrets.ts`), identity numbers make a value sensitive. Re-runs update only changed notes (hidden
+                 path and hash fields) and trash notes that are gone; the whole run is one `undoRun`.
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
