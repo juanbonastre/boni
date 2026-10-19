@@ -71,7 +71,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `vault-fs.cjs`, so it reads and writes the vault with the apps' rules; the vault stays the truth.
                  Node only strips types there: no parameter properties or enums in any file the server imports
                  (`write.test.ts` loads the server the way its container does). SQLite (`node:sqlite`) only for
-                 accounts (made by the admin, `src/cli.ts`), sessions (token hashes) and per-account data. API: snapshot,
+                 the single Boni account's system.db (@boni/identity, next to BONI_DB: accounts made by the admin,
+                 `src/cli.ts`, devices, sessions as token hashes, per-account data); on its first start it imports
+                 the old boni-calendar.db's accounts and sessions once (`startup.ts`), leaving that file as it was. API: snapshot,
                  changes since a version, live stream (SSE), `POST /api/apply` (only with `BONI_WRITE=1`; per-row
                  version check, a session's own writes are not conflicts); serves the web app; CORS open.
                  With writing on it tops up open-ended series itself (`topUpSeries`, after changes and every 6 h).

@@ -1,15 +1,16 @@
 import { dirname, join } from "node:path";
 import { startBackups } from "./backups.ts";
-import { openDb } from "./db.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
+import { databasePaths, openServerDb } from "./startup.ts";
 import { Vaults } from "./vaults.ts";
 
 /**
  * Boni Calendar server. Environment:
- *   BONI_DB     the SQLite file (accounts, sessions)          default ./data/boni-calendar.db
+ *   BONI_DB     the old calendar database: its accounts and sessions move to system.db once   default ./data/boni-calendar.db
+ *   BONI_SYSTEM_DB  the single Boni account's system.db (accounts, devices, sessions)   default: next to BONI_DB
  *   BONI_PORT   port to listen on (behind Tailscale serve)    default 8787
  *   BONI_HOST   address to listen on                          default 127.0.0.1
  *   BONI_PUBLIC_PORT  a second entry serving only the public allow-list (routes.ts), for Funnel   optional
@@ -23,9 +24,10 @@ import { Vaults } from "./vaults.ts";
  *   BONI_PUSH_TOKEN  sent as a bearer token when posting to them (an ntfy account that may write up* topics)
  *   BONI_BACKUPS     daily copies of the database to keep in backups/ next to it   default 14 (0: none)
  */
-const dbPath = process.env.BONI_DB ?? "./data/boni-calendar.db";
-const db = openDb(dbPath);
-const key = loadKey(dbPath);
+const paths = databasePaths();
+const dbPath = paths.system;
+const { db } = openServerDb(paths);
+const key = loadKey(dbPath); // secret.key next to the databases, as before
 const keep = Number(process.env.BONI_BACKUPS ?? 14);
 const stopBackups =
   dbPath !== ":memory:" && keep > 0
