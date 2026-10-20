@@ -8,12 +8,14 @@ RUN corepack enable && apk add --no-cache tini
 WORKDIR /app
 COPY . .
 # Only what the server and the web build need (no Electron, no Playwright).
-RUN pnpm install --frozen-lockfile --filter "@boni/server..." --filter "@boni/calendar-web..." \
+RUN pnpm install --frozen-lockfile --filter "@boni/server..." --filter "@boni/calendar-web..." --filter "@boni/boni-web..." \
   && pnpm --filter @boni/calendar-web build \
+  && pnpm --filter @boni/boni-web build \
   && rm -rf /root/.cache /root/.local/share/pnpm
 ENV NODE_ENV=production \
     BONI_DB=/data/boni-calendar.db \
     BONI_WEB=/app/apps/calendar-web/dist \
+    BONI_BONI_WEB=/app/apps/boni-web/dist \
     BONI_HOST=0.0.0.0 \
     BONI_PORT=8787
 RUN mkdir -p /data && chown node:node /data

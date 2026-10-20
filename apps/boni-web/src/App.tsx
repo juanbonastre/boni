@@ -1,6 +1,7 @@
 import { PanelLeft, Plus, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ChartCard, ChartCardContent } from "./components/ChartCard.tsx";
+import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
@@ -17,6 +18,7 @@ import {
   openScreen,
   openSettings,
   setChartDrill,
+  showChat,
   showHome,
   toggleSidebar,
   useStore,
@@ -115,6 +117,7 @@ function useShortcuts(mobile: boolean) {
       } else if (e.key === "Escape" && !e.defaultPrevented && !s.panel && s.view.kind !== "home") {
         e.preventDefault();
         if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
+        else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
         else showHome();
       }
     };
@@ -156,7 +159,19 @@ function TopBar() {
         </button>
       )}
       <h1 className="title">
-        {view.kind === "chart" && spec ? (
+        {view.kind === "chat" ? (
+          t("nav.chat")
+        ) : view.kind === "inbox" || view.kind === "log" ? (
+          <>
+            <button type="button" className="title-crumb" onClick={showChat}>
+              {t("nav.chat")}
+            </button>
+            <span className="title-sep">/</span>
+            <span className="title-name">
+              {view.kind === "inbox" ? t("inbox.title") : t("log.title")}
+            </span>
+          </>
+        ) : view.kind === "chart" && spec ? (
           <>
             <button type="button" className="title-crumb" onClick={showHome}>
               {t("top.home")}
@@ -220,6 +235,24 @@ function Content() {
       </div>
     );
   }
+  if (view.kind === "chat")
+    return (
+      <div className="content">
+        <ChatView />
+      </div>
+    );
+  if (view.kind === "inbox")
+    return (
+      <div className="content">
+        <InboxView />
+      </div>
+    );
+  if (view.kind === "log")
+    return (
+      <div className="content">
+        <LogView />
+      </div>
+    );
   if (view.kind === "chart") {
     return (
       <div className="content">

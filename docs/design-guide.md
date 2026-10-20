@@ -164,9 +164,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   palette checked for colour blindness on these surfaces) and draw in SVG: hairline grid, 4 px rounded data ends, the
   latest value as a label and the rest in a hover tooltip (`--surface-2` box, 8 px radius).
 - **Boni on a phone** (narrower than 640 px, and its Android app; Juan, 2026-10-18): not the desktop window made small.
-  It is for capturing: two tabs at the bottom, "Apuntar" (the capture buttons, then the user's shortcuts: a saved form
-  with its values, which a tap opens filled in or saves at once with Undo in the toast) and "Gráficas" (a list with each
-  chart's total; one chart on the whole screen with period chips). Forms and editors are full-screen sheets with their
+  It is for capturing: three tabs at the bottom, "Apuntar" (the capture buttons, then the user's shortcuts: a saved form
+  with its values, which a tap opens filled in or saves at once with Undo in the toast), "Gráficas" (a list with each
+  chart's total; one chart on the whole screen with period chips) and "Boni" (the conversation, below). Forms and editors are full-screen sheets with their
   buttons fixed at the bottom; optional fields fold under "Más detalles"; menus come from the bottom; a tap on a chart
   shows the value and a second tap opens the detail. Same tokens and card recipe; written deviation for the thumb:
   16 px text, 48 px touch targets, 20 to 24 px icons. Back closes the top thing.
@@ -185,6 +185,19 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   "only the N largest", kind, colour (the calendar palette) and "…" (edit, duplicate, on home, on the desktop, delete).
   28 px controls, Lucide icons, `--surface` bar with a `--line-strong` border, 8 px radius; the period's label is cut
   before anything else. Each change applies at once with Undo in the toast; deleting waits for that Undo.
+- **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a
+  "Conversación" row under "Inicio" in the sidebar (with the number of proposals waiting), the third tab on the phone.
+  Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
+  (text with slots, a big number in tabular figures, a list, a table). **Text is only text**: no HTML, no Markdown, no
+  links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover.
+  A question shows its options as pills (one line, cut with an ellipsis) and never asks for a password. A
+  **confirmation** is a card with an `--accent` border holding only the code's components: the action as a question,
+  each argument with its real value in full (scrolling, never cut), where it came from ("Viene de fuera · un correo")
+  and its warnings in `--bad` (invisible or direction-changing characters, shown as `⟦U+202E⟧`, mixed alphabets, an
+  international domain with its real name, long text). Its accept button waits 0.7 s and changes side with every
+  confirmation, so nothing is accepted out of habit. The **inbox** shows each proposal as the same card with Accept and
+  Reject (never "accept all"); the **log** lists the requests with Undo for each. The only exception to "no confirmation
+  dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
   menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a
