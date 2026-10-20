@@ -10,3 +10,7 @@ Código anterior al núcleo de Boni, guardado como referencia mientras se porta 
 
 Aquí nada se compila, se analiza ni se prueba (queda fuera de Biome, del espacio de trabajo de pnpm, del CI y de la imagen
 Docker). Cuando una pieza ya está portada al núcleo, se borra de aquí en el mismo PR.
+
+Portado (y borrado de aquí): `apps/web` → `apps/boni-web`, `e2e` → `e2e-boni`, `api` → `apps/boni-web/api` (2026-10-20,
+con su historial). Quedan como referencia el servidor Python y los envoltorios de escritorio y Android, que aún apuntan a
+`apps/web`.

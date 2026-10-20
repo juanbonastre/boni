@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup dev build check test e2e bench-chrome desktop package bench-electron plugin \
-	install-obsidian e2e-obsidian bench-obsidian server
+	install-obsidian e2e-obsidian bench-obsidian server e2e-boni
 
 help: ## List available commands
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -19,8 +19,12 @@ check: ## Lint, type-check and run unit tests
 	pnpm typecheck
 	pnpm test
 
-e2e: ## Run Playwright tests (system Chrome)
+e2e: ## Run Playwright tests (system Chrome): Boni Calendar, then Boni
 	pnpm exec playwright test
+	pnpm exec playwright test -c playwright.boni.config.ts
+
+e2e-boni: ## Only Boni's Playwright tests (apps/boni-web)
+	pnpm exec playwright test -c playwright.boni.config.ts
 
 bench-chrome: build ## Smoothness benchmark in a real Chrome window
 	@(pnpm --filter @boni/calendar-web exec vite preview --port 4173 --strictPort >/dev/null 2>&1 & echo $$! > .preview.pid); sleep 3; \

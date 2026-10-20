@@ -1,0 +1,105 @@
+{
+  "charts": [
+    {
+      "id": "spending-by-category",
+      "title": "Gasto del mes",
+      "kind": "hbar",
+      "measure": "spending",
+      "x": {
+        "field": "group",
+        "granularity": null
+      },
+      "split": null,
+      "period": {
+        "kind": "this_month",
+        "months": null,
+        "days": null,
+        "start": null,
+        "end": null
+      },
+      "filters": [],
+      "compare": "none",
+      "top": null,
+      "sort": "auto",
+      "drilldown": true,
+      "home": true,
+      "color": "#60a5fa",
+      "group_by": "category_group",
+      "filter": {
+        "include": [],
+        "exclude": []
+      }
+    },
+    {
+      "id": "monthly-spending",
+      "title": "Gasto por mes",
+      "kind": "bar",
+      "measure": "spending",
+      "x": {
+        "field": "date",
+        "granularity": "month"
+      },
+      "split": null,
+      "period": {
+        "kind": "last_months",
+        "months": 12,
+        "days": null,
+        "start": null,
+        "end": null
+      },
+      "filters": [],
+      "compare": "none",
+      "top": null,
+      "sort": "auto",
+      "drilldown": true,
+      "home": true,
+      "color": "#a78bfa",
+      "group_by": "month",
+      "filter": {
+        "include": [],
+        "exclude": []
+      }
+    },
+    {
+      "id": "eating-out",
+      "title": "Comida fuera",
+      "kind": "line",
+      "measure": "spending",
+      "x": {
+        "field": "date",
+        "granularity": "month"
+      },
+      "split": null,
+      "period": {
+        "kind": "last_months",
+        "months": 12,
+        "days": null,
+        "start": null,
+        "end": null
+      },
+      "filters": [
+        {
+          "field": "category",
+          "op": "prefix",
+          "values": ["comida/", "bebida/cafe", "bebida/alcohol"]
+        },
+        {
+          "field": "category",
+          "op": "not_prefix",
+          "values": ["comida/supermercado"]
+        }
+      ],
+      "compare": "none",
+      "top": null,
+      "sort": "auto",
+      "drilldown": false,
+      "home": true,
+      "color": "#fb923c",
+      "group_by": "month",
+      "filter": {
+        "include": [],
+        "exclude": []
+      }
+    }
+  ]
+}

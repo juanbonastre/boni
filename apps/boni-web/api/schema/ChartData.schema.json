@@ -1,0 +1,205 @@
+{
+  "$defs": {
+    "ChartPoint": {
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "no_data": {
+          "default": false,
+          "description": "No movements recorded at all in this period (gap, not zero spending)",
+          "title": "No Data",
+          "type": "boolean"
+        },
+        "partial": {
+          "default": false,
+          "description": "Period not finished yet (e.g. current month)",
+          "title": "Partial",
+          "type": "boolean"
+        },
+        "value": {
+          "title": "Value",
+          "type": "number"
+        }
+      },
+      "required": ["key", "label", "value"],
+      "title": "ChartPoint",
+      "type": "object"
+    },
+    "ChartSeries": {
+      "properties": {
+        "key": {
+          "default": "",
+          "title": "Key",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/ChartPoint"
+          },
+          "title": "Points",
+          "type": "array"
+        },
+        "role": {
+          "default": "main",
+          "enum": ["main", "split", "compare"],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": ["name", "points"],
+      "title": "ChartSeries",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "average": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Reference line: mean of the complete periods",
+      "title": "Average"
+    },
+    "chart_id": {
+      "title": "Chart Id",
+      "type": "string"
+    },
+    "computed_at": {
+      "format": "date-time",
+      "title": "Computed At",
+      "type": "string"
+    },
+    "delta_pct": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "(total - previous_total) / previous_total * 100",
+      "title": "Delta Pct"
+    },
+    "drill": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Key this data was drilled into, if any",
+      "title": "Drill"
+    },
+    "drilldown": {
+      "default": false,
+      "title": "Drilldown",
+      "type": "boolean"
+    },
+    "kind": {
+      "enum": ["bar", "stacked_bar", "hbar", "line", "area", "donut", "number", "table"],
+      "title": "Kind",
+      "type": "string"
+    },
+    "measure": {
+      "default": "spending",
+      "enum": ["spending", "income", "count", "average"],
+      "title": "Measure",
+      "type": "string"
+    },
+    "previous_total": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Total of the compared period (compare != none)",
+      "title": "Previous Total"
+    },
+    "series": {
+      "items": {
+        "$ref": "#/$defs/ChartSeries"
+      },
+      "title": "Series",
+      "type": "array"
+    },
+    "stale": {
+      "default": false,
+      "description": "Served from cache because the data source is unreachable",
+      "title": "Stale",
+      "type": "boolean"
+    },
+    "subtitle": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Subtitle"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "total": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Total"
+    },
+    "unit": {
+      "default": "EUR",
+      "description": "'EUR' or '' (counts)",
+      "title": "Unit",
+      "type": "string"
+    },
+    "x_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "X Label"
+    }
+  },
+  "required": ["chart_id", "title", "kind", "series", "computed_at"],
+  "title": "ChartData",
+  "type": "object"
+}
