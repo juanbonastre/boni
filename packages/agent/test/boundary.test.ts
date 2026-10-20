@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 /**
  * Obsidian is an integration at the edge, never a limit of the core (docs/nucleo.md, 9.4): the core packages
  * know nothing of the vault or Obsidian. Their dependencies stay among themselves, and no source file of
- * theirs imports the vault import, the calendar, an app or Obsidian's API.
+ * theirs imports the vault import, the calendar, an app or Obsidian's API. Connectors (mail) are edges too:
+ * the server uses them, the core never does.
  */
 const PACKAGES = join(import.meta.dirname, "..", "..");
 const CORE = ["entities", "store", "agent", "views"];
@@ -40,6 +41,7 @@ describe("the core does not depend on Obsidian", () => {
           if (
             spec === "obsidian" ||
             spec.startsWith("@boni/vault-import") ||
+            spec.startsWith("@boni/mail") ||
             spec.startsWith("@boni/calendar") ||
             spec.includes("vault-fs") ||
             /(^|\/)apps\//.test(spec) ||

@@ -89,6 +89,10 @@ packages/export/ Export in one click (docs/nucleo.md 9.3): `exportZip` (json/<ty
                  formulas, views.json, optional log.ndjson from `store.log()`), a minimal zip of its own (`zip.ts`,
                  `readZip` checks names, CRC and size) and `importExport` (dry run by default; the file's labels are
                  capped at `imported` unless `trustLabels`). Exporting again what was re-imported gives the same files.
+packages/mail/   Mail as a source (an edge, like the mirror; docs/nucleo.md decision of 2026-10-20): `ImapReader`, a
+                 read-only IMAP client with no dependencies (EXAMINE, BODY.PEEK, an allow-list of commands checked before
+                 sending; TLS only, `connect` for tests) and `parseMessage` (headers, encoded words, multipart, charsets;
+                 the plain part first, HTML as text without its hidden elements, counted; attachments by name only).
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
