@@ -39,12 +39,14 @@ export {
   DESTINATION_ROLES,
   EFFECTS,
   ensureSystemTypes,
+  fieldName,
   makeCaps,
   type Net,
   neutralize,
   type ToolDef,
   ToolError,
   ToolRegistry,
+  typeName,
 } from "./tools.ts";
-export { deepLabel, leaf, list, plain, rec, type Val } from "./values.ts";
+export { deepLabel, type Json, leaf, list, plain, rec, type Val } from "./values.ts";
 export { schemaView, toPlannerView } from "./view.ts";

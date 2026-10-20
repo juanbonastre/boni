@@ -4,6 +4,7 @@ import {
   ASK_TURN,
   confirmTurn,
   DONE,
+  MIRROR_PROPOSAL,
   PROPOSALS,
   RTL,
   RUNS,
@@ -163,6 +164,32 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
   // Esc goes back to the conversation.
   await page.keyboard.press("Escape");
   await expect(page.locator(".title")).toHaveText("Conversación");
+});
+
+test("a hand edit in Obsidian waits in the inbox with its note and what will not be applied", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [MIRROR_PROPOSAL],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: /^Bandeja/ }).click();
+  const p = page.locator(".proposal");
+  await expect(p).toHaveCount(1);
+  await expect(p).toContainText("Cambio hecho a mano en Obsidian");
+  await expect(p).toContainText("Nota");
+  await expect(p).toContainText("agenda/docencia/2026-10-19 Clase de ejemplo.md");
+  await expect(p).toContainText("No se aplica");
+  await expect(p).toContainText("De tus datos · tu vault");
+  await page.screenshot({ path: `${SHOTS}/agent-mirror-proposal.png` });
+  await p.getByRole("button", { name: "Aceptar" }).click();
+  await expect(page.locator(".proposal")).toHaveCount(0);
+  expect(await requests(page, "POST api/agent/proposals/")).toEqual([
+    "POST api/agent/proposals/pm/accept",
+  ]);
 });
 
 test("the log: what each request did, and Undo for it", async ({ page }) => {

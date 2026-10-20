@@ -9,6 +9,17 @@ import { join } from "node:path";
  */
 const FORBIDDEN = new Set(["private", "restricted"]);
 
+/** Whether the import reads a note at `path` (vault-relative, "/"): the rules of `scanVault`. */
+export function importable(path: string): boolean {
+  const parts = path.split("/");
+  const name = parts[parts.length - 1] ?? "";
+  if (!name.toLowerCase().endsWith(".md") || name === "README.md") return false;
+  if (parts.length > 1 && parts[0] === "_system") return false;
+  return parts
+    .slice(0, -1)
+    .every((p) => p !== "" && !FORBIDDEN.has(p.toLowerCase()) && !p.startsWith("."));
+}
+
 export interface Scanned {
   /** Vault-relative paths with "/". */
   notes: string[];

@@ -1,8 +1,13 @@
-import { existsSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { ensureSystemTypes } from "@boni/agent";
 import { devicesOf, importAccounts, revokeDevice } from "@boni/identity";
+import { Mirror, type MirrorFs, openMirrorState, type Profile } from "@boni/mirror";
+import { openUserStore } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
+import { mirrorStatePath } from "./mirror.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
 import { V1Store } from "./v1/store.ts";
 
@@ -17,9 +22,26 @@ import { V1Store } from "./v1/store.ts";
  *       the first Boni server's accounts and sessions (devices stay logged in) and its charts,
  *       shortcuts, widgets, preferences and captures, into account <name>; a dry run without --apply.
  *       Running it again moves nothing twice.
+ *   node src/cli.ts mirror <name>                    each type of the account and its mode (vault, core, none)
+ *   node src/cli.ts mirror <name> <type> [--profile generic|vault] [--folder <folder>] [--apply]
+ *       switches a type to core mode (docs/nucleo.md 9.1): the core becomes the truth and its notes the
+ *       mirror. Without --apply only the report (how many notes, which differ, which the core does not have).
+ *   node src/cli.ts mirror <name> <type> --stop      stops mirroring it (its notes stay as they are)
  */
 const [cmd, ...args] = process.argv.slice(2);
-const { db } = openServerDb(databasePaths());
+const paths = databasePaths();
+const { db } = openServerDb(paths);
+const require = createRequire(import.meta.url);
+const { openVault } = require("../../calendar-desktop/vault-fs.cjs") as {
+  openVault: (root: string) => MirrorFs;
+};
+
+/** `--name value` from the arguments (and the rest without them). */
+function option(list: string[], name: string): { value: string | null; rest: string[] } {
+  const i = list.indexOf(name);
+  if (i < 0) return { value: null, rest: list };
+  return { value: list[i + 1] ?? null, rest: [...list.slice(0, i), ...list.slice(i + 2)] };
+}
 
 async function ask(question: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
@@ -81,9 +103,78 @@ try {
       throw e;
     }
     console.log(apply ? "Imported." : "Dry run: nothing written (add --apply).");
+  } else if (cmd === "mirror") {
+    const profile = option(args, "--profile");
+    const folder = option(profile.rest, "--folder");
+    const flags = new Set(folder.rest.filter((a) => a.startsWith("--")));
+    const [name, typeArg] = folder.rest.filter((a) => !a.startsWith("--"));
+    if (!name)
+      throw new Error(
+        "Usage: mirror <name> [<type> [--profile generic|vault] [--folder F] [--apply] | --stop]",
+      );
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!user) throw new Error(`No account ${name}`);
+    if (!user.vault) throw new Error(`Account ${name} has no vault folder`);
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    if (profile.value && profile.value !== "generic" && profile.value !== "vault")
+      throw new Error("--profile is generic or vault");
+    const users = join(dirname(paths.system), "users");
+    mkdirSync(users, { recursive: true, mode: 0o700 });
+    const store = openUserStore(join(users, `${user.id}.db`));
+    ensureSystemTypes(store);
+    const statePath = mirrorStatePath(dirname(paths.system), user.id);
+    const state =
+      existsSync(statePath) || flags.has("--apply")
+        ? openMirrorState(statePath)
+        : openMirrorState(":memory:");
+    const mirror = new Mirror({
+      store,
+      state,
+      fs: openVault(user.vault),
+      propose: () => {
+        throw new Error("no proposals from the command line");
+      },
+    });
+    try {
+      const types = mirror.modes();
+      const type = typeArg
+        ? types.find((t) => t.type === typeArg || t.name.toLowerCase() === typeArg.toLowerCase())
+        : null;
+      if (!typeArg) {
+        for (const t of types)
+          console.log(`${t.type}\t${t.mode}${t.profile ? ` (${t.profile})` : ""}\t${t.name}`);
+      } else if (!type) throw new Error(`No type ${typeArg} (see: mirror ${name})`);
+      else if (flags.has("--stop")) {
+        mirror.stop(type.type);
+        console.log(`${type.name}: no longer mirrored; its notes stay as they are.`);
+      } else {
+        const r = mirror.switchToCore(type.type, {
+          ...(profile.value ? { profile: profile.value as Profile } : {}),
+          ...(folder.value ? { folder: folder.value } : {}),
+          apply: flags.has("--apply"),
+        });
+        console.log(`${r.name} -> core, profile ${r.profile}, folder ${r.folder}`);
+        console.log(
+          `${r.entities} entities: ${r.unchanged} notes as they are (they gain the boni_* lines)`,
+        );
+        console.log(`${r.changed.length} notes would change:`);
+        for (const c of r.changed.slice(0, 50))
+          console.log(`  ${c.path}: ${[...c.props, ...(c.body ? ["(body)"] : [])].join(", ")}`);
+        if (r.changed.length > 50) console.log(`  ... and ${r.changed.length - 50} more`);
+        console.log(
+          `${r.created.length} new notes; ${r.unreadable.length} notes that do not parse (left alone)`,
+        );
+        console.log(`${r.unknown.length} notes the core does not have (they become proposals):`);
+        for (const p of r.unknown.slice(0, 50)) console.log(`  ${p}`);
+        console.log(r.applied ? "Switched." : "Dry run: nothing written (add --apply).");
+      }
+    } finally {
+      state.close();
+      store.close();
+    }
   } else {
     console.log(
-      "Commands: add-user <name> <vault folder> | users | devices <name> | revoke <name> [device] | import-boni <boni.sqlite3> <name> [--apply]",
+      "Commands: add-user <name> <vault folder> | users | devices <name> | revoke <name> [device] | import-boni <boni.sqlite3> <name> [--apply] | mirror <name> [<type> ...]",
     );
   }
 } catch (e) {

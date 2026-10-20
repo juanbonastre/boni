@@ -196,7 +196,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   and its warnings in `--bad` (invisible or direction-changing characters, shown as `⟦U+202E⟧`, mixed alphabets, an
   international domain with its real name, long text). Its accept button waits 0.7 s and changes side with every
   confirmation, so nothing is accepted out of habit. The **inbox** shows each proposal as the same card with Accept and
-  Reject (never "accept all"); the **log** lists the requests with Undo for each. The only exception to "no confirmation
+  Reject (never "accept all"); a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
+  Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; the **log** lists the requests with Undo for each. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,

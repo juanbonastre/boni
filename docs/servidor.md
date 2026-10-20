@@ -190,3 +190,23 @@ compartido, ambiental) es el origen de cada turno, asi que una confirmacion solo
 - La app web de Boni (`apps/boni-web`, compilada) se sirve en `/boni/` solo en la entrada tailnet (`BONI_BONI_WEB`; la
   imagen Docker la lleva). En el navegador habla con este mismo servidor: la API v1 (gráficas, atajos, apuntar gasto) y la
   del agente (la conversación). El calendario sigue en `/`.
+
+## Espejo Markdown (2026-10-20)
+Para los tipos en modo `core` el núcleo es la verdad y escribe sus notas en el vault de la cuenta (`src/mirror.ts` sobre
+`@boni/mirror`; diseño en `docs/nucleo.md`, 9.2 y 9.4). Solo con `BONI_WRITE=1` y el agente encendido (las propuestas van a su
+bandeja). Corre después de cada petición del agente y cada 30 s.
+- Cambiar un tipo de modo lo lanza Juan, con informe previo (sin `--apply` no escribe nada):
+  `node src/cli.ts mirror <cuenta>` lista los tipos y su modo; `node src/cli.ts mirror <cuenta> <tipo> [--profile generic|vault]
+  [--folder <carpeta>] [--apply]` lo pasa a `core`; `--stop` deja de reflejarlo (las notas se quedan como están).
+- Perfil `vault`: las notas se quedan donde las encontró la importación, con sus propiedades de siempre. Perfil `generic`:
+  `Boni/<Tipo>/<título>.md`, una propiedad por campo con su nombre. Cada nota gana `boni_id`, `boni_integrity` y, si algo no
+  cabe en Markdown, `boni_omitted`. El texto de un modelo o de fuera se escribe con los recursos remotos neutralizados (P17).
+- Solo se escriben las líneas que cambian. Una nota que no es la última que escribió el espejo no se pisa: el cambio hecho a
+  mano (en Obsidian, por Syncthing o por otro agente) va a la bandeja como propuesta, comparado con lo último que escribió el
+  espejo (así nunca deshace un cambio más nuevo del núcleo); una nota nueva en la carpeta del tipo propone crear el elemento y
+  una borrada, borrarlo. Rechazar devuelve la versión del núcleo. Las notas que la importación no lee (`private/`, `restricted/`,
+  `_system/`, carpetas con punto, `README.md`) nunca se proponen.
+- Estado del espejo: `users/<id>.mirror.db` junto al almacén (qué tipos, qué nota tiene cada elemento y su último texto).
+- Probado en solo lectura sobre el vault real (2026-10-20): de 4.122 notas, 4.121 quedarían exactamente igual (solo ganan las
+  líneas `boni_*`); la otra es una nota con un secreto de acceso que la importación deja fuera.
+
