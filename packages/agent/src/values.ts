@@ -111,5 +111,42 @@ export function originsOf(v: Val, out: From[] = []): From[] {
   return out;
 }
 
+/** Whether `v` counts as true in a condition: anything but null, false, 0, "" and an empty list. */
+export function truthy(v: Val): boolean {
+  if (v.t === "list") return v.items.length > 0;
+  if (v.t === "rec") return true;
+  const x = v.value;
+  return !(
+    x === null ||
+    x === false ||
+    x === 0 ||
+    x === "" ||
+    (Array.isArray(x) && x.length === 0)
+  );
+}
+
+/**
+ * Like `at`, but a path that does not exist gives null with the label of the deepest part that does
+ * (whether an item exists depends on its list): for conditions, where "is there a second one?" is a
+ * fair question.
+ */
+export function atOrNull(v: Val, path: (string | number)[]): Val {
+  let cur: Val = v;
+  for (const p of path) {
+    if (p === "items" && cur.t === "list") continue;
+    const next: Val | undefined =
+      typeof p === "number"
+        ? cur.t === "list"
+          ? cur.items[p]
+          : undefined
+        : cur.t === "rec"
+          ? cur.fields[p]
+          : undefined;
+    if (!next) return leaf(null, deepLabel(cur), true);
+    cur = next;
+  }
+  return cur;
+}
+
 /** Size of `v` as JSON, to keep runs inside their limits. */
 export const sizeOf = (v: Val) => JSON.stringify(plain(v)).length;

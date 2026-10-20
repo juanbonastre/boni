@@ -17,14 +17,22 @@ if (!key) {
   process.exit(2);
 }
 const plannerModel = process.argv[2] ?? "claude-opus-5-5";
-const readerModel = process.argv[3] ?? "claude-haiku-4-5-20251001";
+const readerModel = process.argv[3] ?? "claude-haiku-4-5";
 
 let tokens = 0;
 const counted = (p: ModelProvider): ModelProvider => ({
   id: p.id,
   privacy: p.privacy,
   async complete(req: ModelRequest): Promise<ModelResponse> {
-    const r = await p.complete(req);
+    let r: ModelResponse;
+    try {
+      r = await p.complete(req);
+    } catch (e) {
+      // The API's own message, for whoever runs the evaluation (the agent only keeps the code).
+      const err = e as { code?: string; detail?: string };
+      console.error(`${req.role}: ${err.code ?? "error"} ${err.detail ?? ""}`);
+      throw e;
+    }
     tokens += r.usage.input + r.usage.output;
     return r;
   },
@@ -64,10 +72,20 @@ const env = makeEnv([
 ]);
 try {
   const agent = env.agent(
-    counted(new AnthropicProvider({ apiKey: key, model: plannerModel })),
+    counted(
+      new AnthropicProvider({
+        apiKey: key,
+        model: plannerModel,
+        effort: "medium",
+        fallbacks: true,
+      }),
+    ),
     counted(new AnthropicProvider({ apiKey: key, model: readerModel })),
   );
-  for (const c of CASES) {
+  // BONI_EVAL_ONLY=7,8 runs only those cases (1 = the first).
+  const only = new Set((process.env.BONI_EVAL_ONLY ?? "").split(",").filter(Boolean).map(Number));
+  for (const [i, c] of CASES.entries()) {
+    if (only.size && !only.has(i + 1)) continue;
     const before = tokens;
     const r = await agent.turn({ text: c.request, origin: PERSONAL, conversation: "eval" });
     console.log(
@@ -82,6 +100,16 @@ try {
         tokens: tokens - before,
       }),
     );
+    // What the models answered (invented data): every call when a run stopped, the final plan otherwise.
+    const calls = env.store.journal.modelCalls(r.run);
+    const shown =
+      r.status === "stopped" ? calls : calls.filter((m) => m.role === "planner").slice(-1);
+    for (const m of shown) {
+      const input = m.request as { input?: { previous_errors?: unknown } };
+      console.log(
+        `  ${m.role}${input.input?.previous_errors ? ` after ${JSON.stringify(input.input.previous_errors)}` : ""}: ${JSON.stringify(m.response).slice(0, 2500)}`,
+      );
+    }
   }
   console.log(`sent to anyone: ${env.sent.length}; total tokens: ${tokens}`);
 } finally {

@@ -41,69 +41,109 @@ const req = {
   maxTokens: 100,
 };
 
+const header = (init: RequestInit | undefined, name: string) =>
+  new Headers(init?.headers).get(name);
+const bodyOf = (c: Call | undefined) => JSON.parse(String(c?.init.body));
+
 describe("the Anthropic provider", () => {
-  it("asks for structured output, with no tools, and reads the JSON", async () => {
+  it("asks a reader for structured output, with no tools, and reads the JSON", async () => {
     const { calls, f } = stub([() => ok('{"a":"x"}')]);
-    const p = new AnthropicProvider({ apiKey: KEY, model: "claude-opus-5-5", fetch: f });
-    const res = await p.complete(req);
+    const p = new AnthropicProvider({ apiKey: KEY, model: "claude-haiku-4-5", fetch: f });
+    const res = await p.complete({ ...req, role: "reader" });
     expect(res).toEqual({
       json: { a: "x" },
       usage: { input: 10, output: 5 },
       model: "claude-opus-5-5",
     });
     expect(calls[0]?.url).toBe("https://api.anthropic.com/v1/messages");
-    const headers = calls[0]?.init.headers as Record<string, string>;
-    expect(headers["x-api-key"]).toBe(KEY);
-    expect(headers["anthropic-version"]).toBe("2023-06-01");
-    const body = JSON.parse(String(calls[0]?.init.body));
+    expect(header(calls[0]?.init, "x-api-key")).toBe(KEY);
+    const body = bodyOf(calls[0]);
     expect(body).not.toHaveProperty("tools");
-    expect(body.output_config.format).toEqual({
-      type: "json_schema",
-      schema: {
-        type: "object",
-        properties: { a: { anyOf: [{ type: "string" }, { type: "null" }] } },
-        additionalProperties: false,
+    expect(body.model).toBe("claude-haiku-4-5");
+    expect(body.output_config).toEqual({
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: { a: { anyOf: [{ type: "string" }, { type: "null" }] } },
+          additionalProperties: false,
+        },
       },
     });
     expect(JSON.parse(body.messages[0].content)).toEqual({ request: "hola" });
   });
 
-  it("retries when the API is busy, and fails with a code that never carries the key", async () => {
-    const sleep = async () => {};
-    const busy = stub([() => new Response("", { status: 529 }), () => ok('{"a":null}')]);
+  it("asks the planner for JSON text, with its effort and the server-side fallback", async () => {
+    const { calls, f } = stub([() => ok('Aquí está:\n```json\n{"version":1,"steps":[]}\n```')]);
+    const p = new AnthropicProvider({
+      apiKey: KEY,
+      model: "claude-opus-5-5",
+      effort: "medium",
+      fallbacks: true,
+      fetch: f,
+    });
+    const res = await p.complete({ ...req, structured: false });
+    expect(res.json).toEqual({ version: 1, steps: [] });
+    const body = bodyOf(calls[0]);
+    expect(body.output_config).toEqual({ effort: "medium" });
+    expect(body.fallbacks).toBe("default");
+    expect(header(calls[0]?.init, "anthropic-beta")).toContain("server-side-fallback-2026-07-01");
+    expect(body).not.toHaveProperty("tools");
+  });
+
+  it("retries when the API is busy, and fails with a fixed code that never carries the key", async () => {
+    const busy = stub([
+      () => new Response("{}", { status: 529, headers: { "retry-after-ms": "1" } }),
+      () => ok('{"a":null}'),
+    ]);
     expect(
-      (await new AnthropicProvider({ apiKey: KEY, model: "m", fetch: busy.f, sleep }).complete(req))
-        .json,
+      (
+        await new AnthropicProvider({
+          apiKey: KEY,
+          model: "m",
+          fetch: busy.f,
+          maxRetries: 1,
+        }).complete(req)
+      ).json,
     ).toEqual({ a: null });
     expect(busy.calls.length).toBe(2);
+    const apiError = (status: number) => () =>
+      new Response(
+        JSON.stringify({
+          type: "error",
+          error: { type: "invalid_request_error", message: "schema is too complex" },
+        }),
+        {
+          status,
+          headers: { "content-type": "application/json" },
+        },
+      );
     for (const [answers, code] of [
-      [[() => new Response(`{"error":"bad key ${KEY}"}`, { status: 401 })], "http-401"],
+      [[apiError(400)], "http-400"],
+      [[apiError(401)], "http-401"],
       [[() => new Error(`connect ${KEY}`)], "network"],
       [[() => ok("no es json")], "not-json"],
       [[() => ok("{}", { stop_reason: "max_tokens" })], "max-tokens"],
       [[() => ok("{}", { stop_reason: "refusal" })], "refusal"],
     ] as const) {
       const s = stub([...answers]);
-      const e = await new AnthropicProvider({
-        apiKey: KEY,
-        model: "m",
-        fetch: s.f,
-        sleep,
-        retries: 0,
-      })
+      const e = await new AnthropicProvider({ apiKey: KEY, model: "m", fetch: s.f, maxRetries: 0 })
         .complete(req)
         .catch((x) => x);
       expect(e).toBeInstanceOf(ProviderError);
       expect(e.code).toBe(code);
       expect(String(e.message)).not.toContain(KEY);
     }
+    // The API's message stays available to whoever runs the server, apart from the code.
+    const s = stub([apiError(400)]);
+    const e = await new AnthropicProvider({ apiKey: KEY, model: "m", fetch: s.f, maxRetries: 0 })
+      .complete(req)
+      .catch((x) => x);
+    expect(e.detail).toContain("schema is too complex");
     expect(() => new AnthropicProvider({ apiKey: "", model: "m" })).toThrow("no-api-key");
   });
 
-  it("sends only schemas the API accepts: closed objects, no length or count limits, no type lists", () => {
-    const names = coreTools()
-      .all()
-      .flatMap((t) => Object.keys(t.args));
+  it("sends only reader schemas the API accepts, within its complexity limits", () => {
     const forbidden = (s: unknown, path: string): string[] => {
       if (Array.isArray(s)) return s.flatMap((x, i) => forbidden(x, `${path}[${i}]`));
       if (!s || typeof s !== "object") return [];
@@ -115,11 +155,41 @@ describe("the Anthropic provider", () => {
       if (o.type === "object" && o.additionalProperties !== false) bad.push(`${path} open`);
       return [...bad, ...Object.entries(o).flatMap(([k, v]) => forbidden(v, `${path}.${k}`))];
     };
-    for (const [name, schema] of [
-      ["plan", planSchema(names)],
-      ...Object.entries(READER_SCHEMAS),
-    ] as [string, unknown][])
-      expect(forbidden(apiSchema(schema), name)).toEqual([]);
+    // The documented limits: 24 optional parameters and 16 with union types per request.
+    const count = (s: unknown): { optional: number; unions: number } => {
+      if (Array.isArray(s))
+        return s
+          .map(count)
+          .reduce((a, b) => ({ optional: a.optional + b.optional, unions: a.unions + b.unions }), {
+            optional: 0,
+            unions: 0,
+          });
+      if (!s || typeof s !== "object") return { optional: 0, unions: 0 };
+      const o = s as Record<string, unknown>;
+      let optional = 0;
+      let unions = 0;
+      if (o.properties && typeof o.properties === "object") {
+        const required = new Set((o.required as string[]) ?? []);
+        for (const [n, p] of Object.entries(o.properties)) {
+          if (!required.has(n)) optional++;
+          if (p && typeof p === "object" && "anyOf" in p) unions++;
+        }
+      }
+      const inner = count(Object.values(o));
+      return { optional: optional + inner.optional, unions: unions + inner.unions };
+    };
+    for (const [name, schema] of Object.entries(READER_SCHEMAS)) {
+      const api = apiSchema(schema);
+      expect(forbidden(api, name)).toEqual([]);
+      const c = count(api);
+      expect(c.optional, name).toBeLessThanOrEqual(24);
+      expect(c.unions, name).toBeLessThanOrEqual(16);
+    }
+    // The plan's schema is far beyond them: that is why the planner answers with JSON text.
+    const names = coreTools()
+      .all()
+      .flatMap((t) => Object.keys(t.args));
+    expect(count(apiSchema(planSchema(names))).unions).toBeGreaterThan(16);
   });
 });
 

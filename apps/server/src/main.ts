@@ -27,7 +27,7 @@ import { Vaults } from "./vaults.ts";
  *   BONI_BACKUPS     daily copies of the database to keep in backups/ next to it   default 14 (0: none)
  *   BONI_TZ     the time zone of the Boni API v1 and of the agent ("today")   default Europe/Madrid
  *   ANTHROPIC_API_KEY  turns the agent on (tailnet only) with Anthropic's models; off without it
- *   BONI_PLANNER_MODEL / BONI_READER_MODEL   default claude-opus-5-5 / claude-haiku-4-5-20251001
+ *   BONI_PLANNER_MODEL / BONI_READER_MODEL   default claude-opus-5-5 / claude-haiku-4-5
  */
 const paths = databasePaths();
 const dbPath = paths.system;
@@ -61,10 +61,12 @@ const agent = new AgentHost({
         planner: new AnthropicProvider({
           apiKey,
           model: process.env.BONI_PLANNER_MODEL ?? "claude-opus-5-5",
+          effort: "medium",
+          fallbacks: true,
         }),
         reader: new AnthropicProvider({
           apiKey,
-          model: process.env.BONI_READER_MODEL ?? "claude-haiku-4-5-20251001",
+          model: process.env.BONI_READER_MODEL ?? "claude-haiku-4-5",
         }),
       }
     : null,

@@ -231,11 +231,19 @@ const optNum = (v: Val | undefined, def: number, max: number): number => {
 };
 
 /** What a `where` (field key = value) keeps, and the labels the decision read. */
+/** Text compared without case or accents ("Ána" contains "ana"). */
+const fold = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/\p{Mn}/gu, "")
+    .toLowerCase();
+
 function matching(
   store: ReadStore,
   def: TypeDef,
   field?: Val,
   equals?: Val,
+  contains?: Val,
 ): { kept: StoredEntity[]; read: Label[] } {
   const all = store.list(def.id);
   if (!field) return { kept: all, read: [] };
@@ -247,7 +255,13 @@ function matching(
   const kept = all.filter((s) => {
     const l = s.labels[f.id];
     if (l) read.push(l);
-    return JSON.stringify(s.entity.values[f.id] ?? null) === want;
+    const v = s.entity.values[f.id] ?? null;
+    if (contains) {
+      const part = plain(contains);
+      if (typeof part !== "string" || !part) throw new ToolError("bad-argument");
+      return typeof v === "string" && fold(v).includes(fold(part));
+    }
+    return JSON.stringify(v) === want;
   });
   return { kept, read };
 }
@@ -274,16 +288,18 @@ export function coreTools(): ToolRegistry {
     name: "entities.query",
     effect: "read",
     title: "Consultar",
-    describe: "Entities of a type, optionally where a field equals a value",
+    describe:
+      "Entities of a type, optionally where a field equals a value or a text field contains a text",
     args: {
       type: { role: "type", required: true, describe: "type key" },
       field: { role: "field", describe: "field key to compare" },
       equals: { role: "value", describe: "the value it must have" },
+      contains: { role: "value", describe: "or: text the field contains (any case, any accents)" },
       limit: { role: "limit", describe: "at most this many (default 50, max 200)" },
     },
     run({ store }, a) {
       const def = typeByKey(store, str(a.type));
-      const { kept, read } = matching(store, def, a.field, a.equals);
+      const { kept, read } = matching(store, def, a.field, a.equals, a.contains);
       const limit = optNum(a.limit, 50, 200);
       const l = read.length ? join(codeLabel("query"), ...read) : codeLabel("query");
       return list(

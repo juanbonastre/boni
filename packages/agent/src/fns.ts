@@ -1,5 +1,15 @@
 import { join, type Label } from "@boni/entities";
-import { codeLabel, deepLabel, type Json, leaf, list, plain, rec, type Val } from "./values.ts";
+import {
+  codeLabel,
+  deepLabel,
+  type Json,
+  leaf,
+  list,
+  plain,
+  rec,
+  truthy,
+  type Val,
+} from "./values.ts";
 
 /**
  * The plan's pure functions (FNS in plan.ts). Each result carries the joined label of everything it
@@ -116,11 +126,11 @@ export function callFn(name: string, args: Val[], today: string): Val {
     case "lt":
       return out(num(a) < num(b));
     case "and":
-      return out(args.every((x) => plain(x) === true));
+      return out(args.every(truthy));
     case "or":
-      return out(args.some((x) => plain(x) === true));
+      return out(args.some(truthy));
     case "not":
-      return out(plain(a) !== true);
+      return out(!truthy(a));
     case "today":
       return out(today);
     case "add_days": {
