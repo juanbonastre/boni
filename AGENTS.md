@@ -72,6 +72,15 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  `eval/eval.ts`: a small evaluation with the real models, outside CI, run by hand with a budget.
                  `test/boundary.test.ts`: the core (entities, store, agent, views) depends on nothing of the vault,
                  the calendar, the apps or Obsidian; Obsidian is an integration at the edge (docs/nucleo.md, 9.4).
+packages/mirror/ The Markdown mirror (docs/nucleo.md 9.2, 9.4; an edge, never imported by the core): for each type in
+                 `core` mode one note per entity in the vault, in a profile (`vault`: where the import found it, with
+                 its properties, via `propertyFields`; `generic`: `Boni/<Type>/<title>.md`), only the changed lines
+                 (`patchNote`), `boni_id` / `boni_integrity` / `boni_omitted` in the frontmatter, low-integrity text
+                 neutralized (P17). Properties are compared by meaning (`sameProp`: lists are sets, links the note
+                 they point to). A note that is not the mirror's last version is never overwritten: the hand edit,
+                 compared three-way with the mirror's last text, becomes a proposal (`Agent.propose`); new notes in
+                 the type's folder (import rules, `importable`) propose an entity, removed ones its removal; rejected,
+                 the core's version comes back. `switchToCore` reports first. State in its own SQLite (`state.ts`).
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
@@ -132,6 +141,8 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  unreachable). Charts, shortcuts, widgets, prefs and captures per account in system.db (`v1/store.ts`);
                  `cli.ts import-boni` brings them, and the accounts, from the old `boni.sqlite3`. `golden/v1.json` is
                  what the original Python server answered (`golden/make_golden.py`); `v1.test.ts` must match it.
+                 `src/mirror.ts`: the mirror of each account's `core` types (after agent requests and every 30 s;
+                 `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run by default.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
                  account (`users/<id>.db` next to system.db) and one `@boni/agent` each; the device's trust level is
                  the turn's origin. On only with `ANTHROPIC_API_KEY`; otherwise 503 `agent-off`.

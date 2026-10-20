@@ -1041,6 +1041,48 @@ export class Agent {
     return this.advance(st);
   }
 
+  /**
+   * A proposal made by code outside a turn (a hand edit of the mirror, docs/nucleo.md 9.2): no model and
+   * no plan, it only waits in the inbox, and accepting it runs the tool under the policy like any other.
+   * It goes stale when an entity it names changed since. `rows` go first in the view the inbox paints.
+   */
+  propose(p: {
+    tool: string;
+    args: Record<string, Val>;
+    origin: string;
+    title?: string;
+    rows?: ConfirmView["rows"];
+  }): string {
+    const tool = this.o.registry.get(p.tool);
+    if (!tool) throw new Error("P0-unregistered-tool");
+    const run = randomUUID();
+    const id = randomUUID();
+    const at = this.now();
+    const journal = this.o.store.journal;
+    journal.startRun({ id: run, turn: null, origin: p.origin, device: null, started: at });
+    const view = confirmView(tool, p.args);
+    journal.addProposal({
+      id,
+      run,
+      tool: tool.name,
+      args: {
+        values: Object.fromEntries(Object.entries(p.args).map(([k, v]) => [k, freeze(v)])),
+        origins: originsFor(tool, p.args, readStore(this.o.store)),
+      },
+      view: { ...view, title: p.title ?? view.title, rows: [...(p.rows ?? []), ...view.rows] },
+      sources: [
+        ...new Set(
+          Object.values(p.args).flatMap((v) =>
+            deepLabel(v).sources.map((s) => `${s.kind}:${s.id}`),
+          ),
+        ),
+      ],
+      created: at,
+    });
+    journal.finishRun(run, "proposed", null, at);
+    return id;
+  }
+
   rejectProposal(id: string): void {
     const p = this.o.store.journal.proposal(id);
     if (p?.status === "pending") this.o.store.journal.setProposal(id, "rejected", this.now());

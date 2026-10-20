@@ -19,6 +19,7 @@
     "@boni/calendar-web": "workspace:*",
     "@boni/entities": "workspace:*",
     "@boni/identity": "workspace:*",
+    "@boni/mirror": "workspace:*",
     "@boni/net": "workspace:*",
     "@boni/store": "workspace:*",
     "@boni/views": "workspace:*"

@@ -196,3 +196,53 @@ export const RUNS = {
     },
   ],
 };
+
+/** A hand edit of the mirror in Obsidian, as the server paints it (packages/mirror). */
+export const MIRROR_PROPOSAL = {
+  proposals: [
+    {
+      id: "pm",
+      tool: "entities.update",
+      view: {
+        tool: "entities.update",
+        title: "Cambio hecho a mano en Obsidian",
+        rows: [
+          {
+            arg: "note",
+            role: "value",
+            value: "agenda/docencia/2026-10-19 Clase de ejemplo.md",
+            integrity: "imported",
+            sources: ["vault"],
+            marks: [],
+          },
+          {
+            arg: "ignored",
+            role: "value",
+            value: "Tipo: no es una de las opciones",
+            integrity: "imported",
+            sources: ["vault"],
+            marks: [],
+          },
+          {
+            arg: "id",
+            role: "entity",
+            value: "e_clase",
+            integrity: "imported",
+            sources: ["vault"],
+            marks: [],
+          },
+          {
+            arg: "values",
+            role: "content",
+            value: '{"starttime":"12:00"}',
+            integrity: "imported",
+            sources: ["vault"],
+            marks: [],
+          },
+        ],
+      },
+      sources: ["vault:agenda/docencia/2026-10-19 Clase de ejemplo.md@0123456789ab"],
+      created: 1,
+    },
+  ],
+};

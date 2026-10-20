@@ -207,7 +207,7 @@ export function entityVal(s: StoredEntity, def: TypeDef | undefined): Val {
 
 /** A name the planner may not see (it came from outside) is known to it by its id only (view.ts). */
 export const fieldName = (f: FieldDef) => (plannerMaySee(f.label) ? f.key : `field_${f.id}`);
-const typeName = (t: TypeDef) => (plannerMaySee(t.label) ? t.key : `type_${t.id}`);
+export const typeName = (t: TypeDef) => (plannerMaySee(t.label) ? t.key : `type_${t.id}`);
 const fieldByName = (def: TypeDef, name: string) =>
   def.fields.find((f) => fieldName(f) === name && !f.archived && !f.hidden);
 

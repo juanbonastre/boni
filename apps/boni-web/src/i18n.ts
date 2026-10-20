@@ -371,6 +371,8 @@ const es = {
   "argname.schedule": "Cada",
   "argname.key": "Clave",
   "argname.kind": "Clase",
+  "argname.note": "Nota",
+  "argname.ignored": "No se aplica",
   "mobile.keepEditing": "Seguir editando",
 };
 
@@ -742,6 +744,8 @@ const en: Record<Key, string> = {
   "argname.schedule": "Every",
   "argname.key": "Key",
   "argname.kind": "Kind",
+  "argname.note": "Note",
+  "argname.ignored": "Not applied",
   "mobile.keepEditing": "Keep editing",
 };
 

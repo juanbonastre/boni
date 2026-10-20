@@ -1,9 +1,11 @@
 import { dirname, join } from "node:path";
 import { AnthropicProvider } from "@boni/agent";
 import { AgentHost } from "./agent.ts";
+import { listUsers } from "./auth.ts";
 import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
+import { Mirrors } from "./mirror.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -73,6 +75,15 @@ const agent = new AgentHost({
     : null,
   tz,
 });
+// The Markdown mirror of the types switched to core mode (`cli.ts mirror`).
+const mirrors = new Mirrors({
+  host: agent,
+  dataDir: dbPath === ":memory:" ? null : dirname(dbPath),
+  write: process.env.BONI_WRITE === "1",
+  accounts: () => listUsers(db),
+});
+agent.onChanged = (account) => void mirrors.run(account);
+mirrors.start();
 const app = makeApp({
   db,
   vaults,
@@ -105,6 +116,7 @@ if (publicServer && publicPort !== null) {
 const stop = () => {
   stopBackups();
   app.close();
+  void mirrors.close();
   agent.close();
   server.close();
   publicServer?.close();

@@ -86,8 +86,9 @@ const NOTE_GROUP: Group = { prefix: "", key: "nota", name: "Nota", sensitivity: 
 /** Calendars whose events are sensitive by nature. */
 const SENSITIVE_CALENDARS = new Set(["salud"]);
 
-const PATH_FIELD = "f_vault_path";
-const HASH_FIELD = "f_vault_hash";
+/** Hidden fields where each entity keeps its note's path and hash (the mirror reads the path too). */
+export const PATH_FIELD = "f_vault_path";
+export const HASH_FIELD = "f_vault_hash";
 
 export interface ImportOptions {
   apply?: boolean;
@@ -147,6 +148,26 @@ export function keyOf(name: string): string {
   return /^[a-z]/.test(k) ? k : `p-${k || "x"}`;
 }
 const fieldIdOf = (key: string) => `f_${key.replace(/-/g, "_")}`.slice(0, 64);
+
+/**
+ * The key of each property of a type's notes (`props`, sorted), as the import gives them: ASCII, unique,
+ * `title` taken by the title field when no note has one. The mirror uses it to write a field back under
+ * the property it came from.
+ */
+export function propertyKeys(props: readonly string[]): Map<string, string> {
+  const used = new Set<string>(props.includes("title") ? [] : ["title"]);
+  const out = new Map<string, string>();
+  for (const prop of [...props].sort()) {
+    let key = keyOf(prop);
+    while (used.has(key)) key = `${key}-2`.slice(0, 40);
+    used.add(key);
+    out.set(prop, key);
+  }
+  return out;
+}
+/** Property name -> field id, for the properties of a type's notes (see `propertyKeys`). */
+export const propertyFields = (props: readonly string[]): Map<string, string> =>
+  new Map([...propertyKeys(props)].map(([prop, key]) => [prop, fieldIdOf(key)]));
 
 const LINK = /^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/;
 const linkTarget = (v: unknown): string | null => {
@@ -308,16 +329,12 @@ export function importVault(
     const props = [...new Set(members.flatMap((n) => Object.keys(n.values)))].sort();
     const fields: FieldDef[] = [];
     const byProp = new Map<string, FieldDef>();
-    const used = new Set<string>();
     const hasTitle = props.includes("title");
-    if (!hasTitle) {
+    if (!hasTitle)
       fields.push({ id: "f_title", key: "title", name: "Título", type: "text", label: typeLabel });
-      used.add("title");
-    }
+    const keys = propertyKeys(props);
     for (const prop of props) {
-      let key = keyOf(prop);
-      while (used.has(key)) key = `${key}-2`.slice(0, 40);
-      used.add(key);
+      const key = keys.get(prop) as string;
       const col = cal?.columns.find((c) => c.id === prop);
       const inferred = inferType(
         members.map((n) => n.values[prop]),

@@ -46,6 +46,8 @@ export class AgentHost {
   private agents = new Map<number, Agent>();
   private registry: ToolRegistry = coreTools().freeze();
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
+  /** Called after a request that may have changed an account's data (the mirror writes it out). */
+  onChanged: ((account: number) => void) | null = null;
 
   constructor(o: AgentHostOptions) {
     this.o = o;
@@ -116,6 +118,21 @@ export async function serveAgent(
   who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
 ): Promise<void> {
   if (!host.on) return send(res, 503, { error: "agent-off" });
+  try {
+    await answerAgent(host, req, res, route, params, who);
+  } finally {
+    if (route.startsWith("POST ")) host.onChanged?.(who.account);
+  }
+}
+
+async function answerAgent(
+  host: AgentHost,
+  req: IncomingMessage,
+  res: ServerResponse,
+  route: string,
+  params: Record<string, string>,
+  who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
+): Promise<void> {
   const agent = host.agent(who.account);
   const bad = () => send(res, 400, { error: "bad-request" });
   const after = (r: { proposals: string[] }) => {
