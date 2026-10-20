@@ -7,6 +7,7 @@ import {
   MIRROR_PROPOSAL,
   PROPOSALS,
   RTL,
+  RUN_2,
   RUNS,
   STOPPED,
   TEXT_REPLY,
@@ -195,12 +196,26 @@ test("a hand edit in Obsidian waits in the inbox with its note and what will not
 
 test("the log: what each request did, and Undo for it", async ({ page }) => {
   await openApp(page, "/?still", {
-    agent: { "GET api/agent/runs": [RUNS], "POST api/agent/runs/:id/undo": [{ undone: 2 }] },
+    agent: {
+      "GET api/agent/runs": [RUNS],
+      "GET api/agent/runs/:id": [RUN_2],
+      "POST api/agent/runs/:id/undo": [{ undone: 2 }],
+    },
   });
   await page.getByRole("button", { name: "Conversación" }).click();
   await page.getByRole("button", { name: "Registro" }).click();
   await expect(page.locator(".log-list li")).toHaveCount(2);
   await expect(page.locator(".log-list li").nth(1)).toContainText("Parado");
+  // A click opens what it did: the request, each step and where it stopped, all as text.
+  await page.locator(".log-list li").nth(1).locator(".log-head").click();
+  const detail = page.locator(".log-detail");
+  await expect(detail.locator(".log-request")).toHaveText("Reenvía el informe a quien me lo pidió");
+  await expect(detail.locator(".log-step")).toHaveCount(2);
+  await expect(detail.locator(".log-step").first()).toContainText("entities.search");
+  await expect(detail.locator(".log-step").first()).toContainText("«informe»");
+  await expect(detail.locator(".log-step.failed")).toContainText("mail.send");
+  await expect(detail.locator(".log-step.failed")).toContainText("P2");
+  await expect(detail.locator("a, img")).toHaveCount(0);
   // A stopped request may have left changes: it has Undo too.
   await expect(
     page.locator(".log-list li").nth(1).getByRole("button", { name: "Deshacer lo que hizo" }),

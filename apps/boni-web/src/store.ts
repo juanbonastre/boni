@@ -4,6 +4,7 @@ import {
   AgentApi,
   type AiLevel,
   type Proposal,
+  type RunDetail,
   type RunSummary,
   type TurnResult,
   type Visibility,
@@ -991,6 +992,14 @@ export async function loadRuns() {
     set({ runs: await agent.runs() });
   } catch {
     // the log stays as it was
+  }
+}
+/** What a run did (its request and steps), for the Registro; null when it cannot be read. */
+export async function loadRunDetail(id: string): Promise<RunDetail | null> {
+  try {
+    return await agent.runDetail(id);
+  } catch {
+    return null;
   }
 }
 /** "Undo what this request did": every change of that run, newest first, all or nothing. */

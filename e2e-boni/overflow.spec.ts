@@ -3,6 +3,7 @@ import {
   ASK_TURN,
   confirmTurn,
   PROPOSALS,
+  RUN_2,
   RUNS,
   TEXT_REPLY,
   VISIBILITY,
@@ -238,6 +239,7 @@ const AGENT = {
   "POST api/agent/turn": [TEXT_REPLY, ASK_TURN, confirmTurn("c1")],
   "GET api/agent/proposals": [PROPOSALS],
   "GET api/agent/runs": [RUNS],
+  "GET api/agent/runs/:id": [RUN_2],
 };
 const C = {
   es: {
@@ -271,6 +273,8 @@ async function converse(page: Page, l: (typeof C)["es"], issues: string[], where
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: l.log }).click();
   await page.locator(".log-list li").first().waitFor();
+  await page.locator(".log-list li").nth(1).locator(".log-head").click();
+  await page.locator(".log-step").first().waitFor();
   issues.push(...(await audit(page, `${where} log`)));
 }
 for (const language of ["es", "en"] as const) {

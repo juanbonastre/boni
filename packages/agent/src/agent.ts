@@ -161,6 +161,22 @@ export interface TurnResult {
   error: string | null;
 }
 
+export interface RunDetail {
+  id: string;
+  status: string;
+  request: string | null;
+  steps: {
+    id: string;
+    op: string;
+    what: string;
+    args: Record<string, unknown>;
+    /** allow, confirm, propose, deny, skip, stopped (the last one logged), or null: it never ran. */
+    decision: string | null;
+    rule: string | null;
+    error: string | null;
+  }[];
+}
+
 export interface AgentOptions {
   store: UserStore;
   registry: ToolRegistry;
@@ -606,9 +622,12 @@ export class Agent {
       }
       return this.finish(st, "done", null);
     } catch (e) {
-      if (e instanceof Stop) return this.finish(st, "stopped", e.code);
-      if (e instanceof ToolError) return this.finish(st, "stopped", `tool-${e.code}`);
-      throw e;
+      const code = e instanceof Stop ? e.code : e instanceof ToolError ? `tool-${e.code}` : null;
+      if (code === null) throw e;
+      // The log says at which step it stopped (Juan's Registro shows it).
+      const step = st.plan.steps[st.pc];
+      if (step) this.log(st, step, "error", "stopped", null, { code });
+      return this.finish(st, "stopped", code);
     }
   }
 
@@ -1110,6 +1129,48 @@ export class Agent {
   rejectProposal(id: string): void {
     const p = this.o.store.journal.proposal(id);
     if (p?.status === "pending") this.o.store.journal.setProposal(id, "rejected", this.now());
+  }
+
+  /**
+   * What a run did, for Juan's Registro: his request, and each step of the plan with what the policy
+   * decided and where it stopped. Arguments as the plan wrote them (literals, quotes of his request,
+   * references), never the values read from his data or from outside.
+   */
+  runDetail(id: string): RunDetail | null {
+    const j = this.o.store.journal;
+    const r = j.run(id);
+    if (!r) return null;
+    const planner = j.modelCalls(id).find((m) => m.role === "planner");
+    const request = (planner?.request as { input?: { request?: unknown } } | undefined)?.input
+      ?.request;
+    const logged = j.steps(id);
+    const plan = r.plan as Plan | null;
+    return {
+      id,
+      status: r.status,
+      request: typeof request === "string" ? request : null,
+      steps: (plan?.steps ?? []).map((s) => {
+        const mine = logged.filter((x) => x.step === s.id);
+        const last = mine.at(-1);
+        const error = mine.find((x) => x.kind === "error")?.detail as { code?: string } | undefined;
+        return {
+          id: s.id,
+          op: s.op,
+          what:
+            s.op === "call"
+              ? s.tool
+              : s.op === "read"
+                ? s.reader
+                : s.op === "reply"
+                  ? s.component
+                  : s.control,
+          args: s.op === "call" ? s.args : s.op === "read" ? { input: s.input } : {},
+          decision: last?.decision ?? null,
+          rule: last?.rule ?? null,
+          error: error?.code ?? null,
+        };
+      }),
+    };
   }
 
   /** "Undo what this request did": every operation of the run, newest first, all or nothing. */

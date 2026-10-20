@@ -24,6 +24,7 @@ import { bodyOf, CORS, SAFE, send } from "./reply.ts";
  *   GET  /api/agent/proposals                -> { proposals } pending, with the view painted by the code
  *   POST /api/agent/proposals/:id/accept | /reject
  *   GET  /api/agent/runs                     -> { runs } the latest, for the log
+ *   GET  /api/agent/runs/:id                 -> RunDetail: the request and each step (a personal device only)
  *   POST /api/agent/runs/:id/undo            -> { undone } every operation of that run
  *   GET  /api/agent/events                   -> Server-Sent Events: "notify" ({ text }) and "proposals"
  *   GET  /api/agent/visibility               -> { types: [{ id, name, level, count }] } what the models may see
@@ -219,6 +220,11 @@ async function answerAgent(
             finished: r.finished,
           })),
       });
+    case "GET /api/agent/runs/:id": {
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const d = agent.runDetail(params.id ?? "");
+      return d ? send(res, 200, d) : send(res, 404, { error: "not-found" });
+    }
     case "POST /api/agent/runs/:id/undo":
       try {
         return send(res, 200, { undone: agent.undoRun(params.id ?? "").length });

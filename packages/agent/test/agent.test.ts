@@ -346,6 +346,12 @@ describe("the agent, with a planner that behaves", () => {
               },
             },
           },
+          {
+            id: "r",
+            op: "reply",
+            component: "text",
+            data: { template: lit("{a}"), a: ref("$e.estado") },
+          },
         ],
       },
       {
@@ -391,10 +397,20 @@ describe("the agent, with a planner that behaves", () => {
     expect(book?.entity.values[estado?.id as string]).toBe(
       estado?.options?.find((o) => o.name === "Leído")?.id,
     );
+    // The planner reads it by its option's name, and finds it by it.
+    expect(res.replies[0]?.data.a).toMatchObject({ value: "Leído" });
 
     const failed = await agent.turn({ text: "y otra de revistas", origin: PERSONAL });
     expect(failed).toMatchObject({ status: "stopped", error: "tool-bad-option" });
     expect(failed.notices).toEqual([{ code: "undone" }]);
+    // The Registro says what was asked and where it stopped.
+    const d = agent.runDetail(failed.run);
+    expect(d?.request).toBe("y otra de revistas");
+    expect(d?.steps.map((x) => [x.what, x.decision, x.error])).toEqual([
+      ["schema.create_type", "allow", null],
+      ["schema.add_field", "stopped", "tool-bad-option"],
+    ]);
+    expect(d?.steps[1]?.args).toMatchObject({ key: { lit: "autor" } });
     expect(Object.values(env.store.schema().types).some((t) => t.key === "revistas")).toBe(false);
   });
 
