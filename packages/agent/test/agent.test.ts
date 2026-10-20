@@ -336,7 +336,7 @@ describe("the agent, with a planner that behaves", () => {
               values: {
                 fn: "obj",
                 args: [
-                  lit("titulo"),
+                  lit("title"),
                   lit("El nombre del viento"),
                   lit("Valoración"),
                   lit(5),
@@ -394,6 +394,8 @@ describe("the agent, with a planner that behaves", () => {
     expect(libros?.fields.map((f) => f.name)).toContain("Valoración");
     const [book] = env.store.list(libros?.id as string);
     expect(Object.values(book?.entity.values ?? {})).toContain(5);
+    // "title" (as models write it) is the type's title field.
+    expect(book?.entity.values[libros?.titleField as string]).toBe("El nombre del viento");
     expect(book?.entity.values[estado?.id as string]).toBe(
       estado?.options?.find((o) => o.name === "Leído")?.id,
     );
