@@ -342,6 +342,10 @@ export class Vaults {
   constructor(opts: { write?: boolean } = {}) {
     this.opts = opts;
   }
+  /** Whether devices may change notes (BONI_WRITE). */
+  get writable(): boolean {
+    return this.opts.write === true;
+  }
   get(root: string): VaultService {
     let v = this.byRoot.get(root);
     if (!v) {

@@ -10,7 +10,7 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
-import { ROUTES } from "./routes.ts";
+import { allowed, ROUTES, routeOf } from "./routes.ts";
 import { Vaults } from "./vaults.ts";
 
 /** The two entries of the server (routes.ts): the whole API on the tailnet, the allow-list in public. */
@@ -81,6 +81,40 @@ describe("the server's two entries", () => {
     ].map((m) => m[1]);
     expect(routes.length).toBeGreaterThan(10);
     for (const r of routes) expect(ROUTES[r as string], `${r} is not in routes.ts`).toBeDefined();
+    // The Boni API v1, and none of it public.
+    const v1 = readFileSync(new URL("./v1/http.ts", import.meta.url), "utf8");
+    const v1Routes = [
+      ...v1.matchAll(
+        /(?:case |route === )"((?:GET|POST|PUT|DELETE) \/(?:api\/v1\/|healthz)[^"]*)"/g,
+      ),
+    ].map((m) => m[1] as string);
+    expect(v1Routes.length).toBeGreaterThan(25);
+    for (const r of v1Routes) expect(ROUTES[r], `${r} is not in routes.ts`).toBe("tailnet");
+    for (const r of Object.keys(ROUTES).filter(
+      (k) => k.includes("/api/v1/") || k.includes("/healthz"),
+    ))
+      expect(v1Routes, `${r} is listed but not served`).toContain(r);
+  });
+
+  it("finds the route of a path with parameters, fixed routes first", () => {
+    expect(routeOf("GET", "/api/v1/charts/catalog")).toEqual({
+      route: "GET /api/v1/charts/catalog",
+      params: {},
+    });
+    expect(routeOf("GET", "/api/v1/charts/gasto%20mes")).toEqual({
+      route: "GET /api/v1/charts/:id",
+      params: { id: "gasto mes" },
+    });
+    expect(routeOf("GET", "/api/v1/charts/a/data").route).toBe("GET /api/v1/charts/:id/data");
+    expect(routeOf("PUT", "/api/v1/charts/order").route).toBe("PUT /api/v1/charts/order");
+    expect(routeOf("GET", "/api/v1/charts/%E0%A4%A")).toEqual({
+      route: "GET /api/v1/charts/%E0%A4%A",
+      params: {},
+    });
+    expect(routeOf("GET", "/api/v1/charts//data").route).toBe("GET /api/v1/charts//data");
+    expect(routeOf("GET", "/api/v1/charts/a/b/data").route).toBe("GET /api/v1/charts/a/b/data");
+    expect(allowed("GET /api/v1/charts/:id", "public")).toBe(false);
+    expect(allowed("GET constructor", "public")).toBe(false);
   });
 
   it("serves the calendar's routes and the web app on both, as today", async () => {

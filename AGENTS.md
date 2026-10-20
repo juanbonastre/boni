@@ -37,7 +37,7 @@ packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accou
                  sessions stored as sha256 of the token (same scrypt and token hashing as both old servers, so
                  `import-accounts` moves their accounts and sessions and devices stay logged in), account data,
                  push addresses, and each account's data key, wrapped (`wrappedKeysIn` for @boni/store). The
-                 servers still use their own accounts until the server moves onto it (plan PR 6).
+                 server uses it since plan PR 6.
 packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed catalogue (`viewErrors` checks every
                  field it names, `viewRows` filters/sorts/limits) and the chart engine `computeChart`, ported function
                  by function from the first Boni's Python engine over a `Profile` (money movements: `moneyProfile`
@@ -97,7 +97,14 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  Two entries over one app (`makeApp` + `serve`): the tailnet's has every route, the public one
                  (`BONI_PUBLIC_PORT`, for Funnel) only the allow-list of `routes.ts`, answering 404 for anything else
                  before authentication. Every route must be listed there (`routes.test.ts` reads http.ts); a new
-                 route is `tailnet` unless it is deliberately made public.
+                 route is `tailnet` unless it is deliberately made public (`:name` segments for parameters).
+                 `src/v1/`: the first Boni's API v1 (`/api/v1/*`, `/healthz`; tailnet only) so the Boni apps move
+                 here unchanged: same paths, bodies and Spanish error messages. Charts through `@boni/views`, money
+                 notes read from the account's vault (`finanzas.ts`, via `vault-fs.cjs`), "Apuntar gasto" writes the
+                 movement note with `create` (never over another note; once per client id, queued if the vault is
+                 unreachable). Charts, shortcuts, widgets, prefs and captures per account in system.db (`v1/store.ts`);
+                 `cli.ts import-boni` brings them, and the accounts, from the old `boni.sqlite3`. `golden/v1.json` is
+                 what the original Python server answered (`golden/make_golden.py`); `v1.test.ts` must match it.
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
 docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.
 legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, real names replaced. Reference only:
