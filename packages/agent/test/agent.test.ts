@@ -1,0 +1,462 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { fakePlanner } from "../src/providers.ts";
+import { type Env, makeEnv, PERSONAL } from "./fixture.ts";
+
+let env: Env;
+afterEach(() => env?.close());
+
+const lit = (v: string | number | boolean | null) => ({ lit: v });
+const ref = (r: string) => ({ ref: r });
+
+describe("the agent, with a planner that behaves", () => {
+  it("answers about data with numbers the code computed", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "n",
+            op: "call",
+            tool: "entities.aggregate",
+            args: { type: lit("tarea"), op: lit("count") },
+          },
+          {
+            id: "r",
+            op: "reply",
+            component: "number",
+            data: { value: ref("$n"), caption: lit("tareas") },
+          },
+        ],
+      },
+    ]);
+    const res = await env.agent(planner).turn({ text: "¿cuántas tareas tengo?", origin: PERSONAL });
+    expect(res.status).toBe("done");
+    expect(res.replies[0]?.data.value).toMatchObject({ t: "v", value: 1 });
+    // The planner got the request, the tools and the schema, and no tool to call in the API.
+    const req = planner.requests[0];
+    expect(req?.role).toBe("planner");
+    expect(JSON.stringify(req?.input)).toContain("entities.aggregate");
+  });
+
+  it("creates what Juan asks for, quoting him, and undoes the whole run", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "c",
+            op: "call",
+            tool: "entities.create",
+            args: {
+              type: lit("tarea"),
+              values: { fn: "obj", args: [lit("titulo"), { quote: "llamar al dentista" }] },
+            },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({ text: "Apunta: llamar al dentista", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["done", null]);
+    const tareas = env.store.list("t_tarea");
+    const nueva = tareas.find((t) => t.entity.values.f_titulo === "llamar al dentista");
+    expect(nueva?.labels.f_titulo?.integrity).toBe("user");
+    expect(agent.undoRun(res.run).length).toBe(1);
+    expect(env.store.list("t_tarea").length).toBe(1);
+  });
+
+  it("refuses a plan that quotes what Juan did not say, and retries once", async () => {
+    env = makeEnv();
+    const bad = {
+      version: 1,
+      steps: [
+        {
+          id: "c",
+          op: "call",
+          tool: "entities.create",
+          args: {
+            type: lit("tarea"),
+            values: { fn: "obj", args: [lit("titulo"), { quote: "algo inventado" }] },
+          },
+        },
+      ],
+    };
+    const planner = fakePlanner([bad, bad]);
+    const res = await env
+      .agent(planner)
+      .turn({ text: "Apunta: llamar al dentista", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["stopped", "plan-invalid"]);
+    expect(planner.requests.length).toBe(2);
+    expect(JSON.stringify(planner.requests[1]?.input)).toContain("quote-not-in-request");
+  });
+
+  it("asks Juan to confirm a deletion, bound to those values, once", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [{ id: "d", op: "call", tool: "entities.delete", args: { id: lit("e_tarea1") } }],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({ text: "borra la tarea del pan", origin: PERSONAL });
+    expect(res.status).toBe("waiting");
+    const pending = res.pending;
+    if (pending?.kind !== "confirm") throw new Error("expected a confirmation");
+    expect(pending.view.rows[0]).toMatchObject({
+      arg: "id",
+      value: "e_tarea1",
+      integrity: "model",
+    });
+    // Not from a shared device.
+    expect((await agent.confirm(res.run, pending.id, "shared")).error).toBe(
+      "confirm-on-a-personal-device",
+    );
+    const done = await agent.confirm(res.run, pending.id, "personal");
+    expect(done.status).toBe("done");
+    expect(env.store.get("e_tarea1")?.entity.deleted).toBeDefined();
+    // The same confirmation a second time does nothing.
+    expect((await agent.confirm(res.run, pending.id, "personal")).error).toBe("nothing-pending");
+  });
+
+  it("asks again when the entity changed between asking and confirming (A7)", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [{ id: "d", op: "call", tool: "entities.delete", args: { id: lit("e_tarea1") } }],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({ text: "borra la tarea del pan", origin: PERSONAL });
+    if (res.pending?.kind !== "confirm") throw new Error("expected a confirmation");
+    env.store.update(
+      "e_tarea1",
+      {
+        f_titulo: {
+          value: "Comprar pan y leche",
+          label: env.store.get("e_tarea1")?.labels.f_titulo as never,
+        },
+      },
+      { actor: "user" },
+    );
+    const again = await agent.confirm(res.run, res.pending.id, "personal");
+    expect(again.status).toBe("waiting");
+    expect(again.pending?.kind).toBe("confirm");
+    expect(env.store.get("e_tarea1")?.entity.deleted).toBeUndefined();
+  });
+
+  it("an option Juan picks keeps the option's label: it does not become his (A2)", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "q",
+            op: "ask",
+            control: "choice",
+            prompt: lit("¿A quién?"),
+            options: { fn: "concat", args: [lit("x")] },
+          },
+          {
+            id: "s",
+            op: "call",
+            tool: "mail.send",
+            args: { to: ref("$q"), subject: lit("Hola"), body: lit("Hola") },
+          },
+        ],
+      },
+    ]);
+    // concat gives a text, not a list: the ask refuses it.
+    const res = await env.agent(planner).turn({ text: "escribe a alguien", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["stopped", "ask-bad-options"]);
+
+    const planner2 = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          { id: "c", op: "call", tool: "entities.query", args: { type: lit("contacto") } },
+          { id: "e", op: "call", tool: "entities.query", args: { type: lit("tarea") } },
+          {
+            id: "q",
+            op: "ask",
+            control: "choice",
+            prompt: lit("¿Envío?"),
+            options: { fn: "field", args: [ref("$e"), lit("titulo")] },
+          },
+          {
+            id: "s",
+            op: "call",
+            tool: "mail.send",
+            args: { to: ref("$q"), subject: lit("Hola"), body: lit("Hola") },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner2);
+    const r2 = await agent.turn({ text: "escribe a alguien", origin: PERSONAL });
+    if (r2.pending?.kind !== "ask") throw new Error("expected a question");
+    const after = await agent.answer(r2.run, r2.pending.id, { choice: 0 });
+    // The option was derived (made by a plan function): never a recipient.
+    expect([after.status, after.error]).toEqual(["stopped", "P14-derived-destination"]);
+    expect(env.sent).toEqual([]);
+  });
+
+  it("sends only to an address taken as it is from Juan's data, after he confirms", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          { id: "a", op: "call", tool: "entities.get", args: { id: lit("e_ana") } },
+          {
+            id: "s",
+            op: "call",
+            tool: "mail.send",
+            args: {
+              to: ref("$a.email"),
+              subject: { quote: "nos vemos el jueves" },
+              body: { quote: "nos vemos el jueves" },
+            },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({ text: "Escribe a Ana: nos vemos el jueves", origin: PERSONAL });
+    if (res.pending?.kind !== "confirm")
+      throw new Error(`expected a confirmation, got ${res.error}`);
+    expect(res.pending.view.rows.find((r) => r.arg === "to")?.value).toBe("ana@example.com");
+    const done = await agent.confirm(res.run, res.pending.id, "personal");
+    expect(done.status).toBe("done");
+    expect(env.sent).toEqual([
+      { to: "ana@example.com", subject: "nos vemos el jueves", body: "nos vemos el jueves" },
+    ]);
+  });
+
+  it("tells Juan about a memory a model wrote, and keeps it out of the planner until he confirms (A11)", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "m",
+            op: "call",
+            tool: "memory.save",
+            args: { text: lit("Juan prefiere que le respondan en inglés") },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({ text: "recuerda esto", origin: PERSONAL });
+    expect(res.status).toBe("done");
+    expect(res.notices).toContainEqual({ code: "memory-unconfirmed" });
+    await agent.turn({ text: "otra cosa", origin: PERSONAL });
+    expect(JSON.stringify(planner.requests[1]?.input)).not.toContain("prefiere");
+  });
+
+  it("changes the schema at Juan's request and says so", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "t",
+            op: "call",
+            tool: "schema.create_type",
+            args: { key: lit("libro"), name: lit("Libros") },
+          },
+          {
+            id: "f",
+            op: "call",
+            tool: "schema.add_field",
+            args: { type: lit("libro"), key: lit("autor"), name: lit("Autor"), kind: lit("text") },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({
+      text: "quiero llevar control de los libros que leo",
+      origin: PERSONAL,
+    });
+    expect(res.status).toBe("done");
+    expect(res.notices).toContainEqual({ code: "schema-changed" });
+    const libro = Object.values(env.store.schema().types).find((t) => t.key === "libro");
+    expect(libro?.fields.map((f) => f.key)).toEqual(["titulo", "autor"]);
+    agent.undoRun(res.run);
+    expect(Object.values(env.store.schema().types).some((t) => t.key === "libro")).toBe(false);
+  });
+
+  it("writes what a run does with its id, so the journal tells what happened and why", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [{ id: "q", op: "call", tool: "entities.query", args: { type: lit("tarea") } }],
+      },
+    ]);
+    const res = await env.agent(planner).turn({ text: "mis tareas", origin: PERSONAL });
+    const steps = env.store.journal.steps(res.run);
+    expect(steps.map((s) => [s.step, s.decision, s.rule])).toEqual([["q", "allow", "P1"]]);
+    expect(env.store.journal.modelCalls(res.run)[0]).toMatchObject({
+      role: "planner",
+      provider: "fake",
+    });
+    expect(env.store.journal.run(res.run)?.status).toBe("done");
+  });
+
+  it("background work has a daily budget of readers per sender (P13)", async () => {
+    env = makeEnv([{ asunto: "Hola", de: "alguien@example.com", cuerpo: "texto inventado" }]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        { id: "x", op: "read", reader: "summarize", input: ref("$m.items[0].cuerpo") },
+      ],
+    };
+    const reader = fakePlanner([{ text: "resumen" }]);
+    const agent = env.agent(fakePlanner([plan]), reader, { limits: { readersPerSenderPerDay: 3 } });
+    const results = [];
+    for (let i = 0; i < 5; i++) results.push(await agent.background(plan));
+    expect(results.map((r) => r.error)).toEqual([
+      null,
+      null,
+      null,
+      "P13-daily-budget",
+      "P13-daily-budget",
+    ]);
+    expect(results[3]?.notices).toContainEqual({ code: "budget" });
+  });
+
+  it("a loop goes over 50 items at most, and a run asks at most 3 confirmations (P12, P5)", async () => {
+    env = makeEnv();
+    for (let i = 0; i < 60; i++)
+      env.store.create(
+        "t_tarea",
+        {
+          f_titulo: { value: `t${i}`, label: env.store.get("e_tarea1")?.labels.f_titulo as never },
+        },
+        { actor: "user" },
+      );
+    const loop = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "t",
+            op: "call",
+            tool: "entities.query",
+            args: { type: lit("tarea"), limit: lit(200) },
+          },
+          {
+            id: "r",
+            op: "reply",
+            component: "text",
+            each: ref("$t"),
+            data: { template: ref("$item.titulo") },
+          },
+        ],
+      },
+    ]);
+    expect((await env.agent(loop).turn({ text: "lista", origin: PERSONAL })).error).toBe(
+      "too-many-items",
+    );
+    const ids = env.store
+      .list("t_tarea")
+      .slice(0, 5)
+      .map((s) => s.entity.id);
+    const deletes = fakePlanner([
+      {
+        version: 1,
+        steps: ids.map((id, i) => ({
+          id: `d${i}`,
+          op: "call",
+          tool: "entities.delete",
+          args: { id: lit(id) },
+        })),
+      },
+    ]);
+    const agent = env.agent(deletes);
+    let r = await agent.turn({ text: "borra", origin: PERSONAL });
+    for (let i = 0; i < 5 && r.pending?.kind === "confirm"; i++)
+      r = await agent.confirm(r.run, r.pending.id, "personal");
+    expect([r.status, r.error]).toEqual(["stopped", "P5-too-many-confirmations"]);
+    expect(ids.filter((id) => env.store.get(id)?.entity.deleted !== undefined).length).toBe(3);
+  });
+
+  it("Juan can say no, and what he types in an answer is his", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          { id: "q", op: "ask", control: "text", prompt: lit("¿Título?") },
+          {
+            id: "c",
+            op: "call",
+            tool: "entities.create",
+            args: { type: lit("tarea"), values: { fn: "obj", args: [lit("titulo"), ref("$q")] } },
+          },
+          { id: "d", op: "call", tool: "entities.delete", args: { id: lit("e_tarea1") } },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const r = await agent.turn({ text: "apunta algo", origin: PERSONAL });
+    if (r.pending?.kind !== "ask") throw new Error("expected a question");
+    const r2 = await agent.answer(r.run, r.pending.id, { text: "Llamar a la gestoría" });
+    const nueva = env.store
+      .list("t_tarea")
+      .find((s) => s.entity.values.f_titulo === "Llamar a la gestoría");
+    expect(nueva?.labels.f_titulo?.integrity).toBe("user");
+    if (r2.pending?.kind !== "confirm") throw new Error("expected a confirmation");
+    expect(agent.decline(r2.run, r2.pending.id)).toMatchObject({
+      status: "stopped",
+      error: "declined",
+    });
+    expect(env.store.get("e_tarea1")?.entity.deleted).toBeUndefined();
+  });
+
+  it("a proposal whose entity changed since is stale and does not run", async () => {
+    env = makeEnv([{ asunto: "Cambia la tarea", de: "alguien@example.com", cuerpo: "x" }]);
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+          {
+            id: "u",
+            op: "call",
+            tool: "entities.update",
+            args: {
+              id: lit("e_tarea1"),
+              values: { fn: "obj", args: [lit("titulo"), ref("$m.items[0].asunto")] },
+            },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const r = await agent.turn({ text: "mira el correo", origin: PERSONAL });
+    expect(r.proposals.length).toBe(1);
+    env.store.update(
+      "e_tarea1",
+      {
+        f_fecha: {
+          value: "2026-10-30",
+          label: env.store.get("e_tarea1")?.labels.f_titulo as never,
+        },
+      },
+      { actor: "user" },
+    );
+    expect((await agent.acceptProposal(r.proposals[0] as string, "personal")).error).toBe("stale");
+    expect(env.store.journal.proposal(r.proposals[0] as string)?.status).toBe("stale");
+  });
+});

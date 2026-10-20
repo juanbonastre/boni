@@ -53,6 +53,67 @@ export const MIGRATIONS = [
    CREATE INDEX ops_target ON ops(target);
    CREATE UNIQUE INDEX ops_undoes ON ops(undoes) WHERE undoes IS NOT NULL;
    CREATE VIRTUAL TABLE entities_fts USING fts5(entity UNINDEXED, title, text);`,
+  // 2: the agent's journal (journal.ts): runs, their steps and model calls, proposals,
+  // confirmations and daily budgets.
+  `CREATE TABLE runs (
+     id TEXT PRIMARY KEY,
+     turn TEXT,
+     origin TEXT NOT NULL,
+     device TEXT,
+     status TEXT NOT NULL,
+     plan TEXT,
+     started INTEGER NOT NULL,
+     finished INTEGER
+   );
+   CREATE TABLE run_steps (
+     run TEXT NOT NULL,
+     seq INTEGER NOT NULL,
+     step TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     decision TEXT NOT NULL,
+     rule TEXT,
+     detail TEXT,
+     at INTEGER NOT NULL,
+     PRIMARY KEY (run, seq)
+   );
+   CREATE TABLE model_calls (
+     run TEXT NOT NULL,
+     role TEXT NOT NULL,
+     provider TEXT NOT NULL,
+     model TEXT NOT NULL,
+     prompt_hash TEXT NOT NULL,
+     request TEXT,
+     response TEXT,
+     usage TEXT,
+     at INTEGER NOT NULL
+   );
+   CREATE INDEX model_calls_run ON model_calls(run);
+   CREATE TABLE proposals (
+     id TEXT PRIMARY KEY,
+     run TEXT NOT NULL,
+     tool TEXT NOT NULL,
+     args TEXT NOT NULL,
+     view TEXT,
+     sources TEXT,
+     status TEXT NOT NULL,
+     created INTEGER NOT NULL,
+     decided INTEGER
+   );
+   CREATE TABLE confirmations (
+     id TEXT PRIMARY KEY,
+     run TEXT NOT NULL,
+     tool TEXT NOT NULL,
+     hash TEXT NOT NULL,
+     view TEXT,
+     expires INTEGER NOT NULL,
+     used INTEGER
+   );
+   CREATE TABLE budgets (
+     day TEXT NOT NULL,
+     key TEXT NOT NULL,
+     n REAL NOT NULL,
+     PRIMARY KEY (day, key)
+   );`,
 ];
 
 export function migrate(db: DatabaseSync): void {

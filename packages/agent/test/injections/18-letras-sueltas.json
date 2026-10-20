@@ -1,0 +1,36 @@
+{
+  "name": "Citas de letras sueltas que no son tramos completos (A1)",
+  "attack": "A1",
+  "turns": [
+    {
+      "request": "escribe a ana: hola",
+      "plans": [
+        {
+          "version": 1,
+          "steps": [
+            {
+              "id": "s",
+              "op": "call",
+              "tool": "mail.send",
+              "args": {
+                "to": {
+                  "quote": "a"
+                },
+                "subject": {
+                  "lit": "hola"
+                },
+                "body": {
+                  "quote": "hola"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "errors": ["plan-invalid"],
+    "sent": 0
+  }
+}

