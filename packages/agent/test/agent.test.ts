@@ -549,3 +549,98 @@ describe("the agent, with a planner that behaves", () => {
     expect(env.sent.map((m) => m.to)).toEqual(["ana@example.com"]);
   });
 });
+
+describe("what Juan keeps from the models (per type, his choice)", () => {
+  const sum = {
+    version: 1,
+    steps: [
+      {
+        id: "n",
+        op: "call",
+        tool: "entities.aggregate",
+        args: { type: lit("movimiento"), op: lit("sum"), of: lit("importe") },
+      },
+      { id: "q", op: "call", tool: "entities.query", args: { type: lit("movimiento") } },
+      {
+        id: "r",
+        op: "reply",
+        component: "number",
+        data: { value: ref("$n"), caption: lit("gastado") },
+      },
+    ],
+  };
+
+  it("hidden: the type is not there for the planner, and its entities are not found", async () => {
+    env = makeEnv();
+    env.store.setAiAccess("t_mov", "hidden", "portatil");
+    const planner = fakePlanner([sum]);
+    const res = await env.agent(planner).turn({ text: "¿cuánto gasté?", origin: PERSONAL });
+    expect(res.status).toBe("stopped");
+    const seen = JSON.stringify(planner.requests[0]?.input);
+    expect(seen).not.toContain("movimiento");
+    expect(seen).not.toContain("importe");
+    const get = fakePlanner([
+      {
+        version: 1,
+        steps: [{ id: "g", op: "call", tool: "entities.get", args: { id: lit("e_mov1") } }],
+      },
+    ]);
+    expect((await env.agent(get).turn({ text: "ese", origin: PERSONAL })).status).toBe("stopped");
+    const search = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          { id: "s", op: "call", tool: "entities.search", args: { text: lit("Cena") } },
+          { id: "r", op: "reply", component: "list", data: { items: ref("$s") } },
+        ],
+      },
+    ]);
+    const found = await env.agent(search).turn({ text: "busca cena", origin: PERSONAL });
+    expect(JSON.stringify(found.replies)).not.toContain("Cena inventada");
+  });
+
+  it("opaque: code computes and paints for Juan, the planner only gets handles, no reader gets it", async () => {
+    env = makeEnv();
+    env.store.setAiAccess("t_mov", "opaque", "portatil");
+    const planner = fakePlanner([sum]);
+    const res = await env.agent(planner).turn({ text: "¿cuánto gasté?", origin: PERSONAL });
+    expect(res.status).toBe("done");
+    // Juan sees the number the code computed.
+    expect(res.replies[0]?.data.value).toMatchObject({ t: "v", value: 42.5 });
+    // The planner knows the type exists, never its values (the next turn's history is handles).
+    expect(JSON.stringify(planner.requests[0]?.input)).toContain("movimiento");
+    const next = fakePlanner([{ version: 1, steps: [] }]);
+    const agent = env.agent(next);
+    await agent.turn({ text: "¿cuánto gasté?", origin: PERSONAL, conversation: "c1" });
+    const reader = fakePlanner([{ text: "resumen" }]);
+    const read = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          { id: "q", op: "call", tool: "entities.query", args: { type: lit("movimiento") } },
+          { id: "x", op: "read", reader: "summarize", input: ref("$q.items[0].concepto") },
+        ],
+      },
+    ]);
+    const r2 = await env.agent(read, reader).turn({ text: "resume", origin: PERSONAL });
+    expect(r2.error).toBe("R3-kept-from-models");
+    expect(reader.requests).toHaveLength(0);
+    for (const p of [...planner.requests, ...next.requests, ...read.requests])
+      expect(JSON.stringify(p.input)).not.toContain("Cena inventada");
+  });
+
+  it("a change applies at once, and no tool of the agent can make it", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([sum, sum]);
+    const agent = env.agent(planner);
+    expect((await agent.turn({ text: "¿cuánto?", origin: PERSONAL })).status).toBe("done");
+    env.store.setAiAccess("t_mov", "hidden", "portatil");
+    expect((await agent.turn({ text: "¿cuánto?", origin: PERSONAL })).status).toBe("stopped");
+    expect(
+      env.registry
+        .all()
+        .map((t) => t.name)
+        .filter((n) => /access|visib|\bai\b/.test(n)),
+    ).toEqual([]);
+  });
+});

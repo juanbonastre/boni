@@ -52,6 +52,16 @@ export interface Proposal {
   sources: string[];
   created: number;
 }
+/** What the models may see of a collection (Juan's choice; the agent cannot change it). */
+export type AiLevel = "visible" | "opaque" | "hidden";
+export const AI_LEVELS: readonly AiLevel[] = ["visible", "opaque", "hidden"];
+export interface Visibility {
+  id: string;
+  name: string;
+  level: AiLevel;
+  count: number;
+}
+
 export interface RunSummary {
   id: string;
   origin: string;
@@ -254,7 +264,11 @@ export class AgentApi {
     this.transport = transport;
   }
 
-  private async call(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
+  private async call(
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    body?: unknown,
+  ): Promise<unknown> {
     const r = await this.transport.request(method, `api/agent/${path}`, body);
     if (!r.ok) {
       if (r.offline) throw new OfflineError(r.message);
@@ -322,6 +336,19 @@ export class AgentApi {
       ];
     });
   }
+  async visibility(): Promise<Visibility[]> {
+    const b = await this.call("GET", "visibility");
+    const list = isObj(b) && Array.isArray(b.types) ? b.types : [];
+    return list.filter(isObj).flatMap((t) => {
+      const id = str(t.id, 80);
+      const name = str(t.name, 120);
+      const level = AI_LEVELS.find((l) => l === t.level);
+      if (!id || !name || !level) return [];
+      return [{ id, name, level, count: typeof t.count === "number" ? t.count : 0 }];
+    });
+  }
+  setVisibility = async (id: string, level: AiLevel) =>
+    void (await this.call("PUT", `visibility/${encodeURIComponent(id)}`, { level }));
   async undo(id: string): Promise<number> {
     const b = await this.call("POST", `runs/${encodeURIComponent(id)}/undo`);
     return isObj(b) && typeof b.undone === "number" ? b.undone : 0;

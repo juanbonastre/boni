@@ -1365,6 +1365,10 @@ select {
   border: 1px solid var(--line-strong);
   border-radius: 10px;
 }
+.setting-note {
+  margin: 0 0 8px;
+}
+
 .setting {
   display: flex;
   flex-wrap: wrap; /* a control that does not fit beside its label goes under it, never squeezed */

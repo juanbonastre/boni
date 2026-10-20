@@ -8,7 +8,7 @@ import { fakePlanner } from "@boni/agent";
 import { label } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
-import { addUser } from "./auth.ts";
+import { addUser, sessionUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -210,5 +210,36 @@ describe("the conversation API", () => {
       'event: notify\ndata: {"text":"sacar la basura","integrity":"user"}\n\n',
     );
     await reader.cancel();
+  });
+
+  it("what the models may see: listed per type, changed from a personal device only", async () => {
+    const token = await login(base, "juan");
+    const auth = { authorization: `Bearer ${token}` };
+    const list = async () =>
+      (
+        (await (await fetch(`${base}/api/agent/visibility`, { headers: auth })).json()) as {
+          types: { id: string; level: string; count: number }[];
+        }
+      ).types;
+    expect((await list()).find((t) => t.id === "t_tarea")).toMatchObject({ level: "visible" });
+    const put = (level: string, type = "t_tarea") =>
+      fetch(`${base}/api/agent/visibility/${type}`, {
+        method: "PUT",
+        headers: auth,
+        body: JSON.stringify({ level }),
+      });
+    expect((await put("hidden")).status).toBe(200);
+    expect((await list()).find((t) => t.id === "t_tarea")).toMatchObject({ level: "hidden" });
+    expect((await put("secreto")).status).toBe(400);
+    expect((await put("hidden", "memory")).status).toBe(404);
+    // Not on the public entry; and a shared device cannot change it.
+    expect((await fetch(`${pub}/api/agent/visibility`, { headers: auth })).status).toBe(404);
+    const s = sessionUser(db, token);
+    const trust = (t: string) =>
+      db.prepare("UPDATE devices SET trust = ? WHERE name = ?").run(t, s?.device ?? "");
+    trust("shared");
+    expect((await put("visible")).status).toBe(403);
+    trust("personal");
+    expect((await put("visible")).status).toBe(200);
   });
 });

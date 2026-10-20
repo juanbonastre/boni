@@ -43,6 +43,8 @@ Este repo pasará a llamarse `boni` (decisión de Juan, 2026-10-19), así que la
 | **Exposición:** todo por tailnet; por Funnel solo una lista blanca de rutas (login y las del calendario que hoy son públicas) | Decidido (Juan, 2026-10-19) |
 | **Obsidian:** espejo Markdown de solo lectura; una edición a mano del espejo se convierte en propuesta; el plugin pasa a ser cliente del núcleo; migración colección a colección, la agenda la última | Decidido (Juan, 2026-10-19) |
 | **Obsidian es una integración por fuera, no un límite:** la comunidad de Obsidian debe poder aprovechar Boni y Boni Calendar, pero eso no condiciona lo que Boni puede hacer. Es una puerta para que la gente de Obsidian entre en Boni (sección 9.4) | Decidido (Juan, 2026-10-20) |
+| **Lo que ve la IA lo decide Juan, colección a colección,** desde la interfaz: "La ve", "Solo sabe que existe" (el código calcula y pinta con ella, ningún modelo lee su contenido) o "No la ve". Diario y Salud empiezan ocultas. Matiza "el modelo puede leer las notas" (fila de arriba): puede, salvo lo que Juan le quite (sección 7.3) | Decidido (Juan, 2026-10-20) |
+| **Nada fijo del dominio de Juan:** tipos, formularios, atajos y vistas los crea el usuario con la ayuda de la IA y son datos. Lo que hoy está fijo (el botón "Apuntar gasto", el formulario de movimientos, la definición de gasto de `@boni/views`, los grupos de carpetas de la importación) es compatibilidad de la transición y se va (PR 16) | Decidido (Juan, 2026-10-20) |
 | **El modelo puede leer y modificar el contenido de las notas**, como Claude con el vault. La seguridad la da la arquitectura, no esconderle los datos al proveedor. Matiza "las notas propias no deben salir" (plan, sección 1) para la fase del NAS | Decidido (Juan, 2026-10-19) |
 | Cada app (Boni y Boni Calendar, en móvil y escritorio) se sigue publicando por separado desde el mismo repo | Decidido (Juan, 2026-10-19) |
 | **Contenido externo = texto escrito por otros** (no una carpeta); `NotionImport/` son notas de Juan | Decidido (Juan, 2026-10-19) |
@@ -402,6 +404,14 @@ type Expr =
   - el esquema de los tipos de Juan;
   - la conversación, con los turnos de Juan y los resultados de confianza;
   - los datos propios que haga falta (decisión de Juan: el modelo puede leer las notas).
+- **Lo que Juan le quita (decidido, Juan, 2026-10-20).** Cada colección tiene un nivel que solo Juan cambia, desde un
+  dispositivo personal (Ajustes → "Lo que ve la IA"; ninguna herramienta del agente lo toca y se guarda fuera del
+  esquema, `ai_access`): `visible` (por defecto), `opaque` ("solo sabe que existe": el tipo está en su esquema, pero cada
+  valor que se lee lleva `noModel`, así que el planificador recibe asas, ningún lector lo recibe (R3) y solo el código
+  calcula y pinta con él) y `hidden` ("no la ve": no está en el esquema, sus elementos no se encuentran ni salen en una
+  búsqueda). Lo aplica `readStore`, la única vista de lectura del agente, en cada llamada, así que un cambio vale al
+  momento. Diario y Salud empiezan ocultas (la importación lo pone solo si Juan no ha elegido). `private/` y
+  `restricted/` siguen sin entrar en Boni de ninguna forma.
 - **Lo que no recibe:** nada con integridad `external` ni `ambient` sin confirmar. En su lugar recibe **asas opacas**
   con la forma del valor ("lista de 5 tareas, externo, campos: título, fecha"). Tampoco recibe secretos ni tokens.
 - **Una sola frontera hacia el planificador.** Todo lo que entra en su contexto pasa por una única función,
@@ -830,6 +840,8 @@ distinguidas por **dónde llegan** y nunca por cabeceras que se puedan falsifica
 | 14 | Exportación en un clic | La exportación se vuelve a importar idéntica |
 |  | **Hecho (2026-10-20):** `@boni/export`: el `.zip` de 9.3 (sin `files/` todavía: el almacén aún no guarda adjuntos), `GET /api/export` (tailnet, solo dispositivos personales), `cli.ts export` e `import-export`, y en la web de Boni Ajustes → Tus datos. Exportar, reimportar en un almacén vacío y volver a exportar da los mismos archivos (solo cambia la versión interna de cada elemento). Ajustes: al reimportar, la procedencia del archivo queda como mucho en `imported`, porque un archivo se puede editar (`--trust-labels` para una exportación propia); el CSV nunca lleva fórmulas; el registro sale de `store.log()`, de solo lectura | |
 | 15 | Primera colección en modo `core` (con Juan) y después el correo como fuente de propuestas (plan, paso 2) | Corpus ampliado con correos reales de forma (inventados) |
+|  | **Antes, "Lo que ve la IA" (2026-10-20):** los tres niveles por colección (7.3), en el almacén (`ai_access`), el agente (`readStore`, R3), el servidor (`/api/agent/visibility`, solo dispositivos personales para cambiarlo), la web de Boni (Ajustes) y la exportación. Propiedad nueva en los 300 planes al azar: con Movimientos en "solo sabe que existe", ninguna llamada a un modelo lleva su contenido (rompiendo el filtro a propósito, falla) | |
+| 16 | **Formularios, atajos y vistas como datos del núcleo; fuera lo fijo** (decisión de 2026-10-20): el formulario de captura sale de los campos del tipo (8), los atajos y mini-apps son especificaciones guardadas en el núcleo (7.13) que Juan crea con la IA; la web de Boni deja de tener el botón fijo "Apuntar gasto" (se convierte en un atajo suyo, migrado de los de v1) y su inicio muestra sus vistas; la definición de gasto pasa a ser una vista guardada; los grupos de carpetas de la importación pasan a un mapa editable. La API v1 sigue para las apps antiguas hasta T6 | Un atajo creado en la conversación aparece y funciona sin el modelo; ningún texto del dominio de Juan queda en el código de la web ni del núcleo (una prueba lo busca) |
 
 ### 12.1 Corpus de inyecciones en el CI
 - **Dónde:** `packages/agent/test/injections/`. Cada caso es un archivo con la petición de Juan, el contenido externo

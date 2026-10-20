@@ -1,5 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
-import { ASK_TURN, confirmTurn, PROPOSALS, RUNS, TEXT_REPLY } from "./agent-scenarios.ts";
+import {
+  ASK_TURN,
+  confirmTurn,
+  PROPOSALS,
+  RUNS,
+  TEXT_REPLY,
+  VISIBILITY,
+} from "./agent-scenarios.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -98,7 +105,10 @@ for (const language of ["es", "en"] as const) {
       const l = L[language];
       await page.setViewportSize({ width, height: 860 });
       const issues: string[] = [];
-      await openApp(page, "/?still", { language });
+      await openApp(page, "/?still", {
+        language,
+        agent: { "GET api/agent/visibility": [VISIBILITY] },
+      });
       await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
       await page.locator(".chart-card .chart svg").first().waitFor();
       issues.push(...(await audit(page, "home")));
@@ -134,6 +144,7 @@ for (const language of ["es", "en"] as const) {
 
       await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
       await page.locator(".modal").waitFor();
+      await page.locator(".modal [role=radiogroup]").first().waitFor();
       issues.push(...(await audit(page, "settings")));
       expect(issues).toEqual([]);
     });
@@ -181,7 +192,10 @@ test.describe("on a phone", () => {
     test(`every phone surface fits (${language})`, async ({ page }) => {
       const l = P[language];
       const issues: string[] = [];
-      await openApp(page, "/?still", { language });
+      await openApp(page, "/?still", {
+        language,
+        agent: { "GET api/agent/visibility": [VISIBILITY] },
+      });
       await expect(page.locator(".m-shortcut")).toHaveCount(2);
       issues.push(...(await audit(page, "phone log")));
       await page.locator(".m-capture").tap();
@@ -212,6 +226,7 @@ test.describe("on a phone", () => {
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: l.settings }).tap();
       await page.locator(".modal").waitFor();
+      await page.locator(".modal [role=radiogroup]").first().waitFor();
       issues.push(...(await audit(page, "phone settings")));
       expect(issues).toEqual([]);
     });

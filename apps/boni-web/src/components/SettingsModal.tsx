@@ -1,9 +1,12 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AI_LEVELS, type AiLevel, type Visibility } from "../core/agent.ts";
 import { host, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
 import {
+  changeVisibility,
   configured,
+  loadVisibility,
   login,
   logout,
   openSettings,
@@ -48,6 +51,8 @@ export function SettingsModal() {
         <div className="modal-body">
           <h3>{t("settings.account")}</h3>
           <Account />
+
+          {configured(settings) && <AiVisibility />}
 
           {host.saveExport && configured(settings) && <ExportData />}
 
@@ -298,6 +303,62 @@ function ExportData() {
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * "Lo que ve la IA": per collection, what the models may see (docs/nucleo.md 7.3). Juan's choice only:
+ * the agent has no tool for it, and the server takes it from a personal device only.
+ */
+function AiVisibility() {
+  const t = useStore((s) => s.t);
+  const [types, setTypes] = useState<Visibility[] | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void loadVisibility().then((v) => live && setTypes(v));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const choose = async (id: string, level: AiLevel) => {
+    const before = types;
+    setTypes((ts) => ts?.map((x) => (x.id === id ? { ...x, level } : x)) ?? ts);
+    if (!(await changeVisibility(id, level))) setTypes(before);
+  };
+  return (
+    <>
+      <h3>{t("ai.title")}</h3>
+      <p className="muted small setting-note">{t("ai.help")}</p>
+      {types === undefined ? null : types === null ? (
+        <p className="muted small setting-note">{t("ai.off")}</p>
+      ) : (
+        types.map((v) => (
+          <div className="setting" key={v.id}>
+            <div className="setting-label">
+              <span>{v.name}</span>
+              <span className="muted small">{t("ai.count", { n: v.count })}</span>
+            </div>
+            <div className="setting-control">
+              <div className="segmented" role="radiogroup" aria-label={v.name}>
+                {AI_LEVELS.map((l) => (
+                  <button
+                    key={l}
+                    type="button"
+                    role="radio"
+                    aria-checked={v.level === l}
+                    className={v.level === l ? "on" : ""}
+                    title={t(`ai.level.${l}.help`)}
+                    onClick={() => v.level !== l && void choose(v.id, l)}
+                  >
+                    {t(`ai.level.${l}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))
+      )}
     </>
   );
 }

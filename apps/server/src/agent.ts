@@ -26,6 +26,8 @@ import { bodyOf, CORS, SAFE, send } from "./reply.ts";
  *   GET  /api/agent/runs                     -> { runs } the latest, for the log
  *   POST /api/agent/runs/:id/undo            -> { undone } every operation of that run
  *   GET  /api/agent/events                   -> Server-Sent Events: "notify" ({ text }) and "proposals"
+ *   GET  /api/agent/visibility               -> { types: [{ id, name, level, count }] } what the models may see
+ *   PUT  /api/agent/visibility/:type         { level: visible | opaque | hidden } (a personal device only)
  */
 export interface Providers {
   planner: ModelProvider;
@@ -223,6 +225,33 @@ async function answerAgent(
       } catch {
         return send(res, 409, { error: "cannot-undo" });
       }
+    case "GET /api/agent/visibility": {
+      const store = host.store(who.account);
+      const levels = store.aiAccess();
+      return send(res, 200, {
+        types: Object.values(store.schema().types)
+          .filter((t) => !t.system && !t.archived)
+          .sort((a, b) => a.name.localeCompare(b.name, "es"))
+          .map((t) => ({
+            id: t.id,
+            name: t.name,
+            level: levels[t.id] ?? "visible",
+            count: store.list(t.id).length,
+          })),
+      });
+    }
+    case "PUT /api/agent/visibility/:type": {
+      // Juan's choice, from a personal device: never something the agent or a shared device decides.
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const b = await bodyOf(req);
+      const level = b.level;
+      if (level !== "visible" && level !== "opaque" && level !== "hidden") return bad();
+      const store = host.store(who.account);
+      const type = store.schema().types[params.type ?? ""];
+      if (!type || type.system) return send(res, 404, { error: "not-found" });
+      store.setAiAccess(type.id, level, who.device);
+      return send(res, 200, { id: type.id, level });
+    }
     case "GET /api/agent/events": {
       res.writeHead(200, {
         ...CORS,

@@ -44,6 +44,10 @@ try {
   console.log(
     `  identity or bank numbers (kept, sensitive): ${r.identityNumbers} notes; links to no note: ${r.unresolvedLinks}`,
   );
+  if (r.hiddenFromModels.length)
+    console.log(
+      `  kept from the AI (unless you chose otherwise in Boni): ${r.hiddenFromModels.join(", ")}`,
+    );
   if (r.unreadable.length)
     console.log(
       `  properties unreadable (body only): ${r.unreadable.length}\n    ${r.unreadable.join("\n    ")}`,

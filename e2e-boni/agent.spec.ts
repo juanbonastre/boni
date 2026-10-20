@@ -10,6 +10,7 @@ import {
   RUNS,
   STOPPED,
   TEXT_REPLY,
+  VISIBILITY,
 } from "./agent-scenarios.ts";
 import { openApp, recorded } from "./fixtures.ts";
 
@@ -207,6 +208,43 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
     .click();
   await expect(page.locator(".toast")).toContainText("Deshecho (2 cambios)");
   expect(await requests(page, "POST api/agent/runs/")).toEqual(["POST api/agent/runs/run-1/undo"]);
+});
+
+test("what the AI sees: Juan chooses per collection in Settings", async ({ page }) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "PUT api/agent/visibility/:type": [{ id: "t_proyecto", level: "hidden" }],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await expect(modal.getByRole("heading", { name: "Lo que ve la IA" })).toBeVisible();
+  const row = (name: string) => modal.getByRole("radiogroup", { name });
+  await expect(row("Diario").getByRole("radio", { name: "No la ve" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(
+    row("Movimientos").getByRole("radio", { name: "Solo sabe que existe" }),
+  ).toHaveAttribute("aria-checked", "true");
+  await row("Proyectos").getByRole("radio", { name: "No la ve" }).click();
+  await expect(row("Proyectos").getByRole("radio", { name: "No la ve" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(await requests(page, "PUT api/agent/visibility")).toEqual([
+    'PUT api/agent/visibility/t_proyecto {"level":"hidden"}',
+  ]);
+  await page.screenshot({ path: `${SHOTS}/agent-visibility.png` });
+
+  // With the agent off it says so, and offers nothing to change.
+  const off = await page.context().newPage();
+  await openApp(off, "/?still");
+  await off.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  await expect(off.locator(".modal")).toContainText("El agente está apagado en el servidor.");
+  await expect(off.locator(".modal").getByRole("radiogroup")).toHaveCount(0);
+  await off.close();
 });
 
 test("on the phone, Boni is the third tab", async ({ page }) => {

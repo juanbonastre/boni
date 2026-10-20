@@ -257,6 +257,8 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
           version: VERSION,
           exported: new Date(now).toISOString(),
           types,
+          // What the models may see of each type (Juan's choice; missing = visible).
+          aiAccess: store.aiAccess(),
           jsonSchema: Object.fromEntries(types.map((t) => [t.key, jsonSchemaOf(t)])),
         },
         null,

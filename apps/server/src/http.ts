@@ -223,7 +223,7 @@ export function makeApp(opts: ServerOptions): App {
         listener,
       );
     if (url.pathname.startsWith("/api/agent/")) {
-      if (req.method !== "GET" && req.method !== "POST")
+      if (req.method !== "GET" && req.method !== "POST" && req.method !== "PUT")
         return send(res, 404, { error: "not-found" });
       const s = sessionUser(db, tokenOf(req));
       if (!s) return send(res, 401, { error: "unauthorized" });

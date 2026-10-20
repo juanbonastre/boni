@@ -101,6 +101,21 @@ describe("importing the vault", () => {
     expect(s.version()).toBe(0);
   });
 
+  it("keeps the journal from the AI by default, and never overrides Juan's choice", () => {
+    const files = {
+      ...FILES,
+      "diario/reflexiones/2026-10-19.md": "---\ntype: journal\n---\nUn día inventado.\n",
+    };
+    const s = store();
+    expect(importVault(vault(files), s).hiddenFromModels).toEqual(["t_diario"]);
+    expect(s.aiAccess()).toEqual({});
+    importVault(vault(files), s, { apply: true });
+    expect(s.aiAccess()).toEqual({ t_diario: "hidden" });
+    s.setAiAccess("t_diario", "visible", "portatil");
+    importVault(vault(files), s, { apply: true });
+    expect(s.aiAccess()).toEqual({ t_diario: "visible" });
+  });
+
   it("never reads private/, restricted/ or dot folders, at any depth", () => {
     const s = store();
     importVault(vault(), s, { apply: true });

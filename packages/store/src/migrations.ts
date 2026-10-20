@@ -114,6 +114,13 @@ export const MIGRATIONS = [
      n REAL NOT NULL,
      PRIMARY KEY (day, key)
    );`,
+  // 3: what the models may see of each type (Juan's choice, never the agent's; docs/nucleo.md 7.3).
+  `CREATE TABLE ai_access (
+     type TEXT PRIMARY KEY,
+     level TEXT NOT NULL CHECK (level IN ('visible', 'opaque', 'hidden')),
+     at INTEGER NOT NULL,
+     by TEXT
+   );`,
 ];
 
 export function migrate(db: DatabaseSync): void {

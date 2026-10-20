@@ -62,6 +62,7 @@ export function importExport(
     format?: string;
     version?: number;
     types?: TypeDef[];
+    aiAccess?: Record<string, string>;
   };
   if (schema.format !== FORMAT || schema.version !== 1 || !Array.isArray(schema.types))
     throw new ExportFormatError("not a Boni export (version 1)");
@@ -102,6 +103,16 @@ export function importExport(
         if (!current.fields.some((x) => x.id === f.id))
           store.applySchema({ op: "add_field", type: t.id, field: f }, meta);
     }
+
+  // What the models may see comes back too (never changing a choice already made here).
+  if (apply)
+    for (const [type, level] of Object.entries(schema.aiAccess ?? {}))
+      if (
+        have()[type] &&
+        !(type in store.aiAccess()) &&
+        (level === "visible" || level === "opaque" || level === "hidden")
+      )
+        store.setAiAccess(type, level, "import");
 
   // Entities: first without relations, then the relations.
   const later: { id: string; writes: Writes }[] = [];

@@ -11,6 +11,7 @@ export {
   type Labeled,
   label,
   labeled,
+  modelMaySee,
   plannerMaySee,
   raiseSensitivity,
   SENSITIVITY_ORDER,

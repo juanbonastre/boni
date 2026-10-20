@@ -232,3 +232,9 @@ espejo genérico, se abre en Obsidian), `csv/<tipo>.csv`, `views.json` (gráfica
   conexión llega desde la IP de ese sidecar y no desde 127.0.0.1. Esa IP se pone aquí para que el servidor se fíe de su
   `X-Forwarded-For` y los límites de inicio de sesión vean la IP real de cada cliente.
 
+## Lo que ve la IA (2026-10-20)
+Por colección: "La ve", "Solo sabe que existe" o "No la ve" (diseño en `docs/nucleo.md`, 7.3). `GET /api/agent/visibility` lista
+las colecciones con su nivel; `PUT /api/agent/visibility/<tipo> { level }` lo cambia, solo desde un dispositivo personal (403
+si no). En la web de Boni: Ajustes → Lo que ve la IA. La importación del vault deja Diario y Salud en "No la ve" si Juan no
+ha elegido antes; volver a importar nunca cambia lo que él eligió.
+

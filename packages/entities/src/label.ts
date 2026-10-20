@@ -39,6 +39,11 @@ export interface Label {
   /** Describes other people (senders, people in the agenda): never part of a report that leaves. */
   thirdParty: boolean;
   sources: readonly SourceRef[];
+  /**
+   * Not for any model, the planner or a reader (Juan chose so for its collection: "solo sabe que existe").
+   * Code may still compute with it and paint it for Juan. Set when it is read, never stored; inherited.
+   */
+  noModel?: true;
 }
 
 export const integrityRank = (i: Integrity) => INTEGRITY_ORDER.indexOf(i);
@@ -67,15 +72,23 @@ export function join(first: Label, ...rest: Label[]): Label {
   let integrity = first.integrity;
   let sensitivity = first.sensitivity;
   let thirdParty = first.thirdParty;
+  let noModel = !!first.noModel;
   const sources = new Map(first.sources.map((s) => [sourceKey(s), s]));
   for (const l of rest) {
     if (integrityRank(l.integrity) < integrityRank(integrity)) integrity = l.integrity;
     if (sensitivityRank(l.sensitivity) > sensitivityRank(sensitivity)) sensitivity = l.sensitivity;
     thirdParty ||= l.thirdParty;
+    noModel ||= !!l.noModel;
     for (const s of l.sources) sources.set(sourceKey(s), s);
   }
   const sorted = [...sources.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return { integrity, sensitivity, thirdParty, sources: sorted.map(([, s]) => s) };
+  return {
+    integrity,
+    sensitivity,
+    thirdParty,
+    sources: sorted.map(([, s]) => s),
+    ...(noModel ? { noModel: true as const } : {}),
+  };
 }
 
 /** The same label, at least this sensitive (it never goes down here: lowering is Juan's, in settings). */
@@ -83,8 +96,14 @@ export function raiseSensitivity(l: Label, to: Sensitivity): Label {
   return sensitivityRank(to) > sensitivityRank(l.sensitivity) ? { ...l, sensitivity: to } : l;
 }
 
-/** The planner never sees external or ambient text; it gets an opaque handle instead (nucleo.md, 7.3). */
-export const plannerMaySee = (l: Label) => l.integrity !== "external" && l.integrity !== "ambient";
+/**
+ * The planner never sees external or ambient text, nor what Juan keeps from the models; it gets an opaque
+ * handle instead (nucleo.md, 7.3).
+ */
+export const plannerMaySee = (l: Label) =>
+  !l.noModel && l.integrity !== "external" && l.integrity !== "ambient";
+/** Whether any model may read it (a reader too): what Juan keeps from the models never reaches one. */
+export const modelMaySee = (l: Label) => !l.noModel;
 
 // ---------------------------------------------------------------- labeled values
 

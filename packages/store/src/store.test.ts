@@ -113,6 +113,19 @@ describe("the store", () => {
     expect(Object.keys(again.schema().types).sort()).toEqual(["t_libro", "t_persona", "t_revista"]);
   });
 
+  it("keeps what the models may see of each type, Juan's choice", () => {
+    const { store } = fresh();
+    expect(store.aiAccess()).toEqual({});
+    store.setAiAccess("t_persona", "hidden", "portatil");
+    store.setAiAccess("t_libro", "opaque", "portatil");
+    store.setAiAccess("t_libro", "visible", "portatil");
+    expect(store.aiAccess()).toEqual({ t_persona: "hidden", t_libro: "visible" });
+    expect(() => store.setAiAccess("t_nada", "hidden", "portatil")).toThrow(StoreError);
+    expect(() => store.setAiAccess("t_libro", "secreto" as never, "portatil")).toThrow(StoreError);
+    // Not something a read query (the views, the agent) can see.
+    expect(() => store.readQuery("SELECT * FROM ai_access")).toThrow();
+  });
+
   it("keeps the schema across restarts", () => {
     const { store, dir } = fresh();
     store.close();

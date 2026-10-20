@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { join, type Label, label } from "@boni/entities";
+import { join, type Label, label, modelMaySee } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
 import { callFn, FnError } from "./fns.ts";
@@ -413,7 +413,7 @@ export class Agent {
       request: st.turn.text,
       today: this.today(),
       tools,
-      schema: schemaView(this.o.store.schema()),
+      schema: schemaView(readStore(this.o.store).schema()),
       history,
       memories: this.memories(),
     };
@@ -770,6 +770,12 @@ export class Agent {
     const params: Record<string, Val> = {};
     for (const [k, e] of Object.entries(step.params ?? {})) params[k] = this.evalExpr(st, e);
     const inLabel = control ? join(deepLabel(input), control) : deepLabel(input);
+    // R3: what Juan keeps from the models (his choice per type) never reaches a reader, not even as a
+    // parameter or through the step's control.
+    if (!modelMaySee(inLabel) || Object.values(params).some((v) => !modelMaySee(deepLabel(v)))) {
+      this.log(st, step, "read", "deny", "R3", { reason: "kept-from-models" });
+      throw new Stop("R3-kept-from-models");
+    }
     const external = inLabel.integrity === "external";
     // A reader never gets Juan's data next to outside content, except as the allowed options (A14).
     if (external)

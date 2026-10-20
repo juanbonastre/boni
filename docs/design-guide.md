@@ -180,7 +180,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   and the user at the bottom), the main area and the right side panel. The home screen's chart cards fill the main area
   (rows share its height; no empty band), and capturing or editing a chart happens in the side panel with the cards in
   view (the card being edited shows the preview and an accent ring).
-  Settings has "Tus datos" between the account and the appearance: one button that downloads everything as a .zip
+  Settings has "Lo que ve la IA" after the account (one row per collection with its count and a three-way segmented
+  control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip
   (where the host can save a file; a toast says how it went).
 - **Chart controls** (Boni; like a Notion view's): when the pointer is over a chart card, a small bar of controls appears
   in its header before the total: period (a menu of usual periods), filters (a box, saved when it closes), order and

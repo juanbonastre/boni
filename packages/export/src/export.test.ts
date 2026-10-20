@@ -130,8 +130,12 @@ describe("the export comes back", () => {
     const dry = importExport(files, b);
     expect(dry).toMatchObject({ applied: false, created: 5, existing: [], failed: [] });
     expect(b.list("t_persona")).toHaveLength(0);
-    const r = importExport(files, b, { apply: true, trustLabels: true });
+    a.setAiAccess("t_persona", "opaque", "portatil");
+    const withChoice = new Map(exportFiles(a, { now: NOW }).map((e) => [e.path, e.data]));
+    const r = importExport(withChoice, b, { apply: true, trustLabels: true });
+    expect(b.aiAccess()).toEqual({ t_persona: "opaque" });
     expect(r).toMatchObject({ applied: true, created: 5, failed: [] });
+    const first2 = exportFiles(a, { now: NOW });
     const second = exportFiles(b, { now: NOW });
     const strip = (p: string, d: Buffer) =>
       p.endsWith(".ndjson")
@@ -145,9 +149,9 @@ describe("the export comes back", () => {
             })
             .join("\n")
         : d.toString("utf8");
-    expect(second.map((e) => e.path)).toEqual(first.map((e) => e.path));
+    expect(second.map((e) => e.path)).toEqual(first2.map((e) => e.path));
     for (const [i, e] of second.entries())
-      expect(strip(e.path, e.data), e.path).toBe(strip(e.path, first[i]?.data as Buffer));
+      expect(strip(e.path, e.data), e.path).toBe(strip(e.path, first2[i]?.data as Buffer));
     // Again: nothing twice.
     expect(importExport(files, b, { apply: true }).existing).toHaveLength(5);
   });
