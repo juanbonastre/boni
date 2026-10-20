@@ -49,6 +49,42 @@ describe("the plan validator", () => {
       })),
     };
     expect(validatePlan(many, cat, "")).toEqual({ ok: false, errors: ["plan: too-many-steps"] });
+    // A bare literal is the model's {"lit": x}; a list or an object is still not an expression.
+    const bare = validatePlan(
+      {
+        version: 1,
+        steps: [
+          { id: "a", op: "call", tool: "entities.query", args: { type: "tarea" } },
+          {
+            id: "b",
+            op: "reply",
+            component: "text",
+            data: { template: "Tienes {a}", a: { fn: "count", args: [{ ref: "$a" }] } },
+          },
+        ],
+      },
+      cat,
+      "",
+    );
+    expect(bare).toMatchObject({
+      ok: true,
+      plan: {
+        steps: [
+          { args: { type: { lit: "tarea" } } },
+          { data: { template: { lit: "Tienes {a}" } } },
+        ],
+      },
+    });
+    expect(
+      validatePlan(
+        {
+          version: 1,
+          steps: [{ id: "a", op: "call", tool: "entities.query", args: { type: ["tarea"] } }],
+        },
+        cat,
+        "",
+      ).ok,
+    ).toBe(false);
   });
   it("gives fixed codes, never data", () => {
     const bad = {

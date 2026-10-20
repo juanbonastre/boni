@@ -98,7 +98,37 @@ export function isWholeSpan(text: string, quote: string): boolean {
 
 export type PlanResult = { ok: true; plan: Plan } | { ok: false; errors: string[] };
 
-export function validatePlan(raw: unknown, catalog: PlanCatalog, turnText: string): PlanResult {
+/**
+ * A bare string, number, boolean or null where an expression goes is the model's own literal, as if it
+ * had written {"lit": x} (smaller models forget the wrapper). Nothing else changes: it is still the
+ * model's (labelled `model`), and lists or objects are still refused.
+ */
+function bareLiterals(raw: unknown): unknown {
+  if (!isObj(raw) || !Array.isArray(raw.steps)) return raw;
+  const scalar = (v: unknown) =>
+    v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean";
+  const expr = (e: unknown): unknown => {
+    if (scalar(e)) return { lit: e };
+    if (isObj(e) && "fn" in e && Array.isArray(e.args))
+      return { ...e, args: e.args.map((a) => (scalar(a) ? { lit: a } : a)) };
+    return e;
+  };
+  const map = (o: unknown) =>
+    isObj(o) ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, expr(v)])) : o;
+  return {
+    ...raw,
+    steps: raw.steps.map((s) => {
+      if (!isObj(s)) return s;
+      const out: Record<string, unknown> = { ...s };
+      for (const k of ["when", "input", "prompt", "options"]) if (k in s) out[k] = expr(s[k]);
+      for (const k of ["args", "params", "data"]) if (k in s) out[k] = map(s[k]);
+      return out;
+    }),
+  };
+}
+
+export function validatePlan(given: unknown, catalog: PlanCatalog, turnText: string): PlanResult {
+  const raw = bareLiterals(given);
   const errors: string[] = [];
   if (
     !isObj(raw) ||
