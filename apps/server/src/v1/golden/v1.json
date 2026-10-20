@@ -1,0 +1,2012 @@
+{
+  "screen": {
+    "api_version": "1",
+    "id": "capture-expense",
+    "title": "Apuntar gasto",
+    "components": [
+      {
+        "type": "form",
+        "id": "expense",
+        "fields": [
+          {
+            "id": "kind",
+            "label": "Tipo",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "choice",
+            "options": [
+              {
+                "value": "gasto",
+                "label": "Gasto",
+                "hint": null
+              },
+              {
+                "value": "ingreso",
+                "label": "Ingreso",
+                "hint": null
+              }
+            ],
+            "source": null,
+            "searchable": false,
+            "style": "chips",
+            "default": "gasto"
+          },
+          {
+            "id": "amount",
+            "label": "Importe",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "amount",
+            "currency": "EUR",
+            "default": null,
+            "min": 0.01,
+            "max": 100000.0
+          },
+          {
+            "id": "account",
+            "label": "Cuenta",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "choice",
+            "options": [
+              {
+                "value": "efectivo",
+                "label": "Efectivo",
+                "hint": null
+              },
+              {
+                "value": "revolut",
+                "label": "Revolut",
+                "hint": null
+              },
+              {
+                "value": "ing",
+                "label": "ING",
+                "hint": null
+              }
+            ],
+            "source": null,
+            "searchable": false,
+            "style": "chips",
+            "default": "efectivo"
+          },
+          {
+            "id": "category",
+            "label": "Categoría",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "choice",
+            "options": null,
+            "source": "categories",
+            "searchable": true,
+            "style": "dropdown",
+            "default": null
+          },
+          {
+            "id": "concept",
+            "label": "Concepto",
+            "required": false,
+            "help": null,
+            "visible_when": null,
+            "type": "text",
+            "default": null,
+            "max_length": 200,
+            "multiline": false,
+            "placeholder": "Qué fue"
+          },
+          {
+            "id": "merchant",
+            "label": "Comercio",
+            "required": false,
+            "help": null,
+            "visible_when": null,
+            "type": "text",
+            "default": null,
+            "max_length": 120,
+            "multiline": false,
+            "placeholder": null
+          },
+          {
+            "id": "people",
+            "label": "Con quién",
+            "required": false,
+            "help": null,
+            "visible_when": null,
+            "type": "multi_choice",
+            "options": null,
+            "source": "people",
+            "searchable": true,
+            "default": []
+          },
+          {
+            "id": "shared",
+            "label": "Pagué yo por otros",
+            "required": false,
+            "help": null,
+            "visible_when": null,
+            "type": "toggle",
+            "default": false
+          },
+          {
+            "id": "invited",
+            "label": "A quién he invitado",
+            "required": false,
+            "help": "No te devuelven nada",
+            "visible_when": {
+              "field": "shared",
+              "equals": true
+            },
+            "type": "multi_choice",
+            "options": null,
+            "source": "people",
+            "searchable": true,
+            "default": []
+          },
+          {
+            "id": "my_share",
+            "label": "Mi parte",
+            "required": false,
+            "help": "Vacio: se calcula (importe x (1 + invitados) / (personas + 1))",
+            "visible_when": {
+              "field": "shared",
+              "equals": true
+            },
+            "type": "amount",
+            "currency": "EUR",
+            "default": null,
+            "min": 0.01,
+            "max": null
+          },
+          {
+            "id": "date",
+            "label": "Fecha",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "date",
+            "default": "today"
+          }
+        ],
+        "submit": {
+          "action": "expenses.capture",
+          "label": "Guardar"
+        }
+      }
+    ]
+  },
+  "screen_revolut": {
+    "api_version": "1",
+    "id": "capture-expense",
+    "title": "Apuntar gasto",
+    "components": [
+      {
+        "type": "form",
+        "id": "expense",
+        "fields": [
+          {
+            "id": "kind",
+            "label": "Tipo",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "choice",
+            "options": [
+              {
+                "value": "gasto",
+                "label": "Gasto",
+                "hint": null
+              },
+              {
+                "value": "ingreso",
+                "label": "Ingreso",
+                "hint": null
+              }
+            ],
+            "source": null,
+            "searchable": false,
+            "style": "chips",
+            "default": "gasto"
+          },
+          {
+            "id": "amount",
+            "label": "Importe",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "amount",
+            "currency": "EUR",
+            "default": null,
+            "min": 0.01,
+            "max": 100000.0
+          },
+          {
+            "id": "account",
+            "label": "Cuenta",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "choice",
+            "options": [
+              {
+                "value": "efectivo",
+                "label": "Efectivo",
+                "hint": null
+              },
+              {
+                "value": "revolut",
+                "label": "Revolut",
+                "hint": null
+              },
+              {
+                "value": "ing",
+                "label": "ING",
+                "hint": null
+              }
+            ],
+            "source": null,
+            "searchable": false,
+            "style": "chips",
+            "default": "revolut"
+          },
+          {
+            "id": "category",
+            "label": "Categoría",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "choice",
+            "options": null,
+            "source": "categories",
+            "searchable": true,
+            "style": "dropdown",
+            "default": null
+          },
+          {
+            "id": "concept",
+            "label": "Concepto",
+            "required": false,
+            "help": null,
+            "visible_when": null,
+            "type": "text",
+            "default": null,
+            "max_length": 200,
+            "multiline": false,
+            "placeholder": "Qué fue"
+          },
+          {
+            "id": "merchant",
+            "label": "Comercio",
+            "required": false,
+            "help": null,
+            "visible_when": null,
+            "type": "text",
+            "default": null,
+            "max_length": 120,
+            "multiline": false,
+            "placeholder": null
+          },
+          {
+            "id": "people",
+            "label": "Con quién",
+            "required": false,
+            "help": null,
+            "visible_when": null,
+            "type": "multi_choice",
+            "options": null,
+            "source": "people",
+            "searchable": true,
+            "default": []
+          },
+          {
+            "id": "shared",
+            "label": "Pagué yo por otros",
+            "required": false,
+            "help": null,
+            "visible_when": null,
+            "type": "toggle",
+            "default": false
+          },
+          {
+            "id": "invited",
+            "label": "A quién he invitado",
+            "required": false,
+            "help": "No te devuelven nada",
+            "visible_when": {
+              "field": "shared",
+              "equals": true
+            },
+            "type": "multi_choice",
+            "options": null,
+            "source": "people",
+            "searchable": true,
+            "default": []
+          },
+          {
+            "id": "my_share",
+            "label": "Mi parte",
+            "required": false,
+            "help": "Vacio: se calcula (importe x (1 + invitados) / (personas + 1))",
+            "visible_when": {
+              "field": "shared",
+              "equals": true
+            },
+            "type": "amount",
+            "currency": "EUR",
+            "default": null,
+            "min": 0.01,
+            "max": null
+          },
+          {
+            "id": "date",
+            "label": "Fecha",
+            "required": true,
+            "help": null,
+            "visible_when": null,
+            "type": "date",
+            "default": "today"
+          }
+        ],
+        "submit": {
+          "action": "expenses.capture",
+          "label": "Guardar"
+        }
+      }
+    ]
+  },
+  "catalog": {
+    "fields": [
+      {
+        "id": "date",
+        "label": "Fecha",
+        "kind": "time",
+        "ops": ["gte", "lte"],
+        "source": null,
+        "can_group": true
+      },
+      {
+        "id": "group",
+        "label": "Grupo de categoría",
+        "kind": "set",
+        "ops": ["in", "not_in"],
+        "source": "groups",
+        "can_group": true
+      },
+      {
+        "id": "category",
+        "label": "Categoría",
+        "kind": "set",
+        "ops": ["in", "not_in", "prefix", "not_prefix"],
+        "source": "categories",
+        "can_group": true
+      },
+      {
+        "id": "account",
+        "label": "Cuenta",
+        "kind": "set",
+        "ops": ["in", "not_in"],
+        "source": "accounts",
+        "can_group": true
+      },
+      {
+        "id": "merchant",
+        "label": "Comercio",
+        "kind": "text",
+        "ops": ["in", "not_in", "contains", "not_contains", "empty", "not_empty"],
+        "source": "merchants",
+        "can_group": true
+      },
+      {
+        "id": "concept",
+        "label": "Concepto",
+        "kind": "text",
+        "ops": ["contains", "not_contains", "empty", "not_empty"],
+        "source": null,
+        "can_group": true
+      },
+      {
+        "id": "people",
+        "label": "Con quién",
+        "kind": "multi",
+        "ops": ["in", "not_in", "contains", "empty", "not_empty"],
+        "source": "people",
+        "can_group": true
+      },
+      {
+        "id": "invited",
+        "label": "Invitados",
+        "kind": "multi",
+        "ops": ["in", "not_in", "contains", "empty", "not_empty"],
+        "source": "people",
+        "can_group": true
+      },
+      {
+        "id": "related",
+        "label": "Proyecto o evento",
+        "kind": "multi",
+        "ops": ["in", "not_in", "contains", "empty", "not_empty"],
+        "source": "related",
+        "can_group": true
+      },
+      {
+        "id": "status",
+        "label": "Estado",
+        "kind": "set",
+        "ops": ["in", "not_in"],
+        "source": "statuses",
+        "can_group": true
+      },
+      {
+        "id": "source",
+        "label": "Origen",
+        "kind": "set",
+        "ops": ["in", "not_in"],
+        "source": "sources",
+        "can_group": true
+      },
+      {
+        "id": "amount",
+        "label": "Importe",
+        "kind": "number",
+        "ops": ["gte", "lte"],
+        "source": null,
+        "can_group": false
+      }
+    ],
+    "kinds": [
+      {
+        "id": "bar",
+        "label": "Barras",
+        "help": "Comparar valores; con fechas, la evolución"
+      },
+      {
+        "id": "stacked_bar",
+        "label": "Barras apiladas",
+        "help": "Cada barra repartida entre las series"
+      },
+      {
+        "id": "hbar",
+        "label": "Barras horizontales",
+        "help": "Rankings: categorías, comercios, personas"
+      },
+      {
+        "id": "line",
+        "label": "Línea",
+        "help": "Evolución en el tiempo"
+      },
+      {
+        "id": "area",
+        "label": "Área",
+        "help": "Evolución en el tiempo, con relleno"
+      },
+      {
+        "id": "donut",
+        "label": "Anillo",
+        "help": "Reparto de un total entre pocas partes"
+      },
+      {
+        "id": "number",
+        "label": "Cifra",
+        "help": "Un número grande, con la diferencia frente a otro periodo"
+      },
+      {
+        "id": "table",
+        "label": "Tabla",
+        "help": "Los valores exactos"
+      }
+    ],
+    "measures": [
+      {
+        "id": "spending",
+        "label": "Gasto",
+        "help": "Tu parte, sin reembolsos ni traspasos"
+      },
+      {
+        "id": "income",
+        "label": "Ingresos",
+        "help": null
+      },
+      {
+        "id": "count",
+        "label": "Número de gastos",
+        "help": null
+      },
+      {
+        "id": "average",
+        "label": "Gasto medio",
+        "help": "Gasto dividido entre número de gastos"
+      }
+    ],
+    "granularities": [
+      {
+        "id": "day",
+        "label": "Día",
+        "help": null
+      },
+      {
+        "id": "week",
+        "label": "Semana",
+        "help": null
+      },
+      {
+        "id": "month",
+        "label": "Mes",
+        "help": null
+      },
+      {
+        "id": "quarter",
+        "label": "Trimestre",
+        "help": null
+      },
+      {
+        "id": "year",
+        "label": "Año",
+        "help": null
+      },
+      {
+        "id": "weekday",
+        "label": "Día de la semana",
+        "help": null
+      }
+    ],
+    "periods": [
+      {
+        "id": "this_month",
+        "label": "Este mes",
+        "help": null
+      },
+      {
+        "id": "last_month",
+        "label": "Mes pasado",
+        "help": null
+      },
+      {
+        "id": "last_months",
+        "label": "Últimos meses",
+        "help": null
+      },
+      {
+        "id": "this_year",
+        "label": "Este año",
+        "help": null
+      },
+      {
+        "id": "last_year",
+        "label": "Año pasado",
+        "help": null
+      },
+      {
+        "id": "last_days",
+        "label": "Últimos días",
+        "help": null
+      },
+      {
+        "id": "range",
+        "label": "Entre fechas",
+        "help": null
+      },
+      {
+        "id": "all",
+        "label": "Todo",
+        "help": null
+      }
+    ],
+    "compares": [
+      {
+        "id": "none",
+        "label": "Sin comparar",
+        "help": null
+      },
+      {
+        "id": "previous_period",
+        "label": "Periodo anterior",
+        "help": null
+      },
+      {
+        "id": "previous_year",
+        "label": "Mismo periodo del año anterior",
+        "help": null
+      }
+    ]
+  },
+  "default_charts": [
+    {
+      "id": "spending-by-category",
+      "title": "Gasto del mes",
+      "kind": "hbar",
+      "measure": "spending",
+      "x": {
+        "field": "group",
+        "granularity": null
+      },
+      "split": null,
+      "period": {
+        "kind": "this_month",
+        "months": null,
+        "days": null,
+        "start": null,
+        "end": null
+      },
+      "filters": [],
+      "compare": "none",
+      "top": null,
+      "sort": "auto",
+      "drilldown": true,
+      "home": true,
+      "color": "#60a5fa",
+      "group_by": "category_group",
+      "filter": {
+        "include": [],
+        "exclude": []
+      }
+    },
+    {
+      "id": "monthly-spending",
+      "title": "Gasto por mes",
+      "kind": "bar",
+      "measure": "spending",
+      "x": {
+        "field": "date",
+        "granularity": "month"
+      },
+      "split": null,
+      "period": {
+        "kind": "last_months",
+        "months": 12,
+        "days": null,
+        "start": null,
+        "end": null
+      },
+      "filters": [],
+      "compare": "none",
+      "top": null,
+      "sort": "auto",
+      "drilldown": true,
+      "home": true,
+      "color": "#a78bfa",
+      "group_by": "month",
+      "filter": {
+        "include": [],
+        "exclude": []
+      }
+    },
+    {
+      "id": "eating-out",
+      "title": "Comida fuera",
+      "kind": "line",
+      "measure": "spending",
+      "x": {
+        "field": "date",
+        "granularity": "month"
+      },
+      "split": null,
+      "period": {
+        "kind": "last_months",
+        "months": 12,
+        "days": null,
+        "start": null,
+        "end": null
+      },
+      "filters": [
+        {
+          "field": "category",
+          "op": "prefix",
+          "values": ["comida/", "bebida/cafe", "bebida/alcohol"]
+        },
+        {
+          "field": "category",
+          "op": "not_prefix",
+          "values": ["comida/supermercado"]
+        }
+      ],
+      "compare": "none",
+      "top": null,
+      "sort": "auto",
+      "drilldown": false,
+      "home": true,
+      "color": "#fb923c",
+      "group_by": "month",
+      "filter": {
+        "include": [],
+        "exclude": []
+      }
+    }
+  ],
+  "specs": [
+    {
+      "raw": {
+        "title": "Legado por grupo",
+        "kind": "hbar",
+        "group_by": "category_group",
+        "period": {
+          "kind": "this_month"
+        }
+      },
+      "spec": {
+        "id": "",
+        "title": "Legado por grupo",
+        "kind": "hbar",
+        "measure": "spending",
+        "x": {
+          "field": "group",
+          "granularity": null
+        },
+        "split": null,
+        "period": {
+          "kind": "this_month",
+          "months": null,
+          "days": null,
+          "start": null,
+          "end": null
+        },
+        "filters": [],
+        "compare": "none",
+        "top": null,
+        "sort": "auto",
+        "drilldown": false,
+        "home": true,
+        "color": null,
+        "group_by": "category_group",
+        "filter": {
+          "include": [],
+          "exclude": []
+        }
+      }
+    },
+    {
+      "raw": {
+        "title": "Legado por mes",
+        "kind": "bar",
+        "group_by": "month",
+        "period": {
+          "kind": "last_months",
+          "months": 6
+        },
+        "filter": {
+          "include": ["comida/"],
+          "exclude": ["comida/supermercado"]
+        }
+      },
+      "spec": {
+        "id": "",
+        "title": "Legado por mes",
+        "kind": "bar",
+        "measure": "spending",
+        "x": {
+          "field": "date",
+          "granularity": "month"
+        },
+        "split": null,
+        "period": {
+          "kind": "last_months",
+          "months": 6,
+          "days": null,
+          "start": null,
+          "end": null
+        },
+        "filters": [
+          {
+            "field": "category",
+            "op": "prefix",
+            "values": ["comida/"]
+          },
+          {
+            "field": "category",
+            "op": "not_prefix",
+            "values": ["comida/supermercado"]
+          }
+        ],
+        "compare": "none",
+        "top": null,
+        "sort": "auto",
+        "drilldown": false,
+        "home": true,
+        "color": null,
+        "group_by": "month",
+        "filter": {
+          "include": [],
+          "exclude": []
+        }
+      }
+    },
+    {
+      "raw": {
+        "title": "Fecha sin granularidad",
+        "kind": "line",
+        "x": {
+          "field": "date"
+        },
+        "split": {
+          "field": "date"
+        },
+        "period": {
+          "kind": "all"
+        }
+      },
+      "spec": {
+        "id": "",
+        "title": "Fecha sin granularidad",
+        "kind": "line",
+        "measure": "spending",
+        "x": {
+          "field": "date",
+          "granularity": "month"
+        },
+        "split": {
+          "field": "date",
+          "granularity": "month"
+        },
+        "period": {
+          "kind": "all",
+          "months": null,
+          "days": null,
+          "start": null,
+          "end": null
+        },
+        "filters": [],
+        "compare": "none",
+        "top": null,
+        "sort": "auto",
+        "drilldown": false,
+        "home": true,
+        "color": null,
+        "group_by": "month",
+        "filter": {
+          "include": [],
+          "exclude": []
+        }
+      }
+    },
+    {
+      "raw": {
+        "title": "Completa",
+        "kind": "table",
+        "x": {
+          "field": "merchant"
+        },
+        "period": {
+          "kind": "range",
+          "start": "2026-01-01",
+          "end": "2026-02-01"
+        },
+        "filters": [
+          {
+            "field": "amount",
+            "op": "gte",
+            "values": [10]
+          }
+        ],
+        "top": 5,
+        "sort": "label",
+        "drilldown": true,
+        "home": false,
+        "color": "#f472b6",
+        "extra_unknown": 1
+      },
+      "spec": {
+        "id": "",
+        "title": "Completa",
+        "kind": "table",
+        "measure": "spending",
+        "x": {
+          "field": "merchant",
+          "granularity": null
+        },
+        "split": null,
+        "period": {
+          "kind": "range",
+          "months": null,
+          "days": null,
+          "start": "2026-01-01",
+          "end": "2026-02-01"
+        },
+        "filters": [
+          {
+            "field": "amount",
+            "op": "gte",
+            "values": [10.0]
+          }
+        ],
+        "compare": "none",
+        "top": 5,
+        "sort": "label",
+        "drilldown": true,
+        "home": false,
+        "color": "#f472b6",
+        "group_by": null,
+        "filter": {
+          "include": [],
+          "exclude": []
+        }
+      }
+    }
+  ],
+  "captures": [
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "94,1",
+        "account": "revolut",
+        "category": "comida/restaurante",
+        "concept": "Cena \"Kumo\"",
+        "merchant": "Kumo",
+        "people": ["lucia-ferri", "tomas"],
+        "shared": true,
+        "invited": ["lucia-ferri"],
+        "date": "2026-09-18"
+      },
+      "created_at": "2026-09-18T22:58:00+02:00",
+      "today": "2026-09-18",
+      "lists": true,
+      "errors": {},
+      "base_name": "2026-09-18-2258-cena-kumo",
+      "note": "---\ntype: movement\ndate: 2026-09-18\ntime: \"22:58\"\namount: -94.10\ncurrency: EUR\nmy_share: 62.73\naccount: revolut\ncategory: comida/restaurante\nmerchant: \"Kumo\"\nconcept: \"Cena \\\"Kumo\\\"\"\npeople: [\"[[lucia-ferri]]\", \"[[tomas]]\"]\ninvited: [\"[[lucia-ferri]]\"]\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Cena \"Kumo\" 94,10 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "94,1",
+        "account": "revolut",
+        "category": "comida/restaurante",
+        "concept": "Cena \"Kumo\"",
+        "merchant": "Kumo",
+        "people": ["lucia-ferri", "tomas"],
+        "shared": true,
+        "invited": ["lucia-ferri"],
+        "date": "2026-09-18"
+      },
+      "created_at": "2026-09-18T22:58:00+02:00",
+      "today": "2026-09-18",
+      "lists": false,
+      "errors": {},
+      "base_name": "2026-09-18-2258-cena-kumo",
+      "note": "---\ntype: movement\ndate: 2026-09-18\ntime: \"22:58\"\namount: -94.10\ncurrency: EUR\nmy_share: 62.73\naccount: revolut\ncategory: comida/restaurante\nmerchant: \"Kumo\"\nconcept: \"Cena \\\"Kumo\\\"\"\npeople: [\"[[lucia-ferri]]\", \"[[tomas]]\"]\ninvited: [\"[[lucia-ferri]]\"]\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Cena \"Kumo\" 94,10 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": 90,
+        "account": "efectivo",
+        "category": "comida/restaurante",
+        "concept": "Cena",
+        "people": ["tomas", "lucia-ferri", "pablo-soler-gil"],
+        "shared": true,
+        "invited": ["tomas"],
+        "date": "today"
+      },
+      "created_at": "2026-10-19T09:05:00+02:00",
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {},
+      "base_name": "2026-10-19-0905-cena",
+      "note": "---\ntype: movement\ndate: 2026-10-19\ntime: \"09:05\"\namount: -90.00\ncurrency: EUR\nmy_share: 45.00\naccount: efectivo\ncategory: comida/restaurante\nmerchant: \nconcept: \"Cena\"\npeople: [\"[[tomas]]\", \"[[lucia-ferri]]\", \"[[pablo-soler-gil]]\"]\ninvited: [\"[[tomas]]\"]\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Cena 90,00 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": 90,
+        "account": "efectivo",
+        "category": "comida/restaurante",
+        "concept": "Cena",
+        "people": ["tomas", "lucia-ferri", "pablo-soler-gil"],
+        "shared": true,
+        "invited": ["tomas"],
+        "date": "today"
+      },
+      "created_at": "2026-10-19T09:05:00+02:00",
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {},
+      "base_name": "2026-10-19-0905-cena",
+      "note": "---\ntype: movement\ndate: 2026-10-19\ntime: \"09:05\"\namount: -90.00\ncurrency: EUR\nmy_share: 45.00\naccount: efectivo\ncategory: comida/restaurante\nmerchant: \nconcept: \"Cena\"\npeople: [\"[[tomas]]\", \"[[lucia-ferri]]\", \"[[pablo-soler-gil]]\"]\ninvited: [\"[[tomas]]\"]\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Cena 90,00 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "12.345",
+        "account": "ing",
+        "category": "bebida/cafe",
+        "concept": "",
+        "merchant": "  Café Ñandú  ",
+        "date": "today"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {},
+      "base_name": "2026-10-19-cafe-nandu",
+      "note": "---\ntype: movement\ndate: 2026-10-19\namount: -12.35\ncurrency: EUR\nmy_share: \naccount: ing\ncategory: bebida/cafe\nmerchant: \"Café Ñandú\"\nconcept: \"\"\npeople: []\ninvited: []\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Café Ñandú 12,35 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "12.345",
+        "account": "ing",
+        "category": "bebida/cafe",
+        "concept": "",
+        "merchant": "  Café Ñandú  ",
+        "date": "today"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {},
+      "base_name": "2026-10-19-cafe-nandu",
+      "note": "---\ntype: movement\ndate: 2026-10-19\namount: -12.35\ncurrency: EUR\nmy_share: \naccount: ing\ncategory: bebida/cafe\nmerchant: \"Café Ñandú\"\nconcept: \"\"\npeople: []\ninvited: []\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Café Ñandú 12,35 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "ingreso",
+        "amount": "20",
+        "account": "ing",
+        "category": "ingreso/nomina",
+        "concept": "",
+        "merchant": "",
+        "date": "2026-10-18"
+      },
+      "created_at": "2026-10-19T08:00:00+02:00",
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {},
+      "base_name": "2026-10-18-movimiento",
+      "note": "---\ntype: movement\ndate: 2026-10-18\namount: 20.00\ncurrency: EUR\nmy_share: \naccount: ing\ncategory: ingreso/nomina\nmerchant: \nconcept: \"\"\npeople: []\ninvited: []\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Movimiento 20,00 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "ingreso",
+        "amount": "20",
+        "account": "ing",
+        "category": "ingreso/nomina",
+        "concept": "",
+        "merchant": "",
+        "date": "2026-10-18"
+      },
+      "created_at": "2026-10-19T08:00:00+02:00",
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {},
+      "base_name": "2026-10-18-movimiento",
+      "note": "---\ntype: movement\ndate: 2026-10-18\namount: 20.00\ncurrency: EUR\nmy_share: \naccount: ing\ncategory: ingreso/nomina\nmerchant: \nconcept: \"\"\npeople: []\ninvited: []\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Movimiento 20,00 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "10",
+        "account": "revolut",
+        "category": "comida/restaurante",
+        "shared": true,
+        "people": ["tomas"],
+        "my_share": "3,5",
+        "date": "2026-10-19"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {},
+      "base_name": "2026-10-19-movimiento",
+      "note": "---\ntype: movement\ndate: 2026-10-19\namount: -10.00\ncurrency: EUR\nmy_share: 3.50\naccount: revolut\ncategory: comida/restaurante\nmerchant: \nconcept: \"\"\npeople: [\"[[tomas]]\"]\ninvited: []\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Movimiento 10,00 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "10",
+        "account": "revolut",
+        "category": "comida/restaurante",
+        "shared": true,
+        "people": ["tomas"],
+        "my_share": "3,5",
+        "date": "2026-10-19"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {},
+      "base_name": "2026-10-19-movimiento",
+      "note": "---\ntype: movement\ndate: 2026-10-19\namount: -10.00\ncurrency: EUR\nmy_share: 3.50\naccount: revolut\ncategory: comida/restaurante\nmerchant: \nconcept: \"\"\npeople: [\"[[tomas]]\"]\ninvited: []\nrelated: []\nstatus: pendiente\nsource: manual\nbank_ref: \ncreated: 2026-10-19\n---\n\n# Movimiento 10,00 EUR\n"
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "10",
+        "account": "revolut",
+        "category": "comida/restaurante",
+        "shared": true,
+        "people": ["tomas"],
+        "my_share": "15",
+        "date": "2026-10-19"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {
+        "my_share": "Tu parte tiene que estar entre 0 y el importe"
+      }
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "10",
+        "account": "revolut",
+        "category": "comida/restaurante",
+        "shared": true,
+        "people": ["tomas"],
+        "my_share": "15",
+        "date": "2026-10-19"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {
+        "my_share": "Tu parte tiene que estar entre 0 y el importe"
+      }
+    },
+    {
+      "values": {
+        "kind": "otro",
+        "amount": "0",
+        "account": "bbva",
+        "category": "",
+        "date": "2026-13-01"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {
+        "kind": "Tipo no valido",
+        "amount": "Pon un importe mayor que 0",
+        "account": "Elige una cuenta",
+        "category": "Elige una categoria",
+        "date": "Fecha no valida"
+      }
+    },
+    {
+      "values": {
+        "kind": "otro",
+        "amount": "0",
+        "account": "bbva",
+        "category": "",
+        "date": "2026-13-01"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {
+        "kind": "Tipo no valido",
+        "amount": "Pon un importe mayor que 0",
+        "account": "Elige una cuenta",
+        "category": "Elige una categoria",
+        "date": "Fecha no valida"
+      }
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "100001",
+        "account": "ing",
+        "category": "inventada",
+        "people": ["nadie"],
+        "date": "2026-10-25",
+        "concept": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {
+        "amount": "Importe demasiado alto",
+        "category": "Esa categoria no esta en la lista",
+        "concept": "Demasiado largo",
+        "people": "No encuentro: nadie",
+        "date": "La fecha es futura"
+      }
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "100001",
+        "account": "ing",
+        "category": "inventada",
+        "people": ["nadie"],
+        "date": "2026-10-25",
+        "concept": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {
+        "amount": "Importe demasiado alto",
+        "concept": "Demasiado largo",
+        "date": "La fecha es futura"
+      }
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "5",
+        "account": "ing",
+        "category": "ocio/cine",
+        "shared": true,
+        "people": [],
+        "date": "2026-10-20"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {
+        "people": "Si pagaste por otros, di con quien"
+      }
+    },
+    {
+      "values": {
+        "kind": "gasto",
+        "amount": "5",
+        "account": "ing",
+        "category": "ocio/cine",
+        "shared": true,
+        "people": [],
+        "date": "2026-10-20"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {
+        "people": "Si pagaste por otros, di con quien"
+      }
+    },
+    {
+      "values": {
+        "amount": "abc",
+        "account": "efectivo",
+        "category": "ocio/cine"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": true,
+      "errors": {
+        "amount": "Pon un importe mayor que 0"
+      }
+    },
+    {
+      "values": {
+        "amount": "abc",
+        "account": "efectivo",
+        "category": "ocio/cine"
+      },
+      "created_at": null,
+      "today": "2026-10-19",
+      "lists": false,
+      "errors": {
+        "amount": "Pon un importe mayor que 0"
+      }
+    }
+  ],
+  "shares": [
+    {
+      "amount": "90",
+      "people": 3,
+      "invited": 1,
+      "share": "45.00"
+    },
+    {
+      "amount": "94.1",
+      "people": 2,
+      "invited": 1,
+      "share": "62.73"
+    },
+    {
+      "amount": "10",
+      "people": 2,
+      "invited": 0,
+      "share": "3.33"
+    },
+    {
+      "amount": "0.05",
+      "people": 2,
+      "invited": 0,
+      "share": "0.02"
+    },
+    {
+      "amount": "100",
+      "people": 6,
+      "invited": 2,
+      "share": "42.86"
+    },
+    {
+      "amount": "33.33",
+      "people": 2,
+      "invited": 1,
+      "share": "22.22"
+    }
+  ],
+  "slugs": [
+    {
+      "text": "Cena con Peña y Ruíz!",
+      "max": 60,
+      "slug": "cena-con-pena-y-ruiz"
+    },
+    {
+      "text": "Cafe con leche en la cafeteria",
+      "max": 10,
+      "slug": "cafe-con-l"
+    },
+    {
+      "text": "  ¡Hola!  ",
+      "max": 60,
+      "slug": "hola"
+    },
+    {
+      "text": "---",
+      "max": 60,
+      "slug": ""
+    },
+    {
+      "text": "Ü-ber_cool 2.0",
+      "max": 60,
+      "slug": "u-ber-cool-2-0"
+    }
+  ],
+  "categories": [
+    {
+      "text": "---\ntype: wiki\ncategories:\n  - comida/restaurante\n  - \"bebida/cafe\"\n  - 'ocio/cine'\nother: 1\n---\nbody\n",
+      "categories": ["comida/restaurante", "bebida/cafe", "ocio/cine"]
+    },
+    {
+      "text": "---\ncategories: [comida/a, \"comida/b\", ocio]\n---\n",
+      "categories": ["comida/a", "comida/b", "ocio"]
+    },
+    {
+      "text": "no frontmatter\n",
+      "categories": []
+    }
+  ],
+  "movements": [
+    {
+      "row": {
+        "path": "registros/finanzas/movimientos/2026/10/2026-10-19-cafe.md",
+        "date": "2026-10-19",
+        "amount": -1.6,
+        "category": "bebida/cafe",
+        "people": ["[[tomas]]", "[[lucia-ferri|Lucía]]"],
+        "settles": "[[d-001#x]]",
+        "merchant": " Bar ",
+        "my_share": "0,8",
+        "account": "efectivo"
+      },
+      "movement": {
+        "name": "2026-10-19-cafe",
+        "date": "2026-10-19",
+        "amount": -1.6,
+        "category": "bebida/cafe",
+        "my_share": 0.8,
+        "settles": "d-001",
+        "people": ["tomas", "lucia-ferri"],
+        "invited": [],
+        "related": [],
+        "account": "efectivo",
+        "merchant": "Bar",
+        "concept": "",
+        "status": "",
+        "source": ""
+      }
+    },
+    {
+      "row": {
+        "path": "registros/finanzas/movimientos/2026/10/x.md",
+        "date": "2026-10-19T10:00:00",
+        "amount": "12",
+        "category": null,
+        "related": "[[viaje]]"
+      },
+      "movement": {
+        "name": "x",
+        "date": "2026-10-19",
+        "amount": 12.0,
+        "category": "",
+        "my_share": null,
+        "settles": "",
+        "people": [],
+        "invited": [],
+        "related": ["viaje"],
+        "account": "",
+        "merchant": "",
+        "concept": "",
+        "status": "",
+        "source": ""
+      }
+    },
+    {
+      "row": {
+        "path": "registros/finanzas/movimientos/2026/10/bad.md",
+        "date": "nope",
+        "amount": 1
+      },
+      "movement": null
+    },
+    {
+      "row": {
+        "path": "registros/finanzas/movimientos/2026/10/bad2.md",
+        "date": "2026-10-19",
+        "amount": ""
+      },
+      "movement": null
+    }
+  ],
+  "debts": [
+    {
+      "row": {
+        "path": "registros/finanzas/deudas/d-001.md",
+        "movement": "[[2026-10-19-cena]]",
+        "amount": "-12,5",
+        "direction": null,
+        "status": "pendiente"
+      },
+      "debt": {
+        "name": "d-001",
+        "movement": "2026-10-19-cena",
+        "amount": 12.5,
+        "direction": "me-deben",
+        "status": "pendiente",
+        "date": null
+      }
+    },
+    {
+      "row": {
+        "path": "registros/finanzas/deudas/d-002.md",
+        "movement": "x",
+        "amount": null
+      },
+      "debt": null
+    }
+  ],
+  "options": [
+    {
+      "source": "categories",
+      "q": "",
+      "limit": 50,
+      "options": [
+        {
+          "value": "comida/restaurante",
+          "label": "comida/restaurante",
+          "hint": null
+        },
+        {
+          "value": "comida/supermercado",
+          "label": "comida/supermercado",
+          "hint": null
+        },
+        {
+          "value": "bebida/cafe",
+          "label": "bebida/cafe",
+          "hint": null
+        },
+        {
+          "value": "ocio/cine",
+          "label": "ocio/cine",
+          "hint": null
+        },
+        {
+          "value": "ingreso/nomina",
+          "label": "ingreso/nomina",
+          "hint": null
+        },
+        {
+          "value": "transferencia/ahorro",
+          "label": "transferencia/ahorro",
+          "hint": null
+        }
+      ]
+    },
+    {
+      "source": "categories",
+      "q": "com",
+      "limit": 50,
+      "options": [
+        {
+          "value": "comida/restaurante",
+          "label": "comida/restaurante",
+          "hint": null
+        },
+        {
+          "value": "comida/supermercado",
+          "label": "comida/supermercado",
+          "hint": null
+        }
+      ]
+    },
+    {
+      "source": "groups",
+      "q": "",
+      "limit": 50,
+      "options": [
+        {
+          "value": "comida",
+          "label": "Comida",
+          "hint": null
+        },
+        {
+          "value": "bebida",
+          "label": "Bebida",
+          "hint": null
+        },
+        {
+          "value": "ingreso",
+          "label": "Ingreso",
+          "hint": null
+        },
+        {
+          "value": "transferencia",
+          "label": "Transferencia",
+          "hint": null
+        },
+        {
+          "value": "ocio",
+          "label": "Ocio",
+          "hint": null
+        }
+      ]
+    },
+    {
+      "source": "accounts",
+      "q": "",
+      "limit": 50,
+      "options": [
+        {
+          "value": "efectivo",
+          "label": "Efectivo",
+          "hint": null
+        },
+        {
+          "value": "revolut",
+          "label": "Revolut",
+          "hint": null
+        },
+        {
+          "value": "ing",
+          "label": "ING",
+          "hint": null
+        }
+      ]
+    },
+    {
+      "source": "people",
+      "q": "luc",
+      "limit": 50,
+      "options": [
+        {
+          "value": "lucia-ferri",
+          "label": "Lucia Ferri",
+          "hint": "Amiga"
+        }
+      ]
+    },
+    {
+      "source": "merchants",
+      "q": "",
+      "limit": 50,
+      "options": [
+        {
+          "value": "cine ficticio",
+          "label": "Cine ficticio",
+          "hint": null
+        },
+        {
+          "value": "Bar Inventado",
+          "label": "Bar Inventado",
+          "hint": null
+        },
+        {
+          "value": "Muy Viejo",
+          "label": "Muy Viejo",
+          "hint": null
+        },
+        {
+          "value": "Óptica Demo",
+          "label": "Óptica Demo",
+          "hint": null
+        }
+      ]
+    },
+    {
+      "source": "merchants",
+      "q": "cine",
+      "limit": 1,
+      "options": [
+        {
+          "value": "cine ficticio",
+          "label": "Cine ficticio",
+          "hint": null
+        }
+      ]
+    },
+    {
+      "source": "related",
+      "q": "",
+      "limit": 50,
+      "options": [
+        {
+          "value": "viaje-ejemplo",
+          "label": "Viaje ejemplo",
+          "hint": null
+        },
+        {
+          "value": "curso-ejemplo",
+          "label": "Curso ejemplo",
+          "hint": null
+        }
+      ]
+    },
+    {
+      "source": "statuses",
+      "q": "",
+      "limit": 50,
+      "options": [
+        {
+          "value": "conciliado",
+          "label": "Conciliado",
+          "hint": null
+        },
+        {
+          "value": "pendiente",
+          "label": "Pendiente",
+          "hint": null
+        },
+        {
+          "value": "x",
+          "label": "X",
+          "hint": null
+        }
+      ]
+    },
+    {
+      "source": "sources",
+      "q": "",
+      "limit": 50,
+      "options": [
+        {
+          "value": "banco",
+          "label": "Banco",
+          "hint": null
+        },
+        {
+          "value": "boni",
+          "label": "Boni",
+          "hint": null
+        },
+        {
+          "value": "manual",
+          "label": "Manual",
+          "hint": null
+        },
+        {
+          "value": "y",
+          "label": "Y",
+          "hint": null
+        }
+      ]
+    }
+  ],
+  "movements_for_options": [
+    {
+      "name": "m0",
+      "date": "2026-10-01",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": ["viaje-ejemplo"],
+      "account": "",
+      "merchant": "Cine Ficticio",
+      "concept": "",
+      "status": "pendiente",
+      "source": "manual"
+    },
+    {
+      "name": "m1",
+      "date": "2026-08-22",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "cine ficticio",
+      "concept": "",
+      "status": "conciliado",
+      "source": "banco"
+    },
+    {
+      "name": "m2",
+      "date": "2026-07-13",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": ["viaje-ejemplo", "curso-ejemplo"],
+      "account": "",
+      "merchant": "Bar Inventado",
+      "concept": "",
+      "status": "",
+      "source": "boni"
+    },
+    {
+      "name": "m3",
+      "date": "2026-06-03",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "Óptica Demo",
+      "concept": "",
+      "status": "conciliado",
+      "source": "banco"
+    },
+    {
+      "name": "m4",
+      "date": "2026-04-24",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "Muy Viejo",
+      "concept": "",
+      "status": "x",
+      "source": "y"
+    },
+    {
+      "name": "m5",
+      "date": "2026-03-15",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": ["viaje-ejemplo"],
+      "account": "",
+      "merchant": "Cine Ficticio",
+      "concept": "",
+      "status": "pendiente",
+      "source": "manual"
+    },
+    {
+      "name": "m6",
+      "date": "2026-02-03",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "cine ficticio",
+      "concept": "",
+      "status": "conciliado",
+      "source": "banco"
+    },
+    {
+      "name": "m7",
+      "date": "2025-12-25",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": ["viaje-ejemplo", "curso-ejemplo"],
+      "account": "",
+      "merchant": "Bar Inventado",
+      "concept": "",
+      "status": "",
+      "source": "boni"
+    },
+    {
+      "name": "m8",
+      "date": "2025-11-15",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "Óptica Demo",
+      "concept": "",
+      "status": "conciliado",
+      "source": "banco"
+    },
+    {
+      "name": "m9",
+      "date": "2025-10-06",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "Muy Viejo",
+      "concept": "",
+      "status": "x",
+      "source": "y"
+    },
+    {
+      "name": "m10",
+      "date": "2025-08-27",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": ["viaje-ejemplo"],
+      "account": "",
+      "merchant": "Cine Ficticio",
+      "concept": "",
+      "status": "pendiente",
+      "source": "manual"
+    },
+    {
+      "name": "m11",
+      "date": "2025-07-18",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "cine ficticio",
+      "concept": "",
+      "status": "conciliado",
+      "source": "banco"
+    },
+    {
+      "name": "m12",
+      "date": "2025-06-08",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": ["viaje-ejemplo", "curso-ejemplo"],
+      "account": "",
+      "merchant": "Bar Inventado",
+      "concept": "",
+      "status": "",
+      "source": "boni"
+    },
+    {
+      "name": "m13",
+      "date": "2025-04-29",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "Óptica Demo",
+      "concept": "",
+      "status": "conciliado",
+      "source": "banco"
+    },
+    {
+      "name": "m14",
+      "date": "2025-03-20",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "Muy Viejo",
+      "concept": "",
+      "status": "x",
+      "source": "y"
+    },
+    {
+      "name": "m15",
+      "date": "2025-02-08",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": ["viaje-ejemplo"],
+      "account": "",
+      "merchant": "Cine Ficticio",
+      "concept": "",
+      "status": "pendiente",
+      "source": "manual"
+    },
+    {
+      "name": "m16",
+      "date": "2024-12-30",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "cine ficticio",
+      "concept": "",
+      "status": "conciliado",
+      "source": "banco"
+    },
+    {
+      "name": "m17",
+      "date": "2024-11-20",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": ["viaje-ejemplo", "curso-ejemplo"],
+      "account": "",
+      "merchant": "Bar Inventado",
+      "concept": "",
+      "status": "",
+      "source": "boni"
+    },
+    {
+      "name": "m18",
+      "date": "2024-10-11",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "Óptica Demo",
+      "concept": "",
+      "status": "conciliado",
+      "source": "banco"
+    },
+    {
+      "name": "m19",
+      "date": "2024-09-01",
+      "amount": -5.0,
+      "category": "ocio/cine",
+      "my_share": null,
+      "settles": "",
+      "people": [],
+      "invited": [],
+      "related": [],
+      "account": "",
+      "merchant": "Muy Viejo",
+      "concept": "",
+      "status": "x",
+      "source": "y"
+    }
+  ]
+}

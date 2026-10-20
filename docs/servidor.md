@@ -158,3 +158,20 @@ estaba. El primer arranque con `system.db` vacio importa las cuentas, sesiones, 
 conectados con su mismo token. La CLI tiene los mismos comandos y, ademas, `devices <usuario>` y `revoke <usuario>
 <dispositivo>` (cerrar solo un dispositivo). Una cuenta sin carpeta del vault (solo Boni) recibe 403 en el calendario.
 
+
+## API v1 de Boni (2026-10-20)
+El servidor habla tambien la API v1 del primer Boni (`/api/v1/*` y `/healthz`, `src/v1/`), asi las apps de Boni
+(escritorio y Android) pasan a este servidor sin cambiar nada: mismas rutas, mismos cuerpos y los mismos mensajes de
+error. Solo en la entrada tailnet (como el servidor de Boni, que nunca fue publico): en la entrada publica no existe.
+- Las graficas se calculan con `@boni/views` sobre las notas de dinero del vault de la cuenta
+  (`registros/finanzas/movimientos`, `deudas`, `categorias.md`, `registros/personas`), leidas con `vault-fs.cjs` (nunca
+  `private/` ni `restricted/`).
+- "Apuntar gasto" escribe la nota del movimiento con el mismo formato que antes, sin pisar nunca otra (`-2`, `-3`...), una
+  sola vez por `client_id`; si el vault no responde queda en cola y se escribe al minuto. Necesita `BONI_WRITE=1`.
+- Graficas, atajos, widgets (por dispositivo), preferencias y capturas viven en `system.db`, por cuenta.
+- `BONI_TZ` (por defecto `Europe/Madrid`): el "hoy" de las graficas y la hora de una captura.
+- Traer lo del servidor antiguo: `node src/cli.ts import-boni <boni.sqlite3> <usuario>` ensaya y dice que moveria;
+  con `--apply` lo mueve (cuentas y sesiones, asi los dispositivos siguen conectados, y graficas, atajos, widgets,
+  preferencias y capturas). Repetirlo no duplica nada.
+- Al desplegarlo: el nodo con Funnel tiene que llevar a la entrada publica (`BONI_PUBLIC_PORT`) y las apps de Boni a la
+  completa por la tailnet; si Funnel llevara a la completa, la API v1 quedaria en internet (con sesion, pero publica).

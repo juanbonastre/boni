@@ -1,0 +1,29 @@
+{
+  "shortcuts": [
+    {
+      "id": "cafe",
+      "label": "Caf\u00e9",
+      "screen": "capture-expense",
+      "values": {
+        "kind": "gasto",
+        "amount": 1.6,
+        "account": "efectivo",
+        "category": "bebida/cafe",
+        "concept": "Cafe"
+      },
+      "mode": "save",
+      "color": "#fb923c"
+    },
+    {
+      "id": "comida-con-pablo",
+      "label": "Comida con Pablo",
+      "screen": "capture-expense",
+      "values": {
+        "people": ["pablo-soler-gil"],
+        "shared": true
+      },
+      "mode": "open",
+      "color": null
+    }
+  ]
+}

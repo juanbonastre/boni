@@ -8,8 +8,12 @@ import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
-import { allowed, type Listener, ROUTES } from "./routes.ts";
+import { bodyOf, CORS, header, SAFE, send, tokenOf } from "./reply.ts";
+import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
 import type { SecretKey } from "./secret.ts";
+import { serveV1 } from "./v1/http.ts";
+import { V1Service } from "./v1/service.ts";
+import { V1Store } from "./v1/store.ts";
 import type { Vaults } from "./vaults.ts";
 
 /**
@@ -31,6 +35,7 @@ import type { Vaults } from "./vaults.ts";
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
  *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change)
  * The stream also sends an "account" event ({ updated }) when the account's prefs or calendars change.
+ * The first Boni's API v1 (/api/v1/..., /healthz) is v1/http.ts, on the tailnet only.
  * Anything else is the web app (static files of apps/calendar-web/dist), so a browser can open the calendar.
  */
 export interface ServerOptions {
@@ -50,6 +55,16 @@ export interface ServerOptions {
   listener?: Listener;
   /** The allow-list (tests only; ROUTES when missing). */
   routes?: Readonly<Record<string, "public" | "tailnet">>;
+  /** The server's time zone for the Boni API v1 (BONI_TZ): "today", a capture's time. */
+  tz?: string;
+  /** The clock (tests only). */
+  now?: () => number;
+}
+
+export interface App {
+  handler(listener: Listener): (req: IncomingMessage, res: ServerResponse) => void;
+  /** Stops its timers. */
+  close(): void;
 }
 
 const MIME: Record<string, string> = {
@@ -61,25 +76,6 @@ const MIME: Record<string, string> = {
   ".png": "image/png",
   ".ico": "image/x-icon",
   ".map": "application/json",
-};
-
-/**
- * The desktop and Android apps are not served from here (another origin), so the API allows any
- * origin. That is safe because access is by a bearer token the app holds, never by cookies a browser
- * would send on its own.
- */
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization, content-type",
-  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "access-control-max-age": "600",
-};
-
-/** On every answer: no guessing of types, no referrer, HTTPS from now on (Funnel and serve are HTTPS). */
-const SAFE = {
-  "x-content-type-options": "nosniff",
-  "referrer-policy": "no-referrer",
-  "strict-transport-security": "max-age=31536000",
 };
 
 /**
@@ -95,47 +91,12 @@ const PAGE = {
   "x-frame-options": "DENY",
 };
 
-function send(res: ServerResponse, status: number, body: unknown): void {
-  const text = JSON.stringify(body);
-  res.writeHead(status, {
-    ...CORS,
-    ...SAFE,
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-    "content-length": Buffer.byteLength(text),
-  });
-  res.end(text);
-}
-
-async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const c of req) {
-    size += (c as Buffer).length;
-    if (size > 8_000_000) throw new Error("too large");
-    chunks.push(c as Buffer);
-  }
-  const text = Buffer.concat(chunks).toString("utf8");
-  return text ? (JSON.parse(text) as Record<string, unknown>) : {};
-}
-
-const header = (req: IncomingMessage, name: string): string | undefined => {
-  const v = req.headers[name];
-  return Array.isArray(v) ? v[0] : v;
-};
-
-const tokenOf = (req: IncomingMessage): string | null => {
-  const h = req.headers.authorization;
-  return h?.startsWith("Bearer ") ? h.slice(7).trim() : null;
-};
-
 /** One server per entry, all sharing one app (login limits, live streams): see `makeApp`. */
 export function makeServer(opts: ServerOptions): Server {
-  return serve(makeApp(opts), opts.listener ?? "tailnet");
-}
-
-export interface App {
-  handler(listener: Listener): (req: IncomingMessage, res: ServerResponse) => void;
+  const app = makeApp(opts);
+  const server = serve(app, opts.listener ?? "tailnet");
+  server.on("close", () => app.close());
+  return server;
 }
 
 /** An HTTP server for one entry of `app`. */
@@ -190,6 +151,37 @@ export function makeApp(opts: ServerOptions): App {
   }
   const webRoot = opts.webDir ? resolve(opts.webDir) : null;
 
+  const tz = opts.tz ?? "Europe/Madrid";
+  const v1 = new V1Service({
+    store: new V1Store(db),
+    tz,
+    writable: vaults.writable,
+    ...(opts.now ? { now: opts.now } : {}),
+  });
+  const vaultOf = (id: number): string | null => {
+    const r = db.prepare("SELECT vault FROM accounts WHERE id = ?").get(id) as
+      | { vault: string | null }
+      | undefined;
+    return r ? (r.vault ?? "") : null;
+  };
+  const hasVault = () =>
+    !!db.prepare("SELECT 1 FROM accounts WHERE vault IS NOT NULL AND vault != '' LIMIT 1").get();
+  // Captures that could not be written yet, and the apps told when their money notes change.
+  const flush = () => {
+    try {
+      const n = v1.flushOutbox(vaultOf);
+      if (n) console.log(`v1 outbox: ${n} capture(s) written`);
+    } catch (e) {
+      console.error("v1 outbox", e);
+    }
+  };
+  flush();
+  const timers = [
+    setInterval(flush, 60_000),
+    setInterval(() => v1.checkData((id) => vaultOf(id) ?? ""), 60_000),
+  ];
+  for (const t of timers) t.unref();
+
   const authed = (req: IncomingMessage, res: ServerResponse): User | null => {
     const user = userOf(db, tokenOf(req));
     if (!user) send(res, 401, { error: "unauthorized" });
@@ -206,9 +198,11 @@ export function makeApp(opts: ServerOptions): App {
       res.writeHead(204, CORS);
       return void res.end();
     }
-    const route = `${req.method} ${url.pathname}`;
+    const { route, params } = routeOf(req.method, url.pathname, routes);
     // Before anything else, login included: on the public entry only the allow-list exists.
     if (!allowed(route, listener, routes)) return send(res, 404, { error: "not-found" });
+    if (route === "GET /healthz" || url.pathname.startsWith("/api/v1/"))
+      return serveV1({ svc: v1, db, guard, tz, hasVault }, req, res, url, route, params, listener);
     if (route === "POST /api/login") {
       const b = await bodyOf(req);
       const name = String(b.user ?? "").slice(0, 64);
@@ -398,11 +392,15 @@ export function makeApp(opts: ServerOptions): App {
   };
 
   return {
+    close: () => {
+      for (const t of timers) clearInterval(t);
+    },
     handler: (listener) => (req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
-      const handle = url.pathname.startsWith("/api/")
-        ? api(req, res, url, listener)
-        : staticFile(res, url.pathname);
+      const handle =
+        url.pathname.startsWith("/api/") || url.pathname === "/healthz"
+          ? api(req, res, url, listener)
+          : staticFile(res, url.pathname);
       handle.catch((e) => {
         console.error(e);
         if (!res.headersSent) send(res, 500, { error: "server" });

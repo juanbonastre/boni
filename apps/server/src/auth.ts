@@ -58,6 +58,20 @@ export function userOf(db: Db, token: string | null | undefined): User | null {
   return s ? { id: s.account.id, name: s.account.name, vault: s.account.vault ?? "" } : null;
 }
 
+/** The account and the device of a session (the Boni API v1 keeps widgets and preferences per device). */
+export function sessionUser(
+  db: Db,
+  token: string | null | undefined,
+): { user: User; device: string } | null {
+  const s = sessionOf(db, token);
+  return s
+    ? {
+        user: { id: s.account.id, name: s.account.name, vault: s.account.vault ?? "" },
+        device: s.device.name,
+      }
+    : null;
+}
+
 export function logout(db: Db, token: string): void {
   identityLogout(db, token);
 }

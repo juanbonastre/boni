@@ -23,6 +23,7 @@ import { Vaults } from "./vaults.ts";
  *                    server); push is off without it
  *   BONI_PUSH_TOKEN  sent as a bearer token when posting to them (an ntfy account that may write up* topics)
  *   BONI_BACKUPS     daily copies of the database to keep in backups/ next to it   default 14 (0: none)
+ *   BONI_TZ     the time zone of the Boni API v1 ("today", the time a capture was saved)   default Europe/Madrid
  */
 const paths = databasePaths();
 const dbPath = paths.system;
@@ -54,6 +55,7 @@ const app = makeApp({
   feeds,
   ...(push ? { push } : {}),
   webDir: process.env.BONI_WEB ?? null,
+  tz: process.env.BONI_TZ ?? "Europe/Madrid",
 });
 const port = Number(process.env.BONI_PORT ?? 8787);
 const host = process.env.BONI_HOST ?? "127.0.0.1";
@@ -74,6 +76,7 @@ if (publicServer && publicPort !== null) {
 
 const stop = () => {
   stopBackups();
+  app.close();
   server.close();
   publicServer?.close();
   vaults.close();

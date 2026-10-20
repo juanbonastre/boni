@@ -17,7 +17,8 @@
     "@boni/calendar": "workspace:*",
     "@boni/calendar-web": "workspace:*",
     "@boni/identity": "workspace:*",
-    "@boni/net": "workspace:*"
+    "@boni/net": "workspace:*",
+    "@boni/views": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

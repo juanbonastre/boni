@@ -261,6 +261,9 @@ importers:
       '@boni/net':
         specifier: workspace:*
         version: link:../../packages/net
+      '@boni/views':
+        specifier: workspace:*
+        version: link:../../packages/views
     devDependencies:
       '@types/node':
         specifier: 24.19.2
