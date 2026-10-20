@@ -45,7 +45,7 @@ install-obsidian: plugin ## Copy the plugin into a vault: make install-obsidian 
 	node apps/obsidian-plugin/install.mjs "$(VAULT)"
 
 e2e-obsidian: plugin ## The plugin in the installed Obsidian (temporary profile and invented vault)
-	pnpm exec playwright test -c playwright.obsidian.config.ts plugin.spec.ts
+	pnpm exec playwright test -c playwright.obsidian.config.ts plugin.spec.ts core.spec.ts
 
 bench-obsidian: plugin ## Smoothness benchmark inside the installed Obsidian (opens a window)
 	BONI_BENCH=1 pnpm exec playwright test -c playwright.obsidian.config.ts bench.spec.ts

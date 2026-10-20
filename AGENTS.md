@@ -98,7 +98,8 @@ apps/obsidian-plugin/  The same app as an Obsidian plugin (desktop only, `make p
                  `view.ts` mounts the app in a shadow root (Obsidian's CSS and ours never meet) and leaves the
                  calendar's Mod shortcuts to it through the view's `Scope`; `bridge.ts` is the `VaultBridge`
                  over Obsidian's API (`vault.process`, `fileManager.renameFile` / `trashFile`, vault events),
-                 unit-tested against `fakeObsidian.ts`. Writing is on by default there; one calendar tab at a
+                 unit-tested against `fakeObsidian.ts`. It works alone over its vault; Settings → Data can make it a client of a
+                 Boni server instead (optional, docs/nucleo.md 9.4). Writing is on by default there; one calendar tab at a
                  time (the store is a singleton). The index lives in IndexedDB (`cache.ts`), settings in
                  `app.saveLocalStorage`: per device, never in `.obsidian/` (Syncthing carries it).
 apps/calendar-android/ The same app on Android (Kotlin shell, `make`-less: CI builds it, android.yml): the built web UI in a
@@ -172,7 +173,9 @@ legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, 
 - `make bench-chrome` / `make bench-electron` smoothness benchmark in a real window (see `docs/rendimiento.md`)
 - `make plugin` build the Obsidian plugin · `make install-obsidian VAULT=/path/to/vault` copy it into a vault
 - `make e2e-obsidian` / `make bench-obsidian` the plugin in the Obsidian installed here (`OBSIDIAN_BIN`, default
-  `/opt/Obsidian/obsidian`), always on a temporary profile and an invented vault (`e2e-obsidian/obsidian.ts`); not in CI
+  `/opt/Obsidian/obsidian`), always on a temporary profile and an invented vault (`e2e-obsidian/obsidian.ts`); not in CI.
+  `core.spec.ts` there: a remote image in a mirror note from outside text never loads in Obsidian, and the plugin against
+  a local Boni server
 
 ## Rules
 

@@ -129,7 +129,8 @@ const TIMEZONES = [
 /**
  * Settings → Data: where the calendars come from. With a vault folder (desktop, Android) the device
  * chooses between that folder and a Boni Calendar Server; a plain browser can only use a server; the
- * Obsidian plugin always shows its own vault.
+ * Obsidian plugin chooses between the vault it runs in (the default: it works alone) and a server
+ * (docs/nucleo.md 9.4: connecting to Boni is optional).
  */
 function DataSettings() {
   const source = useApp((s) => s.source);
@@ -137,16 +138,8 @@ function DataSettings() {
   const folder = !!vaultBridge();
   const fixed = !!getHost().fixedVault;
   const [mode, setMode] = useState<"local" | "server">(
-    source === "server" || hasServer || !folder ? "server" : "local",
+    source === "server" || hasServer || (!folder && !fixed) ? "server" : "local",
   );
-  if (fixed) {
-    return (
-      <>
-        <h3>{t("settings.data")}</h3>
-        <VaultSettings />
-      </>
-    );
-  }
   const choose = (m: "local" | "server") => {
     setMode(m);
     if (m === "local" && useApp.getState().settings.server)
@@ -155,13 +148,16 @@ function DataSettings() {
   return (
     <>
       <h3>{t("settings.data")}</h3>
-      {folder && (
+      {(folder || fixed) && (
         <Field label={t("settings.origin")}>
           <Segmented
             value={mode}
             onChange={choose}
             options={[
-              { v: "local", label: t("settings.origin.local") },
+              {
+                v: "local",
+                label: t(fixed ? "settings.origin.thisVault" : "settings.origin.local"),
+              },
               { v: "server", label: t("settings.origin.server") },
             ]}
           />
