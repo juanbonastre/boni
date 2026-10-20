@@ -10,6 +10,8 @@ export { type KeyProvider, open, seal, type WrappedKeys, wrappedKeyProvider } fr
 export { MIGRATIONS, migrate } from "./migrations.ts";
 export {
   type Actor,
+  AI_LEVELS,
+  type AiLevel,
   BODY,
   entityLabel,
   type LogRow,

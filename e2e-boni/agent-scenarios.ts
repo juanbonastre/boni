@@ -246,3 +246,12 @@ export const MIRROR_PROPOSAL = {
     },
   ],
 };
+
+/** What the models may see, per collection (invented collections). */
+export const VISIBILITY = {
+  types: [
+    { id: "t_diario", name: "Diario", level: "hidden", count: 31 },
+    { id: "t_movimiento", name: "Movimientos", level: "opaque", count: 553 },
+    { id: "t_proyecto", name: "Proyectos", level: "visible", count: 82 },
+  ],
+};

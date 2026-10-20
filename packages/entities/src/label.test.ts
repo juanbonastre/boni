@@ -9,6 +9,7 @@ import {
   type Label,
   label,
   labeled,
+  modelMaySee,
   plannerMaySee,
   raiseSensitivity,
   SENSITIVITY_ORDER,
@@ -86,6 +87,16 @@ describe("labels", () => {
     const glued = derive(`${a.value}${b.value}`, a, b);
     expect(glued.label.integrity).toBe("user");
     expect(canBeDestination(glued)).toBe(false);
+  });
+
+  it("what Juan keeps from the models stays kept in everything made from it", () => {
+    const kept = { ...label("user", "personal", []), noModel: true as const };
+    const juan = label("user", "public", [{ kind: "turn", id: "t1" }]);
+    expect(join(juan, kept).noModel).toBe(true);
+    expect(join(kept, juan).noModel).toBe(true);
+    expect(plannerMaySee(join(juan, kept))).toBe(false);
+    expect(modelMaySee(join(juan, kept))).toBe(false);
+    expect("noModel" in join(juan, juan)).toBe(false);
   });
 
   it("the planner sees everything except external and ambient text", () => {

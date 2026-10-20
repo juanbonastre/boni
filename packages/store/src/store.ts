@@ -46,6 +46,9 @@ export interface Write {
 export type Writes = Record<string, Write>;
 export const BODY = "$body";
 
+export type AiLevel = "visible" | "opaque" | "hidden";
+export const AI_LEVELS: readonly AiLevel[] = ["visible", "opaque", "hidden"];
+
 /** One operation of the log, as stored (`before` / `after` / `label` parsed). */
 export interface LogRow {
   seq: number;
@@ -119,6 +122,13 @@ export interface UserStore {
   readQuery(sql: string, params?: (string | number | null)[]): Record<string, unknown>[];
   /** The operation log, oldest first, for an export (`log.ndjson`); never the agent's journal. */
   log(): LogRow[];
+  /**
+   * What the models may see of each type: `visible` (the default), `opaque` (the planner knows the type and
+   * code works with its values, but no model reads them) or `hidden` (as if it did not exist). Juan sets it
+   * (a personal device, `setAiAccess`); no tool of the agent can.
+   */
+  aiAccess(): Record<TypeId, AiLevel>;
+  setAiAccess(type: TypeId, level: AiLevel, by: string): void;
   /** An encrypted copy of the whole store, coherent while it is in use. */
   backupTo(path: string, key: Buffer): void;
   /** The agent's runs, proposals and confirmations, in this same database. */
@@ -657,6 +667,20 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
         if (!seqs.length) throw new StoreError("undo", `nothing to undo in run "${run}"`);
         return seqs.map((s) => undoOne(s, meta)); // newest first; any conflict rolls all of it back
       }),
+    aiAccess() {
+      const out: Record<TypeId, AiLevel> = {};
+      for (const r of db.prepare("SELECT type, level FROM ai_access").all())
+        out[r.type as string] = r.level as AiLevel;
+      return out;
+    },
+    setAiAccess(type, level, by) {
+      if (!AI_LEVELS.includes(level)) throw new StoreError("invalid", `bad level ${level}`);
+      if (!fresh().types[type]) throw new StoreError("not-found", `no type ${type}`);
+      db.prepare(
+        "INSERT INTO ai_access (type, level, at, by) VALUES (?, ?, ?, ?) " +
+          "ON CONFLICT (type) DO UPDATE SET level = excluded.level, at = excluded.at, by = excluded.by",
+      ).run(type, level, now(), by);
+    },
     log() {
       const parse = (x: unknown) => (typeof x === "string" ? JSON.parse(x) : null);
       return db

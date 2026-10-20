@@ -72,7 +72,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         const decided = /^api\/agent\/proposals\/([^/]+)\//.exec(p);
         if (decided && inbox) inbox = inbox.filter((x) => x.id !== decided[1]);
         if (p.startsWith("api/agent/")) {
-          const key = `${method} ${p.replace(/\/proposals\/[^/]+\//, "/proposals/:id/").replace(/\/runs\/[^/]+\//, "/runs/:id/")}`;
+          const key = `${method} ${p
+            .replace(/\/proposals\/[^/]+\//, "/proposals/:id/")
+            .replace(/\/runs\/[^/]+\//, "/runs/:id/")
+            .replace(/\/visibility\/[^/]+$/, "/visibility/:type")}`;
           const list = opts.agent?.[key];
           if (!list?.length) return [503, '{"error":"agent-off"}'];
           const n = agentCalls[key] ?? 0;

@@ -1,6 +1,13 @@
 import { useMemo } from "react";
 import { create } from "zustand";
-import { AgentApi, type Proposal, type RunSummary, type TurnResult } from "./core/agent.ts";
+import {
+  AgentApi,
+  type AiLevel,
+  type Proposal,
+  type RunSummary,
+  type TurnResult,
+  type Visibility,
+} from "./core/agent.ts";
 import { ApiError, BoniApi, NotConfiguredError, OfflineError } from "./core/api.ts";
 import { normalize } from "./core/chartBuilder.ts";
 import { ChartRepository, type ChartState } from "./core/charts.ts";
@@ -996,4 +1003,25 @@ export async function undoRun(id: string) {
     toast(e instanceof ApiError && e.status === 409 ? t("log.cannotUndo") : errorText(t, e));
   }
   await loadRuns();
+}
+
+/** What the models may see of each collection, or null when the agent is off or unreachable. */
+export async function loadVisibility(): Promise<Visibility[] | null> {
+  try {
+    return await agent.visibility();
+  } catch {
+    return null;
+  }
+}
+
+/** Juan's choice for one collection (a personal device only); true when the server took it. */
+export async function changeVisibility(id: string, level: AiLevel): Promise<boolean> {
+  const t = useStore.getState().t;
+  try {
+    await agent.setVisibility(id, level);
+    return true;
+  } catch (e) {
+    toast(e instanceof ApiError && e.status === 403 ? t("ai.personal") : t("ai.failed"));
+    return false;
+  }
 }

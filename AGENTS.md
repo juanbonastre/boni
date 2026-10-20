@@ -62,7 +62,10 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  class (`tools.ts`), the policy engine `decide` (`policy.ts`, rules P0-P16 in order, deny by default),
                  `toPlannerView` (`view.ts`, the only way into the planner: what it may not see becomes a handle),
                  quarantined readers (`readers.ts`), confirmations painted by code and bound to a hash (`confirm.ts`),
-                 and the interpreter and turn (`agent.ts`: ask, confirm, inbox, undo by run, limits). Providers:
+                 and the interpreter and turn (`agent.ts`: ask, confirm, inbox, undo by run, limits).
+                 What Juan keeps from the models (per type: visible / opaque / hidden, `store.aiAccess()`) is
+                 applied in `readStore`, the agent's only read view: hidden types do not exist there, opaque ones
+                 carry `noModel` on every value (planner handles, no reader: R3). Providers:
                  `fake` and `adversary` only (the real one comes later). `test/injections/*.json` is the injection
                  corpus: the attacker plans, the reader repeats the attacker and Juan says yes to everything, and
                  the properties of `test/adversarial.ts` must hold; `random-plans.test.ts` does the same with 300

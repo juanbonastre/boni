@@ -42,6 +42,8 @@ interface Group {
   name: string;
   sensitivity: Sensitivity;
   thirdParty?: boolean;
+  /** Kept from the models until Juan says otherwise (docs/nucleo.md 7.3; decided by Juan, 2026-10-20). */
+  hiddenFromModels?: boolean;
 }
 
 /** Folder → type, most specific first (vault conventions). Anything else is a "nota". */
@@ -74,7 +76,13 @@ const GROUPS: Group[] = [
   },
   { prefix: "proyectos/", key: "proyecto", name: "Proyecto", sensitivity: "personal" },
   { prefix: "areas/", key: "area", name: "Área", sensitivity: "personal" },
-  { prefix: "diario/", key: "diario", name: "Diario", sensitivity: "sensitive" },
+  {
+    prefix: "diario/",
+    key: "diario",
+    name: "Diario",
+    sensitivity: "sensitive",
+    hiddenFromModels: true,
+  },
   {
     prefix: "NotionImport/",
     key: "notion",
@@ -83,7 +91,7 @@ const GROUPS: Group[] = [
   },
 ];
 const NOTE_GROUP: Group = { prefix: "", key: "nota", name: "Nota", sensitivity: "personal" };
-/** Calendars whose events are sensitive by nature. */
+/** Calendars whose events are sensitive by nature (and kept from the models until Juan says otherwise). */
 const SENSITIVE_CALENDARS = new Set(["salud"]);
 
 /** Hidden fields where each entity keeps its note's path and hash (the mirror reads the path too). */
@@ -122,6 +130,8 @@ export interface ImportReport {
   failed: { path: string; error: string }[];
   /** Types that would not check (nothing is written while there is any). */
   typeProblems: string[];
+  /** Types kept from the models by default (unless Juan already chose otherwise). */
+  hiddenFromModels: string[];
 }
 
 interface Note {
@@ -281,6 +291,7 @@ export function importVault(
     unresolvedLinks: 0,
     failed: [],
     typeProblems: [],
+    hiddenFromModels: [],
   };
 
   // ------------------------------------------------ read every note once
@@ -470,6 +481,17 @@ export function importVault(
         if (!have.fields.some((x) => x.id === f.id))
           store.applySchema({ op: "add_field", type: def.id, field: f }, meta);
     }
+  }
+
+  // What the models may see: Diario and Salud start hidden; a choice Juan already made is never changed.
+  for (const [typeId, members] of groups) {
+    const first = members[0] as Note;
+    const hide = first.calendar
+      ? SENSITIVE_CALENDARS.has(first.calendar.id)
+      : !!(first.group as Group).hiddenFromModels;
+    if (!hide) continue;
+    report.hiddenFromModels.push(typeId);
+    if (apply && !(typeId in store.aiAccess())) store.setAiAccess(typeId, "hidden", "import");
   }
 
   // ------------------------------------------------ entities: first without relations, then relations
