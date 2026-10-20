@@ -139,7 +139,8 @@ export interface UserStore {
 export function openUserStore(path: string, opts: { now?: () => number } = {}): UserStore {
   const now = opts.now ?? Date.now;
   const db = new DatabaseSync(path);
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  // Another process (the import, a command) may be writing: wait for it instead of failing at once.
+  db.exec("PRAGMA busy_timeout = 15000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
   db.enableDefensive(true);
   migrate(db);
 

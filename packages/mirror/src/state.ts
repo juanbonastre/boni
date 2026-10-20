@@ -60,6 +60,7 @@ export interface MirrorState {
 export function openMirrorState(path: string): MirrorState {
   const db = new DatabaseSync(path);
   db.exec(`
+    PRAGMA busy_timeout = 15000;
     PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS types (type TEXT PRIMARY KEY, profile TEXT NOT NULL, folder TEXT NOT NULL,
       props TEXT NOT NULL, schema INTEGER NOT NULL);
