@@ -134,6 +134,19 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
   migrate(db);
 
   let schema: Schema = loadSchema();
+  // Another connection to this file (the vault import, `cli.ts mirror`, a second server process) may have
+  // changed the schema: SQLite's data_version moves when someone else commits, and then it is read again.
+  const versionQuery = db.prepare("PRAGMA data_version");
+  const dataVersion = () => Number((versionQuery.get() as { data_version: number }).data_version);
+  let seen = dataVersion();
+  function fresh(): Schema {
+    const v = dataVersion();
+    if (v !== seen) {
+      seen = v;
+      schema = loadSchema();
+    }
+    return schema;
+  }
 
   function loadSchema(): Schema {
     const rows = db.prepare("SELECT def FROM types").all() as { def: string }[];
@@ -147,6 +160,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
 
   function tx<T>(fn: () => T): T {
     db.exec("BEGIN IMMEDIATE");
+    fresh(); // with the write lock held: nobody else can change it now
     try {
       const out = fn();
       db.exec("COMMIT");
@@ -573,7 +587,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
   // ------------------------------------------------------------ the API
 
   return {
-    schema: () => schema,
+    schema: () => fresh(),
     applySchema: (op, meta) => tx(() => doSchema(op, meta)),
     create: (type, writes, meta, id = newId("e")) => tx(() => doCreate(type, writes, meta, id)),
     update: (id, writes, meta, expectedVersion) =>
