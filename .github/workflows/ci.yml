@@ -21,9 +21,39 @@ jobs:
       - run: pnpm build
       - run: pnpm --filter @boni/obsidian-plugin build
 
-  e2e:
+  # Which browser suites a pull request needs (pushes to main run both). A change outside the paths of one app
+  # (agent, server, docs...) skips that app's suite; shared files (lockfile, configs, CI, packages the app
+  # uses) run it.
+  changes:
     runs-on: ubuntu-24.04
-    needs: check
+    outputs:
+      calendar: ${{ steps.diff.outputs.calendar }}
+      boni: ${{ steps.diff.outputs.boni }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "calendar=true" >> "$GITHUB_OUTPUT"; echo "boni=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          printf '%s\n' "$files"
+          shared='^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig[^/]*\.json|biome\.json|\.github/)'
+          has() { printf '%s\n' "$files" | grep -Eq "$1|$shared" && echo true || echo false; }
+          echo "calendar=$(has '^(apps/calendar-web/|apps/calendar-desktop/|packages/calendar/|e2e/|playwright\.config\.ts)')" >> "$GITHUB_OUTPUT"
+          echo "boni=$(has '^(apps/boni-web/|e2e-boni/|playwright\.boni\.config\.ts)')" >> "$GITHUB_OUTPUT"
+
+  # The calendar's suite in two halves on two machines; Boni's on a third. All start without waiting for `check`.
+  e2e-calendar:
+    needs: changes
+    if: needs.changes.outputs.calendar == 'true'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -32,20 +62,62 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - id: pw
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm exec playwright test
+      - run: pnpm exec playwright test --shard=${{ matrix.shard }}/2
         env:
           CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-calendar-${{ matrix.shard }}
+          path: e2e/screenshots
+
+  e2e-boni:
+    needs: changes
+    if: needs.changes.outputs.boni == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: pw
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm exec playwright test -c playwright.boni.config.ts
         env:
           CI: "1"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: screenshots
-          path: |
-            e2e/screenshots
-            e2e-boni/screenshots
+          name: screenshots-boni
+          path: e2e-boni/screenshots
+
+  # The check `main` requires: the suites that ran passed (a skipped one is not needed by the change).
+  e2e:
+    needs: [changes, e2e-calendar, e2e-boni]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo "changes=${{ needs.changes.result }} calendar=${{ needs.e2e-calendar.result }} boni=${{ needs.e2e-boni.result }}"
+          [ "${{ needs.changes.result }}" = success ] || exit 1
+          for r in "${{ needs.e2e-calendar.result }}" "${{ needs.e2e-boni.result }}"; do
+            case "$r" in success | skipped) ;; *) exit 1 ;; esac
+          done
 
   package:
     runs-on: ubuntu-24.04
