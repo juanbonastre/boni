@@ -41,6 +41,7 @@ export const FNS: Readonly<Record<string, [number, number]>> = {
   field: [2, 2],
   filter_eq: [3, 3],
   concat: [1, 10],
+  list: [1, 20],
   obj: [2, 40],
   length: [1, 1],
   eq: [2, 2],
@@ -58,7 +59,7 @@ export const MAX_STEPS = 40;
 export const MAX_EACH = 50;
 const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   extract_tasks: [],
-  classify: ["options"],
+  classify: ["options", "question"],
   summarize: [],
   rewrite: ["instruction"],
   answer_about: ["question"],
