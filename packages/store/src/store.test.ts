@@ -569,3 +569,29 @@ describe("the agent's journal", () => {
     expect(j.spent("2026-10-21", "reader")).toBe(0);
   });
 });
+
+describe("two processes on one store", () => {
+  it("a write waits while another connection holds the lock, instead of failing", async () => {
+    const { store, dir } = fresh();
+    const { Worker } = await import("node:worker_threads");
+    const path = join(dir, "boni.db");
+    // Another connection (in its own thread, as the import would be) takes the write lock for a moment.
+    const worker = new Worker(
+      `const { DatabaseSync } = require("node:sqlite");
+       const { parentPort, workerData } = require("node:worker_threads");
+       const db = new DatabaseSync(workerData);
+       db.exec("BEGIN IMMEDIATE");
+       parentPort.postMessage("locked");
+       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 400);
+       db.exec("COMMIT");
+       db.close();`,
+      { eval: true, workerData: path },
+    );
+    await new Promise((r) => worker.once("message", r));
+    const t0 = Date.now();
+    const e = store.create("t_libro", { f_titulo: { value: "Espera", label: JUAN } }, me);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(200);
+    expect(store.get(e.entity.id)?.entity.values.f_titulo).toBe("Espera");
+    await worker.terminate();
+  });
+});
