@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { create } from "zustand";
+import { AgentApi, type Proposal, type RunSummary, type TurnResult } from "./core/agent.ts";
 import { ApiError, BoniApi, NotConfiguredError, OfflineError } from "./core/api.ts";
 import { normalize } from "./core/chartBuilder.ts";
 import { ChartRepository, type ChartState } from "./core/charts.ts";
@@ -50,7 +51,12 @@ const OPTION_LIST_LIMIT = 500;
 const RELOAD_EVERY_MINUTES = 15;
 const DELETE_AFTER_MS = 6000;
 
-export type View = { kind: "home" } | { kind: "chart"; id: string; drill?: string | null };
+export type View =
+  | { kind: "home" }
+  | { kind: "chart"; id: string; drill?: string | null }
+  | { kind: "chat" }
+  | { kind: "inbox" }
+  | { kind: "log" };
 /**
  * The right side panel (on the phone, a sheet over the whole screen): a server screen (the capture form, maybe
  * filled in by a shortcut), the chart editor or the shortcut editor.
@@ -60,8 +66,16 @@ export type Panel =
   | { kind: "screen"; id: string; values?: F.Values; shortcut?: string }
   | { kind: "edit"; spec: ChartSpec; isNew: boolean }
   | { kind: "shortcut"; shortcut: Shortcut; isNew: boolean };
-/** The phone's two tabs: capturing (shortcuts) and the charts. */
-export type Tab = "capture" | "charts";
+/** The phone's tabs: capturing (shortcuts), the charts and the conversation with Boni. */
+export type Tab = "capture" | "charts" | "boni";
+
+/** One turn of the conversation: what Juan asked and what the agent answered (painted by the code). */
+export interface ChatEntry {
+  id: string;
+  request: string;
+  result: TurnResult | null;
+  error: string | null;
+}
 
 export type SubmitOutcome =
   | { kind: "done" | "queued"; message: string }
@@ -108,6 +122,14 @@ interface State {
   rejected: QueuedAction[];
   loadError: string | null;
   toast: Toast | null;
+  /** The conversation with the agent (this device's, kept for the session). */
+  chat: ChatEntry[];
+  chatBusy: boolean;
+  /** Proposals waiting in the inbox, and the agent's latest runs (the log). */
+  inbox: Proposal[];
+  runs: RunSummary[];
+  /** Flips with every confirmation, so its button is never where the last one was. */
+  confirmFlip: boolean;
 }
 
 export const configured = (s: ClientSettings) => Boolean(s.serverUrl && s.hasToken);
@@ -119,6 +141,9 @@ const store: TextStore = {
   remove: (n) => hostRef.store.remove(n),
 };
 const api = new BoniApi({ request: (m, p, b) => hostRef.transport.request(m, p, b) });
+const agent = new AgentApi({ request: (m, p, b) => hostRef.transport.request(m, p, b) });
+/** This page's conversation (the server keeps its history per conversation). */
+const CONVERSATION = newId();
 const queue = new OfflineQueue(store);
 export const charts = new ChartRepository(
   () => (configured(useStore.getState().settings) ? api : null),
@@ -177,6 +202,11 @@ export const useStore = create<State>(() => ({
   rejected: [],
   loadError: null,
   toast: null,
+  chat: [],
+  chatBusy: false,
+  inbox: [],
+  runs: [],
+  confirmFlip: false,
 }));
 
 const set = useStore.setState;
@@ -388,6 +418,7 @@ export function goBack(): boolean {
   else if (s.panel) dismissPanel();
   else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
   else if (s.view.kind === "chart") showHome();
+  else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
   else if (s.tab !== "capture") showTab("capture");
   else return false;
   return true;
@@ -827,3 +858,142 @@ export async function logout() {
 export const suggestedDevice = () => hostRef.suggestedDevice();
 
 export const todayIso = () => today();
+
+// ---------- the agent ----------
+export const showChat = () => set({ view: { kind: "chat" } });
+/** The inbox view loads its proposals when it opens. */
+export const showInbox = () => set({ view: { kind: "inbox" } });
+export const showLog = () => {
+  set({ view: { kind: "log" } });
+  void loadRuns();
+};
+
+/** Why a run stopped, in words: a fixed code from the server, never its data. */
+export function agentErrorText(t: T, code: string): string {
+  if (code === "agent-off") return t("agent.error.off");
+  if (code === "declined") return t("agent.error.declined");
+  if (code === "plan-invalid") return t("agent.error.planInvalid");
+  if (code.startsWith("model-")) return t("agent.error.model");
+  const rule = /^(P\d{1,2}|R\d)/.exec(code)?.[1];
+  if (rule) return t("agent.error.rule", { rule });
+  return t("agent.error.generic", { code });
+}
+
+function patchEntry(id: string, patch: Partial<ChatEntry>) {
+  set((s) => ({ chat: s.chat.map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
+}
+/** A later answer of the same run: its replies follow the earlier ones; its question or confirmation replaces the last. */
+function mergeResult(prev: TurnResult | null, next: TurnResult): TurnResult {
+  if (!prev) return next;
+  return {
+    ...next,
+    replies: [...prev.replies, ...next.replies],
+    proposals: [...prev.proposals, ...next.proposals],
+    notices: [...prev.notices, ...next.notices],
+  };
+}
+async function agentCall(id: string, call: () => Promise<TurnResult>) {
+  set({ chatBusy: true });
+  try {
+    const r = await call();
+    const entry = get().chat.find((e) => e.id === id);
+    patchEntry(id, { result: mergeResult(entry?.result ?? null, r), error: null });
+    if (r.pending?.kind === "confirm") set((s) => ({ confirmFlip: !s.confirmFlip }));
+    if (r.proposals.length) void loadInbox();
+  } catch (e) {
+    const code = e instanceof ApiError ? e.code : null;
+    patchEntry(id, {
+      error: code === "agent-off" ? agentErrorText(get().t, code) : errorText(get().t, e),
+    });
+  } finally {
+    set({ chatBusy: false });
+  }
+}
+
+export async function sendTurn(text: string) {
+  const request = text.trim();
+  if (!request || get().chatBusy) return;
+  const id = newId();
+  set((s) => ({ chat: [...s.chat, { id, request, result: null, error: null }] }));
+  await agentCall(id, () => agent.turn(request, CONVERSATION));
+}
+export async function answerAsk(entryId: string, a: { choice: number } | { text: string }) {
+  const e = get().chat.find((x) => x.id === entryId);
+  const p = e?.result?.pending;
+  if (!e?.result || p?.kind !== "ask") return;
+  const run = e.result.run;
+  await agentCall(entryId, () => agent.answer(run, p.id, a));
+}
+export async function confirmPending(entryId: string) {
+  const e = get().chat.find((x) => x.id === entryId);
+  const p = e?.result?.pending;
+  if (!e?.result || p?.kind !== "confirm") return;
+  const run = e.result.run;
+  await agentCall(entryId, () => agent.confirm(run, p.id));
+}
+export async function declinePending(entryId: string) {
+  const e = get().chat.find((x) => x.id === entryId);
+  const p = e?.result?.pending;
+  if (!e?.result || p?.kind !== "confirm") return;
+  const run = e.result.run;
+  await agentCall(entryId, () => agent.decline(run, p.id));
+}
+
+export async function loadInbox() {
+  try {
+    set({ inbox: await agent.proposals() });
+  } catch {
+    // the inbox stays as it was (offline, agent off)
+  }
+}
+/** Accepting one proposal (never all at once: each is looked at, docs/nucleo.md 7.5). */
+export async function acceptProposal(id: string) {
+  const t = get().t;
+  try {
+    const r = await agent.accept(id);
+    if (r.pending?.kind === "confirm") {
+      // Accepted, but it still needs a confirmation (deleting...): it goes on in the conversation.
+      const entry: ChatEntry = {
+        id: newId(),
+        request: t("inbox.acceptedRequest"),
+        result: r,
+        error: null,
+      };
+      set((s) => ({
+        chat: [...s.chat, entry],
+        confirmFlip: !s.confirmFlip,
+        view: { kind: "chat" },
+      }));
+    } else toast(r.error ? agentErrorText(t, r.error) : t("inbox.accepted"));
+  } catch (e) {
+    toast(errorText(t, e));
+  }
+  await loadInbox();
+}
+export async function rejectProposal(id: string) {
+  try {
+    await agent.reject(id);
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
+  await loadInbox();
+}
+
+export async function loadRuns() {
+  try {
+    set({ runs: await agent.runs() });
+  } catch {
+    // the log stays as it was
+  }
+}
+/** "Undo what this request did": every change of that run, newest first, all or nothing. */
+export async function undoRun(id: string) {
+  const t = get().t;
+  try {
+    const n = await agent.undo(id);
+    toast(t("log.undone", { n }));
+  } catch (e) {
+    toast(e instanceof ApiError && e.status === 409 ? t("log.cannotUndo") : errorText(t, e));
+  }
+  await loadRuns();
+}

@@ -16,7 +16,7 @@ const sent = async (page: Page, prefix: string) =>
 const sheet = (page: Page) => page.locator(".m-sheet");
 const PERSON = JSON.parse(EXAMPLES["options-people.json"]!).options[0];
 
-test("the phone opens on capturing: the capture button, the shortcuts, two tabs", async ({
+test("the phone opens on capturing: the capture button, the shortcuts, three tabs", async ({
   page,
 }) => {
   await openApp(page, "/?still");
@@ -30,7 +30,7 @@ test("the phone opens on capturing: the capture button, the shortcuts, two tabs"
   await expect(shortcuts.first().locator(".m-shortcut-sub")).toHaveText(
     "1,60 € · Cafe · bebida/cafe",
   );
-  await expect(page.locator(".m-tab")).toHaveText(["Apuntar", "Gráficas"]);
+  await expect(page.locator(".m-tab")).toHaveText(["Apuntar", "Gráficas", "Boni"]);
   // Thumb-sized: tabs, the capture button and each shortcut are at least 48 px high
   for (const el of [
     page.locator(".m-tab").first(),

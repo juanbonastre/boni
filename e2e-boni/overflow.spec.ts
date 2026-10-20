@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { ASK_TURN, confirmTurn, PROPOSALS, RUNS, TEXT_REPLY } from "./agent-scenarios.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -10,10 +11,10 @@ import { openApp } from "./fixtures.ts";
 
 const SURFACES =
   ".sidebar, .topbar, .chart-card, .card-controls, .pop-box, .side-panel, .modal, .toast, .empty-state, " +
-  ".m-top, .m-scroll, .m-tabs, .m-sheet, .m-action-sheet, .m-periods";
+  ".m-top, .m-scroll, .m-tabs, .m-sheet, .m-action-sheet, .m-periods, .chat, .agent-page";
 const SINGLE_LINE =
   "button, .btn, .pill, .ctl, .choice, .menu-item, .segmented > *, .picked-chip, .card-title, .nav-name, " +
-  ".m-title, .m-shortcut-name, .m-shortcut-sub, .m-chart-row-name, .m-chart-row-sub, .m-tab-label";
+  ".m-title, .m-shortcut-name, .m-shortcut-sub, .m-chart-row-name, .m-chart-row-sub, .m-tab-label, .link-btn, .confirm-row dt";
 
 async function audit(page: Page, where: string): Promise<string[]> {
   return page.evaluate(
@@ -216,3 +217,66 @@ test.describe("on a phone", () => {
     });
   }
 });
+
+/** The conversation with the agent: a reply, a question, a confirmation, the inbox and the log. */
+const AGENT = {
+  "POST api/agent/turn": [TEXT_REPLY, ASK_TURN, confirmTurn("c1")],
+  "GET api/agent/proposals": [PROPOSALS],
+  "GET api/agent/runs": [RUNS],
+};
+const C = {
+  es: {
+    chat: "Conversación",
+    box: "Escribe a Boni…",
+    inbox: /^Bandeja/,
+    log: "Registro",
+    tab: "Boni",
+  },
+  en: {
+    chat: "Conversation",
+    box: "Write to Boni…",
+    inbox: /^Inbox/,
+    log: "Activity",
+    tab: "Boni",
+  },
+};
+async function converse(page: Page, l: (typeof C)["es"], issues: string[], where: string) {
+  for (const text of ["uno", "dos", "tres"]) {
+    const box = page.getByRole("textbox", { name: l.box });
+    await box.fill(text);
+    await box.press("Enter");
+    await expect(page.locator(".turn")).toHaveCount(["uno", "dos", "tres"].indexOf(text) + 1);
+    await expect(page.locator(".turn-answer").last()).not.toBeEmpty();
+  }
+  await page.locator(".confirm-card").waitFor();
+  issues.push(...(await audit(page, `${where} conversation`)));
+  await page.getByRole("button", { name: l.inbox }).click();
+  await page.locator(".proposal").first().waitFor();
+  issues.push(...(await audit(page, `${where} inbox`)));
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: l.log }).click();
+  await page.locator(".log-list li").first().waitFor();
+  issues.push(...(await audit(page, `${where} log`)));
+}
+for (const language of ["es", "en"] as const) {
+  for (const width of [1440, 900]) {
+    test(`the conversation fits (${language}, ${width} px)`, async ({ page }) => {
+      const l = C[language];
+      const issues: string[] = [];
+      await page.setViewportSize({ width, height: 860 });
+      await openApp(page, "/?still", { language, agent: AGENT });
+      await page.getByRole("button", { name: l.chat }).click();
+      await converse(page, l, issues, `${width}`);
+      expect(issues).toEqual([]);
+    });
+  }
+  test(`the conversation fits on a phone (${language})`, async ({ page }) => {
+    const l = C[language];
+    const issues: string[] = [];
+    await page.setViewportSize({ width: 360, height: 740 });
+    await openApp(page, "/?still", { language, agent: AGENT });
+    await page.getByRole("button", { name: l.tab, exact: true }).click();
+    await converse(page, l, issues, "phone");
+    expect(issues).toEqual([]);
+  });
+}

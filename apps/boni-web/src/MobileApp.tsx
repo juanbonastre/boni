@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  MessageSquare,
   MoreVertical,
   Pencil,
   PenLine,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChartCard, ChartCardContent, useChartData } from "./components/ChartCard.tsx";
+import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { FormView } from "./components/FormView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { EditorPanel } from "./components/SidePanel.tsx";
@@ -84,8 +86,34 @@ export function MobileApp() {
         <ChartScreen id={view.id} openMenu={setMenu} />
       ) : (
         <>
-          <MobileTop title={tab === "capture" ? t("tab.capture") : t("tab.charts")} />
-          {tab === "capture" ? <CaptureTab openMenu={setMenu} /> : <ChartsTab />}
+          <MobileTop
+            title={
+              tab === "capture"
+                ? t("tab.capture")
+                : tab === "charts"
+                  ? t("tab.charts")
+                  : view.kind === "inbox"
+                    ? t("inbox.title")
+                    : view.kind === "log"
+                      ? t("log.title")
+                      : t("tab.boni")
+            }
+          />
+          {tab === "capture" ? (
+            <CaptureTab openMenu={setMenu} />
+          ) : tab === "charts" ? (
+            <ChartsTab />
+          ) : view.kind === "inbox" ? (
+            <div className="m-scroll">
+              <InboxView />
+            </div>
+          ) : view.kind === "log" ? (
+            <div className="m-scroll">
+              <LogView />
+            </div>
+          ) : (
+            <ChatView compact />
+          )}
           <TabBar />
         </>
       )}
@@ -178,6 +206,11 @@ function TabBar() {
       id: "charts" as const,
       label: t("tab.charts"),
       icon: <BarChart3 size={22} strokeWidth={1.8} />,
+    },
+    {
+      id: "boni" as const,
+      label: t("tab.boni"),
+      icon: <MessageSquare size={22} strokeWidth={1.8} />,
     },
   ];
   return (

@@ -1,4 +1,14 @@
-import { Eye, EyeOff, House, PanelLeft, Plus, Settings, SlidersHorizontal, X } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  House,
+  MessageSquare,
+  PanelLeft,
+  Plus,
+  Settings,
+  SlidersHorizontal,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 import { newSpec } from "../core/chartBuilder.ts";
 import { host } from "../host.ts";
@@ -13,6 +23,7 @@ import {
   removeWidget,
   setWidgetHidden,
   showChart,
+  showChat,
   showHome,
   toggleSidebar,
   useStore,
@@ -32,6 +43,7 @@ export function Sidebar() {
   const widgets = useStore((s) => s.widgets);
   const settings = useStore((s) => s.settings);
   const home = useStore((s) => s.home);
+  const inbox = useStore((s) => s.inbox);
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const canCapture =
@@ -77,6 +89,15 @@ export function Sidebar() {
         >
           <House size={15} strokeWidth={1.8} />
           <span className="nav-name">{t("top.home")}</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-row${view.kind === "chat" || view.kind === "inbox" || view.kind === "log" ? " active" : ""}`}
+          onClick={showChat}
+        >
+          <MessageSquare size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("nav.chat")}</span>
+          {inbox.length > 0 && <span className="nav-count">{inbox.length}</span>}
         </button>
 
         <div className="group-head">

@@ -26,6 +26,8 @@ export interface Options {
   language?: "es" | "en";
   /** Files on the device (store), by name. */
   files?: Record<string, string>;
+  /** Answers of the agent's API, in order, by "METHOD path" ("POST api/agent/turn"); the last one repeats. */
+  agent?: Record<string, unknown[]>;
 }
 
 /**
@@ -58,8 +60,25 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         autostart: true,
         layerAvailable: true,
       };
+      const agentCalls: Record<string, number> = {};
+      // The inbox as the server keeps it: accepting or rejecting a proposal takes it out.
+      let inbox = (
+        opts.agent?.["GET api/agent/proposals"]?.[0] as { proposals: { id: string }[] } | undefined
+      )?.proposals;
       const answer = (method: string, path: string, body?: unknown): [number, string] | null => {
         const p = path.split("?")[0]!;
+        if (p === "api/agent/proposals" && inbox)
+          return [200, JSON.stringify({ proposals: inbox })];
+        const decided = /^api\/agent\/proposals\/([^/]+)\//.exec(p);
+        if (decided && inbox) inbox = inbox.filter((x) => x.id !== decided[1]);
+        if (p.startsWith("api/agent/")) {
+          const key = `${method} ${p.replace(/\/proposals\/[^/]+\//, "/proposals/:id/").replace(/\/runs\/[^/]+\//, "/runs/:id/")}`;
+          const list = opts.agent?.[key];
+          if (!list?.length) return [503, '{"error":"agent-off"}'];
+          const n = agentCalls[key] ?? 0;
+          agentCalls[key] = n + 1;
+          return [200, JSON.stringify(list[Math.min(n, list.length - 1)])];
+        }
         const ok = (name: string): [number, string] => [200, examples[name]!];
         if (method === "DELETE") return [204, ""];
         if (p.endsWith("/home")) return ok("home.json");

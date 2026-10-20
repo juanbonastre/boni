@@ -53,6 +53,8 @@ export interface ServerOptions {
   guard?: LoginGuard;
   /** The built web app to serve, if any. */
   webDir?: string | null;
+  /** Boni's web app (apps/boni-web/dist), served at /boni/ on the tailnet entry only, like its APIs. */
+  boniWebDir?: string | null;
   /** Which entry this server is (routes.ts); "tailnet" (everything) when missing. */
   listener?: Listener;
   /** The allow-list (tests only; ROUTES when missing). */
@@ -154,6 +156,7 @@ export function makeApp(opts: ServerOptions): App {
     }
   }
   const webRoot = opts.webDir ? resolve(opts.webDir) : null;
+  const boniRoot = opts.boniWebDir ? resolve(opts.boniWebDir) : null;
 
   const tz = opts.tz ?? "Europe/Madrid";
   const v1 = new V1Service({
@@ -384,12 +387,31 @@ export function makeApp(opts: ServerOptions): App {
     }
   };
 
-  const staticFile = async (res: ServerResponse, pathname: string): Promise<void> => {
-    if (!webRoot) return send(res, 404, { error: "not-found" });
-    const rel = normalize(decodeURIComponent(pathname)).replace(/^([/\\])+/, "");
-    let file = join(webRoot, rel || "index.html");
+  const staticFile = async (
+    res: ServerResponse,
+    pathname: string,
+    listener: Listener,
+  ): Promise<void> => {
+    // /boni/... is Boni's web app (tailnet only); everything else is the calendar's.
+    const boni = pathname === "/boni" || pathname.startsWith("/boni/");
+    if (boni && pathname === "/boni") {
+      res.writeHead(301, { ...SAFE, location: "/boni/" });
+      return void res.end();
+    }
+    const root = boni ? (listener === "tailnet" ? boniRoot : null) : webRoot;
+    if (!root) return send(res, 404, { error: "not-found" });
+    let rel: string;
+    try {
+      rel = normalize(decodeURIComponent(boni ? pathname.slice("/boni".length) : pathname)).replace(
+        /^([/\\])+/,
+        "",
+      );
+    } catch {
+      return send(res, 404, { error: "not-found" });
+    }
+    let file = join(root, rel || "index.html");
     // Inside the web app's folder only (not a sibling that merely starts with the same name).
-    if (file !== webRoot && !file.startsWith(webRoot + sep))
+    if (file !== root && !file.startsWith(root + sep))
       return send(res, 404, { error: "not-found" });
     try {
       if ((await stat(file)).isDirectory()) file = join(file, "index.html");
@@ -416,7 +438,7 @@ export function makeApp(opts: ServerOptions): App {
       const handle =
         url.pathname.startsWith("/api/") || url.pathname === "/healthz"
           ? api(req, res, url, listener)
-          : staticFile(res, url.pathname);
+          : staticFile(res, url.pathname, listener);
       handle.catch((e) => {
         console.error(e);
         if (!res.headersSent) send(res, 500, { error: "server" });

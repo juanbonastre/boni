@@ -187,3 +187,6 @@ compartido, ambiental) es el origen de cada turno, asi que una confirmacion solo
   el repo). Modelos: `BONI_PLANNER_MODEL` (por defecto `claude-opus-5-5`) y `BONI_READER_MODEL` (por defecto
   `claude-haiku-4-5`). Sin clave el log dice "agent off" y las rutas responden 503 `agent-off`.
 - Evaluacion con el modelo real (fuera del CI, con datos inventados): `ANTHROPIC_API_KEY=... node packages/agent/eval/eval.ts`.
+- La app web de Boni (`apps/boni-web`, compilada) se sirve en `/boni/` solo en la entrada tailnet (`BONI_BONI_WEB`; la
+  imagen Docker la lleva). En el navegador habla con este mismo servidor: la API v1 (gráficas, atajos, apuntar gasto) y la
+  del agente (la conversación). El calendario sigue en `/`.

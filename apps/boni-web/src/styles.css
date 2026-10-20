@@ -2152,3 +2152,312 @@ html.widget-page body {
   flex: 1;
   min-height: 0;
 }
+
+/* ---------- the conversation with the agent (components/Chat.tsx) ---------- */
+.chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  max-width: 820px;
+  width: 100%;
+  margin: 0 auto;
+  gap: 10px;
+}
+.chat-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.chat-thread {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px;
+}
+.chat-busy {
+  font-size: 12px;
+}
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.turn-request {
+  align-self: flex-end;
+  max-width: 80%;
+  background: var(--accent-soft);
+  border-radius: 10px;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.turn-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.turn-error {
+  color: var(--bad);
+  font-size: 12.5px;
+  margin: 0;
+}
+.turn-notices {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-undo {
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--muted);
+}
+.turn-undo:hover {
+  color: var(--text);
+}
+.reply-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.reply-caption {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.reply-figure {
+  font-size: 26px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.reply-unit {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.reply-list ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.reply-list li {
+  overflow-wrap: anywhere;
+}
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.reply-table table {
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.reply-table th,
+.reply-table td {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+  max-width: 28rem;
+  overflow-wrap: anywhere;
+}
+.reply-table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+/* What came from outside: plain text with a mark, never a link or HTML (docs/nucleo.md, 7.14). */
+.val-ext {
+  border-left: 2px solid var(--c4);
+  padding-left: 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.val-model,
+.val {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.val-proposal {
+  color: var(--muted);
+  font-style: italic;
+}
+.ask {
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.ask-prompt {
+  margin: 0;
+}
+.ask-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ask-options .pill {
+  max-width: 100%;
+}
+.ask-text {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ask-text input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+/* A confirmation lives on a surface with only the code's components. */
+.confirm-card {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.confirm-card h3,
+.proposal h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.confirm-rows {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.confirm-row {
+  display: grid;
+  grid-template-columns: minmax(5rem, 9rem) minmax(0, 1fr);
+  gap: 4px 10px;
+}
+.confirm-row dt {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.confirm-row dd {
+  margin: 0;
+  min-width: 0;
+}
+/* The whole value, never cut: long text scrolls. */
+.confirm-value {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 14rem;
+  overflow-y: auto;
+  font-variant-numeric: tabular-nums;
+}
+.confirm-value.ext {
+  border-left: 2px solid var(--c4);
+  padding-left: 6px;
+}
+.confirm-marks {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mark-warn {
+  color: var(--bad);
+  font-size: 12px;
+}
+.confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chat-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.chat-composer textarea {
+  flex: 1 1 16rem;
+  min-width: 0;
+  resize: vertical;
+  min-height: 44px;
+  max-height: 40vh;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font: inherit;
+}
+.agent-page {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 820px;
+  width: 100%;
+  margin: 0 auto;
+}
+.proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.nav-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.chat.compact {
+  padding: 8px 12px 0;
+}
+.chat.compact .turn-request {
+  max-width: 90%;
+}
+.ask-options .pill > *,
+.ask-options .pill .val,
+.ask-options .pill .val-ext,
+.ask-options .pill .val-model {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

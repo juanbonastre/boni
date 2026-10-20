@@ -34,6 +34,9 @@ beforeAll(async () => {
   mkdirSync(join(dir, "vault", "_system/colecciones"), { recursive: true });
   mkdirSync(join(dir, "web"));
   writeFileSync(join(dir, "web", "index.html"), "<!doctype html><title>Boni Calendar</title>");
+  mkdirSync(join(dir, "boni-web", "assets"), { recursive: true });
+  writeFileSync(join(dir, "boni-web", "index.html"), "<!doctype html><title>Boni</title>");
+  writeFileSync(join(dir, "boni-web", "assets", "app.js"), "console.log(1)");
   db = openDb(join(dir, "db.sqlite"));
   addUser(db, "juan", PASSWORD, join(dir, "vault"));
   vaults = new Vaults();
@@ -43,6 +46,7 @@ beforeAll(async () => {
     key: randomBytes(32),
     feeds: new Feeds(async () => ""),
     webDir: join(dir, "web"),
+    boniWebDir: join(dir, "boni-web"),
     guard: new LoginGuard({ perUser: 3, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
   };
   const app = makeApp(opts);
@@ -135,6 +139,21 @@ describe("the server's two entries", () => {
       expect(me.status).toBe(200);
       expect((await fetch(`${base}/`)).status).toBe(200);
     }
+  });
+
+  it("serves Boni's web app at /boni/ on the tailnet only, like its APIs", async () => {
+    const page = await fetch(`${tailnet}/boni/`);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("<title>Boni</title>");
+    expect((await fetch(`${tailnet}/boni/assets/app.js`)).status).toBe(200);
+    expect((await fetch(`${tailnet}/boni`, { redirect: "manual" })).headers.get("location")).toBe(
+      "/boni/",
+    );
+    expect((await fetch(`${tailnet}/boni/..%2f..%2fdb.sqlite`)).status).toBe(404);
+    expect((await fetch(`${pub}/boni/`)).status).toBe(404);
+    expect((await fetch(`${pub}/boni/assets/app.js`)).status).toBe(404);
+    // the calendar's app is still at the root, on both
+    expect(await (await fetch(`${pub}/`)).text()).toContain("Boni Calendar");
   });
 
   it("answers 404 on the public entry for a route off the list, before asking who you are", async () => {

@@ -140,7 +140,11 @@ apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`lega
                  page in a browser, in its desktop shell and in its Android WebView (`src/host.ts`). `api/` is the v1
                  contract (`examples/` are real server answers the tests parse). Its desktop and Android shells are
                  still in `legacy/boni/apps/` (they build from this folder when ported). The agent's conversation
-                 comes next (plan PR 12b).
+                 (`components/Chat.tsx`, `core/agent.ts` over `/api/agent/*`): every answer painted by this code from
+                 labelled values, text only as text (never HTML, Markdown or links; outside text marked),
+                 confirmations with the real values, their origin and warnings, the accept button changing side;
+                 the inbox one proposal at a time, the log with Undo. The server serves the built app at `/boni/` on
+                 the tailnet entry (`BONI_BONI_WEB`).
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots (Boni Calendar);
                  e2e-boni/ the same for apps/boni-web (`playwright.boni.config.ts`, a fake server from `api/examples`).
 docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.

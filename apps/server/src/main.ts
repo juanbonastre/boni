@@ -18,6 +18,7 @@ import { Vaults } from "./vaults.ts";
  *   BONI_PUBLIC_PORT  a second entry serving only the public allow-list (routes.ts), for Funnel   optional
  *   BONI_PUBLIC_HOST  address of that entry                    default 0.0.0.0
  *   BONI_WEB    the built web app to serve (apps/calendar-web/dist)     optional
+ *   BONI_BONI_WEB  Boni's built web app (apps/boni-web/dist), at /boni/ on the tailnet entry   optional
  *   BONI_WRITE  "1": devices may change the notes (the vault must be mounted writable)   default read-only
  *   BONI_SECRET_KEY  32 bytes in base64 to encrypt accounts' secrets   default: secret.key next to the DB
  *   BONI_FEEDS_ALLOW_PRIVATE  "1": external calendars may be on private addresses (tests only)
@@ -79,6 +80,7 @@ const app = makeApp({
   feeds,
   ...(push ? { push } : {}),
   webDir: process.env.BONI_WEB ?? null,
+  boniWebDir: process.env.BONI_BONI_WEB ?? null,
   tz,
   agent,
 });
