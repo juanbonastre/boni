@@ -17,3 +17,4 @@ apps/calendar-android/.gradle/
 apps/calendar-android/**/build/
 apps/calendar-android/local.properties
 apps/calendar-android/app/src/main/assets/web/
+e2e-boni/screenshots/

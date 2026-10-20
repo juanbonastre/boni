@@ -1,0 +1,14 @@
+{
+  "properties": {
+    "ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Ids",
+      "type": "array"
+    }
+  },
+  "required": ["ids"],
+  "title": "ShortcutOrder",
+  "type": "object"
+}

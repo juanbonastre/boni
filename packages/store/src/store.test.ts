@@ -265,7 +265,7 @@ describe("the store", () => {
       for (const seq of done.reverse()) store.undo(seq, me);
       expect(snapshot(), `seed ${seed}`).toEqual(before);
     }
-  });
+  }, 60_000); // 25 seeds of random changes: slow on a busy CI runner
 
   it("changes a field's type converting values, and undo brings the old ones back", () => {
     const { store } = fresh();

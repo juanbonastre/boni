@@ -133,7 +133,14 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
                  account (`users/<id>.db` next to system.db) and one `@boni/agent` each; the device's trust level is
                  the turn's origin. On only with `ANTHROPIC_API_KEY`; otherwise 503 `agent-off`.
-bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots.
+apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`legacy/boni/apps/web`, with its history):
+                 charts, shortcuts and "Apuntar gasto" over the API v1 (`src/core/api.ts`, `contract.ts`), the same
+                 page in a browser, in its desktop shell and in its Android WebView (`src/host.ts`). `api/` is the v1
+                 contract (`examples/` are real server answers the tests parse). Its desktop and Android shells are
+                 still in `legacy/boni/apps/` (they build from this folder when ported). The agent's conversation
+                 comes next (plan PR 12b).
+bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots (Boni Calendar);
+                 e2e-boni/ the same for apps/boni-web (`playwright.boni.config.ts`, a fake server from `api/examples`).
 docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.
 legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, real names replaced. Reference only:
                  not built, linted or tested here; delete each piece once it is ported to the core.
@@ -142,7 +149,8 @@ legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, 
 ## Commands (use the Makefile)
 
 - `make setup` install dependencies · `make dev` UI dev server · `make check` lint + types + unit tests
-- `make e2e` Playwright (uses the system Chrome; screenshots land in `e2e/screenshots/`)
+- `make e2e` Playwright (uses the system Chrome; screenshots land in `e2e/screenshots/` and `e2e-boni/screenshots/`);
+  `make e2e-boni` only Boni's
 - `make desktop` run the Electron app · `make package` build `.deb` + AppImage into `release/`
 - `make bench-chrome` / `make bench-electron` smoothness benchmark in a real window (see `docs/rendimiento.md`)
 - `make plugin` build the Obsidian plugin · `make install-obsidian VAULT=/path/to/vault` copy it into a vault

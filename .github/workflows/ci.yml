@@ -36,11 +36,16 @@ jobs:
       - run: pnpm exec playwright test
         env:
           CI: "1"
+      - run: pnpm exec playwright test -c playwright.boni.config.ts
+        env:
+          CI: "1"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: screenshots
-          path: e2e/screenshots
+          path: |
+            e2e/screenshots
+            e2e-boni/screenshots
 
   package:
     runs-on: ubuntu-24.04
