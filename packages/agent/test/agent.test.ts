@@ -1,5 +1,7 @@
+import { label } from "@boni/entities";
 import { afterEach, describe, expect, it } from "vitest";
 import { fakePlanner } from "../src/providers.ts";
+import { leaf, rec } from "../src/values.ts";
 import { type Env, makeEnv, PERSONAL } from "./fixture.ts";
 
 let env: Env;
@@ -393,6 +395,38 @@ describe("the agent, with a planner that behaves", () => {
     expect(estado?.options?.map((o) => o.name)).toEqual(["Por leer", "Leyendo", "Leído"]);
     expect(libros?.fields.map((f) => f.name)).toContain("Valoración");
     const [book] = env.store.list(libros?.id as string);
+    const imported = label("imported", "personal", [{ kind: "vault", id: "Boni/Libros/x.md" }]);
+    // A proposal (or confirmation) about the book shows it by its title and each value by its field's name,
+    // unless they came from outside (then the id, and the field's key).
+    const propose = () =>
+      agent.propose({
+        tool: "entities.update",
+        args: {
+          id: leaf(book?.entity.id as string, imported),
+          values: rec({ valoracion: leaf(4, imported) }, imported),
+        },
+        origin: "mirror",
+      });
+    const rowsOf = (id: string) =>
+      (env.store.journal.proposal(id)?.view as { rows: Record<string, unknown>[] } | undefined)
+        ?.rows ?? [];
+    const pid = propose();
+    expect(rowsOf(pid)).toContainEqual(
+      expect.objectContaining({ arg: "id", detail: "El nombre del viento" }),
+    );
+    expect(rowsOf(pid)).toContainEqual(
+      expect.objectContaining({ arg: "values.valoracion", name: "Valoración", value: "4" }),
+    );
+    agent.rejectProposal(pid);
+    const outside = label("external", "personal", [{ kind: "mail", id: "m1" }], true);
+    env.store.update(
+      book?.entity.id as string,
+      { [libros?.titleField as string]: { value: "Título de un correo", label: outside } },
+      { actor: "connector" },
+    );
+    const again = propose();
+    expect(rowsOf(again).find((r) => r.arg === "id")?.detail).toBeUndefined();
+    agent.rejectProposal(again);
     expect(Object.values(book?.entity.values ?? {})).toContain(5);
     // "title" (as models write it) is the type's title field.
     expect(book?.entity.values[libros?.titleField as string]).toBe("El nombre del viento");

@@ -356,6 +356,9 @@ function argLabel(t: T, arg: string, role: string): string {
   return byRole !== `arg.${role}` ? byRole : arg;
 }
 
+/** "values.autor" -> "autor": a record's field without a name from the schema. */
+const fieldKey = (arg: string) => (arg.includes(".") ? arg.slice(arg.indexOf(".") + 1) : null);
+
 /** "Enviar correo" -> "enviar correo", for the middle of a sentence. */
 const lower = (s: string) => (s ? s[0]?.toLowerCase() + s.slice(1) : s);
 
@@ -389,10 +392,16 @@ export function CallRows({ view }: { view: ConfirmView }) {
     <dl className="confirm-rows">
       {view.rows.map((r) => (
         <div key={r.arg} className="confirm-row">
-          <dt>{argLabel(t, r.arg, r.role)}</dt>
+          <dt>{r.name ?? fieldKey(r.arg) ?? argLabel(t, r.arg, r.role)}</dt>
           <dd>
             <div className={`confirm-value${r.integrity === "external" ? " ext" : ""}`}>
-              {reveal(r.value)}
+              {r.detail ? (
+                <>
+                  {reveal(r.detail)} <span className="muted small">{reveal(r.value)}</span>
+                </>
+              ) : (
+                reveal(r.value)
+              )}
             </div>
             <div className="confirm-prov muted small">{provenance(t, r.integrity, r.sources)}</div>
             <Marks marks={r.marks} />
