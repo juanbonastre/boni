@@ -185,5 +185,5 @@ compartido, ambiental) es el origen de cada turno, asi que una confirmacion solo
   hizo una peticion: `POST /api/agent/runs/<id>/undo`; avisos en vivo: `GET /api/agent/events`.
 - Se enciende solo con `ANTHROPIC_API_KEY` (la clave, con limite de gasto, en el `.env` del NAS y en Vaultwarden; nunca en
   el repo). Modelos: `BONI_PLANNER_MODEL` (por defecto `claude-opus-5-5`) y `BONI_READER_MODEL` (por defecto
-  `claude-haiku-4-5-20251001`). Sin clave el log dice "agent off" y las rutas responden 503 `agent-off`.
+  `claude-haiku-4-5`). Sin clave el log dice "agent off" y las rutas responden 503 `agent-off`.
 - Evaluacion con el modelo real (fuera del CI, con datos inventados): `ANTHROPIC_API_KEY=... node packages/agent/eval/eval.ts`.

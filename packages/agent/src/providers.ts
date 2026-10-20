@@ -13,6 +13,9 @@ export interface ModelRequest {
   system: string;
   input: unknown;
   schema: object;
+  /** false: the model answers with JSON text that the code checks (the planner: its schema is beyond
+   * what the API's structured output accepts); otherwise the schema is enforced by the API. */
+  structured?: boolean;
   maxTokens: number;
 }
 export interface ModelResponse {

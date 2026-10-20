@@ -459,4 +459,93 @@ describe("the agent, with a planner that behaves", () => {
     expect((await agent.acceptProposal(r.proposals[0] as string, "personal")).error).toBe("stale");
     expect(env.store.journal.proposal(r.proposals[0] as string)?.status).toBe("stale");
   });
+
+  it("finds a contact by part of its name, any case and accents", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "c",
+            op: "call",
+            tool: "entities.query",
+            args: { type: lit("contacto"), field: lit("nombre"), contains: { quote: "ána" } },
+          },
+          { id: "r", op: "reply", component: "text", data: { template: ref("$c.items[0].email") } },
+        ],
+      },
+    ]);
+    const r = await env.agent(planner).turn({ text: "escribe a ána", origin: PERSONAL });
+    expect(r.error).toBeNull();
+    expect(r.replies[0]?.data.template).toMatchObject({ value: "ana@example.com" });
+  });
+
+  it("a condition on an item that does not exist is false, not an error (a plan the real planner wrote)", async () => {
+    env = makeEnv();
+    const plan = {
+      version: 1,
+      steps: [
+        {
+          id: "s1",
+          op: "call",
+          tool: "entities.query",
+          args: { type: { lit: "contacto" }, field: { lit: "nombre" }, contains: { quote: "Ana" } },
+        },
+        {
+          id: "s2",
+          op: "ask",
+          when: { ref: "$s1.items[1]" },
+          control: "choice",
+          prompt: { lit: "Hay varios contactos llamados Ana. ¿A cuál le escribo?" },
+          options: { fn: "field", args: [{ ref: "$s1.items" }, { lit: "nombre" }] },
+        },
+        {
+          id: "s3",
+          op: "call",
+          when: { ref: "$s1.items[1]" },
+          tool: "entities.query",
+          args: { type: { lit: "contacto" }, field: { lit: "nombre" }, equals: { ref: "$s2" } },
+        },
+        {
+          id: "s4",
+          op: "call",
+          when: { fn: "not", args: [{ ref: "$s1.items[1]" }] },
+          tool: "mail.send",
+          args: {
+            to: { ref: "$s1.items[0].email" },
+            subject: { quote: "nos vemos el jueves" },
+            body: { quote: "nos vemos el jueves" },
+          },
+        },
+        {
+          id: "s5",
+          op: "call",
+          when: { ref: "$s1.items[1]" },
+          tool: "mail.send",
+          args: {
+            to: { ref: "$s3.items[0].email" },
+            subject: { quote: "nos vemos el jueves" },
+            body: { quote: "nos vemos el jueves" },
+          },
+        },
+        {
+          id: "s6",
+          op: "reply",
+          component: "text",
+          data: {
+            template: { lit: "Correo enviado a Ana: {a}" },
+            a: { quote: "nos vemos el jueves" },
+          },
+        },
+      ],
+    };
+    const agent = env.agent(fakePlanner([plan]));
+    const r = await agent.turn({ text: "Escribe a Ana que nos vemos el jueves", origin: PERSONAL });
+    if (r.pending?.kind !== "confirm") throw new Error(`expected a confirmation, got ${r.error}`);
+    expect(r.pending.view.rows.find((x) => x.arg === "to")?.value).toBe("ana@example.com");
+    const done = await agent.confirm(r.run, r.pending.id, "personal");
+    expect(done.status).toBe("done");
+    expect(env.sent.map((m) => m.to)).toEqual(["ana@example.com"]);
+  });
 });
