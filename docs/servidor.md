@@ -175,3 +175,15 @@ error. Solo en la entrada tailnet (como el servidor de Boni, que nunca fue publi
   preferencias y capturas). Repetirlo no duplica nada.
 - Al desplegarlo: el nodo con Funnel tiene que llevar a la entrada publica (`BONI_PUBLIC_PORT`) y las apps de Boni a la
   completa por la tailnet; si Funnel llevara a la completa, la API v1 quedaria en internet (con sesion, pero publica).
+
+## Agente (2026-10-20)
+La API de conversacion del agente (`/api/agent/*`, `src/agent.ts`) solo existe en la entrada tailnet. Cada cuenta tiene su
+propio almacen (`users/<id>.db` junto a `system.db`) y su propio agente; el nivel de confianza del dispositivo (personal,
+compartido, ambiental) es el origen de cada turno, asi que una confirmacion solo vale desde un dispositivo personal.
+- Turno: `POST /api/agent/turn { text }`; responder a una pregunta, confirmar o rechazar: `/answer`, `/confirm`, `/decline`;
+  bandeja: `GET /api/agent/proposals` y `/proposals/<id>/accept|reject`; registro: `GET /api/agent/runs`; deshacer lo que
+  hizo una peticion: `POST /api/agent/runs/<id>/undo`; avisos en vivo: `GET /api/agent/events`.
+- Se enciende solo con `ANTHROPIC_API_KEY` (la clave, con limite de gasto, en el `.env` del NAS y en Vaultwarden; nunca en
+  el repo). Modelos: `BONI_PLANNER_MODEL` (por defecto `claude-opus-5-5`) y `BONI_READER_MODEL` (por defecto
+  `claude-haiku-4-5-20251001`). Sin clave el log dice "agent off" y las rutas responden 503 `agent-off`.
+- Evaluacion con el modelo real (fuera del CI, con datos inventados): `ANTHROPIC_API_KEY=... node packages/agent/eval/eval.ts`.

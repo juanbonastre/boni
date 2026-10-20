@@ -249,18 +249,27 @@ importers:
 
   apps/server:
     dependencies:
+      '@boni/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@boni/calendar':
         specifier: workspace:*
         version: link:../../packages/calendar
       '@boni/calendar-web':
         specifier: workspace:*
         version: link:../calendar-web
+      '@boni/entities':
+        specifier: workspace:*
+        version: link:../../packages/entities
       '@boni/identity':
         specifier: workspace:*
         version: link:../../packages/identity
       '@boni/net':
         specifier: workspace:*
         version: link:../../packages/net
+      '@boni/store':
+        specifier: workspace:*
+        version: link:../../packages/store
       '@boni/views':
         specifier: workspace:*
         version: link:../../packages/views

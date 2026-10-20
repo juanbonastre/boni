@@ -3,7 +3,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni/calendar";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
-import { login, logout, tokenHash, type User, userOf } from "./auth.ts";
+import { type AgentHost, serveAgent } from "./agent.ts";
+import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
@@ -35,7 +36,8 @@ import type { Vaults } from "./vaults.ts";
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
  *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change)
  * The stream also sends an "account" event ({ updated }) when the account's prefs or calendars change.
- * The first Boni's API v1 (/api/v1/..., /healthz) is v1/http.ts, on the tailnet only.
+ * The first Boni's API v1 (/api/v1/..., /healthz) is v1/http.ts, on the tailnet only; the agent's
+ * conversation API (/api/agent/...) is agent.ts, on the tailnet only too.
  * Anything else is the web app (static files of apps/calendar-web/dist), so a browser can open the calendar.
  */
 export interface ServerOptions {
@@ -59,6 +61,8 @@ export interface ServerOptions {
   tz?: string;
   /** The clock (tests only). */
   now?: () => number;
+  /** The agent's conversation API (agent.ts); off (503) when missing. */
+  agent?: AgentHost;
 }
 
 export interface App {
@@ -203,6 +207,18 @@ export function makeApp(opts: ServerOptions): App {
     if (!allowed(route, listener, routes)) return send(res, 404, { error: "not-found" });
     if (route === "GET /healthz" || url.pathname.startsWith("/api/v1/"))
       return serveV1({ svc: v1, db, guard, tz, hasVault }, req, res, url, route, params, listener);
+    if (url.pathname.startsWith("/api/agent/")) {
+      if (req.method !== "GET" && req.method !== "POST")
+        return send(res, 404, { error: "not-found" });
+      const s = sessionUser(db, tokenOf(req));
+      if (!s) return send(res, 401, { error: "unauthorized" });
+      if (!opts.agent) return send(res, 503, { error: "agent-off" });
+      return serveAgent(opts.agent, req, res, route, params, {
+        account: s.user.id,
+        device: s.device,
+        trust: s.trust,
+      });
+    }
     if (route === "POST /api/login") {
       const b = await bodyOf(req);
       const name = String(b.user ?? "").slice(0, 64);

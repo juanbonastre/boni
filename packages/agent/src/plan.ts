@@ -282,43 +282,55 @@ const EXPR_SCHEMA = {
     },
   ],
 };
-const EXPR_MAP = { type: "object", additionalProperties: EXPR_SCHEMA };
-/** The JSON schema of a plan, for the planner's structured output (not recursive). */
-export const PLAN_SCHEMA = {
+/** A map of named expressions with exactly these names, all optional (validatePlan checks them per
+ * tool; a structured-output schema must close every object). */
+const exprMap = (names: readonly string[]) => ({
   type: "object",
-  properties: {
-    version: { const: 1 },
-    steps: {
-      type: "array",
-      maxItems: MAX_STEPS,
-      items: {
-        type: "object",
-        properties: {
-          id: { type: "string" },
-          op: { type: "string", enum: ["call", "read", "ask", "reply"] },
-          when: EXPR_SCHEMA,
-          each: {
-            type: "object",
-            properties: { ref: { type: "string" } },
-            required: ["ref"],
-            additionalProperties: false,
+  properties: Object.fromEntries([...new Set(names)].sort().map((n) => [n, EXPR_SCHEMA])),
+  additionalProperties: false,
+});
+
+/**
+ * The JSON schema of a plan for the planner's structured output, for the argument names of the tools
+ * it may use (not recursive). It only guides the model: `validatePlan` decides.
+ */
+export function planSchema(argNames: readonly string[]) {
+  return {
+    type: "object",
+    properties: {
+      version: { const: 1 },
+      steps: {
+        type: "array",
+        maxItems: MAX_STEPS,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            op: { type: "string", enum: ["call", "read", "ask", "reply"] },
+            when: EXPR_SCHEMA,
+            each: {
+              type: "object",
+              properties: { ref: { type: "string" } },
+              required: ["ref"],
+              additionalProperties: false,
+            },
+            tool: { type: "string" },
+            args: exprMap(argNames),
+            reader: { type: "string", enum: [...READERS] },
+            input: EXPR_SCHEMA,
+            params: exprMap(Object.values(READER_PARAMS).flat()),
+            control: { type: "string", enum: [...ASK_CONTROLS] },
+            prompt: EXPR_SCHEMA,
+            options: EXPR_SCHEMA,
+            component: { type: "string", enum: [...REPLY_COMPONENTS] },
+            data: exprMap(Object.values(REPLY_DATA).flat()),
           },
-          tool: { type: "string" },
-          args: EXPR_MAP,
-          reader: { type: "string", enum: [...READERS] },
-          input: EXPR_SCHEMA,
-          params: EXPR_MAP,
-          control: { type: "string", enum: [...ASK_CONTROLS] },
-          prompt: EXPR_SCHEMA,
-          options: EXPR_SCHEMA,
-          component: { type: "string", enum: [...REPLY_COMPONENTS] },
-          data: EXPR_MAP,
+          required: ["id", "op"],
+          additionalProperties: false,
         },
-        required: ["id", "op"],
-        additionalProperties: false,
       },
     },
-  },
-  required: ["version", "steps"],
-  additionalProperties: false,
-};
+    required: ["version", "steps"],
+    additionalProperties: false,
+  };
+}
