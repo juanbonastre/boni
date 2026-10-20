@@ -160,7 +160,10 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `src/mail.ts`: each account's mailbox (`@boni/mail`, read-only; Settings → Correo, `/api/mail`, a
                  personal device; the app password encrypted with `secret.ts`, never sent back): every 5 minutes new
                  mail becomes entities of the account's "Correos" (made by the code; every value `external`, the sender
-                 as its source), from the last UID, starting over by date when UIDVALIDITY changes.
+                 as its source), from the last UID, starting over by date when UIDVALIDITY changes. With the agent on
+                 and collections marked, each new mail runs `mailPlan` in the background (P7: extract_tasks, then
+                 classify among the marked collections, each option with up to three of Juan's own titles of it;
+                 one `entities.create` per task, which the policy sends to the inbox).
                  `src/mirror.ts`: the mirror of each account's `core` types (after agent requests and every 30 s;
                  `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run by default.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per

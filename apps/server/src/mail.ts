@@ -11,7 +11,9 @@ import { decrypt, encrypt, type SecretKey } from "./secret.ts";
  * by IMAP (`@boni/mail`, read-only: nothing is marked read, moved or deleted). Every few minutes the new
  * messages of its folder become entities of the account's "Correos" collection, made by this code the first
  * time: every value `external` (it is someone else's text), with the sender as its source, third party.
- * What the agent then proposes from them (tasks) comes in the next step; this only brings the mail in.
+ * Then, with the agent on and collections marked in Settings, each new mail runs a background plan (P7: it
+ * reads and proposes, never acts): a reader lists the tasks the mail asks for, another picks one of those
+ * collections, and each task becomes a proposal in the inbox, with where it came from.
  *
  * Kept in system.db's account data: `mail` (the settings, the app password among them, encrypted with the
  * server's secret key; never sent back to a device) and `mail-state` (where it is: UIDVALIDITY, the last
@@ -37,6 +39,69 @@ export interface MailState {
   /** Messages brought in so far. */
   count: number;
 }
+/** A collection tasks may go to, as the plan names it. */
+export interface Target {
+  key: string;
+  name: string;
+  /** The option the reader sees: the name and a few of Juan's own titles in it, so it knows what goes there. */
+  option: string;
+  /** Its first date field's key, where a task's due day goes (none: the day is left out). */
+  date: string | null;
+}
+
+/**
+ * The background plan for one mail (docs/nucleo.md 7.12, a plan template made by code): read the mail,
+ * list its tasks, pick a collection when there are several (only if there are tasks), and one
+ * `entities.create` per task in the chosen one. Every value comes from the mail, so the policy sends each
+ * one to the inbox (P4, P7); nothing here is written by itself.
+ */
+export function mailPlan(mail: string, hasBody: boolean, targets: Target[]): unknown {
+  const text = hasBody
+    ? { fn: "concat", args: [{ ref: "$m.asunto" }, { lit: "\n\n" }, { ref: "$m.body" }] }
+    : { ref: "$m.asunto" };
+  const steps: unknown[] = [
+    { id: "m", op: "call", tool: "entities.get", args: { id: { lit: mail } } },
+    { id: "t", op: "read", reader: "extract_tasks", input: text },
+  ];
+  if (targets.length > 1)
+    steps.push({
+      id: "c",
+      op: "read",
+      reader: "classify",
+      input: text,
+      params: {
+        options: { fn: "list", args: targets.map((t) => ({ lit: t.option })) },
+        question: {
+          lit: "¿En cuál de estas colecciones apuntaría el destinatario las tareas que le pide este mensaje?",
+        },
+      },
+      when: { ref: "$t.tasks" },
+    });
+  targets.forEach((t, i) => {
+    steps.push({
+      id: `n${i}`,
+      op: "call",
+      tool: "entities.create",
+      each: { ref: "$t.tasks" },
+      ...(targets.length > 1
+        ? { when: { fn: "eq", args: [{ ref: "$c.choice" }, { lit: t.option }] } }
+        : {}),
+      args: {
+        type: { lit: t.key },
+        values: {
+          fn: "obj",
+          args: [
+            { lit: "title" },
+            { ref: "$item.title" },
+            ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
+          ],
+        },
+      },
+    });
+  });
+  return { version: 1, steps };
+}
+
 /** What a device sees: everything but the password. */
 export type MailView = Omit<MailSettings, "password"> & { configured: true; state: MailState };
 
@@ -345,8 +410,69 @@ export class Mails {
       st.lastCheck = this.now();
       this.saveState(account, st);
     }
-    if (made.length) this.o.onNew?.(account, made);
+    if (made.length) {
+      this.o.onNew?.(account, made);
+      await this.propose(account, s, made);
+    }
     return st;
+  }
+
+  /**
+   * The marked collections the models may see, as plan targets (a hidden one is never offered). Each option
+   * shows the collection's name and up to three of its latest titles, so a reader that only gets names (and
+   * guesses) knows what each one holds: only titles that are Juan's or his data's, not sensitive, and none
+   * from a collection the models may only know exists (R3). Options are the one thing of Juan's a reader of
+   * outside text may get (A14), and its answer can only be one of them.
+   */
+  private targets(store: UserStore, s: MailSettings): Target[] {
+    const levels = store.aiAccess();
+    const types = store.schema().types;
+    return s.collections.flatMap((id) => {
+      const t = types[id];
+      if (!t || t.archived || t.system || levels[id] === "hidden") return [];
+      const date = t.fields.find((f) => f.type === "date" && !f.archived && !f.hidden);
+      const examples =
+        levels[id] === "opaque"
+          ? []
+          : store
+              .list(id)
+              .filter((e) => {
+                const l = e.labels[t.titleField];
+                return (
+                  l !== undefined &&
+                  (l.integrity === "user" || l.integrity === "own" || l.integrity === "imported") &&
+                  l.sensitivity !== "sensitive"
+                );
+              })
+              .sort((a, b) => b.entity.updated - a.entity.updated)
+              .slice(0, 3)
+              .map((e) => String(e.entity.values[t.titleField]).replace(/\s+/g, " ").slice(0, 40));
+      const option = examples.length ? `${t.name} (p. ej.: ${examples.join("; ")})` : t.name;
+      return [{ key: t.key, name: t.name, option: option.slice(0, 200), date: date?.key ?? null }];
+    });
+  }
+
+  /** Runs the mail plan for each new mail; the proposals land in the inbox (and the devices are told). */
+  private async propose(account: number, s: MailSettings, made: string[]): Promise<void> {
+    if (!this.o.host.on) return;
+    const store = this.o.host.store(account);
+    const targets = this.targets(store, s);
+    if (!targets.length) return;
+    const agent = this.o.host.agent(account);
+    let n = 0;
+    for (const id of made) {
+      const e = store.get(id);
+      if (!e) continue;
+      try {
+        const r = await agent.background(mailPlan(id, Boolean(e.entity.body), targets));
+        n += r.proposals.length;
+        if (r.status === "stopped" && r.error)
+          console.warn(`mail ${account}: plan stopped (${r.error})`);
+      } catch (err) {
+        console.error(`mail ${account}: ${(err as Error).message}`);
+      }
+    }
+    if (n) this.o.host.emit(account, "proposals", { n });
   }
 
   /** Every `everyMs`, the accounts whose mailbox is on. */

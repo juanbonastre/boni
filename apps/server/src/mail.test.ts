@@ -5,6 +5,8 @@ import type { AddressInfo } from "node:net";
 import { createServer, type Server, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ScriptedProvider } from "@boni/agent";
+import { label } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
@@ -12,7 +14,7 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
-import { Mails } from "./mail.ts";
+import { Mails, mailPlan } from "./mail.ts";
 import { Vaults } from "./vaults.ts";
 
 /** The mailbox connector against a fake IMAP server (invented mail only). */
@@ -237,5 +239,119 @@ describe("the mailbox", () => {
     expect((await call(t, "POST", "/api/mail/forget")).status).toBe(200);
     expect(mails.view(1)).toBeNull();
     expect(host.store(1).list(st.type as string)).toHaveLength(4);
+  });
+});
+
+describe("tasks a mail asks for", () => {
+  it("become proposals in a collection the reader picks among the marked ones, never writes", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-agent-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD, "");
+    const readers: string[] = [];
+    const reader = new ScriptedProvider("fake", (req) => {
+      const kind = /list the tasks/.test(req.system) ? "extract_tasks" : "classify";
+      readers.push(kind);
+      if (kind === "classify") return { choice: "Gestiones (p. ej.: Renovar el DNI)" };
+      return {
+        tasks: [
+          {
+            title: "Enviar el informe",
+            due: "2026-10-23",
+            sender: "lucia.ejemplo@example.com",
+            message_id: "m21",
+          },
+          {
+            title: "Reservar la sala",
+            due: null,
+            sender: "lucia.ejemplo@example.com",
+            message_id: "m21",
+          },
+        ],
+      };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    for (const [id, key, name] of [
+      ["t_docencia", "docencia", "Docencia"],
+      ["t_gestiones", "gestiones", "Gestiones"],
+      ["t_diario", "diario", "Diario"],
+    ] as const)
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key,
+            name,
+            fields: [
+              { id: `${id}_t`, key: "titulo", name: "Título", type: "text", label: own },
+              { id: `${id}_d`, key: "date", name: "Fecha", type: "date", label: own },
+            ],
+            titleField: `${id}_t`,
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: own,
+          },
+        },
+        { actor: "user" },
+      );
+    store.setAiAccess("t_diario", "hidden", "portatil");
+    store.create(
+      "t_gestiones",
+      { t_gestiones_t: { value: "Renovar el DNI", label: own } },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 9;
+    box.mails = new Map([
+      [1, mail(21, "Informe y sala", "¿Me envías el informe el jueves? Y reserva la sala.")],
+    ]);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia", "t_gestiones", "t_diario"],
+    });
+    expect(await m.check(1)).toMatchObject({ count: 1, lastError: null });
+    expect(readers).toEqual(["extract_tasks", "classify"]);
+    const pending = store.journal.proposals("pending");
+    expect(pending).toHaveLength(2);
+    const rows = pending.map((p) => (p.view as { rows: { arg: string; value: string }[] }).rows);
+    for (const r of rows) {
+      expect(r.find((x) => x.arg === "type")?.value).toBe("gestiones");
+    }
+    expect(rows.map((r) => r.find((x) => x.arg === "values.title")?.value).sort()).toEqual([
+      "Enviar el informe",
+      "Reservar la sala",
+    ]);
+    expect(rows.flat().find((x) => x.arg === "values.date")?.value).toBe("2026-10-23");
+    expect(rows.flat().filter((x) => x.arg === "values.date")).toHaveLength(1); // no "null" row
+    // Nothing written by itself, in any collection; the diary (hidden) was never an option, and each option
+    // carried a few of Juan's own titles of it.
+    expect(store.list("t_docencia")).toHaveLength(0);
+    expect(store.list("t_gestiones")).toHaveLength(1);
+    expect(store.list("t_diario")).toHaveLength(0);
+    const asked = reader.requests.find((r) => /choose the one option/.test(r.system));
+    expect((asked?.input as { options?: string[] } | undefined)?.options).toEqual([
+      "Docencia",
+      "Gestiones (p. ej.: Renovar el DNI)",
+    ]);
+    const plan = mailPlan("e_x", true, [
+      { key: "docencia", name: "Docencia", option: "Docencia", date: "date" },
+      { key: "gestiones", name: "Gestiones", option: "Gestiones", date: "date" },
+    ]) as { steps: { reader?: string; params?: { options: { args: { lit: string }[] } } }[] };
+    expect(
+      plan.steps.find((x) => x.reader === "classify")?.params?.options.args.map((a) => a.lit),
+    ).toEqual(["Docencia", "Gestiones"]);
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
   });
 });

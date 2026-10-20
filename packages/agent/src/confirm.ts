@@ -116,6 +116,8 @@ export function confirmView(
     const role = tool.args[name]?.role ?? "?";
     if (v.t === "rec" && store) {
       for (const [key, fv] of Object.entries(v.fields)) {
+        // A field with no value (a task without a due day) is simply not set: no row saying "null".
+        if (plain(fv) === null) continue;
         const f = def?.fields.find((x) => x.key === key);
         rows.push(row(`${name}.${key}`, role, fv, f && trusted(f.label) ? { name: f.name } : {}));
       }

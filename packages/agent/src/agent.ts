@@ -53,8 +53,9 @@ The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "
 one "op":
 - {"id", "op": "call", "tool", "args": {name: expr}}: a tool from "tools", with its argument names.
 - {"id", "op": "read", "reader", "input": expr, "params"}: a reader model reads a text and fills a fixed form.
-  Readers: extract_tasks (tasks a message asks for), classify (params.options: the allowed answers), summarize,
-  rewrite (params.instruction), answer_about (params.question). Use them for text from outside (e-mails, pages).
+  Readers: extract_tasks (tasks a message asks for), classify (params.options: the allowed answers; params.question,
+  optional: what to choose for), summarize, rewrite (params.instruction), answer_about (params.question). Use them for
+  text from outside (e-mails, pages).
 - {"id", "op": "ask", "control": "choice" | "text", "prompt": expr, "options": expr}: ask the user; choice options
   must be a list. Never ask for passwords or codes.
 - {"id", "op": "reply", "component": "text" | "number" | "list" | "table", "data": {...}}: what the user sees.
@@ -69,10 +70,11 @@ Expressions. Every value in "args", "params", "data", "input", "prompt", "option
 - {"quote": "..."}: a whole span of the user's request, copied exactly (at least 3 characters, between spaces or
   punctuation): use it for any value the user gave, such as a title, a name or an address.
 - {"ref": "$id.path"}: an earlier result: "$s1", "$s1.items[0].titulo", "$item.email".
-- {"fn": name, "args": [...]}: one of count, sum, min, max, pick, item, field, filter_eq, concat, obj, length, eq, ne,
+- {"fn": name, "args": [...]}: one of count, sum, min, max, pick, item, field, filter_eq, concat, obj, list, length, eq, ne,
   gt, lt, and, or, not, today, add_days. Its args are lit, quote or ref ONLY: never another fn. To combine, add a step.
   obj(key, value, key, value...) builds the "values" of entities.create and entities.update (field keys);
-  field(list, key) is the list of that field of each item; count(list); eq/gt/lt(a, b).
+  field(list, key) is the list of that field of each item; count(list); eq/gt/lt(a, b); list(a, b, ...) builds a list
+  (the "options" of a classify reader, for example).
 A reply's template is an expression too: {"lit": "Hecho: {a}"}, with "a".."d" filling {a}..{d}.
 
 Results:

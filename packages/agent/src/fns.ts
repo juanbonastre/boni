@@ -117,6 +117,9 @@ export function callFn(name: string, args: Val[], today: string): Val {
     }
     case "concat":
       return out(args.map(text).join(""));
+    case "list":
+      // The items keep their own labels; the list's is all of them (who chose what is in it).
+      return list(args, lab, true);
     case "length":
       return out(a.t === "list" ? a.items.length : [...text(a)].length);
     case "eq":
