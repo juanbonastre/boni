@@ -372,6 +372,7 @@ const es = {
   "log.origin.turn": "Petición",
   "log.origin.background": "Segundo plano",
   "log.origin.accepted": "Propuesta aceptada",
+  "log.origin.mirror": "Cambio en Obsidian",
   "log.origin.miniapp": "Mini-app",
   "mail.title": "Correo",
   "mail.help":
@@ -421,6 +422,7 @@ const es = {
   "log.status.stopped": "Parado",
   "log.status.running": "En curso",
   "log.status.waiting": "Esperando",
+  "log.status.proposed": "En la bandeja",
   "agent.error.off": "El agente está apagado en el servidor.",
   "agent.error.declined": "Cancelado.",
   "agent.error.planInvalid": "Boni no ha sabido cómo hacerlo. Prueba a decirlo de otra forma.",
@@ -814,6 +816,7 @@ const en: Record<Key, string> = {
   "log.origin.turn": "Request",
   "log.origin.background": "Background",
   "log.origin.accepted": "Accepted proposal",
+  "log.origin.mirror": "Change in Obsidian",
   "log.origin.miniapp": "Mini-app",
   "mail.title": "Mail",
   "mail.help":
@@ -863,6 +866,7 @@ const en: Record<Key, string> = {
   "log.status.stopped": "Stopped",
   "log.status.running": "Running",
   "log.status.waiting": "Waiting",
+  "log.status.proposed": "In the inbox",
   "agent.error.off": "The agent is off on the server.",
   "agent.error.declined": "Cancelled.",
   "agent.error.planInvalid": "Boni didn't know how to do it. Try saying it another way.",
