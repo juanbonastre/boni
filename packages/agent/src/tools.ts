@@ -228,13 +228,15 @@ const KEY = /^[a-z][a-z0-9_]{0,40}$/;
 const byName = <T>(all: T[], name: string, nameOf: (x: T) => string, key: (x: T) => string) =>
   all.find((x) => nameOf(x) === name) ??
   all.find((x) => nameOf(x) === key(x) && key(x) === asKey(name));
+/** A field by its name; "title" is the type's title field when no field is called that (models write it). */
 const fieldByName = (def: TypeDef, name: string) =>
   byName(
     def.fields.filter((f) => !f.archived && !f.hidden),
     name,
     fieldName,
     (f) => f.key,
-  );
+  ) ??
+  (name === "title" ? def.fields.find((f) => f.id === def.titleField && !f.archived) : undefined);
 
 /** A select's value by its option id, or by the option's name as a model writes it ("Leído", "leido"). */
 const optionFor = (f: FieldDef, v: unknown): unknown => {
