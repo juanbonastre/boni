@@ -62,12 +62,13 @@ export function userOf(db: Db, token: string | null | undefined): User | null {
 export function sessionUser(
   db: Db,
   token: string | null | undefined,
-): { user: User; device: string } | null {
+): { user: User; device: string; trust: "personal" | "shared" | "ambient" } | null {
   const s = sessionOf(db, token);
   return s
     ? {
         user: { id: s.account.id, name: s.account.name, vault: s.account.vault ?? "" },
         device: s.device.name,
+        trust: s.device.trust,
       }
     : null;
 }

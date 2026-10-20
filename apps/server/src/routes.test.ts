@@ -94,6 +94,15 @@ describe("the server's two entries", () => {
       (k) => k.includes("/api/v1/") || k.includes("/healthz"),
     ))
       expect(v1Routes, `${r} is listed but not served`).toContain(r);
+    // The agent's, none of them public either.
+    const ag = readFileSync(new URL("./agent.ts", import.meta.url), "utf8");
+    const agRoutes = [...ag.matchAll(/case "((?:GET|POST|PUT|DELETE) \/api\/agent\/[^"]*)"/g)].map(
+      (m) => m[1] as string,
+    );
+    expect(agRoutes.length).toBeGreaterThanOrEqual(10);
+    for (const r of agRoutes) expect(ROUTES[r], `${r} is not in routes.ts`).toBe("tailnet");
+    for (const r of Object.keys(ROUTES).filter((k) => k.includes("/api/agent/")))
+      expect(agRoutes, `${r} is listed but not served`).toContain(r);
   });
 
   it("finds the route of a path with parameters, fixed routes first", () => {

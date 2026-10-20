@@ -14,10 +14,13 @@
     "node": ">=24"
   },
   "dependencies": {
+    "@boni/agent": "workspace:*",
     "@boni/calendar": "workspace:*",
     "@boni/calendar-web": "workspace:*",
+    "@boni/entities": "workspace:*",
     "@boni/identity": "workspace:*",
     "@boni/net": "workspace:*",
+    "@boni/store": "workspace:*",
     "@boni/views": "workspace:*"
   },
   "devDependencies": {

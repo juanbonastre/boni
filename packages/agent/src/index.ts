@@ -12,14 +12,15 @@ export {
   type RunLimits,
   type TurnResult,
 } from "./agent.ts";
+export { AnthropicProvider, apiSchema, ProviderError } from "./anthropic.ts";
 export { type ConfirmView, confirmHash, confirmView, marksOf } from "./confirm.ts";
 export { callFn, FnError } from "./fns.ts";
 export {
   type Expr,
   FNS,
   isWholeSpan,
-  PLAN_SCHEMA,
   type Plan,
+  planSchema,
   type Step,
   validatePlan,
 } from "./plan.ts";

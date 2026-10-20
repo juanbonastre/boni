@@ -1,4 +1,6 @@
 import { dirname, join } from "node:path";
+import { AnthropicProvider } from "@boni/agent";
+import { AgentHost } from "./agent.ts";
 import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
@@ -23,7 +25,9 @@ import { Vaults } from "./vaults.ts";
  *                    server); push is off without it
  *   BONI_PUSH_TOKEN  sent as a bearer token when posting to them (an ntfy account that may write up* topics)
  *   BONI_BACKUPS     daily copies of the database to keep in backups/ next to it   default 14 (0: none)
- *   BONI_TZ     the time zone of the Boni API v1 ("today", the time a capture was saved)   default Europe/Madrid
+ *   BONI_TZ     the time zone of the Boni API v1 and of the agent ("today")   default Europe/Madrid
+ *   ANTHROPIC_API_KEY  turns the agent on (tailnet only) with Anthropic's models; off without it
+ *   BONI_PLANNER_MODEL / BONI_READER_MODEL   default claude-opus-5-5 / claude-haiku-4-5-20251001
  */
 const paths = databasePaths();
 const dbPath = paths.system;
@@ -48,6 +52,24 @@ const push = hosts.length
       ...(process.env.BONI_PUSH_TOKEN ? { token: process.env.BONI_PUSH_TOKEN } : {}),
     })
   : undefined;
+const tz = process.env.BONI_TZ ?? "Europe/Madrid";
+const apiKey = process.env.ANTHROPIC_API_KEY ?? "";
+const agent = new AgentHost({
+  dataDir: dbPath === ":memory:" ? null : dirname(dbPath),
+  providers: apiKey
+    ? {
+        planner: new AnthropicProvider({
+          apiKey,
+          model: process.env.BONI_PLANNER_MODEL ?? "claude-opus-5-5",
+        }),
+        reader: new AnthropicProvider({
+          apiKey,
+          model: process.env.BONI_READER_MODEL ?? "claude-haiku-4-5-20251001",
+        }),
+      }
+    : null,
+  tz,
+});
 const app = makeApp({
   db,
   vaults,
@@ -55,13 +77,15 @@ const app = makeApp({
   feeds,
   ...(push ? { push } : {}),
   webDir: process.env.BONI_WEB ?? null,
-  tz: process.env.BONI_TZ ?? "Europe/Madrid",
+  tz,
+  agent,
 });
 const port = Number(process.env.BONI_PORT ?? 8787);
 const host = process.env.BONI_HOST ?? "127.0.0.1";
 // The whole API (the tailnet's entry). The log line is what the NAS notes check for.
 const server = serve(app, "tailnet");
 server.listen(port, host, () => console.log(`boni-calendar-server on http://${host}:${port}`));
+console.log(agent.on ? "agent on (tailnet only)" : "agent off (no ANTHROPIC_API_KEY)");
 // The public entry (behind Funnel): the same app, only the allow-list.
 const publicPort = process.env.BONI_PUBLIC_PORT ? Number(process.env.BONI_PUBLIC_PORT) : null;
 const publicServer = publicPort === null ? null : serve(app, "public");
@@ -77,6 +101,7 @@ if (publicServer && publicPort !== null) {
 const stop = () => {
   stopBackups();
   app.close();
+  agent.close();
   server.close();
   publicServer?.close();
   vaults.close();

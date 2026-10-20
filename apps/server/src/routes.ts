@@ -4,7 +4,7 @@
  * missing here is never served on the public entry, and routes.test.ts fails while any route of
  * http.ts is missing, so a new route cannot become public by accident. Today every route is the
  * calendar's, which was already public; the Boni API v1 (v1/http.ts, the first Boni's apps) is
- * "tailnet", as the first Boni's server was; the agent's will be too. A ":name" segment matches any
+ * "tailnet", as the first Boni's server was, and so is the agent's (agent.ts). A ":name" segment matches any
  * one segment; a fixed route wins over a pattern ("charts/order" before "charts/:id").
  */
 export type Listener = "tailnet" | "public";
@@ -52,6 +52,16 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "POST /api/v1/widgets": "tailnet",
   "PUT /api/v1/widgets/:id": "tailnet",
   "DELETE /api/v1/widgets/:id": "tailnet",
+  "POST /api/agent/turn": "tailnet",
+  "POST /api/agent/answer": "tailnet",
+  "POST /api/agent/confirm": "tailnet",
+  "POST /api/agent/decline": "tailnet",
+  "GET /api/agent/proposals": "tailnet",
+  "POST /api/agent/proposals/:id/accept": "tailnet",
+  "POST /api/agent/proposals/:id/reject": "tailnet",
+  "GET /api/agent/runs": "tailnet",
+  "POST /api/agent/runs/:id/undo": "tailnet",
+  "GET /api/agent/events": "tailnet",
 };
 
 /**
