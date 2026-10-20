@@ -62,6 +62,34 @@ export interface Visibility {
   count: number;
 }
 
+/** One step of a run as Juan's Registro shows it (`GET api/agent/runs/:id`). */
+export interface RunStep {
+  id: string;
+  what: string;
+  /** The arguments as the plan wrote them, as text. */
+  args: string;
+  decision: string | null;
+  rule: string | null;
+  error: string | null;
+}
+export interface RunDetail {
+  id: string;
+  status: string;
+  request: string | null;
+  steps: RunStep[];
+}
+
+/** A plan expression as text: a literal as it is, a quote of the request in quotes, a reference by name. */
+export function exprText(e: unknown): string {
+  if (!isObj(e)) return "?";
+  if ("lit" in e) return JSON.stringify(e.lit);
+  if ("quote" in e) return `«${String(e.quote)}»`;
+  if ("ref" in e) return String(e.ref);
+  if ("fn" in e && Array.isArray(e.args))
+    return `${String(e.fn)}(${e.args.map(exprText).join(", ")})`;
+  return "?";
+}
+
 export interface RunSummary {
   id: string;
   origin: string;
@@ -349,6 +377,28 @@ export class AgentApi {
   }
   setVisibility = async (id: string, level: AiLevel) =>
     void (await this.call("PUT", `visibility/${encodeURIComponent(id)}`, { level }));
+  async runDetail(id: string): Promise<RunDetail | null> {
+    const b = await this.call("GET", `runs/${encodeURIComponent(id)}`);
+    if (!isObj(b) || !Array.isArray(b.steps)) return null;
+    return {
+      id: str(b.id, 80) ?? id,
+      status: str(b.status, 80) ?? "",
+      request: typeof b.request === "string" ? b.request.slice(0, 4000) : null,
+      steps: b.steps.filter(isObj).map((x) => ({
+        id: str(x.id, 40) ?? "",
+        what: str(x.what, 60) ?? "",
+        args: isObj(x.args)
+          ? Object.entries(x.args)
+              .map(([k, v]) => `${k}: ${exprText(v)}`)
+              .join(", ")
+              .slice(0, 600)
+          : "",
+        decision: str(x.decision, 20),
+        rule: str(x.rule, 10),
+        error: str(x.error, 80),
+      })),
+    };
+  }
   async undo(id: string): Promise<number> {
     const b = await this.call("POST", `runs/${encodeURIComponent(id)}/undo`);
     return isObj(b) && typeof b.undone === "number" ? b.undone : 0;

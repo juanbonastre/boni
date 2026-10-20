@@ -200,7 +200,20 @@ export function entityVal(s: StoredEntity, def: TypeDef | undefined): Val {
     if (f.hidden || f.archived) continue;
     const v = s.entity.values[f.id];
     if (v === undefined) continue;
-    fields[fieldName(f)] = leafFrom(v as Json, s.labels[f.id] ?? code, from);
+    const l = s.labels[f.id] ?? code;
+    // A select's value by its option's name ("Leído", not "o_leido"); writes take the name back.
+    const option = (id: unknown) => f.options?.find((o) => o.id === id);
+    if (f.type === "select" && option(v)) {
+      const o = option(v) as NonNullable<ReturnType<typeof option>>;
+      fields[fieldName(f)] = leafFrom(o.name, join(l, o.label), from);
+    } else if (f.type === "multiselect" && Array.isArray(v)) {
+      const opts = v.map(option);
+      fields[fieldName(f)] = leafFrom(
+        v.map((id, i) => opts[i]?.name ?? id) as Json,
+        join(l, ...opts.flatMap((o) => (o ? [o.label] : []))),
+        from,
+      );
+    } else fields[fieldName(f)] = leafFrom(v as Json, l, from);
   }
   if (s.entity.body !== undefined)
     fields.body = leafFrom(s.entity.body, s.labels[BODY] ?? code, from);
@@ -271,7 +284,8 @@ function matching(
   const key = str(field);
   const f = fieldByName(def, key);
   if (!f) throw new ToolError("unknown-field");
-  const want = JSON.stringify(equals ? plain(equals) : null);
+  const given = equals ? plain(equals) : null;
+  const want = JSON.stringify(f.type === "select" ? optionFor(f, given) : given);
   const read: Label[] = [];
   const kept = all.filter((s) => {
     const l = s.labels[f.id];

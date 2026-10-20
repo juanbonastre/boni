@@ -8,6 +8,7 @@ import {
   type Painted,
   type Pending,
   type Reply,
+  type RunDetail,
   reveal,
   textOf,
 } from "../core/agent.ts";
@@ -20,6 +21,7 @@ import {
   confirmPending,
   declinePending,
   loadInbox,
+  loadRunDetail,
   rejectProposal,
   sendTurn,
   showInbox,
@@ -480,29 +482,68 @@ export function LogView() {
   const t = useStore((s) => s.t);
   const runs = useStore((s) => s.runs);
   const lang = useStore((s) => s.settings.language);
+  const [open, setOpen] = useState<string | null>(null);
+  const [detail, setDetail] = useState<RunDetail | null | "loading">(null);
+  const toggle = (id: string) => {
+    if (open === id) return setOpen(null);
+    setOpen(id);
+    setDetail("loading");
+    void loadRunDetail(id).then(setDetail);
+  };
   return (
     <div className="agent-page">
       {runs.length === 0 && <p className="muted center-note">{t("log.empty")}</p>}
       <ul className="log-list">
         {runs.map((r) => (
-          <li key={r.id} className="list-row">
-            <span className="list-main small">
-              {new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
-                dateStyle: "short",
-                timeStyle: "short",
-              }).format(r.started)}{" "}
-              · {t(`log.origin.${r.origin}`)} · {t(`log.status.${r.status.split(":")[0]}`)}
-            </span>
-            {/* A stopped run may have left changes (a limit stopped it after some): it can be undone too. */}
-            {(r.status === "done" || r.status.startsWith("stopped")) && (
-              <button type="button" className="btn ghost" onClick={() => void undoRun(r.id)}>
-                <Undo2 size={13} strokeWidth={1.8} />
-                {t("chat.undo")}
+          <li key={r.id} className="log-run">
+            <div className="list-row">
+              <button
+                type="button"
+                className="link-btn list-main small log-head"
+                aria-expanded={open === r.id}
+                onClick={() => toggle(r.id)}
+              >
+                {new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
+                  dateStyle: "short",
+                  timeStyle: "short",
+                }).format(r.started)}{" "}
+                · {t(`log.origin.${r.origin}`)} · {t(`log.status.${r.status.split(":")[0]}`)}
               </button>
-            )}
+              {/* A stopped run may have left changes (a limit stopped it after some): it can be undone too. */}
+              {(r.status === "done" || r.status.startsWith("stopped")) && (
+                <button type="button" className="btn ghost" onClick={() => void undoRun(r.id)}>
+                  <Undo2 size={13} strokeWidth={1.8} />
+                  {t("chat.undo")}
+                </button>
+              )}
+            </div>
+            {open === r.id && <RunSteps t={t} detail={detail} />}
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** A run's request and steps, as text (the plan's own words; nothing here is a link or markup). */
+function RunSteps({ t, detail }: { t: T; detail: RunDetail | null | "loading" }) {
+  if (detail === "loading") return <p className="muted small log-detail">{t("log.loading")}</p>;
+  if (!detail) return <p className="muted small log-detail">{t("log.noDetail")}</p>;
+  return (
+    <div className="log-detail small">
+      {detail.request !== null && <p className="log-request">{detail.request}</p>}
+      <ol className="log-steps">
+        {detail.steps.map((s) => (
+          <li key={s.id} className={s.error ? "log-step failed" : "log-step"}>
+            <span className="log-step-what">{s.what}</span>{" "}
+            <span className="muted">
+              {s.error ? agentErrorText(t, s.error) : t(`log.decision.${s.decision ?? "none"}`)}
+              {s.rule ? ` (${s.rule})` : ""}
+            </span>
+            {s.args && <code className="log-args">{s.args}</code>}
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

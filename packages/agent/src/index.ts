@@ -9,6 +9,7 @@ export {
   paint,
   type Reply,
   RUN_LIMITS,
+  type RunDetail,
   type RunLimits,
   type TurnResult,
 } from "./agent.ts";

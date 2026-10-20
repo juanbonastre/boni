@@ -2444,6 +2444,37 @@ html.widget-page body {
   flex-direction: column;
   gap: 6px;
 }
+.log-head {
+  text-align: left;
+  color: inherit;
+}
+.log-detail {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line);
+}
+.log-request {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.log-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.log-step.failed .log-step-what {
+  color: var(--bad);
+}
+.log-args {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 .nav-count {
   margin-left: auto;
   font-size: 11px;

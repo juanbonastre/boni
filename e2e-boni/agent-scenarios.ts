@@ -176,6 +176,32 @@ export const PROPOSALS = {
   ],
 };
 
+/** What run-2 did, as the server tells the Registro (invented). */
+export const RUN_2 = {
+  id: "run-2",
+  status: "stopped:P2-untrusted-destination",
+  request: "Reenvía el informe a quien me lo pidió",
+  steps: [
+    {
+      id: "s1",
+      op: "call",
+      what: "entities.search",
+      args: { text: { quote: "informe" } },
+      decision: "allow",
+      rule: "P1",
+      error: null,
+    },
+    {
+      id: "s2",
+      op: "call",
+      what: "mail.send",
+      args: { to: { ref: "$s1[0].de" }, body: { lit: "Aquí lo tienes" } },
+      decision: "stopped",
+      rule: null,
+      error: "P2-untrusted-destination",
+    },
+  ],
+};
 export const RUNS = {
   runs: [
     {

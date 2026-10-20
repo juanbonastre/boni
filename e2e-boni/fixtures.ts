@@ -75,6 +75,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           const key = `${method} ${p
             .replace(/\/proposals\/[^/]+\//, "/proposals/:id/")
             .replace(/\/runs\/[^/]+\//, "/runs/:id/")
+            .replace(/\/runs\/[^/]+$/, "/runs/:id")
             .replace(/\/visibility\/[^/]+$/, "/visibility/:type")}`;
           const list = opts.agent?.[key];
           if (!list?.length) return [503, '{"error":"agent-off"}'];
