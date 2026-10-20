@@ -85,6 +85,7 @@ export interface MailsOptions {
 export class Mails {
   private o: MailsOptions;
   private busy = new Map<number, Promise<MailState>>();
+  private queued = new Map<number, Promise<MailState>>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(o: MailsOptions) {
@@ -270,12 +271,25 @@ export class Mails {
     return store.create(def.id, values, { actor: "connector" }).entity.id;
   }
 
-  /** Brings in the new mail of one account, once at a time. */
+  /**
+   * Brings in the new mail of one account, one check at a time. Asked while one runs, it waits for it and
+   * then checks again (that one may have looked before the new mail arrived); callers meanwhile share it.
+   */
   check(account: number): Promise<MailState> {
     const running = this.busy.get(account);
-    if (running) return running;
-    const job = this.run(account).finally(() => this.busy.delete(account));
-    this.busy.set(account, job);
+    const queued = this.queued.get(account);
+    if (queued) return queued;
+    const job: Promise<MailState> = (running ? running.catch(() => null) : Promise.resolve(null))
+      .then(() => {
+        this.queued.delete(account);
+        this.busy.set(account, job);
+        return this.run(account);
+      })
+      .finally(() => {
+        if (this.busy.get(account) === job) this.busy.delete(account);
+      });
+    if (running) this.queued.set(account, job);
+    else this.busy.set(account, job);
     return job;
   }
 
@@ -347,6 +361,6 @@ export class Mails {
 
   async close(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
-    await Promise.allSettled(this.busy.values());
+    await Promise.allSettled([...this.busy.values(), ...this.queued.values()]);
   }
 }
