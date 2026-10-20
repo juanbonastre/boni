@@ -38,6 +38,11 @@ export interface MailState {
   lastError: string | null;
   /** Messages brought in so far. */
   count: number;
+  /**
+   * Mail not yet read for tasks (no collection marked yet, or the agent off): read as soon as it can be, oldest
+   * first, so the order of setting things up never loses a mail. Missing in a state from before it existed.
+   */
+  pending?: string[];
 }
 /** A collection tasks may go to, as the plan names it. */
 export interface Target {
@@ -410,10 +415,20 @@ export class Mails {
       st.lastCheck = this.now();
       this.saveState(account, st);
     }
-    if (made.length) {
-      this.o.onNew?.(account, made);
-      await this.propose(account, s, made);
-    }
+    if (made.length) this.o.onNew?.(account, made);
+    // Every mail waits in `pending` until a plan has read it; a state from before `pending` existed gets
+    // the mail of the first days (what the first check brought in) once.
+    if (st.pending === undefined)
+      st.pending = st.type
+        ? store
+            .list(st.type)
+            .filter((e) => e.entity.created >= this.now() - (this.o.firstDays ?? 3) * 86_400_000)
+            .sort((a, b) => a.entity.created - b.entity.created)
+            .map((e) => e.entity.id)
+        : [];
+    st.pending = [...new Set([...st.pending, ...made])].slice(-500);
+    this.saveState(account, st);
+    await this.propose(account, s, st);
     return st;
   }
 
@@ -452,17 +467,23 @@ export class Mails {
     });
   }
 
-  /** Runs the mail plan for each new mail; the proposals land in the inbox (and the devices are told). */
-  private async propose(account: number, s: MailSettings, made: string[]): Promise<void> {
-    if (!this.o.host.on) return;
+  /**
+   * Runs the mail plan for the pending mail (up to `perCheck` each time), each one taken off the list once its
+   * plan ran; the proposals land in the inbox (and the devices are told). Waits while there is no agent or
+   * no collection marked.
+   */
+  private async propose(account: number, s: MailSettings, st: MailState): Promise<void> {
+    if (!this.o.host.on || !st.pending?.length) return;
     const store = this.o.host.store(account);
     const targets = this.targets(store, s);
     if (!targets.length) return;
     const agent = this.o.host.agent(account);
     let n = 0;
-    for (const id of made) {
+    for (const id of st.pending.slice(0, this.o.perCheck ?? 50)) {
+      st.pending = st.pending.filter((x) => x !== id);
+      this.saveState(account, st);
       const e = store.get(id);
-      if (!e) continue;
+      if (!e || e.entity.deleted !== undefined) continue;
       try {
         const r = await agent.background(mailPlan(id, Boolean(e.entity.body), targets));
         n += r.proposals.length;

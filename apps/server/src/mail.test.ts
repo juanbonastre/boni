@@ -313,13 +313,14 @@ describe("tasks a mail asks for", () => {
     box.mails = new Map([
       [1, mail(21, "Informe y sala", "¿Me envías el informe el jueves? Y reserva la sala.")],
     ]);
-    await m.save(1, {
-      host: "imap.example.com",
-      user: "juan@example.com",
-      password: APP_PASSWORD,
-      collections: ["t_docencia", "t_gestiones", "t_diario"],
-    });
+    // Connected before any collection is marked: the mail waits, unread by any model.
+    await m.save(1, { host: "imap.example.com", user: "juan@example.com", password: APP_PASSWORD });
     expect(await m.check(1)).toMatchObject({ count: 1, lastError: null });
+    expect(readers).toEqual([]);
+    expect(m.state(1).pending).toHaveLength(1);
+    // Marked afterwards: the next check reads it (and nothing new arrived).
+    await m.save(1, { collections: ["t_docencia", "t_gestiones", "t_diario"] });
+    expect(await m.check(1)).toMatchObject({ count: 1, pending: [] });
     expect(readers).toEqual(["extract_tasks", "classify"]);
     const pending = store.journal.proposals("pending");
     expect(pending).toHaveLength(2);
