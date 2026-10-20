@@ -62,6 +62,7 @@ export function openMirrorState(path: string): MirrorState {
   db.exec(`
     PRAGMA busy_timeout = 15000;
     PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
     CREATE TABLE IF NOT EXISTS types (type TEXT PRIMARY KEY, profile TEXT NOT NULL, folder TEXT NOT NULL,
       props TEXT NOT NULL, schema INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS notes (entity TEXT PRIMARY KEY, type TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
