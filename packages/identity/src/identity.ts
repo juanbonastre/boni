@@ -83,7 +83,7 @@ const MIGRATIONS = [
 export function openSystemDb(path: string): SystemDb {
   const db = new DatabaseSync(path);
   // The server and the admin's commands share this file: a writer waits for the other.
-  db.exec("PRAGMA busy_timeout = 15000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  db.exec("PRAGMA busy_timeout = 15000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;");
   const version = (db.prepare("PRAGMA user_version").get() as { user_version: number })
     .user_version;
   for (let v = version; v < MIGRATIONS.length; v++) {

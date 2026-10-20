@@ -140,7 +140,10 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
   const now = opts.now ?? Date.now;
   const db = new DatabaseSync(path);
   // Another process (the import, a command) may be writing: wait for it instead of failing at once.
-  db.exec("PRAGMA busy_timeout = 15000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  // WAL with synchronous NORMAL: never corrupt, and a commit does not wait for the disk (on the NAS's
+  // encrypted volume FULL made the vault import take most of an hour); a power cut can lose the last
+  // commits, which the daily copies cover.
+  db.exec("PRAGMA busy_timeout = 15000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;");
   db.enableDefensive(true);
   migrate(db);
 
