@@ -4,11 +4,12 @@ import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ensureSystemTypes } from "@boni/agent";
 import { exportZip, importExport, readZip } from "@boni/export";
-import { devicesOf, importAccounts, revokeDevice } from "@boni/identity";
+import { devicesOf, importAccounts, revokeDevice, wrappedKeysIn } from "@boni/identity";
 import { Mirror, type MirrorFs, openMirrorState, type Profile } from "@boni/mirror";
-import { openUserStore } from "@boni/store";
+import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
 import { mirrorStatePath } from "./mirror.ts";
+import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
 import { V1Store } from "./v1/store.ts";
 
@@ -32,6 +33,8 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts import-export <file.zip> <name> [--apply] [--trust-labels]
  *       an export back into account <name> (ids already there are left alone); a dry run without --apply.
  *       --trust-labels keeps the file's provenance labels (only for an export of one's own that never left).
+ *   node src/cli.ts restore <name> <backups/user-<id>-<day>.db.sealed> <out.db>
+ *       opens one of the account's encrypted copies (store or mirror state) into a plain file; never over a file.
  */
 const [cmd, ...args] = process.argv.slice(2);
 const paths = databasePaths();
@@ -108,6 +111,18 @@ try {
       throw e;
     }
     console.log(apply ? "Imported." : "Dry run: nothing written (add --apply).");
+  } else if (cmd === "restore") {
+    const [name, sealed, out] = args;
+    if (!name || !sealed || !out)
+      throw new Error("Usage: restore <name> <file.db.sealed> <out.db>");
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!user) throw new Error(`No account ${name}`);
+    if (existsSync(out)) throw new Error(`${out} exists: choose a new file`);
+    const key = wrappedKeyProvider(loadKey(paths.system), wrappedKeysIn(db)).dataKey(
+      String(user.id),
+    );
+    restoreBackup(sealed, key, out);
+    console.log(`${out}: restored (stop the server before putting it in place)`);
   } else if (cmd === "export" || cmd === "import-export") {
     const flags = new Set(args.filter((a) => a.startsWith("--")));
     const [a, b] = args.filter((x) => !x.startsWith("--"));

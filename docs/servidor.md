@@ -222,3 +222,13 @@ espejo genérico, se abre en Obsidian), `csv/<tipo>.csv`, `views.json` (gráfica
   se puede editar); `--trust-labels` la conserva tal cual, solo para una exportación propia que no ha salido de tus manos.
 - En una hoja de cálculo, una celda que empieza como una fórmula (`=`, `+`, `-`, `@`) se guarda como texto.
 
+## Listo para el NAS (2026-10-20)
+- **Copias:** además de `system.db`, cada día una copia de cada cuenta (`backups/user-<id>-<día>.db.sealed`, su almacén:
+  elementos, procedencia, registro y diario del agente) y del estado de su espejo (`mirror-<id>-<día>.db.sealed`), cifradas
+  con la clave de datos de la cuenta, que se guarda envuelta en `system.db` y se abre con `secret.key`. Sin `secret.key` no
+  se pueden abrir: guárdala aparte (Vaultwarden). Se conservan `BONI_BACKUPS` (14). Abrir una:
+  `node src/cli.ts restore <cuenta> backups/user-<id>-<día>.db.sealed <nuevo.db>` (nunca sobre un archivo que exista).
+- **`BONI_TRUSTED_PROXIES`:** con la entrada pública detrás del sidecar del nodo público por una red interna de Docker, la
+  conexión llega desde la IP de ese sidecar y no desde 127.0.0.1. Esa IP se pone aquí para que el servidor se fíe de su
+  `X-Forwarded-For` y los límites de inicio de sesión vean la IP real de cada cliente.
+

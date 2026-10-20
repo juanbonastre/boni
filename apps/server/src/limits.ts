@@ -68,14 +68,23 @@ export class LoginGuard {
 
 /**
  * The client's address. Behind Tailscale serve (and Funnel) every request comes from loopback, and the
- * proxy says who it was for in X-Forwarded-For; a header from anyone else is not trusted.
+ * proxy says who it was for in X-Forwarded-For; a header from anyone else is not trusted, unless it comes
+ * from one of `proxies` (BONI_TRUSTED_PROXIES: the public node's sidecar reaching the public entry over an
+ * internal Docker network, docs/nucleo.md 11).
  */
 export function clientAddress(
   socketAddress: string | undefined,
   forwardedFor: string | undefined,
+  proxies: ReadonlySet<string> = new Set(),
 ): string {
   const direct = socketAddress ?? "unknown";
-  const fromProxy = direct === "127.0.0.1" || direct === "::1" || direct === "::ffff:127.0.0.1";
+  const plain = direct.startsWith("::ffff:") ? direct.slice(7) : direct;
+  const fromProxy =
+    direct === "127.0.0.1" ||
+    direct === "::1" ||
+    direct === "::ffff:127.0.0.1" ||
+    proxies.has(direct) ||
+    proxies.has(plain);
   const first = forwardedFor?.split(",")[0]?.trim();
   return fromProxy && first ? first : direct;
 }

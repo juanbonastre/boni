@@ -148,6 +148,8 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `cli.ts import-boni` brings them, and the accounts, from the old `boni.sqlite3`. `golden/v1.json` is
                  what the original Python server answered (`golden/make_golden.py`); `v1.test.ts` must match it.
                  `GET /api/export` (tailnet, personal devices) and `cli.ts export` / `import-export`.
+                 Daily copies of each account's store and mirror state, sealed with the account's data key
+                 (`backupStoresNow`, `cli.ts restore`); `BONI_TRUSTED_PROXIES` for the public entry behind an internal network.
                  `src/mirror.ts`: the mirror of each account's `core` types (after agent requests and every 30 s;
                  `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run by default.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
