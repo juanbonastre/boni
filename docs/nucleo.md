@@ -45,6 +45,10 @@ Este repo pasará a llamarse `boni` (decisión de Juan, 2026-10-19), así que la
 | **Obsidian es una integración por fuera, no un límite:** la comunidad de Obsidian debe poder aprovechar Boni y Boni Calendar, pero eso no condiciona lo que Boni puede hacer. Es una puerta para que la gente de Obsidian entre en Boni (sección 9.4) | Decidido (Juan, 2026-10-20) |
 | **Lo que ve la IA lo decide Juan, colección a colección,** desde la interfaz: "La ve", "Solo sabe que existe" (el código calcula y pinta con ella, ningún modelo lee su contenido) o "No la ve". Diario y Salud empiezan ocultas. Matiza "el modelo puede leer las notas" (fila de arriba): puede, salvo lo que Juan le quite (sección 7.3) | Decidido (Juan, 2026-10-20) |
 | **Nada fijo del dominio de Juan:** tipos, formularios, atajos y vistas los crea el usuario con la ayuda de la IA y son datos. Lo que hoy está fijo (el botón "Apuntar gasto", el formulario de movimientos, la definición de gasto de `@boni/views`, los grupos de carpetas de la importación) es compatibilidad de la transición y se va (PR 16) | Decidido (Juan, 2026-10-20) |
+| **La interfaz de Boni, como Notion:** páginas con un editor de bloques con las mismas funciones que el de Notion (bloques de cada tipo, menú `/`, arrastrar bloques, páginas dentro de páginas, bases de datos en línea, menciones y enlaces entre páginas), bases de datos con sus vistas, y una barra lateral con lo que el usuario crea. Sin pantalla "Hoy" fija: si la quiere, la crea él como otra página | Decidido (Juan, 2026-10-20) |
+| **Las funciones de Hermes, en Boni:** automatizar (trabajos programados y disparadores), conectores, herramientas y memoria, con su sitio en la interfaz y creadas hablando o a mano | Decidido (Juan, 2026-10-20) |
+| **Modelos configurables desde la app:** Claude, OpenRouter, OpenAI y cualquier API compatible, un modelo local o uno en un servidor propio, elegidos por papel (planificador, lectores). La seguridad no depende del modelo (7.10) | Decidido (Juan, 2026-10-20) |
+| **Lo que ve la IA, también dentro de una colección:** reglas con filtro ("Movimientos con categoría salud: no la ve") además del nivel de la colección (7.3) | Decidido (Juan, 2026-10-20) |
 | **El modelo puede leer y modificar el contenido de las notas**, como Claude con el vault. La seguridad la da la arquitectura, no esconderle los datos al proveedor. Matiza "las notas propias no deben salir" (plan, sección 1) para la fase del NAS | Decidido (Juan, 2026-10-19) |
 | Cada app (Boni y Boni Calendar, en móvil y escritorio) se sigue publicando por separado desde el mismo repo | Decidido (Juan, 2026-10-19) |
 | **Contenido externo = texto escrito por otros** (no una carpeta); `NotionImport/` son notas de Juan | Decidido (Juan, 2026-10-19) |
@@ -412,6 +416,12 @@ type Expr =
   búsqueda). Lo aplica `readStore`, la única vista de lectura del agente, en cada llamada, así que un cambio vale al
   momento. Diario y Salud empiezan ocultas (la importación lo pone solo si Juan no ha elegido). `private/` y
   `restricted/` siguen sin entrar en Boni de ninguna forma.
+- **Reglas dentro de una colección (decidido, Juan, 2026-10-20; diseño propuesto):** además del nivel de la colección,
+  reglas con un filtro del mismo lenguaje que las vistas (8): "donde categoría = salud → no la ve", "donde etiqueta
+  contiene privado → solo sabe que existe". Gana la regla más estricta que case. Se evalúan en `readStore` por elemento;
+  un elemento oculto tampoco cuenta en totales ni recuentos (si contara, la diferencia lo delataría). Un filtro que dependa
+  de un campo que la IA puede cambiar no protege frente a ella: las reglas solo pueden usar campos que la IA no ve o no
+  puede escribir (lo comprueba el código al guardarlas).
 - **Lo que no recibe:** nada con integridad `external` ni `ambient` sin confirmar. En su lugar recibe **asas opacas**
   con la forma del valor ("lista de 5 tareas, externo, campos: título, fecha"). Tampoco recibe secretos ni tokens.
 - **Una sola frontera hacia el planificador.** Todo lo que entra en su contexto pasa por una única función,
@@ -561,6 +571,15 @@ interface ModelProvider {
 
 - **Un modelo por papel**, elegido en la configuración del servidor (Juan no tiene que tocar nada). La seguridad no
   depende de cuál sea.
+- **Proveedores configurables desde la app (decidido, Juan, 2026-10-20; diseño propuesto):** Anthropic, OpenRouter,
+  OpenAI y cualquier API compatible con la de OpenAI (vLLM, llama.cpp, Ollama y similares, en local o en un servidor
+  propio), elegidos por papel. En Ajustes, solo desde un dispositivo personal; las claves se guardan cifradas en el
+  servidor y nunca vuelven a ningún dispositivo. La dirección de un proveedor es un destino que pone Juan, así que es la
+  única salida a una red privada que se permite (para un modelo en el NAS o en la LAN); nunca la puede poner el agente.
+  Cada proveedor declara su clase de privacidad (`external-api`, `verifiable`, `local`), y "Lo que ve la IA" puede
+  distinguir entre ellas (por ejemplo, el diario solo para un modelo local). Como cada modelo responde distinto, la
+  evaluación con el modelo real (`eval/eval.ts`) se pasa por proveedor antes de usarlo; el código valida cada plan y cada
+  salida igual que hoy.
 - **Propuesta para el NAS:**
   - planificador `claude-opus-5-5`, con salida estructurada y esfuerzo `medium`, `high` si las pruebas lo piden;
   - lectores `claude-haiku-4-5` (barato y suficiente para extraer con esquema), o `claude-sonnet-5-5` si la calidad
@@ -842,6 +861,11 @@ distinguidas por **dónde llegan** y nunca por cabeceras que se puedan falsifica
 | 15 | Primera colección en modo `core` (con Juan) y después el correo como fuente de propuestas (plan, paso 2) | Corpus ampliado con correos reales de forma (inventados) |
 |  | **Antes, "Lo que ve la IA" (2026-10-20):** los tres niveles por colección (7.3), en el almacén (`ai_access`), el agente (`readStore`, R3), el servidor (`/api/agent/visibility`, solo dispositivos personales para cambiarlo), la web de Boni (Ajustes) y la exportación. Propiedad nueva en los 300 planes al azar: con Movimientos en "solo sabe que existe", ninguna llamada a un modelo lleva su contenido (rompiendo el filtro a propósito, falla) | |
 | 16 | **Formularios, atajos y vistas como datos del núcleo; fuera lo fijo** (decisión de 2026-10-20): el formulario de captura sale de los campos del tipo (8), los atajos y mini-apps son especificaciones guardadas en el núcleo (7.13) que Juan crea con la IA; la web de Boni deja de tener el botón fijo "Apuntar gasto" (se convierte en un atajo suyo, migrado de los de v1) y su inicio muestra sus vistas; la definición de gasto pasa a ser una vista guardada; los grupos de carpetas de la importación pasan a un mapa editable. La API v1 sigue para las apps antiguas hasta T6 | Un atajo creado en la conversación aparece y funciona sin el modelo; ningún texto del dominio de Juan queda en el código de la web ni del núcleo (una prueba lo busca) |
+| 17 | **Reglas de lo que ve la IA dentro de una colección** (7.3): filtros por elemento, la más estricta gana, fuera de totales y recuentos; en Ajustes junto al nivel de la colección | Una regla oculta un elemento en `get`, `list`, `search` y `aggregate`; la propiedad de los planes al azar con una regla por fila; una regla sobre un campo que la IA puede escribir se rechaza |
+| 18 | **La app de Boni como Notion** (decidido, Juan, 2026-10-20): barra lateral con las páginas y bases de datos del usuario (en árbol, arrastrables, favoritas), Conversación, Bandeja, Automatizaciones, Datos y Ajustes; sin "Hoy" fijo. Páginas = entidades de un tipo de sistema `page`, con su cuerpo como árbol de bloques (exporta a Markdown y al espejo). Editor de bloques con las funciones del de Notion: texto, títulos, listas, tareas, desplegables, citas, avisos, código, separador, tabla, imagen/archivo, columnas, menú `/`, arrastrar bloques, menciones `@` y enlaces entre páginas con sus retroenlaces, base de datos en línea. El texto de fuera se pinta como texto (7.14). Librería del editor por decidir en el PR (medida y licencia) | e2e de cada bloque y del menú `/`; pegar HTML de fuera no ejecuta nada; exportar e importar una página la deja igual; texto que cabe en móvil y escritorio |
+| 19 | **Vistas de base de datos como las de Notion** (8): tabla, tablero, galería, lista, calendario, línea de tiempo y gráfica, con filtros, orden, agrupación y propiedades visibles por vista; editar celdas en su sitio | Las vistas guardadas se abren sin el modelo; miles de filas sin perder fluidez (medido); e2e por tipo de vista |
+| 20 | **Proveedores de modelos desde la app** (7.10): Anthropic, OpenRouter, OpenAI y compatibles (local o servidor propio) por papel, claves cifradas, clase de privacidad que usa "Lo que ve la IA" | Las pruebas del agente con cada adaptador contra un sustituto de su API; una clave nunca vuelve a un dispositivo; la evaluación real por proveedor |
+| 21 | **Automatizaciones, como en Hermes** (7.12, 7.13): trabajos programados y disparadores (al llegar un correo, al crear un elemento, a una hora), su registro y sus avisos, creados hablando o a mano en su sección; conectores MCP con mínimo privilegio (7.10b) | Corpus: un correo no puede crear ni cambiar una automatización (P16); un trabajo en segundo plano solo propone; e2e de crear, pausar y ver lo que hizo |
 
 ### 12.1 Corpus de inyecciones en el CI
 - **Dónde:** `packages/agent/test/injections/`. Cada caso es un archivo con la petición de Juan, el contenido externo
