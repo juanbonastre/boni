@@ -81,6 +81,11 @@ packages/mirror/ The Markdown mirror (docs/nucleo.md 9.2, 9.4; an edge, never im
                  compared three-way with the mirror's last text, becomes a proposal (`Agent.propose`); new notes in
                  the type's folder (import rules, `importable`) propose an entity, removed ones its removal; rejected,
                  the core's version comes back. `switchToCore` reports first. State in its own SQLite (`state.ts`).
+packages/export/ Export in one click (docs/nucleo.md 9.3): `exportZip` (json/<type>.ndjson the faithful copy with labels,
+                 schema.json with each type and a JSON Schema, <type>/*.md through the mirror's `render`, csv/ with no
+                 formulas, views.json, optional log.ndjson from `store.log()`), a minimal zip of its own (`zip.ts`,
+                 `readZip` checks names, CRC and size) and `importExport` (dry run by default; the file's labels are
+                 capped at `imported` unless `trustLabels`). Exporting again what was re-imported gives the same files.
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
@@ -142,6 +147,7 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  unreachable). Charts, shortcuts, widgets, prefs and captures per account in system.db (`v1/store.ts`);
                  `cli.ts import-boni` brings them, and the accounts, from the old `boni.sqlite3`. `golden/v1.json` is
                  what the original Python server answered (`golden/make_golden.py`); `v1.test.ts` must match it.
+                 `GET /api/export` (tailnet, personal devices) and `cli.ts export` / `import-export`.
                  `src/mirror.ts`: the mirror of each account's `core` types (after agent requests and every 30 s;
                  `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run by default.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per

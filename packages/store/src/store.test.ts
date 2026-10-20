@@ -80,6 +80,20 @@ function fresh(): { store: UserStore; dir: string } {
 }
 
 describe("the store", () => {
+  it("lists its operation log, oldest first, for an export", () => {
+    const { store } = fresh();
+    const e = store.create(
+      "t_libro",
+      { f_titulo: { value: "Un libro", label: JUAN } },
+      { ...me, run: "r1" },
+    );
+    store.update(e.entity.id, { f_titulo: { value: "Otro", label: JUAN } }, me);
+    const log = store.log();
+    expect(log.map((r) => r.kind).slice(-2)).toEqual(["create", "update"]);
+    expect(log.at(-2)).toMatchObject({ target: e.entity.id, run: "r1", before: null });
+    expect(log.at(-1)?.seq).toBeGreaterThan(log.at(-2)?.seq ?? 0);
+  });
+
   it("keeps the schema across restarts", () => {
     const { store, dir } = fresh();
     store.close();

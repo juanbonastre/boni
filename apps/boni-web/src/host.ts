@@ -131,6 +131,11 @@ export interface Host {
   phone: PhoneHost | null;
   /** The host holds a live connection to the server (desktop, Android): without it, "offline" means nothing. */
   live: boolean;
+  /**
+   * Downloads everything of the account as one zip (`GET /api/export`, docs/nucleo.md 9.3) and saves it where
+   * the user's downloads go. Only where a host can save a file (the browser, for now).
+   */
+  saveExport?: () => Promise<"saved" | "offline" | "forbidden" | "error">;
 }
 
 declare global {
@@ -270,6 +275,29 @@ export function browserHost(): Host {
           return { ok: false, offline: true, message: String((e as Error).message ?? e) };
         }
       },
+    },
+    async saveExport() {
+      const token = safeGet(TOKEN_KEY);
+      if (!token) return "error";
+      try {
+        const r = await fetch("/api/export", { headers: { Authorization: `Bearer ${token}` } });
+        if (r.status === 403) return "forbidden";
+        if (!r.ok) return "error";
+        const name =
+          /filename="([\w.-]+)"/.exec(r.headers.get("content-disposition") ?? "")?.[1] ??
+          "boni.zip";
+        const url = URL.createObjectURL(await r.blob());
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return "saved";
+      } catch {
+        return "offline";
+      }
     },
     store: {
       read: async (name) => safeGet(`${PREFIX}store:${name}`),

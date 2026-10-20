@@ -18,6 +18,7 @@
     "@boni/calendar": "workspace:*",
     "@boni/calendar-web": "workspace:*",
     "@boni/entities": "workspace:*",
+    "@boni/export": "workspace:*",
     "@boni/identity": "workspace:*",
     "@boni/mirror": "workspace:*",
     "@boni/net": "workspace:*",

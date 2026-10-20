@@ -180,6 +180,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   and the user at the bottom), the main area and the right side panel. The home screen's chart cards fill the main area
   (rows share its height; no empty band), and capturing or editing a chart happens in the side panel with the cards in
   view (the card being edited shows the preview and an accent ring).
+  Settings has "Tus datos" between the account and the appearance: one button that downloads everything as a .zip
+  (where the host can save a file; a toast says how it went).
 - **Chart controls** (Boni; like a Notion view's): when the pointer is over a chart card, a small bar of controls appears
   in its header before the total: period (a menu of usual periods), filters (a box, saved when it closes), order and
   "only the N largest", kind, colour (the calendar palette) and "…" (edit, duplicate, on home, on the desktop, delete).

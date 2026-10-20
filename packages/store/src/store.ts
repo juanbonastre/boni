@@ -46,6 +46,21 @@ export interface Write {
 export type Writes = Record<string, Write>;
 export const BODY = "$body";
 
+/** One operation of the log, as stored (`before` / `after` / `label` parsed). */
+export interface LogRow {
+  seq: number;
+  at: number;
+  actor: string;
+  device: string | null;
+  run: string | null;
+  kind: string;
+  target: string;
+  before: unknown;
+  after: unknown;
+  label: unknown;
+  undoes: number | null;
+}
+
 export interface StoredEntity {
   entity: Entity;
   /** By field id (and `$body`). */
@@ -102,6 +117,8 @@ export interface UserStore {
   undoRun(run: string, meta: OpMeta): number[];
   /** A SELECT over the readable tables only (an authorizer refuses anything else). */
   readQuery(sql: string, params?: (string | number | null)[]): Record<string, unknown>[];
+  /** The operation log, oldest first, for an export (`log.ndjson`); never the agent's journal. */
+  log(): LogRow[];
   /** An encrypted copy of the whole store, coherent while it is in use. */
   backupTo(path: string, key: Buffer): void;
   /** The agent's runs, proposals and confirmations, in this same database. */
@@ -626,6 +643,25 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
         if (!seqs.length) throw new StoreError("undo", `nothing to undo in run "${run}"`);
         return seqs.map((s) => undoOne(s, meta)); // newest first; any conflict rolls all of it back
       }),
+    log() {
+      const parse = (x: unknown) => (typeof x === "string" ? JSON.parse(x) : null);
+      return db
+        .prepare("SELECT * FROM ops ORDER BY seq")
+        .all()
+        .map((r) => ({
+          seq: Number(r.seq),
+          at: Number(r.at),
+          actor: r.actor as string,
+          device: (r.device as string | null) ?? null,
+          run: (r.run as string | null) ?? null,
+          kind: r.kind as string,
+          target: r.target as string,
+          before: parse(r.before),
+          after: parse(r.after),
+          label: parse(r.label),
+          undoes: r.undoes === null ? null : Number(r.undoes),
+        }));
+    },
     readQuery(sql, params = []) {
       db.setAuthorizer((action, a1, a2) => {
         if (action === constants.SQLITE_SELECT) return constants.SQLITE_OK;

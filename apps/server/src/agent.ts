@@ -52,6 +52,10 @@ export class AgentHost {
   constructor(o: AgentHostOptions) {
     this.o = o;
   }
+  /** The accounts' stores can be opened (a data folder), with the agent on or not. */
+  get hasData(): boolean {
+    return !!this.o.dataDir;
+  }
   get on(): boolean {
     return !!(this.o.providers && this.o.dataDir);
   }

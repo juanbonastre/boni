@@ -49,6 +49,8 @@ export function SettingsModal() {
           <h3>{t("settings.account")}</h3>
           <Account />
 
+          {host.saveExport && configured(settings) && <ExportData />}
+
           <h3>{t("settings.appearance")}</h3>
           <div className="setting">
             <div className="setting-label">{t("settings.theme")}</div>
@@ -266,5 +268,36 @@ function Account() {
         </button>
       </div>
     </form>
+  );
+}
+
+/** "Tus datos": everything of the account in one zip of open formats, in one click. */
+function ExportData() {
+  const t = useStore((s) => s.t);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = (await host.saveExport?.()) ?? "error";
+      toast(t(`export.${r}`));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <h3>{t("export.title")}</h3>
+      <div className="setting">
+        <div className="setting-label">
+          <span>{t("export.label")}</span>
+          <span className="muted small">{t("export.help")}</span>
+        </div>
+        <div className="setting-control">
+          <button type="button" className="btn" disabled={busy} onClick={() => void run()}>
+            {busy ? t("export.busy") : t("export.button")}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }

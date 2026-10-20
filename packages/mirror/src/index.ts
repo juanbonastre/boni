@@ -12,11 +12,13 @@ export {
   changesFor,
   ID_KEY,
   INTEGRITY_KEY,
+  type Links,
   noteFields,
   OMITTED_KEY,
   parseEdit,
   type Rendered,
   render,
+  sameProp,
 } from "./render.ts";
 export {
   type EditRow,

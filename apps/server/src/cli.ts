@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ensureSystemTypes } from "@boni/agent";
+import { exportZip, importExport, readZip } from "@boni/export";
 import { devicesOf, importAccounts, revokeDevice } from "@boni/identity";
 import { Mirror, type MirrorFs, openMirrorState, type Profile } from "@boni/mirror";
 import { openUserStore } from "@boni/store";
@@ -27,6 +28,10 @@ import { V1Store } from "./v1/store.ts";
  *       switches a type to core mode (docs/nucleo.md 9.1): the core becomes the truth and its notes the
  *       mirror. Without --apply only the report (how many notes, which differ, which the core does not have).
  *   node src/cli.ts mirror <name> <type> --stop      stops mirroring it (its notes stay as they are)
+ *   node src/cli.ts export <name> <file.zip> [--log] everything of the account in one zip (docs/nucleo.md 9.3)
+ *   node src/cli.ts import-export <file.zip> <name> [--apply] [--trust-labels]
+ *       an export back into account <name> (ids already there are left alone); a dry run without --apply.
+ *       --trust-labels keeps the file's provenance labels (only for an export of one's own that never left).
  */
 const [cmd, ...args] = process.argv.slice(2);
 const paths = databasePaths();
@@ -103,6 +108,47 @@ try {
       throw e;
     }
     console.log(apply ? "Imported." : "Dry run: nothing written (add --apply).");
+  } else if (cmd === "export" || cmd === "import-export") {
+    const flags = new Set(args.filter((a) => a.startsWith("--")));
+    const [a, b] = args.filter((x) => !x.startsWith("--"));
+    const [name, file] = cmd === "export" ? [a, b] : [b, a];
+    if (!name || !file)
+      throw new Error(
+        "Usage: export <name> <file.zip> [--log] | import-export <file.zip> <name> [--apply] [--trust-labels]",
+      );
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!user) throw new Error(`No account ${name}`);
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    const users = join(dirname(paths.system), "users");
+    mkdirSync(users, { recursive: true, mode: 0o700 });
+    const store = openUserStore(join(users, `${user.id}.db`));
+    ensureSystemTypes(store);
+    try {
+      if (cmd === "export") {
+        const v1 = new V1Store(db);
+        const zip = exportZip(store, {
+          views: { charts: v1.charts(user.id), shortcuts: v1.shortcuts(user.id) },
+          log: flags.has("--log"),
+        });
+        writeFileSync(file, zip, { mode: 0o600 });
+        console.log(`${file}: ${zip.length} bytes`);
+      } else {
+        const r = importExport(readZip(readFileSync(file)), store, {
+          apply: flags.has("--apply"),
+          trustLabels: flags.has("--trust-labels"),
+          name: file.split("/").pop() ?? file,
+        });
+        for (const t of r.types)
+          console.log(`${t.name} (${t.key})${t.created ? " (new type)" : ""}: ${t.entities}`);
+        console.log(
+          `${r.created} entities to create, ${r.existing.length} already here, ${r.failed.length} failed`,
+        );
+        for (const f of r.failed.slice(0, 20)) console.log(`  ${f.id}: ${f.error}`);
+        console.log(r.applied ? "Imported." : "Dry run: nothing written (add --apply).");
+      }
+    } finally {
+      store.close();
+    }
   } else if (cmd === "mirror") {
     const profile = option(args, "--profile");
     const folder = option(profile.rest, "--folder");
@@ -174,7 +220,7 @@ try {
     }
   } else {
     console.log(
-      "Commands: add-user <name> <vault folder> | users | devices <name> | revoke <name> [device] | import-boni <boni.sqlite3> <name> [--apply] | mirror <name> [<type> ...]",
+      "Commands: add-user <name> <vault folder> | users | devices <name> | revoke <name> [device] | import-boni <boni.sqlite3> <name> [--apply] | mirror <name> [<type> ...] | export <name> <file.zip> | import-export <file.zip> <name>",
     );
   }
 } catch (e) {

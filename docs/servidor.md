@@ -210,3 +210,15 @@ bandeja). Corre después de cada petición del agente y cada 30 s.
 - Probado en solo lectura sobre el vault real (2026-10-20): de 4.122 notas, 4.121 quedarían exactamente igual (solo ganan las
   líneas `boni_*`); la otra es una nota con un secreto de acceso que la importación deja fuera.
 
+## Exportación (2026-10-20)
+Todo lo de una cuenta en un `.zip` de formatos abiertos (`@boni/export`; diseño en `docs/nucleo.md`, 9.3): `json/<tipo>.ndjson`
+(la copia fiel, con la procedencia de cada valor), `schema.json` (los tipos y un JSON Schema de cada uno), `<tipo>/*.md` (como el
+espejo genérico, se abre en Obsidian), `csv/<tipo>.csv`, `views.json` (gráficas y atajos) y, si se pide, `log.ndjson`.
+- `GET /api/export` (solo tailnet y solo desde un dispositivo personal; `?log=1` añade el registro). En la web de Boni:
+  Ajustes → Tus datos → Descargar .zip.
+- `node src/cli.ts export <cuenta> <archivo.zip> [--log]`.
+- Volver a importarlo: `node src/cli.ts import-export <archivo.zip> <cuenta> [--apply] [--trust-labels]` (sin `--apply` es un
+  ensayo; lo que ya está no se toca). Por defecto la procedencia que trae el archivo queda como mucho en `imported` (un archivo
+  se puede editar); `--trust-labels` la conserva tal cual, solo para una exportación propia que no ha salido de tus manos.
+- En una hoja de cálculo, una celda que empieza como una fórmula (`=`, `+`, `-`, `@`) se guarda como texto.
+

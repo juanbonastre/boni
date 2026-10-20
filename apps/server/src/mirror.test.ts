@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakePlanner } from "@boni/agent";
 import { label } from "@boni/entities";
+import { readZip } from "@boni/export";
 import { Mirror, type MirrorFs, openMirrorState } from "@boni/mirror";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
@@ -178,5 +179,24 @@ describe("the mirror on the server", () => {
     await mirrors.run(1);
     expect(host.store(1).journal.proposals("pending")).toHaveLength(0);
     expect(read(note)).toContain('Autor: "Autora Inventada"');
+  });
+
+  it("exports everything of the account in one zip, from a personal device", async () => {
+    expect((await fetch(`${base}/api/export`)).status).toBe(401);
+    const t = await token();
+    const r = await fetch(`${base}/api/export`, { headers: { authorization: `Bearer ${t}` } });
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("application/zip");
+    expect(r.headers.get("content-disposition")).toMatch(
+      /^attachment; filename="boni-\d{4}-\d{2}-\d{2}\.zip"$/,
+    );
+    const files = readZip(Buffer.from(await r.arrayBuffer()));
+    expect(files.get("json/libro.ndjson")?.toString("utf8")).toContain("Autora Inventada");
+    expect(files.has("libro/Un libro de ejemplo.md")).toBe(true);
+    expect(files.has("log.ndjson")).toBe(false);
+    expect(JSON.parse(files.get("views.json")?.toString("utf8") ?? "{}")).toEqual({
+      charts: expect.any(Array),
+      shortcuts: expect.any(Array),
+    });
   });
 });
