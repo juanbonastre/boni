@@ -17,6 +17,10 @@ export interface ConfirmRow {
   integrity: string;
   sources: string[];
   marks: string[];
+  /** The field's name as Juan reads it ("Valoración (1-5)"), for a row of a record's field. */
+  name?: string;
+  /** What an entity id names, as Juan reads it (its title), next to the id. */
+  detail?: string;
 }
 export interface ConfirmView {
   tool: string;
@@ -72,23 +76,66 @@ export function marksOf(text: string): string[] {
 
 const show = (v: Json): string => (typeof v === "string" ? v : JSON.stringify(v));
 
-export function confirmView(tool: ToolDef, args: Readonly<Record<string, Val>>): ConfirmView {
-  return {
-    tool: tool.name,
-    title: tool.title,
-    rows: Object.entries(args).map(([name, v]) => {
-      const l = deepLabel(v);
-      const value = show(plain(v));
-      return {
-        arg: name,
-        role: tool.args[name]?.role ?? "?",
-        value,
-        integrity: l.integrity,
-        sources: l.sources.map((s) => s.kind),
-        marks: marksOf(value),
-      };
-    }),
+/** Names and titles from Juan's schema and data are shown, unless they came from outside (as the planner sees). */
+const trusted = (l: { integrity: string }) =>
+  l.integrity !== "external" && l.integrity !== "ambient";
+
+/**
+ * With `store` (what the models may see of it), rows read better: a record of field values (an entity's
+ * `values`) becomes one row per field with the field's name, and an entity id carries its title. Both come
+ * from Juan's schema and data by code; each row keeps its own value's provenance and marks.
+ */
+export function confirmView(
+  tool: ToolDef,
+  args: Readonly<Record<string, Val>>,
+  store?: ReadStore,
+): ConfirmView {
+  const types = store ? Object.values(store.schema().types) : [];
+  const typeArg = args.type ? plain(args.type) : null;
+  const idArg = args.id ? plain(args.id) : null;
+  const def =
+    types.find((t) => t.key === typeArg) ??
+    (typeof idArg === "string"
+      ? types.find((t) => t.id === store?.get(idArg)?.entity.type)
+      : undefined);
+  const row = (arg: string, role: string, v: Val, extra: Partial<ConfirmRow> = {}): ConfirmRow => {
+    const l = deepLabel(v);
+    const value = show(plain(v));
+    return {
+      arg,
+      role,
+      value,
+      integrity: l.integrity,
+      sources: l.sources.map((s) => s.kind),
+      marks: marksOf(value),
+      ...extra,
+    };
   };
+  const rows: ConfirmRow[] = [];
+  for (const [name, v] of Object.entries(args)) {
+    const role = tool.args[name]?.role ?? "?";
+    if (v.t === "rec" && store) {
+      for (const [key, fv] of Object.entries(v.fields)) {
+        const f = def?.fields.find((x) => x.key === key);
+        rows.push(row(`${name}.${key}`, role, fv, f && trusted(f.label) ? { name: f.name } : {}));
+      }
+      continue;
+    }
+    const id = plain(v);
+    const s = role === "entity" && typeof id === "string" && store ? store.get(id) : null;
+    const t = s ? types.find((x) => x.id === s.entity.type) : undefined;
+    const title = t && s ? s.entity.values[t.titleField] : undefined;
+    const titleLabel = t && s ? s.labels[t.titleField] : undefined;
+    rows.push(
+      row(
+        name,
+        role,
+        v,
+        typeof title === "string" && titleLabel && trusted(titleLabel) ? { detail: title } : {},
+      ),
+    );
+  }
+  return { tool: tool.name, title: tool.title, rows };
 }
 
 /** The versions the arguments depend on: where they were read from, and the entities they name. */

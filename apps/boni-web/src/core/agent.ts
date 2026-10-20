@@ -22,6 +22,10 @@ export interface ConfirmRow {
   integrity: string;
   sources: string[];
   marks: string[];
+  /** The field's name as Juan reads it, for a row of one field of a record. */
+  name?: string;
+  /** An entity's title, next to its id. */
+  detail?: string;
 }
 export interface ConfirmView {
   tool: string;
@@ -140,9 +144,11 @@ export function parseConfirmView(v: unknown): ConfirmView | null {
   const title = str(v.title, 80);
   if (!tool || !title) return null;
   const rows: ConfirmRow[] = [];
-  for (const r of v.rows.slice(0, 20)) {
+  // A confirmation shows every value or none: an entity's fields are one row each.
+  if (v.rows.length > 120) return null;
+  for (const r of v.rows) {
     if (!isObj(r)) continue;
-    const arg = str(r.arg, 40);
+    const arg = str(r.arg, 100);
     const value = typeof r.value === "string" ? r.value : null;
     if (!arg || value === null) continue;
     rows.push({
@@ -152,6 +158,8 @@ export function parseConfirmView(v: unknown): ConfirmView | null {
       integrity: str(r.integrity, 20) ?? "external",
       sources: strs(r.sources),
       marks: strs(r.marks),
+      ...(str(r.name, 80) ? { name: str(r.name, 80) as string } : {}),
+      ...(str(r.detail, 300) ? { detail: str(r.detail, 300) as string } : {}),
     });
   }
   return { tool, title, rows };

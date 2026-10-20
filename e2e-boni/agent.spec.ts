@@ -186,6 +186,10 @@ test("a hand edit in Obsidian waits in the inbox with its note and what will not
   await expect(p).toContainText("agenda/docencia/2026-10-19 Clase de ejemplo.md");
   await expect(p).toContainText("No se aplica");
   await expect(p).toContainText("De tus datos · tu vault");
+  // The element by its title (the id beside it) and each field by its name, never a JSON blob.
+  await expect(p.locator(".confirm-row", { hasText: "e_clase" })).toContainText("Clase de ejemplo");
+  await expect(p.locator(".confirm-row", { hasText: "Hora de inicio" })).toContainText("12:00");
+  await expect(p).not.toContainText("{");
   await page.screenshot({ path: `${SHOTS}/agent-mirror-proposal.png` });
   await p.getByRole("button", { name: "Aceptar" }).click();
   await expect(page.locator(".proposal")).toHaveCount(0);

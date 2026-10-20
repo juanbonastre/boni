@@ -697,7 +697,7 @@ export class Agent {
             values: Object.fromEntries(Object.entries(args).map(([k, v]) => [k, freeze(v)])),
             origins,
           },
-          view: confirmView(tool, args),
+          view: confirmView(tool, args, readStore(this.o.store)),
           sources: [
             ...new Set(
               Object.values(args).flatMap((v) =>
@@ -725,7 +725,7 @@ export class Agent {
         if (st.counters.confirmations > this.limits.maxConfirmations)
           throw new Stop("P5-too-many-confirmations");
         const id = randomUUID();
-        const view = confirmView(tool, args);
+        const view = confirmView(tool, args, readStore(this.o.store));
         this.o.store.journal.addConfirmation({
           id,
           run: st.id,
@@ -1103,7 +1103,7 @@ export class Agent {
     const at = this.now();
     const journal = this.o.store.journal;
     journal.startRun({ id: run, turn: null, origin: p.origin, device: null, started: at });
-    const view = confirmView(tool, p.args);
+    const view = confirmView(tool, p.args, readStore(this.o.store));
     journal.addProposal({
       id,
       run,

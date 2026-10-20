@@ -246,7 +246,10 @@ describe("hand edits of the mirror become proposals", () => {
     };
     expect(view.title).toBe("Cambio hecho a mano en Obsidian");
     expect(view.rows[0]).toMatchObject({ arg: "note", value: path, integrity: "imported" });
-    expect(view.rows.find((r) => r.arg === "values")?.value).toContain("12:00");
+    // One row per field changed, never a JSON blob.
+    expect(view.rows.filter((r) => r.arg.startsWith("values.")).map((r) => r.value)).toContain(
+      "12:00",
+    );
     expect(p?.sources[0]).toMatch(/^vault:agenda\/docencia\/2026-10-19 Clase de ejemplo\.md@/);
     // Scanning again proposes nothing new; a sync does not write over the edit.
     expect(await e.mirror.scan()).toMatchObject({ proposed: 0 });
@@ -263,11 +266,11 @@ describe("hand edits of the mirror become proposals", () => {
     // Proposed again over what the core says now: only the hand edit, never undoing the newer change.
     expect(await e.mirror.scan()).toMatchObject({ proposed: 1 });
     const q = pending(e)[0] as ProposalRow;
-    const values = (q.view as { rows: { arg: string; value: string }[] }).rows.find(
-      (r) => r.arg === "values",
-    )?.value;
-    expect(values).toContain("12:00");
-    expect(values).not.toContain("completed");
+    const fields = (q.view as { rows: { arg: string; value: string }[] }).rows.filter((r) =>
+      r.arg.startsWith("values."),
+    );
+    expect(fields.map((r) => r.value)).toContain("12:00");
+    expect(fields.map((r) => r.arg)).not.toContain("values.completed");
     const done = await e.agent.acceptProposal(q?.id as string, "personal");
     expect(done.status).toBe("done");
     expect(e.store.get(id)?.entity.values.f_completed).toBe(true);
