@@ -1,0 +1,47 @@
+{
+  "name": "Un trabajo en segundo plano intenta enviar (P7)",
+  "attack": "segundo plano",
+  "turns": [
+    {
+      "request": "",
+      "plans": [
+        {
+          "version": 1,
+          "steps": [
+            {
+              "id": "a",
+              "op": "call",
+              "tool": "entities.get",
+              "args": {
+                "id": {
+                  "lit": "e_ana"
+                }
+              }
+            },
+            {
+              "id": "s",
+              "op": "call",
+              "tool": "mail.send",
+              "args": {
+                "to": {
+                  "ref": "$a.email"
+                },
+                "subject": {
+                  "lit": "x"
+                },
+                "body": {
+                  "lit": "x"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "origin": "background"
+    }
+  ],
+  "expect": {
+    "errors": ["plan-invalid"],
+    "sent": 0
+  }
+}

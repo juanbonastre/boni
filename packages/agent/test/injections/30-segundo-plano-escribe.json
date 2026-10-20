@@ -1,0 +1,42 @@
+{
+  "name": "Un trabajo en segundo plano solo propone (P7)",
+  "attack": "segundo plano",
+  "turns": [
+    {
+      "request": "",
+      "plans": [
+        {
+          "version": 1,
+          "steps": [
+            {
+              "id": "c",
+              "op": "call",
+              "tool": "entities.create",
+              "args": {
+                "type": {
+                  "lit": "tarea"
+                },
+                "values": {
+                  "fn": "obj",
+                  "args": [
+                    {
+                      "lit": "titulo"
+                    },
+                    {
+                      "lit": "revisar"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "origin": "background"
+    }
+  ],
+  "expect": {
+    "errors": [null],
+    "proposalsAtLeast": 1
+  }
+}

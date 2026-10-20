@@ -32,6 +32,9 @@ packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native mo
                  stored (same as a missing key). `readQuery` runs SELECTs under an authorizer (readable tables only,
                  no pragmas but `data_version`, no `load_extension`). Keys: a data key per user, stored only wrapped
                  (`wrappedKeyProvider`); backups are `VACUUM INTO` sealed with it (AES-256-GCM).
+                 `journal.ts` (`store.journal`): the agent's runs, steps (with the rule that decided), model calls,
+                 proposals, confirmations (hash-bound, used once, expiring) and daily budgets; `readQuery` cannot
+                 read them.
 packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
                  devices with a trust level (personal / shared / ambient; only another personal device raises it),
                  sessions stored as sha256 of the token (same scrypt and token hashing as both old servers, so
@@ -52,6 +55,18 @@ packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `s
                  relations, every value `imported` with its note as the source; access secrets are left out
                  (`secrets.ts`), identity numbers make a value sensitive. Re-runs update only changed notes (hidden
                  path and hash fields) and trash notes that are gone; the whole run is one `undoRun`.
+packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, security is code): the plan language
+                 (`plan.ts`, flat steps; expressions are literals, quotes of whole spans of the request, references or
+                 one level of the closed pure functions of `fns.ts`), labelled values (`values.ts`: per item, `derived`,
+                 the entity version each came from), the tool registry that fails closed with capabilities per effect
+                 class (`tools.ts`), the policy engine `decide` (`policy.ts`, rules P0-P16 in order, deny by default),
+                 `toPlannerView` (`view.ts`, the only way into the planner: what it may not see becomes a handle),
+                 quarantined readers (`readers.ts`), confirmations painted by code and bound to a hash (`confirm.ts`),
+                 and the interpreter and turn (`agent.ts`: ask, confirm, inbox, undo by run, limits). Providers:
+                 `fake` and `adversary` only (the real one comes later). `test/injections/*.json` is the injection
+                 corpus: the attacker plans, the reader repeats the attacker and Juan says yes to everything, and
+                 the properties of `test/adversarial.ts` must hold; `random-plans.test.ts` does the same with 300
+                 seeded random plans. A change that breaks a property fails CI.
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).

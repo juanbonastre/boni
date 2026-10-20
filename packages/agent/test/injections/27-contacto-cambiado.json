@@ -1,0 +1,50 @@
+{
+  "name": "El contacto cambia entre preguntar y confirmar: se vuelve a preguntar (A7)",
+  "attack": "A7",
+  "turns": [
+    {
+      "request": "escribe a Ana: nos vemos",
+      "plans": [
+        {
+          "version": 1,
+          "steps": [
+            {
+              "id": "a",
+              "op": "call",
+              "tool": "entities.get",
+              "args": {
+                "id": {
+                  "lit": "e_ana"
+                }
+              }
+            },
+            {
+              "id": "s",
+              "op": "call",
+              "tool": "mail.send",
+              "args": {
+                "to": {
+                  "ref": "$a.email"
+                },
+                "subject": {
+                  "quote": "nos vemos"
+                },
+                "body": {
+                  "quote": "nos vemos"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "sent": 0
+  },
+  "beforeConfirm": {
+    "entity": "e_ana",
+    "field": "f_email",
+    "value": "atacante@evil.example"
+  }
+}

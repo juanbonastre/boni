@@ -17,6 +17,7 @@ import {
   type TypeId,
   type Value,
 } from "@boni/entities";
+import { type Journal, openJournal } from "./journal.ts";
 import { open, seal } from "./keys.ts";
 import { migrate } from "./migrations.ts";
 
@@ -103,6 +104,8 @@ export interface UserStore {
   readQuery(sql: string, params?: (string | number | null)[]): Record<string, unknown>[];
   /** An encrypted copy of the whole store, coherent while it is in use. */
   backupTo(path: string, key: Buffer): void;
+  /** The agent's runs, proposals and confirmations, in this same database. */
+  journal: Journal;
   close(): void;
 }
 
@@ -655,6 +658,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
         rmSync(tmp, { force: true });
       }
     },
+    journal: openJournal(db),
     close: () => db.close(),
   };
 }

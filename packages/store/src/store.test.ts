@@ -443,3 +443,83 @@ describe("keys and backups", () => {
     expect(() => restoreBackup(file, Buffer.alloc(32, 4), join(dir, "nope.db"))).toThrow();
   });
 });
+
+describe("the agent's journal", () => {
+  it("keeps runs, their steps and model calls, and the read-only queries cannot reach them", () => {
+    const { store } = fresh();
+    const j = store.journal;
+    j.startRun({ id: "r1", turn: "t1", origin: "turn", device: "portatil", started: 1 });
+    j.step({
+      run: "r1",
+      step: "a",
+      kind: "call",
+      decision: "allow",
+      rule: "P1",
+      detail: { tool: "x" },
+      at: 2,
+    });
+    j.step({
+      run: "r1",
+      step: "b",
+      kind: "call",
+      decision: "deny",
+      rule: "P2",
+      detail: null,
+      at: 3,
+    });
+    j.modelCall({
+      run: "r1",
+      role: "planner",
+      provider: "fake",
+      model: "m",
+      promptHash: "h",
+      request: { a: 1 },
+      response: { b: 2 },
+      usage: { input: 1, output: 1 },
+      at: 2,
+    });
+    j.finishRun("r1", "done", { version: 1 }, 4);
+    expect(j.run("r1")).toMatchObject({ status: "done", plan: { version: 1 }, finished: 4 });
+    expect(j.steps("r1").map((s) => [s.seq, s.rule])).toEqual([
+      [1, "P1"],
+      [2, "P2"],
+    ]);
+    expect(j.modelCalls("r1")[0]?.request).toEqual({ a: 1 });
+    // Prompts and answers are not for views or plans.
+    expect(() => store.readQuery("SELECT * FROM model_calls")).toThrow();
+    expect(() => store.readQuery("SELECT * FROM proposals")).toThrow();
+  });
+
+  it("uses a confirmation once, for its hash, before it expires", () => {
+    const { store } = fresh();
+    const j = store.journal;
+    j.addConfirmation({ id: "c1", run: "r1", tool: "x", hash: "h1", view: {}, expires: 100 });
+    expect(j.useConfirmation("c1", "otro", 10)).toBe(false);
+    expect(j.useConfirmation("c1", "h1", 10)).toBe(true);
+    expect(j.useConfirmation("c1", "h1", 11)).toBe(false);
+    j.addConfirmation({ id: "c2", run: "r1", tool: "x", hash: "h2", view: {}, expires: 100 });
+    expect(j.useConfirmation("c2", "h2", 100)).toBe(false);
+  });
+
+  it("keeps proposals and daily budgets", () => {
+    const { store } = fresh();
+    const j = store.journal;
+    j.addProposal({
+      id: "p1",
+      run: "r1",
+      tool: "x",
+      args: { a: 1 },
+      view: null,
+      sources: ["mail:m1"],
+      created: 1,
+    });
+    expect(j.proposals("pending").map((p) => p.id)).toEqual(["p1"]);
+    j.setProposal("p1", "rejected", 2);
+    expect(j.proposals("pending")).toEqual([]);
+    expect(j.proposal("p1")?.status).toBe("rejected");
+    j.spend("2026-10-20", "reader", 2);
+    j.spend("2026-10-20", "reader", 1);
+    expect(j.spent("2026-10-20", "reader")).toBe(3);
+    expect(j.spent("2026-10-21", "reader")).toBe(0);
+  });
+});
