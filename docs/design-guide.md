@@ -203,7 +203,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
   menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a
   click anywhere in it gives it the focus; `Esc` keeps it there), so typing in a note never reaches the calendar. While it
-  has the focus, the calendar's `Ctrl` shortcuts (`Ctrl+K`, `Ctrl+,`, `Ctrl+Z`...) are its own, not Obsidian's. It opens
+  has the focus, the calendar's `Ctrl` shortcuts (`Ctrl+K`, `Ctrl+,`, `Ctrl+Z`...) are its own, not Obsidian's. Settings →
+  Data offers "Este vault" (the default: it works alone) or "Servidor" (a Boni server, optional, docs/nucleo.md 9.4). It opens
   from the ribbon icon (calendar) or the command "Abrir Boni Calendar", in one tab (the command brings that tab
   forward), and lives in a shadow root so neither Obsidian's theme nor its class names reach it. In Obsidian the
   calendar always shows the vault it runs in (Settings → Data offers no folder to choose) and writes to it from
