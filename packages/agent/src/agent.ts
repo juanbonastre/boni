@@ -145,7 +145,7 @@ export type Pending =
   | { kind: "ask"; id: string; control: "choice" | "text"; prompt: Painted; options: Painted[] }
   | { kind: "confirm"; id: string; view: ConfirmView };
 export interface Notice {
-  code: "memory-unconfirmed" | "schema-changed" | "proposals" | "budget" | "denied";
+  code: "memory-unconfirmed" | "schema-changed" | "proposals" | "budget" | "denied" | "undone";
   rule?: string;
   n?: number;
 }
@@ -748,7 +748,8 @@ export class Agent {
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
     const result = await tool.run(capFor as never, args, control ?? neutral);
     if (tool.effect !== "read" && tool.effect !== "notify") st.counters.writes++;
-    if (tool.effect === "schema") st.notices.push({ code: "schema-changed" });
+    if (tool.effect === "schema" && !st.notices.some((n) => n.code === "schema-changed"))
+      st.notices.push({ code: "schema-changed" });
     if (tool.effect === "memory") {
       const l = deepLabel(args.text as Val);
       if (l.integrity !== "user" && l.integrity !== "own" && l.integrity !== "imported")
@@ -893,6 +894,22 @@ export class Agent {
 
   private finish(st: RunState, status: "done" | "stopped", error: string | null): TurnResult {
     this.runs.delete(st.id);
+    // A request that fails halfway because a tool could not do its part leaves nothing half done (a type
+    // with only some of its fields): what it wrote is undone. A stop Juan or a limit made (he said no, too
+    // many confirmations) keeps what he saw done before it.
+    if (status === "stopped" && error?.startsWith("tool-") && st.counters.writes > 0)
+      try {
+        this.o.store.undoRun(st.id, { actor: "agent" });
+        st.notices = [
+          ...st.notices.filter(
+            (n) => n.code !== "schema-changed" && n.code !== "memory-unconfirmed",
+          ),
+          { code: "undone" },
+        ];
+      } catch {
+        // Nothing of it in the store (a notice or a proposal only), or a later change of Juan's in the way:
+        // it stays, with Undo in the log.
+      }
     this.o.store.journal.finishRun(
       st.id,
       error ? `${status}:${error}` : status,

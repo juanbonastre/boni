@@ -1,5 +1,6 @@
 import { join, type Label } from "@boni/entities";
 import {
+  asKey,
   codeLabel,
   deepLabel,
   type Json,
@@ -102,7 +103,8 @@ export function callFn(name: string, args: Val[], today: string): Val {
       if (args.length % 2) throw new FnError("wrong-arguments");
       const fields: Record<string, Val> = {};
       for (let i = 0; i < args.length; i += 2) {
-        const k = key(args[i] as Val);
+        const given = key(args[i] as Val);
+        const k = /^[a-z_$][a-z0-9_]{0,40}$/.test(given) ? given : asKey(given);
         if (!/^[a-z_$][a-z0-9_]{0,40}$/.test(k) || Object.hasOwn(fields, k))
           throw new FnError("bad-key");
         fields[k] = args[i + 1] as Val;

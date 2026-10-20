@@ -201,6 +201,10 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
   await page.getByRole("button", { name: "Registro" }).click();
   await expect(page.locator(".log-list li")).toHaveCount(2);
   await expect(page.locator(".log-list li").nth(1)).toContainText("Parado");
+  // A stopped request may have left changes: it has Undo too.
+  await expect(
+    page.locator(".log-list li").nth(1).getByRole("button", { name: "Deshacer lo que hizo" }),
+  ).toBeVisible();
   await page
     .locator(".log-list li")
     .first()

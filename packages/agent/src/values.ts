@@ -150,3 +150,17 @@ export function atOrNull(v: Val, path: (string | number)[]): Val {
 
 /** Size of `v` as JSON, to keep runs inside their limits. */
 export const sizeOf = (v: Val) => JSON.stringify(plain(v)).length;
+
+/**
+ * The ASCII key a model meant: "Valoración" or "fecha fin" is "valoracion", "fecha_fin" (a model writes
+ * keys like names, and that slip is not worth failing a request over). Empty when nothing is left.
+ */
+export function asKey(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 41);
+}

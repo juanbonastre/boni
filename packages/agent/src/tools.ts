@@ -10,6 +10,7 @@ import {
 } from "@boni/entities";
 import { BODY, type StoredEntity, StoreError, type UserStore } from "@boni/store";
 import {
+  asKey,
   codeLabel,
   deepLabel,
   type Json,
@@ -208,12 +209,25 @@ export function entityVal(s: StoredEntity, def: TypeDef | undefined): Val {
 /** A name the planner may not see (it came from outside) is known to it by its id only (view.ts). */
 export const fieldName = (f: FieldDef) => (plannerMaySee(f.label) ? f.key : `field_${f.id}`);
 export const typeName = (t: TypeDef) => (plannerMaySee(t.label) ? t.key : `type_${t.id}`);
+const KEY = /^[a-z][a-z0-9_]{0,40}$/;
+/** By its exact name, else by the key it would have (only for names the planner may see). */
+const byName = <T>(all: T[], name: string, nameOf: (x: T) => string, key: (x: T) => string) =>
+  all.find((x) => nameOf(x) === name) ??
+  all.find((x) => nameOf(x) === key(x) && key(x) === asKey(name));
 const fieldByName = (def: TypeDef, name: string) =>
-  def.fields.find((f) => fieldName(f) === name && !f.archived && !f.hidden);
+  byName(
+    def.fields.filter((f) => !f.archived && !f.hidden),
+    name,
+    fieldName,
+    (f) => f.key,
+  );
 
 const typeByKey = (store: ReadStore, key: string): TypeDef => {
-  const def = Object.values(store.schema().types).find(
-    (t) => typeName(t) === key && !t.system && !t.archived,
+  const def = byName(
+    Object.values(store.schema().types).filter((t) => !t.system && !t.archived),
+    key,
+    typeName,
+    (t) => t.key,
   );
   if (!def) throw new ToolError("unknown-type");
   return def;
@@ -676,8 +690,13 @@ export function makeCaps(c: CapsContext): Caps {
       wrap(() => c.store.remove(id, meta));
     },
   };
+  /** The model's key made ASCII, or the name's when the key has nothing left. */
+  const keyFor = (key: string, name: string) => {
+    const k = asKey(key) || asKey(name);
+    if (!KEY.test(k)) throw new ToolError("bad-key");
+    return k;
+  };
   const fieldDef = (key: string, name: string, kind: FieldType, l: Label): FieldDef => {
-    if (!/^[a-z][a-z0-9_]{0,40}$/.test(key)) throw new ToolError("bad-key");
     return {
       id: newId("f", c.now()),
       key,
@@ -687,8 +706,8 @@ export function makeCaps(c: CapsContext): Caps {
     };
   };
   const schema: SchemaWriter = {
-    createType(key, name, l) {
-      if (!/^[a-z][a-z0-9_]{0,40}$/.test(key)) throw new ToolError("bad-key");
+    createType(raw, name, l) {
+      const key = keyFor(raw, name);
       if (Object.values(c.store.schema().types).some((t) => t.key === key))
         throw new ToolError("type-exists");
       const title = fieldDef("titulo", "Título", "text", l);
@@ -705,8 +724,9 @@ export function makeCaps(c: CapsContext): Caps {
       wrap(() => c.store.applySchema({ op: "create_type", type: def }, meta));
       return leaf(key, l);
     },
-    addField(typeKey, key, name, kind, l) {
+    addField(typeKey, raw, name, kind, l) {
       const def = typeByKey(ro, typeKey);
+      const key = keyFor(raw, name);
       if (def.fields.some((f) => f.key === key || fieldName(f) === key))
         throw new ToolError("field-exists");
       wrap(() =>

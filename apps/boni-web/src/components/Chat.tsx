@@ -493,7 +493,8 @@ export function LogView() {
               }).format(r.started)}{" "}
               · {t(`log.origin.${r.origin}`)} · {t(`log.status.${r.status.split(":")[0]}`)}
             </span>
-            {r.status === "done" && (
+            {/* A stopped run may have left changes (a limit stopped it after some): it can be undone too. */}
+            {(r.status === "done" || r.status.startsWith("stopped")) && (
               <button type="button" className="btn ghost" onClick={() => void undoRun(r.id)}>
                 <Undo2 size={13} strokeWidth={1.8} />
                 {t("chat.undo")}
