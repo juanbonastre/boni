@@ -12,6 +12,7 @@ export {
   type Actor,
   BODY,
   entityLabel,
+  type LogRow,
   type OpMeta,
   openUserStore,
   restoreBackup,

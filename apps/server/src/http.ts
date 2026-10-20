@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni/calendar";
+import { exportZip } from "@boni/export";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
 import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
@@ -159,8 +160,9 @@ export function makeApp(opts: ServerOptions): App {
   const boniRoot = opts.boniWebDir ? resolve(opts.boniWebDir) : null;
 
   const tz = opts.tz ?? "Europe/Madrid";
+  const v1store = new V1Store(db);
   const v1 = new V1Service({
-    store: new V1Store(db),
+    store: v1store,
     tz,
     writable: vaults.writable,
     ...(opts.now ? { now: opts.now } : {}),
@@ -221,6 +223,26 @@ export function makeApp(opts: ServerOptions): App {
         device: s.device,
         trust: s.trust,
       });
+    }
+    if (route === "GET /api/export") {
+      // Everything of the account in one zip (docs/nucleo.md 9.3), from a personal device only.
+      const s = sessionUser(db, tokenOf(req));
+      if (!s) return send(res, 401, { error: "unauthorized" });
+      if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      if (!opts.agent?.hasData) return send(res, 503, { error: "no-store" });
+      const zip = exportZip(opts.agent.store(s.user.id), {
+        views: { charts: v1store.charts(s.user.id), shortcuts: v1store.shortcuts(s.user.id) },
+        log: url.searchParams.get("log") === "1",
+      });
+      res.writeHead(200, {
+        ...CORS,
+        ...SAFE,
+        "content-type": "application/zip",
+        "content-disposition": `attachment; filename="boni-${new Date().toISOString().slice(0, 10)}.zip"`,
+        "content-length": zip.length,
+        "cache-control": "no-store",
+      });
+      return void res.end(zip);
     }
     if (route === "POST /api/login") {
       const b = await bodyOf(req);
