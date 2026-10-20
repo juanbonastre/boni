@@ -1,5 +1,5 @@
 import { dirname, join } from "node:path";
-import { AnthropicProvider } from "@boni/agent";
+import { AnthropicProvider, OpenAIProvider } from "@boni/agent";
 import { AgentHost } from "./agent.ts";
 import { listUsers } from "./auth.ts";
 import { startBackups } from "./backups.ts";
@@ -34,6 +34,9 @@ import { Vaults } from "./vaults.ts";
  *   BONI_TZ     the time zone of the Boni API v1 and of the agent ("today")   default Europe/Madrid
  *   ANTHROPIC_API_KEY  turns the agent on (tailnet only) with Anthropic's models; off without it
  *   BONI_PLANNER_MODEL / BONI_READER_MODEL   default claude-opus-5-5 / claude-haiku-4-5
+ *   OPENROUTER_API_KEY  without ANTHROPIC_API_KEY: the agent with OpenRouter's models (the defaults are then
+ *                    anthropic/claude-haiku-5.5 / deepseek/deepseek-v4.1-flash); choosing them in the app
+ *                    comes with plan PR 20
  */
 const paths = databasePaths();
 const dbPath = paths.system;
@@ -55,6 +58,9 @@ const push = hosts.length
   : undefined;
 const tz = process.env.BONI_TZ ?? "Europe/Madrid";
 const apiKey = process.env.ANTHROPIC_API_KEY ?? "";
+const routerKey = process.env.OPENROUTER_API_KEY ?? "";
+const router = (model: string) =>
+  new OpenAIProvider({ apiKey: routerKey, model, baseURL: "https://openrouter.ai/api/v1" });
 const agent = new AgentHost({
   dataDir: dbPath === ":memory:" ? null : dirname(dbPath),
   providers: apiKey
@@ -70,7 +76,12 @@ const agent = new AgentHost({
           model: process.env.BONI_READER_MODEL ?? "claude-haiku-4-5",
         }),
       }
-    : null,
+    : routerKey
+      ? {
+          planner: router(process.env.BONI_PLANNER_MODEL ?? "anthropic/claude-haiku-5.5"),
+          reader: router(process.env.BONI_READER_MODEL ?? "deepseek/deepseek-v4.1-flash"),
+        }
+      : null,
   tz,
 });
 const keep = Number(process.env.BONI_BACKUPS ?? 14);

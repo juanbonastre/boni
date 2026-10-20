@@ -311,6 +311,7 @@ describe("the agent, with a planner that behaves", () => {
             tool: "schema.create_type",
             args: { key: lit("Libros"), name: lit("Libros") },
           },
+          { id: "ti", ...field("titulo", "Título", "text") },
           { id: "a", ...field("autor", "Autor", "text") },
           { id: "v", ...field("valoración", "Valoración", "number") },
           { id: "d", ...field("Fecha en que lo terminé", "Fecha en que lo terminé", "date") },

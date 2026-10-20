@@ -504,7 +504,8 @@ export function coreTools(): ToolRegistry {
     name: "schema.create_type",
     effect: "schema",
     title: "Crear tipo",
-    describe: "A new type with a title field (add more fields with schema.add_field)",
+    describe:
+      'A new type; it already has its title field "titulo" (add the others with schema.add_field)',
     args: {
       key: { role: "value", required: true, describe: "ASCII key, e.g. libro" },
       name: { role: "content", required: true, describe: "name Juan reads, e.g. Libros" },
@@ -780,8 +781,17 @@ export function makeCaps(c: CapsContext): Caps {
     addField(typeKey, raw, name, kind, l, options) {
       const def = typeByKey(ro, typeKey);
       const key = keyFor(raw, name);
-      if (def.fields.some((f) => f.key === key || fieldName(f) === key))
-        throw new ToolError("field-exists");
+      const same = def.fields.find((f) => f.key === key || fieldName(f) === key);
+      // Asking again for a field it already has, of the same kind (the title of a new type), is done.
+      if (
+        same &&
+        same.type === kind &&
+        !same.archived &&
+        kind !== "select" &&
+        kind !== "multiselect"
+      )
+        return leaf(fieldName(same), l);
+      if (same) throw new ToolError("field-exists");
       wrap(() =>
         c.store.applySchema(
           { op: "add_field", type: def.id, field: fieldDef(key, name, kind, l, options) },
