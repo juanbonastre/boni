@@ -61,7 +61,8 @@ one "op":
   text: template, a, b, c, d; number: value, unit, caption; list: items, fields, caption; table: rows, fields, caption.
 Any step may have "when": expr (it runs only if the value is not empty: anything but null, false, 0, "" or an empty
 list; a path that does not exist counts as empty, so "when": {"ref": "$s1.items[1]"} asks "is there a second one?")
-and "each": {"ref": "$step"} (once per item of that list, the item is "$item"; at most 50).
+and "each": {"ref": "$step"} (once per item of that list, the item is "$item"; at most 50). "when" is checked once,
+before the loop, so it cannot use "$item".
 
 Expressions. Every value in "args", "params", "data", "input", "prompt", "options" and "when" is one of:
 - {"lit": x}: your own literal; x is ONE string, number, boolean or null, never a list or an object.

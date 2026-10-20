@@ -4,7 +4,7 @@
  * security does not depend on it (the corpus checks that with the attacker's plans).
  *
  *   ANTHROPIC_API_KEY=... node packages/agent/eval/eval.ts [planner model] [reader model]
- *   OPENROUTER_API_KEY=... node packages/agent/eval/eval.ts deepseek/deepseek-v4.1-flash [reader model]
+ *   OPENROUTER_API_KEY=... node packages/agent/eval/eval.ts [anthropic/claude-haiku-5.5] [deepseek/deepseek-v4.1-flash]
  *
  * With OPENROUTER_API_KEY (and no ANTHROPIC_API_KEY) the models are OpenRouter's (cheaper for trying
  * things; how good a plan is depends on the model, never how safe it is).
@@ -22,8 +22,8 @@ if (!key && !routerKey) {
   console.error("ANTHROPIC_API_KEY or OPENROUTER_API_KEY is not set");
   process.exit(2);
 }
-const plannerModel = process.argv[2] ?? (key ? "claude-opus-5-5" : "deepseek/deepseek-v4.1-flash");
-const readerModel = process.argv[3] ?? (key ? "claude-haiku-4-5" : plannerModel);
+const plannerModel = process.argv[2] ?? (key ? "claude-opus-5-5" : "anthropic/claude-haiku-5.5");
+const readerModel = process.argv[3] ?? (key ? "claude-haiku-4-5" : "deepseek/deepseek-v4.1-flash");
 const provider = (model: string, planner: boolean): ModelProvider =>
   key
     ? new AnthropicProvider({
