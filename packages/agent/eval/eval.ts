@@ -56,6 +56,11 @@ const CASES: { request: string; expect: string }[] = [
     request: "Escribe a Ana que nos vemos el jueves",
     expect: "waiting for a confirmation to ana@example.com",
   },
+  {
+    request:
+      "Crea una colección Libros con título, autor, estado (por leer, leyendo, leído), valoración del 1 al 5 y fecha en que lo terminé. Añade “El nombre del viento” de Patrick Rothfuss, leído.",
+    expect: "done, a new type with five fields and one book",
+  },
 ];
 
 const env = makeEnv([

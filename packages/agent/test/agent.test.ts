@@ -315,6 +315,18 @@ describe("the agent, with a planner that behaves", () => {
           { id: "v", ...field("valoración", "Valoración", "number") },
           { id: "d", ...field("Fecha en que lo terminé", "Fecha en que lo terminé", "date") },
           {
+            id: "s",
+            op: "call",
+            tool: "schema.add_field",
+            args: {
+              type: lit("libros"),
+              key: lit("estado"),
+              name: lit("Estado"),
+              kind: lit("select"),
+              options: lit("Por leer, Leyendo, Leído"),
+            },
+          },
+          {
             id: "e",
             op: "call",
             tool: "entities.create",
@@ -322,7 +334,14 @@ describe("the agent, with a planner that behaves", () => {
               type: lit("libros"),
               values: {
                 fn: "obj",
-                args: [lit("titulo"), lit("El nombre del viento"), lit("Valoración"), lit(5)],
+                args: [
+                  lit("titulo"),
+                  lit("El nombre del viento"),
+                  lit("Valoración"),
+                  lit(5),
+                  lit("estado"),
+                  lit("leido"),
+                ],
               },
             },
           },
@@ -361,10 +380,16 @@ describe("the agent, with a planner that behaves", () => {
       "autor",
       "valoracion",
       "fecha_en_que_lo_termine",
+      "estado",
     ]);
+    const estado = libros?.fields.find((f) => f.key === "estado");
+    expect(estado?.options?.map((o) => o.name)).toEqual(["Por leer", "Leyendo", "Leído"]);
     expect(libros?.fields.map((f) => f.name)).toContain("Valoración");
     const [book] = env.store.list(libros?.id as string);
     expect(Object.values(book?.entity.values ?? {})).toContain(5);
+    expect(book?.entity.values[estado?.id as string]).toBe(
+      estado?.options?.find((o) => o.name === "Leído")?.id,
+    );
 
     const failed = await agent.turn({ text: "y otra de revistas", origin: PERSONAL });
     expect(failed).toMatchObject({ status: "stopped", error: "tool-bad-option" });

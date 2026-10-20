@@ -80,7 +80,8 @@ export interface Writer {
 }
 export interface SchemaWriter {
   createType(key: string, name: string, l: Label): Val;
-  addField(type: string, key: string, name: string, kind: FieldType, l: Label): Val;
+  /** `options`: the names of a select's options (text separated by commas, or a list of text). */
+  addField(type: string, key: string, name: string, kind: FieldType, l: Label, options?: Val): Val;
 }
 export interface MemoryWriter {
   save(text: Val, extra: Label): Val;
@@ -222,6 +223,12 @@ const fieldByName = (def: TypeDef, name: string) =>
     (f) => f.key,
   );
 
+/** A select's value by its option id, or by the option's name as a model writes it ("Leído", "leido"). */
+const optionFor = (f: FieldDef, v: unknown): unknown => {
+  if (typeof v !== "string" || f.options?.some((o) => o.id === v)) return v;
+  return f.options?.find((o) => asKey(o.name) === asKey(v))?.id ?? v;
+};
+
 const typeByKey = (store: ReadStore, key: string): TypeDef => {
   const def = byName(
     Object.values(store.schema().types).filter((t) => !t.system && !t.archived),
@@ -294,6 +301,8 @@ const FIELD_KINDS: readonly FieldType[] = [
   "url",
   "email",
   "phone",
+  "select",
+  "multiselect",
 ];
 
 export function coreTools(): ToolRegistry {
@@ -518,6 +527,11 @@ export function coreTools(): ToolRegistry {
       key: { role: "value", required: true, describe: "ASCII key" },
       name: { role: "content", required: true, describe: "name Juan reads" },
       kind: { role: "option", required: true, describe: "field kind" },
+      options: {
+        role: "content",
+        describe:
+          'select and multiselect only: its options, separated by commas ("Por leer, Leído")',
+      },
     },
     run({ schema }, a, extra) {
       const kind = str(a.kind) as FieldType;
@@ -528,6 +542,7 @@ export function coreTools(): ToolRegistry {
         str(a.name),
         kind,
         join(deepLabel(a.key as Val), deepLabel(a.name as Val), extra),
+        a.options as Val | undefined,
       );
     },
   });
@@ -656,6 +671,9 @@ export function makeCaps(c: CapsContext): Caps {
       }
       const f = fieldByName(def, k);
       if (!f) throw new ToolError("unknown-field");
+      if (f.type === "select") value = optionFor(f, value);
+      if (f.type === "multiselect" && Array.isArray(value))
+        value = value.map((x) => optionFor(f, x));
       writes[f.id] = { value, label: l };
     }
     return writes;
@@ -696,14 +714,49 @@ export function makeCaps(c: CapsContext): Caps {
     if (!KEY.test(k)) throw new ToolError("bad-key");
     return k;
   };
-  const fieldDef = (key: string, name: string, kind: FieldType, l: Label): FieldDef => {
-    return {
+  const fieldDef = (
+    key: string,
+    name: string,
+    kind: FieldType,
+    l: Label,
+    options?: Val,
+  ): FieldDef => {
+    const def: FieldDef = {
       id: newId("f", c.now()),
       key,
       name: (lowIntegrity(l) ? neutralize(name) : name).slice(0, 80),
       type: kind,
       label: l,
     };
+    if (kind !== "select" && kind !== "multiselect") {
+      if (options) throw new ToolError("options-not-a-select");
+      return def;
+    }
+    // Text separated by commas (a quote of Juan's words), or a list a step gave.
+    const text = options ? plain(options) : null;
+    const items: Val[] =
+      options?.t === "list"
+        ? options.items
+        : typeof text === "string"
+          ? text
+              .split(/[,;\n]/)
+              .filter((x) => x.trim())
+              .map((x) => leaf(x, deepLabel(options as Val)))
+          : [];
+    if (!items.length || items.length > 50) throw new ToolError("select-needs-options");
+    def.options = [];
+    for (const item of items) {
+      const n = plain(item);
+      if (typeof n !== "string" || !n.trim()) throw new ToolError("bad-option-name");
+      const ol = join(deepLabel(item), l);
+      const shown = (lowIntegrity(ol) ? neutralize(n.trim()) : n.trim()).slice(0, 80);
+      const base = `o_${asKey(shown) || "x"}`.slice(0, 40);
+      let id = base;
+      for (let i = 2; def.options.some((o) => o.id === id); i++) id = `${base}_${i}`;
+      if (def.options.some((o) => asKey(o.name) === asKey(shown))) continue;
+      def.options.push({ id, name: shown, label: ol });
+    }
+    return def;
   };
   const schema: SchemaWriter = {
     createType(raw, name, l) {
@@ -724,14 +777,14 @@ export function makeCaps(c: CapsContext): Caps {
       wrap(() => c.store.applySchema({ op: "create_type", type: def }, meta));
       return leaf(key, l);
     },
-    addField(typeKey, raw, name, kind, l) {
+    addField(typeKey, raw, name, kind, l, options) {
       const def = typeByKey(ro, typeKey);
       const key = keyFor(raw, name);
       if (def.fields.some((f) => f.key === key || fieldName(f) === key))
         throw new ToolError("field-exists");
       wrap(() =>
         c.store.applySchema(
-          { op: "add_field", type: def.id, field: fieldDef(key, name, kind, l) },
+          { op: "add_field", type: def.id, field: fieldDef(key, name, kind, l, options) },
           meta,
         ),
       );
