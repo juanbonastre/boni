@@ -27,7 +27,10 @@ import { Vaults } from "./vaults.ts";
  *   BONI_PUSH_HOSTS  hosts devices may register as UnifiedPush addresses, comma separated (e.g. the ntfy
  *                    server); push is off without it
  *   BONI_PUSH_TOKEN  sent as a bearer token when posting to them (an ntfy account that may write up* topics)
- *   BONI_BACKUPS     daily copies of the database to keep in backups/ next to it   default 14 (0: none)
+ *   BONI_BACKUPS     daily copies to keep in backups/ next to the databases (system.db, and each account's
+ *                    store and mirror state, encrypted with the account's key)   default 14 (0: none)
+ *   BONI_TRUSTED_PROXIES  addresses whose X-Forwarded-For is trusted besides loopback, comma separated (the
+ *                    public node's sidecar on an internal network)   optional
  *   BONI_TZ     the time zone of the Boni API v1 and of the agent ("today")   default Europe/Madrid
  *   ANTHROPIC_API_KEY  turns the agent on (tailnet only) with Anthropic's models; off without it
  *   BONI_PLANNER_MODEL / BONI_READER_MODEL   default claude-opus-5-5 / claude-haiku-4-5
@@ -36,11 +39,6 @@ const paths = databasePaths();
 const dbPath = paths.system;
 const { db } = openServerDb(paths);
 const key = loadKey(dbPath); // secret.key next to the databases, as before
-const keep = Number(process.env.BONI_BACKUPS ?? 14);
-const stopBackups =
-  dbPath !== ":memory:" && keep > 0
-    ? startBackups(db, join(dirname(dbPath), "backups"), keep)
-    : () => {};
 const feeds = new Feeds(
   makeFetcher({ allowPrivate: process.env.BONI_FEEDS_ALLOW_PRIVATE === "1" }),
 );
@@ -75,6 +73,17 @@ const agent = new AgentHost({
     : null,
   tz,
 });
+const keep = Number(process.env.BONI_BACKUPS ?? 14);
+// system.db, and each account's store and mirror state (encrypted with the account's data key).
+const stopBackups =
+  dbPath !== ":memory:" && keep > 0
+    ? startBackups(db, join(dirname(dbPath), "backups"), keep, {
+        usersDir: join(dirname(dbPath), "users"),
+        accounts: () => listUsers(db).map((u) => u.id),
+        store: (a) => agent.store(a),
+        master: key,
+      })
+    : () => {};
 // The Markdown mirror of the types switched to core mode (`cli.ts mirror`).
 const mirrors = new Mirrors({
   host: agent,
@@ -94,6 +103,12 @@ const app = makeApp({
   boniWebDir: process.env.BONI_BONI_WEB ?? null,
   tz,
   agent,
+  trustedProxies: new Set(
+    (process.env.BONI_TRUSTED_PROXIES ?? "")
+      .split(",")
+      .map((h) => h.trim())
+      .filter(Boolean),
+  ),
 });
 const port = Number(process.env.BONI_PORT ?? 8787);
 const host = process.env.BONI_HOST ?? "127.0.0.1";

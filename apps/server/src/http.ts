@@ -66,6 +66,8 @@ export interface ServerOptions {
   now?: () => number;
   /** The agent's conversation API (agent.ts); off (503) when missing. */
   agent?: AgentHost;
+  /** Proxies whose X-Forwarded-For is trusted besides loopback (BONI_TRUSTED_PROXIES; limits.ts). */
+  trustedProxies?: ReadonlySet<string>;
 }
 
 export interface App {
@@ -211,7 +213,15 @@ export function makeApp(opts: ServerOptions): App {
     // Before anything else, login included: on the public entry only the allow-list exists.
     if (!allowed(route, listener, routes)) return send(res, 404, { error: "not-found" });
     if (route === "GET /healthz" || url.pathname.startsWith("/api/v1/"))
-      return serveV1({ svc: v1, db, guard, tz, hasVault }, req, res, url, route, params, listener);
+      return serveV1(
+        { svc: v1, db, guard, tz, hasVault, proxies: opts.trustedProxies },
+        req,
+        res,
+        url,
+        route,
+        params,
+        listener,
+      );
     if (url.pathname.startsWith("/api/agent/")) {
       if (req.method !== "GET" && req.method !== "POST")
         return send(res, 404, { error: "not-found" });
@@ -247,7 +257,11 @@ export function makeApp(opts: ServerOptions): App {
     if (route === "POST /api/login") {
       const b = await bodyOf(req);
       const name = String(b.user ?? "").slice(0, 64);
-      const from = clientAddress(req.socket.remoteAddress, header(req, "x-forwarded-for"));
+      const from = clientAddress(
+        req.socket.remoteAddress,
+        header(req, "x-forwarded-for"),
+        opts.trustedProxies,
+      );
       if (!guard.allow(name, from)) {
         console.warn(`login refused (too many attempts): ${JSON.stringify(name)} from ${from}`);
         res.setHeader("retry-after", "900");

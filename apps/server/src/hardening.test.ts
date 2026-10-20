@@ -1,11 +1,23 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { label } from "@boni/entities";
+import { wrappedKeysIn } from "@boni/identity";
+import { openMirrorState } from "@boni/mirror";
+import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addUser, SESSION_IDLE_MS } from "./auth.ts";
-import { backupNow } from "./backups.ts";
+import { backupNow, backupStoresNow } from "./backups.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { makeServer } from "./http.ts";
@@ -82,6 +94,10 @@ describe("logging in from the internet", () => {
   it("trusts X-Forwarded-For only from the local proxy (Tailscale serve)", () => {
     expect(clientAddress("127.0.0.1", "203.0.113.7, 10.0.0.1")).toBe("203.0.113.7");
     expect(clientAddress("100.64.1.2", "203.0.113.7")).toBe("100.64.1.2");
+    // The public node's sidecar over an internal network, when it is named as a proxy.
+    const proxies = new Set(["172.31.250.2"]);
+    expect(clientAddress("::ffff:172.31.250.2", "203.0.113.7", proxies)).toBe("203.0.113.7");
+    expect(clientAddress("172.31.250.3", "203.0.113.7", proxies)).toBe("172.31.250.3");
     expect(clientAddress("::1", undefined)).toBe("::1");
   });
 
@@ -138,5 +154,59 @@ describe("backups", () => {
     expect((copy.prepare("SELECT COUNT(*) AS n FROM accounts").get() as { n: number }).n).toBe(2);
     copy.close();
     expect(existsSync(join(out, "secret.key"))).toBe(false);
+  });
+
+  it("each account's store and mirror state, encrypted with the account's key", () => {
+    const users = join(dir, "users");
+    mkdirSync(users, { recursive: true });
+    const store = openUserStore(join(users, "1.db"));
+    const own = label("user", "personal", []);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_libro",
+          key: "libro",
+          name: "Libros",
+          fields: [{ id: "f_titulo", key: "titulo", name: "Título", type: "text", label: own }],
+          titleField: "f_titulo",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    store.create("t_libro", { f_titulo: { value: "MARCA-LIBRO", label: own } }, { actor: "user" });
+    const mirror = openMirrorState(join(users, "1.mirror.db"));
+    mirror.setSynced(7);
+    mirror.close();
+    const out = join(dir, "backups-stores");
+    const master = randomBytes(32);
+    const o = { usersDir: users, accounts: () => [1, 2], store: () => store, master };
+    for (let d = 1; d <= 4; d++) backupStoresNow(db, out, 2, o, new Date(Date.UTC(2026, 9, d)));
+    expect(readdirSync(out).sort()).toEqual([
+      "mirror-1-2026-10-03.db.sealed",
+      "mirror-1-2026-10-04.db.sealed",
+      "user-1-2026-10-03.db.sealed",
+      "user-1-2026-10-04.db.sealed",
+    ]);
+    const sealed = readFileSync(join(out, "user-1-2026-10-04.db.sealed"));
+    expect(sealed.includes(Buffer.from("MARCA-LIBRO"))).toBe(false);
+    // Opened with the account's own key (kept wrapped in system.db), and only with it.
+    const key = wrappedKeyProvider(master, wrappedKeysIn(db)).dataKey("1");
+    restoreBackup(join(out, "user-1-2026-10-04.db" + ".sealed"), key, join(dir, "back.db"));
+    const back = openUserStore(join(dir, "back.db"));
+    expect(back.list("t_libro").map((s) => s.entity.values.f_titulo)).toEqual(["MARCA-LIBRO"]);
+    back.close();
+    restoreBackup(join(out, "mirror-1-2026-10-04.db.sealed"), key, join(dir, "mirror-back.db"));
+    const m = openMirrorState(join(dir, "mirror-back.db"));
+    expect(m.synced()).toBe(7);
+    m.close();
+    const other = wrappedKeyProvider(master, wrappedKeysIn(db)).dataKey("2");
+    expect(() =>
+      restoreBackup(join(out, "user-1-2026-10-04.db.sealed"), other, join(dir, "x.db")),
+    ).toThrow();
+    store.close();
   });
 });

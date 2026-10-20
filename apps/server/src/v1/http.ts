@@ -119,6 +119,8 @@ export interface V1Http {
   svc: V1Service;
   db: Db;
   guard: LoginGuard;
+  /** Proxies whose X-Forwarded-For is trusted besides loopback (limits.ts). */
+  proxies?: ReadonlySet<string>;
   tz: string;
   /** Whether any account has a vault here (for /healthz). */
   hasVault: () => boolean;
@@ -148,7 +150,11 @@ export async function serveV1(
       const name = str(b, "user").trim().slice(0, 64);
       const password = str(b, "password");
       const device = str(b, "device").trim().slice(0, 80) || "equipo";
-      const from = clientAddress(req.socket.remoteAddress, header(req, "x-forwarded-for"));
+      const from = clientAddress(
+        req.socket.remoteAddress,
+        header(req, "x-forwarded-for"),
+        o.proxies,
+      );
       if (!o.guard.allow(name, from)) {
         console.warn(`v1 login refused (too many attempts): ${JSON.stringify(name)} from ${from}`);
         res.setHeader("retry-after", "900");
