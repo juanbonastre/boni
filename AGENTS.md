@@ -70,6 +70,8 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  `anthropic.ts`: the real provider (Messages API with structured output, no tools, no SDK);
                  `apiSchema` reduces schemas to what that API accepts (the code checks every answer again anyway).
                  `eval/eval.ts`: a small evaluation with the real models, outside CI, run by hand with a budget.
+                 `test/boundary.test.ts`: the core (entities, store, agent, views) depends on nothing of the vault,
+                 the calendar, the apps or Obsidian; Obsidian is an integration at the edge (docs/nucleo.md, 9.4).
 packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
                  (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
                  Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).

