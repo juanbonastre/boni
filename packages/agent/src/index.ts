@@ -15,6 +15,7 @@ export {
 export { AnthropicProvider, apiSchema, ProviderError } from "./anthropic.ts";
 export { type ConfirmView, confirmHash, confirmView, marksOf } from "./confirm.ts";
 export { callFn, FnError } from "./fns.ts";
+export { type OpenAIOptions, OpenAIProvider } from "./openai.ts";
 export {
   type Expr,
   FNS,
