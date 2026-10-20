@@ -294,6 +294,109 @@ describe("the agent, with a planner that behaves", () => {
     expect(Object.values(env.store.schema().types).some((t) => t.key === "libro")).toBe(false);
   });
 
+  it("takes keys written like names, and a request that fails halfway leaves nothing half done", async () => {
+    env = makeEnv();
+    const field = (key: string, name: string, kind: string) => ({
+      op: "call" as const,
+      tool: "schema.add_field",
+      args: { type: lit("Libros"), key: lit(key), name: lit(name), kind: lit(kind) },
+    });
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "t",
+            op: "call",
+            tool: "schema.create_type",
+            args: { key: lit("Libros"), name: lit("Libros") },
+          },
+          { id: "a", ...field("autor", "Autor", "text") },
+          { id: "v", ...field("valoración", "Valoración", "number") },
+          { id: "d", ...field("Fecha en que lo terminé", "Fecha en que lo terminé", "date") },
+          {
+            id: "s",
+            op: "call",
+            tool: "schema.add_field",
+            args: {
+              type: lit("libros"),
+              key: lit("estado"),
+              name: lit("Estado"),
+              kind: lit("select"),
+              options: lit("Por leer, Leyendo, Leído"),
+            },
+          },
+          {
+            id: "e",
+            op: "call",
+            tool: "entities.create",
+            args: {
+              type: lit("libros"),
+              values: {
+                fn: "obj",
+                args: [
+                  lit("titulo"),
+                  lit("El nombre del viento"),
+                  lit("Valoración"),
+                  lit(5),
+                  lit("estado"),
+                  lit("leido"),
+                ],
+              },
+            },
+          },
+        ],
+      },
+      {
+        version: 1,
+        steps: [
+          {
+            id: "t",
+            op: "call",
+            tool: "schema.create_type",
+            args: { key: lit("revistas"), name: lit("Revistas") },
+          },
+          {
+            id: "a",
+            op: "call",
+            tool: "schema.add_field",
+            args: {
+              type: lit("revistas"),
+              key: lit("autor"),
+              name: lit("Autor"),
+              kind: lit("nada"),
+            },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({ text: "crea una colección Libros", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["done", null]);
+    expect(res.notices.filter((n) => n.code === "schema-changed")).toHaveLength(1);
+    const libros = Object.values(env.store.schema().types).find((t) => t.key === "libros");
+    expect(libros?.fields.map((f) => f.key)).toEqual([
+      "titulo",
+      "autor",
+      "valoracion",
+      "fecha_en_que_lo_termine",
+      "estado",
+    ]);
+    const estado = libros?.fields.find((f) => f.key === "estado");
+    expect(estado?.options?.map((o) => o.name)).toEqual(["Por leer", "Leyendo", "Leído"]);
+    expect(libros?.fields.map((f) => f.name)).toContain("Valoración");
+    const [book] = env.store.list(libros?.id as string);
+    expect(Object.values(book?.entity.values ?? {})).toContain(5);
+    expect(book?.entity.values[estado?.id as string]).toBe(
+      estado?.options?.find((o) => o.name === "Leído")?.id,
+    );
+
+    const failed = await agent.turn({ text: "y otra de revistas", origin: PERSONAL });
+    expect(failed).toMatchObject({ status: "stopped", error: "tool-bad-option" });
+    expect(failed.notices).toEqual([{ code: "undone" }]);
+    expect(Object.values(env.store.schema().types).some((t) => t.key === "revistas")).toBe(false);
+  });
+
   it("writes what a run does with its id, so the journal tells what happened and why", async () => {
     env = makeEnv();
     const planner = fakePlanner([

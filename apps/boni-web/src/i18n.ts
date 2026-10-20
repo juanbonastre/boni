@@ -355,6 +355,7 @@ const es = {
   "notice.schema-changed": "Boni ha cambiado tus tipos o campos (puedes deshacerlo).",
   "notice.proposals": "{n} propuesta(s) en la bandeja",
   "notice.budget": "Se ha llegado al límite de hoy para el trabajo en segundo plano.",
+  "notice.undone": "No ha quedado nada a medias: lo que había hecho se ha deshecho.",
   "inbox.title": "Bandeja",
   "inbox.titleN": "Bandeja ({n})",
   "inbox.help":
@@ -752,6 +753,7 @@ const en: Record<Key, string> = {
   "notice.schema-changed": "Boni changed your types or fields (you can undo it).",
   "notice.proposals": "{n} proposal(s) in the inbox",
   "notice.budget": "Today's limit for background work was reached.",
+  "notice.undone": "Nothing was left half done: what it had done was undone.",
   "inbox.title": "Inbox",
   "inbox.titleN": "Inbox ({n})",
   "inbox.help":
