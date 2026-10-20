@@ -26,7 +26,8 @@ export interface Options {
   language?: "es" | "en";
   /** Files on the device (store), by name. */
   files?: Record<string, string>;
-  /** Answers of the agent's API, in order, by "METHOD path" ("POST api/agent/turn"); the last one repeats. */
+  /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
+   * api/agent/turn"); the last one repeats. */
   agent?: Record<string, unknown[]>;
 }
 
@@ -71,7 +72,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           return [200, JSON.stringify({ proposals: inbox })];
         const decided = /^api\/agent\/proposals\/([^/]+)\//.exec(p);
         if (decided && inbox) inbox = inbox.filter((x) => x.id !== decided[1]);
-        if (p.startsWith("api/agent/")) {
+        if (p.startsWith("api/agent/") || p === "api/mail" || p.startsWith("api/mail/")) {
           const key = `${method} ${p
             .replace(/\/proposals\/[^/]+\//, "/proposals/:id/")
             .replace(/\/runs\/[^/]+\//, "/runs/:id/")
@@ -81,7 +82,13 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           if (!list?.length) return [503, '{"error":"agent-off"}'];
           const n = agentCalls[key] ?? 0;
           agentCalls[key] = n + 1;
-          return [200, JSON.stringify(list[Math.min(n, list.length - 1)])];
+          // An answer with `__status` is an error the server would send (`{ __status: 400, error: "auth" }`).
+          const item = list[Math.min(n, list.length - 1)] as Record<string, unknown> | undefined;
+          if (item && typeof item === "object" && typeof item.__status === "number") {
+            const { __status, ...rest } = item;
+            return [__status as number, JSON.stringify(rest)];
+          }
+          return [200, JSON.stringify(item)];
         }
         const ok = (name: string): [number, string] => [200, examples[name]!];
         if (method === "DELETE") return [204, ""];

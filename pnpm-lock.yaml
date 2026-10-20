@@ -301,6 +301,9 @@ importers:
       '@boni/identity':
         specifier: workspace:*
         version: link:../../packages/identity
+      '@boni/mail':
+        specifier: workspace:*
+        version: link:../../packages/mail
       '@boni/mirror':
         specifier: workspace:*
         version: link:../../packages/mirror

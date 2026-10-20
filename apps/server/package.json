@@ -20,6 +20,7 @@
     "@boni/entities": "workspace:*",
     "@boni/export": "workspace:*",
     "@boni/identity": "workspace:*",
+    "@boni/mail": "workspace:*",
     "@boni/mirror": "workspace:*",
     "@boni/net": "workspace:*",
     "@boni/store": "workspace:*",

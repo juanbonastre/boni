@@ -1,0 +1,366 @@
+import type { Duplex } from "node:stream";
+import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
+import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
+import { BODY, type UserStore } from "@boni/store";
+import type { AgentHost } from "./agent.ts";
+import type { Db } from "./db.ts";
+import { decrypt, encrypt, type SecretKey } from "./secret.ts";
+
+/**
+ * Mail as a source (docs/nucleo.md, decision of 2026-10-20; plan PR 15b). An account may connect one mailbox
+ * by IMAP (`@boni/mail`, read-only: nothing is marked read, moved or deleted). Every few minutes the new
+ * messages of its folder become entities of the account's "Correos" collection, made by this code the first
+ * time: every value `external` (it is someone else's text), with the sender as its source, third party.
+ * What the agent then proposes from them (tasks) comes in the next step; this only brings the mail in.
+ *
+ * Kept in system.db's account data: `mail` (the settings, the app password among them, encrypted with the
+ * server's secret key; never sent back to a device) and `mail-state` (where it is: UIDVALIDITY, the last
+ * UID, the collection's id, the last check and its error).
+ */
+export interface MailSettings {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  folder: string;
+  /** The collections (type ids) tasks from mail may be proposed into (the AI picks one; next step). */
+  collections: string[];
+  on: boolean;
+}
+export interface MailState {
+  type: string | null;
+  uidValidity: number;
+  lastUid: number;
+  lastCheck: number;
+  /** A fixed code ("auth", "network", "timeout", "protocol"), never the server's words. */
+  lastError: string | null;
+  /** Messages brought in so far. */
+  count: number;
+}
+/** What a device sees: everything but the password. */
+export type MailView = Omit<MailSettings, "password"> & { configured: true; state: MailState };
+
+const EMPTY: MailState = {
+  type: null,
+  uidValidity: 0,
+  lastUid: 0,
+  lastCheck: 0,
+  lastError: null,
+  count: 0,
+};
+const CODE = label("own", "personal", [{ kind: "code", id: "mail" }]);
+const FIELDS: [key: string, name: string, type: FieldDef["type"]][] = [
+  ["asunto", "Asunto", "text"],
+  ["de", "De", "email"],
+  ["de_nombre", "Nombre", "text"],
+  ["para", "Para", "text"],
+  ["fecha", "Fecha", "datetime"],
+  ["adjuntos", "Adjuntos", "text"],
+  ["id_mensaje", "Id del mensaje", "text"],
+];
+
+export class MailError extends Error {
+  code: string;
+  constructor(code: string) {
+    super(code);
+    this.code = code;
+  }
+}
+
+export interface MailsOptions {
+  db: Db;
+  key: SecretKey;
+  host: AgentHost;
+  now?: () => number;
+  /** On the first check, mail received in the last `firstDays` days (older mail is never brought in). */
+  firstDays?: number;
+  /** At most this many messages per check (the rest on the next one). */
+  perCheck?: number;
+  /** Called with the ids of the entities made from new mail (the agent's proposals hang from it). */
+  onNew?: (account: number, entities: string[]) => void;
+  /** Tests only: the IMAP connection. */
+  connect?: () => Duplex;
+}
+
+export class Mails {
+  private o: MailsOptions;
+  private busy = new Map<number, Promise<MailState>>();
+  private queued = new Map<number, Promise<MailState>>();
+  private timer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(o: MailsOptions) {
+    this.o = o;
+  }
+
+  private now = () => (this.o.now ?? Date.now)();
+
+  private get(account: number, key: string): string | null {
+    const r = this.o.db
+      .prepare("SELECT value FROM account_data WHERE account_id = ? AND key = ?")
+      .get(account, key) as { value: string } | undefined;
+    return r?.value ?? null;
+  }
+
+  private set(account: number, key: string, value: string | null): void {
+    if (value === null)
+      this.o.db
+        .prepare("DELETE FROM account_data WHERE account_id = ? AND key = ?")
+        .run(account, key);
+    else
+      this.o.db
+        .prepare(
+          `INSERT INTO account_data (account_id, key, value, updated) VALUES (?, ?, ?, ?)
+           ON CONFLICT (account_id, key) DO UPDATE SET value = excluded.value, updated = excluded.updated`,
+        )
+        .run(account, key, value, this.now());
+  }
+
+  settings(account: number): MailSettings | null {
+    const v = this.get(account, "mail");
+    return v ? (JSON.parse(decrypt(this.o.key, v)) as MailSettings) : null;
+  }
+
+  state(account: number): MailState {
+    const v = this.get(account, "mail-state");
+    return v ? { ...EMPTY, ...(JSON.parse(v) as Partial<MailState>) } : { ...EMPTY };
+  }
+
+  private saveState(account: number, s: MailState) {
+    this.set(account, "mail-state", JSON.stringify(s));
+  }
+
+  view(account: number): MailView | null {
+    const s = this.settings(account);
+    if (!s) return null;
+    const { password: _p, ...rest } = s;
+    return { ...rest, configured: true, state: this.state(account) };
+  }
+
+  /**
+   * New settings, after a connection with them works (a wrong password is never kept). Without `password`
+   * the stored one stays. A different mailbox starts over (cursor and count), keeping the mail already in.
+   */
+  async save(
+    account: number,
+    input: Partial<Omit<MailSettings, "password">> & { password?: string },
+  ): Promise<MailView> {
+    const old = this.settings(account);
+    const s: MailSettings = {
+      host: String(input.host ?? old?.host ?? "").trim(),
+      port: Number(input.port ?? old?.port ?? 993),
+      user: String(input.user ?? old?.user ?? "").trim(),
+      password: input.password ? String(input.password) : (old?.password ?? ""),
+      folder: String(input.folder ?? old?.folder ?? "INBOX").trim() || "INBOX",
+      collections: (Array.isArray(input.collections)
+        ? input.collections
+        : (old?.collections ?? [])
+      ).filter((c): c is string => typeof c === "string" && c.length < 80),
+      on: input.on ?? old?.on ?? true,
+    };
+    if (
+      !/^[a-z0-9.-]{1,253}$/i.test(s.host) ||
+      !Number.isInteger(s.port) ||
+      s.port < 1 ||
+      s.port > 65535
+    )
+      throw new MailError("bad-server");
+    if (!s.user || s.user.length > 320 || !s.password || s.password.length > 500)
+      throw new MailError("bad-login");
+    if (s.folder.length > 200) throw new MailError("bad-folder");
+    const sameBox = old && old.host === s.host && old.user === s.user && old.folder === s.folder;
+    if (!sameBox || input.password) {
+      const r = await this.open(s);
+      try {
+        await r.examine(s.folder);
+      } finally {
+        r.close();
+      }
+    }
+    this.set(account, "mail", encrypt(this.o.key, JSON.stringify(s)));
+    if (!sameBox) {
+      const st = this.state(account);
+      this.saveState(account, { ...EMPTY, type: st.type, count: 0 });
+    }
+    return this.view(account) as MailView;
+  }
+
+  /** Disconnects the mailbox: the settings go, the mail already brought in stays. */
+  forget(account: number): void {
+    this.set(account, "mail", null);
+    this.set(account, "mail-state", null);
+  }
+
+  private async open(s: MailSettings): Promise<ImapReader> {
+    try {
+      return await ImapReader.open({
+        host: s.host,
+        port: s.port,
+        user: s.user,
+        password: s.password,
+        ...(this.o.connect ? { connect: this.o.connect } : {}),
+      });
+    } catch (e) {
+      throw new MailError(e instanceof ImapError ? e.code : "network");
+    }
+  }
+
+  /** The account's "Correos" collection: the one this code made, or a new one if it is gone. */
+  private collection(store: UserStore, st: MailState): TypeDef {
+    const had = st.type ? store.schema().types[st.type] : undefined;
+    if (had && !had.archived) return had;
+    const taken = new Set(Object.values(store.schema().types).map((t) => t.key));
+    let key = "correo";
+    for (let i = 2; taken.has(key); i++) key = `correo${i}`;
+    const fields: FieldDef[] = FIELDS.map(([k, name, type]) => ({
+      id: `f_${k}`,
+      key: k,
+      name,
+      type,
+      label: CODE,
+      ...(k === "de" || k === "de_nombre" || k === "para"
+        ? { sensitivity: "personal" as const }
+        : {}),
+    }));
+    const def: TypeDef = {
+      id: newId("t", this.now()),
+      key,
+      name: "Correos",
+      fields,
+      titleField: "f_asunto",
+      sensitivity: "personal",
+      schemaVersion: 1,
+      label: CODE,
+    };
+    store.applySchema({ op: "create_type", type: def }, { actor: "connector" });
+    return def;
+  }
+
+  /** One message as an entity: every value the sender's (external), the body as its text. */
+  private keep(store: UserStore, def: TypeDef, m: Message, arrived: string | null): string {
+    const from = m.from[0];
+    const l = label(
+      "external",
+      "personal",
+      [{ kind: "mail", id: from?.address ?? "unknown" }],
+      true,
+    );
+    const w = (v: unknown) => ({ value: v, label: l });
+    const values: Record<string, { value: unknown; label: typeof l }> = {
+      f_asunto: w(m.subject || "(sin asunto)"),
+      f_id_mensaje: w(m.messageId),
+    };
+    if (from && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from.address)) values.f_de = w(from.address);
+    if (from?.name) values.f_de_nombre = w(from.name.slice(0, 200));
+    const to = [...m.to, ...m.cc].map((a) => a.address).join(", ");
+    if (to) values.f_para = w(to.slice(0, 2000));
+    const when = m.date ?? arrived;
+    if (when) values.f_fecha = w(when);
+    if (m.attachments.length)
+      values.f_adjuntos = w(
+        m.attachments
+          .map((a) => a.name)
+          .join(", ")
+          .slice(0, 2000),
+      );
+    const notes = [
+      m.hidden ? `[Boni: ${m.hidden} partes ocultas del HTML no se muestran]` : "",
+      m.truncated ? "[Boni: el correo es más largo; solo se guarda el principio]" : "",
+    ].filter(Boolean);
+    const text = [m.text, ...notes].filter(Boolean).join("\n\n");
+    if (text) values[BODY] = w(text);
+    return store.create(def.id, values, { actor: "connector" }).entity.id;
+  }
+
+  /**
+   * Brings in the new mail of one account, one check at a time. Asked while one runs, it waits for it and
+   * then checks again (that one may have looked before the new mail arrived); callers meanwhile share it.
+   */
+  check(account: number): Promise<MailState> {
+    const running = this.busy.get(account);
+    const queued = this.queued.get(account);
+    if (queued) return queued;
+    const job: Promise<MailState> = (running ? running.catch(() => null) : Promise.resolve(null))
+      .then(() => {
+        this.queued.delete(account);
+        this.busy.set(account, job);
+        return this.run(account);
+      })
+      .finally(() => {
+        if (this.busy.get(account) === job) this.busy.delete(account);
+      });
+    if (running) this.queued.set(account, job);
+    else this.busy.set(account, job);
+    return job;
+  }
+
+  private async run(account: number): Promise<MailState> {
+    const s = this.settings(account);
+    const st = this.state(account);
+    if (!s || !this.o.host.hasData) return st;
+    const store = this.o.host.store(account);
+    const made: string[] = [];
+    let r: ImapReader | null = null;
+    try {
+      r = await this.open(s);
+      const box = await r.examine(s.folder);
+      const def = this.collection(store, st);
+      st.type = def.id;
+      // A new UIDVALIDITY means the old UIDs name other messages now: start from recent mail again,
+      // skipping what is already in by its Message-ID.
+      const restart = box.uidValidity !== st.uidValidity;
+      const day = new Date(this.now() - (this.o.firstDays ?? 3) * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      const uids = restart
+        ? await r.search({ since: day })
+        : await r.search({ afterUid: st.lastUid });
+      const known = restart
+        ? new Set(
+            store
+              .list(def.id)
+              .map((e) => e.entity.values.f_id_mensaje)
+              .filter((x): x is string => typeof x === "string" && x !== ""),
+          )
+        : new Set<string>();
+      if (restart) {
+        st.uidValidity = box.uidValidity;
+        st.lastUid = 0;
+      }
+      for (const uid of uids.slice(0, this.o.perCheck ?? 50)) {
+        const f = await r.fetch(uid);
+        st.lastUid = Math.max(st.lastUid, uid);
+        if (!f) continue;
+        const m = parseMessage(f.raw, f.raw.length < f.size);
+        if (m.messageId && known.has(m.messageId)) continue;
+        made.push(this.keep(store, def, m, f.internalDate));
+        st.count++;
+      }
+      st.lastError = null;
+    } catch (e) {
+      st.lastError = e instanceof MailError ? e.code : e instanceof ImapError ? e.code : "failed";
+      if (!(e instanceof MailError || e instanceof ImapError))
+        console.error(`mail ${account}: ${(e as Error).message}`);
+    } finally {
+      r?.close();
+      st.lastCheck = this.now();
+      this.saveState(account, st);
+    }
+    if (made.length) this.o.onNew?.(account, made);
+    return st;
+  }
+
+  /** Every `everyMs`, the accounts whose mailbox is on. */
+  start(accounts: () => { id: number }[], everyMs = 5 * 60_000): void {
+    const tick = () => {
+      for (const a of accounts()) if (this.settings(a.id)?.on) void this.check(a.id);
+    };
+    this.timer = setInterval(tick, everyMs);
+    this.timer.unref();
+    setTimeout(tick, 10_000).unref();
+  }
+
+  async close(): Promise<void> {
+    if (this.timer) clearInterval(this.timer);
+    await Promise.allSettled([...this.busy.values(), ...this.queued.values()]);
+  }
+}

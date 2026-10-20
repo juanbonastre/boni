@@ -294,6 +294,48 @@ export function reveal(text: string): string {
 
 // ---------------------------------------------------------------- the API
 
+/** The account's mailbox as the server shows it (never its password). */
+export interface MailView {
+  host: string;
+  port: number;
+  user: string;
+  folder: string;
+  collections: string[];
+  on: boolean;
+  /** `type`: the "Correos" collection's id (null before the first check). */
+  state: { lastCheck: number; lastError: string | null; count: number; type: string | null };
+}
+
+export function parseMail(v: unknown): MailView | null {
+  if (!isObj(v) || !isObj(v.state)) return null;
+  const host = str(v.host, 253);
+  const user = str(v.user, 320);
+  if (!host || !user) return null;
+  return {
+    host,
+    port: typeof v.port === "number" ? v.port : 993,
+    user,
+    folder: str(v.folder, 200) ?? "INBOX",
+    collections: strs(v.collections),
+    on: v.on !== false,
+    state: {
+      lastCheck: typeof v.state.lastCheck === "number" ? v.state.lastCheck : 0,
+      lastError: str(v.state.lastError, 40),
+      count: typeof v.state.count === "number" ? v.state.count : 0,
+      type: str(v.state.type, 80),
+    },
+  };
+}
+export interface MailInput {
+  host?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  folder?: string;
+  collections?: string[];
+  on?: boolean;
+}
+
 export class AgentApi {
   private readonly transport: Transport;
   constructor(transport: Transport) {
@@ -304,8 +346,9 @@ export class AgentApi {
     method: "GET" | "POST" | "PUT",
     path: string,
     body?: unknown,
+    prefix = "api/agent/",
   ): Promise<unknown> {
-    const r = await this.transport.request(method, `api/agent/${path}`, body);
+    const r = await this.transport.request(method, `${prefix}${path}`, body);
     if (!r.ok) {
       if (r.offline) throw new OfflineError(r.message);
       throw new NotConfiguredError("not configured");
@@ -407,6 +450,11 @@ export class AgentApi {
       })),
     };
   }
+  private mailOf = (b: unknown) => (isObj(b) ? parseMail(b.mail) : null);
+  mail = async () => this.mailOf(await this.call("GET", "", undefined, "api/mail"));
+  saveMail = async (input: MailInput) => this.mailOf(await this.call("PUT", "", input, "api/mail"));
+  checkMail = async () => this.mailOf(await this.call("POST", "/check", {}, "api/mail"));
+  forgetMail = async () => void (await this.call("POST", "/forget", {}, "api/mail"));
   async undo(id: string): Promise<number> {
     const b = await this.call("POST", `runs/${encodeURIComponent(id)}/undo`);
     return isObj(b) && typeof b.undone === "number" ? b.undone : 0;

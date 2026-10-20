@@ -4,6 +4,7 @@ import {
   ASK_TURN,
   confirmTurn,
   DONE,
+  MAIL,
   MIRROR_PROPOSAL,
   PROPOSALS,
   RTL,
@@ -280,4 +281,41 @@ test("on the phone, Boni is the third tab", async ({ page }) => {
   await page.getByRole("button", { name: "Enviar" }).click();
   await expect(page.locator(".turn-answer")).toContainText("Gastado este mes");
   await page.screenshot({ path: `${SHOTS}/agent-phone.png` });
+});
+
+test("the mailbox in Settings: a wrong password is said, a good one connects; collections and check", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "GET api/mail": [{ mail: null }],
+      "PUT api/mail": [{ __status: 400, error: "auth" }, MAIL, MAIL],
+      "POST api/mail/check": [MAIL],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await expect(modal.getByRole("heading", { name: "Correo" })).toBeVisible();
+  await modal.getByLabel("Usuario", { exact: true }).last().fill("ejemplo@example.com");
+  await modal.getByLabel("Contraseña de aplicación").fill("mala");
+  await modal.getByRole("button", { name: "Conectar" }).click();
+  await expect(modal.locator(".form-error")).toHaveText(
+    "El servidor no acepta el usuario o la contraseña.",
+  );
+  await modal.getByLabel("Contraseña de aplicación").fill("abcdabcdabcdabcd");
+  await modal.getByRole("button", { name: "Conectar" }).click();
+  await expect(modal).toContainText("Conectado: ejemplo@example.com");
+  await expect(modal).toContainText("12 correos");
+  // The mail collection itself is never a destination; hidden collections are not offered.
+  await expect(modal.getByRole("checkbox", { name: "Proyectos" })).toBeChecked();
+  await expect(modal.getByRole("checkbox", { name: "Diario" })).toHaveCount(0);
+  await modal.getByRole("checkbox", { name: "Movimientos" }).check();
+  await modal.getByRole("button", { name: "Comprobar ahora" }).click();
+  const puts = await requests(page, "PUT api/mail");
+  expect(puts[0]).toContain('"password":"mala"');
+  expect(puts[2]).toContain('"collections":["t_proyecto","t_movimiento"]');
+  expect(puts[2]).not.toContain("password");
+  expect(await requests(page, "POST api/mail/check")).toHaveLength(1);
+  await page.screenshot({ path: `${SHOTS}/agent-mail-settings.png` });
 });
