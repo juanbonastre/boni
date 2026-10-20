@@ -94,6 +94,25 @@ describe("the store", () => {
     expect(log.at(-1)?.seq).toBeGreaterThan(log.at(-2)?.seq ?? 0);
   });
 
+  it("sees a schema another connection changed (the import while the server runs)", () => {
+    const { store, dir } = fresh();
+    const other = openUserStore(join(dir, "boni.db"));
+    stores.push(other);
+    const def = { ...libro(), id: "t_revista", key: "revista", name: "Revistas" };
+    other.applySchema({ op: "create_type", type: def }, me);
+    expect(store.schema().types.t_revista?.name).toBe("Revistas");
+    const e = store.create("t_revista", { f_titulo: { value: "Una revista", label: JUAN } }, me);
+    expect(other.get(e.entity.id)?.entity.values.f_titulo).toBe("Una revista");
+    // And a change made here after it does not lose the other's type.
+    store.applySchema(
+      { op: "rename_type", type: "t_libro", key: "libro", name: "Libros leídos", label: JUAN },
+      me,
+    );
+    const again = openUserStore(join(dir, "boni.db"));
+    stores.push(again);
+    expect(Object.keys(again.schema().types).sort()).toEqual(["t_libro", "t_persona", "t_revista"]);
+  });
+
   it("keeps the schema across restarts", () => {
     const { store, dir } = fresh();
     store.close();
