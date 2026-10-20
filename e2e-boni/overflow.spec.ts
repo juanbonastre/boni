@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   ASK_TURN,
   confirmTurn,
+  MAIL,
   PROPOSALS,
   RUN_2,
   RUNS,
@@ -108,7 +109,7 @@ for (const language of ["es", "en"] as const) {
       const issues: string[] = [];
       await openApp(page, "/?still", {
         language,
-        agent: { "GET api/agent/visibility": [VISIBILITY] },
+        agent: { "GET api/agent/visibility": [VISIBILITY], "GET api/mail": [MAIL] },
       });
       await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
       await page.locator(".chart-card .chart svg").first().waitFor();
@@ -195,7 +196,7 @@ test.describe("on a phone", () => {
       const issues: string[] = [];
       await openApp(page, "/?still", {
         language,
-        agent: { "GET api/agent/visibility": [VISIBILITY] },
+        agent: { "GET api/agent/visibility": [VISIBILITY], "GET api/mail": [MAIL] },
       });
       await expect(page.locator(".m-shortcut")).toHaveCount(2);
       issues.push(...(await audit(page, "phone log")));

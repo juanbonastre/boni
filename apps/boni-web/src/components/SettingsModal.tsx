@@ -1,15 +1,19 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AI_LEVELS, type AiLevel, type Visibility } from "../core/agent.ts";
+import { AI_LEVELS, type AiLevel, type MailView, type Visibility } from "../core/agent.ts";
 import { host, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
 import {
   changeVisibility,
+  checkMail,
   configured,
+  forgetMail,
+  loadMail,
   loadVisibility,
   login,
   logout,
   openSettings,
+  saveMail,
   saveSettings,
   suggestedDevice,
   toast,
@@ -53,6 +57,8 @@ export function SettingsModal() {
           <Account />
 
           {configured(settings) && <AiVisibility />}
+
+          {configured(settings) && <MailSettings />}
 
           {host.saveExport && configured(settings) && <ExportData />}
 
@@ -358,6 +364,202 @@ function AiVisibility() {
             </div>
           </div>
         ))
+      )}
+    </>
+  );
+}
+
+/**
+ * "Correo": the account's mailbox (docs/nucleo.md, mail as a source). Boni reads it, read-only, every few
+ * minutes; each new mail lands in "Correos" as outside text and the tasks it asks become proposals in the
+ * inbox, into one of the collections marked here (the AI picks which). The password is sent once and never
+ * comes back; the server tries the connection before it keeps anything.
+ */
+function MailSettings() {
+  const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language);
+  const [mail, setMail] = useState<MailView | null | undefined>(undefined);
+  const [types, setTypes] = useState<Visibility[] | null>(null);
+  const [form, setForm] = useState({
+    host: "imap.gmail.com",
+    user: "",
+    password: "",
+    folder: "INBOX",
+  });
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void loadMail().then((m) => live && setMail(m));
+    void loadVisibility().then((v) => live && setTypes(v));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (mail === undefined) return null;
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await saveMail({
+      host: form.host.trim(),
+      user: form.user.trim(),
+      folder: form.folder.trim() || "INBOX",
+      ...(form.password ? { password: form.password } : {}),
+    });
+    setBusy(false);
+    if ("error" in r) return setError(t(`mail.error.${r.error}`));
+    setMail(r);
+    setEditing(false);
+    setForm((f) => ({ ...f, password: "" }));
+    toast(t("mail.connected"));
+  };
+  const toggle = async (id: string, on: boolean) => {
+    if (!mail) return;
+    const collections = on ? [...mail.collections, id] : mail.collections.filter((c) => c !== id);
+    setMail({ ...mail, collections });
+    const r = await saveMail({ collections });
+    if ("error" in r) {
+      setMail(mail);
+      toast(t(`mail.error.${r.error}`));
+    } else setMail(r);
+  };
+  const when = (ms: number) =>
+    new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
+      dateStyle: "short",
+      timeStyle: "short",
+    }).format(ms);
+  return (
+    <>
+      <h3>{t("mail.title")}</h3>
+      <p className="muted small setting-note">{t("mail.help")}</p>
+      {mail && !editing ? (
+        <>
+          <div className="setting">
+            <div className="setting-label">
+              <span>{t("mail.connectedAs", { user: mail.user })}</span>
+              <span className="muted small">
+                {mail.state.lastError
+                  ? t(`mail.error.${mail.state.lastError}`)
+                  : mail.state.lastCheck
+                    ? t("mail.state", { when: when(mail.state.lastCheck), n: mail.state.count })
+                    : t("mail.never")}
+              </span>
+            </div>
+            <div className="setting-control">
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  const m = await checkMail();
+                  setBusy(false);
+                  if (m) setMail(m);
+                }}
+              >
+                {busy ? t("mail.checking") : t("mail.check")}
+              </button>
+            </div>
+          </div>
+          <p className="muted small setting-note">{t("mail.collections")}</p>
+          {(types ?? [])
+            .filter((v) => v.level !== "hidden" && v.id !== mail.state.type)
+            .map((v) => (
+              <div className="setting" key={v.id}>
+                <div className="setting-label">{v.name}</div>
+                <div className="setting-control">
+                  <input
+                    type="checkbox"
+                    className="switch"
+                    aria-label={v.name}
+                    checked={mail.collections.includes(v.id)}
+                    onChange={(e) => void toggle(v.id, e.target.checked)}
+                  />
+                </div>
+              </div>
+            ))}
+          <div className="modal-actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setForm((f) => ({ ...f, host: mail.host, user: mail.user, folder: mail.folder }));
+                setEditing(true);
+              }}
+            >
+              {t("mail.change")}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={async () => {
+                if (await forgetMail()) setMail(null);
+              }}
+            >
+              {t("mail.forget")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <form
+          className="server-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submit();
+          }}
+        >
+          <div className="field-pair">
+            <label className="field">
+              <span className="field-label">{t("mail.server")}</span>
+              <input className="input" value={form.host} onChange={set("host")} />
+            </label>
+            <label className="field">
+              <span className="field-label">{t("mail.folder")}</span>
+              <input className="input" value={form.folder} onChange={set("folder")} />
+            </label>
+          </div>
+          <div className="field-pair">
+            <label className="field">
+              <span className="field-label">{t("mail.user")}</span>
+              <input
+                className="input"
+                value={form.user}
+                autoComplete="off"
+                placeholder="nombre@example.com"
+                onChange={set("user")}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">{t("mail.password")}</span>
+              <input
+                className="input"
+                type="password"
+                value={form.password}
+                autoComplete="new-password"
+                onChange={set("password")}
+              />
+            </label>
+          </div>
+          <span className="field-help">{t("mail.passwordHelp")}</span>
+          {error && <p className="form-error">{error}</p>}
+          <div className="modal-actions">
+            {mail && (
+              <button type="button" className="btn" onClick={() => setEditing(false)}>
+                {t("mail.cancel")}
+              </button>
+            )}
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={busy || !form.host.trim() || !form.user.trim() || (!mail && !form.password)}
+            >
+              {busy ? t("mail.connecting") : t("mail.connect")}
+            </button>
+          </div>
+        </form>
       )}
     </>
   );

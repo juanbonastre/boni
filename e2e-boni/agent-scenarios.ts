@@ -283,3 +283,24 @@ export const VISIBILITY = {
     { id: "t_proyecto", name: "Proyectos", level: "visible", count: 82 },
   ],
 };
+
+/** The account's mailbox as the server shows it (invented). */
+export const MAIL = {
+  mail: {
+    host: "imap.gmail.com",
+    port: 993,
+    user: "ejemplo@example.com",
+    folder: "INBOX",
+    collections: ["t_proyecto"],
+    on: true,
+    configured: true,
+    state: {
+      type: "t_correo",
+      lastCheck: Date.UTC(2026, 9, 20, 10, 5),
+      lastError: null,
+      count: 12,
+      uidValidity: 7,
+      lastUid: 40,
+    },
+  },
+};

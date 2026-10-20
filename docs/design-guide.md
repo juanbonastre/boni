@@ -202,6 +202,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   Reject (never "accept all"); a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
   Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it (names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
+- **Settings → Correo** (Boni): the account's mailbox. Not connected: server (`imap.gmail.com` by default), folder, user
+  and app password, and "Conectar", which tries the connection before anything is kept (a wrong password is said under the
+  form). Connected: who, the last check and how many mails, "Comprobar ahora", one switch per collection tasks from mail
+  may go to (never "Correos" itself nor a hidden one), "Cambiar" and "Desconectar". The password is never shown again.
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
   menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a

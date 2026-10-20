@@ -66,6 +66,10 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "GET /api/agent/visibility": "tailnet",
   "PUT /api/agent/visibility/:type": "tailnet",
   "GET /api/export": "tailnet",
+  "GET /api/mail": "tailnet",
+  "PUT /api/mail": "tailnet",
+  "POST /api/mail/check": "tailnet",
+  "POST /api/mail/forget": "tailnet",
 };
 
 /**

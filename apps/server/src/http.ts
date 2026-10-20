@@ -9,6 +9,7 @@ import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
+import { MailError, type Mails } from "./mail.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
 import { bodyOf, CORS, header, SAFE, send, tokenOf } from "./reply.ts";
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
@@ -36,6 +37,8 @@ import type { Vaults } from "./vaults.ts";
  *        a calendar's reminders, written in its definition note
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
  *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change)
+ *   GET  /api/mail · PUT /api/mail { host, port, user, password?, folder, collections, on } · POST /api/mail/check ·
+ *        POST /api/mail/forget: the account's mailbox (mail.ts; a personal device; the password never comes back)
  * The stream also sends an "account" event ({ updated }) when the account's prefs or calendars change.
  * The first Boni's API v1 (/api/v1/..., /healthz) is v1/http.ts, on the tailnet only; the agent's
  * conversation API (/api/agent/...) is agent.ts, on the tailnet only too.
@@ -66,6 +69,8 @@ export interface ServerOptions {
   now?: () => number;
   /** The agent's conversation API (agent.ts); off (503) when missing. */
   agent?: AgentHost;
+  /** The accounts' mailboxes (mail.ts); 503 when missing. */
+  mails?: Mails;
   /** Proxies whose X-Forwarded-For is trusted besides loopback (BONI_TRUSTED_PROXIES; limits.ts). */
   trustedProxies?: ReadonlySet<string>;
 }
@@ -233,6 +238,47 @@ export function makeApp(opts: ServerOptions): App {
         device: s.device,
         trust: s.trust,
       });
+    }
+    if (
+      route === "GET /api/mail" ||
+      route === "PUT /api/mail" ||
+      route === "POST /api/mail/check" ||
+      route === "POST /api/mail/forget"
+    ) {
+      // The account's mailbox (mail.ts), from a personal device only; the password never comes back.
+      const s = sessionUser(db, tokenOf(req));
+      if (!s) return send(res, 401, { error: "unauthorized" });
+      if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const mails = opts.mails;
+      if (!mails || !opts.agent?.hasData) return send(res, 503, { error: "no-store" });
+      const id = s.user.id;
+      if (route === "GET /api/mail") return send(res, 200, { mail: mails.view(id) });
+      if (route === "POST /api/mail/forget") {
+        mails.forget(id);
+        return send(res, 200, { mail: null });
+      }
+      if (route === "POST /api/mail/check") {
+        if (!mails.view(id)) return send(res, 404, { error: "not-configured" });
+        await mails.check(id);
+        return send(res, 200, { mail: mails.view(id) });
+      }
+      try {
+        const b = await bodyOf(req);
+        const mail = await mails.save(id, {
+          ...(typeof b.host === "string" ? { host: b.host } : {}),
+          ...(typeof b.port === "number" ? { port: b.port } : {}),
+          ...(typeof b.user === "string" ? { user: b.user } : {}),
+          ...(typeof b.password === "string" && b.password ? { password: b.password } : {}),
+          ...(typeof b.folder === "string" ? { folder: b.folder } : {}),
+          ...(Array.isArray(b.collections) ? { collections: b.collections as string[] } : {}),
+          ...(typeof b.on === "boolean" ? { on: b.on } : {}),
+        });
+        if (mail.on) void mails.check(id);
+        return send(res, 200, { mail });
+      } catch (e) {
+        if (e instanceof MailError) return send(res, 400, { error: e.code });
+        throw e;
+      }
     }
     if (route === "GET /api/export") {
       // Everything of the account in one zip (docs/nucleo.md 9.3), from a personal device only.

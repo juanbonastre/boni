@@ -3,6 +3,8 @@ import { create } from "zustand";
 import {
   AgentApi,
   type AiLevel,
+  type MailInput,
+  type MailView,
   type Proposal,
   type RunDetail,
   type RunSummary,
@@ -1020,6 +1022,44 @@ export async function loadVisibility(): Promise<Visibility[] | null> {
     return await agent.visibility();
   } catch {
     return null;
+  }
+}
+
+/** The account's mailbox: null when none is connected, undefined when it cannot be read (offline, shared device). */
+export async function loadMail(): Promise<MailView | null | undefined> {
+  try {
+    return await agent.mail();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Connects or changes the mailbox; the server tries it first. Returns the view, or the error's code. */
+export async function saveMail(input: MailInput): Promise<MailView | { error: string }> {
+  try {
+    const m = await agent.saveMail(input);
+    return m ?? { error: "failed" };
+  } catch (e) {
+    return { error: e instanceof ApiError ? e.code : "offline" };
+  }
+}
+
+export async function checkMail(): Promise<MailView | null> {
+  try {
+    return await agent.checkMail();
+  } catch {
+    toast(useStore.getState().t("mail.error.failed"));
+    return null;
+  }
+}
+
+export async function forgetMail(): Promise<boolean> {
+  try {
+    await agent.forgetMail();
+    return true;
+  } catch {
+    toast(useStore.getState().t("mail.error.failed"));
+    return false;
   }
 }
 

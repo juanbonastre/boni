@@ -5,6 +5,7 @@ import { listUsers } from "./auth.ts";
 import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
+import { Mails } from "./mail.ts";
 import { Mirrors } from "./mirror.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
@@ -104,6 +105,9 @@ const mirrors = new Mirrors({
 });
 agent.onChanged = (account) => void mirrors.run(account);
 mirrors.start();
+// The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
+const mails = new Mails({ db, key, host: agent });
+mails.start(() => listUsers(db));
 const app = makeApp({
   db,
   vaults,
@@ -114,6 +118,7 @@ const app = makeApp({
   boniWebDir: process.env.BONI_BONI_WEB ?? null,
   tz,
   agent,
+  mails,
   trustedProxies: new Set(
     (process.env.BONI_TRUSTED_PROXIES ?? "")
       .split(",")
@@ -143,6 +148,7 @@ const stop = () => {
   stopBackups();
   app.close();
   void mirrors.close();
+  void mails.close();
   agent.close();
   server.close();
   publicServer?.close();
