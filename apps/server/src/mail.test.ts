@@ -354,6 +354,15 @@ describe("tasks a mail asks for", () => {
     expect(store.journal.proposals("stale").map((p) => p.id)).toEqual([pending[1]?.id]);
     expect(store.journal.proposals("rejected").map((p) => p.id)).toEqual([pending[0]?.id]);
     expect(store.journal.proposals("pending")).toHaveLength(2);
+    // A reminder from the same sender: its reader is told the tasks still waiting from her, so it does not
+    // propose them again; another sender's mail is told nothing.
+    box.mails.set(2, mail(22, "Recordatorio", "Te recuerdo lo del informe y la sala."));
+    box.mails.set(3, mail(23, "Otra cosa", "¿Puedes revisar el acta?", "otro.ejemplo@example.com"));
+    await m.check(1);
+    const extracts = reader.requests.filter((r) => /list the tasks/.test(r.system));
+    const knownOf = (i: number) => (extracts.at(i)?.input as { known?: string[] }).known;
+    expect(knownOf(-2)?.sort()).toEqual(["Enviar el informe", "Reservar la sala"]);
+    expect(knownOf(-1)).toBeUndefined();
     const plan = mailPlan("e_x", true, [
       { key: "docencia", name: "Docencia", option: "Docencia", date: "date" },
       { key: "gestiones", name: "Gestiones", option: "Gestiones", date: "date" },
