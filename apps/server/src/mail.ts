@@ -12,13 +12,14 @@ import {
 } from "@boni/agent";
 import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
+import { wrappedKeysIn } from "@boni/identity";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
-import { BODY, type UserStore } from "@boni/store";
+import { BODY, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
 import type { AgentHost } from "./agent.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import { decisions, review, type Suggestion } from "./mailReview.ts";
-import { decrypt, encrypt, type SecretKey } from "./secret.ts";
+import { decrypt, type SecretKey } from "./secret.ts";
 
 /**
  * Mail as a source (docs/nucleo.md, decision of 2026-10-20; plan PR 15b). An account may connect one mailbox
@@ -384,30 +385,65 @@ export class Mails {
 
   private now = () => (this.o.now ?? Date.now)();
 
-  private get(account: number, key: string): string | null {
-    const r = this.o.db
-      .prepare("SELECT value FROM account_data WHERE account_id = ? AND key = ?")
-      .get(account, key) as { value: string } | undefined;
-    return r?.value ?? null;
+  /**
+   * Where each part lives (docs/extensiones.md 4): in the user's own store, outside its operation log; the
+   * settings (with the app password) and the guide sealed with the user's data key. Before 0.8 they were in
+   * system.db's account data (the settings and guide encrypted with the server's key): the first read moves
+   * them, once, and removes them from there.
+   */
+  private static readonly PLACES: Record<string, { at: string; sealed: boolean }> = {
+    mail: { at: "ext/correo/settings", sealed: true },
+    "mail-state": { at: "ext/correo/state", sealed: false },
+    "mail-guide": { at: "ext/correo/guide", sealed: true },
+  };
+  private keys = new Map<number, Buffer>();
+
+  private dataKey(account: number): Buffer {
+    let k = this.keys.get(account);
+    if (!k) {
+      k = wrappedKeyProvider(this.o.key, wrappedKeysIn(this.o.db)).dataKey(String(account));
+      this.keys.set(account, k);
+    }
+    return k;
   }
 
-  private set(account: number, key: string, value: string | null): void {
-    if (value === null)
+  private get(account: number, key: string): string | null {
+    const place = Mails.PLACES[key];
+    if (!place || !this.o.host.hasData) return null;
+    const store = this.o.host.store(account);
+    let v = store.setting(place.at);
+    if (v === null) {
+      const old = this.o.db
+        .prepare("SELECT value FROM account_data WHERE account_id = ? AND key = ?")
+        .get(account, key) as { value: string } | undefined;
+      if (!old) return null;
+      this.set(account, key, place.sealed ? decrypt(this.o.key, old.value) : old.value);
       this.o.db
         .prepare("DELETE FROM account_data WHERE account_id = ? AND key = ?")
         .run(account, key);
-    else
-      this.o.db
-        .prepare(
-          `INSERT INTO account_data (account_id, key, value, updated) VALUES (?, ?, ?, ?)
-           ON CONFLICT (account_id, key) DO UPDATE SET value = excluded.value, updated = excluded.updated`,
-        )
-        .run(account, key, value, this.now());
+      v = store.setting(place.at);
+      if (v === null) return null;
+    }
+    return place.sealed
+      ? open(this.dataKey(account), Buffer.from(v, "base64"), place.at).toString("utf8")
+      : v;
+  }
+
+  private set(account: number, key: string, value: string | null): void {
+    const place = Mails.PLACES[key];
+    if (!place || !this.o.host.hasData) throw new MailError("no-store");
+    const store = this.o.host.store(account);
+    store.setSetting(
+      place.at,
+      value === null || !place.sealed
+        ? value
+        : seal(this.dataKey(account), Buffer.from(value, "utf8"), place.at).toString("base64"),
+    );
   }
 
   settings(account: number): MailSettings | null {
     const v = this.get(account, "mail");
-    return v ? (JSON.parse(decrypt(this.o.key, v)) as MailSettings) : null;
+    return v ? (JSON.parse(v) as MailSettings) : null;
   }
 
   state(account: number): MailState {
@@ -467,7 +503,7 @@ export class Mails {
         r.close();
       }
     }
-    this.set(account, "mail", encrypt(this.o.key, JSON.stringify(s)));
+    this.set(account, "mail", JSON.stringify(s));
     if (!sameBox) {
       const st = this.state(account);
       this.saveState(account, { ...EMPTY, type: st.type, count: 0 });
@@ -478,9 +514,7 @@ export class Mails {
   /** Juan's reading guide (empty until he writes one). */
   guide(account: number): MailGuide {
     const v = this.get(account, "mail-guide");
-    return v
-      ? { ...EMPTY_GUIDE, ...(JSON.parse(decrypt(this.o.key, v)) as Partial<MailGuide>) }
-      : { ...EMPTY_GUIDE };
+    return v ? { ...EMPTY_GUIDE, ...(JSON.parse(v) as Partial<MailGuide>) } : { ...EMPTY_GUIDE };
   }
 
   /**
@@ -525,7 +559,7 @@ export class Mails {
       const keep = new Set(input.keepExamples);
       g.examples = old.examples.filter((e) => keep.has(e.id));
     }
-    this.set(account, "mail-guide", encrypt(this.o.key, JSON.stringify(g)));
+    this.set(account, "mail-guide", JSON.stringify(g));
     return g;
   }
 
@@ -632,7 +666,7 @@ export class Mails {
         ],
         examples: [...guide.examples, ...s.examples].slice(-10),
       };
-      this.set(account, "mail-guide", encrypt(this.o.key, JSON.stringify(g)));
+      this.set(account, "mail-guide", JSON.stringify(g));
     } else
       st.refused = [
         ...new Set([
