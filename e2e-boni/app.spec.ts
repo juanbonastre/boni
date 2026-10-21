@@ -87,11 +87,16 @@ test("a chart's own controls on hover (like Notion): period, order, colour; save
     months: 12,
   });
 
+  // A narrow card (half the page) shows only the period and "…": its title stays in view.
   await monthly.hover();
-  await monthly.getByRole("button", { name: "Color" }).click();
+  await expect(monthly.getByRole("button", { name: "Color" })).toBeHidden();
+  await expect(monthly.getByRole("button", { name: "Más" })).toBeVisible();
+  const wide = card(page, "Gasto del mes");
+  await wide.hover();
+  await wide.getByRole("button", { name: "Color" }).click();
   await page.getByRole("radio", { name: "Verde" }).click();
-  await expect.poll(async () => (await puts(page, "monthly-spending")).length).toBe(3);
-  expect(body((await puts(page, "monthly-spending"))[2]!).color).toBe("#4ade80");
+  await expect.poll(async () => (await puts(page, "spending-by-category")).length).toBe(1);
+  expect(body((await puts(page, "spending-by-category"))[0]!).color).toBe("#4ade80");
 });
 
 test("filters from a chart's controls: edited in their box, saved once when it closes", async ({

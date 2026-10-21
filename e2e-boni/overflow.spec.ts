@@ -62,7 +62,7 @@ for (const language of ["es", "en"] as const) {
       await page.locator(".chart-card .chart svg").first().waitFor();
       issues.push(...(await audit(page, "home")));
 
-      const card = page.locator(".doc-charts .chart-card").nth(1);
+      const card = page.locator(".doc-charts .chart-card").first();
       await card.hover();
       issues.push(...(await audit(page, "card controls")));
       await card.getByRole("button", { name: l.period }).click();

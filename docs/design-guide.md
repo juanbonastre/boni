@@ -244,7 +244,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   in its header before the total: period (a menu of usual periods), filters (a box, saved when it closes), order and
   "only the N largest", kind, colour (the calendar palette) and "…" (edit, duplicate, on the desktop, delete).
   28 px controls, Lucide icons, `--surface` bar with a `--line-strong` border, 8 px radius; the period's label is cut
-  before anything else. Each change applies at once with Undo in the toast; deleting waits for that Undo.
+  before anything else. A card narrower than 480 px (half a page) shows only the period and "…" (whose "Edit…" has
+  the rest), so the bar never covers the card's title. Each change applies at once with Undo in the toast; deleting
+  waits for that Undo.
 - **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a
   "Conversación" row at the top of the sidebar (with the number of proposals waiting), the third tab on the phone.
   Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components

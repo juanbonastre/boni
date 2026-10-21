@@ -823,6 +823,15 @@ select {
 .chart-card.controls-open .card-controls {
   display: flex;
 }
+/* A narrow card keeps its title in view: its controls are only the period and "…" (whose "Edit…" has the rest). */
+.chart-card {
+  container-type: inline-size;
+}
+@container (max-width: 480px) {
+  .card-controls > .ctl:not(:first-of-type):not(:last-of-type) {
+    display: none;
+  }
+}
 .ctl {
   display: inline-flex;
   align-items: center;
