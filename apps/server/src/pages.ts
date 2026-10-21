@@ -71,9 +71,9 @@ export function getPage(store: UserStore, id: string): Page | null {
   return e && e.entity.type === "page" && e.entity.deleted === undefined ? toPage(e.entity) : null;
 }
 
+/** A page's name; empty is fine (the app shows it as untitled, as Notion does). */
 const title = (t: unknown) => {
-  if (typeof t !== "string" || !t.trim() || t.length > PAGE_LIMITS.title)
-    throw new PageError("bad-title");
+  if (typeof t !== "string" || t.length > PAGE_LIMITS.title) throw new PageError("bad-title");
   return t.trim();
 };
 
@@ -82,7 +82,7 @@ export function createPage(
   input: { title?: unknown; parent?: unknown; spec?: unknown },
   device?: string,
 ): Page {
-  const t = title(input.title ?? "Sin título");
+  const t = title(input.title ?? "");
   const parent =
     typeof input.parent === "string" && getPage(store, input.parent) ? input.parent : "";
   const spec = input.spec ?? emptyPage();
@@ -182,6 +182,7 @@ export function seedFromV1(store: UserStore, v1: V1Store, account: number): void
     title: "Gastos",
     spec: {
       version: 1,
+      full: true,
       blocks: [
         { id: id(), type: "action", screen: "capture-expense", label: "Apuntar gasto" },
         ...shortcuts.map((s) => ({

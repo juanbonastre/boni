@@ -2718,55 +2718,6 @@ span.page-icon {
   text-align: center;
   font-size: 13px;
 }
-.title-edit {
-  font: inherit;
-  color: inherit;
-  border-radius: 6px;
-  padding: 0 4px;
-  margin-left: -4px;
-}
-.title-edit:hover {
-  background: var(--hover);
-}
-.title-input {
-  font: inherit;
-  color: var(--text);
-  min-width: 0;
-  width: min(36rem, 100%);
-  padding: 0 4px;
-  margin-left: -4px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  background: var(--surface-2);
-  outline: none;
-}
-.content.page {
-  max-width: 100%;
-}
-.page-heading {
-  margin: 8px 0 0;
-  font-size: 17px;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-.page-text {
-  margin: 0;
-  max-width: 70ch;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  line-height: 1.5;
-}
-.page-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-}
-.page-actions > * {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .page-loading {
   height: 220px;
   border-radius: 12px;
@@ -2785,73 +2736,6 @@ span.page-icon {
   .page-loading {
     animation: none;
   }
-}
-.block-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 52rem;
-}
-.block-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 8px 8px 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  min-width: 0;
-}
-.block-main {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-}
-.block-kind {
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.block-tools {
-  display: flex;
-  flex: none;
-  gap: 2px;
-}
-.block-input {
-  width: 100%;
-  min-width: 0;
-  padding: 5px 8px;
-  border-radius: 7px;
-  border: 1px solid var(--line-strong);
-  background: var(--surface-2);
-  color: var(--text);
-  font: inherit;
-  outline: none;
-  resize: vertical;
-}
-.block-input:focus {
-  border-color: var(--accent);
-}
-.block-heading-input {
-  font-size: 15px;
-  font-weight: 650;
-}
-.block-chart {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 30px;
-}
-.page-edit-foot {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-width: 52rem;
 }
 .menu-list.scroll {
   max-height: min(26rem, 60cqh);
@@ -2893,4 +2777,352 @@ span.page-icon {
 }
 .setting.column > .btn {
   align-self: flex-start;
+}
+
+/* A page as a Notion page: a reading column (or the whole width), the title as its first line, blocks
+   written in place with "+" and a handle in the gutter on hover. */
+.content.page-doc {
+  align-items: center;
+  padding: 0 96px;
+}
+.doc {
+  display: flex;
+  flex-direction: column;
+  width: min(708px, 100%);
+  min-height: 100%;
+  padding-top: 64px;
+}
+.page-doc.full .doc {
+  width: 100%;
+}
+/* A page longer than the window scrolls; nothing in it is squeezed to fit. */
+.doc > * {
+  flex-shrink: 0;
+}
+@container (max-width: 700px) {
+  .content.page-doc {
+    padding: 0 24px 0 56px;
+  }
+}
+.doc-title {
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 3px 2px;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.doc-title::placeholder,
+.blk-input::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+.doc-blocks {
+  display: flex;
+  flex-direction: column;
+}
+.blk {
+  position: relative;
+  min-width: 0;
+  border-radius: 4px;
+}
+.blk-gutter {
+  position: absolute;
+  z-index: 20;
+  left: -52px;
+  top: 3px;
+  display: flex;
+  opacity: 0;
+  transition: opacity 120ms var(--ease-out);
+}
+.blk:hover > .blk-gutter,
+.blk.menu-open > .blk-gutter,
+.blk-gutter:focus-within {
+  opacity: 1;
+}
+.blk-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.blk-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+/* A block whose menu is open sits over the blocks after it (the menu falls over them). */
+.blk.menu-open,
+.blk:focus-within {
+  z-index: 30;
+}
+.blk-handle {
+  display: inline-flex;
+  cursor: grab;
+}
+.blk.dragging {
+  opacity: 0.4;
+}
+.blk.drop-before {
+  box-shadow: 0 -2px 0 var(--accent);
+}
+.blk.drop-after {
+  box-shadow: 0 2px 0 var(--accent);
+}
+.doc-actions > .blk.drop-before {
+  box-shadow: -3px 0 0 var(--accent);
+}
+.doc-actions > .blk.drop-after {
+  box-shadow: 3px 0 0 var(--accent);
+}
+.blk-body {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+.blk-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 2px;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+}
+/* As in Notion, the hint shows only on the line being written. */
+.blk-input:not(:focus)::placeholder {
+  color: transparent;
+}
+.blk-h1 {
+  margin-top: 22px;
+}
+.blk-h1 .blk-input {
+  font-size: 30px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.blk-h1 > .blk-gutter {
+  top: 9px;
+}
+.blk-h2 {
+  margin-top: 16px;
+}
+.blk-h2 .blk-input {
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.blk-h2 > .blk-gutter {
+  top: 6px;
+}
+.blk-h3 {
+  margin-top: 10px;
+}
+.blk-h3 .blk-input {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.blk-h3 > .blk-gutter {
+  top: 4px;
+}
+.blk-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin: 12px 9px 0 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.blk-check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 7px 6px 0 3px;
+  accent-color: var(--accent);
+}
+.blk-todo:has(.blk-check:checked) .blk-input {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.blk-divider {
+  padding: 6px 0;
+}
+.doc-divider {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+}
+.doc-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  margin: 10px 0;
+}
+.page-doc.full .doc-charts {
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+}
+.page-doc.full .doc-chart.wide {
+  grid-column: 1 / -1;
+}
+.doc-chart > .blk > .chart-card {
+  height: 340px;
+}
+/* Side by side, a chart's handle sits just above its top left corner (the row gap leaves room). */
+.content.page-doc.full {
+  padding: 0 24px 0 56px;
+}
+.page-doc.full .doc-charts {
+  row-gap: 32px;
+}
+.page-doc.full .doc-chart > .blk > .blk-gutter {
+  left: 0;
+  top: -28px;
+}
+.doc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  min-width: 0;
+}
+.doc-actions > .blk {
+  max-width: 100%;
+}
+.doc-actions > .blk > :last-child {
+  max-width: 100%;
+}
+.doc-actions > .blk:not(:first-child) > .blk-gutter {
+  left: 0;
+  top: -26px;
+}
+.doc-gone {
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 10px;
+  color: var(--muted);
+}
+.doc-tail {
+  flex: 1 0 120px;
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  padding: 3px 2px;
+  text-align: left;
+  cursor: text;
+  align-self: stretch;
+}
+.doc-hint {
+  color: var(--muted);
+  opacity: 0.6;
+  font-size: 16px;
+}
+.slash-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  width: 300px;
+  max-height: 340px;
+}
+.menu-item.active {
+  background: var(--hover);
+}
+.menu-hint {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.crumb-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.crumb {
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+button.crumb:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.crumb.current {
+  color: var(--text);
+}
+.crumb-sep {
+  color: var(--muted);
+  opacity: 0.6;
+}
+.page-row {
+  padding-right: 2px;
+}
+.page-row .chart-main {
+  padding-left: 4px;
+}
+.page-toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 4px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.page-toggle:not(.static):hover {
+  background: var(--hover);
+}
+.page-toggle .page-chev {
+  display: none;
+  transition: transform 120ms var(--ease-out);
+}
+.page-toggle.open .page-chev {
+  transform: rotate(90deg);
+}
+.page-row:hover .page-toggle:not(.static) .page-icon-slot {
+  display: none;
+}
+.page-row:hover .page-toggle:not(.static) .page-chev {
+  display: block;
+}
+.page-icon-slot {
+  display: grid;
+  place-items: center;
+}
+.nav-name.untitled {
+  color: var(--muted);
+}
+.muted-row {
+  color: var(--muted);
 }

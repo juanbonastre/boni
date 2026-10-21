@@ -15,16 +15,14 @@ test("the window is laid out as Boni Calendar: sidebar, the start page's charts 
 }) => {
   await openApp(page, "/?still");
   await expect(page.locator(".sidebar")).toBeVisible();
-  await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
+  await expect(page.locator(".doc-charts .chart-card")).toHaveCount(3);
   // The sidebar holds only what the user made: the conversation and the pages.
   await expect(page.locator(".sidebar .page-row")).toHaveCount(1);
   await expect(page.locator(".sidebar .page-row.active")).toContainText("Gastos");
   await expect(page.locator(".sidebar")).not.toContainText("Tus gráficas");
-  await expect(page.locator(".topbar .title")).toHaveText("Gastos");
-  // no empty band under the charts: the last row reaches the bottom of the content
-  const content = (await page.locator(".content").boundingBox())!;
-  const last = (await page.locator(".dashboard .chart-card").last().boundingBox())!;
-  expect(content.y + content.height - (last.y + last.height)).toBeLessThan(30);
+  // As a Notion page: its name as its first line, the path in the top bar.
+  await expect(page.locator(".doc-title")).toHaveValue("Gastos");
+  await expect(page.locator(".topbar .crumbs")).toHaveText("Gastos");
   await page.screenshot({ path: `${SHOTS}/home.png` });
 
   // [ hides the sidebar, and the charts take its room
@@ -53,12 +51,15 @@ test("a chart: values on hover, a detail on click, and on its own from its title
   ).toBe(true);
   await ranking.getByRole("button", { name: "Volver" }).click();
 
-  await card(page, "Comida fuera").getByRole("button", { name: "Comida fuera" }).click();
+  await page
+    .getByRole("region", { name: "Comida fuera" })
+    .getByRole("button", { name: "Comida fuera" })
+    .click();
   await expect(page.locator(".chart-card.focus")).toBeVisible();
   await expect(page.locator(".title-name")).toHaveText("Comida fuera");
   await page.screenshot({ path: `${SHOTS}/chart.png` });
   await page.keyboard.press("Escape");
-  await expect(page.locator(".dashboard")).toBeVisible();
+  await expect(page.locator(".doc-charts")).toBeVisible();
 });
 
 test("a chart's own controls on hover (like Notion): period, order, colour; saved, with Undo", async ({
@@ -72,6 +73,7 @@ test("a chart's own controls on hover (like Notion): period, order, colour; save
   await monthly.getByRole("button", { name: "Periodo" }).click();
   await page.screenshot({ path: `${SHOTS}/controls-period.png` });
   await page.getByRole("menuitemradio", { name: "Últimos 6 meses" }).click();
+  await monthly.hover();
   await expect(monthly.getByRole("button", { name: "Periodo" })).toContainText("Últimos 6 meses");
   expect(body((await puts(page, "monthly-spending"))[0]!).period).toEqual({
     kind: "last_months",
@@ -114,11 +116,11 @@ test("capture in the side panel, from the page's button: the charts stay in view
   page,
 }) => {
   await openApp(page, "/?still");
-  await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
-  await page.locator(".page-actions").getByRole("button", { name: "Apuntar gasto" }).click();
+  await expect(page.locator(".doc-charts .chart-card")).toHaveCount(3);
+  await page.locator(".doc-actions").getByRole("button", { name: "Apuntar gasto" }).click();
   const panel = page.locator(".side-panel");
   await expect(panel).toBeVisible();
-  await expect(page.locator(".dashboard")).toBeVisible();
+  await expect(page.locator(".doc-charts")).toBeVisible();
   await panel.getByRole("button", { name: "Guardar" }).click();
   await expect(panel.locator(".field-error").first()).toHaveText("Obligatorio");
   await panel.getByLabel("Importe").fill("12,50");
@@ -142,7 +144,7 @@ test("capture in the side panel, from the page's button: the charts stay in view
 
 test("offline: the capture stays on the device and goes with the next tick", async ({ page }) => {
   await openApp(page, "/?still", { action: "offline" });
-  await page.locator(".page-actions").getByRole("button", { name: "Apuntar gasto" }).click();
+  await page.locator(".doc-actions").getByRole("button", { name: "Apuntar gasto" }).click();
   const panel = page.locator(".side-panel");
   await panel.getByLabel("Importe").fill("3");
   const category = panel.locator(".field", { hasText: "Categor" }).locator("input");
@@ -182,10 +184,11 @@ test("the editor in the side panel: the card shows the preview; a new chart gets
   await expect(page.locator(".toast")).toHaveText("Gráfica guardada");
   expect(body((await puts(page, "monthly-spending"))[0]!).kind).toBe("line");
 
-  // A new chart from the page's "Add block": saved, it goes onto the page.
-  await page.locator(".topbar").getByRole("button", { name: "Editar página" }).click();
-  await page.getByRole("button", { name: "Añadir bloque" }).click();
-  await page.getByRole("menuitemradio", { name: "Gráfica nueva…" }).click();
+  // A new chart from "/" on the page: saved, it takes that line's place.
+  await page.locator(".doc-tail").click();
+  await page.keyboard.type("/nueva", { delay: 20 });
+  await expect(page.locator(".slash-menu")).toBeVisible();
+  await page.keyboard.press("Enter");
   await expect(page.locator(".chart-card.new")).toBeVisible();
   await panel.locator(".title-input").fill("Gasto en ocio (prueba)");
   await expect(page.locator(".chart-card.new .card-title")).toHaveText("Gasto en ocio (prueba)");
@@ -211,59 +214,76 @@ test("deleting a chart waits for Undo before it reaches the server", async ({ pa
   await eating.hover();
   await eating.getByRole("button", { name: "Más" }).click();
   await page.getByRole("menuitemradio", { name: "Borrar" }).click();
-  await expect(page.locator(".dashboard .chart-card")).toHaveCount(2);
+  await expect(page.locator(".doc-charts .chart-card")).toHaveCount(2);
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
-  await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
+  await expect(page.locator(".doc-charts .chart-card")).toHaveCount(3);
   await page.waitForTimeout(6500);
   expect((await recorded(page)).requests.some((r) => r.startsWith("DELETE api/v1/charts/"))).toBe(
     false,
   );
 });
 
-test("pages: made from the sidebar, blocks added, moved and removed, renamed, deleted with Undo", async ({
+test('pages as Notion\'s: made from the sidebar, written in place, blocks by "/", moved and deleted', async ({
   page,
 }) => {
   await openApp(page, "/?still");
-  await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
-  // A new page opens empty, ready to edit.
+  await expect(page.locator(".doc-charts .chart-card")).toHaveCount(3);
+  // A new page opens at once, untitled, with the caret in its name.
   await page.getByRole("button", { name: "Nueva página" }).click();
   await expect(page.locator(".sidebar .page-row")).toHaveCount(2);
-  await expect(page.locator(".sidebar .page-row.active")).toContainText("Sin título");
-  await expect(page.locator(".page-edit-foot")).toBeVisible();
-  // Its name, changed in place.
-  await page.locator(".topbar .title-edit").click();
-  await page.locator(".topbar .title-input").fill("Docencia");
-  await page.keyboard.press("Enter");
+  await expect(page.locator(".doc-title")).toBeFocused();
+  await page.keyboard.type("Docencia", { delay: 20 });
   await expect(page.locator(".sidebar .page-row.active")).toContainText("Docencia");
-  // Blocks: a heading and a chart, then the chart moved up and the heading removed.
-  await page.getByRole("button", { name: "Añadir bloque" }).click();
-  await page.getByRole("menuitemradio", { name: "Título" }).click();
-  await page.getByRole("textbox", { name: "Escribe un título" }).fill("Este curso");
-  await page.getByRole("textbox", { name: "Escribe un título" }).press("Enter");
-  await page.getByRole("button", { name: "Añadir bloque" }).click();
-  await page.getByRole("menuitemradio", { name: "Comida fuera" }).click();
-  await expect(page.locator(".block-row")).toHaveCount(2);
-  await page.screenshot({ path: `${SHOTS}/page-edit.png` });
-  await page.getByRole("button", { name: "Subir: Gráfica" }).click();
-  await expect(page.locator(".block-row").first()).toContainText("Comida fuera");
-  await page.getByRole("button", { name: "Quitar de la página: Título" }).click();
-  await expect(page.locator(".block-row")).toHaveCount(1);
-  await page.locator(".topbar").getByRole("button", { name: "Hecho" }).click();
-  await expect(page.locator(".dashboard .chart-card")).toHaveCount(1);
-  const saved = (await recorded(page)).requests.filter((r) => r.startsWith("PUT api/pages/p1 "));
-  expect(body(saved[saved.length - 1]!).spec.blocks).toEqual([
-    expect.objectContaining({ type: "chart", chart: "eating-out" }),
-  ]);
-  // Deleted from its menu: to the start page, and Undo brings it back.
+  // Enter goes to the first line; "# " makes it a heading, Enter the next line, "/" the block menu.
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("# Este curso", { delay: 20 });
+  await expect(page.locator(".blk-h1 textarea")).toHaveValue("Este curso");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("- Exámenes", { delay: 20 });
+  await expect(page.locator(".blk-dot")).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // an empty list item ends the list
+  await page.keyboard.type("/comida", { delay: 20 });
+  await expect(page.locator(".slash-menu")).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/page-slash.png` });
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".doc-charts .chart-card")).toHaveCount(1);
+  await page.screenshot({ path: `${SHOTS}/page-doc.png` });
+  // The chart's handle: moved to the top. The heading's: deleted (Undo in the toast).
+  const chart = page.locator(".blk-chart").first();
+  await chart.hover();
+  await chart.getByRole("button", { name: "Mover o cambiar: Gráfica" }).click();
+  await page.screenshot({ path: `${SHOTS}/page-handle.png` });
+  await page.getByRole("menuitemradio", { name: "Subir" }).click();
+  await chart.hover();
+  await chart.getByRole("button", { name: "Mover o cambiar: Gráfica" }).click();
+  await page.getByRole("menuitemradio", { name: "Subir" }).click();
+  const heading = page.locator(".blk-h1");
+  await heading.hover();
+  await heading.getByRole("button", { name: "Mover o cambiar: Título 1" }).click();
+  await page.getByRole("menuitemradio", { name: "Borrar" }).click();
+  await expect(page.locator(".blk-h1")).toHaveCount(0);
+  await expect(page.locator(".toast")).toContainText("Bloque borrado");
+  // Sent together a moment later.
+  await expect
+    .poll(async () => {
+      const saved = (await recorded(page)).requests.filter((r) =>
+        r.startsWith("PUT api/pages/p1 "),
+      );
+      const last = saved[saved.length - 1];
+      return last ? body(last).spec?.blocks?.map((b: { type: string }) => b.type) : null;
+    })
+    .toEqual(["chart", "bullet", "text"]);
+  // Deleted from its menu in the sidebar: to the start page, and Undo brings it back.
   const row = page.locator(".sidebar .page-row", { hasText: "Docencia" });
   await row.hover();
   await row.getByRole("button", { name: /^Más opciones/ }).click();
   await page.getByRole("menuitemradio", { name: "Borrar página" }).click();
   await expect(page.locator(".sidebar .page-row")).toHaveCount(1);
-  await expect(page.locator(".topbar .title")).toHaveText("Gastos");
+  await expect(page.locator(".doc-title")).toHaveValue("Gastos");
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
   await expect(page.locator(".sidebar .page-row")).toHaveCount(2);
-  await expect(page.locator(".topbar .title")).toHaveText("Docencia");
+  await expect(page.locator(".doc-title")).toHaveValue("Docencia");
 });
 
 test("no pages: a welcome, nothing fixed; the first page from there", async ({ page }) => {
@@ -274,7 +294,7 @@ test("no pages: a welcome, nothing fixed; the first page from there", async ({ p
   await page.screenshot({ path: `${SHOTS}/welcome.png` });
   await page.locator(".welcome").getByRole("button", { name: "Nueva página" }).click();
   await expect(page.locator(".sidebar .page-row")).toHaveCount(1);
-  await expect(page.locator(".page-edit-foot")).toBeVisible();
+  await expect(page.locator(".doc-title")).toBeFocused();
 });
 
 test("this computer's widgets, in Settings → Desktop: hidden here, added", async ({ page }) => {
@@ -386,7 +406,7 @@ test("live changes: the server says the charts changed, the page loads them agai
   page,
 }) => {
   await openApp(page, "/?still");
-  await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
+  await expect(page.locator(".doc-charts .chart-card")).toHaveCount(3);
   const before = (await recorded(page)).requests.filter((r) => r === "GET api/v1/charts").length;
   await emit(page, { type: "changed", what: "charts" });
   await expect

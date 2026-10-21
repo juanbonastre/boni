@@ -5,7 +5,11 @@ const ok = {
   version: 1,
   blocks: [
     { id: "h1", type: "heading", text: "Gastos" },
+    { id: "h2", type: "heading", text: "Este mes", level: 2 },
     { id: "t1", type: "text", text: "Lo que llevo gastado este mes." },
+    { id: "l1", type: "bullet", text: "Comida" },
+    { id: "d1", type: "todo", text: "Revisar el banco", done: true },
+    { id: "s1", type: "divider" },
     { id: "c1", type: "chart", chart: "gasto-del-mes" },
     { id: "a1", type: "action", screen: "gasto", label: "Apuntar gasto" },
     { id: "a2", type: "action", screen: "gasto", label: "Café", shortcut: "cafe" },
@@ -26,10 +30,14 @@ describe("a page (docs/extensiones.md 6)", () => {
     expect(with_({ id: "x", type: "action", screen: "gasto", label: " " })[0]).toMatch(/action/);
     expect(with_({ type: "heading", text: "x" })[0]).toMatch(/needs an id/);
     expect(pageErrors({ ...ok, blocks: [...ok.blocks, ok.blocks[0]] })).toContain(
-      "blocks[5]: id used twice",
+      "blocks[9]: id used twice",
     );
     expect(pageErrors({ version: 2, blocks: [] })).toHaveLength(1);
     expect(pageErrors({ version: 1, blocks: [], script: "x" })).toHaveLength(1);
+    expect(pageErrors({ version: 1, full: "yes", blocks: [] })).toHaveLength(1);
+    expect(with_({ id: "x", type: "heading", text: "x", level: 4 })[0]).toMatch(/level/);
+    expect(with_({ id: "x", type: "todo", text: "x", done: "sí" })[0]).toMatch(/to-do/);
+    expect(with_({ id: "x", type: "divider", text: "x" })[0]).toMatch(/divider/);
     expect(
       pageErrors({
         version: 1,

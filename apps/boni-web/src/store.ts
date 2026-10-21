@@ -1,3 +1,4 @@
+import type { PageSpec } from "@boni/views";
 import { useMemo } from "react";
 import { create } from "zustand";
 import {
@@ -146,10 +147,10 @@ interface State {
   pages: PageInfo[] | null;
   /** The open page with its blocks. */
   page: Page | null;
-  /** The open page shows its blocks with their controls (move, remove, add). */
-  pageEditing: boolean;
-  /** A chart being created from this page's "Add": saved, it goes onto the page. */
-  chartForPage: string | null;
+  /** Where the caret goes next on the open page: a block (start or end of its text), or the title. */
+  pageFocus: { block: string; at: "start" | "end" | number } | { title: true } | null;
+  /** A chart being created from a block of this page: saved, it takes that block's place. */
+  chartForPage: { page: string; block: string } | null;
   /** Proposals waiting in the inbox, and the agent's latest runs (the log). */
   inbox: Proposal[];
   runs: RunSummary[];
@@ -231,7 +232,7 @@ export const useStore = create<State>(() => ({
   chatBusy: false,
   pages: null,
   page: null,
-  pageEditing: false,
+  pageFocus: null,
   chartForPage: null,
   inbox: [],
   runs: [],
@@ -312,6 +313,8 @@ export async function init(role: "main" | "widget", h: Host = defaultHost) {
     else if (e.type === "settings") onSettingsChanged(e.settings);
   });
   if (role === "main") {
+    // What was typed on a page in the last moment is sent before the window goes.
+    window.addEventListener("pagehide", () => void flushPage());
     void countQueue();
     void reloadAll();
     void h.phone?.takeLaunch().then((target) => target && navigate(target));
@@ -654,8 +657,15 @@ export async function saveChart(spec: ChartSpec) {
   await loadCharts();
   afterChartChange();
   const page = get().page;
-  if (!spec.id && saved?.id && page && get().chartForPage === page.id)
-    await setPageBlocks([...page.spec.blocks, { id: blockId(), type: "chart", chart: saved.id }]);
+  const slot = get().chartForPage;
+  if (!spec.id && saved?.id && page && slot?.page === page.id) {
+    const chart: Block = { id: blockId(), type: "chart", chart: saved.id };
+    const at = page.spec.blocks.findIndex((b) => b.id === slot.block);
+    const blocks = [...page.spec.blocks];
+    if (at < 0) blocks.push(chart);
+    else blocks.splice(at, 1, chart);
+    setPageBlocks(blocks);
+  }
   set({ chartForPage: null });
   return saved;
 }
@@ -1215,17 +1225,14 @@ async function startPages() {
 }
 
 export async function openPage(id: string) {
+  await flushPage();
   const same = get().page?.id === id;
-  set({
-    view: { kind: "page", id },
-    page: same ? get().page : null,
-    pageEditing: same ? get().pageEditing : false,
-  });
+  set({ view: { kind: "page", id }, page: same ? get().page : null });
   try {
     const page = await agent.page(id);
     const v = get().view;
     if (!page || v.kind !== "page" || v.id !== id) return;
-    set({ page, pageEditing: get().pageEditing || page.spec.blocks.length === 0 });
+    set({ page });
     await keep(FILES.lastPage, { page });
   } catch {
     if (!get().page) toast(get().t("page.loadError"));
@@ -1246,71 +1253,105 @@ export async function openStart() {
   if (id) await openPage(id);
 }
 
+/** A new page (as Notion's): untitled, open at once with the caret in its title. */
 export async function newPage(parent: string | null = null) {
+  await flushPage();
   try {
-    const page = await agent.createPage({ title: get().t("page.untitled"), parent });
+    const page = await agent.createPage({ title: "", parent });
     if (!page) return;
-    await loadPages();
-    set({ page, pageEditing: true });
-    await openPage(page.id);
+    set({
+      pages: [...(get().pages ?? []), page],
+      page,
+      view: { kind: "page", id: page.id },
+      pageFocus: { title: true },
+    });
+    await keep(FILES.lastPage, { page });
+    void loadPages();
   } catch {
     toast(get().t("page.error"));
   }
 }
 
-export const setPageEditing = (on: boolean) => set({ pageEditing: on });
+// Changes to the open page are kept at once on screen and sent together after a short pause (typing does
+// not make a request per key); opening another page or leaving the window sends what is pending.
+const SAVE_AFTER_MS = 500;
+let pending: {
+  id: string;
+  patch: { title?: string; spec?: PageSpec };
+  timer: ReturnType<typeof setTimeout>;
+} | null = null;
 
-export async function renamePage(id: string, title: string) {
-  const clean = title.trim();
-  if (!clean) return;
-  const before = get().pages;
-  const page = get().page;
-  set({
-    pages: before?.map((p) => (p.id === id ? { ...p, title: clean } : p)) ?? before,
-    page: page?.id === id ? { ...page, title: clean } : page,
-  });
+function savePage(id: string, patch: { title?: string; spec?: PageSpec }) {
+  if (pending && pending.id !== id) void flushPage();
+  if (pending) clearTimeout(pending.timer);
+  pending = {
+    id,
+    patch: { ...pending?.patch, ...patch },
+    timer: setTimeout(() => void flushPage(), SAVE_AFTER_MS),
+  };
+}
+
+export async function flushPage() {
+  const p = pending;
+  if (!p) return;
+  pending = null;
+  clearTimeout(p.timer);
   try {
-    await agent.updatePage(id, { title: clean });
-    await keep(FILES.pages, { pages: get().pages });
+    await agent.updatePage(p.id, p.patch);
+    const page = get().page;
+    if (page?.id === p.id) await keep(FILES.lastPage, { page });
+    if (p.patch.title !== undefined) await keep(FILES.pages, { pages: get().pages });
   } catch {
-    set({ pages: before, page });
     toast(get().t("page.error"));
+    // What the server has is the truth again.
+    if (get().page?.id === p.id) await openPage(p.id);
+    void loadPages();
   }
 }
 
-/** The page's blocks, changed at once here and kept on the server; a failure puts them back. */
-export async function setPageBlocks(blocks: Block[]) {
+export function setPageTitle(title: string) {
   const page = get().page;
   if (!page) return;
-  const before = page.spec;
-  const next = { ...page, spec: { version: 1 as const, blocks } };
-  set({ page: next });
-  try {
-    await agent.updatePage(page.id, { spec: next.spec });
-    await keep(FILES.lastPage, { page: next });
-  } catch {
-    const now = get().page;
-    if (now?.id === page.id) set({ page: { ...now, spec: before } });
-    toast(get().t("page.error"));
-  }
+  const clean = title.replace(/\s+/g, " ").slice(0, 120);
+  set({
+    page: { ...page, title: clean },
+    pages: get().pages?.map((p) => (p.id === page.id ? { ...p, title: clean } : p)) ?? null,
+  });
+  savePage(page.id, { title: clean.trim() });
 }
 
-export function addPageBlock(block: Block) {
+/** The page's blocks, changed at once here and kept on the server shortly after. */
+export function setPageBlocks(blocks: Block[]) {
   const page = get().page;
-  if (page) void setPageBlocks([...page.spec.blocks, block]);
+  if (!page) return;
+  const spec: PageSpec = { ...page.spec, version: 1, blocks };
+  set({ page: { ...page, spec } });
+  savePage(page.id, { spec });
 }
 
-/** A new chart for this page: the editor opens, and saving puts it on the page. */
-export function newChartForPage(spec: ChartSpec) {
+/** The reading column or the window's whole width. */
+export function setPageFull(full: boolean) {
+  const page = get().page;
+  if (!page) return;
+  const spec: PageSpec = { version: 1, blocks: page.spec.blocks, ...(full ? { full: true } : {}) };
+  set({ page: { ...page, spec } });
+  savePage(page.id, { spec });
+}
+
+export const setPageFocus = (f: State["pageFocus"]) => set({ pageFocus: f });
+
+/** A new chart for a block of this page: the editor opens, and saving puts the chart in its place. */
+export function newChartForPage(spec: ChartSpec, block: string) {
   const page = get().page;
   if (!page) return;
   openEditor(spec, true);
-  set({ chartForPage: page.id });
+  set({ chartForPage: { page: page.id, block } });
 }
 
 /** To the trash, with Undo in the toast (no confirmation: section 1 of the design guide). */
 export async function deletePage(id: string) {
   const t = get().t;
+  await flushPage();
   try {
     await agent.deletePage(id);
   } catch {

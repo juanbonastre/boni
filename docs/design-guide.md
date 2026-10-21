@@ -219,15 +219,23 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
   pages, a welcome with "Nueva página" and "Hablar con Boni". An account that used the first Boni got, once, a page
   "Gastos" with what its home showed, as data it can change or delete.
-- **A page** (`components/PageView.tsx`, docs/extensiones.md 6) is painted from its blocks, each from a closed catalogue:
-  heading, text (plain, `pre-wrap`), chart (consecutive charts share the card grid that fills the main area: rows share
-  its height, no empty band) and button (a screen the server has, or a saved shortcut; consecutive buttons share a row,
-  a screen's in `btn primary` with a plus, a shortcut's as a pill). Its name is edited in place in the top bar (click,
-  Enter; Esc leaves it). **"Editar página"** (top bar) turns the page into a list of block rows (kind in small muted
-  text, its fields, up / down / remove on the right) with "Añadir bloque" at the end: a menu grouped as "Para escribir",
-  "Gráficas" (a new chart opens the editor and lands on the page when saved) and "Botones"; "Hecho" leaves. One task at
-  a time: reading shows no controls but the charts' own. Capturing or editing a chart happens in the side panel with
-  the cards in view (the card being edited shows the preview and an accent ring).
+- **A page is a Notion page** (`components/PageView.tsx`, docs/extensiones.md 6; measured on Notion on 2026-10-21):
+  always editable in place, no edit mode. A reading column of 708 px centred with 64 px above (or the window's whole
+  width, from the top bar's "…": "Ancho completo", where charts sit side by side); the name is the first line (40 px,
+  700; "Sin título" as its hint), and the top bar shows only the path (parent pages, small) and "…" (full width, add a
+  subpage, delete). Blocks from a closed catalogue: text (16 px, line 1.5), headings 1-3 (30/24/20 px), list, to-do,
+  divider, chart (a card, 340 px high) and button (a screen of the server or a saved shortcut; consecutive buttons
+  share a row). Writing: Enter makes the next line (a list or a to-do continues; Enter on an empty one ends it),
+  Backspace at the start joins the line to the one above (or turns a heading or list back into text), "# ", "## ",
+  "### ", "- ", "[] " and "---" turn a text line into that block, "/" opens the block menu under the line (grouped "Para
+  escribir", "Gráficas", "Botones", filtered by what follows the "/", arrows and Enter, Esc closes). The hint "Escribe,
+  o «/» para elegir un bloque" shows only on the focused empty line. On hover every block shows in its left gutter
+  "+" (a line below with the menu open) and its handle (its menu: turn into, duplicate, up, down, delete with Undo;
+  drag it to move it); side by side, a chart's gutter sits above its top left corner. A click under the last block
+  writes at the end. Changes show at once and go to the server together half a second later (and before the window
+  closes or another page opens). A new page (sidebar "+", a row's "+" for a subpage) opens at once, untitled, with the
+  caret in its name. Sidebar rows: page icon, which turns into a chevron to fold its subpages on hover; "…" and "+"
+  on the right on hover. Capturing or editing a chart happens in the side panel with the page in view.
 - This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
   Settings has "Lo que ve la IA" after the account (one row per collection with its count and a three-way segmented
   control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip

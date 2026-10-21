@@ -132,7 +132,7 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
           blocks: [{ id: "x", type: "html", html: "<script>alert(1)</script>" }],
         },
       },
-      { title: "" },
+      { title: "x".repeat(121) },
       { parent: sub.id },
     ])
       expect((await call(t, "PUT", `/api/pages/${sub.id}`, bad)).status).toBe(400);
