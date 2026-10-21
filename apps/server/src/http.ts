@@ -38,6 +38,7 @@ import type { Vaults } from "./vaults.ts";
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
  *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change)
  *   GET  /api/mail · PUT /api/mail { host, port, user, password?, folder, collections, on } · POST /api/mail/check ·
+ *        POST /api/mail/reread { days } (the pending proposals of that mail withdrawn, the mail read again) ·
  *        POST /api/mail/forget: the account's mailbox (mail.ts; a personal device; the password never comes back)
  * The stream also sends an "account" event ({ updated }) when the account's prefs or calendars change.
  * The first Boni's API v1 (/api/v1/..., /healthz) is v1/http.ts, on the tailnet only; the agent's
@@ -243,6 +244,7 @@ export function makeApp(opts: ServerOptions): App {
       route === "GET /api/mail" ||
       route === "PUT /api/mail" ||
       route === "POST /api/mail/check" ||
+      route === "POST /api/mail/reread" ||
       route === "POST /api/mail/forget"
     ) {
       // The account's mailbox (mail.ts), from a personal device only; the password never comes back.
@@ -261,6 +263,12 @@ export function makeApp(opts: ServerOptions): App {
         if (!mails.view(id)) return send(res, 404, { error: "not-configured" });
         await mails.check(id);
         return send(res, 200, { mail: mails.view(id) });
+      }
+      if (route === "POST /api/mail/reread") {
+        if (!mails.view(id)) return send(res, 404, { error: "not-configured" });
+        const b = await bodyOf(req);
+        const days = typeof b.days === "number" && Number.isFinite(b.days) ? b.days : 7;
+        return send(res, 200, await mails.reread(id, days));
       }
       try {
         const b = await bodyOf(req);

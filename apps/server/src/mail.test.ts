@@ -344,6 +344,16 @@ describe("tasks a mail asks for", () => {
       "Docencia",
       "Gestiones (p. ej.: Renovar el DNI)",
     ]);
+    // Read again: the two pending proposals of that mail are withdrawn (not "rejected") and made again;
+    // one Juan already decided stays as it was; mail older than the days asked is left alone.
+    store.journal.setProposal(pending[0]?.id ?? "", "rejected", NOW);
+    expect(await m.reread(1, 1)).toEqual({ mails: 0, withdrawn: 0 });
+    expect(await m.reread(1, 7)).toEqual({ mails: 1, withdrawn: 1 });
+    await m.check(1);
+    expect(readers).toEqual(["extract_tasks", "classify", "extract_tasks", "classify"]);
+    expect(store.journal.proposals("stale").map((p) => p.id)).toEqual([pending[1]?.id]);
+    expect(store.journal.proposals("rejected").map((p) => p.id)).toEqual([pending[0]?.id]);
+    expect(store.journal.proposals("pending")).toHaveLength(2);
     const plan = mailPlan("e_x", true, [
       { key: "docencia", name: "Docencia", option: "Docencia", date: "date" },
       { key: "gestiones", name: "Gestiones", option: "Gestiones", date: "date" },

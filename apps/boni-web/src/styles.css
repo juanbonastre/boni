@@ -1394,6 +1394,12 @@ select {
   max-width: 100%;
   margin-left: auto;
 }
+.setting-control.with-gap {
+  gap: 8px;
+}
+.input.auto-width {
+  width: auto;
+}
 .toast {
   position: fixed;
   left: 50%;

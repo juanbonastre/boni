@@ -1053,6 +1053,19 @@ export async function checkMail(): Promise<MailView | null> {
   }
 }
 
+/** Reads the last `days` days of mail again (its pending proposals are replaced); a toast says how many. */
+export async function rereadMail(days: number): Promise<boolean> {
+  const t = useStore.getState().t;
+  try {
+    const r = await agent.rereadMail(days);
+    toast(t("mail.reread.done", { n: r.mails }));
+    return true;
+  } catch {
+    toast(t("mail.error.failed"));
+    return false;
+  }
+}
+
 export async function forgetMail(): Promise<boolean> {
   try {
     await agent.forgetMail();

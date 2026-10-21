@@ -13,6 +13,7 @@ import {
   login,
   logout,
   openSettings,
+  rereadMail,
   saveMail,
   saveSettings,
   suggestedDevice,
@@ -389,6 +390,8 @@ function MailSettings() {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [days, setDays] = useState(7);
+  const [rereading, setRereading] = useState(false);
   useEffect(() => {
     let live = true;
     void loadMail().then((m) => live && setMail(m));
@@ -461,6 +464,38 @@ function MailSettings() {
                 }}
               >
                 {busy ? t("mail.checking") : t("mail.check")}
+              </button>
+            </div>
+          </div>
+          <div className="setting">
+            <div className="setting-label">
+              <span>{t("mail.reread")}</span>
+              <span className="muted small">{t("mail.reread.help")}</span>
+            </div>
+            <div className="setting-control with-gap">
+              <select
+                className="input auto-width"
+                aria-label={t("mail.reread.days")}
+                value={days}
+                onChange={(e) => setDays(Number(e.target.value))}
+              >
+                {[1, 3, 7, 14, 30].map((d) => (
+                  <option key={d} value={d}>
+                    {t("mail.reread.option", { n: d })}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn"
+                disabled={rereading}
+                onClick={async () => {
+                  setRereading(true);
+                  await rereadMail(days);
+                  setRereading(false);
+                }}
+              >
+                {t("mail.reread.go")}
               </button>
             </div>
           </div>

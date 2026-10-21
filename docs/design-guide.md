@@ -204,7 +204,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Settings → Correo** (Boni): the account's mailbox. Not connected: server (`imap.gmail.com` by default), folder, user
   and app password, and "Conectar", which tries the connection before anything is kept (a wrong password is said under the
-  form). Connected: who, the last check and how many mails, "Comprobar ahora", one switch per collection tasks from mail
+  form). Connected: who, the last check and how many mails, "Comprobar ahora", "Volver a leer" (a
+  days select, 1 to 30, and "Leer": that mail is read again and its pending proposals are replaced; a toast says how
+  many mails), one switch per collection tasks from mail
   may go to (never "Correos" itself nor a hidden one), "Cambiar" and "Desconectar". The password is never shown again.
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,

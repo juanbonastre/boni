@@ -454,6 +454,14 @@ export class AgentApi {
   mail = async () => this.mailOf(await this.call("GET", "", undefined, "api/mail"));
   saveMail = async (input: MailInput) => this.mailOf(await this.call("PUT", "", input, "api/mail"));
   checkMail = async () => this.mailOf(await this.call("POST", "/check", {}, "api/mail"));
+  /** Reads the mail of the last `days` days again; how many mails and withdrawn proposals. */
+  rereadMail = async (days: number) => {
+    const b = await this.call("POST", "/reread", { days }, "api/mail");
+    return {
+      mails: isObj(b) && typeof b.mails === "number" ? b.mails : 0,
+      withdrawn: isObj(b) && typeof b.withdrawn === "number" ? b.withdrawn : 0,
+    };
+  };
   forgetMail = async () => void (await this.call("POST", "/forget", {}, "api/mail"));
   async undo(id: string): Promise<number> {
     const b = await this.call("POST", `runs/${encodeURIComponent(id)}/undo`);
