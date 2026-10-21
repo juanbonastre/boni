@@ -6,7 +6,7 @@ import { createServer, type Server, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ScriptedProvider } from "@boni/agent";
-import { label } from "@boni/entities";
+import { type FieldDef, label, type TypeDef } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
@@ -14,7 +14,7 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
-import { Mails, mailPlan } from "./mail.ts";
+import { dueField, Mails, mailPlan } from "./mail.ts";
 import { Vaults } from "./vaults.ts";
 
 /** The mailbox connector against a fake IMAP server (invented mail only). */
@@ -354,5 +354,69 @@ describe("tasks a mail asks for", () => {
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("the field a due day goes to", () => {
+  const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+  const field = (id: string, type: FieldDef["type"] = "date", extra = {}): FieldDef => ({
+    id,
+    key: id,
+    name: id,
+    type,
+    label: own,
+    ...extra,
+  });
+  const typeOf = (...fields: FieldDef[]): TypeDef => ({
+    id: "t_x",
+    key: "x",
+    name: "X",
+    fields: [field("titulo", "text"), ...fields],
+    titleField: "titulo",
+    sensitivity: "personal",
+    schemaVersion: 1,
+    label: own,
+  });
+  // Stored on 2026-10-20 at noon UTC, as an import would.
+  const at = Date.parse("2026-10-20T12:00:00Z");
+  const rows = (vals: Record<string, string>[]) => vals.map((values) => ({ values, created: at }));
+
+  it("is never a field that only records the past, however it is called", () => {
+    // A people or notes collection: a creation day on every item, all of them before they were stored.
+    const t = typeOf(field("alta"));
+    const r = rows([{ alta: "2026-01-02" }, { alta: "2025-05-06" }, { alta: "2026-10-19" }]);
+    expect(dueField(t, r)).toBeNull();
+    // The same with a day written in a zone ahead of UTC: the next day is not "ahead".
+    expect(dueField(t, [...r, { values: { alta: "2026-10-21" }, created: at }])).toBeNull();
+  });
+
+  it("is the field with days ahead, not the first date field", () => {
+    // A projects collection: created, start (all past) and end (some ahead).
+    const t = typeOf(field("created"), field("start"), field("end"));
+    const r = rows([
+      { created: "2026-09-01", start: "2026-09-01", end: "2026-12-20" },
+      { created: "2026-03-01", start: "2026-03-02", end: "2026-06-30" },
+      { created: "2026-10-01", start: "2026-10-02", end: "2027-02-01" },
+    ]);
+    expect(dueField(t, r)?.id).toBe("end");
+  });
+
+  it("in a new collection, the first date field it cannot judge; hidden and archived ones never", () => {
+    expect(dueField(typeOf(field("dia")), [])?.id).toBe("dia");
+    expect(
+      dueField(
+        typeOf(
+          field("oculto", "date", { hidden: true }),
+          field("viejo", "date", { archived: true }),
+        ),
+        [],
+      ),
+    ).toBeNull();
+    // A field with too few values says nothing yet; one with enough past ones is skipped for it.
+    const t = typeOf(field("hecho"), field("vence"));
+    const r = rows([{ hecho: "2026-01-01" }, { hecho: "2026-02-01" }, { hecho: "2026-03-01" }]);
+    expect(dueField(t, r)?.id).toBe("vence");
+    expect(dueField(typeOf(field("sin")), [])?.type).toBe("date");
+    expect(dueField(typeOf(field("ahora", "datetime")), [])).toBeNull();
   });
 });
