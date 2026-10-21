@@ -94,6 +94,12 @@ packages/export/ Export in one click (docs/nucleo.md 9.3): `exportZip` (json/<ty
                  formulas, views.json, optional log.ndjson from `store.log()`), a minimal zip of its own (`zip.ts`,
                  `readZip` checks names, CRC and size) and `importExport` (dry run by default; the file's labels are
                  capped at `imported` unless `trustLabels`). Exporting again what was re-imported gives the same files.
+packages/extensions/ Extensions (docs/extensiones.md 3): the manifest (types, sources, readers, flows, routes,
+                 learning, needs), closed, validated against the build's catalogue (`manifestErrors`), and
+                 `moreNeeds` (what a new version asks for). Pure, no I/O. The server keeps each account's
+                 installed extensions as entities of the system type `extension` (`apps/server/src/extensions.ts`:
+                 `CATALOGUE`, the presets, `ensurePresets`); mail is the first one: its modules, routes,
+                 learning and budget come from its manifest, and off it fetches and reads nothing.
 packages/mail/   Mail as a source (an edge, like the mirror; docs/nucleo.md decision of 2026-10-20): `ImapReader`, a
                  read-only IMAP client with no dependencies (EXAMINE, BODY.PEEK, an allow-list of commands checked before
                  sending; TLS only, `connect` for tests) and `parseMessage` (headers, encoded words, multipart, charsets;

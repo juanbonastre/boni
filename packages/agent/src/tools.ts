@@ -892,16 +892,17 @@ export function makeCaps(c: CapsContext): Caps {
   };
 }
 
-/** Boni's own types the agent's tools write through code (memory, jobs): made once, by the code. */
+/** Boni's own types written through code (memory, jobs, extensions): made once, by the code. The agent's
+ * entity tools never touch a system type. */
 export function ensureSystemTypes(store: UserStore): void {
   const code = label("own", "personal", [{ kind: "code", id: "system-types" }]);
-  const make = (id: "memory" | "job", name: string, keys: string[]) => {
+  const make = (id: "memory" | "job" | "extension", name: string, keys: string[]) => {
     if (store.schema().types[id]) return;
     const fields: FieldDef[] = keys.map((k) => ({
       id: `f_${k}`,
       key: k,
       name: k,
-      type: k === "prompt" ? "longtext" : "text",
+      type: k === "prompt" || k === "manifest" ? "longtext" : "text",
       label: code,
     }));
     store.applySchema(
@@ -924,4 +925,7 @@ export function ensureSystemTypes(store: UserStore): void {
   };
   make("memory", "Memoria", ["text"]);
   make("job", "Trabajos", ["name", "schedule", "prompt"]);
+  // docs/extensiones.md 3: one entity per installed extension; `preset` is the preset version it still is
+  // (empty once it was changed), `state` "on" or "off".
+  make("extension", "Extensiones", ["key", "name", "manifest", "state", "preset"]);
 }

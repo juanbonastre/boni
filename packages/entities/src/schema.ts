@@ -121,7 +121,7 @@ export interface Schema {
 }
 
 /** Ids of Boni's own types. */
-export const SYSTEM_TYPES = ["memory", "proposal", "job", "miniapp", "view"] as const;
+export const SYSTEM_TYPES = ["memory", "proposal", "job", "miniapp", "view", "extension"] as const;
 
 const ID = /^[a-z][a-z0-9_]{1,63}$/;
 /** ASCII only: keys are matched literally by other tools (vault conventions). */

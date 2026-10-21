@@ -344,6 +344,7 @@ Esto no es otro proyecto: es la forma de hacer los PR 16 a 21 sin duplicar códi
 | # | PR | Recoge |
 |---|---|---|
 | A1 | **Extensiones:** tipo `extension`, registro y validador de manifiestos contra el catálogo, `needs` como capacidades; el correo pasa a ser la primera (preset), sin cambiar lo que hace; `mailPlan`, módulos y rutas salen de su manifiesto | — |
+|  | **A1 hecho (2026-10-21):** `@boni/extensions` (manifiesto cerrado y su validación), el tipo de sistema `extension`, el correo como primer preset (sus módulos, rutas, cada cuánto aprende y su presupuesto salen del manifiesto; apagado no trae ni lee nada), módulos de lectura propios en el manifiesto (los ata el código como `$modules`), presupuesto diario por extensión (P13), Ajustes → Extensiones. Las fuentes y los flujos los sigue ejecutando el código del correo; el motor genérico de flujos llega con el PR 21 | |
 | A2 | **Todo lo del usuario a su almacén:** ajustes, secretos (cifrados con su clave), estado de las fuentes, guía; `account_data` se queda para lo del servidor | — |
 | A3 | **Memoria con ámbito y clase:** `instruction`, `rule`, `example`, `fact`, `decision`; la guía del correo migra; la revisora pasa a ser genérica | 7.13 |
 | A4 | **El Lienzo:** catálogo de componentes con `data-boni-ref`, especificaciones con datos enlazados y acciones por referencia, superficies (página, panel de la derecha, tarjeta, ajustes, respuesta); los ajustes del correo salen de su manifiesto; las peticiones en el panel de la derecha | 16 (parte), 18-19 (base) |

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   AI_LEVELS,
   type AiLevel,
+  type ExtensionView,
   type MailGuide,
   type MailView,
   type Visibility,
@@ -11,10 +12,12 @@ import { host, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
 import {
   answerSuggestion,
+  changeExtension,
   changeVisibility,
   checkMail,
   configured,
   forgetMail,
+  loadExtensions,
   loadMail,
   loadMailGuide,
   loadVisibility,
@@ -37,10 +40,10 @@ export function SettingsModal() {
   const settings = useStore((s) => s.settings);
   const close = () => openSettings(false);
   const linked = configured(settings);
-  type Section = "account" | "ai" | "mail" | "data" | "appearance" | "desktop";
+  type Section = "account" | "ai" | "extensions" | "mail" | "data" | "appearance" | "desktop";
   const sections: Section[] = [
     "account",
-    ...(linked ? (["ai", "mail"] as const) : []),
+    ...(linked ? (["ai", "extensions", "mail"] as const) : []),
     ...(linked && host.saveExport ? (["data"] as const) : []),
     "appearance",
     ...(host.desktop ? (["desktop"] as const) : []),
@@ -100,6 +103,7 @@ export function SettingsModal() {
             <h3>{t(`settings.section.${section}`)}</h3>
             {section === "account" && <Account />}
             {section === "ai" && <AiVisibility />}
+            {section === "extensions" && <Extensions />}
             {section === "mail" && <MailSettings />}
             {section === "data" && <ExportData />}
             {section === "appearance" && <Appearance />}
@@ -425,7 +429,7 @@ function AiVisibility() {
         <p className="muted small setting-note">{t("ai.off")}</p>
       ) : (
         <>
-          <ul className="legend small muted">
+          <ul className="notes-list small muted">
             {AI_LEVELS.map((l) => (
               <li key={l}>
                 <strong>{t(`ai.level.${l}`)}</strong>: {t(`ai.level.${l}.help`)}
@@ -966,5 +970,84 @@ function MailGuideSettings({
         </div>
       </div>
     </Disclosure>
+  );
+}
+
+/**
+ * "Extensiones" (docs/extensiones.md 3): what Boni has installed, each with what it does in one line, a
+ * switch, and what it uses behind a disclosure (sources, what it reads, whether it proposes, its daily
+ * budget). Juan's choice only: the agent has no tool for it.
+ */
+function Extensions() {
+  const t = useStore((s) => s.t);
+  const [list, setList] = useState<ExtensionView[] | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    void loadExtensions().then((v) => live && setList(v));
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (list === undefined) return null;
+  if (list === null) return <p className="muted small setting-note">{t("ai.off")}</p>;
+  // A catalogue piece by its name in the user's language; one an extension defined, by its id.
+  const named = (key: string, fallback: string) => {
+    const s = t(key);
+    return s === key ? fallback : s;
+  };
+  const toggle = async (id: string, on: boolean) => {
+    const before = list;
+    setList(list.map((x) => (x.id === id ? { ...x, enabled: on } : x)));
+    if (!(await changeExtension(id, on))) setList(before);
+  };
+  return (
+    <>
+      <p className="muted small setting-note">{t("ext.help")}</p>
+      {list.map((x) => (
+        <div key={x.id} className="extension">
+          <div className="setting">
+            <div className="setting-label">
+              <span>{x.name}</span>
+              <span className="muted small">{x.description}</span>
+            </div>
+            <div className="setting-control">
+              <input
+                type="checkbox"
+                className="switch"
+                aria-label={x.name}
+                checked={x.enabled}
+                onChange={(e) => void toggle(x.id, e.target.checked)}
+              />
+            </div>
+          </div>
+          <Disclosure
+            title={t("ext.uses")}
+            summary={
+              x.preset ? t("ext.preset", { v: x.preset }) : t("ext.changed", { v: x.version })
+            }
+          >
+            <ul className="notes-list small muted">
+              {x.sources.length > 0 && (
+                <li>
+                  {t("ext.sources", {
+                    list: x.sources.map((c) => named(`ext.connector.${c}`, c)).join(", "),
+                  })}
+                </li>
+              )}
+              <li>{t("ext.reads", { list: x.reads.join(", ") })}</li>
+              {x.modules.length > 0 && (
+                <li>
+                  {t("ext.modules", {
+                    list: x.modules.map((m) => named(`ext.module.${m}`, m)).join(", "),
+                  })}
+                </li>
+              )}
+              <li>{x.proposes ? t("ext.proposes") : t("ext.noProposes")}</li>
+              {x.readersPerDay !== null && <li>{t("ext.budget", { n: x.readersPerDay })}</li>}
+            </ul>
+          </Disclosure>
+        </div>
+      ))}
+    </>
   );
 }

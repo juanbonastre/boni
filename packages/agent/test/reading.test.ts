@@ -1,3 +1,4 @@
+import { label } from "@boni/entities";
 import { afterEach, describe, expect, it } from "vitest";
 import { fakePlanner, ScriptedProvider } from "../src/providers.ts";
 import {
@@ -7,8 +8,10 @@ import {
   modulesOf,
   readMessagePrompt,
   readMessageSchema,
+  resolveModules,
   weekdayOf,
 } from "../src/reading.ts";
+import { leaf } from "../src/values.ts";
 import { type Env, makeEnv } from "./fixture.ts";
 
 const item = (actor: string, kind: string, title: string, due: string | null = null) => ({
@@ -153,5 +156,66 @@ describe("the reading guide reaches a reader only as code binds it (7.4b, A14)",
     );
     expect(mixed.error).toBe("R1-private-data-to-reader");
     expect(r.requests).toHaveLength(0);
+  });
+});
+
+describe("modules an extension defines (docs/extensiones.md 3)", () => {
+  it("built-in by id, or its own kind and prompt part; anything odd is refused", () => {
+    const own = {
+      id: "deadlines",
+      kind: "deadline",
+      prompt: "a date by which the user must hand something in",
+    };
+    const r = resolveModules(["tasks", own]);
+    expect(r?.map((m) => m.kind)).toEqual(["task", "deadline"]);
+    expect(readMessagePrompt(r ?? [])).toContain('- "deadline": a date by which');
+    for (const bad of [
+      [],
+      ["spy"],
+      [{ ...own, kind: "notice" }],
+      [{ ...own, prompt: "mira https://x.example" }],
+      [{ ...own, run: "x" }],
+      ["tasks", { ...own, kind: "task" }],
+      Array.from({ length: 7 }, (_, i) => ({ ...own, id: `m${i}x`, kind: `k${i}x` })),
+    ])
+      expect(resolveModules(bad)).toBeNull();
+  });
+
+  it("an extension's own budget of readers a day stops its background work, not the rest (P13)", async () => {
+    const env = makeEnv([
+      { asunto: "Hola", de: "alguien@example.com", cuerpo: "¿Me envías el acta?" },
+    ]);
+    try {
+      const r = new ScriptedProvider("fake", () => ({ items: [] }));
+      const agent = env.agent(fakePlanner([]), r);
+      const plan = {
+        version: 1,
+        steps: [
+          { id: "m", op: "call", tool: "entities.query", args: { type: { lit: "correo" } } },
+          {
+            id: "r",
+            op: "read",
+            reader: "read_message",
+            input: { ref: "$m.items[0].cuerpo" },
+            params: { modules: { ref: "$modules" } },
+          },
+        ],
+      };
+      const modules = leaf(
+        ["tasks", { id: "deadlines", kind: "deadline", prompt: "a date to hand something in" }],
+        label("own", "public", [{ kind: "code", id: "extension" }]),
+      );
+      const runs = [];
+      for (let i = 0; i < 3; i++)
+        runs.push(await agent.background(plan, { modules }, [], { key: "correo", perDay: 2 }));
+      expect(runs.map((x) => x.error)).toEqual([null, null, "P13-daily-budget"]);
+      // Another extension (or none) still reads.
+      expect(
+        (await agent.background(plan, { modules }, [], { key: "otra", perDay: 2 })).error,
+      ).toBeNull();
+      expect(r.requests[0]?.system).toContain('"deadline": a date to hand something in');
+    } finally {
+      env.close();
+    }
   });
 });

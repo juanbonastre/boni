@@ -4,6 +4,7 @@ import {
   ASK_TURN,
   confirmTurn,
   DONE,
+  EXTENSIONS,
   GUIDE,
   MAIL,
   MAIL_SUGGESTED,
@@ -430,4 +431,33 @@ test("the reviewer's suggestion: measured, shown with what it changes, added onl
   // Review now with nothing clear: it says so.
   await modal.getByRole("button", { name: "Revisar ahora" }).click();
   await expect(page.getByText("Nada claro que sugerir por ahora")).toBeVisible();
+});
+
+test("extensions in Settings: what each does, on or off, and what it uses", async ({ page }) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "GET api/agent/extensions": [EXTENSIONS],
+      "PUT api/agent/extensions/:id": [{ id: "correo", enabled: false }],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByRole("tab", { name: "Extensiones" }).click();
+  await expect(modal.getByRole("checkbox", { name: "Correo" })).toBeChecked();
+  await expect(modal.getByRole("checkbox", { name: "Plazos de los documentos" })).not.toBeChecked();
+  // What it uses stays one click away, with whether it is still as it came.
+  const uses = modal.getByRole("button", { name: /Qué usa/ }).first();
+  await expect(uses).toContainText("Viene con Boni (versión 1)");
+  await uses.click();
+  await expect(modal).toContainText("Trae datos de: un buzón de correo (IMAP)");
+  await expect(modal).toContainText("Busca: tareas, citas y eventos");
+  await expect(modal).toContainText("Como mucho 150 lecturas de la IA al día");
+  await modal.getByRole("checkbox", { name: "Correo" }).uncheck();
+  await page.waitForTimeout(300);
+  await expect(modal.getByRole("checkbox", { name: "Correo" })).not.toBeChecked();
+  expect(await requests(page, "PUT api/agent/extensions")).toEqual([
+    'PUT api/agent/extensions/correo {"enabled":false}',
+  ]);
+  await page.screenshot({ path: `${SHOTS}/agent-extensions.png` });
 });

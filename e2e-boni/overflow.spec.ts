@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   ASK_TURN,
   confirmTurn,
+  EXTENSIONS,
   GUIDE,
   MAIL,
   MAIL_SUGGESTED,
@@ -134,6 +135,7 @@ for (const language of ["es", "en"] as const) {
           "GET api/agent/visibility": [VISIBILITY],
           "GET api/mail": [MAIL_SUGGESTED],
           "GET api/mail/guide": [GUIDE],
+          "GET api/agent/extensions": [EXTENSIONS],
         },
       });
       await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
@@ -224,6 +226,7 @@ test.describe("on a phone", () => {
           "GET api/agent/visibility": [VISIBILITY],
           "GET api/mail": [MAIL_SUGGESTED],
           "GET api/mail/guide": [GUIDE],
+          "GET api/agent/extensions": [EXTENSIONS],
         },
       });
       await expect(page.locator(".m-shortcut")).toHaveCount(2);

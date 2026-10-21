@@ -41,6 +41,37 @@ const ACTORS = ["recipient", "sender", "other"] as const;
 /** Always available: what is announced to many and asks nothing in particular is never kept. */
 const NOTICE = "notice";
 
+const KIND_ID = /^[a-z][a-z0-9_]{1,23}$/;
+const LINKY = /(https?:\/\/|www\.|<\s*\/?\s*[a-z!]|\]\(|javascript:|data:)/i;
+/**
+ * The modules a reading asks for, as the plan carried them: built-in ones by id, or ones an extension's
+ * manifest defines (`{ id, kind, prompt }`, bound by code: docs/extensiones.md 3). Null when anything is
+ * off: an unknown id, a kind used twice or "notice", a prompt part too long or with a link.
+ */
+export function resolveModules(v: unknown): ReadingModule[] | null {
+  if (!Array.isArray(v) || !v.length || v.length > 6) return null;
+  const out: ReadingModule[] = [];
+  for (const x of v) {
+    if (typeof x === "string") {
+      const m = MODULES.find((b) => b.id === x);
+      if (!m) return null;
+      out.push(m);
+      continue;
+    }
+    if (typeof x !== "object" || x === null || Array.isArray(x)) return null;
+    const { id, kind, prompt, ...rest } = x as Record<string, unknown>;
+    if (Object.keys(rest).length) return null;
+    if (typeof id !== "string" || !KIND_ID.test(id)) return null;
+    if (typeof kind !== "string" || !KIND_ID.test(kind) || kind === "notice") return null;
+    if (typeof prompt !== "string" || !prompt.trim() || prompt.length > 1200 || LINKY.test(prompt))
+      return null;
+    out.push({ id, kind, prompt: `"${kind}": ${prompt.trim()}` });
+  }
+  const ids = new Set(out.map((m) => m.id));
+  const kinds = new Set(out.map((m) => m.kind));
+  return ids.size === out.length && kinds.size === out.length ? out : null;
+}
+
 export const modulesOf = (ids: readonly string[]): ReadingModule[] =>
   MODULES.filter((m) => ids.includes(m.id));
 

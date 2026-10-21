@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
+import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
@@ -591,6 +592,129 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
     expect(await m.reviewNow(1)).toBeNull();
     reviewerSays = { rules: [], examples: ["d5"] };
     expect(await m.reviewNow(1)).toBeNull(); // the example adds nothing the reading did not get right
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("mail as an extension (docs/extensiones.md 3)", () => {
+  it("is installed as a preset; off, nothing is fetched; its own module and fixed route are data", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-ext-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD, "");
+    const reader = new ScriptedProvider("fake", (req) =>
+      /find what it asks of the user/.test(req.system)
+        ? {
+            items: [
+              {
+                quote: "…",
+                actor: "recipient",
+                kind: "deadline",
+                title: "Entregar las actas",
+                due: "2026-10-30",
+              },
+              { quote: "…", actor: "recipient", kind: "task", title: "Revisar el acta", due: null },
+            ],
+          }
+        : { choice: "Docencia" },
+    );
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    for (const [id, key, name] of [
+      ["t_docencia", "docencia", "Docencia"],
+      ["t_gestiones", "gestiones", "Gestiones"],
+    ] as const)
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key,
+            name,
+            fields: [{ id: `${id}_t`, key: "titulo", name: "Título", type: "text", label: own }],
+            titleField: `${id}_t`,
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: own,
+          },
+        },
+        { actor: "user" },
+      );
+    // The preset is there, once, and on.
+    expect(installed(store).map((i) => [i.manifest.id, i.enabled, i.preset])).toEqual([
+      ["correo", true, 1],
+    ]);
+    ensurePresets(store);
+    expect(installed(store)).toHaveLength(1);
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 17;
+    box.mails = new Map([
+      [1, mail(61, "Actas", "Entrega las actas antes del 30 y revisa el acta.")],
+    ]);
+    // Off: the mailbox is not even opened.
+    setEnabled(store, "correo", false);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia"],
+    });
+    const before = asked.length;
+    expect(await m.check(1)).toMatchObject({ count: 0 });
+    expect(asked.length).toBe(before);
+    // On, with a module of its own (data) whose items go to a fixed collection, not the chosen one.
+    setEnabled(store, "correo", true);
+    const i = extension(store, "correo");
+    const next = {
+      ...MAIL_EXTENSION,
+      version: 2,
+      readers: [
+        { module: "tasks" },
+        {
+          module: "deadlines",
+          kind: "deadline",
+          prompt: "a date by which the user must hand something in",
+        },
+      ],
+      routes: {
+        tasks: { propose: "chosen" },
+        deadlines: { propose: { collection: "t_gestiones" } },
+      },
+    };
+    store.update(
+      i?.entity ?? "",
+      {
+        f_manifest: { value: JSON.stringify(next), label: own },
+        f_preset: { value: "", label: own },
+      },
+      { actor: "system" },
+    );
+    await m.check(1);
+    const reads = reader.requests.filter((r) => /find what it asks of the user/.test(r.system));
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.system).toContain('"deadline": a date by which');
+    const where = store.journal
+      .proposals("pending")
+      .map((p) => (p.view as { rows: { arg: string; value: string }[] }).rows)
+      .map((r) => [
+        r.find((x) => x.arg === "type")?.value,
+        r.find((x) => x.arg === "values.title")?.value,
+      ])
+      .sort();
+    expect(where).toEqual([
+      ["docencia", "Revisar el acta"],
+      ["gestiones", "Entregar las actas"],
+    ]);
+    // A changed manifest is no longer the preset: a new preset version never overwrites it.
+    expect(extension(store, "correo")?.preset).toBeNull();
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });
