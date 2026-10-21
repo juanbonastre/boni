@@ -888,6 +888,10 @@ distinguidas por **dónde llegan** y nunca por cabeceras que se puedan falsifica
 
 ## 12. Plan de PRs (en orden; cada uno con sus pruebas y el CI en verde)
 
+> **Propuesta del 2026-10-21, pendiente de Juan:** `docs/extensiones.md` (extensiones declarativas, todo lo del usuario
+> en su almacén, memoria con ámbito y clase, interfaz por especificaciones, autoconocimiento, papeles con perfiles)
+> reordena los PR 16 a 21 en su sección 10. Prioridad: el escritorio.
+
 | # | PR | Pruebas |
 |---|---|---|
 | 0 | **Este diseño** (`docs/nucleo.md`) | — |
