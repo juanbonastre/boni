@@ -14,6 +14,7 @@ export const READERS = [
   "summarize",
   "rewrite",
   "answer_about",
+  "read_message",
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
@@ -40,7 +41,7 @@ export const FNS: Readonly<Record<string, [number, number]>> = {
   item: [2, 2],
   field: [2, 2],
   filter_eq: [3, 3],
-  concat: [1, 10],
+  concat: [1, 40],
   list: [1, 20],
   obj: [2, 40],
   length: [1, 1],
@@ -63,6 +64,7 @@ const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   summarize: [],
   rewrite: ["instruction"],
   answer_about: ["question"],
+  read_message: ["modules", "user_in", "known"],
 };
 const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> = {
   text: ["template", "a", "b", "c", "d"],

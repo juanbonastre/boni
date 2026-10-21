@@ -8,6 +8,17 @@ import { DEFAULT_LIMITS, type Decision, decide, type Origin } from "./policy.ts"
 import type { ModelProvider, ModelRequest } from "./providers.ts";
 import { checkReaderOutput, delimit, READER_PROMPTS, READER_SCHEMAS } from "./readers.ts";
 import {
+  checkReadMessage,
+  MODULE_IDS,
+  modulesOf,
+  type ReadingModule,
+  readMessagePrompt,
+  readMessageSchema,
+  USER_IN,
+  type UserIn,
+  weekdayOf,
+} from "./reading.ts";
+import {
   type Caps,
   makeCaps,
   type Net,
@@ -822,6 +833,23 @@ export class Agent {
         throw new Stop("reader-bad-options");
       options = o as string[];
     }
+    // read_message: the modules (code's ids) make its prompt and schema; where the user is, from a closed list.
+    let mods: ReadingModule[] = [];
+    let userIn: string | null = null;
+    if (step.reader === "read_message") {
+      const m = params.modules ? plain(params.modules) : null;
+      if (
+        !Array.isArray(m) ||
+        !m.length ||
+        !m.every((x) => typeof x === "string" && MODULE_IDS.includes(x))
+      )
+        throw new Stop("reader-bad-modules");
+      mods = modulesOf(m as string[]);
+      const u = params.user_in ? plain(params.user_in) : "group";
+      if (!USER_IN.includes(u as UserIn)) throw new Stop("reader-bad-user-in");
+      userIn = u as string;
+    }
+    const system = mods.length ? readMessagePrompt(mods) : READER_PROMPTS[step.reader];
     // P13: what work without a turn may spend per day, overall and per sender.
     if (st.origin.kind === "background") {
       const day = this.today();
@@ -844,22 +872,26 @@ export class Agent {
       this.o.reader,
       {
         role: "reader",
-        system: READER_PROMPTS[step.reader],
+        system,
         input: {
           marker,
           today: this.today(),
+          weekday: weekdayOf(this.today()),
+          ...(userIn ? { user_in: userIn } : {}),
           content: text,
           ...(params.instruction ? { instruction: plain(params.instruction) } : {}),
           ...(params.question ? { question: plain(params.question) } : {}),
           ...(known?.length ? { known } : {}),
           ...(options.length ? { options } : {}),
         },
-        schema: READER_SCHEMAS[step.reader],
+        schema: mods.length ? readMessageSchema(mods) : READER_SCHEMAS[step.reader],
         maxTokens: 4000,
       },
-      createHash("sha256").update(READER_PROMPTS[step.reader]).digest("hex"),
+      createHash("sha256").update(system).digest("hex"),
     );
-    const checked = checkReaderOutput(step.reader, out, options);
+    const checked = mods.length
+      ? checkReadMessage(out, mods)
+      : checkReaderOutput(step.reader, out, options);
     if (!checked) {
       this.log(st, step, "read", "deny", "R2", { reason: "reader-output-invalid" });
       throw new Stop("R2-reader-output-invalid");

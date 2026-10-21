@@ -14,7 +14,7 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
-import { dueField, Mails, mailPlan } from "./mail.ts";
+import { dueField, Mails, mailPlan, userIn } from "./mail.ts";
 import { Vaults } from "./vaults.ts";
 
 /** The mailbox connector against a fake IMAP server (invented mail only). */
@@ -249,25 +249,23 @@ describe("tasks a mail asks for", () => {
     addUser(sdb, "juan", PASSWORD, "");
     const readers: string[] = [];
     const reader = new ScriptedProvider("fake", (req) => {
-      const kind = /list what it asks of its recipient/.test(req.system)
-        ? "extract_tasks"
-        : "classify";
+      const kind = /find what it asks of the user/.test(req.system) ? "read_message" : "classify";
       readers.push(kind);
       if (kind === "classify") return { choice: "Gestiones (p. ej.: Renovar el DNI)" };
+      const item = (actor: string, kind: string, title: string, due: string | null) => ({
+        quote: "…",
+        actor,
+        kind,
+        title,
+        due,
+      });
       return {
-        tasks: [
-          {
-            title: "Enviar el informe",
-            due: "2026-10-23",
-            sender: "lucia.ejemplo@example.com",
-            message_id: "m21",
-          },
-          {
-            title: "Reservar la sala",
-            due: null,
-            sender: "lucia.ejemplo@example.com",
-            message_id: "m21",
-          },
+        items: [
+          item("recipient", "task", "Enviar el informe", "2026-10-23"),
+          item("recipient", "task", "Reservar la sala", null),
+          // What the sender will do and a general announcement are never proposed (the code decides).
+          item("sender", "task", "Llevar el proyector", "2026-10-22"),
+          item("recipient", "notice", "Feria de empleo", "2026-10-30"),
         ],
       };
     });
@@ -323,7 +321,14 @@ describe("tasks a mail asks for", () => {
     // Marked afterwards: the next check reads it (and nothing new arrived).
     await m.save(1, { collections: ["t_docencia", "t_gestiones", "t_diario"] });
     expect(await m.check(1)).toMatchObject({ count: 1, pending: [] });
-    expect(readers).toEqual(["extract_tasks", "classify"]);
+    expect(readers).toEqual(["read_message", "classify"]);
+    // The reader saw the mail's headers, where the user is and today's weekday (outside the markers).
+    const first = reader.requests[0]?.input as Record<string, string>;
+    expect(first.content).toContain("De: Lucía Ejemplo <lucia.ejemplo@example.com>");
+    expect(first.content).toContain("Para: juan@example.com");
+    expect(first.content).toContain("¿Me envías el informe el jueves?");
+    expect(first.user_in).toBe("to");
+    expect(first.weekday).toMatch(/^(lunes|martes|miércoles|jueves|viernes|sábado|domingo)$/);
     const pending = store.journal.proposals("pending");
     expect(pending).toHaveLength(2);
     const rows = pending.map((p) => (p.view as { rows: { arg: string; value: string }[] }).rows);
@@ -352,7 +357,7 @@ describe("tasks a mail asks for", () => {
     expect(await m.reread(1, 1)).toEqual({ mails: 0, withdrawn: 0 });
     expect(await m.reread(1, 7)).toEqual({ mails: 1, withdrawn: 1 });
     await m.check(1);
-    expect(readers).toEqual(["extract_tasks", "classify", "extract_tasks", "classify"]);
+    expect(readers).toEqual(["read_message", "classify", "read_message", "classify"]);
     expect(store.journal.proposals("stale").map((p) => p.id)).toEqual([pending[1]?.id]);
     expect(store.journal.proposals("rejected").map((p) => p.id)).toEqual([pending[0]?.id]);
     expect(store.journal.proposals("pending")).toHaveLength(2);
@@ -361,14 +366,12 @@ describe("tasks a mail asks for", () => {
     box.mails.set(2, mail(22, "Recordatorio", "Te recuerdo lo del informe y la sala."));
     box.mails.set(3, mail(23, "Otra cosa", "¿Puedes revisar el acta?", "otro.ejemplo@example.com"));
     await m.check(1);
-    const extracts = reader.requests.filter((r) =>
-      /list what it asks of its recipient/.test(r.system),
-    );
+    const extracts = reader.requests.filter((r) => /find what it asks of the user/.test(r.system));
     const knownOf = (i: number) =>
       (extracts.at(i)?.input as { known?: string[] } | undefined)?.known;
     expect(knownOf(-2)?.sort()).toEqual(["Enviar el informe", "Reservar la sala"]);
     expect(knownOf(-1)).toBeUndefined();
-    const plan = mailPlan("e_x", true, [
+    const plan = mailPlan("e_x", [
       { key: "docencia", name: "Docencia", option: "Docencia", date: "date" },
       { key: "gestiones", name: "Gestiones", option: "Gestiones", date: "date" },
     ]) as { steps: { reader?: string; params?: { options: { args: { lit: string }[] } } }[] };
@@ -442,5 +445,15 @@ describe("the field a due day goes to", () => {
     expect(dueField(t, r)?.id).toBe("vence");
     expect(dueField(typeOf(field("sin")), [])?.type).toBe("date");
     expect(dueField(typeOf(field("ahora", "datetime")), [])).toBeNull();
+  });
+});
+
+describe("where the user is among a mail's recipients", () => {
+  it("is in Para, only in Cc, or a group the mailbox is not named in", () => {
+    const me = "Juan.Ejemplo@example.com";
+    expect(userIn(me, "Ana <ana@example.com>, juan.ejemplo@example.com", null)).toBe("to");
+    expect(userIn(me, "Ana <ana@example.com>", "Juan <juan.ejemplo@example.com>")).toBe("cc");
+    expect(userIn(me, "todos@example.com", undefined)).toBe("group");
+    expect(userIn("juan", "juan@example.com", null)).toBe("group"); // a login, not an address
   });
 });
