@@ -1,17 +1,25 @@
-import { Plus, Trash2 } from "lucide-react";
+import { type ChartStyle, chartStyle, fullStyle } from "@boni/views";
+import {
+  ChartArea,
+  ChartBar,
+  ChartColumn,
+  ChartColumnStacked,
+  ChartLine,
+  ChartPie,
+  ChevronDown,
+  Hash,
+  Plus,
+  Table2,
+  Trash2,
+} from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import * as B from "../core/chartBuilder.ts";
-import type {
-  ChartCatalog,
-  ChartFilterRule,
-  ChartSpec,
-  Dimension,
-  FieldInfo,
-} from "../core/contract.ts";
+import type { ChartCatalog, ChartFilterRule, ChartSpec, FieldInfo } from "../core/contract.ts";
 import { isIsoDate, parseAmount } from "../core/formLogic.ts";
+import { PALETTE } from "../core/palette.ts";
 import { optionList, useStore } from "../store.ts";
 import { SearchList } from "./FormView.tsx";
-import { Choices, MenuButton } from "./Menu.tsx";
+import { MenuButton } from "./Menu.tsx";
 
 /**
  * The fields of a chart definition (the side panel's editor), and the filters on their own (a chart's filter
@@ -33,47 +41,6 @@ function Section({
       {help && <p className="field-help">{help}</p>}
       {children}
     </section>
-  );
-}
-
-/** A dimension: a field, and for dates its granularity. `none` adds a "nothing" choice (for the series). */
-function DimensionPicker({
-  value,
-  cat,
-  none,
-  onChange,
-}: {
-  value: Dimension | null;
-  cat: ChartCatalog;
-  none?: string;
-  onChange: (d: Dimension | null) => void;
-}) {
-  const t = useStore((s) => s.t);
-  const fields = cat.fields.filter((f) => f.can_group !== false);
-  const items = [
-    ...(none ? [{ id: "", label: none }] : []),
-    ...fields.map((f) => ({ id: f.id, label: f.label })),
-  ];
-  return (
-    <>
-      <Choices
-        items={items}
-        value={value?.field ?? ""}
-        onChange={(id) =>
-          onChange(id ? { field: id, granularity: id === "date" ? "month" : null } : null)
-        }
-      />
-      {value?.field === "date" && (
-        <div className="row">
-          <span className="muted small">{t("editor.by")}</span>
-          <Choices
-            items={cat.granularities}
-            value={value.granularity ?? "month"}
-            onChange={(g) => onChange({ ...value, granularity: g })}
-          />
-        </div>
-      )}
-    </>
   );
 }
 
@@ -136,6 +103,75 @@ function DateInput({
   );
 }
 
+const KIND_ICONS: Record<string, ReactNode> = {
+  bar: <ChartColumn size={16} strokeWidth={1.8} />,
+  hbar: <ChartBar size={16} strokeWidth={1.8} />,
+  line: <ChartLine size={16} strokeWidth={1.8} />,
+  donut: <ChartPie size={16} strokeWidth={1.8} />,
+  number: <Hash size={16} strokeWidth={1.8} />,
+  stacked_bar: <ChartColumnStacked size={16} strokeWidth={1.8} />,
+  area: <ChartArea size={16} strokeWidth={1.8} />,
+  table: <Table2 size={16} strokeWidth={1.8} />,
+};
+/** Notion's five, first; the rest of the catalogue under "Other kinds". */
+const MAIN_KINDS = ["bar", "hbar", "line", "donut", "number"];
+
+/** One setting as Notion's view settings show it: its name on the left, its value (a menu) on the right. */
+function OptRow({
+  label,
+  value,
+  items,
+  onPick,
+}: {
+  label: string;
+  value: string;
+  items: { id: string; label: string }[];
+  onPick: (id: string) => void;
+}) {
+  const current = items.find((i) => i.id === value)?.label ?? value;
+  return (
+    <div className="opt-row">
+      <span className="opt-label">{label}</span>
+      <MenuButton
+        className="opt-value"
+        ariaLabel={`${label}: ${current}`}
+        label={current}
+        items={items.map((i) => ({ ...i, on: i.id === value }))}
+        onPick={onPick}
+      />
+    </div>
+  );
+}
+
+function OptToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <label className="opt-row">
+      <span className="opt-label">{label}</span>
+      <input
+        type="checkbox"
+        className="switch"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+    </label>
+  );
+}
+
+/**
+ * The chart's settings, laid out as Notion's chart view settings: its name, the chart type as icons, then
+ * sections of rows (name on the left, value on the right): the X axis (what it shows, its order, zero
+ * values), the Y axis (what it measures, series, running total, comparison, reference line), the period,
+ * the filters and the style (colour, and behind "More style options" the height, grid, axis names and data
+ * labels). Every change shows at once on the chart's card.
+ */
 export function EditorForm({
   spec,
   cat,
@@ -146,12 +182,23 @@ export function EditorForm({
   edit: (c: (s: ChartSpec) => ChartSpec) => void;
 }) {
   const t = useStore((s) => s.t);
+  const [moreStyle, setMoreStyle] = useState(false);
+  const style = fullStyle(spec.style);
+  const setStyle = (patch: Partial<ChartStyle>) =>
+    edit((s) => ({ ...s, style: chartStyle({ ...fullStyle(s.style), ...patch }) ?? {} }));
+  const category = B.isCategoryKind(spec.kind);
+  const time = !category && spec.kind !== "number";
+  const fields = cat.fields.filter((f) => f.can_group !== false);
+  const fieldItems = fields.map((f) => ({ id: f.id, label: f.label }));
   const sorts = ["auto", "value_desc", "value_asc", "label"].map((id) => ({
     id,
     label: t(`editor.sort.${id}`),
   }));
+  const others = cat.kinds.filter((k) => !MAIN_KINDS.includes(k.id));
+  const choose = (list: string[], prefix: string) =>
+    list.map((id) => ({ id, label: t(`${prefix}.${id}`) }));
   return (
-    <>
+    <div className="chart-options">
       <label className="field">
         <span className="field-label">{t("editor.title")}</span>
         <input
@@ -160,43 +207,150 @@ export function EditorForm({
           onChange={(e) => edit((s) => ({ ...s, title: e.target.value.slice(0, 80) }))}
         />
       </label>
-      <Section title={t("editor.kind")} help={cat.kinds.find((k) => k.id === spec.kind)?.help}>
-        <Choices
-          items={cat.kinds}
-          value={spec.kind}
-          onChange={(kind) => edit((s) => ({ ...s, kind }))}
-        />
-      </Section>
-      <Section
-        title={t("editor.measure")}
-        help={cat.measures.find((m) => m.id === spec.measure)?.help}
-      >
-        <Choices
-          items={cat.measures}
-          value={spec.measure}
-          onChange={(measure) => edit((s) => ({ ...s, measure }))}
-        />
-      </Section>
+
+      <section className="opt-section">
+        <h3>{t("editor.chartType")}</h3>
+        <div className="kind-icons" role="radiogroup" aria-label={t("editor.chartType")}>
+          {MAIN_KINDS.filter((k) => cat.kinds.some((c) => c.id === k)).map((k) => {
+            const name = cat.kinds.find((c) => c.id === k)?.label ?? k;
+            return (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={spec.kind === k}
+                aria-label={name}
+                title={name}
+                className={`kind-icon${spec.kind === k ? " on" : ""}`}
+                onClick={() => edit((s) => ({ ...s, kind: k }))}
+              >
+                {KIND_ICONS[k]}
+              </button>
+            );
+          })}
+          {others.length > 0 && (
+            <MenuButton
+              className={`kind-icon more${MAIN_KINDS.includes(spec.kind) ? "" : " on"}`}
+              ariaLabel={t("editor.otherKinds")}
+              icon={MAIN_KINDS.includes(spec.kind) ? null : KIND_ICONS[spec.kind]}
+              label=""
+              items={others.map((k) => ({ id: k.id, label: k.label, on: k.id === spec.kind }))}
+              onPick={(kind) => edit((s) => ({ ...s, kind }))}
+            />
+          )}
+        </div>
+        {cat.kinds.find((k) => k.id === spec.kind)?.help && (
+          <p className="field-help">{cat.kinds.find((k) => k.id === spec.kind)?.help}</p>
+        )}
+      </section>
+
       {spec.kind !== "number" && (
-        <Section title={B.isCategoryKind(spec.kind) ? t("editor.groupBy") : t("editor.xAxis")}>
-          <DimensionPicker value={spec.x} cat={cat} onChange={(x) => edit((s) => ({ ...s, x }))} />
-        </Section>
-      )}
-      {B.SPLIT_KINDS.has(spec.kind) && (
-        <Section title={t("editor.split")} help={t("editor.splitHelp")}>
-          <DimensionPicker
-            value={spec.split}
-            cat={cat}
-            none={spec.kind === "stacked_bar" ? undefined : t("editor.noSplit")}
-            onChange={(split) => edit((s) => ({ ...s, split }))}
+        <section className="opt-section">
+          <h3>{category ? t("editor.data") : t("editor.xSection")}</h3>
+          <OptRow
+            label={category ? t("editor.groupBy") : t("editor.whatToShow")}
+            value={spec.x?.field ?? ""}
+            items={fieldItems}
+            onPick={(id) =>
+              edit((s) => ({
+                ...s,
+                x: { field: id, granularity: id === "date" ? (s.x?.granularity ?? "month") : null },
+              }))
+            }
           />
-        </Section>
+          {spec.x?.field === "date" && (
+            <OptRow
+              label={t("editor.by")}
+              value={spec.x.granularity ?? "month"}
+              items={cat.granularities}
+              onPick={(g) => edit((s) => ({ ...s, x: { field: "date", granularity: g } }))}
+            />
+          )}
+          <OptRow
+            label={t("editor.sortBy")}
+            value={spec.sort}
+            items={sorts}
+            onPick={(sort) => edit((s) => ({ ...s, sort }))}
+          />
+          {spec.x?.field !== "date" && (
+            <NumberInput
+              label={t("editor.top")}
+              value={spec.top}
+              allowEmpty
+              onChange={(n) =>
+                edit((s) => ({ ...s, top: n == null ? null : Math.min(50, Math.max(1, n)) }))
+              }
+            />
+          )}
+          <OptToggle
+            label={t("editor.omitZero")}
+            checked={style.omitZero}
+            onChange={(omitZero) => setStyle({ omitZero })}
+          />
+          <OptToggle
+            label={t("editor.drilldown")}
+            checked={spec.drilldown}
+            onChange={(drilldown) => edit((s) => ({ ...s, drilldown }))}
+          />
+        </section>
       )}
-      <Section title={t("editor.period")}>
-        <Choices
-          items={cat.periods}
+
+      <section className="opt-section">
+        <h3>{spec.kind === "number" || category ? t("editor.value") : t("editor.ySection")}</h3>
+        <OptRow
+          label={t("editor.whatToShow")}
+          value={spec.measure}
+          items={cat.measures}
+          onPick={(measure) => edit((s) => ({ ...s, measure }))}
+        />
+        {B.SPLIT_KINDS.has(spec.kind) && (
+          <OptRow
+            label={t("editor.split")}
+            value={spec.split?.field ?? ""}
+            items={[
+              ...(spec.kind === "stacked_bar" ? [] : [{ id: "", label: t("editor.noSplit") }]),
+              ...fieldItems,
+            ]}
+            onPick={(id) =>
+              edit((s) => ({
+                ...s,
+                split: id ? { field: id, granularity: id === "date" ? "month" : null } : null,
+              }))
+            }
+          />
+        )}
+        {time && (
+          <OptToggle
+            label={t("editor.cumulative")}
+            checked={style.cumulative}
+            onChange={(cumulative) => setStyle({ cumulative })}
+          />
+        )}
+        {!spec.split && spec.kind !== "donut" && (
+          <OptRow
+            label={t("editor.compare")}
+            value={spec.compare}
+            items={cat.compares}
+            onPick={(compare) => edit((s) => ({ ...s, compare }))}
+          />
+        )}
+        {time && (
+          <OptRow
+            label={t("editor.reference")}
+            value={style.reference}
+            items={choose(["none", "average"], "editor.ref")}
+            onPick={(reference) => setStyle({ reference: reference as ChartStyle["reference"] })}
+          />
+        )}
+      </section>
+
+      <section className="opt-section">
+        <h3>{t("editor.period")}</h3>
+        <OptRow
+          label={t("editor.period")}
           value={spec.period.kind}
-          onChange={(kind) => edit((s) => ({ ...s, period: { kind } }))}
+          items={cat.periods}
+          onPick={(kind) => edit((s) => ({ ...s, period: { kind } }))}
         />
         {spec.period.kind === "last_months" && (
           <NumberInput
@@ -226,46 +380,93 @@ export function EditorForm({
             />
           </div>
         )}
-      </Section>
-      {!spec.split && spec.kind !== "donut" && (
-        <Section title={t("editor.compare")} help={t("editor.compareHelp")}>
-          <Choices
-            items={cat.compares}
-            value={spec.compare}
-            onChange={(compare) => edit((s) => ({ ...s, compare }))}
-          />
-        </Section>
-      )}
+      </section>
+
       <FiltersEditor spec={spec} cat={cat} edit={edit} />
-      {spec.kind !== "number" && (
-        <Section title={t("editor.order")}>
-          {spec.x?.field !== "date" && (
-            <NumberInput
-              label={t("editor.top")}
-              value={spec.top}
-              allowEmpty
-              onChange={(n) =>
-                edit((s) => ({ ...s, top: n == null ? null : Math.min(50, Math.max(1, n)) }))
-              }
-            />
-          )}
-          <Choices
-            items={sorts}
-            value={spec.sort}
-            onChange={(sort) => edit((s) => ({ ...s, sort }))}
-          />
-          <label className="toggle-row">
-            <input
-              type="checkbox"
-              className="switch"
-              checked={spec.drilldown}
-              onChange={(e) => edit((s) => ({ ...s, drilldown: e.target.checked }))}
-            />
-            <span>{t("editor.drilldown")}</span>
-          </label>
-        </Section>
-      )}
-    </>
+
+      <section className="opt-section">
+        <h3>{t("editor.style")}</h3>
+        <div className="opt-row">
+          <span className="opt-label">{t("editor.color")}</span>
+          <div className="opt-swatches" role="radiogroup" aria-label={t("editor.color")}>
+            {spec.kind !== "line" && spec.kind !== "number" && (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={style.colors === "colorful"}
+                title={t("editor.colorful")}
+                aria-label={t("editor.colorful")}
+                className={`swatch big colorful${style.colors === "colorful" ? " on" : ""}`}
+                onClick={() => setStyle({ colors: "colorful" })}
+              />
+            )}
+            {PALETTE.map((c) => (
+              <button
+                key={c.hex}
+                type="button"
+                role="radio"
+                aria-checked={style.colors === "auto" && spec.color === c.hex}
+                title={t(`color.${c.name}`)}
+                aria-label={t(`color.${c.name}`)}
+                className={`swatch big${style.colors === "auto" && spec.color === c.hex ? " on" : ""}`}
+                style={{ background: c.hex }}
+                onClick={() =>
+                  edit((s) => ({
+                    ...s,
+                    color: c.hex,
+                    style: chartStyle({ ...fullStyle(s.style), colors: "auto" }) ?? {},
+                  }))
+                }
+              />
+            ))}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="opt-row opt-disclosure"
+          aria-expanded={moreStyle}
+          onClick={() => setMoreStyle((o) => !o)}
+        >
+          <span className="opt-label">{t("editor.moreStyle")}</span>
+          <ChevronDown size={14} strokeWidth={1.8} className={`chev${moreStyle ? " open" : ""}`} />
+        </button>
+        {moreStyle && (
+          <div className="opt-more">
+            {spec.kind !== "number" && (
+              <OptRow
+                label={t("editor.height")}
+                value={style.height}
+                items={choose(["s", "m", "l", "xl"], "editor.heights")}
+                onPick={(height) => setStyle({ height: height as ChartStyle["height"] })}
+              />
+            )}
+            {time && (
+              <OptRow
+                label={t("editor.grid")}
+                value={style.grid}
+                items={choose(["h", "v", "both", "none"], "editor.grids")}
+                onPick={(grid) => setStyle({ grid: grid as ChartStyle["grid"] })}
+              />
+            )}
+            {spec.kind !== "number" && spec.kind !== "donut" && (
+              <OptRow
+                label={t("editor.axes")}
+                value={style.axes}
+                items={choose(["none", "x", "y", "both"], "editor.axesNames")}
+                onPick={(axes) => setStyle({ axes: axes as ChartStyle["axes"] })}
+              />
+            )}
+            {spec.kind !== "number" && spec.kind !== "donut" && (
+              <OptToggle
+                label={t("editor.labels")}
+                checked={style.labels}
+                onChange={(labels) => setStyle({ labels })}
+              />
+            )}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 

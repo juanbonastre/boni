@@ -1,3 +1,4 @@
+import type { ChartStyle } from "@boni/views";
 import { ChevronLeft } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import * as M from "../core/chartMath.ts";
@@ -48,6 +49,7 @@ export function ChartCard({
     <ChartCardContent
       title={(draft ?? spec)?.title ?? state.data?.title ?? ""}
       color={(draft ?? spec)?.color}
+      style={(draft ?? spec)?.style}
       state={preview ?? state}
       compact={compact}
       className={`${className ?? ""}${editing ? " editing" : ""}${controlsOpen ? " controls-open" : ""}`}
@@ -95,6 +97,7 @@ export function useChartData(chartId: string, drill: string | null = null): Char
 export function ChartCardContent({
   title,
   color,
+  style,
   state,
   compact = false,
   className,
@@ -105,6 +108,7 @@ export function ChartCardContent({
 }: {
   title: string;
   color?: string | null;
+  style?: ChartStyle;
   state: ChartState;
   compact?: boolean;
   className?: string;
@@ -154,6 +158,7 @@ export function ChartCardContent({
           <Chart
             data={data}
             color={color}
+            style={style}
             compact={compact}
             onSelect={data.drilldown && onDrill ? (p) => onDrill(p.key) : undefined}
           />

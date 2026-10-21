@@ -1,3 +1,4 @@
+import { type ChartStyle, chartStyle } from "@boni/views";
 /**
  * Client side of the API v1 contract. Source of truth: `server/boni/contract.py` (JSON schema in `api/schema/`).
  * Field names are the wire names (snake_case). Unknown fields are ignored; unknown component and field types
@@ -201,6 +202,8 @@ export interface ChartSpec {
   home: boolean;
   /** The chart's colour, from Boni Calendar's palette (`#rrggbb`); null = the accent. */
   color: string | null;
+  /** How it looks (Notion's style settings); empty = the defaults. */
+  style: ChartStyle;
 }
 
 export interface FieldInfo {
@@ -323,6 +326,7 @@ export function parseSpec(raw: unknown): ChartSpec {
     drilldown: Boolean(o.drilldown),
     home: o.home === undefined ? true : Boolean(o.home),
     color: typeof o.color === "string" && /^#[0-9a-f]{6}$/.test(o.color) ? o.color : null,
+    style: chartStyle(o.style) ?? {},
   };
 }
 

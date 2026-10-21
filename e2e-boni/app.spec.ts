@@ -185,9 +185,18 @@ test("the editor in the side panel: the card shows the preview; a new chart gets
     )
     .toBe(true);
   await page.screenshot({ path: `${SHOTS}/editor.png` });
+  // Notion's style options: a larger chart without data labels, the running total.
+  await panel.getByRole("button", { name: "Más opciones de estilo" }).click();
+  await panel.getByRole("button", { name: "Altura: Mediana" }).click();
+  await panel.getByRole("menuitem", { name: "Grande", exact: true }).click();
+  await panel.locator(".opt-row", { hasText: "Etiquetas de datos" }).locator("input").uncheck();
+  await panel.locator(".opt-row", { hasText: "Acumulado" }).locator("input").check();
+  await page.screenshot({ path: `${SHOTS}/editor-style.png` });
   await panel.getByRole("button", { name: "Guardar" }).click();
   await expect(page.locator(".toast")).toHaveText("Gráfica guardada");
-  expect(body((await puts(page, "monthly-spending"))[0]!).kind).toBe("line");
+  const saved = body((await puts(page, "monthly-spending"))[0]!);
+  expect(saved.kind).toBe("line");
+  expect(saved.style).toEqual({ height: "l", labels: false, cumulative: true });
 
   // A new chart from "/" on the page: saved, it takes that line's place.
   await page.locator(".doc-tail").click();

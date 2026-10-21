@@ -87,8 +87,12 @@ for (const language of ["es", "en"] as const) {
       await card.hover();
       await card.getByRole("button", { name: l.more }).click();
       await page.getByRole("menuitemradio", { name: l.edit }).click();
-      await page.locator(".side-panel .editor-form .choices").first().waitFor();
+      await page.locator(".side-panel .chart-options .opt-row").first().waitFor();
       issues.push(...(await audit(page, "editor panel")));
+      await page.locator(".side-panel .opt-disclosure").click();
+      await page.locator(".side-panel .opt-more .opt-value").first().click();
+      issues.push(...(await audit(page, "editor style options")));
+      await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");
 
       await page.locator(".doc-tail").click();
@@ -187,7 +191,7 @@ test.describe("on a phone", () => {
       issues.push(...(await audit(page, "phone chart")));
       await page.getByRole("button", { name: l.chartMenu }).tap();
       await page.getByRole("menuitem", { name: l.edit }).tap();
-      await page.locator(".m-sheet .editor-form .choices").first().waitFor();
+      await page.locator(".m-sheet .chart-options .opt-row").first().waitFor();
       issues.push(...(await audit(page, "phone chart editor")));
       await page.keyboard.press("Escape");
       await page.keyboard.press("Escape");

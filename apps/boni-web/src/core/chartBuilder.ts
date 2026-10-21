@@ -27,6 +27,7 @@ export const newSpec = (title: string): ChartSpec => ({
   drilldown: false,
   home: true,
   color: null,
+  style: {},
 });
 
 export const duplicate = (spec: ChartSpec, copyLabel: string): ChartSpec => ({
