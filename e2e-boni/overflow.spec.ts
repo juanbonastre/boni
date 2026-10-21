@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import {
   ASK_TURN,
   confirmTurn,
+  GUIDE,
   MAIL,
   PROPOSALS,
   RUN_2,
@@ -82,6 +83,25 @@ async function audit(page: Page, where: string): Promise<string[]> {
   );
 }
 
+/** Every section of Settings, with every group opened. */
+async function settingsAudit(page: Page, prefix = ""): Promise<string[]> {
+  const issues: string[] = [];
+  const tabs = page.locator(".modal [role=tab]");
+  const n = await tabs.count();
+  for (let i = 0; i < n; i++) {
+    const tab = tabs.nth(i);
+    await tab.click();
+    const name = (await tab.textContent()) ?? String(i);
+    await page.locator(".modal .settings-pane h3").first().waitFor();
+    // Wait for what a section loads (the mailbox, the visibility list) before opening its groups.
+    await page.waitForTimeout(150);
+    const closed = page.locator('.modal .disclosure-head[aria-expanded="false"]');
+    while ((await closed.count()) > 0) await closed.first().click();
+    issues.push(...(await audit(page, `${prefix}settings: ${name}`)));
+  }
+  return issues;
+}
+
 const L = {
   es: {
     period: "Periodo",
@@ -109,7 +129,11 @@ for (const language of ["es", "en"] as const) {
       const issues: string[] = [];
       await openApp(page, "/?still", {
         language,
-        agent: { "GET api/agent/visibility": [VISIBILITY], "GET api/mail": [MAIL] },
+        agent: {
+          "GET api/agent/visibility": [VISIBILITY],
+          "GET api/mail": [MAIL],
+          "GET api/mail/guide": [GUIDE],
+        },
       });
       await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
       await page.locator(".chart-card .chart svg").first().waitFor();
@@ -146,8 +170,7 @@ for (const language of ["es", "en"] as const) {
 
       await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
       await page.locator(".modal").waitFor();
-      await page.locator(".modal [role=radiogroup]").first().waitFor();
-      issues.push(...(await audit(page, "settings")));
+      issues.push(...(await settingsAudit(page)));
       expect(issues).toEqual([]);
     });
   }
@@ -196,7 +219,11 @@ test.describe("on a phone", () => {
       const issues: string[] = [];
       await openApp(page, "/?still", {
         language,
-        agent: { "GET api/agent/visibility": [VISIBILITY], "GET api/mail": [MAIL] },
+        agent: {
+          "GET api/agent/visibility": [VISIBILITY],
+          "GET api/mail": [MAIL],
+          "GET api/mail/guide": [GUIDE],
+        },
       });
       await expect(page.locator(".m-shortcut")).toHaveCount(2);
       issues.push(...(await audit(page, "phone log")));
@@ -228,8 +255,7 @@ test.describe("on a phone", () => {
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: l.settings }).tap();
       await page.locator(".modal").waitFor();
-      await page.locator(".modal [role=radiogroup]").first().waitFor();
-      issues.push(...(await audit(page, "phone settings")));
+      issues.push(...(await settingsAudit(page, "phone ")));
       expect(issues).toEqual([]);
     });
   }

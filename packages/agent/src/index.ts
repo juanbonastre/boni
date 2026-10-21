@@ -37,10 +37,13 @@ export {
 export { checkReaderOutput, READER_SCHEMAS } from "./readers.ts";
 export {
   checkReadMessage,
+  GUIDE_LIMITS,
+  guideValue,
   MODULE_IDS,
   MODULES,
   modulesOf,
   type Reading,
+  type ReadingGuide,
   type ReadingModule,
   readMessagePrompt,
   readMessageSchema,

@@ -304,3 +304,28 @@ export const MAIL = {
     },
   },
 };
+
+/** Juan's reading guide (invented): his words, one rule of each kind, one example from a decision. */
+export const GUIDE = {
+  guide: {
+    instructions:
+      "Los avisos de la plataforma de cursos solo me interesan si un alumno pregunta algo.",
+    rules: [
+      { id: "r1", from: "@lista.example.com", action: "skip" },
+      {
+        id: "r2",
+        from: "coordinacion@example.com",
+        action: "collection",
+        collection: "t_proyecto",
+      },
+    ],
+    examples: [
+      {
+        id: "x1",
+        subject: "Entrevista del jueves",
+        from: "lucia@example.com",
+        want: [{ title: "Confirmar la sala a Lucía" }],
+      },
+    ],
+  },
+};

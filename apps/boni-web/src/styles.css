@@ -915,6 +915,10 @@ select {
   height: 100%;
   text-align: center;
 }
+/* Data shown whole that may be one long word (an address): it breaks anywhere rather than overflow. */
+.breakable {
+  overflow-wrap: anywhere;
+}
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -1350,6 +1354,133 @@ select {
   letter-spacing: 0.06em;
   color: var(--muted);
 }
+/* Settings: one section at a time, chosen in a column on the left (tabs on top when narrow). */
+.modal:has(.settings-layout) {
+  width: min(760px, 94vw);
+  height: min(640px, 86vh);
+}
+.settings-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  container-type: inline-size;
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: none;
+  width: 190px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+.settings-nav button {
+  text-align: left;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-nav button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.settings-nav button.on {
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 600;
+}
+.settings-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0; /* in a column (phone) it scrolls instead of growing past the screen */
+}
+.settings-pane > h3:first-child {
+  margin-top: 12px;
+}
+@media (max-width: 640px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+  .settings-nav {
+    flex-direction: row;
+    width: auto;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .settings-nav button {
+    flex: none;
+  }
+}
+.m-app .settings-layout {
+  flex-direction: column;
+}
+.m-app .settings-nav {
+  flex-direction: row;
+  width: auto;
+  padding: 8px 12px;
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.m-app .settings-nav button {
+  flex: none;
+}
+/* A group that opens and closes: title, a one-line summary, and its settings under it. */
+.disclosure {
+  border-bottom: 1px solid var(--line-soft);
+}
+.disclosure-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 0;
+  text-align: left;
+}
+.disclosure-chevron {
+  flex: none;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+.disclosure.open .disclosure-chevron {
+  transform: rotate(90deg);
+}
+.disclosure-title {
+  flex: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.disclosure-summary {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.disclosure-body {
+  padding: 0 0 10px 22px;
+}
+.disclosure-body > .setting:last-child {
+  border-bottom: 0;
+}
+.legend {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+.legend li {
+  margin: 2px 0;
+}
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -1399,6 +1530,27 @@ select {
 }
 .input.auto-width {
   width: auto;
+}
+/* A row of controls with no label (an input and its buttons): the input takes the room, the rest
+   wraps under it rather than being squeezed. */
+.setting-control.grow {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.setting-control.grow > .input:not(.auto-width) {
+  flex: 1 1 12rem;
+}
+.setting-control.grow > :not(.input:not(.auto-width)) {
+  flex: none;
+}
+.setting.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.setting.stacked > .setting-label {
+  flex: none;
 }
 .toast {
   position: fixed;
@@ -2058,6 +2210,8 @@ html.widget-page body {
 .m-app .scrim {
   position: absolute;
   padding: 0;
+  /* One cell the size of the screen: a full-screen modal is that tall and scrolls inside, never taller. */
+  grid-template: 100% / 100%;
 }
 .m-app .modal {
   width: 100%;

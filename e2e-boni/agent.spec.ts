@@ -4,6 +4,7 @@ import {
   ASK_TURN,
   confirmTurn,
   DONE,
+  GUIDE,
   MAIL,
   MIRROR_PROPOSAL,
   PROPOSALS,
@@ -243,20 +244,15 @@ test("what the AI sees: Juan chooses per collection in Settings", async ({ page 
   });
   await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
   const modal = page.locator(".modal");
+  // Settings open on the account; each section is one tab.
+  await expect(modal.getByRole("tab", { name: "Cuenta" })).toHaveAttribute("aria-selected", "true");
+  await modal.getByRole("tab", { name: "Lo que ve la IA" }).click();
   await expect(modal.getByRole("heading", { name: "Lo que ve la IA" })).toBeVisible();
-  const row = (name: string) => modal.getByRole("radiogroup", { name });
-  await expect(row("Diario").getByRole("radio", { name: "No la ve" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  await expect(
-    row("Movimientos").getByRole("radio", { name: "Solo sabe que existe" }),
-  ).toHaveAttribute("aria-checked", "true");
-  await row("Proyectos").getByRole("radio", { name: "No la ve" }).click();
-  await expect(row("Proyectos").getByRole("radio", { name: "No la ve" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
+  const row = (name: string) => modal.getByRole("combobox", { name });
+  await expect(row("Diario")).toHaveValue("hidden");
+  await expect(row("Movimientos")).toHaveValue("opaque");
+  await row("Proyectos").selectOption("hidden");
+  await expect(row("Proyectos")).toHaveValue("hidden");
   expect(await requests(page, "PUT api/agent/visibility")).toEqual([
     'PUT api/agent/visibility/t_proyecto {"level":"hidden"}',
   ]);
@@ -266,8 +262,9 @@ test("what the AI sees: Juan chooses per collection in Settings", async ({ page 
   const off = await page.context().newPage();
   await openApp(off, "/?still");
   await off.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  await off.locator(".modal").getByRole("tab", { name: "Lo que ve la IA" }).click();
   await expect(off.locator(".modal")).toContainText("El agente está apagado en el servidor.");
-  await expect(off.locator(".modal").getByRole("radiogroup")).toHaveCount(0);
+  await expect(off.locator(".modal").getByRole("combobox")).toHaveCount(0);
   await off.close();
 });
 
@@ -297,6 +294,7 @@ test("the mailbox in Settings: a wrong password is said, a good one connects; co
   });
   await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
   const modal = page.locator(".modal");
+  await modal.getByRole("tab", { name: "Correo" }).click();
   await expect(modal.getByRole("heading", { name: "Correo" })).toBeVisible();
   await modal.getByLabel("Usuario", { exact: true }).last().fill("ejemplo@example.com");
   await modal.getByLabel("Contraseña de aplicación").fill("mala");
@@ -308,6 +306,11 @@ test("the mailbox in Settings: a wrong password is said, a good one connects; co
   await modal.getByRole("button", { name: "Conectar" }).click();
   await expect(modal).toContainText("Conectado: ejemplo@example.com");
   await expect(modal).toContainText("12 correos");
+  // The groups start closed, each with what is inside in one line.
+  const collections = modal.getByRole("button", { name: /Colecciones de destino/ });
+  await expect(collections).toHaveAttribute("aria-expanded", "false");
+  await expect(collections).toContainText("Proyectos");
+  await collections.click();
   // The mail collection itself is never a destination; hidden collections are not offered.
   await expect(modal.getByRole("checkbox", { name: "Proyectos" })).toBeChecked();
   await expect(modal.getByRole("checkbox", { name: "Diario" })).toHaveCount(0);
@@ -318,7 +321,10 @@ test("the mailbox in Settings: a wrong password is said, a good one connects; co
   expect(puts[2]).toContain('"collections":["t_proyecto","t_movimiento"]');
   expect(puts[2]).not.toContain("password");
   expect(await requests(page, "POST api/mail/check")).toHaveLength(1);
-  // Read again the last days' mail: the days chosen go to the server, a toast says how many.
+  // Read again the last days' mail (under "Más opciones"): the days chosen go to the server, a toast
+  // says how many.
+  await expect(modal.getByLabel("Días")).toHaveCount(0);
+  await modal.getByRole("button", { name: "Más opciones" }).click();
   await modal.getByLabel("Días").selectOption("14");
   await modal.getByRole("button", { name: "Leer", exact: true }).click();
   await expect(page.getByText("Correos que se vuelven a leer: 4")).toBeVisible();
@@ -326,4 +332,61 @@ test("the mailbox in Settings: a wrong password is said, a good one connects; co
     'POST api/mail/reread {"days":14}',
   ]);
   await page.screenshot({ path: `${SHOTS}/agent-mail-settings.png` });
+});
+
+test("the reading guide: his words saved, rules added and removed, examples only removed", async ({
+  page,
+}) => {
+  const saved = {
+    guide: { ...GUIDE.guide, instructions: "Solo lo que me pidan a mí." },
+  };
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "GET api/mail": [MAIL],
+      "GET api/mail/guide": [GUIDE],
+      "PUT api/mail/guide": [
+        saved,
+        { __status: 400, error: "bad-rule" },
+        {
+          guide: {
+            ...saved.guide,
+            rules: [...saved.guide.rules, { id: "r3", from: "@x.example.com", action: "skip" }],
+          },
+        },
+        { guide: { ...saved.guide, examples: [] } },
+      ],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByRole("tab", { name: "Correo" }).click();
+  const guideHead = modal.getByRole("button", { name: /Guía de lectura/ });
+  await expect(guideHead).toContainText("Con indicaciones · Reglas: 2 · Ejemplos: 1");
+  await guideHead.click();
+  const text = modal.locator("#mail-guide-text");
+  await expect(text).toHaveValue(GUIDE.guide.instructions);
+  await expect(modal).toContainText("@lista.example.com");
+  await expect(modal).toContainText("No leer nunca");
+  await expect(modal).toContainText("Siempre a Proyectos");
+  await expect(modal).toContainText("Confirmar la sala a Lucía");
+  await text.fill("Solo lo que me pidan a mí.");
+  await modal.getByRole("button", { name: "Guardar", exact: true }).click();
+  await expect(page.getByText("Guía guardada")).toBeVisible();
+  // A wrong sender is said; a good one is added.
+  await modal.getByLabel("Dirección o @dominio").fill("nadie");
+  await modal.getByRole("button", { name: "Añadir", exact: true }).click();
+  await expect(modal.locator(".form-error")).toContainText("Escribe una dirección");
+  await modal.getByLabel("Dirección o @dominio").fill("@x.example.com");
+  await modal.getByRole("button", { name: "Añadir", exact: true }).click();
+  await expect(modal).toContainText("@x.example.com");
+  // The example is removed by keeping the others (none).
+  await modal.getByRole("button", { name: "Quitar" }).last().click();
+  await expect(modal).not.toContainText("Confirmar la sala a Lucía");
+  const puts = await requests(page, "PUT api/mail/guide");
+  expect(puts[0]).toContain('"instructions":"Solo lo que me pidan a mí."');
+  expect(puts[2]).toContain('"from":"@x.example.com","action":"skip"');
+  expect(puts[3]).toContain('"keepExamples":[]');
+  await modal.locator("#mail-guide-text").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${SHOTS}/agent-mail-guide.png` });
 });

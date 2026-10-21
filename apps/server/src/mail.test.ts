@@ -384,6 +384,108 @@ describe("tasks a mail asks for", () => {
   });
 });
 
+describe("the reading guide (docs/nucleo.md 7.4b)", () => {
+  it("his words reach the reader; rules are code: never read, or straight to one collection", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-guide-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD, "");
+    const reader = new ScriptedProvider("fake", (req) =>
+      /find what it asks of the user/.test(req.system)
+        ? {
+            items: [
+              { quote: "…", actor: "recipient", kind: "task", title: "Revisar el acta", due: null },
+            ],
+          }
+        : { choice: "Docencia" },
+    );
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    for (const [id, key, name] of [
+      ["t_docencia", "docencia", "Docencia"],
+      ["t_gestiones", "gestiones", "Gestiones"],
+    ] as const)
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key,
+            name,
+            fields: [{ id: `${id}_t`, key: "titulo", name: "Título", type: "text", label: own }],
+            titleField: `${id}_t`,
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: own,
+          },
+        },
+        { actor: "user" },
+      );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 11;
+    box.mails = new Map([
+      [1, mail(31, "Boletín", "Novedades de la semana.", "noticias@lista.example.com")],
+      [2, mail(32, "Acta", "¿Revisas el acta?", "jefa@example.com")],
+      [3, mail(33, "Otra", "¿Revisas el acta?", "otra@example.com")],
+    ]);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia", "t_gestiones"],
+    });
+    // A device cannot write an example, and a rule outside the catalogue is refused.
+    expect(() => m.saveGuide(1, { rules: [{ from: "nadie", action: "skip" }] })).toThrow(
+      "bad-rule",
+    );
+    expect(() => m.saveGuide(1, { rules: [{ from: "@x.example.com", action: "send" }] })).toThrow(
+      "bad-rule",
+    );
+    const before = m.readingVersion(1);
+    const g = m.saveGuide(1, {
+      instructions: "Lo que pida la jefa va a Gestiones.",
+      rules: [
+        { from: "@lista.example.com", action: "skip" },
+        { from: "jefa@example.com", action: "collection", collection: "t_gestiones" },
+      ],
+      keepExamples: ["inventado"],
+    });
+    expect(g.examples).toEqual([]);
+    expect(m.readingVersion(1)).not.toBe(before);
+    await m.check(1);
+    const reads = reader.requests.filter((r) => /find what it asks of the user/.test(r.system));
+    // The newsletter was never read; the boss's mail went straight to Gestiones (no classify); the other
+    // was classified. Juan's words reached both readings, outside the markers.
+    expect(reads).toHaveLength(2);
+    expect(reads.map((r) => (r.input as { content: string }).content).join()).not.toContain(
+      "Boletín",
+    );
+    for (const r of reads)
+      expect((r.input as { guide: { instructions: string } }).guide.instructions).toBe(
+        "Lo que pida la jefa va a Gestiones.",
+      );
+    expect(reader.requests.filter((r) => /choose the one option/.test(r.system))).toHaveLength(1);
+    const types = store.journal
+      .proposals("pending")
+      .map((p) => (p.view as { rows: { arg: string; value: string }[] }).rows[0]?.value);
+    expect(types.sort()).toEqual(["docencia", "gestiones"]);
+    expect(Object.values(m.state(1).readWith ?? {})).toEqual([
+      m.readingVersion(1),
+      m.readingVersion(1),
+      m.readingVersion(1),
+    ]);
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});
+
 describe("the field a due day goes to", () => {
   const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
   const field = (id: string, type: FieldDef["type"] = "date", extra = {}): FieldDef => ({
