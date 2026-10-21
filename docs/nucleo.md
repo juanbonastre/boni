@@ -443,7 +443,8 @@ type Expr =
   **esquema de salida fijo** (salida estructurada). El código vuelve a validar la salida: tipos, longitudes máximas,
   valores enumerados, fechas que se pueden leer, sin enlaces ni HTML en el texto.
 - **Tipos iniciales:**
-  - `extract_tasks(correo) → [{título, fecha_límite?, remitente, id_mensaje}]`;
+  - `extract_tasks(correo) → [{título, fecha_límite?, remitente, id_mensaje}]` (desde 15d, `read_message` con
+    módulos: 7.4b);
   - `classify(texto, opciones) → enumerado`;
   - `summarize(texto) → texto`;
   - `rewrite(texto, instrucción del plan) → texto`;
@@ -461,6 +462,68 @@ type Expr =
   calidad de la extracción.
 - **Un lector no puede pedir nada.** No hay `need_tools`, no puede replanificar y no puede llamar a otro lector. Si el
   contenido dice "consulta también este enlace", eso sale como un campo más, externo.
+
+### 7.4b Lectura de correos por módulos y guía que aprende (decidido, Juan, 2026-10-21)
+Lo que hay hasta el PR 15c es un lector `extract_tasks` con un párrafo de instrucciones que solo ve asunto y cuerpo:
+no sabe quién escribe, para quién es ni si Juan está solo en copia, y decide de golpe. En el buzón real confundía lo que
+el remitente hará con lo que pide ("mañana le entrego la raspberry" → tarea de Juan), y para buscar otra cosa habría
+que leer otra vez cada correo con otro lector. Juan pide un prompt largo y preciso, que mejore con sus respuestas, y una
+arquitectura de módulos: una lectura genérica a la que se suman "buscar tareas", "eventos", "avisos importantes",
+"correos que piden respuesta"...
+
+**1. Una lectura por correo, con módulos.** Un lector nuevo, `read_message`, lee cada correo **una vez**:
+- **Entrada** (la arma el código): las cabeceras del propio correo (De, Para, Cc, Asunto, Fecha) y el cuerpo, entre
+  marcas; fuera de las marcas, `today` con el día de la semana, `user_in` (`to`, `cc` o `group`: dónde está la
+  dirección del buzón; lo calcula el código), `known` (lo que sigue pendiente de ese remitente), los **módulos**
+  activos y la **guía** (punto 2).
+- **Prompt base** largo y fijo en el código: quién es el usuario, cómo leer un correo, cómo razonar paso a paso y que
+  el texto es dato. Cada módulo añade su trozo de instrucciones y su forma de elemento. Nada del dominio de Juan: los
+  ejemplos del código son genéricos.
+- **Salida: razonar antes de decidir.** Una lista de elementos; cada uno se rellena en este orden: `quote` (las
+  palabras del correo), `actor` (`recipient` / `sender` / `other`: quién lo tiene que hacer, no de quién se habla),
+  `module`, la clase del módulo (p. ej. tarea, evento o aviso general) y solo al final `title` (desde el lado de Juan) y
+  `due`. **Decide el código**: solo pasa lo que hace `recipient` y no es un aviso general; a qué colección va, si avisa
+  al móvil o si se queda en "Correos" lo decide el código del módulo.
+- **Módulos** en un registro del código (como las herramientas): id, nombre, su trozo de prompt, su forma de elemento,
+  su validación y su ruta (propuesta en una colección, aviso, nada). Primero `tareas` y `eventos` (paso 1); después
+  `avisos` (importantes, al móvil) y `respuestas` (correos que piden contestar: propone un borrador, enviar siempre se
+  confirma; paso 4, con el PR 21).
+- **Versión de la lectura:** el hash del prompt base, de los módulos y de la guía. Cada correo guarda con qué versión
+  se leyó; "Volver a leer" puede pedir solo los leídos con una versión anterior. La salida validada queda en el
+  registro (la llamada al modelo con su respuesta). Un módulo nuevo vuelve a leer solo los correos que Juan pida.
+- **Coste:** una llamada por correo para todos los módulos. La parte fija va primero y marcada para la caché de
+  prompts del proveedor (UNVERIFIED: con Haiku la caché pide un mínimo de tokens que el prompt quizá no alcanza).
+
+**2. La guía de lectura de Juan** (Ajustes → Correo), guardada por cuenta y cifrada como el resto del buzón:
+- **Sus indicaciones**, en lenguaje natural ("los avisos de la plataforma de cursos solo me interesan si un alumno
+  pregunta algo"). Texto de Juan (integridad `user`), como mucho 2.000 caracteres.
+- **Reglas que aplica el código**, de un catálogo cerrado: por remitente (dirección exacta o dominio) o por destino
+  (`user_in`) → "nunca proponer", "solo avisos", "tareas a la colección X". Se aplican antes (no leer) o después del
+  lector (filtrar o dirigir); el modelo no puede saltárselas.
+- **Ejemplos:** casos que Juan decidió (un correo → lo que él quiso). El texto del correo del ejemplo va **entre sus
+  propias marcas** (sigue siendo de fuera); lo que Juan quiso, fuera.
+- **Política (amplía 7.4 y A14):** a un lector de contenido externo se le puede pasar la guía de la cuenta además de
+  las opciones, y nada más de Juan. El intérprete lo comprueba por la etiqueta: el valor tiene que venir de la guía
+  (fuente `guide`), no de datos que el planificador haya leído; nada `sensitive`. La salida une la etiqueta de la guía
+  (`personal`), así que P3 sigue impidiendo que salga por la red. Un plan del modelo no puede pasar la guía.
+
+**3. Una IA revisora que aprende de las decisiones de Juan, y solo propone.**
+- Se apunta cada decisión sobre una propuesta que vino de un correo: aceptada, rechazada, y si Juan cambió después lo
+  creado (p. ej. el título), con el valor final.
+- Cada 20 decisiones nuevas (o con "Revisar ahora"), un lector `review_reading` recibe esas decisiones (lo de fuera
+  entre marcas) y la guía, y devuelve **cambios de un catálogo cerrado**: reglas del punto 2 y qué decisiones convertir
+  en ejemplos (por su id). **No escribe texto libre en la guía**: un correo preparado no puede colar una indicación (P16).
+- **Antes de proponer, se mide.** El código vuelve a leer con la guía candidata los correos ya decididos (los últimos
+  40 como mucho, dentro del presupuesto diario) y compara con lo que decidió Juan: propuestas que aceptó y vuelven a
+  salir, propuestas que rechazó y ya no salen. La sugerencia llega con su número ("de tus últimas 40 decisiones,
+  acertaría 37 en vez de 31") y solo si mejora.
+- **Juan acepta o rechaza** cada sugerencia (hoy en Ajustes → Correo; con el PR 18-19, en el panel de peticiones).
+  Nada cambia la guía sin él.
+
+**4. Robustez.** Las reglas son código; el modelo solo rellena un formulario que el código valida (enumerados, citas
+cortas sin enlaces, fechas); lo que sale del lector sigue siendo `external` y por P4/P7 solo propone; ningún módulo
+envía nada por sí mismo. El corpus de inyecciones gana casos: un correo que intenta hacerse pasar por "recipient", que
+intenta salir como regla de la guía, o un ejemplo con instrucciones dentro.
 
 ### 7.5 Motor de políticas
 Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vista) | propose`.
@@ -862,6 +925,9 @@ distinguidas por **dónde llegan** y nunca por cabeceras que se puedan falsifica
 | 15 | Primera colección en modo `core` (con Juan) y después el correo como fuente de propuestas (plan, paso 2) | Corpus ampliado con correos reales de forma (inventados) |
 |  | **15a hecho (2026-10-20):** Libros en modo `core` en el Boni de Juan (creada hablando, espejo en `Boni/Libros/`; una edición a mano llega a la bandeja y, rechazada, la nota vuelve). **15b:** `@boni/mail` (PR 88): cliente IMAP de solo lectura sin dependencias (EXAMINE, BODY.PEEK y una lista cerrada de órdenes; probado contra un servidor falso y el saludo real de Gmail) y el correo como texto (prefiere la parte de texto; del HTML quita lo oculto y lo cuenta; los adjuntos, solo su nombre). **15c (PR 89, 90):** el conector (Ajustes → Correo, contraseña de aplicación cifrada y probada antes de guardarla, cursor por UIDVALIDITY, colección "Correos" con todo `external`) y las propuestas: cada correo nuevo ejecuta un plan en segundo plano hecho por el código (lector `extract_tasks`, después `classify` entre las colecciones marcadas, cada opción con hasta tres títulos propios de Juan para que el lector sepa qué va en cada una; una propuesta por tarea). Probado con modelos reales baratos (DeepSeek V4.1 Flash, Claude Haiku 5.5) y correos inventados: las tareas y fechas salen bien, la colección acierta solo con los títulos de ejemplo (con solo el nombre, DeepSeek lo mandaba todo a una), y el correo con una orden oculta en el HTML no produjo nada. Falta probarlo con el buzón real de Juan | |
 |  | **Antes, "Lo que ve la IA" (2026-10-20):** los tres niveles por colección (7.3), en el almacén (`ai_access`), el agente (`readStore`, R3), el servidor (`/api/agent/visibility`, solo dispositivos personales para cambiarlo), la web de Boni (Ajustes) y la exportación. Propiedad nueva en los 300 planes al azar: con Movimientos en "solo sabe que existe", ninguna llamada a un modelo lleva su contenido (rompiendo el filtro a propósito, falla) | |
+| 15d | **Lectura por módulos** (7.4b, punto 1): `read_message` con cabeceras, `user_in`, día de la semana y salida razonada (`quote`, `actor`, clase, título); módulos `tareas` y `eventos`; versión de la lectura por correo | Correos inventados con la forma de los reales (remitente que promete, alumno que pide, solo en copia, boletín, reunión, calendario de exámenes) con Haiku 4.5 a mano; unitarias del filtro y de la validación |
+| 15e | **Guía de lectura** (7.4b, punto 2): indicaciones de Juan, reglas de código y ejemplos en Ajustes → Correo; la guía como única excepción de A14, comprobada por etiqueta | Una regla se cumple sin modelo; un plan del planificador no puede pasar la guía a un lector; el ejemplo de un correo va entre marcas |
+| 15f | **Revisora** (7.4b, punto 3): decisiones apuntadas, sugerencias de un catálogo cerrado medidas contra las decisiones de Juan, aceptar o rechazar en Ajustes → Correo | Corpus: un correo no consigue que la revisora proponga texto ni una regla a su favor; una sugerencia que no mejora no se propone |
 | 16 | **Formularios, atajos y vistas como datos del núcleo; fuera lo fijo** (decisión de 2026-10-20): el formulario de captura sale de los campos del tipo (8), los atajos y mini-apps son especificaciones guardadas en el núcleo (7.13) que Juan crea con la IA; la web de Boni deja de tener el botón fijo "Apuntar gasto" (se convierte en un atajo suyo, migrado de los de v1) y su inicio muestra sus vistas; la definición de gasto pasa a ser una vista guardada; los grupos de carpetas de la importación pasan a un mapa editable. La API v1 sigue para las apps antiguas hasta T6 | Un atajo creado en la conversación aparece y funciona sin el modelo; ningún texto del dominio de Juan queda en el código de la web ni del núcleo (una prueba lo busca) |
 | 17 | **Reglas de lo que ve la IA dentro de una colección** (7.3): filtros por elemento, la más estricta gana, fuera de totales y recuentos; en Ajustes junto al nivel de la colección | Una regla oculta un elemento en `get`, `list`, `search` y `aggregate`; la propiedad de los planes al azar con una regla por fila; una regla sobre un campo que la IA puede escribir se rechaza |
 | 18 | **La app de Boni como Notion** (decidido, Juan, 2026-10-20): barra lateral con las páginas y bases de datos del usuario (en árbol, arrastrables, favoritas), Conversación, Bandeja, Automatizaciones, Datos y Ajustes; sin "Hoy" fijo. Páginas = entidades de un tipo de sistema `page`, con su cuerpo como árbol de bloques (exporta a Markdown y al espejo). Editor de bloques con las funciones del de Notion: texto, títulos, listas, tareas, desplegables, citas, avisos, código, separador, tabla, imagen/archivo, columnas, menú `/`, arrastrar bloques, menciones `@` y enlaces entre páginas con sus retroenlaces, base de datos en línea. El texto de fuera se pinta como texto (7.14). Librería del editor por decidir en el PR (medida y licencia) | e2e de cada bloque y del menú `/`; pegar HTML de fuera no ejecuta nada; exportar e importar una página la deja igual; texto que cabe en móvil y escritorio |
