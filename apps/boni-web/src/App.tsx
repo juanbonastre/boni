@@ -1,8 +1,9 @@
-import { PanelLeft, WifiOff } from "lucide-react";
+import { MoreHorizontal, PanelLeft, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
+import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
@@ -10,14 +11,15 @@ import { host } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
   configured,
+  deletePage,
   dismissRejected,
   dismissToast,
   goBack,
+  newPage,
   openPage,
   openSettings,
-  renamePage,
   setChartDrill,
-  setPageEditing,
+  setPageFull,
   showChat,
   showStart,
   toggleSidebar,
@@ -137,7 +139,7 @@ function TopBar() {
       : null,
   );
   const page = useStore((s) => s.page);
-  const editing = useStore((s) => s.pageEditing);
+  const pages = useStore((s) => s.pages);
   const pending = useStore((s) => s.pending);
   const settings = useStore((s) => s.settings);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
@@ -187,7 +189,7 @@ function TopBar() {
             <span className="title-name">{spec.title}</span>
           </>
         ) : onPage && page ? (
-          <PageTitle id={page.id} title={page.title} />
+          <Crumbs page={page} pages={pages ?? []} />
         ) : view.kind === "page" ? (
           ""
         ) : (
@@ -207,58 +209,77 @@ function TopBar() {
           {settings.sessionEnded ? t("account.ended") : t("account.legacy")}
         </button>
       )}
-      {onPage && !editing && (
-        <button type="button" className="pill" onClick={() => setPageEditing(true)}>
-          {t("page.edit")}
-        </button>
-      )}
-      {onPage && editing && (
-        <button type="button" className="btn primary" onClick={() => setPageEditing(false)}>
-          {t("page.done")}
-        </button>
+      {onPage && page && (
+        <PopButton
+          className="icon-btn"
+          title={t("page.more")}
+          width={240}
+          label={<MoreHorizontal size={16} strokeWidth={1.8} />}
+        >
+          {(close) => (
+            <div className="menu-list" role="menu">
+              <MenuRow
+                label={t("page.full")}
+                on={Boolean(page.spec.full)}
+                onClick={() => {
+                  close();
+                  setPageFull(!page.spec.full);
+                }}
+              />
+              <MenuRow
+                label={t("page.newSub")}
+                onClick={() => {
+                  close();
+                  void newPage(page.id);
+                }}
+              />
+              <MenuSep />
+              <MenuRow
+                label={t("page.delete")}
+                danger
+                onClick={() => {
+                  close();
+                  void deletePage(page.id);
+                }}
+              />
+            </div>
+          )}
+        </PopButton>
       )}
     </header>
   );
 }
 
-/** The page's name, changed in place: click, type, Enter (Esc leaves it as it was). */
-function PageTitle({ id, title }: { id: string; title: string }) {
+/** Where the page is (as Notion's top bar): its parent pages, then its own name, small. */
+function Crumbs({
+  page,
+  pages,
+}: {
+  page: { id: string; title: string; parent: string | null };
+  pages: { id: string; title: string; parent: string | null }[];
+}) {
   const t = useStore((s) => s.t);
-  const [text, setText] = useState<string | null>(null);
-  if (text === null)
-    return (
-      <button
-        type="button"
-        className="title-name title-edit"
-        title={t("page.name")}
-        onClick={() => setText(title)}
-      >
-        {title || t("page.untitled")}
-      </button>
-    );
-  const done = (save: boolean) => {
-    if (save && text.trim() && text.trim() !== title) void renamePage(id, text);
-    setText(null);
-  };
+  const path: { id: string; title: string }[] = [];
+  const seen = new Set([page.id]);
+  for (let at = page.parent; at && !seen.has(at); ) {
+    seen.add(at);
+    const p = pages.find((x) => x.id === at);
+    if (!p) break;
+    path.unshift(p);
+    at = p.parent;
+  }
   return (
-    <input
-      className="title-input"
-      aria-label={t("page.name")}
-      value={text}
-      maxLength={120}
-      // biome-ignore lint/a11y/noAutofocus: the user just clicked the name to change it
-      autoFocus
-      onFocus={(e) => e.currentTarget.select()}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => done(true)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") done(true);
-        else if (e.key === "Escape") {
-          e.preventDefault();
-          done(false);
-        }
-      }}
-    />
+    <span className="crumbs">
+      {path.map((p) => (
+        <span key={p.id} className="crumb-part">
+          <button type="button" className="crumb" onClick={() => void openPage(p.id)}>
+            {p.title || t("page.untitled")}
+          </button>
+          <span className="crumb-sep">/</span>
+        </span>
+      ))}
+      <span className="crumb current">{page.title || t("page.untitled")}</span>
+    </span>
   );
 }
 

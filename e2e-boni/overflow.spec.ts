@@ -30,8 +30,7 @@ const L = {
     more: "Más",
     edit: /^Editar…/,
     settings: "Ajustes",
-    editPage: "Editar página",
-    addBlock: "Añadir bloque",
+    pageMenu: "Más opciones",
   },
   en: {
     period: "Period",
@@ -40,8 +39,7 @@ const L = {
     more: "More",
     edit: /^Edit…/,
     settings: "Settings",
-    editPage: "Edit page",
-    addBlock: "Add block",
+    pageMenu: "More options",
   },
 };
 
@@ -60,11 +58,11 @@ for (const language of ["es", "en"] as const) {
           "GET api/agent/extensions": [EXTENSIONS],
         },
       });
-      await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
+      await expect(page.locator(".doc-charts .chart-card")).toHaveCount(3);
       await page.locator(".chart-card .chart svg").first().waitFor();
       issues.push(...(await audit(page, "home")));
 
-      const card = page.locator(".dashboard .chart-card").nth(1);
+      const card = page.locator(".doc-charts .chart-card").first();
       await card.hover();
       issues.push(...(await audit(page, "card controls")));
       await card.getByRole("button", { name: l.period }).click();
@@ -81,7 +79,7 @@ for (const language of ["es", "en"] as const) {
       issues.push(...(await audit(page, "chart menu")));
       await page.keyboard.press("Escape");
 
-      await page.locator(".page-actions .btn.primary").click();
+      await page.locator(".doc-actions .btn.primary").click();
       await page.locator(".side-panel .form").waitFor();
       issues.push(...(await audit(page, "capture panel")));
       await page.keyboard.press("Escape");
@@ -93,11 +91,18 @@ for (const language of ["es", "en"] as const) {
       issues.push(...(await audit(page, "editor panel")));
       await page.keyboard.press("Escape");
 
-      await page.locator(".topbar").getByRole("button", { name: l.editPage }).click();
-      await page.locator(".page-edit-foot").waitFor();
-      issues.push(...(await audit(page, "page editor")));
-      await page.getByRole("button", { name: l.addBlock }).click();
-      issues.push(...(await audit(page, "add block menu")));
+      await page.locator(".doc-tail").click();
+      await page.keyboard.type("/", { delay: 20 });
+      await page.locator(".slash-menu").waitFor();
+      issues.push(...(await audit(page, "block menu (/)")));
+      await page.keyboard.press("Escape");
+      const blk = page.locator(".blk-chart").first();
+      await blk.hover();
+      await blk.locator(".blk-handle button").click();
+      issues.push(...(await audit(page, "block handle menu")));
+      await page.keyboard.press("Escape");
+      await page.locator(".topbar").getByRole("button", { name: l.pageMenu }).click();
+      issues.push(...(await audit(page, "page menu")));
       await page.keyboard.press("Escape");
 
       await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();

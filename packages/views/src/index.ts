@@ -9,6 +9,7 @@ export {
   type PageBlock,
   type PageSpec,
   pageErrors,
+  TEXT_BLOCKS,
 } from "./page.ts";
 export { pyRound, pySum } from "./pyround.ts";
 export { type ViewComponent, type ViewSpec, viewErrors, viewRows } from "./views.ts";

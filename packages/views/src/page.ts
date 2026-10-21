@@ -7,17 +7,24 @@
  */
 
 export type PageBlock =
-  | { id: string; type: "heading"; text: string }
+  | { id: string; type: "heading"; text: string; level?: 1 | 2 | 3 }
   | { id: string; type: "text"; text: string }
+  | { id: string; type: "bullet"; text: string }
+  | { id: string; type: "todo"; text: string; done?: boolean }
+  | { id: string; type: "divider" }
   | { id: string; type: "chart"; chart: string }
   | { id: string; type: "action"; screen: string; label: string; shortcut?: string };
 
 export interface PageSpec {
   version: 1;
+  /** The page uses the window's whole width (charts side by side) instead of a reading column. */
+  full?: boolean;
   blocks: PageBlock[];
 }
 
-export const PAGE_BLOCKS = ["heading", "text", "chart", "action"] as const;
+/** The blocks that hold text the user writes in place (and can turn into one another). */
+export const TEXT_BLOCKS = ["text", "heading", "bullet", "todo"] as const;
+export const PAGE_BLOCKS = [...TEXT_BLOCKS, "divider", "chart", "action"] as const;
 export const PAGE_LIMITS = {
   blocks: 200,
   heading: 200,
@@ -42,9 +49,10 @@ export function pageErrors(spec: unknown): string[] {
     !isObj(spec) ||
     spec.version !== 1 ||
     !Array.isArray(spec.blocks) ||
-    !only(spec, ["version", "blocks"])
+    !only(spec, ["version", "full", "blocks"]) ||
+    (spec.full !== undefined && typeof spec.full !== "boolean")
   )
-    return ["page: { version: 1, blocks: [...] }"];
+    return ["page: { version: 1, full?, blocks: [...] }"];
   if (spec.blocks.length > PAGE_LIMITS.blocks)
     return [`page: at most ${PAGE_LIMITS.blocks} blocks`];
   const errors: string[] = [];
@@ -59,12 +67,28 @@ export function pageErrors(spec: unknown): string[] {
     ids.add(b.id);
     switch (b.type) {
       case "heading":
-        if (!only(b, ["id", "type", "text"]) || !text(b.text, PAGE_LIMITS.heading, true))
-          errors.push(`${w}: a heading has text`);
+        if (
+          !only(b, ["id", "type", "text", "level"]) ||
+          !text(b.text, PAGE_LIMITS.heading, true) ||
+          (b.level !== undefined && b.level !== 1 && b.level !== 2 && b.level !== 3)
+        )
+          errors.push(`${w}: a heading has text and a level 1-3`);
         break;
       case "text":
+      case "bullet":
         if (!only(b, ["id", "type", "text"]) || !text(b.text, PAGE_LIMITS.text, true))
           errors.push(`${w}: a text block has text`);
+        break;
+      case "todo":
+        if (
+          !only(b, ["id", "type", "text", "done"]) ||
+          !text(b.text, PAGE_LIMITS.text, true) ||
+          (b.done !== undefined && typeof b.done !== "boolean")
+        )
+          errors.push(`${w}: a to-do has text and done`);
+        break;
+      case "divider":
+        if (!only(b, ["id", "type"])) errors.push(`${w}: a divider has nothing else`);
         break;
       case "chart":
         if (!only(b, ["id", "type", "chart"]) || typeof b.chart !== "string" || !ID.test(b.chart))

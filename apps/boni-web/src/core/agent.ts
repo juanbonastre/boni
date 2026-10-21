@@ -378,7 +378,7 @@ function parsePageInfo(v: unknown): PageInfo | null {
   return {
     id,
     title: str(v.title, 200) ?? "",
-    icon: str(v.icon, 8) ?? "",
+    icon: str(v.icon, 16) ?? "",
     parent: str(v.parent, 80),
     position: typeof v.position === "number" ? v.position : 0,
   };
@@ -588,7 +588,13 @@ export class AgentApi {
     parsePage((await this.call("POST", "", input, "api/pages")) as never);
   updatePage = async (
     id: string,
-    input: { title?: string; parent?: string | null; position?: number; spec?: PageSpec },
+    input: {
+      title?: string;
+      icon?: string;
+      parent?: string | null;
+      position?: number;
+      spec?: PageSpec;
+    },
   ) =>
     parsePage((await this.call("PUT", `/${encodeURIComponent(id)}`, input, "api/pages")) as never);
   restorePage = async (id: string) =>

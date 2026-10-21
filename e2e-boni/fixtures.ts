@@ -40,7 +40,7 @@ export interface FakePage {
   icon?: string;
   parent?: string | null;
   position?: number;
-  spec: { version: 1; blocks: Record<string, unknown>[] };
+  spec: { version: 1; full?: boolean; blocks: Record<string, unknown>[] };
 }
 
 /** What an account that used the first Boni gets once (apps/server/src/pages.ts, seedFromV1). */
@@ -49,6 +49,7 @@ export const PAGE_FROM_HOME: FakePage = {
   title: "Gastos",
   spec: {
     version: 1,
+    full: true,
     blocks: [
       { id: "b1", type: "action", screen: "capture-expense", label: "Apuntar gasto" },
       { id: "b2", type: "action", screen: "capture-expense", label: "Café", shortcut: "cafe" },

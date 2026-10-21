@@ -71,9 +71,9 @@ export function getPage(store: UserStore, id: string): Page | null {
   return e && e.entity.type === "page" && e.entity.deleted === undefined ? toPage(e.entity) : null;
 }
 
+/** A page's name; empty is fine (the app shows it as untitled, as Notion does). */
 const title = (t: unknown) => {
-  if (typeof t !== "string" || !t.trim() || t.length > PAGE_LIMITS.title)
-    throw new PageError("bad-title");
+  if (typeof t !== "string" || t.length > PAGE_LIMITS.title) throw new PageError("bad-title");
   return t.trim();
 };
 
@@ -82,7 +82,7 @@ export function createPage(
   input: { title?: unknown; parent?: unknown; spec?: unknown },
   device?: string,
 ): Page {
-  const t = title(input.title ?? "Sin título");
+  const t = title(input.title ?? "");
   const parent =
     typeof input.parent === "string" && getPage(store, input.parent) ? input.parent : "";
   const spec = input.spec ?? emptyPage();
@@ -112,7 +112,8 @@ export function updatePage(
   const w: Record<string, ReturnType<typeof v>> = {};
   if (input.title !== undefined) w.f_title = v(title(input.title));
   if (input.icon !== undefined) {
-    if (typeof input.icon !== "string" || [...input.icon].length > 2)
+    // One emoji (a few code points when joined, as 👩‍🏫); shown only as text.
+    if (typeof input.icon !== "string" || [...input.icon].length > 8 || /[<>&]/.test(input.icon))
       throw new PageError("bad-icon");
     w.f_icon = v(input.icon);
   }
@@ -182,6 +183,7 @@ export function seedFromV1(store: UserStore, v1: V1Store, account: number): void
     title: "Gastos",
     spec: {
       version: 1,
+      full: true,
       blocks: [
         { id: id(), type: "action", screen: "capture-expense", label: "Apuntar gasto" },
         ...shortcuts.map((s) => ({
