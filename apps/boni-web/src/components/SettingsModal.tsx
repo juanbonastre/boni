@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   AI_LEVELS,
@@ -34,6 +34,17 @@ export function SettingsModal() {
   const t = useStore((s) => s.t);
   const settings = useStore((s) => s.settings);
   const close = () => openSettings(false);
+  const linked = configured(settings);
+  type Section = "account" | "ai" | "mail" | "data" | "appearance" | "desktop";
+  const sections: Section[] = [
+    "account",
+    ...(linked ? (["ai", "mail"] as const) : []),
+    ...(linked && host.saveExport ? (["data"] as const) : []),
+    "appearance",
+    ...(host.desktop ? (["desktop"] as const) : []),
+  ];
+  const [chosen, setSection] = useState<Section>("account");
+  const section: Section = sections.includes(chosen) ? chosen : "account";
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -61,110 +72,175 @@ export function SettingsModal() {
             <X size={16} strokeWidth={1.8} />
           </button>
         </div>
-        <div className="modal-body">
-          <h3>{t("settings.account")}</h3>
-          <Account />
-
-          {configured(settings) && <AiVisibility />}
-
-          {configured(settings) && <MailSettings />}
-
-          {host.saveExport && configured(settings) && <ExportData />}
-
-          <h3>{t("settings.appearance")}</h3>
-          <div className="setting">
-            <div className="setting-label">{t("settings.theme")}</div>
-            <div className="setting-control">
-              <div className="segmented">
-                {(["dark", "light", "system"] as Theme[]).map((th) => (
-                  <button
-                    key={th}
-                    type="button"
-                    className={settings.theme === th ? "on" : ""}
-                    onClick={() => void saveSettings({ theme: th })}
-                  >
-                    {t(`settings.theme.${th}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
+        <div className="settings-layout">
+          <div className="settings-nav" role="tablist" aria-label={t("settings.title")}>
+            {sections.map((id) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                id={`settings-tab-${id}`}
+                aria-selected={section === id}
+                aria-controls="settings-pane"
+                className={section === id ? "on" : ""}
+                onClick={() => setSection(id)}
+              >
+                {t(`settings.section.${id}`)}
+              </button>
+            ))}
           </div>
-          <div className="setting">
-            <div className="setting-label">{t("settings.language")}</div>
-            <div className="setting-control">
-              <div className="segmented">
-                {(
-                  [
-                    ["es", "Español"],
-                    ["en", "English"],
-                  ] as [Lang, string][]
-                ).map(([l, label]) => (
-                  <button
-                    key={l}
-                    type="button"
-                    className={settings.language === l ? "on" : ""}
-                    onClick={() => void saveSettings({ language: l })}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div
+            className="modal-body settings-pane"
+            id="settings-pane"
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${section}`}
+          >
+            <h3>{t(`settings.section.${section}`)}</h3>
+            {section === "account" && <Account />}
+            {section === "ai" && <AiVisibility />}
+            {section === "mail" && <MailSettings />}
+            {section === "data" && <ExportData />}
+            {section === "appearance" && <Appearance />}
+            {section === "desktop" && <DesktopSettings />}
           </div>
-
-          {host.desktop && (
-            <>
-              <h3>{t("settings.desktop")}</h3>
-              <div className="setting">
-                <div className="setting-label">
-                  <span>{t("settings.autostart")}</span>
-                  <span className="muted small">{t("settings.autostartHelp")}</span>
-                </div>
-                <div className="setting-control">
-                  <input
-                    type="checkbox"
-                    className="switch"
-                    aria-label={t("settings.autostart")}
-                    checked={settings.autostart}
-                    onChange={(e) => void saveSettings({ autostart: e.target.checked })}
-                  />
-                </div>
-              </div>
-              <div className="setting">
-                <div className="setting-label">
-                  <span>{t("settings.showWidgets")}</span>
-                  <span className="muted small">
-                    {settings.layerAvailable
-                      ? t("settings.widgetsHelp")
-                      : t("settings.layerMissing")}
-                  </span>
-                </div>
-                <div className="setting-control">
-                  <input
-                    type="checkbox"
-                    className="switch"
-                    aria-label={t("settings.showWidgets")}
-                    checked={settings.showWidgets}
-                    onChange={(e) => void saveSettings({ showWidgets: e.target.checked })}
-                  />
-                </div>
-              </div>
-              <div className="setting">
-                <div className="setting-label">{t("settings.resetWidgets")}</div>
-                <div className="setting-control">
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={() => void saveSettings({ showWidgets: true, resetWidgets: true })}
-                  >
-                    {t("settings.reset")}
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** "Apariencia": theme and language. */
+function Appearance() {
+  const t = useStore((s) => s.t);
+  const settings = useStore((s) => s.settings);
+  return (
+    <>
+      <div className="setting">
+        <div className="setting-label">{t("settings.theme")}</div>
+        <div className="setting-control">
+          <div className="segmented">
+            {(["dark", "light", "system"] as Theme[]).map((th) => (
+              <button
+                key={th}
+                type="button"
+                className={settings.theme === th ? "on" : ""}
+                onClick={() => void saveSettings({ theme: th })}
+              >
+                {t(`settings.theme.${th}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="setting">
+        <div className="setting-label">{t("settings.language")}</div>
+        <div className="setting-control">
+          <div className="segmented">
+            {(
+              [
+                ["es", "Español"],
+                ["en", "English"],
+              ] as [Lang, string][]
+            ).map(([l, label]) => (
+              <button
+                key={l}
+                type="button"
+                className={settings.language === l ? "on" : ""}
+                onClick={() => void saveSettings({ language: l })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/** "Escritorio" (the desktop shell only): start with the computer, the widgets on the desktop. */
+function DesktopSettings() {
+  const t = useStore((s) => s.t);
+  const settings = useStore((s) => s.settings);
+  return (
+    <>
+      <div className="setting">
+        <div className="setting-label">
+          <span>{t("settings.autostart")}</span>
+          <span className="muted small">{t("settings.autostartHelp")}</span>
+        </div>
+        <div className="setting-control">
+          <input
+            type="checkbox"
+            className="switch"
+            aria-label={t("settings.autostart")}
+            checked={settings.autostart}
+            onChange={(e) => void saveSettings({ autostart: e.target.checked })}
+          />
+        </div>
+      </div>
+      <div className="setting">
+        <div className="setting-label">
+          <span>{t("settings.showWidgets")}</span>
+          <span className="muted small">
+            {settings.layerAvailable ? t("settings.widgetsHelp") : t("settings.layerMissing")}
+          </span>
+        </div>
+        <div className="setting-control">
+          <input
+            type="checkbox"
+            className="switch"
+            aria-label={t("settings.showWidgets")}
+            checked={settings.showWidgets}
+            onChange={(e) => void saveSettings({ showWidgets: e.target.checked })}
+          />
+        </div>
+      </div>
+      <div className="setting">
+        <div className="setting-label">{t("settings.resetWidgets")}</div>
+        <div className="setting-control">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => void saveSettings({ showWidgets: true, resetWidgets: true })}
+          >
+            {t("settings.reset")}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/**
+ * A group that opens and closes (a disclosure): its title and a one-line summary of what is inside, so
+ * the section shows the common things first and the rest one click away.
+ */
+function Disclosure({
+  title,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  summary?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className={`disclosure${open ? " open" : ""}`}>
+      <button
+        type="button"
+        className="disclosure-head"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <ChevronRight className="disclosure-chevron" size={14} strokeWidth={2} />
+        <span className="disclosure-title">{title}</span>
+        {summary && <span className="muted small disclosure-summary">{summary}</span>}
+      </button>
+      {open && <div className="disclosure-body">{children}</div>}
     </div>
   );
 }
@@ -306,7 +382,6 @@ function ExportData() {
   };
   return (
     <>
-      <h3>{t("export.title")}</h3>
       <div className="setting">
         <div className="setting-label">
           <span>{t("export.label")}</span>
@@ -343,36 +418,41 @@ function AiVisibility() {
   };
   return (
     <>
-      <h3>{t("ai.title")}</h3>
       <p className="muted small setting-note">{t("ai.help")}</p>
       {types === undefined ? null : types === null ? (
         <p className="muted small setting-note">{t("ai.off")}</p>
       ) : (
-        types.map((v) => (
-          <div className="setting" key={v.id}>
-            <div className="setting-label">
-              <span>{v.name}</span>
-              <span className="muted small">{t("ai.count", { n: v.count })}</span>
-            </div>
-            <div className="setting-control">
-              <div className="segmented" role="radiogroup" aria-label={v.name}>
-                {AI_LEVELS.map((l) => (
-                  <button
-                    key={l}
-                    type="button"
-                    role="radio"
-                    aria-checked={v.level === l}
-                    className={v.level === l ? "on" : ""}
-                    title={t(`ai.level.${l}.help`)}
-                    onClick={() => v.level !== l && void choose(v.id, l)}
-                  >
-                    {t(`ai.level.${l}`)}
-                  </button>
-                ))}
+        <>
+          <ul className="legend small muted">
+            {AI_LEVELS.map((l) => (
+              <li key={l}>
+                <strong>{t(`ai.level.${l}`)}</strong>: {t(`ai.level.${l}.help`)}
+              </li>
+            ))}
+          </ul>
+          {types.map((v) => (
+            <div className="setting" key={v.id}>
+              <div className="setting-label">
+                <span>{v.name}</span>
+                <span className="muted small">{t("ai.count", { n: v.count })}</span>
+              </div>
+              <div className="setting-control">
+                <select
+                  className="input auto-width"
+                  aria-label={v.name}
+                  value={v.level}
+                  onChange={(e) => void choose(v.id, e.target.value as AiLevel)}
+                >
+                  {AI_LEVELS.map((l) => (
+                    <option key={l} value={l}>
+                      {t(`ai.level.${l}`)}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-          </div>
-        ))
+          ))}
+        </>
       )}
     </>
   );
@@ -444,7 +524,6 @@ function MailSettings() {
     }).format(ms);
   return (
     <>
-      <h3>{t("mail.title")}</h3>
       <p className="muted small setting-note">{t("mail.help")}</p>
       {mail && !editing ? (
         <>
@@ -475,79 +554,108 @@ function MailSettings() {
               </button>
             </div>
           </div>
-          <div className="setting">
-            <div className="setting-label">
-              <span>{t("mail.reread")}</span>
-              <span className="muted small">{t("mail.reread.help")}</span>
-            </div>
-            <div className="setting-control with-gap">
-              <select
-                className="input auto-width"
-                aria-label={t("mail.reread.days")}
-                value={days}
-                onChange={(e) => setDays(Number(e.target.value))}
+          {(() => {
+            const offered = (types ?? []).filter(
+              (v) => v.level !== "hidden" && v.id !== mail.state.type,
+            );
+            const marked = offered.filter((v) => mail.collections.includes(v.id));
+            return (
+              <Disclosure
+                title={t("mail.collections.title")}
+                summary={
+                  marked.length ? marked.map((v) => v.name).join(", ") : t("mail.collections.none")
+                }
+                defaultOpen={types !== null && !marked.length}
               >
-                {[1, 3, 7, 14, 30].map((d) => (
-                  <option key={d} value={d}>
-                    {t("mail.reread.option", { n: d })}
-                  </option>
+                <p className="muted small setting-note">{t("mail.collections")}</p>
+                {offered.map((v) => (
+                  <div className="setting" key={v.id}>
+                    <div className="setting-label">{v.name}</div>
+                    <div className="setting-control">
+                      <input
+                        type="checkbox"
+                        className="switch"
+                        aria-label={v.name}
+                        checked={mail.collections.includes(v.id)}
+                        onChange={(e) => void toggle(v.id, e.target.checked)}
+                      />
+                    </div>
+                  </div>
                 ))}
-              </select>
-              <button
-                type="button"
-                className="btn"
-                disabled={rereading}
-                onClick={async () => {
-                  setRereading(true);
-                  await rereadMail(days);
-                  setRereading(false);
-                }}
-              >
-                {t("mail.reread.go")}
-              </button>
-            </div>
-          </div>
-          <p className="muted small setting-note">{t("mail.collections")}</p>
-          {(types ?? [])
-            .filter((v) => v.level !== "hidden" && v.id !== mail.state.type)
-            .map((v) => (
-              <div className="setting" key={v.id}>
-                <div className="setting-label">{v.name}</div>
-                <div className="setting-control">
-                  <input
-                    type="checkbox"
-                    className="switch"
-                    aria-label={v.name}
-                    checked={mail.collections.includes(v.id)}
-                    onChange={(e) => void toggle(v.id, e.target.checked)}
-                  />
-                </div>
-              </div>
-            ))}
+              </Disclosure>
+            );
+          })()}
           <MailGuideSettings
             collections={(types ?? []).filter((v) => mail.collections.includes(v.id))}
           />
-          <div className="modal-actions">
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                setForm((f) => ({ ...f, host: mail.host, user: mail.user, folder: mail.folder }));
-                setEditing(true);
-              }}
-            >
-              {t("mail.change")}
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={async () => {
-                if (await forgetMail()) setMail(null);
-              }}
-            >
-              {t("mail.forget")}
-            </button>
-          </div>
+          <Disclosure title={t("mail.more")}>
+            <div className="setting">
+              <div className="setting-label">
+                <span>{t("mail.reread")}</span>
+                <span className="muted small">{t("mail.reread.help")}</span>
+              </div>
+              <div className="setting-control with-gap">
+                <select
+                  className="input auto-width"
+                  aria-label={t("mail.reread.days")}
+                  value={days}
+                  onChange={(e) => setDays(Number(e.target.value))}
+                >
+                  {[1, 3, 7, 14, 30].map((d) => (
+                    <option key={d} value={d}>
+                      {t("mail.reread.option", { n: d })}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={rereading}
+                  onClick={async () => {
+                    setRereading(true);
+                    await rereadMail(days);
+                    setRereading(false);
+                  }}
+                >
+                  {t("mail.reread.go")}
+                </button>
+              </div>
+            </div>
+            <div className="setting">
+              <div className="setting-label">
+                <span>{t("mail.box")}</span>
+                <span className="muted small">
+                  {mail.host} · {mail.folder}
+                </span>
+              </div>
+              <div className="setting-control with-gap">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setForm((f) => ({
+                      ...f,
+                      host: mail.host,
+                      user: mail.user,
+                      folder: mail.folder,
+                    }));
+                    setEditing(true);
+                  }}
+                >
+                  {t("mail.change")}
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={async () => {
+                    if (await forgetMail()) setMail(null);
+                  }}
+                >
+                  {t("mail.forget")}
+                </button>
+              </div>
+            </div>
+          </Disclosure>
         </>
       ) : (
         <form
@@ -643,8 +751,15 @@ function MailGuideSettings({ collections }: { collections: Visibility[] }) {
     if (done) toast(t(done));
   };
   const nameOf = (id?: string) => collections.find((c) => c.id === id)?.name ?? id ?? "";
+  const summary = [
+    guide.instructions ? t("mail.guide.hasText") : "",
+    guide.rules.length ? t("mail.guide.nRules", { n: guide.rules.length }) : "",
+    guide.examples.length ? t("mail.guide.nExamples", { n: guide.examples.length }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
-    <>
+    <Disclosure title={t("mail.guide.title")} summary={summary || t("mail.guide.empty")}>
       <p className="muted small setting-note">{t("mail.guide.help")}</p>
       <div className="setting stacked">
         <label className="setting-label" htmlFor="mail-guide-text">
@@ -673,7 +788,7 @@ function MailGuideSettings({ collections }: { collections: Visibility[] }) {
       {guide.rules.map((r) => (
         <div className="setting" key={r.id}>
           <div className="setting-label">
-            <span>{r.from}</span>
+            <span className="breakable">{r.from}</span>
             <span className="muted small">
               {r.action === "skip"
                 ? t("mail.guide.skip")
@@ -759,6 +874,6 @@ function MailGuideSettings({ collections }: { collections: Visibility[] }) {
           ))}
         </>
       )}
-    </>
+    </Disclosure>
   );
 }

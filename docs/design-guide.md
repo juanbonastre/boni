@@ -15,6 +15,10 @@ behaviour covered by `e2e/`. Validated by Juan on the desktop app up to version 
   question we ask is the "this / this and following / all" scope for a recurring event.
 - Keyboard first, but never keyboard only: everything also has a visible control or a context menu. Nothing is
   hover-only.
+- Easy to use before complete (Juan, 2026-10-21): group options into sections, show the common things first and put
+  the rest behind a disclosure (a group that opens, with a one-line summary of what is inside, or "Más opciones"); one
+  task per screen or panel; no long flat lists of controls; a choice among several values on many rows is a select,
+  not a row of buttons. Judge each new surface on its screenshot as someone new to it would.
 - Smooth: 60 fps while scrolling, zooming and dragging is a requirement, not a nice-to-have (`docs/rendimiento.md`).
 - Text never stretches or jumps when the layout moves (zoom keeps letter sizes), and it is always pixel-sharp: boxes, offsets
   and column or row sizes are whole device pixels (see `AGENTS.md`, "Sharp text").
@@ -202,39 +206,21 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   Reject (never "accept all"); a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
   Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it (names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
-- **Settings → Correo** (Boni): the account's mailbox. Not connected: server (`imap.gmail.com` by default), folder, user
-  and app password, and "Conectar", which tries the connection before anything is kept (a wrong password is said under the
-  form). Connected: who, the last check and how many mails, "Comprobar ahora", "Volver a leer" (a
-  days select, 1 to 30, and "Leer": that mail is read again and its pending proposals are replaced; a toast says how
-  many mails), one switch per collection tasks from mail
-  may go to (never "Correos" itself nor a hidden one), the reading guide, "Cambiar" and "Desconectar". The password is
-  never shown again. **Reading guide** (docs/nucleo.md 7.4b): a note on what it is, "Tus indicaciones" (a textarea
-  over the whole row, "Guardar" enabled only when it changed), one row per rule (sender, what it does, "Quitar") and a
-  row to add one (address or @domain taking the room, the action select and "Añadir" wrap under it when narrow), and
-  the examples kept from Juan's decisions (subject, what he wanted, "Quitar"; never written here).
-- **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
-  (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
-  menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a
-  click anywhere in it gives it the focus; `Esc` keeps it there), so typing in a note never reaches the calendar. While it
-  has the focus, the calendar's `Ctrl` shortcuts (`Ctrl+K`, `Ctrl+,`, `Ctrl+Z`...) are its own, not Obsidian's. Settings →
-  Data offers "Este vault" (the default: it works alone) or "Servidor" (a Boni server, optional, docs/nucleo.md 9.4). It opens
-  from the ribbon icon (calendar) or the command "Abrir Boni Calendar", in one tab (the command brings that tab
-  forward), and lives in a shadow root so neither Obsidian's theme nor its class names reach it. In Obsidian the
-  calendar always shows the vault it runs in (Settings → Data offers no folder to choose) and writes to it from
-  the start, with the same rules as the desktop app; "Open note" opens the note in a tab, or brings forward the tab
-  that already shows it. Installed by hand (`make install-obsidian VAULT=...`), not from the community catalogue.
-- **Mobile** (the Android app, `apps/calendar-android`: the same web app in a WebView, so the look is the desktop's by construction;
-  also any pane narrower than 640 px): same tokens and card recipe. It opens on three days. The sidebar is a drawer over
-  the calendar (top-left button; it closes on a tap outside or once a day is chosen); the detail is a sheet at the bottom
-  (expanded, full screen); "new event" is a floating button (next whole hour, today). Fingers: a swipe scrolls the hours
-  and glides on, a sideways swipe moves days and settles on a whole day, two fingers zoom the hours; a tap selects and
-  opens the detail; a long press then a drag creates, moves or resizes exactly like the mouse; a long press without moving
-  opens the context menu. Nothing is hover-only on a touch screen, resize edges are taller, the system Back button closes
-  what is open, and the calendar keeps clear of the status and navigation bars. Undo through the toast. On Android the vault's
-  folder is chosen once (Settings → Data → Choose, the system folder picker); "Open note" opens it in Obsidian.
-  GrapheneOS lets the user take network access away from an app (its "Network" permission, which no dialog can ask for);
-  when it is off, Settings says so where the network is needed (server, external calendars) with a button that opens the
-  app's permissions.
+- **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
+  window): Cuenta, Lo que ve la IA, Correo, Tus datos, Apariencia, Escritorio (only those that apply). It opens on
+  Cuenta. **Lo que ve la IA**: the three levels explained once at the top, then one row per collection with a select.
+  **Correo**: not connected, server (`imap.gmail.com` by default), folder, user and app password, and "Conectar", which
+  tries the connection before anything is kept (a wrong password is said under the form). Connected: who, the last
+  check and how many mails, and "Comprobar ahora"; under it three closed groups, each with a summary on its right:
+  "Colecciones de destino" (the marked ones; open when none is marked, as it needs doing): one switch per collection
+  tasks from mail may go to, never "Correos" itself nor a hidden one; "Guía de lectura" (docs/nucleo.md 7.4b; summary
+  "Con indicaciones · Reglas: n · Ejemplos: n"): "Tus indicaciones" (a textarea over the whole row, "Guardar" enabled
+  only when it changed), one row per rule (sender, what it does, "Quitar"; a long address breaks rather than overflow)
+  and a row to add one (address or @domain taking the room; the action select and "Añadir" wrap under it when
+  narrow), and the examples kept from Juan's decisions (subject, what he wanted, "Quitar"; never written here); "Más
+  opciones": "Volver a leer" (a days select, 1 to 30, and "Leer": that mail is read again and its pending proposals
+  are replaced; a toast says how many mails) and the mailbox with "Cambiar" and "Desconectar". The password is never
+  shown again.
 
 ## 7. Keeping it consistent
 - A pull request that changes look or behaviour in Boni Calendar updates this file.

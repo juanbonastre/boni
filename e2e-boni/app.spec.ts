@@ -275,6 +275,7 @@ test("account as Boni Calendar's: log in with user and device; an old token asks
   expect((await recorded(page)).calls).toContain(
     "login https://boni.example.ts.net ejemplo portatil",
   );
+  await modal.getByRole("tab", { name: "Apariencia" }).click();
   await modal.getByRole("button", { name: "Claro" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.keyboard.press("Escape");
