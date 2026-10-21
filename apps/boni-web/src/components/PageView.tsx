@@ -13,6 +13,7 @@ import { isCategoryKind, newSpec } from "../core/chartBuilder.ts";
 import { emptyState } from "../core/charts.ts";
 import {
   blockId,
+  loadDataTypes,
   newChartForPage,
   newPage,
   newSubpageBlock,
@@ -32,6 +33,7 @@ import {
 } from "../store.ts";
 import { ACCENT } from "./Chart.tsx";
 import { ChartCard, ChartCardContent } from "./ChartCard.tsx";
+import { DatabaseBlock } from "./DatabaseBlock.tsx";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 type Block = Page["spec"]["blocks"][number];
@@ -397,6 +399,14 @@ function Blocks({ page }: { page: Page }) {
         <hr className="doc-divider" />
       ) : b.type === "page" ? (
         <PageLink id={b.page} />
+      ) : b.type === "database" ? (
+        <DatabaseBlock
+          source={b.source}
+          view={b.view}
+          onView={(view) =>
+            setPageBlocks(page.spec.blocks.map((x) => (x.id === b.id ? { ...b, view } : x)))
+          }
+        />
       ) : (
         <TextField block={b} page={page} number={numbers.get(b.id)} hidden={hidden} />
       )}
@@ -943,6 +953,7 @@ type Choice =
   | { kind: "new-chart" }
   | { kind: "page" }
   | { kind: "ai" }
+  | { kind: "database"; source: string }
   | { kind: "action"; screen: string; label: string; shortcut?: string };
 
 /** What the "/" menu's choice does to the block where it was typed. */
@@ -961,6 +972,13 @@ function pick(choice: Choice, block: TextBlock, blocks: Block[], index: number) 
       return putInstead({ id: block.id, type: "divider" });
     case "chart":
       return putInstead({ id: block.id, type: "chart", chart: choice.chart });
+    case "database":
+      return putInstead({
+        id: block.id,
+        type: "database",
+        source: choice.source,
+        view: { layout: "table" },
+      });
     case "action":
       return putInstead({
         id: block.id,
@@ -1029,6 +1047,10 @@ function SlashMenu({
   const specs = useVisibleCharts();
   const home = useStore((s) => s.home);
   const shortcuts = useStore((s) => s.shortcuts);
+  const dataTypes = useStore((s) => s.dataTypes);
+  useEffect(() => {
+    if (!dataTypes) void loadDataTypes();
+  }, []);
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const items = useMemo(() => {
@@ -1044,6 +1066,14 @@ function SlashMenu({
       })),
       { group: write, label: t("block.kind.page"), choice: { kind: "page" } },
       { group: "Boni", label: t("block.ai"), hint: t("block.soon"), choice: { kind: "ai" } },
+      ...(dataTypes ?? []).map(
+        (d): SlashItem => ({
+          group: t("block.databases"),
+          label: d.name,
+          hint: d.icon || undefined,
+          choice: { kind: "database", source: d.id },
+        }),
+      ),
       { group: charts, label: t("block.chartNew"), choice: { kind: "new-chart" } },
       ...specs.map(
         (s): SlashItem => ({
@@ -1074,7 +1104,7 @@ function SlashMenu({
     ];
     const q = fold(query.trim());
     return q ? all.filter((i) => fold(i.label).includes(q) || fold(i.group).includes(q)) : all;
-  }, [query, specs, home, shortcuts, t]);
+  }, [query, specs, home, shortcuts, dataTypes, t]);
   useEffect(() => setActive(0), [query]);
   // The keys stay in the text field: the menu follows them.
   useEffect(() => {

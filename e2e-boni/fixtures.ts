@@ -143,8 +143,78 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         pageList[i] = { ...pageList[i], ...b };
         return [200, JSON.stringify({ page: pageList[i] })];
       };
+      // The user's collections as databases (apps/server/src/data.ts), kept in memory.
+      const libros = {
+        id: "t_libro",
+        name: "Libros",
+        icon: "📚",
+        titleField: "f_titulo",
+        count: 3,
+        fields: [
+          { id: "f_titulo", name: "Título", type: "text" },
+          {
+            id: "f_estado",
+            name: "Estado",
+            type: "select",
+            options: [
+              { id: "o_pendiente", name: "Pendiente" },
+              { id: "o_leyendo", name: "Leyendo" },
+              { id: "o_leido", name: "Leído" },
+            ],
+          },
+          { id: "f_paginas", name: "Páginas", type: "number" },
+          { id: "f_fin", name: "Terminado", type: "date" },
+          { id: "f_fav", name: "Favorito", type: "checkbox" },
+        ],
+      };
+      const today = new Date().toISOString().slice(0, 10);
+      let rows: { id: string; values: Record<string, unknown>; updated: number }[] = [
+        {
+          id: "r1",
+          values: { f_titulo: "Rayuela", f_estado: "o_leyendo", f_paginas: 600 },
+          updated: 3,
+        },
+        {
+          id: "r2",
+          values: { f_titulo: "Ficciones", f_estado: "o_leido", f_fin: today },
+          updated: 2,
+        },
+        { id: "r3", values: { f_titulo: "Pedro Páramo", f_estado: "o_pendiente" }, updated: 1 },
+      ];
+      const gone: typeof rows = [];
+      let rowSeq = 0;
+      const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
+        const b = (body ?? {}) as { values?: Record<string, unknown> };
+        if (p === "api/data/types") return [200, JSON.stringify({ types: [libros] })];
+        if (p === "api/data/types/t_libro/rows" && method === "GET")
+          return [200, JSON.stringify({ rows, titles: {}, truncated: false })];
+        if (p === "api/data/types/t_libro/rows") {
+          const row = { id: `n${++rowSeq}`, values: { ...(b.values ?? {}) }, updated: Date.now() };
+          rows = [row, ...rows];
+          return [200, JSON.stringify({ row })];
+        }
+        const m = /^api\/data\/rows\/([^/]+)(\/restore)?$/.exec(p);
+        if (!m) return [404, '{"error":"not-found"}'];
+        if (m[2]) {
+          const back = gone.find((x) => x.id === m[1]);
+          if (back) rows = [back, ...rows];
+          return [200, "{}"];
+        }
+        const i = rows.findIndex((x) => x.id === m[1]);
+        if (i < 0) return [404, '{"error":"not-found"}'];
+        if (method === "DELETE") {
+          gone.push(rows[i]!);
+          rows = rows.filter((x) => x.id !== m[1]);
+          return [200, "{}"];
+        }
+        const values = { ...rows[i]!.values, ...(b.values ?? {}) };
+        for (const [k, v] of Object.entries(values)) if (v === null) delete values[k];
+        rows[i] = { ...rows[i]!, values, updated: Date.now() };
+        return [200, JSON.stringify({ row: rows[i] })];
+      };
       const answer = (method: string, path: string, body?: unknown): [number, string] | null => {
         const p = path.split("?")[0]!;
+        if (p.startsWith("api/data/")) return dataAnswer(method, p, body);
         if (p === "api/pages-trash")
           return [
             200,

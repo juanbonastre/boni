@@ -4,6 +4,9 @@ import { create } from "zustand";
 import {
   AgentApi,
   type AiLevel,
+  type DataRow,
+  type DataType,
+  type DataValue,
   type ExtensionView,
   type MailGuide,
   type MailInput,
@@ -151,6 +154,9 @@ interface State {
   pageFocus: { block: string; at: "start" | "end" | number } | { title: true } | null;
   /** A chart being created from a block of this page: saved, it takes that block's place. */
   chartForPage: { page: string; block: string } | null;
+  /** The user's collections (as databases), and the rows loaded of each. */
+  dataTypes: DataType[] | null;
+  rows: Record<string, { rows: DataRow[]; titles: Record<string, string> }>;
   /** Ctrl+K: the quick find over the pages. */
   findOpen: boolean;
   /** The pages in the trash, while its list is open. */
@@ -240,6 +246,8 @@ export const useStore = create<State>(() => ({
   chartForPage: null,
   findOpen: false,
   trash: null,
+  dataTypes: null,
+  rows: {},
   inbox: [],
   runs: [],
   confirmFlip: false,
@@ -1547,4 +1555,87 @@ export async function deletePage(id: string) {
         .then(() => openPage(id))
         .catch(() => toast(t("page.error"))),
   });
+}
+
+// ------------------------------------------------------------------ databases (plan PR 19)
+
+export async function loadDataTypes(): Promise<DataType[] | null> {
+  try {
+    const dataTypes = await agent.dataTypes();
+    set({ dataTypes });
+    return dataTypes;
+  } catch {
+    return get().dataTypes;
+  }
+}
+
+export async function loadRows(type: string) {
+  try {
+    const r = await agent.dataRows(type);
+    set({ rows: { ...get().rows, [type]: r } });
+  } catch {
+    toast(get().t("db.loadError"));
+  }
+}
+
+const putRow = (type: string, row: DataRow) => {
+  const cur = get().rows[type];
+  if (!cur) return;
+  const has = cur.rows.some((r) => r.id === row.id);
+  set({
+    rows: {
+      ...get().rows,
+      [type]: {
+        ...cur,
+        rows: has ? cur.rows.map((r) => (r.id === row.id ? row : r)) : [row, ...cur.rows],
+      },
+    },
+  });
+};
+
+/** A cell changed in a view: at once here, then on the server (its answer is the truth). */
+export async function editCell(type: string, id: string, field: string, value: DataValue) {
+  const before = get().rows[type]?.rows.find((r) => r.id === id);
+  if (!before) return;
+  putRow(type, { ...before, values: { ...before.values, [field]: value } });
+  try {
+    const saved = await agent.updateRow(id, { [field]: value });
+    if (saved) putRow(type, saved);
+  } catch {
+    putRow(type, before);
+    toast(get().t("db.saveError"));
+  }
+}
+
+export async function addRow(type: string, values: Record<string, DataValue> = {}) {
+  try {
+    const row = await agent.createRow(type, values);
+    if (row) putRow(type, row);
+    return row;
+  } catch {
+    toast(get().t("db.saveError"));
+    return null;
+  }
+}
+
+export async function deleteRow(type: string, id: string) {
+  const cur = get().rows[type];
+  const t = get().t;
+  try {
+    await agent.deleteRow(id);
+    if (cur)
+      set({
+        rows: { ...get().rows, [type]: { ...cur, rows: cur.rows.filter((r) => r.id !== id) } },
+      });
+    toast(t("db.deleted"), {
+      label: t("toast.undo"),
+      run: () =>
+        void agent
+          .restoreRow(id)
+          .then(() => loadRows(type))
+          .catch(() => toast(t("db.saveError"))),
+    });
+  } catch {
+    toast(t("db.saveError"));
+  }
 }

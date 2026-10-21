@@ -393,6 +393,79 @@ function parsePage(b: unknown): Page | null {
   return { ...i, spec };
 }
 
+/** A collection of the user's as a database (plan PR 19): its fields, and its rows. */
+export interface DataField {
+  id: string;
+  name: string;
+  type: string;
+  options?: { id: string; name: string; color?: string }[];
+  relation?: { target: string; many: boolean };
+}
+export interface DataType {
+  id: string;
+  name: string;
+  icon: string;
+  titleField: string;
+  fields: DataField[];
+  count: number;
+}
+export type DataValue =
+  | string
+  | number
+  | boolean
+  | string[]
+  | { amount: number; currency: string }
+  | null;
+export interface DataRow {
+  id: string;
+  values: Record<string, DataValue>;
+  updated: number;
+}
+
+function parseDataType(v: unknown): DataType | null {
+  if (!isObj(v) || typeof v.id !== "string" || !Array.isArray(v.fields)) return null;
+  return {
+    id: v.id,
+    name: str(v.name, 200) ?? v.id,
+    icon: str(v.icon, 16) ?? "",
+    titleField: str(v.titleField, 80) ?? "",
+    count: typeof v.count === "number" ? v.count : 0,
+    fields: v.fields.flatMap((f): DataField[] =>
+      isObj(f) && typeof f.id === "string" && typeof f.type === "string"
+        ? [
+            {
+              id: f.id,
+              name: str(f.name, 200) ?? f.id,
+              type: f.type,
+              ...(Array.isArray(f.options)
+                ? {
+                    options: f.options.flatMap((o) =>
+                      isObj(o) && typeof o.id === "string"
+                        ? [
+                            {
+                              id: o.id,
+                              name: str(o.name, 200) ?? o.id,
+                              ...(typeof o.color === "string" ? { color: o.color } : {}),
+                            },
+                          ]
+                        : [],
+                    ),
+                  }
+                : {}),
+              ...(isObj(f.relation) && typeof f.relation.target === "string"
+                ? { relation: { target: f.relation.target, many: Boolean(f.relation.many) } }
+                : {}),
+            },
+          ]
+        : [],
+    ),
+  };
+}
+function parseRow(v: unknown): DataRow | null {
+  if (!isObj(v) || typeof v.id !== "string" || !isObj(v.values)) return null;
+  return { id: v.id, values: v.values as DataRow["values"], updated: Number(v.updated) || 0 };
+}
+
 /** An installed extension as the server shows it (docs/extensiones.md 3). */
 export interface ExtensionView {
   id: string;
@@ -612,6 +685,52 @@ export class AgentApi {
     void (await this.call("POST", `/${encodeURIComponent(id)}/restore`, {}, "api/pages"));
   deletePage = async (id: string) =>
     void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/pages"));
+  // The user's collections as databases (plan PR 19).
+  dataTypes = async (): Promise<DataType[]> => {
+    const b = await this.call("GET", "", undefined, "api/data/types");
+    return isObj(b) && Array.isArray(b.types)
+      ? b.types.map(parseDataType).filter((x): x is DataType => !!x)
+      : [];
+  };
+  dataRows = async (type: string) => {
+    const b = await this.call(
+      "GET",
+      `/${encodeURIComponent(type)}/rows`,
+      undefined,
+      "api/data/types",
+    );
+    const rows =
+      isObj(b) && Array.isArray(b.rows)
+        ? b.rows.map(parseRow).filter((x): x is DataRow => !!x)
+        : [];
+    const titles = isObj(b) && isObj(b.titles) ? (b.titles as Record<string, string>) : {};
+    return { rows, titles };
+  };
+  createRow = async (type: string, values: Record<string, DataValue>) =>
+    parseRow(
+      (
+        (await this.call(
+          "POST",
+          `/${encodeURIComponent(type)}/rows`,
+          { values },
+          "api/data/types",
+        )) as {
+          row?: unknown;
+        }
+      )?.row,
+    );
+  updateRow = async (id: string, values: Record<string, DataValue>) =>
+    parseRow(
+      (
+        (await this.call("PUT", `/${encodeURIComponent(id)}`, { values }, "api/data/rows")) as {
+          row?: unknown;
+        }
+      )?.row,
+    );
+  deleteRow = async (id: string) =>
+    void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/data/rows"));
+  restoreRow = async (id: string) =>
+    void (await this.call("POST", `/${encodeURIComponent(id)}/restore`, {}, "api/data/rows"));
   extensions = async (): Promise<ExtensionView[]> => {
     const b = await this.call("GET", "extensions");
     return isObj(b) && Array.isArray(b.extensions)

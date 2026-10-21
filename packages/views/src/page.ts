@@ -25,7 +25,22 @@ export type PageBlock =
   /** A link to another of the user's pages (a subpage), shown with its icon and name. */
   | { id: string; type: "page"; page: string }
   | { id: string; type: "chart"; chart: string }
+  /** A collection of the user's shown as a Notion database view (plan PR 19). */
+  | { id: string; type: "database"; source: string; view: DatabaseView }
   | { id: string; type: "action"; screen: string; label: string; shortcut?: string };
+
+/** How a database block shows its collection: Notion's layouts and their settings, all closed. */
+export interface DatabaseView {
+  layout: "table" | "board" | "list" | "gallery" | "calendar";
+  /** The select field whose options are a board's columns. */
+  group?: string;
+  /** The date field a calendar places rows by. */
+  date?: string;
+  sort?: { field: string; desc?: boolean };
+  /** Properties not shown in this view. */
+  hide?: string[];
+}
+export const DATABASE_LAYOUTS = ["table", "board", "list", "gallery", "calendar"] as const;
 
 export interface PageSpec {
   version: 1;
@@ -46,7 +61,14 @@ export const TEXT_BLOCKS = [
   "callout",
   "code",
 ] as const;
-export const PAGE_BLOCKS = [...TEXT_BLOCKS, "divider", "page", "chart", "action"] as const;
+export const PAGE_BLOCKS = [
+  ...TEXT_BLOCKS,
+  "divider",
+  "page",
+  "chart",
+  "database",
+  "action",
+] as const;
 export const PAGE_LIMITS = {
   blocks: 1000,
   heading: 200,
@@ -136,6 +158,32 @@ export function pageErrors(spec: unknown): string[] {
         if (!only(b, ["id", "type", "chart"]) || typeof b.chart !== "string" || !ID.test(b.chart))
           errors.push(`${w}: a chart names its chart`);
         break;
+      case "database": {
+        const v = isObj(b.view) ? b.view : null;
+        const okField = (f: unknown) => f === undefined || (typeof f === "string" && ID.test(f));
+        const sortOk =
+          v?.sort === undefined ||
+          (isObj(v.sort) &&
+            only(v.sort, ["field", "desc"]) &&
+            okField(v.sort.field) &&
+            v.sort.field !== undefined &&
+            (v.sort.desc === undefined || typeof v.sort.desc === "boolean"));
+        if (
+          !only(b, ["id", "type", "source", "view"]) ||
+          typeof b.source !== "string" ||
+          !ID.test(b.source) ||
+          !v ||
+          !only(v, ["layout", "group", "date", "sort", "hide"]) ||
+          !(DATABASE_LAYOUTS as readonly unknown[]).includes(v.layout) ||
+          !okField(v.group) ||
+          !okField(v.date) ||
+          !sortOk ||
+          (v.hide !== undefined &&
+            (!Array.isArray(v.hide) || v.hide.length > 100 || !v.hide.every((f) => okField(f))))
+        )
+          errors.push(`${w}: a database names its collection and a closed view`);
+        break;
+      }
       case "action":
         if (
           !only(b, ["id", "type", "screen", "label", "shortcut"]) ||

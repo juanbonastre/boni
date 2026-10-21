@@ -4,6 +4,8 @@ export * from "./dates.ts";
 export { type EntityProfileOptions, entityMonths, entityProfile } from "./entities.ts";
 export * from "./money.ts";
 export {
+  DATABASE_LAYOUTS,
+  type DatabaseView,
   emptyPage,
   PAGE_BLOCKS,
   PAGE_LIMITS,

@@ -6,6 +6,15 @@ import { exportZip } from "@boni/export";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
 import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
+import {
+  createRow,
+  DataError,
+  listRows,
+  listTypes,
+  removeRow,
+  restoreRow,
+  updateRow,
+} from "./data.ts";
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
@@ -252,6 +261,42 @@ export function makeApp(opts: ServerOptions): App {
         device: s.device,
         trust: s.trust,
       });
+    }
+    if (route.includes(" /api/data/")) {
+      // The user's collections as databases (data.ts): only from a personal device, reading too (the rows
+      // hold what the AI may not see and money).
+      const s = sessionUser(db, tokenOf(req));
+      if (!s) return send(res, 401, { error: "unauthorized" });
+      if (!opts.agent?.hasData) return send(res, 503, { error: "no-store" });
+      if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const store = opts.agent.store(s.user.id);
+      try {
+        if (route === "GET /api/data/types") return send(res, 200, { types: listTypes(store) });
+        if (route === "GET /api/data/types/:type/rows")
+          return send(res, 200, listRows(store, params.type ?? ""));
+        if (route === "POST /api/data/types/:type/rows") {
+          const b = (await bodyOf(req)) as { values?: unknown };
+          return send(res, 200, {
+            row: createRow(store, params.type ?? "", b.values ?? {}, s.device),
+          });
+        }
+        if (route === "PUT /api/data/rows/:id") {
+          const b = (await bodyOf(req)) as { values?: unknown };
+          return send(res, 200, { row: updateRow(store, params.id ?? "", b.values, s.device) });
+        }
+        if (route === "DELETE /api/data/rows/:id") {
+          removeRow(store, params.id ?? "", s.device);
+          return send(res, 200, {});
+        }
+        if (route === "POST /api/data/rows/:id/restore") {
+          restoreRow(store, params.id ?? "", s.device);
+          return send(res, 200, {});
+        }
+      } catch (e) {
+        if (e instanceof DataError)
+          return send(res, e.code === "not-found" ? 404 : 400, { error: e.code });
+        throw e;
+      }
     }
     if (
       route.startsWith("GET /api/pages") ||
