@@ -358,6 +358,44 @@ export function parseMail(v: unknown): MailView | null {
     },
   };
 }
+/** An installed extension as the server shows it (docs/extensiones.md 3). */
+export interface ExtensionView {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  /** The preset version it still is, or null once it was changed. */
+  preset: number | null;
+  enabled: boolean;
+  reads: string[];
+  proposes: boolean;
+  readersPerDay: number | null;
+  sources: string[];
+  modules: string[];
+}
+
+function parseExtension(v: unknown): ExtensionView | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id, 40);
+  const name = str(v.name, 60);
+  if (!id || !name) return null;
+  const needs = isObj(v.needs) ? v.needs : {};
+  const budget = isObj(needs.budget) ? needs.budget.readersPerDay : null;
+  return {
+    id,
+    name,
+    description: str(v.description, 300) ?? "",
+    version: typeof v.version === "number" ? v.version : 1,
+    preset: typeof v.preset === "number" ? v.preset : null,
+    enabled: v.enabled !== false,
+    reads: strs(needs.reads),
+    proposes: needs.proposes === true,
+    readersPerDay: typeof budget === "number" ? budget : null,
+    sources: strs(v.sources),
+    modules: strs(v.modules),
+  };
+}
+
 /** Juan's reading guide (docs/nucleo.md 7.4b): his words, the code's rules, the examples he keeps. */
 export interface MailRule {
   id: string;
@@ -500,6 +538,14 @@ export class AgentApi {
       return [{ id, name, level, count: typeof t.count === "number" ? t.count : 0 }];
     });
   }
+  extensions = async (): Promise<ExtensionView[]> => {
+    const b = await this.call("GET", "extensions");
+    return isObj(b) && Array.isArray(b.extensions)
+      ? b.extensions.map(parseExtension).filter((x): x is ExtensionView => !!x)
+      : [];
+  };
+  setExtension = async (id: string, enabled: boolean) =>
+    void (await this.call("PUT", `extensions/${encodeURIComponent(id)}`, { enabled }));
   setVisibility = async (id: string, level: AiLevel) =>
     void (await this.call("PUT", `visibility/${encodeURIComponent(id)}`, { level }));
   async runDetail(id: string): Promise<RunDetail | null> {

@@ -9,12 +9,11 @@ import type { ModelProvider, ModelRequest } from "./providers.ts";
 import { checkReaderOutput, delimit, READER_PROMPTS, READER_SCHEMAS } from "./readers.ts";
 import {
   checkReadMessage,
-  MODULE_IDS,
-  modulesOf,
   type ReadingModule,
   readGuide,
   readMessagePrompt,
   readMessageSchema,
+  resolveModules,
   USER_IN,
   type UserIn,
   weekdayOf,
@@ -235,6 +234,8 @@ interface RunState {
   control: Label | null;
   controlDone: boolean;
   env: Map<string, Val>;
+  /** Background work of an extension: its own daily budget of reader calls. */
+  budget?: { key: string; perDay: number };
   counters: {
     writes: number;
     sensitiveReads: number;
@@ -359,6 +360,8 @@ export class Agent {
     plan: unknown,
     bind: Record<string, Val> = {},
     keep: readonly string[] = [],
+    /** An extension's own daily budget of reader calls, on top of the account's (P13). */
+    budget?: { key: string; perDay: number },
   ): Promise<TurnResult> {
     const origin: Origin = { kind: "background", trust: "personal" };
     const run = randomUUID();
@@ -373,6 +376,7 @@ export class Agent {
     const v = validatePlan(plan, this.catalogView(origin), "", Object.keys(bind));
     if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
     for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
+    if (budget) st.budget = budget;
     st.plan = v.plan;
     this.o.store.journal.setPlan(run, st.plan);
     const r = await this.advance(st);
@@ -869,14 +873,9 @@ export class Agent {
     let mods: ReadingModule[] = [];
     let userIn: string | null = null;
     if (step.reader === "read_message") {
-      const m = params.modules ? plain(params.modules) : null;
-      if (
-        !Array.isArray(m) ||
-        !m.length ||
-        !m.every((x) => typeof x === "string" && MODULE_IDS.includes(x))
-      )
-        throw new Stop("reader-bad-modules");
-      mods = modulesOf(m as string[]);
+      const m = params.modules ? resolveModules(plain(params.modules)) : null;
+      if (!m) throw new Stop("reader-bad-modules");
+      mods = m;
       const u = params.user_in ? plain(params.user_in) : "group";
       if (!USER_IN.includes(u as UserIn)) throw new Stop("reader-bad-user-in");
       userIn = u as string;
@@ -899,8 +898,16 @@ export class Agent {
     if (st.origin.kind === "background") {
       const day = this.today();
       const sender = inLabel.sources.find((s) => s.kind === "mail");
-      const keys = ["reader", ...(sender ? [`reader:${sender.kind}:${sender.id}`] : [])];
-      const limits = [this.limits.readersPerDay, this.limits.readersPerSenderPerDay];
+      const keys = [
+        "reader",
+        ...(sender ? [`reader:${sender.kind}:${sender.id}`] : []),
+        ...(st.budget ? [`reader:ext:${st.budget.key}`] : []),
+      ];
+      const limits = [
+        this.limits.readersPerDay,
+        ...(sender ? [this.limits.readersPerSenderPerDay] : []),
+        ...(st.budget ? [st.budget.perDay] : []),
+      ];
       if (keys.some((k, i) => this.o.store.journal.spent(day, k) >= (limits[i] as number))) {
         if (!st.notices.some((n) => n.code === "budget")) st.notices.push({ code: "budget" });
         this.log(st, step, "read", "deny", "P13", { reason: "daily-budget" });

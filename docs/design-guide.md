@@ -207,8 +207,11 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it (names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
-  window): Cuenta, Lo que ve la IA, Correo, Tus datos, Apariencia, Escritorio (only those that apply). It opens on
-  Cuenta. **Lo que ve la IA**: the three levels explained once at the top, then one row per collection with a select.
+  window): Cuenta, Lo que ve la IA, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only those that apply).
+  It opens on Cuenta. **Extensiones** (docs/extensiones.md): a note on what they are, then per extension its name and
+  what it does in one line with its switch, and under it a closed "Qué usa" group whose summary says whether it is
+  as it came ("Viene con Boni (versión 1)") or changed; inside, in plain words (never ids): where it brings data from,
+  what it reads, what it looks for, whether it proposes, its daily budget. **Lo que ve la IA**: the three levels explained once at the top, then one row per collection with a select.
   **Correo**: not connected, server (`imap.gmail.com` by default), folder, user and app password, and "Conectar", which
   tries the connection before anything is kept (a wrong password is said under the form). Connected: who, the last
   check and how many mails, and "Comprobar ahora"; under it three closed groups, each with a summary on its right:

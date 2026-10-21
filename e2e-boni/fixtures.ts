@@ -77,7 +77,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/proposals\/[^/]+\//, "/proposals/:id/")
             .replace(/\/runs\/[^/]+\//, "/runs/:id/")
             .replace(/\/runs\/[^/]+$/, "/runs/:id")
-            .replace(/\/visibility\/[^/]+$/, "/visibility/:type")}`;
+            .replace(/\/visibility\/[^/]+$/, "/visibility/:type")
+            .replace(/\/extensions\/[^/]+$/, "/extensions/:id")}`;
           const list = opts.agent?.[key];
           if (!list?.length) return [503, '{"error":"agent-off"}'];
           const n = agentCalls[key] ?? 0;

@@ -9,6 +9,7 @@ import {
   type ToolRegistry,
 } from "@boni/agent";
 import { openUserStore, type UserStore } from "@boni/store";
+import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 
 /**
@@ -29,6 +30,8 @@ import { bodyOf, CORS, SAFE, send } from "./reply.ts";
  *   GET  /api/agent/events                   -> Server-Sent Events: "notify" ({ text }) and "proposals"
  *   GET  /api/agent/visibility               -> { types: [{ id, name, level, count }] } what the models may see
  *   PUT  /api/agent/visibility/:type         { level: visible | opaque | hidden } (a personal device only)
+ *   GET  /api/agent/extensions               -> { extensions: [{ id, name, description, version, preset, enabled, needs, … }] }
+ *   PUT  /api/agent/extensions/:id           { enabled } (a personal device only; off, the extension does nothing)
  */
 export interface Providers {
   planner: ModelProvider;
@@ -71,6 +74,7 @@ export class AgentHost {
       mkdirSync(users, { recursive: true, mode: 0o700 });
       s = openUserStore(join(users, `${account}.db`), this.o.now ? { now: this.o.now } : {});
       ensureSystemTypes(s);
+      ensurePresets(s);
       this.stores.set(account, s);
     }
     return s;
@@ -257,6 +261,36 @@ async function answerAgent(
       if (!type || type.system) return send(res, 404, { error: "not-found" });
       store.setAiAccess(type.id, level, who.device);
       return send(res, 200, { id: type.id, level });
+    }
+    case "GET /api/agent/extensions": {
+      // The installed extensions (docs/extensiones.md 3): what each is, what it asks for, on or off; the
+      // collections it reads by their names.
+      const store = host.store(who.account);
+      const types = Object.values(store.schema().types);
+      const nameOf = (key: string) => types.find((t) => t.key === key)?.name ?? key;
+      return send(res, 200, {
+        extensions: installed(store).map((i) => ({
+          id: i.manifest.id,
+          name: i.manifest.name,
+          description: i.manifest.description ?? "",
+          version: i.manifest.version,
+          preset: i.preset,
+          enabled: i.enabled,
+          needs: { ...i.manifest.needs, reads: i.manifest.needs.reads.map(nameOf) },
+          sources: (i.manifest.sources ?? []).map((s) => s.connector),
+          modules: (i.manifest.readers ?? []).map((r) => r.module),
+        })),
+      });
+    }
+    case "PUT /api/agent/extensions/:id": {
+      // Juan's choice, from a personal device.
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const b = await bodyOf(req);
+      if (typeof b.enabled !== "boolean") return bad();
+      const i = setEnabled(host.store(who.account), params.id ?? "", b.enabled, who.device);
+      return i
+        ? send(res, 200, { id: i.manifest.id, enabled: i.enabled })
+        : send(res, 404, { error: "not-found" });
     }
     case "GET /api/agent/events": {
       res.writeHead(200, {

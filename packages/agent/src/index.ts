@@ -47,6 +47,7 @@ export {
   type ReadingModule,
   readMessagePrompt,
   readMessageSchema,
+  resolveModules,
   USER_IN,
   type UserIn,
   weekdayOf,

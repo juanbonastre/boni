@@ -3,17 +3,20 @@ import type { Duplex } from "node:stream";
 import {
   GUIDE_LIMITS,
   guideValue,
-  MODULES,
-  modulesOf,
+  leaf,
+  plain,
   type ReadingGuide,
   readMessagePrompt,
+  resolveModules,
   type UserIn,
 } from "@boni/agent";
 import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
+import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
 import { BODY, type UserStore } from "@boni/store";
 import type { AgentHost } from "./agent.ts";
 import type { Db } from "./db.ts";
+import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import { decisions, review, type Suggestion } from "./mailReview.ts";
 import { decrypt, encrypt, type SecretKey } from "./secret.ts";
 
@@ -91,8 +94,6 @@ export interface GuideExample {
   mail: string;
   want: ReadingGuide["examples"][number]["want"];
 }
-/** Decisions of Juan's on mail proposals between two reviews. */
-const REVIEW_EVERY = 20;
 const EMPTY_GUIDE: MailGuide = { instructions: "", rules: [], examples: [] };
 const SENDER = /^(@[a-z0-9.-]+\.[a-z]{2,}|[^\s@]+@[a-z0-9.-]+\.[a-z]{2,})$/i;
 
@@ -102,6 +103,19 @@ export const guideOf = (g: MailGuide) =>
     instructions: g.instructions,
     examples: g.examples.map((e) => ({ mail: e.mail, want: e.want })),
   });
+
+/** The modules of an extension as the reader gets them (`$modules`, bound by code): built-in ones by id,
+ * its own with their kind and prompt part. */
+export const modulesOfManifest = (m: ExtensionManifest) =>
+  leaf(
+    (m.readers ?? []).map((r) =>
+      "kind" in r ? { id: r.module, kind: r.kind, prompt: r.prompt } : r.module,
+    ),
+    label("own", "public", [{ kind: "code", id: `extension:${m.id}` }]),
+  );
+const moduleIds = (m: ExtensionManifest) => (m.readers ?? []).map((r) => r.module);
+const budgetOf = (m: ExtensionManifest) =>
+  m.needs.budget ? { key: m.id, perDay: m.needs.budget.readersPerDay } : undefined;
 
 /** The first rule of the guide for mail from `address`. */
 export function ruleFor(guide: MailGuide, address: string): MailRule | null {
@@ -188,11 +202,24 @@ export function mailPlan(
     has?: readonly string[];
     known?: string[];
     userIn?: UserIn;
+    /** The extension's module ids (each one's items go where its route says). */
     modules?: string[];
+    /** The reader gets `$modules` (the extension's definitions, bound by code) instead of built-in ids. */
+    boundModules?: boolean;
+    /** Per module: propose in the collection the reader picks among `targets` (default), in a fixed one
+     * (`fixed`), or nothing. */
+    routes?: Record<string, RouteSpec>;
+    fixed?: Target[];
     /** The plan reads `$guide` (the code binds it: Agent.background). */
     guide?: boolean;
   } = {},
 ): unknown {
+  const modules = o.modules ?? MAIL_MODULES;
+  const route = (m: string): RouteSpec => o.routes?.[m] ?? { propose: "chosen" };
+  const chosen = modules.filter((m) => {
+    const r = route(m);
+    return "propose" in r && r.propose === "chosen";
+  });
   const has = new Set(o.has ?? ["asunto", "body"]);
   const parts: unknown[] = [];
   const line = (name: string, ...keys: [string, string, string][]) => {
@@ -223,14 +250,34 @@ export function mailPlan(
       reader: "read_message",
       input: text,
       params: {
-        modules: { fn: "list", args: (o.modules ?? MAIL_MODULES).map((m) => ({ lit: m })) },
+        modules: o.boundModules
+          ? { ref: "$modules" }
+          : { fn: "list", args: modules.map((m) => ({ lit: m })) },
         user_in: { lit: o.userIn ?? "group" },
         ...(known.length ? { known: { fn: "list", args: known.map((k) => ({ lit: k })) } } : {}),
         ...(o.guide ? { guide: { ref: "$guide" } } : {}),
       },
     },
   ];
-  if (targets.length > 1)
+  const create = (id: string, module: string, t: Target, when?: unknown) => ({
+    id,
+    op: "call",
+    tool: "entities.create",
+    each: { ref: `$r.${module}` },
+    ...(when ? { when } : {}),
+    args: {
+      type: { lit: t.key },
+      values: {
+        fn: "obj",
+        args: [
+          { lit: "title" },
+          { ref: "$item.title" },
+          ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
+        ],
+      },
+    },
+  });
+  if (chosen.length && targets.length > 1)
     steps.push({
       id: "c",
       op: "read",
@@ -245,28 +292,22 @@ export function mailPlan(
       when: { ref: "$r.all" },
     });
   targets.forEach((t, i) => {
-    for (const module of o.modules ?? MAIL_MODULES)
-      steps.push({
-        id: `n${i}_${module}`,
-        op: "call",
-        tool: "entities.create",
-        each: { ref: `$r.${module}` },
-        ...(targets.length > 1
-          ? { when: { fn: "eq", args: [{ ref: "$c.choice" }, { lit: t.option }] } }
-          : {}),
-        args: {
-          type: { lit: t.key },
-          values: {
-            fn: "obj",
-            args: [
-              { lit: "title" },
-              { ref: "$item.title" },
-              ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
-            ],
-          },
-        },
-      });
+    for (const module of chosen)
+      steps.push(
+        create(
+          `n${i}_${module}`,
+          module,
+          t,
+          targets.length > 1 ? { fn: "eq", args: [{ ref: "$c.choice" }, { lit: t.option }] } : null,
+        ),
+      );
   });
+  for (const module of modules) {
+    const r = route(module);
+    if (!("propose" in r) || r.propose === "chosen") continue;
+    const t = o.fixed?.find((x) => x.id === r.propose.collection);
+    if (t) steps.push(create(`f_${module}`, module, t));
+  }
   return { version: 1, steps };
 }
 
@@ -491,11 +532,26 @@ export class Mails {
   /** What a reading is: the prompt with the mail modules and the guide the reader gets (a short hash). */
   readingVersion(account: number): string {
     const g = this.guide(account);
+    const mods = resolveModules(plain(modulesOfManifest(this.manifest(account)))) ?? [];
     return createHash("sha256")
-      .update(readMessagePrompt(modulesOf(MAIL_MODULES)))
+      .update(readMessagePrompt(mods))
       .update(JSON.stringify([g.instructions, g.examples.map((e) => [e.mail, e.want])]))
       .digest("hex")
       .slice(0, 12);
+  }
+
+  /** The mail extension's manifest for this account (the preset until the store has one). */
+  manifest(account: number): ExtensionManifest {
+    return this.o.host.hasData
+      ? (extension(this.o.host.store(account), MAIL_EXTENSION.id)?.manifest ?? MAIL_EXTENSION)
+      : MAIL_EXTENSION;
+  }
+
+  /** Whether the mail extension is on (Settings → Extensiones); off, nothing is fetched or read. */
+  enabled(account: number): boolean {
+    return !this.o.host.hasData
+      ? true
+      : (extension(this.o.host.store(account), MAIL_EXTENSION.id)?.enabled ?? true);
   }
 
   /** Reads one mail with a guide as the mail plan would, without proposing anything: the titles it keeps. */
@@ -510,14 +566,18 @@ export class Mails {
       (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
     );
     const withGuide = !!(g.instructions || g.examples.length);
+    const m = this.manifest(account);
     const r = await this.o.host.agent(account).background(
       mailPlan(mail, [], {
         has: e.entity.body ? [...has, "body"] : has,
         userIn: userIn(s.user, v.f_para, v.f_cc),
         guide: withGuide,
+        modules: moduleIds(m),
+        boundModules: true,
       }),
-      withGuide ? { guide: guideOf(g) } : {},
+      { modules: modulesOfManifest(m), ...(withGuide ? { guide: guideOf(g) } : {}) },
       ["r"],
+      budgetOf(m),
     );
     const all = (r.kept?.r as { all?: { title: string }[] } | undefined)?.all;
     return all ? all.map((x) => x.title) : null;
@@ -745,7 +805,7 @@ export class Mails {
   private async run(account: number): Promise<MailState> {
     const s = this.settings(account);
     const st = this.state(account);
-    if (!s || !this.o.host.hasData) return st;
+    if (!s || !this.o.host.hasData || !this.enabled(account)) return st;
     const store = this.o.host.store(account);
     const made: string[] = [];
     let r: ImapReader | null = null;
@@ -819,9 +879,13 @@ export class Mails {
    * outside text may get (A14), and its answer can only be one of them.
    */
   private targets(store: UserStore, s: MailSettings): Target[] {
+    return this.targetsFor(store, s.collections);
+  }
+
+  private targetsFor(store: UserStore, ids: readonly string[]): Target[] {
     const levels = store.aiAccess();
     const types = store.schema().types;
-    return s.collections.flatMap((id) => {
+    return ids.flatMap((id) => {
       const t = types[id];
       if (!t || t.archived || t.system || levels[id] === "hidden") return [];
       const all = store.list(id);
@@ -863,17 +927,24 @@ export class Mails {
    * no collection marked.
    */
   private async propose(account: number, s: MailSettings, st: MailState): Promise<void> {
-    if (!this.o.host.on || !st.pending?.length) return;
+    if (!this.o.host.on || !st.pending?.length || !this.enabled(account)) return;
     const store = this.o.host.store(account);
     const targets = this.targets(store, s);
-    if (!targets.length) return;
+    const m = this.manifest(account);
+    // Collections a route names by id, whether or not they are marked (never a hidden or system one).
+    const fixedIds = Object.values(m.routes ?? {}).flatMap((r) =>
+      "propose" in r && r.propose !== "chosen" ? [r.propose.collection] : [],
+    );
+    const fixed = this.targetsFor(store, fixedIds);
+    if (!targets.length && !fixed.length) return;
     const agent = this.o.host.agent(account);
     const guide = this.guide(account);
     const version = this.readingVersion(account);
     const withGuide = !!(guide.instructions || guide.examples.length);
-    const bound: Record<string, ReturnType<typeof guideValue>> = withGuide
-      ? { guide: guideOf(guide) }
-      : {};
+    const bound: Record<string, ReturnType<typeof guideValue>> = {
+      modules: modulesOfManifest(m),
+      ...(withGuide ? { guide: guideOf(guide) } : {}),
+    };
     let n = 0;
     for (const id of st.pending.slice(0, this.o.perCheck ?? 50)) {
       st.pending = st.pending.filter((x) => x !== id);
@@ -903,8 +974,14 @@ export class Mails {
             known: from ? this.known(store, from) : [],
             userIn: userIn(s.user, v.f_para, v.f_cc),
             guide: withGuide,
+            modules: moduleIds(m),
+            boundModules: true,
+            ...(m.routes ? { routes: m.routes } : {}),
+            fixed,
           }),
           bound,
+          [],
+          budgetOf(m),
         );
         n += r.proposals.length;
         if (r.status === "stopped" && r.error)
@@ -914,12 +991,14 @@ export class Mails {
       }
     }
     if (n) this.o.host.emit(account, "proposals", { n });
-    // Every 20 new decisions of Juan's on mail proposals, the reviewer looks (in the background).
+    // Every `learning.every` new decisions of Juan's (the extension's manifest), the reviewer looks, in
+    // the background.
+    if (!m.learning) return;
     const since = st.reviewedAt ?? 0;
     const fresh = store.journal
       .proposals()
       .filter((p) => p.decided !== null && p.decided > since && p.status !== "stale").length;
-    if (fresh >= REVIEW_EVERY && !st.suggestion) void this.reviewNow(account).catch(() => null);
+    if (fresh >= m.learning.every && !st.suggestion) void this.reviewNow(account).catch(() => null);
   }
 
   /** The titles of the proposals from `sender`'s mail still waiting in the inbox (the latest 20). */

@@ -71,6 +71,7 @@ describe("the export", () => {
       "csv/movimiento.csv",
       "csv/persona.csv",
       "csv/proyecto.csv",
+      "json/extension.ndjson",
       "json/job.ndjson",
       "json/memory.ndjson",
       "json/movimiento.ndjson",

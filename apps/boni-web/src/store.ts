@@ -3,6 +3,7 @@ import { create } from "zustand";
 import {
   AgentApi,
   type AiLevel,
+  type ExtensionView,
   type MailGuide,
   type MailInput,
   type MailView,
@@ -1018,6 +1019,26 @@ export async function undoRun(id: string) {
 }
 
 /** What the models may see of each collection, or null when the agent is off or unreachable. */
+/** The installed extensions; null when they cannot be read (agent off, offline). */
+export async function loadExtensions(): Promise<ExtensionView[] | null> {
+  try {
+    return await agent.extensions();
+  } catch {
+    return null;
+  }
+}
+
+/** Juan turns an extension on or off; false when the server did not take it. */
+export async function changeExtension(id: string, enabled: boolean): Promise<boolean> {
+  try {
+    await agent.setExtension(id, enabled);
+    return true;
+  } catch {
+    toast(useStore.getState().t("ext.error"));
+    return false;
+  }
+}
+
 export async function loadVisibility(): Promise<Visibility[] | null> {
   try {
     return await agent.visibility();

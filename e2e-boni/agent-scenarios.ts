@@ -356,3 +356,32 @@ export const MAIL_SUGGESTED = {
     },
   },
 };
+
+/** The installed extensions (invented: the mail preset and one Juan changed). */
+export const EXTENSIONS = {
+  extensions: [
+    {
+      id: "correo",
+      name: "Correo",
+      description:
+        "Trae el correo de tu buzón (solo lectura) y propone las tareas y citas que te pide, en la colección que elige la IA entre las que marcas.",
+      version: 1,
+      preset: 1,
+      enabled: true,
+      needs: { reads: ["Correos"], proposes: true, budget: { readersPerDay: 150 } },
+      sources: ["imap"],
+      modules: ["tasks", "events"],
+    },
+    {
+      id: "plazos",
+      name: "Plazos de los documentos",
+      description: "Busca fechas de entrega en tus documentos.",
+      version: 3,
+      preset: null,
+      enabled: false,
+      needs: { reads: ["Documentos"], proposes: true },
+      sources: [],
+      modules: ["deadlines"],
+    },
+  ],
+};
