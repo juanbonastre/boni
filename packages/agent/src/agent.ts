@@ -53,7 +53,7 @@ The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "
 one "op":
 - {"id", "op": "call", "tool", "args": {name: expr}}: a tool from "tools", with its argument names.
 - {"id", "op": "read", "reader", "input": expr, "params"}: a reader model reads a text and fills a fixed form.
-  Readers: extract_tasks (tasks a message asks for), classify (params.options: the allowed answers; params.question,
+  Readers: extract_tasks (tasks a message asks for; params.known, optional: tasks already proposed, left out), classify (params.options: the allowed answers; params.question,
   optional: what to choose for), summarize, rewrite (params.instruction), answer_about (params.question). Use them for
   text from outside (e-mails, pages).
 - {"id", "op": "ask", "control": "choice" | "text", "prompt": expr, "options": expr}: ask the user; choice options
@@ -807,6 +807,14 @@ export class Agent {
           this.log(st, step, "read", "deny", "R1", { reason: "private-data-to-reader" });
           throw new Stop("R1-private-data-to-reader");
         }
+    const known = params.known ? plain(params.known) : null;
+    if (
+      known !== null &&
+      (!Array.isArray(known) ||
+        known.length > 20 ||
+        known.some((x) => typeof x !== "string" || x.length > 200))
+    )
+      throw new Stop("reader-bad-known");
     let options: string[] = [];
     if (step.reader === "classify") {
       const o = params.options ? plain(params.options) : null;
@@ -843,6 +851,7 @@ export class Agent {
           content: text,
           ...(params.instruction ? { instruction: plain(params.instruction) } : {}),
           ...(params.question ? { question: plain(params.question) } : {}),
+          ...(known?.length ? { known } : {}),
           ...(options.length ? { options } : {}),
         },
         schema: READER_SCHEMAS[step.reader],

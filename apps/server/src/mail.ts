@@ -96,15 +96,30 @@ export function dueField(
  * The background plan for one mail (docs/nucleo.md 7.12, a plan template made by code): read the mail,
  * list its tasks, pick a collection when there are several (only if there are tasks), and one
  * `entities.create` per task in the chosen one. Every value comes from the mail, so the policy sends each
- * one to the inbox (P4, P7); nothing here is written by itself.
+ * one to the inbox (P4, P7); nothing here is written by itself. `known`: the titles of the tasks still
+ * waiting in the inbox from the same sender, so a reminder or a second mail about the same thing does not
+ * propose it again (that sender's own text: nothing of Juan's goes to the reader, A14).
  */
-export function mailPlan(mail: string, hasBody: boolean, targets: Target[]): unknown {
+export function mailPlan(
+  mail: string,
+  hasBody: boolean,
+  targets: Target[],
+  known: string[] = [],
+): unknown {
   const text = hasBody
     ? { fn: "concat", args: [{ ref: "$m.asunto" }, { lit: "\n\n" }, { ref: "$m.body" }] }
     : { ref: "$m.asunto" };
   const steps: unknown[] = [
     { id: "m", op: "call", tool: "entities.get", args: { id: { lit: mail } } },
-    { id: "t", op: "read", reader: "extract_tasks", input: text },
+    {
+      id: "t",
+      op: "read",
+      reader: "extract_tasks",
+      input: text,
+      ...(known.length
+        ? { params: { known: { fn: "list", args: known.map((k) => ({ lit: k })) } } }
+        : {}),
+    },
   ];
   if (targets.length > 1)
     steps.push({
@@ -571,7 +586,10 @@ export class Mails {
       const e = store.get(id);
       if (!e || e.entity.deleted !== undefined) continue;
       try {
-        const r = await agent.background(mailPlan(id, Boolean(e.entity.body), targets));
+        const from = String(e.entity.values.f_de ?? "");
+        const r = await agent.background(
+          mailPlan(id, Boolean(e.entity.body), targets, from ? this.known(store, from) : []),
+        );
         n += r.proposals.length;
         if (r.status === "stopped" && r.error)
           console.warn(`mail ${account}: plan stopped (${r.error})`);
@@ -580,6 +598,21 @@ export class Mails {
       }
     }
     if (n) this.o.host.emit(account, "proposals", { n });
+  }
+
+  /** The titles of the proposals from `sender`'s mail still waiting in the inbox (the latest 20). */
+  private known(store: UserStore, sender: string): string[] {
+    const titles = store.journal
+      .proposals("pending")
+      .filter((p) => p.tool === "entities.create" && p.sources.includes(`mail:${sender}`))
+      .sort((a, b) => b.created - a.created)
+      .map((p) => {
+        const rows = (p.view as { rows?: { arg: string; value: unknown }[] }).rows ?? [];
+        return rows.find((r) => r.arg === "values.title")?.value;
+      })
+      .filter((v): v is string => typeof v === "string" && v !== "")
+      .map((v) => v.slice(0, 200));
+    return [...new Set(titles)].slice(0, 20);
   }
 
   /** Every `everyMs`, the accounts whose mailbox is on. */
