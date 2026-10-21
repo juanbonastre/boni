@@ -597,6 +597,17 @@ export class AgentApi {
     },
   ) =>
     parsePage((await this.call("PUT", `/${encodeURIComponent(id)}`, input, "api/pages")) as never);
+  trash = async (): Promise<(PageInfo & { deleted: number })[]> => {
+    const b = await this.call("GET", "", undefined, "api/pages-trash");
+    return isObj(b) && Array.isArray(b.pages)
+      ? b.pages.flatMap((x) => {
+          const i = parsePageInfo(x);
+          return i && isObj(x)
+            ? [{ ...i, deleted: typeof x.deleted === "number" ? x.deleted : 0 }]
+            : [];
+        })
+      : [];
+  };
   restorePage = async (id: string) =>
     void (await this.call("POST", `/${encodeURIComponent(id)}/restore`, {}, "api/pages"));
   deletePage = async (id: string) =>

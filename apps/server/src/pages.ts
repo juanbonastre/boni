@@ -157,6 +157,17 @@ export function removePage(store: UserStore, id: string, device?: string): void 
   store.remove(id, meta(device));
 }
 
+/** The trash: pages removed, the latest first (Notion's Trash; restore brings one back). */
+export function listTrash(store: UserStore): (PageInfo & { deleted: number })[] {
+  if (!store.schema().types.page) return [];
+  return store
+    .list("page", { includeDeleted: true })
+    .filter((e) => e.entity.deleted !== undefined)
+    .map((e) => ({ ...info(toPage(e.entity)), deleted: Number(e.entity.deleted) || 0 }))
+    .sort((a, b) => b.deleted - a.deleted)
+    .slice(0, 200);
+}
+
 /** Undo of a removal: the page back from the trash (its subpages stay where they moved). */
 export function restorePage(store: UserStore, id: string, device?: string): Page {
   const e = store.get(id);
