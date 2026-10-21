@@ -1,6 +1,6 @@
 # Boni extensible: extensiones, memoria y autoconocimiento
 
-Propuesta (Claude, 2026-10-21) a petición de Juan, pendiente de su aprobación. Amplía `docs/nucleo.md`: aquel define el
+Propuesta (Claude, 2026-10-21) a petición de Juan; lo decidido está en la sección 11. Amplía `docs/nucleo.md`: aquel define el
 núcleo seguro (entidades, procedencia, agente con planes, políticas, lectores en cuarentena); este define **cómo se
 construye todo lo demás encima** sin que el código se llene de casos especiales. Prioridad: el escritorio (Electron y
 Chrome); el móvil, más adelante.
@@ -32,16 +32,38 @@ paquete de datos hecho solo con piezas del catálogo.
 Cada capa solo puede usar lo que le da la de arriba, y la de arriba la valida. Así la coherencia (robustez, estilo
 visual, forma de razonar, usabilidad) no depende de que cada función nueva se haga bien: depende de las capas.
 
-| Capa | Qué es | Quién la cambia | Ejemplos |
+| Capa | Qué es | Dónde vive | Quién la cambia |
 |---|---|---|---|
-| **0. Principios** | Las reglas de todo Boni | Juan (decisiones), con PR | Modelo de amenazas y políticas P1-P18 (`nucleo.md`), guía de diseño, "decide el código, no el modelo", "lo común primero" |
-| **1. Catálogos** | Las piezas, en código revisado y probado | Desarrollo (Claude Code + Juan), con PR | Herramientas, conectores, funciones de los planes, lectores base, componentes de interfaz, tipos de tarjeta, papeles de modelo |
-| **2. Extensiones** | Paquetes declarativos hechos con piezas del catálogo | Boni, **siempre como propuesta que Juan acepta**; o vienen hechas ("presets") | Correo, Calendario, Libros, "Plazos de mis PDF" |
-| **3. Datos** | Lo de Juan | Juan, y Boni dentro de las políticas | Entidades, la guía de lectura con sus reglas y ejemplos, valores de ajustes, decisiones |
+| **0. Principios** | Las reglas de todo Boni | El repo (`docs/`, y las políticas en código) | Juan con Claude Code, por PR. Desde Boni, solo los **parámetros** que el código expone, en la "Zona peligrosa" |
+| **1. Primitivas** | Lo que solo el código puede hacer con seguridad | El repo (código revisado y probado) | Juan con Claude Code, por PR |
+| **2. Definiciones y extensiones** | Lo que se compone con primitivas: conectores, componentes, herramientas compuestas, extensiones | El almacén del usuario (datos) | Boni, **siempre como propuesta que Juan acepta**; o vienen hechas ("presets") |
+| **3. Datos** | Lo de Juan | El almacén del usuario | Juan, y Boni dentro de las políticas |
 
-**La regla que lo ordena:** nada de la capa 2 o 3 puede hacer algo que el catálogo no permita. Una extensión no trae
-código: trae datos que el código interpreta, igual que un plan. Por eso Boni puede crear extensiones sin que eso sea
-"ejecutar lo que dice el modelo".
+**"Código" y "datos", en concreto:** el código es el repositorio `juanbonastre/boni` de GitHub, del que sale la app;
+se cambia con un PR (lo hace Claude Code, lo revisa Juan, pasa el CI y se despliega). Los datos son lo que vive dentro
+de Boni, en el almacén de Juan; se cambian desde Boni, con su permiso. **Boni da los bloques** (primitivas) y construye
+con ellos; como solo puede usar esos bloques, lo que construye no puede ser raro, inseguro ni salirse del estilo.
+
+**La regla que lo ordena:** nada de la capa 2 o 3 puede hacer algo que las primitivas no permitan. Una extensión no
+trae código: trae datos que el código interpreta, igual que un plan. Por eso Boni puede crear extensiones sin que eso
+sea "ejecutar lo que dice el modelo".
+
+### 2.1 Zona peligrosa (Ajustes)
+
+Los principios se cambian con Claude Code por PR. Pero algunos tienen **parámetros** que el código deja ajustar, y
+esos sí pueden cambiarse desde Boni, en una sección propia, "Zona peligrosa", al final de Ajustes:
+
+| Se puede ajustar ahí | Nunca, ni ahí |
+|---|---|
+| Qué clases de efecto se confirman siempre (hoy: toda salida a la red) | Que un contenido de fuera ordene algo (P2, P4, P9, P16) |
+| Presupuestos diarios por extensión y por papel | Que un literal del modelo sea un destino (P2, P14) |
+| Que una extensión use una red privada (un modelo en la LAN) | Que el planificador vea contenido externo (`toPlannerView`) |
+| Conceder a una extensión una capacidad que pide (`needs`) | Que algo se borre sin Deshacer o sin confirmar |
+| Proveedores de modelo y sus clases de privacidad | Que Boni cambie su propio código |
+
+Con fricción a propósito: solo desde un dispositivo personal, con el código de su app de autenticación (como
+agent-sudo), cada cambio explicado con su riesgo en una frase, apuntado en el registro y con Deshacer. Boni puede
+**proponer** un cambio de la zona peligrosa, pero nunca aplicarlo: siempre lo acepta Juan ahí.
 
 ## 3. La extensión
 
@@ -97,6 +119,25 @@ conector existe; si no existe, eso sí es un PR (capa 1).
    propuestas".
 4. Juan lo acepta en una tarjeta. Queda en el registro con Deshacer. Un correo nunca puede crear ni cambiar una
    extensión (P16, ampliada a manifiestos).
+
+### 3.1 Ampliar el catálogo desde Boni
+
+Juan: "a lo mejor hay algún conector que no se nos había ocurrido y se podría agregar desde Boni". Sí: el catálogo
+también tiene dos niveles. Las **primitivas** son código; las **definiciones** hechas con ellas son datos, y Boni puede
+proponerlas como cualquier extensión.
+
+| Pieza | Primitiva (código, PR) | Definición (dato, desde Boni) |
+|---|---|---|
+| Conector | Los protocolos: HTTP/JSON con sus tipos de autenticación (clave, OAuth, básica), IMAP, iCal, RSS, carpeta de archivos, webhooks de entrada, servidores MCP | "La API de X": dirección (la pone Juan), autenticación, rutas, paginación, qué campo va a qué columna. Así hace Airbyte sus conectores de bajo código: la mayoría de las API son formulaicas |
+| Componente | Los de la guía de diseño (sección 6) | Componentes compuestos: "tarjeta de tarea con su fecha y dos botones", hechos de componentes base |
+| Herramienta | Las del registro, con su clase de efecto | Herramientas compuestas: un plan guardado con parámetros ("archivar los correos de X") |
+| Lector | El lector base y su validación | Módulos de lectura (qué buscar) |
+
+Las definiciones heredan las garantías de su primitiva: un conector HTTP definido desde Boni descarga por `@boni/net`
+(solo direcciones públicas), su dirección la pone Juan (P18), lo que trae es `external`, y su clave se guarda cifrada.
+Un servidor MCP de terceros se da de alta como dice 7.10b: con su clasificación puesta a mano y su esquema fijado por
+hash; con esto, ese alta se hace desde la zona peligrosa en vez de en el código. Solo hace falta un PR cuando falta una
+**primitiva**: un protocolo nuevo, un componente base nuevo, una clase de efecto nueva.
 
 ## 4. Dónde se guarda cada cosa
 
@@ -156,24 +197,92 @@ que escribe un modelo no vuelve a su contexto sin el sí de Juan.
 crezca; caducidad y conflictos entre indicaciones ("Juan dijo X en marzo y lo contrario en junio": gana la última y se
 le pregunta); y una pantalla "Lo que Boni sabe de ti", por ámbito, donde todo se lee, se corrige y se borra.
 
-## 6. Interfaz: catálogo de componentes y especificaciones
+### 5.1 ¿Texto en una base de datos, o un grafo? (investigado, 2026-10-21)
 
-Para que Boni pueda construir funciones con un estilo coherente, la interfaz se divide igual que el resto:
+**Lo que se usa hoy en sistemas de memoria para agentes:**
+- **Tipos de memoria** tomados de las ciencias cognitivas: de trabajo (lo que entra en el contexto de cada llamada),
+  episódica (lo que pasó, con su fecha), semántica (hechos y relaciones) y procedimental (cómo hacer las cosas: reglas,
+  flujos, ejemplos).
+- **Grafos de conocimiento temporales**: Zep y su motor Graphiti guardan hechos como aristas de un grafo con dos
+  tiempos (cuándo fue verdad y cuándo se supo). Un hecho que otro contradice no se borra: se marca como dejó de ser
+  verdad (`invalid_at`). Es lo que mejor responde preguntas que dependen del tiempo.
+- **Bloques de memoria y consolidación en reposo** (Letta, antes MemGPT): unos pocos bloques pequeños siempre en
+  contexto ("sobre el usuario", "esta tarea"), un archivo grande que se busca, y un agente que, mientras el principal
+  no trabaja, repasa y consolida. Mem0 combina vectores, grafo y clave-valor.
+- **Lo que advierte la investigación de 2026:** la memoria estructurada cuesta (latencia por turno de hasta decenas de
+  segundos y millones de tokens para construir los índices en algunos sistemas), y muchos bancos de pruebas ya no
+  miden bien porque los modelos de contexto largo los resuelven sin memoria. Moraleja: medir con datos propios.
 
-- **Catálogo (código, capa 1):** componentes de la guía de diseño, y solo ellos: sección, grupo plegable con resumen,
-  fila de ajuste, interruptor, desplegable, área de texto, lista con Quitar, fila de "añadir", tarjeta de petición,
-  vistas (tabla, tablero, calendario, gráfica…), formulario. Cada uno con sus reglas (lo común primero, el texto cabe,
-  accesible) y sus pruebas.
-- **Especificaciones (datos, capa 2):** qué componentes y con qué datos. Los ajustes del correo dejan de ser React a
-  mano y pasan a ser `ui.settings` de su manifiesto. Una extensión nueva trae sus ajustes sin tocar `SettingsModal.tsx`.
-- **Peticiones** (la idea de Juan del panel de la derecha): una petición es algo que Boni necesita de Juan. Un catálogo
-  cerrado de clases, cada una con su tarjeta: sí/no, elegir entre opciones (las que la IA cree más probables primero),
-  "¿es esta persona o la creo?" (buscar + crear), selección múltiple, escribir, completar campos que faltan, aceptar un
-  cambio de manifiesto o de guía (con su ensayo y su medida). Las propuestas de la bandeja y la sugerencia de la
-  revisora de hoy son dos de esas clases. Todas viven en el registro y salen en el panel de la derecha.
+**Lo que propongo para Boni:**
+1. **El almacén ya es un grafo.** Entidades con tipo, relaciones (`links`), procedencia por campo y un registro de
+   operaciones con fecha. La memoria no necesita otra base de datos: cada memoria es una entidad de un tipo de sistema
+   **enlazada a lo que trata** (un hecho sobre Ana enlaza a la persona Ana; una regla del correo, a la extensión).
+2. **Dos tiempos, como Graphiti:** cada memoria lleva desde cuándo vale y, si otra la contradice, hasta cuándo valió
+   (nunca se borra; se ve en "Lo que Boni sabe de ti" con su historia). Ante una contradicción, gana la última y Boni
+   lo pregunta con una tarjeta.
+3. **Tres niveles, como Letta:** el **núcleo** de cada ámbito (pocos bloques, siempre en contexto: "sobre Juan", "guía
+   del correo"), el **archivo** (todo lo demás, buscado) y el **registro** (lo que pasó: ejecuciones, decisiones).
+4. **Recuperación híbrida dentro de SQLite:** texto (FTS5, ya está), similitud por significado (embeddings de un
+   modelo local guardados como bloques binarios y comparados en el propio servidor: para miles de memorias basta, sin
+   extensiones nativas ni servicios aparte), vecinos en el grafo (lo enlazado a lo que se está tratando) y lo reciente.
+   Con un presupuesto de tokens por papel.
+5. **Consolidación en reposo:** la revisora del correo es justo eso para la memoria procedimental (reglas y
+   ejemplos). Se generaliza: trabajos nocturnos que proponen fusionar memorias repetidas, marcar las contradichas o
+   subir al núcleo lo que se usa mucho. Siempre como propuesta.
+6. **No depender de Mem0 ni de Zep:** son servicios aparte (Python, Neo4j u otros) que no conocen nuestras etiquetas de
+   procedencia ni "Lo que ve la IA", y su gracia es la que el almacén ya tiene. Se toman sus ideas, no su código.
+7. **Medir:** una evaluación con decisiones reales de Juan (como `eval/mail.ts` y la medida de la revisora) antes de
+   cada cambio de cómo se recupera.
 
-**Cada componente lleva su referencia** (`data-boni-ref="ext:correo/settings/guide/rules"`): la ruta de la
+Fuentes (consultadas el 2026-10-21): Zep, "A Temporal Knowledge Graph Architecture for Agent Memory"
+(arXiv 2501.13956); "Anatomy of Agentic Memory" (arXiv 2602.19320); Letta, "Memory blocks" y sleep-time compute
+(letta.com/blog/memory-blocks); "Graph-based Agent Memory: Taxonomy, Techniques, and Applications" (arXiv 2602.05665);
+Google, "Introducing A2UI" (developers.googleblog.com); Airbyte, "Low-code connector development" (docs.airbyte.com).
+
+## 6. El Lienzo: la capacidad de pintar
+
+Juan: Boni tiene la capacidad general de crear componentes interactivos (gráficas, paneles, botones, acciones) de forma
+segura, y las extensiones la usan; también para widgets en el escritorio que cambian según el día. Es una pieza del
+núcleo, el **Lienzo**, con tres partes:
+
+**1. Catálogo de componentes (primitivas, código).** Los de la guía de diseño y solo ellos: texto, cifra, lista,
+tabla, gráfica, calendario, tarjeta, sección, grupo plegable con resumen, fila de ajuste, interruptor, desplegable, área
+de texto, botón, formulario, selector de entidad (buscar + crear)… Cada uno con sus reglas (lo común primero, el texto
+cabe, accesible) y sus pruebas. Más los compuestos que se definan como datos (3.1).
+
+**2. Especificaciones (datos).** Un árbol de componentes del catálogo en JSON, como el protocolo A2UI que publicó Google
+(diciembre de 2025): el agente o una extensión describe qué pintar y la app lo pinta con sus propios componentes, sin
+recibir nunca código. Tres reglas del código:
+- **Los datos se enlazan, no se escriben:** una cifra o una lista se declara como una consulta (`$query`: el lenguaje de
+  vistas, sección 8 de `nucleo.md`) que calcula el código. Un modelo no puede inventarse un número en un widget.
+- **Las acciones son referencias:** un botón dice qué herramienta o plan guardado lanza; al pulsarlo pasa por la
+  política como cualquier llamada (confirmar, proponer, Deshacer).
+- **Lo de fuera, como texto** (7.14): nunca HTML ni enlaces activos.
+
+**3. Superficies: dónde se pinta.** La misma especificación puede ir a cualquiera:
+
+| Superficie | Ejemplo |
+|---|---|
+| Página de la app | Una página tipo Notion con una vista y unos botones |
+| Panel de la derecha | Las peticiones de Boni (la idea de Juan) |
+| Tarjeta de petición | Sí/no, elegir entre opciones, "¿es esta persona o la creo?", selección múltiple, escribir, aceptar un cambio con su ensayo y su medida |
+| Respuesta de la conversación | Una tabla o una gráfica que contesta a una pregunta |
+| Ajustes de una extensión | Los del correo, sacados de su manifiesto |
+| **Widget en el escritorio** | Una ventana de Electron sin marco (como los widgets de gráficas de hoy) |
+| Aviso | Una notificación con dos botones |
+
+**Superficies dinámicas:** una superficie puede estar enlazada a un **flujo** que vuelve a decidir qué pintar cuando
+toca: cada mañana, al cambiar las tareas, al llegar un correo. Ejemplo: el widget "Hoy" del escritorio. A las 7:00 un
+flujo con el papel `builder` elige, entre las piezas del catálogo, qué enseñar ese día ("tres tareas que vencen, la
+primera reunión, el gasto de la semana"); los datos los calcula el código con sus consultas, y la ventana se actualiza
+sola por el canal en vivo. Si lo que pinta solo **muestra**, se aplica sin preguntar. Si añade **acciones** que no
+estaban, la primera vez es una petición que Juan acepta (como P16: lo que puede actuar no nace solo).
+
+**Cada componente pintado lleva su referencia** (`data-boni-ref="ext:correo/settings/guide/rules"`): la ruta de la
 especificación que lo pintó. Es lo que permite el asistente de la sección 8 sin capturas de pantalla.
+
+**La extensión de correo** usa el Lienzo así: sus propuestas son tarjetas en el panel de la derecha, sus ajustes son
+una especificación, y la sugerencia de la revisora es una tarjeta "aceptar un cambio con su medida".
 
 ## 7. Boni se conoce a sí mismo
 
@@ -237,20 +346,25 @@ Esto no es otro proyecto: es la forma de hacer los PR 16 a 21 sin duplicar códi
 | A1 | **Extensiones:** tipo `extension`, registro y validador de manifiestos contra el catálogo, `needs` como capacidades; el correo pasa a ser la primera (preset), sin cambiar lo que hace; `mailPlan`, módulos y rutas salen de su manifiesto | — |
 | A2 | **Todo lo del usuario a su almacén:** ajustes, secretos (cifrados con su clave), estado de las fuentes, guía; `account_data` se queda para lo del servidor | — |
 | A3 | **Memoria con ámbito y clase:** `instruction`, `rule`, `example`, `fact`, `decision`; la guía del correo migra; la revisora pasa a ser genérica | 7.13 |
-| A4 | **Interfaz por especificaciones:** catálogo de componentes con `data-boni-ref`; los ajustes de cada extensión salen de su manifiesto; las peticiones con sus clases de tarjeta en el panel de la derecha | 16 (parte), 18-19 (base) |
+| A4 | **El Lienzo:** catálogo de componentes con `data-boni-ref`, especificaciones con datos enlazados y acciones por referencia, superficies (página, panel de la derecha, tarjeta, ajustes, respuesta); los ajustes del correo salen de su manifiesto; las peticiones en el panel de la derecha | 16 (parte), 18-19 (base) |
 | 16 | Lo que queda del 16: fuera "Apuntar gasto" y lo fijo de Juan, como extensiones o vistas | 16 |
 | A5 | **Autoconocimiento:** el mapa generado, `boni.describe`, `boni.docs.search`, y `extensions.propose` con ensayo en seco | — |
 | 17 | Reglas de lo que ve la IA dentro de una colección | 17 |
 | 18-19 | La app como Notion, con el catálogo de A4 | 18-19 |
 | 20 | Papeles con perfiles (sección 9) | 20 |
 | 21 | Automatizaciones = los `flows` de las extensiones, creados hablando | 21 |
-| A6 | El asistente que ve la pantalla, voz y modo señalar (escritorio) | — |
+| A6 | Widgets dinámicos en el escritorio (superficie Electron enlazada a un flujo) | — |
+| A7 | Zona peligrosa (parámetros de los principios, con código de autenticación) y definiciones de conectores HTTP desde Boni | — |
+| A8 | El asistente que ve la pantalla, voz y modo señalar (escritorio) | — |
 
-## 11. Para decidir (Juan)
+## 11. Decisiones
 
-1. **Nombre** de la pieza: "extensión" (como en un navegador), "módulo" o "habilidad". Recomendado: **extensión**.
-2. **Frontera de la automodificación:** Boni cambia datos (extensiones, memoria, ajustes, vistas) con propuestas; el
-   código solo con PR revisado. Recomendado: **sí**.
-3. **Orden:** A1-A4 antes de lo que queda del PR 16. Recomendado: **sí**, porque el 16 se hace dentro de A4.
-4. **Memoria:** aprobar la memoria con ámbito y clase (sección 5) como base, y estudiar después búsqueda, caducidad y la
-   pantalla "Lo que Boni sabe de ti".
+1. **Nombre: "extensión".** Decidido (Juan, 2026-10-21).
+2. **Frontera:** código = el repo de GitHub, por PR (Claude Code, revisado por Juan); datos = lo que vive en Boni, con
+   su permiso. Boni da los bloques y construye con ellos. Decidido (Juan, 2026-10-21), con la zona peligrosa (2.1) y las
+   definiciones de catálogo desde Boni (3.1) como matiz suyo.
+3. **Orden:** A1-A4 antes de lo que queda del PR 16. Decidido (Juan, 2026-10-21).
+4. **Memoria:** la base por ámbito y clase, decidida (Juan, 2026-10-21); la forma (5.1: grafo del propio almacén, dos
+   tiempos, tres niveles, recuperación híbrida, consolidación) es propuesta, pendiente de su visto bueno.
+5. **Pendiente de Juan:** el Lienzo (sección 6) con sus superficies dinámicas, la zona peligrosa (2.1) y las
+   definiciones de catálogo desde Boni (3.1).
