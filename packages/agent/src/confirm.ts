@@ -123,6 +123,11 @@ export function confirmView(
       }
       continue;
     }
+    // A collection by its name, Juan's own (a name that came from outside keeps the key alone).
+    if (role === "type" && def && trusted(def.label) && plain(v) === def.key) {
+      rows.push(row(name, role, v, { detail: def.name }));
+      continue;
+    }
     const id = plain(v);
     const s = role === "entity" && typeof id === "string" && store ? store.get(id) : null;
     const t = s ? types.find((x) => x.id === s.entity.type) : undefined;

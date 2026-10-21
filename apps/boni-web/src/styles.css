@@ -5,6 +5,8 @@
  * palette checked for colour blindness and contrast on these surfaces, in both themes.
  */
 :root {
+  /* Motion (docs/design-guide.md, "Calidad"): a strong ease-out for what enters, leaves or answers a press. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --font:
     "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --radius: 8px;
@@ -184,6 +186,11 @@ select {
   background: var(--surface-2);
   border: 1px solid var(--line-strong);
   font-weight: 500;
+  transition: transform 120ms var(--ease-out);
+}
+/* A press answers at once (pointer only: a key press is not animated). */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .pill {
   border-color: var(--line);
@@ -345,7 +352,7 @@ select {
   background: var(--line-strong);
   position: relative;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 150ms var(--ease-out);
 }
 .switch::after {
   content: "";
@@ -356,7 +363,7 @@ select {
   height: 14px;
   border-radius: 50%;
   background: #fff;
-  transition: transform 0.15s;
+  transition: transform 150ms var(--ease-out);
 }
 .switch:checked {
   background: var(--accent);
@@ -1468,7 +1475,7 @@ select {
 .disclosure-chevron {
   flex: none;
   color: var(--muted);
-  transition: transform 120ms ease;
+  transition: transform 120ms var(--ease-out);
 }
 .disclosure.open .disclosure-chevron {
   transform: rotate(90deg);
@@ -1549,6 +1556,9 @@ select {
 }
 .input.auto-width {
   width: auto;
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 /* A row of controls with no label (an input and its buttons): the input takes the room, the rest
    wraps under it rather than being squeezed. */
@@ -1560,7 +1570,10 @@ select {
 .setting-control.grow > .input:not(.auto-width) {
   flex: 1 1 12rem;
 }
-.setting-control.grow > :not(.input:not(.auto-width)) {
+.setting-control.grow > .input.auto-width {
+  flex: 0 1 auto;
+}
+.setting-control.grow > :not(.input) {
   flex: none;
 }
 .setting.stacked {
@@ -1642,7 +1655,7 @@ html.widget-page body {
     transparent 78%
   );
   opacity: 0;
-  transition: opacity 0.15s;
+  transition: opacity 150ms var(--ease-out);
 }
 .widget:hover .widget-resize {
   opacity: 1;
@@ -1681,7 +1694,7 @@ html.widget-page body {
   white-space: nowrap;
 }
 .more-toggle svg {
-  transition: transform 0.15s;
+  transition: transform 150ms var(--ease-out);
 }
 .more-toggle.open svg {
   transform: rotate(180deg);
@@ -2674,4 +2687,20 @@ html.widget-page body {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+/* Text selection in the app's own colour, not the browser's. */
+::selection {
+  background: var(--accent-soft);
+}
+/* "Reduce motion" (the system's setting): nothing glides, fades or slides. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }

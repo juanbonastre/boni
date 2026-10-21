@@ -418,6 +418,19 @@ describe("the agent, with a planner that behaves", () => {
       expect.objectContaining({ arg: "values.valoracion", name: "Valoración", value: "4" }),
     );
     agent.rejectProposal(pid);
+    // A new item in Juan's collection shows the collection by its name ("Libros"), not its key.
+    const created = agent.propose({
+      tool: "entities.create",
+      args: {
+        type: leaf(libros?.key as string, imported),
+        values: rec({ title: leaf("Otro libro", imported) }, imported),
+      },
+      origin: "mirror",
+    });
+    expect(rowsOf(created)).toContainEqual(
+      expect.objectContaining({ arg: "type", value: libros?.key, detail: libros?.name }),
+    );
+    agent.rejectProposal(created);
     const outside = label("external", "personal", [{ kind: "mail", id: "m1" }], true);
     env.store.update(
       book?.entity.id as string,

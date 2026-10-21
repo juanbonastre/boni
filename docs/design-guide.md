@@ -155,6 +155,40 @@ slate `#94a3b8`.
   calendar cannot place are listed in Settings, never hidden.
 - Every edit is optimistic and undoable; one gesture is one undo step.
 
+## 4b. Quality (learned 2026-10-21)
+Distilled from pbakaus/impeccable (Apache 2.0) and emilkowalski/skills (MIT) at Juan's request; the general version for
+any interface is the vault note `wiki/temas/diseno-de-interfaces.md`. Here, what it means for Boni.
+
+- **Boni is an "operate" product:** someone doing a task. Familiar controls, one family of type, a tight scale, colour for
+  state and selection only, the same vocabulary on every screen. Character lives in details, never in invented controls.
+- **Cognitive load:** at most about four visible choices per decision; more go behind a select or a closed group with its
+  summary. Groups of four or fewer. Where you are is always marked. No ids or keys in front of the user ("imap" → "un
+  buzón de correo (IMAP)").
+- **States:** every control has normal, hover, keyboard focus, pressed, disabled, loading, error and empty. An empty
+  list says what to do next.
+- **Counts:** a translation key with a count has a `.one` form when "1 …" reads wrong ("1 elemento", "1 correo"); both
+  translators use it. Never "(s)". Four-digit numbers stay unseparated in Spanish (1284), as Spanish usage has it.
+- **Motion:**
+  - Whether to animate depends on how often it is seen: keyboard actions and things done many times a day are never
+    animated; occasional ones (a panel, a toast) get a short transition.
+  - Easing `var(--ease-out)` (`cubic-bezier(0.23, 1, 0.32, 1)`) for what enters, leaves or answers a press; never
+    ease-in. 100-160 ms for a press, 150-250 ms for a menu, at most 300 ms for a panel; exits faster than entries.
+  - Never from `scale(0)` (from 0.95 with opacity); menus grow from their trigger; transitions, not keyframes, for
+    anything that can be interrupted; only `transform` and `opacity`; never `transition: all`.
+  - Buttons (`.btn`) answer a pointer press with `scale(0.97)` in 120 ms.
+  - **"Reduce motion"** (`prefers-reduced-motion`) is respected in both apps: transitions and animations collapse, and the
+    calendar's viewport lands jumps and zooms at once (its smoothing time drops to 1 ms).
+- **Surfaces nobody draws:** text selection in the accent's soft tint (`::selection`), a visible focus ring, styled
+  scrollbars, tabular numerals in figures.
+- **Copy:** a button names its action; an error says what happened and how to fix it, never a code.
+- **Worst realistic data:** `e2e-boni/worst-case.spec.ts` fills Settings and the inbox with long hyphenated accented
+  names, a 70-character address, one-letter values, counts of 1 and of thousands, a long collection name, through the
+  fake server; every section with its groups open must fit. (It found the guide's rule select overflowing with a long
+  collection name: a select in a row of controls now shrinks and ellipsizes.)
+- **Review before a PR that changes a screen:** look at the screenshot as a first-time user (does every word make sense?
+  what do I do on an empty screen?) and as a daily user (keyboard? how many clicks for the main task?); Nielsen's ten
+  heuristics and the cognitive-load list; the worst-case data.
+
 ## 5. Language and copy
 Spanish first, English second, all through `src/i18n.ts` (no hard-coded text). The UI uses proper Spanish with accents
 (the "no accents" rule belongs to generated vault notes and chat, not to the product). Labels are short and imperative;
@@ -204,7 +238,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   international domain with its real name, long text). Its accept button waits 0.7 s and changes side with every
   confirmation, so nothing is accepted out of habit. The **inbox** shows each proposal as the same card with Accept and
   Reject (never "accept all"); a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
-  Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it (names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
+  Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it, and a collection by its name alone ("Docencia"; names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
   window): Cuenta, Lo que ve la IA, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only those that apply).

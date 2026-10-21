@@ -258,7 +258,7 @@ describe("chart builder", () => {
       compare: "previous_year",
     });
     expect(B.describe(t, s, null)).toBe(
-      "bar · spending · por month · Últimos 6 meses · previous_year · 1 filtro(s)",
+      "bar · spending · por month · Últimos 6 meses · previous_year · 1 filtro",
     );
     expect(B.opLabel(t, "category", "prefix")).toBe("es del grupo o es");
     expect(B.opLabel(t, "amount", "gte")).toBe("mayor o igual que");
@@ -321,5 +321,18 @@ describe("shortcuts", () => {
     );
     expect(S.canSaveDirectly(form, { amount: 1.6 }, "2026-10-18")).toBe(false);
     expect(S.filledValues(form, { amount: 1.6 }, "2026-10-18").date).toBe("2026-10-18");
+  });
+});
+
+describe("counts in the interface", () => {
+  it('1 takes the singular, never "1 elementos"', async () => {
+    const { translator } = await import("../i18n.ts");
+    for (const lang of ["es", "en"] as const) {
+      const t = translator(lang);
+      expect(t("ai.count", { n: 1 })).toBe(lang === "es" ? "1 elemento" : "1 item");
+      expect(t("ai.count", { n: 2 })).toBe(lang === "es" ? "2 elementos" : "2 items");
+      expect(t("mail.reread.option", { n: 1 })).toBe(lang === "es" ? "1 día" : "1 day");
+      expect(t("ai.count", { n: 0 })).toBe(lang === "es" ? "0 elementos" : "0 items");
+    }
   });
 });

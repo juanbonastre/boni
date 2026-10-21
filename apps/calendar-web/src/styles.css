@@ -6,6 +6,8 @@
  * (`data-theme`) and the `mod-select` class.
  */
 :root {
+  /* Motion (docs/design-guide.md, "Calidad"): a strong ease-out for what enters, leaves or answers a press. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --font:
     "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --radius: 8px;
@@ -496,7 +498,7 @@ select,
   white-space: nowrap;
 }
 .chev {
-  transition: transform 0.15s;
+  transition: transform 150ms var(--ease-out);
 }
 .chev.closed {
   transform: rotate(-90deg);
@@ -2043,4 +2045,20 @@ textarea.field-input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Text selection in the app's own colour, not the browser's. */
+::selection {
+  background: var(--accent-soft);
+}
+/* "Reduce motion" (the system's setting): nothing glides, fades or slides. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }
