@@ -385,6 +385,68 @@ test('Ctrl+K finds a page; duplicate, subpage from "/", the trash restores', asy
   await expect(page.locator(".sidebar .page-row", { hasText: "Docencia (1)" })).toHaveCount(1);
 });
 
+test("a collection as a Notion database: table, board, calendar; cells edited in place", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    pages: [{ id: "lect", title: "Lecturas", spec: { version: 1, blocks: [] } }],
+  });
+  await page.locator(".doc-tail").click();
+  await page.keyboard.type("/libros", { delay: 15 });
+  await expect(page.locator(".slash-menu")).toContainText("Libros");
+  await page.keyboard.press("Enter");
+  const db = page.locator(".db");
+  await expect(db.locator(".db-table tbody tr")).toHaveCount(3);
+  // A title edited where it is.
+  await db.getByRole("button", { name: "Pedro Páramo", exact: true }).click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" (relectura)", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(async () =>
+      (await recorded(page)).requests.some(
+        (r) => r.startsWith("PUT api/data/rows/r3 ") && r.includes("relectura"),
+      ),
+    )
+    .toBe(true);
+  // A select chosen from its coloured options.
+  await db.locator("tr", { hasText: "Rayuela" }).getByRole("button", { name: "Estado" }).click();
+  await page.getByRole("menuitemradio", { name: "Leído" }).click();
+  await expect
+    .poll(async () =>
+      (await recorded(page)).requests.some(
+        (r) => r.startsWith("PUT api/data/rows/r1 ") && r.includes('"f_estado":"o_leido"'),
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({ path: `${SHOTS}/db-table.png` });
+  // The board groups by the select; a card dragged to another column changes it.
+  await db.getByRole("radio", { name: "Tablero" }).click();
+  await expect(db.locator(".db-column")).toHaveCount(3);
+  await db
+    .locator(".db-card", { hasText: "Ficciones" })
+    .dragTo(db.locator(".db-column", { hasText: "Pendiente" }));
+  await expect
+    .poll(async () =>
+      (await recorded(page)).requests.some(
+        (r) => r.startsWith("PUT api/data/rows/r2 ") && r.includes('"f_estado":"o_pendiente"'),
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({ path: `${SHOTS}/db-board.png` });
+  // The calendar places a row by its date (Ficciones ended today).
+  await db.getByRole("radio", { name: "Calendario" }).click();
+  await expect(db.locator(".db-cal-day.today")).toContainText("Ficciones");
+  // The layout is the page's: saved with it.
+  await expect
+    .poll(async () =>
+      (await recorded(page)).requests.some(
+        (r) => r.startsWith("PUT api/pages/lect ") && r.includes('"layout":"calendar"'),
+      ),
+    )
+    .toBe(true);
+});
+
 test("no pages: a welcome, nothing fixed; the first page from there", async ({ page }) => {
   await openApp(page, "/?still", { pages: [] });
   await expect(page.locator(".welcome")).toContainText("Te damos la bienvenida a Boni");

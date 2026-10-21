@@ -16,6 +16,12 @@ const ok = {
     { id: "k1", type: "callout", text: "Ojo", icon: "💡" },
     { id: "c2", type: "code", text: "a = 1\nb = 2" },
     { id: "p1", type: "page", page: "e_01abc" },
+    {
+      id: "db1",
+      type: "database",
+      source: "t_libro",
+      view: { layout: "board", group: "f_estado", sort: { field: "f_titulo" }, hide: ["f_x"] },
+    },
     { id: "c1", type: "chart", chart: "gasto-del-mes" },
     { id: "a1", type: "action", screen: "gasto", label: "Apuntar gasto" },
     { id: "a2", type: "action", screen: "gasto", label: "Café", shortcut: "cafe" },
@@ -36,7 +42,7 @@ describe("a page (docs/extensiones.md 6)", () => {
     expect(with_({ id: "x", type: "action", screen: "gasto", label: " " })[0]).toMatch(/action/);
     expect(with_({ type: "heading", text: "x" })[0]).toMatch(/needs an id/);
     expect(pageErrors({ ...ok, blocks: [...ok.blocks, ok.blocks[0]] })).toContain(
-      "blocks[15]: id used twice",
+      "blocks[16]: id used twice",
     );
     expect(pageErrors({ version: 2, blocks: [] })).toHaveLength(1);
     expect(pageErrors({ version: 1, blocks: [], script: "x" })).toHaveLength(1);
@@ -46,6 +52,12 @@ describe("a page (docs/extensiones.md 6)", () => {
     expect(with_({ id: "x", type: "divider", text: "x" })[0]).toMatch(/divider/);
     expect(with_({ id: "x", type: "text", text: "x", indent: 7 })[0]).toMatch(/text block/);
     expect(with_({ id: "x", type: "page", page: "https://x" })[0]).toMatch(/page link/);
+    expect(
+      with_({ id: "x", type: "database", source: "t", view: { layout: "kanban" } })[0],
+    ).toMatch(/database/);
+    expect(
+      with_({ id: "x", type: "database", source: "t", view: { layout: "table", sql: "x" } })[0],
+    ).toMatch(/database/);
     expect(with_({ id: "x", type: "callout", text: "x", icon: "<img>" })[0]).toMatch(/callout/);
     expect(
       pageErrors({

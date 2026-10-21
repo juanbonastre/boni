@@ -7,7 +7,7 @@ import type { Page } from "@playwright/test";
 
 const SURFACES =
   ".sidebar, .topbar, .chart-card, .card-controls, .pop-box, .side-panel, .modal, .toast, .empty-state, " +
-  ".doc, .slash-menu, " +
+  ".doc, .slash-menu, .db, " +
   ".m-top, .m-scroll, .m-tabs, .m-sheet, .m-action-sheet, .m-periods, .chat, .agent-page";
 const SINGLE_LINE =
   "button, .btn, .pill, .ctl, .choice, .menu-item, .segmented > *, .picked-chip, .card-title, .nav-name, " +

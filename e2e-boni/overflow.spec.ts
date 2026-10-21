@@ -108,6 +108,17 @@ for (const language of ["es", "en"] as const) {
       await page.locator(".topbar").getByRole("button", { name: l.pageMenu }).click();
       issues.push(...(await audit(page, "page menu")));
       await page.keyboard.press("Escape");
+      await page.locator(".doc-tail").click();
+      await page.keyboard.type("/libros", { delay: 15 });
+      await page.keyboard.press("Enter");
+      await page.locator(".db-table tbody tr").first().waitFor();
+      issues.push(...(await audit(page, "database table")));
+      await page.locator(".db-layout").nth(1).click();
+      await page.locator(".db-column").first().waitFor();
+      issues.push(...(await audit(page, "database board")));
+      await page.locator(".db-layout").nth(4).click();
+      await page.locator(".db-cal-grid").waitFor();
+      issues.push(...(await audit(page, "database calendar")));
 
       await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
       await page.locator(".modal").waitFor();

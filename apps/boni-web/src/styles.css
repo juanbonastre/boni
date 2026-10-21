@@ -3577,3 +3577,355 @@ button.find-row:hover {
 .page-row.dragging {
   opacity: 0.5;
 }
+
+/* A collection as a Notion database: its head (name, layouts, options, New), then the layout. */
+:root {
+  --opt-gray: #9b9a97;
+  --opt-brown: #a27763;
+  --opt-orange: #d9730d;
+  --opt-yellow: #cb912f;
+  --opt-green: #448361;
+  --opt-blue: #337ea9;
+  --opt-purple: #9065b0;
+  --opt-pink: #c14c8a;
+  --opt-red: #d44c47;
+}
+.db {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+  min-width: 0;
+}
+.db-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  min-width: 0;
+}
+.db-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 auto 0 0;
+  font-size: 18px;
+  font-weight: 650;
+  min-width: 0;
+}
+.db-layouts {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+.db-layout {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.db-layout:hover {
+  background: var(--hover);
+}
+.db-layout.on {
+  color: var(--text);
+  background: var(--hover);
+}
+.btn.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+.db-loading,
+.db-hint {
+  color: var(--muted);
+  padding: 12px 2px;
+  margin: 0;
+}
+.db-table-wrap {
+  overflow-x: auto;
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+.db-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: max-content;
+  font-size: 14px;
+}
+.db-table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  white-space: nowrap;
+}
+.db-table td {
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  padding: 0;
+  min-width: 120px;
+  max-width: 320px;
+  vertical-align: top;
+}
+.db-table td.is-title {
+  min-width: 220px;
+  font-weight: 500;
+}
+.db-table .row-tools {
+  border-right: 0;
+  min-width: 36px;
+  width: 36px;
+  text-align: center;
+}
+.db-table tr .row-tools .icon-btn {
+  opacity: 0;
+}
+.db-table tr:hover .row-tools .icon-btn,
+.db-table tr .row-tools .icon-btn:focus-visible {
+  opacity: 1;
+}
+.db-cell {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-cell:hover {
+  background: var(--hover);
+}
+.db-empty {
+  color: var(--muted);
+}
+.db-input {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 0;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.db-ro {
+  display: block;
+  padding: 6px 8px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-check {
+  margin: 9px 8px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+.db-pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.db-pill {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--c) 32%, transparent);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--c);
+}
+.db-add-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  color: var(--muted);
+  border-radius: 4px;
+  font-size: 14px;
+}
+.db-add-row:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.db-board {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  min-width: 0;
+}
+.db-column {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 8px;
+  min-width: 0;
+}
+.db-column.over {
+  background: var(--accent-soft);
+}
+.db-column-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 4px;
+  min-width: 0;
+}
+.db-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+.db-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  min-width: 0;
+  cursor: grab;
+}
+.db-card.dragging {
+  opacity: 0.4;
+}
+.db-card-title .db-cell {
+  font-weight: 600;
+  min-height: 30px;
+}
+.db-card-prop .db-cell,
+.db-card-prop .db-ro {
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.db-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.db-gallery .db-card {
+  cursor: default;
+  min-height: 110px;
+}
+.db-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+.db-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.db-list-row .db-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.db-list-row .db-card-prop {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 30%;
+}
+.db-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.db-cal-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.db-cal-title {
+  margin-right: auto;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.db-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+}
+.db-cal-day {
+  min-height: 96px;
+  padding: 4px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.db-cal-day.other {
+  background: color-mix(in srgb, var(--surface-2) 50%, transparent);
+}
+.db-cal-day.other .db-cal-num span {
+  color: var(--muted);
+}
+.db-cal-num {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.db-cal-day.today .db-cal-num span {
+  background: var(--accent);
+  color: #fff;
+  border-radius: 10px;
+  padding: 0 6px;
+}
+.db-cal-add {
+  opacity: 0;
+}
+.db-cal-day:hover .db-cal-add,
+.db-cal-add:focus-visible {
+  opacity: 1;
+}
+.db-cal-item {
+  margin-top: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-cal-more {
+  color: var(--muted);
+  font-size: 11px;
+  padding: 2px 6px;
+}

@@ -237,6 +237,14 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   caret in its name. Sidebar rows: page icon, which turns into a chevron to fold its subpages on hover; "…" and "+"
   on the right on hover; a row is dragged to move the page (top quarter: before, bottom: after, middle: inside).
   Capturing or editing a chart happens in the side panel with the page in view.
+- **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`): "/" + a collection's name puts it on a
+  page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Opciones" (sort, a board's
+  grouping select, a calendar's date, visible properties) and "Nuevo". Table: the title column first, 34 px rows,
+  hairline grid, each cell edited where it is (text and numbers as a field, Enter or leaving saves, Esc does not;
+  selects as Notion's coloured pills from a menu; checkboxes at once; relations read-only), delete on hover with Undo.
+  Board: a column per option (and "Sin X" when used), cards dragged between columns change the select. Calendar: a
+  month from Monday, today marked, "+" on a day adds a row on it. The view (layout, sort, grouping, hidden
+  properties) is the page block's; the rows are the collection's (`/api/data/*`, a personal device only).
 - **More of Notion** (2026-10-22): blocks numbered list (numbers follow on), toggle (its line folds the blocks
   nested under it; Enter at its end writes inside it), quote (a 3 px bar), callout (an emoji you can change, a
   `--surface-2` box), code (monospace, Enter is a new line, Ctrl+Enter leaves it) and a link to a subpage ("/Página"
