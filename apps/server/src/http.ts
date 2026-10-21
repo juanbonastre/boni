@@ -10,6 +10,16 @@ import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { MailError, type Mails } from "./mail.ts";
+import {
+  createPage,
+  getPage,
+  listPages,
+  PageError,
+  removePage,
+  restorePage,
+  seedFromV1,
+  updatePage,
+} from "./pages.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
 import { bodyOf, CORS, header, SAFE, send, tokenOf } from "./reply.ts";
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
@@ -241,6 +251,45 @@ export function makeApp(opts: ServerOptions): App {
         device: s.device,
         trust: s.trust,
       });
+    }
+    if (
+      route.startsWith("GET /api/pages") ||
+      route.startsWith("POST /api/pages") ||
+      route.startsWith("PUT /api/pages") ||
+      route.startsWith("DELETE /api/pages")
+    ) {
+      // The user's pages (pages.ts, docs/extensiones.md 6): any device of the account reads them; only a
+      // personal one changes them.
+      const s = sessionUser(db, tokenOf(req));
+      if (!s) return send(res, 401, { error: "unauthorized" });
+      if (!opts.agent?.hasData) return send(res, 503, { error: "no-store" });
+      const store = opts.agent.store(s.user.id);
+      const id = params.id ?? "";
+      if (route === "GET /api/pages") {
+        seedFromV1(store, v1store, s.user.id);
+        return send(res, 200, { pages: listPages(store) });
+      }
+      if (route === "GET /api/pages/:id") {
+        const p = getPage(store, id);
+        return p ? send(res, 200, { page: p }) : send(res, 404, { error: "not-found" });
+      }
+      if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      try {
+        if (route === "POST /api/pages")
+          return send(res, 200, { page: createPage(store, await bodyOf(req), s.device) });
+        if (route === "PUT /api/pages/:id")
+          return send(res, 200, { page: updatePage(store, id, await bodyOf(req), s.device) });
+        if (route === "POST /api/pages/:id/restore")
+          return send(res, 200, { page: restorePage(store, id, s.device) });
+        if (route === "DELETE /api/pages/:id") {
+          removePage(store, id, s.device);
+          return send(res, 200, {});
+        }
+      } catch (e) {
+        if (e instanceof PageError)
+          return send(res, e.code === "not-found" ? 404 : 400, { error: e.code });
+        throw e;
+      }
     }
     if (
       route === "GET /api/mail" ||

@@ -1,60 +1,26 @@
+import { FileText, MessageSquare, MoreHorizontal, PanelLeft, Plus, Settings } from "lucide-react";
+import type { PageInfo } from "../core/agent.ts";
 import {
-  Eye,
-  EyeOff,
-  House,
-  MessageSquare,
-  PanelLeft,
-  Plus,
-  Settings,
-  SlidersHorizontal,
-  X,
-} from "lucide-react";
-import { useState } from "react";
-import { newSpec } from "../core/chartBuilder.ts";
-import { host } from "../host.ts";
-import {
-  addWidget,
-  CAPTURE_SCREEN,
-  changeChart,
-  openEditor,
-  openScreen,
+  deletePage,
+  newPage,
+  openPage,
   openSettings,
-  orderCharts,
-  removeWidget,
-  setWidgetHidden,
-  showChart,
   showChat,
-  showHome,
   toggleSidebar,
   useStore,
-  useVisibleCharts,
 } from "../store.ts";
-import { ACCENT } from "./Chart.tsx";
-import { MenuRow, PopButton } from "./Popover.tsx";
+import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 /**
- * The sidebar (Boni Calendar's): home, the charts (colour, eye = on the home screen, gear = edit, drag to reorder),
- * this computer's desktop widgets (eye = shown here) and, at the bottom, settings and who is logged in.
+ * The sidebar: the conversation with Boni, the user's pages (a tree: a page can hold subpages) and, at the
+ * bottom, settings and who is logged in. Nothing else is fixed here: what the user sees is what they made.
  */
 export function Sidebar() {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
-  const specs = useVisibleCharts();
-  const widgets = useStore((s) => s.widgets);
   const settings = useStore((s) => s.settings);
-  const home = useStore((s) => s.home);
   const inbox = useStore((s) => s.inbox);
-  const [dragging, setDragging] = useState<string | null>(null);
-  const [over, setOver] = useState<string | null>(null);
-  const canCapture =
-    !home || home.components.some((c) => c.type === "button" && c.screen === CAPTURE_SCREEN);
-
-  const drop = (target: string) => {
-    if (!dragging || dragging === target) return;
-    const ids = specs.map((s) => s.id).filter((id) => id !== dragging);
-    ids.splice(ids.indexOf(target), 0, dragging);
-    void orderCharts(ids);
-  };
+  const pages = useStore((s) => s.pages);
 
   return (
     <nav className="sidebar" aria-label={t("sidebar.label")}>
@@ -68,28 +34,8 @@ export function Sidebar() {
         >
           <PanelLeft size={16} strokeWidth={1.8} />
         </button>
-        <span className="spacer" />
-        {canCapture && (
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => openScreen(CAPTURE_SCREEN)}
-            title={t("capture.title")}
-            aria-label={t("capture.title")}
-          >
-            <Plus size={16} strokeWidth={1.8} />
-          </button>
-        )}
       </div>
       <div className="sidebar-scroll">
-        <button
-          type="button"
-          className={`nav-row${view.kind === "home" ? " active" : ""}`}
-          onClick={showHome}
-        >
-          <House size={15} strokeWidth={1.8} />
-          <span className="nav-name">{t("top.home")}</span>
-        </button>
         <button
           type="button"
           className={`nav-row${view.kind === "chat" || view.kind === "inbox" || view.kind === "log" ? " active" : ""}`}
@@ -100,153 +46,22 @@ export function Sidebar() {
           {inbox.length > 0 && <span className="nav-count">{inbox.length}</span>}
         </button>
 
-        <div className="group-head">
-          <span>{t("charts.yours")}</span>
-          <button
-            type="button"
-            className="icon-btn tiny"
-            onClick={() => openEditor(newSpec(t("charts.newTitle")), true)}
-            title={t("charts.new")}
-            aria-label={t("charts.new")}
-          >
-            <Plus size={13} strokeWidth={2} />
-          </button>
-        </div>
-        <ul className="nav-list">
-          {specs.map((spec) => (
-            <li
-              key={spec.id}
-              className={`chart-row${view.kind === "chart" && view.id === spec.id ? " active" : ""}${
-                over === spec.id && dragging && dragging !== spec.id ? " drop-before" : ""
-              }${!spec.home ? " off" : ""}`}
-              draggable
-              onDragStart={(e) => {
-                setDragging(spec.id);
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", spec.id);
-              }}
-              onDragOver={(e) => {
-                if (!dragging) return;
-                e.preventDefault();
-                setOver(spec.id);
-              }}
-              onDragLeave={() => setOver((o) => (o === spec.id ? null : o))}
-              onDrop={(e) => {
-                e.preventDefault();
-                drop(spec.id);
-                setOver(null);
-              }}
-              onDragEnd={() => {
-                setDragging(null);
-                setOver(null);
-              }}
-            >
-              <button type="button" className="chart-main" onClick={() => showChart(spec.id)}>
-                <span
-                  className={`swatch${spec.home ? "" : " hollow"}`}
-                  style={{ ["--c" as string]: spec.color ?? ACCENT }}
-                />
-                <span className="nav-name">{spec.title}</span>
-              </button>
-              <button
-                type="button"
-                className="icon-btn tiny row-action"
-                onClick={() => openEditor(spec)}
-                title={t("controls.edit")}
-                aria-label={`${t("controls.edit")}: ${spec.title}`}
-              >
-                <SlidersHorizontal size={13} strokeWidth={1.8} />
-              </button>
-              <button
-                type="button"
-                className={`icon-btn tiny row-action eye${spec.home ? "" : " shown"}`}
-                onClick={() => void changeChart({ ...spec, home: !spec.home })}
-                title={spec.home ? t("controls.hideHome") : t("controls.showHome")}
-                aria-label={`${spec.home ? t("controls.hideHome") : t("controls.showHome")}: ${spec.title}`}
-              >
-                {spec.home ? (
-                  <Eye size={13} strokeWidth={1.8} />
-                ) : (
-                  <EyeOff size={13} strokeWidth={1.8} />
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        {host.desktop && (
+        {pages !== null && (
           <>
             <div className="group-head">
-              <span>{t("widgets.title")}</span>
-              <PopButton
+              <span>{t("nav.pages")}</span>
+              <button
+                type="button"
                 className="icon-btn tiny"
-                title={t("widgets.add")}
-                align="start"
-                label={<Plus size={13} strokeWidth={2} />}
+                onClick={() => void newPage()}
+                title={t("page.new")}
+                aria-label={t("page.new")}
               >
-                {(close) => (
-                  <div className="menu-list" role="menu">
-                    {specs.map((s) => (
-                      <MenuRow
-                        key={s.id}
-                        label={s.title}
-                        icon={
-                          <span
-                            className="swatch"
-                            style={{ ["--c" as string]: s.color ?? ACCENT }}
-                          />
-                        }
-                        onClick={() => {
-                          close();
-                          void addWidget(s.id);
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </PopButton>
+                <Plus size={13} strokeWidth={2} />
+              </button>
             </div>
-            {widgets.length === 0 && <p className="nav-hint">{t("widgets.none")}</p>}
-            <ul className="nav-list">
-              {widgets.map((w) => {
-                const spec = specs.find((s) => s.id === w.chart_id);
-                const hidden = !settings.showWidgets || settings.hiddenWidgets.includes(w.id);
-                return (
-                  <li key={w.id} className={`chart-row${hidden ? " off" : ""}`}>
-                    <span className="chart-main static">
-                      <span
-                        className={`swatch square${hidden ? " hollow" : ""}`}
-                        style={{ ["--c" as string]: spec?.color ?? ACCENT }}
-                      />
-                      <span className="nav-name">{spec?.title ?? w.chart_id}</span>
-                    </span>
-                    <button
-                      type="button"
-                      className="icon-btn tiny row-action"
-                      onClick={() => void removeWidget(w.id)}
-                      title={t("widgets.remove")}
-                      aria-label={`${t("widgets.remove")}: ${spec?.title ?? w.chart_id}`}
-                    >
-                      <X size={13} strokeWidth={1.8} />
-                    </button>
-                    <button
-                      type="button"
-                      className={`icon-btn tiny row-action eye${hidden ? " shown" : ""}`}
-                      onClick={() =>
-                        void setWidgetHidden(w.id, !settings.hiddenWidgets.includes(w.id))
-                      }
-                      title={hidden ? t("widgets.show") : t("widgets.hide")}
-                      aria-label={`${hidden ? t("widgets.show") : t("widgets.hide")}: ${spec?.title ?? w.chart_id}`}
-                    >
-                      {hidden ? (
-                        <EyeOff size={13} strokeWidth={1.8} />
-                      ) : (
-                        <Eye size={13} strokeWidth={1.8} />
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
+            <ul className="nav-list" aria-label={t("nav.pages")}>
+              <PageTree pages={pages} parent={null} depth={0} />
             </ul>
           </>
         )}
@@ -263,5 +78,77 @@ export function Sidebar() {
         )}
       </div>
     </nav>
+  );
+}
+
+const MAX_DEPTH = 6;
+
+function PageTree({
+  pages,
+  parent,
+  depth,
+}: {
+  pages: PageInfo[];
+  parent: string | null;
+  depth: number;
+}) {
+  const t = useStore((s) => s.t);
+  const view = useStore((s) => s.view);
+  // A page whose parent is gone shows at the top (never lost).
+  const here = pages.filter((p) =>
+    parent === null ? !p.parent || !pages.some((q) => q.id === p.parent) : p.parent === parent,
+  );
+  return (
+    <>
+      {here.map((p) => (
+        <li key={p.id}>
+          <div
+            className={`chart-row page-row${view.kind === "page" && view.id === p.id ? " active" : ""}`}
+            style={{ paddingLeft: depth * 14 }}
+          >
+            <button type="button" className="chart-main" onClick={() => void openPage(p.id)}>
+              {p.icon ? (
+                <span className="page-icon">{p.icon}</span>
+              ) : (
+                <FileText size={14} strokeWidth={1.8} className="page-icon" />
+              )}
+              <span className="nav-name">{p.title || t("page.untitled")}</span>
+            </button>
+            <PopButton
+              className="icon-btn tiny row-action"
+              title={`${t("page.more")}: ${p.title}`}
+              align="start"
+              label={<MoreHorizontal size={13} strokeWidth={1.8} />}
+            >
+              {(close) => (
+                <div className="menu-list" role="menu">
+                  <MenuRow
+                    label={t("page.newSub")}
+                    onClick={() => {
+                      close();
+                      void newPage(p.id);
+                    }}
+                  />
+                  <MenuSep />
+                  <MenuRow
+                    label={t("page.delete")}
+                    danger
+                    onClick={() => {
+                      close();
+                      void deletePage(p.id);
+                    }}
+                  />
+                </div>
+              )}
+            </PopButton>
+          </div>
+          {depth < MAX_DEPTH && pages.some((c) => c.parent === p.id) && (
+            <ul className="nav-list">
+              <PageTree pages={pages} parent={p.id} depth={depth + 1} />
+            </ul>
+          )}
+        </li>
+      ))}
+    </>
   );
 }

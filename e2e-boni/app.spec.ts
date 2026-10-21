@@ -10,13 +10,17 @@ const puts = async (page: Page, id: string) =>
   (await recorded(page)).requests.filter((r) => r.startsWith(`PUT api/v1/charts/${id} `));
 const card = (page: Page, title: string) => page.locator(".chart-card", { hasText: title }).first();
 
-test("the window is laid out as Boni Calendar: sidebar, charts filling the window", async ({
+test("the window is laid out as Boni Calendar: sidebar, the start page's charts filling the window", async ({
   page,
 }) => {
   await openApp(page, "/?still");
   await expect(page.locator(".sidebar")).toBeVisible();
   await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
-  await expect(page.locator(".chart-row")).toHaveCount(3 + 3); // charts + this computer's widgets
+  // The sidebar holds only what the user made: the conversation and the pages.
+  await expect(page.locator(".sidebar .page-row")).toHaveCount(1);
+  await expect(page.locator(".sidebar .page-row.active")).toContainText("Gastos");
+  await expect(page.locator(".sidebar")).not.toContainText("Tus gráficas");
+  await expect(page.locator(".topbar .title")).toHaveText("Gastos");
   // no empty band under the charts: the last row reaches the bottom of the content
   const content = (await page.locator(".content").boundingBox())!;
   const last = (await page.locator(".dashboard .chart-card").last().boundingBox())!;
@@ -86,13 +90,6 @@ test("a chart's own controls on hover (like Notion): period, order, colour; save
   await page.getByRole("radio", { name: "Verde" }).click();
   await expect.poll(async () => (await puts(page, "monthly-spending")).length).toBe(3);
   expect(body((await puts(page, "monthly-spending"))[2]!).color).toBe("#4ade80");
-  await expect(
-    page
-      .locator(".nav-list")
-      .first()
-      .locator(".chart-row", { hasText: "Gasto por mes" })
-      .locator(".swatch"),
-  ).toHaveCSS("background-color", "rgb(74, 222, 128)");
 });
 
 test("filters from a chart's controls: edited in their box, saved once when it closes", async ({
@@ -113,12 +110,12 @@ test("filters from a chart's controls: edited in their box, saved once when it c
   await expect(ranking.locator(".ctl-badge")).toHaveText("1");
 });
 
-test("capture in the side panel (N): the charts stay in view; sent once, numbers as numbers", async ({
+test("capture in the side panel, from the page's button: the charts stay in view; sent once, numbers as numbers", async ({
   page,
 }) => {
   await openApp(page, "/?still");
   await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
-  await page.keyboard.press("n");
+  await page.locator(".page-actions").getByRole("button", { name: "Apuntar gasto" }).click();
   const panel = page.locator(".side-panel");
   await expect(panel).toBeVisible();
   await expect(page.locator(".dashboard")).toBeVisible();
@@ -145,10 +142,7 @@ test("capture in the side panel (N): the charts stay in view; sent once, numbers
 
 test("offline: the capture stays on the device and goes with the next tick", async ({ page }) => {
   await openApp(page, "/?still", { action: "offline" });
-  await page
-    .locator(".topbar")
-    .getByRole("button", { name: /Apuntar gasto/ })
-    .click();
+  await page.locator(".page-actions").getByRole("button", { name: "Apuntar gasto" }).click();
   const panel = page.locator(".side-panel");
   await panel.getByLabel("Importe").fill("3");
   const category = panel.locator(".field", { hasText: "Categor" }).locator("input");
@@ -170,9 +164,10 @@ test("the editor in the side panel: the card shows the preview; a new chart gets
   page,
 }) => {
   await openApp(page, "/?still");
-  const row = page.locator(".chart-row", { hasText: "Gasto por mes" }).first();
-  await row.hover();
-  await row.getByRole("button", { name: /^Editar…/ }).click();
+  const monthly = card(page, "Gasto por mes");
+  await monthly.hover();
+  await monthly.getByRole("button", { name: "Más" }).click();
+  await page.getByRole("menuitemradio", { name: "Editar" }).click();
   const panel = page.locator(".side-panel");
   await expect(panel.getByRole("heading", { name: "Editar gráfica" })).toBeVisible();
   await expect(card(page, "Gasto por mes")).toHaveClass(/editing/);
@@ -187,7 +182,10 @@ test("the editor in the side panel: the card shows the preview; a new chart gets
   await expect(page.locator(".toast")).toHaveText("Gráfica guardada");
   expect(body((await puts(page, "monthly-spending"))[0]!).kind).toBe("line");
 
-  await page.getByRole("button", { name: "Nueva gráfica" }).click();
+  // A new chart from the page's "Add block": saved, it goes onto the page.
+  await page.locator(".topbar").getByRole("button", { name: "Editar página" }).click();
+  await page.getByRole("button", { name: "Añadir bloque" }).click();
+  await page.getByRole("menuitemradio", { name: "Gráfica nueva…" }).click();
   await expect(page.locator(".chart-card.new")).toBeVisible();
   await panel.locator(".title-input").fill("Gasto en ocio (prueba)");
   await expect(page.locator(".chart-card.new .card-title")).toHaveText("Gasto en ocio (prueba)");
@@ -198,6 +196,13 @@ test("the editor in the side panel: the card shows the preview; a new chart gets
     )
     .toBe(true);
   await expect(page.locator(".chart-card.new")).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      (await recorded(page)).requests.some(
+        (r) => r.startsWith("PUT api/pages/gastos ") && r.includes('"chart":"nueva"'),
+      ),
+    )
+    .toBe(true);
 });
 
 test("deleting a chart waits for Undo before it reaches the server", async ({ page }) => {
@@ -215,30 +220,68 @@ test("deleting a chart waits for Undo before it reaches the server", async ({ pa
   );
 });
 
-test("the sidebar: eye = on the home screen, drag to reorder, this computer's widgets", async ({
+test("pages: made from the sidebar, blocks added, moved and removed, renamed, deleted with Undo", async ({
   page,
 }) => {
   await openApp(page, "/?still");
-  const row = page.locator(".nav-list").first().locator(".chart-row", { hasText: "Comida fuera" });
+  await expect(page.locator(".dashboard .chart-card")).toHaveCount(3);
+  // A new page opens empty, ready to edit.
+  await page.getByRole("button", { name: "Nueva página" }).click();
+  await expect(page.locator(".sidebar .page-row")).toHaveCount(2);
+  await expect(page.locator(".sidebar .page-row.active")).toContainText("Sin título");
+  await expect(page.locator(".page-edit-foot")).toBeVisible();
+  // Its name, changed in place.
+  await page.locator(".topbar .title-edit").click();
+  await page.locator(".topbar .title-input").fill("Docencia");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".sidebar .page-row.active")).toContainText("Docencia");
+  // Blocks: a heading and a chart, then the chart moved up and the heading removed.
+  await page.getByRole("button", { name: "Añadir bloque" }).click();
+  await page.getByRole("menuitemradio", { name: "Título" }).click();
+  await page.getByRole("textbox", { name: "Escribe un título" }).fill("Este curso");
+  await page.getByRole("textbox", { name: "Escribe un título" }).press("Enter");
+  await page.getByRole("button", { name: "Añadir bloque" }).click();
+  await page.getByRole("menuitemradio", { name: "Comida fuera" }).click();
+  await expect(page.locator(".block-row")).toHaveCount(2);
+  await page.screenshot({ path: `${SHOTS}/page-edit.png` });
+  await page.getByRole("button", { name: "Subir: Gráfica" }).click();
+  await expect(page.locator(".block-row").first()).toContainText("Comida fuera");
+  await page.getByRole("button", { name: "Quitar de la página: Título" }).click();
+  await expect(page.locator(".block-row")).toHaveCount(1);
+  await page.locator(".topbar").getByRole("button", { name: "Hecho" }).click();
+  await expect(page.locator(".dashboard .chart-card")).toHaveCount(1);
+  const saved = (await recorded(page)).requests.filter((r) => r.startsWith("PUT api/pages/p1 "));
+  expect(body(saved[saved.length - 1]!).spec.blocks).toEqual([
+    expect.objectContaining({ type: "chart", chart: "eating-out" }),
+  ]);
+  // Deleted from its menu: to the start page, and Undo brings it back.
+  const row = page.locator(".sidebar .page-row", { hasText: "Docencia" });
   await row.hover();
-  await row.getByRole("button", { name: /^Quitar de inicio/ }).click();
-  await expect(page.locator(".dashboard .chart-card")).toHaveCount(2);
-  expect(body((await puts(page, "eating-out"))[0]!).home).toBe(false);
+  await row.getByRole("button", { name: /^Más opciones/ }).click();
+  await page.getByRole("menuitemradio", { name: "Borrar página" }).click();
+  await expect(page.locator(".sidebar .page-row")).toHaveCount(1);
+  await expect(page.locator(".topbar .title")).toHaveText("Gastos");
+  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
+  await expect(page.locator(".sidebar .page-row")).toHaveCount(2);
+  await expect(page.locator(".topbar .title")).toHaveText("Docencia");
+});
 
-  const rows = page.locator(".nav-list").first().locator(".chart-row");
-  await rows.nth(2).dragTo(rows.nth(0));
-  await expect
-    .poll(async () =>
-      (await recorded(page)).requests.find((r) => r.startsWith("PUT api/v1/charts/order")),
-    )
-    .toBeTruthy();
-  const order = body(
-    (await recorded(page)).requests.find((r) => r.startsWith("PUT api/v1/charts/order"))!,
-  );
-  expect(order.ids[0]).toBe("eating-out");
+test("no pages: a welcome, nothing fixed; the first page from there", async ({ page }) => {
+  await openApp(page, "/?still", { pages: [] });
+  await expect(page.locator(".welcome")).toContainText("Te damos la bienvenida a Boni");
+  await expect(page.locator(".chart-card")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Apuntar gasto" })).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/welcome.png` });
+  await page.locator(".welcome").getByRole("button", { name: "Nueva página" }).click();
+  await expect(page.locator(".sidebar .page-row")).toHaveCount(1);
+  await expect(page.locator(".page-edit-foot")).toBeVisible();
+});
 
-  const widget = page.locator(".nav-list").nth(1).locator(".chart-row").first();
-  await widget.hover();
+test("this computer's widgets, in Settings → Desktop: hidden here, added", async ({ page }) => {
+  await openApp(page, "/?still");
+  await page.getByRole("button", { name: "Ajustes" }).click();
+  await page.getByRole("tab", { name: "Escritorio" }).click();
+  const widget = page.locator(".widget-list .chart-row").first();
   await widget.getByRole("button", { name: /^Ocultar en este equipo/ }).click();
   expect(
     (await recorded(page)).calls.some((c) =>

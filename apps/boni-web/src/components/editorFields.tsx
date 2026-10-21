@@ -265,15 +265,6 @@ export function EditorForm({
           </label>
         </Section>
       )}
-      <label className="toggle-row">
-        <input
-          type="checkbox"
-          className="switch"
-          checked={spec.home}
-          onChange={(e) => edit((s) => ({ ...s, home: e.target.checked }))}
-        />
-        <span>{t("editor.home")}</span>
-      </label>
     </>
   );
 }

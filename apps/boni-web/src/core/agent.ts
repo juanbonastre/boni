@@ -1,3 +1,4 @@
+import { emptyPage, type PageSpec, pageErrors } from "@boni/views";
 import { ApiError, NotConfiguredError, OfflineError, type Transport } from "./api.ts";
 
 /**
@@ -358,6 +359,40 @@ export function parseMail(v: unknown): MailView | null {
     },
   };
 }
+/** A page of the user's (docs/extensiones.md 6): its place in the tree, and its blocks when opened. */
+export interface PageInfo {
+  id: string;
+  title: string;
+  icon: string;
+  parent: string | null;
+  position: number;
+}
+export interface Page extends PageInfo {
+  spec: PageSpec;
+}
+
+function parsePageInfo(v: unknown): PageInfo | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id, 80);
+  if (!id) return null;
+  return {
+    id,
+    title: str(v.title, 200) ?? "",
+    icon: str(v.icon, 8) ?? "",
+    parent: str(v.parent, 80),
+    position: typeof v.position === "number" ? v.position : 0,
+  };
+}
+
+/** A page with its blocks, checked again here: a block off the catalogue is never painted. */
+function parsePage(b: unknown): Page | null {
+  const v = isObj(b) ? b.page : null;
+  const i = parsePageInfo(v);
+  if (!i || !isObj(v)) return null;
+  const spec = pageErrors(v.spec).length ? emptyPage() : (v.spec as PageSpec);
+  return { ...i, spec };
+}
+
 /** An installed extension as the server shows it (docs/extensiones.md 3). */
 export interface ExtensionView {
   id: string;
@@ -455,7 +490,7 @@ export class AgentApi {
   }
 
   private async call(
-    method: "GET" | "POST" | "PUT",
+    method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,
     body?: unknown,
     prefix = "api/agent/",
@@ -538,6 +573,28 @@ export class AgentApi {
       return [{ id, name, level, count: typeof t.count === "number" ? t.count : 0 }];
     });
   }
+  // The user's pages (docs/extensiones.md 6).
+  pages = async (): Promise<PageInfo[]> => {
+    const b = await this.call("GET", "", undefined, "api/pages");
+    return isObj(b) && Array.isArray(b.pages)
+      ? b.pages.map(parsePageInfo).filter((x): x is PageInfo => !!x)
+      : [];
+  };
+  page = async (id: string) =>
+    parsePage(
+      (await this.call("GET", `/${encodeURIComponent(id)}`, undefined, "api/pages")) as never,
+    );
+  createPage = async (input: { title: string; parent?: string | null; spec?: PageSpec }) =>
+    parsePage((await this.call("POST", "", input, "api/pages")) as never);
+  updatePage = async (
+    id: string,
+    input: { title?: string; parent?: string | null; position?: number; spec?: PageSpec },
+  ) =>
+    parsePage((await this.call("PUT", `/${encodeURIComponent(id)}`, input, "api/pages")) as never);
+  restorePage = async (id: string) =>
+    void (await this.call("POST", `/${encodeURIComponent(id)}/restore`, {}, "api/pages"));
+  deletePage = async (id: string) =>
+    void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/pages"));
   extensions = async (): Promise<ExtensionView[]> => {
     const b = await this.call("GET", "extensions");
     return isObj(b) && Array.isArray(b.extensions)

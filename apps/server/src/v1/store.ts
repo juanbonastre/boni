@@ -62,6 +62,16 @@ export class V1Store {
     });
   }
 
+  /**
+   * Whether the account really used the first Boni: something captured, a shortcut, a widget or a preference
+   * of its own (asking for the charts alone makes the default ones, so that does not count).
+   */
+  used(a: number): boolean {
+    return ["v1_captures", "v1_shortcuts", "v1_widgets", "v1_prefs"].some(
+      (t) => !!this.db.prepare(`SELECT 1 FROM ${t} WHERE account_id = ? LIMIT 1`).get(a),
+    );
+  }
+
   charts(a: number): V1ChartSpec[] {
     this.seed(a);
     return (

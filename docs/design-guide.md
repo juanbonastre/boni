@@ -213,21 +213,32 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   (`--surface`, 10 px radius, `--line-strong` border) and is fully interactive: hover for values, click for a detail;
   dragging anywhere moves it, the bottom-right corner resizes it; on hover it shows its period and its menu (the chart
   controls below, compact), and right click opens the same menu (open or edit in the app, refresh, hide here, remove).
-- **Boni's main window** is laid out as this app: the sidebar (home; the charts, each with a colour from the calendar
-  palette, eye = on the home screen, a properties button, drag to reorder; this computer's widgets with an eye; settings
-  and the user at the bottom), the main area and the right side panel. The home screen's chart cards fill the main area
-  (rows share its height; no empty band), and capturing or editing a chart happens in the side panel with the cards in
-  view (the card being edited shows the preview and an accent ring).
+- **Boni's main window** is laid out as this app: the sidebar (the conversation; "Páginas", the user's pages as a tree,
+  each row with a "…" menu: add a subpage, delete with Undo; settings and the user at the bottom), the main area and
+  the right side panel. **Nothing on screen is fixed by the app** (Juan, 2026-10-21): no home of charts, no "Apuntar
+  gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
+  pages, a welcome with "Nueva página" and "Hablar con Boni". An account that used the first Boni got, once, a page
+  "Gastos" with what its home showed, as data it can change or delete.
+- **A page** (`components/PageView.tsx`, docs/extensiones.md 6) is painted from its blocks, each from a closed catalogue:
+  heading, text (plain, `pre-wrap`), chart (consecutive charts share the card grid that fills the main area: rows share
+  its height, no empty band) and button (a screen the server has, or a saved shortcut; consecutive buttons share a row,
+  a screen's in `btn primary` with a plus, a shortcut's as a pill). Its name is edited in place in the top bar (click,
+  Enter; Esc leaves it). **"Editar página"** (top bar) turns the page into a list of block rows (kind in small muted
+  text, its fields, up / down / remove on the right) with "Añadir bloque" at the end: a menu grouped as "Para escribir",
+  "Gráficas" (a new chart opens the editor and lands on the page when saved) and "Botones"; "Hecho" leaves. One task at
+  a time: reading shows no controls but the charts' own. Capturing or editing a chart happens in the side panel with
+  the cards in view (the card being edited shows the preview and an accent ring).
+- This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
   Settings has "Lo que ve la IA" after the account (one row per collection with its count and a three-way segmented
   control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip
   (where the host can save a file; a toast says how it went).
 - **Chart controls** (Boni; like a Notion view's): when the pointer is over a chart card, a small bar of controls appears
   in its header before the total: period (a menu of usual periods), filters (a box, saved when it closes), order and
-  "only the N largest", kind, colour (the calendar palette) and "…" (edit, duplicate, on home, on the desktop, delete).
+  "only the N largest", kind, colour (the calendar palette) and "…" (edit, duplicate, on the desktop, delete).
   28 px controls, Lucide icons, `--surface` bar with a `--line-strong` border, 8 px radius; the period's label is cut
   before anything else. Each change applies at once with Undo in the toast; deleting waits for that Undo.
 - **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a
-  "Conversación" row under "Inicio" in the sidebar (with the number of proposals waiting), the third tab on the phone.
+  "Conversación" row at the top of the sidebar (with the number of proposals waiting), the third tab on the phone.
   Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
   (text with slots, a big number in tabular figures, a list, a table). **Text is only text**: no HTML, no Markdown, no
   links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover.

@@ -29,15 +29,44 @@ export interface Options {
   /** Answers of the agent's API (and the mailbox's, "GET api/mail"), in order, by "METHOD path" ("POST
    * api/agent/turn"); the last one repeats. */
   agent?: Record<string, unknown[]>;
+  /** The account's pages (`/api/pages`, kept in memory as the server would); null: a server without
+   * them. By default one page as the first Boni's home becomes (`PAGE_FROM_HOME`). */
+  pages?: FakePage[] | null;
 }
+
+export interface FakePage {
+  id: string;
+  title: string;
+  icon?: string;
+  parent?: string | null;
+  position?: number;
+  spec: { version: 1; blocks: Record<string, unknown>[] };
+}
+
+/** What an account that used the first Boni gets once (apps/server/src/pages.ts, seedFromV1). */
+export const PAGE_FROM_HOME: FakePage = {
+  id: "gastos",
+  title: "Gastos",
+  spec: {
+    version: 1,
+    blocks: [
+      { id: "b1", type: "action", screen: "capture-expense", label: "Apuntar gasto" },
+      { id: "b2", type: "action", screen: "capture-expense", label: "Café", shortcut: "cafe" },
+      { id: "b3", type: "chart", chart: "spending-by-category" },
+      { id: "b4", type: "chart", chart: "monthly-spending" },
+      { id: "b5", type: "chart", chart: "eating-out" },
+    ],
+  },
+};
 
 /**
  * Opens the page with a stand-in for the desktop shell (`window.boniDesktop`, as preload.cjs gives it): its
  * requests are answered from api/examples, its files live in memory, and what the page asks is recorded.
  */
 export async function openApp(page: Page, url = "/", opts: Options = {}): Promise<void> {
+  const pages = opts.pages === undefined ? [PAGE_FROM_HOME] : opts.pages;
   await page.addInitScript(
-    ({ examples, opts }) => {
+    ({ examples, opts, pages }) => {
       const w = window as unknown as Record<string, unknown>;
       const record = (key: string, v: string) => {
         const list = (w[key] as string[] | undefined) ?? [];
@@ -66,8 +95,56 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       let inbox = (
         opts.agent?.["GET api/agent/proposals"]?.[0] as { proposals: { id: string }[] } | undefined
       )?.proposals;
+      // The pages as the server keeps them (apps/server/src/pages.ts), with its trash for Undo.
+      const pageList = (pages ?? []).map((x, i) => ({
+        icon: "",
+        parent: null,
+        position: i + 1,
+        ...x,
+      })) as Record<string, unknown>[];
+      const trash: Record<string, unknown>[] = [];
+      let made = 0;
+      const pageAnswer = (method: string, p: string, body?: unknown): [number, string] => {
+        if (pages === null) return [503, '{"error":"agent-off"}'];
+        const info = ({ spec: _s, ...rest }: Record<string, unknown>) => rest;
+        const m = /^api\/pages\/([^/]+)(\/restore)?$/.exec(p);
+        const b = (body ?? {}) as Record<string, unknown>;
+        if (!m) {
+          if (method === "GET") return [200, JSON.stringify({ pages: pageList.map(info) })];
+          const page = {
+            id: `p${++made}`,
+            title: b.title,
+            icon: "",
+            parent: b.parent ?? null,
+            position: pageList.length + 1,
+            spec: b.spec ?? { version: 1, blocks: [] },
+          };
+          pageList.push(page);
+          return [200, JSON.stringify({ page })];
+        }
+        const id = m[1]!;
+        if (m[2]) {
+          const i = trash.findIndex((x) => x.id === id);
+          if (i < 0) return [404, '{"error":"not-found"}'];
+          const [back] = trash.splice(i, 1);
+          pageList.push(back!);
+          return [200, JSON.stringify({ page: back })];
+        }
+        const i = pageList.findIndex((x) => x.id === id);
+        if (i < 0) return [404, '{"error":"not-found"}'];
+        if (method === "GET") return [200, JSON.stringify({ page: pageList[i] })];
+        if (method === "DELETE") {
+          const [gone] = pageList.splice(i, 1);
+          trash.push(gone!);
+          for (const x of pageList) if (x.parent === id) x.parent = gone!.parent ?? null;
+          return [200, "{}"];
+        }
+        pageList[i] = { ...pageList[i], ...b };
+        return [200, JSON.stringify({ page: pageList[i] })];
+      };
       const answer = (method: string, path: string, body?: unknown): [number, string] | null => {
         const p = path.split("?")[0]!;
+        if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         if (p === "api/agent/proposals" && inbox)
           return [200, JSON.stringify({ proposals: inbox })];
         const decided = /^api\/agent\/proposals\/([^/]+)\//.exec(p);
@@ -208,7 +285,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         widgetHide: () => record("__calls", "hide"),
       };
     },
-    { examples: EXAMPLES, opts },
+    { examples: EXAMPLES, opts, pages },
   );
   await page.goto(url);
 }

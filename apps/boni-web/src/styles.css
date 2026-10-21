@@ -2704,3 +2704,193 @@ html.widget-page body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------- pages (docs/extensiones.md 6): the user's own screens, built from blocks ---------- */
+.chart-row:focus-within .row-action {
+  opacity: 1;
+}
+.page-row .page-icon {
+  flex: none;
+  color: var(--muted);
+}
+span.page-icon {
+  width: 14px;
+  text-align: center;
+  font-size: 13px;
+}
+.title-edit {
+  font: inherit;
+  color: inherit;
+  border-radius: 6px;
+  padding: 0 4px;
+  margin-left: -4px;
+}
+.title-edit:hover {
+  background: var(--hover);
+}
+.title-input {
+  font: inherit;
+  color: var(--text);
+  min-width: 0;
+  width: min(36rem, 100%);
+  padding: 0 4px;
+  margin-left: -4px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface-2);
+  outline: none;
+}
+.content.page {
+  max-width: 100%;
+}
+.page-heading {
+  margin: 8px 0 0;
+  font-size: 17px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.page-text {
+  margin: 0;
+  max-width: 70ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.page-actions > * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.page-loading {
+  height: 220px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  animation: page-pulse 1.4s var(--ease-out) infinite alternate;
+}
+@keyframes page-pulse {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-loading {
+    animation: none;
+  }
+}
+.block-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 52rem;
+}
+.block-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  min-width: 0;
+}
+.block-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.block-kind {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.block-tools {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+.block-input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  resize: vertical;
+}
+.block-input:focus {
+  border-color: var(--accent);
+}
+.block-heading-input {
+  font-size: 15px;
+  font-weight: 650;
+}
+.block-chart {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+}
+.page-edit-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 52rem;
+}
+.menu-list.scroll {
+  max-height: min(26rem, 60cqh);
+  overflow: auto;
+}
+.menu-head {
+  padding: 6px 8px 2px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.welcome {
+  max-width: 30rem;
+}
+.welcome h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 19px;
+}
+.welcome p {
+  margin: 0;
+  line-height: 1.5;
+}
+.welcome-actions .btn:not(.primary) {
+  color: var(--text);
+}
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.setting.column {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px 0;
+}
+.widget-list {
+  margin: 4px 0;
+}
+.setting.column > .btn {
+  align-self: flex-start;
+}

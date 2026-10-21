@@ -30,6 +30,8 @@ const L = {
     more: "Más",
     edit: /^Editar…/,
     settings: "Ajustes",
+    editPage: "Editar página",
+    addBlock: "Añadir bloque",
   },
   en: {
     period: "Period",
@@ -38,6 +40,8 @@ const L = {
     more: "More",
     edit: /^Edit…/,
     settings: "Settings",
+    editPage: "Edit page",
+    addBlock: "Add block",
   },
 };
 
@@ -77,16 +81,23 @@ for (const language of ["es", "en"] as const) {
       issues.push(...(await audit(page, "chart menu")));
       await page.keyboard.press("Escape");
 
-      await page.keyboard.press("n");
+      await page.locator(".page-actions .btn.primary").click();
       await page.locator(".side-panel .form").waitFor();
       issues.push(...(await audit(page, "capture panel")));
       await page.keyboard.press("Escape");
 
-      const row = page.locator(".nav-list").first().locator(".chart-row").first();
-      await row.hover();
-      await row.getByRole("button", { name: l.edit }).click();
+      await card.hover();
+      await card.getByRole("button", { name: l.more }).click();
+      await page.getByRole("menuitemradio", { name: l.edit }).click();
       await page.locator(".side-panel .editor-form .choices").first().waitFor();
       issues.push(...(await audit(page, "editor panel")));
+      await page.keyboard.press("Escape");
+
+      await page.locator(".topbar").getByRole("button", { name: l.editPage }).click();
+      await page.locator(".page-edit-foot").waitFor();
+      issues.push(...(await audit(page, "page editor")));
+      await page.getByRole("button", { name: l.addBlock }).click();
+      issues.push(...(await audit(page, "add block menu")));
       await page.keyboard.press("Escape");
 
       await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
