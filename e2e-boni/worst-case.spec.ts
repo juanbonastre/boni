@@ -114,7 +114,8 @@ const longTitle = (id: string, title: string) => ({
       {
         arg: "type",
         role: "type",
-        value: "t_b",
+        value: "proyectos",
+        detail: "Proyectos de investigación del grupo de inteligencia artificial aplicada",
         integrity: "model",
         sources: ["model"],
         marks: [],

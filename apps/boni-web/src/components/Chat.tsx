@@ -397,7 +397,8 @@ export function CallRows({ view }: { view: ConfirmView }) {
             <div className={`confirm-value${r.integrity === "external" ? " ext" : ""}`}>
               {r.detail ? (
                 <>
-                  {reveal(r.detail)} <span className="muted small">{reveal(r.value)}</span>
+                  {reveal(r.detail)}
+                  {r.role !== "type" && <span className="muted small"> {reveal(r.value)}</span>}
                 </>
               ) : (
                 reveal(r.value)
