@@ -121,6 +121,14 @@ export const MIGRATIONS = [
      at INTEGER NOT NULL,
      by TEXT
    );`,
+  // 4: settings of the user's extensions and their working state (docs/extensiones.md 4): kept here, in the
+  // user's own store, but outside the operation log (a mailbox cursor moving every few minutes is not a
+  // change to undo); not readable by readQuery. Secrets are stored sealed with the user's data key.
+  `CREATE TABLE settings (
+     key TEXT PRIMARY KEY,
+     value TEXT NOT NULL,
+     updated INTEGER NOT NULL
+   );`,
 ];
 
 export function migrate(db: DatabaseSync): void {

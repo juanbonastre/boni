@@ -172,11 +172,12 @@ describe("the mailbox", () => {
     const view = JSON.stringify(await ok.json());
     expect(view).not.toContain(APP_PASSWORD);
     expect(view).toContain('"user":"juan@example.com"');
-    const raw = db.prepare("SELECT value FROM account_data WHERE key = 'mail'").get() as {
-      value: string;
-    };
-    expect(raw.value.startsWith("v1.")).toBe(true);
-    expect(raw.value).not.toContain(APP_PASSWORD);
+    // Kept in the user's own store, sealed with the user's data key; nothing of it in system.db.
+    const raw = host.store(1).setting("ext/correo/settings") ?? "";
+    expect(raw.length).toBeGreaterThan(20);
+    expect(Buffer.from(raw, "base64").toString("latin1")).not.toContain(APP_PASSWORD);
+    expect(raw).not.toContain(APP_PASSWORD);
+    expect(db.prepare("SELECT * FROM account_data WHERE key LIKE 'mail%'").all()).toEqual([]);
     // Changing the collections only keeps the password.
     const again = await call(t, "PUT", "/api/mail", { collections: ["t_x"] });
     expect(again.status).toBe(200);
@@ -229,13 +230,18 @@ describe("the mailbox", () => {
       .map((e) => e.entity.values.f_asunto);
     expect(titles.filter((t) => t === "Acta")).toHaveLength(1);
     // The password stops working (revoked): the check says why, nothing breaks.
+    // (Set as an account from before 0.8 had it, in system.db with the server's key: the first read moves it
+    // to the user's store, sealed, and removes it from there.)
     const s = mails.settings(1);
-    db.prepare("DELETE FROM account_data WHERE key = 'mail'").run();
+    host.store(1).setSetting("ext/correo/settings", null);
     const { encrypt } = await import("./secret.ts");
     db.prepare(
       "INSERT INTO account_data (account_id, key, value, updated) VALUES (1, 'mail', ?, 0)",
     ).run(encrypt(key, JSON.stringify({ ...s, password: "revocada" })));
     expect((await mails.check(1)).lastError).toBe("auth");
+    expect(mails.settings(1)?.password).toBe("revocada");
+    expect(db.prepare("SELECT * FROM account_data WHERE key = 'mail'").all()).toEqual([]);
+    expect(host.store(1).setting("ext/correo/settings")).not.toBeNull();
     const t = await token();
     expect((await call(t, "POST", "/api/mail/forget")).status).toBe(200);
     expect(mails.view(1)).toBeNull();

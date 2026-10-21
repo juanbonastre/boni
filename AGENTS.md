@@ -35,6 +35,8 @@ packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native mo
                  `journal.ts` (`store.journal`): the agent's runs, steps (with the rule that decided), model calls,
                  proposals, confirmations (hash-bound, used once, expiring) and daily budgets; `readQuery` cannot
                  read them.
+                 `settings` (`setting` / `setSetting`): extensions' settings and working state, outside the log and
+                 out of `readQuery`'s reach (secrets go in sealed with the user's data key by the caller).
 packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
                  devices with a trust level (personal / shared / ambient; only another personal device raises it),
                  sessions stored as sha256 of the token (same scrypt and token hashing as both old servers, so

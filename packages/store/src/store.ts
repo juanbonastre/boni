@@ -129,6 +129,13 @@ export interface UserStore {
    */
   aiAccess(): Record<TypeId, AiLevel>;
   setAiAccess(type: TypeId, level: AiLevel, by: string): void;
+  /**
+   * A setting or working state of the user's extensions (docs/extensiones.md 4), outside the operation log
+   * and out of readQuery's reach; null when absent. Writing null removes it. Secrets go in sealed by the
+   * caller with the user's data key.
+   */
+  setting(key: string): string | null;
+  setSetting(key: string, value: string | null): void;
   /** An encrypted copy of the whole store, coherent while it is in use. */
   backupTo(path: string, key: Buffer): void;
   /** The agent's runs, proposals and confirmations, in this same database. */
@@ -678,6 +685,20 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       for (const r of db.prepare("SELECT type, level FROM ai_access").all())
         out[r.type as string] = r.level as AiLevel;
       return out;
+    },
+    setting(key) {
+      const r = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
+        | { value: string }
+        | undefined;
+      return r?.value ?? null;
+    },
+    setSetting(key, value) {
+      if (value === null) db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+      else
+        db.prepare(
+          "INSERT INTO settings (key, value, updated) VALUES (?, ?, ?) " +
+            "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated = excluded.updated",
+        ).run(key, value, now());
     },
     setAiAccess(type, level, by) {
       if (!AI_LEVELS.includes(level)) throw new StoreError("invalid", `bad level ${level}`);

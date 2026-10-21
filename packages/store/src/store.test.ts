@@ -126,6 +126,22 @@ describe("the store", () => {
     expect(() => store.readQuery("SELECT * FROM ai_access")).toThrow();
   });
 
+  it("keeps extensions' settings and state outside the log, out of read queries, across restarts", () => {
+    const { store, dir } = fresh();
+    const ops = store.log().length;
+    expect(store.setting("mail/state")).toBeNull();
+    store.setSetting("mail/state", '{"lastUid":7}');
+    store.setSetting("mail/state", '{"lastUid":8}');
+    expect(store.setting("mail/state")).toBe('{"lastUid":8}');
+    expect(store.log()).toHaveLength(ops); // a cursor moving is not a change to undo
+    expect(() => store.readQuery("SELECT * FROM settings")).toThrow();
+    const again = openUserStore(join(dir, "boni.db"));
+    stores.push(again);
+    expect(again.setting("mail/state")).toBe('{"lastUid":8}');
+    again.setSetting("mail/state", null);
+    expect(store.setting("mail/state")).toBeNull();
+  });
+
   it("keeps the schema across restarts", () => {
     const { store, dir } = fresh();
     store.close();
