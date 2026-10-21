@@ -36,6 +36,19 @@ export {
 } from "./providers.ts";
 export { checkReaderOutput, READER_SCHEMAS } from "./readers.ts";
 export {
+  checkReadMessage,
+  MODULE_IDS,
+  MODULES,
+  modulesOf,
+  type Reading,
+  type ReadingModule,
+  readMessagePrompt,
+  readMessageSchema,
+  USER_IN,
+  type UserIn,
+  weekdayOf,
+} from "./reading.ts";
+export {
   ARG_ROLES,
   coreTools,
   DESTINATION_ROLES,

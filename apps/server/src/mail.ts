@@ -1,4 +1,5 @@
 import type { Duplex } from "node:stream";
+import type { UserIn } from "@boni/agent";
 import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
 import { BODY, type UserStore } from "@boni/store";
@@ -92,33 +93,65 @@ export function dueField(
   return best ?? unknown;
 }
 
+/** Where the mailbox's address is among a mail's recipients: in Para, only in Cc, or neither (a list). */
+export function userIn(mailbox: string, para: unknown, cc: unknown): UserIn {
+  const me = mailbox.trim().toLowerCase();
+  const has = (v: unknown) =>
+    typeof v === "string" && me.includes("@") && v.toLowerCase().includes(me);
+  return has(para) ? "to" : has(cc) ? "cc" : "group";
+}
+
+/** The modules a mail is read with (docs/nucleo.md 7.4b): what it asks the user to do, and to attend. */
+export const MAIL_MODULES = ["tasks", "events"];
+
 /**
- * The background plan for one mail (docs/nucleo.md 7.12, a plan template made by code): read the mail,
- * list its tasks, pick a collection when there are several (only if there are tasks), and one
- * `entities.create` per task in the chosen one. Every value comes from the mail, so the policy sends each
- * one to the inbox (P4, P7); nothing here is written by itself. `known`: the titles of the tasks still
- * waiting in the inbox from the same sender, so a reminder or a second mail about the same thing does not
- * propose it again (that sender's own text: nothing of Juan's goes to the reader, A14).
+ * The background plan for one mail (docs/nucleo.md 7.4b, 7.12; a plan template made by code): read the
+ * mail once with `read_message` (its headers and text, where the user is among its recipients, the
+ * modules), pick a collection when there are several (only if something is for the user), and one
+ * `entities.create` per task or event in the chosen one. Every value comes from the mail, so the policy
+ * sends each one to the inbox (P4, P7); nothing here is written by itself. `has`: the mail's fields that
+ * have a value (the headers shown are those); `known`: the titles still waiting in the inbox from the same
+ * sender, so a reminder does not propose them again (that sender's own text: nothing of Juan's, A14).
  */
 export function mailPlan(
   mail: string,
-  hasBody: boolean,
   targets: Target[],
-  known: string[] = [],
+  o: { has?: readonly string[]; known?: string[]; userIn?: UserIn; modules?: string[] } = {},
 ): unknown {
-  const text = hasBody
-    ? { fn: "concat", args: [{ ref: "$m.asunto" }, { lit: "\n\n" }, { ref: "$m.body" }] }
-    : { ref: "$m.asunto" };
+  const has = new Set(o.has ?? ["asunto", "body"]);
+  const parts: unknown[] = [];
+  const line = (name: string, ...keys: [string, string, string][]) => {
+    const present = keys.filter(([k]) => has.has(k));
+    if (!present.length) return;
+    parts.push({ lit: `${name}: ` });
+    for (const [k, before, after] of present)
+      parts.push(
+        ...(before ? [{ lit: before }] : []),
+        { ref: `$m.${k}` },
+        ...(after ? [{ lit: after }] : []),
+      );
+    parts.push({ lit: "\n" });
+  };
+  line("De", ["de_nombre", "", " "], ["de", "<", ">"]);
+  line("Para", ["para", "", ""]);
+  line("Cc", ["cc", "", ""]);
+  line("Fecha", ["fecha", "", ""]);
+  line("Asunto", ["asunto", "", ""]);
+  if (has.has("body")) parts.push({ lit: "\n" }, { ref: "$m.body" });
+  const text = { fn: "concat", args: parts };
+  const known = o.known ?? [];
   const steps: unknown[] = [
     { id: "m", op: "call", tool: "entities.get", args: { id: { lit: mail } } },
     {
-      id: "t",
+      id: "r",
       op: "read",
-      reader: "extract_tasks",
+      reader: "read_message",
       input: text,
-      ...(known.length
-        ? { params: { known: { fn: "list", args: known.map((k) => ({ lit: k })) } } }
-        : {}),
+      params: {
+        modules: { fn: "list", args: (o.modules ?? MAIL_MODULES).map((m) => ({ lit: m })) },
+        user_in: { lit: o.userIn ?? "group" },
+        ...(known.length ? { known: { fn: "list", args: known.map((k) => ({ lit: k })) } } : {}),
+      },
     },
   ];
   if (targets.length > 1)
@@ -130,32 +163,33 @@ export function mailPlan(
       params: {
         options: { fn: "list", args: targets.map((t) => ({ lit: t.option })) },
         question: {
-          lit: "¿En cuál de estas colecciones apuntaría el destinatario las tareas que le pide este mensaje?",
+          lit: "¿En cuál de estas colecciones apuntaría el destinatario lo que este mensaje le pide hacer o a lo que tiene que ir?",
         },
       },
-      when: { ref: "$t.tasks" },
+      when: { ref: "$r.all" },
     });
   targets.forEach((t, i) => {
-    steps.push({
-      id: `n${i}`,
-      op: "call",
-      tool: "entities.create",
-      each: { ref: "$t.tasks" },
-      ...(targets.length > 1
-        ? { when: { fn: "eq", args: [{ ref: "$c.choice" }, { lit: t.option }] } }
-        : {}),
-      args: {
-        type: { lit: t.key },
-        values: {
-          fn: "obj",
-          args: [
-            { lit: "title" },
-            { ref: "$item.title" },
-            ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
-          ],
+    for (const module of o.modules ?? MAIL_MODULES)
+      steps.push({
+        id: `n${i}_${module}`,
+        op: "call",
+        tool: "entities.create",
+        each: { ref: `$r.${module}` },
+        ...(targets.length > 1
+          ? { when: { fn: "eq", args: [{ ref: "$c.choice" }, { lit: t.option }] } }
+          : {}),
+        args: {
+          type: { lit: t.key },
+          values: {
+            fn: "obj",
+            args: [
+              { lit: "title" },
+              { ref: "$item.title" },
+              ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
+            ],
+          },
         },
-      },
-    });
+      });
   });
   return { version: 1, steps };
 }
@@ -177,10 +211,22 @@ const FIELDS: [key: string, name: string, type: FieldDef["type"]][] = [
   ["de", "De", "email"],
   ["de_nombre", "Nombre", "text"],
   ["para", "Para", "text"],
+  ["cc", "Cc", "text"],
   ["fecha", "Fecha", "datetime"],
   ["adjuntos", "Adjuntos", "text"],
   ["id_mensaje", "Id del mensaje", "text"],
 ];
+
+const fieldOf = ([k, name, type]: (typeof FIELDS)[number]): FieldDef => ({
+  id: `f_${k}`,
+  key: k,
+  name,
+  type,
+  label: CODE,
+  ...(k === "de" || k === "de_nombre" || k === "para" || k === "cc"
+    ? { sensitivity: "personal" as const }
+    : {}),
+});
 
 export class MailError extends Error {
   code: string;
@@ -330,20 +376,17 @@ export class Mails {
   /** The account's "Correos" collection: the one this code made, or a new one if it is gone. */
   private collection(store: UserStore, st: MailState): TypeDef {
     const had = st.type ? store.schema().types[st.type] : undefined;
-    if (had && !had.archived) return had;
+    if (had && !had.archived) {
+      // A field this code added later (Cc) joins a collection made before it.
+      const missing = FIELDS.map(fieldOf).filter((f) => !had.fields.some((x) => x.id === f.id));
+      for (const field of missing)
+        store.applySchema({ op: "add_field", type: had.id, field }, { actor: "connector" });
+      return missing.length ? (store.schema().types[had.id] as TypeDef) : had;
+    }
     const taken = new Set(Object.values(store.schema().types).map((t) => t.key));
     let key = "correo";
     for (let i = 2; taken.has(key); i++) key = `correo${i}`;
-    const fields: FieldDef[] = FIELDS.map(([k, name, type]) => ({
-      id: `f_${k}`,
-      key: k,
-      name,
-      type,
-      label: CODE,
-      ...(k === "de" || k === "de_nombre" || k === "para"
-        ? { sensitivity: "personal" as const }
-        : {}),
-    }));
+    const fields: FieldDef[] = FIELDS.map(fieldOf);
     const def: TypeDef = {
       id: newId("t", this.now()),
       key,
@@ -374,8 +417,13 @@ export class Mails {
     };
     if (from && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from.address)) values.f_de = w(from.address);
     if (from?.name) values.f_de_nombre = w(from.name.slice(0, 200));
-    const to = [...m.to, ...m.cc].map((a) => a.address).join(", ");
-    if (to) values.f_para = w(to.slice(0, 2000));
+    const list = (as: typeof m.to) =>
+      as
+        .map((a) => (a.name ? `${a.name} <${a.address}>` : a.address))
+        .join(", ")
+        .slice(0, 2000);
+    if (m.to.length) values.f_para = w(list(m.to));
+    if (m.cc.length) values.f_cc = w(list(m.cc));
     const when = m.date ?? arrived;
     if (when) values.f_fecha = w(when);
     if (m.attachments.length)
@@ -586,9 +634,17 @@ export class Mails {
       const e = store.get(id);
       if (!e || e.entity.deleted !== undefined) continue;
       try {
-        const from = String(e.entity.values.f_de ?? "");
+        const v = e.entity.values;
+        const from = String(v.f_de ?? "");
+        const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto"].filter(
+          (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
+        );
         const r = await agent.background(
-          mailPlan(id, Boolean(e.entity.body), targets, from ? this.known(store, from) : []),
+          mailPlan(id, targets, {
+            has: e.entity.body ? [...has, "body"] : has,
+            known: from ? this.known(store, from) : [],
+            userIn: userIn(s.user, v.f_para, v.f_cc),
+          }),
         );
         n += r.proposals.length;
         if (r.status === "stopped" && r.error)

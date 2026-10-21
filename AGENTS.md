@@ -73,6 +73,11 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  `anthropic.ts`: the real provider (Messages API with structured output, no tools, no SDK);
                  `apiSchema` reduces schemas to what that API accepts (the code checks every answer again anyway).
                  `eval/eval.ts`: a small evaluation with the real models, outside CI, run by hand with a budget.
+                 `reading.ts`: reading a message by modules (docs/nucleo.md 7.4b; reader `read_message`): a long
+                 base prompt plus each module's part (`MODULES`: tasks, events), reasoned items (quote, actor,
+                 kind, then title and day) and `checkReadMessage`, where the code keeps only what the recipient
+                 does in an active module. `eval/mail.ts` measures it on invented mail shaped like the real
+                 failures; run it before and after changing the prompt (Haiku 4.5, the server's reader, 5 runs).
                  `test/boundary.test.ts`: the core (entities, store, agent, views) depends on nothing of the vault,
                  the calendar, the apps or Obsidian; Obsidian is an integration at the edge (docs/nucleo.md, 9.4).
 packages/mirror/ The Markdown mirror (docs/nucleo.md 9.2, 9.4; an edge, never imported by the core): for each type in
