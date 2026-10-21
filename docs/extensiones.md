@@ -1,6 +1,6 @@
 # Boni extensible: extensiones, memoria y autoconocimiento
 
-Propuesta (Claude, 2026-10-21) a petición de Juan; lo decidido está en la sección 11. Amplía `docs/nucleo.md`: aquel define el
+Diseño aprobado por Juan (2026-10-21); las decisiones están en la sección 11. Amplía `docs/nucleo.md`: aquel define el
 núcleo seguro (entidades, procedencia, agente con planes, políticas, lectores en cuarentena); este define **cómo se
 construye todo lo demás encima** sin que el código se llene de casos especiales. Prioridad: el escritorio (Electron y
 Chrome); el móvil, más adelante.
@@ -364,7 +364,9 @@ Esto no es otro proyecto: es la forma de hacer los PR 16 a 21 sin duplicar códi
    su permiso. Boni da los bloques y construye con ellos. Decidido (Juan, 2026-10-21), con la zona peligrosa (2.1) y las
    definiciones de catálogo desde Boni (3.1) como matiz suyo.
 3. **Orden:** A1-A4 antes de lo que queda del PR 16. Decidido (Juan, 2026-10-21).
-4. **Memoria:** la base por ámbito y clase, decidida (Juan, 2026-10-21); la forma (5.1: grafo del propio almacén, dos
-   tiempos, tres niveles, recuperación híbrida, consolidación) es propuesta, pendiente de su visto bueno.
-5. **Pendiente de Juan:** el Lienzo (sección 6) con sus superficies dinámicas, la zona peligrosa (2.1) y las
-   definiciones de catálogo desde Boni (3.1).
+4. **Memoria:** por ámbito y clase, y con la forma de 5.1 (grafo del propio almacén, dos tiempos, tres niveles,
+   recuperación híbrida, consolidación). Decidido (Juan, 2026-10-21).
+5. **El Lienzo** con sus superficies dinámicas (sección 6), la **zona peligrosa** (2.1) y las **definiciones de
+   catálogo desde Boni** (3.1). Decidido (Juan, 2026-10-21).
+6. **Índices de APIs** (p. ej. `public-apis`): como consulta del papel `builder` para descubrir APIs al definir
+   conectores (A7); el conector se arma mejor desde el OpenAPI de cada API. Propuesto (2026-10-21).
