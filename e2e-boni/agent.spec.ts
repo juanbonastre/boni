@@ -6,6 +6,7 @@ import {
   DONE,
   GUIDE,
   MAIL,
+  MAIL_SUGGESTED,
   MIRROR_PROPOSAL,
   PROPOSALS,
   RTL,
@@ -389,4 +390,44 @@ test("the reading guide: his words saved, rules added and removed, examples only
   expect(puts[3]).toContain('"keepExamples":[]');
   await modal.locator("#mail-guide-text").scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${SHOTS}/agent-mail-guide.png` });
+});
+
+test("the reviewer's suggestion: measured, shown with what it changes, added only when Juan says", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "GET api/mail": [MAIL_SUGGESTED],
+      "GET api/mail/guide": [GUIDE],
+      "POST api/mail/suggestion": [
+        {
+          guide: {
+            ...GUIDE.guide,
+            rules: [...GUIDE.guide.rules, MAIL_SUGGESTED.mail.state.suggestion.rules[0]],
+          },
+          mail: MAIL.mail,
+        },
+      ],
+      "POST api/mail/review": [MAIL],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByRole("tab", { name: "Correo" }).click();
+  // The guide's group opens by itself when a suggestion waits.
+  const card = modal.getByRole("group", { name: "Sugerencia de la revisora" });
+  await expect(card).toContainText("acertaría 37 de tus últimas 40 decisiones (ahora 31)");
+  await expect(card).toContainText("@boletines.example.com: No leer nunca");
+  await expect(card).toContainText("Ejemplo «Feria de empleo»: Nada que proponer");
+  await page.screenshot({ path: `${SHOTS}/agent-mail-suggestion.png` });
+  await card.getByRole("button", { name: "Añadir a la guía" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(modal).toContainText("@boletines.example.com");
+  expect(await requests(page, "POST api/mail/suggestion")).toEqual([
+    'POST api/mail/suggestion {"id":"g-1","accept":true}',
+  ]);
+  // Review now with nothing clear: it says so.
+  await modal.getByRole("button", { name: "Revisar ahora" }).click();
+  await expect(page.getByText("Nada claro que sugerir por ahora")).toBeVisible();
 });

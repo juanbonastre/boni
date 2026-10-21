@@ -10,6 +10,7 @@ import {
 import { host, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
 import {
+  answerSuggestion,
   changeVisibility,
   checkMail,
   configured,
@@ -21,6 +22,7 @@ import {
   logout,
   openSettings,
   rereadMail,
+  reviewMail,
   saveMail,
   saveMailGuide,
   saveSettings,
@@ -587,6 +589,8 @@ function MailSettings() {
           })()}
           <MailGuideSettings
             collections={(types ?? []).filter((v) => mail.collections.includes(v.id))}
+            mail={mail}
+            onMail={setMail}
           />
           <Disclosure title={t("mail.more")}>
             <div className="setting">
@@ -724,13 +728,23 @@ function MailSettings() {
  * (never read a sender, or send what it asks to one collection) and the examples kept from his decisions
  * (removable here, never written here).
  */
-function MailGuideSettings({ collections }: { collections: Visibility[] }) {
+function MailGuideSettings({
+  collections,
+  mail,
+  onMail,
+}: {
+  collections: Visibility[];
+  mail: MailView;
+  onMail: (m: MailView) => void;
+}) {
   const t = useStore((s) => s.t);
   const [guide, setGuide] = useState<MailGuide | null>(null);
   const [text, setText] = useState("");
   const [from, setFrom] = useState("");
   const [action, setAction] = useState("skip");
   const [error, setError] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const suggestion = mail.state.suggestion;
   useEffect(() => {
     let live = true;
     void loadMailGuide().then((g) => {
@@ -759,8 +773,61 @@ function MailGuideSettings({ collections }: { collections: Visibility[] }) {
     .filter(Boolean)
     .join(" · ");
   return (
-    <Disclosure title={t("mail.guide.title")} summary={summary || t("mail.guide.empty")}>
+    <Disclosure
+      title={t("mail.guide.title")}
+      summary={suggestion ? t("mail.suggestion.waiting") : summary || t("mail.guide.empty")}
+      defaultOpen={!!suggestion}
+    >
       <p className="muted small setting-note">{t("mail.guide.help")}</p>
+      {suggestion && (
+        <div className="suggestion" role="group" aria-label={t("mail.suggestion.title")}>
+          <div className="suggestion-head">
+            <strong>{t("mail.suggestion.title")}</strong>
+            <span className="muted small">
+              {t("mail.suggestion.score", {
+                after: suggestion.after,
+                before: suggestion.before,
+                total: suggestion.total,
+              })}
+            </span>
+          </div>
+          <ul className="small">
+            {suggestion.rules.map((r) => (
+              <li key={r.id}>
+                <span className="breakable">{r.from}</span>:{" "}
+                {r.action === "skip"
+                  ? t("mail.guide.skip")
+                  : t("mail.guide.to", { name: nameOf(r.collection) })}
+              </li>
+            ))}
+            {suggestion.examples.map((e) => (
+              <li key={e.id}>
+                {t("mail.suggestion.example", { subject: e.subject })}{" "}
+                {e.want.length ? e.want.map((w) => w.title).join(" · ") : t("mail.guide.nothing")}
+              </li>
+            ))}
+          </ul>
+          <div className="modal-actions">
+            {[false, true].map((accept) => (
+              <button
+                key={String(accept)}
+                type="button"
+                className={accept ? "btn primary" : "btn"}
+                onClick={async () => {
+                  const r = await answerSuggestion(suggestion.id, accept);
+                  if (r?.guide) {
+                    setGuide(r.guide);
+                    setText(r.guide.instructions);
+                  }
+                  if (r?.mail) onMail(r.mail);
+                }}
+              >
+                {t(accept ? "mail.suggestion.accept" : "mail.suggestion.reject")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="setting stacked">
         <label className="setting-label" htmlFor="mail-guide-text">
           <span>{t("mail.guide.instructions")}</span>
@@ -874,6 +941,30 @@ function MailGuideSettings({ collections }: { collections: Visibility[] }) {
           ))}
         </>
       )}
+      <div className="setting">
+        <div className="setting-label">
+          <span>{t("mail.review")}</span>
+          <span className="muted small">{t("mail.review.help")}</span>
+        </div>
+        <div className="setting-control">
+          <button
+            type="button"
+            className="btn"
+            disabled={reviewing}
+            onClick={async () => {
+              setReviewing(true);
+              const m = await reviewMail();
+              setReviewing(false);
+              if (m) {
+                onMail(m);
+                if (!m.state.suggestion) toast(t("mail.review.nothing"));
+              }
+            }}
+          >
+            {reviewing ? t("mail.review.busy") : t("mail.review.go")}
+          </button>
+        </div>
+      </div>
     </Disclosure>
   );
 }

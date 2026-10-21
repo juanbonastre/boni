@@ -303,7 +303,38 @@ export interface MailView {
   collections: string[];
   on: boolean;
   /** `type`: the "Correos" collection's id (null before the first check). */
-  state: { lastCheck: number; lastError: string | null; count: number; type: string | null };
+  state: {
+    lastCheck: number;
+    lastError: string | null;
+    count: number;
+    type: string | null;
+    /** The reviewer's suggestion for the reading guide, waiting for Juan. */
+    suggestion: MailSuggestion | null;
+  };
+}
+export interface MailSuggestion {
+  id: string;
+  rules: MailRule[];
+  examples: { id: string; subject: string; want: { title: string }[] }[];
+  before: number;
+  after: number;
+  total: number;
+}
+
+function parseSuggestion(v: unknown): MailSuggestion | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id, 80);
+  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
+  const g = parseGuide({ rules: v.rules, examples: v.examples, instructions: "" });
+  if (!id || !g) return null;
+  return {
+    id,
+    rules: g.rules,
+    examples: g.examples,
+    before: n(v.before),
+    after: n(v.after),
+    total: n(v.total),
+  };
 }
 
 export function parseMail(v: unknown): MailView | null {
@@ -323,6 +354,7 @@ export function parseMail(v: unknown): MailView | null {
       lastError: str(v.state.lastError, 40),
       count: typeof v.state.count === "number" ? v.state.count : 0,
       type: str(v.state.type, 80),
+      suggestion: parseSuggestion(v.state.suggestion),
     },
   };
 }
@@ -506,6 +538,14 @@ export class AgentApi {
   };
   forgetMail = async () => void (await this.call("POST", "/forget", {}, "api/mail"));
   private guideOf = (b: unknown) => (isObj(b) ? parseGuide(b.guide) : null);
+  reviewMail = async () => this.mailOf(await this.call("POST", "/review", {}, "api/mail"));
+  answerSuggestion = async (id: string, accept: boolean) => {
+    const b = await this.call("POST", "/suggestion", { id, accept }, "api/mail");
+    return {
+      guide: isObj(b) ? parseGuide(b.guide) : null,
+      mail: isObj(b) ? parseMail(b.mail) : null,
+    };
+  };
   mailGuide = async () => this.guideOf(await this.call("GET", "/guide", undefined, "api/mail"));
   saveMailGuide = async (input: {
     instructions?: string;

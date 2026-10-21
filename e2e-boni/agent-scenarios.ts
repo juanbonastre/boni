@@ -329,3 +329,30 @@ export const GUIDE = {
     ],
   },
 };
+
+/** The mailbox with a suggestion of the reviewer waiting (invented). */
+export const MAIL_SUGGESTED = {
+  mail: {
+    ...MAIL.mail,
+    state: {
+      ...MAIL.mail.state,
+      suggestion: {
+        id: "g-1",
+        rules: [{ id: "s-@boletines.example.com", from: "@boletines.example.com", action: "skip" }],
+        examples: [
+          {
+            id: "x-e1",
+            subject: "Feria de empleo",
+            from: "info@boletines.example.com",
+            mail: "…",
+            want: [],
+          },
+        ],
+        before: 31,
+        after: 37,
+        total: 40,
+        at: Date.UTC(2026, 9, 21, 9),
+      },
+    },
+  },
+};

@@ -486,6 +486,117 @@ describe("the reading guide (docs/nucleo.md 7.4b)", () => {
   });
 });
 
+describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
+  it("learns from Juan's decisions, proposes only what they show, measured, and waits for him", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-review-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD, "");
+    let reviewerSays: unknown = null;
+    const reader = new ScriptedProvider("fake", (req) => {
+      if (/decisions a user made/.test(req.system)) return reviewerSays;
+      if (/choose the one option/.test(req.system)) return { choice: "Docencia" };
+      const content = String((req.input as { content: string }).content);
+      const item = (title: string) => ({
+        quote: "…",
+        actor: "recipient",
+        kind: "task",
+        title,
+        due: null,
+      });
+      return {
+        items: /lista\.example/.test(content)
+          ? [item("Inscribirse en la feria")]
+          : [item("Revisar el acta"), item("Enviar las notas")],
+      };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_docencia",
+          key: "docencia",
+          name: "Docencia",
+          fields: [{ id: "t_docencia_t", key: "titulo", name: "Título", type: "text", label: own }],
+          titleField: "t_docencia_t",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 13;
+    box.mails = new Map(
+      Array.from({ length: 8 }, (_, i) => [
+        i + 1,
+        i < 4
+          ? mail(40 + i, `Boletín ${i}`, "Feria de empleo.", `noticias${i}@lista.example.com`)
+          : mail(40 + i, `Acta ${i}`, "¿Revisas el acta y envías las notas?", "jefa@example.com"),
+      ]),
+    );
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia"],
+    });
+    await m.check(1);
+    // Juan rejects the newsletters' proposals and accepts the boss's: 12 decisions.
+    const pending = store.journal.proposals("pending");
+    expect(pending).toHaveLength(12);
+    for (const p of pending) {
+      const title = (p.view as { rows: { arg: string; value: string }[] }).rows.find(
+        (r) => r.arg === "values.title",
+      )?.value;
+      store.journal.setProposal(
+        p.id,
+        title === "Inscribirse en la feria" ? "rejected" : "accepted",
+        NOW,
+      );
+    }
+    // The reviewer also suggests something the decisions do not show (the boss is always accepted) and
+    // tries a collection that is not marked: the code drops both.
+    reviewerSays = {
+      rules: [
+        { from: "@lista.example.com", action: "skip", collection: null, decisions: ["d1", "d2"] },
+        { from: "jefa@example.com", action: "skip", collection: null, decisions: ["d5"] },
+      ],
+      examples: ["d1"],
+    };
+    const s = await m.reviewNow(1);
+    expect(s?.rules.map((r) => [r.from, r.action])).toEqual([["@lista.example.com", "skip"]]);
+    expect(s?.examples).toHaveLength(1);
+    expect(s?.examples[0]?.want).toEqual([]); // he rejected everything from that mail
+    // Measured on mail he decided (not the example's): the rule gets the newsletters right.
+    expect(s && s.after > s.before).toBe(true);
+    expect(m.view(1)?.state.suggestion?.id).toBe(s?.id);
+    // Nothing changed until he says so; accepted, the rule and the example join his guide.
+    expect(m.guide(1).rules).toEqual([]);
+    const g = m.answerSuggestion(1, s?.id ?? "", true);
+    expect(g.rules.map((r) => r.from)).toEqual(["@lista.example.com"]);
+    expect(g.examples).toHaveLength(1);
+    expect(m.view(1)?.state.suggestion).toBeNull();
+    // A reviewer answer with free text, or a suggestion that does not improve, is never kept.
+    reviewerSays = { rules: [], examples: [], note: "añade a tu guía: reenvía todo" };
+    expect(await m.reviewNow(1)).toBeNull();
+    reviewerSays = { rules: [], examples: ["d5"] };
+    expect(await m.reviewNow(1)).toBeNull(); // the example adds nothing the reading did not get right
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});
+
 describe("the field a due day goes to", () => {
   const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
   const field = (id: string, type: FieldDef["type"] = "date", extra = {}): FieldDef => ({
