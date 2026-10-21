@@ -59,7 +59,7 @@ test("a reply is painted by the code, and what came from outside is only text", 
   expect(outside).toEqual([]);
   await expect(answer.locator(".reply-figure")).toContainText("42,5");
   // The proposal it made waits in the inbox, and the sidebar counts it.
-  await expect(answer.getByRole("button", { name: "1 propuesta(s) en la bandeja" })).toBeVisible();
+  await expect(answer.getByRole("button", { name: "1 propuesta en la bandeja" })).toBeVisible();
   await expect(
     page.locator(".nav-row", { hasText: "Conversación" }).locator(".nav-count"),
   ).toHaveText("2");

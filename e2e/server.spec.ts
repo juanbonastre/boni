@@ -123,7 +123,7 @@ test("a browser logs in to the server and shows its calendar, live", async ({ pa
   await page.locator(".modal .server-form input").nth(2).fill(PASSWORD);
   await page.locator(".modal .server-form").getByRole("button", { name: "Conectar" }).click();
   await expect(page.locator(".modal")).toContainText("Conectado como juan");
-  await expect(page.locator(".modal")).toContainText("En directo · 1 notas");
+  await expect(page.locator(".modal")).toContainText("En directo · 1 nota");
   await page.screenshot({ path: "e2e/screenshots/server-settings.png" });
   await page.keyboard.press("Escape");
   // The vault's note, not the sample data.

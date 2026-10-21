@@ -155,6 +155,40 @@ slate `#94a3b8`.
   calendar cannot place are listed in Settings, never hidden.
 - Every edit is optimistic and undoable; one gesture is one undo step.
 
+## 4b. Quality (learned 2026-10-21)
+Distilled from pbakaus/impeccable (Apache 2.0) and emilkowalski/skills (MIT) at Juan's request; the general version for
+any interface is the vault note `wiki/temas/diseno-de-interfaces.md`. Here, what it means for Boni.
+
+- **Boni is an "operate" product:** someone doing a task. Familiar controls, one family of type, a tight scale, colour for
+  state and selection only, the same vocabulary on every screen. Character lives in details, never in invented controls.
+- **Cognitive load:** at most about four visible choices per decision; more go behind a select or a closed group with its
+  summary. Groups of four or fewer. Where you are is always marked. No ids or keys in front of the user ("imap" → "un
+  buzón de correo (IMAP)").
+- **States:** every control has normal, hover, keyboard focus, pressed, disabled, loading, error and empty. An empty
+  list says what to do next.
+- **Counts:** a translation key with a count has a `.one` form when "1 …" reads wrong ("1 elemento", "1 correo"); both
+  translators use it. Never "(s)". Four-digit numbers stay unseparated in Spanish (1284), as Spanish usage has it.
+- **Motion:**
+  - Whether to animate depends on how often it is seen: keyboard actions and things done many times a day are never
+    animated; occasional ones (a panel, a toast) get a short transition.
+  - Easing `var(--ease-out)` (`cubic-bezier(0.23, 1, 0.32, 1)`) for what enters, leaves or answers a press; never
+    ease-in. 100-160 ms for a press, 150-250 ms for a menu, at most 300 ms for a panel; exits faster than entries.
+  - Never from `scale(0)` (from 0.95 with opacity); menus grow from their trigger; transitions, not keyframes, for
+    anything that can be interrupted; only `transform` and `opacity`; never `transition: all`.
+  - Buttons (`.btn`) answer a pointer press with `scale(0.97)` in 120 ms.
+  - **"Reduce motion"** (`prefers-reduced-motion`) is respected in both apps: transitions and animations collapse, and the
+    calendar's viewport lands jumps and zooms at once (its smoothing time drops to 1 ms).
+- **Surfaces nobody draws:** text selection in the accent's soft tint (`::selection`), a visible focus ring, styled
+  scrollbars, tabular numerals in figures.
+- **Copy:** a button names its action; an error says what happened and how to fix it, never a code.
+- **Worst realistic data:** `e2e-boni/worst-case.spec.ts` fills Settings and the inbox with long hyphenated accented
+  names, a 70-character address, one-letter values, counts of 1 and of thousands, a long collection name, through the
+  fake server; every section with its groups open must fit. (It found the guide's rule select overflowing with a long
+  collection name: a select in a row of controls now shrinks and ellipsizes.)
+- **Review before a PR that changes a screen:** look at the screenshot as a first-time user (does every word make sense?
+  what do I do on an empty screen?) and as a daily user (keyboard? how many clicks for the main task?); Nielsen's ten
+  heuristics and the cognitive-load list; the worst-case data.
+
 ## 5. Language and copy
 Spanish first, English second, all through `src/i18n.ts` (no hard-coded text). The UI uses proper Spanish with accents
 (the "no accents" rule belongs to generated vault notes and chat, not to the product). Labels are short and imperative;

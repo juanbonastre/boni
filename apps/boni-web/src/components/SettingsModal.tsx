@@ -848,7 +848,7 @@ function MailGuideSettings({
           <button
             type="button"
             className="btn"
-            disabled={text.trim() === guide.instructions}
+            disabled={text.trim() === guide.instructions.trim()}
             onClick={() => void save({ instructions: text }, "mail.guide.saved")}
           >
             {t("mail.guide.save")}
