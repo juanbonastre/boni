@@ -264,6 +264,8 @@ type Drag = { id: string; over: string | null; after: boolean } | null;
 /** The blocks; consecutive charts share a grid (side by side on a full-width page), buttons a row. */
 function Blocks({ page }: { page: Page }) {
   const specs = useVisibleCharts();
+  // While a chart is being edited its height follows the draft.
+  const panel = useStore((s) => s.panel);
   const [drag, setDrag] = useState<Drag>(null);
   const blocks = page.spec.blocks;
   const groups: Block[][] = [];
@@ -318,8 +320,11 @@ function Blocks({ page }: { page: Page }) {
               {g.map((b) => {
                 const spec = b.type === "chart" ? specs.find((s) => s.id === b.chart) : null;
                 const wide = spec && isCategoryKind(spec.kind) && spec.kind !== "donut";
+                const draft =
+                  panel?.kind === "edit" && panel.spec.id === spec?.id ? panel.spec : spec;
+                const tall = draft?.style.height ?? "m";
                 return (
-                  <div key={b.id} className={`doc-chart${wide ? " wide" : ""}`}>
+                  <div key={b.id} className={`doc-chart h-${tall}${wide ? " wide" : ""}`}>
                     {row(b)}
                   </div>
                 );
@@ -905,10 +910,11 @@ function NewChartPreview() {
   if (panel?.kind !== "edit" || !panel.isNew || !forPage) return null;
   return (
     <div className="doc-charts">
-      <div className="doc-chart">
+      <div className={`doc-chart h-${panel.spec.style.height ?? "m"}`}>
         <ChartCardContent
           title={panel.spec.title}
           color={panel.spec.color}
+          style={panel.spec.style}
           state={preview ?? emptyState()}
           className="editing new"
         />

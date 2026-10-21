@@ -240,6 +240,18 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   Settings has "Lo que ve la IA" after the account (one row per collection with its count and a three-way segmented
   control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip
   (where the host can save a file; a toast says how it went).
+- **Charts look as Notion's** (studied in Juan's Notion, 2026-10-21): on a page a chart has no card around it (its
+  title, period and total over it), a dotted grid, the value over each column or point ("Data labels"), a band behind
+  the column under the pointer (no dimming of the rest), a 1.75 px line with a soft gradient under it, a thin donut
+  ring with the total big in its centre. Its **style** (`ChartStyle`, `@boni/views`, kept in the chart's definition
+  only when it differs from the defaults): height S/M/L/XL (240/340/440/560 px), grid lines (horizontal, vertical,
+  both, none), axis names, data labels, colour (one from the palette or "Colorido", one per bar), running total
+  ("Acumulado"), zero values left out, and the average as the reference line. The **settings** (the side panel) are
+  laid out as Notion's view settings: name, the chart type as five icons (bar, horizontal bar, line, donut, number;
+  the rest under a chevron), then sections of rows with the name on the left and the value (a menu) or a switch on
+  the right: Eje X (what to show, by, sort, the N largest, omit zero values, detail on click), Eje Y (what to show,
+  series, cumulative, compare, reference line), Periodo, Filtros, Estilo (colour swatches; "Más opciones de estilo":
+  height, grid, axis names, data labels). Every change shows at once on the chart.
 - **Chart controls** (Boni; like a Notion view's): when the pointer is over a chart card, a small bar of controls appears
   in its header before the total: period (a menu of usual periods), filters (a box, saved when it closes), order and
   "only the N largest", kind, colour (the calendar palette) and "…" (edit, duplicate, on the desktop, delete).

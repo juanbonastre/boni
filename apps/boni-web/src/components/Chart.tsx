@@ -1,4 +1,13 @@
-import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { type ChartStyle, fullStyle } from "@boni/views";
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as M from "../core/chartMath.ts";
 import type { ChartData, ChartPoint, ChartSeries } from "../core/contract.ts";
 import type { T } from "../i18n.ts";
@@ -6,9 +15,11 @@ import { useStore } from "../store.ts";
 import { useChartAnim } from "./useChartAnim.ts";
 
 /**
- * Charts drawn by hand in SVG (as the first client did on a Compose canvas): thin marks, 4 px rounded data ends
- * anchored to the baseline, hairline grid, selective labels (the latest value, the rest in the hover tooltip),
- * entry animation. Kinds: bar, stacked_bar, hbar, line, area, donut (SVG); number and table (plain layout).
+ * Charts drawn by hand in SVG, looking as Notion's: thin marks, 4 px rounded data ends anchored to the
+ * baseline, a dotted grid, the value over each mark (data labels), a band behind what the pointer is over,
+ * a soft gradient under a line, entry animation. The chart's style (Notion's "Style" settings) chooses the
+ * grid, the labels, one colour or one per bar, the axis names, the average as a reference line, a running
+ * total and zero values left out. Kinds: bar, stacked_bar, hbar, line, area, donut (SVG); number and table.
  */
 
 const REST = "_rest";
@@ -43,6 +54,51 @@ export function sliceColors(points: ChartPoint[]): string[] {
   return points.map((p) =>
     p.key === REST ? "var(--muted)" : CATEGORICAL[slot++ % CATEGORICAL.length]!,
   );
+}
+
+/** What the style asks of the drawing. */
+interface Look {
+  grid: "h" | "v" | "both" | "none";
+  labels: boolean;
+  colorful: boolean;
+  reference: boolean;
+  xName: string | null;
+  yName: string | null;
+}
+const plainLook: Look = {
+  grid: "h",
+  labels: true,
+  colorful: false,
+  reference: true,
+  xName: null,
+  yName: null,
+};
+const TIME_KINDS = new Set(["bar", "stacked_bar", "line", "area"]);
+
+/** The data as the style wants it: zero values left out, or each point the running total so far. */
+function styled(data: ChartData, style: Required<ChartStyle>): ChartData {
+  let series = data.series;
+  if (style.omitZero && data.kind !== "number") {
+    const keep = (series[0]?.points ?? []).map((_, i) =>
+      series.some((s) => (s.points[i]?.value ?? 0) !== 0),
+    );
+    series = series.map((s) => ({ ...s, points: s.points.filter((_, i) => keep[i]) }));
+  }
+  if (style.cumulative && TIME_KINDS.has(data.kind)) {
+    series = series.map((s) => {
+      let sum = 0;
+      return {
+        ...s,
+        points: s.points.map((p) => {
+          if (p.no_data) return p;
+          sum += p.value;
+          return { ...p, value: sum };
+        }),
+      };
+    });
+    return { ...data, series, average: null };
+  }
+  return series === data.series ? data : { ...data, series };
 }
 
 const donutPoints = (series: ChartSeries[]) => (series[0]?.points ?? []).filter((p) => p.value > 0);
@@ -101,11 +157,31 @@ const width = (r: Rect) => r.right - r.left;
 const height = (r: Rect) => r.bottom - r.top;
 
 /** Plot area and hit-testing shared by drawing and clicking. */
-function geometry(kind: string, w: number, h: number, n: number, compact: boolean) {
+function geometry(
+  kind: string,
+  w: number,
+  h: number,
+  n: number,
+  compact: boolean,
+  look: Look = plainLook,
+) {
   const horizontal = kind === "hbar";
+  // Room for the axis names when the style shows them.
+  const padL = look.yName ? 18 : 0;
+  const padB = look.xName ? 18 : 0;
   const plot: Rect = horizontal
-    ? { left: compact ? 92 : 120, top: 4, right: w - (compact ? 64 : 76), bottom: h - 4 }
-    : { left: compact ? 30 : 38, top: 20, right: w - (compact ? 8 : 12), bottom: h - 22 };
+    ? {
+        left: (compact ? 92 : 120) + padL,
+        top: 4,
+        right: w - (compact ? 64 : 76),
+        bottom: h - 4 - padB,
+      }
+    : {
+        left: (compact ? 30 : 38) + padL,
+        top: 20,
+        right: w - (compact ? 8 : 12),
+        bottom: h - 22 - padB,
+      };
   const band = n === 0 ? 0 : (horizontal ? height(plot) : width(plot)) / n;
   const indexAt = (x: number, y: number): number | null => {
     if (n === 0) return null;
@@ -177,17 +253,40 @@ interface ChartProps {
   /** The chart's own colour (its main series); the accent when it has none. */
   color?: string | null;
   compact?: boolean;
+  /** How it looks (Notion's style settings); the defaults when absent. */
+  style?: ChartStyle;
   onSelect?: (p: ChartPoint) => void;
 }
 
-export function Chart({ data, color, compact = false, onSelect }: ChartProps) {
+export function Chart({ data: raw, color, compact = false, style, onSelect }: ChartProps) {
+  const catalog = useStore((s) => s.catalog);
+  const full = fullStyle(style);
+  const key = JSON.stringify(full);
+  const data = useMemo(() => styled(raw, full), [raw, key]);
+  const look: Look = {
+    grid: full.grid,
+    labels: full.labels,
+    colorful: full.colors === "colorful",
+    reference: full.reference === "average",
+    xName: full.axes === "x" || full.axes === "both" ? (data.x_label ?? null) : null,
+    yName:
+      full.axes === "y" || full.axes === "both"
+        ? (catalog?.measures.find((m) => m.id === data.measure)?.label ?? null)
+        : null,
+  };
   if (data.kind === "number") return <NumberTile data={data} compact={compact} />;
   if (data.kind === "table")
     return <ChartTable data={data} color={color} compact={compact} onSelect={onSelect} />;
-  return <SvgChart data={data} color={color} compact={compact} onSelect={onSelect} />;
+  return <SvgChart data={data} color={color} compact={compact} look={look} onSelect={onSelect} />;
 }
 
-function SvgChart({ data, color, compact = false, onSelect }: ChartProps) {
+function SvgChart({
+  data,
+  color,
+  compact = false,
+  look,
+  onSelect,
+}: Omit<ChartProps, "style"> & { look: Look }) {
   const t = useStore((s) => s.t);
   const uid = useId();
   const [ref, { w, h }] = useSize<HTMLDivElement>();
@@ -224,24 +323,29 @@ function SvgChart({ data, color, compact = false, onSelect }: ChartProps) {
     }
     if (data.kind === "hbar") {
       const cmp = data.series.find((s) => s.role === "compare")?.points;
-      const rows = hbarRows(main, cmp, w, h, compact);
-      const i = geometry("hbar", w, h, rows.length, compact).indexAt(pos.x, pos.y);
+      const rows = hbarRows(main, cmp, w, h, compact, look);
+      const i = geometry("hbar", w, h, rows.length, compact, look).indexAt(pos.x, pos.y);
       return i == null ? null : (rows[i]?.[0] ?? null);
     }
-    const i = geometry(data.kind, w, h, main.length, compact).indexAt(pos.x, pos.y);
+    const i = geometry(data.kind, w, h, main.length, compact, look).indexAt(pos.x, pos.y);
     return i == null ? null : (main[i] ?? null);
   };
 
   let body: { svg: ReactNode; tip: Tip | null } = { svg: null, tip: null };
   if (w > 0 && h > 0) {
-    const ctx: DrawCtx = { t, uid, w, h, compact, unit, entry, hover, colors };
+    const ctx: DrawCtx = { t, uid, w, h, compact, unit, entry, hover, colors, look };
     switch (data.kind) {
       case "hbar":
         body = drawHBars(ctx, series);
         break;
       case "line":
       case "area":
-        body = drawLines(ctx, series, data.average ?? null, data.kind === "area");
+        body = drawLines(
+          ctx,
+          series,
+          look.reference ? (data.average ?? null) : null,
+          data.kind === "area",
+        );
         break;
       case "donut":
         body = drawDonut(ctx, donutPoints(series));
@@ -250,7 +354,7 @@ function SvgChart({ data, color, compact = false, onSelect }: ChartProps) {
         body = drawColumns(ctx, series, null, true);
         break;
       default:
-        body = drawColumns(ctx, series, data.average ?? null, false);
+        body = drawColumns(ctx, series, look.reference ? (data.average ?? null) : null, false);
     }
   }
   const clickable =
@@ -283,6 +387,7 @@ function SvgChart({ data, color, compact = false, onSelect }: ChartProps) {
     >
       <svg width={w} height={h} role="img" aria-label={data.title}>
         {body.svg}
+        {data.kind !== "donut" && <AxisNames c={{ w, h, look }} />}
       </svg>
       {body.tip && <Tooltip tip={body.tip} w={w} h={h} />}
     </div>
@@ -326,6 +431,116 @@ interface DrawCtx {
   entry: number;
   hover: { x: number; y: number } | null;
   colors: string[];
+  look: Look;
+}
+
+/** The axis names (the style's "Axis name"): the x name under the labels, the y name up the left side. */
+function AxisNames({ c }: { c: { w: number; h: number; look: Look } }) {
+  return (
+    <g>
+      {c.look.xName && (
+        <text
+          x={c.w / 2}
+          y={c.h - 3}
+          textAnchor="middle"
+          className="t-axis axis-name"
+          fontSize={11}
+        >
+          {fitText(c.look.xName, c.w - 20, 11)}
+        </text>
+      )}
+      {c.look.yName && (
+        <text
+          x={0}
+          y={0}
+          transform={`translate(10 ${c.h / 2}) rotate(-90)`}
+          textAnchor="middle"
+          className="t-axis axis-name"
+          fontSize={11}
+        >
+          {fitText(c.look.yName, c.h - 20, 11)}
+        </text>
+      )}
+    </g>
+  );
+}
+
+/** Notion's vertical grid lines, through each column's centre. */
+function VGrid({ c, plot, band, n }: { c: DrawCtx; plot: Rect; band: number; n: number }) {
+  if (c.look.grid !== "v" && c.look.grid !== "both") return null;
+  return (
+    <g>
+      {Array.from({ length: n }, (_, i) => {
+        const x = Math.round(plot.left + band * (i + 0.5)) + 0.5;
+        return <line key={i} x1={x} x2={x} y1={plot.top} y2={plot.bottom} className="grid" />;
+      })}
+    </g>
+  );
+}
+
+/** The band behind the column the pointer is over (Notion's hover). */
+function HoverBand({
+  plot,
+  band,
+  i,
+  horizontal,
+}: {
+  plot: Rect;
+  band: number;
+  i: number | null;
+  horizontal?: boolean;
+}) {
+  if (i == null) return null;
+  return horizontal ? (
+    <rect x={0} y={plot.top + band * i} width="100%" height={band} className="hover-band" />
+  ) : (
+    <rect
+      x={plot.left + band * i}
+      y={plot.top - 14}
+      width={band}
+      height={plot.bottom - plot.top + 14}
+      className="hover-band"
+    />
+  );
+}
+
+/** Values over the marks, as many as fit side by side (every k-th, always the last). */
+function DataLabels({
+  c,
+  xs,
+  ys,
+  values,
+  band,
+}: {
+  c: DrawCtx;
+  xs: number[];
+  ys: (number | null)[];
+  values: number[];
+  band: number;
+}) {
+  if (!c.look.labels || c.entry < 0.95) return null;
+  const size = valueSize(c) - 1;
+  const texts = values.map((v) => M.formatAuto(v, c.unit));
+  const widest = Math.max(...texts.map((tx) => textWidth(tx, size)));
+  const step = Math.max(1, Math.ceil((widest + 6) / Math.max(band, 1)));
+  return (
+    <g>
+      {texts.map((tx, i) =>
+        ys[i] == null || (texts.length - 1 - i) % step !== 0 ? null : (
+          <text
+            key={i}
+            x={xs[i]}
+            y={(ys[i] as number) - 6}
+            textAnchor="middle"
+            className="t-label data-label"
+            fontSize={size}
+          >
+            {tx}
+          </text>
+        ),
+      )}
+    </g>
+  );
 }
 
 const axisSize = (c: DrawCtx) => (c.compact ? 10 : 11);
@@ -354,13 +569,15 @@ function YAxis({
     <g>
       {ticks.map((tk) => (
         <g key={tk}>
-          <line
-            x1={plot.left}
-            x2={plot.right}
-            y1={Math.round(y(tk)) + 0.5}
-            y2={Math.round(y(tk)) + 0.5}
-            className={tk === 0 ? "baseline" : "grid"}
-          />
+          {(tk === 0 || c.look.grid === "h" || c.look.grid === "both") && (
+            <line
+              x1={plot.left}
+              x2={plot.right}
+              y1={Math.round(y(tk)) + 0.5}
+              y2={Math.round(y(tk)) + 0.5}
+              className={tk === 0 ? "baseline" : "grid"}
+            />
+          )}
           <text
             x={plot.left - 6}
             y={y(tk)}
@@ -485,7 +702,7 @@ function drawColumns(c: DrawCtx, series: ChartSeries[], average: number | null, 
   const main = series[0]?.points ?? [];
   const n = main.length;
   if (n === 0) return { svg: <Empty c={c} />, tip: null };
-  const g = geometry("bar", c.w, c.h, n, c.compact);
+  const g = geometry("bar", c.w, c.h, n, c.compact, c.look);
   const maxV = stacked
     ? Math.max(
         ...main.map((_, i) =>
@@ -518,7 +735,7 @@ function drawColumns(c: DrawCtx, series: ChartSeries[], average: number | null, 
       );
       continue;
     }
-    const alpha = hi != null && hi !== i ? 0.45 : p0.partial ? 0.55 : 1;
+    const alpha = p0.partial ? 0.55 : 1;
     if (stacked) {
       let base = 0;
       const visible = series
@@ -573,11 +790,15 @@ function drawColumns(c: DrawCtx, series: ChartSeries[], average: number | null, 
         const yTop = y(Math.max(p.value, 0) * c.entry);
         const hgt = g.plot.bottom - 1 - yTop;
         if (hgt > 0.5) {
+          const fill =
+            c.look.colorful && series.length === 1
+              ? CATEGORICAL[i % CATEGORICAL.length]
+              : c.colors[si];
           marks.push(
             <path
               key={`b${i}-${si}`}
               d={barPath(left, yTop, barW, hgt, Math.min(4, barW / 2), false)}
-              fill={c.colors[si]}
+              fill={fill}
               opacity={alpha}
             />,
           );
@@ -596,27 +817,24 @@ function drawColumns(c: DrawCtx, series: ChartSeries[], average: number | null, 
     lastIdx >= n - 3 &&
     Math.abs(y(average) - y(Math.max(main[lastIdx]!.value, 0))) < 22
   );
-  let label: ReactNode = null;
-  if (series.length === 1 && hi == null && c.entry > 0.95) {
-    const i = main
-      .map((p, k) => (p.no_data ? -1 : k))
-      .filter((k) => k >= 0)
-      .pop();
-    if (i != null) {
-      const p = main[i]!;
-      label = (
-        <text
-          x={g.plot.left + g.band * (i + 0.5)}
-          y={y(Math.max(p.value, 0)) - 3}
-          textAnchor="middle"
-          className="t-value"
-          fontSize={valueSize(c)}
-        >
-          {M.formatAuto(p.value, c.unit)}
-        </text>
-      );
-    }
-  }
+  // The value over each column (over the stack, or over the tallest of a group).
+  const tops = main.map((p, i) =>
+    p.no_data
+      ? null
+      : stacked
+        ? series.reduce((s, ser) => s + Math.max(ser.points[i]?.value ?? 0, 0), 0)
+        : Math.max(...series.map((ser) => Math.max(ser.points[i]?.value ?? 0, 0))),
+  );
+  const label =
+    series.length === 1 || stacked ? (
+      <DataLabels
+        c={c}
+        xs={main.map((_, i) => g.plot.left + g.band * (i + 0.5))}
+        ys={tops.map((v) => (v == null ? null : y(v)))}
+        values={tops.map((v) => v ?? 0)}
+        band={g.band}
+      />
+    ) : null;
   let tip: Tip | null = null;
   if (hi != null) {
     const cx = g.plot.left + g.band * (hi + 0.5);
@@ -633,7 +851,9 @@ function drawColumns(c: DrawCtx, series: ChartSeries[], average: number | null, 
   return {
     svg: (
       <g>
+        <HoverBand plot={g.plot} band={g.band} i={hi} />
         <YAxis c={c} plot={g.plot} ticks={ticks} y={y} />
+        <VGrid c={c} plot={g.plot} band={g.band} n={n} />
         <XLabels c={c} plot={g.plot} band={g.band} points={main} />
         {marks}
         {series.length === 1 && (
@@ -654,8 +874,9 @@ function hbarRows(
   w: number,
   h: number,
   compact: boolean,
+  look: Look = plainLook,
 ) {
-  const plot = geometry("hbar", w, h, main.length, compact).plot;
+  const plot = geometry("hbar", w, h, main.length, compact, look).plot;
   const maxRows = Math.max(2, Math.floor(height(plot) / (compact ? 20 : 28)));
   const pairs = main.map((p, i) => [p, compare?.[i]] as [ChartPoint, ChartPoint | undefined]);
   if (pairs.length <= maxRows) return pairs;
@@ -678,8 +899,8 @@ function drawHBars(c: DrawCtx, series: ChartSeries[]) {
   const main = series[mainIdx]?.points ?? [];
   const cmp = series.find((s) => s.role === "compare");
   if (!main.length) return { svg: <Empty c={c} />, tip: null };
-  const rows = hbarRows(main, cmp?.points, c.w, c.h, c.compact);
-  const g = geometry("hbar", c.w, c.h, rows.length, c.compact);
+  const rows = hbarRows(main, cmp?.points, c.w, c.h, c.compact, c.look);
+  const g = geometry("hbar", c.w, c.h, rows.length, c.compact, c.look);
   const top = Math.max(1, ...rows.map(([p, q]) => Math.max(p.value, q?.value ?? 0)));
   const decimals = top < 100;
   const barH = Math.min(c.compact ? 14 : 18, g.band * 0.7);
@@ -690,6 +911,7 @@ function drawHBars(c: DrawCtx, series: ChartSeries[]) {
   return {
     svg: (
       <g>
+        <HoverBand plot={g.plot} band={g.band} i={hi} horizontal />
         <line
           x1={g.plot.left + 0.5}
           x2={g.plot.left + 0.5}
@@ -699,7 +921,7 @@ function drawHBars(c: DrawCtx, series: ChartSeries[]) {
         />
         {rows.map(([p, prev], i) => {
           const cy = g.plot.top + g.band * (i + 0.5);
-          const alpha = hi != null && hi !== i ? 0.45 : 1;
+          const alpha = 1;
           const bw = (Math.max(p.value, 0) / top) * width(g.plot) * c.entry;
           const px = prev
             ? g.plot.left + 1 + (Math.max(prev.value, 0) / top) * width(g.plot)
@@ -720,7 +942,13 @@ function drawHBars(c: DrawCtx, series: ChartSeries[]) {
               {bw > 0.5 && (
                 <path
                   d={barPath(g.plot.left + 1, cy - barH / 2, bw, barH, 4, true)}
-                  fill={p.key === REST ? "var(--muted)" : accent}
+                  fill={
+                    p.key === REST
+                      ? "var(--muted)"
+                      : c.look.colorful
+                        ? CATEGORICAL[i % CATEGORICAL.length]
+                        : accent
+                  }
                 />
               )}
               {px != null && c.entry > 0.6 && (
@@ -732,7 +960,7 @@ function drawHBars(c: DrawCtx, series: ChartSeries[]) {
                   className="compare-tick"
                 />
               )}
-              {c.entry > 0.6 && (
+              {c.entry > 0.6 && c.look.labels && (
                 <text
                   x={end + 6}
                   y={cy}
@@ -771,7 +999,7 @@ function drawLines(c: DrawCtx, series: ChartSeries[], average: number | null, fi
   const main = series[0]?.points ?? [];
   const n = main.length;
   if (n === 0) return { svg: <Empty c={c} />, tip: null };
-  const g = geometry("line", c.w, c.h, n, c.compact);
+  const g = geometry("line", c.w, c.h, n, c.compact, c.look);
   const maxV = Math.max(...series.flatMap((s) => s.points.map((p) => p.value)));
   const ticks = M.ticks(Math.max(maxV, average ?? 0), c.compact ? 3 : 4);
   const top = ticks[ticks.length - 1]!;
@@ -794,7 +1022,9 @@ function drawLines(c: DrawCtx, series: ChartSeries[], average: number | null, fi
     const pts = s.points;
     const color = c.colors[si]!;
     const dashed = s.role === "compare";
-    const fill = dashed ? 0 : filled ? (drawn === 1 ? 0.16 : 0.1) : drawn === 1 ? 0.1 : 0;
+    // As Notion's: a soft gradient under a single line, a flat tint for areas.
+    const fill = dashed ? 0 : filled ? (drawn === 1 ? 0.16 : 0.1) : drawn === 1 ? 1 : 0;
+    const gradId = `g${clipId}-${si}`;
     // Runs of consecutive points with data: gaps (no_data) break the line instead of pretending it was zero.
     const runs: number[][] = [];
     pts.forEach((p, i) => {
@@ -806,14 +1036,27 @@ function drawLines(c: DrawCtx, series: ChartSeries[], average: number | null, fi
     runs.forEach((run, r) => {
       const line = run.map((i, k) => `${k ? "L" : "M"}${x(i)},${y(pts[i]!.value)}`).join("");
       const area = `M${x(run[0]!)},${g.plot.bottom}${run.map((i) => `L${x(i)},${y(pts[i]!.value)}`).join("")}L${x(run[run.length - 1]!)},${g.plot.bottom}Z`;
-      if (fill > 0) paths.push(<path key={`a${si}-${r}`} d={area} fill={color} opacity={fill} />);
+      if (fill === 1)
+        paths.push(
+          <g key={`a${si}-${r}`}>
+            <defs>
+              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor={color} stopOpacity={0.22} />
+                <stop offset="1" stopColor={color} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <path d={area} fill={`url(#${gradId})`} />
+          </g>,
+        );
+      else if (fill > 0)
+        paths.push(<path key={`a${si}-${r}`} d={area} fill={color} opacity={fill} />);
       paths.push(
         <path
           key={`l${si}-${r}`}
           d={line}
           fill="none"
           stroke={color}
-          strokeWidth={dashed ? 1.5 : 2}
+          strokeWidth={dashed ? 1.5 : 1.75}
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeDasharray={dashed ? "4 4" : undefined}
@@ -872,7 +1115,7 @@ function drawLines(c: DrawCtx, series: ChartSeries[], average: number | null, fi
         <circle cx={x(last)} cy={y(p.value)} r={6} className="surface-fill" />
         <circle cx={x(last)} cy={y(p.value)} r={4} fill={c.colors[0]} />
         {p.partial && <circle cx={x(last)} cy={y(p.value)} r={2} className="surface-fill" />}
-        {hi == null && (
+        {hi == null && !c.look.labels && (
           <text
             x={x(last)}
             y={y(p.value) - 8}
@@ -924,8 +1167,18 @@ function drawLines(c: DrawCtx, series: ChartSeries[], average: number | null, fi
           </clipPath>
         </defs>
         <YAxis c={c} plot={g.plot} ticks={ticks} y={y} />
+        <VGrid c={c} plot={g.plot} band={g.band} n={n} />
         <XLabels c={c} plot={g.plot} band={g.band} points={main} />
         <g clipPath={`url(#${clipId})`}>{paths}</g>
+        {drawn === 1 && hi == null && (
+          <DataLabels
+            c={c}
+            xs={main.map((_, i) => x(i))}
+            ys={main.map((p) => (p.no_data ? null : y(p.value)))}
+            values={main.map((p) => p.value)}
+            band={g.band}
+          />
+        )}
         {drawn === 1 && (
           <AverageLine c={c} plot={g.plot} average={average} y={y} labelRight={false} />
         )}
@@ -941,7 +1194,7 @@ function drawLines(c: DrawCtx, series: ChartSeries[], average: number | null, fi
 function donutGeometry(w: number, h: number) {
   const withLegend = w > h * 1.5;
   const d = withLegend ? Math.min(h, w * 0.45) : Math.min(w, h);
-  const thickness = d * 0.16;
+  const thickness = d * 0.1;
   const radius = d / 2 - thickness / 2 - 2;
   const cx = withLegend ? d / 2 : w / 2;
   const cy = h / 2;
@@ -1000,6 +1253,11 @@ function drawDonut(c: DrawCtx, points: ChartPoint[]) {
     : c.t("chart.totalCenter");
   const value = M.formatAuto(hp ? hp.value : total, c.unit);
   const inner = (d.radius - d.thickness / 2) * 1.7;
+  // Notion's donut: the total big in the centre, its name small under it.
+  const centerSize = Math.max(
+    14,
+    Math.min(c.compact ? 18 : 28, (d.radius - d.thickness / 2) * 0.45),
+  );
   const legend: ReactNode[] = [];
   if (d.legendLeft != null) {
     const rowH = c.compact ? 18 : 22;
@@ -1058,18 +1316,24 @@ function drawDonut(c: DrawCtx, points: ChartPoint[]) {
         {slices}
         {c.entry > 0.6 && (
           <g>
-            <text x={d.cx} y={d.cy - 2} textAnchor="middle" className="t-tip-title" fontSize={11}>
-              {fitText(title, inner, 11)}
-            </text>
             <text
               x={d.cx}
               y={d.cy + 2}
               textAnchor="middle"
-              dominantBaseline="hanging"
-              className="t-tip-value"
-              fontSize={13}
+              className="t-tip-value donut-total"
+              fontSize={centerSize}
             >
-              {value}
+              {fitText(value, inner, centerSize, 700)}
+            </text>
+            <text
+              x={d.cx}
+              y={d.cy + 8}
+              textAnchor="middle"
+              dominantBaseline="hanging"
+              className="t-tip-title"
+              fontSize={11}
+            >
+              {fitText(title, inner, 11)}
             </text>
           </g>
         )}

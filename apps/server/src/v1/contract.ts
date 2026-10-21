@@ -1,4 +1,9 @@
-import type { ChartSpec as EngineSpec, Granularity } from "@boni/views";
+import {
+  type ChartStyle,
+  chartStyle,
+  type ChartSpec as EngineSpec,
+  type Granularity,
+} from "@boni/views";
 
 /**
  * The Boni API v1 contract (the first Boni's server/boni/contract.py and legacy/boni/api/), as the Boni apps
@@ -86,6 +91,8 @@ export interface V1ChartSpec extends EngineSpec {
   drilldown: boolean;
   home: boolean;
   color: string | null;
+  /** How it looks (Notion's style settings); only when it differs from the defaults. */
+  style?: ChartStyle;
   group_by: "category_group" | "category" | "month" | null;
   filter: { include: string[]; exclude: string[] };
 }
@@ -185,6 +192,8 @@ export function normalizeSpec(raw: unknown): V1ChartSpec {
     group_by: groupBy,
     filter: { include, exclude },
   };
+  const style = chartStyle(raw.style);
+  if (style) spec.style = style;
   // The model's after-validator (_upgrade_legacy), in its order.
   if (spec.x === null && spec.group_by !== null)
     spec.x = {

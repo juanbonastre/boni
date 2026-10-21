@@ -1,4 +1,5 @@
 export * from "./chart.ts";
+export * from "./chartStyle.ts";
 export * from "./dates.ts";
 export { type EntityProfileOptions, entityMonths, entityProfile } from "./entities.ts";
 export * from "./money.ts";
