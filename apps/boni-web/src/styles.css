@@ -915,6 +915,24 @@ select {
   height: 100%;
   text-align: center;
 }
+/* A suggestion waiting for Juan: what it would change, how much better it measured, and his two buttons. */
+.suggestion {
+  margin: 6px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+.suggestion-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: baseline;
+}
+.suggestion ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
 /* Data shown whole that may be one long word (an address): it breaks anywhere rather than overflow. */
 .breakable {
   overflow-wrap: anywhere;

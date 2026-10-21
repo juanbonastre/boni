@@ -14,6 +14,7 @@ import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
 import { BODY, type UserStore } from "@boni/store";
 import type { AgentHost } from "./agent.ts";
 import type { Db } from "./db.ts";
+import { decisions, review, type Suggestion } from "./mailReview.ts";
 import { decrypt, encrypt, type SecretKey } from "./secret.ts";
 
 /**
@@ -55,6 +56,12 @@ export interface MailState {
   pending?: string[];
   /** With which reading (prompt, modules and guide, `readingVersion`) each mail was last read (the latest 1,000). */
   readWith?: Record<string, string>;
+  /** The reviewer's last suggestion for the guide, waiting for Juan (docs/nucleo.md 7.4b, point 3). */
+  suggestion?: Suggestion | null;
+  /** When the reviewer last looked (decisions after it count towards the next review). */
+  reviewedAt?: number;
+  /** Senders and example ids Juan said no to: never suggested again. */
+  refused?: string[];
 }
 /**
  * Juan's reading guide (docs/nucleo.md 7.4b, point 2), kept with the mailbox's settings and encrypted the
@@ -84,8 +91,17 @@ export interface GuideExample {
   mail: string;
   want: ReadingGuide["examples"][number]["want"];
 }
+/** Decisions of Juan's on mail proposals between two reviews. */
+const REVIEW_EVERY = 20;
 const EMPTY_GUIDE: MailGuide = { instructions: "", rules: [], examples: [] };
 const SENDER = /^(@[a-z0-9.-]+\.[a-z]{2,}|[^\s@]+@[a-z0-9.-]+\.[a-z]{2,})$/i;
+
+/** The guide as the reader gets it, bound to the plan as `$guide`. */
+export const guideOf = (g: MailGuide) =>
+  guideValue({
+    instructions: g.instructions,
+    examples: g.examples.map((e) => ({ mail: e.mail, want: e.want })),
+  });
 
 /** The first rule of the guide for mail from `address`. */
 export function ruleFor(guide: MailGuide, address: string): MailRule | null {
@@ -255,7 +271,10 @@ export function mailPlan(
 }
 
 /** What a device sees: everything but the password. */
-export type MailView = Omit<MailSettings, "password"> & { configured: true; state: MailState };
+export type MailView = Omit<MailSettings, "password"> & {
+  configured: true;
+  state: Omit<MailState, "readWith" | "refused">;
+};
 
 const EMPTY: MailState = {
   type: null,
@@ -315,6 +334,7 @@ export class Mails {
   private o: MailsOptions;
   private busy = new Map<number, Promise<MailState>>();
   private queued = new Map<number, Promise<MailState>>();
+  private reviewing = new Set<number>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(o: MailsOptions) {
@@ -362,7 +382,8 @@ export class Mails {
     const s = this.settings(account);
     if (!s) return null;
     const { password: _p, ...rest } = s;
-    return { ...rest, configured: true, state: this.state(account) };
+    const { readWith: _r, refused: _x, ...state } = this.state(account);
+    return { ...rest, configured: true, state };
   }
 
   /**
@@ -475,6 +496,94 @@ export class Mails {
       .update(JSON.stringify([g.instructions, g.examples.map((e) => [e.mail, e.want])]))
       .digest("hex")
       .slice(0, 12);
+  }
+
+  /** Reads one mail with a guide as the mail plan would, without proposing anything: the titles it keeps. */
+  private async readOnce(account: number, mail: string, g: MailGuide): Promise<string[] | null> {
+    const s = this.settings(account);
+    const store = this.o.host.store(account);
+    const e = store.get(mail);
+    if (!s || !e) return null;
+    const v = e.entity.values;
+    if (ruleFor(g, String(v.f_de ?? ""))?.action === "skip") return null;
+    const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto"].filter(
+      (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
+    );
+    const withGuide = !!(g.instructions || g.examples.length);
+    const r = await this.o.host.agent(account).background(
+      mailPlan(mail, [], {
+        has: e.entity.body ? [...has, "body"] : has,
+        userIn: userIn(s.user, v.f_para, v.f_cc),
+        guide: withGuide,
+      }),
+      withGuide ? { guide: guideOf(g) } : {},
+      ["r"],
+    );
+    const all = (r.kept?.r as { all?: { title: string }[] } | undefined)?.all;
+    return all ? all.map((x) => x.title) : null;
+  }
+
+  /**
+   * One review now (docs/nucleo.md 7.4b, point 3): Juan's latest decisions on mail proposals go to the
+   * reviewer; a suggestion that gets more of them right waits in the state for him. One at a time.
+   */
+  async reviewNow(account: number): Promise<Suggestion | null> {
+    if (this.reviewing.has(account)) return this.state(account).suggestion ?? null;
+    this.reviewing.add(account);
+    try {
+      const s = this.settings(account);
+      const st = this.state(account);
+      if (!s || !st.type || !this.o.host.on) return null;
+      const store = this.o.host.store(account);
+      const guide = this.guide(account);
+      const suggestion = await review({
+        store,
+        agent: this.o.host.agent(account),
+        guide,
+        targets: this.targets(store, s),
+        ds: decisions(store, st.type, (v) => userIn(s.user, v.f_para, v.f_cc)),
+        read: (mail, g) => this.readOnce(account, mail, g),
+        now: this.now(),
+        excluded: new Set(st.refused ?? []),
+      });
+      const after = this.state(account);
+      after.reviewedAt = this.now();
+      if (suggestion) after.suggestion = suggestion;
+      this.saveState(account, after);
+      if (suggestion) this.o.host.emit(account, "mail-suggestion", { id: suggestion.id });
+      return suggestion;
+    } finally {
+      this.reviewing.delete(account);
+    }
+  }
+
+  /** Juan's answer to the waiting suggestion: accepted, its rules and examples join his guide. */
+  answerSuggestion(account: number, id: string, accept: boolean): MailGuide {
+    const st = this.state(account);
+    const s = st.suggestion;
+    const guide = this.guide(account);
+    if (!s || s.id !== id) throw new MailError("no-suggestion");
+    if (accept) {
+      const g: MailGuide = {
+        ...guide,
+        rules: [
+          ...guide.rules,
+          ...s.rules.filter((r) => !guide.rules.some((x) => x.from === r.from)),
+        ],
+        examples: [...guide.examples, ...s.examples].slice(-10),
+      };
+      this.set(account, "mail-guide", encrypt(this.o.key, JSON.stringify(g)));
+    } else
+      st.refused = [
+        ...new Set([
+          ...(st.refused ?? []),
+          ...s.rules.map((r) => r.from),
+          ...s.examples.map((e) => e.id),
+        ]),
+      ].slice(-500);
+    st.suggestion = null;
+    this.saveState(account, st);
+    return this.guide(account);
   }
 
   /** Disconnects the mailbox: the settings go, the mail already brought in stays. */
@@ -763,12 +872,7 @@ export class Mails {
     const version = this.readingVersion(account);
     const withGuide = !!(guide.instructions || guide.examples.length);
     const bound: Record<string, ReturnType<typeof guideValue>> = withGuide
-      ? {
-          guide: guideValue({
-            instructions: guide.instructions,
-            examples: guide.examples.map((e) => ({ mail: e.mail, want: e.want })),
-          }),
-        }
+      ? { guide: guideOf(guide) }
       : {};
     let n = 0;
     for (const id of st.pending.slice(0, this.o.perCheck ?? 50)) {
@@ -810,6 +914,12 @@ export class Mails {
       }
     }
     if (n) this.o.host.emit(account, "proposals", { n });
+    // Every 20 new decisions of Juan's on mail proposals, the reviewer looks (in the background).
+    const since = st.reviewedAt ?? 0;
+    const fresh = store.journal
+      .proposals()
+      .filter((p) => p.decided !== null && p.decided > since && p.status !== "stale").length;
+    if (fresh >= REVIEW_EVERY && !st.suggestion) void this.reviewNow(account).catch(() => null);
   }
 
   /** The titles of the proposals from `sender`'s mail still waiting in the inbox (the latest 20). */

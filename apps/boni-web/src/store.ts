@@ -1045,6 +1045,26 @@ export async function saveMail(input: MailInput): Promise<MailView | { error: st
   }
 }
 
+/** The reviewer now; the mailbox's view with its suggestion (if any). */
+export async function reviewMail(): Promise<MailView | null> {
+  try {
+    return await agent.reviewMail();
+  } catch {
+    toast(useStore.getState().t("mail.error.failed"));
+    return null;
+  }
+}
+
+/** Juan's answer to the reviewer's suggestion: the guide and the mailbox after it. */
+export async function answerSuggestion(id: string, accept: boolean) {
+  try {
+    return await agent.answerSuggestion(id, accept);
+  } catch {
+    toast(useStore.getState().t("mail.error.failed"));
+    return null;
+  }
+}
+
 export async function loadMailGuide(): Promise<MailGuide | null> {
   try {
     return await agent.mailGuide();

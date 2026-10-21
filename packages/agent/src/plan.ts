@@ -15,6 +15,7 @@ export const READERS = [
   "rewrite",
   "answer_about",
   "read_message",
+  "review_reading",
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
@@ -65,6 +66,7 @@ const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   rewrite: ["instruction"],
   answer_about: ["question"],
   read_message: ["modules", "user_in", "known", "guide"],
+  review_reading: ["options"],
 };
 const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> = {
   text: ["template", "a", "b", "c", "d"],

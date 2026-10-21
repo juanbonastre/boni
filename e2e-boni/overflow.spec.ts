@@ -4,6 +4,7 @@ import {
   confirmTurn,
   GUIDE,
   MAIL,
+  MAIL_SUGGESTED,
   PROPOSALS,
   RUN_2,
   RUNS,
@@ -131,7 +132,7 @@ for (const language of ["es", "en"] as const) {
         language,
         agent: {
           "GET api/agent/visibility": [VISIBILITY],
-          "GET api/mail": [MAIL],
+          "GET api/mail": [MAIL_SUGGESTED],
           "GET api/mail/guide": [GUIDE],
         },
       });
@@ -221,7 +222,7 @@ test.describe("on a phone", () => {
         language,
         agent: {
           "GET api/agent/visibility": [VISIBILITY],
-          "GET api/mail": [MAIL],
+          "GET api/mail": [MAIL_SUGGESTED],
           "GET api/mail/guide": [GUIDE],
         },
       });

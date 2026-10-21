@@ -173,6 +173,8 @@ export interface TurnResult {
   notices: Notice[];
   /** A fixed code (never data): why it stopped. */
   error: string | null;
+  /** A plan made by code only: the values of the steps it asked to keep (Agent.background). */
+  kept?: Record<string, Json>;
 }
 
 export interface RunDetail {
@@ -353,7 +355,11 @@ export class Agent {
    * `bind`: values the code gives the plan by name, with their own labels (the reading guide, `$guide`).
    * Only a plan made by code runs here, so only code can bind; a planner's plan cannot name them.
    */
-  async background(plan: unknown, bind: Record<string, Val> = {}): Promise<TurnResult> {
+  async background(
+    plan: unknown,
+    bind: Record<string, Val> = {},
+    keep: readonly string[] = [],
+  ): Promise<TurnResult> {
     const origin: Origin = { kind: "background", trust: "personal" };
     const run = randomUUID();
     this.o.store.journal.startRun({
@@ -369,7 +375,15 @@ export class Agent {
     for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
     st.plan = v.plan;
     this.o.store.journal.setPlan(run, st.plan);
-    return this.advance(st);
+    const r = await this.advance(st);
+    if (!keep.length) return r;
+    // What the code asked to see of its own plan: those steps' values (checked, without their labels).
+    const kept: Record<string, Json> = {};
+    for (const id of keep) {
+      const val = st.env.get(id);
+      if (val) kept[id] = plain(val);
+    }
+    return { ...r, kept };
   }
 
   private newState(
@@ -845,7 +859,7 @@ export class Agent {
     )
       throw new Stop("reader-bad-known");
     let options: string[] = [];
-    if (step.reader === "classify") {
+    if (step.reader === "classify" || step.reader === "review_reading") {
       const o = params.options ? plain(params.options) : null;
       if (!Array.isArray(o) || !o.length || o.length > 50 || !o.every((x) => typeof x === "string"))
         throw new Stop("reader-bad-options");
