@@ -50,8 +50,46 @@ export interface Target {
   name: string;
   /** The option the reader sees: the name and a few of Juan's own titles in it, so it knows what goes there. */
   option: string;
-  /** Its first date field's key, where a task's due day goes (none: the day is left out). */
+  /** The date field a task's due day goes to (`dueField`; none: the day is left out). */
   date: string | null;
+}
+
+/** Fewer values than this say nothing about what a date field holds. */
+const EVIDENCE = 3;
+const DAY_MS = 86_400_000;
+
+/**
+ * The date field of a collection a due day goes to, judged by its data, never by its name (no field is
+ * special to Boni): a field some of whose days fall after the day its item was recorded holds days ahead
+ * (a due day, a meeting, a project's end), the one with most such days wins; a field with enough values and
+ * none after that day only records what already happened (when a note was made, last reviewed, a birthday
+ * written down) and never gets a due day. With no field of the first kind, the first one without enough
+ * values to tell (a new collection); otherwise none. "After" means more than a day after the instant it was
+ * stored, so a day written in another time zone is not taken for one ahead.
+ */
+export function dueField(
+  type: TypeDef,
+  entities: readonly { values: Record<string, unknown>; created: number }[],
+): FieldDef | null {
+  const dates = type.fields.filter((f) => f.type === "date" && !f.archived && !f.hidden);
+  let best: FieldDef | null = null;
+  let most = 0;
+  let unknown: FieldDef | null = null;
+  for (const f of dates) {
+    let n = 0;
+    let ahead = 0;
+    for (const e of entities) {
+      const v = e.values[f.id];
+      if (typeof v !== "string") continue;
+      const at = Date.parse(`${v}T00:00:00Z`);
+      if (Number.isNaN(at)) continue;
+      n++;
+      if (at - e.created > DAY_MS) ahead++;
+    }
+    if (ahead > most) [best, most] = [f, ahead];
+    else if (!ahead && n < EVIDENCE && !unknown) unknown = f;
+  }
+  return best ?? unknown;
 }
 
 /**
@@ -445,12 +483,15 @@ export class Mails {
     return s.collections.flatMap((id) => {
       const t = types[id];
       if (!t || t.archived || t.system || levels[id] === "hidden") return [];
-      const date = t.fields.find((f) => f.type === "date" && !f.archived && !f.hidden);
+      const all = store.list(id);
+      const date = dueField(
+        t,
+        all.map((e) => e.entity),
+      );
       const examples =
         levels[id] === "opaque"
           ? []
-          : store
-              .list(id)
+          : all
               .filter((e) => {
                 const l = e.labels[t.titleField];
                 return (
