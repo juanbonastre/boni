@@ -1277,11 +1277,11 @@ export async function newPage(parent: string | null = null) {
 const SAVE_AFTER_MS = 500;
 let pending: {
   id: string;
-  patch: { title?: string; spec?: PageSpec };
+  patch: { title?: string; icon?: string; spec?: PageSpec };
   timer: ReturnType<typeof setTimeout>;
 } | null = null;
 
-function savePage(id: string, patch: { title?: string; spec?: PageSpec }) {
+function savePage(id: string, patch: { title?: string; icon?: string; spec?: PageSpec }) {
   if (pending && pending.id !== id) void flushPage();
   if (pending) clearTimeout(pending.timer);
   pending = {
@@ -1300,7 +1300,8 @@ export async function flushPage() {
     await agent.updatePage(p.id, p.patch);
     const page = get().page;
     if (page?.id === p.id) await keep(FILES.lastPage, { page });
-    if (p.patch.title !== undefined) await keep(FILES.pages, { pages: get().pages });
+    if (p.patch.title !== undefined || p.patch.icon !== undefined)
+      await keep(FILES.pages, { pages: get().pages });
   } catch {
     toast(get().t("page.error"));
     // What the server has is the truth again.
@@ -1318,6 +1319,17 @@ export function setPageTitle(title: string) {
     pages: get().pages?.map((p) => (p.id === page.id ? { ...p, title: clean } : p)) ?? null,
   });
   savePage(page.id, { title: clean.trim() });
+}
+
+/** The page's icon (an emoji; "" removes it). */
+export function setPageIcon(icon: string) {
+  const page = get().page;
+  if (!page) return;
+  set({
+    page: { ...page, icon },
+    pages: get().pages?.map((p) => (p.id === page.id ? { ...p, icon } : p)) ?? null,
+  });
+  savePage(page.id, { icon });
 }
 
 /** The page's blocks, changed at once here and kept on the server shortly after. */

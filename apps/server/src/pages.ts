@@ -112,7 +112,8 @@ export function updatePage(
   const w: Record<string, ReturnType<typeof v>> = {};
   if (input.title !== undefined) w.f_title = v(title(input.title));
   if (input.icon !== undefined) {
-    if (typeof input.icon !== "string" || [...input.icon].length > 2)
+    // One emoji (a few code points when joined, as 👩‍🏫); shown only as text.
+    if (typeof input.icon !== "string" || [...input.icon].length > 8 || /[<>&]/.test(input.icon))
       throw new PageError("bad-icon");
     w.f_icon = v(input.icon);
   }

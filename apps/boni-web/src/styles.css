@@ -2804,6 +2804,57 @@ span.page-icon {
     padding: 0 24px 0 56px;
   }
 }
+.doc-head {
+  display: flex;
+  align-items: flex-end;
+  min-height: 30px;
+  margin-bottom: 4px;
+}
+.doc-add-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 120ms var(--ease-out);
+}
+.doc:hover .doc-add-icon,
+.doc-add-icon:focus-visible,
+.doc-add-icon[aria-expanded="true"] {
+  opacity: 1;
+}
+.doc-add-icon:hover {
+  background: var(--hover);
+}
+.doc-icon {
+  font-size: 64px;
+  line-height: 1.1;
+  border-radius: 8px;
+  padding: 2px 4px;
+  margin-left: -4px;
+}
+.doc-icon:hover {
+  background: var(--hover);
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+}
+.emoji {
+  display: grid;
+  place-items: center;
+  height: 34px;
+  border-radius: 6px;
+  font-size: 20px;
+}
+.emoji:hover {
+  background: var(--hover);
+}
 .doc-title {
   width: 100%;
   margin: 0 0 10px;

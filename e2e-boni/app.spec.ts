@@ -234,6 +234,14 @@ test('pages as Notion\'s: made from the sidebar, written in place, blocks by "/"
   await expect(page.locator(".doc-title")).toBeFocused();
   await page.keyboard.type("Docencia", { delay: 20 });
   await expect(page.locator(".sidebar .page-row.active")).toContainText("Docencia");
+  // An icon, from "Add icon" over the name: it shows there and in the sidebar.
+  await page.locator(".doc-title").hover();
+  await page.getByRole("button", { name: "Añadir icono" }).click();
+  await page.getByRole("button", { name: "📚" }).click();
+  await expect(page.locator(".doc-icon")).toHaveText("📚");
+  await expect(page.locator(".sidebar .page-row.active .page-icon")).toHaveText("📚");
+  await page.locator(".doc-title").click();
+  await page.keyboard.press("End");
   // Enter goes to the first line; "# " makes it a heading, Enter the next line, "/" the block menu.
   await page.keyboard.press("Enter");
   await page.keyboard.type("# Este curso", { delay: 20 });

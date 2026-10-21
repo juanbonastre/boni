@@ -1,4 +1,4 @@
-import { GripVertical, Plus } from "lucide-react";
+import { GripVertical, Plus, Smile } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -20,6 +20,7 @@ import {
   runShortcut,
   setPageBlocks,
   setPageFocus,
+  setPageIcon,
   setPageTitle,
   showChat,
   toast,
@@ -71,12 +72,132 @@ export function PageView({ after }: { after?: ReactNode }) {
   return (
     <div className={`content page-doc${page.spec.full ? " full" : ""}`}>
       <div className="doc">
+        <PageIcon page={page} />
         <PageTitle page={page} />
         <Blocks page={page} />
         <DocTail page={page} />
         <NewChartPreview />
         {after}
       </div>
+    </div>
+  );
+}
+
+/** Emojis to choose a page's icon from (one tap, as Notion's picker; no images). */
+const EMOJIS = [
+  "📄",
+  "📝",
+  "📚",
+  "📖",
+  "🗂️",
+  "📁",
+  "📌",
+  "📎",
+  "✅",
+  "☑️",
+  "📅",
+  "🗓️",
+  "⏰",
+  "💡",
+  "⭐",
+  "🔥",
+  "🎯",
+  "🚀",
+  "💼",
+  "🏫",
+  "🎓",
+  "🧪",
+  "🔬",
+  "💻",
+  "🖥️",
+  "📱",
+  "⚙️",
+  "🔧",
+  "🏠",
+  "🛒",
+  "💰",
+  "💶",
+  "📈",
+  "📊",
+  "🍽️",
+  "☕",
+  "🍎",
+  "🏃",
+  "🧘",
+  "❤️",
+  "🩺",
+  "✈️",
+  "🚗",
+  "🎵",
+  "🎬",
+  "📷",
+  "🌱",
+  "🐾",
+];
+
+/** Over the name: the page's icon (a click changes it), or "Add icon" on hover, as in Notion. */
+function PageIcon({ page }: { page: Page }) {
+  const t = useStore((s) => s.t);
+  const picker = (close: () => void) => (
+    <div className="pop-section">
+      <div className="emoji-grid" role="group" aria-label={t("page.icon")}>
+        {EMOJIS.map((e) => (
+          <button
+            key={e}
+            type="button"
+            className="emoji"
+            aria-label={e}
+            onClick={() => {
+              close();
+              setPageIcon(e);
+            }}
+          >
+            {e}
+          </button>
+        ))}
+      </div>
+      {page.icon && (
+        <button
+          type="button"
+          className="btn ghost"
+          onClick={() => {
+            close();
+            setPageIcon("");
+          }}
+        >
+          {t("page.iconRemove")}
+        </button>
+      )}
+    </div>
+  );
+  return (
+    <div className={`doc-head${page.icon ? " has-icon" : ""}`}>
+      {page.icon ? (
+        <PopButton
+          className="doc-icon"
+          title={t("page.iconChange")}
+          align="start"
+          width={330}
+          label={page.icon}
+        >
+          {picker}
+        </PopButton>
+      ) : (
+        <PopButton
+          className="doc-add-icon"
+          title={t("page.iconAdd")}
+          align="start"
+          width={330}
+          label={
+            <>
+              <Smile size={15} strokeWidth={1.8} />
+              {t("page.iconAdd")}
+            </>
+          }
+        >
+          {picker}
+        </PopButton>
+      )}
     </div>
   );
 }
