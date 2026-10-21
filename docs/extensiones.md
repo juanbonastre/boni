@@ -333,6 +333,14 @@ modelo, y el papel tiene un **perfil**:
 | `voice` | Transcribir | Local si se puede |
 | `builder` | Proponer extensiones y cambios de manifiesto | Potente |
 
+**`decider` (medido el 2026-10-21, `packages/agent/eval/decide.ts`):** un modelo de decisiones como Jev (TypeSafe,
+por OpenRouter, `/api/alpha/decisions`) no escribe: elige entre opciones cerradas con probabilidades y una confianza.
+En 27 correos inventados en español (2 pasadas): colección 35/38 frente a 36/38 de Haiku 4.5, estable al invertir el
+orden de las opciones, y **la confianza separa aciertos (0,87 de media) de fallos (0,34)**: con un umbral de 0,6 decide
+solo 30 de 38, todos bien, y los 8 restantes (incluidos los 3 fallos) serían una pregunta a Juan. Como filtro "¿pide
+algo?" ahorra poco (10 de 54 lecturas, sin perder ninguna petición). Unas 25 veces más barato que Haiku. Uso propuesto:
+elegir la colección (y lo dudoso, al panel de peticiones), detectar duplicados; la extracción sigue en un `reader`.
+
 Cada perfil dice proveedor, modelo, clase de privacidad (`local`, `external-api`) y coste. El router elige con dos reglas
 del código: lo que "Lo que ve la IA" restringa por clase de privacidad, y el presupuesto de la extensión. Cambiar de
 modelo un papel es un ajuste, y antes de usarlo se pasa su evaluación (`eval/*.ts`).
