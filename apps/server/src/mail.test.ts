@@ -360,7 +360,8 @@ describe("tasks a mail asks for", () => {
     box.mails.set(3, mail(23, "Otra cosa", "¿Puedes revisar el acta?", "otro.ejemplo@example.com"));
     await m.check(1);
     const extracts = reader.requests.filter((r) => /list the tasks/.test(r.system));
-    const knownOf = (i: number) => (extracts.at(i)?.input as { known?: string[] }).known;
+    const knownOf = (i: number) =>
+      (extracts.at(i)?.input as { known?: string[] } | undefined)?.known;
     expect(knownOf(-2)?.sort()).toEqual(["Enviar el informe", "Reservar la sala"]);
     expect(knownOf(-1)).toBeUndefined();
     const plan = mailPlan("e_x", true, [
