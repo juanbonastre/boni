@@ -268,13 +268,6 @@ export function CardControls({
                   void duplicateChart(spec);
                 }}
               />
-              <MenuRow
-                label={spec.home ? t("controls.hideHome") : t("controls.showHome")}
-                onClick={() => {
-                  close();
-                  change({ ...spec, home: !spec.home });
-                }}
-              />
               {host.desktop && (
                 <MenuRow
                   label={onDesktop ? t("controls.removeDesktop") : t("controls.addDesktop")}

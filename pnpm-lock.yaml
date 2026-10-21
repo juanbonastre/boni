@@ -178,6 +178,9 @@ importers:
 
   apps/boni-web:
     dependencies:
+      '@boni/views':
+        specifier: workspace:*
+        version: link:../../packages/views
       lucide-react:
         specifier: 1.57.0
         version: 1.57.0(@types/react@19.3.0)(react@19.3.0)

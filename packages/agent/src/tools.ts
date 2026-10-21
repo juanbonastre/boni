@@ -896,13 +896,13 @@ export function makeCaps(c: CapsContext): Caps {
  * entity tools never touch a system type. */
 export function ensureSystemTypes(store: UserStore): void {
   const code = label("own", "personal", [{ kind: "code", id: "system-types" }]);
-  const make = (id: "memory" | "job" | "extension", name: string, keys: string[]) => {
+  const make = (id: "memory" | "job" | "extension" | "page", name: string, keys: string[]) => {
     if (store.schema().types[id]) return;
     const fields: FieldDef[] = keys.map((k) => ({
       id: `f_${k}`,
       key: k,
       name: k,
-      type: k === "prompt" || k === "manifest" ? "longtext" : "text",
+      type: k === "prompt" || k === "manifest" || k === "spec" ? "longtext" : "text",
       label: code,
     }));
     store.applySchema(
@@ -928,4 +928,6 @@ export function ensureSystemTypes(store: UserStore): void {
   // docs/extensiones.md 3: one entity per installed extension; `preset` is the preset version it still is
   // (empty once it was changed), `state` "on" or "off".
   make("extension", "Extensiones", ["key", "name", "manifest", "state", "preset"]);
+  // docs/extensiones.md 6: the user's pages (the Lienzo's blocks in `spec`, `parent` for the tree).
+  make("page", "Páginas", ["title", "icon", "parent", "position", "spec"]);
 }

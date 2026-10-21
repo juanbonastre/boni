@@ -75,6 +75,7 @@ describe("the export", () => {
       "json/job.ndjson",
       "json/memory.ndjson",
       "json/movimiento.ndjson",
+      "json/page.ndjson",
       "json/persona.ndjson",
       "json/proyecto.ndjson",
       "log.ndjson",

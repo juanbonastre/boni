@@ -7,6 +7,8 @@ import {
   type MailGuide,
   type MailInput,
   type MailView,
+  type Page,
+  type PageInfo,
   type Proposal,
   type RunDetail,
   type RunSummary,
@@ -58,6 +60,8 @@ const FILES = {
   home: "home.json",
   screens: "screens.json",
   shortcuts: "shortcuts.json",
+  pages: "pages.json",
+  lastPage: "last-page.json",
 };
 const OPTION_LIST_LIMIT = 500;
 const RELOAD_EVERY_MINUTES = 15;
@@ -68,7 +72,8 @@ export type View =
   | { kind: "chart"; id: string; drill?: string | null }
   | { kind: "chat" }
   | { kind: "inbox" }
-  | { kind: "log" };
+  | { kind: "log" }
+  | { kind: "page"; id: string };
 /**
  * The right side panel (on the phone, a sheet over the whole screen): a server screen (the capture form, maybe
  * filled in by a shortcut), the chart editor or the shortcut editor.
@@ -137,6 +142,14 @@ interface State {
   /** The conversation with the agent (this device's, kept for the session). */
   chat: ChatEntry[];
   chatBusy: boolean;
+  /** The user's pages (docs/extensiones.md 6): null while unknown (no server, agent store off). */
+  pages: PageInfo[] | null;
+  /** The open page with its blocks. */
+  page: Page | null;
+  /** The open page shows its blocks with their controls (move, remove, add). */
+  pageEditing: boolean;
+  /** A chart being created from this page's "Add": saved, it goes onto the page. */
+  chartForPage: string | null;
   /** Proposals waiting in the inbox, and the agent's latest runs (the log). */
   inbox: Proposal[];
   runs: RunSummary[];
@@ -216,6 +229,10 @@ export const useStore = create<State>(() => ({
   toast: null,
   chat: [],
   chatBusy: false,
+  pages: null,
+  page: null,
+  pageEditing: false,
+  chartForPage: null,
   inbox: [],
   runs: [],
   confirmFlip: false,
@@ -261,14 +278,19 @@ async function countQueue() {
 export async function init(role: "main" | "widget", h: Host = defaultHost) {
   hostRef = h;
   applySettings(await h.getSettings());
-  const [widgets, specs, catalog, home, screens, shortcuts] = await Promise.all([
+  const [widgets, specs, catalog, home, screens, shortcuts, pages, last] = await Promise.all([
     readJson<{ widgets: Widget[] }>(h.store, FILES.widgets),
     readJson<{ charts: unknown[] }>(h.store, FILES.charts),
     readJson<ChartCatalog>(h.store, FILES.catalog),
     readJson<unknown>(h.store, FILES.home),
     readJson<Record<string, unknown>>(h.store, FILES.screens),
     readJson<{ shortcuts: unknown[] }>(h.store, FILES.shortcuts),
+    readJson<{ pages: PageInfo[] }>(h.store, FILES.pages),
+    readJson<{ page: Page }>(h.store, FILES.lastPage),
   ]);
+  // The device's copy of the pages and of the last one opened: the window opens on it without network.
+  const cachedPages = Array.isArray(pages?.pages) ? pages.pages : null;
+  const lastPage = last?.page && cachedPages?.some((p) => p.id === last.page.id) ? last.page : null;
   set({
     widgets: widgets?.widgets ?? [],
     chartSpecs: (specs?.charts ?? []).map(parseSpec),
@@ -276,6 +298,10 @@ export async function init(role: "main" | "widget", h: Host = defaultHost) {
     catalog,
     home: home ? parseScreen(home) : null,
     screens: Object.fromEntries(Object.entries(screens ?? {}).map(([k, v]) => [k, parseScreen(v)])),
+    pages: cachedPages,
+    ...(role === "main" && lastPage
+      ? { page: lastPage, view: { kind: "page" as const, id: lastPage.id } }
+      : {}),
     ready: true,
   });
   h.onEvent((e) => {
@@ -306,7 +332,7 @@ export function navigate(screen: string) {
   else if (screen === "capture") openScreen(CAPTURE_SCREEN);
   else if (screen.startsWith("shortcut:")) {
     const sc = get().shortcuts.find((x) => x.id === screen.slice(9));
-    set({ panel: null, view: { kind: "home" }, tab: "capture" });
+    set({ panel: null, tab: "capture" });
     if (sc) void runShortcut(sc);
     else toast(get().t("shortcut.gone"));
   } else if (screen.startsWith("chart:")) {
@@ -317,7 +343,7 @@ export function navigate(screen: string) {
   } else if (screen.startsWith("edit:")) {
     const spec = get().chartSpecs.find((c) => c.id === screen.slice(5));
     if (spec) openEditor(spec);
-  } else showHome();
+  } else showStart();
 }
 
 function onSettingsChanged(s: ClientSettings) {
@@ -343,6 +369,7 @@ async function reloadAll() {
     loadCatalog(true).catch(() => undefined),
     loadShortcuts().catch(() => undefined),
     prefetch(),
+    startPages(),
   ]);
   charts.invalidate();
   refresh();
@@ -390,6 +417,12 @@ export function refresh() {
 // ---------- navigation ----------
 const FRESH_PANEL = { editPreview: null, panelEdited: false, discardAsk: false };
 export const showHome = () => set({ view: { kind: "home" } });
+/** Back from a chart or the conversation's screens: to the page open before, else the start. */
+export const showStart = () => {
+  const page = get().page;
+  if (page) set({ view: { kind: "page", id: page.id } });
+  else void openStart();
+};
 export const showChart = (id: string) => set({ view: { kind: "chart", id } });
 /** The detail of one bar or slice of the chart on its own: navigation, so Back leaves it before the chart. */
 export const setChartDrill = (drill: string | null) =>
@@ -402,7 +435,7 @@ export const openScreen = (id: string, values?: F.Values, shortcut?: string) => 
 export const showTab = (tab: Tab) => set({ tab, view: { kind: "home" } });
 export const openEditor = (spec: ChartSpec, isNew = false) =>
   set({ panel: { kind: "edit", spec: normalize(spec), isNew }, ...FRESH_PANEL });
-export const closePanel = () => set({ panel: null, ...FRESH_PANEL });
+export const closePanel = () => set({ panel: null, chartForPage: null, ...FRESH_PANEL });
 export const markPanelEdited = () => {
   if (get().panel && !get().panelEdited) set({ panelEdited: true });
 };
@@ -620,6 +653,10 @@ export async function saveChart(spec: ChartSpec) {
   const saved = spec.id ? await api.updateChart(spec) : await api.createChart(spec);
   await loadCharts();
   afterChartChange();
+  const page = get().page;
+  if (!spec.id && saved?.id && page && get().chartForPage === page.id)
+    await setPageBlocks([...page.spec.blocks, { id: blockId(), type: "chart", chart: saved.id }]);
+  set({ chartForPage: null });
   return saved;
 }
 
@@ -646,7 +683,7 @@ export function deleteChart(id: string) {
   const t = get().t;
   set((s) => ({ deleting: [...s.deleting, id] }));
   const v = get().view;
-  if (v.kind === "chart" && v.id === id) showHome();
+  if (v.kind === "chart" && v.id === id) showStart();
   const finish = async () => {
     if (!get().deleting.includes(id)) return; // undone
     try {
@@ -1147,4 +1184,150 @@ export async function changeVisibility(id: string, level: AiLevel): Promise<bool
     toast(e instanceof ApiError && e.status === 403 ? t("ai.personal") : t("ai.failed"));
     return false;
   }
+}
+
+// ------------------------------------------------------------------ pages (docs/extensiones.md 6)
+
+type Block = Page["spec"]["blocks"][number];
+
+/** A new block's id (closed spec: letters, digits, - and _). */
+export const blockId = () => Math.random().toString(36).slice(2, 10);
+
+/** The user's pages, kept on the device too. Null when the server has none to give (an older server). */
+export async function loadPages(): Promise<PageInfo[] | null> {
+  try {
+    const pages = await agent.pages();
+    set({ pages });
+    await keep(FILES.pages, { pages });
+    return pages;
+  } catch {
+    return get().pages;
+  }
+}
+
+/** At start and after a reconnection: the pages again, and the start page if none is open. */
+async function startPages() {
+  const pages = await loadPages();
+  const v = get().view;
+  if (v.kind === "home" || (v.kind === "page" && !pages?.some((p) => p.id === v.id)))
+    await openStart();
+  else if (v.kind === "page") await openPage(v.id);
+}
+
+export async function openPage(id: string) {
+  const same = get().page?.id === id;
+  set({
+    view: { kind: "page", id },
+    page: same ? get().page : null,
+    pageEditing: same ? get().pageEditing : false,
+  });
+  try {
+    const page = await agent.page(id);
+    const v = get().view;
+    if (!page || v.kind !== "page" || v.id !== id) return;
+    set({ page, pageEditing: get().pageEditing || page.spec.blocks.length === 0 });
+    await keep(FILES.lastPage, { page });
+  } catch {
+    if (!get().page) toast(get().t("page.loadError"));
+  }
+}
+
+/** The start screen: the last page opened here if it still exists, else the first; none, the welcome. */
+export async function openStart() {
+  const pages = get().pages;
+  if (!pages?.length) {
+    set({ view: { kind: "home" }, page: null });
+    return;
+  }
+  const last = await readJson<{ page: Page }>(store, FILES.lastPage);
+  const id = pages.some((p) => p.id === last?.page?.id)
+    ? (last?.page.id as string)
+    : (pages.find((p) => !p.parent) ?? pages[0])?.id;
+  if (id) await openPage(id);
+}
+
+export async function newPage(parent: string | null = null) {
+  try {
+    const page = await agent.createPage({ title: get().t("page.untitled"), parent });
+    if (!page) return;
+    await loadPages();
+    set({ page, pageEditing: true });
+    await openPage(page.id);
+  } catch {
+    toast(get().t("page.error"));
+  }
+}
+
+export const setPageEditing = (on: boolean) => set({ pageEditing: on });
+
+export async function renamePage(id: string, title: string) {
+  const clean = title.trim();
+  if (!clean) return;
+  const before = get().pages;
+  const page = get().page;
+  set({
+    pages: before?.map((p) => (p.id === id ? { ...p, title: clean } : p)) ?? before,
+    page: page?.id === id ? { ...page, title: clean } : page,
+  });
+  try {
+    await agent.updatePage(id, { title: clean });
+    await keep(FILES.pages, { pages: get().pages });
+  } catch {
+    set({ pages: before, page });
+    toast(get().t("page.error"));
+  }
+}
+
+/** The page's blocks, changed at once here and kept on the server; a failure puts them back. */
+export async function setPageBlocks(blocks: Block[]) {
+  const page = get().page;
+  if (!page) return;
+  const before = page.spec;
+  const next = { ...page, spec: { version: 1 as const, blocks } };
+  set({ page: next });
+  try {
+    await agent.updatePage(page.id, { spec: next.spec });
+    await keep(FILES.lastPage, { page: next });
+  } catch {
+    const now = get().page;
+    if (now?.id === page.id) set({ page: { ...now, spec: before } });
+    toast(get().t("page.error"));
+  }
+}
+
+export function addPageBlock(block: Block) {
+  const page = get().page;
+  if (page) void setPageBlocks([...page.spec.blocks, block]);
+}
+
+/** A new chart for this page: the editor opens, and saving puts it on the page. */
+export function newChartForPage(spec: ChartSpec) {
+  const page = get().page;
+  if (!page) return;
+  openEditor(spec, true);
+  set({ chartForPage: page.id });
+}
+
+/** To the trash, with Undo in the toast (no confirmation: section 1 of the design guide). */
+export async function deletePage(id: string) {
+  const t = get().t;
+  try {
+    await agent.deletePage(id);
+  } catch {
+    toast(t("page.error"));
+    return;
+  }
+  if (get().page?.id === id) set({ page: null });
+  await loadPages();
+  const v = get().view;
+  if (v.kind === "page" && v.id === id) await openStart();
+  toast(t("page.deleted"), {
+    label: t("toast.undo"),
+    run: () =>
+      void agent
+        .restorePage(id)
+        .then(() => loadPages())
+        .then(() => openPage(id))
+        .catch(() => toast(t("page.error"))),
+  });
 }

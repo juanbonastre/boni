@@ -1,34 +1,33 @@
-import { PanelLeft, Plus, WifiOff } from "lucide-react";
+import { PanelLeft, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ChartCard, ChartCardContent } from "./components/ChartCard.tsx";
+import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
+import { PageView, Welcome } from "./components/PageView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
-import { isCategoryKind } from "./core/chartBuilder.ts";
-import { emptyState } from "./core/charts.ts";
 import { host } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
-  CAPTURE_SCREEN,
   configured,
   dismissRejected,
   dismissToast,
   goBack,
-  openScreen,
+  openPage,
   openSettings,
+  renamePage,
   setChartDrill,
+  setPageEditing,
   showChat,
-  showHome,
+  showStart,
   toggleSidebar,
   useStore,
-  useVisibleCharts,
 } from "./store.ts";
 import { useTheme } from "./theme.ts";
 
 /**
- * The main window, laid out as Boni Calendar: the sidebar, the main area (the home screen's charts filling the
- * window, or one chart on its own) and the side panel (capture, chart editor) next to it.
+ * The main window, laid out as Boni Calendar: the sidebar, the main area (a page of the user's, the
+ * conversation, or one chart on its own) and the side panel (capture, chart editor) next to it.
  */
 export function App() {
   useTheme();
@@ -88,8 +87,8 @@ function useMedia(query: string): boolean {
 }
 
 /**
- * N new capture, [ the sidebar, Ctrl+, settings, Esc back to the home screen (panels close first). On the phone
- * Esc is Back: it closes the top thing (`goBack`).
+ * [ the sidebar, Ctrl+, settings, Esc back to the page (panels close first). On the phone Esc is Back: it
+ * closes the top thing (`goBack`).
  */
 function useShortcuts(mobile: boolean) {
   useEffect(() => {
@@ -108,17 +107,20 @@ function useShortcuts(mobile: boolean) {
         return;
       }
       if (typing || e.ctrlKey || e.metaKey || e.altKey || s.settingsOpen) return;
-      if (e.key === "n" || e.key === "N") {
-        e.preventDefault();
-        openScreen(CAPTURE_SCREEN);
-      } else if (e.key === "[") {
+      if (e.key === "[") {
         e.preventDefault();
         toggleSidebar();
-      } else if (e.key === "Escape" && !e.defaultPrevented && !s.panel && s.view.kind !== "home") {
+      } else if (
+        e.key === "Escape" &&
+        !e.defaultPrevented &&
+        !s.panel &&
+        s.view.kind !== "home" &&
+        s.view.kind !== "page"
+      ) {
         e.preventDefault();
         if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
         else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
-        else showHome();
+        else showStart();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -134,17 +136,14 @@ function TopBar() {
       ? s.chartSpecs.find((c) => c.id === (s.view as { id: string }).id)
       : null,
   );
-  const home = useStore((s) => s.home);
+  const page = useStore((s) => s.page);
+  const editing = useStore((s) => s.pageEditing);
   const pending = useStore((s) => s.pending);
   const settings = useStore((s) => s.settings);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const ready = configured(settings);
-  const buttons = (home?.components ?? []).filter((c) => c.type === "button");
-  // Without the server's home yet, capture is still offered (the form comes from the device's copy).
-  const actions = buttons.length
-    ? buttons
-    : [{ type: "button" as const, label: t("capture.title"), screen: CAPTURE_SCREEN, icon: "add" }];
   const offline = ready && host.live && !settings.live && !settings.liveUnsupported;
+  const onPage = view.kind === "page" && page?.id === view.id;
   return (
     <header className="topbar">
       {!sidebarOpen && (
@@ -173,14 +172,26 @@ function TopBar() {
           </>
         ) : view.kind === "chart" && spec ? (
           <>
-            <button type="button" className="title-crumb" onClick={showHome}>
-              {t("top.home")}
-            </button>
-            <span className="title-sep">/</span>
+            {page && (
+              <>
+                <button
+                  type="button"
+                  className="title-crumb"
+                  onClick={() => void openPage(page.id)}
+                >
+                  {page.title}
+                </button>
+                <span className="title-sep">/</span>
+              </>
+            )}
             <span className="title-name">{spec.title}</span>
           </>
+        ) : onPage && page ? (
+          <PageTitle id={page.id} title={page.title} />
+        ) : view.kind === "page" ? (
+          ""
         ) : (
-          t("top.home")
+          "Boni"
         )}
       </h1>
       <span className="spacer" />
@@ -196,21 +207,58 @@ function TopBar() {
           {settings.sessionEnded ? t("account.ended") : t("account.legacy")}
         </button>
       )}
-      {actions.map((b) =>
-        b.type === "button" ? (
-          <button
-            key={b.screen}
-            type="button"
-            className={b.style === "secondary" ? "pill" : "btn primary"}
-            onClick={() => openScreen(b.screen)}
-            title={`${b.label} (N)`}
-          >
-            {b.icon === "add" && <Plus size={15} strokeWidth={2} />}
-            {b.label}
-          </button>
-        ) : null,
+      {onPage && !editing && (
+        <button type="button" className="pill" onClick={() => setPageEditing(true)}>
+          {t("page.edit")}
+        </button>
+      )}
+      {onPage && editing && (
+        <button type="button" className="btn primary" onClick={() => setPageEditing(false)}>
+          {t("page.done")}
+        </button>
       )}
     </header>
+  );
+}
+
+/** The page's name, changed in place: click, type, Enter (Esc leaves it as it was). */
+function PageTitle({ id, title }: { id: string; title: string }) {
+  const t = useStore((s) => s.t);
+  const [text, setText] = useState<string | null>(null);
+  if (text === null)
+    return (
+      <button
+        type="button"
+        className="title-name title-edit"
+        title={t("page.name")}
+        onClick={() => setText(title)}
+      >
+        {title || t("page.untitled")}
+      </button>
+    );
+  const done = (save: boolean) => {
+    if (save && text.trim() && text.trim() !== title) void renamePage(id, text);
+    setText(null);
+  };
+  return (
+    <input
+      className="title-input"
+      aria-label={t("page.name")}
+      value={text}
+      maxLength={120}
+      // biome-ignore lint/a11y/noAutofocus: the user just clicked the name to change it
+      autoFocus
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => done(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") done(true);
+        else if (e.key === "Escape") {
+          e.preventDefault();
+          done(false);
+        }
+      }}
+    />
   );
 }
 
@@ -218,7 +266,7 @@ function Content() {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const settings = useStore((s) => s.settings);
-  const specs = useVisibleCharts();
+  const pages = useStore((s) => s.pages);
   const loadError = useStore((s) => s.loadError);
   const ready = configured(settings);
 
@@ -260,39 +308,8 @@ function Content() {
       </div>
     );
   }
-  const onHome = specs.filter((s) => s.home);
-  return (
-    <div className="content">
-      {loadError && specs.length === 0 && <p className="form-error">{loadError}</p>}
-      <div className="dashboard">
-        {onHome.map((s) => (
-          <ChartCard
-            key={s.id}
-            chartId={s.id}
-            className={isCategoryKind(s.kind) && s.kind !== "donut" ? "wide" : undefined}
-          />
-        ))}
-        <NewChartPreview />
-      </div>
-      {onHome.length === 0 && <p className="muted center-note">{t("charts.noneHome")}</p>}
-      <QueueNotes />
-    </div>
-  );
-}
-
-/** The card of a chart being created in the side panel, with the editor's preview. */
-function NewChartPreview() {
-  const panel = useStore((s) => s.panel);
-  const preview = useStore((s) => (s.editPreview?.id === "" ? s.editPreview.state : null));
-  if (panel?.kind !== "edit" || !panel.isNew) return null;
-  return (
-    <ChartCardContent
-      title={panel.spec.title}
-      color={panel.spec.color}
-      state={preview ?? emptyState()}
-      className="editing new"
-    />
-  );
+  if (view.kind === "page") return <PageView after={<QueueNotes />} />;
+  return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;
 }
 
 function QueueNotes() {

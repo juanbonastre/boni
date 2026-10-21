@@ -1,4 +1,4 @@
-import { ChevronRight, X } from "lucide-react";
+import { ChevronRight, Eye, EyeOff, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   AI_LEVELS,
@@ -11,6 +11,7 @@ import {
 import { host, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
 import {
+  addWidget,
   answerSuggestion,
   changeExtension,
   changeVisibility,
@@ -24,15 +25,20 @@ import {
   login,
   logout,
   openSettings,
+  removeWidget,
   rereadMail,
   reviewMail,
   saveMail,
   saveMailGuide,
   saveSettings,
+  setWidgetHidden,
   suggestedDevice,
   toast,
   useStore,
+  useVisibleCharts,
 } from "../store.ts";
+import { ACCENT } from "./Chart.tsx";
+import { MenuRow, PopButton } from "./Popover.tsx";
 
 /** Settings (Boni Calendar's modal): account, appearance and, on the desktop, the tray and the widgets. */
 export function SettingsModal() {
@@ -165,11 +171,101 @@ function Appearance() {
 }
 
 /** "Escritorio" (the desktop shell only): start with the computer, the widgets on the desktop. */
+/** This computer's desktop widgets: each a chart, shown or hidden here, removed with its X. */
+function DesktopWidgets() {
+  const t = useStore((s) => s.t);
+  const settings = useStore((s) => s.settings);
+  const widgets = useStore((s) => s.widgets);
+  const specs = useVisibleCharts();
+  return (
+    <div className="setting column">
+      <div className="setting-label">
+        <span>{t("widgets.title")}</span>
+        {widgets.length === 0 && <span className="muted small">{t("widgets.none")}</span>}
+      </div>
+      {widgets.length > 0 && (
+        <ul className="nav-list widget-list">
+          {widgets.map((w) => {
+            const spec = specs.find((s) => s.id === w.chart_id);
+            const name = spec?.title ?? w.chart_id;
+            const hidden = !settings.showWidgets || settings.hiddenWidgets.includes(w.id);
+            return (
+              <li key={w.id} className={`chart-row${hidden ? " off" : ""}`}>
+                <span className="chart-main static">
+                  <span
+                    className={`swatch square${hidden ? " hollow" : ""}`}
+                    style={{ ["--c" as string]: spec?.color ?? ACCENT }}
+                  />
+                  <span className="nav-name">{name}</span>
+                </span>
+                <button
+                  type="button"
+                  className={`icon-btn tiny eye${hidden ? " shown" : ""}`}
+                  onClick={() => void setWidgetHidden(w.id, !settings.hiddenWidgets.includes(w.id))}
+                  title={hidden ? t("widgets.show") : t("widgets.hide")}
+                  aria-label={`${hidden ? t("widgets.show") : t("widgets.hide")}: ${name}`}
+                >
+                  {hidden ? (
+                    <EyeOff size={13} strokeWidth={1.8} />
+                  ) : (
+                    <Eye size={13} strokeWidth={1.8} />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn tiny"
+                  onClick={() => void removeWidget(w.id)}
+                  title={t("widgets.remove")}
+                  aria-label={`${t("widgets.remove")}: ${name}`}
+                >
+                  <X size={13} strokeWidth={1.8} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {specs.length > 0 && (
+        <PopButton
+          className="btn"
+          title={t("widgets.add")}
+          align="start"
+          label={
+            <>
+              <Plus size={14} strokeWidth={2} />
+              {t("widgets.add")}
+            </>
+          }
+        >
+          {(close) => (
+            <div className="menu-list scroll" role="menu">
+              {specs.map((s) => (
+                <MenuRow
+                  key={s.id}
+                  label={s.title}
+                  icon={
+                    <span className="swatch" style={{ ["--c" as string]: s.color ?? ACCENT }} />
+                  }
+                  onClick={() => {
+                    close();
+                    void addWidget(s.id);
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </PopButton>
+      )}
+    </div>
+  );
+}
+
 function DesktopSettings() {
   const t = useStore((s) => s.t);
   const settings = useStore((s) => s.settings);
   return (
     <>
+      <DesktopWidgets />
       <div className="setting">
         <div className="setting-label">
           <span>{t("settings.autostart")}</span>

@@ -50,6 +50,7 @@ packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed
                  the Python numbers exactly (Python's round to even and CPython 3.12's compensated sum included):
                  `golden/cases.json` comes from the original engine (`golden/make_golden.py`); a change to the
                  engine changes them only on purpose.
+                 `page.ts`: a page's blocks (`PageSpec`: heading, text, chart, button), closed (`pageErrors`).
 packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `src/cli.ts --vault --store [--apply]`,
                  dry run by default; never writes the vault). Zones as everywhere (`scan.ts`: no private/, restricted/,
                  dot folders, _system/ notes, symlinks). Type by folder (agenda by `_system/colecciones`), fields
@@ -182,6 +183,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  goes to the reader as `$guide`, bound by code. `src/mailReview.ts`: the reviewer, every 20 of
                  Juan's decisions (or "Revisar ahora"): it suggests rules and examples, the code checks them
                  against his decisions and re-reads decided mail to measure; kept only if better, until he answers.
+                 `src/pages.ts`: the user's pages (system type `page` in the user's store, `/api/pages`): nothing
+                 fixed on screen, the sidebar and the start are what the user makes; `seedFromV1` gives an account
+                 that used the first Boni, once, a page "Gastos" with what its home showed.
                  `src/mirror.ts`: the mirror of each account's `core` types (after agent requests and every 30 s;
                  `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run by default.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
