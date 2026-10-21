@@ -3,6 +3,7 @@ import { create } from "zustand";
 import {
   AgentApi,
   type AiLevel,
+  type MailGuide,
   type MailInput,
   type MailView,
   type Proposal,
@@ -1039,6 +1040,25 @@ export async function saveMail(input: MailInput): Promise<MailView | { error: st
   try {
     const m = await agent.saveMail(input);
     return m ?? { error: "failed" };
+  } catch (e) {
+    return { error: e instanceof ApiError ? e.code : "offline" };
+  }
+}
+
+export async function loadMailGuide(): Promise<MailGuide | null> {
+  try {
+    return await agent.mailGuide();
+  } catch {
+    return null;
+  }
+}
+
+/** Saves part of the reading guide; the new guide, or the error's code. */
+export async function saveMailGuide(
+  input: Parameters<typeof agent.saveMailGuide>[0],
+): Promise<MailGuide | { error: string }> {
+  try {
+    return (await agent.saveMailGuide(input)) ?? { error: "failed" };
   } catch (e) {
     return { error: e instanceof ApiError ? e.code : "offline" };
   }

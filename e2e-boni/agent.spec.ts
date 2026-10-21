@@ -4,6 +4,7 @@ import {
   ASK_TURN,
   confirmTurn,
   DONE,
+  GUIDE,
   MAIL,
   MIRROR_PROPOSAL,
   PROPOSALS,
@@ -326,4 +327,57 @@ test("the mailbox in Settings: a wrong password is said, a good one connects; co
     'POST api/mail/reread {"days":14}',
   ]);
   await page.screenshot({ path: `${SHOTS}/agent-mail-settings.png` });
+});
+
+test("the reading guide: his words saved, rules added and removed, examples only removed", async ({
+  page,
+}) => {
+  const saved = {
+    guide: { ...GUIDE.guide, instructions: "Solo lo que me pidan a mí." },
+  };
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "GET api/mail": [MAIL],
+      "GET api/mail/guide": [GUIDE],
+      "PUT api/mail/guide": [
+        saved,
+        { __status: 400, error: "bad-rule" },
+        {
+          guide: {
+            ...saved.guide,
+            rules: [...saved.guide.rules, { id: "r3", from: "@x.example.com", action: "skip" }],
+          },
+        },
+        { guide: { ...saved.guide, examples: [] } },
+      ],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  const text = modal.locator("#mail-guide-text");
+  await expect(text).toHaveValue(GUIDE.guide.instructions);
+  await expect(modal).toContainText("@lista.example.com");
+  await expect(modal).toContainText("No leer nunca");
+  await expect(modal).toContainText("Siempre a Proyectos");
+  await expect(modal).toContainText("Confirmar la sala a Lucía");
+  await text.fill("Solo lo que me pidan a mí.");
+  await modal.getByRole("button", { name: "Guardar", exact: true }).click();
+  await expect(page.getByText("Guía guardada")).toBeVisible();
+  // A wrong sender is said; a good one is added.
+  await modal.getByLabel("Dirección o @dominio").fill("nadie");
+  await modal.getByRole("button", { name: "Añadir", exact: true }).click();
+  await expect(modal.locator(".form-error")).toContainText("Escribe una dirección");
+  await modal.getByLabel("Dirección o @dominio").fill("@x.example.com");
+  await modal.getByRole("button", { name: "Añadir", exact: true }).click();
+  await expect(modal).toContainText("@x.example.com");
+  // The example is removed by keeping the others (none).
+  await modal.getByRole("button", { name: "Quitar" }).last().click();
+  await expect(modal).not.toContainText("Confirmar la sala a Lucía");
+  const puts = await requests(page, "PUT api/mail/guide");
+  expect(puts[0]).toContain('"instructions":"Solo lo que me pidan a mí."');
+  expect(puts[2]).toContain('"from":"@x.example.com","action":"skip"');
+  expect(puts[3]).toContain('"keepExamples":[]');
+  await modal.locator("#mail-guide-text").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: `${SHOTS}/agent-mail-guide.png` });
 });

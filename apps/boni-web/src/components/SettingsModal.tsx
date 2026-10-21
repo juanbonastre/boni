@@ -1,6 +1,12 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AI_LEVELS, type AiLevel, type MailView, type Visibility } from "../core/agent.ts";
+import {
+  AI_LEVELS,
+  type AiLevel,
+  type MailGuide,
+  type MailView,
+  type Visibility,
+} from "../core/agent.ts";
 import { host, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
 import {
@@ -9,12 +15,14 @@ import {
   configured,
   forgetMail,
   loadMail,
+  loadMailGuide,
   loadVisibility,
   login,
   logout,
   openSettings,
   rereadMail,
   saveMail,
+  saveMailGuide,
   saveSettings,
   suggestedDevice,
   toast,
@@ -516,6 +524,9 @@ function MailSettings() {
                 </div>
               </div>
             ))}
+          <MailGuideSettings
+            collections={(types ?? []).filter((v) => mail.collections.includes(v.id))}
+          />
           <div className="modal-actions">
             <button
               type="button"
@@ -595,6 +606,158 @@ function MailSettings() {
             </button>
           </div>
         </form>
+      )}
+    </>
+  );
+}
+
+/**
+ * "Guía de lectura" (docs/nucleo.md 7.4b): Juan's words for the reader, the rules the code applies
+ * (never read a sender, or send what it asks to one collection) and the examples kept from his decisions
+ * (removable here, never written here).
+ */
+function MailGuideSettings({ collections }: { collections: Visibility[] }) {
+  const t = useStore((s) => s.t);
+  const [guide, setGuide] = useState<MailGuide | null>(null);
+  const [text, setText] = useState("");
+  const [from, setFrom] = useState("");
+  const [action, setAction] = useState("skip");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void loadMailGuide().then((g) => {
+      if (!live || !g) return;
+      setGuide(g);
+      setText(g.instructions);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (!guide) return null;
+  const save = async (input: Parameters<typeof saveMailGuide>[0], done?: string) => {
+    setError(null);
+    const r = await saveMailGuide(input);
+    if ("error" in r) return setError(t(`mail.guide.error.${r.error}`));
+    setGuide(r);
+    if (done) toast(t(done));
+  };
+  const nameOf = (id?: string) => collections.find((c) => c.id === id)?.name ?? id ?? "";
+  return (
+    <>
+      <p className="muted small setting-note">{t("mail.guide.help")}</p>
+      <div className="setting stacked">
+        <label className="setting-label" htmlFor="mail-guide-text">
+          <span>{t("mail.guide.instructions")}</span>
+        </label>
+        <textarea
+          id="mail-guide-text"
+          className="input area"
+          maxLength={2000}
+          value={text}
+          placeholder={t("mail.guide.placeholder")}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <div className="setting-control">
+          <button
+            type="button"
+            className="btn"
+            disabled={text.trim() === guide.instructions}
+            onClick={() => void save({ instructions: text }, "mail.guide.saved")}
+          >
+            {t("mail.guide.save")}
+          </button>
+        </div>
+      </div>
+      <p className="muted small setting-note">{t("mail.guide.rules")}</p>
+      {guide.rules.map((r) => (
+        <div className="setting" key={r.id}>
+          <div className="setting-label">
+            <span>{r.from}</span>
+            <span className="muted small">
+              {r.action === "skip"
+                ? t("mail.guide.skip")
+                : t("mail.guide.to", { name: nameOf(r.collection) })}
+            </span>
+          </div>
+          <div className="setting-control">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void save({ rules: guide.rules.filter((x) => x.id !== r.id) })}
+            >
+              {t("mail.guide.remove")}
+            </button>
+          </div>
+        </div>
+      ))}
+      <div className="setting">
+        <div className="setting-control with-gap grow">
+          <input
+            className="input"
+            aria-label={t("mail.guide.from")}
+            placeholder={t("mail.guide.from")}
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+          />
+          <select
+            className="input auto-width"
+            aria-label={t("mail.guide.action")}
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+          >
+            <option value="skip">{t("mail.guide.skip")}</option>
+            {collections.map((c) => (
+              <option key={c.id} value={c.id}>
+                {t("mail.guide.to", { name: c.name })}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn"
+            disabled={!from.trim()}
+            onClick={async () => {
+              const rule =
+                action === "skip"
+                  ? { from: from.trim(), action: "skip" as const }
+                  : { from: from.trim(), action: "collection" as const, collection: action };
+              await save({ rules: [...guide.rules, rule] });
+              setFrom("");
+            }}
+          >
+            {t("mail.guide.add")}
+          </button>
+        </div>
+      </div>
+      {error && <p className="form-error">{error}</p>}
+      {guide.examples.length > 0 && (
+        <>
+          <p className="muted small setting-note">{t("mail.guide.examples")}</p>
+          {guide.examples.map((e) => (
+            <div className="setting" key={e.id}>
+              <div className="setting-label">
+                <span>{e.subject}</span>
+                <span className="muted small">
+                  {e.want.length ? e.want.map((w) => w.title).join(" · ") : t("mail.guide.nothing")}
+                </span>
+              </div>
+              <div className="setting-control">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    void save({
+                      keepExamples: guide.examples.filter((x) => x.id !== e.id).map((x) => x.id),
+                    })
+                  }
+                >
+                  {t("mail.guide.remove")}
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
       )}
     </>
   );

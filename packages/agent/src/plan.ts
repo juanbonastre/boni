@@ -64,7 +64,7 @@ const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   summarize: [],
   rewrite: ["instruction"],
   answer_about: ["question"],
-  read_message: ["modules", "user_in", "known"],
+  read_message: ["modules", "user_in", "known", "guide"],
 };
 const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> = {
   text: ["template", "a", "b", "c", "d"],
@@ -130,7 +130,16 @@ function bareLiterals(raw: unknown): unknown {
   };
 }
 
-export function validatePlan(given: unknown, catalog: PlanCatalog, turnText: string): PlanResult {
+/**
+ * `bound`: names a plan made by code may refer to without a step (`$guide`), values the code binds with
+ * their own labels (Agent.background). A planner's plan has none.
+ */
+export function validatePlan(
+  given: unknown,
+  catalog: PlanCatalog,
+  turnText: string,
+  bound: readonly string[] = [],
+): PlanResult {
   const raw = bareLiterals(given);
   const errors: string[] = [];
   if (
@@ -142,7 +151,7 @@ export function validatePlan(given: unknown, catalog: PlanCatalog, turnText: str
     return { ok: false, errors: ["plan: not-a-plan"] };
   if (raw.steps.length === 0) return { ok: false, errors: ["plan: no-steps"] };
   if (raw.steps.length > MAX_STEPS) return { ok: false, errors: ["plan: too-many-steps"] };
-  const seen = new Set<string>();
+  const seen = new Set<string>(bound);
 
   const checkAtom = (where: string, a: unknown, inEach: boolean) => {
     if (!isObj(a) || Object.keys(a).length !== 1) return errors.push(`${where}: bad-expression`);

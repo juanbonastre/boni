@@ -1,5 +1,14 @@
+import { createHash, randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
-import type { UserIn } from "@boni/agent";
+import {
+  GUIDE_LIMITS,
+  guideValue,
+  MODULES,
+  modulesOf,
+  type ReadingGuide,
+  readMessagePrompt,
+  type UserIn,
+} from "@boni/agent";
 import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
 import { BODY, type UserStore } from "@boni/store";
@@ -44,9 +53,52 @@ export interface MailState {
    * first, so the order of setting things up never loses a mail. Missing in a state from before it existed.
    */
   pending?: string[];
+  /** With which reading (prompt, modules and guide, `readingVersion`) each mail was last read (the latest 1,000). */
+  readWith?: Record<string, string>;
 }
+/**
+ * Juan's reading guide (docs/nucleo.md 7.4b, point 2), kept with the mailbox's settings and encrypted the
+ * same way: his own words for the reader, rules the code applies (the model cannot skip them), and
+ * examples of mail he decided (made from his decisions, never typed in by a device).
+ */
+export interface MailGuide {
+  instructions: string;
+  rules: MailRule[];
+  examples: GuideExample[];
+}
+/** A rule from a closed catalogue: mail from an address or a domain ("@example.com") is never read, or
+ * what it asks goes to one collection. The first rule that matches wins. */
+export interface MailRule {
+  id: string;
+  from: string;
+  action: "skip" | "collection";
+  /** The type id, for "collection". */
+  collection?: string;
+}
+export interface GuideExample {
+  id: string;
+  /** For Settings only: the mail's subject and sender. */
+  subject: string;
+  from: string;
+  /** The mail as the reader read it (someone else's text). */
+  mail: string;
+  want: ReadingGuide["examples"][number]["want"];
+}
+const EMPTY_GUIDE: MailGuide = { instructions: "", rules: [], examples: [] };
+const SENDER = /^(@[a-z0-9.-]+\.[a-z]{2,}|[^\s@]+@[a-z0-9.-]+\.[a-z]{2,})$/i;
+
+/** The first rule of the guide for mail from `address`. */
+export function ruleFor(guide: MailGuide, address: string): MailRule | null {
+  const a = address.trim().toLowerCase();
+  return (
+    guide.rules.find((r) => (r.from.startsWith("@") ? a.endsWith(r.from) : a === r.from)) ?? null
+  );
+}
+
 /** A collection tasks may go to, as the plan names it. */
 export interface Target {
+  /** The type's id (a guide rule names it). */
+  id?: string;
   key: string;
   name: string;
   /** The option the reader sees: the name and a few of Juan's own titles in it, so it knows what goes there. */
@@ -116,7 +168,14 @@ export const MAIL_MODULES = ["tasks", "events"];
 export function mailPlan(
   mail: string,
   targets: Target[],
-  o: { has?: readonly string[]; known?: string[]; userIn?: UserIn; modules?: string[] } = {},
+  o: {
+    has?: readonly string[];
+    known?: string[];
+    userIn?: UserIn;
+    modules?: string[];
+    /** The plan reads `$guide` (the code binds it: Agent.background). */
+    guide?: boolean;
+  } = {},
 ): unknown {
   const has = new Set(o.has ?? ["asunto", "body"]);
   const parts: unknown[] = [];
@@ -151,6 +210,7 @@ export function mailPlan(
         modules: { fn: "list", args: (o.modules ?? MAIL_MODULES).map((m) => ({ lit: m })) },
         user_in: { lit: o.userIn ?? "group" },
         ...(known.length ? { known: { fn: "list", args: known.map((k) => ({ lit: k })) } } : {}),
+        ...(o.guide ? { guide: { ref: "$guide" } } : {}),
       },
     },
   ];
@@ -351,6 +411,70 @@ export class Mails {
       this.saveState(account, { ...EMPTY, type: st.type, count: 0 });
     }
     return this.view(account) as MailView;
+  }
+
+  /** Juan's reading guide (empty until he writes one). */
+  guide(account: number): MailGuide {
+    const v = this.get(account, "mail-guide");
+    return v
+      ? { ...EMPTY_GUIDE, ...(JSON.parse(decrypt(this.o.key, v)) as Partial<MailGuide>) }
+      : { ...EMPTY_GUIDE };
+  }
+
+  /**
+   * A new guide from a device: his words and his rules as given (checked), and the examples he keeps
+   * (only ids of examples that exist: a device removes examples, it never writes one).
+   */
+  saveGuide(
+    account: number,
+    input: { instructions?: unknown; rules?: unknown; keepExamples?: unknown },
+  ): MailGuide {
+    const old = this.guide(account);
+    const g: MailGuide = { ...old };
+    if (input.instructions !== undefined) {
+      if (
+        typeof input.instructions !== "string" ||
+        input.instructions.length > GUIDE_LIMITS.instructions
+      )
+        throw new MailError("bad-guide");
+      g.instructions = input.instructions.trim();
+    }
+    if (input.rules !== undefined) {
+      if (!Array.isArray(input.rules) || input.rules.length > 100) throw new MailError("bad-guide");
+      g.rules = input.rules.map((r) => {
+        const x = r as Partial<MailRule>;
+        const from = String(x.from ?? "")
+          .trim()
+          .toLowerCase();
+        if (!SENDER.test(from) || (x.action !== "skip" && x.action !== "collection"))
+          throw new MailError("bad-rule");
+        if (x.action === "collection" && (typeof x.collection !== "string" || !x.collection))
+          throw new MailError("bad-rule");
+        return {
+          id: typeof x.id === "string" && /^[a-z0-9_-]{1,40}$/i.test(x.id) ? x.id : randomUUID(),
+          from,
+          action: x.action,
+          ...(x.action === "collection" ? { collection: x.collection as string } : {}),
+        };
+      });
+    }
+    if (input.keepExamples !== undefined) {
+      if (!Array.isArray(input.keepExamples)) throw new MailError("bad-guide");
+      const keep = new Set(input.keepExamples);
+      g.examples = old.examples.filter((e) => keep.has(e.id));
+    }
+    this.set(account, "mail-guide", encrypt(this.o.key, JSON.stringify(g)));
+    return g;
+  }
+
+  /** What a reading is: the prompt with the mail modules and the guide the reader gets (a short hash). */
+  readingVersion(account: number): string {
+    const g = this.guide(account);
+    return createHash("sha256")
+      .update(readMessagePrompt(modulesOf(MAIL_MODULES)))
+      .update(JSON.stringify([g.instructions, g.examples.map((e) => [e.mail, e.want])]))
+      .digest("hex")
+      .slice(0, 12);
   }
 
   /** Disconnects the mailbox: the settings go, the mail already brought in stays. */
@@ -612,7 +736,15 @@ export class Mails {
               .slice(0, 3)
               .map((e) => String(e.entity.values[t.titleField]).replace(/\s+/g, " ").slice(0, 40));
       const option = examples.length ? `${t.name} (p. ej.: ${examples.join("; ")})` : t.name;
-      return [{ key: t.key, name: t.name, option: option.slice(0, 200), date: date?.key ?? null }];
+      return [
+        {
+          id: t.id,
+          key: t.key,
+          name: t.name,
+          option: option.slice(0, 200),
+          date: date?.key ?? null,
+        },
+      ];
     });
   }
 
@@ -627,24 +759,48 @@ export class Mails {
     const targets = this.targets(store, s);
     if (!targets.length) return;
     const agent = this.o.host.agent(account);
+    const guide = this.guide(account);
+    const version = this.readingVersion(account);
+    const withGuide = !!(guide.instructions || guide.examples.length);
+    const bound: Record<string, ReturnType<typeof guideValue>> = withGuide
+      ? {
+          guide: guideValue({
+            instructions: guide.instructions,
+            examples: guide.examples.map((e) => ({ mail: e.mail, want: e.want })),
+          }),
+        }
+      : {};
     let n = 0;
     for (const id of st.pending.slice(0, this.o.perCheck ?? 50)) {
       st.pending = st.pending.filter((x) => x !== id);
+      const read = { ...(st.readWith ?? {}) };
+      delete read[id];
+      read[id] = version;
+      const keys = Object.keys(read);
+      for (const k of keys.slice(0, Math.max(0, keys.length - 1000))) delete read[k];
+      st.readWith = read;
       this.saveState(account, st);
       const e = store.get(id);
       if (!e || e.entity.deleted !== undefined) continue;
+      const v = e.entity.values;
+      const from = String(v.f_de ?? "");
+      // Guide rules first, by code: a mail it says never to read is not read at all.
+      const rule = ruleFor(guide, from);
+      if (rule?.action === "skip") continue;
+      const only =
+        rule?.action === "collection" ? targets.filter((t) => t.id === rule.collection) : [];
       try {
-        const v = e.entity.values;
-        const from = String(v.f_de ?? "");
         const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto"].filter(
           (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
         );
         const r = await agent.background(
-          mailPlan(id, targets, {
+          mailPlan(id, only.length ? only : targets, {
             has: e.entity.body ? [...has, "body"] : has,
             known: from ? this.known(store, from) : [],
             userIn: userIn(s.user, v.f_para, v.f_cc),
+            guide: withGuide,
           }),
+          bound,
         );
         n += r.proposals.length;
         if (r.status === "stopped" && r.error)

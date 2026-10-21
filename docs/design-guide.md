@@ -207,7 +207,11 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   form). Connected: who, the last check and how many mails, "Comprobar ahora", "Volver a leer" (a
   days select, 1 to 30, and "Leer": that mail is read again and its pending proposals are replaced; a toast says how
   many mails), one switch per collection tasks from mail
-  may go to (never "Correos" itself nor a hidden one), "Cambiar" and "Desconectar". The password is never shown again.
+  may go to (never "Correos" itself nor a hidden one), the reading guide, "Cambiar" and "Desconectar". The password is
+  never shown again. **Reading guide** (docs/nucleo.md 7.4b): a note on what it is, "Tus indicaciones" (a textarea
+  over the whole row, "Guardar" enabled only when it changed), one row per rule (sender, what it does, "Quitar") and a
+  row to add one (address or @domain taking the room, the action select and "Añadir" wrap under it when narrow), and
+  the examples kept from Juan's decisions (subject, what he wanted, "Quitar"; never written here).
 - **Obsidian plugin:** uses these tokens, scoped to the plugin's own container, so it looks like Boni Calendar inside Obsidian
   (decided by Juan, 2026-10-15; it does not follow Obsidian's theme variables). It is the same app, mounted in a pane: popovers,
   menus, dialogs and toasts stay inside that pane, and the keyboard shortcuts work only while the calendar has the focus (a

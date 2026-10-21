@@ -1400,6 +1400,27 @@ select {
 .input.auto-width {
   width: auto;
 }
+/* A row of controls with no label (an input and its buttons): the input takes the room, the rest
+   wraps under it rather than being squeezed. */
+.setting-control.grow {
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+.setting-control.grow > .input:not(.auto-width) {
+  flex: 1 1 12rem;
+}
+.setting-control.grow > :not(.input:not(.auto-width)) {
+  flex: none;
+}
+.setting.stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.setting.stacked > .setting-label {
+  flex: none;
+}
 .toast {
   position: fixed;
   left: 50%;

@@ -326,6 +326,48 @@ export function parseMail(v: unknown): MailView | null {
     },
   };
 }
+/** Juan's reading guide (docs/nucleo.md 7.4b): his words, the code's rules, the examples he keeps. */
+export interface MailRule {
+  id: string;
+  from: string;
+  action: "skip" | "collection";
+  collection?: string;
+}
+export interface MailGuide {
+  instructions: string;
+  rules: MailRule[];
+  examples: { id: string; subject: string; from: string; want: { title: string }[] }[];
+}
+
+export function parseGuide(v: unknown): MailGuide | null {
+  if (!isObj(v)) return null;
+  const rules: MailRule[] = [];
+  for (const r of Array.isArray(v.rules) ? v.rules : []) {
+    if (!isObj(r)) continue;
+    const id = str(r.id, 80);
+    const from = str(r.from, 320);
+    if (!id || !from || (r.action !== "skip" && r.action !== "collection")) continue;
+    const collection = str(r.collection, 80);
+    rules.push({ id, from, action: r.action, ...(collection ? { collection } : {}) });
+  }
+  const examples: MailGuide["examples"] = [];
+  for (const e of Array.isArray(v.examples) ? v.examples : []) {
+    if (!isObj(e)) continue;
+    const id = str(e.id, 80);
+    if (!id) continue;
+    examples.push({
+      id,
+      subject: str(e.subject, 300) ?? "",
+      from: str(e.from, 320) ?? "",
+      want: (Array.isArray(e.want) ? e.want : [])
+        .map((w) => (isObj(w) ? str(w.title, 200) : null))
+        .filter((t): t is string => !!t)
+        .map((title) => ({ title })),
+    });
+  }
+  return { instructions: str(v.instructions, 2000) ?? "", rules, examples };
+}
+
 export interface MailInput {
   host?: string;
   port?: number;
@@ -463,6 +505,13 @@ export class AgentApi {
     };
   };
   forgetMail = async () => void (await this.call("POST", "/forget", {}, "api/mail"));
+  private guideOf = (b: unknown) => (isObj(b) ? parseGuide(b.guide) : null);
+  mailGuide = async () => this.guideOf(await this.call("GET", "/guide", undefined, "api/mail"));
+  saveMailGuide = async (input: {
+    instructions?: string;
+    rules?: Omit<MailRule, "id">[] | MailRule[];
+    keepExamples?: string[];
+  }) => this.guideOf(await this.call("PUT", "/guide", input, "api/mail"));
   async undo(id: string): Promise<number> {
     const b = await this.call("POST", `runs/${encodeURIComponent(id)}/undo`);
     return isObj(b) && typeof b.undone === "number" ? b.undone : 0;

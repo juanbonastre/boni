@@ -12,6 +12,7 @@ import {
   MODULE_IDS,
   modulesOf,
   type ReadingModule,
+  readGuide,
   readMessagePrompt,
   readMessageSchema,
   USER_IN,
@@ -348,7 +349,11 @@ export class Agent {
   }
 
   /** A job's plan, with no turn of Juan (P7: it reads and proposes). */
-  async background(plan: unknown): Promise<TurnResult> {
+  /**
+   * `bind`: values the code gives the plan by name, with their own labels (the reading guide, `$guide`).
+   * Only a plan made by code runs here, so only code can bind; a planner's plan cannot name them.
+   */
+  async background(plan: unknown, bind: Record<string, Val> = {}): Promise<TurnResult> {
     const origin: Origin = { kind: "background", trust: "personal" };
     const run = randomUUID();
     this.o.store.journal.startRun({
@@ -359,8 +364,9 @@ export class Agent {
       started: this.now(),
     });
     const st = this.newState(run, { id: run, text: "" }, origin, { version: 1, steps: [] }, null);
-    const v = validatePlan(plan, this.catalogView(origin), "");
+    const v = validatePlan(plan, this.catalogView(origin), "", Object.keys(bind));
     if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
+    for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
     st.plan = v.plan;
     this.o.store.journal.setPlan(run, st.plan);
     return this.advance(st);
@@ -811,10 +817,22 @@ export class Agent {
       throw new Stop("R3-kept-from-models");
     }
     const external = inLabel.integrity === "external";
-    // A reader never gets Juan's data next to outside content, except as the allowed options (A14).
+    // A reader never gets Juan's data next to outside content, except as the allowed options and, for
+    // read_message, his reading guide: a value every part of which comes from the guide (only code binds
+    // it, docs/nucleo.md 7.4b) and nothing sensitive (A14).
+    const isGuide = (k: string, v: Val) => {
+      const l = deepLabel(v);
+      return (
+        k === "guide" &&
+        step.reader === "read_message" &&
+        l.sensitivity !== "sensitive" &&
+        l.sources.length > 0 &&
+        l.sources.every((s) => s.kind === "guide")
+      );
+    };
     if (external)
       for (const [k, v] of Object.entries(params))
-        if (k !== "options" && deepLabel(v).sensitivity !== "public") {
+        if (k !== "options" && !isGuide(k, v) && deepLabel(v).sensitivity !== "public") {
           this.log(st, step, "read", "deny", "R1", { reason: "private-data-to-reader" });
           throw new Stop("R1-private-data-to-reader");
         }
@@ -849,6 +867,19 @@ export class Agent {
       if (!USER_IN.includes(u as UserIn)) throw new Stop("reader-bad-user-in");
       userIn = u as string;
     }
+    let guide: Record<string, unknown> | null = null;
+    if (params.guide) {
+      const g = isGuide("guide", params.guide) ? readGuide(plain(params.guide)) : null;
+      if (!g) throw new Stop("reader-bad-guide");
+      // Each example's mail is someone else's text: between its own markers, like the mail itself.
+      guide = {
+        instructions: g.instructions,
+        examples: g.examples.map((e) => {
+          const d = delimit(e.mail);
+          return { marker: d.marker, mail: d.text, want: e.want };
+        }),
+      };
+    }
     const system = mods.length ? readMessagePrompt(mods) : READER_PROMPTS[step.reader];
     // P13: what work without a turn may spend per day, overall and per sender.
     if (st.origin.kind === "background") {
@@ -878,6 +909,7 @@ export class Agent {
           today: this.today(),
           weekday: weekdayOf(this.today()),
           ...(userIn ? { user_in: userIn } : {}),
+          ...(guide ? { guide } : {}),
           content: text,
           ...(params.instruction ? { instruction: plain(params.instruction) } : {}),
           ...(params.question ? { question: plain(params.question) } : {}),

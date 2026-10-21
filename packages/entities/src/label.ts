@@ -29,7 +29,17 @@ export type Sensitivity = "public" | "personal" | "sensitive";
 export const SENSITIVITY_ORDER: readonly Sensitivity[] = ["public", "personal", "sensitive"];
 
 export interface SourceRef {
-  kind: "turn" | "user-edit" | "vault" | "mail" | "web" | "ical" | "model" | "code" | "export";
+  kind:
+    | "turn"
+    | "user-edit"
+    | "vault"
+    | "mail"
+    | "web"
+    | "ical"
+    | "model"
+    | "code"
+    | "export"
+    | "guide";
   id: string;
 }
 

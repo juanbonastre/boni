@@ -70,6 +70,8 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "PUT /api/mail": "tailnet",
   "POST /api/mail/check": "tailnet",
   "POST /api/mail/reread": "tailnet",
+  "GET /api/mail/guide": "tailnet",
+  "PUT /api/mail/guide": "tailnet",
   "POST /api/mail/forget": "tailnet",
 };
 
