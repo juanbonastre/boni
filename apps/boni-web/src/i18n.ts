@@ -391,6 +391,13 @@ const es = {
   "mail.never": "Todavía no se ha comprobado",
   "mail.check": "Comprobar ahora",
   "mail.checking": "Comprobando…",
+  "mail.reread": "Volver a leer",
+  "mail.reread.help":
+    "Lee otra vez los correos de esos días: sus propuestas pendientes se sustituyen por las nuevas.",
+  "mail.reread.days": "Días",
+  "mail.reread.option": "{n} días",
+  "mail.reread.go": "Leer",
+  "mail.reread.done": "Correos que se vuelven a leer: {n}",
   "mail.collections":
     "Las tareas de los correos pueden ir a estas colecciones (la IA elige una y la propuesta lo dice):",
   "mail.change": "Cambiar",
@@ -835,6 +842,13 @@ const en: Record<Key, string> = {
   "mail.never": "Not checked yet",
   "mail.check": "Check now",
   "mail.checking": "Checking…",
+  "mail.reread": "Read again",
+  "mail.reread.help":
+    "Reads those days' mail again: its pending proposals are replaced by the new ones.",
+  "mail.reread.days": "Days",
+  "mail.reread.option": "{n} days",
+  "mail.reread.go": "Read",
+  "mail.reread.done": "Mails being read again: {n}",
   "mail.collections":
     "Tasks from mail may go to these collections (the AI picks one and the proposal says so):",
   "mail.change": "Change",

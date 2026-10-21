@@ -292,6 +292,7 @@ test("the mailbox in Settings: a wrong password is said, a good one connects; co
       "GET api/mail": [{ mail: null }],
       "PUT api/mail": [{ __status: 400, error: "auth" }, MAIL, MAIL],
       "POST api/mail/check": [MAIL],
+      "POST api/mail/reread": [{ mails: 4, withdrawn: 6 }],
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
@@ -317,5 +318,12 @@ test("the mailbox in Settings: a wrong password is said, a good one connects; co
   expect(puts[2]).toContain('"collections":["t_proyecto","t_movimiento"]');
   expect(puts[2]).not.toContain("password");
   expect(await requests(page, "POST api/mail/check")).toHaveLength(1);
+  // Read again the last days' mail: the days chosen go to the server, a toast says how many.
+  await modal.getByLabel("Días").selectOption("14");
+  await modal.getByRole("button", { name: "Leer", exact: true }).click();
+  await expect(page.getByText("Correos que se vuelven a leer: 4")).toBeVisible();
+  expect(await requests(page, "POST api/mail/reread")).toEqual([
+    'POST api/mail/reread {"days":14}',
+  ]);
   await page.screenshot({ path: `${SHOTS}/agent-mail-settings.png` });
 });

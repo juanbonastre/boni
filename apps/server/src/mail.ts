@@ -401,6 +401,51 @@ export class Mails {
     return job;
   }
 
+  /**
+   * Reads again the mail of the last `days` days (by its date) with today's code: the pending proposals
+   * those mails made are withdrawn (`stale`, never "rejected": Juan did not decide them) and the mails go
+   * back to `pending`, then a check runs. Waits for a check under way, so neither overwrites the other's
+   * state. Proposals Juan already accepted or rejected stay as they are.
+   */
+  async reread(account: number, days: number): Promise<{ mails: number; withdrawn: number }> {
+    for (;;) {
+      const running = this.queued.get(account) ?? this.busy.get(account);
+      if (!running) break;
+      await running.catch(() => null);
+    }
+    const st = this.state(account);
+    if (!st.type || !this.o.host.hasData) return { mails: 0, withdrawn: 0 };
+    const store = this.o.host.store(account);
+    const since = this.now() - Math.max(1, Math.min(days, 60)) * 86_400_000;
+    const mails = store
+      .list(st.type)
+      .map((e) => e.entity)
+      .filter((e) => {
+        const at = Date.parse(String(e.values.f_fecha ?? ""));
+        return (Number.isNaN(at) ? e.created : at) >= since;
+      })
+      .sort((a, b) => a.created - b.created)
+      .map((e) => e.id);
+    const set = new Set(mails);
+    const j = store.journal;
+    let withdrawn = 0;
+    for (const p of j.proposals("pending")) {
+      const plan = j.run(p.run)?.plan as {
+        steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[];
+      };
+      const first = plan?.steps?.[0];
+      if (first?.tool === "entities.get" && set.has(String(first.args?.id?.lit))) {
+        j.setProposal(p.id, "stale", this.now());
+        withdrawn++;
+      }
+    }
+    st.pending = [...new Set([...(st.pending ?? []), ...mails])].slice(-500);
+    this.saveState(account, st);
+    if (withdrawn) this.o.host.emit(account, "proposals", { n: 0 });
+    void this.check(account);
+    return { mails: mails.length, withdrawn };
+  }
+
   private async run(account: number): Promise<MailState> {
     const s = this.settings(account);
     const st = this.state(account);
