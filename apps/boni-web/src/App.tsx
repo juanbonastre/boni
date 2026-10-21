@@ -4,6 +4,7 @@ import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
+import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
@@ -14,8 +15,10 @@ import {
   deletePage,
   dismissRejected,
   dismissToast,
+  duplicatePage,
   goBack,
   newPage,
+  openFind,
   openPage,
   openSettings,
   setChartDrill,
@@ -40,6 +43,8 @@ export function App() {
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const panelOpen = useStore((s) => s.panel != null);
   const toast = useStore((s) => s.toast);
+  const findOpen = useStore((s) => s.findOpen);
+  const trashOpen = useStore((s) => s.trash != null);
   // In a narrow window the side panel takes the sidebar's room while it is open (the charts keep theirs).
   const narrow = useMedia("(max-width: 1100px)");
   const showSidebar = sidebarOpen && !(narrow && panelOpen);
@@ -53,6 +58,8 @@ export function App() {
       </div>
       <SidePanel />
       {settingsOpen && <SettingsModal />}
+      {findOpen && <QuickFind />}
+      {trashOpen && <TrashDialog />}
       {toast && (
         <div className="toast" role="status" key={toast.id}>
           <span>{toast.text}</span>
@@ -89,7 +96,7 @@ function useMedia(query: string): boolean {
 }
 
 /**
- * [ the sidebar, Ctrl+, settings, Esc back to the page (panels close first). On the phone Esc is Back: it
+ * [ the sidebar, Ctrl+K search, Ctrl+, settings, Esc back to the page (panels close first). On the phone Esc is Back: it
  * closes the top thing (`goBack`).
  */
 function useShortcuts(mobile: boolean) {
@@ -103,6 +110,11 @@ function useShortcuts(mobile: boolean) {
       const typing = (e.target as HTMLElement | null)?.closest(
         "input, textarea, select, [contenteditable]",
       );
+      if (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        openFind(!s.findOpen);
+        return;
+      }
       if (e.key === "," && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         openSettings(!s.settingsOpen);
@@ -231,6 +243,13 @@ function TopBar() {
                 onClick={() => {
                   close();
                   void newPage(page.id);
+                }}
+              />
+              <MenuRow
+                label={t("page.duplicate")}
+                onClick={() => {
+                  close();
+                  void duplicatePage(page.id);
                 }}
               />
               <MenuSep />

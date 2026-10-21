@@ -151,6 +151,10 @@ interface State {
   pageFocus: { block: string; at: "start" | "end" | number } | { title: true } | null;
   /** A chart being created from a block of this page: saved, it takes that block's place. */
   chartForPage: { page: string; block: string } | null;
+  /** Ctrl+K: the quick find over the pages. */
+  findOpen: boolean;
+  /** The pages in the trash, while its list is open. */
+  trash: (PageInfo & { deleted: number })[] | null;
   /** Proposals waiting in the inbox, and the agent's latest runs (the log). */
   inbox: Proposal[];
   runs: RunSummary[];
@@ -234,6 +238,8 @@ export const useStore = create<State>(() => ({
   page: null,
   pageFocus: null,
   chartForPage: null,
+  findOpen: false,
+  trash: null,
   inbox: [],
   runs: [],
   confirmFlip: false,
@@ -1253,21 +1259,46 @@ export async function openStart() {
   if (id) await openPage(id);
 }
 
-/** A new page (as Notion's): untitled, open at once with the caret in its title. */
+/** A new page (as Notion's): untitled, open at once with the caret in its name. It is on screen before
+ * the server answers; what is typed meanwhile goes to the server with it. */
 export async function newPage(parent: string | null = null) {
   await flushPage();
+  const temp: Page = {
+    id: `new-${blockId()}`,
+    title: "",
+    icon: "",
+    parent,
+    position: Number.MAX_SAFE_INTEGER,
+    spec: { version: 1, blocks: [] },
+  };
+  set({
+    pages: [...(get().pages ?? []), temp],
+    page: temp,
+    view: { kind: "page", id: temp.id },
+    pageFocus: { title: true },
+  });
   try {
-    const page = await agent.createPage({ title: "", parent });
-    if (!page) return;
+    const made = await agent.createPage({ title: "", parent });
+    if (!made) throw new Error("no page");
+    const typed = get().page?.id === temp.id ? (get().page as Page) : null;
+    const page: Page = typed
+      ? { ...made, title: typed.title, icon: typed.icon, spec: typed.spec }
+      : made;
     set({
-      pages: [...(get().pages ?? []), page],
-      page,
-      view: { kind: "page", id: page.id },
-      pageFocus: { title: true },
+      pages: (get().pages ?? []).map((p) => (p.id === temp.id ? page : p)),
+      ...(typed ? { page, view: { kind: "page" as const, id: page.id } } : {}),
     });
+    if (typed && (typed.title || typed.icon || typed.spec.blocks.length))
+      savePage(page.id, {
+        title: typed.title.trim(),
+        spec: typed.spec,
+        ...(typed.icon ? { icon: typed.icon } : {}),
+      });
     await keep(FILES.lastPage, { page });
-    void loadPages();
+    await keep(FILES.pages, { pages: get().pages });
   } catch {
+    set({ pages: (get().pages ?? []).filter((p) => p.id !== temp.id) });
+    if (get().page?.id === temp.id) await openStart();
     toast(get().t("page.error"));
   }
 }
@@ -1282,6 +1313,8 @@ let pending: {
 } | null = null;
 
 function savePage(id: string, patch: { title?: string; icon?: string; spec?: PageSpec }) {
+  // A page still being made on the server: what it holds is sent when it is (newPage).
+  if (id.startsWith("new-")) return;
   if (pending && pending.id !== id) void flushPage();
   if (pending) clearTimeout(pending.timer);
   pending = {
@@ -1332,13 +1365,45 @@ export function setPageIcon(icon: string) {
   savePage(page.id, { icon });
 }
 
-/** The page's blocks, changed at once here and kept on the server shortly after. */
-export function setPageBlocks(blocks: Block[]) {
+// Undo on a page (Ctrl+Z, Ctrl+Shift+Z), as Notion's: every change of its blocks can be taken back; typing
+// in one block for a moment is one step.
+const history = { page: "", past: [] as PageSpec[], future: [] as PageSpec[], typing: "", at: 0 };
+const HISTORY_LIMIT = 200;
+
+function remember(page: Page, typingIn?: string) {
+  if (history.page !== page.id) Object.assign(history, { page: page.id, past: [], future: [] });
+  const now = Date.now();
+  const sameTyping = typingIn && history.typing === typingIn && now - history.at < 1500;
+  history.typing = typingIn ?? "";
+  history.at = now;
+  history.future = [];
+  if (sameTyping) return;
+  history.past.push(page.spec);
+  if (history.past.length > HISTORY_LIMIT) history.past.shift();
+}
+
+/** The page's blocks, changed at once here and kept on the server shortly after. `typingIn` names the
+ * block being typed in (those keystrokes make one undo step). */
+export function setPageBlocks(blocks: Block[], typingIn?: string) {
   const page = get().page;
   if (!page) return;
+  remember(page, typingIn);
   const spec: PageSpec = { ...page.spec, version: 1, blocks };
   set({ page: { ...page, spec } });
   savePage(page.id, { spec });
+}
+
+export function undoPage(redo = false): boolean {
+  const page = get().page;
+  if (!page || history.page !== page.id) return false;
+  const from = redo ? history.future : history.past;
+  const spec = from.pop();
+  if (!spec) return false;
+  (redo ? history.past : history.future).push(page.spec);
+  history.typing = "";
+  set({ page: { ...page, spec } });
+  savePage(page.id, { spec });
+  return true;
 }
 
 /** The reading column or the window's whole width. */
@@ -1351,6 +1416,105 @@ export function setPageFull(full: boolean) {
 }
 
 export const setPageFocus = (f: State["pageFocus"]) => set({ pageFocus: f });
+
+export const openFind = (open = true) => set({ findOpen: open });
+
+/** A copy of a page next to it (Notion's Duplicate): its name with "(1)", its blocks, open at once. */
+export async function duplicatePage(id: string) {
+  await flushPage();
+  try {
+    const src = await agent.page(id);
+    if (!src) return;
+    const copy = await agent.createPage({
+      title: `${src.title || get().t("page.untitled")} (1)`.slice(0, 120),
+      parent: src.parent,
+      spec: src.spec,
+    });
+    if (!copy) return;
+    if (src.icon) await agent.updatePage(copy.id, { icon: src.icon });
+    await loadPages();
+    await openPage(copy.id);
+  } catch {
+    toast(get().t("page.error"));
+  }
+}
+
+/** A page moved in the sidebar: under another one, or before / after a sibling (its position between). */
+export async function movePage(id: string, target: string, where: "before" | "after" | "inside") {
+  const pages = get().pages ?? [];
+  const t = pages.find((p) => p.id === target);
+  if (!t || id === target) return;
+  // Never under itself.
+  for (let at: string | null = where === "inside" ? target : t.parent; at; ) {
+    if (at === id) return;
+    at = pages.find((p) => p.id === at)?.parent ?? null;
+  }
+  const parent = where === "inside" ? target : t.parent;
+  const siblings = pages
+    .filter((p) => p.parent === parent && p.id !== id)
+    .sort((a, b) => a.position - b.position);
+  let position: number;
+  if (where === "inside") position = (siblings[siblings.length - 1]?.position ?? 0) + 1;
+  else {
+    const i = siblings.findIndex((p) => p.id === target);
+    const before = where === "before" ? siblings[i - 1] : siblings[i];
+    const after = where === "before" ? siblings[i] : siblings[i + 1];
+    position =
+      before && after
+        ? (before.position + after.position) / 2
+        : before
+          ? before.position + 1
+          : (after?.position ?? 1) - 1;
+  }
+  const previous = pages;
+  set({ pages: pages.map((p) => (p.id === id ? { ...p, parent, position } : p)) });
+  try {
+    await agent.updatePage(id, { parent, position });
+    await loadPages();
+  } catch {
+    set({ pages: previous });
+    toast(get().t("page.error"));
+  }
+}
+
+export async function loadTrash() {
+  try {
+    set({ trash: await agent.trash() });
+  } catch {
+    toast(get().t("page.loadError"));
+  }
+}
+export const closeTrash = () => set({ trash: null });
+
+export async function restoreFromTrash(id: string) {
+  try {
+    await agent.restorePage(id);
+    await Promise.all([loadPages(), loadTrash()]);
+    toast(get().t("page.restored"));
+  } catch {
+    toast(get().t("page.error"));
+  }
+}
+
+/** "/Página": a subpage made at once, linked from this block, and opened with the caret in its name. */
+export async function newSubpageBlock(block: string) {
+  const page = get().page;
+  if (!page) return;
+  try {
+    const sub = await agent.createPage({ title: "", parent: page.id });
+    if (!sub) return;
+    setPageBlocks(
+      page.spec.blocks.map((b) => (b.id === block ? { id: block, type: "page", page: sub.id } : b)),
+    );
+    await flushPage();
+    set({ pages: [...(get().pages ?? []), sub] });
+    set({ page: sub, view: { kind: "page", id: sub.id }, pageFocus: { title: true } });
+    await keep(FILES.lastPage, { page: sub });
+    void loadPages();
+  } catch {
+    toast(get().t("page.error"));
+  }
+}
 
 /** A new chart for a block of this page: the editor opens, and saving puts the chart in its place. */
 export function newChartForPage(spec: ChartSpec, block: string) {

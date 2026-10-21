@@ -1,4 +1,4 @@
-import { GripVertical, Plus, Smile } from "lucide-react";
+import { ChevronRight, FileText, GripVertical, Plus, Smile } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -15,7 +15,9 @@ import {
   blockId,
   newChartForPage,
   newPage,
+  newSubpageBlock,
   openEditor,
+  openPage,
   openScreen,
   runShortcut,
   setPageBlocks,
@@ -24,6 +26,7 @@ import {
   setPageTitle,
   showChat,
   toast,
+  undoPage,
   useStore,
   useVisibleCharts,
 } from "../store.ts";
@@ -33,20 +36,64 @@ import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 type Block = Page["spec"]["blocks"][number];
 type TextBlock = Extract<Block, { text: string }>;
-type TextKind = "text" | "h1" | "h2" | "h3" | "bullet" | "todo";
+type TextKind =
+  | "text"
+  | "h1"
+  | "h2"
+  | "h3"
+  | "bullet"
+  | "numbered"
+  | "todo"
+  | "toggle"
+  | "quote"
+  | "callout"
+  | "code";
 
-const isText = (b: Block): b is TextBlock =>
-  b.type === "text" || b.type === "heading" || b.type === "bullet" || b.type === "todo";
+const TEXT_TYPES = new Set([
+  "text",
+  "heading",
+  "bullet",
+  "numbered",
+  "todo",
+  "toggle",
+  "quote",
+  "callout",
+  "code",
+]);
+const isText = (b: Block): b is TextBlock => TEXT_TYPES.has(b.type);
 const kindOf = (b: TextBlock): TextKind =>
   b.type === "heading" ? (`h${b.level ?? 1}` as TextKind) : (b.type as TextKind);
-/** The same block (id and text kept) as another kind of text. */
+const indentOf = (b: Block | undefined): number => (b && "indent" in b && b.indent) || 0;
+const withIndent = (n: number) => (n > 0 ? { indent: Math.min(n, 4) as 1 | 2 | 3 | 4 } : {});
+/** The same block (id, text and indent kept) as another kind of text. */
 function asKind(b: TextBlock, kind: TextKind, text = b.text): TextBlock {
+  const ind = withIndent(indentOf(b));
   if (kind === "h1" || kind === "h2" || kind === "h3")
-    return { id: b.id, type: "heading", text, level: Number(kind[1]) as 1 | 2 | 3 };
-  if (kind === "todo") return { id: b.id, type: "todo", text };
-  return { id: b.id, type: kind, text };
+    return { id: b.id, type: "heading", text, level: Number(kind[1]) as 1 | 2 | 3, ...ind };
+  if (kind === "toggle") return { id: b.id, type: "toggle", text, open: true, ...ind };
+  if (kind === "callout")
+    return {
+      id: b.id,
+      type: "callout",
+      text,
+      icon: b.type === "callout" && b.icon ? b.icon : "💡",
+      ...ind,
+    };
+  return { id: b.id, type: kind, text, ...ind } as TextBlock;
 }
-const emptyText = (): TextBlock => ({ id: blockId(), type: "text", text: "" });
+const emptyText = (indent = 0): TextBlock => ({
+  id: blockId(),
+  type: "text",
+  text: "",
+  ...withIndent(indent),
+});
+/** A block with the ones nested under it (moved, duplicated and deleted together, as in Notion). */
+function withChildren(blocks: Block[], i: number): Block[] {
+  const base = indentOf(blocks[i]);
+  let j = i + 1;
+  while (j < blocks.length && indentOf(blocks[j]) > base) j++;
+  return blocks.slice(i, j);
+}
 
 /**
  * A page of the user's, as a Notion page (docs/extensiones.md 6): always editable in place, no edit mode.
@@ -71,7 +118,15 @@ export function PageView({ after }: { after?: ReactNode }) {
     );
   return (
     <div className={`content page-doc${page.spec.full ? " full" : ""}`}>
-      <div className="doc">
+      <div
+        className="doc"
+        onKeyDownCapture={(e) => {
+          // Ctrl+Z / Ctrl+Shift+Z (Ctrl+Y) undo and redo the page's changes, as in Notion.
+          if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+          const k = e.key.toLowerCase();
+          if ((k === "z" || k === "y") && undoPage(k === "y" || e.shiftKey)) e.preventDefault();
+        }}
+      >
         <PageIcon page={page} />
         <PageTitle page={page} />
         <Blocks page={page} />
@@ -135,27 +190,31 @@ const EMOJIS = [
   "🐾",
 ];
 
+/** A grid of emojis to choose one from. */
+function EmojiGrid({ onPick }: { onPick: (e: string) => void }) {
+  const t = useStore((s) => s.t);
+  return (
+    <div className="emoji-grid" role="group" aria-label={t("page.icon")}>
+      {EMOJIS.map((e) => (
+        <button key={e} type="button" className="emoji" aria-label={e} onClick={() => onPick(e)}>
+          {e}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Over the name: the page's icon (a click changes it), or "Add icon" on hover, as in Notion. */
 function PageIcon({ page }: { page: Page }) {
   const t = useStore((s) => s.t);
   const picker = (close: () => void) => (
     <div className="pop-section">
-      <div className="emoji-grid" role="group" aria-label={t("page.icon")}>
-        {EMOJIS.map((e) => (
-          <button
-            key={e}
-            type="button"
-            className="emoji"
-            aria-label={e}
-            onClick={() => {
-              close();
-              setPageIcon(e);
-            }}
-          >
-            {e}
-          </button>
-        ))}
-      </div>
+      <EmojiGrid
+        onPick={(e) => {
+          close();
+          setPageIcon(e);
+        }}
+      />
       {page.icon && (
         <button
           type="button"
@@ -261,6 +320,31 @@ function DocTail({ page }: { page: Page }) {
 
 type Drag = { id: string; over: string | null; after: boolean } | null;
 
+/** What the page shows of its blocks: those under a closed toggle are folded away; numbered lists count. */
+function layoutOf(blocks: Block[]) {
+  const hidden = new Set<string>();
+  const numbers = new Map<string, number>();
+  const counters: number[] = [];
+  let fold: number | null = null;
+  for (const b of blocks) {
+    const ind = indentOf(b);
+    if (fold !== null) {
+      if (ind > fold) {
+        hidden.add(b.id);
+        continue;
+      }
+      fold = null;
+    }
+    if (b.type === "toggle" && !b.open) fold = ind;
+    if (b.type === "numbered") {
+      counters.length = ind + 1;
+      counters[ind] = (counters[ind] ?? 0) + 1;
+      numbers.set(b.id, counters[ind]);
+    } else counters.length = Math.min(counters.length, ind);
+  }
+  return { hidden, numbers };
+}
+
 /** The blocks; consecutive charts share a grid (side by side on a full-width page), buttons a row. */
 function Blocks({ page }: { page: Page }) {
   const specs = useVisibleCharts();
@@ -268,19 +352,25 @@ function Blocks({ page }: { page: Page }) {
   const panel = useStore((s) => s.panel);
   const [drag, setDrag] = useState<Drag>(null);
   const blocks = page.spec.blocks;
+  const { hidden, numbers } = useMemo(() => layoutOf(blocks), [blocks]);
   const groups: Block[][] = [];
   for (const b of blocks) {
+    if (hidden.has(b.id)) continue;
     const last = groups[groups.length - 1];
     const joins = (b.type === "chart" || b.type === "action") && last?.[0]?.type === b.type;
     if (last && joins) last.push(b);
     else groups.push([b]);
   }
   const drop = () => {
-    const moving = blocks.find((b) => b.id === drag?.id);
-    if (!drag?.over || drag.over === drag.id || !moving) return setDrag(null);
-    const rest = blocks.filter((b) => b.id !== drag.id);
-    const at = rest.findIndex((b) => b.id === drag.over) + (drag.after ? 1 : 0);
-    rest.splice(at, 0, moving);
+    const from = blocks.findIndex((b) => b.id === drag?.id);
+    if (!drag?.over || drag.over === drag.id || from < 0) return setDrag(null);
+    // The block goes with the ones nested under it.
+    const moving = withChildren(blocks, from);
+    if (moving.some((b) => b.id === drag.over)) return setDrag(null);
+    const rest = blocks.filter((b) => !moving.includes(b));
+    const target = rest.findIndex((b) => b.id === drag.over);
+    const at = drag.after ? target + withChildren(rest, target).length : target;
+    rest.splice(at, 0, ...moving);
     setPageBlocks(rest);
     setDrag(null);
   };
@@ -305,8 +395,10 @@ function Blocks({ page }: { page: Page }) {
         <ActionButton block={b} />
       ) : b.type === "divider" ? (
         <hr className="doc-divider" />
+      ) : b.type === "page" ? (
+        <PageLink id={b.page} />
       ) : (
-        <TextField block={b} page={page} />
+        <TextField block={b} page={page} number={numbers.get(b.id)} hidden={hidden} />
       )}
     </BlockRow>
   );
@@ -340,6 +432,23 @@ function Blocks({ page }: { page: Page }) {
         return row(first);
       })}
     </div>
+  );
+}
+
+/** A link to a subpage: its icon and name; a click opens it. */
+function PageLink({ id }: { id: string }) {
+  const t = useStore((s) => s.t);
+  const target = useStore((s) => s.pages?.find((p) => p.id === id));
+  if (!target) return <p className="doc-gone">{t("block.pageGone")}</p>;
+  return (
+    <button type="button" className="doc-page-link" onClick={() => void openPage(id)}>
+      <span className="doc-page-icon">
+        {target.icon || <FileText size={18} strokeWidth={1.7} />}
+      </span>
+      <span className={`doc-page-name${target.title ? "" : " untitled"}`}>
+        {target.title || t("page.untitled")}
+      </span>
+    </button>
   );
 }
 
@@ -388,6 +497,7 @@ function BlockRow({
         target ? (drag.after ? " drop-after" : " drop-before") : ""
       }`}
       data-block={block.id}
+      style={indentOf(block) ? { marginLeft: indentOf(block) * 26 } : undefined}
       onDragOver={(e) => {
         if (!drag) return;
         e.preventDefault();
@@ -440,7 +550,19 @@ function BlockRow({
   );
 }
 
-const TURN_INTO: TextKind[] = ["text", "h1", "h2", "h3", "bullet", "todo"];
+const TURN_INTO: TextKind[] = [
+  "text",
+  "h1",
+  "h2",
+  "h3",
+  "bullet",
+  "numbered",
+  "todo",
+  "toggle",
+  "quote",
+  "callout",
+  "code",
+];
 
 /** The handle's menu: turn into (text blocks), the button's text, duplicate, move, delete. */
 function BlockMenu({ block, page, close }: { block: Block; page: Page; close: () => void }) {
@@ -592,18 +714,38 @@ const SHORTCUTS: [string, TextKind | "divider"][] = [
   ["# ", "h1"],
   ["- ", "bullet"],
   ["* ", "bullet"],
+  ["1. ", "numbered"],
   ["[] ", "todo"],
   ["[ ] ", "todo"],
+  ["> ", "toggle"],
+  ['" ', "quote"],
+  ["```", "code"],
   ["---", "divider"],
 ];
+/** Kinds whose Enter makes another of the same kind (a list goes on). */
+const CONTINUES = new Set(["bullet", "numbered", "todo"]);
+/** Kinds whose empty line ends with Enter (it becomes text), as Notion's lists. */
+const ENDS = new Set(["bullet", "numbered", "todo", "toggle", "quote", "callout"]);
+const DOTS = ["•", "◦", "▪"];
 
-function TextField({ block, page }: { block: TextBlock; page: Page }) {
+function TextField({
+  block,
+  page,
+  number,
+  hidden,
+}: {
+  block: TextBlock;
+  page: Page;
+  number?: number;
+  hidden: Set<string>;
+}) {
   const t = useStore((s) => s.t);
   const focus = useStore((s) => s.pageFocus);
   const ref = useRef<HTMLTextAreaElement>(null);
   const [slashOff, setSlashOff] = useState(false);
   const blocks = page.spec.blocks;
   const kind = kindOf(block);
+  const indent = indentOf(block);
   useAutosize(ref, block.text);
   useEffect(() => {
     if (!focus || !("block" in focus) || focus.block !== block.id) return;
@@ -616,25 +758,32 @@ function TextField({ block, page }: { block: TextBlock; page: Page }) {
   }, [focus, block.id]);
 
   const index = blocks.findIndex((b) => b.id === block.id);
-  const slash = !slashOff && block.text.startsWith("/") && !block.text.includes("\n");
+  const slash =
+    !slashOff && block.type !== "code" && block.text.startsWith("/") && !block.text.includes("\n");
+  const put = (b: Block) => blocks.map((x) => (x.id === block.id ? b : x));
+  // The blocks next to this one that are on screen (a closed toggle's are not).
+  const near = (dir: -1 | 1) => {
+    for (let i = index + dir; i >= 0 && i < blocks.length; i += dir) {
+      const b = blocks[i];
+      if (b && !hidden.has(b.id)) return b;
+    }
+    return undefined;
+  };
 
   const change = (text: string) => {
     setSlashOff(false);
     for (const [prefix, to] of SHORTCUTS) {
       if (block.type !== "text" || !text.startsWith(prefix)) continue;
       if (to === "divider") {
-        const after = emptyText();
+        const after = emptyText(indent);
         const next = [...blocks];
         next.splice(index, 1, { id: block.id, type: "divider" }, after);
         setPageBlocks(next);
         setPageFocus({ block: after.id, at: "start" });
-      } else {
-        const turned = asKind(block, to, text.slice(prefix.length));
-        setPageBlocks(blocks.map((b) => (b.id === block.id ? turned : b)));
-      }
+      } else setPageBlocks(put(asKind(block, to, text.slice(prefix.length))));
       return;
     }
-    setPageBlocks(blocks.map((b) => (b.id === block.id ? { ...block, text } : b)));
+    setPageBlocks(put({ ...block, text }), block.id);
   };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -642,28 +791,57 @@ function TextField({ block, page }: { block: TextBlock; page: Page }) {
     const el = e.currentTarget;
     const start = el.selectionStart;
     const end = el.selectionEnd;
-    const prev = blocks[index - 1];
-    const next = blocks[index + 1];
-    if (e.key === "Enter" && !e.shiftKey) {
+    const prev = near(-1);
+    const next = near(1);
+    const mod = e.ctrlKey || e.metaKey;
+    if (e.key === "Tab") {
+      // Nesting, as Notion's Tab: under the block above (at most one level deeper), Shift+Tab back out.
       e.preventDefault();
-      // Enter on an empty list item or to-do ends the list (it becomes text), as in Notion.
-      if (!block.text && (block.type === "bullet" || block.type === "todo")) {
-        setPageBlocks(blocks.map((b) => (b.id === block.id ? asKind(block, "text") : b)));
+      const deeper = Math.min(4, indentOf(prev) + 1, indent + 1);
+      const to = e.shiftKey ? Math.max(0, indent - 1) : prev ? deeper : indent;
+      if (to !== indent) {
+        const { indent: _, ...rest } = block as TextBlock & { indent?: number };
+        setPageBlocks(put({ ...rest, ...withIndent(to) } as TextBlock));
+        setPageFocus({ block: block.id, at: start });
+      }
+    } else if (e.key === "Enter" && !e.shiftKey && (block.type !== "code" || mod)) {
+      e.preventDefault();
+      // Enter on an empty list item first comes out of its nesting, then ends the list, as in Notion.
+      if (!block.text && ENDS.has(block.type)) {
+        if (indent > 0) {
+          const { indent: _, ...rest } = block as TextBlock & { indent?: number };
+          setPageBlocks(put({ ...rest, ...withIndent(indent - 1) } as TextBlock));
+        } else setPageBlocks(put(asKind(block, "text")));
         return;
       }
-      const tail = block.text.slice(end);
+      const tail = block.type === "code" ? "" : block.text.slice(end);
+      const head = block.type === "code" ? block.text : block.text.slice(0, start);
+      // A toggle's next line goes inside it; a list goes on; anything else is followed by text.
       const made: TextBlock =
-        block.type === "bullet" || block.type === "todo"
-          ? asKind({ ...block, id: blockId() }, kind, tail)
-          : { id: blockId(), type: "text", text: tail };
+        block.type === "toggle"
+          ? emptyText(Math.min(4, indent + 1))
+          : CONTINUES.has(block.type)
+            ? {
+                ...asKind({ ...block, id: blockId() }, kind, tail),
+                ...(block.type === "todo" ? { done: false } : {}),
+              }
+            : { ...emptyText(indent), text: tail };
       const out = [...blocks];
-      out.splice(index, 1, { ...block, text: block.text.slice(0, start) }, made);
+      out.splice(index, 1, { ...block, text: head } as TextBlock, made);
+      if (block.type === "toggle" && !block.open) {
+        // A closed toggle opens to take the new line.
+        out[index] = { ...(out[index] as TextBlock), open: true } as TextBlock;
+      }
       setPageBlocks(out);
       setPageFocus({ block: made.id, at: "start" });
     } else if (e.key === "Backspace" && start === 0 && end === 0) {
       if (block.type !== "text") {
         e.preventDefault();
-        setPageBlocks(blocks.map((b) => (b.id === block.id ? asKind(block, "text") : b)));
+        setPageBlocks(put(asKind(block, "text")));
+      } else if (indent > 0) {
+        e.preventDefault();
+        const { indent: _, ...rest } = block as TextBlock & { indent?: number };
+        setPageBlocks(put({ ...rest, ...withIndent(indent - 1) } as TextBlock));
       } else if (prev && isText(prev)) {
         e.preventDefault();
         const joined = { ...prev, text: prev.text + block.text };
@@ -686,27 +864,62 @@ function TextField({ block, page }: { block: TextBlock; page: Page }) {
   };
 
   return (
-    <div className="blk-body">
-      {block.type === "bullet" && <span className="blk-dot" aria-hidden="true" />}
+    <div className={`blk-body${block.type === "callout" ? " callout" : ""}`}>
+      {block.type === "bullet" && (
+        <span className="blk-mark" aria-hidden="true">
+          {DOTS[indent % DOTS.length]}
+        </span>
+      )}
+      {block.type === "numbered" && (
+        <span className="blk-mark num" aria-hidden="true">
+          {`${number ?? 1}.`}
+        </span>
+      )}
       {block.type === "todo" && (
         <input
           type="checkbox"
           className="blk-check"
           checked={Boolean(block.done)}
           aria-label={t("block.done")}
-          onChange={(e) =>
-            setPageBlocks(
-              blocks.map((b) => (b.id === block.id ? { ...block, done: e.target.checked } : b)),
-            )
-          }
+          onChange={(e) => setPageBlocks(put({ ...block, done: e.target.checked }))}
         />
+      )}
+      {block.type === "toggle" && (
+        <button
+          type="button"
+          className={`blk-fold${block.open ? " open" : ""}`}
+          aria-expanded={Boolean(block.open)}
+          aria-label={block.open ? t("block.fold") : t("block.unfold")}
+          onClick={() => setPageBlocks(put({ ...block, open: !block.open }))}
+        >
+          <ChevronRight size={16} strokeWidth={2} />
+        </button>
+      )}
+      {block.type === "callout" && (
+        <PopButton
+          className="blk-callout-icon"
+          title={t("page.iconChange")}
+          align="start"
+          width={330}
+          label={block.icon || "💡"}
+        >
+          {(close) => (
+            <EmojiGrid
+              onPick={(icon) => {
+                close();
+                setPageBlocks(put({ ...block, icon }));
+              }}
+            />
+          )}
+        </PopButton>
       )}
       <textarea
         ref={ref}
         className="blk-input"
         rows={1}
         value={block.text}
-        maxLength={block.type === "heading" ? 200 : 5000}
+        spellCheck={block.type !== "code"}
+        maxLength={block.type === "heading" ? 200 : block.type === "code" ? 20000 : 5000}
         placeholder={kind === "text" ? t("block.placeholder") : t(`block.kind.${kind}`)}
         aria-label={t(`block.kind.${kind}`)}
         onChange={(e) => change(e.target.value)}
@@ -728,6 +941,8 @@ type Choice =
   | { kind: TextKind | "divider" }
   | { kind: "chart"; chart: string }
   | { kind: "new-chart" }
+  | { kind: "page" }
+  | { kind: "ai" }
   | { kind: "action"; screen: string; label: string; shortcut?: string };
 
 /** What the "/" menu's choice does to the block where it was typed. */
@@ -740,6 +955,7 @@ function pick(choice: Choice, block: TextBlock, blocks: Block[], index: number) 
     const next = after[0] ?? blocks[index + 1];
     if (next && isText(next)) setPageFocus({ block: next.id, at: "start" });
   };
+  const t = useStore.getState().t;
   switch (choice.kind) {
     case "divider":
       return putInstead({ id: block.id, type: "divider" });
@@ -756,7 +972,17 @@ function pick(choice: Choice, block: TextBlock, blocks: Block[], index: number) 
     case "new-chart":
       out.splice(index, 1, { ...block, text: "" });
       setPageBlocks(out);
-      newChartForPage(newSpec(useStore.getState().t("charts.newTitle")), block.id);
+      newChartForPage(newSpec(t("charts.newTitle")), block.id);
+      return;
+    case "page":
+      void newSubpageBlock(block.id);
+      return;
+    case "ai":
+      // A placeholder: Boni writing on the page comes later.
+      out.splice(index, 1, { ...block, text: "" });
+      setPageBlocks(out);
+      setPageFocus({ block: block.id, at: "start" });
+      toast(t("block.aiSoon"));
       return;
     default:
       out.splice(index, 1, asKind(block, choice.kind, ""));
@@ -770,7 +996,11 @@ const HINTS: Partial<Record<TextKind | "divider", string>> = {
   h2: "##",
   h3: "###",
   bullet: "-",
+  numbered: "1.",
   todo: "[]",
+  toggle: ">",
+  quote: '"',
+  code: "```",
   divider: "---",
 };
 const fold = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -812,6 +1042,8 @@ function SlashMenu({
         hint: HINTS[k],
         choice: { kind: k },
       })),
+      { group: write, label: t("block.kind.page"), choice: { kind: "page" } },
+      { group: "Boni", label: t("block.ai"), hint: t("block.soon"), choice: { kind: "ai" } },
       { group: charts, label: t("block.chartNew"), choice: { kind: "new-chart" } },
       ...specs.map(
         (s): SlashItem => ({

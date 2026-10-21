@@ -5,13 +5,19 @@ import {
   MoreHorizontal,
   PanelLeft,
   Plus,
+  Search,
   Settings,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
 import type { PageInfo } from "../core/agent.ts";
 import {
   deletePage,
+  duplicatePage,
+  loadTrash,
+  movePage,
   newPage,
+  openFind,
   openPage,
   openSettings,
   showChat,
@@ -30,6 +36,7 @@ export function Sidebar() {
   const settings = useStore((s) => s.settings);
   const inbox = useStore((s) => s.inbox);
   const pages = useStore((s) => s.pages);
+  const [drag, setDrag] = useState<Drag>(null);
 
   return (
     <nav className="sidebar" aria-label={t("sidebar.label")}>
@@ -45,6 +52,11 @@ export function Sidebar() {
         </button>
       </div>
       <div className="sidebar-scroll">
+        <button type="button" className="nav-row" onClick={() => openFind()}>
+          <Search size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("nav.search")}</span>
+          <span className="nav-key">Ctrl K</span>
+        </button>
         <button
           type="button"
           className={`nav-row${view.kind === "chat" || view.kind === "inbox" || view.kind === "log" ? " active" : ""}`}
@@ -70,7 +82,7 @@ export function Sidebar() {
               </button>
             </div>
             <ul className="nav-list" aria-label={t("nav.pages")}>
-              <PageTree pages={pages} parent={null} depth={0} />
+              <PageTree pages={pages} parent={null} depth={0} drag={drag} setDrag={setDrag} />
               {pages.length === 0 && (
                 <li>
                   <button
@@ -87,6 +99,12 @@ export function Sidebar() {
           </>
         )}
       </div>
+      {pages !== null && (
+        <button type="button" className="nav-row trash-row" onClick={() => void loadTrash()}>
+          <Trash2 size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("page.trash")}</span>
+        </button>
+      )}
       <div className="sidebar-foot">
         <button type="button" className="foot-btn" onClick={() => openSettings()}>
           <Settings size={15} strokeWidth={1.8} />
@@ -104,14 +122,21 @@ export function Sidebar() {
 
 const MAX_DEPTH = 6;
 
+/** A page being dragged in the sidebar, and where it would land (before, after or inside a row). */
+type Drag = { id: string; over: string | null; where: "before" | "after" | "inside" } | null;
+
 function PageTree({
   pages,
   parent,
   depth,
+  drag,
+  setDrag,
 }: {
   pages: PageInfo[];
   parent: string | null;
   depth: number;
+  drag: Drag;
+  setDrag: (d: Drag) => void;
 }) {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
@@ -129,8 +154,34 @@ function PageTree({
         return (
           <li key={p.id}>
             <div
-              className={`chart-row page-row${view.kind === "page" && view.id === p.id ? " active" : ""}`}
+              className={`chart-row page-row${view.kind === "page" && view.id === p.id ? " active" : ""}${
+                drag?.over === p.id && drag.id !== p.id ? ` drop-${drag.where}` : ""
+              }${drag?.id === p.id ? " dragging" : ""}`}
               style={{ paddingLeft: depth * 14 }}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", p.id);
+                setDrag({ id: p.id, over: null, where: "inside" });
+              }}
+              onDragOver={(e) => {
+                if (!drag) return;
+                e.preventDefault();
+                const r = e.currentTarget.getBoundingClientRect();
+                const y = (e.clientY - r.top) / r.height;
+                setDrag({
+                  ...drag,
+                  over: p.id,
+                  where: y < 0.25 ? "before" : y > 0.75 ? "after" : "inside",
+                });
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (drag?.over && drag.over !== drag.id)
+                  void movePage(drag.id, drag.over, drag.where);
+                setDrag(null);
+              }}
+              onDragEnd={() => setDrag(null)}
             >
               {kids ? (
                 <button
@@ -180,6 +231,13 @@ function PageTree({
                         void newPage(p.id);
                       }}
                     />
+                    <MenuRow
+                      label={t("page.duplicate")}
+                      onClick={() => {
+                        close();
+                        void duplicatePage(p.id);
+                      }}
+                    />
                     <MenuSep />
                     <MenuRow
                       label={t("page.delete")}
@@ -207,7 +265,13 @@ function PageTree({
             </div>
             {open && (
               <ul className="nav-list">
-                <PageTree pages={pages} parent={p.id} depth={depth + 1} />
+                <PageTree
+                  pages={pages}
+                  parent={p.id}
+                  depth={depth + 1}
+                  drag={drag}
+                  setDrag={setDrag}
+                />
               </ul>
             )}
           </li>

@@ -6,12 +6,24 @@
  * catalogue does (the block editor of plan PR 18 builds on this).
  */
 
+/** Nesting, as Notion's Tab: how far a block is indented under the one above (0 = not at all). */
+type Indent = { indent?: 1 | 2 | 3 | 4 };
+
 export type PageBlock =
-  | { id: string; type: "heading"; text: string; level?: 1 | 2 | 3 }
-  | { id: string; type: "text"; text: string }
-  | { id: string; type: "bullet"; text: string }
-  | { id: string; type: "todo"; text: string; done?: boolean }
+  | ({ id: string; type: "heading"; text: string; level?: 1 | 2 | 3 } & Indent)
+  | ({ id: string; type: "text"; text: string } & Indent)
+  | ({ id: string; type: "bullet"; text: string } & Indent)
+  | ({ id: string; type: "numbered"; text: string } & Indent)
+  | ({ id: string; type: "todo"; text: string; done?: boolean } & Indent)
+  /** Its text is the toggle's line; the blocks indented under it fold away when it is closed. */
+  | ({ id: string; type: "toggle"; text: string; open?: boolean } & Indent)
+  | ({ id: string; type: "quote"; text: string } & Indent)
+  | ({ id: string; type: "callout"; text: string; icon?: string } & Indent)
+  /** Plain text in a fixed-width font, its lines kept; never run. */
+  | ({ id: string; type: "code"; text: string } & Indent)
   | { id: string; type: "divider" }
+  /** A link to another of the user's pages (a subpage), shown with its icon and name. */
+  | { id: string; type: "page"; page: string }
   | { id: string; type: "chart"; chart: string }
   | { id: string; type: "action"; screen: string; label: string; shortcut?: string };
 
@@ -23,12 +35,23 @@ export interface PageSpec {
 }
 
 /** The blocks that hold text the user writes in place (and can turn into one another). */
-export const TEXT_BLOCKS = ["text", "heading", "bullet", "todo"] as const;
-export const PAGE_BLOCKS = [...TEXT_BLOCKS, "divider", "chart", "action"] as const;
+export const TEXT_BLOCKS = [
+  "text",
+  "heading",
+  "bullet",
+  "numbered",
+  "todo",
+  "toggle",
+  "quote",
+  "callout",
+  "code",
+] as const;
+export const PAGE_BLOCKS = [...TEXT_BLOCKS, "divider", "page", "chart", "action"] as const;
 export const PAGE_LIMITS = {
-  blocks: 200,
+  blocks: 1000,
   heading: 200,
   text: 5000,
+  code: 20000,
   label: 80,
   title: 120,
 } as const;
@@ -65,30 +88,49 @@ export function pageErrors(spec: unknown): string[] {
     }
     if (ids.has(b.id)) errors.push(`${w}: id used twice`);
     ids.add(b.id);
+    const indentOk =
+      b.indent === undefined || (typeof b.indent === "number" && [1, 2, 3, 4].includes(b.indent));
+    const textual = (extra: string[], max: number = PAGE_LIMITS.text) =>
+      only(b, ["id", "type", "text", "indent", ...extra]) && text(b.text, max, true) && indentOk;
     switch (b.type) {
       case "heading":
         if (
-          !only(b, ["id", "type", "text", "level"]) ||
-          !text(b.text, PAGE_LIMITS.heading, true) ||
+          !textual(["level"], PAGE_LIMITS.heading) ||
           (b.level !== undefined && b.level !== 1 && b.level !== 2 && b.level !== 3)
         )
           errors.push(`${w}: a heading has text and a level 1-3`);
         break;
       case "text":
       case "bullet":
-        if (!only(b, ["id", "type", "text"]) || !text(b.text, PAGE_LIMITS.text, true))
-          errors.push(`${w}: a text block has text`);
+      case "numbered":
+      case "quote":
+        if (!textual([])) errors.push(`${w}: a text block has text`);
+        break;
+      case "code":
+        if (!textual([], PAGE_LIMITS.code)) errors.push(`${w}: a code block has text`);
         break;
       case "todo":
-        if (
-          !only(b, ["id", "type", "text", "done"]) ||
-          !text(b.text, PAGE_LIMITS.text, true) ||
-          (b.done !== undefined && typeof b.done !== "boolean")
-        )
+        if (!textual(["done"]) || (b.done !== undefined && typeof b.done !== "boolean"))
           errors.push(`${w}: a to-do has text and done`);
+        break;
+      case "toggle":
+        if (!textual(["open"]) || (b.open !== undefined && typeof b.open !== "boolean"))
+          errors.push(`${w}: a toggle has text and open`);
+        break;
+      case "callout":
+        if (
+          !textual(["icon"]) ||
+          (b.icon !== undefined &&
+            (typeof b.icon !== "string" || [...b.icon].length > 8 || /[<>&]/.test(b.icon)))
+        )
+          errors.push(`${w}: a callout has text and an emoji`);
         break;
       case "divider":
         if (!only(b, ["id", "type"])) errors.push(`${w}: a divider has nothing else`);
+        break;
+      case "page":
+        if (!only(b, ["id", "type", "page"]) || typeof b.page !== "string" || !ID.test(b.page))
+          errors.push(`${w}: a page link names its page`);
         break;
       case "chart":
         if (!only(b, ["id", "type", "chart"]) || typeof b.chart !== "string" || !ID.test(b.chart))

@@ -156,5 +156,8 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
       parent: string | null;
     }[];
     expect(left).toEqual([expect.objectContaining({ id: sub.id, parent: null })]);
+    // The removed page waits in the trash.
+    const trash = (await call(t, "GET", "/api/pages-trash")).body.pages as { id: string }[];
+    expect(trash.map((p) => p.id)).toContain(made.id);
   });
 });

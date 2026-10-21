@@ -14,6 +14,7 @@ import {
   createPage,
   getPage,
   listPages,
+  listTrash,
   PageError,
   removePage,
   restorePage,
@@ -269,6 +270,7 @@ export function makeApp(opts: ServerOptions): App {
         seedFromV1(store, v1store, s.user.id);
         return send(res, 200, { pages: listPages(store) });
       }
+      if (route === "GET /api/pages-trash") return send(res, 200, { pages: listTrash(store) });
       if (route === "GET /api/pages/:id") {
         const p = getPage(store, id);
         return p ? send(res, 200, { page: p }) : send(res, 404, { error: "not-found" });

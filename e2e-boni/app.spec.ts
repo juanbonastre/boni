@@ -262,7 +262,7 @@ test('pages as Notion\'s: made from the sidebar, written in place, blocks by "/"
   await expect(page.locator(".blk-h1 textarea")).toHaveValue("Este curso");
   await page.keyboard.press("Enter");
   await page.keyboard.type("- Exámenes", { delay: 20 });
-  await expect(page.locator(".blk-dot")).toHaveCount(1);
+  await expect(page.locator(".blk-bullet .blk-mark")).toHaveCount(1);
   await page.keyboard.press("Enter");
   await page.keyboard.press("Enter"); // an empty list item ends the list
   await page.keyboard.type("/comida", { delay: 20 });
@@ -306,6 +306,83 @@ test('pages as Notion\'s: made from the sidebar, written in place, blocks by "/"
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
   await expect(page.locator(".sidebar .page-row")).toHaveCount(2);
   await expect(page.locator(".doc-title")).toHaveValue("Docencia");
+});
+
+test("Notion's blocks: lists, toggles, code; Tab nests, a closed toggle folds, Ctrl+Z undoes", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", { pages: [] });
+  await page.locator(".welcome").getByRole("button", { name: "Nueva página" }).click();
+  await page.keyboard.type("Apuntes", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("1. Uno", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("Dos", { delay: 15 });
+  await expect(page.locator(".blk-mark.num")).toHaveText(["1.", "2."]);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // an empty item ends the list
+  await page.keyboard.type("> Más", { delay: 15 });
+  await expect(page.locator(".blk-fold")).toHaveCount(1);
+  await page.keyboard.press("Enter"); // the next line goes inside the toggle
+  await page.keyboard.type("Dentro", { delay: 15 });
+  await expect(page.locator('.blk[style*="margin-left"] textarea')).toHaveValue("Dentro");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.type("```", { delay: 15 });
+  await page.keyboard.type("a = 1", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("b = 2", { delay: 15 });
+  await expect(page.locator(".blk-code textarea")).toHaveValue("a = 1\nb = 2");
+  // Ctrl+Z takes back the last change (the code typed in one go), Ctrl+Shift+Z brings it again.
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".blk-code textarea")).toHaveValue("");
+  await page.keyboard.press("Control+Shift+z");
+  await expect(page.locator(".blk-code textarea")).toHaveValue("a = 1\nb = 2");
+  await page.screenshot({ path: `${SHOTS}/page-blocks.png` });
+  // A closed toggle hides what is inside it.
+  const lines = page.locator(".doc-blocks textarea");
+  const before = await lines.count();
+  await page.locator(".blk-fold").click();
+  await expect(lines).toHaveCount(before - 1);
+  await page.locator(".blk-fold").click();
+  await expect(lines).toHaveCount(before);
+});
+
+test('Ctrl+K finds a page; duplicate, subpage from "/", the trash restores', async ({ page }) => {
+  await openApp(page, "/?still", {
+    pages: [
+      { id: "gastos", title: "Gastos", spec: { version: 1, blocks: [] } },
+      { id: "docencia", title: "Docencia", spec: { version: 1, blocks: [] } },
+    ],
+  });
+  await expect(page.locator(".sidebar .page-row")).toHaveCount(2);
+  await page.keyboard.press("Control+k");
+  await expect(page.locator(".find-box")).toBeVisible();
+  await page.keyboard.type("doc", { delay: 15 });
+  await expect(page.locator(".find-row")).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".doc-title")).toHaveValue("Docencia");
+  // "/página" makes a subpage, linked from here, and opens it with the caret in its name.
+  await page.locator(".doc-tail").click();
+  await page.keyboard.type("/pági", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".doc-title")).toBeFocused();
+  await page.keyboard.type("Exámenes", { delay: 15 });
+  await expect(page.locator(".topbar .crumbs")).toContainText("Docencia");
+  await page.locator(".topbar .crumb", { hasText: "Docencia" }).click();
+  await expect(page.locator(".doc-page-link")).toContainText("Exámenes");
+  // Duplicate from the top bar's menu.
+  await page.locator(".topbar").getByRole("button", { name: "Más opciones" }).click();
+  await page.getByRole("menuitemradio", { name: "Duplicar" }).click();
+  await expect(page.locator(".doc-title")).toHaveValue("Docencia (1)");
+  // Delete it, then bring it back from the trash.
+  await page.locator(".topbar").getByRole("button", { name: "Más opciones" }).click();
+  await page.getByRole("menuitemradio", { name: "Borrar página" }).click();
+  await page.getByRole("button", { name: "Papelera" }).click();
+  await expect(page.locator(".find-box")).toContainText("Docencia (1)");
+  await page.getByRole("button", { name: "Restaurar" }).click();
+  await expect(page.locator(".toast")).toContainText("Página restaurada");
+  await expect(page.locator(".sidebar .page-row", { hasText: "Docencia (1)" })).toHaveCount(1);
 });
 
 test("no pages: a welcome, nothing fixed; the first page from there", async ({ page }) => {

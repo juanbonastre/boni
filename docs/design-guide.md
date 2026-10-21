@@ -235,7 +235,19 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   writes at the end. Changes show at once and go to the server together half a second later (and before the window
   closes or another page opens). A new page (sidebar "+", a row's "+" for a subpage) opens at once, untitled, with the
   caret in its name. Sidebar rows: page icon, which turns into a chevron to fold its subpages on hover; "…" and "+"
-  on the right on hover. Capturing or editing a chart happens in the side panel with the page in view.
+  on the right on hover; a row is dragged to move the page (top quarter: before, bottom: after, middle: inside).
+  Capturing or editing a chart happens in the side panel with the page in view.
+- **More of Notion** (2026-10-22): blocks numbered list (numbers follow on), toggle (its line folds the blocks
+  nested under it; Enter at its end writes inside it), quote (a 3 px bar), callout (an emoji you can change, a
+  `--surface-2` box), code (monospace, Enter is a new line, Ctrl+Enter leaves it) and a link to a subpage ("/Página"
+  makes the subpage and opens it). **Nesting** as Notion's Tab: Tab puts a line one level under the one above (26 px
+  each, up to 4), Shift+Tab takes it out; an empty nested list item comes out with Enter before it ends the list; a
+  block moves, is dragged and deleted with what is nested under it. Markdown also "1. ", "> " (toggle), `" ` (quote)
+  and "```" (code). **Ctrl+Z / Ctrl+Shift+Z** undo and redo the page's changes (typing in one block for a moment is
+  one step). **Ctrl+K** (and "Buscar" at the top of the sidebar) opens Notion's search: a box over the window, pages
+  matching the words with their path, arrows and Enter. **Papelera** at the bottom of the sidebar lists deleted pages
+  with "Restaurar"; "Duplicar" is in a page's "…" (sidebar and top bar). A new page shows at once (made on the
+  server behind it, keeping what was typed). **AI** is a placeholder for now: "/Pedir a Boni" says it is coming.
 - This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
   Settings has "Lo que ve la IA" after the account (one row per collection with its count and a three-way segmented
   control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip
