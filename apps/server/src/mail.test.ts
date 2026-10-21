@@ -249,7 +249,9 @@ describe("tasks a mail asks for", () => {
     addUser(sdb, "juan", PASSWORD, "");
     const readers: string[] = [];
     const reader = new ScriptedProvider("fake", (req) => {
-      const kind = /list the tasks/.test(req.system) ? "extract_tasks" : "classify";
+      const kind = /list what it asks of its recipient/.test(req.system)
+        ? "extract_tasks"
+        : "classify";
       readers.push(kind);
       if (kind === "classify") return { choice: "Gestiones (p. ej.: Renovar el DNI)" };
       return {
@@ -359,7 +361,9 @@ describe("tasks a mail asks for", () => {
     box.mails.set(2, mail(22, "Recordatorio", "Te recuerdo lo del informe y la sala."));
     box.mails.set(3, mail(23, "Otra cosa", "¿Puedes revisar el acta?", "otro.ejemplo@example.com"));
     await m.check(1);
-    const extracts = reader.requests.filter((r) => /list the tasks/.test(r.system));
+    const extracts = reader.requests.filter((r) =>
+      /list what it asks of its recipient/.test(r.system),
+    );
     const knownOf = (i: number) =>
       (extracts.at(i)?.input as { known?: string[] } | undefined)?.known;
     expect(knownOf(-2)?.sort()).toEqual(["Enviar el informe", "Reservar la sala"]);
