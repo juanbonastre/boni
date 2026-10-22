@@ -2,6 +2,8 @@ import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
   ASK_TURN,
+  CARD_COMPACT,
+  CARD_DETAILED,
   confirmTurn,
   DONE,
   EXTENSIONS,
@@ -17,7 +19,7 @@ import {
   TEXT_REPLY,
   VISIBILITY,
 } from "./agent-scenarios.ts";
-import { openApp, recorded } from "./fixtures.ts";
+import { emit, openApp, recorded } from "./fixtures.ts";
 
 /**
  * The conversation with the agent (docs/nucleo.md, 7.14): painted by the code, text from outside only as text,
@@ -152,7 +154,10 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
     },
   });
   await page.getByRole("button", { name: "Conversación" }).click();
-  await page.getByRole("button", { name: /^Bandeja/ }).click();
+  await page
+    .locator(".chat-tools")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
   await expect(page.locator(".title")).toContainText("Bandeja");
   await expect(page.locator(".proposal")).toHaveCount(2);
   await expect(page.getByRole("button", { name: /todas/i })).toHaveCount(0);
@@ -172,6 +177,57 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
   await expect(page.locator(".title")).toHaveText("Conversación");
 });
 
+test("the inbox panel: cards say what, from where and the day around it; it opens by itself for new ones", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_DETAILED] }],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  // The top bar opens the panel on the right.
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const panel = page.locator(".inbox-panel");
+  await expect(panel).toBeVisible();
+  const card = panel.locator(".inbox-card").first();
+  await expect(card.locator("h3")).toHaveText("Añadir evento a Docencia");
+  await expect(card.locator(".inbox-source")).toHaveText(
+    "ejemplo@example.edu · Coordinación de ejemplo",
+  );
+  await expect(card).not.toContainText("Viene de fuera");
+  // Detailed (the first from that sender): the mail's words and one day, the proposal dashed among the rest.
+  await expect(card.locator(".inbox-quote")).toContainText("antes del jueves");
+  await expect(card.locator(".mini-day")).toHaveCount(1);
+  const items = card.locator(".mini-day .mini-item");
+  await expect(items).toHaveCount(3);
+  await expect(items.nth(1)).toHaveClass(/proposed/);
+  await expect(items.nth(1)).toContainText("12:00");
+  await page.screenshot({ path: `${SHOTS}/inbox-panel.png` });
+  // A new one arrives (compact: it happened before): the panel shows it with three days.
+  await page.locator(".inbox-panel .panel-head").getByRole("button").click();
+  await expect(panel).toHaveCount(0);
+  await page.evaluate(
+    (p) => (window as unknown as { __pushProposal: (p: unknown) => void }).__pushProposal(p),
+    CARD_COMPACT,
+  );
+  await emit(page, { type: "tick", minute: 1 });
+  await expect(panel).toBeVisible();
+  const compact = panel.locator(".inbox-card", { hasText: "Enviar notas" });
+  await expect(compact).toHaveClass(/compact/);
+  await expect(compact.locator(".mini-day")).toHaveCount(3);
+  await expect(compact.locator(".inbox-quote")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/inbox-panel-compact.png` });
+  await compact.getByRole("button", { name: "Más detalles" }).click();
+  await expect(compact.locator(".inbox-quote")).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/inbox-panel-two.png` });
+  await compact.getByRole("button", { name: "Aceptar" }).click();
+  await expect(panel.locator(".inbox-card")).toHaveCount(1);
+});
+
 test("a hand edit in Obsidian waits in the inbox with its note and what will not be applied", async ({
   page,
 }) => {
@@ -182,7 +238,10 @@ test("a hand edit in Obsidian waits in the inbox with its note and what will not
     },
   });
   await page.getByRole("button", { name: "Conversación" }).click();
-  await page.getByRole("button", { name: /^Bandeja/ }).click();
+  await page
+    .locator(".chat-tools")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
   const p = page.locator(".proposal");
   await expect(p).toHaveCount(1);
   await expect(p).toContainText("Cambio hecho a mano en Obsidian");

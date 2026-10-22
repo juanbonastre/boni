@@ -177,7 +177,10 @@ for (const width of [1440, 900]) {
     await page.screenshot({ path: `e2e-boni/screenshots/worst-settings-${width}.png` });
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Conversación" }).click();
-    await page.getByRole("button", { name: /^Bandeja/ }).click();
+    await page
+      .locator(".chat-tools")
+      .getByRole("button", { name: /^Bandeja/ })
+      .click();
     await page.locator(".proposal").first().waitFor();
     issues.push(...(await audit(page, `${width} inbox`)));
     await page.screenshot({ path: `e2e-boni/screenshots/worst-inbox-${width}.png` });

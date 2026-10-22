@@ -4449,3 +4449,193 @@ button.find-row:hover {
 .peek .toast {
   position: fixed;
 }
+
+/* ---------------------------------------------------------------- the inbox's cards (Juan, 2026-10-22) */
+.inbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.inbox-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+}
+.inbox-card-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.inbox-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 0;
+}
+.inbox-source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-what {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.inbox-title {
+  font-weight: 500;
+}
+.inbox-mail {
+  border-left: 2px solid var(--line-strong, var(--line));
+  padding: 2px 0 2px 10px;
+}
+.inbox-subject {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.inbox-quote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.inbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.inbox-more svg {
+  transition: transform 0.15s ease;
+}
+.inbox-more.open svg {
+  transform: rotate(180deg);
+}
+.inbox-fields {
+  display: grid;
+  grid-template-columns: minmax(70px, auto) minmax(0, 1fr);
+  gap: 3px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+.inbox-field {
+  display: contents;
+}
+.inbox-field dt {
+  color: var(--muted);
+}
+.inbox-field dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.inbox-field.warn dt,
+.inbox-field.warn dd {
+  color: var(--warn, #d9a441);
+}
+.inbox-body {
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+/* The days around a proposal: lists in time order, the proposal with a dashed border among them. */
+.mini-days {
+  display: grid;
+  gap: 6px;
+}
+.mini-day {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.mini-day.target {
+  border-color: var(--line-strong, var(--line));
+  background: var(--hover);
+}
+.mini-day-head {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.mini-day.target .mini-day-head {
+  color: var(--text);
+  font-weight: 500;
+}
+.mini-item {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  background: var(--surface-2, var(--hover));
+}
+.mini-item.proposed {
+  background: transparent;
+  border: 1.5px dashed var(--accent);
+  color: var(--accent);
+}
+.mini-time {
+  flex: none;
+  color: var(--muted);
+}
+.mini-item.proposed .mini-time {
+  color: inherit;
+}
+.mini-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mini-empty,
+.mini-more {
+  font-size: 11px;
+}
+.md-preview p {
+  margin: 0 0 4px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.md-preview .md-h1 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.md-preview .md-h2,
+.md-preview .md-h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.md-preview .md-quote {
+  border-left: 2px solid var(--line);
+  padding-left: 8px;
+  color: var(--muted);
+}
+.md-preview .md-code {
+  font-size: 12px;
+  white-space: pre-wrap;
+  margin: 0 0 4px;
+}
+.inbox-btn.on {
+  background: var(--hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .inbox-more svg {
+    transition: none;
+  }
+}

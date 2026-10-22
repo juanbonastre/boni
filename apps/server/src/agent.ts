@@ -11,6 +11,7 @@ import {
 import { openUserStore, type UserStore } from "@boni/store";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
+import { type InboxCard, inboxCard } from "./inboxCard.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 
 /**
@@ -55,6 +56,8 @@ export class AgentHost {
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
   /** Called after a request that may have changed an account's data (the mirror writes it out). */
   onChanged: ((account: number) => void) | null = null;
+  /** The account's mailbox as the inbox names it (its address), when it has one (mail.ts). */
+  mailAccountOf: ((account: number) => string | null) | null = null;
 
   constructor(o: AgentHostOptions) {
     this.o = o;
@@ -198,13 +201,24 @@ async function answerAgent(
         proposals: host
           .store(who.account)
           .journal.proposals("pending")
-          .map((p) => ({
-            id: p.id,
-            tool: p.tool,
-            view: p.view,
-            sources: p.sources,
-            created: p.created,
-          })),
+          .map((p) => {
+            let card: InboxCard | null = null;
+            try {
+              card = inboxCard(host.store(who.account), p, {
+                mailAccount: host.mailAccountOf?.(who.account) ?? null,
+              });
+            } catch {
+              // a proposal the card cannot read still shows with its rows
+            }
+            return {
+              id: p.id,
+              tool: p.tool,
+              view: p.view,
+              sources: p.sources,
+              created: p.created,
+              card,
+            };
+          }),
       });
     case "POST /api/agent/proposals/:id/accept":
       return send(res, 200, after(await agent.acceptProposal(params.id ?? "", who.trust)));

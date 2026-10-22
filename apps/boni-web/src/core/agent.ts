@@ -62,6 +62,75 @@ export interface Proposal {
   view: ConfirmView | null;
   sources: string[];
   created: number;
+  /** What the inbox shows of it, made by the server's code (apps/server/src/inboxCard.ts). */
+  card: InboxCard | null;
+}
+/** The inbox card (Juan, 2026-10-22): what it does, where it came from, its day and the days around it. */
+export interface InboxCard {
+  action: "create" | "update" | "delete" | "other";
+  collection: string | null;
+  kind: "event" | "task" | "item";
+  title: string | null;
+  day: string | null;
+  start: string | null;
+  end: string | null;
+  source:
+    | { kind: "mail"; account: string | null; from: string; subject: string; excerpt: string }
+    | { kind: "note"; path: string }
+    | null;
+  familiar: number;
+  complete: boolean;
+  mode: "compact" | "detailed";
+  context: { day: string; items: { title: string; start: string | null; end: string | null }[] }[];
+}
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const optStr = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
+const optMatch = (v: unknown, re: RegExp) => (typeof v === "string" && re.test(v) ? v : null);
+function parseCard(v: unknown): InboxCard | null {
+  if (!isObj(v)) return null;
+  const actions = ["create", "update", "delete", "other"] as const;
+  const kinds = ["event", "task", "item"] as const;
+  const src = isObj(v.source) ? v.source : null;
+  const source: InboxCard["source"] =
+    src?.kind === "mail"
+      ? {
+          kind: "mail",
+          account: optStr(src.account, 200),
+          from: optStr(src.from, 200) ?? "",
+          subject: optStr(src.subject, 200) ?? "",
+          excerpt: optStr(src.excerpt, 400) ?? "",
+        }
+      : src?.kind === "note" && typeof src.path === "string"
+        ? { kind: "note", path: src.path.slice(0, 500) }
+        : null;
+  return {
+    action: actions.find((a) => a === v.action) ?? "other",
+    collection: optStr(v.collection, 200),
+    kind: kinds.find((k) => k === v.kind) ?? "item",
+    title: optStr(v.title, 300),
+    day: optMatch(v.day, DAY_RE),
+    start: optMatch(v.start, TIME_RE),
+    end: optMatch(v.end, TIME_RE),
+    source,
+    familiar: typeof v.familiar === "number" ? v.familiar : 0,
+    complete: v.complete === true,
+    mode: v.mode === "compact" ? "compact" : "detailed",
+    context: Array.isArray(v.context)
+      ? v.context.filter(isObj).flatMap((d) => {
+          const day = optMatch(d.day, DAY_RE);
+          if (!day) return [];
+          const items = Array.isArray(d.items)
+            ? d.items.filter(isObj).map((i) => ({
+                title: optStr(i.title, 120) ?? "",
+                start: optMatch(i.start, TIME_RE),
+                end: optMatch(i.end, TIME_RE),
+              }))
+            : [];
+          return [{ day, items: items.slice(0, 30) }];
+        })
+      : [],
+  };
 }
 /** What the models may see of a collection (Juan's choice; the agent cannot change it). */
 export type AiLevel = "visible" | "opaque" | "restricted" | "private";
@@ -659,6 +728,7 @@ export class AgentApi {
           view: parseConfirmView(p.view),
           sources: strs(p.sources),
           created: typeof p.created === "number" ? p.created : 0,
+          card: parseCard(p.card),
         },
       ];
     });

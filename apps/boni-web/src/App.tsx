@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { CollectionsView, CollectionView } from "./components/Collections.tsx";
+import { InboxButton, InboxPanel } from "./components/InboxCards.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
@@ -46,12 +47,13 @@ export function App() {
   const settingsOpen = useStore((s) => s.settingsOpen);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const panelOpen = useStore((s) => s.panel != null);
+  const inboxOpen = useStore((s) => s.inboxOpen);
   const toast = useStore((s) => s.toast);
   const findOpen = useStore((s) => s.findOpen);
   const trashOpen = useStore((s) => s.trash != null);
   // In a narrow window the side panel takes the sidebar's room while it is open (the charts keep theirs).
   const narrow = useMedia("(max-width: 1100px)");
-  const showSidebar = sidebarOpen && !(narrow && panelOpen);
+  const showSidebar = sidebarOpen && !(narrow && (panelOpen || inboxOpen));
   if (mobile) return <MobileApp />;
   return (
     <div className={`app${showSidebar ? "" : " no-sidebar"}`}>
@@ -60,7 +62,7 @@ export function App() {
         <TopBar />
         <Content />
       </div>
-      <SidePanel />
+      {panelOpen ? <SidePanel /> : <InboxPanel />}
       {settingsOpen && <SettingsModal />}
       {findOpen && <QuickFind />}
       {trashOpen && <TrashDialog />}
@@ -223,6 +225,7 @@ function TopBar() {
       </h1>
       <span className="spacer" />
       {pending > 0 && <span className="status">{t("top.pending", { n: pending })}</span>}
+      {ready && <InboxButton />}
       {offline && (
         <span className="status" title={t("top.offlineHelp")}>
           <WifiOff size={14} strokeWidth={1.8} />

@@ -321,8 +321,17 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   each argument with its real value in full (scrolling, never cut), where it came from ("Viene de fuera · un correo")
   and its warnings in `--bad` (invisible or direction-changing characters, shown as `⟦U+202E⟧`, mixed alphabets, an
   international domain with its real name, long text). Its accept button waits 0.7 s and changes side with every
-  confirmation, so nothing is accepted out of habit. The **inbox** shows each proposal as the same card with Accept and
-  Reject (never "accept all"); a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
+  confirmation, so nothing is accepted out of habit. The **inbox** (Juan, 2026-10-22) is a panel on the right
+  (the top bar's "Bandeja (N)"; it comes out by itself when a new proposal arrives, checked every minute; in a narrow
+  window the sidebar gives it room) and the same cards in Conversación → Bandeja. A card says what the proposal does
+  in words made by code ("Añadir tarea a Docencia", "Añadir evento a …", "Cambio a mano en «nota»"), where it came
+  from once (the mailbox and the sender, or the note's path; never "Viene de fuera" on every row), its day and times,
+  and a mini calendar: the day (detailed) or the day before, the day and the day after (compact), each a short list in
+  time order with the proposal drawn with a dashed `--accent` border among what is there. Compact when the source said
+  everything and Juan accepted two like it before, detailed otherwise (the subject and the mail's words, clamped to
+  three lines, and the fields that the card's line does not already say); "Más detalles" / "Menos" switches. A
+  changed note's text shows as reading text (headings, lists, to-dos), never raw Markdown. Accept and Reject on each
+  card (never "accept all"); a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
   Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it, and a collection by its name alone ("Docencia"; names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
