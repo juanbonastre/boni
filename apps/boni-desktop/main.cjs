@@ -9,13 +9,14 @@ const { execFile } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { allowedPath } = require("./paths.cjs");
 const { createLive } = require("./live.cjs");
 const S = require("./settings.cjs");
 const W = require("./widgets.cjs");
 const autostart = require("./autostart.cjs");
 
 const PACKAGED_UI = path.join(__dirname, "web", "index.html");
-const DEV_UI = path.join(__dirname, "..", "web", "dist", "index.html");
+const DEV_UI = path.join(__dirname, "..", "boni-web", "dist", "index.html");
 const UI = fs.existsSync(PACKAGED_UI) ? PACKAGED_UI : DEV_UI;
 const ICON = path.join(__dirname, "icon.png");
 
@@ -479,16 +480,10 @@ ipcMain.handle("account:logout", async () => {
 
 // ---------- requests to the server (the page never sees the token) ----------
 const METHODS = new Set(["GET", "POST", "PUT", "DELETE"]);
-const API_PATH = /^api\/v1\/[A-Za-z0-9_\-./%]*(\?[A-Za-z0-9_\-.=&%+]*)?$/;
 const MAX_BODY = 10 * 1024 * 1024;
 
 ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
-  if (
-    !METHODS.has(method) ||
-    typeof apiPath !== "string" ||
-    !API_PATH.test(apiPath) ||
-    apiPath.includes("..")
-  ) {
+  if (!METHODS.has(method) || !allowedPath(apiPath)) {
     return { ok: false, offline: true, message: "bad request" };
   }
   if (!settings.serverUrl || !settings.token)

@@ -1,8 +1,8 @@
 {
   "name": "boni",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
-  "description": "Boni: gráficas y capturas",
+  "description": "Boni: páginas, bases de datos, gráficas, conversación y capturas",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
@@ -36,8 +36,8 @@
       "category": "Office",
       "icon": "icon.png",
       "maintainer": "Juan Bonastre <juanbonastre@users.noreply.github.com>",
-      "synopsis": "Boni: gráficas y capturas",
-      "description": "Boni: gráficas, capturas y widgets de escritorio, cliente del servidor de Boni.",
+      "synopsis": "Boni: páginas, bases de datos, gráficas y conversación",
+      "description": "Boni: páginas como Notion con tus colecciones, gráficas, la conversación con Boni, capturas y widgets de escritorio; cliente del servidor de Boni.",
       "executableName": "boni",
       "syncDesktopName": true
     },

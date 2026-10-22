@@ -194,13 +194,21 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
 apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`legacy/boni/apps/web`, with its history):
                  charts, shortcuts and "Apuntar gasto" over the API v1 (`src/core/api.ts`, `contract.ts`), the same
                  page in a browser, in its desktop shell and in its Android WebView (`src/host.ts`). `api/` is the v1
-                 contract (`examples/` are real server answers the tests parse). Its desktop and Android shells are
-                 still in `legacy/boni/apps/` (they build from this folder when ported). The agent's conversation
+                 contract (`examples/` are real server answers the tests parse). Its Android shell is still in
+                 `legacy/boni/apps/android` (it builds from this folder when ported); the desktop one is apps/boni-desktop. The agent's conversation
                  (`components/Chat.tsx`, `core/agent.ts` over `/api/agent/*`): every answer painted by this code from
                  labelled values, text only as text (never HTML, Markdown or links; outside text marked),
                  confirmations with the real values, their origin and warnings, the accept button changing side;
                  the inbox one proposal at a time, the log with Undo. The server serves the built app at `/boni/` on
                  the tailnet entry (`BONI_BONI_WEB`).
+apps/boni-desktop/ Boni's desktop app (Electron, package `boni`, `.deb` via `make package-boni`; moved from
+                 `legacy/boni/apps/desktop` on 2026-10-22): it bundles apps/boni-web's build (`scripts/copy-web.mjs`),
+                 keeps the token in the main process and calls the server for the page (`window.boniDesktop`), only
+                 on the paths `paths.cjs` allows (v1, agent, pages, data, mail: a new API the app uses must be added
+                 there). Tray, autostart, desktop widgets. **Every change to apps/boni-web ships in a new desktop
+                 version too** (Juan uses the desktop app, not the browser): bump its version, `make package-boni`,
+                 and test it in the app itself with `make e2e-boni-desktop` (Playwright `_electron`, temporary profile,
+                 the real server with an invented account and vault; opens a window, not in CI).
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots (Boni Calendar);
                  e2e-boni/ the same for apps/boni-web (`playwright.boni.config.ts`, a fake server from `api/examples`).
 docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.
