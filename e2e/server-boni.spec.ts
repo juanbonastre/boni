@@ -1,5 +1,13 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -150,6 +158,36 @@ test("the calendar comes from Boni: its edits go to Boni and the mirror writes t
   await expect
     .poll(() => read(CLASS), { timeout: 15_000 })
     .toContain('title: "Clase renombrada en el calendario"');
+});
+
+test("a new event typed in the calendar gets its note named by its title, never «Sin título»", async ({
+  page,
+}) => {
+  await connect(page);
+  const cols = await page.locator(".cols-viewport").boundingBox();
+  if (!cols) throw new Error("no grid");
+  const x = cols.x + (cols.width / 7) * 4.5; // Friday 19
+  await page.mouse.move(x, cols.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(x, cols.y + 360, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  await page
+    .locator(".popover .title-input")
+    .pressSequentially("Resonancia inventada", { delay: 80 });
+  await page.locator(".popover .title-input").press("Enter");
+  await page.keyboard.press("Escape");
+  const notes = () =>
+    readdirSync(join(dir, "vault", "agenda", "docencia")).filter((f) => f.endsWith(".md"));
+  await expect
+    .poll(() => notes().filter((f) => f.includes("Resonancia inventada")), { timeout: 40_000 })
+    .toHaveLength(1);
+  expect(notes().some((f) => f.startsWith("Sin título"))).toBe(false);
+  const text = read(
+    `agenda/docencia/${notes().find((f) => f.includes("Resonancia inventada"))}`,
+  ) as string;
+  expect(text).toContain('title: "Resonancia inventada"');
+  expect(text).not.toMatch(/^\w+:\s*$/m); // no empty properties
 });
 
 test("Boni's own edits reach the calendar live; a hand edit in the vault no longer does", async ({

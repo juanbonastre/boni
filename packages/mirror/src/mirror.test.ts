@@ -185,6 +185,29 @@ describe("the core writes its notes", () => {
     expect(await e.mirror.scan()).toMatchObject({ proposed: 0 });
   });
 
+  it("an event made in Boni without a title gets its note once it has one, without empty properties", async () => {
+    const e = env();
+    e.mirror.switchToCore(CAL, { apply: true });
+    const l = label("user", "personal", []);
+    const made = e.store.create(
+      CAL,
+      { f_date: { value: "2026-10-27", label: l } },
+      { actor: "user" },
+    );
+    expect(await e.mirror.sync()).toMatchObject({ created: 0 });
+    expect(() => e.read("agenda/docencia/Sin título.md")).toThrow();
+    e.store.update(
+      made.entity.id,
+      { f_title: { value: "Resonancia", label: l } },
+      { actor: "user" },
+    );
+    expect(await e.mirror.sync()).toMatchObject({ created: 1 });
+    const text = e.read("agenda/docencia/Resonancia.md");
+    expect(text).toContain('title: "Resonancia"\n');
+    expect(text).toContain('date: "2026-10-27"\n');
+    expect(text).not.toMatch(/^\w+:\s*$/m); // no empty properties
+  });
+
   it("a removed entity's note goes to the vault's trash; Undo brings it back", async () => {
     const e = env();
     e.mirror.switchToCore(CAL, { apply: true });

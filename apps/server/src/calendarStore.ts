@@ -5,6 +5,7 @@ import {
   diffRows,
   extendSeries,
   makeModel,
+  noteFileName,
   type PropValue,
   parseCollectionDef,
   type Row,
@@ -13,6 +14,7 @@ import {
   rowToEvent,
   systemTimeZone,
   todayIn,
+  uniqueNotePath,
   withMovedRowProperties,
   withNewRowProperties,
 } from "@boni/calendar";
@@ -511,9 +513,19 @@ export class StoreCalendar implements CalendarSource {
         touched.push(c.row.id);
       } else {
         const row = { ...c.row, values: withNewRowProperties(c.row.values, p.def) };
-        const made = this.store.create(p.type, this.writesFor(p, null, row, device), meta);
-        aliases[c.row.id] = made.entity.id;
-        touched.push(made.entity.id);
+        const writes = this.writesFor(p, null, row, device);
+        // Its note's name, as the vault's writer names one ("2026-10-27 Clase"): kept as the row's id, and where
+        // the mirror writes the note. Untitled, the mirror waits for the title and names it by that.
+        const path = String(row.values[p.def.mapping.title] ?? "").trim()
+          ? uniqueNotePath(p.def.folder, noteFileName(p.def, row.values), (x) =>
+              this.entityOf.has(x),
+            )
+          : null;
+        if (path) writes[PATH_FIELD] = { value: path, label: this.labelFor(p.type, null, device) };
+        const made = this.store.create(p.type, writes, meta);
+        const id = path ?? made.entity.id;
+        aliases[c.row.id] = id;
+        touched.push(id);
       }
     }
     this.poll();
