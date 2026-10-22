@@ -29,6 +29,50 @@ export interface DataType {
   zone?: Zone;
   /** Parts of it with their own level (Notion's filters). */
   rules: { id: string; filter: unknown[]; level: AiLevel }[];
+  /** How its rows open as pages: properties unfolded or not, and the ones hidden one by one (Juan, 2026-10-22). */
+  rowUi: RowUi;
+}
+export interface RowUi {
+  open: boolean;
+  hidden: string[];
+}
+/** Where a collection's `RowUi` is kept (the store's settings: the account's, on every device). */
+export const ROW_UI = "ui/row/";
+export function rowUiOf(store: UserStore, typeId: string): RowUi {
+  try {
+    const v = JSON.parse(store.setting(`${ROW_UI}${typeId}`) ?? "{}") as Partial<RowUi>;
+    return {
+      open: v.open === true,
+      hidden: Array.isArray(v.hidden) ? v.hidden.filter((x) => typeof x === "string") : [],
+    };
+  } catch {
+    return { open: false, hidden: [] };
+  }
+}
+/** Folds or unfolds a collection's properties, or hides or shows some of them (fields it has). */
+export function setRowUi(
+  store: UserStore,
+  typeId: string,
+  body: Record<string, unknown>,
+): RowUi | { status: number; error: string } {
+  const t = userTypes(store).find((x) => x.id === typeId);
+  if (!t) return { status: 404, error: "not-found" };
+  const next = rowUiOf(store, typeId);
+  if (body.open !== undefined) {
+    if (typeof body.open !== "boolean") return { status: 400, error: "bad-open" };
+    next.open = body.open;
+  }
+  if (body.hidden !== undefined) {
+    const ids = new Set(t.fields.map((f) => f.id));
+    if (
+      !Array.isArray(body.hidden) ||
+      body.hidden.some((x) => typeof x !== "string" || !ids.has(x))
+    )
+      return { status: 400, error: "bad-hidden" };
+    next.hidden = [...new Set(body.hidden as string[])];
+  }
+  store.setSetting(`${ROW_UI}${typeId}`, JSON.stringify(next));
+  return next;
 }
 export interface DataRow {
   id: string;
@@ -91,6 +135,7 @@ export function listTypes(store: UserStore): DataType[] {
       rules: rules
         .filter((r) => r.type === t.id)
         .map((r) => ({ id: r.id, filter: r.filter, level: r.level })),
+      rowUi: rowUiOf(store, t.id),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }

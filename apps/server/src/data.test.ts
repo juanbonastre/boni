@@ -189,6 +189,41 @@ describe("collections as databases (plan PR 19)", () => {
     expect((await call(tv, "GET", "/api/data/types")).status).toBe(403);
   });
 
+  it("how a collection's rows open: properties folded or not, some hidden one by one, for the account", async () => {
+    const t = await token();
+    const ui = async () =>
+      (
+        (await call(t, "GET", "/api/data/types")).body.types as {
+          id: string;
+          rowUi: { open: boolean; hidden: string[] };
+        }[]
+      ).find((x) => x.id === "t_libro")?.rowUi;
+    expect(await ui()).toEqual({ open: false, hidden: [] });
+    const r = await call(t, "PUT", "/api/data/types/t_libro/row-ui", {
+      open: true,
+      hidden: ["f_paginas"],
+    });
+    expect(r.body).toEqual({ open: true, hidden: ["f_paginas"] });
+    // Another device of the account sees the same.
+    const other = await token("otro-equipo");
+    const theirs = (await call(other, "GET", "/api/data/types")).body.types as {
+      id: string;
+      rowUi: unknown;
+    }[];
+    expect(theirs.find((x) => x.id === "t_libro")?.rowUi).toEqual({
+      open: true,
+      hidden: ["f_paginas"],
+    });
+    expect(
+      (await call(t, "PUT", "/api/data/types/t_libro/row-ui", { hidden: ["f_nada"] })).status,
+    ).toBe(400);
+    expect((await call(t, "PUT", "/api/data/types/t_nada/row-ui", { open: true })).status).toBe(
+      404,
+    );
+    await call(t, "PUT", "/api/data/types/t_libro/row-ui", { open: false });
+    expect(await ui()).toEqual({ open: false, hidden: ["f_paginas"] });
+  });
+
   it("gives a zone's attachments only as a download, and keeps the zone's AI level locked", async () => {
     const t = await token();
     const store = host.store(1);
