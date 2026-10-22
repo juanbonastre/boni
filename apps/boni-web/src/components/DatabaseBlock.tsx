@@ -1,6 +1,7 @@
 import { type DatabaseFilter, type DatabaseView, matchesFilters } from "@boni/views";
 import {
   Calendar as CalendarIcon,
+  Check,
   ChevronLeft,
   ChevronRight,
   Columns3,
@@ -11,18 +12,21 @@ import {
   Plus,
   Table2,
   Trash2,
+  X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { DataField, DataRow, DataType, DataValue } from "../core/agent.ts";
 import type { T } from "../i18n.ts";
 import {
   addRow,
+  decideGhost,
   deleteRow,
   editCell,
   loadDataTypes,
   loadRows,
   openFile,
   openRow,
+  toggleInbox,
   useStore,
 } from "../store.ts";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
@@ -143,6 +147,7 @@ export function DatabaseBlock({
         <TableView
           type={type}
           rows={rows}
+          ghosts={data.ghosts ?? []}
           fields={shown}
           titles={data.titles}
           onAdd={() => void add()}
@@ -154,7 +159,7 @@ export function DatabaseBlock({
           span={view.span ?? "month"}
           onSpan={(span) => onView({ ...view, span })}
           sources={[
-            { type, rows, date: view.date },
+            { type, rows: [...(data.ghosts ?? []), ...rows], date: view.date },
             ...also.flatMap((a) => {
               const at = types?.find((x) => x.id === a);
               return at ? [{ type: at, rows: allRows[a]?.rows ?? [] }] : [];
@@ -570,17 +575,20 @@ function ViewOptions({
 function TableView({
   type,
   rows,
+  ghosts,
   fields,
   titles,
   onAdd,
 }: {
   type: DataType;
   rows: DataRow[];
+  ghosts: DataRow[];
   fields: DataField[];
   titles: Record<string, string>;
   onAdd: () => void;
 }) {
   const t = useStore((s) => s.t);
+  const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
   // The title column first, as Notion's.
   const ordered = [
     ...fields.filter((f) => f.id === type.titleField),
@@ -600,6 +608,42 @@ function TableView({
           </tr>
         </thead>
         <tbody>
+          {/* Pending proposals first, dashed: read only, accepted or rejected here (Juan, 2026-10-22). */}
+          {ghosts.map((r) => (
+            <tr key={r.id} className="ghost-row">
+              {ordered.map((f) => (
+                <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
+                  <div className="ghost-cell">
+                    <span className="ghost-text">{ghostText(f, r.values[f.id], locale)}</span>
+                    {f.id === type.titleField && (
+                      <>
+                        <span className="ghost-tag">{t("ghost.proposed")}</span>
+                        <button
+                          type="button"
+                          className="icon-btn tiny"
+                          title={t("inbox.accept")}
+                          aria-label={`${t("inbox.accept")}: ${titleOf(type, r)}`}
+                          onClick={() => void decideGhost(type.id, r.ghost as string, true)}
+                        >
+                          <Check size={13} strokeWidth={2} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn tiny"
+                          title={t("inbox.reject")}
+                          aria-label={`${t("inbox.reject")}: ${titleOf(type, r)}`}
+                          onClick={() => void decideGhost(type.id, r.ghost as string, false)}
+                        >
+                          <X size={13} strokeWidth={2} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </td>
+              ))}
+              <td className="row-tools" />
+            </tr>
+          ))}
           {rows.map((r) => (
             <tr key={r.id}>
               {ordered.map((f) => (
@@ -646,6 +690,21 @@ function OpenButton({ type, row }: { type: DataType; row: DataRow }) {
       {t("db.open")}
     </button>
   );
+}
+
+/** A ghost row's value as text (it is not edited): an option by its name, a check as ✓. */
+function ghostText(f: DataField, v: DataValue | undefined, locale: string): string {
+  if (v === null || v === undefined) return "";
+  if (f.type === "date" && typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v))
+    return new Intl.DateTimeFormat(locale, {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${v}T12:00:00Z`));
+  if (f.type === "select") return f.options?.find((o) => o.id === v)?.name ?? String(v);
+  if (f.type === "checkbox") return v === true ? "✓" : "";
+  return typeof v === "string" || typeof v === "number" ? String(v) : "";
 }
 
 const titleOf = (type: DataType, r: DataRow) => {
@@ -1284,9 +1343,12 @@ function CalendarView({
                 <button
                   key={it.row.id}
                   type="button"
-                  className={`db-cal-item${week ? " tall" : ""}`}
+                  className={`db-cal-item${week ? " tall" : ""}${it.row.ghost ? " ghost" : ""}`}
                   style={{ ["--c" as string]: it.color }}
-                  onClick={() => void openRow(it.type.id, it.row.id)}
+                  title={it.row.ghost ? t("ghost.proposed") : undefined}
+                  onClick={() =>
+                    it.row.ghost ? toggleInbox(true) : void openRow(it.type.id, it.row.id)
+                  }
                 >
                   {it.time && <span className="db-cal-time">{it.time}</span>}
                   <span className="db-cal-text">

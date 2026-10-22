@@ -74,6 +74,13 @@ export function setRowUi(
   store.setSetting(`${ROW_UI}${typeId}`, JSON.stringify(next));
   return next;
 }
+/** A pending proposal drawn as a row (`ghostRows`): its proposal's id, never an entity. */
+export interface GhostRow {
+  id: string;
+  proposal: string;
+  values: Record<string, Value>;
+  updated: number;
+}
 export interface DataRow {
   id: string;
   values: Record<string, Value>;
@@ -210,10 +217,48 @@ export function setRule(
 const ROW_LIMIT = 2000;
 
 /** The rows of a type (the latest changed first), with the titles of what their relations point to. */
+/**
+ * The collection's pending proposals to create an entry, as rows drawn apart (Juan, 2026-10-22: ghost rows): not
+ * entities, so nothing counts them (the AI, totals, charts); the app shows them dashed, accepted or rejected there.
+ * Values come from the proposal's painted rows by field key: what a field cannot take is left out.
+ */
+export function ghostRows(store: UserStore, typeId: string): GhostRow[] {
+  const def = userTypes(store).find((t) => t.id === typeId);
+  if (!def) return [];
+  const out: GhostRow[] = [];
+  for (const p of store.journal.proposals("pending")) {
+    if (p.tool !== "entities.create") continue;
+    const rows = (p.view as { rows?: { arg: string; value?: unknown }[] } | null)?.rows ?? [];
+    const key = String(rows.find((r) => r.arg === "type")?.value ?? "");
+    if (key !== def.key && key !== def.id) continue;
+    const values: Record<string, Value> = {};
+    for (const r of rows) {
+      if (!r.arg.startsWith("values.")) continue;
+      const k = r.arg.slice("values.".length);
+      const f =
+        def.fields.find((x) => x.key === k || x.id === k) ??
+        (k === "title" ? def.fields.find((x) => x.id === def.titleField) : undefined);
+      if (!f || f.hidden) continue;
+      const raw = typeof r.value === "string" ? r.value : r.value == null ? "" : String(r.value);
+      if (!raw) continue;
+      if (f.type === "select") {
+        const o = f.options?.find((x) => x.name === raw || x.id === raw);
+        if (o) values[f.id] = o.id;
+      } else if (f.type === "number") {
+        const n = Number(raw.replace(",", "."));
+        if (Number.isFinite(n)) values[f.id] = n;
+      } else if (f.type === "checkbox") values[f.id] = raw === "true";
+      else if (["text", "longtext", "date", "time", "url"].includes(f.type)) values[f.id] = raw;
+    }
+    out.push({ id: `ghost:${p.id}`, proposal: p.id, values, updated: p.created });
+  }
+  return out;
+}
+
 export function listRows(
   store: UserStore,
   type: string,
-): { rows: DataRow[]; titles: Record<string, string>; truncated: boolean } {
+): { rows: DataRow[]; titles: Record<string, string>; truncated: boolean; ghosts: GhostRow[] } {
   const def = userTypes(store).find((t) => t.id === type);
   if (!def) throw new DataError("not-found");
   const all = store
@@ -238,7 +283,7 @@ export function listRows(
       }
     }
   }
-  return { rows, titles, truncated: all.length > rows.length };
+  return { rows, titles, truncated: all.length > rows.length, ghosts: ghostRows(store, type) };
 }
 
 const writesOf = (

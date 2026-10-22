@@ -4639,3 +4639,45 @@ button.find-row:hover {
     transition: none;
   }
 }
+
+/* Ghost rows (Juan, 2026-10-22): pending proposals drawn with a dashed border, read only, ✓ / ✕ where they are. */
+.ghost-row td {
+  color: var(--muted);
+  border-top: 1px dashed var(--accent);
+  border-bottom: 1px dashed var(--accent);
+}
+.ghost-row td:first-child {
+  border-left: 1px dashed var(--accent);
+}
+.ghost-row td:last-child {
+  border-right: 1px dashed var(--accent);
+}
+.ghost-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 7px 8px;
+  font-size: 14px;
+}
+.ghost-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ghost-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px dashed var(--accent);
+  white-space: nowrap;
+}
+.db-cal-item.ghost {
+  background: transparent;
+  outline: 1.5px dashed var(--accent);
+  outline-offset: -1.5px;
+  color: var(--accent);
+}

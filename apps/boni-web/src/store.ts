@@ -172,7 +172,7 @@ interface State {
   row: DataRow | null;
   /** The open row's text as the page editor's blocks (saved back as Markdown). */
   rowDoc: Page | null;
-  rows: Record<string, { rows: DataRow[]; titles: Record<string, string> }>;
+  rows: Record<string, { rows: DataRow[]; titles: Record<string, string>; ghosts?: DataRow[] }>;
   /** The vault note opened from another app (its path), for the peek's "Abrir en Boni". */
   openedNote: string | null;
   /** How each collection is shown on its own page (this session). */
@@ -1685,6 +1685,13 @@ export async function saveRule(
     );
     return false;
   }
+}
+
+/** A ghost row (a pending proposal) accepted or rejected where it is shown; its collection and the inbox again. */
+export async function decideGhost(type: string, proposal: string, accept: boolean) {
+  if (accept) await acceptProposal(proposal);
+  else await rejectProposal(proposal);
+  await loadRows(type);
 }
 
 export async function loadRows(type: string) {

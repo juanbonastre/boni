@@ -647,3 +647,56 @@ test("live changes: the server says the charts changed, the page loads them agai
     before + 1,
   );
 });
+
+test("ghost rows: a pending proposal drawn dashed in its collection, accepted or rejected there", async ({
+  page,
+}) => {
+  const today = new Date().toISOString().slice(0, 10);
+  await openApp(page, "/?still", {
+    pages: [{ id: "lect", title: "Lecturas", spec: { version: 1, blocks: [] } }],
+    ghosts: [
+      {
+        id: "ghost:pg1",
+        proposal: "pg1",
+        values: { f_titulo: "Leer Rayuela otra vez", f_estado: "o_pendiente", f_fin: today },
+        updated: 9,
+      },
+    ],
+    agent: {
+      "POST api/agent/proposals/:id/accept": [
+        {
+          run: "x",
+          status: "done",
+          replies: [],
+          pending: null,
+          proposals: [],
+          notices: [],
+          error: null,
+        },
+      ],
+    },
+  });
+  await page.locator(".doc-tail").click();
+  await page.keyboard.type("/libros", { delay: 15 });
+  await page.keyboard.press("Enter");
+  const db = page.locator(".db");
+  // Apart from the three books: dashed, read only, "Propuesta", ✓ and ✕.
+  await expect(db.locator(".db-table tbody tr.ghost-row")).toHaveCount(1);
+  await expect(db.locator(".db-table tbody tr:not(.ghost-row)")).toHaveCount(3);
+  const ghost = db.locator("tr.ghost-row");
+  await expect(ghost).toContainText("Leer Rayuela otra vez");
+  await expect(ghost).toContainText("Pendiente");
+  await expect(ghost).toContainText("Propuesta");
+  await page.screenshot({ path: `${SHOTS}/db-ghost.png` });
+  // In the calendar layout too, dashed.
+  await db.getByRole("radio", { name: "Calendario" }).click();
+  await expect(db.locator(".db-cal-item.ghost")).toContainText("Leer Rayuela otra vez");
+  await db.getByRole("radio", { name: "Tabla" }).click();
+  await ghost.getByRole("button", { name: /^Aceptar/ }).click();
+  await expect(db.locator(".db-table tbody tr.ghost-row")).toHaveCount(0);
+  expect(
+    (await recorded(page)).requests.some((r) =>
+      r.startsWith("POST api/agent/proposals/pg1/accept"),
+    ),
+  ).toBe(true);
+});

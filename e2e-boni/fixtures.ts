@@ -32,6 +32,8 @@ export interface Options {
   /** The account's pages (`/api/pages`, kept in memory as the server would); null: a server without
    * them. By default one page as the first Boni's home becomes (`PAGE_FROM_HOME`). */
   pages?: FakePage[] | null;
+  /** Pending proposals of Libros drawn as ghost rows (`{ id, proposal, values }`); deciding one takes it out. */
+  ghosts?: { id: string; proposal: string; values: Record<string, unknown>; updated: number }[];
 }
 
 export interface FakePage {
@@ -92,6 +94,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         layerAvailable: true,
       };
       const agentCalls: Record<string, number> = {};
+      let ghosts = opts.ghosts ?? [];
       // The inbox as the server keeps it: accepting or rejecting a proposal takes it out.
       let inbox = (
         opts.agent?.["GET api/agent/proposals"]?.[0] as { proposals: { id: string }[] } | undefined
@@ -218,7 +221,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           return [200, JSON.stringify({ id: t.id, level: t.level })];
         }
         if (p === "api/data/types/t_libro/rows" && method === "GET")
-          return [200, JSON.stringify({ rows, titles: {}, truncated: false })];
+          return [200, JSON.stringify({ rows, titles: {}, truncated: false, ghosts })];
         if (p === "api/data/types/t_libro/rows") {
           const row = { id: `n${++rowSeq}`, values: { ...(b.values ?? {}) }, updated: Date.now() };
           rows = [row, ...rows];
@@ -264,6 +267,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           return [200, JSON.stringify({ proposals: inbox })];
         const decided = /^api\/agent\/proposals\/([^/]+)\//.exec(p);
         if (decided && inbox) inbox = inbox.filter((x) => x.id !== decided[1]);
+        if (decided) ghosts = ghosts.filter((g) => g.proposal !== decided[1]);
         if (p.startsWith("api/agent/") || p === "api/mail" || p.startsWith("api/mail/")) {
           const key = `${method} ${p
             .replace(/\/proposals\/[^/]+\//, "/proposals/:id/")
