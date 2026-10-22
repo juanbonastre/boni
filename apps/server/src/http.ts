@@ -9,6 +9,7 @@ import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth
 import {
   createRow,
   DataError,
+  findByPath,
   getRow,
   listRows,
   listTypes,
@@ -283,6 +284,8 @@ export function makeApp(opts: ServerOptions): App {
             row: createRow(store, params.type ?? "", b.values ?? {}, s.device),
           });
         }
+        if (route === "GET /api/data/lookup")
+          return send(res, 200, findByPath(store, url.searchParams.get("path") ?? ""));
         if (route === "GET /api/data/rows/:id")
           return send(res, 200, { row: getRow(store, params.id ?? "") });
         if (route === "PUT /api/data/rows/:id") {

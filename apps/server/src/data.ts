@@ -235,6 +235,20 @@ export function createRow(store: UserStore, type: string, values: unknown, devic
   }
 }
 
+/**
+ * The row a vault note became (Boni Calendar's "Abrir en Boni": its rows are the vault's notes, by path), found
+ * by the hidden path the import keeps.
+ */
+export function findByPath(store: UserStore, path: string): { type: string; id: string } {
+  if (!path || path.length > 500) throw new DataError("not-found");
+  for (const t of userTypes(store)) {
+    if (!t.fields.some((f) => f.id === PATH_FIELD)) continue;
+    const e = store.list(t.id).find((x) => x.entity.values[PATH_FIELD] === path);
+    if (e) return { type: t.id, id: e.entity.id };
+  }
+  throw new DataError("not-found");
+}
+
 /** One row with its body (a row opened as a page). */
 export function getRow(store: UserStore, id: string): DataRow & { type: string } {
   const e = store.get(id);

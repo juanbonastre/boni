@@ -792,6 +792,26 @@ export class AgentApi {
     void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/data/rows"));
   restoreRow = async (id: string) =>
     void (await this.call("POST", `/${encodeURIComponent(id)}/restore`, {}, "api/data/rows"));
+  /** The row a vault note became (Boni Calendar's "Abrir en Boni"), or null. */
+  lookupNote = async (path: string): Promise<{ type: string; id: string } | null> => {
+    // Every character that is not a letter or a digit escaped: the desktop app passes only plain query strings.
+    const q = [...new TextEncoder().encode(path)]
+      .map((b) =>
+        /[A-Za-z0-9]/.test(String.fromCharCode(b))
+          ? String.fromCharCode(b)
+          : `%${b.toString(16).toUpperCase().padStart(2, "0")}`,
+      )
+      .join("");
+    try {
+      const b = await this.call("GET", `?path=${q}`, undefined, "api/data/lookup");
+      return isObj(b) && typeof b.type === "string" && typeof b.id === "string"
+        ? { type: b.type, id: b.id }
+        : null;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+  };
   /** A part of a collection with its own level: added (no id), changed or removed. */
   saveRule = async (
     type: string,

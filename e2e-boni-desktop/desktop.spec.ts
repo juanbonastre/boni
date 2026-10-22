@@ -1,5 +1,6 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -273,4 +274,35 @@ test("a part of a collection with its own level: a rule made from Notion's filte
   await expect(dialog.locator(".rule-row")).toContainText("Restringida");
   await w.keyboard.press("Escape");
   await expect(w.locator(".col-protect .protect-pill")).toContainText("+1");
+});
+
+test("a boni:// link (Boni Calendar's \"Abrir en Boni\") opens the note's row in the running app", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
+  // A second start with the link, as the system does: it hands the link to this one and leaves.
+  const note = `agenda/docencia/${iso(today)} Clase de ejemplo.md`;
+  const bin = process.env.BONI_DESKTOP_BIN;
+  const electronBin =
+    bin ??
+    (createRequire(join(ROOT, "apps", "boni-desktop", "package.json"))("electron") as string);
+  execFileSync(
+    electronBin,
+    [
+      ...(bin ? [] : ["."]),
+      `--user-data-dir=${join(dir, "electron")}`,
+      `boni://note?path=${encodeURIComponent(note)}`,
+    ],
+    {
+      cwd: join(ROOT, "apps", "boni-desktop"),
+      env: {
+        ...process.env,
+        XDG_CONFIG_HOME: join(dir, "config"),
+        XDG_DATA_HOME: join(dir, "data"),
+        TMPDIR: join(dir, "tmp"),
+      },
+      timeout: 20_000,
+    },
+  );
+  await expect(w.locator(".row-body")).toHaveValue(/Preparar los ejercicios del tema 3/);
+  await expect(w.locator(".topbar")).toContainText("Clase de ejemplo");
 });

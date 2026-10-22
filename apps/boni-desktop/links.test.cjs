@@ -1,0 +1,27 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { linkIn, screenOfUrl } = require("./links.cjs");
+
+test("a boni:// link opens a vault note's row, nothing else", () => {
+  const p = encodeURIComponent("agenda/docencia/2026-10-22 Clase de ejemplo.md");
+  assert.equal(
+    screenOfUrl(`boni://note?path=${p}`),
+    "note:agenda/docencia/2026-10-22 Clase de ejemplo.md",
+  );
+  for (const bad of [
+    "boni://note?path=..%2Fsecreto.md",
+    "boni://note?path=%2Fetc%2Fpasswd.md",
+    "boni://note?path=a%2Fb.txt",
+    "boni://note",
+    "boni://settings?x=1",
+    "https://example.com/?path=a.md",
+    "no es una url",
+    "boni://note?path=a%0Ab.md",
+  ])
+    assert.equal(screenOfUrl(bad), null, bad);
+});
+
+test("finds the link among the arguments of a start", () => {
+  assert.equal(linkIn(["/opt/Boni/boni", "--background"]), undefined);
+  assert.equal(linkIn(["/opt/Boni/boni", "boni://note?path=a.md"]), "boni://note?path=a.md");
+});

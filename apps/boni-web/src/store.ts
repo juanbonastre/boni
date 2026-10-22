@@ -360,7 +360,8 @@ export async function init(role: "main" | "widget", h: Host = defaultHost) {
 
 /** What the tray, a widget or a phone's launcher shortcut asks the main window to show. */
 export function navigate(screen: string) {
-  if (screen === "settings") openSettings();
+  if (screen.startsWith("note:")) void openNoteAt(screen.slice(5));
+  else if (screen === "settings") openSettings();
   else if (screen === "capture") openScreen(CAPTURE_SCREEN);
   else if (screen.startsWith("shortcut:")) {
     const sc = get().shortcuts.find((x) => x.id === screen.slice(9));
@@ -1712,6 +1713,17 @@ export async function deleteRow(type: string, id: string) {
     });
   } catch {
     toast(t("db.saveError"));
+  }
+}
+
+/** A vault note opened from another app (Boni Calendar's "Abrir en Boni"): the row it became, as a page. */
+export async function openNoteAt(path: string) {
+  try {
+    const at = await agent.lookupNote(path);
+    if (at) return void (await openRow(at.type, at.id));
+    toast(get().t("note.notFound"));
+  } catch {
+    toast(get().t("note.offline"));
   }
 }
 
