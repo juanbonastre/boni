@@ -249,3 +249,28 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
   await w.locator(".protect-menu").getByRole("menuitemradio", { name: "Privada" }).click();
   await expect(row.locator(".protect-pill")).toHaveText("Privada");
 });
+
+test("a part of a collection with its own level: a rule made from Notion's filter", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
+  await w.getByRole("button", { name: "Abrir Docencia" }).click();
+  await w.locator(".col-protect .protect-pill").click();
+  await w
+    .locator(".protect-menu")
+    .getByRole("menuitemradio", { name: /Una parte con otro nivel/ })
+    .click();
+  const dialog = w.getByRole("dialog", { name: /Partes de «Docencia»/ });
+  await expect(dialog).toContainText("Ninguna regla");
+  await dialog.getByRole("button", { name: "Añadir regla" }).click();
+  await dialog.getByRole("combobox", { name: "Propiedad" }).selectOption({ label: "Título" });
+  await dialog.getByRole("combobox", { name: "Condición" }).selectOption({ label: "contiene" });
+  await dialog.getByRole("textbox", { name: "Valor" }).fill("Tutoría");
+  await dialog.locator(".rule-level select").selectOption("restricted");
+  await shot(w, "rule");
+  await dialog.getByRole("button", { name: "Guardar regla" }).click();
+  await expect(dialog.locator(".rule-row")).toHaveCount(1);
+  await expect(dialog.locator(".rule-row")).toContainText("Título contiene Tutoría");
+  await expect(dialog.locator(".rule-row")).toContainText("Restringida");
+  await w.keyboard.press("Escape");
+  await expect(w.locator(".col-protect .protect-pill")).toContainText("+1");
+});

@@ -161,6 +161,16 @@ export const MIGRATIONS = [
      ON CONFLICT (type) DO UPDATE SET level = excluded.level, at = excluded.at, by = excluded.by;
    DROP TABLE ai_access;
    ALTER TABLE ai_access_new RENAME TO ai_access;`,
+  // 7: a part of a collection with its own level (Juan, 2026-10-22): the rows that match a filter (Notion's
+  // rules, as JSON) are seen by the models at that level instead of the collection's.
+  `CREATE TABLE ai_rules (
+     id TEXT PRIMARY KEY,
+     type TEXT NOT NULL,
+     filter TEXT NOT NULL,
+     level TEXT NOT NULL CHECK (level IN ('visible', 'opaque', 'restricted', 'private')),
+     at INTEGER NOT NULL,
+     by TEXT
+   );`,
 ];
 
 export function migrate(db: DatabaseSync): void {

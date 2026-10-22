@@ -8,7 +8,16 @@ import {
   plannerMaySee,
   type TypeDef,
 } from "@boni/entities";
-import { BODY, closedToAi, type StoredEntity, StoreError, type UserStore } from "@boni/store";
+import {
+  type AiLevel,
+  BODY,
+  closedToAi,
+  levelRank,
+  type StoredEntity,
+  StoreError,
+  type UserStore,
+} from "@boni/store";
+import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
 import {
   asKey,
   codeLabel,
@@ -630,19 +639,50 @@ export interface CapsContext {
 
 const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "external";
 
-/** The read-only view: nothing that writes, nothing of the journal. */
 /**
- * The read-only view, as the models may see it (Juan's choice per type, `store.aiAccess()`, read on every
- * call so a change applies at once): a `restricted` or `private` type does not exist here (not in the schema, its entities
- * not found, not in a search); an `opaque` type is there, but every value of its entities carries
- * `noModel`, so the planner gets handles, no reader gets them, and only code computes with them.
+ * The read-only view, as the models may see it (Juan's choice, read on every call so a change applies at once).
+ * Each entity has a level: its collection's (`store.aiAccess()`), or, when it matches one of the collection's
+ * rules (`store.aiRules()`, Notion's filters), the most closed of the rules it matches. A `restricted` or
+ * `private` entity does not exist here (not found, not listed, not in a search), and a collection whose every
+ * row is closed is not in the schema; an `opaque` one is there, but every value carries `noModel`, so the planner
+ * gets handles, no reader gets them, and only code computes with them. A rule that closes and cannot be read
+ * (a field gone, a bad shape) closes every row; one that opens and cannot be read opens nothing.
  */
-export function readStore(store: UserStore): ReadStore {
-  const levels = () => store.aiAccess();
+export function readStore(store: UserStore, now: () => number = Date.now): ReadStore {
   const kept = (l: Label | undefined): Label => ({ ...(l ?? codeLabel("store")), noModel: true });
-  const asSeen = (s: StoredEntity | null, lv = levels()): StoredEntity | null => {
+  const snapshot = () => ({
+    levels: store.aiAccess(),
+    rules: store.aiRules(),
+    types: store.schema().types,
+    today: new Date(now()).toISOString().slice(0, 10),
+  });
+  type Snap = ReturnType<typeof snapshot>;
+  const levelOf = (s: StoredEntity, v: Snap): AiLevel => {
+    const typeLevel = v.levels[s.entity.type] ?? "visible";
+    const mine = v.rules.filter((r) => r.type === s.entity.type);
+    if (!mine.length) return typeLevel;
+    const def = v.types[s.entity.type];
+    const typeOf = (id: string) => def?.fields.find((f) => f.id === id)?.type;
+    let out: AiLevel | null = null;
+    for (const r of mine) {
+      const closes = levelRank(r.level) > levelRank(typeLevel);
+      const ok = filterErrors(r.filter).length === 0;
+      const hit = ok
+        ? matchesFilters(
+            s.entity.values,
+            typeOf,
+            r.filter as DatabaseFilter[],
+            v.today,
+            closes ? "match" : "fail",
+          )
+        : closes;
+      if (hit && (out === null || levelRank(r.level) > levelRank(out))) out = r.level;
+    }
+    return out ?? typeLevel;
+  };
+  const asSeen = (s: StoredEntity | null, v: Snap = snapshot()): StoredEntity | null => {
     if (!s) return null;
-    const level = lv[s.entity.type] ?? "visible";
+    const level = levelOf(s, v);
     if (closedToAi(level)) return null;
     if (level === "visible") return s;
     const labels: Record<string, Label> = {};
@@ -650,30 +690,35 @@ export function readStore(store: UserStore): ReadStore {
       labels[k] = kept(s.labels[k]);
     return { ...s, labels };
   };
+  /** A collection is there unless it and every rule of it are closed. */
+  const typeShown = (type: string, v: Snap) =>
+    !closedToAi(v.levels[type]) || v.rules.some((r) => r.type === type && !closedToAi(r.level));
   return {
     schema: () => {
-      const lv = levels();
-      const all = store.schema();
+      const v = snapshot();
       return {
-        types: Object.fromEntries(Object.entries(all.types).filter(([id]) => !closedToAi(lv[id]))),
+        types: Object.fromEntries(Object.entries(v.types).filter(([id]) => typeShown(id, v))),
       };
     },
     get: (id) => asSeen(store.get(id)),
     list: (type) => {
-      const lv = levels();
-      if (closedToAi(lv[type])) return [];
-      return store.list(type).map((s) => asSeen(s, lv) as StoredEntity);
+      const v = snapshot();
+      if (!typeShown(type, v)) return [];
+      return store.list(type).flatMap((s) => {
+        const seen = asSeen(s, v);
+        return seen ? [seen] : [];
+      });
     },
     search: (text, o) => {
-      const lv = levels();
-      if (o?.type && closedToAi(lv[o.type])) return [];
-      return store.search(text, o).filter((id) => asSeen(store.get(id), lv) !== null);
+      const v = snapshot();
+      if (o?.type && !typeShown(o.type, v)) return [];
+      return store.search(text, o).filter((id) => asSeen(store.get(id), v) !== null);
     },
   };
 }
 
 export function makeCaps(c: CapsContext): Caps {
-  const ro = readStore(c.store);
+  const ro = readStore(c.store, c.now);
   const meta = { actor: "agent" as const, run: c.run, ...(c.device ? { device: c.device } : {}) };
   const toWrites = (def: TypeDef, values: Val, extra: Label) => {
     if (values.t !== "rec") throw new ToolError("values-not-a-record");

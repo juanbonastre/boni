@@ -1,5 +1,6 @@
 import { type FieldDef, label, type Value } from "@boni/entities";
 import { AI_LEVELS, type AiLevel, BODY, StoreError, type UserStore, type Zone } from "@boni/store";
+import { filterErrors } from "@boni/views";
 
 /**
  * The user's collections as Notion's databases (docs/nucleo.md plan PR 19): their types and fields, their
@@ -26,6 +27,8 @@ export interface DataType {
   level: AiLevel;
   /** The vault zone it came from, if any. */
   zone?: Zone;
+  /** Parts of it with their own level (Notion's filters). */
+  rules: { id: string; filter: unknown[]; level: AiLevel }[];
 }
 export interface DataRow {
   id: string;
@@ -64,6 +67,7 @@ const userTypes = (store: UserStore) =>
 export function listTypes(store: UserStore): DataType[] {
   const zones = store.zones();
   const levels = store.aiAccess();
+  const rules = store.aiRules();
   return userTypes(store)
     .map((t) => ({
       id: t.id,
@@ -84,6 +88,9 @@ export function listTypes(store: UserStore): DataType[] {
       count: store.list(t.id).length,
       level: levels[t.id] ?? "visible",
       ...(zones[t.id] ? { zone: zones[t.id] } : {}),
+      rules: rules
+        .filter((r) => r.type === t.id)
+        .map((r) => ({ id: r.id, filter: r.filter, level: r.level })),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }
@@ -110,6 +117,49 @@ export function setProtection(
     throw e;
   }
   return { id: type.id, level };
+}
+
+/**
+ * A part of a collection with its own level: adds (no `ruleId`), changes or (`remove`) deletes a rule. The filter
+ * is Notion's, on the collection's own fields. Whatever would lower something private needs `unlock`, which the
+ * app sends only from the collection's own page.
+ */
+export function setRule(
+  store: UserStore,
+  at: { type?: string; ruleId?: string },
+  body: Record<string, unknown>,
+  device: string,
+  remove = false,
+): { id: string } | { status: number; error: string } {
+  const unlock = body.unlock === true;
+  const was = at.ruleId ? store.aiRules().find((r) => r.id === at.ruleId) : undefined;
+  if (at.ruleId && !was) return { status: 404, error: "not-found" };
+  const typeId = was?.type ?? at.type ?? "";
+  const type = store.schema().types[typeId];
+  if (!type || type.system) return { status: 404, error: "not-found" };
+  try {
+    if (remove && was) {
+      store.removeAiRule(was.id, device, { unlock });
+      return { id: was.id };
+    }
+    const level = body.level as AiLevel;
+    if (!AI_LEVELS.includes(level)) return { status: 400, error: "bad-level" };
+    const filter = body.filter;
+    if (!Array.isArray(filter) || !filter.length || filterErrors(filter).length)
+      return { status: 400, error: "bad-filter" };
+    const fields = new Set(type.fields.map((f) => f.id));
+    if (!filter.every((r) => fields.has((r as { field: string }).field)))
+      return { status: 400, error: "bad-filter" };
+    const id = store.setAiRule(
+      { ...(was ? { id: was.id } : {}), type: type.id, filter, level },
+      device,
+      { unlock },
+    );
+    return { id };
+  } catch (e) {
+    if (e instanceof StoreError && e.code === "locked") return { status: 409, error: "locked" };
+    throw e;
+  }
 }
 
 const ROW_LIMIT = 2000;

@@ -1,3 +1,5 @@
+import { filterErrors } from "./filter.ts";
+
 /**
  * A page (docs/extensiones.md 6, the Lienzo; docs/nucleo.md 8): what the user puts on it, as a list of blocks
  * from a closed catalogue. The app paints each block with its own components; nothing in a page is code, a
@@ -201,20 +203,7 @@ export function pageErrors(spec: unknown): string[] {
           !v ||
           !only(v, ["layout", "group", "date", "sort", "hide", "also", "span", "filter"]) ||
           (v.span !== undefined && v.span !== "month" && v.span !== "week") ||
-          (v.filter !== undefined &&
-            (!Array.isArray(v.filter) ||
-              v.filter.length > 20 ||
-              !v.filter.every(
-                (r) =>
-                  isObj(r) &&
-                  only(r, ["field", "op", "value"]) &&
-                  typeof r.field === "string" &&
-                  ID.test(r.field) &&
-                  (FILTER_OPS as readonly unknown[]).includes(r.op) &&
-                  (r.value === undefined ||
-                    (typeof r.value === "string" && r.value.length <= 200) ||
-                    (typeof r.value === "number" && Number.isFinite(r.value))),
-              ))) ||
+          (v.filter !== undefined && filterErrors(v.filter).length > 0) ||
           (v.also !== undefined &&
             (!Array.isArray(v.also) || v.also.length > 10 || !v.also.every((f) => okField(f)))) ||
           !(DATABASE_LAYOUTS as readonly unknown[]).includes(v.layout) ||

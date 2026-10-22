@@ -4050,6 +4050,60 @@ button.find-row:hover {
   background: var(--accent-soft, var(--hover));
   color: var(--text);
 }
+.protect-pill.static {
+  cursor: default;
+}
+.protect-rules {
+  color: var(--muted);
+  font-size: 11px;
+}
+.rules-box {
+  gap: 10px;
+  width: min(620px, calc(100cqw - 32px));
+}
+.rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--line);
+}
+.rule-when {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.rule-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.rule-label {
+  margin: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.rule-editor .db-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 16px;
+}
 .protect-menu {
   display: flex;
   flex-direction: column;

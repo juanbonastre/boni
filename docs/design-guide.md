@@ -253,7 +253,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   where to unlock it; on the collection's own page (Colecciones → the collection) "Desbloquear…" opens a dialog
   that asks for the new level and its name typed. **Colecciones** (sidebar): every collection in a table (name,
   items, what the AI sees, origin), a search and chips by level with their counts; a name opens the collection on a
-  page of its own, the database without repeating its name. An attachment is a small chip "Abrir archivo"
+  page of its own, the database without repeating its name. "Una parte con otro nivel…" (in the pill's menu) opens
+  the collection's rules: each is Notion's filter editor and a level, listed in words ("Título contiene Tutoría ·
+  Restringida"); the pill shows "+N" when there are rules. Whatever would lower something private asks for the
+  collection's name, and only on its own page. An attachment is a small chip "Abrir archivo"
   with a clip (never a link): the desktop app opens it with the system's viewer, a browser downloads it; a kind no
   viewer opens is shown in its folder, with a toast saying so.
 - **More of Notion** (2026-10-22): blocks numbered list (numbers follow on), toggle (its line folds the blocks

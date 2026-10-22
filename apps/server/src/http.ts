@@ -15,6 +15,7 @@ import {
   removeRow,
   restoreRow,
   setProtection,
+  setRule,
   updateRow,
 } from "./data.ts";
 import type { Db } from "./db.ts";
@@ -300,6 +301,20 @@ export function makeApp(opts: ServerOptions): App {
         }
         if (route === "PUT /api/data/types/:type/protection") {
           const r = setProtection(store, params.type ?? "", await bodyOf(req), s.device);
+          return "error" in r ? send(res, r.status, { error: r.error }) : send(res, 200, r);
+        }
+        if (
+          route === "POST /api/data/types/:type/rules" ||
+          route === "PUT /api/data/rules/:id" ||
+          route === "DELETE /api/data/rules/:id"
+        ) {
+          const r = setRule(
+            store,
+            route.startsWith("POST") ? { type: params.type } : { ruleId: params.id },
+            await bodyOf(req),
+            s.device,
+            route.startsWith("DELETE"),
+          );
           return "error" in r ? send(res, r.status, { error: r.error }) : send(res, 200, r);
         }
         if (route === "GET /api/data/files/:sha") {

@@ -1,4 +1,4 @@
-import type { DatabaseFilter, DatabaseView } from "@boni/views";
+import { type DatabaseFilter, type DatabaseView, matchesFilters } from "@boni/views";
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { DataField, DataRow, DataType, DataValue } from "../core/agent.ts";
+import type { T } from "../i18n.ts";
 import {
   addRow,
   deleteRow,
@@ -179,12 +180,6 @@ export function DatabaseBlock({
   );
 }
 
-const fold = (v: unknown) =>
-  String(v ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-
 /** Notion's filter: the rows that match every rule (a rule on a field that is gone is left out). */
 export function filterRows(
   rows: DataRow[],
@@ -193,58 +188,12 @@ export function filterRows(
 ): DataRow[] {
   if (!type || !rules?.length) return rows;
   const today = ymd(new Date());
-  const checks = rules.flatMap((r) => {
-    const f = type.fields.find((x) => x.id === r.field);
-    if (!f) return [];
-    const want = r.value === "today" ? today : r.value;
-    return [
-      (row: DataRow) => {
-        const v = row.values[f.id];
-        const empty = v == null || v === "" || (Array.isArray(v) && v.length === 0);
-        const num =
-          typeof v === "number"
-            ? v
-            : v && typeof v === "object" && !Array.isArray(v)
-              ? v.amount
-              : NaN;
-        switch (r.op) {
-          case "empty":
-            return empty;
-          case "not_empty":
-            return !empty;
-          case "checked":
-            return v === true;
-          case "unchecked":
-            return v !== true;
-          case "contains":
-            return Array.isArray(v) ? v.includes(String(want)) : fold(v).includes(fold(want));
-          case "not_contains":
-            return Array.isArray(v) ? !v.includes(String(want)) : !fold(v).includes(fold(want));
-          case "is":
-            return typeof v === "number"
-              ? v === Number(want)
-              : fold(v).slice(0, f.type === "datetime" ? 10 : undefined) === fold(want);
-          case "is_not":
-            return typeof v === "number" ? v !== Number(want) : fold(v) !== fold(want);
-          case "before":
-            return typeof v === "string" && v.slice(0, 10) < String(want);
-          case "after":
-            return typeof v === "string" && v.slice(0, 10) > String(want);
-          case "gt":
-            return num > Number(want);
-          case "lt":
-            return num < Number(want);
-          default:
-            return true;
-        }
-      },
-    ];
-  });
-  return rows.filter((row) => checks.every((c) => c(row)));
+  const typeOf = (id: string) => type.fields.find((x) => x.id === id)?.type;
+  return rows.filter((row) => matchesFilters(row.values, typeOf, rules, today));
 }
 
 /** The operators that fit a field, as Notion offers them. */
-function opsFor(f: DataField): DatabaseFilter["op"][] {
+export function opsFor(f: DataField): DatabaseFilter["op"][] {
   switch (f.type) {
     case "number":
     case "money":
@@ -281,9 +230,6 @@ function FilterButton({
 }) {
   const t = useStore((s) => s.t);
   const rules = view.filter ?? [];
-  const put = (next: DatabaseFilter[]) =>
-    onView({ ...view, filter: next.length ? next : undefined });
-  const fields = type.fields;
   return (
     <PopButton
       className={`btn ghost small${rules.length ? " on" : ""}`}
@@ -293,71 +239,108 @@ function FilterButton({
     >
       {() => (
         <div className="pop-section db-filters">
-          {rules.length === 0 && <p className="muted small">{t("db.noFilter")}</p>}
-          {rules.map((r, i) => {
-            const f = fields.find((x) => x.id === r.field);
-            const ops = f ? opsFor(f) : [];
-            const set = (patch: Partial<DatabaseFilter>) =>
-              put(rules.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-            return (
-              <div key={`${r.field}-${i}`} className="db-filter-row">
-                <select
-                  className="input"
-                  aria-label={t("db.filterField")}
-                  value={r.field}
-                  onChange={(e) => {
-                    const nf = fields.find((x) => x.id === e.target.value);
-                    if (nf) set({ field: nf.id, op: opsFor(nf)[0] ?? "is", value: undefined });
-                  }}
-                >
-                  {fields.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="input"
-                  aria-label={t("db.filterOp")}
-                  value={r.op}
-                  onChange={(e) => set({ op: e.target.value as DatabaseFilter["op"] })}
-                >
-                  {ops.map((o) => (
-                    <option key={o} value={o}>
-                      {t(`db.ops.${o}`)}
-                    </option>
-                  ))}
-                </select>
-                {!NO_VALUE.has(r.op) && f && (
-                  <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />
-                )}
-                <button
-                  type="button"
-                  className="icon-btn tiny"
-                  aria-label={t("db.filterRemove")}
-                  title={t("db.filterRemove")}
-                  onClick={() => put(rules.filter((_, j) => j !== i))}
-                >
-                  <Trash2 size={13} strokeWidth={1.8} />
-                </button>
-              </div>
-            );
-          })}
-          <button
-            type="button"
-            className="btn ghost small"
-            onClick={() => {
-              const f = fields[0];
-              if (f) put([...rules, { field: f.id, op: opsFor(f)[0] ?? "contains" }]);
-            }}
-          >
-            <Plus size={14} strokeWidth={1.8} />
-            {t("db.filterAdd")}
-          </button>
+          <FilterEditor
+            type={type}
+            rules={rules}
+            onChange={(next) => onView({ ...view, filter: next.length ? next : undefined })}
+          />
         </div>
       )}
     </PopButton>
   );
+}
+
+/** Notion's filter rules, edited: a field, an operator that fits it, a value; add and remove. */
+export function FilterEditor({
+  type,
+  rules,
+  onChange,
+}: {
+  type: DataType;
+  rules: DatabaseFilter[];
+  onChange: (next: DatabaseFilter[]) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const put = onChange;
+  const fields = type.fields;
+  return (
+    <>
+      {rules.length === 0 && <p className="muted small">{t("db.noFilter")}</p>}
+      {rules.map((r, i) => {
+        const f = fields.find((x) => x.id === r.field);
+        const ops = f ? opsFor(f) : [];
+        const set = (patch: Partial<DatabaseFilter>) =>
+          put(rules.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+        return (
+          <div key={`${r.field}-${i}`} className="db-filter-row">
+            <select
+              className="input"
+              aria-label={t("db.filterField")}
+              value={r.field}
+              onChange={(e) => {
+                const nf = fields.find((x) => x.id === e.target.value);
+                if (nf) set({ field: nf.id, op: opsFor(nf)[0] ?? "is", value: undefined });
+              }}
+            >
+              {fields.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="input"
+              aria-label={t("db.filterOp")}
+              value={r.op}
+              onChange={(e) => set({ op: e.target.value as DatabaseFilter["op"] })}
+            >
+              {ops.map((o) => (
+                <option key={o} value={o}>
+                  {t(`db.ops.${o}`)}
+                </option>
+              ))}
+            </select>
+            {!NO_VALUE.has(r.op) && f && (
+              <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />
+            )}
+            <button
+              type="button"
+              className="icon-btn tiny"
+              aria-label={t("db.filterRemove")}
+              title={t("db.filterRemove")}
+              onClick={() => put(rules.filter((_, j) => j !== i))}
+            >
+              <Trash2 size={13} strokeWidth={1.8} />
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="btn ghost small"
+        onClick={() => {
+          const f = fields[0];
+          if (f) put([...rules, { field: f.id, op: opsFor(f)[0] ?? "contains" }]);
+        }}
+      >
+        <Plus size={14} strokeWidth={1.8} />
+        {t("db.filterAdd")}
+      </button>
+    </>
+  );
+}
+
+/** A filter rule in words: "Categoría es Salud", "Fecha antes de hoy". */
+export function filterText(type: DataType, r: DatabaseFilter, t: T): string {
+  const f = type.fields.find((x) => x.id === r.field);
+  if (!f) return t("db.gone");
+  const value =
+    NO_VALUE.has(r.op) || r.value === undefined
+      ? ""
+      : r.value === "today"
+        ? t("db.today")
+        : (f.options?.find((o) => o.id === r.value)?.name ?? String(r.value));
+  return [f.name, t(`db.ops.${r.op}`), value].filter(Boolean).join(" ");
 }
 
 function FilterValue({

@@ -60,6 +60,16 @@ const LEVEL_RANK: Record<AiLevel, number> = { visible: 0, opaque: 1, restricted:
 export const closedToAi = (level: AiLevel | undefined) =>
   level === "restricted" || level === "private";
 
+/** A part of a collection with its own level: the rows that match `filter` (Notion's rules, every one). */
+export interface AiRule {
+  id: string;
+  type: TypeId;
+  /** DatabaseFilter[] (checked by the caller with @boni/views' `filterErrors`). */
+  filter: unknown[];
+  level: AiLevel;
+}
+export const levelRank = (l: AiLevel | undefined) => LEVEL_RANK[l ?? "visible"];
+
 /** The vault's zones, where a collection came from; each starts at the level of the same name. */
 export type Zone = "restricted" | "private";
 const ZONE_RANK: Record<Zone, number> = { restricted: 1, private: 2 };
@@ -154,6 +164,19 @@ export interface UserStore {
   aiAccess(): Record<TypeId, AiLevel>;
   /** Lowering a `private` type needs `unlock` (StoreError "locked" otherwise). */
   setAiAccess(type: TypeId, level: AiLevel, by: string, opts?: { unlock?: boolean }): void;
+  /** The rules that give a part of a collection its own level, oldest first. */
+  aiRules(): AiRule[];
+  /**
+   * Adds (no `id`) or changes a rule. Needs `unlock` when it would lower something private: a private rule made
+   * less closed, or a rule that opens part of a private collection.
+   */
+  setAiRule(
+    rule: Omit<AiRule, "id"> & { id?: string },
+    by: string,
+    opts?: { unlock?: boolean },
+  ): string;
+  /** Removes a rule; a private one only with `unlock`. */
+  removeAiRule(id: string, by: string, opts?: { unlock?: boolean }): void;
   /** The types that came from a vault zone. */
   zones(): Record<TypeId, Zone>;
   /** Marks a type as from a zone (only the import Juan runs) and raises its level to the zone's, never lowers it. */
@@ -717,6 +740,56 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       for (const r of db.prepare("SELECT type, level FROM ai_access").all())
         out[r.type as string] = r.level as AiLevel;
       return out;
+    },
+    aiRules() {
+      return db
+        .prepare("SELECT id, type, filter, level FROM ai_rules ORDER BY at, id")
+        .all()
+        .map((r) => ({
+          id: r.id as string,
+          type: r.type as string,
+          filter: JSON.parse(r.filter as string) as unknown[],
+          level: r.level as AiLevel,
+        }));
+    },
+    setAiRule(rule, by, opts = {}) {
+      if (!AI_LEVELS.includes(rule.level))
+        throw new StoreError("invalid", `bad level ${rule.level}`);
+      if (!Array.isArray(rule.filter) || !rule.filter.length || rule.filter.length > 20)
+        throw new StoreError("invalid", "a rule needs 1 to 20 conditions");
+      if (!fresh().types[rule.type]) throw new StoreError("not-found", `no type ${rule.type}`);
+      const was = rule.id
+        ? (db.prepare("SELECT type, level FROM ai_rules WHERE id = ?").get(rule.id) as
+            | { type: string; level: AiLevel }
+            | undefined)
+        : undefined;
+      if (rule.id && (!was || was.type !== rule.type))
+        throw new StoreError("not-found", `no rule ${rule.id}`);
+      const typeLevel = (
+        db.prepare("SELECT level FROM ai_access WHERE type = ?").get(rule.type) as
+          | { level: AiLevel }
+          | undefined
+      )?.level;
+      const lowers =
+        (was?.level === "private" && rule.level !== "private") ||
+        (typeLevel === "private" && rule.level !== "private");
+      if (lowers && !opts.unlock)
+        throw new StoreError("locked", "it would lower something private: only an unlock does");
+      const id = rule.id ?? `r${newId("o", now()).slice(1)}`;
+      db.prepare(
+        "INSERT INTO ai_rules (id, type, filter, level, at, by) VALUES (?, ?, ?, ?, ?, ?) " +
+          "ON CONFLICT (id) DO UPDATE SET filter = excluded.filter, level = excluded.level, by = excluded.by",
+      ).run(id, rule.type, JSON.stringify(rule.filter), rule.level, now(), by);
+      return id;
+    },
+    removeAiRule(id, _by, opts = {}) {
+      const was = db.prepare("SELECT level FROM ai_rules WHERE id = ?").get(id) as
+        | { level: AiLevel }
+        | undefined;
+      if (!was) throw new StoreError("not-found", `no rule ${id}`);
+      if (was.level === "private" && !opts.unlock)
+        throw new StoreError("locked", "a private rule: only an unlock removes it");
+      db.prepare("DELETE FROM ai_rules WHERE id = ?").run(id);
     },
     zones() {
       const out: Record<TypeId, Zone> = {};

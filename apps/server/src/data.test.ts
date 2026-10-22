@@ -212,4 +212,38 @@ describe("collections as databases (plan PR 19)", () => {
       (await call(t, "PUT", "/api/data/types/t_nada/protection", { level: "opaque" })).status,
     ).toBe(404);
   });
+
+  it("a part of a collection with its own level: rules added, changed, listed and removed", async () => {
+    const t = await token();
+    const store = host.store(1);
+    store.setAiAccess("t_libro", "opaque", "portatil", { unlock: true });
+    const rule = {
+      filter: [{ field: "f_estado", op: "is", value: "o_leido" }],
+      level: "restricted",
+    };
+    const made = await call(t, "POST", "/api/data/types/t_libro/rules", rule);
+    expect(made.status).toBe(200);
+    const id = made.body.id as string;
+    const listed = (await call(t, "GET", "/api/data/types")).body.types as {
+      id: string;
+      rules: { id: string; level: string }[];
+    }[];
+    expect(listed.find((x) => x.id === "t_libro")?.rules).toEqual([
+      { id, filter: rule.filter, level: "restricted" },
+    ]);
+    // Only the collection's own fields, Notion's operators.
+    const bad = (body: unknown) => call(t, "POST", "/api/data/types/t_libro/rules", body);
+    expect((await bad({ ...rule, filter: [{ field: "f_nada", op: "is" }] })).status).toBe(400);
+    expect((await bad({ ...rule, filter: [{ field: "f_estado", op: "drop" }] })).status).toBe(400);
+    expect((await bad({ ...rule, filter: [] })).status).toBe(400);
+    expect((await bad({ ...rule, level: "nada" })).status).toBe(400);
+    // Private: locked like a collection.
+    expect(
+      (await call(t, "PUT", `/api/data/rules/${id}`, { ...rule, level: "private" })).status,
+    ).toBe(200);
+    expect((await call(t, "DELETE", `/api/data/rules/${id}`)).status).toBe(409);
+    expect((await call(t, "DELETE", `/api/data/rules/${id}`, { unlock: true })).status).toBe(200);
+    expect(store.aiRules()).toEqual([]);
+    expect((await call(t, "PUT", "/api/data/rules/r_nada", rule)).status).toBe(404);
+  });
 });

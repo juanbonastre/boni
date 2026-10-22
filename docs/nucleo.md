@@ -825,8 +825,10 @@ sustituto para todo lo que hoy escribe en el vault. Las zonas ya entran (2026-10
 pantalla), nunca va al espejo, y sus archivos se guardan como adjuntos. `restricted` podrá abrirse para una
 conversación cuando Juan lo pida (pendiente, con el MCP); hasta entonces es tan cerrada como `private`.
 Niveles de protección (Juan, 2026-10-22): Visible, Opaca, Restringida (antes «No la ve») y Privada, que queda
-bloqueada y solo se desbloquea desde la página de la colección. Pendiente: un nivel distinto para un subconjunto de
-una colección (un filtro), qué modelos ven qué, y aplicar los niveles a lo que la IA vea de la interfaz (capturas).
+bloqueada y solo se desbloquea desde la página de la colección. Una parte de una colección puede tener su propio
+nivel: una regla es un filtro de Notion (el mismo código que filtra las vistas, `matchesFilters` de `@boni/views`) y un
+nivel; un elemento que cumple varias tiene la más cerrada, y una regla que no se puede leer cierra si cerraba y no abre
+nada si abría (`readStore`). Pendiente: qué modelos ven qué, y aplicar los niveles a lo que la IA vea de la interfaz.
 
 ### 9.4 Obsidian, por fuera (decidido, Juan, 2026-10-20)
 Obsidian es una puerta de entrada a Boni, no una pieza del núcleo. Quien ya vive en Obsidian puede usar Boni Calendar
