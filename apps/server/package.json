@@ -28,6 +28,7 @@
     "@boni/views": "workspace:*"
   },
   "devDependencies": {
+    "@boni/vault-import": "workspace:*",
     "@types/node": "24.19.2",
     "vitest": "5.0.4"
   }

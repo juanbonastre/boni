@@ -1,3 +1,4 @@
+export { CORE_MARK } from "@boni/vault-import";
 export {
   Mirror,
   type MirrorFs,

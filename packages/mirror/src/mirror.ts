@@ -3,7 +3,7 @@ import { type Json, leaf, rec, typeName, type Val } from "@boni/agent";
 import { formatNote, NoteError, parseNote, patchNote } from "@boni/calendar";
 import { label, type TypeDef } from "@boni/entities";
 import type { StoredEntity, UserStore } from "@boni/store";
-import { importable, PATH_FIELD, propertyFields } from "@boni/vault-import";
+import { CORE_MARK, importable, PATH_FIELD, propertyFields } from "@boni/vault-import";
 import {
   changesFor,
   ID_KEY,
@@ -143,11 +143,14 @@ export class Mirror {
   private links(): Links {
     const names = new Map<string, string>(); // entity -> note name
     const byName = new Map<string, Map<string, string>>(); // type -> lower name -> entity
+    // One query for the mirrored notes and one per type for its values (no labels): this runs every round.
+    const mirrored = new Map(this.state.refs().map((r) => [r.entity, r.path]));
     for (const t of Object.values(this.store.schema().types)) {
       if (t.system) continue;
       const m = new Map<string, string>();
-      for (const s of this.store.list(t.id)) {
-        const row = this.state.note(s.entity.id);
+      for (const e of this.store.entities(t.id)) {
+        const s = { entity: e };
+        const row = mirrored.has(e.id) ? { path: mirrored.get(e.id) as string } : null;
         const p = s.entity.values[PATH_FIELD];
         const title = s.entity.values[t.titleField];
         const name = row
@@ -235,7 +238,7 @@ export class Mirror {
 
   /** Every note path an entity of any type came from or is mirrored to. */
   private knownPaths(): Set<string> {
-    const known = new Set(this.state.notes().map((n) => n.path));
+    const known = new Set(this.state.refs().map((n) => n.path));
     for (const t of Object.values(this.store.schema().types))
       if (!t.system)
         for (const s of this.store.list(t.id, { includeDeleted: true })) {
@@ -334,6 +337,8 @@ export class Mirror {
     if (!opts.apply) return report;
 
     this.state.setType(m);
+    // The core is its truth from now on: the vault's import leaves it alone (`CORE_MARK`).
+    this.store.setSetting(`${CORE_MARK}${typeId}`, profile);
     for (const w of writes) {
       const s = entities.find((x) => x.entity.id === w.entity) as StoredEntity;
       if (w.path && w.old !== null) {
@@ -356,6 +361,7 @@ export class Mirror {
   /** Stops mirroring a type (back to `vault` mode or none): its notes stay as they are. */
   stop(typeId: string): void {
     this.state.dropType(typeId);
+    this.store.setSetting(`${CORE_MARK}${typeId}`, null);
   }
 
   // ------------------------------------------------------------------ core -> notes
@@ -454,9 +460,18 @@ export class Mirror {
     const mirrored = this.state.types();
     if (!mirrored.length) return report;
     const schema = this.store.schema();
+    const ch = this.store.changesSince(this.state.synced());
+    // Nothing changed in the core and nothing waits to be linked: a quiet round costs two queries.
+    if (
+      !ch.entities.length &&
+      mirrored.every((m) => schema.types[m.type]?.schemaVersion === m.schema) &&
+      !this.state.edits().some((e) => e.kind === "create")
+    ) {
+      this.state.setSynced(ch.version);
+      return report;
+    }
     const links = this.links();
     this.linkCreated(links);
-    const ch = this.store.changesSince(this.state.synced());
     const todo = new Map<string, StoredEntity>();
     for (const m of mirrored) {
       const t = schema.types[m.type];
@@ -588,16 +603,30 @@ export class Mirror {
   async scan(): Promise<ScanReport> {
     const report: ScanReport = { proposed: 0, adopted: 0, restored: 0, unreadable: [] };
     const schema = this.store.schema();
-    const links = this.links();
+    // Read only when a note changed: most rounds find none.
+    let linksMemo: Links | null = null;
+    const real = (): Links => {
+      if (!linksMemo) linksMemo = this.links();
+      return linksMemo;
+    };
+    const lazy: Links = {
+      nameOf: (id) => real().nameOf(id),
+      resolve: (name, target) => real().resolve(name, target),
+    };
+    const links = lazy;
+    let knownMemo: Set<string> | null = null;
+    const statePaths = new Set(this.state.refs().map((r) => r.path));
     const sync: SyncReport = { written: 0, created: 0, trashed: 0, held: [] };
     for (const m of this.state.types()) {
       const t = schema.types[m.type];
       if (!t) continue;
-      const rows = this.state.notes(m.type);
+      const refs = this.state.refs(m.type);
       const under = this.notesUnder(m.folder);
-      for (const row of rows) {
-        const stamp = under.get(row.path);
-        if (stamp && this.stamps.get(row.path) === stamp) continue;
+      for (const ref of refs) {
+        const stamp = under.get(ref.path);
+        if (stamp && this.stamps.get(ref.path) === stamp) continue;
+        const row = this.state.noteAt(ref.path);
+        if (!row) continue;
         const s = this.store.get(row.entity);
         // Trashed by the mirror: the next sync brings the note back if the entity is restored.
         if (!s || s.entity.deleted !== undefined || row.sha === GONE) continue;
@@ -679,7 +708,6 @@ export class Mirror {
       }
       // New notes in the type's folder.
       const empty: Rendered = { props: {}, body: "", omitted: [], title: "" };
-      const known = this.knownPaths();
       const creating = new Set(
         this.state
           .edits()
@@ -687,7 +715,9 @@ export class Mirror {
           .map((e) => e.path),
       );
       for (const path of under.keys()) {
-        if (known.has(path) || creating.has(path)) continue;
+        if (statePaths.has(path) || creating.has(path)) continue;
+        knownMemo ??= this.knownPaths();
+        if (knownMemo.has(path)) continue;
         const f = this.readMaybe(path);
         if (!f) continue;
         const h = sha(f.text);

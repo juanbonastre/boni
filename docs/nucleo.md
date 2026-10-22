@@ -824,6 +824,11 @@ sustituto para todo lo que hoy escribe en el vault. Las zonas ya entran (2026-10
 `--zone`, cada colección queda fuera del alcance de cualquier modelo por código (no se puede cambiar desde una
 pantalla), nunca va al espejo, y sus archivos se guardan como adjuntos. `restricted` podrá abrirse para una
 conversación cuando Juan lo pida (pendiente, con el MCP); hasta entonces es tan cerrada como `private`.
+**Cierre de la doble verdad (2026-10-22):** cada colección pasa a modo `core` con el espejo (el vault queda como copia
+que escribe Boni; lo que se edite a mano allí llega como propuesta), la importación del vault deja de tocarlas, y el
+calendario del servidor se sirve desde las colecciones de Boni (`calendarStore.ts`), con la misma API para las apps.
+«Apuntar gasto» crea el movimiento en Boni. Siguen escribiendo en el vault, y por tanto llegan como propuestas: la
+app de gastos de Android, Obsidian y Hermes, hasta que pasen a la API o al MCP de Boni.
 Niveles de protección (Juan, 2026-10-22): Visible, Opaca, Restringida (antes «No la ve») y Privada, que queda
 bloqueada y solo se desbloquea desde la página de la colección. Una parte de una colección puede tener su propio
 nivel: una regla es un filtro de Notion (el mismo código que filtra las vistas, `matchesFilters` de `@boni/views`) y un

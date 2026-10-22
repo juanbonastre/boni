@@ -220,6 +220,15 @@ describe("importing the vault", () => {
     expect(s.list("t_area")).toEqual([]);
     expect(s.schema().types.t_nota?.fields.some((f) => f.key === "color")).toBe(true); // a new key, a new field
 
+    // A type whose truth is Boni now (the mirror switched it): its notes are left alone, none to the trash.
+    s.setSetting("mirror/core/t_docencia", "vault");
+    unlinkSync(join(root, "agenda/docencia/2026-10-19 Clase de ejemplo.md"));
+    const fourth = importVault(root, s, { apply: true, run: "import-4" });
+    expect(fourth.removed).toBe(0);
+    expect(fourth.skipped["kept in Boni (core)"]).toBe(1);
+    expect(s.list("t_docencia")).toHaveLength(2);
+    s.setSetting("mirror/core/t_docencia", null);
+
     // The whole import can be undone at once.
     s.undoRun("import-3", { actor: "user" });
     expect(s.list("t_area")).toHaveLength(1);

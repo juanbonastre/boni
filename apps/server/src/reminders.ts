@@ -9,9 +9,9 @@ import {
 } from "@boni/calendar";
 import { type Notice, noticesFor } from "@boni/calendar-web/src/notifications.ts";
 import type { Account } from "./account.ts";
+import type { CalendarSource } from "./calendarStore.ts";
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
-import type { VaultService } from "./vaults.ts";
 
 /**
  * Reminders for a device that is not running the calendar (phase 5): the Android app asks for the
@@ -19,7 +19,7 @@ import type { VaultService } from "./vaults.ts";
  * in the device's timezone and language; external calendars that remind are downloaded here too.
  */
 export async function noticesOfAccount(
-  vault: VaultService,
+  vault: Pick<CalendarSource, "snapshot">,
   account: Account,
   feeds: Feeds,
   userId: number,

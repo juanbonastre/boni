@@ -97,6 +97,13 @@ const SENSITIVE_CALENDARS = new Set(["salud"]);
 /** Hidden fields where each entity keeps its note's path and hash (the mirror reads the path too). */
 export const PATH_FIELD = "f_vault_path";
 export const HASH_FIELD = "f_vault_hash";
+/**
+ * A store setting per type whose truth is the core (`core` mode, set by the mirror when it switches one; its
+ * value is the mirror's profile): the vault's import never writes, updates or trashes those, its notes are
+ * the core's mirror.
+ */
+export const CORE_MARK = "mirror/core/";
+
 /** The field that holds an attachment imported from a zone (a row per file). */
 export const FILE_FIELD = "f_boni_file";
 
@@ -364,6 +371,9 @@ export function importVault(
     files: 0,
   };
 
+  // Types whose truth is Boni now: their notes are its mirror, never imported again.
+  const inCore = (typeId: string) => store.setting(`${CORE_MARK}${typeId}`) !== null;
+
   // ------------------------------------------------ read every note once
   const notes: Note[] = [];
   for (const rel of scan.notes) {
@@ -422,6 +432,12 @@ export function importVault(
   // ------------------------------------------------ types and their fields
   const typeIdOf = (n: Note) =>
     n.calendar ? `t_${n.calendar.id.replace(/-/g, "_")}` : `t_${(n.group as Group).key}`;
+  {
+    const kept = notes.filter((n) => !inCore(typeIdOf(n)));
+    const left = notes.length - kept.length;
+    if (left) report.skipped["kept in Boni (core)"] = left;
+    notes.splice(0, notes.length, ...kept);
+  }
   const byName = new Map<string, Note>(); // link target (file name) -> note
   for (const n of notes) if (!n.file) byName.set(basename(n.path, ".md").toLowerCase(), n);
   const linkedType = (target: string) => {
@@ -544,7 +560,8 @@ export function importVault(
     for (const e of store.list(typeId)) {
       const p = e.entity.values[PATH_FIELD];
       // Each import sees only its own notes: the vault's never a zone's, a zone's only its own.
-      const mine = typeof p === "string" && (zone ? p.startsWith(`${zone}/`) : !inZone(p));
+      const mine =
+        typeof p === "string" && !inCore(typeId) && (zone ? p.startsWith(`${zone}/`) : !inZone(p));
       if (mine)
         existing.set(p, { id: e.entity.id, hash: String(e.entity.values[HASH_FIELD] ?? "") });
     }

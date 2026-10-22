@@ -43,6 +43,8 @@ export interface MirrorState {
   setType(t: MirroredType): void;
   dropType(id: string): void;
   notes(type?: string): NoteRow[];
+  /** The notes without their text (a round of the mirror reads only what it needs). */
+  refs(type?: string): Omit<NoteRow, "text">[];
   note(entity: string): NoteRow | null;
   noteAt(path: string): NoteRow | null;
   setNote(n: NoteRow): void;
@@ -114,6 +116,19 @@ export function openMirrorState(path: string): MirrorState {
         ? db.prepare("SELECT * FROM notes WHERE type = ? ORDER BY path").all(type)
         : db.prepare("SELECT * FROM notes ORDER BY path").all()
       ).map(noteOf),
+    refs: (type) =>
+      (
+        (type
+          ? db
+              .prepare("SELECT entity, type, path, sha FROM notes WHERE type = ? ORDER BY path")
+              .all(type)
+          : db.prepare("SELECT entity, type, path, sha FROM notes ORDER BY path").all()) as {
+          entity: string;
+          type: string;
+          path: string;
+          sha: string;
+        }[]
+      ).map((r) => ({ entity: r.entity, type: r.type, path: r.path, sha: r.sha })),
     note(entity) {
       const r = db.prepare("SELECT * FROM notes WHERE entity = ?").get(entity);
       return r ? noteOf(r) : null;
