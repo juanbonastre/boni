@@ -4640,17 +4640,9 @@ button.find-row:hover {
   }
 }
 
-/* Ghost rows (Juan, 2026-10-22): pending proposals drawn with a dashed border, read only, ✓ / ✕ where they are. */
+/* Ghost rows (Juan, 2026-10-22): pending proposals as muted rows with a "Propuesta" tag and ✓ / ✕ (dashed only in calendars). */
 .ghost-row td {
   color: var(--muted);
-  border-top: 1px dashed var(--accent);
-  border-bottom: 1px dashed var(--accent);
-}
-.ghost-row td:first-child {
-  border-left: 1px dashed var(--accent);
-}
-.ghost-row td:last-child {
-  border-right: 1px dashed var(--accent);
 }
 .ghost-cell {
   display: flex;
@@ -4672,7 +4664,7 @@ button.find-row:hover {
   border-radius: 999px;
   font-size: 11px;
   color: var(--accent);
-  border: 1px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   white-space: nowrap;
 }
 .db-cal-item.ghost {

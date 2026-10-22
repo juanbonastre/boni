@@ -332,8 +332,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   three lines, and the fields that the card's line does not already say); "Más detalles" / "Menos" switches. A
   changed note's text shows as reading text (headings, lists, to-dos), never raw Markdown. Accept and Reject on each
   card (never "accept all"). **Ghost rows**: a pending proposal to create an entry also shows in its collection: in
-  the table, first, read only, with a dashed `--accent` border, a "Propuesta" tag and ✓ / ✕ beside its title; in the
-  calendar layout, a dashed item (a click opens the inbox). They are proposals, not entities: nothing counts them; a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
+  the table, first, read only, in muted text with a solid "Propuesta" tag and ✓ / ✕ beside its title (no dashed
+  border on rows: Juan, 2026-10-23, dashed only in calendars); in the calendar layout, a dashed item (a click opens the inbox). They are proposals, not entities: nothing counts them; a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
   Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it, and a collection by its name alone ("Docencia"; names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
