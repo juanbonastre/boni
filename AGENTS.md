@@ -140,6 +140,8 @@ apps/calendar-desktop/  Electron shell (chosen over Tauri after measuring, see d
                  autostart entry (`--hidden`), so reminders arrive with the window closed. `vault-fs.cjs` is the
                  only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
                  atomic writes with a conflict check); the UI reaches it through `window.boniVault` (`vaultBridge.ts`).
+                 "Abrir en Boni" (the bridge's `noteApp: "boni"`) opens a note in Boni's desktop app with a
+                 `boni://note?path=` link (Obsidian only in the Obsidian plugin and on Android).
 apps/obsidian-plugin/  The same app as an Obsidian plugin (desktop only, `make plugin`): `main.ts` registers a tab, a
                  ribbon icon and a command and reads nothing until the tab opens (after `onLayoutReady`);
                  `view.ts` mounts the app in a shadow root (Obsidian's CSS and ours never meet) and leaves the
@@ -227,7 +229,9 @@ apps/boni-desktop/ Boni's desktop app (Electron, package `boni`, `.deb` via `mak
                  keeps the token in the main process and calls the server for the page (`window.boniDesktop`), only
                  on the paths `paths.cjs` allows; attachments are downloaded by the main process into a private
                  temporary folder removed on quit and opened only when a viewer opens their kind (`files.cjs`;
-                 anything else is shown in its folder, never run) (v1, agent, pages, data, mail: a new API the app uses must be added
+                 anything else is shown in its folder, never run). `boni://note?path=<vault path>` (the .deb
+                 registers the scheme; `links.cjs` takes only that shape) opens the row a vault note became
+                 (`GET /api/data/lookup?path=`): Boni Calendar's desktop app opens its notes in Boni this way (v1, agent, pages, data, mail: a new API the app uses must be added
                  there). Tray, autostart, desktop widgets. **Every change to apps/boni-web ships in a new desktop
                  version too** (Juan uses the desktop app, not the browser): bump its version, `make package-boni`,
                  and test it in the app itself with `make e2e-boni-desktop` (Playwright `_electron`, temporary profile,

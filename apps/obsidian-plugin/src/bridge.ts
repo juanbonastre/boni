@@ -198,6 +198,7 @@ export function obsidianBridge(
         return null;
       }),
 
+    noteApp: "obsidian",
     openNote: (path) =>
       attempt(async () => {
         const file = note(path);

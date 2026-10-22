@@ -54,6 +54,7 @@ import { t } from "../i18n.ts";
 import { presetOf, type RecPreset, recurrenceLabel, ruleOf } from "../recurrence.ts";
 import { useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
+import { vaultBridge } from "../vaultBridge.ts";
 import { ChoicePicker, DateField, DraftInput, TimeInput } from "./fields.tsx";
 import { Menu } from "./Menu.tsx";
 import { RecurrenceModal } from "./RecurrenceModals.tsx";
@@ -201,7 +202,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
           <button
             type="button"
             className="icon-btn"
-            title={t("event.openNote")}
+            title={t(vaultBridge()?.noteApp === "boni" ? "event.openInBoni" : "event.openNote")}
             onClick={() => void app.openNote(ev.id)}
           >
             <ExternalLink size={15} />

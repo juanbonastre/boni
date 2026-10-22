@@ -302,12 +302,9 @@ handle("vault:trash", async (rel) => {
   return null;
 });
 handle("vault:open-note", (rel) => {
-  // Obsidian opens a note given its absolute path; the URL is built here, never taken from the UI. Without a
-  // vault folder on this device (the calendar comes from a server) it opens the path in Obsidian's open vault.
-  const url = vault
-    ? `obsidian://open?path=${encodeURIComponent(vault.locate(rel))}`
-    : `obsidian://open?file=${encodeURIComponent(notePath(rel).join("/").replace(/\.md$/i, ""))}`;
-  void shell.openExternal(url);
+  // In Boni (Juan, 2026-10-22: the notes live in Boni now): its desktop app takes boni://note?path=<the note's
+  // vault path> and opens the row that note became. The URL is built here from a checked path, never by the UI.
+  void shell.openExternal(`boni://note?path=${encodeURIComponent(notePath(rel).join("/"))}`);
   return null;
 });
 handle("vault:create", (rel, text) => vault.create(rel, text));

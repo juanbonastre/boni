@@ -281,6 +281,8 @@ const es = {
   "ai.level.private.help":
     "Ninguna IA la ve, nunca. Queda bloqueada: solo se desbloquea desde su página en Colecciones.",
   "nav.collections": "Colecciones",
+  "note.notFound": "Esa nota no está en Boni (todavía no se ha importado).",
+  "note.offline": "Sin conexión con el servidor: no se pudo abrir la nota.",
   "col.help": "Todas tus colecciones: ábrelas, búscalas y decide qué ve la IA de cada una.",
   "col.search": "Buscar colección",
   "col.all": "Todas",
@@ -1018,6 +1020,8 @@ const en: Record<Key, string> = {
   "ai.level.private.help":
     "No AI ever sees it. It stays locked: it is unlocked only from its page in Collections.",
   "nav.collections": "Collections",
+  "note.notFound": "That note is not in Boni (it has not been imported yet).",
+  "note.offline": "No connection to the server: the note could not be opened.",
   "col.help": "All your collections: open them, search them and decide what the AI sees of each.",
   "col.search": "Search collections",
   "col.all": "All",

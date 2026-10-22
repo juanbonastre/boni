@@ -200,6 +200,7 @@ const es = {
   "settings.vaultWriteHint":
     "Con la escritura activada, crear, mover, editar o borrar eventos cambia las notas (borrar las manda a la papelera).",
   "event.openNote": "Abrir nota en Obsidian",
+  "event.openInBoni": "Abrir en Boni",
   "ctx.openNote": "Abrir nota en Obsidian",
   "settings.general": "General",
   "settings.appearance": "Apariencia",
@@ -517,6 +518,7 @@ const en: Record<Key, string> = {
   "settings.vaultWriteHint":
     "With writing on, creating, moving, editing or deleting events changes the notes (deleting sends them to the trash).",
   "event.openNote": "Open note in Obsidian",
+  "event.openInBoni": "Open in Boni",
   "ctx.openNote": "Open note in Obsidian",
   "settings.general": "General",
   "settings.appearance": "Appearance",

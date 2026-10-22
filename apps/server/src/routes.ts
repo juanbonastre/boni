@@ -84,6 +84,7 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "DELETE /api/data/rows/:id": "tailnet",
   "POST /api/data/rows/:id/restore": "tailnet",
   "GET /api/data/files/:sha": "tailnet",
+  "GET /api/data/lookup": "tailnet",
   "PUT /api/data/types/:type/protection": "tailnet",
   "POST /api/data/types/:type/rules": "tailnet",
   "PUT /api/data/rules/:id": "tailnet",

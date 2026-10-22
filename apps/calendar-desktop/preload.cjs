@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld("boniVault", {
   rename: (from, to) => ipcRenderer.invoke("vault:rename", from, to),
   trash: (path) => ipcRenderer.invoke("vault:trash", path),
   openNote: (path) => ipcRenderer.invoke("vault:open-note", path),
+  noteApp: "boni",
   watch: (dirs) => ipcRenderer.invoke("vault:watch", dirs),
   onChanged: (cb) => {
     const listener = () => cb();

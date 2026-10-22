@@ -21,6 +21,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { allowedPath } = require("./paths.cjs");
 const F = require("./files.cjs");
+const { linkIn, screenOfUrl } = require("./links.cjs");
 const { createLive } = require("./live.cjs");
 const S = require("./settings.cjs");
 const W = require("./widgets.cjs");
@@ -712,7 +713,10 @@ function start() {
     updateTray();
     reconcileWidgets();
     live.restart();
-    if (!background || !settings.serverUrl || !settings.token || process.env.BONI_SCREENSHOT)
+    // Started by a boni:// link (Boni Calendar's "Abrir en Boni"): the window, on what it names.
+    const link = linkIn(process.argv);
+    if (link) openMain(screenOfUrl(link) ?? undefined);
+    else if (!background || !settings.serverUrl || !settings.token || process.env.BONI_SCREENSHOT)
       openMain();
     setTimeout(tick, 3000);
     setInterval(tick, 60_000);
@@ -736,8 +740,12 @@ if (!process.env.BONI_SCREENSHOT && !app.requestSingleInstanceLock()) {
 } else {
   // Opening Boni again (the menu) shows the one that runs in the tray; the autostart's second start does nothing.
   app.on("second-instance", (_e, argv) => {
-    if (!argv.includes("--background")) openMain();
+    const link = linkIn(argv);
+    if (link) openMain(screenOfUrl(link) ?? undefined);
+    else if (!argv.includes("--background")) openMain();
   });
+  // boni:// links reach here through the .deb's desktop entry (MimeType x-scheme-handler/boni): nothing is
+  // registered at run time, so a start from the source or a test never changes the user's settings.
   app.on("before-quit", () => {
     quitting = true;
   });

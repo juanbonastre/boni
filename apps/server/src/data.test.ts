@@ -174,6 +174,14 @@ describe("collections as databases (plan PR 19)", () => {
       values: Record<string, unknown>;
     }[];
     expect(listed.find((r) => r.id === noTitle.entity.id)?.values.f_titulo).toBe("La tregua");
+    // Found by its note's path (Boni Calendar's "Abrir en Boni").
+    const at = await call(
+      t,
+      "GET",
+      `/api/data/lookup?path=${encodeURIComponent("Boni/Libros/La tregua.md")}`,
+    );
+    expect(at.body).toEqual({ type: "t_libro", id: noTitle.entity.id });
+    expect((await call(t, "GET", "/api/data/lookup?path=nada.md")).status).toBe(404);
     // Only a personal device sees or changes the data.
     db.prepare("UPDATE devices SET trust = 'shared' WHERE name = 'tele-ejemplo'").run();
     const tv = await token("tele-ejemplo");
