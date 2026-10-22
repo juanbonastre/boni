@@ -3874,7 +3874,6 @@ button.find-row:hover {
 .db-cal-title {
   margin-right: auto;
   font-weight: 600;
-  text-transform: capitalize;
 }
 .db-cal-grid {
   display: grid;

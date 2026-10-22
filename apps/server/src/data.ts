@@ -39,6 +39,21 @@ export class DataError extends Error {
   }
 }
 
+/** The vault path a note was imported from (vault-import's hidden field). */
+const PATH_FIELD = "f_vault_path";
+
+/** A row as a view shows it: a note imported without a title property takes its file's name, as
+ * Obsidian shows it (only for display; editing the title writes the property). */
+function shown(values: Record<string, Value>, titleField: string): Record<string, Value> {
+  const title = values[titleField];
+  const path = values[PATH_FIELD];
+  if ((title === undefined || title === null || title === "") && typeof path === "string") {
+    const name = path.split("/").pop()?.replace(/\.md$/i, "") ?? "";
+    if (name) return { ...values, [titleField]: name };
+  }
+  return values;
+}
+
 const userTypes = (store: UserStore) =>
   Object.values(store.schema().types).filter((t) => !t.system && !t.archived);
 
@@ -77,7 +92,11 @@ export function listRows(
   const all = store
     .list(type)
     .sort((a, b) => b.entity.updated - a.entity.updated)
-    .map((e) => ({ id: e.entity.id, values: e.entity.values, updated: e.entity.updated }));
+    .map((e) => ({
+      id: e.entity.id,
+      values: shown(e.entity.values, def.titleField),
+      updated: e.entity.updated,
+    }));
   const rows = all.slice(0, ROW_LIMIT);
   const titles: Record<string, string> = {};
   const types = store.schema().types;
@@ -139,10 +158,11 @@ export function getRow(store: UserStore, id: string): DataRow & { type: string }
   const e = store.get(id);
   if (!e || e.entity.deleted !== undefined || !userTypes(store).some((t) => t.id === e.entity.type))
     throw new DataError("not-found");
+  const def = userTypes(store).find((t) => t.id === e.entity.type);
   return {
     id: e.entity.id,
     type: e.entity.type,
-    values: e.entity.values,
+    values: def ? shown(e.entity.values, def.titleField) : e.entity.values,
     updated: e.entity.updated,
     body: e.entity.body ?? "",
   };

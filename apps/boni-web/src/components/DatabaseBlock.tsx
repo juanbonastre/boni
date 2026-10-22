@@ -876,11 +876,13 @@ function CalendarView({
   });
   const weeks = days[35] && days[35].getUTCMonth() !== month.getUTCMonth() ? 5 : 6;
   const today = ymd(new Date());
-  const title = month.toLocaleDateString(lang === "en" ? "en-GB" : "es-ES", {
+  const long = month.toLocaleDateString(lang === "en" ? "en-GB" : "es-ES", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   });
+  // "octubre de 2026" -> "Octubre de 2026" (only the first letter).
+  const title = long.charAt(0).toUpperCase() + long.slice(1);
   const step = (n: number) =>
     setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + n, 1)));
   return (
