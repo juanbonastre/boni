@@ -26,6 +26,7 @@ import type { Feeds } from "./feeds.ts";
 import { entityFromNote } from "./fromNote.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { MailError, type Mails } from "./mail.ts";
+import { mcpAnswer } from "./mcp.ts";
 import {
   createPage,
   getPage,
@@ -307,6 +308,33 @@ export function makeApp(opts: ServerOptions): App {
         device: s.device,
         trust: s.trust,
       });
+    }
+    if (route.endsWith(" /api/mcp")) {
+      // Boni's MCP (mcp.ts): the assistants' tools over the account's collections. JSON answers only (no
+      // stream to open), a personal device's session (`cli.ts token`).
+      if (req.method === "GET") return send(res, 405, { error: "no-stream" });
+      const s = sessionUser(db, tokenOf(req));
+      if (!s) return send(res, 401, { error: "unauthorized" });
+      if (!opts.agent?.hasData) return send(res, 503, { error: "no-store" });
+      if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      let body: unknown;
+      try {
+        body = await bodyOf(req);
+      } catch {
+        return send(res, 400, {
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32700, message: "parse error" },
+        });
+      }
+      const out = mcpAnswer(opts.agent.store(s.user.id), s.device, body);
+      // What it wrote reaches the mirror at once.
+      opts.agent.onChanged?.(s.user.id);
+      if (out === null) {
+        res.writeHead(202, { ...CORS, ...SAFE });
+        return void res.end();
+      }
+      return send(res, 200, out);
     }
     if (route.includes(" /api/data/")) {
       // The user's collections as databases (data.ts): only from a personal device, reading too (the rows

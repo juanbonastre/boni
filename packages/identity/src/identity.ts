@@ -261,6 +261,34 @@ export function login(
   return { token, account: { id: a.id, name: a.name, vault: a.vault }, device };
 }
 
+/**
+ * A session made by the admin for a device of an account, without its password (`cli.ts token`): what an
+ * assistant's tools use (Boni's MCP). The token is shown once; only its hash is kept.
+ */
+export function issueSession(
+  db: SystemDb,
+  name: string,
+  deviceName: string,
+  opts: { kind?: DeviceKind; listener: Listener },
+): { token: string; device: Device } | null {
+  const a = accountByName(db, name);
+  if (!a || a.disabled) return null;
+  const now = Date.now();
+  const device = deviceRow(
+    db,
+    a.id,
+    deviceName.slice(0, 80) || "device",
+    opts.kind ?? "unknown",
+    opts.listener,
+    now,
+  );
+  const token = randomBytes(32).toString("base64url");
+  db.prepare(
+    "INSERT INTO sessions (token_hash, account_id, device_id, listener, created, last_seen) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(tokenHash(token), a.id, device.id, opts.listener, now, now);
+  return { token, device };
+}
+
 /** The account and device of a token, or null (unknown, idle too long, or the account is disabled). */
 export function sessionOf(
   db: SystemDb,
