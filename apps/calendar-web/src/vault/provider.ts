@@ -10,6 +10,8 @@ import {
   type RowChange,
   uniqueNotePath,
   withAreaLine,
+  withMovedRowProperties,
+  withNewRowProperties,
 } from "@boni/calendar";
 import type { VaultBridge, VaultResult } from "../vaultBridge.ts";
 import {
@@ -98,7 +100,9 @@ export function makeVaultProvider(bridge: VaultBridge): CollectionProvider {
     let content = text;
     if (content === undefined) {
       if (!String(row.values[def.mapping.title] ?? "").trim()) return; // it becomes a note once it has a title
-      const values = Object.fromEntries(Object.entries(row.values).filter(([, v]) => !empty(v)));
+      const values = Object.fromEntries(
+        Object.entries(withNewRowProperties(row.values, def)).filter(([, v]) => !empty(v)),
+      );
       content = formatNote(
         values,
         def.newNote?.body ?? "",
@@ -176,7 +180,8 @@ export function makeVaultProvider(bridge: VaultBridge): CollectionProvider {
         const from =
           gone && gone.collectionId !== c.row.collectionId ? defOf(gone.collectionId) : undefined;
         if (from) {
-          await move(path, c.row, def);
+          const values = withMovedRowProperties(c.row.values, from, def);
+          await move(path, { ...c.row, values }, def);
           consumed.add(c.row.id);
         } else await update(path, c.row, def);
         continue;

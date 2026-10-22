@@ -13,6 +13,8 @@ import {
   rowToEvent,
   systemTimeZone,
   todayIn,
+  withMovedRowProperties,
+  withNewRowProperties,
 } from "@boni/calendar";
 import { type Entity, type FieldDef, type FieldType, label, type TypeDef } from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
@@ -142,6 +144,25 @@ export class StoreCalendar implements CalendarSource {
     return def.fields
       .filter((f) => !f.hidden && !f.archived && f.id !== PATH_FIELD && f.id !== HASH_FIELD)
       .map((f) => ({ prop: p.def.columns.find((c) => c.name === f.name)?.id ?? f.name, field: f }));
+  }
+
+  /** The entity of `type` that `[[name]]` names: by its title or its note's file name (any case). */
+  private linked(type: string, link: string): string | null {
+    const name = (/^\[\[([^\]|#]+)/.exec(link.trim())?.[1] ?? link)
+      .trim()
+      .split("/")
+      .pop()
+      ?.toLowerCase();
+    if (!name) return null;
+    const tf = this.store.schema().types[type]?.titleField;
+    for (const s of this.store.list(type)) {
+      const path = s.entity.values[PATH_FIELD];
+      const file =
+        typeof path === "string" ? path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, "") : "";
+      const title = tf ? String(s.entity.values[tf] ?? "") : "";
+      if (file.toLowerCase() === name || title.toLowerCase() === name) return s.entity.id;
+    }
+    return null;
   }
 
   private titleOf(id: string): string {
@@ -353,8 +374,16 @@ export class StoreCalendar implements CalendarSource {
       case "number":
       case "duration":
         return typeof v === "number" ? v : Number(v);
-      case "relation":
-        return undefined; // never written from the calendar (it does not edit them)
+      case "relation": {
+        // The calendar does not edit links, but a new row (its collection's `newNote.properties`, the area) and a
+        // moved one carry them: `[[name]]` is the target's entity by its title or its note's name. A link to
+        // nothing is left as it was.
+        const target = f.relation?.target;
+        if (!target) return undefined;
+        const ids = (Array.isArray(v) ? v : [v]).map((x) => this.linked(target, String(x)));
+        if (ids.some((x) => x === null)) return undefined;
+        return f.relation?.many ? ids : ids[0];
+      }
       case "money":
         return { amount: Number(v), currency: "EUR" };
       case "text":
@@ -394,6 +423,13 @@ export class StoreCalendar implements CalendarSource {
               : typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)
                 ? "time"
                 : "text";
+    // `[[x]]` naming a note Boni has (an area): a link to that collection.
+    const target =
+      type === "text" && typeof v === "string" && /^\[\[[^\]]+\]\]$/.test(v.trim())
+        ? Object.values(this.store.schema().types).find(
+            (t) => !t.system && !t.archived && this.linked(t.id, v) !== null,
+          )
+        : undefined;
     const def = this.store.schema().types[p.type] as TypeDef;
     let key = keyOf(prop);
     while (def.fields.some((f) => f.key === key)) key = `${key}-2`.slice(0, 40);
@@ -401,7 +437,8 @@ export class StoreCalendar implements CalendarSource {
       id: `f_${key.replace(/-/g, "_")}`.slice(0, 64),
       key,
       name: col?.name ?? prop,
-      type,
+      type: target ? "relation" : type,
+      ...(target ? { relation: { target: target.id, many: false } } : {}),
       label: this.labelFor(p.type, null, device),
     };
     this.store.applySchema({ op: "add_field", type: p.type, field }, { actor: "user", device });
@@ -455,7 +492,9 @@ export class StoreCalendar implements CalendarSource {
       if (eid && before && before.collectionId !== c.row.collectionId) {
         // Moved to another calendar: another collection, so another entity there (its note moves to that folder,
         // keeping its file name when free) and the old one to the trash. The device maps the row by `aliases`.
-        const writes = this.writesFor(p, null, c.row, device);
+        const from = this.placed.find((x) => x.def.id === before.collectionId)?.def;
+        const values = withMovedRowProperties(c.row.values, from, p.def);
+        const writes = this.writesFor(p, null, { ...c.row, values }, device);
         const was = this.store.get(eid)?.entity.values[PATH_FIELD];
         const name = typeof was === "string" ? was.slice(was.lastIndexOf("/") + 1) : null;
         const path = name ? `${p.def.folder}/${name}` : null;
@@ -471,7 +510,8 @@ export class StoreCalendar implements CalendarSource {
         if (Object.keys(writes).length) this.store.update(eid, writes, meta);
         touched.push(c.row.id);
       } else {
-        const made = this.store.create(p.type, this.writesFor(p, null, c.row, device), meta);
+        const row = { ...c.row, values: withNewRowProperties(c.row.values, p.def) };
+        const made = this.store.create(p.type, this.writesFor(p, null, row, device), meta);
         aliases[c.row.id] = made.entity.id;
         touched.push(made.entity.id);
       }

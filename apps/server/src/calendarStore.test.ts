@@ -42,6 +42,12 @@ const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const c of cleanups.splice(0)) c();
 });
+/** Each calendar gives its new rows its area (`newNote.properties`). */
+const areaOf = (area: string) => ({
+  name: "{title}",
+  body: "",
+  properties: { area: `[[${area}]]` },
+});
 /** With `planes`: a second calendar, to move events between them. */
 const PLANES = { ...RAW, id: "planes", name: "Planes", folder: "agenda/planes" };
 function env(two = false): { store: UserStore; cal: StoreCalendar } {
@@ -54,6 +60,8 @@ function env(two = false): { store: UserStore; cal: StoreCalendar } {
           "Planes",
         ),
         "agenda/planes/2026-10-25 Cena.md": '---\ntitle: "Cena"\ndate: "2026-10-25"\n---\n',
+        "areas/docencia.md": "---\ntype: area\n---\n# Docencia\n",
+        "areas/planes.md": "---\ntype: area\n---\n# Planes\n",
       }
     : VAULT;
   for (const [p, t] of Object.entries(files)) {
@@ -63,8 +71,12 @@ function env(two = false): { store: UserStore; cal: StoreCalendar } {
   const store = openUserStore(":memory:");
   importVault(root, store, { apply: true });
   saveCalendarDefs(store, [
-    { type: "t_docencia", raw: RAW },
-    ...(two ? [{ type: "t_planes", raw: PLANES }] : []),
+    ...(two
+      ? [
+          { type: "t_docencia", raw: { ...RAW, newNote: areaOf("docencia") } },
+          { type: "t_planes", raw: { ...PLANES, newNote: areaOf("planes") } },
+        ]
+      : [{ type: "t_docencia", raw: RAW }]),
   ]);
   const cal = new StoreCalendar(store, { write: true, pollMs: 60_000 });
   cleanups.push(() => {
@@ -161,6 +173,28 @@ describe("the calendar over Boni's collections", () => {
       body: "Preparar el tema 3.\n",
     });
     expect(store.list("t_docencia").map((e) => e.entity.values.f_title)).toEqual(["Tutoría"]);
+    // Its project stays; its area becomes the new calendar's.
+    const areaId = (p: string) =>
+      store.list("t_area").find((e) => e.entity.values.f_vault_path === `areas/${p}.md`)?.entity.id;
+    const e = store.list("t_planes").find((x) => x.entity.values.f_title === "Clase de ejemplo");
+    expect(e?.entity.values.f_project).toBeTruthy();
+    expect(e?.entity.values.f_area).toBe(areaId("planes"));
+    // A new row gets its calendar's area.
+    const fresh: Row = {
+      id: "ev-nuevo",
+      collectionId: "docencia",
+      values: { title: "Reunión inventada", date: "2026-10-24" },
+      created: 0,
+      updated: 0,
+    };
+    const made = await cal.apply(
+      r.ok ? r.version : 0,
+      [{ op: "upsert", row: fresh }],
+      "token-a",
+      "portatil",
+    );
+    const id = made.ok ? (made.aliases["ev-nuevo"] as string) : "";
+    expect(store.get(id)?.entity.values.f_area).toBe(areaId("docencia"));
   });
 
   it("sends only what changed since a version; a change by someone else after it is a conflict", async () => {

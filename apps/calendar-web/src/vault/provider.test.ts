@@ -164,6 +164,48 @@ describe("the vault provider", () => {
     expect(aliases.get(LESSON)).toBe(target);
   });
 
+  it("with the area as a property (newNote.properties), a new note gets it and a moved one swaps it", async () => {
+    const asProperty = (text: string, area: string) =>
+      text.replace(
+        `body: "Area: [[${area}]]\\n\\n## Notas\\n"`,
+        `body: "## Notas\\n"\n    properties: { area: "[[${area}]]" }`,
+      );
+    const note = lesson.replace(
+      "completed:\n---\nArea: [[docencia]]\n\n",
+      'completed:\narea: "[[docencia]]"\n---\n',
+    );
+    const vault = memoryVault({
+      "_system/colecciones/docencia.md": asProperty(
+        definitionNote("docencia", "Docencia", "agenda/docencia", "docencia"),
+        "docencia",
+      ),
+      "_system/colecciones/planes.md": asProperty(
+        definitionNote("planes", "Planes", "agenda/planes", "planes"),
+        "planes",
+      ),
+      [LESSON]: note,
+    });
+    const load = await readVault(vault.bridge, { readOnly: false });
+    const provider = makeVaultProvider(vault.bridge);
+    const row = load.snapshot.rows.find((r) => r.id === LESSON) as Row;
+    await provider.apply([
+      {
+        op: "upsert",
+        row: { ...row, id: "ev-temp-2", values: { title: "Nueva", date: "2026-12-26" } },
+      },
+    ]);
+    expect(vault.files.get("agenda/docencia/2026-12-26 Nueva.md")).toBe(
+      '---\ntitle: "Nueva"\ndate: "2026-12-26"\narea: "[[docencia]]"\n---\n## Notas\n',
+    );
+    await provider.apply([
+      { op: "upsert", row: { ...row, collectionId: "planes" } },
+      { op: "remove", collectionId: "docencia", id: LESSON },
+    ]);
+    const moved = vault.files.get("agenda/planes/2026-12-22 Clase de ejemplo.md") ?? "";
+    expect(moved).toContain('area: "[[planes]]"');
+    expect(moved).not.toContain("Area:");
+  });
+
   it("ignores rows that never became notes when they are removed", async () => {
     const t = await setup();
     await t.provider.apply([{ op: "remove", collectionId: "docencia", id: "ev-never-saved" }]);

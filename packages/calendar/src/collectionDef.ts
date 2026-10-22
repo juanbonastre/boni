@@ -31,7 +31,11 @@ export interface CollectionDef {
   columns: Column[];
   mapping: CalendarMapping;
   /** How a note created by the app is named and what it starts with. */
-  newNote?: { name: string; body: string };
+  /**
+   * How a new note starts: its file name, its text and the properties every new row of the collection gets
+   * (`properties`, e.g. `area: "[[docencia]]"`; moving a row to another collection swaps them).
+   */
+  newNote?: { name: string; body: string; properties?: Record<string, PropValue> };
   /** Default reminders of its events: `reminders: { timed: "10m", allDay: "0d@09:00" }` (none when missing). */
   reminders?: ReminderDefaults;
 }
@@ -119,6 +123,20 @@ export function parseCollectionDef(data: unknown): DefResult {
     const n = data.newNote;
     if (isObj(n) && typeof n.name === "string") {
       newNote = { name: n.name, body: typeof n.body === "string" ? n.body : "" };
+      if (isObj(n.properties)) {
+        const props: Record<string, PropValue> = {};
+        for (const [k, v] of Object.entries(n.properties))
+          if (
+            typeof v === "string" ||
+            typeof v === "number" ||
+            typeof v === "boolean" ||
+            (Array.isArray(v) && v.every((x) => typeof x === "string"))
+          )
+            props[k] = v as PropValue;
+          else
+            errors.push(`newNote.properties.${k}: text, a number, true/false or a list of texts`);
+        if (Object.keys(props).length) newNote.properties = props;
+      }
     } else errors.push("newNote: needs a name");
   }
   if (errors.length > 0 || !id || !name || !folder || !account || !color || !mapping) {
@@ -325,6 +343,67 @@ export function uniqueNotePath(
   let path = `${folder}/${base}.md`;
   for (let n = 2; taken(path); n++) path = `${folder}/${base} ${n}.md`;
   return path;
+}
+
+const unset = (v: PropValue | undefined) =>
+  v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+const sameValue = (a: PropValue | undefined, b: PropValue | undefined) =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/** A new row's values with its collection's `newNote.properties` where it has none of its own. */
+export function withNewRowProperties(
+  values: Record<string, PropValue>,
+  def: CollectionDef,
+): Record<string, PropValue> {
+  const out = { ...values };
+  for (const [k, v] of Object.entries(def.newNote?.properties ?? {})) if (unset(out[k])) out[k] = v;
+  return out;
+}
+
+/**
+ * A row moved from one collection to another: the properties it had from the first one's `newNote.properties`
+ * (still the same value) become the second one's; what the row set itself stays.
+ */
+export function withMovedRowProperties(
+  values: Record<string, PropValue>,
+  from: CollectionDef | undefined,
+  to: CollectionDef,
+): Record<string, PropValue> {
+  const out = { ...values };
+  const was = from?.newNote?.properties ?? {};
+  const now = to.newNote?.properties ?? {};
+  for (const [k, v] of Object.entries(was)) if (!(k in now) && sameValue(out[k], v)) out[k] = null;
+  for (const [k, v] of Object.entries(now))
+    if (unset(out[k]) || (k in was && sameValue(out[k], was[k]))) out[k] = v;
+  return out;
+}
+
+/**
+ * A note's text without the lines its collection's template wrote as `Key: [[link]]` (how new notes got their area
+ * before `newNote.properties`), and those lines as properties (`area: "[[docencia]]"`; the key in lower case). A
+ * blank line right after one goes with it. Properties the note already has are left alone.
+ */
+export function liftTemplateLinks(
+  body: string,
+  templateBody: string,
+  has: (prop: string) => boolean,
+): { body: string; values: Record<string, string> } {
+  const values: Record<string, string> = {};
+  let out = body;
+  for (const m of templateBody.matchAll(/^([A-Za-z][A-Za-z0-9_ ]*): \[\[[^\]\n]*\]\][ \t]*$/gm)) {
+    const key = m[1] as string;
+    const prop = key.toLowerCase();
+    if (prop in values || has(prop)) continue;
+    const line = new RegExp(
+      `^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: (\\[\\[[^\\]\\n]*\\]\\])[ \\t]*(?:\\r?\\n(?:[ \\t]*\\r?\\n)?|$)`,
+      "m",
+    );
+    const found = line.exec(out);
+    if (!found) continue;
+    values[prop] = found[1] as string;
+    out = out.slice(0, found.index) + out.slice(found.index + found[0].length);
+  }
+  return { body: out, values };
 }
 
 /**

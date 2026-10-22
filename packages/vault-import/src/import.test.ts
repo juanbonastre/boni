@@ -240,6 +240,30 @@ describe("importing the vault", () => {
   });
 });
 
+describe("a calendar note's Area line (Juan, 2026-10-22: a property)", () => {
+  it("the template's Area: [[x]] line leaves the text and becomes a link to the area", () => {
+    const s = store();
+    const withTemplate = DEF.replace(
+      "  mapping:",
+      '  newNote:\n    name: "{date} {title}"\n    body: "Area: [[docencia]]\\n\\n## Notas\\n"\n  mapping:',
+    );
+    importVault(vault({ ...FILES, "_system/colecciones/agenda-docencia.md": withTemplate }), s, {
+      apply: true,
+    });
+    const clase = s
+      .list("t_docencia")
+      .find((e) => e.entity.values.f_title === "Clase de ejemplo") as NonNullable<
+      ReturnType<UserStore["get"]>
+    >;
+    const area = s.list("t_area").find((e) => e.entity.values[PATH_FIELD] === "areas/docencia.md");
+    expect(clase.entity.values.f_area).toBe(area?.entity.id);
+    expect(clase.entity.body).toBe("## Notas\n");
+    expect(s.schema().types.t_docencia?.fields.find((f) => f.key === "area")?.type).toBe(
+      "relation",
+    );
+  });
+});
+
 describe("importing again", () => {
   it("a value seen for the first time becomes a new option of the field", () => {
     const s = store();

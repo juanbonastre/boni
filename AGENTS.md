@@ -79,7 +79,8 @@ packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `s
                  path and hash fields) and trash notes that are gone; the whole run is one `undoRun`. A note Boni's mirror
                  writes for a type in core mode (its `boni_id`) is never imported as a note of its own, `boni_*` lines are
                  never fields, a new value of a list field becomes a new option, and attachments are read one at a
-                 time (the server's container has 384 MB).
+                 time (the server's container has 384 MB). A calendar note's `Key: [[link]]` lines that its
+                 collection's template writes (`Area: [[docencia]]`) become properties (`liftTemplateLinks`).
                  `--zone restricted|private --vault <that folder>`: one of the vault's zones, run by Juan alone
                  (no agent-sudo action on purpose: the server and the AI never see those folders); a type per
                  first-level folder put in the zone, attachments a row each (`f_boni_file`), paths kept as
@@ -324,7 +325,9 @@ legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, 
   triggers a cheap re-scan. Anything that compares definitions must keep object identity when they did not change. Never put real titles, paths or note contents in the repo (tests use invented notes).
   **Writing** (opt-in, `settings.vaultWrite`): `vault/provider.ts` turns row changes into note changes: only differing
   properties are patched (`patchNote`), a new row becomes a note once it has a title (until then the UI shows it as a
-  draft, `newEventId`: a tinted range only, dropped by `discardDraft` when its detail closes untitled) (name from `newNote.name`, counter on the
+  draft, `newEventId`: a tinted range only, dropped by `discardDraft` when its detail closes untitled) (name from `newNote.name`,
+  properties from `newNote.properties` (the area, Juan 2026-10-22; a move to another collection swaps them:
+  `withNewRowProperties`, `withMovedRowProperties`, also in the server's `StoreCalendar`), counter on the
   file name only), a row that changes collection moves its file (and its `Area:` line), a removed row goes to the system
   trash (text kept in memory so Undo can restore it), existing notes are never renamed, and a note whose mtime changed since
   it was read is never overwritten (`VaultWriteError` conflict -> toast and reload). Reads and writes share one lock
