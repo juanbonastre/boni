@@ -165,6 +165,8 @@ interface State {
   /** The row open as a page, with its text. */
   row: DataRow | null;
   rows: Record<string, { rows: DataRow[]; titles: Record<string, string> }>;
+  /** The vault note opened from another app (its path), for the peek's "Abrir en Boni". */
+  openedNote: string | null;
   /** How each collection is shown on its own page (this session). */
   collectionViews: Record<string, DatabaseView>;
   /** Ctrl+K: the quick find over the pages. */
@@ -259,6 +261,7 @@ export const useStore = create<State>(() => ({
   dataTypes: null,
   rows: {},
   collectionViews: {},
+  openedNote: null,
   row: null,
   inbox: [],
   runs: [],
@@ -301,8 +304,12 @@ async function countQueue() {
   });
 }
 
-/** Starts the page: settings, what the device kept, shell events. Widget pages load less. */
-export async function init(role: "main" | "widget", h: Host = defaultHost) {
+/**
+ * Starts the page: settings, what the device kept, shell events. Widget pages load less; a peek (a note opened from
+ * another app, in a small window that closes when it loses the focus) loads as little as a widget.
+ */
+export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHost) {
+  const role = kind === "peek" ? "widget" : kind;
   hostRef = h;
   applySettings(await h.getSettings());
   const [widgets, specs, catalog, home, screens, shortcuts, pages, last] = await Promise.all([
@@ -353,6 +360,10 @@ export async function init(role: "main" | "widget", h: Host = defaultHost) {
       let minute = 0;
       setInterval(() => void onTick(++minute, role), 60_000);
     }
+  } else if (kind === "peek") {
+    // A note's text typed a moment before the peek closes is sent before it goes.
+    window.addEventListener("pagehide", () => void flushRowBody());
+    h.desktop?.peekReady?.();
   } else {
     void loadCharts().catch(() => undefined);
   }
@@ -361,7 +372,11 @@ export async function init(role: "main" | "widget", h: Host = defaultHost) {
 /** What the tray, a widget or a phone's launcher shortcut asks the main window to show. */
 export function navigate(screen: string) {
   if (screen.startsWith("note:")) void openNoteAt(screen.slice(5));
-  else if (screen === "settings") openSettings();
+  else if (screen === "blank") {
+    // The peek was hidden: its next note starts empty, never showing the last one for a moment.
+    void flushRowBody();
+    set({ row: null, view: { kind: "home" } });
+  } else if (screen === "settings") openSettings();
   else if (screen === "capture") openScreen(CAPTURE_SCREEN);
   else if (screen.startsWith("shortcut:")) {
     const sc = get().shortcuts.find((x) => x.id === screen.slice(9));
@@ -1718,6 +1733,7 @@ export async function deleteRow(type: string, id: string) {
 
 /** A vault note opened from another app (Boni Calendar's "Abrir en Boni"): the row it became, as a page. */
 export async function openNoteAt(path: string) {
+  set({ openedNote: path, row: null });
   try {
     const at = await agent.lookupNote(path);
     if (at) return void (await openRow(at.type, at.id));

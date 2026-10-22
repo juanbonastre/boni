@@ -4348,3 +4348,56 @@ button.find-row:hover {
 .btn.ghost.small.on {
   color: var(--accent);
 }
+
+/* The peek: a note opened from another app in a small window, closed when it loses the focus. */
+.peek {
+  display: flex;
+  flex-direction: column;
+  height: 100cqh;
+  background: var(--bg);
+}
+.peek-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+/* A frameless window: its head moves it; its buttons stay buttons. */
+.peek-head {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.peek-head button {
+  -webkit-app-region: no-drag;
+}
+.peek-body .row-kind {
+  display: none;
+}
+.peek-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.peek-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.peek-body .content.page-doc {
+  padding: 0 40px;
+}
+.peek-body .doc {
+  padding-top: 24px;
+}
+.peek .toast {
+  position: fixed;
+}

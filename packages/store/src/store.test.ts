@@ -98,6 +98,22 @@ describe("the store", () => {
     expect(log.at(-1)?.seq).toBeGreaterThan(log.at(-2)?.seq ?? 0);
   });
 
+  it("counts a type and finds entities by a value without reading them one by one", () => {
+    const { store } = fresh();
+    const a = store.create("t_libro", { f_titulo: { value: "Uno", label: JUAN } }, me);
+    store.create("t_libro", { f_titulo: { value: "Dos", label: JUAN } }, me);
+    const gone = store.create("t_libro", { f_titulo: { value: "Uno", label: JUAN } }, me);
+    store.remove(gone.entity.id, me);
+    expect(store.count("t_libro")).toBe(2);
+    expect(store.findByValue("f_titulo", "Uno")).toEqual([{ id: a.entity.id, type: "t_libro" }]);
+    expect(store.findByValue('f_titulo"); DROP TABLE entities; --', "Uno")).toEqual([]);
+    expect(store.list("t_libro").map((e) => e.labels.f_titulo?.integrity)).toEqual([
+      "user",
+      "user",
+    ]);
+    expect(store.list("t_libro", { includeDeleted: true })).toHaveLength(3);
+  });
+
   it("sees a schema another connection changed (the import while the server runs)", () => {
     const { store, dir } = fresh();
     const other = openUserStore(join(dir, "boni.db"));
