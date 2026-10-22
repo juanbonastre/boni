@@ -39,6 +39,8 @@ export interface DatabaseView {
   sort?: { field: string; desc?: boolean };
   /** Properties not shown in this view. */
   hide?: string[];
+  /** Other collections the calendar also shows (as Boni Calendar showed every area at once). */
+  also?: string[];
 }
 export const DATABASE_LAYOUTS = ["table", "board", "list", "gallery", "calendar"] as const;
 
@@ -173,7 +175,9 @@ export function pageErrors(spec: unknown): string[] {
           typeof b.source !== "string" ||
           !ID.test(b.source) ||
           !v ||
-          !only(v, ["layout", "group", "date", "sort", "hide"]) ||
+          !only(v, ["layout", "group", "date", "sort", "hide", "also"]) ||
+          (v.also !== undefined &&
+            (!Array.isArray(v.also) || v.also.length > 10 || !v.also.every((f) => okField(f)))) ||
           !(DATABASE_LAYOUTS as readonly unknown[]).includes(v.layout) ||
           !okField(v.group) ||
           !okField(v.date) ||

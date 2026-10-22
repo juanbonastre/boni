@@ -129,6 +129,11 @@ describe("collections as databases (plan PR 19)", () => {
     expect((await call(t, "PUT", `/api/data/rows/${made.id}`, { values: { f_x: 1 } })).status).toBe(
       400,
     );
+    // Opened as a page: its body is read and written as text.
+    await call(t, "PUT", `/api/data/rows/${made.id}`, { body: "Notas de **lectura**." });
+    expect(
+      ((await call(t, "GET", `/api/data/rows/${made.id}`)).body.row as { body: string }).body,
+    ).toBe("Notas de **lectura**.");
     const rows = (await call(t, "GET", "/api/data/types/t_libro/rows")).body.rows as {
       id: string;
     }[];

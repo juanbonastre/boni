@@ -420,6 +420,9 @@ export interface DataRow {
   id: string;
   values: Record<string, DataValue>;
   updated: number;
+  /** The row's text (a note's body), when it was opened as a page. */
+  body?: string;
+  type?: string;
 }
 
 function parseDataType(v: unknown): DataType | null {
@@ -463,7 +466,13 @@ function parseDataType(v: unknown): DataType | null {
 }
 function parseRow(v: unknown): DataRow | null {
   if (!isObj(v) || typeof v.id !== "string" || !isObj(v.values)) return null;
-  return { id: v.id, values: v.values as DataRow["values"], updated: Number(v.updated) || 0 };
+  return {
+    id: v.id,
+    values: v.values as DataRow["values"],
+    updated: Number(v.updated) || 0,
+    ...(typeof v.body === "string" ? { body: v.body } : {}),
+    ...(typeof v.type === "string" ? { type: v.type } : {}),
+  };
 }
 
 /** An installed extension as the server shows it (docs/extensiones.md 3). */
@@ -719,10 +728,21 @@ export class AgentApi {
         }
       )?.row,
     );
-  updateRow = async (id: string, values: Record<string, DataValue>) =>
+  updateRow = async (id: string, values: Record<string, DataValue>, body?: string) =>
     parseRow(
       (
-        (await this.call("PUT", `/${encodeURIComponent(id)}`, { values }, "api/data/rows")) as {
+        (await this.call(
+          "PUT",
+          `/${encodeURIComponent(id)}`,
+          { values, ...(body !== undefined ? { body } : {}) },
+          "api/data/rows",
+        )) as { row?: unknown }
+      )?.row,
+    );
+  dataRow = async (id: string) =>
+    parseRow(
+      (
+        (await this.call("GET", `/${encodeURIComponent(id)}`, undefined, "api/data/rows")) as {
           row?: unknown;
         }
       )?.row,

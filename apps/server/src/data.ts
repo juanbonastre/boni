@@ -1,5 +1,5 @@
 import { type FieldDef, label, type Value } from "@boni/entities";
-import type { UserStore } from "@boni/store";
+import { BODY, type UserStore } from "@boni/store";
 
 /**
  * The user's collections as Notion's databases (docs/nucleo.md plan PR 19): their types and fields, their
@@ -27,6 +27,8 @@ export interface DataRow {
   id: string;
   values: Record<string, Value>;
   updated: number;
+  /** The row's free text (a note's body, Markdown), only when one row is asked for. */
+  body?: string;
 }
 
 export class DataError extends Error {
@@ -132,12 +134,46 @@ export function createRow(store: UserStore, type: string, values: unknown, devic
   }
 }
 
-export function updateRow(store: UserStore, id: string, values: unknown, device?: string) {
+/** One row with its body (a row opened as a page). */
+export function getRow(store: UserStore, id: string): DataRow & { type: string } {
+  const e = store.get(id);
+  if (!e || e.entity.deleted !== undefined || !userTypes(store).some((t) => t.id === e.entity.type))
+    throw new DataError("not-found");
+  return {
+    id: e.entity.id,
+    type: e.entity.type,
+    values: e.entity.values,
+    updated: e.entity.updated,
+    body: e.entity.body ?? "",
+  };
+}
+
+export function updateRow(
+  store: UserStore,
+  id: string,
+  values: unknown,
+  device?: string,
+  body?: unknown,
+) {
   const e = store.get(id);
   if (!e || e.entity.deleted !== undefined || !userTypes(store).some((t) => t.id === e.entity.type))
     throw new DataError("not-found");
   try {
-    const u = store.update(id, writesOf(store, e.entity.type, values, device), meta(device));
+    const writes = writesOf(store, e.entity.type, values ?? {}, device);
+    if (body !== undefined) {
+      if (typeof body !== "string" || body.length > 200_000) throw new DataError("bad-body");
+      const def = userTypes(store).find((t) => t.id === e.entity.type);
+      writes[BODY] = {
+        value: body || null,
+        label: label(
+          "user",
+          def?.sensitivity ?? "personal",
+          [{ kind: "user-edit", id: device ?? "device" }],
+          Boolean(def?.thirdParty),
+        ),
+      };
+    }
+    const u = store.update(id, writes, meta(device));
     return { id: u.entity.id, values: u.entity.values, updated: u.entity.updated };
   } catch (err) {
     if (err instanceof DataError) throw err;
