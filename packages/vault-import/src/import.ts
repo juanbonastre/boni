@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import {
   type CollectionDef,
@@ -207,8 +207,8 @@ export interface ImportReport {
 interface Note {
   /** As kept in the store (`<zone>/...` for a zone). */
   path: string;
-  /** An attachment instead of a note. */
-  file?: { data: Uint8Array; mime: string; name: string };
+  /** An attachment instead of a note: read from `abs` only when it is stored (a vault holds more than memory). */
+  file?: { abs: string; mime: string; name: string };
   group: Group | null;
   calendar: CollectionDef | null;
   values: Record<string, PropValue>;
@@ -275,6 +275,41 @@ export function readDefinitions(root: string): CollectionDef[] {
     if (r.ok) defs.push(r.def);
   }
   return defs;
+}
+
+/** A file's sha256 read in chunks: the server's container has little memory and a vault has large files. */
+function fileHash(abs: string): string {
+  const hash = createHash("sha256");
+  const buf = Buffer.alloc(1 << 20);
+  const fd = openSync(abs, "r");
+  try {
+    for (let n = readSync(fd, buf); n > 0; n = readSync(fd, buf)) hash.update(buf.subarray(0, n));
+  } finally {
+    closeSync(fd);
+  }
+  return hash.digest("hex");
+}
+
+/**
+ * A file's bytes in one buffer reused from call to call (valid until the next call): a new buffer per file is
+ * freed only when the garbage collector runs, and a few hundred megabytes of attachments outgrew the container.
+ */
+let shared = Buffer.alloc(0);
+function fileBytes(abs: string): Uint8Array {
+  const size = statSync(abs).size;
+  if (shared.byteLength < size) shared = Buffer.alloc(size);
+  const fd = openSync(abs, "r");
+  try {
+    let at = 0;
+    while (at < size) {
+      const n = readSync(fd, shared, at, size - at, at);
+      if (n === 0) break;
+      at += n;
+    }
+    return shared.subarray(0, at);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function inferType(
@@ -430,20 +465,20 @@ export function importVault(
     });
   }
   for (const rel of scan.files) {
-    const data = readFileSync(join(root, rel));
-    if (data.byteLength > MAX_FILE_BYTES) {
+    const abs = join(root, rel);
+    if (statSync(abs).size > MAX_FILE_BYTES) {
       report.skipped["file over 50 MB"] = (report.skipped["file over 50 MB"] ?? 0) + 1;
       continue;
     }
     const name = basename(rel);
     notes.push({
       path: stored(rel),
-      file: { data, mime: mimeOf(name), name },
+      file: { abs, mime: mimeOf(name), name },
       group: zone ? zoneGroup(rel) : FILES_GROUP,
       calendar: null,
       values: {},
       body: "",
-      hash: createHash("sha256").update(data).digest("hex"),
+      hash: fileHash(abs),
       sensitive: !!zone,
     });
   }
@@ -712,7 +747,8 @@ export function importVault(
           label: l,
         };
       }
-      if (apply) writes[FILE_FIELD] = { value: store.putFile(n.file.data, n.file.mime), label: l };
+      if (apply)
+        writes[FILE_FIELD] = { value: store.putFile(fileBytes(n.file.abs), n.file.mime), label: l };
       report.files++;
     } else if (!byProp.has("title")) {
       writes.f_title = { value: head?.title ?? basename(n.path, ".md"), label: l };
