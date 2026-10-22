@@ -107,7 +107,7 @@ function useDayFormat() {
   };
 }
 
-export function ProposalCard({ p }: { p: Proposal }) {
+export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }) {
   const t = useStore((s) => s.t);
   const c = p.card;
   const fmt = useDayFormat();
@@ -124,11 +124,11 @@ export function ProposalCard({ p }: { p: Proposal }) {
         ),
       }
     : null;
-  return (
-    <section className={`card proposal inbox-card${more ? " detailed" : " compact"}`}>
-      <header className="inbox-card-head">
-        <h3>{headline(t, p, c)}</h3>
-      </header>
+  // On the inbox's own page (more room), a detailed card from mail is two columns (Juan, 2026-10-23): the mail on
+  // the left, the three days with the proposal on the right.
+  const two = wide && more && c?.source?.kind === "mail" && !!c.day && c.context.length > 0;
+  const source = (
+    <>
       {c?.source?.kind === "mail" && (
         <p className="inbox-source">
           <Mail size={13} strokeWidth={1.8} aria-hidden="true" />
@@ -150,19 +150,25 @@ export function ProposalCard({ p }: { p: Proposal }) {
           {when && <span className="muted"> · {when}</span>}
         </p>
       )}
-      {more && c?.source?.kind === "mail" && (c.source.subject || c.source.excerpt) && (
-        <div className="inbox-mail">
-          {c.source.subject && <p className="inbox-subject">{c.source.subject}</p>}
-          {c.source.excerpt && <p className="inbox-quote">«{c.source.excerpt}»</p>}
-        </div>
+    </>
+  );
+  const mail = more && c?.source?.kind === "mail" && (c.source.subject || c.source.excerpt) && (
+    <div className="inbox-mail">
+      {c.source.subject && <p className="inbox-subject">{c.source.subject}</p>}
+      {c.source.excerpt && (
+        <p className={`inbox-quote${two ? " long" : ""}`}>«{c.source.excerpt}»</p>
       )}
-      {c?.day && c.context.length > 0 && (
-        <MiniDays
-          days={more ? c.context.filter((d) => d.day === c.day) : c.context}
-          proposed={{ day: c.day, start: c.start, end: c.end, title: c.title ?? "" }}
-          short={fmt.short}
-        />
-      )}
+    </div>
+  );
+  const days = c?.day && c.context.length > 0 && (
+    <MiniDays
+      days={more && !two ? c.context.filter((d) => d.day === c.day) : c.context}
+      proposed={{ day: c.day, start: c.start, end: c.end, title: c.title ?? "" }}
+      short={fmt.short}
+    />
+  );
+  const fields = (
+    <>
       {more &&
         rest &&
         rest.rows.length > 0 &&
@@ -171,6 +177,32 @@ export function ProposalCard({ p }: { p: Proposal }) {
         <div className="inbox-body">
           <MarkdownPreview text={body.value} />
         </div>
+      )}
+    </>
+  );
+  return (
+    <section
+      className={`card proposal inbox-card${more ? " detailed" : " compact"}${two ? " two" : ""}`}
+    >
+      <header className="inbox-card-head">
+        <h3>{headline(t, p, c)}</h3>
+      </header>
+      {two ? (
+        <div className="inbox-two">
+          <div className="inbox-col">
+            {source}
+            {mail}
+            {fields}
+          </div>
+          <div className="inbox-col">{days}</div>
+        </div>
+      ) : (
+        <>
+          {source}
+          {mail}
+          {days}
+          {fields}
+        </>
       )}
       <div className="inbox-actions">
         <button type="button" className="btn primary" onClick={() => void acceptProposal(p.id)}>

@@ -99,7 +99,7 @@ function parseCard(v: unknown): InboxCard | null {
           account: optStr(src.account, 200),
           from: optStr(src.from, 200) ?? "",
           subject: optStr(src.subject, 200) ?? "",
-          excerpt: optStr(src.excerpt, 400) ?? "",
+          excerpt: optStr(src.excerpt, 1500) ?? "",
         }
       : src?.kind === "note" && typeof src.path === "string"
         ? { kind: "note", path: src.path.slice(0, 500) }

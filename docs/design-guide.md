@@ -329,7 +329,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   and a mini calendar: the day (detailed) or the day before, the day and the day after (compact), each a short list in
   time order with the proposal drawn with a dashed `--accent` border among what is there. Compact when the source said
   everything and Juan accepted two like it before, detailed otherwise (the subject and the mail's words, clamped to
-  three lines, and the fields that the card's line does not already say); "Más detalles" / "Menos" switches. A
+  three lines, and the fields that the card's line does not already say); "Más detalles" / "Menos" switches. On
+  the inbox's own page (more room) a detailed card from mail is two columns: the mail (up to twelve lines) and the
+  fields on the left, the three days on the right (titles on two lines); one column when the card is narrow. A
   changed note's text shows as reading text (headings, lists, to-dos), never raw Markdown. Accept and Reject on each
   card (never "accept all"). **Ghost rows**: a pending proposal to create an entry also shows in its collection: in
   the table, first, read only, in muted text with a solid "Propuesta" tag and ✓ / ✕ beside its title (no dashed

@@ -472,7 +472,7 @@ export function InboxView() {
       <p className="muted small">{t("inbox.help")}</p>
       {inbox.length === 0 && <p className="muted center-note">{t("inbox.empty")}</p>}
       {inbox.map((p) => (
-        <ProposalCard key={p.id} p={p} />
+        <ProposalCard key={p.id} p={p} wide />
       ))}
     </div>
   );
