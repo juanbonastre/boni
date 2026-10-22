@@ -85,7 +85,7 @@ export function listTypes(store: UserStore): DataType[] {
             : {}),
           ...(f.relation ? { relation: { target: f.relation.target, many: f.relation.many } } : {}),
         })),
-      count: store.list(t.id).length,
+      count: store.count(t.id),
       level: levels[t.id] ?? "visible",
       ...(zones[t.id] ? { zone: zones[t.id] } : {}),
       rules: rules
@@ -172,12 +172,12 @@ export function listRows(
   const def = userTypes(store).find((t) => t.id === type);
   if (!def) throw new DataError("not-found");
   const all = store
-    .list(type)
-    .sort((a, b) => b.entity.updated - a.entity.updated)
+    .entities(type)
+    .sort((a, b) => b.updated - a.updated)
     .map((e) => ({
-      id: e.entity.id,
-      values: shown(e.entity.values, def.titleField),
-      updated: e.entity.updated,
+      id: e.id,
+      values: shown(e.values, def.titleField),
+      updated: e.updated,
     }));
   const rows = all.slice(0, ROW_LIMIT);
   const titles: Record<string, string> = {};
@@ -241,12 +241,10 @@ export function createRow(store: UserStore, type: string, values: unknown, devic
  */
 export function findByPath(store: UserStore, path: string): { type: string; id: string } {
   if (!path || path.length > 500) throw new DataError("not-found");
-  for (const t of userTypes(store)) {
-    if (!t.fields.some((f) => f.id === PATH_FIELD)) continue;
-    const e = store.list(t.id).find((x) => x.entity.values[PATH_FIELD] === path);
-    if (e) return { type: t.id, id: e.entity.id };
-  }
-  throw new DataError("not-found");
+  const mine = new Set(userTypes(store).map((t) => t.id));
+  const hit = store.findByValue(PATH_FIELD, path).find((x) => mine.has(x.type));
+  if (!hit) throw new DataError("not-found");
+  return hit;
 }
 
 /** One row with its body (a row opened as a page). */

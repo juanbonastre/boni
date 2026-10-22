@@ -1,13 +1,15 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { PeekPage } from "./components/Peek.tsx";
 import { PicturePage } from "./Picture.tsx";
 import { androidBack, init } from "./store.ts";
 import { WidgetPage } from "./Widget.tsx";
 import "./styles.css";
 
-// One page, three roles: the main window, one desktop widget (`?widget=<id>&chart=<chart id>`), or the picture of
-// one chart for an Android home-screen widget (`?picture=<chart id>`).
+// One page, four roles: the main window, one desktop widget (`?widget=<id>&chart=<chart id>`), the picture of one
+// chart for an Android home-screen widget (`?picture=<chart id>`), or the desktop's peek (`?peek=1`: a note opened
+// from another app, in a small window).
 const params = new URLSearchParams(location.search);
 const widgetId = params.get("widget");
 const chartId = params.get("chart");
@@ -22,6 +24,15 @@ if (pictureId) {
     root.render(
       <StrictMode>
         <PicturePage chartId={pictureId} />
+      </StrictMode>,
+    ),
+  );
+} else if (params.get("peek") === "1") {
+  document.documentElement.classList.add("peek-page");
+  void init("peek").then(() =>
+    root.render(
+      <StrictMode>
+        <PeekPage />
       </StrictMode>,
     ),
   );

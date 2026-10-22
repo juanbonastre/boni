@@ -268,7 +268,8 @@ test("a part of a collection with its own level: a rule made from Notion's filte
   await dialog.getByRole("textbox", { name: "Valor" }).fill("Tutoría");
   await dialog.locator(".rule-level select").selectOption("restricted");
   await shot(w, "rule");
-  await dialog.getByRole("button", { name: "Guardar regla" }).click();
+  // A double click (Juan's report): the rule is saved once.
+  await dialog.getByRole("button", { name: "Guardar regla" }).dblclick();
   await expect(dialog.locator(".rule-row")).toHaveCount(1);
   await expect(dialog.locator(".rule-row")).toContainText("Título contiene Tutoría");
   await expect(dialog.locator(".rule-row")).toContainText("Restringida");
@@ -276,22 +277,15 @@ test("a part of a collection with its own level: a rule made from Notion's filte
   await expect(w.locator(".col-protect .protect-pill")).toContainText("+1");
 });
 
-test("a boni:// link (Boni Calendar's \"Abrir en Boni\") opens the note's row in the running app", async () => {
-  const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
-  // A second start with the link, as the system does: it hands the link to this one and leaves.
-  const note = `agenda/docencia/${iso(today)} Clase de ejemplo.md`;
+/** A second start with a link, as the system does: it hands the link to the running app and leaves. */
+function openLink(link: string) {
   const bin = process.env.BONI_DESKTOP_BIN;
   const electronBin =
     bin ??
     (createRequire(join(ROOT, "apps", "boni-desktop", "package.json"))("electron") as string);
   execFileSync(
     electronBin,
-    [
-      ...(bin ? [] : ["."]),
-      `--user-data-dir=${join(dir, "electron")}`,
-      `boni://note?path=${encodeURIComponent(note)}`,
-    ],
+    [...(bin ? [] : ["."]), `--user-data-dir=${join(dir, "electron")}`, link],
     {
       cwd: join(ROOT, "apps", "boni-desktop"),
       env: {
@@ -303,6 +297,54 @@ test("a boni:// link (Boni Calendar's \"Abrir en Boni\") opens the note's row in
       timeout: 20_000,
     },
   );
+}
+
+test("a boni:// link opens the note's row in the running app", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
+  const note = `agenda/docencia/${iso(today)} Clase de ejemplo.md`;
+  openLink(`boni://note?path=${encodeURIComponent(note)}`);
   await expect(w.locator(".row-body")).toHaveValue(/Preparar los ejercicios del tema 3/);
   await expect(w.locator(".topbar")).toContainText("Clase de ejemplo");
+});
+
+test("Boni Calendar's link with peek=1: a small window with the note, gone when it loses the focus", async () => {
+  const a = app as ElectronApplication;
+  const note = `agenda/docencia/${iso(tomorrow)} Tutoría.md`;
+  openLink(`boni://note?path=${encodeURIComponent(note)}&peek=1`);
+  const peekPage = async () => {
+    for (let i = 0; i < 100; i++) {
+      const p = a.windows().find((x) => x.url().includes("peek=1"));
+      if (p) return p;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error("no peek window");
+  };
+  const peek = await peekPage();
+  await expect(peek.locator(".peek-head")).toContainText("Docencia");
+  await expect(peek.locator(".row-title, .doc-title").first()).toHaveValue("Tutoría");
+  await peek.screenshot({ path: join(SHOTS, "desktop-peek.png") });
+  const visible = () =>
+    a.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().some(
+        (x) => x.webContents.getURL().includes("peek=1") && x.isVisible(),
+      ),
+    );
+  expect(await visible()).toBe(true);
+  // A click anywhere else: the main window takes the focus and the peek goes.
+  await a.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()
+      .find(
+        (x) =>
+          !x.webContents.getURL().includes("peek=1") && !x.webContents.getURL().includes("widget="),
+      )
+      ?.focus(),
+  );
+  await expect.poll(visible).toBe(false);
+  // The next one opens again, with its own note.
+  openLink(
+    `boni://note?path=${encodeURIComponent(`agenda/docencia/${iso(today)} Clase de ejemplo.md`)}&peek=1`,
+  );
+  await expect.poll(visible).toBe(true);
+  await expect(peek.locator(".row-body")).toHaveValue(/Preparar los ejercicios/);
 });

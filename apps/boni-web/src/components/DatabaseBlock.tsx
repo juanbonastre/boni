@@ -814,16 +814,46 @@ function TextCell({
   );
 }
 
+// Formatters made once: building one per cell (toLocaleDateString does) cost most of a table's render.
+const DATE_FMT = new Intl.DateTimeFormat("es-ES", { dateStyle: "medium", timeZone: "UTC" });
+const DATETIME_FMT = new Intl.DateTimeFormat("es-ES", { dateStyle: "medium", timeStyle: "short" });
+const MONEY_FMT = new Map<string, Intl.NumberFormat>();
+const moneyFmt = (currency: string) => {
+  let f = MONEY_FMT.get(currency);
+  if (!f) {
+    try {
+      f = new Intl.NumberFormat("es-ES", { style: "currency", currency });
+    } catch {
+      f = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 });
+    }
+    MONEY_FMT.set(currency, f);
+  }
+  return f;
+};
+
+const DATE_FMTS = new Map<string, Intl.DateTimeFormat>();
+const dateFmt = (locale: string, o: Intl.DateTimeFormatOptions) => {
+  const key = `${locale} ${JSON.stringify(o)}`;
+  let f = DATE_FMTS.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(locale, { ...o, timeZone: "UTC" });
+    DATE_FMTS.set(key, f);
+  }
+  return f;
+};
+
 function showValue(field: DataField, value: DataValue): string {
   if (value == null) return "";
   if (typeof value === "object" && !Array.isArray(value))
-    return new Intl.NumberFormat("es-ES", { style: "currency", currency: value.currency }).format(
-      value.amount,
-    );
-  if (field.type === "datetime" && typeof value === "string")
-    return new Date(value).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" });
-  if (field.type === "date" && typeof value === "string")
-    return new Date(`${value}T12:00:00Z`).toLocaleDateString("es-ES", { dateStyle: "medium" });
+    return moneyFmt(value.currency).format(value.amount);
+  if (field.type === "datetime" && typeof value === "string") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? value : DATETIME_FMT.format(d);
+  }
+  if (field.type === "date" && typeof value === "string") {
+    const d = new Date(`${value}T12:00:00Z`);
+    return Number.isNaN(d.getTime()) ? value : DATE_FMT.format(d);
+  }
   if (field.type === "duration" && typeof value === "number")
     return `${Math.floor(value / 60)} h ${value % 60} min`;
   if (Array.isArray(value)) return value.join(", ");
@@ -1151,8 +1181,7 @@ function CalendarView({
     ? days
     : days.slice(0, days[35] && days[35].getUTCMonth() !== first.getUTCMonth() ? 35 : 42);
   const today = ymd(new Date());
-  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) =>
-    d.toLocaleDateString(locale, { ...o, timeZone: "UTC" });
+  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) => dateFmt(locale, o).format(d);
   const long = week
     ? `${fmt(days[0] as Date, { day: "numeric", month: "short" })} – ${fmt(days[6] as Date, { day: "numeric", month: "short", year: "numeric" })}`
     : fmt(first, { month: "long", year: "numeric" });

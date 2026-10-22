@@ -205,6 +205,69 @@ function openMain(screenId) {
   if (screenId) mainWindow.webContents.send("boni:event", { type: "navigate", screen: screenId });
 }
 
+// ---------- the peek: a note opened from another app, in a small window gone when it loses the focus ----------
+let peekWindow = null;
+let peekReady = null;
+function makePeek() {
+  if (peekWindow && !peekWindow.isDestroyed()) return peekReady;
+  peekWindow = new BrowserWindow({
+    width: 760,
+    height: 640,
+    minWidth: 420,
+    minHeight: 320,
+    show: false,
+    frame: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    title: "Boni",
+    icon: ICON,
+    backgroundColor: "#16171a",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+  peekWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Losing the focus (a click anywhere else) puts it away, ready for the next note.
+  peekWindow.on("blur", () => hidePeek());
+  peekWindow.on("closed", () => {
+    peekWindow = null;
+    peekReady = null;
+  });
+  // Ready when its page listens (it says so after starting), not when it has loaded: an event sent before
+  // would be lost.
+  const contents = peekWindow.webContents;
+  peekReady = new Promise((resolve) => {
+    const ready = (e) => {
+      if (e.sender !== contents) return;
+      ipcMain.removeListener("shell:peek-ready", ready);
+      resolve();
+    };
+    ipcMain.on("shell:peek-ready", ready);
+  });
+  peekWindow.loadFile(UI, { query: { peek: "1" } });
+  return peekReady;
+}
+function hidePeek() {
+  if (!peekWindow || peekWindow.isDestroyed() || !peekWindow.isVisible()) return;
+  peekWindow.hide();
+  peekWindow.webContents.send("boni:event", { type: "navigate", screen: "blank" });
+}
+async function openPeek(screenId) {
+  await makePeek();
+  const win = peekWindow;
+  if (!win) return;
+  // Centred on the display where the pointer is (where the click in the other app was).
+  const a = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const [w, h] = win.getSize();
+  win.setPosition(Math.round(a.x + (a.width - w) / 2), Math.round(a.y + (a.height - h) / 3));
+  win.webContents.send("boni:event", { type: "navigate", screen: screenId });
+  win.show();
+  win.focus();
+}
+ipcMain.on("shell:peek-hide", () => hidePeek());
+
 // ---------- widget windows ----------
 function workArea() {
   return screen.getPrimaryDisplay().workArea;
@@ -712,10 +775,15 @@ function start() {
     }
     updateTray();
     reconcileWidgets();
+    // The peek is made ahead (hidden), so "Abrir en Boni" shows a note at once.
+    if (settings.serverUrl && settings.token && !process.env.BONI_SCREENSHOT)
+      setTimeout(() => void makePeek(), 4000);
     live.restart();
     // Started by a boni:// link (Boni Calendar's "Abrir en Boni"): the window, on what it names.
     const link = linkIn(process.argv);
-    if (link) openMain(screenOfUrl(link) ?? undefined);
+    const opened = link ? screenOfUrl(link) : null;
+    if (opened?.peek) void openPeek(opened.screen);
+    else if (link) openMain(opened?.screen);
     else if (!background || !settings.serverUrl || !settings.token || process.env.BONI_SCREENSHOT)
       openMain();
     setTimeout(tick, 3000);
@@ -741,7 +809,9 @@ if (!process.env.BONI_SCREENSHOT && !app.requestSingleInstanceLock()) {
   // Opening Boni again (the menu) shows the one that runs in the tray; the autostart's second start does nothing.
   app.on("second-instance", (_e, argv) => {
     const link = linkIn(argv);
-    if (link) openMain(screenOfUrl(link) ?? undefined);
+    const opened = link ? screenOfUrl(link) : null;
+    if (opened?.peek) void openPeek(opened.screen);
+    else if (link) openMain(opened?.screen);
     else if (!argv.includes("--background")) openMain();
   });
   // boni:// links reach here through the .deb's desktop entry (MimeType x-scheme-handler/boni): nothing is

@@ -303,8 +303,9 @@ handle("vault:trash", async (rel) => {
 });
 handle("vault:open-note", (rel) => {
   // In Boni (Juan, 2026-10-22: the notes live in Boni now): its desktop app takes boni://note?path=<the note's
-  // vault path> and opens the row that note became. The URL is built here from a checked path, never by the UI.
-  void shell.openExternal(`boni://note?path=${encodeURIComponent(notePath(rel).join("/"))}`);
+  // vault path> and shows the row that note became as a peek (a small window gone when it loses the focus). The
+  // URL is built here from a checked path, never by the UI.
+  void shell.openExternal(`boni://note?path=${encodeURIComponent(notePath(rel).join("/"))}&peek=1`);
   return null;
 });
 handle("vault:create", (rel, text) => vault.create(rel, text));

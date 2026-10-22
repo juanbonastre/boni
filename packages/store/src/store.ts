@@ -141,6 +141,12 @@ export interface UserStore {
   restore(id: EntityId, meta: OpMeta): void;
   get(id: EntityId): StoredEntity | null;
   list(type: TypeId, opts?: { includeDeleted?: boolean }): StoredEntity[];
+  /** A type's entities (not in the trash) without their labels, in one query: for a view's rows. */
+  entities(type: TypeId): Entity[];
+  /** How many entities a type has (not in the trash), without reading them. */
+  count(type: TypeId): number;
+  /** The entities (not in the trash) whose `field` holds exactly `value` (a text), by one query. */
+  findByValue(field: string, value: string): { id: EntityId; type: TypeId }[];
   linksTo(id: EntityId): { src: EntityId; field: string }[];
   search(text: string, opts?: { type?: TypeId; limit?: number }): EntityId[];
   /** The last operation's number: the version devices sync from. */
@@ -280,19 +286,59 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
 
   // ------------------------------------------------------------ reading
 
+  interface EntityRow {
+    id: string;
+    type: string;
+    vals: string;
+    body: string | null;
+    created: number;
+    updated: number;
+    version: number;
+    deleted: number | null;
+  }
+  const toEntity = (row: EntityRow): Entity => ({
+    id: row.id,
+    type: row.type,
+    values: JSON.parse(row.vals) as Record<string, Value>,
+    created: row.created,
+    updated: row.updated,
+    version: row.version,
+    ...(row.body !== null ? { body: row.body } : {}),
+    ...(row.deleted !== null ? { deleted: row.deleted } : {}),
+  });
+
+  /** A whole type in two queries (its entities, then all their labels), not one per entity. */
+  function readType(type: TypeId, includeDeleted: boolean): StoredEntity[] {
+    const alive = includeDeleted ? "" : " AND deleted IS NULL";
+    const rows = db
+      .prepare(`SELECT * FROM entities WHERE type = ?${alive} ORDER BY created, id`)
+      .all(type) as unknown as EntityRow[];
+    const labels = new Map<string, Record<string, Label>>();
+    // Most labels of a type are the same text (one import, one source): each is parsed once (shared, and
+    // labels are never changed in place).
+    const parsed = new Map<string, Label>();
+    for (const p of db
+      .prepare(
+        `SELECT p.entity, p.field, p.label FROM field_prov p JOIN entities e ON e.id = p.entity WHERE e.type = ?${alive.replace("deleted", "e.deleted")}`,
+      )
+      .all(type) as { entity: string; field: string; label: string }[]) {
+      let m = labels.get(p.entity);
+      if (!m) {
+        m = {};
+        labels.set(p.entity, m);
+      }
+      let l = parsed.get(p.label);
+      if (!l) {
+        l = JSON.parse(p.label) as Label;
+        parsed.set(p.label, l);
+      }
+      m[p.field] = l;
+    }
+    return rows.map((r) => ({ entity: toEntity(r), labels: labels.get(r.id) ?? {} }));
+  }
+
   function readEntity(id: EntityId): StoredEntity | null {
-    const row = db.prepare("SELECT * FROM entities WHERE id = ?").get(id) as
-      | {
-          id: string;
-          type: string;
-          vals: string;
-          body: string | null;
-          created: number;
-          updated: number;
-          version: number;
-          deleted: number | null;
-        }
-      | undefined;
+    const row = db.prepare("SELECT * FROM entities WHERE id = ?").get(id) as EntityRow | undefined;
     if (!row) return null;
     const entity: Entity = {
       id: row.id,
@@ -681,14 +727,27 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
     remove: (id, meta) => void tx(() => doDelete(id, meta, true)),
     restore: (id, meta) => void tx(() => doDelete(id, meta, false)),
     get: readEntity,
-    list: (type, o = {}) =>
+    list: (type, o = {}) => readType(type, !!o.includeDeleted),
+    entities: (type) =>
       (
         db
-          .prepare(
-            `SELECT id FROM entities WHERE type = ?${o.includeDeleted ? "" : " AND deleted IS NULL"} ORDER BY created, id`,
-          )
-          .all(type) as { id: string }[]
-      ).map((r) => readEntity(r.id) as StoredEntity),
+          .prepare("SELECT * FROM entities WHERE type = ? AND deleted IS NULL ORDER BY created, id")
+          .all(type) as unknown as EntityRow[]
+      ).map(toEntity),
+    count: (type) =>
+      Number(
+        (
+          db
+            .prepare("SELECT COUNT(*) AS n FROM entities WHERE type = ? AND deleted IS NULL")
+            .get(type) as { n: number }
+        ).n,
+      ),
+    findByValue: (field, value) =>
+      db
+        .prepare(
+          "SELECT id, type FROM entities WHERE deleted IS NULL AND json_extract(vals, ?) = ? ORDER BY created, id",
+        )
+        .all(`$."${field.replace(/"/g, "")}"`, value) as { id: string; type: string }[],
     linksTo: (id) =>
       db.prepare("SELECT src, field FROM links WHERE dst = ? ORDER BY src, pos").all(id) as {
         src: string;

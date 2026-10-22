@@ -4,10 +4,11 @@ const { linkIn, screenOfUrl } = require("./links.cjs");
 
 test("a boni:// link opens a vault note's row, nothing else", () => {
   const p = encodeURIComponent("agenda/docencia/2026-10-22 Clase de ejemplo.md");
-  assert.equal(
-    screenOfUrl(`boni://note?path=${p}`),
-    "note:agenda/docencia/2026-10-22 Clase de ejemplo.md",
-  );
+  assert.deepEqual(screenOfUrl(`boni://note?path=${p}`), {
+    screen: "note:agenda/docencia/2026-10-22 Clase de ejemplo.md",
+    peek: false,
+  });
+  assert.equal(screenOfUrl(`boni://note?path=${p}&peek=1`)?.peek, true);
   for (const bad of [
     "boni://note?path=..%2Fsecreto.md",
     "boni://note?path=%2Fetc%2Fpasswd.md",

@@ -132,7 +132,8 @@ function UnlockDialog({
   const t = useStore((s) => s.t);
   const [to, setTo] = useState<AiLevel>(levels?.includes("restricted") ? "restricted" : "private");
   const [typed, setTyped] = useState("");
-  const ok = typed.trim() === type.name.trim();
+  const [busy, setBusy] = useState(false);
+  const ok = typed.trim() === type.name.trim() && !busy;
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
@@ -158,7 +159,11 @@ function UnlockDialog({
         onSubmit={(e) => {
           e.preventDefault();
           if (!ok) return;
-          void onConfirm(to).then((done) => done && onClose());
+          setBusy(true);
+          void onConfirm(to).then((done) => {
+            setBusy(false);
+            if (done) onClose();
+          });
         }}
       >
         <div className="find-head">
@@ -228,6 +233,17 @@ function RulesDialog({
 }) {
   const t = useStore((s) => s.t);
   const [draft, setDraft] = useState<Draft | null>(null);
+  // One save at a time: a double click must not add the rule twice.
+  const [busy, setBusy] = useState(false);
+  const once = async (f: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await f();
+    } finally {
+      setBusy(false);
+    }
+  };
   const [unlock, setUnlock] = useState<
     { kind: "save"; rule: Draft } | { kind: "remove"; id: string } | null
   >(null);
@@ -251,7 +267,9 @@ function RulesDialog({
       else toast(t("protect.locked"));
       return;
     }
-    if (await saveRule(type.id, d)) setDraft(null);
+    await once(async () => {
+      if (await saveRule(type.id, d)) setDraft(null);
+    });
   };
   const remove = async (id: string) => {
     if (wasPrivate(id)) {
@@ -259,7 +277,7 @@ function RulesDialog({
       else toast(t("protect.locked"));
       return;
     }
-    await saveRule(type.id, { id, remove: true });
+    await once(() => saveRule(type.id, { id, remove: true }));
   };
   return (
     <div
@@ -349,7 +367,7 @@ function RulesDialog({
               <button
                 type="button"
                 className="btn primary"
-                disabled={!draft.filter.length}
+                disabled={!draft.filter.length || busy}
                 onClick={() => void save(draft)}
               >
                 {t("rules.save")}
