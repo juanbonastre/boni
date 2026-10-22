@@ -3938,6 +3938,14 @@ button.find-row:hover {
   font-size: 13px;
   margin-bottom: 6px;
 }
+/* Boni Calendar's peek before its first login: the account form, with room around it. */
+.peek-login {
+  padding: 24px 28px;
+  max-width: 520px;
+}
+.peek-login > p {
+  margin: 0 0 16px;
+}
 /* The properties fold under one line (closed by default, as a note opens on its text). */
 .row-props-toggle {
   display: inline-flex;

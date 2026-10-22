@@ -351,7 +351,7 @@ function Disclosure({
  * The account, as Boni Calendar's "Data → Server": logged in ("Logged in as juan · portatil", live or not, Log out),
  * or the login form (address, user, password, this device's name). An old device token works, but asks to log in.
  */
-function Account() {
+export function Account() {
   const t = useStore((s) => s.t);
   const settings = useStore((s) => s.settings);
   const loggedIn = configured(settings) && Boolean(settings.user) && !settings.sessionEnded;
@@ -413,16 +413,19 @@ function Account() {
           {settings.sessionEnded ? t("account.endedHelp") : t("account.legacyHelp")}
         </p>
       )}
-      <label className="field">
-        <span className="field-label">{t("settings.url")}</span>
-        <input
-          className="input"
-          value={form.serverUrl}
-          placeholder="https://boni.example.ts.net"
-          autoComplete="url"
-          onChange={set("serverUrl")}
-        />
-      </label>
+      {/* In Boni Calendar's peek the address is the page's own: nothing to choose. */}
+      {!host.embed && (
+        <label className="field">
+          <span className="field-label">{t("settings.url")}</span>
+          <input
+            className="input"
+            value={form.serverUrl}
+            placeholder="https://boni.example.ts.net"
+            autoComplete="url"
+            onChange={set("serverUrl")}
+          />
+        </label>
+      )}
       <div className="field-pair">
         <label className="field">
           <span className="field-label">{t("account.user")}</span>

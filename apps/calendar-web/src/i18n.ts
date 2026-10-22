@@ -26,6 +26,9 @@ const es = {
     "Al cerrar la ventana, la app sigue en la bandeja del sistema y los avisos llegan igual",
   "desktop.autostart": "Abrir al iniciar sesión",
   "desktop.autostartHint": "Arranca en la bandeja, sin ventana",
+  "desktop.boniUrl": "Dirección de Boni",
+  "desktop.boniUrlHint": "Con ella, doble clic en un evento abre su nota aquí mismo",
+  "desktop.boniUrlBad": "Tiene que empezar por https://",
   "desktop.trayOpen": "Abrir Boni Calendar",
   "desktop.trayQuit": "Salir",
   "reminders.hint":
@@ -343,6 +346,9 @@ const en: Record<Key, string> = {
     "When the window closes, the app stays in the system tray and reminders still arrive",
   "desktop.autostart": "Open at login",
   "desktop.autostartHint": "Starts in the tray, without a window",
+  "desktop.boniUrl": "Boni's address",
+  "desktop.boniUrlHint": "With it, double-clicking an event opens its note right here",
+  "desktop.boniUrlBad": "It must start with https://",
   "desktop.trayOpen": "Open Boni Calendar",
   "desktop.trayQuit": "Quit",
   "reminders.hint":

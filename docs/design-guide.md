@@ -263,7 +263,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   Its properties start folded under one quiet line ("12 propiedades", a chevron); unfolded ("Ocultar propiedades")
   they stay so for that collection on the device. A note opens on its text, not on a list of properties.
 - **Peek** (2026-10-22): a note opened from another app (a double click on an event in Boni Calendar; Ctrl+click and
-  its "Abrir en Boni" open the note in Boni's main window instead) shows in a small frameless
+  its "Abrir en Boni" open the note in Boni's main window instead). In Boni Calendar with Boni's address (Settings →
+  Escritorio) it is the calendar's own window with Boni's note page, which asks once for the user and password (no
+  address field: it is the page's own) and hides at once on a click in the calendar. It shows in a small frameless
   window, centred where the pointer is: a thin head (its collection, "Abrir en Boni" to take it to the main window,
   ×) that moves the window, and the row as a page below. Esc, × or a click in Boni Calendar put it away (it stays,
   on top, while Juan works in another app); the next note never shows the last one for a moment.

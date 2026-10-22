@@ -14,6 +14,8 @@ export interface ServerSync {
 export interface DesktopPrefs {
   background: boolean;
   autostart: boolean;
+  /** Boni's address (its server on the tailnet): a double click on an event shows its note in a small window. */
+  boniUrl: string;
 }
 
 /** Small per-device key-value storage for settings and UI state. */

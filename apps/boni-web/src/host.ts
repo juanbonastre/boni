@@ -145,10 +145,23 @@ export interface Host {
    * folder and opens it with the system's app; a browser downloads it.
    */
   openFile?: (sha256: string, name: string) => Promise<"opened" | "shown" | "offline" | "error">;
+  /**
+   * The page inside another app's window (Boni Calendar's note peek, Juan 2026-10-22): it says when it listens,
+   * asks to be put away and to open a note in Boni. The notes to show arrive as `navigate` events.
+   */
+  embed?: EmbedHost;
+}
+
+export interface EmbedHost {
+  ready(): void;
+  hide(): void;
+  openInBoni(path: string): void;
 }
 
 declare global {
   interface Window {
+    /** Given by Boni Calendar's peek window (its preload) to the page it loads from the server. */
+    boniEmbed?: EmbedHost & { onNote(cb: (path: string | null) => void): void };
     boniAndroid?: AndroidNative;
     boniDesktop?: {
       request(method: string, path: string, body?: unknown): Promise<TransportAnswer>;
@@ -257,6 +270,12 @@ const DEFAULTS: ClientSettings = {
  */
 export function browserHost(): Host {
   const listeners = new Set<(e: ShellEvent) => void>();
+  const embed = typeof window === "undefined" ? undefined : window.boniEmbed;
+  // In Boni Calendar's peek the page is served by Boni's server: its address is this page's.
+  const defaults = embed ? { ...DEFAULTS, serverUrl: location.origin } : DEFAULTS;
+  embed?.onNote((path) => {
+    for (const l of listeners) l({ type: "navigate", screen: path ? `note:${path}` : "blank" });
+  });
   const read = (): ClientSettings => {
     let saved: Partial<ClientSettings> = {};
     try {
@@ -264,7 +283,7 @@ export function browserHost(): Host {
     } catch {
       saved = {};
     }
-    return { ...DEFAULTS, ...saved, hasToken: Boolean(safeGet(TOKEN_KEY)) };
+    return { ...defaults, ...saved, hasToken: Boolean(safeGet(TOKEN_KEY)) };
   };
   const write = (next: Partial<ClientSettings>) => {
     const { hasToken: _h, ...current } = read();
@@ -384,7 +403,7 @@ export function browserHost(): Host {
       safeSet(TOKEN_KEY, null);
       return write({ user: "" });
     },
-    suggestedDevice: async () => "navegador",
+    suggestedDevice: async () => (embed ? "Boni Calendar (notas)" : "navegador"),
     onEvent(cb) {
       listeners.add(cb);
       return () => listeners.delete(cb);
@@ -392,6 +411,15 @@ export function browserHost(): Host {
     desktop: null,
     phone: null,
     live: false,
+    ...(embed
+      ? {
+          embed: {
+            ready: () => embed.ready(),
+            hide: () => embed.hide(),
+            openInBoni: (path: string) => embed.openInBoni(path),
+          },
+        }
+      : {}),
   };
 }
 

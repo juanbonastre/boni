@@ -150,8 +150,13 @@ apps/calendar-desktop/  Electron shell (chosen over Tauri after measuring, see d
                  only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
                  atomic writes with a conflict check); the UI reaches it through `window.boniVault` (`vaultBridge.ts`).
                  With the bridge's `noteApp: "boni"`, Ctrl+click and "Abrir en Boni" open an event's note in Boni's
-                 desktop app (`boni://note?path=...`) and a double click in its peek (`&peek=1`); a click in the
-                 calendar then sends `boni://peek?hide=1`.
+                 desktop app (`boni://note?path=...`). A double click opens the calendar's own note peek (Juan,
+                 2026-10-22): with Boni's address in Settings → Desktop (`desktop-prefs.cjs` `boniUrl`, an https
+                 origin) a small window loads `<address>/boni/?peek=1` (Boni's page, its own session in the
+                 `persist:boni-peek` partition, only that origin; `peek-preload.cjs` gives it `window.boniEmbed`:
+                 ready, hide, open in Boni, the notes) and a click in the calendar hides it at once. Without an
+                 address, Boni's own peek (`&peek=1`, hidden by `boni://peek?hide=1`).
+                 `make e2e-calendar-desktop` drives it for real (not in CI).
 legacy/obsidian/ The Obsidian plugin and its tests in the installed Obsidian, out of the build since Juan dropped
                  Obsidian (2026-10-22; to come back with the version for more people, see legacy/README.md).
 apps/calendar-android/ The same app on Android (Kotlin shell, `make`-less: CI builds it, android.yml): the built web UI in a
