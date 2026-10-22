@@ -256,6 +256,56 @@ describe("importing again", () => {
   });
 });
 
+describe("links and entities after a stopped import or a type kept in Boni", () => {
+  const CLASS = "agenda/docencia/2026-10-19 Clase de ejemplo.md";
+  const classOf = (s: UserStore) =>
+    s.list("t_docencia").filter((e) => e.entity.values[PATH_FIELD] === CLASS);
+  const course = (s: UserStore) =>
+    s.list("t_proyecto").find((e) => e.entity.values[PATH_FIELD] === "proyectos/curso-ejemplo.md")
+      ?.entity.id;
+
+  it("a link to a note of a type kept in Boni still resolves", () => {
+    const s = store();
+    const root = vault();
+    importVault(root, s, { apply: true });
+    s.setSetting("mirror/core/t_proyecto", "vault");
+    writeFileSync(
+      join(root, CLASS),
+      '---\ntitle: "Clase cambiada"\ndate: "2026-10-19"\nproject: "[[curso-ejemplo]]"\n---\n',
+    );
+    const r = importVault(root, s, { apply: true });
+    expect(r.updated).toBe(1);
+    expect(classOf(s)[0]?.entity.values.f_project).toBe(course(s));
+  });
+
+  it("an unchanged note's lost link is written again; an extra entity of one note goes to the trash", () => {
+    const s = store();
+    const root = vault();
+    importVault(root, s, { apply: true });
+    const [first] = classOf(s);
+    const l = first?.labels.f_title as NonNullable<typeof first>["labels"][string];
+    s.update(
+      first?.entity.id as string,
+      { f_project: { value: null, label: l } },
+      { actor: "import" },
+    );
+    s.create(
+      "t_docencia",
+      {
+        f_title: { value: "Clase de ejemplo", label: l },
+        [PATH_FIELD]: { value: CLASS, label: l },
+      },
+      { actor: "import" },
+    );
+    expect(classOf(s)).toHaveLength(2);
+    const r = importVault(root, s, { apply: true });
+    expect(r).toMatchObject({ relinked: 1, duplicates: 1 });
+    expect(classOf(s).map((e) => e.entity.id)).toEqual([first?.entity.id]);
+    expect(classOf(s)[0]?.entity.values.f_project).toBe(course(s));
+    expect(importVault(root, s, { apply: true })).toMatchObject({ relinked: 0, duplicates: 0 });
+  });
+});
+
 describe("the notes Boni's mirror writes", () => {
   it("a note the mirror writes for a type in core mode is that entity's, and boni_* lines are never fields", () => {
     const s = store();

@@ -199,6 +199,10 @@ export interface ImportReport {
   hiddenFromModels: string[];
   /** Notes titled by their first heading instead of their file's name (that heading leaves the text). */
   titled: number;
+  /** Unchanged notes whose links were written again (their target came later, or a stopped import lost them). */
+  relinked: number;
+  /** Extra entities of one note (an import that stopped halfway), sent to the trash. */
+  duplicates: number;
   /** A zone's import: the zone, and how many attachments became rows. */
   zone?: Zone;
   files: number;
@@ -278,6 +282,12 @@ export function readDefinitions(root: string): CollectionDef[] {
   }
   return defs;
 }
+
+/** Whether two relation values point to the same entities (order does not count). */
+const sameLinks = (a: Value, b: Value) => {
+  const ids = (v: Value) => (v === null ? [] : Array.isArray(v) ? [...v].sort() : [v]);
+  return JSON.stringify(ids(a)) === JSON.stringify(ids(b));
+};
 
 /** The lines Boni's mirror adds to a note (`@boni/mirror`'s ID_KEY, INTEGRITY_KEY, OMITTED_KEY). */
 const MIRROR_KEYS = ["boni_id", "boni_integrity", "boni_omitted"];
@@ -432,6 +442,8 @@ export function importVault(
     ...(zone ? { zone } : {}),
     files: 0,
     titled: 0,
+    relinked: 0,
+    duplicates: 0,
   };
 
   // Types whose truth is Boni now: their notes are its mirror, never imported again.
@@ -504,21 +516,25 @@ export function importVault(
   // ------------------------------------------------ types and their fields
   const typeIdOf = (n: Note) =>
     n.calendar ? `t_${n.calendar.id.replace(/-/g, "_")}` : `t_${(n.group as Group).key}`;
+  const mirrorsOther = (n: Note) => {
+    const s = n.mirrorOf ? store.get(n.mirrorOf) : null;
+    return !!s && s.entity.values[PATH_FIELD] !== n.path;
+  };
+  const read = [...notes];
   {
     const kept = notes.filter((n) => !inCore(typeIdOf(n)));
     const left = notes.length - kept.length;
     if (left) report.skipped["kept in Boni (core)"] = left;
-    // A note Boni's mirror writes for another type (`Boni/Libros/…`, generic profile) is that entity's.
-    const own = kept.filter((n) => {
-      const s = n.mirrorOf ? store.get(n.mirrorOf) : null;
-      return !(s && inCore(s.entity.type));
-    });
+    // A note Boni's mirror writes for an entity that is not this note's (`Boni/Libros/…`, generic profile).
+    const own = kept.filter((n) => !mirrorsOther(n));
     if (kept.length - own.length)
       report.skipped["written by Boni's mirror"] = kept.length - own.length;
     notes.splice(0, notes.length, ...own);
   }
+  // Links reach every note, also those of types kept in Boni (a class still links to its project).
   const byName = new Map<string, Note>(); // link target (file name) -> note
-  for (const n of notes) if (!n.file) byName.set(basename(n.path, ".md").toLowerCase(), n);
+  for (const n of read)
+    if (!n.file && !mirrorsOther(n)) byName.set(basename(n.path, ".md").toLowerCase(), n);
   const linkedType = (target: string) => {
     const n = byName.get(target);
     return n ? typeIdOf(n) : null;
@@ -642,15 +658,28 @@ export function importVault(
   }
 
   // ------------------------------------------------ what is already in the store
-  const existing = new Map<string, { id: string; hash: string }>(); // path -> entity
+  const existing = new Map<string, { id: string; hash: string; values: Record<string, Value> }>(); // path -> entity
+  const coreIds = new Map<string, string>(); // path -> entity, for the types kept in Boni (link targets only)
+  const duplicates: string[] = [];
   for (const typeId of Object.keys(store.schema().types))
     for (const e of store.list(typeId)) {
       const p = e.entity.values[PATH_FIELD];
+      if (typeof p !== "string") continue;
+      if (inCore(typeId)) {
+        coreIds.set(p, e.entity.id);
+        continue;
+      }
       // Each import sees only its own notes: the vault's never a zone's, a zone's only its own.
-      const mine =
-        typeof p === "string" && !inCore(typeId) && (zone ? p.startsWith(`${zone}/`) : !inZone(p));
-      if (mine)
-        existing.set(p, { id: e.entity.id, hash: String(e.entity.values[HASH_FIELD] ?? "") });
+      if (zone ? !p.startsWith(`${zone}/`) : inZone(p)) continue;
+      const entry = {
+        id: e.entity.id,
+        hash: String(e.entity.values[HASH_FIELD] ?? ""),
+        values: e.entity.values,
+      };
+      // Two entities of one note (an import that stopped halfway): the first made is kept.
+      const other = existing.get(p);
+      if (other) duplicates.push(other.id < entry.id ? entry.id : other.id);
+      if (!other || entry.id < other.id) existing.set(p, entry);
     }
   const idOf = new Map<string, string>(); // path -> entity id (existing or new)
   for (const n of notes) idOf.set(n.path, existing.get(n.path)?.id ?? newId("e", now));
@@ -660,14 +689,20 @@ export function importVault(
       report.unresolvedLinks++;
       return null;
     }
-    return idOf.get(n.path) ?? null;
+    return idOf.get(n.path) ?? coreIds.get(n.path) ?? null;
   };
 
   const meta: OpMeta = { actor: "import", run: opts.run ?? `import-${now}` };
   const apply = !!opts.apply;
 
   // Every type is checked before anything is written (a dry run sees the same problems).
-  const all = { types: Object.fromEntries([...wanted.values()].map((d) => [d.id, d])) };
+  // A type kept in Boni is not imported again but is still there to link to.
+  const all = {
+    types: {
+      ...Object.fromEntries(Object.entries(store.schema().types).filter(([id]) => inCore(id))),
+      ...Object.fromEntries([...wanted.values()].map((d) => [d.id, d])),
+    },
+  };
   for (const def of wanted.values())
     for (const e of typeErrors(def, all)) report.typeProblems.push(`${def.id}: ${e}`);
   if (report.typeProblems.length) {
@@ -743,6 +778,22 @@ export function importVault(
     const head = !n.file && !byProp.has("title") ? leadingTitle(n.body) : null;
     if (was && was.hash === n.hash) {
       report.unchanged++;
+      // Its links again: one written before its target was there (or lost by an import that stopped) is
+      // written now.
+      const fix: Writes = {};
+      for (const [prop, f] of byProp) {
+        const target = def.fields.find((x) => x.id === f.id) ?? f;
+        const raw = n.values[prop] ?? null;
+        if (target.type !== "relation" || raw === null) continue;
+        const want = toValue(target, raw, resolve);
+        if (sameLinks(want, was.values[f.id] ?? null)) continue;
+        const sens: Sensitivity = n.sensitive ? "sensitive" : def.sensitivity;
+        fix[f.id] = { value: want, label: label("imported", sens, source(n), !!def.thirdParty) };
+      }
+      if (Object.keys(fix).length) {
+        report.relinked++;
+        later.push({ id: was.id, writes: fix, path: n.path });
+      }
       // Imported before this rule: titled now, unless it was given another title or text meanwhile.
       const e = head ? store.get(was.id) : null;
       if (
@@ -821,6 +872,8 @@ export function importVault(
       } catch (e) {
         report.failed.push({ path: r.path, error: e instanceof Error ? e.message : String(e) });
       }
+  report.duplicates = duplicates.length;
+  if (apply) for (const id of duplicates) store.remove(id, meta);
   // Notes that are gone go to the trash (Undo brings them back; a note that comes back is imported again).
   const present = new Set(notes.map((n) => n.path));
   for (const [path, e] of existing)
