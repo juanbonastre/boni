@@ -2,6 +2,7 @@ export * from "./chart.ts";
 export * from "./chartStyle.ts";
 export * from "./dates.ts";
 export { type EntityProfileOptions, entityMonths, entityProfile } from "./entities.ts";
+export { filterErrors, matchesFilters } from "./filter.ts";
 export * from "./money.ts";
 export {
   DATABASE_LAYOUTS,

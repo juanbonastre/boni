@@ -7,6 +7,7 @@ import {
   plain,
   type ReadingGuide,
   readMessagePrompt,
+  readStore,
   resolveModules,
   type UserIn,
 } from "@boni/agent";
@@ -14,7 +15,7 @@ import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
 import { wrappedKeysIn } from "@boni/identity";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
-import { BODY, closedToAi, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
+import { BODY, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
 import type { AgentHost } from "./agent.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
@@ -917,12 +918,14 @@ export class Mails {
   }
 
   private targetsFor(store: UserStore, ids: readonly string[]): Target[] {
+    // What the models may see of each: its level and its rules (a closed row is never an example).
+    const ro = readStore(store);
     const levels = store.aiAccess();
-    const types = store.schema().types;
+    const types = ro.schema().types;
     return ids.flatMap((id) => {
       const t = types[id];
-      if (!t || t.archived || t.system || closedToAi(levels[id])) return [];
-      const all = store.list(id);
+      if (!t || t.archived || t.system) return [];
+      const all = ro.list(id);
       const date = dueField(
         t,
         all.map((e) => e.entity),
@@ -935,6 +938,7 @@ export class Mails {
                 const l = e.labels[t.titleField];
                 return (
                   l !== undefined &&
+                  !l.noModel &&
                   (l.integrity === "user" || l.integrity === "own" || l.integrity === "imported") &&
                   l.sensitivity !== "sensitive"
                 );

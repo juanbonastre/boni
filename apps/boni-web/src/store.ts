@@ -1,4 +1,4 @@
-import type { DatabaseView, PageSpec } from "@boni/views";
+import type { DatabaseFilter, DatabaseView, PageSpec } from "@boni/views";
 import { useMemo } from "react";
 import { create } from "zustand";
 import {
@@ -1611,6 +1611,25 @@ export async function changeProtection(type: string, level: AiLevel, unlock = fa
     return true;
   } catch (e) {
     if (was) put(was);
+    toast(
+      get().t(e instanceof ApiError && e.code === "locked" ? "protect.locked" : "db.saveError"),
+    );
+    return false;
+  }
+}
+
+/** Saves a rule of a collection's protection (or removes it), then reads the collections again. */
+export async function saveRule(
+  type: string,
+  rule: { id?: string; filter: DatabaseFilter[]; level: AiLevel } | { id: string; remove: true },
+  unlock = false,
+) {
+  try {
+    if ("remove" in rule) await agent.removeRule(rule.id, unlock);
+    else await agent.saveRule(type, rule, unlock);
+    await loadDataTypes();
+    return true;
+  } catch (e) {
     toast(
       get().t(e instanceof ApiError && e.code === "locked" ? "protect.locked" : "db.saveError"),
     );

@@ -47,7 +47,9 @@ packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native mo
                  last two): lowering a `private` type needs `setAiAccess(..., { unlock: true })`, which the app
                  sends only from the collection's own page (Colecciones) after Juan types its name. `zones` /
                  `setZone`: where a type came from (the vault's `restricted/` or `private/`); the import raises it
-                 to that level, and the mirror never takes it. `putFile` / `getFile`: attachments by sha256 (a `file` value), outside
+                 to that level, and the mirror never takes it. `aiRules` / `setAiRule` / `removeAiRule`: a part of a
+                 collection with its own level (Notion's filter as JSON); whatever lowers something private needs
+                 `unlock` too. `putFile` / `getFile`: attachments by sha256 (a `file` value), outside
                  the log and `readQuery`, at most `MAX_FILE_BYTES`.
 packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
                  devices with a trust level (personal / shared / ambient; only another personal device raises it),
@@ -63,6 +65,8 @@ packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed
                  `golden/cases.json` comes from the original engine (`golden/make_golden.py`); a change to the
                  engine changes them only on purpose.
                  `page.ts`: a page's blocks (`PageSpec`: heading, text, chart, button), closed (`pageErrors`).
+                 `filter.ts`: Notion's filter rules (`filterErrors`, `matchesFilters`), the one matcher for a
+                 database view and for a protection rule (the agent depends on views for it).
 packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `src/cli.ts --vault --store [--apply]`,
                  dry run by default; never writes the vault). Zones as everywhere (`scan.ts`: no private/, restricted/,
                  dot folders, _system/ notes, symlinks). Type by folder (agenda by `_system/colecciones`), fields

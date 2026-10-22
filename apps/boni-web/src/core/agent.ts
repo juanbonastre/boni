@@ -1,4 +1,10 @@
-import { emptyPage, type PageSpec, pageErrors } from "@boni/views";
+import {
+  type DatabaseFilter,
+  emptyPage,
+  filterErrors,
+  type PageSpec,
+  pageErrors,
+} from "@boni/views";
 import { ApiError, NotConfiguredError, OfflineError, type Transport } from "./api.ts";
 
 /**
@@ -418,6 +424,13 @@ export interface DataType {
   level: AiLevel;
   /** The vault zone it came from, if any. */
   zone?: Zone;
+  /** Parts of it with their own level: the rows that match every condition of a rule. */
+  rules: ProtectionRule[];
+}
+export interface ProtectionRule {
+  id: string;
+  filter: DatabaseFilter[];
+  level: AiLevel;
 }
 export type DataValue =
   | string
@@ -444,6 +457,13 @@ function parseDataType(v: unknown): DataType | null {
     titleField: str(v.titleField, 80) ?? "",
     count: typeof v.count === "number" ? v.count : 0,
     level: levelOf(v.level),
+    rules: Array.isArray(v.rules)
+      ? v.rules.flatMap((r): ProtectionRule[] =>
+          isObj(r) && typeof r.id === "string" && filterErrors(r.filter).length === 0
+            ? [{ id: r.id, filter: r.filter as DatabaseFilter[], level: levelOf(r.level) }]
+            : [],
+        )
+      : [],
     ...(zoneOf(v.zone) ? { zone: zoneOf(v.zone) } : {}),
     fields: v.fields.flatMap((f): DataField[] =>
       isObj(f) && typeof f.id === "string" && typeof f.type === "string"
@@ -772,6 +792,23 @@ export class AgentApi {
     void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/data/rows"));
   restoreRow = async (id: string) =>
     void (await this.call("POST", `/${encodeURIComponent(id)}/restore`, {}, "api/data/rows"));
+  /** A part of a collection with its own level: added (no id), changed or removed. */
+  saveRule = async (
+    type: string,
+    rule: { id?: string; filter: DatabaseFilter[]; level: AiLevel },
+    unlock = false,
+  ) => {
+    const body = { filter: rule.filter, level: rule.level, ...(unlock ? { unlock: true } : {}) };
+    if (rule.id) await this.call("PUT", `/${encodeURIComponent(rule.id)}`, body, "api/data/rules");
+    else await this.call("POST", `/${encodeURIComponent(type)}/rules`, body, "api/data/types");
+  };
+  removeRule = async (id: string, unlock = false) =>
+    void (await this.call(
+      "DELETE",
+      `/${encodeURIComponent(id)}`,
+      unlock ? { unlock: true } : undefined,
+      "api/data/rules",
+    ));
   /** How much the models may see of a collection; `unlock` lowers a private one (its own page only). */
   setProtection = async (type: string, level: AiLevel, unlock = false) =>
     void (await this.call(
