@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { BODY, openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
-import { importVault, keyOf } from "./import.ts";
+import { FILE_FIELD, importVault, keyOf, PATH_FIELD } from "./import.ts";
 import { hasIdentityNumbers, withoutSecrets } from "./secrets.ts";
 
 /** An invented vault with the shapes of the real one (conventions.md), never real notes. */
@@ -229,6 +229,70 @@ describe("importing the vault", () => {
         .map((e) => e.entity.values.f_title)
         .sort(),
     ).toEqual(["Clase de ejemplo", "Tutoría"]);
+  });
+});
+
+describe("importing a zone (only Juan gives its folder)", () => {
+  /** An invented `private/` folder: notes at its root, a folder with a note, a link and a PDF. */
+  const ZONE: Record<string, string> = {
+    "suelto.md": "---\ntitle: Nota suelta inventada\n---\nTexto.\n",
+    "Documentos/seguro.md":
+      '---\nvence: "2027-01-01"\nrelacionado: "[[suelto]]"\n---\nPóliza inventada.\npassword: hunter2-inventada-0123456789\n',
+    "Documentos/poliza.pdf": "%PDF-1.7 inventado",
+    "Documentos/README.md": "# índice",
+    ".obsidian/x.json": "{}",
+  };
+
+  it("makes a type per folder, keeps attachments, and puts every type in the zone", () => {
+    const s = store();
+    const dry = importVault(vault(ZONE), s, { zone: "private" });
+    expect(dry).toMatchObject({ applied: false, zone: "private", files: 1, created: 3 });
+    expect(s.version()).toBe(0);
+
+    const r = importVault(vault(ZONE), s, { zone: "private", apply: true });
+    expect(r.types.map((t) => [t.id, t.name, t.notes]).sort()).toEqual([
+      ["t_private_documentos", "Documentos", 2],
+      ["t_private_root", "Privado", 1],
+    ]);
+    expect(r.skipped).toEqual({ "folder index (README.md)": 1 });
+    expect(r.secrets).toHaveLength(1); // left out, as everywhere
+    expect(s.zones()).toEqual({ t_private_documentos: "private", t_private_root: "private" });
+    expect(s.aiAccess()).toEqual({ t_private_documentos: "hidden", t_private_root: "hidden" });
+    expect(() => s.setAiAccess("t_private_root", "visible", "portatil")).toThrow();
+
+    const docs = s.list("t_private_documentos");
+    const pdf = docs.find((e) => e.entity.values[FILE_FIELD]);
+    expect(pdf?.entity.values.f_title).toBe("poliza.pdf");
+    expect(pdf?.entity.values[PATH_FIELD]).toBe("private/Documentos/poliza.pdf");
+    const f = s.getFile(String(pdf?.entity.values[FILE_FIELD]));
+    expect(f?.mime).toBe("application/pdf");
+    expect(Buffer.from(f?.data ?? []).toString()).toBe("%PDF-1.7 inventado");
+    expect(pdf?.labels[FILE_FIELD]?.sensitivity).toBe("sensitive");
+    const seguro = docs.find((e) => e.entity.values.f_title === "seguro");
+    const suelto = s.list("t_private_root")[0];
+    expect(seguro?.entity.values.f_relacionado).toBe(suelto?.entity.id);
+    expect(seguro?.entity.body).not.toContain("hunter2");
+  });
+
+  it("the vault's import and a zone's never touch each other's rows", () => {
+    const s = store();
+    const root = vault();
+    const zone = vault(ZONE);
+    importVault(root, s, { apply: true });
+    importVault(zone, s, { zone: "private", apply: true });
+    expect(importVault(root, s, { apply: true })).toMatchObject({ removed: 0, unchanged: 10 });
+    expect(importVault(zone, s, { zone: "private", apply: true })).toMatchObject({
+      removed: 0,
+      unchanged: 3,
+    });
+    // Another zone does not see this one's rows either; a file gone goes to the trash.
+    expect(
+      importVault(vault({ "a.md": "---\n---\n" }), s, { zone: "restricted", apply: true }),
+    ).toMatchObject({ created: 1, removed: 0 });
+    unlinkSync(join(zone, "Documentos/poliza.pdf"));
+    expect(importVault(zone, s, { zone: "private", apply: true })).toMatchObject({ removed: 1 });
+    expect(s.list("t_private_documentos")).toHaveLength(1);
+    expect(s.zones().t_restricted_root).toBe("restricted");
   });
 });
 

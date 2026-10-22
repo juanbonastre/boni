@@ -6,7 +6,9 @@ import {
   Columns3,
   LayoutGrid,
   List,
+  Lock,
   Maximize2,
+  Paperclip,
   Plus,
   Table2,
   Trash2,
@@ -19,6 +21,7 @@ import {
   editCell,
   loadDataTypes,
   loadRows,
+  openFile,
   openRow,
   useStore,
 } from "../store.ts";
@@ -100,6 +103,7 @@ export function DatabaseBlock({
         <h3 className="db-name">
           {type?.icon && <span className="db-icon">{type.icon}</span>}
           {type?.name ?? "…"}
+          {type?.zone && <ZoneMark zone={type.zone} />}
         </h3>
         <div className="db-layouts" role="radiogroup" aria-label={t("db.layout")}>
           {LAYOUTS.map((l) => (
@@ -654,6 +658,17 @@ function OpenButton({ type, row }: { type: DataType; row: DataRow }) {
   );
 }
 
+/** A vault zone moved into Boni: a lock, and why, where the collection's name is. */
+export function ZoneMark({ zone }: { zone: "restricted" | "private" }) {
+  const t = useStore((s) => s.t);
+  return (
+    <span className="db-zone" title={t(`db.zone.${zone}.help`)}>
+      <Lock size={12} strokeWidth={2} aria-hidden />
+      {t(`db.zone.${zone}`)}
+    </span>
+  );
+}
+
 const titleOf = (type: DataType, r: DataRow) => {
   const v = r.values[type.titleField];
   return typeof v === "string" ? v : "";
@@ -713,7 +728,25 @@ export function Cell({
         </span>
       );
     }
-    case "file":
+    case "file": {
+      if (typeof value !== "string") return <span className="db-ro" />;
+      const name = titleOf(type, row) || t("db.file");
+      return (
+        <button
+          type="button"
+          className="db-file"
+          title={t("db.openFile")}
+          aria-label={`${t("db.openFile")}: ${name}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void openFile(value, name);
+          }}
+        >
+          <Paperclip size={12} strokeWidth={2} />
+          <span>{t("db.openFile")}</span>
+        </button>
+      );
+    }
     case "dates":
       return <span className="db-ro">{Array.isArray(value) ? value.join(", ") : ""}</span>;
     default:

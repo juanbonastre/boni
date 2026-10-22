@@ -4,12 +4,23 @@
 // token never reaches a page). Pages ask through preload.cjs (`window.boniDesktop`).
 //
 // Env vars (tests): BONI_SCREENSHOT=<file> writes a PNG of the main window after load and quits.
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, net, screen, Tray } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeImage,
+  net,
+  screen,
+  shell,
+  Tray,
+} = require("electron");
 const { execFile } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { allowedPath } = require("./paths.cjs");
+const F = require("./files.cjs");
 const { createLive } = require("./live.cjs");
 const S = require("./settings.cjs");
 const W = require("./widgets.cjs");
@@ -511,6 +522,34 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
   }
 });
 
+// ---------- attachments (a row's file), opened with the system's app ----------
+let filesDir = null;
+ipcMain.handle("file:open", async (_e, sha, name) => {
+  if (!F.isSha(sha)) return "error";
+  if (!settings.serverUrl || !settings.token) return "error";
+  try {
+    const r = await net.fetch(new URL(`api/data/files/${sha}`, `${settings.serverUrl}/`).href, {
+      headers: { Authorization: `Bearer ${settings.token}`, "X-Boni-Client": "boni-desktop" },
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!r.ok) return "error";
+    const data = Buffer.from(await r.arrayBuffer());
+    filesDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "boni-files-"));
+    fs.chmodSync(filesDir, 0o700);
+    const dir = fs.mkdtempSync(path.join(filesDir, "f-"));
+    const file = path.join(dir, F.safeFileName(name));
+    fs.writeFileSync(file, data, { mode: 0o600 });
+    if (process.env.BONI_TEST_FILES) return F.opensDirectly(file) ? "opened" : "shown";
+    if (!F.opensDirectly(file)) {
+      shell.showItemInFolder(file);
+      return "shown";
+    }
+    return (await shell.openPath(file)) ? "error" : "opened";
+  } catch {
+    return "offline";
+  }
+});
+
 // ---------- small files of the page (queue, last chart answers, widget list) ----------
 const STORE_NAME = /^[A-Za-z0-9._-]+\.json$/;
 const storeFile = (name) => {
@@ -701,6 +740,10 @@ if (!process.env.BONI_SCREENSHOT && !app.requestSingleInstanceLock()) {
   });
   app.on("before-quit", () => {
     quitting = true;
+  });
+  // The attachments opened in this session go with it.
+  app.on("will-quit", () => {
+    if (filesDir) fs.rmSync(filesDir, { recursive: true, force: true });
   });
   app.whenReady().then(start);
   // Windows come and go; Boni lives in the tray until "Quit".

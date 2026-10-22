@@ -47,6 +47,12 @@ const VAULT: Record<string, string> = {
     "---\ntype: person\nsummary: Invented colleague.\n---\n# Ana\n",
 };
 
+/** An invented `private/` folder (the AI never reads Juan's): a note and a PDF in a folder. */
+const ZONE: Record<string, string> = {
+  "Documentos/seguro.md": '---\nvence: "2027-01-01"\n---\nPóliza inventada.\n',
+  "Documentos/poliza.pdf": "%PDF-1.7 inventado",
+};
+
 let dir = "";
 let server: ChildProcess | null = null;
 let app: ElectronApplication | null = null;
@@ -76,6 +82,26 @@ test.beforeAll(async () => {
     ],
     { cwd: ROOT, env },
   );
+  // A zone, as Juan imports it himself: its own folder, every type kept from the AI.
+  const zone = join(dir, "zone");
+  for (const [p, text] of Object.entries(ZONE)) {
+    mkdirSync(dirname(join(zone, p)), { recursive: true });
+    writeFileSync(join(zone, p), text);
+  }
+  execFileSync(
+    "node",
+    [
+      "packages/vault-import/src/cli.ts",
+      "--zone",
+      "private",
+      "--vault",
+      zone,
+      "--store",
+      join(dir, "users", "1.db"),
+      "--apply",
+    ],
+    { cwd: ROOT, env },
+  );
   server = spawn("node", ["apps/server/src/main.ts"], {
     cwd: ROOT,
     env: { ...env, BONI_PORT: String(PORT), BONI_WRITE: "1", ANTHROPIC_API_KEY: "" },
@@ -93,6 +119,7 @@ test.beforeAll(async () => {
   // The desktop app as it runs on Juan's computer, with a profile of its own (never his).
   // BONI_DESKTOP_BIN: the packaged app (release/linux-unpacked/boni) instead of the source.
   const bin = process.env.BONI_DESKTOP_BIN;
+  mkdirSync(join(dir, "tmp"));
   app = await electron.launch({
     cwd: join(ROOT, "apps", "boni-desktop"),
     ...(bin ? { executablePath: bin } : {}),
@@ -101,6 +128,8 @@ test.beforeAll(async () => {
       ...process.env,
       XDG_CONFIG_HOME: join(dir, "config"),
       XDG_DATA_HOME: join(dir, "data"),
+      TMPDIR: join(dir, "tmp"),
+      BONI_TEST_FILES: "1", // an attachment is saved, not opened in a viewer
     },
   });
 });
@@ -158,4 +187,27 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await w.locator(".topbar .crumb", { hasText: "Mi agenda" }).click();
   await db.locator(".db-cal-day.today .db-cal-item").first().click();
   await expect(w.locator(".row-body")).toHaveValue(/Llevar el proyector/);
+});
+
+test("a zone moved into Boni: marked as private, its attachment opened from the app", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Nueva página" }).first().click();
+  await w.keyboard.type("Papeles", { delay: 20 });
+  await w.keyboard.press("Enter");
+  await w.keyboard.type("/documentos", { delay: 20 });
+  await expect(w.locator(".slash-menu")).toContainText("Documentos");
+  await w.keyboard.press("Enter");
+  const db = w.locator(".db").last();
+  await expect(db.locator(".db-zone")).toHaveText("Privado");
+  await expect(db.locator(".db-table tbody tr")).toHaveCount(2);
+  const file = db.getByRole("button", { name: "Abrir archivo: poliza.pdf" });
+  await file.click();
+  await expect(w.locator(".toast")).toHaveCount(0);
+  await shot(w, "zone");
+  // Saved in a private temporary folder of its own, with its name and bytes.
+  const saved = execFileSync("find", [join(dir, "tmp"), "-name", "poliza.pdf"])
+    .toString()
+    .trim();
+  expect(saved).toContain("boni-files-");
+  expect(execFileSync("cat", [saved]).toString()).toBe("%PDF-1.7 inventado");
 });

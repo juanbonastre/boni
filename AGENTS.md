@@ -43,6 +43,10 @@ packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native mo
                  read them.
                  `settings` (`setting` / `setSetting`): extensions' settings and working state, outside the log and
                  out of `readQuery`'s reach (secrets go in sealed with the user's data key by the caller).
+                 `zones` / `setZone`: the vault's `restricted/` and `private/` moved into Boni; a zoned type is
+                 `hidden` in `aiAccess` whatever was chosen, `setAiAccess` refuses it, a zone is never lowered,
+                 the mirror never takes it. `putFile` / `getFile`: attachments by sha256 (a `file` value), outside
+                 the log and `readQuery`, at most `MAX_FILE_BYTES`.
 packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
                  devices with a trust level (personal / shared / ambient; only another personal device raises it),
                  sessions stored as sha256 of the token (same scrypt and token hashing as both old servers, so
@@ -64,6 +68,11 @@ packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `s
                  relations, every value `imported` with its note as the source; access secrets are left out
                  (`secrets.ts`), identity numbers make a value sensitive. Re-runs update only changed notes (hidden
                  path and hash fields) and trash notes that are gone; the whole run is one `undoRun`.
+                 `--zone restricted|private --vault <that folder>`: one of the vault's zones, run by Juan alone
+                 (no agent-sudo action on purpose: the server and the AI never see those folders); a type per
+                 first-level folder put in the zone, attachments a row each (`f_boni_file`), paths kept as
+                 `<zone>/...` so each import only ever touches its own rows; its report is counts only
+                 (`--details`, names and paths, is for Juan).
 packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, security is code): the plan language
                  (`plan.ts`, flat steps; expressions are literals, quotes of whole spans of the request, references or
                  one level of the closed pure functions of `fns.ts`), labelled values (`values.ts`: per item, `derived`,
@@ -210,7 +219,9 @@ apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`lega
 apps/boni-desktop/ Boni's desktop app (Electron, package `boni`, `.deb` via `make package-boni`; moved from
                  `legacy/boni/apps/desktop` on 2026-10-22): it bundles apps/boni-web's build (`scripts/copy-web.mjs`),
                  keeps the token in the main process and calls the server for the page (`window.boniDesktop`), only
-                 on the paths `paths.cjs` allows (v1, agent, pages, data, mail: a new API the app uses must be added
+                 on the paths `paths.cjs` allows; attachments are downloaded by the main process into a private
+                 temporary folder removed on quit and opened only when a viewer opens their kind (`files.cjs`;
+                 anything else is shown in its folder, never run) (v1, agent, pages, data, mail: a new API the app uses must be added
                  there). Tray, autostart, desktop widgets. **Every change to apps/boni-web ships in a new desktop
                  version too** (Juan uses the desktop app, not the browser): bump its version, `make package-boni`,
                  and test it in the app itself with `make e2e-boni-desktop` (Playwright `_electron`, temporary profile,

@@ -13,6 +13,7 @@ import { writeZip, type ZipEntry } from "./zip.ts";
  *                            `importExport` reads it back)
  *   <type>/<title>.md        Markdown with YAML properties, as the generic mirror writes it (Obsidian opens it)
  *   csv/<type>.csv           for a spreadsheet
+ *   files/<sha256>           the attachments (`file` values), their types in schema.json
  *   views.json               the account's charts and shortcuts (what the server passes)
  *   log.ndjson               the operation log, when asked for
  * Boni's own types (memory, jobs) go only to json/. Entities in the trash are left out. Text from a model or
@@ -248,6 +249,18 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
     // A BOM so spreadsheets read the accents right.
     out.push({ path: `csv/${t.key}.csv`, data: enc(`﻿${[header, ...rows].join("\r\n")}\r\n`) });
   }
+  // Attachments once each, by content.
+  const fileTypes: Record<string, string> = {};
+  for (const t of types)
+    for (const f of fieldsOf(t).filter((x) => x.type === "file"))
+      for (const s of lists.get(t.id) ?? []) {
+        const sha = s.entity.values[f.id];
+        if (typeof sha !== "string" || sha in fileTypes) continue;
+        const file = store.getFile(sha);
+        if (!file) continue;
+        fileTypes[sha] = file.mime;
+        out.push({ path: `files/${sha}`, data: Buffer.from(file.data) });
+      }
   out.push({
     path: "schema.json",
     data: enc(
@@ -259,6 +272,9 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
           types,
           // What the models may see of each type (Juan's choice; missing = visible).
           aiAccess: store.aiAccess(),
+          // The vault's zones moved into Boni (no model ever sees them) and each attachment's type.
+          zones: store.zones(),
+          files: fileTypes,
           jsonSchema: Object.fromEntries(types.map((t) => [t.key, jsonSchemaOf(t)])),
         },
         null,

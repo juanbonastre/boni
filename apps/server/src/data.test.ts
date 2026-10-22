@@ -180,4 +180,22 @@ describe("collections as databases (plan PR 19)", () => {
     db.prepare("UPDATE devices SET trust = 'shared' WHERE name = 'tele-ejemplo'").run();
     expect((await call(tv, "GET", "/api/data/types")).status).toBe(403);
   });
+
+  it("gives a zone's attachments only as a download, and keeps the zone's AI level locked", async () => {
+    const t = await token();
+    const store = host.store(1);
+    const sha = store.putFile(new TextEncoder().encode("<svg onload=alert(1)/>"), "image/svg+xml");
+    store.setZone("t_libro", "private", "import");
+    const r = await fetch(`${base}/api/data/files/${sha}`, {
+      headers: { authorization: `Bearer ${t}` },
+    });
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-disposition")).toBe("attachment");
+    expect(r.headers.get("content-security-policy")).toContain("sandbox");
+    expect(await r.text()).toBe("<svg onload=alert(1)/>");
+    expect((await call(t, "GET", `/api/data/files/${"0".repeat(64)}`)).status).toBe(404);
+    expect((await fetch(`${base}/api/data/files/${sha}`)).status).toBe(401);
+    const types = (await call(t, "GET", "/api/data/types")).body.types as { zone?: string }[];
+    expect(types[0]?.zone).toBe("private");
+  });
 });

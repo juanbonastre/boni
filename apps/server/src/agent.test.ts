@@ -241,5 +241,12 @@ describe("the conversation API", () => {
     expect((await put("visible")).status).toBe(403);
     trust("personal");
     expect((await put("visible")).status).toBe(200);
+    // A vault zone: hidden and locked, whatever a screen asks.
+    host.store(1).setZone("t_tarea", "restricted", "import");
+    expect((await list()).find((t) => t.id === "t_tarea")).toMatchObject({
+      level: "hidden",
+      zone: "restricted",
+    });
+    expect((await put("visible")).status).toBe(409);
   });
 });

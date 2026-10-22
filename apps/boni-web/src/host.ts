@@ -136,6 +136,11 @@ export interface Host {
    * the user's downloads go. Only where a host can save a file (the browser, for now).
    */
   saveExport?: () => Promise<"saved" | "offline" | "forbidden" | "error">;
+  /**
+   * Opens an attachment (`GET /api/data/files/<sha256>`): the desktop app saves it in a private temporary
+   * folder and opens it with the system's app; a browser downloads it.
+   */
+  openFile?: (sha256: string, name: string) => Promise<"opened" | "shown" | "offline" | "error">;
 }
 
 declare global {
@@ -160,6 +165,7 @@ declare global {
       widgetDragMove(): void;
       widgetDragEnd(): void;
       widgetHide(): void;
+      openFile?(sha256: string, name: string): Promise<"opened" | "shown" | "offline" | "error">;
     };
   }
 }
@@ -192,6 +198,12 @@ function desktopHost(b: NonNullable<Window["boniDesktop"]>): Host {
     },
     phone: null,
     live: true,
+    ...(b.openFile
+      ? {
+          openFile: (sha: string, name: string) =>
+            b.openFile?.(sha, name) ?? Promise.resolve("error" as const),
+        }
+      : {}),
   };
 }
 
@@ -275,6 +287,27 @@ export function browserHost(): Host {
           return { ok: false, offline: true, message: String((e as Error).message ?? e) };
         }
       },
+    },
+    async openFile(sha, name) {
+      const token = safeGet(TOKEN_KEY);
+      if (!token || !/^[0-9a-f]{64}$/.test(sha)) return "error";
+      try {
+        const r = await fetch(`/api/data/files/${sha}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) return "error";
+        const url = URL.createObjectURL(await r.blob());
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return "opened";
+      } catch {
+        return "offline";
+      }
     },
     async saveExport() {
       const token = safeGet(TOKEN_KEY);

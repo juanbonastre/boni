@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, extname, join } from "node:path";
 import {
   type CollectionDef,
   frontmatterData,
@@ -20,8 +20,8 @@ import {
   typeErrors,
   type Value,
 } from "@boni/entities";
-import type { OpMeta, UserStore, Writes } from "@boni/store";
-import { BODY } from "@boni/store";
+import type { OpMeta, UserStore, Writes, Zone } from "@boni/store";
+import { BODY, MAX_FILE_BYTES } from "@boni/store";
 import { scanVault } from "./scan.ts";
 import { hasIdentityNumbers, withoutSecrets } from "./secrets.ts";
 
@@ -97,9 +97,49 @@ const SENSITIVE_CALENDARS = new Set(["salud"]);
 /** Hidden fields where each entity keeps its note's path and hash (the mirror reads the path too). */
 export const PATH_FIELD = "f_vault_path";
 export const HASH_FIELD = "f_vault_hash";
+/** The field that holds an attachment imported from a zone (a row per file). */
+export const FILE_FIELD = "f_boni_file";
+
+/** The vault's zones, as the folders they are (zone 2 and zone 3 of the vault's AGENTS.md). */
+export const ZONES: readonly Zone[] = ["restricted", "private"];
+const ZONE_NAMES: Record<Zone, string> = { restricted: "Restringido", private: "Privado" };
+const inZone = (path: string) => ZONES.some((z) => path.startsWith(`${z}/`));
+
+/** Attachment types by extension; anything else is kept as bytes. */
+const MIME: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".heic": "image/heic",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain",
+  ".csv": "text/csv",
+  ".json": "application/json",
+  ".zip": "application/zip",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".odt": "application/vnd.oasis.opendocument.text",
+  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".mp4": "video/mp4",
+};
+export const mimeOf = (name: string) =>
+  MIME[extname(name).toLowerCase()] ?? "application/octet-stream";
 
 export interface ImportOptions {
   apply?: boolean;
+  /**
+   * Import one of the vault's zones: `root` is that folder (only Juan can give it: the server never sees
+   * it), each first-level folder a type, attachments a row each, every type put in the zone (no model may
+   * ever see it). Paths are kept as `<zone>/...`, so the vault's own import never touches them.
+   */
+  zone?: Zone;
   /** The run of this import in the store's log (undoRun undoes it whole). */
   run?: string;
   now?: number;
@@ -132,10 +172,16 @@ export interface ImportReport {
   typeProblems: string[];
   /** Types kept from the models by default (unless Juan already chose otherwise). */
   hiddenFromModels: string[];
+  /** A zone's import: the zone, and how many attachments became rows. */
+  zone?: Zone;
+  files: number;
 }
 
 interface Note {
+  /** As kept in the store (`<zone>/...` for a zone). */
   path: string;
+  /** An attachment instead of a note. */
+  file?: { data: Uint8Array; mime: string; name: string };
   group: Group | null;
   calendar: CollectionDef | null;
   values: Record<string, PropValue>;
@@ -275,8 +321,30 @@ export function importVault(
   opts: ImportOptions = {},
 ): ImportReport {
   const now = opts.now ?? Date.now();
+  const zone = opts.zone;
+  if (zone && !ZONES.includes(zone)) throw new Error(`not a zone: ${zone}`);
   const scan = scanVault(root);
-  const defs = readDefinitions(root);
+  const defs = zone ? [] : readDefinitions(root);
+  const stored = (rel: string) => (zone ? `${zone}/${rel}` : rel);
+  // In a zone each first-level folder is a type (its name, Juan's own), the notes at its root another.
+  const zoneGroups = new Map<string, Group>();
+  const zoneGroup = (rel: string): Group => {
+    const z = zone as Zone;
+    const folder = rel.includes("/") ? (rel.split("/")[0] as string) : "";
+    let g = zoneGroups.get(folder);
+    if (!g) {
+      const key = `${z}_${folder ? keyOf(folder).replace(/-/g, "_") : "root"}`.slice(0, 48);
+      g = {
+        prefix: folder ? `${folder}/` : "",
+        key,
+        name: folder || ZONE_NAMES[z],
+        sensitivity: "sensitive",
+        hiddenFromModels: true,
+      };
+      zoneGroups.set(folder, g);
+    }
+    return g;
+  };
   const report: ImportReport = {
     applied: !!opts.apply,
     types: [],
@@ -292,14 +360,21 @@ export function importVault(
     failed: [],
     typeProblems: [],
     hiddenFromModels: [],
+    ...(zone ? { zone } : {}),
+    files: 0,
   };
 
   // ------------------------------------------------ read every note once
   const notes: Note[] = [];
-  for (const path of scan.notes) {
-    const raw = readFileSync(join(root, path), "utf8");
-    const calendar = defs.find((d) => path.startsWith(`${d.folder}/`)) ?? null;
-    const group = calendar ? null : (GROUPS.find((g) => path.startsWith(g.prefix)) ?? NOTE_GROUP);
+  for (const rel of scan.notes) {
+    const path = stored(rel);
+    const raw = readFileSync(join(root, rel), "utf8");
+    const calendar = defs.find((d) => rel.startsWith(`${d.folder}/`)) ?? null;
+    const group = calendar
+      ? null
+      : zone
+        ? zoneGroup(rel)
+        : (GROUPS.find((g) => rel.startsWith(g.prefix)) ?? NOTE_GROUP);
     const clean = withoutSecrets(raw);
     for (const s of clean.found) report.secrets.push({ path, ...s });
     const parsed = parseNote(clean.text);
@@ -316,12 +391,39 @@ export function importVault(
       sensitive,
     });
   }
+  // A zone's attachments: a row each, in the type of its folder (outside a zone they stay skipped).
+  if (zone)
+    for (const rel of scan.files) {
+      const data = readFileSync(join(root, rel));
+      if (data.byteLength > MAX_FILE_BYTES) {
+        report.skipped["file over 50 MB"] = (report.skipped["file over 50 MB"] ?? 0) + 1;
+        continue;
+      }
+      const name = basename(rel);
+      notes.push({
+        path: stored(rel),
+        file: { data, mime: mimeOf(name), name },
+        group: zoneGroup(rel),
+        calendar: null,
+        values: {},
+        body: "",
+        hash: createHash("sha256").update(data).digest("hex"),
+        sensitive: true,
+      });
+    }
+  if (zone) {
+    const why = "not a note (attachment or other file)";
+    const left = (scan.skipped[why] ?? 0) - scan.files.length;
+    report.skipped = { ...report.skipped };
+    if (left > 0) report.skipped[why] = left;
+    else delete report.skipped[why];
+  }
 
   // ------------------------------------------------ types and their fields
   const typeIdOf = (n: Note) =>
     n.calendar ? `t_${n.calendar.id.replace(/-/g, "_")}` : `t_${(n.group as Group).key}`;
   const byName = new Map<string, Note>(); // link target (file name) -> note
-  for (const n of notes) byName.set(basename(n.path, ".md").toLowerCase(), n);
+  for (const n of notes) if (!n.file) byName.set(basename(n.path, ".md").toLowerCase(), n);
   const linkedType = (target: string) => {
     const n = byName.get(target);
     return n ? typeIdOf(n) : null;
@@ -343,6 +445,14 @@ export function importVault(
     const hasTitle = props.includes("title");
     if (!hasTitle)
       fields.push({ id: "f_title", key: "title", name: "Título", type: "text", label: typeLabel });
+    if (members.some((n) => n.file))
+      fields.push({
+        id: FILE_FIELD,
+        key: "boni-archivo",
+        name: "Archivo",
+        type: "file",
+        label: typeLabel,
+      });
     const keys = propertyKeys(props);
     for (const prop of props) {
       const key = keys.get(prop) as string;
@@ -433,7 +543,9 @@ export function importVault(
   for (const typeId of Object.keys(store.schema().types))
     for (const e of store.list(typeId)) {
       const p = e.entity.values[PATH_FIELD];
-      if (typeof p === "string")
+      // Each import sees only its own notes: the vault's never a zone's, a zone's only its own.
+      const mine = typeof p === "string" && (zone ? p.startsWith(`${zone}/`) : !inZone(p));
+      if (mine)
         existing.set(p, { id: e.entity.id, hash: String(e.entity.values[HASH_FIELD] ?? "") });
     }
   const idOf = new Map<string, string>(); // path -> entity id (existing or new)
@@ -491,7 +603,8 @@ export function importVault(
       : !!(first.group as Group).hiddenFromModels;
     if (!hide) continue;
     report.hiddenFromModels.push(typeId);
-    if (apply && !(typeId in store.aiAccess())) store.setAiAccess(typeId, "hidden", "import");
+    if (apply && zone) store.setZone(typeId, zone, "import");
+    else if (apply && !(typeId in store.aiAccess())) store.setAiAccess(typeId, "hidden", "import");
   }
 
   // ------------------------------------------------ entities: first without relations, then relations
@@ -513,8 +626,12 @@ export function importVault(
     const l = label("imported", sens, source(n), !!def.thirdParty);
     const writes: Writes = {};
     const rel: Writes = {};
-    if (!byProp.has("title")) writes.f_title = { value: basename(n.path, ".md"), label: l };
-    for (const [prop, f] of byProp) {
+    if (n.file) {
+      writes[def.titleField] = { value: n.file.name, label: l };
+      if (apply) writes[FILE_FIELD] = { value: store.putFile(n.file.data, n.file.mime), label: l };
+      report.files++;
+    } else if (!byProp.has("title")) writes.f_title = { value: basename(n.path, ".md"), label: l };
+    for (const [prop, f] of n.file ? [] : byProp) {
       const raw = n.values[prop] ?? null;
       const target = def.fields.find((x) => x.id === f.id) ?? f;
       if (target.type === "relation") {

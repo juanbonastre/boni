@@ -238,6 +238,7 @@ async function answerAgent(
     case "GET /api/agent/visibility": {
       const store = host.store(who.account);
       const levels = store.aiAccess();
+      const zones = store.zones();
       return send(res, 200, {
         types: Object.values(store.schema().types)
           .filter((t) => !t.system && !t.archived)
@@ -246,6 +247,7 @@ async function answerAgent(
             id: t.id,
             name: t.name,
             level: levels[t.id] ?? "visible",
+            ...(zones[t.id] ? { zone: zones[t.id] } : {}),
             count: store.list(t.id).length,
           })),
       });
@@ -259,6 +261,8 @@ async function answerAgent(
       const store = host.store(who.account);
       const type = store.schema().types[params.type ?? ""];
       if (!type || type.system) return send(res, 404, { error: "not-found" });
+      // A vault zone stays out of every model's reach: not something to change from a screen.
+      if (store.zones()[type.id]) return send(res, 409, { error: "in-zone" });
       store.setAiAccess(type.id, level, who.device);
       return send(res, 200, { id: type.id, level });
     }

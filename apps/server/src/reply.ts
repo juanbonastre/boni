@@ -31,6 +31,23 @@ export function send(res: ServerResponse, status: number, body: unknown): void {
   res.end(text);
 }
 
+/**
+ * An attachment's bytes: always a download (never shown by a browser on this origin, where an SVG or an
+ * HTML file could run script), in a sandbox if it is shown anyway.
+ */
+export function sendFile(res: ServerResponse, mime: string, data: Uint8Array): void {
+  res.writeHead(200, {
+    ...CORS,
+    ...SAFE,
+    "content-type": mime,
+    "content-disposition": "attachment",
+    "content-security-policy": "sandbox; default-src 'none'",
+    "cache-control": "private, no-store",
+    "content-length": data.byteLength,
+  });
+  res.end(data);
+}
+
 export async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;

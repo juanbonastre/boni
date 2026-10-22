@@ -816,6 +816,15 @@ interface ViewSpec {
 - **El plugin de Obsidian pasa a ser cliente del núcleo** para esas colecciones (modo servidor, como las apps). Editar
   en el calendario dentro de Obsidian sigue funcionando y escribe en el núcleo, que actualiza el espejo.
 
+### 9.5 Sin vault (decidido, Juan, 2026-10-22)
+Juan no quiere mantener vault y Boni: todo pasa a Boni, también `restricted/` y `private/`, y el vault se congela como
+archivo. Antes de retirarlo, Boni tiene que dar lo que daba el vault: copia sin conexión en cada dispositivo, las
+instrucciones para la IA (un MCP de Boni y un archivo local en caché para Claude Code), copias fuera del NAS y un
+sustituto para todo lo que hoy escribe en el vault. Las zonas ya entran (2026-10-22): las importa Juan con
+`--zone`, cada colección queda fuera del alcance de cualquier modelo por código (no se puede cambiar desde una
+pantalla), nunca va al espejo, y sus archivos se guardan como adjuntos. `restricted` podrá abrirse para una
+conversación cuando Juan lo pida (pendiente, con el MCP); hasta entonces es tan cerrada como `private`.
+
 ### 9.4 Obsidian, por fuera (decidido, Juan, 2026-10-20)
 Obsidian es una puerta de entrada a Boni, no una pieza del núcleo. Quien ya vive en Obsidian puede usar Boni Calendar
 dentro de su vault, traer su vault a Boni y seguir viendo sus datos como notas; pero Boni no deja de hacer algo porque

@@ -248,6 +248,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   and a legend. "Filtro" (Notion's): rules of a property, a condition that fits its type (es, contiene, está vacío,
   antes de / después de hoy or a date, mayor que…) and a value; the button shows how many are on. The view (layout, sort, grouping, hidden
   properties) is the page block's; the rows are the collection's (`/api/data/*`, a personal device only).
+  A collection that came from a vault zone carries a quiet lock badge after its name ("Privado" / "Restringido",
+  the reason on hover), and in Ajustes → IA its level is shown, locked. An attachment is a small chip "Abrir archivo"
+  with a clip (never a link): the desktop app opens it with the system's viewer, a browser downloads it; a kind no
+  viewer opens is shown in its folder, with a toast saying so.
 - **More of Notion** (2026-10-22): blocks numbered list (numbers follow on), toggle (its line folds the blocks
   nested under it; Enter at its end writes inside it), quote (a 3 px bar), callout (an emoji you can change, a
   `--surface-2` box), code (monospace, Enter is a new line, Ctrl+Enter leaves it) and a link to a subpage ("/Página"
