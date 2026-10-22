@@ -842,7 +842,10 @@ function CalendarView({
     sources.forEach((src, si) => {
       const df = dateOf(src.type, src.date);
       if (!df) return;
-      const tf = src.type.fields.find((f) => f.type === "time");
+      // The start time (a collection may also have an end time, as the agenda's).
+      const times = src.type.fields.filter((f) => f.type === "time");
+      const tf =
+        times.find((f) => /start|inicio|comienzo|empieza/i.test(`${f.id} ${f.name}`)) ?? times[0];
       for (const r of src.rows) {
         const v = r.values[df.id];
         if (typeof v !== "string") continue;
