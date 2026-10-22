@@ -91,6 +91,23 @@ const GROUPS: Group[] = [
   },
 ];
 const NOTE_GROUP: Group = { prefix: "", key: "nota", name: "Nota", sensitivity: "personal" };
+/** The vault's own rules and logs (`_system/`, its calendar definitions apart). */
+const SYSTEM_GROUP: Group = {
+  prefix: "_system/",
+  key: "sistema",
+  name: "Sistema",
+  sensitivity: "personal",
+};
+/** Every other file of the vault (pictures, PDFs, configurations), a row each with where it was. */
+const FILES_GROUP: Group = {
+  prefix: "",
+  key: "archivo",
+  name: "Archivos",
+  sensitivity: "personal",
+};
+/** The field of a file row that keeps the folder it was in. */
+export const FOLDER_FIELD = "f_folder";
+const isIndex = (rel: string) => (rel.split("/").pop() ?? "") === "README.md";
 /** Calendars whose events are sensitive by nature (and kept from the models until Juan says otherwise). */
 const SENSITIVE_CALENDARS = new Set(["salud"]);
 
@@ -379,12 +396,19 @@ export function importVault(
   for (const rel of scan.notes) {
     const path = stored(rel);
     const raw = readFileSync(join(root, rel), "utf8");
-    const calendar = defs.find((d) => rel.startsWith(`${d.folder}/`)) ?? null;
+    // A folder's index (README.md) is a note of its own, never a row of what the folder holds.
+    const calendar = isIndex(rel)
+      ? null
+      : (defs.find((d) => rel.startsWith(`${d.folder}/`)) ?? null);
     const group = calendar
       ? null
       : zone
         ? zoneGroup(rel)
-        : (GROUPS.find((g) => rel.startsWith(g.prefix)) ?? NOTE_GROUP);
+        : isIndex(rel)
+          ? NOTE_GROUP
+          : rel.startsWith(SYSTEM_GROUP.prefix)
+            ? SYSTEM_GROUP
+            : (GROUPS.find((g) => rel.startsWith(g.prefix)) ?? NOTE_GROUP);
     const clean = withoutSecrets(raw);
     for (const s of clean.found) report.secrets.push({ path, ...s });
     const parsed = parseNote(clean.text);
@@ -401,27 +425,25 @@ export function importVault(
       sensitive,
     });
   }
-  // A zone's attachments: a row each, in the type of its folder (outside a zone they stay skipped).
-  if (zone)
-    for (const rel of scan.files) {
-      const data = readFileSync(join(root, rel));
-      if (data.byteLength > MAX_FILE_BYTES) {
-        report.skipped["file over 50 MB"] = (report.skipped["file over 50 MB"] ?? 0) + 1;
-        continue;
-      }
-      const name = basename(rel);
-      notes.push({
-        path: stored(rel),
-        file: { data, mime: mimeOf(name), name },
-        group: zoneGroup(rel),
-        calendar: null,
-        values: {},
-        body: "",
-        hash: createHash("sha256").update(data).digest("hex"),
-        sensitive: true,
-      });
+  for (const rel of scan.files) {
+    const data = readFileSync(join(root, rel));
+    if (data.byteLength > MAX_FILE_BYTES) {
+      report.skipped["file over 50 MB"] = (report.skipped["file over 50 MB"] ?? 0) + 1;
+      continue;
     }
-  if (zone) {
+    const name = basename(rel);
+    notes.push({
+      path: stored(rel),
+      file: { data, mime: mimeOf(name), name },
+      group: zone ? zoneGroup(rel) : FILES_GROUP,
+      calendar: null,
+      values: {},
+      body: "",
+      hash: createHash("sha256").update(data).digest("hex"),
+      sensitive: !!zone,
+    });
+  }
+  {
     const why = "not a note (attachment or other file)";
     const left = (scan.skipped[why] ?? 0) - scan.files.length;
     report.skipped = { ...report.skipped };
@@ -467,6 +489,14 @@ export function importVault(
         key: "boni-archivo",
         name: "Archivo",
         type: "file",
+        label: typeLabel,
+      });
+    if (g === FILES_GROUP)
+      fields.push({
+        id: FOLDER_FIELD,
+        key: "carpeta",
+        name: "Carpeta",
+        type: "text",
         label: typeLabel,
       });
     const keys = propertyKeys(props);
@@ -646,6 +676,13 @@ export function importVault(
     const rel: Writes = {};
     if (n.file) {
       writes[def.titleField] = { value: n.file.name, label: l };
+      if (n.group === FILES_GROUP) {
+        const rel = zone ? n.path.slice(zone.length + 1) : n.path;
+        writes[FOLDER_FIELD] = {
+          value: rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "",
+          label: l,
+        };
+      }
       if (apply) writes[FILE_FIELD] = { value: store.putFile(n.file.data, n.file.mime), label: l };
       report.files++;
     } else if (!byProp.has("title")) writes.f_title = { value: basename(n.path, ".md"), label: l };
