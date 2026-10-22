@@ -226,6 +226,20 @@ test("the inbox panel: cards say what, from where and the day around it; it open
   await page.screenshot({ path: `${SHOTS}/inbox-panel-two.png` });
   await compact.getByRole("button", { name: "Aceptar" }).click();
   await expect(panel.locator(".inbox-card")).toHaveCount(1);
+  // The inbox's own page has more room: a detailed card from mail in two columns, the mail and the three days.
+  await page.locator(".inbox-panel .panel-head").getByRole("button").click();
+  await page.getByRole("button", { name: "Conversación" }).click();
+  await page
+    .locator(".chat-tools")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const wide = page.locator(".agent-page .inbox-card.two");
+  await expect(wide).toHaveCount(1);
+  await expect(wide.locator(".inbox-col").nth(0).locator(".inbox-quote")).toContainText(
+    "antes del jueves",
+  );
+  await expect(wide.locator(".inbox-col").nth(1).locator(".mini-day")).toHaveCount(3);
+  await page.screenshot({ path: `${SHOTS}/inbox-page-two-columns.png` });
 });
 
 test("a hand edit in Obsidian waits in the inbox with its note and what will not be applied", async ({

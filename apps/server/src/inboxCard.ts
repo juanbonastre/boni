@@ -34,7 +34,7 @@ export interface InboxCard {
 type Row = { arg: string; value?: unknown; detail?: unknown; role?: string };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
-const EXCERPT = 280;
+const EXCERPT = 1200;
 
 const rowsOf = (p: ProposalRow): Row[] =>
   ((p.view as { rows?: Row[] } | null)?.rows ?? []) as Row[];
