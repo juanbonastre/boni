@@ -211,6 +211,8 @@ interface Note {
   file?: { abs: string; mime: string; name: string };
   group: Group | null;
   calendar: CollectionDef | null;
+  /** The entity whose note Boni's mirror wrote here (`boni_id`), if any. */
+  mirrorOf?: string | null;
   values: Record<string, PropValue>;
   body: string;
   hash: string;
@@ -276,6 +278,11 @@ export function readDefinitions(root: string): CollectionDef[] {
   }
   return defs;
 }
+
+/** The lines Boni's mirror adds to a note (`@boni/mirror`'s ID_KEY, INTEGRITY_KEY, OMITTED_KEY). */
+const MIRROR_KEYS = ["boni_id", "boni_integrity", "boni_omitted"];
+const mirrorId = (values: Record<string, PropValue>) =>
+  typeof values.boni_id === "string" ? values.boni_id : null;
 
 /** A file's sha256 read in chunks: the server's container has little memory and a vault has large files. */
 function fileHash(abs: string): string {
@@ -454,11 +461,15 @@ export function importVault(
     if (parsed.error) report.unreadable.push(path);
     const sensitive = hasIdentityNumbers(clean.text);
     if (sensitive) report.identityNumbers++;
+    const values: Record<string, PropValue> = parsed.error ? {} : { ...parsed.values };
+    // Boni's mirror's own lines say which entity a note is, never data of the note.
+    for (const k of MIRROR_KEYS) delete values[k];
     notes.push({
       path,
       group,
       calendar,
-      values: parsed.error ? {} : parsed.values,
+      mirrorOf: parsed.error ? null : mirrorId(parsed.values),
+      values,
       body: parsed.body,
       hash: sha(raw),
       sensitive,
@@ -497,7 +508,14 @@ export function importVault(
     const kept = notes.filter((n) => !inCore(typeIdOf(n)));
     const left = notes.length - kept.length;
     if (left) report.skipped["kept in Boni (core)"] = left;
-    notes.splice(0, notes.length, ...kept);
+    // A note Boni's mirror writes for another type (`Boni/Libros/…`, generic profile) is that entity's.
+    const own = kept.filter((n) => {
+      const s = n.mirrorOf ? store.get(n.mirrorOf) : null;
+      return !(s && inCore(s.entity.type));
+    });
+    if (kept.length - own.length)
+      report.skipped["written by Boni's mirror"] = kept.length - own.length;
+    notes.splice(0, notes.length, ...own);
   }
   const byName = new Map<string, Note>(); // link target (file name) -> note
   for (const n of notes) if (!n.file) byName.set(basename(n.path, ".md").toLowerCase(), n);
@@ -675,9 +693,24 @@ export function importVault(
         );
     for (const def of wanted.values()) {
       const have = store.schema().types[def.id] as TypeDef;
-      for (const f of def.fields)
-        if (!have.fields.some((x) => x.id === f.id))
-          store.applySchema({ op: "add_field", type: def.id, field: f }, meta);
+      for (const f of def.fields) {
+        const was = have.fields.find((x) => x.id === f.id);
+        if (!was) store.applySchema({ op: "add_field", type: def.id, field: f }, meta);
+        else if (
+          f.options &&
+          was.options &&
+          (was.type === "select" || was.type === "multiselect")
+        ) {
+          // A value seen for the first time (a new tag) is a new option of the field it already had.
+          const known = new Set(was.options.map((o) => o.id));
+          const more = f.options.filter((o) => !known.has(o.id));
+          if (more.length)
+            store.applySchema(
+              { op: "set_options", type: def.id, field: f.id, options: [...was.options, ...more] },
+              meta,
+            );
+        }
+      }
     }
   }
 

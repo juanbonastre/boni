@@ -10,6 +10,7 @@ import {
 } from "@boni/entities";
 import type { StoredEntity } from "@boni/store";
 import { HASH_FIELD, PATH_FIELD } from "@boni/vault-import";
+import { leadingTitle } from "@boni/views";
 import type { MirroredType } from "./state.ts";
 
 /**
@@ -43,6 +44,8 @@ export interface Rendered {
   /** Field ids of the entity left out of the note (files, for now). */
   omitted: string[];
   title: string;
+  /** The title is the note's own (no property): its first "# Heading", or else its file name. */
+  ownTitle?: boolean;
 }
 
 /** The fields a note shows, each with the property it is written as ("" = the file name). */
@@ -83,6 +86,39 @@ function propOf(f: FieldDef, v: Value, links: Links): PropValue {
   }
 }
 
+/** Whether a type's title is the note's own: no property, the file name or the first heading. */
+export const ownTitle = (type: TypeDef, m: MirroredType) =>
+  noteFields(type, m).some((x) => x.field.id === type.titleField && x.prop === "");
+
+/**
+ * A note's own title and its text: the first "# Heading" when the text opens with one (a note is titled by
+ * it, Juan 2026-10-22; the import takes it out of the text the same way), else its file name.
+ */
+export function readOwnTitle(body: string, fileName: string): { title: string; body: string } {
+  const h = leadingTitle(body);
+  return h ? { title: h.title, body: h.rest } : { title: fileName, body };
+}
+
+/**
+ * The text a note is written with. A note titled by its first heading keeps it (otherwise the mirror would
+ * take every such note's title out of the vault); `current` is kept as it is when it says the same.
+ */
+export function bodyFor(r: Rendered, fileName: string, current: string | null): string {
+  if (!r.ownTitle) return r.body;
+  if (current !== null) {
+    const c = readOwnTitle(current, fileName);
+    if (c.title === r.title && c.body === r.body) return current;
+  }
+  const heading = r.title !== fileName || (current !== null && leadingTitle(current) !== null);
+  if (!heading) return r.body;
+  return r.body ? `# ${r.title}\n\n${r.body}` : `# ${r.title}\n`;
+}
+
+/** A note's title and text as `parseEdit` compares them (the heading read as the title when it is). */
+function ownView(body: string, fileName: string, own: boolean) {
+  return own ? readOwnTitle(body, fileName) : { title: fileName, body };
+}
+
 export function render(
   s: StoredEntity,
   type: TypeDef,
@@ -112,7 +148,7 @@ export function render(
   props[ID_KEY] = e.id;
   props[INTEGRITY_KEY] = integrity;
   if (omitted.length) props[OMITTED_KEY] = omitted;
-  return { props, body, omitted, title, integrity };
+  return { props, body, omitted, title, integrity, ownTitle: ownTitle(type, m) };
 }
 
 const clean = (p: PropValue): PropValue =>
@@ -233,8 +269,9 @@ export function parseEdit(
   links: Links,
 ): Parsed {
   const out: Parsed = { values: {}, problems: [] };
+  const own = ownView(body, fileName, ownTitle(type, m));
   for (const { field: f, prop } of noteFields(type, m)) {
-    const now = prop === "" ? fileName : (values[prop] ?? null);
+    const now = prop === "" ? own.title : (values[prop] ?? null);
     const was = prop === "" ? r.title : (r.props[prop] ?? null);
     if (sameProp(now, was)) continue;
     const where = prop || "(nombre)";
@@ -246,6 +283,6 @@ export function parseEdit(
     if ("error" in v) out.problems.push({ prop: where, error: v.error });
     else out.values[fieldName(f)] = v.value;
   }
-  if (body !== r.body) out.body = body;
+  if (own.body !== r.body) out.body = own.body;
   return out;
 }

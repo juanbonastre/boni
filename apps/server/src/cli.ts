@@ -242,8 +242,12 @@ try {
           `${r.entities} entities: ${r.unchanged} notes as they are (they gain the boni_* lines)`,
         );
         console.log(`${r.changed.length} notes would change:`);
-        for (const c of r.changed.slice(0, 50))
+        const shown = (v: unknown) => JSON.stringify(v)?.slice(0, 80) ?? "null";
+        for (const c of r.changed.slice(0, 50)) {
           console.log(`  ${c.path}: ${[...c.props, ...(c.body ? ["(body)"] : [])].join(", ")}`);
+          for (const [k, v] of Object.entries(c.values ?? {}))
+            console.log(`      ${k}: ${shown(v.note)} -> ${shown(v.core)}`);
+        }
         if (r.changed.length > 50) console.log(`  ... and ${r.changed.length - 50} more`);
         console.log(
           `${r.created.length} new notes; ${r.unreadable.length} notes that do not parse (left alone)`,
