@@ -518,6 +518,10 @@ function vaultWriter(bridge: Parameters<typeof makeVaultProvider>[0]): Collectio
   return vaultProvider;
 }
 
+/** How long a click waits before showing an event's detail where a double click opens its note (ms). */
+export const DOUBLE_CLICK_MS = 300;
+let detailTimer: ReturnType<typeof setTimeout> | undefined;
+
 export const useApp = create<AppState>((set, get) => {
   const urlTz =
     typeof location === "undefined" ? null : new URLSearchParams(location.search).get("tz");
@@ -1054,6 +1058,7 @@ export const useApp = create<AppState>((set, get) => {
     peekEvent: (id) => {
       const s = get();
       if (vaultBridge()?.noteApp !== "boni" || !s.noteOfEvent(id)) return false;
+      clearTimeout(detailTimer);
       // The first click of the two opened its detail: the peek shows the note instead.
       s.select(id, false);
       void s.openNote(id, { peek: true });
@@ -1085,12 +1090,20 @@ export const useApp = create<AppState>((set, get) => {
         ctrl: mods.ctrl,
         shift: mods.shift,
       });
+      // Where a double click opens the note's peek, the detail waits for a moment: a second click opens the peek
+      // without the detail showing and going (Juan, 2026-10-22).
+      clearTimeout(detailTimer);
+      const wait = r.popover && vaultBridge()?.noteApp === "boni" && !!s.noteOfEvent(id);
       set({
         selectedIds: r.ids,
         selectedId: r.ids.length === 1 ? (r.ids[0] ?? null) : null,
         anchorId: r.anchor,
-        popoverId: r.popover ? id : null,
+        popoverId: r.popover && !wait ? id : null,
       });
+      if (wait)
+        detailTimer = setTimeout(() => {
+          if (get().selectedId === id && get().popoverId === null) set({ popoverId: id });
+        }, DOUBLE_CLICK_MS);
     },
 
     selectAllVisible: () => {

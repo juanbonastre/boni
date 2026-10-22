@@ -261,11 +261,15 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   quotes, code, dividers; "/" offers text blocks only), saved as Markdown; what it does not paint yet (tables,
   images, inline bold or links) shows as written. A note is titled by its first `# Heading`, never its file's slug.
   Its properties start folded under one quiet line ("12 propiedades", a chevron); unfolded ("Ocultar propiedades")
-  they stay so for that collection on the device. A note opens on its text, not on a list of properties.
+  they stay so for that collection. Each property hides with the eye that shows on hover (as Notion's); hidden ones
+  wait, dimmed, under "N ocultas" at the end, where the same eye shows them again. The account keeps both per
+  collection (Boni, Boni Calendar's peek, every device). A note opens on its text, not on a list of properties.
 - **Peek** (2026-10-22): a note opened from another app (a double click on an event in Boni Calendar; Ctrl+click and
   its "Abrir en Boni" open the note in Boni's main window instead). In Boni Calendar with Boni's address (Settings →
   Escritorio) it is the calendar's own window with Boni's note page, which asks once for the user and password (no
-  address field: it is the page's own) and hides at once on a click in the calendar. It shows in a small frameless
+  address field: it is the page's own) and hides at once on a click in the calendar; it sits above the calendar's
+  window only, never over other apps. A single click waits 300 ms before the event's detail where a double click
+  opens the peek, so a double click never flashes the detail. It shows in a small frameless
   window, centred where the pointer is: a thin head (its collection, "Abrir en Boni" to take it to the main window,
   ×) that moves the window, and the row as a page below. Esc, × or a click in Boni Calendar put it away (it stays,
   on top, while Juan works in another app); the next note never shows the last one for a moment.

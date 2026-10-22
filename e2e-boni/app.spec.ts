@@ -450,6 +450,19 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
     "aria-expanded",
     "true",
   );
+  // One property hidden with its eye (on hover); it waits under "1 oculta" and comes back the same way.
+  await page.locator(".row-prop", { hasText: "Páginas" }).hover();
+  await page.getByRole("button", { name: "Ocultar «Páginas»" }).click();
+  await expect(page.locator(".row-prop:not(.row-prop-hidden)")).toHaveCount(3);
+  await page.getByRole("button", { name: "1 oculta" }).click();
+  await expect(page.locator(".row-prop-hidden")).toContainText("Páginas");
+  await page.screenshot({ path: `${SHOTS}/db-row-hidden.png` });
+  await page.locator(".row-prop-hidden").hover();
+  await page.getByRole("button", { name: "Mostrar «Páginas»" }).click();
+  await expect(page.locator(".row-prop:not(.row-prop-hidden)")).toHaveCount(4);
+  expect(
+    (await recorded(page)).requests.some((r) => r.startsWith("PUT api/data/types/t_libro/row-ui")),
+  ).toBe(true);
   await page.locator(".row-doc .doc-tail").click();
   await page.keyboard.type("Releer el capítulo 7.", { delay: 15 });
   await expect

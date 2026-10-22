@@ -267,8 +267,20 @@ test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and 
   // biome-ignore lint/suspicious/noExplicitAny: reads what the test double recorded
   const opened = () => page.evaluate(() => (window as any).__opened as [string, boolean][]);
   const ev = page.locator(".ev", { hasText: "Clase del servidor" });
+  // The detail never shows during a double click (it waits a moment where a double click opens the peek).
+  await page.evaluate(() => {
+    // biome-ignore lint/suspicious/noExplicitAny: a flag the test reads back
+    const w = window as any;
+    w.__popoverSeen = false;
+    new MutationObserver(() => {
+      if (document.querySelector(".popover")) w.__popoverSeen = true;
+    }).observe(document.body, { childList: true, subtree: true });
+  });
   await ev.dblclick();
   await expect.poll(opened).toEqual([[path, true]]);
+  await page.waitForTimeout(500);
+  // biome-ignore lint/suspicious/noExplicitAny: reads the flag
+  expect(await page.evaluate(() => (window as any).__popoverSeen)).toBe(false);
   await expect(page.locator(".popover")).toHaveCount(0); // the peek shows it, not the detail
   await ev.click({ modifiers: ["Control"] });
   await expect.poll(opened).toEqual([

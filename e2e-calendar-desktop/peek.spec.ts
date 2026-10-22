@@ -165,6 +165,17 @@ test("a double click: the note in the calendar's own window, logged in once; a c
   await expect(peek.locator(".doc-title")).toHaveValue("Clase de ejemplo");
   await expect(peek.locator(".peek-head")).toContainText("Docencia");
   await peek.screenshot({ path: join(SHOTS, "calendar-peek.png") });
+  // Above the calendar only, not over other apps' windows.
+  const where = await (app as ElectronApplication).evaluate(({ BrowserWindow }) => {
+    const p = BrowserWindow.getAllWindows().find((w) =>
+      w.webContents.getURL().includes("/boni/?peek=1"),
+    );
+    return {
+      onTop: p?.isAlwaysOnTop(),
+      parentIsCalendar: !!p?.getParentWindow()?.webContents.getURL().startsWith("file:"),
+    };
+  });
+  expect(where).toEqual({ onTop: false, parentIsCalendar: true });
   // Going to another window keeps it; a click in the calendar puts it away at once.
   await main.mouse.click(600, 400);
   const t0 = Date.now();

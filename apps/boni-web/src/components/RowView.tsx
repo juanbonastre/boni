@@ -1,6 +1,6 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Eye, EyeOff } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { editRowValue, toggleRowProps, useStore } from "../store.ts";
+import { editRowValue, setPropHidden, toggleRowProps, useStore } from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
 import { DocEditor } from "./PageView.tsx";
 
@@ -8,14 +8,15 @@ import { DocEditor } from "./PageView.tsx";
  * A row of a collection opened as a page, as Notion's: its title big, its properties one per line (the
  * name on the left, the value edited in place on the right), then its text with the page's block editor
  * (headings, lists, to-dos...; kept as Markdown, saved by itself a moment after typing). The properties start
- * folded under one line (Juan, 2026-10-22: a note opens on its text); unfolded, the collection remembers it.
+ * folded under one line (Juan, 2026-10-22: a note opens on its text); each one can be hidden (the eye on hover,
+ * as Notion's), and the hidden ones wait under "N ocultas". The collection keeps both for the account.
  */
 export function RowView() {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const row = useStore((s) => s.row);
   const doc = useStore((s) => s.rowDoc);
-  const propsShown = useStore((s) => s.propsShown);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
   const type = useStore((s) =>
     s.view.kind === "row"
       ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
@@ -34,7 +35,10 @@ export function RowView() {
     );
   const titleField = type.fields.find((f) => f.id === type.titleField);
   const props = type.fields.filter((f) => f.id !== type.titleField);
-  const shown = !!propsShown[type.id];
+  const hiddenIds = new Set(type.rowUi.hidden);
+  const visible = props.filter((f) => !hiddenIds.has(f.id));
+  const hidden = props.filter((f) => hiddenIds.has(f.id));
+  const shown = type.rowUi.open;
   const title =
     typeof row.values[type.titleField] === "string" ? (row.values[type.titleField] as string) : "";
   return (
@@ -60,12 +64,16 @@ export function RowView() {
             onClick={() => toggleRowProps(type.id)}
           >
             <ChevronRight size={14} strokeWidth={2} />
-            {shown ? t("row.hideProps") : t("row.showProps", { n: props.length })}
+            {shown
+              ? t("row.hideProps")
+              : visible.length
+                ? t("row.showProps", { n: visible.length })
+                : t("row.hiddenProps", { n: hidden.length })}
           </button>
         )}
         {shown && (
           <div className="row-props">
-            {props.map((f) => (
+            {visible.map((f) => (
               <div key={f.id} className="row-prop">
                 <span className="row-prop-name">{f.name}</span>
                 <div className="row-prop-value">
@@ -77,8 +85,54 @@ export function RowView() {
                     onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
                   />
                 </div>
+                <button
+                  type="button"
+                  className="icon-btn row-prop-eye"
+                  title={t("row.hideProp", { name: f.name })}
+                  aria-label={t("row.hideProp", { name: f.name })}
+                  onClick={() => setPropHidden(type.id, f.id, true)}
+                >
+                  <EyeOff size={14} strokeWidth={1.8} />
+                </button>
               </div>
             ))}
+            {hidden.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  className={`row-props-toggle row-hidden-toggle${hiddenOpen ? " open" : ""}`}
+                  aria-expanded={hiddenOpen}
+                  onClick={() => setHiddenOpen(!hiddenOpen)}
+                >
+                  <ChevronRight size={14} strokeWidth={2} />
+                  {t("row.hiddenProps", { n: hidden.length })}
+                </button>
+                {hiddenOpen &&
+                  hidden.map((f) => (
+                    <div key={f.id} className="row-prop row-prop-hidden">
+                      <span className="row-prop-name">{f.name}</span>
+                      <div className="row-prop-value">
+                        <Cell
+                          type={type}
+                          field={f}
+                          row={row}
+                          titles={{}}
+                          onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-btn row-prop-eye"
+                        title={t("row.showProp", { name: f.name })}
+                        aria-label={t("row.showProp", { name: f.name })}
+                        onClick={() => setPropHidden(type.id, f.id, false)}
+                      >
+                        <Eye size={14} strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  ))}
+              </>
+            )}
           </div>
         )}
         {doc && <DocEditor key={doc.id} doc={doc} />}

@@ -167,6 +167,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           { id: "f_fin", name: "Terminado", type: "date" },
           { id: "f_fav", name: "Favorito", type: "checkbox" },
         ],
+        rowUi: { open: false, hidden: [] as string[] },
       };
       // A collection from the vault's private/ (Colecciones lists it, locked).
       const documentos = {
@@ -178,6 +179,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         level: "private",
         zone: "private",
         fields: [{ id: "f_title", name: "Título", type: "text" }],
+        rowUi: { open: false, hidden: [] as string[] },
       };
       const today = new Date().toISOString().slice(0, 10);
       let rows: { id: string; values: Record<string, unknown>; updated: number }[] = [
@@ -198,6 +200,13 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
         const b = (body ?? {}) as { values?: Record<string, unknown> };
         if (p === "api/data/types") return [200, JSON.stringify({ types: [libros, documentos] })];
+        const rowUi = /^api\/data\/types\/([^/]+)\/row-ui$/.exec(p);
+        if (rowUi) {
+          const t = [libros, documentos].find((x) => x.id === rowUi[1]);
+          if (!t) return [404, '{"error":"not-found"}'];
+          t.rowUi = { ...t.rowUi, ...((body ?? {}) as Partial<typeof t.rowUi>) };
+          return [200, JSON.stringify(t.rowUi)];
+        }
         const protect = /^api\/data\/types\/([^/]+)\/protection$/.exec(p);
         if (protect) {
           const t = [libros, documentos].find((x) => x.id === protect[1]);

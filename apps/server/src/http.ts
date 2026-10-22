@@ -18,6 +18,7 @@ import {
   removeRow,
   restoreRow,
   setProtection,
+  setRowUi,
   setRule,
   updateRow,
 } from "./data.ts";
@@ -373,6 +374,10 @@ export function makeApp(opts: ServerOptions): App {
         if (route === "POST /api/data/rows/:id/restore") {
           restoreRow(store, params.id ?? "", s.device);
           return send(res, 200, {});
+        }
+        if (route === "PUT /api/data/types/:type/row-ui") {
+          const r = setRowUi(store, params.type ?? "", await bodyOf(req));
+          return "error" in r ? send(res, r.status, { error: r.error }) : send(res, 200, r);
         }
         if (route === "PUT /api/data/types/:type/protection") {
           const r = setProtection(store, params.type ?? "", await bodyOf(req), s.device);

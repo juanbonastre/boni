@@ -4006,6 +4006,28 @@ button.find-row:hover {
   min-width: 0;
   border-radius: 4px;
 }
+/* Each property hides with the eye that shows on hover (as Notion's); hidden ones wait under "N ocultas". */
+.row-prop-eye {
+  flex: none;
+  align-self: center;
+  opacity: 0;
+}
+.row-prop:hover .row-prop-eye,
+.row-prop:focus-within .row-prop-eye,
+.row-prop-eye:focus-visible {
+  opacity: 1;
+}
+.row-hidden-toggle {
+  margin: 6px 0 2px -6px;
+}
+.row-prop-hidden .row-prop-name {
+  opacity: 0.7;
+}
+@media (hover: none) {
+  .row-prop-eye {
+    opacity: 1;
+  }
+}
 .db-open {
   display: none;
   align-items: center;

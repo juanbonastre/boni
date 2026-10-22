@@ -231,7 +231,6 @@ function makePeek() {
     show: false,
     frame: false,
     skipTaskbar: true,
-    alwaysOnTop: true,
     title: "Boni",
     icon: ICON,
     backgroundColor: "#16171a",

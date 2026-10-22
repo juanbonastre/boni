@@ -337,8 +337,8 @@ handle("vault:open-note", (rel, peek) => {
 // ---------- the note peek (Juan, 2026-10-22: a window of Boni Calendar) ----------
 // Made ahead and hidden; it loads `<Boni's address>/boni/?peek=1` (Boni's page, logged in once with its own session,
 // kept in its own partition) and is sent the note to show. Only that origin is ever loaded in it; its preload gives
-// the page three calls (ready, hide, open in Boni) and the notes. It stays while Juan works in other apps; a click
-// in the calendar, Esc or its × put it away.
+// the page three calls (ready, hide, open in Boni) and the notes. It is the calendar window's child (above it, not
+// above other apps) and stays while Juan works in other apps; a click in the calendar, Esc or its × put it away.
 let peekWin = null;
 let peekReady = null;
 function makePeek() {
@@ -352,7 +352,6 @@ function makePeek() {
     show: false,
     frame: false,
     skipTaskbar: true,
-    alwaysOnTop: true,
     title: "Boni Calendar",
     icon: path.join(__dirname, "icon.png"),
     backgroundColor: "#16171a",
@@ -400,6 +399,11 @@ async function showPeek(notePathText) {
   const a = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   const [w, h] = win.getSize();
   win.setPosition(Math.round(a.x + (a.width - w) / 2), Math.round(a.y + (a.height - h) / 3));
+  // Above the calendar's window only (Juan, 2026-10-22: not over other apps' windows): its child.
+  const owner = BrowserWindow.getAllWindows().find(
+    (x) => x !== win && x.webContents.getURL().startsWith("file:"),
+  );
+  if (owner && win.getParentWindow() !== owner) win.setParentWindow(owner);
   win.webContents.send("peek:note", notePathText);
   win.show();
   win.focus();

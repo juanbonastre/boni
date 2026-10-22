@@ -426,6 +426,8 @@ export interface DataType {
   zone?: Zone;
   /** Parts of it with their own level: the rows that match every condition of a rule. */
   rules: ProtectionRule[];
+  /** How its rows open as pages (the account's, every device): properties unfolded, and those hidden. */
+  rowUi: { open: boolean; hidden: string[] };
 }
 export interface ProtectionRule {
   id: string;
@@ -465,6 +467,13 @@ function parseDataType(v: unknown): DataType | null {
         )
       : [],
     ...(zoneOf(v.zone) ? { zone: zoneOf(v.zone) } : {}),
+    rowUi: {
+      open: isObj(v.rowUi) && v.rowUi.open === true,
+      hidden:
+        isObj(v.rowUi) && Array.isArray(v.rowUi.hidden)
+          ? v.rowUi.hidden.filter((x): x is string => typeof x === "string")
+          : [],
+    },
     fields: v.fields.flatMap((f): DataField[] =>
       isObj(f) && typeof f.id === "string" && typeof f.type === "string"
         ? [
@@ -829,6 +838,9 @@ export class AgentApi {
       unlock ? { unlock: true } : undefined,
       "api/data/rules",
     ));
+  /** How a collection's rows open: properties unfolded or not, and those hidden one by one. */
+  setRowUi = async (type: string, patch: { open?: boolean; hidden?: string[] }) =>
+    void (await this.call("PUT", `/${encodeURIComponent(type)}/row-ui`, patch, "api/data/types"));
   /** How much the models may see of a collection; `unlock` lowers a private one (its own page only). */
   setProtection = async (type: string, level: AiLevel, unlock = false) =>
     void (await this.call(
