@@ -4,6 +4,7 @@ import { basename, extname, join } from "node:path";
 import {
   type CollectionDef,
   frontmatterData,
+  liftTemplateLinks,
   type PropValue,
   parseCollectionDef,
   parseNote,
@@ -476,13 +477,19 @@ export function importVault(
     const values: Record<string, PropValue> = parsed.error ? {} : { ...parsed.values };
     // Boni's mirror's own lines say which entity a note is, never data of the note.
     for (const k of MIRROR_KEYS) delete values[k];
+    // A calendar note's "Area: [[x]]" line (its template's) is a property (Juan, 2026-10-22).
+    const lifted =
+      calendar?.newNote && !parsed.error
+        ? liftTemplateLinks(parsed.body, calendar.newNote.body, (p) => p in values)
+        : { body: parsed.body, values: {} };
+    Object.assign(values, lifted.values);
     notes.push({
       path,
       group,
       calendar,
       mirrorOf: parsed.error ? null : mirrorId(parsed.values),
       values,
-      body: parsed.body,
+      body: lifted.body,
       hash: sha(raw),
       sensitive,
     });

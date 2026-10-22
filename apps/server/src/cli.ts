@@ -15,7 +15,7 @@ import {
 import { Mirror, type MirrorFs, openMirrorState, type Profile } from "@boni/mirror";
 import { openUserStore, restoreBackup, type UserStore, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
-import { CALENDAR_DEFS, saveCalendarDefs } from "./calendarStore.ts";
+import { CALENDAR_DEFS, calendarDefs, saveCalendarDefs } from "./calendarStore.ts";
 import { mirrorStatePath } from "./mirror.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -318,6 +318,24 @@ function moveCalendar(
     if (flags.has("--apply")) throw new Error(why);
     console.log(`Not ready. ${why}`);
     return;
+  }
+  // Copied again over calendars already in Boni: what Boni changed in them since (reminders, the column an
+  // event's own reminders went to) stays; the rest comes from the vault's definitions (a new `newNote`).
+  const kept = new Map(calendarDefs(store).map((p) => [p.def.id, p.raw]));
+  for (const d of defs) {
+    const was = kept.get(d.id);
+    if (!was) continue;
+    if (was.reminders !== undefined) d.raw.reminders = was.reminders;
+    const wasMap = (was.mapping ?? {}) as Record<string, unknown>;
+    const map = (d.raw.mapping ?? {}) as Record<string, unknown>;
+    if (wasMap.reminders !== undefined && map.reminders === undefined) {
+      d.raw.mapping = { ...map, reminders: wasMap.reminders };
+      const cols = (d.raw.columns ?? []) as { id?: unknown }[];
+      const col = ((was.columns ?? []) as { id?: unknown }[]).find(
+        (c) => c.id === wasMap.reminders,
+      );
+      if (col && !cols.some((c) => c.id === col.id)) d.raw.columns = [...cols, col];
+    }
   }
   if (flags.has("--apply")) {
     saveCalendarDefs(store, defs);

@@ -3,6 +3,7 @@ import {
   type CollectionDef,
   defsToModel,
   frontmatterData,
+  liftTemplateLinks,
   makeModel,
   makeProjector,
   noteFileName,
@@ -13,6 +14,8 @@ import {
   unplaceableRows,
   validateModel,
   withAreaLine,
+  withMovedRowProperties,
+  withNewRowProperties,
 } from "./index.ts";
 
 // A definition note as it would sit in the vault (all data invented).
@@ -199,6 +202,70 @@ describe("names of new notes", () => {
     ).toBe("Area: [[planes]]\n\n## Notas\nTexto\n");
     expect(withAreaLine("Sin línea de área\n", "Area: [[planes]]\n")).toBe("Sin línea de área\n");
     expect(withAreaLine("Area: [[docencia]]\n", "Sin área\n")).toBe("Area: [[docencia]]\n");
+  });
+});
+
+describe("properties of new notes (Juan, 2026-10-22: the area is a property)", () => {
+  const def = (id: string, area?: string) => {
+    const r = parseCollectionDef({
+      id,
+      name: id,
+      folder: `agenda/${id}`,
+      account: "Agenda",
+      color: "#60a5fa",
+      columns: [
+        { id: "title", name: "Título", type: "text" },
+        { id: "date", name: "Fecha", type: "date" },
+      ],
+      mapping: { title: "title", when: { kind: "split", date: "date" } },
+      newNote: {
+        name: "{date} {title}",
+        body: "## Notas\n",
+        ...(area ? { properties: { area } } : {}),
+      },
+    });
+    if (!r.ok) throw new Error(r.errors.join("; "));
+    return r.def;
+  };
+
+  it("a definition's newNote.properties go to every new row; moving a row swaps them", () => {
+    const docencia = def("docencia", "[[docencia]]");
+    const planes = def("planes", "[[planes]]");
+    expect(docencia.newNote?.properties).toEqual({ area: "[[docencia]]" });
+    expect(withNewRowProperties({ title: "Clase" }, docencia)).toEqual({
+      title: "Clase",
+      area: "[[docencia]]",
+    });
+    expect(withNewRowProperties({ title: "Clase", area: "[[otra]]" }, docencia).area).toBe(
+      "[[otra]]",
+    );
+    expect(withMovedRowProperties({ area: "[[docencia]]" }, docencia, planes).area).toBe(
+      "[[planes]]",
+    );
+    expect(withMovedRowProperties({ area: "[[a-mano]]" }, docencia, planes).area).toBe(
+      "[[a-mano]]",
+    );
+    expect(withMovedRowProperties({ area: "[[docencia]]" }, docencia, def("sin")).area).toBeNull();
+    expect(
+      parseCollectionDef({ ...docencia, newNote: { name: "x", properties: { area: { no: 1 } } } })
+        .ok,
+    ).toBe(false);
+  });
+
+  it("the template's Key: [[link]] lines leave the text as properties", () => {
+    const template = "Area: [[docencia]]\n\n## Notas\n";
+    const none = () => false;
+    expect(liftTemplateLinks("Area: [[docencia]]\n\n## Notas\nTexto\n", template, none)).toEqual({
+      body: "## Notas\nTexto\n",
+      values: { area: "[[docencia]]" },
+    });
+    expect(liftTemplateLinks("Texto\nArea: [[planes]]", template, none)).toEqual({
+      body: "Texto\n",
+      values: { area: "[[planes]]" },
+    });
+    // Already a property, or a template without such lines: nothing moves.
+    expect(liftTemplateLinks("Area: [[x]]\n", template, (p) => p === "area").values).toEqual({});
+    expect(liftTemplateLinks("Area: [[x]]\n", "## Notas\n", none).body).toBe("Area: [[x]]\n");
   });
 });
 
