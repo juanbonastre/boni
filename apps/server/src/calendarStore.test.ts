@@ -137,9 +137,14 @@ describe("the calendar over Boni's collections", () => {
       "token-a",
       "portatil",
     );
-    expect(made.ok && made.aliases["ev-nuevo"]).toMatch(/^e_/);
+    // Its id is its note's name, as the vault's writer names one (the mirror writes it there).
     const id = made.ok ? (made.aliases["ev-nuevo"] as string) : "";
-    expect(store.get(id)?.entity.values.f_title).toBe("Reunión inventada");
+    expect(id).toBe("agenda/docencia/Reunión inventada.md");
+    const entityAt = (path: string) =>
+      store
+        .list("t_docencia", { includeDeleted: true })
+        .find((e) => e.entity.values.f_vault_path === path);
+    expect(entityAt(id)?.entity.values.f_title).toBe("Reunión inventada");
     expect(store.schema().types.t_docencia?.fields.some((f) => f.name === "avisos")).toBe(true);
     expect((await rowOf(cal, id)).values.avisos).toBe("1h");
 
@@ -150,7 +155,7 @@ describe("the calendar over Boni's collections", () => {
       "portatil",
     );
     expect(gone.ok).toBe(true);
-    expect(store.get(id)?.entity.deleted).toBeDefined();
+    expect(entityAt(id)?.entity.deleted).toBeDefined();
     expect((await cal.snapshot()).rows.some((x) => x.id === id)).toBe(false);
   });
 
@@ -194,7 +199,9 @@ describe("the calendar over Boni's collections", () => {
       "portatil",
     );
     const id = made.ok ? (made.aliases["ev-nuevo"] as string) : "";
-    expect(store.get(id)?.entity.values.f_area).toBe(areaId("docencia"));
+    expect(id).toBe("agenda/docencia/Reunión inventada.md");
+    const made2 = store.list("t_docencia").find((e) => e.entity.values.f_vault_path === id);
+    expect(made2?.entity.values.f_area).toBe(areaId("docencia"));
   });
 
   it("sends only what changed since a version; a change by someone else after it is a conflict", async () => {

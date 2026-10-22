@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type Json, leaf, rec, typeName, type Val } from "@boni/agent";
-import { formatNote, NoteError, parseNote, patchNote } from "@boni/calendar";
+import { formatNote, NoteError, type PropValue, parseNote, patchNote } from "@boni/calendar";
 import { label, type TypeDef } from "@boni/entities";
 import type { StoredEntity, UserStore } from "@boni/store";
 import {
@@ -110,6 +110,16 @@ export interface ScanReport {
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const GONE = "gone";
+/**
+ * A new note's properties without the empty ones, in the vault profile (a new event's note listed every field of
+ * its type); the generic profile keeps them, a form to fill in.
+ */
+const filled = (props: Record<string, PropValue>) =>
+  Object.fromEntries(
+    Object.entries(props).filter(
+      ([, v]) => v !== null && v !== "" && !(Array.isArray(v) && v.length === 0),
+    ),
+  );
 const baseName = (path: string) => (path.split("/").pop() ?? "").replace(/\.md$/i, "");
 const dirOf = (path: string) => path.split("/").slice(0, -1).join("/");
 /** A file name from a title: no characters Obsidian or the file systems refuse. */
@@ -349,8 +359,8 @@ export class Mirror {
           text: patchNote(old, changes, { body: text }),
           old,
         });
-      } else {
-        report.created.push(r.title || s.entity.id);
+      } else if (r.title.trim()) {
+        report.created.push(r.title);
         writes.push({
           entity: s.entity.id,
           path: null,
@@ -405,7 +415,10 @@ export class Mirror {
     for (const path of paths()) {
       const other = this.state.noteAt(path);
       if (other && other.entity !== s.entity.id) continue;
-      const text = formatNote(r.props, bodyFor(r, baseName(path), null));
+      const text = formatNote(
+        m.profile === "vault" ? filled(r.props) : r.props,
+        bodyFor(r, baseName(path), null),
+      );
       if (!this.o.fs.create(path, text).exists) {
         this.state.setNote({ entity: s.entity.id, type: t.id, path, sha: sha(text), text });
         return path;
@@ -444,6 +457,9 @@ export class Mirror {
     }
     const r = render(s, t, m, links);
     if (!row) {
+      // No title yet (an event typed in the calendar reaches Boni before its title): no note until it has one,
+      // or it would be "Sin título.md" for good (existing notes are never renamed).
+      if (!r.title.trim()) return;
       this.createNote(s, t, m, r);
       report.created++;
       return;
@@ -454,7 +470,10 @@ export class Mirror {
       const e = this.state.edit(row.path, GONE);
       const status = e ? this.store.journal.proposal(e.proposal)?.status : null;
       if (row.sha !== GONE && status !== "rejected") return void report.held.push(row.path);
-      const text = formatNote(r.props, bodyFor(r, baseName(row.path), null));
+      const text = formatNote(
+        m.profile === "vault" ? filled(r.props) : r.props,
+        bodyFor(r, baseName(row.path), null),
+      );
       if (this.o.fs.create(row.path, text).exists) return void report.held.push(row.path);
       this.state.setNote({ ...row, sha: sha(text), text });
       if (e) this.state.dropEdit(row.path, GONE);
