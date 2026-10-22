@@ -431,6 +431,9 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
   const onDoubleClick = (e: RPE<HTMLDivElement>) => {
     // The grid captures the pointer on press, so e.target is the grid itself: locate by coordinates.
     const under = (elementsAt(e.clientX, e.clientY)[0] ?? null) as HTMLElement | null;
+    const item = under?.closest<HTMLElement>(".ev[data-id], .bar[data-id]");
+    // On an event: its note in Boni's peek.
+    if (item?.dataset.id) return void useApp.getState().peekEvent(item.dataset.id);
     if (!under || under.closest(".ev, .bar")) return;
     const app = useApp.getState();
     const tz = app.settings.tz;

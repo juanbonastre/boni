@@ -305,13 +305,15 @@ handle("vault:trash", async (rel) => {
   await vault.trash(rel);
   return null;
 });
-handle("vault:open-note", (rel) => {
+handle("vault:open-note", (rel, peek) => {
   // In Boni (Juan, 2026-10-22: the notes live in Boni now): its desktop app takes boni://note?path=<the note's
-  // vault path> and shows the row that note became as a peek (a small window, put away by a click in the calendar).
-  // The URL is built here from a checked path, never by the UI.
+  // vault path> and shows the row that note became, in its window (Ctrl+click, "Abrir en Boni") or as a peek (a
+  // double click: a small window, put away by a click in the calendar). The URL is built here from a checked path,
+  // never by the UI.
+  const link = `boni://note?path=${encodeURIComponent(notePath(rel).join("/"))}`;
   clearTimeout(peekHideTimer);
-  peekOpen = true;
-  void shell.openExternal(`boni://note?path=${encodeURIComponent(notePath(rel).join("/"))}&peek=1`);
+  if (peek === true) peekOpen = true;
+  void shell.openExternal(peek === true ? `${link}&peek=1` : link);
   return null;
 });
 

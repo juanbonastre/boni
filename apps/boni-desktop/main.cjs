@@ -182,11 +182,10 @@ function openMain(screenId) {
     mainWindow.on("closed", () => {
       mainWindow = null;
     });
-    if (screenId) {
-      mainWindow.webContents.once("did-finish-load", () =>
-        mainWindow?.webContents.send("boni:event", { type: "navigate", screen: screenId }),
-      );
-    }
+    // What to show waits until the page listens (it says so after starting): sent when it has only loaded, a
+    // boni:// link that started Boni (Boni Calendar's "Abrir en Boni") was lost and had to be clicked twice.
+    mainListening = false;
+    mainPending = screenId ?? null;
     if (process.env.BONI_SCREENSHOT) {
       mainWindow.webContents.once("did-finish-load", () =>
         setTimeout(async () => {
@@ -202,8 +201,20 @@ function openMain(screenId) {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
-  if (screenId) mainWindow.webContents.send("boni:event", { type: "navigate", screen: screenId });
+  if (!screenId) return;
+  if (mainListening)
+    mainWindow.webContents.send("boni:event", { type: "navigate", screen: screenId });
+  else mainPending = screenId;
 }
+let mainListening = false;
+let mainPending = null;
+ipcMain.on("shell:page-ready", (e) => {
+  if (!mainWindow || mainWindow.isDestroyed() || e.sender !== mainWindow.webContents) return;
+  mainListening = true;
+  if (mainPending)
+    mainWindow.webContents.send("boni:event", { type: "navigate", screen: mainPending });
+  mainPending = null;
+});
 
 // ---------- the peek: a note opened from another app, in a small window ----------
 // It stays while Juan works in another app (Juan, 2026-10-22); Esc, its close button or a click in Boni Calendar
@@ -241,10 +252,10 @@ function makePeek() {
   peekReady = new Promise((resolve) => {
     const ready = (e) => {
       if (e.sender !== contents) return;
-      ipcMain.removeListener("shell:peek-ready", ready);
+      ipcMain.removeListener("shell:page-ready", ready);
       resolve();
     };
-    ipcMain.on("shell:peek-ready", ready);
+    ipcMain.on("shell:page-ready", ready);
   });
   peekWindow.loadFile(UI, { query: { peek: "1" } });
   return peekReady;

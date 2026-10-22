@@ -21,6 +21,7 @@ import {
 import type { DayIndex } from "../engine/dayIndex.ts";
 import { clamp, looksLikeNotch, wheelPixels } from "../engine/viewport.ts";
 import { useCalendarMap, useDayIndex } from "../hooks.ts";
+import { elementsAt } from "../host.ts";
 import { t } from "../i18n.ts";
 import { useApp, useVisible } from "../store.ts";
 import { NEW_ID } from "./useGridPointer.ts";
@@ -215,6 +216,13 @@ export function MonthView() {
         style={{ "--rowh": `${rowH}px` } as CSSProperties}
         {...pointer}
         {...touch}
+        onDoubleClick={(e) => {
+          // The press on an item captured the pointer, so the target is this body: locate by coordinates.
+          const item = (
+            elementsAt(e.clientX, e.clientY)[0] as HTMLElement | undefined
+          )?.closest<HTMLElement>(".mchip[data-id], .bar[data-id]");
+          if (item?.dataset.id) useApp.getState().peekEvent(item.dataset.id);
+        }}
       >
         <div className="month-strip" ref={stripRef}>
           {rows.map((r) => (

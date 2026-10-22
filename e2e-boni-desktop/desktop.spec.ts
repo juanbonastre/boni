@@ -318,6 +318,21 @@ test("a boni:// link opens the note's row in the running app", async () => {
   await expect(w.locator(".topbar")).toContainText("Clase de ejemplo");
 });
 
+test("a boni:// link with the window closed: the window opens on the note at the first click", async () => {
+  const a = app as ElectronApplication;
+  const main = () =>
+    a.windows().find((x) => !x.url().includes("peek=1") && !x.url().includes("widget="));
+  await main()?.close(); // Boni goes on in the tray
+  await expect.poll(() => main()).toBeUndefined();
+  const note = `agenda/docencia/${iso(today)} Clase de ejemplo.md`;
+  openLink(`boni://note?path=${encodeURIComponent(note)}`);
+  await expect.poll(() => main()).toBeDefined();
+  const w = main() as NonNullable<ReturnType<typeof main>>;
+  await expect(w.locator(".row-doc .blk-input").first()).toHaveValue(
+    /Preparar los ejercicios del tema 3/,
+  );
+});
+
 test("Boni Calendar's link with peek=1: a small window with the note; it stays when another window takes the focus, a click in the calendar puts it away", async () => {
   const a = app as ElectronApplication;
   const note = `agenda/docencia/${iso(tomorrow)} Tutoría.md`;

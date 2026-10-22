@@ -36,8 +36,11 @@ export interface VaultBridge {
   ): Promise<VaultResult<{ exists: true } | { exists: false; mtimeMs: number; size: number }>>;
   /** Sends a note to the system trash. */
   trash?(path: string): Promise<VaultResult<null>>;
-  /** Opens a note: in Boni (the desktop app, a `boni://` link) or in Obsidian (`noteApp` says which). */
-  openNote?(path: string): Promise<VaultResult<null>>;
+  /**
+   * Opens a note: in Boni (the desktop app, a `boni://` link; `peek`: in its small window instead of the main one)
+   * or in Obsidian (`noteApp` says which).
+   */
+  openNote?(path: string, opts?: { peek?: boolean }): Promise<VaultResult<null>>;
   /** Where `openNote` opens a note; Obsidian when not said. */
   noteApp?: "boni" | "obsidian";
   /** Starts watching these folders (replacing any earlier set); `onChanged` fires after a burst of changes. */

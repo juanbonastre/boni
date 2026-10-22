@@ -228,6 +228,64 @@ test("with a server, an event still opens its note in Obsidian on a device that 
   ]);
 });
 
+test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and the button open it in Boni", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const ok = (value: unknown) => ({ ok: true, value });
+    const opened: [string, boolean][] = [];
+    // biome-ignore lint/suspicious/noExplicitAny: what the test double below recorded
+    (window as any).__opened = opened;
+    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge (an empty folder)
+    (window as any).boniVault = {
+      noteApp: "boni",
+      getRoot: async () => ok("/vault/ejemplo"),
+      chooseRoot: async () => ok("/vault/ejemplo"),
+      scan: async () => ok([]),
+      read: async () => ({ ok: false, code: "not-found", message: "x" }),
+      openNote: async (path: string, opts?: { peek?: boolean }) => {
+        opened.push([path, opts?.peek === true]);
+        return ok(null);
+      },
+    };
+  });
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await page.locator(".vault-notice").waitFor();
+  await page.keyboard.press("Control+,");
+  await page
+    .locator(".modal .setting", { hasText: "Origen" })
+    .getByRole("radio", { name: "Servidor" })
+    .click();
+  const form = page.locator(".modal .server-form");
+  await form.locator("input").nth(0).fill(url);
+  await form.locator("input").nth(1).fill("juan");
+  await form.locator("input").nth(2).fill(PASSWORD);
+  await form.getByRole("button", { name: "Conectar" }).click();
+  await expect(page.locator(".modal")).toContainText("En directo");
+  await page.keyboard.press("Escape");
+  const path = "agenda/docencia/2025-09-17 Clase del servidor.md";
+  // biome-ignore lint/suspicious/noExplicitAny: reads what the test double recorded
+  const opened = () => page.evaluate(() => (window as any).__opened as [string, boolean][]);
+  const ev = page.locator(".ev", { hasText: "Clase del servidor" });
+  await ev.dblclick();
+  await expect.poll(opened).toEqual([[path, true]]);
+  await expect(page.locator(".popover")).toHaveCount(0); // the peek shows it, not the detail
+  await ev.click({ modifiers: ["Control"] });
+  await expect.poll(opened).toEqual([
+    [path, true],
+    [path, false],
+  ]);
+  await ev.click();
+  await page.locator(".popover").getByRole("button", { name: "Abrir en Boni" }).click();
+  await expect.poll(async () => (await opened()).length).toBe(3);
+  expect((await opened())[2]).toEqual([path, false]);
+  await page.keyboard.press("Escape");
+  // The month too.
+  await page.keyboard.press("m");
+  await page.locator(".mchip", { hasText: "Clase del servidor" }).dblclick();
+  await expect.poll(async () => (await opened()).at(-1)).toEqual([path, true]);
+});
+
 test("edits go to the notes through the server: only the edited line, new events, deletions", async ({
   page,
 }) => {

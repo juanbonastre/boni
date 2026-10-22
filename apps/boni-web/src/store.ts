@@ -367,6 +367,8 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
     void countQueue();
     void reloadAll();
     void h.phone?.takeLaunch().then((target) => target && navigate(target));
+    // A note asked for while the window was opening (a boni:// link) comes now that the page listens.
+    h.desktop?.pageReady?.();
     publishTargets();
     if (!h.desktop && !h.phone) {
       // A plain browser has no shell sending ticks: keep its own minute.
@@ -376,7 +378,7 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
   } else if (kind === "peek") {
     // A note's text typed a moment before the peek closes is sent before it goes.
     window.addEventListener("pagehide", () => void flushRowBody());
-    h.desktop?.peekReady?.();
+    h.desktop?.pageReady?.();
   } else {
     void loadCharts().catch(() => undefined);
   }

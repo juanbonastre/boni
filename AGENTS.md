@@ -148,8 +148,9 @@ apps/calendar-desktop/  Electron shell (chosen over Tauri after measuring, see d
                  autostart entry (`--hidden`), so reminders arrive with the window closed. `vault-fs.cjs` is the
                  only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
                  atomic writes with a conflict check); the UI reaches it through `window.boniVault` (`vaultBridge.ts`).
-                 "Abrir en Boni" (the bridge's `noteApp: "boni"`) opens a note in Boni's desktop app with a
-                 `boni://note?path=...&peek=1` link.
+                 With the bridge's `noteApp: "boni"`, Ctrl+click and "Abrir en Boni" open an event's note in Boni's
+                 desktop app (`boni://note?path=...`) and a double click in its peek (`&peek=1`); a click in the
+                 calendar then sends `boni://peek?hide=1`.
 legacy/obsidian/ The Obsidian plugin and its tests in the installed Obsidian, out of the build since Juan dropped
                  Obsidian (2026-10-22; to come back with the version for more people, see legacy/README.md).
 apps/calendar-android/ The same app on Android (Kotlin shell, `make`-less: CI builds it, android.yml): the built web UI in a
