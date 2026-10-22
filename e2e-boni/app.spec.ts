@@ -440,7 +440,16 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await rayuela.hover();
   await rayuela.getByRole("button", { name: /^Abrir/ }).click();
   await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
+  // The properties start folded under one line; unfolded, the collection remembers it.
+  await expect(page.locator(".row-prop")).toHaveCount(0);
+  const fold = page.getByRole("button", { name: "4 propiedades" });
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await fold.click();
   await expect(page.locator(".row-prop")).toHaveCount(4);
+  await expect(page.getByRole("button", { name: "Ocultar propiedades" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await page.locator(".row-doc .doc-tail").click();
   await page.keyboard.type("Releer el capítulo 7.", { delay: 15 });
   await expect
@@ -455,6 +464,12 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await page.screenshot({ path: `${SHOTS}/db-row.png` });
   await page.locator(".topbar .crumb", { hasText: "Lecturas" }).click();
   await expect(page.locator(".doc-title")).toHaveValue("Lecturas");
+  await rayuela.hover();
+  await rayuela.getByRole("button", { name: /^Abrir/ }).click();
+  await expect(page.locator(".row-prop")).toHaveCount(4); // still unfolded for this collection
+  await page.getByRole("button", { name: "Ocultar propiedades" }).click();
+  await expect(page.locator(".row-prop")).toHaveCount(0);
+  await page.locator(".topbar .crumb", { hasText: "Lecturas" }).click();
   // Notion's filter: only what matches every rule.
   await db.getByRole("button", { name: "Filtro" }).click();
   await page.getByRole("button", { name: "Añadir filtro" }).click();

@@ -250,7 +250,8 @@ apps/boni-desktop/ Boni's desktop app (Electron, package `boni`, `.deb` via `mak
                  registers the scheme; `links.cjs` takes only that shape) opens the row a vault note became
                  (`GET /api/data/lookup?path=`): Boni Calendar's desktop app opens its notes in Boni this way, with
                  `&peek=1`: a small frameless window made ahead and hidden (`?peek=1`, `PeekPage`), shown on the
-                 note and hidden again when it loses the focus (the page says `peek-ready` before it is sent one) (v1, agent, pages, data, mail: a new API the app uses must be added
+                 note and hidden by Esc, its close button or a click in Boni Calendar (which sends
+                 `boni://peek?hide=1`; it stays while Juan works in other apps) (the page says `peek-ready` before it is sent one) (v1, agent, pages, data, mail: a new API the app uses must be added
                  there). Tray, autostart, desktop widgets. **Every change to apps/boni-web ships in a new desktop
                  version too** (Juan uses the desktop app, not the browser): bump its version, `make package-boni`,
                  and test it in the app itself with `make e2e-boni-desktop` (Playwright `_electron`, temporary profile,

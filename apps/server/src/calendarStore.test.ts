@@ -42,15 +42,30 @@ const cleanups: (() => void)[] = [];
 afterEach(() => {
   for (const c of cleanups.splice(0)) c();
 });
-function env(): { store: UserStore; cal: StoreCalendar } {
+/** With `planes`: a second calendar, to move events between them. */
+const PLANES = { ...RAW, id: "planes", name: "Planes", folder: "agenda/planes" };
+function env(two = false): { store: UserStore; cal: StoreCalendar } {
   const root = mkdtempSync(join(tmpdir(), "boni-cal-"));
-  for (const [p, t] of Object.entries(VAULT)) {
+  const files: Record<string, string> = two
+    ? {
+        ...VAULT,
+        "_system/colecciones/agenda-planes.md": DEF.replace(/docencia/g, "planes").replace(
+          "Docencia",
+          "Planes",
+        ),
+        "agenda/planes/2026-10-25 Cena.md": '---\ntitle: "Cena"\ndate: "2026-10-25"\n---\n',
+      }
+    : VAULT;
+  for (const [p, t] of Object.entries(files)) {
     mkdirSync(dirname(join(root, p)), { recursive: true });
     writeFileSync(join(root, p), t);
   }
   const store = openUserStore(":memory:");
   importVault(root, store, { apply: true });
-  saveCalendarDefs(store, [{ type: "t_docencia", raw: RAW }]);
+  saveCalendarDefs(store, [
+    { type: "t_docencia", raw: RAW },
+    ...(two ? [{ type: "t_planes", raw: PLANES }] : []),
+  ]);
   const cal = new StoreCalendar(store, { write: true, pollMs: 60_000 });
   cleanups.push(() => {
     cal.close();
@@ -125,6 +140,27 @@ describe("the calendar over Boni's collections", () => {
     expect(gone.ok).toBe(true);
     expect(store.get(id)?.entity.deleted).toBeDefined();
     expect((await cal.snapshot()).rows.some((x) => x.id === id)).toBe(false);
+  });
+
+  it("an event moved to another calendar becomes a row of that collection; the old one goes to the trash", async () => {
+    const { store, cal } = env(true);
+    const snap = await cal.snapshot();
+    const row = await rowOf(cal, CLASS);
+    const r = await cal.apply(
+      snap.version,
+      [{ op: "upsert", row: { ...row, collectionId: "planes" } }],
+      "token-a",
+      "portatil",
+    );
+    const moved = "agenda/planes/2026-10-22 Clase de ejemplo.md";
+    expect(r).toMatchObject({ ok: true, aliases: { [CLASS]: moved } });
+    const rows = (await cal.snapshot()).rows.filter((x) => x.values.title === "Clase de ejemplo");
+    expect(rows.map((x) => [x.id, x.collectionId])).toEqual([[moved, "planes"]]);
+    expect(rows[0]).toMatchObject({
+      values: { date: "2026-10-22", startTime: "10:00" },
+      body: "Preparar el tema 3.\n",
+    });
+    expect(store.list("t_docencia").map((e) => e.entity.values.f_title)).toEqual(["Tutoría"]);
   });
 
   it("sends only what changed since a version; a change by someone else after it is a conflict", async () => {

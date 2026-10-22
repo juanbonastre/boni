@@ -142,6 +142,10 @@ function createWindow(hidden = false) {
   });
   if (saved.maximized) win.maximize();
   win.webContents.setVisualZoomLevelLimits(1, 1); // pinch must not zoom the page: Ctrl+wheel zooms the hours
+  // A click in the calendar puts Boni's peek away (it stays while Juan works in other apps).
+  win.webContents.on("input-event", (_e, input) => {
+    if (input.type === "mouseDown") peekClick();
+  });
   win.loadFile(UI, { search: process.env.BONI_START_QUERY ?? "" });
   if (process.env.BONI_SCREENSHOT) {
     win.webContents.once("did-finish-load", () => {
@@ -303,11 +307,26 @@ handle("vault:trash", async (rel) => {
 });
 handle("vault:open-note", (rel) => {
   // In Boni (Juan, 2026-10-22: the notes live in Boni now): its desktop app takes boni://note?path=<the note's
-  // vault path> and shows the row that note became as a peek (a small window gone when it loses the focus). The
-  // URL is built here from a checked path, never by the UI.
+  // vault path> and shows the row that note became as a peek (a small window, put away by a click in the calendar).
+  // The URL is built here from a checked path, never by the UI.
+  clearTimeout(peekHideTimer);
+  peekOpen = true;
   void shell.openExternal(`boni://note?path=${encodeURIComponent(notePath(rel).join("/"))}&peek=1`);
   return null;
 });
+
+// Boni's peek, while one may be open: a click in the calendar sends boni://peek?hide=1, a moment later so that the
+// click which opens another note (it reaches vault:open-note just after) does not hide it.
+let peekOpen = false;
+let peekHideTimer = null;
+function peekClick() {
+  if (!peekOpen) return;
+  clearTimeout(peekHideTimer);
+  peekHideTimer = setTimeout(() => {
+    peekOpen = false;
+    void shell.openExternal("boni://peek?hide=1");
+  }, 250);
+}
 handle("vault:create", (rel, text) => vault.create(rel, text));
 ipcMain.handle("vault:choose-root", async (e) => {
   try {

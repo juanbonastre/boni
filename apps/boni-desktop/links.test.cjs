@@ -22,6 +22,12 @@ test("a boni:// link opens a vault note's row, nothing else", () => {
     assert.equal(screenOfUrl(bad), null, bad);
 });
 
+test("boni://peek?hide=1 puts the peek away, nothing more", () => {
+  assert.deepEqual(screenOfUrl("boni://peek?hide=1"), { hidePeek: true });
+  assert.equal(screenOfUrl("boni://peek"), null);
+  assert.equal(screenOfUrl("boni://peek?hide=0"), null);
+});
+
 test("finds the link among the arguments of a start", () => {
   assert.equal(linkIn(["/opt/Boni/boni", "--background"]), undefined);
   assert.equal(linkIn(["/opt/Boni/boni", "boni://note?path=a.md"]), "boni://note?path=a.md");

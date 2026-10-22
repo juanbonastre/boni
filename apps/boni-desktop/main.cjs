@@ -205,7 +205,9 @@ function openMain(screenId) {
   if (screenId) mainWindow.webContents.send("boni:event", { type: "navigate", screen: screenId });
 }
 
-// ---------- the peek: a note opened from another app, in a small window gone when it loses the focus ----------
+// ---------- the peek: a note opened from another app, in a small window ----------
+// It stays while Juan works in another app (Juan, 2026-10-22); Esc, its close button or a click in Boni Calendar
+// (which sends `boni://peek?hide=1`) put it away.
 let peekWindow = null;
 let peekReady = null;
 function makePeek() {
@@ -229,8 +231,6 @@ function makePeek() {
     },
   });
   peekWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  // Losing the focus (a click anywhere else) puts it away, ready for the next note.
-  peekWindow.on("blur", () => hidePeek());
   peekWindow.on("closed", () => {
     peekWindow = null;
     peekReady = null;
@@ -249,8 +249,11 @@ function makePeek() {
   peekWindow.loadFile(UI, { query: { peek: "1" } });
   return peekReady;
 }
-function hidePeek() {
+let peekShownAt = 0;
+function hidePeek({ fromLink = false } = {}) {
   if (!peekWindow || peekWindow.isDestroyed() || !peekWindow.isVisible()) return;
+  // The click that opened a note in Boni Calendar also asks to hide the last one: links can arrive in any order.
+  if (fromLink && Date.now() - peekShownAt < 800) return;
   peekWindow.hide();
   peekWindow.webContents.send("boni:event", { type: "navigate", screen: "blank" });
 }
@@ -263,6 +266,7 @@ async function openPeek(screenId) {
   const [w, h] = win.getSize();
   win.setPosition(Math.round(a.x + (a.width - w) / 2), Math.round(a.y + (a.height - h) / 3));
   win.webContents.send("boni:event", { type: "navigate", screen: screenId });
+  peekShownAt = Date.now();
   win.show();
   win.focus();
 }
@@ -782,7 +786,9 @@ function start() {
     // Started by a boni:// link (Boni Calendar's "Abrir en Boni"): the window, on what it names.
     const link = linkIn(process.argv);
     const opened = link ? screenOfUrl(link) : null;
-    if (opened?.peek) void openPeek(opened.screen);
+    if (opened?.hidePeek) {
+      // Nothing to hide in a Boni that was not running: it stays in the tray.
+    } else if (opened?.peek) void openPeek(opened.screen);
     else if (link) openMain(opened?.screen);
     else if (!background || !settings.serverUrl || !settings.token || process.env.BONI_SCREENSHOT)
       openMain();
@@ -810,7 +816,8 @@ if (!process.env.BONI_SCREENSHOT && !app.requestSingleInstanceLock()) {
   app.on("second-instance", (_e, argv) => {
     const link = linkIn(argv);
     const opened = link ? screenOfUrl(link) : null;
-    if (opened?.peek) void openPeek(opened.screen);
+    if (opened?.hidePeek) hidePeek({ fromLink: true });
+    else if (opened?.peek) void openPeek(opened.screen);
     else if (link) openMain(opened?.screen);
     else if (!argv.includes("--background")) openMain();
   });

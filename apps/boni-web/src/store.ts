@@ -72,6 +72,7 @@ const FILES = {
   shortcuts: "shortcuts.json",
   pages: "pages.json",
   lastPage: "last-page.json",
+  rowUi: "row-ui.json",
 };
 const OPTION_LIST_LIMIT = 500;
 const RELOAD_EVERY_MINUTES = 15;
@@ -175,6 +176,8 @@ interface State {
   rows: Record<string, { rows: DataRow[]; titles: Record<string, string> }>;
   /** The vault note opened from another app (its path), for the peek's "Abrir en Boni". */
   openedNote: string | null;
+  /** The collections whose rows open with their properties shown (folded by default; per device). */
+  propsShown: Record<string, boolean>;
   /** How each collection is shown on its own page (this session). */
   collectionViews: Record<string, DatabaseView>;
   /** Ctrl+K: the quick find over the pages. */
@@ -270,6 +273,7 @@ export const useStore = create<State>(() => ({
   rows: {},
   collectionViews: {},
   openedNote: null,
+  propsShown: {},
   row: null,
   rowDoc: null,
   inbox: [],
@@ -1772,6 +1776,10 @@ export async function openRow(type: string, id: string) {
     panel: null,
   });
   if (!get().dataTypes) void loadDataTypes();
+  // Read each time: the main window and the peek share the choice.
+  void readJson<{ shown?: Record<string, boolean> }>(hostRef.store, FILES.rowUi).then((ui) =>
+    set({ propsShown: ui?.shown ?? {} }),
+  );
   try {
     const row = await agent.dataRow(id);
     const v = get().view;
@@ -1779,6 +1787,13 @@ export async function openRow(type: string, id: string) {
   } catch {
     toast(get().t("db.loadError"));
   }
+}
+
+/** Shows or folds a collection's properties on its rows' pages (Juan, 2026-10-22: folded by default). */
+export function toggleRowProps(type: string) {
+  const shown = { ...get().propsShown, [type]: !get().propsShown[type] };
+  set({ propsShown: shown });
+  void hostRef.store.write(FILES.rowUi, JSON.stringify({ shown }));
 }
 
 /** A property of the open row changed: here, in the collection's loaded rows, then on the server. */

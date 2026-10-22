@@ -1,18 +1,21 @@
+import { ChevronRight } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { editRowValue, useStore } from "../store.ts";
+import { editRowValue, toggleRowProps, useStore } from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
 import { DocEditor } from "./PageView.tsx";
 
 /**
  * A row of a collection opened as a page, as Notion's: its title big, its properties one per line (the
  * name on the left, the value edited in place on the right), then its text with the page's block editor
- * (headings, lists, to-dos...; kept as Markdown, saved by itself a moment after typing).
+ * (headings, lists, to-dos...; kept as Markdown, saved by itself a moment after typing). The properties start
+ * folded under one line (Juan, 2026-10-22: a note opens on its text); unfolded, the collection remembers it.
  */
 export function RowView() {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const row = useStore((s) => s.row);
   const doc = useStore((s) => s.rowDoc);
+  const propsShown = useStore((s) => s.propsShown);
   const type = useStore((s) =>
     s.view.kind === "row"
       ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
@@ -30,6 +33,8 @@ export function RowView() {
       </div>
     );
   const titleField = type.fields.find((f) => f.id === type.titleField);
+  const props = type.fields.filter((f) => f.id !== type.titleField);
+  const shown = !!propsShown[type.id];
   const title =
     typeof row.values[type.titleField] === "string" ? (row.values[type.titleField] as string) : "";
   return (
@@ -47,10 +52,20 @@ export function RowView() {
             onSave={(v) => void editRowValue(type.id, row.id, type.titleField, v || null)}
           />
         )}
-        <div className="row-props">
-          {type.fields
-            .filter((f) => f.id !== type.titleField)
-            .map((f) => (
+        {props.length > 0 && (
+          <button
+            type="button"
+            className={`row-props-toggle${shown ? " open" : ""}`}
+            aria-expanded={shown}
+            onClick={() => toggleRowProps(type.id)}
+          >
+            <ChevronRight size={14} strokeWidth={2} />
+            {shown ? t("row.hideProps") : t("row.showProps", { n: props.length })}
+          </button>
+        )}
+        {shown && (
+          <div className="row-props">
+            {props.map((f) => (
               <div key={f.id} className="row-prop">
                 <span className="row-prop-name">{f.name}</span>
                 <div className="row-prop-value">
@@ -64,7 +79,8 @@ export function RowView() {
                 </div>
               </div>
             ))}
-        </div>
+          </div>
+        )}
         {doc && <DocEditor key={doc.id} doc={doc} />}
       </div>
     </div>

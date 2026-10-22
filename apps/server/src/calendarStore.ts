@@ -452,7 +452,21 @@ export class StoreCalendar implements CalendarSource {
       if (!p) continue;
       const eid = this.entityOf.get(c.row.id);
       const before = eid ? (this.rows.get(c.row.id) ?? null) : null;
-      if (eid && before) {
+      if (eid && before && before.collectionId !== c.row.collectionId) {
+        // Moved to another calendar: another collection, so another entity there (its note moves to that folder,
+        // keeping its file name when free) and the old one to the trash. The device maps the row by `aliases`.
+        const writes = this.writesFor(p, null, c.row, device);
+        const was = this.store.get(eid)?.entity.values[PATH_FIELD];
+        const name = typeof was === "string" ? was.slice(was.lastIndexOf("/") + 1) : null;
+        const path = name ? `${p.def.folder}/${name}` : null;
+        if (path && !this.entityOf.has(path))
+          writes[PATH_FIELD] = { value: path, label: this.labelFor(p.type, null, device) };
+        const made = this.store.create(p.type, writes, meta);
+        this.store.remove(eid, meta);
+        const id = path && writes[PATH_FIELD] ? path : made.entity.id;
+        aliases[c.row.id] = id;
+        touched.push(id);
+      } else if (eid && before) {
         const writes = this.writesFor(p, before, c.row, device);
         if (Object.keys(writes).length) this.store.update(eid, writes, meta);
         touched.push(c.row.id);
