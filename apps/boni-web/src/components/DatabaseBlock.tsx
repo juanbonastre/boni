@@ -1,4 +1,4 @@
-import type { DatabaseView } from "@boni/views";
+import type { DatabaseFilter, DatabaseView } from "@boni/views";
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -85,7 +85,7 @@ export function DatabaseBlock({
   }, [also.join(",")]);
   const type = types?.find((x) => x.id === source);
   if (types && !type) return <p className="doc-gone">{t("db.gone")}</p>;
-  const sorted = sortRows(data?.rows ?? [], type, view);
+  const sorted = sortRows(filterRows(data?.rows ?? [], type, view.filter), type, view);
   const rows =
     view.layout === "calendar" || view.layout === "board" ? sorted : sorted.slice(0, limit);
   const more = sorted.length - rows.length;
@@ -118,6 +118,7 @@ export function DatabaseBlock({
             </button>
           ))}
         </div>
+        {type && <FilterButton type={type} view={view} onView={onView} />}
         {type && <ViewOptions type={type} view={view} onView={onView} />}
         <button type="button" className="btn primary small" onClick={() => void add()}>
           <Plus size={14} strokeWidth={2} />
@@ -138,6 +139,8 @@ export function DatabaseBlock({
         <BoardView type={type} rows={rows} view={view} titles={data.titles} onAdd={add} />
       ) : view.layout === "calendar" ? (
         <CalendarView
+          span={view.span ?? "month"}
+          onSpan={(span) => onView({ ...view, span })}
           sources={[
             { type, rows, date: view.date },
             ...also.flatMap((a) => {
@@ -162,6 +165,256 @@ export function DatabaseBlock({
         </button>
       )}
     </section>
+  );
+}
+
+const fold = (v: unknown) =>
+  String(v ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+/** Notion's filter: the rows that match every rule (a rule on a field that is gone is left out). */
+export function filterRows(
+  rows: DataRow[],
+  type: DataType | undefined,
+  rules: DatabaseFilter[] | undefined,
+): DataRow[] {
+  if (!type || !rules?.length) return rows;
+  const today = ymd(new Date());
+  const checks = rules.flatMap((r) => {
+    const f = type.fields.find((x) => x.id === r.field);
+    if (!f) return [];
+    const want = r.value === "today" ? today : r.value;
+    return [
+      (row: DataRow) => {
+        const v = row.values[f.id];
+        const empty = v == null || v === "" || (Array.isArray(v) && v.length === 0);
+        const num =
+          typeof v === "number"
+            ? v
+            : v && typeof v === "object" && !Array.isArray(v)
+              ? v.amount
+              : NaN;
+        switch (r.op) {
+          case "empty":
+            return empty;
+          case "not_empty":
+            return !empty;
+          case "checked":
+            return v === true;
+          case "unchecked":
+            return v !== true;
+          case "contains":
+            return Array.isArray(v) ? v.includes(String(want)) : fold(v).includes(fold(want));
+          case "not_contains":
+            return Array.isArray(v) ? !v.includes(String(want)) : !fold(v).includes(fold(want));
+          case "is":
+            return typeof v === "number"
+              ? v === Number(want)
+              : fold(v).slice(0, f.type === "datetime" ? 10 : undefined) === fold(want);
+          case "is_not":
+            return typeof v === "number" ? v !== Number(want) : fold(v) !== fold(want);
+          case "before":
+            return typeof v === "string" && v.slice(0, 10) < String(want);
+          case "after":
+            return typeof v === "string" && v.slice(0, 10) > String(want);
+          case "gt":
+            return num > Number(want);
+          case "lt":
+            return num < Number(want);
+          default:
+            return true;
+        }
+      },
+    ];
+  });
+  return rows.filter((row) => checks.every((c) => c(row)));
+}
+
+/** The operators that fit a field, as Notion offers them. */
+function opsFor(f: DataField): DatabaseFilter["op"][] {
+  switch (f.type) {
+    case "number":
+    case "money":
+    case "duration":
+      return ["is", "gt", "lt", "empty", "not_empty"];
+    case "select":
+      return ["is", "is_not", "empty", "not_empty"];
+    case "multiselect":
+      return ["contains", "not_contains", "empty", "not_empty"];
+    case "checkbox":
+      return ["checked", "unchecked"];
+    case "date":
+    case "datetime":
+      return ["is", "before", "after", "empty", "not_empty"];
+    case "relation":
+    case "file":
+    case "dates":
+      return ["empty", "not_empty"];
+    default:
+      return ["contains", "not_contains", "is", "is_not", "empty", "not_empty"];
+  }
+}
+const NO_VALUE = new Set(["empty", "not_empty", "checked", "unchecked"]);
+
+/** "Filtro": the view's rules, each a field, an operator and a value; added and removed here. */
+function FilterButton({
+  type,
+  view,
+  onView,
+}: {
+  type: DataType;
+  view: DatabaseView;
+  onView: (v: DatabaseView) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const rules = view.filter ?? [];
+  const put = (next: DatabaseFilter[]) =>
+    onView({ ...view, filter: next.length ? next : undefined });
+  const fields = type.fields;
+  return (
+    <PopButton
+      className={`btn ghost small${rules.length ? " on" : ""}`}
+      title={t("db.filter")}
+      width={420}
+      label={rules.length ? `${t("db.filter")} (${rules.length})` : t("db.filter")}
+    >
+      {() => (
+        <div className="pop-section db-filters">
+          {rules.length === 0 && <p className="muted small">{t("db.noFilter")}</p>}
+          {rules.map((r, i) => {
+            const f = fields.find((x) => x.id === r.field);
+            const ops = f ? opsFor(f) : [];
+            const set = (patch: Partial<DatabaseFilter>) =>
+              put(rules.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+            return (
+              <div key={`${r.field}-${i}`} className="db-filter-row">
+                <select
+                  className="input"
+                  aria-label={t("db.filterField")}
+                  value={r.field}
+                  onChange={(e) => {
+                    const nf = fields.find((x) => x.id === e.target.value);
+                    if (nf) set({ field: nf.id, op: opsFor(nf)[0] ?? "is", value: undefined });
+                  }}
+                >
+                  {fields.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="input"
+                  aria-label={t("db.filterOp")}
+                  value={r.op}
+                  onChange={(e) => set({ op: e.target.value as DatabaseFilter["op"] })}
+                >
+                  {ops.map((o) => (
+                    <option key={o} value={o}>
+                      {t(`db.ops.${o}`)}
+                    </option>
+                  ))}
+                </select>
+                {!NO_VALUE.has(r.op) && f && (
+                  <FilterValue field={f} value={r.value} onChange={(value) => set({ value })} />
+                )}
+                <button
+                  type="button"
+                  className="icon-btn tiny"
+                  aria-label={t("db.filterRemove")}
+                  title={t("db.filterRemove")}
+                  onClick={() => put(rules.filter((_, j) => j !== i))}
+                >
+                  <Trash2 size={13} strokeWidth={1.8} />
+                </button>
+              </div>
+            );
+          })}
+          <button
+            type="button"
+            className="btn ghost small"
+            onClick={() => {
+              const f = fields[0];
+              if (f) put([...rules, { field: f.id, op: opsFor(f)[0] ?? "contains" }]);
+            }}
+          >
+            <Plus size={14} strokeWidth={1.8} />
+            {t("db.filterAdd")}
+          </button>
+        </div>
+      )}
+    </PopButton>
+  );
+}
+
+function FilterValue({
+  field,
+  value,
+  onChange,
+}: {
+  field: DataField;
+  value: string | number | undefined;
+  onChange: (v: string | number | undefined) => void;
+}) {
+  const t = useStore((s) => s.t);
+  if (field.type === "select" || field.type === "multiselect")
+    return (
+      <select
+        className="input"
+        aria-label={t("db.filterValue")}
+        value={String(value ?? "")}
+        onChange={(e) => onChange(e.target.value || undefined)}
+      >
+        <option value="">—</option>
+        {(field.options ?? []).map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    );
+  if (field.type === "date" || field.type === "datetime") {
+    const fixed = typeof value === "string" && value !== "today";
+    return (
+      <>
+        <select
+          className="input"
+          aria-label={t("db.filterValue")}
+          value={fixed ? "date" : "today"}
+          onChange={(e) => onChange(e.target.value === "today" ? "today" : ymd(new Date()))}
+        >
+          <option value="today">{t("db.today")}</option>
+          <option value="date">{t("db.aDate")}</option>
+        </select>
+        {fixed && (
+          <input
+            className="input"
+            type="date"
+            aria-label={t("db.aDate")}
+            value={value}
+            onChange={(e) => onChange(e.target.value || "today")}
+          />
+        )}
+      </>
+    );
+  }
+  const numeric = field.type === "number" || field.type === "money" || field.type === "duration";
+  return (
+    <input
+      className="input"
+      aria-label={t("db.filterValue")}
+      type={numeric ? "number" : "text"}
+      defaultValue={value ?? ""}
+      onBlur={(e) => {
+        const v = e.target.value.trim();
+        onChange(v === "" ? undefined : numeric ? Number(v) : v.slice(0, 200));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+    />
   );
 }
 
@@ -821,22 +1074,25 @@ interface CalItem {
 /** A month, from Monday, of every collection given (each with its colour, as the areas of the agenda). */
 function CalendarView({
   sources,
+  span,
+  onSpan,
   onAdd,
 }: {
   sources: { type: DataType; rows: DataRow[]; date?: string }[];
+  span: "month" | "week";
+  onSpan: (s: "month" | "week") => void;
   onAdd: (values?: Record<string, DataValue>) => Promise<void>;
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
+  const locale = lang === "en" ? "en-GB" : "es-ES";
   const dateOf = (type: DataType, chosen?: string) =>
     type.fields.find((f) => f.id === chosen && (f.type === "date" || f.type === "datetime")) ??
     type.fields.find((f) => f.type === "date" || f.type === "datetime");
   const main = sources[0];
   const mainDate = main ? dateOf(main.type, main.date) : undefined;
-  const [month, setMonth] = useState(() => {
-    const n = new Date();
-    return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1));
-  });
+  // The day the view is on (UTC midnight); the month or the week around it is shown.
+  const [anchor, setAnchor] = useState(() => new Date(`${ymd(new Date())}T00:00:00Z`));
   const byDay = useMemo(() => {
     const m = new Map<string, CalItem[]>();
     sources.forEach((src, si) => {
@@ -867,24 +1123,37 @@ function CalendarView({
     return m;
   }, [sources]);
   if (!mainDate) return <p className="db-hint">{t("db.calendarNeedsDate")}</p>;
-  const start = new Date(month);
-  start.setUTCDate(1 - ((month.getUTCDay() + 6) % 7));
-  const days = Array.from({ length: 42 }, (_, i) => {
+  const week = span === "week";
+  const first = week
+    ? new Date(anchor)
+    : new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+  const start = new Date(first);
+  start.setUTCDate(first.getUTCDate() - ((first.getUTCDay() + 6) % 7));
+  const count = week ? 7 : 42;
+  const days = Array.from({ length: count }, (_, i) => {
     const d = new Date(start);
     d.setUTCDate(start.getUTCDate() + i);
     return d;
   });
-  const weeks = days[35] && days[35].getUTCMonth() !== month.getUTCMonth() ? 5 : 6;
+  const shown = week
+    ? days
+    : days.slice(0, days[35] && days[35].getUTCMonth() !== first.getUTCMonth() ? 35 : 42);
   const today = ymd(new Date());
-  const long = month.toLocaleDateString(lang === "en" ? "en-GB" : "es-ES", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  const fmt = (d: Date, o: Intl.DateTimeFormatOptions) =>
+    d.toLocaleDateString(locale, { ...o, timeZone: "UTC" });
+  const long = week
+    ? `${fmt(days[0] as Date, { day: "numeric", month: "short" })} – ${fmt(days[6] as Date, { day: "numeric", month: "short", year: "numeric" })}`
+    : fmt(first, { month: "long", year: "numeric" });
   // "octubre de 2026" -> "Octubre de 2026" (only the first letter).
   const title = long.charAt(0).toUpperCase() + long.slice(1);
-  const step = (n: number) =>
-    setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + n, 1)));
+  const step = (n: number) => {
+    const d = new Date(anchor);
+    if (week) d.setUTCDate(d.getUTCDate() + 7 * n);
+    else d.setUTCMonth(d.getUTCMonth() + n, 1);
+    setAnchor(d);
+  };
+  const add = (key: string) =>
+    void onAdd({ [mainDate.id]: mainDate.type === "date" ? key : `${key}T09:00:00.000Z` });
   return (
     <div className="db-calendar">
       <div className="db-cal-head">
@@ -902,13 +1171,24 @@ function CalendarView({
             ))}
           </span>
         )}
+        <div className="db-span" role="radiogroup" aria-label={t("db.span")}>
+          {(["month", "week"] as const).map((sp) => (
+            <button
+              key={sp}
+              type="button"
+              role="radio"
+              aria-checked={span === sp}
+              className={`db-layout${span === sp ? " on" : ""}`}
+              onClick={() => onSpan(sp)}
+            >
+              {t(`db.spans.${sp}`)}
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           className="btn ghost small"
-          onClick={() => {
-            const n = new Date();
-            setMonth(new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)));
-          }}
+          onClick={() => setAnchor(new Date(`${ymd(new Date())}T00:00:00Z`))}
         >
           {t("db.today")}
         </button>
@@ -916,7 +1196,7 @@ function CalendarView({
           type="button"
           className="icon-btn"
           onClick={() => step(-1)}
-          aria-label={t("db.prevMonth")}
+          aria-label={week ? t("db.prevWeek") : t("db.prevMonth")}
         >
           <ChevronLeft size={16} strokeWidth={1.8} />
         </button>
@@ -924,48 +1204,58 @@ function CalendarView({
           type="button"
           className="icon-btn"
           onClick={() => step(1)}
-          aria-label={t("db.nextMonth")}
+          aria-label={week ? t("db.nextWeek") : t("db.nextMonth")}
         >
           <ChevronRight size={16} strokeWidth={1.8} />
         </button>
       </div>
-      <div className="db-cal-grid">
-        {days.slice(0, weeks * 7).map((d) => {
+      {week && (
+        <div className="db-cal-weekdays">
+          {days.map((d) => (
+            <div key={ymd(d)} className={`db-cal-wd${ymd(d) === today ? " today" : ""}`}>
+              {fmt(d, { weekday: "short", day: "numeric" })}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className={`db-cal-grid${week ? " week" : ""}`}>
+        {shown.map((d) => {
           const key = ymd(d);
           const items = byDay.get(key) ?? [];
+          const visible = week ? items : items.slice(0, 4);
           return (
             <div
               key={key}
-              className={`db-cal-day${d.getUTCMonth() === month.getUTCMonth() ? "" : " other"}${key === today ? " today" : ""}`}
+              className={`db-cal-day${!week && d.getUTCMonth() !== first.getUTCMonth() ? " other" : ""}${key === today ? " today" : ""}`}
             >
               <div className="db-cal-num">
-                <span>{d.getUTCDate()}</span>
+                {!week && <span>{d.getUTCDate()}</span>}
                 <button
                   type="button"
                   className="icon-btn tiny db-cal-add"
                   aria-label={`${t("db.new")}: ${key}`}
-                  onClick={() =>
-                    void onAdd({
-                      [mainDate.id]: mainDate.type === "date" ? key : `${key}T09:00:00.000Z`,
-                    })
-                  }
+                  onClick={() => add(key)}
                 >
                   <Plus size={12} strokeWidth={2} />
                 </button>
               </div>
-              {items.slice(0, 4).map((it) => (
+              {visible.map((it) => (
                 <button
                   key={it.row.id}
                   type="button"
-                  className="db-cal-item"
+                  className={`db-cal-item${week ? " tall" : ""}`}
                   style={{ ["--c" as string]: it.color }}
                   onClick={() => void openRow(it.type.id, it.row.id)}
                 >
                   {it.time && <span className="db-cal-time">{it.time}</span>}
-                  {titleOf(it.type, it.row) || t("page.untitled")}
+                  <span className="db-cal-text">
+                    {titleOf(it.type, it.row) || t("page.untitled")}
+                  </span>
                 </button>
               ))}
-              {items.length > 4 && <div className="db-cal-more">+{items.length - 4}</div>}
+              {items.length > visible.length && (
+                <div className="db-cal-more">+{items.length - visible.length}</div>
+              )}
             </div>
           );
         })}

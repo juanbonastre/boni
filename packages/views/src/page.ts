@@ -41,7 +41,31 @@ export interface DatabaseView {
   hide?: string[];
   /** Other collections the calendar also shows (as Boni Calendar showed every area at once). */
   also?: string[];
+  /** A calendar's span: a month (the default) or a week. */
+  span?: "month" | "week";
+  /** Notion's filter: only the rows that match every rule. */
+  filter?: DatabaseFilter[];
 }
+export interface DatabaseFilter {
+  field: string;
+  op: (typeof FILTER_OPS)[number];
+  /** Text, a number, a date ("YYYY-MM-DD") or an option's id, as the operator needs. */
+  value?: string | number;
+}
+export const FILTER_OPS = [
+  "is",
+  "is_not",
+  "contains",
+  "not_contains",
+  "empty",
+  "not_empty",
+  "checked",
+  "unchecked",
+  "before",
+  "after",
+  "gt",
+  "lt",
+] as const;
 export const DATABASE_LAYOUTS = ["table", "board", "list", "gallery", "calendar"] as const;
 
 export interface PageSpec {
@@ -175,7 +199,22 @@ export function pageErrors(spec: unknown): string[] {
           typeof b.source !== "string" ||
           !ID.test(b.source) ||
           !v ||
-          !only(v, ["layout", "group", "date", "sort", "hide", "also"]) ||
+          !only(v, ["layout", "group", "date", "sort", "hide", "also", "span", "filter"]) ||
+          (v.span !== undefined && v.span !== "month" && v.span !== "week") ||
+          (v.filter !== undefined &&
+            (!Array.isArray(v.filter) ||
+              v.filter.length > 20 ||
+              !v.filter.every(
+                (r) =>
+                  isObj(r) &&
+                  only(r, ["field", "op", "value"]) &&
+                  typeof r.field === "string" &&
+                  ID.test(r.field) &&
+                  (FILTER_OPS as readonly unknown[]).includes(r.op) &&
+                  (r.value === undefined ||
+                    (typeof r.value === "string" && r.value.length <= 200) ||
+                    (typeof r.value === "number" && Number.isFinite(r.value))),
+              ))) ||
           (v.also !== undefined &&
             (!Array.isArray(v.also) || v.also.length > 10 || !v.also.every((f) => okField(f)))) ||
           !(DATABASE_LAYOUTS as readonly unknown[]).includes(v.layout) ||

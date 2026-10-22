@@ -243,7 +243,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   hairline grid, each cell edited where it is (text and numbers as a field, Enter or leaving saves, Esc does not;
   selects as Notion's coloured pills from a menu; checkboxes at once; relations read-only), delete on hover with Undo.
   Board: a column per option (and "Sin X" when used), cards dragged between columns change the select. Calendar: a
-  month from Monday, today marked, "+" on a day adds a row on it. The view (layout, sort, grouping, hidden
+  month from Monday, today marked, "+" on a day adds a row on it; "Semana" shows seven tall days with every item
+  (its start time over its title); "También en el calendario" (Opciones) adds other collections, each with its colour
+  and a legend. "Filtro" (Notion's): rules of a property, a condition that fits its type (es, contiene, está vacío,
+  antes de / después de hoy or a date, mayor que…) and a value; the button shows how many are on. The view (layout, sort, grouping, hidden
   properties) is the page block's; the rows are the collection's (`/api/data/*`, a personal device only).
 - **More of Notion** (2026-10-22): blocks numbered list (numbers follow on), toggle (its line folds the blocks
   nested under it; Enter at its end writes inside it), quote (a 3 px bar), callout (an emoji you can change, a

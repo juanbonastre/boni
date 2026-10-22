@@ -20,7 +20,17 @@ const ok = {
       id: "db1",
       type: "database",
       source: "t_libro",
-      view: { layout: "board", group: "f_estado", sort: { field: "f_titulo" }, hide: ["f_x"] },
+      view: {
+        layout: "board",
+        group: "f_estado",
+        sort: { field: "f_titulo" },
+        hide: ["f_x"],
+        span: "week",
+        filter: [
+          { field: "f_estado", op: "is", value: "o_leido" },
+          { field: "f_fin", op: "not_empty" },
+        ],
+      },
     },
     { id: "c1", type: "chart", chart: "gasto-del-mes" },
     { id: "a1", type: "action", screen: "gasto", label: "Apuntar gasto" },
@@ -57,6 +67,14 @@ describe("a page (docs/extensiones.md 6)", () => {
     ).toMatch(/database/);
     expect(
       with_({ id: "x", type: "database", source: "t", view: { layout: "table", sql: "x" } })[0],
+    ).toMatch(/database/);
+    expect(
+      with_({
+        id: "x",
+        type: "database",
+        source: "t",
+        view: { layout: "table", filter: [{ field: "f", op: "regex", value: ".*" }] },
+      })[0],
     ).toMatch(/database/);
     expect(with_({ id: "x", type: "callout", text: "x", icon: "<img>" })[0]).toMatch(/callout/);
     expect(

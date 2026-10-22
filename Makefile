@@ -28,6 +28,7 @@ e2e-boni: ## Only Boni's Playwright tests (apps/boni-web)
 
 boni-desktop: ## Run Boni's desktop app (Electron) with the built web app
 	pnpm --filter @boni/boni-web build
+	pnpm --filter boni prepare-web
 	pnpm --filter boni start
 
 package-boni: ## Build Boni's desktop .deb into release/
@@ -36,6 +37,7 @@ package-boni: ## Build Boni's desktop .deb into release/
 
 e2e-boni-desktop: ## Boni's desktop app driven for real (opens a window; not in CI)
 	pnpm --filter @boni/boni-web build
+	pnpm --filter boni prepare-web
 	pnpm exec playwright test -c playwright.boni-desktop.config.ts
 
 bench-chrome: build ## Smoothness benchmark in a real Chrome window
