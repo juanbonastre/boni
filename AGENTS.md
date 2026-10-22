@@ -6,6 +6,12 @@ server. It is growing into the Boni core (entities, agent, views) and the Boni a
 `docs/nucleo.md`: one server, one account, several apps published separately (each with its own release tag prefix).
 Project notes live in Juan's vault (`proyectos/boni-plan.md`, `proyectos/boni-calendar.md`).
 
+**Before working, read in the vault** (they are not loaded by themselves): `proyectos/boni-plan.md` → "Cómo trabajar
+en Boni (leer primero)" and the last entries of its Registro (the state and the next step), and
+`proyectos/boni-calendar.md` → "Errores y soluciones". Say in your first reply what you read. Rules about how to work
+are written there (or here, for code), never left in a chat. Juan uses **Boni's desktop app** (`apps/boni-desktop`):
+UI work is done and tested for it (see that folder below).
+
 Names that devices depend on stay as they were when folders moved: the desktop package `boni-calendar-desktop` (its
 userData folder and the `.deb`), the Android `applicationId` and the workflow file `android.yml` (its run number is the
 `versionCode`), the Obsidian plugin id `boni-calendar`, the IndexedDB stores `boni-calendar-server*`, the server's start
