@@ -96,9 +96,11 @@ test.beforeAll(async () => {
     });
   });
   const shell = join(ROOT, "apps", "calendar-desktop");
+  // CALENDAR_DESKTOP_BIN: the packaged app (release/linux-unpacked/boni-calendar) instead of the source.
+  const bin = process.env.CALENDAR_DESKTOP_BIN;
   app = await electron.launch({
-    executablePath: createRequire(join(shell, "package.json"))("electron") as string,
-    args: [shell, `--user-data-dir=${join(dir, "electron")}`],
+    executablePath: bin ?? (createRequire(join(shell, "package.json"))("electron") as string),
+    args: [...(bin ? [] : [shell]), `--user-data-dir=${join(dir, "electron")}`],
     env: { ...process.env, XDG_CONFIG_HOME: join(dir, "config") },
   });
   main = await app.firstWindow();
