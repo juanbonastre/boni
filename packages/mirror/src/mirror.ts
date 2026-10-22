@@ -3,7 +3,13 @@ import { type Json, leaf, rec, typeName, type Val } from "@boni/agent";
 import { formatNote, NoteError, parseNote, patchNote } from "@boni/calendar";
 import { label, type TypeDef } from "@boni/entities";
 import type { StoredEntity, UserStore } from "@boni/store";
-import { CORE_MARK, importable, PATH_FIELD, propertyFields } from "@boni/vault-import";
+import {
+  CORE_MARK,
+  FOLDER_FIELD,
+  importable,
+  PATH_FIELD,
+  propertyFields,
+} from "@boni/vault-import";
 import {
   changesFor,
   ID_KEY,
@@ -126,7 +132,9 @@ export class Mirror {
     return Object.values(this.store.schema().types)
       .filter((t) => !t.system && !t.archived)
       .map((t) => {
-        if (zones[t.id]) return { type: t.id, name: t.name, mode: "none" as const };
+        // A vault zone never goes back to the vault; the vault's files are not notes to mirror.
+        if (zones[t.id] || t.fields.some((f) => f.id === FOLDER_FIELD))
+          return { type: t.id, name: t.name, mode: "none" as const };
         const m = this.state.type(t.id);
         if (m) return { type: t.id, name: t.name, mode: "core" as const, profile: m.profile };
         const imported = t.fields.some((f) => f.id === PATH_FIELD);
@@ -261,6 +269,8 @@ export class Mirror {
     if (this.state.type(typeId)) throw new Error(`Already in core mode: ${t.name}`);
     // A vault zone moved into Boni never goes back to the vault, where other agents read.
     if (this.store.zones()[typeId]) throw new Error(`In a zone, never mirrored: ${t.name}`);
+    if (t.fields.some((f) => f.id === FOLDER_FIELD))
+      throw new Error(`Files, not notes: never mirrored: ${t.name}`);
     const { profile, folder } = this.defaults(t, opts.profile, opts.folder);
     const entities = this.store.list(typeId);
     // Where each entity's note is (the import's path, for the vault profile).

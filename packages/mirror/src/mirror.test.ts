@@ -365,8 +365,10 @@ describe("a note says the same as the core when it means the same", () => {
 
   it("new notes are looked for with the import's rules", () => {
     expect(importable("agenda/docencia/2026-10-23 Examen.md")).toBe(true);
+    // Everything comes in now (Juan, 2026-10-22): a folder's index and _system's notes too.
+    expect(importable("agenda/docencia/README.md")).toBe(true);
+    expect(importable("_system/changelog.md")).toBe(true);
     for (const p of [
-      "agenda/docencia/README.md",
       "agenda/docencia/Private/x.md",
       "agenda/restricted/x.md",
       "agenda/.hidden/x.md",

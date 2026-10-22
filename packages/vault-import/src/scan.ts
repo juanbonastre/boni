@@ -4,8 +4,10 @@ import { join } from "node:path";
 /**
  * The vault's notes the import may read (docs/nucleo.md, 9.1). The same zones as everywhere else:
  * never `private/` or `restricted/` (at any depth, any case), never a folder that starts with a dot
- * (`.obsidian`, `.trash`, `.git`), never `_system/` (rules; only its collection definitions are read,
- * by `readDefinitions`), never a symbolic link (it could point out of the vault). Markdown only.
+ * (`.obsidian`, `.trash`, `.git`), never `_system/colecciones/` (the calendars' definitions, read by
+ * `readDefinitions`), never a symbolic link (it could point out of the vault). Everything else comes in
+ * (Juan, 2026-10-22: nothing stays in the vault): notes, folder indexes, `_system/`'s notes, and the other
+ * files as attachments.
  */
 const FORBIDDEN = new Set(["private", "restricted"]);
 
@@ -13,8 +15,8 @@ const FORBIDDEN = new Set(["private", "restricted"]);
 export function importable(path: string): boolean {
   const parts = path.split("/");
   const name = parts[parts.length - 1] ?? "";
-  if (!name.toLowerCase().endsWith(".md") || name === "README.md") return false;
-  if (parts.length > 1 && parts[0] === "_system") return false;
+  if (!name.toLowerCase().endsWith(".md")) return false;
+  if (parts[0] === "_system" && parts[1] === "colecciones") return false;
   return parts
     .slice(0, -1)
     .every((p) => p !== "" && !FORBIDDEN.has(p.toLowerCase()) && !p.startsWith("."));
@@ -47,7 +49,7 @@ export function scanVault(root: string): Scanned {
         const low = e.name.toLowerCase();
         if (FORBIDDEN.has(low)) continue; // not even counted: these folders are not looked at
         if (e.name.startsWith(".")) continue;
-        if (!rel && e.name === "_system") continue;
+        if (rel === "_system" && e.name === "colecciones") continue;
         walk(path);
         continue;
       }
@@ -55,8 +57,7 @@ export function scanVault(root: string): Scanned {
       if (!e.name.toLowerCase().endsWith(".md")) {
         if (!e.name.startsWith(".")) files.push(path);
         skip("not a note (attachment or other file)");
-      } else if (e.name === "README.md") skip("folder index (README.md)");
-      else notes.push(path);
+      } else notes.push(path);
     }
   };
   walk("");

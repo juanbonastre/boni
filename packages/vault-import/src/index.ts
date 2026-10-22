@@ -1,6 +1,7 @@
 export {
   CORE_MARK,
   FILE_FIELD,
+  FOLDER_FIELD,
   HASH_FIELD,
   type ImportOptions,
   type ImportReport,

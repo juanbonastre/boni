@@ -19,7 +19,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - run: pnpm --filter @boni/obsidian-plugin build
 
   # Which browser suites a pull request needs (pushes to main run both). A change outside the paths of one app
   # (agent, server, docs...) skips that app's suite; shared files (lockfile, configs, CI, packages the app

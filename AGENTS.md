@@ -141,16 +141,9 @@ apps/calendar-desktop/  Electron shell (chosen over Tauri after measuring, see d
                  only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
                  atomic writes with a conflict check); the UI reaches it through `window.boniVault` (`vaultBridge.ts`).
                  "Abrir en Boni" (the bridge's `noteApp: "boni"`) opens a note in Boni's desktop app with a
-                 `boni://note?path=...&peek=1` link (Obsidian only in the Obsidian plugin and on Android).
-apps/obsidian-plugin/  The same app as an Obsidian plugin (desktop only, `make plugin`): `main.ts` registers a tab, a
-                 ribbon icon and a command and reads nothing until the tab opens (after `onLayoutReady`);
-                 `view.ts` mounts the app in a shadow root (Obsidian's CSS and ours never meet) and leaves the
-                 calendar's Mod shortcuts to it through the view's `Scope`; `bridge.ts` is the `VaultBridge`
-                 over Obsidian's API (`vault.process`, `fileManager.renameFile` / `trashFile`, vault events),
-                 unit-tested against `fakeObsidian.ts`. It works alone over its vault; Settings → Data can make it a client of a
-                 Boni server instead (optional, docs/nucleo.md 9.4). Writing is on by default there; one calendar tab at a
-                 time (the store is a singleton). The index lives in IndexedDB (`cache.ts`), settings in
-                 `app.saveLocalStorage`: per device, never in `.obsidian/` (Syncthing carries it).
+                 `boni://note?path=...&peek=1` link.
+legacy/obsidian/ The Obsidian plugin and its tests in the installed Obsidian, out of the build since Juan dropped
+                 Obsidian (2026-10-22; to come back with the version for more people, see legacy/README.md).
 apps/calendar-android/ The same app on Android (Kotlin shell, `make`-less: CI builds it, android.yml): the built web UI in a
                  WebView from the APK's assets. `AndroidBridge.kt` is `window.boniAndroid` (async calls, answers
                  fetched with `take`; web side `src/android.ts`): the vault through the Storage Access Framework
@@ -263,11 +256,6 @@ legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, 
   `make e2e-boni` only Boni's
 - `make desktop` run the Electron app · `make package` build `.deb` + AppImage into `release/`
 - `make bench-chrome` / `make bench-electron` smoothness benchmark in a real window (see `docs/rendimiento.md`)
-- `make plugin` build the Obsidian plugin · `make install-obsidian VAULT=/path/to/vault` copy it into a vault
-- `make e2e-obsidian` / `make bench-obsidian` the plugin in the Obsidian installed here (`OBSIDIAN_BIN`, default
-  `/opt/Obsidian/obsidian`), always on a temporary profile and an invented vault (`e2e-obsidian/obsidian.ts`); not in CI.
-  `core.spec.ts` there: a remote image in a mirror note from outside text never loads in Obsidian, and the plugin against
-  a local Boni server
 
 ## Rules
 

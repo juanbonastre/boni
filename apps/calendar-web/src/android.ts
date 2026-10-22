@@ -50,7 +50,6 @@ export function androidHost(native: AndroidNative): {
     create: (path, text) => call("create", path, text),
     rename: (from, to) => call("rename", from, to),
     trash: (path) => call("trash", path),
-    openNote: (path) => call("openNote", path),
     cacheRead: () => call("cacheRead"),
     cacheWrite: (text) => call("cacheWrite", text),
   };

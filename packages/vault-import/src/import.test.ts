@@ -83,20 +83,19 @@ describe("importing the vault", () => {
     const s = store();
     const r = importVault(vault(), s);
     expect(r.applied).toBe(false);
+    // Everything comes in (Juan, 2026-10-22): the folder index as a note, the picture as a file.
     expect(r.types.map((t) => [t.id, t.notes]).sort()).toEqual([
+      ["t_archivo", 1],
       ["t_area", 1],
       ["t_docencia", 2],
       ["t_movimiento", 1],
-      ["t_nota", 1],
+      ["t_nota", 2],
       ["t_notion", 1],
       ["t_persona", 2],
       ["t_proyecto", 2],
     ]);
-    expect(r.created).toBe(10);
-    expect(r.skipped).toEqual({
-      "folder index (README.md)": 1,
-      "not a note (attachment or other file)": 1,
-    });
+    expect(r.created).toBe(12);
+    expect(r.skipped).toEqual({});
     expect(Object.keys(s.schema().types)).toEqual([]);
     expect(s.version()).toBe(0);
   });
@@ -188,7 +187,7 @@ describe("importing the vault", () => {
       { path: "bandeja/con-secreto.md", line: 5, kind: "Anthropic or OpenAI-style key" },
     ]);
     expect(r.identityNumbers).toBe(1);
-    const note = s.list("t_nota")[0];
+    const note = s.list("t_nota").find((e) => e.entity.values.f_title === "con-secreto");
     expect(note?.entity.body).not.toContain("sk-ant-");
     expect(note?.entity.body).toContain("12345678Z"); // kept as it is (Juan, 2026-10-19)
     expect(note?.labels[BODY]?.sensitivity).toBe("sensitive");
@@ -200,7 +199,7 @@ describe("importing the vault", () => {
     importVault(root, s, { apply: true });
     const v = s.version();
     const again = importVault(root, s, { apply: true });
-    expect(again).toMatchObject({ created: 0, updated: 0, unchanged: 10, removed: 0 });
+    expect(again).toMatchObject({ created: 0, updated: 0, unchanged: 12, removed: 0 });
     expect(s.version()).toBe(v); // nothing written
 
     writeFileSync(
@@ -255,15 +254,15 @@ describe("importing a zone (only Juan gives its folder)", () => {
   it("makes a type per folder, keeps attachments, and puts every type in the zone", () => {
     const s = store();
     const dry = importVault(vault(ZONE), s, { zone: "private" });
-    expect(dry).toMatchObject({ applied: false, zone: "private", files: 1, created: 3 });
+    expect(dry).toMatchObject({ applied: false, zone: "private", files: 1, created: 4 });
     expect(s.version()).toBe(0);
 
     const r = importVault(vault(ZONE), s, { zone: "private", apply: true });
     expect(r.types.map((t) => [t.id, t.name, t.notes]).sort()).toEqual([
-      ["t_private_documentos", "Documentos", 2],
+      ["t_private_documentos", "Documentos", 3],
       ["t_private_root", "Privado", 1],
     ]);
-    expect(r.skipped).toEqual({ "folder index (README.md)": 1 });
+    expect(r.skipped).toEqual({}); // its index too, as a note
     expect(r.secrets).toHaveLength(1); // left out, as everywhere
     expect(s.zones()).toEqual({ t_private_documentos: "private", t_private_root: "private" });
     expect(s.aiAccess()).toEqual({ t_private_documentos: "private", t_private_root: "private" });
@@ -289,10 +288,10 @@ describe("importing a zone (only Juan gives its folder)", () => {
     const zone = vault(ZONE);
     importVault(root, s, { apply: true });
     importVault(zone, s, { zone: "private", apply: true });
-    expect(importVault(root, s, { apply: true })).toMatchObject({ removed: 0, unchanged: 10 });
+    expect(importVault(root, s, { apply: true })).toMatchObject({ removed: 0, unchanged: 12 });
     expect(importVault(zone, s, { zone: "private", apply: true })).toMatchObject({
       removed: 0,
-      unchanged: 3,
+      unchanged: 4,
     });
     // Another zone does not see this one's rows either; a file gone goes to the trash.
     expect(
@@ -300,7 +299,7 @@ describe("importing a zone (only Juan gives its folder)", () => {
     ).toMatchObject({ created: 1, removed: 0 });
     unlinkSync(join(zone, "Documentos/poliza.pdf"));
     expect(importVault(zone, s, { zone: "private", apply: true })).toMatchObject({ removed: 1 });
-    expect(s.list("t_private_documentos")).toHaveLength(1);
+    expect(s.list("t_private_documentos")).toHaveLength(2);
     expect(s.zones().t_restricted_root).toBe("restricted");
   });
 });
