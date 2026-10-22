@@ -3,9 +3,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni/calendar";
 import { exportZip } from "@boni/export";
+import { CORE_MARK } from "@boni/mirror";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
 import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
+import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import {
   createRow,
   DataError,
@@ -21,6 +23,7 @@ import {
 } from "./data.ts";
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
+import { entityFromNote } from "./fromNote.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { MailError, type Mails } from "./mail.ts";
 import {
@@ -165,6 +168,34 @@ export function makeApp(opts: ServerOptions): App {
     for (const l of accountListeners.get(userId) ?? []) l(updated);
     push?.changed([userId]);
   };
+  /**
+   * An account's calendar: from its own collections in Boni once they moved there (their definitions are in the
+   * store, `calendar/defs`), else from its vault as before.
+   */
+  const storeCalendars = new Map<number, StoreCalendar>();
+  const onStore = (account: number): boolean => {
+    if (!opts.agent?.hasData) return false;
+    try {
+      return calendarDefs(opts.agent.store(account)).length > 0;
+    } catch {
+      return false;
+    }
+  };
+  const calendarOf = (user: { id: number; vault: string }): CalendarSource | null => {
+    if (onStore(user.id)) {
+      let c = storeCalendars.get(user.id);
+      if (!c) {
+        c = new StoreCalendar((opts.agent as NonNullable<typeof opts.agent>).store(user.id), {
+          write: vaults.writable,
+        });
+        storeCalendars.set(user.id, c);
+        const id = user.id;
+        c.subscribe(() => push?.changed([id]));
+      }
+      return c;
+    }
+    return user.vault ? vaults.get(user.vault) : null;
+  };
   /** With push on, a change in a vault tells the devices of every account that uses it. */
   const watched = new Set<string>();
   const watchVault = (root: string) => {
@@ -180,13 +211,15 @@ export function makeApp(opts: ServerOptions): App {
     void v.snapshot().catch((e) => console.warn("vault", e));
   };
   if (push) {
+    // A vault is read (and its series topped up) only for accounts whose calendar still lives there.
     for (const u of db
-      .prepare("SELECT DISTINCT vault FROM accounts WHERE vault IS NOT NULL")
-      .all() as { vault: string }[]) {
+      .prepare("SELECT id, vault FROM accounts WHERE vault IS NOT NULL AND vault != ''")
+      .all() as { id: number; vault: string }[]) {
       try {
-        watchVault(u.vault);
+        if (onStore(u.id)) calendarOf({ id: u.id, vault: u.vault });
+        else watchVault(u.vault);
       } catch (e) {
-        console.warn("vault", e instanceof Error ? e.message : e);
+        console.warn("calendar", e instanceof Error ? e.message : e);
       }
     }
   }
@@ -199,6 +232,15 @@ export function makeApp(opts: ServerOptions): App {
     store: v1store,
     tz,
     writable: vaults.writable,
+    // "Apuntar gasto" with the movements in Boni: the movement goes into Boni and its mirror writes the note.
+    intoBoni: (account, path, text, device) => {
+      if (!opts.agent?.hasData) return false;
+      const store = opts.agent.store(account);
+      if (store.setting(`${CORE_MARK}t_movimiento`) === null) return false;
+      entityFromNote(store, "t_movimiento", path, text, device);
+      opts.agent.onChanged?.(account);
+      return true;
+    },
     ...(opts.now ? { now: opts.now } : {}),
   });
   const vaultOf = (id: number): string | null => {
@@ -274,6 +316,8 @@ export function makeApp(opts: ServerOptions): App {
       if (!opts.agent?.hasData) return send(res, 503, { error: "no-store" });
       if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const store = opts.agent.store(s.user.id);
+      // A change made here reaches the mirror (and so the vault) at once.
+      if (req.method !== "GET") res.on("finish", () => opts.agent?.onChanged?.(s.user.id));
       try {
         if (route === "GET /api/data/types") return send(res, 200, { types: listTypes(store) });
         if (route === "GET /api/data/types/:type/rows")
@@ -491,10 +535,10 @@ export function makeApp(opts: ServerOptions): App {
     }
     const user = authed(req, res);
     if (!user) return;
-    // An account without a vault (Boni only) has no calendar here.
-    if (!user.vault) return send(res, 403, { error: "no-calendar" });
-    const vault = vaults.get(user.vault);
-    watchVault(user.vault);
+    // An account without a calendar (no vault, nothing moved to Boni) has none here.
+    const vault = calendarOf(user);
+    if (!vault) return send(res, 403, { error: "no-calendar" });
+    if (!onStore(user.id)) watchVault(user.vault);
     switch (route) {
       case "POST /api/logout":
         logout(db, tokenOf(req) ?? "");
@@ -507,7 +551,14 @@ export function makeApp(opts: ServerOptions): App {
         const base = Number(b.base);
         if (!Number.isInteger(base) || !Array.isArray(b.changes))
           return send(res, 400, { error: "bad-request" });
-        const r = await vault.apply(base, b.changes as RowChange[], tokenOf(req) ?? "");
+        const r = await vault.apply(
+          base,
+          b.changes as RowChange[],
+          tokenOf(req) ?? "",
+          sessionUser(db, tokenOf(req))?.device,
+        );
+        // Boni's mirror writes the change into the vault now, not at its next round.
+        if (r.ok && onStore(user.id)) opts.agent?.onChanged?.(user.id);
         return r.ok
           ? send(res, 200, r)
           : send(res, 409, { error: "conflict", conflict: r.conflict });
@@ -681,6 +732,8 @@ export function makeApp(opts: ServerOptions): App {
   return {
     close: () => {
       for (const t of timers) clearInterval(t);
+      for (const c of storeCalendars.values()) c.close();
+      storeCalendars.clear();
     },
     handler: (listener) => (req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");

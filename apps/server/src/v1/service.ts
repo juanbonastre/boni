@@ -86,6 +86,11 @@ export interface V1Options {
   /** Whether the server may write notes (BONI_WRITE). */
   writable: boolean;
   now?: () => number;
+  /**
+   * When the account's movements live in Boni (core mode): takes a captured movement note as an entity there
+   * and says true; Boni's mirror then writes the note at `path` (never a proposal, it is Juan's own capture).
+   */
+  intoBoni?: (account: number, path: string, text: string, device: string) => boolean;
 }
 
 export class V1Service {
@@ -96,11 +101,13 @@ export class V1Service {
   private fins = new Map<string, Finanzas>();
   private listeners = new Map<number, Set<(what: Change) => void>>();
   private prints = new Map<number, string>();
+  private intoBoni: V1Options["intoBoni"];
 
   constructor(o: V1Options) {
     this.store = o.store;
     this.tz = o.tz;
     this.writable = o.writable;
+    this.intoBoni = o.intoBoni;
     this.nowMs = o.now ?? Date.now;
   }
 
@@ -495,7 +502,12 @@ export class V1Service {
     }
     let path: string;
     try {
-      path = this.fin(c).createMovement(draft.date, baseName(draft), render(draft, today));
+      const text = render(draft, today);
+      const fin = this.fin(c);
+      const free = fin.freeMovementPath(draft.date, baseName(draft));
+      path = this.intoBoni?.(c.account, free, text, cap.device)
+        ? free
+        : fin.createMovement(draft.date, baseName(draft), text);
     } catch (e) {
       const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
       const code = (e as { code?: string }).code;

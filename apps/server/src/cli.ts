@@ -1,13 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ensureSystemTypes } from "@boni/agent";
+import { frontmatterData, parseCollectionDef } from "@boni/calendar";
 import { exportZip, importExport, readZip } from "@boni/export";
 import { devicesOf, importAccounts, revokeDevice, wrappedKeysIn } from "@boni/identity";
 import { Mirror, type MirrorFs, openMirrorState, type Profile } from "@boni/mirror";
-import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
+import { openUserStore, restoreBackup, type UserStore, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
+import { CALENDAR_DEFS, saveCalendarDefs } from "./calendarStore.ts";
 import { mirrorStatePath } from "./mirror.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -35,6 +37,9 @@ import { V1Store } from "./v1/store.ts";
  *       --trust-labels keeps the file's provenance labels (only for an export of one's own that never left).
  *   node src/cli.ts restore <name> <backups/user-<id>-<day>.db.sealed> <out.db>
  *       opens one of the account's encrypted copies (store or mirror state) into a plain file; never over a file.
+ *   node src/cli.ts mirror <name> --calendar [--apply | --stop]
+ *       the account's calendar from Boni (once every calendar's collection is in core mode): copies the
+ *       definitions of _system/colecciones/ into the store; --stop serves it from the vault again.
  */
 const [cmd, ...args] = process.argv.slice(2);
 const paths = databasePaths();
@@ -201,7 +206,8 @@ try {
       const type = typeArg
         ? types.find((t) => t.type === typeArg || t.name.toLowerCase() === typeArg.toLowerCase())
         : null;
-      if (!typeArg) {
+      if (flags.has("--calendar")) moveCalendar(store, user.vault, types, flags);
+      else if (!typeArg) {
         for (const t of types)
           console.log(`${t.type}\t${t.mode}${t.profile ? ` (${t.profile})` : ""}\t${t.name}`);
       } else if (!type) throw new Error(`No type ${typeArg} (see: mirror ${name})`);
@@ -243,4 +249,57 @@ try {
   process.exitCode = 1;
 } finally {
   db.close();
+}
+
+/**
+ * Moves an account's calendar to Boni (Juan, 2026-10-22): once every calendar's collection is in core mode,
+ * their definitions (as written in `_system/colecciones/`) go into the store and the server serves the
+ * calendar from there. Dry run unless --apply; --stop puts it back on the vault.
+ */
+function moveCalendar(
+  store: UserStore,
+  vault: string,
+  modes: { type: string; mode: string; name: string }[],
+  flags: Set<string>,
+): void {
+  if (flags.has("--stop")) {
+    if (flags.has("--apply")) store.setSetting(CALENDAR_DEFS, null);
+    console.log(
+      flags.has("--apply")
+        ? "The calendar comes from the vault again."
+        : "Dry run: the calendar would come from the vault again (add --apply).",
+    );
+    return;
+  }
+  const dir = join(vault, "_system", "colecciones");
+  const defs: { type: string; raw: Record<string, unknown>; id: string }[] = [];
+  for (const f of readdirSync(dir)
+    .filter((x) => x.endsWith(".md") && x !== "README.md")
+    .sort()) {
+    const fm = frontmatterData(readFileSync(join(dir, f), "utf8"));
+    if ("error" in fm) continue;
+    const raw = fm.data.collection as Record<string, unknown> | undefined;
+    const r = parseCollectionDef(raw);
+    if (!r.ok || !raw) {
+      console.log(`  ${f}: does not parse (left out)`);
+      continue;
+    }
+    defs.push({ type: `t_${r.def.id.replace(/-/g, "_")}`, raw, id: r.def.id });
+  }
+  const notCore = defs.filter((d) => modes.find((m) => m.type === d.type)?.mode !== "core");
+  for (const d of defs)
+    console.log(
+      `  ${d.id}: ${modes.find((m) => m.type === d.type)?.mode ?? "no collection"} (${d.type})`,
+    );
+  if (!defs.length) throw new Error("No calendar definitions in _system/colecciones/");
+  if (notCore.length) {
+    const why = `Not in core mode yet: ${notCore.map((d) => d.type).join(", ")} (mirror <name> <type> --apply first)`;
+    if (flags.has("--apply")) throw new Error(why);
+    console.log(`Not ready. ${why}`);
+    return;
+  }
+  if (flags.has("--apply")) {
+    saveCalendarDefs(store, defs);
+    console.log(`The calendar comes from Boni now (${defs.length} calendars).`);
+  } else console.log(`Dry run: ${defs.length} calendars would come from Boni (add --apply).`);
 }

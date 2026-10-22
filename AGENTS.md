@@ -209,8 +209,19 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `src/pages.ts`: the user's pages (system type `page` in the user's store, `/api/pages`): nothing
                  fixed on screen, the sidebar and the start are what the user makes; `seedFromV1` gives an account
                  that used the first Boni, once, a page "Gastos" with what its home showed.
-                 `src/mirror.ts`: the mirror of each account's `core` types (after agent requests and every 30 s;
-                 `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run by default.
+                 `src/mirror.ts`: the mirror of each account's `core` types (after agent requests, calendar and data
+                 writes, and every 30 s; `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run
+                 by default, and marks it in the store (`CORE_MARK`) so the vault's import never touches it again.
+                 A quiet round must stay cheap at Juan's size (~4,000 notes): no labels, no note texts, links and
+                 known paths only when a note changed.
+                 `src/calendarStore.ts`: an account's calendar from its own collections (Juan, 2026-10-22: one truth)
+                 once `cli.ts mirror <name> --calendar --apply` copied `_system/colecciones/` into the store
+                 (`calendar/defs`; only when every calendar's type is in core mode; `--calendar --stop` goes back to the
+                 vault). Same API as `vaults.ts` (`CalendarSource`): rows keep the note path as id, values by property
+                 name, a write changes only what differs, with the device's label; Boni's own edits reach the devices
+                 within a second. `src/fromNote.ts`: "Apuntar gasto" with the movements in core mode creates the
+                 entity (the mirror writes the note), never a proposal. `e2e/server-boni.spec.ts` runs the migration
+                 with the same commands as the NAS.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
                  account (`users/<id>.db` next to system.db) and one `@boni/agent` each; the device's trust level is
                  the turn's origin. On only with `ANTHROPIC_API_KEY`; otherwise 503 `agent-off`.

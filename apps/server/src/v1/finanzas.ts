@@ -203,6 +203,22 @@ export class Finanzas {
     return parts.sort().join("|");
   }
 
+  /** The first free path for a movement note (`movimientos/YYYY/MM/<base>[-N].md`), without writing it. */
+  freeMovementPath(date: string, base: string): string {
+    const folder = `${MOV}/${date.slice(0, 4)}/${date.slice(5, 7)}`;
+    let taken: Set<string>;
+    try {
+      taken = new Set(this.fs.scan(folder).map((f) => noteName(f.path)));
+    } catch {
+      taken = new Set();
+    }
+    for (let n = 1; n < 1000; n++) {
+      const name = n === 1 ? base : `${base}-${n}`;
+      if (!taken.has(name)) return `${folder}/${name}.md`;
+    }
+    throw new Error("could not find a free note name");
+  }
+
   /** Writes a movement note at movimientos/YYYY/MM/<base>[-N].md (never over another note); returns its path. */
   createMovement(date: string, base: string, content: string): string {
     const folder = `${MOV}/${date.slice(0, 4)}/${date.slice(5, 7)}`;

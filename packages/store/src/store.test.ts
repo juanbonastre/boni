@@ -105,6 +105,8 @@ describe("the store", () => {
     const gone = store.create("t_libro", { f_titulo: { value: "Uno", label: JUAN } }, me);
     store.remove(gone.entity.id, me);
     expect(store.count("t_libro")).toBe(2);
+    expect(store.lastChange(gone.entity.id)).toMatchObject({ device: "portatil" });
+    expect(store.lastChange("e_nada")).toBeNull();
     expect(store.findByValue("f_titulo", "Uno")).toEqual([{ id: a.entity.id, type: "t_libro" }]);
     expect(store.findByValue('f_titulo"); DROP TABLE entities; --', "Uno")).toEqual([]);
     expect(store.list("t_libro").map((e) => e.labels.f_titulo?.integrity)).toEqual([

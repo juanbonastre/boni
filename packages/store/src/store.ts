@@ -143,6 +143,8 @@ export interface UserStore {
   list(type: TypeId, opts?: { includeDeleted?: boolean }): StoredEntity[];
   /** A type's entities (not in the trash) without their labels, in one query: for a view's rows. */
   entities(type: TypeId): Entity[];
+  /** The last operation on an entity (its number and the device that made it), or null. */
+  lastChange(id: EntityId): { seq: number; device: string | null } | null;
   /** How many entities a type has (not in the trash), without reading them. */
   count(type: TypeId): number;
   /** The entities (not in the trash) whose `field` holds exactly `value` (a text), by one query. */
@@ -734,6 +736,12 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
           .prepare("SELECT * FROM entities WHERE type = ? AND deleted IS NULL ORDER BY created, id")
           .all(type) as unknown as EntityRow[]
       ).map(toEntity),
+    lastChange: (id) => {
+      const r = db
+        .prepare("SELECT seq, device FROM ops WHERE target = ? ORDER BY seq DESC LIMIT 1")
+        .get(id) as { seq: number; device: string | null } | undefined;
+      return r ? { seq: Number(r.seq), device: r.device ?? null } : null;
+    },
     count: (type) =>
       Number(
         (

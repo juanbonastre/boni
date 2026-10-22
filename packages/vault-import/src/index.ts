@@ -1,4 +1,5 @@
 export {
+  CORE_MARK,
   FILE_FIELD,
   HASH_FIELD,
   type ImportOptions,
