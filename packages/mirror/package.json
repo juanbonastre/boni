@@ -21,7 +21,8 @@
     "@boni/calendar": "workspace:*",
     "@boni/entities": "workspace:*",
     "@boni/store": "workspace:*",
-    "@boni/vault-import": "workspace:*"
+    "@boni/vault-import": "workspace:*",
+    "@boni/views": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

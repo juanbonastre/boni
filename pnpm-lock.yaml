@@ -434,6 +434,9 @@ importers:
       '@boni/vault-import':
         specifier: workspace:*
         version: link:../vault-import
+      '@boni/views':
+        specifier: workspace:*
+        version: link:../views
     devDependencies:
       '@types/node':
         specifier: 24.19.2

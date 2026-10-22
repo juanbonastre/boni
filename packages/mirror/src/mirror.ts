@@ -11,13 +11,16 @@ import {
   propertyFields,
 } from "@boni/vault-import";
 import {
+  bodyFor,
   changesFor,
   ID_KEY,
   INTEGRITY_KEY,
   type Links,
   OMITTED_KEY,
+  ownTitle,
   parseEdit,
   type Rendered,
+  readOwnTitle,
   render,
 } from "./render.ts";
 import type { MirroredType, MirrorState, Profile } from "./state.ts";
@@ -75,7 +78,13 @@ export interface SwitchReport {
   /** Notes that already say what the core says (they only gain the `boni_*` lines). */
   unchanged: number;
   /** Notes the switch would rewrite, with the properties that differ. */
-  changed: { path: string; props: string[]; body: boolean }[];
+  changed: {
+    path: string;
+    props: string[];
+    body: boolean;
+    /** Each changed property: what the note says and what the core would write. */
+    values?: Record<string, { note: unknown; core: unknown }>;
+  }[];
   /** Entities without a note yet (one is created). */
   created: string[];
   /** Notes in the folder the core does not have (after the switch they become proposals). */
@@ -322,13 +331,22 @@ export class Mirror {
         const props = Object.keys(changes).filter(
           (k) => k !== ID_KEY && k !== INTEGRITY_KEY && k !== OMITTED_KEY,
         );
-        const body = parsed.body !== r.body;
-        if (props.length || body) report.changed.push({ path, props, body });
+        const text = bodyFor(r, baseName(path), parsed.body);
+        const body = parsed.body !== text;
+        if (props.length || body)
+          report.changed.push({
+            path,
+            props,
+            body,
+            values: Object.fromEntries(
+              props.map((k) => [k, { note: parsed.values[k] ?? null, core: changes[k] ?? null }]),
+            ),
+          });
         else report.unchanged++;
         writes.push({
           entity: s.entity.id,
           path,
-          text: patchNote(old, changes, { body: r.body }),
+          text: patchNote(old, changes, { body: text }),
           old,
         });
       } else {
@@ -336,7 +354,7 @@ export class Mirror {
         writes.push({
           entity: s.entity.id,
           path: null,
-          text: formatNote(r.props, r.body),
+          text: formatNote(r.props, bodyFor(r, safeName(r.title), null)),
           old: null,
         });
       }
@@ -378,7 +396,6 @@ export class Mirror {
 
   /** A new note: where the import found it when that place is free, else `<folder>/<title>.md`. */
   private createNote(s: StoredEntity, t: TypeDef, m: MirroredType, r: Rendered): string {
-    const text = formatNote(r.props, r.body);
     const was = s.entity.values[PATH_FIELD];
     const base = m.folder ? `${m.folder}/${safeName(r.title)}` : safeName(r.title);
     const paths = function* () {
@@ -388,6 +405,7 @@ export class Mirror {
     for (const path of paths()) {
       const other = this.state.noteAt(path);
       if (other && other.entity !== s.entity.id) continue;
+      const text = formatNote(r.props, bodyFor(r, baseName(path), null));
       if (!this.o.fs.create(path, text).exists) {
         this.state.setNote({ entity: s.entity.id, type: t.id, path, sha: sha(text), text });
         return path;
@@ -436,7 +454,7 @@ export class Mirror {
       const e = this.state.edit(row.path, GONE);
       const status = e ? this.store.journal.proposal(e.proposal)?.status : null;
       if (row.sha !== GONE && status !== "rejected") return void report.held.push(row.path);
-      const text = formatNote(r.props, r.body);
+      const text = formatNote(r.props, bodyFor(r, baseName(row.path), null));
       if (this.o.fs.create(row.path, text).exists) return void report.held.push(row.path);
       this.state.setNote({ ...row, sha: sha(text), text });
       if (e) this.state.dropEdit(row.path, GONE);
@@ -450,7 +468,9 @@ export class Mirror {
     if (parsed.error) return void report.held.push(row.path);
     let text: string;
     try {
-      text = patchNote(f.text, changesFor(parsed.values, r), { body: r.body });
+      text = patchNote(f.text, changesFor(parsed.values, r), {
+        body: bodyFor(r, baseName(row.path), parsed.body),
+      });
     } catch (e) {
       if (e instanceof NoteError) return void report.held.push(row.path);
       throw e;
@@ -589,9 +609,12 @@ export class Mirror {
   }
 
   /** What the mirror last wrote at a note, as the base a hand edit is compared with (three-way). */
-  private base(row: { path: string; text: string }): Rendered {
+  private base(row: { path: string; text: string }, t: TypeDef, m: MirroredType): Rendered {
     const p = parseNote(row.text);
-    return { props: p.values, body: p.body, omitted: [], title: baseName(row.path) };
+    const own = ownTitle(t, m)
+      ? readOwnTitle(p.body, baseName(row.path))
+      : { title: baseName(row.path), body: p.body };
+    return { props: p.values, body: own.body, omitted: [], title: own.title };
   }
 
   /** The status of the proposal a hand edit became, or null when there is none (or it went stale). */
@@ -690,7 +713,7 @@ export class Mirror {
           baseName(row.path),
           t,
           m,
-          this.base(row),
+          this.base(row, t, m),
           links,
         );
         if (!Object.keys(p.values).length && p.body === undefined && !p.problems.length) {

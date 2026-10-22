@@ -240,6 +240,53 @@ describe("importing the vault", () => {
   });
 });
 
+describe("importing again", () => {
+  it("a value seen for the first time becomes a new option of the field", () => {
+    const s = store();
+    const root = vault();
+    importVault(root, s, { apply: true });
+    writeFileSync(
+      join(root, "registros/personas/ana-ejemplo.md"),
+      "---\ntype: person\nsummary: Invented colleague.\ntags: [ucam, profesor, nueva]\n---\n# Ana\n",
+    );
+    const r = importVault(root, s, { apply: true });
+    expect(r.failed).toEqual([]);
+    const tags = s.schema().types.t_persona?.fields.find((f) => f.key === "tags");
+    expect(tags?.options?.map((o) => o.name)).toContain("nueva");
+  });
+});
+
+describe("the notes Boni's mirror writes", () => {
+  it("a note the mirror writes for a type in core mode is that entity's, and boni_* lines are never fields", () => {
+    const s = store();
+    const root = vault();
+    importVault(root, s, { apply: true });
+    const ana = s.list("t_persona").find((e) => e.entity.values.f_title === "Ana") as {
+      entity: { id: string };
+    };
+    // Boni's generic profile writes `Boni/<Type>/<title>.md` for a type of its own.
+    s.setSetting("mirror/core/t_persona", "generic");
+    mkdirSync(join(root, "Boni/Gente"), { recursive: true });
+    writeFileSync(
+      join(root, "Boni/Gente/Ana.md"),
+      `---\nNombre: Ana\nboni_id: "${ana.entity.id}"\nboni_integrity: "imported"\n---\n`,
+    );
+    writeFileSync(
+      join(root, "bandeja/otra.md"),
+      '---\nboni_id: "e_que_no_existe"\nboni_integrity: "user"\n---\nTexto.\n',
+    );
+    const r = importVault(root, s, { apply: true });
+    expect(r.skipped["written by Boni's mirror"]).toBe(1);
+    expect(s.list("t_nota").some((e) => e.entity.values[PATH_FIELD] === "Boni/Gente/Ana.md")).toBe(
+      false,
+    );
+    expect(s.list("t_nota").some((e) => e.entity.values[PATH_FIELD] === "bandeja/otra.md")).toBe(
+      true,
+    );
+    expect(s.schema().types.t_nota?.fields.some((f) => f.name.startsWith("boni_"))).toBe(false);
+  });
+});
+
 describe("notes titled by their first heading (Juan, 2026-10-22)", () => {
   const WIKI = {
     "wiki/como-hacer/redaccion-y-correccion-tfg-tfm.md":

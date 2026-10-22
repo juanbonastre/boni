@@ -151,7 +151,12 @@ describe("switching a collection to core mode", () => {
     );
     const r = e.mirror.switchToCore(CAL);
     expect(r.changed).toEqual([
-      { path: "agenda/docencia/2026-10-20 Tutoría.md", props: ["date"], body: false },
+      {
+        path: "agenda/docencia/2026-10-20 Tutoría.md",
+        props: ["date"],
+        body: false,
+        values: { date: { note: "2026-10-20", core: "2026-10-22" } },
+      },
     ]);
     expect(r.unknown).toEqual(["agenda/docencia/2026-10-21 Nueva.md"]);
   });
@@ -388,5 +393,62 @@ describe("a note says the same as the core when it means the same", () => {
     e.mirror.switchToCore(CAL, { apply: true });
     expect(await e.mirror.scan()).toMatchObject({ proposed: 0 });
     expect(JSON.stringify(e.store.journal.proposals())).not.toContain("MARCA-PRIVADA");
+  });
+});
+
+describe("notes titled by their first heading (Juan, 2026-10-22)", () => {
+  const MOVE = "registros/finanzas/movimientos/2026/10/2026-10-19-cafe.md";
+  const PROJ = "proyectos/plan-de-ejemplo.md";
+  const files = {
+    ...FILES,
+    [MOVE]: "---\ntype: movement\namount: -1.20\n---\n\n# Café 1,20 EUR\n",
+    [PROJ]: "---\ntype: project\n---\n# Plan de ejemplo\n\nPrimer párrafo.\n\n## Notas\n",
+  };
+  const T_MOVE = "t_movimiento";
+  const T_PROJ = "t_proyecto";
+  const idAt = (e: Env, type: string) => e.store.list(type)[0]?.entity.id as string;
+
+  it("switching keeps the heading: the notes only gain the boni_* lines", () => {
+    const e = env(files);
+    expect(e.store.list(T_PROJ)[0]?.entity.values.f_title).toBe("Plan de ejemplo");
+    for (const type of [T_MOVE, T_PROJ, "t_persona"]) {
+      const r = e.mirror.switchToCore(type);
+      expect(r).toMatchObject({ changed: [], unchanged: 1 });
+      e.mirror.switchToCore(type, { apply: true });
+    }
+    expect(e.read(MOVE)).toBe(
+      `---\ntype: movement\namount: -1.20\nboni_id: "${idAt(e, T_MOVE)}"\nboni_integrity: "imported"\n---\n\n# Café 1,20 EUR\n`,
+    );
+    expect(e.read(PROJ)).toContain("---\n# Plan de ejemplo\n\nPrimer párrafo.\n\n## Notas\n");
+    expect(e.read("registros/personas/ana-ejemplo.md")).toContain("---\n# Ana\n");
+  });
+
+  it("a title or text changed in Boni is written under the heading", async () => {
+    const e = env(files);
+    e.mirror.switchToCore(T_PROJ, { apply: true });
+    const l = label("user", "personal", []);
+    e.store.update(
+      idAt(e, T_PROJ),
+      {
+        f_title: { value: "Plan renombrado", label: l },
+        $body: { value: "Otro texto.", label: l },
+      },
+      { actor: "user" },
+    );
+    expect(await e.mirror.sync()).toMatchObject({ written: 1 });
+    expect(e.read(PROJ)).toMatch(/---\n# Plan renombrado\n\nOtro texto\.\n?$/);
+    expect(await e.mirror.scan()).toMatchObject({ proposed: 0 });
+  });
+
+  it("a heading edited by hand is a proposal for the title, not for the text", async () => {
+    const e = env(files);
+    e.mirror.switchToCore(T_PROJ, { apply: true });
+    e.write(PROJ, e.read(PROJ).replace("# Plan de ejemplo", "# Plan cambiado a mano"));
+    expect(await e.mirror.scan()).toMatchObject({ proposed: 1 });
+    const rows =
+      (pending(e)[0]?.view as { rows: { arg: string; value: string }[] } | undefined)?.rows ?? [];
+    expect(rows.filter((r) => r.arg.startsWith("values.")).map((r) => r.value)).toEqual([
+      "Plan cambiado a mano",
+    ]);
   });
 });

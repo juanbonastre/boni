@@ -76,7 +76,10 @@ packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `s
                  inferred from all values (names kept, keys ASCII), `[[links]]` that all resolve to one type become
                  relations, every value `imported` with its note as the source; access secrets are left out
                  (`secrets.ts`), identity numbers make a value sensitive. Re-runs update only changed notes (hidden
-                 path and hash fields) and trash notes that are gone; the whole run is one `undoRun`.
+                 path and hash fields) and trash notes that are gone; the whole run is one `undoRun`. A note Boni's mirror
+                 writes for a type in core mode (its `boni_id`) is never imported as a note of its own, `boni_*` lines are
+                 never fields, a new value of a list field becomes a new option, and attachments are read one at a
+                 time (the server's container has 384 MB).
                  `--zone restricted|private --vault <that folder>`: one of the vault's zones, run by Juan alone
                  (no agent-sudo action on purpose: the server and the AI never see those folders); a type per
                  first-level folder put in the zone, attachments a row each (`f_boni_file`), paths kept as
@@ -115,7 +118,9 @@ packages/mirror/ The Markdown mirror (docs/nucleo.md 9.2, 9.4; an edge, never im
                  they point to). A note that is not the mirror's last version is never overwritten: the hand edit,
                  compared three-way with the mirror's last text, becomes a proposal (`Agent.propose`); new notes in
                  the type's folder (import rules, `importable`) propose an entity, removed ones its removal; rejected,
-                 the core's version comes back. `switchToCore` reports first. State in its own SQLite (`state.ts`).
+                 the core's version comes back. A note titled by its first `# Heading` (no title property) keeps it: the
+                 heading is its title both ways (`bodyFor`, `readOwnTitle`). `switchToCore` reports first, with each
+                 changed property's values. State in its own SQLite (`state.ts`).
 packages/export/ Export in one click (docs/nucleo.md 9.3): `exportZip` (json/<type>.ndjson the faithful copy with labels,
                  schema.json with each type and a JSON Schema, <type>/*.md through the mirror's `render`, csv/ with no
                  formulas, views.json, optional log.ndjson from `store.log()`), a minimal zip of its own (`zip.ts`,
