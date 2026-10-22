@@ -5,6 +5,7 @@ import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
+import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
@@ -134,6 +135,7 @@ function useShortcuts(mobile: boolean) {
         e.preventDefault();
         if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
         else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
+        else if (s.view.kind === "row" && s.page) void openPage(s.page.id);
         else showStart();
       }
     };
@@ -200,6 +202,8 @@ function TopBar() {
             )}
             <span className="title-name">{spec.title}</span>
           </>
+        ) : view.kind === "row" ? (
+          <RowCrumbs />
         ) : onPage && page ? (
           <Crumbs page={page} pages={pages ?? []} />
         ) : view.kind === "page" ? (
@@ -266,6 +270,40 @@ function TopBar() {
         </PopButton>
       )}
     </header>
+  );
+}
+
+/** Where an open row is: the page it was opened from, its collection, its title. */
+function RowCrumbs() {
+  const t = useStore((s) => s.t);
+  const page = useStore((s) => s.page);
+  const row = useStore((s) => s.row);
+  const type = useStore((s) =>
+    s.view.kind === "row"
+      ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
+      : undefined,
+  );
+  const title = row && type ? row.values[type.titleField] : null;
+  return (
+    <span className="crumbs">
+      {page && (
+        <span className="crumb-part">
+          <button type="button" className="crumb" onClick={() => void openPage(page.id)}>
+            {page.title || t("page.untitled")}
+          </button>
+          <span className="crumb-sep">/</span>
+        </span>
+      )}
+      {type && (
+        <span className="crumb-part">
+          <span className="crumb">{type.name}</span>
+          <span className="crumb-sep">/</span>
+        </span>
+      )}
+      <span className="crumb current">
+        {typeof title === "string" && title ? title : t("page.untitled")}
+      </span>
+    </span>
   );
 }
 
@@ -349,6 +387,7 @@ function Content() {
     );
   }
   if (view.kind === "page") return <PageView after={<QueueNotes />} />;
+  if (view.kind === "row") return <RowView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;
 }
 

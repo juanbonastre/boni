@@ -129,6 +129,11 @@ describe("collections as databases (plan PR 19)", () => {
     expect((await call(t, "PUT", `/api/data/rows/${made.id}`, { values: { f_x: 1 } })).status).toBe(
       400,
     );
+    // Opened as a page: its body is read and written as text.
+    await call(t, "PUT", `/api/data/rows/${made.id}`, { body: "Notas de **lectura**." });
+    expect(
+      ((await call(t, "GET", `/api/data/rows/${made.id}`)).body.row as { body: string }).body,
+    ).toBe("Notas de **lectura**.");
     const rows = (await call(t, "GET", "/api/data/types/t_libro/rows")).body.rows as {
       id: string;
     }[];
@@ -141,6 +146,34 @@ describe("collections as databases (plan PR 19)", () => {
     expect(
       ((await call(t, "GET", "/api/data/types/t_libro/rows")).body.rows as unknown[]).length,
     ).toBe(1);
+    // A note imported without a title property shows its file's name.
+    host.store(1).applySchema(
+      {
+        op: "add_field",
+        type: "t_libro",
+        field: {
+          id: "f_vault_path",
+          key: "vault_path",
+          name: "Ruta",
+          type: "text",
+          hidden: true,
+          label: L,
+        },
+      },
+      { actor: "system" },
+    );
+    const noTitle = host
+      .store(1)
+      .create(
+        "t_libro",
+        { f_vault_path: { value: "Boni/Libros/La tregua.md", label: L } },
+        { actor: "import" },
+      );
+    const listed = (await call(t, "GET", "/api/data/types/t_libro/rows")).body.rows as {
+      id: string;
+      values: Record<string, unknown>;
+    }[];
+    expect(listed.find((r) => r.id === noTitle.entity.id)?.values.f_titulo).toBe("La tregua");
     // Only a personal device sees or changes the data.
     db.prepare("UPDATE devices SET trust = 'shared' WHERE name = 'tele-ejemplo'").run();
     const tv = await token("tele-ejemplo");

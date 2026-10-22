@@ -6,13 +6,22 @@ import {
   Columns3,
   LayoutGrid,
   List,
+  Maximize2,
   Plus,
   Table2,
   Trash2,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { DataField, DataRow, DataType, DataValue } from "../core/agent.ts";
-import { addRow, deleteRow, editCell, loadDataTypes, loadRows, useStore } from "../store.ts";
+import {
+  addRow,
+  deleteRow,
+  editCell,
+  loadDataTypes,
+  loadRows,
+  openRow,
+  useStore,
+} from "../store.ts";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 /**
@@ -63,13 +72,23 @@ export function DatabaseBlock({
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
   const data = useStore((s) => s.rows[source]);
+  const allRows = useStore((s) => s.rows);
+  // As Notion: the first rows, more on demand (a collection can hold thousands).
+  const [limit, setLimit] = useState(50);
+  const also = view.layout === "calendar" ? (view.also ?? []) : [];
   useEffect(() => {
     if (!types) void loadDataTypes();
     void loadRows(source);
   }, [source]);
+  useEffect(() => {
+    for (const a of also) if (!allRows[a]) void loadRows(a);
+  }, [also.join(",")]);
   const type = types?.find((x) => x.id === source);
   if (types && !type) return <p className="doc-gone">{t("db.gone")}</p>;
-  const rows = sortRows(data?.rows ?? [], type, view);
+  const sorted = sortRows(data?.rows ?? [], type, view);
+  const rows =
+    view.layout === "calendar" || view.layout === "board" ? sorted : sorted.slice(0, limit);
+  const more = sorted.length - rows.length;
   const shown = type?.fields.filter((f) => !view.hide?.includes(f.id)) ?? [];
   const titleField = type?.fields.find((f) => f.id === type.titleField);
   const add = async (values: Record<string, DataValue> = {}) => {
@@ -118,7 +137,16 @@ export function DatabaseBlock({
       ) : view.layout === "board" ? (
         <BoardView type={type} rows={rows} view={view} titles={data.titles} onAdd={add} />
       ) : view.layout === "calendar" ? (
-        <CalendarView type={type} rows={rows} view={view} onAdd={add} />
+        <CalendarView
+          sources={[
+            { type, rows, date: view.date },
+            ...also.flatMap((a) => {
+              const at = types?.find((x) => x.id === a);
+              return at ? [{ type: at, rows: allRows[a]?.rows ?? [] }] : [];
+            }),
+          ]}
+          onAdd={add}
+        />
       ) : (
         <CardsView
           type={type}
@@ -127,6 +155,11 @@ export function DatabaseBlock({
           titles={data.titles}
           gallery={view.layout === "gallery"}
         />
+      )}
+      {more > 0 && (
+        <button type="button" className="db-add-row" onClick={() => setLimit((l) => l + 100)}>
+          {t("db.loadMore", { n: more })}
+        </button>
       )}
     </section>
   );
@@ -165,6 +198,7 @@ function ViewOptions({
   onView: (v: DatabaseView) => void;
 }) {
   const t = useStore((s) => s.t);
+  const allTypes = useStore((s) => s.dataTypes);
   const selects = type.fields.filter((f) => f.type === "select");
   const dates = type.fields.filter((f) => f.type === "date" || f.type === "datetime");
   return (
@@ -224,6 +258,36 @@ function ViewOptions({
                   onClick={() => onView({ ...view, date: f.id })}
                 />
               ))}
+            </>
+          )}
+          {view.layout === "calendar" && (
+            <>
+              <MenuSep />
+              <div className="menu-head">{t("db.alsoShow")}</div>
+              {(allTypes ?? [])
+                .filter(
+                  (x) =>
+                    x.id !== type.id &&
+                    x.fields.some((f) => f.type === "date" || f.type === "datetime"),
+                )
+                .map((x) => {
+                  const on = view.also?.includes(x.id) ?? false;
+                  return (
+                    <MenuRow
+                      key={x.id}
+                      label={x.name}
+                      on={on}
+                      onClick={() =>
+                        onView({
+                          ...view,
+                          also: on
+                            ? (view.also ?? []).filter((y) => y !== x.id)
+                            : [...(view.also ?? []), x.id].slice(0, 10),
+                        })
+                      }
+                    />
+                  );
+                })}
             </>
           )}
           <MenuSep />
@@ -294,6 +358,7 @@ function TableView({
               {ordered.map((f) => (
                 <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
                   <Cell type={type} field={f} row={r} titles={titles} />
+                  {f.id === type.titleField && <OpenButton type={type} row={r} />}
                 </td>
               ))}
               <td className="row-tools">
@@ -319,6 +384,23 @@ function TableView({
   );
 }
 
+/** Notion's "Open": the row as a page, with its properties and its text. */
+function OpenButton({ type, row }: { type: DataType; row: DataRow }) {
+  const t = useStore((s) => s.t);
+  return (
+    <button
+      type="button"
+      className="db-open"
+      title={t("db.open")}
+      aria-label={`${t("db.open")}: ${titleOf(type, row) || t("page.untitled")}`}
+      onClick={() => void openRow(type.id, row.id)}
+    >
+      <Maximize2 size={12} strokeWidth={2} />
+      {t("db.open")}
+    </button>
+  );
+}
+
 const titleOf = (type: DataType, r: DataRow) => {
   const v = r.values[type.titleField];
   return typeof v === "string" ? v : "";
@@ -326,20 +408,22 @@ const titleOf = (type: DataType, r: DataRow) => {
 
 // ---------------------------------------------------------------- a cell, edited in place
 
-function Cell({
+export function Cell({
   type,
   field,
   row,
   titles,
+  onSave,
 }: {
   type: DataType;
   field: DataField;
   row: DataRow;
   titles: Record<string, string>;
+  onSave?: (v: DataValue) => void;
 }) {
   const t = useStore((s) => s.t);
   const value = row.values[field.id] ?? null;
-  const save = (v: DataValue) => void editCell(type.id, row.id, field.id, v);
+  const save = onSave ?? ((v: DataValue) => void editCell(type.id, row.id, field.id, v));
   switch (field.type) {
     case "checkbox":
       return (
@@ -666,6 +750,7 @@ function CardBody({
       {title && (
         <div className="db-card-title">
           <Cell type={type} field={title} row={row} titles={titles} />
+          <OpenButton type={type} row={row} />
         </div>
       )}
       {fields
@@ -715,42 +800,75 @@ function CardsView({
 const ymd = (d: Date) =>
   `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 
+const SOURCE_COLORS = [
+  "var(--opt-blue)",
+  "var(--opt-green)",
+  "var(--opt-orange)",
+  "var(--opt-purple)",
+  "var(--opt-pink)",
+  "var(--opt-yellow)",
+  "var(--opt-red)",
+  "var(--opt-brown)",
+];
+
+interface CalItem {
+  type: DataType;
+  row: DataRow;
+  time: string;
+  color: string;
+}
+
+/** A month, from Monday, of every collection given (each with its colour, as the areas of the agenda). */
 function CalendarView({
-  type,
-  rows,
-  view,
+  sources,
   onAdd,
 }: {
-  type: DataType;
-  rows: DataRow[];
-  view: DatabaseView;
+  sources: { type: DataType; rows: DataRow[]; date?: string }[];
   onAdd: (values?: Record<string, DataValue>) => Promise<void>;
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
-  const dateField =
-    type.fields.find((f) => f.id === view.date && (f.type === "date" || f.type === "datetime")) ??
+  const dateOf = (type: DataType, chosen?: string) =>
+    type.fields.find((f) => f.id === chosen && (f.type === "date" || f.type === "datetime")) ??
     type.fields.find((f) => f.type === "date" || f.type === "datetime");
+  const main = sources[0];
+  const mainDate = main ? dateOf(main.type, main.date) : undefined;
   const [month, setMonth] = useState(() => {
     const n = new Date();
     return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1));
   });
   const byDay = useMemo(() => {
-    const m = new Map<string, DataRow[]>();
-    if (!dateField) return m;
-    for (const r of rows) {
-      const v = r.values[dateField.id];
-      if (typeof v !== "string") continue;
-      const day = v.slice(0, 10);
-      m.set(day, [...(m.get(day) ?? []), r]);
-    }
+    const m = new Map<string, CalItem[]>();
+    sources.forEach((src, si) => {
+      const df = dateOf(src.type, src.date);
+      if (!df) return;
+      // The start time (a collection may also have an end time, as the agenda's).
+      const times = src.type.fields.filter((f) => f.type === "time");
+      const tf =
+        times.find((f) => /start|inicio|comienzo|empieza/i.test(`${f.id} ${f.name}`)) ?? times[0];
+      for (const r of src.rows) {
+        const v = r.values[df.id];
+        if (typeof v !== "string") continue;
+        const day = v.slice(0, 10);
+        const tv = tf ? r.values[tf.id] : null;
+        const time =
+          typeof tv === "string" ? tv.slice(0, 5) : df.type === "datetime" ? v.slice(11, 16) : "";
+        const item = {
+          type: src.type,
+          row: r,
+          time,
+          color: SOURCE_COLORS[si % SOURCE_COLORS.length] ?? "var(--accent)",
+        };
+        m.set(day, [...(m.get(day) ?? []), item]);
+      }
+    });
+    for (const list of m.values())
+      list.sort((a, b) => (a.time || "99").localeCompare(b.time || "99"));
     return m;
-  }, [rows, dateField]);
-  if (!dateField) return <p className="db-hint">{t("db.calendarNeedsDate")}</p>;
-  // Weeks from Monday, covering the month.
-  const first = new Date(month);
-  const start = new Date(first);
-  start.setUTCDate(1 - ((first.getUTCDay() + 6) % 7));
+  }, [sources]);
+  if (!mainDate) return <p className="db-hint">{t("db.calendarNeedsDate")}</p>;
+  const start = new Date(month);
+  start.setUTCDate(1 - ((month.getUTCDay() + 6) % 7));
   const days = Array.from({ length: 42 }, (_, i) => {
     const d = new Date(start);
     d.setUTCDate(start.getUTCDate() + i);
@@ -758,17 +876,42 @@ function CalendarView({
   });
   const weeks = days[35] && days[35].getUTCMonth() !== month.getUTCMonth() ? 5 : 6;
   const today = ymd(new Date());
-  const title = month.toLocaleDateString(lang === "en" ? "en-GB" : "es-ES", {
+  const long = month.toLocaleDateString(lang === "en" ? "en-GB" : "es-ES", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",
   });
+  // "octubre de 2026" -> "Octubre de 2026" (only the first letter).
+  const title = long.charAt(0).toUpperCase() + long.slice(1);
   const step = (n: number) =>
     setMonth(new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + n, 1)));
   return (
     <div className="db-calendar">
       <div className="db-cal-head">
         <span className="db-cal-title">{title}</span>
+        {sources.length > 1 && (
+          <span className="db-cal-legend">
+            {sources.map((s, i) => (
+              <span key={s.type.id} className="db-cal-key">
+                <span
+                  className="db-dot"
+                  style={{ ["--c" as string]: SOURCE_COLORS[i % SOURCE_COLORS.length] }}
+                />
+                {s.type.name}
+              </span>
+            ))}
+          </span>
+        )}
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={() => {
+            const n = new Date();
+            setMonth(new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), 1)));
+          }}
+        >
+          {t("db.today")}
+        </button>
         <button
           type="button"
           className="icon-btn"
@@ -803,17 +946,24 @@ function CalendarView({
                   aria-label={`${t("db.new")}: ${key}`}
                   onClick={() =>
                     void onAdd({
-                      [dateField.id]: dateField.type === "date" ? key : `${key}T09:00:00.000Z`,
+                      [mainDate.id]: mainDate.type === "date" ? key : `${key}T09:00:00.000Z`,
                     })
                   }
                 >
                   <Plus size={12} strokeWidth={2} />
                 </button>
               </div>
-              {items.slice(0, 4).map((r) => (
-                <div key={r.id} className="db-cal-item">
-                  {titleOf(type, r) || t("page.untitled")}
-                </div>
+              {items.slice(0, 4).map((it) => (
+                <button
+                  key={it.row.id}
+                  type="button"
+                  className="db-cal-item"
+                  style={{ ["--c" as string]: it.color }}
+                  onClick={() => void openRow(it.type.id, it.row.id)}
+                >
+                  {it.time && <span className="db-cal-time">{it.time}</span>}
+                  {titleOf(it.type, it.row) || t("page.untitled")}
+                </button>
               ))}
               {items.length > 4 && <div className="db-cal-more">+{items.length - 4}</div>}
             </div>

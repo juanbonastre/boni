@@ -202,6 +202,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         const i = rows.findIndex((x) => x.id === m[1]);
         if (i < 0) return [404, '{"error":"not-found"}'];
+        if (method === "GET")
+          return [200, JSON.stringify({ row: { body: "", ...rows[i], type: "t_libro" } })];
         if (method === "DELETE") {
           gone.push(rows[i]!);
           rows = rows.filter((x) => x.id !== m[1]);
@@ -209,7 +211,13 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         const values = { ...rows[i]!.values, ...(b.values ?? {}) };
         for (const [k, v] of Object.entries(values)) if (v === null) delete values[k];
-        rows[i] = { ...rows[i]!, values, updated: Date.now() };
+        const bb = (body ?? {}) as { body?: string };
+        rows[i] = {
+          ...rows[i]!,
+          values,
+          updated: Date.now(),
+          ...(bb.body !== undefined ? { body: bb.body } : {}),
+        } as (typeof rows)[number];
         return [200, JSON.stringify({ row: rows[i] })];
       };
       const answer = (method: string, path: string, body?: unknown): [number, string] | null => {

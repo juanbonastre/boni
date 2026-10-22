@@ -1,5 +1,5 @@
 import { type FieldDef, label, type Value } from "@boni/entities";
-import type { UserStore } from "@boni/store";
+import { BODY, type UserStore } from "@boni/store";
 
 /**
  * The user's collections as Notion's databases (docs/nucleo.md plan PR 19): their types and fields, their
@@ -27,6 +27,8 @@ export interface DataRow {
   id: string;
   values: Record<string, Value>;
   updated: number;
+  /** The row's free text (a note's body, Markdown), only when one row is asked for. */
+  body?: string;
 }
 
 export class DataError extends Error {
@@ -35,6 +37,21 @@ export class DataError extends Error {
     super(code);
     this.code = code;
   }
+}
+
+/** The vault path a note was imported from (vault-import's hidden field). */
+const PATH_FIELD = "f_vault_path";
+
+/** A row as a view shows it: a note imported without a title property takes its file's name, as
+ * Obsidian shows it (only for display; editing the title writes the property). */
+function shown(values: Record<string, Value>, titleField: string): Record<string, Value> {
+  const title = values[titleField];
+  const path = values[PATH_FIELD];
+  if ((title === undefined || title === null || title === "") && typeof path === "string") {
+    const name = path.split("/").pop()?.replace(/\.md$/i, "") ?? "";
+    if (name) return { ...values, [titleField]: name };
+  }
+  return values;
 }
 
 const userTypes = (store: UserStore) =>
@@ -75,7 +92,11 @@ export function listRows(
   const all = store
     .list(type)
     .sort((a, b) => b.entity.updated - a.entity.updated)
-    .map((e) => ({ id: e.entity.id, values: e.entity.values, updated: e.entity.updated }));
+    .map((e) => ({
+      id: e.entity.id,
+      values: shown(e.entity.values, def.titleField),
+      updated: e.entity.updated,
+    }));
   const rows = all.slice(0, ROW_LIMIT);
   const titles: Record<string, string> = {};
   const types = store.schema().types;
@@ -132,12 +153,47 @@ export function createRow(store: UserStore, type: string, values: unknown, devic
   }
 }
 
-export function updateRow(store: UserStore, id: string, values: unknown, device?: string) {
+/** One row with its body (a row opened as a page). */
+export function getRow(store: UserStore, id: string): DataRow & { type: string } {
+  const e = store.get(id);
+  if (!e || e.entity.deleted !== undefined || !userTypes(store).some((t) => t.id === e.entity.type))
+    throw new DataError("not-found");
+  const def = userTypes(store).find((t) => t.id === e.entity.type);
+  return {
+    id: e.entity.id,
+    type: e.entity.type,
+    values: def ? shown(e.entity.values, def.titleField) : e.entity.values,
+    updated: e.entity.updated,
+    body: e.entity.body ?? "",
+  };
+}
+
+export function updateRow(
+  store: UserStore,
+  id: string,
+  values: unknown,
+  device?: string,
+  body?: unknown,
+) {
   const e = store.get(id);
   if (!e || e.entity.deleted !== undefined || !userTypes(store).some((t) => t.id === e.entity.type))
     throw new DataError("not-found");
   try {
-    const u = store.update(id, writesOf(store, e.entity.type, values, device), meta(device));
+    const writes = writesOf(store, e.entity.type, values ?? {}, device);
+    if (body !== undefined) {
+      if (typeof body !== "string" || body.length > 200_000) throw new DataError("bad-body");
+      const def = userTypes(store).find((t) => t.id === e.entity.type);
+      writes[BODY] = {
+        value: body || null,
+        label: label(
+          "user",
+          def?.sensitivity ?? "personal",
+          [{ kind: "user-edit", id: device ?? "device" }],
+          Boolean(def?.thirdParty),
+        ),
+      };
+    }
+    const u = store.update(id, writes, meta(device));
     return { id: u.entity.id, values: u.entity.values, updated: u.entity.updated };
   } catch (err) {
     if (err instanceof DataError) throw err;

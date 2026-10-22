@@ -434,6 +434,27 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
     )
     .toBe(true);
   await page.screenshot({ path: `${SHOTS}/db-board.png` });
+  // A row opened as a page: its properties and its text, saved by itself.
+  await db.getByRole("radio", { name: "Tabla" }).click();
+  const rayuela = db.locator("tr", { hasText: "Rayuela" }).locator("td.is-title");
+  await rayuela.hover();
+  await rayuela.getByRole("button", { name: /^Abrir/ }).click();
+  await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
+  await expect(page.locator(".row-prop")).toHaveCount(4);
+  await page.locator(".row-body").click();
+  await page.keyboard.type("Releer el capítulo 7.", { delay: 15 });
+  await expect
+    .poll(async () =>
+      (await recorded(page)).requests.some(
+        (r) =>
+          (r.startsWith("PUT api/data/rows/r1 ") && r.includes("cap\u00edtulo 7")) ||
+          r.includes("capítulo 7"),
+      ),
+    )
+    .toBe(true);
+  await page.screenshot({ path: `${SHOTS}/db-row.png` });
+  await page.locator(".topbar .crumb", { hasText: "Lecturas" }).click();
+  await expect(page.locator(".doc-title")).toHaveValue("Lecturas");
   // The calendar places a row by its date (Ficciones ended today).
   await db.getByRole("radio", { name: "Calendario" }).click();
   await expect(db.locator(".db-cal-day.today")).toContainText("Ficciones");

@@ -9,6 +9,7 @@ import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth
 import {
   createRow,
   DataError,
+  getRow,
   listRows,
   listTypes,
   removeRow,
@@ -280,9 +281,13 @@ export function makeApp(opts: ServerOptions): App {
             row: createRow(store, params.type ?? "", b.values ?? {}, s.device),
           });
         }
+        if (route === "GET /api/data/rows/:id")
+          return send(res, 200, { row: getRow(store, params.id ?? "") });
         if (route === "PUT /api/data/rows/:id") {
-          const b = (await bodyOf(req)) as { values?: unknown };
-          return send(res, 200, { row: updateRow(store, params.id ?? "", b.values, s.device) });
+          const b = (await bodyOf(req)) as { values?: unknown; body?: unknown };
+          return send(res, 200, {
+            row: updateRow(store, params.id ?? "", b.values, s.device, b.body),
+          });
         }
         if (route === "DELETE /api/data/rows/:id") {
           removeRow(store, params.id ?? "", s.device);

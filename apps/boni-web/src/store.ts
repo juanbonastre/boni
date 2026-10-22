@@ -77,7 +77,9 @@ export type View =
   | { kind: "chat" }
   | { kind: "inbox" }
   | { kind: "log" }
-  | { kind: "page"; id: string };
+  | { kind: "page"; id: string }
+  /** A row of a collection opened as a page (its properties and its text), as Notion's. */
+  | { kind: "row"; type: string; id: string };
 /**
  * The right side panel (on the phone, a sheet over the whole screen): a server screen (the capture form, maybe
  * filled in by a shortcut), the chart editor or the shortcut editor.
@@ -156,6 +158,8 @@ interface State {
   chartForPage: { page: string; block: string } | null;
   /** The user's collections (as databases), and the rows loaded of each. */
   dataTypes: DataType[] | null;
+  /** The row open as a page, with its text. */
+  row: DataRow | null;
   rows: Record<string, { rows: DataRow[]; titles: Record<string, string> }>;
   /** Ctrl+K: the quick find over the pages. */
   findOpen: boolean;
@@ -248,6 +252,7 @@ export const useStore = create<State>(() => ({
   trash: null,
   dataTypes: null,
   rows: {},
+  row: null,
   inbox: [],
   runs: [],
   confirmFlip: false,
@@ -328,7 +333,10 @@ export async function init(role: "main" | "widget", h: Host = defaultHost) {
   });
   if (role === "main") {
     // What was typed on a page in the last moment is sent before the window goes.
-    window.addEventListener("pagehide", () => void flushPage());
+    window.addEventListener("pagehide", () => {
+      void flushPage();
+      void flushRowBody();
+    });
     void countQueue();
     void reloadAll();
     void h.phone?.takeLaunch().then((target) => target && navigate(target));
@@ -1240,6 +1248,7 @@ async function startPages() {
 
 export async function openPage(id: string) {
   await flushPage();
+  await flushRowBody();
   const same = get().page?.id === id;
   set({ view: { kind: "page", id }, page: same ? get().page : null });
   try {
@@ -1637,5 +1646,60 @@ export async function deleteRow(type: string, id: string) {
     });
   } catch {
     toast(t("db.saveError"));
+  }
+}
+
+/** A row opened as a page: its properties and its text (a note's body). */
+export async function openRow(type: string, id: string) {
+  await flushPage();
+  await flushRowBody();
+  set({ view: { kind: "row", type, id }, row: null, panel: null });
+  if (!get().dataTypes) void loadDataTypes();
+  try {
+    const row = await agent.dataRow(id);
+    const v = get().view;
+    if (row && v.kind === "row" && v.id === id) set({ row });
+  } catch {
+    toast(get().t("db.loadError"));
+  }
+}
+
+/** A property of the open row changed: here, in the collection's loaded rows, then on the server. */
+export async function editRowValue(type: string, id: string, field: string, value: DataValue) {
+  const row = get().row;
+  if (row?.id === id) set({ row: { ...row, values: { ...row.values, [field]: value } } });
+  if (get().rows[type]) await editCell(type, id, field, value);
+  else {
+    try {
+      await agent.updateRow(id, { [field]: value });
+    } catch {
+      toast(get().t("db.saveError"));
+    }
+  }
+}
+
+// The text of the open row is sent after a pause in typing, and before leaving it.
+let bodyTimer: ReturnType<typeof setTimeout> | null = null;
+let bodyPending: { id: string; body: string } | null = null;
+
+export function setRowBody(body: string) {
+  const row = get().row;
+  if (!row) return;
+  set({ row: { ...row, body } });
+  bodyPending = { id: row.id, body };
+  if (bodyTimer) clearTimeout(bodyTimer);
+  bodyTimer = setTimeout(() => void flushRowBody(), 600);
+}
+
+export async function flushRowBody() {
+  if (bodyTimer) clearTimeout(bodyTimer);
+  bodyTimer = null;
+  const p = bodyPending;
+  bodyPending = null;
+  if (!p) return;
+  try {
+    await agent.updateRow(p.id, {}, p.body);
+  } catch {
+    toast(get().t("db.saveError"));
   }
 }
