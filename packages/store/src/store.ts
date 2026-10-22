@@ -224,6 +224,11 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
   // changed the schema: SQLite's data_version moves when someone else commits, and then it is read again.
   const versionQuery = db.prepare("PRAGMA data_version");
   const dataVersion = () => Number((versionQuery.get() as { data_version: number }).data_version);
+  // One statement for every file: a statement keeps its bound blob until it is garbage collected, so a new
+  // one per file held every attachment of a vault import in memory at once.
+  const insertFile = db.prepare(
+    "INSERT INTO files (sha256, mime, size, data, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+  );
   let seen = dataVersion();
   function fresh(): Schema {
     const v = dataVersion();
@@ -888,9 +893,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       if (data.byteLength > MAX_FILE_BYTES) throw new StoreError("invalid", "file too large");
       if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(mime)) throw new StoreError("invalid", "bad type");
       const sha256 = createHash("sha256").update(data).digest("hex");
-      db.prepare(
-        "INSERT INTO files (sha256, mime, size, data, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
-      ).run(sha256, mime.toLowerCase(), data.byteLength, data, now());
+      insertFile.run(sha256, mime.toLowerCase(), data.byteLength, data, now());
       return sha256;
     },
     getFile(sha256) {
