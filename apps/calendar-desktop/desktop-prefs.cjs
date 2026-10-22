@@ -6,7 +6,25 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const DEFAULTS = { background: true, autostart: false };
+// `boniUrl`: Boni's address on the tailnet (its server's /boni/ page), where the calendar's note peek comes from
+// (Juan, 2026-10-22: the peek is a window of Boni Calendar). Empty: notes open in Boni's desktop app.
+const DEFAULTS = { background: true, autostart: false, boniUrl: "" };
+
+/** Boni's address as kept: an https origin (http only for this computer, for tests), or "" (none). */
+function boniOrigin(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  let u;
+  try {
+    u = new URL(text);
+  } catch {
+    return null;
+  }
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) return null;
+  if (u.username || u.password) return null;
+  return u.origin;
+}
 const ENTRY = "boni-calendar.desktop";
 
 function loadPrefs(file) {
@@ -15,6 +33,7 @@ function loadPrefs(file) {
     return {
       background: typeof p.background === "boolean" ? p.background : DEFAULTS.background,
       autostart: typeof p.autostart === "boolean" ? p.autostart : DEFAULTS.autostart,
+      boniUrl: boniOrigin(p.boniUrl) ?? "",
     };
   } catch {
     return { ...DEFAULTS };
@@ -58,6 +77,7 @@ function setAutostart(dir, on, exec) {
 
 module.exports = {
   DEFAULTS,
+  boniOrigin,
   loadPrefs,
   savePrefs,
   autostartDir,

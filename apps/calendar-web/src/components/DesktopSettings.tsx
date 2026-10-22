@@ -34,7 +34,40 @@ function YesNo({ value, onChange }: { value: boolean; onChange: (v: boolean) => 
   );
 }
 
-/** Settings → Desktop (the desktop app only): keep running in the tray, open at login. */
+/** Boni's address, where the notes a double click opens come from (empty: Boni's desktop app shows them). */
+function BoniUrl({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (patch: Partial<DesktopPrefs>) => Promise<boolean>;
+}) {
+  const [text, setText] = useState(value);
+  const [bad, setBad] = useState(false);
+  const save = async () => {
+    if (text.trim() === value) return;
+    setBad(!(await onSave({ boniUrl: text.trim() })));
+  };
+  return (
+    <Row
+      label={t("desktop.boniUrl")}
+      hint={bad ? t("desktop.boniUrlBad") : t("desktop.boniUrlHint")}
+    >
+      <input
+        className="field-input"
+        aria-invalid={bad}
+        value={text}
+        placeholder="https://boni.example.ts.net"
+        spellCheck={false}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => void save()}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+      />
+    </Row>
+  );
+}
+
+/** Settings → Desktop (the desktop app only): keep running in the tray, open at login, Boni's address. */
 export function DesktopSettings() {
   const desktop = getHost().desktop;
   const [prefs, setPrefs] = useState<DesktopPrefs | null>(null);
@@ -45,6 +78,7 @@ export function DesktopSettings() {
   const change = async (patch: Partial<DesktopPrefs>) => {
     const r = await desktop.setPrefs(patch);
     if (r.ok) setPrefs(r.value);
+    return r.ok;
   };
   return (
     <div className="desktop-settings">
@@ -55,6 +89,7 @@ export function DesktopSettings() {
       <Row label={t("desktop.autostart")} hint={t("desktop.autostartHint")}>
         <YesNo value={prefs.autostart} onChange={(v) => void change({ autostart: v })} />
       </Row>
+      <BoniUrl value={prefs.boniUrl ?? ""} onSave={change} />
     </div>
   );
 }

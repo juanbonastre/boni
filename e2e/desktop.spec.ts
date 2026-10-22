@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
  */
 test("Settings → Desktop keeps running in the tray and can open at login", async ({ page }) => {
   await page.addInitScript(() => {
-    const prefs = { background: true, autostart: false };
+    const prefs = { background: true, autostart: false, boniUrl: "" };
     const calls: unknown[] = [];
     // biome-ignore lint/suspicious/noExplicitAny: test hooks
     const w = window as any;
@@ -15,6 +15,8 @@ test("Settings → Desktop keeps running in the tray and can open at login", asy
       getPrefs: async () => ({ ...prefs }),
       setPrefs: async (patch: Partial<typeof prefs>) => {
         calls.push(patch);
+        if (patch.boniUrl !== undefined && patch.boniUrl && !patch.boniUrl.startsWith("https://"))
+          return { ok: false, message: "Bad address" };
         Object.assign(prefs, patch);
         return { ok: true, value: { ...prefs } };
       },
@@ -44,6 +46,16 @@ test("Settings → Desktop keeps running in the tray and can open at login", asy
     "true",
   );
   expect(await calls()).toContainEqual({ autostart: true });
+  // Boni's address: with it, a double click opens an event's note in the calendar's own small window.
+  const boni = section.locator(".setting", { hasText: "Dirección de Boni" }).locator("input");
+  await boni.fill("http://boni.example.net");
+  await boni.press("Enter");
+  await expect(boni).toHaveAttribute("aria-invalid", "true");
+  await expect(section).toContainText("Tiene que empezar por https://");
+  await boni.fill("https://boni.example.ts.net");
+  await boni.press("Enter");
+  await expect(boni).toHaveAttribute("aria-invalid", "false");
+  expect(await calls()).toContainEqual({ boniUrl: "https://boni.example.ts.net" });
   await section.scrollIntoViewIfNeeded();
   await page.screenshot({ path: "e2e/screenshots/desktop-settings.png" });
 });

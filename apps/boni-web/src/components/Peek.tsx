@@ -1,9 +1,10 @@
 import { Maximize2, X } from "lucide-react";
 import { useEffect } from "react";
 import { host } from "../host.ts";
-import { dismissToast, flushRowBody, useStore } from "../store.ts";
+import { configured, dismissToast, flushRowBody, openNoteAt, useStore } from "../store.ts";
 import { useTheme } from "../theme.ts";
 import { RowView } from "./RowView.tsx";
+import { Account } from "./SettingsModal.tsx";
 
 /**
  * A note opened from another app (Boni Calendar's "Abrir en Boni"), as a peek: a small window with the row as a
@@ -21,10 +22,17 @@ export function PeekPage() {
       : undefined,
   );
   const toast = useStore((s) => s.toast);
+  const settings = useStore((s) => s.settings);
+  const loggedIn = configured(settings) && !settings.sessionEnded;
   const close = () => {
     void flushRowBody();
-    host.desktop?.peekHide?.();
+    if (host.desktop) host.desktop.peekHide?.();
+    else host.embed?.hide();
   };
+  // Boni Calendar's peek logs in once with its own session; then the note asked for opens.
+  useEffect(() => {
+    if (loggedIn && path) void openNoteAt(path);
+  }, [loggedIn]);
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) close();
@@ -46,8 +54,13 @@ export function PeekPage() {
             className="btn ghost small"
             onClick={() => {
               void flushRowBody().then(() => {
-                host.desktop?.openMain(`note:${path}`);
-                host.desktop?.peekHide?.();
+                if (host.desktop) {
+                  host.desktop.openMain(`note:${path}`);
+                  host.desktop.peekHide?.();
+                } else {
+                  host.embed?.openInBoni(path);
+                  host.embed?.hide();
+                }
               });
             }}
           >
@@ -66,7 +79,14 @@ export function PeekPage() {
         </button>
       </header>
       <div className="peek-body">
-        <RowView />
+        {loggedIn ? (
+          <RowView />
+        ) : (
+          <div className="peek-login">
+            <p className="muted">{t("peek.login")}</p>
+            <Account />
+          </div>
+        )}
       </div>
       {toast && (
         <div className="toast" role="status">

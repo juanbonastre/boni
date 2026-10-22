@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 .PHONY: help setup dev build check test e2e bench-chrome desktop package bench-electron \
-	server e2e-boni boni-desktop package-boni e2e-boni-desktop
+	server e2e-boni boni-desktop package-boni e2e-boni-desktop e2e-calendar-desktop
 
 help: ## List available commands
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -34,6 +34,12 @@ boni-desktop: ## Run Boni's desktop app (Electron) with the built web app
 package-boni: ## Build Boni's desktop .deb into release/
 	pnpm --filter @boni/boni-web build
 	pnpm --filter boni dist
+
+e2e-calendar-desktop: ## Boni Calendar's desktop app driven for real, its note peek included (opens windows; not in CI)
+	pnpm --filter @boni/boni-web build
+	pnpm --filter @boni/calendar-web build
+	node apps/calendar-desktop/scripts/copy-web.mjs
+	pnpm exec playwright test -c playwright.calendar-desktop.config.ts
 
 e2e-boni-desktop: ## Boni's desktop app driven for real (opens a window; not in CI)
 	pnpm --filter @boni/boni-web build

@@ -1904,9 +1904,13 @@ textarea.field-input {
   border-radius: 10px;
 }
 .ext-form .field-input,
-.server-form .field-input {
+.server-form .field-input,
+.desktop-settings .field-input {
   border-color: var(--line-strong);
   background: var(--surface-2);
+}
+.field-input[aria-invalid="true"] {
+  border-color: var(--danger, #e5484d);
 }
 .ext-actions {
   display: flex;

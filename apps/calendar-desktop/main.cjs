@@ -20,7 +20,13 @@ const fs = require("node:fs");
 const crypto = require("node:crypto");
 const path = require("node:path");
 const { notePath, openVault, VaultError } = require("./vault-fs.cjs");
-const { autostartDir, loadPrefs, savePrefs, setAutostart } = require("./desktop-prefs.cjs");
+const {
+  autostartDir,
+  boniOrigin,
+  loadPrefs,
+  savePrefs,
+  setAutostart,
+} = require("./desktop-prefs.cjs");
 
 const PACKAGED_UI = path.join(__dirname, "web", "index.html");
 const DEV_UI = path.join(__dirname, "..", "calendar-web", "dist", "index.html");
@@ -48,7 +54,7 @@ function saveState(win) {
 
 // ---- running in the background (Settings → Desktop): the tray, closing hides, starting with the session ----
 const prefsFile = () => path.join(app.getPath("userData"), "desktop.json");
-let prefs = { background: true, autostart: false };
+let prefs = { background: true, autostart: false, boniUrl: "" };
 let tray = null;
 let quitting = false;
 let trayLabels = { open: "Abrir Boni Calendar", quit: "Salir" };
@@ -103,6 +109,12 @@ ipcMain.handle("desktop:set-prefs", (_e, patch) => {
   const next = { ...prefs };
   if (typeof patch?.background === "boolean") next.background = patch.background;
   if (typeof patch?.autostart === "boolean") next.autostart = patch.autostart;
+  if (patch?.boniUrl !== undefined) {
+    const origin = boniOrigin(patch.boniUrl);
+    if (origin === null) return { ok: false, code: "boni-url", message: "Bad address" };
+    if (origin !== next.boniUrl) dropPeek();
+    next.boniUrl = origin;
+  }
   try {
     applyPrefs(next);
     return { ok: true, value: prefs };
@@ -306,26 +318,119 @@ handle("vault:trash", async (rel) => {
   return null;
 });
 handle("vault:open-note", (rel, peek) => {
-  // In Boni (Juan, 2026-10-22: the notes live in Boni now): its desktop app takes boni://note?path=<the note's
-  // vault path> and shows the row that note became, in its window (Ctrl+click, "Abrir en Boni") or as a peek (a
-  // double click: a small window, put away by a click in the calendar). The URL is built here from a checked path,
-  // never by the UI.
-  const link = `boni://note?path=${encodeURIComponent(notePath(rel).join("/"))}`;
+  // The notes live in Boni (Juan, 2026-10-22). Ctrl+click and "Abrir en Boni": Boni's desktop app opens the row a
+  // note became (boni://note?path=<the note's vault path>). A double click: the calendar's own peek, a small window
+  // with Boni's note page from Boni's server (Settings → Desktop gives its address); without one, Boni's peek
+  // (`&peek=1`). Paths and URLs are built here from a checked path, never by the UI.
+  const note = notePath(rel).join("/");
+  const link = `boni://note?path=${encodeURIComponent(note)}`;
+  if (peek === true && prefs.boniUrl) {
+    void showPeek(note);
+    return null;
+  }
   clearTimeout(peekHideTimer);
-  if (peek === true) peekOpen = true;
+  if (peek === true) boniPeekOpen = true;
   void shell.openExternal(peek === true ? `${link}&peek=1` : link);
   return null;
 });
 
-// Boni's peek, while one may be open: a click in the calendar sends boni://peek?hide=1, a moment later so that the
-// click which opens another note (it reaches vault:open-note just after) does not hide it.
-let peekOpen = false;
+// ---------- the note peek (Juan, 2026-10-22: a window of Boni Calendar) ----------
+// Made ahead and hidden; it loads `<Boni's address>/boni/?peek=1` (Boni's page, logged in once with its own session,
+// kept in its own partition) and is sent the note to show. Only that origin is ever loaded in it; its preload gives
+// the page three calls (ready, hide, open in Boni) and the notes. It stays while Juan works in other apps; a click
+// in the calendar, Esc or its × put it away.
+let peekWin = null;
+let peekReady = null;
+function makePeek() {
+  if (peekWin && !peekWin.isDestroyed()) return peekReady;
+  const origin = prefs.boniUrl;
+  peekWin = new BrowserWindow({
+    width: 760,
+    height: 640,
+    minWidth: 420,
+    minHeight: 320,
+    show: false,
+    frame: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    title: "Boni Calendar",
+    icon: path.join(__dirname, "icon.png"),
+    backgroundColor: "#16171a",
+    webPreferences: {
+      preload: path.join(__dirname, "peek-preload.cjs"),
+      contextIsolation: true,
+      sandbox: true,
+      partition: "persist:boni-peek",
+    },
+  });
+  const contents = peekWin.webContents;
+  contents.setWindowOpenHandler(() => ({ action: "deny" }));
+  contents.on("will-navigate", (e, url) => {
+    let ok = false;
+    try {
+      ok = new URL(url).origin === origin;
+    } catch {}
+    if (!ok) e.preventDefault();
+  });
+  peekWin.on("closed", () => {
+    peekWin = null;
+    peekReady = null;
+  });
+  peekReady = new Promise((resolve) => {
+    const ready = (e) => {
+      if (e.sender !== contents) return;
+      ipcMain.removeListener("peek:ready", ready);
+      resolve();
+    };
+    ipcMain.on("peek:ready", ready);
+  });
+  void peekWin.loadURL(`${origin}/boni/?peek=1`);
+  return peekReady;
+}
+function dropPeek() {
+  if (peekWin && !peekWin.isDestroyed()) peekWin.destroy();
+  peekWin = null;
+  peekReady = null;
+}
+async function showPeek(notePathText) {
+  await makePeek();
+  const win = peekWin;
+  if (!win) return;
+  // Centred on the display where the pointer is (where the double click was).
+  const a = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const [w, h] = win.getSize();
+  win.setPosition(Math.round(a.x + (a.width - w) / 2), Math.round(a.y + (a.height - h) / 3));
+  win.webContents.send("peek:note", notePathText);
+  win.show();
+  win.focus();
+}
+function hidePeek() {
+  if (!peekWin || peekWin.isDestroyed() || !peekWin.isVisible()) return;
+  peekWin.hide();
+  peekWin.webContents.send("peek:note", null);
+}
+const fromPeek = (e) => !!peekWin && !peekWin.isDestroyed() && e.sender === peekWin.webContents;
+ipcMain.on("peek:hide", (e) => fromPeek(e) && hidePeek());
+ipcMain.on("peek:open-in-boni", (e, rel) => {
+  if (!fromPeek(e)) return;
+  try {
+    const p = notePath(String(rel)).join("/");
+    void shell.openExternal(`boni://note?path=${encodeURIComponent(p)}`);
+  } catch {
+    // not a note's path: nothing
+  }
+});
+
+// A click in the calendar puts a peek away: its own at once; Boni's (no address set) by boni://peek?hide=1, a
+// moment later so that the click which opens another note (it reaches vault:open-note just after) does not hide it.
+let boniPeekOpen = false;
 let peekHideTimer = null;
 function peekClick() {
-  if (!peekOpen) return;
+  hidePeek();
+  if (!boniPeekOpen) return;
   clearTimeout(peekHideTimer);
   peekHideTimer = setTimeout(() => {
-    peekOpen = false;
+    boniPeekOpen = false;
     void shell.openExternal("boni://peek?hide=1");
   }, 250);
 }
