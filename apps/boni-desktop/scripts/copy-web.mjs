@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const src = join(here, "..", "..", "web", "dist");
+const src = join(here, "..", "..", "boni-web", "dist");
 const dst = join(here, "..", "web");
 if (!existsSync(join(src, "index.html"))) throw new Error("Build the web UI first: pnpm build");
 rmSync(dst, { recursive: true, force: true });
