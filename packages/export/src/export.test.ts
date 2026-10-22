@@ -43,7 +43,9 @@ function filled(): UserStore {
   importVault(root, s, { apply: true, run: "import-1", now: NOW });
   const mail = label("external", "personal", [{ kind: "mail", id: "m1" }], true);
   const own = label("user", "personal", [{ kind: "turn", id: "t" }]);
-  const ana = s.list("t_persona").find((x) => x.entity.values.f_title === "ana-ejemplo");
+  const ana = s
+    .list("t_persona")
+    .find((x) => x.entity.values.f_vault_path === "registros/personas/ana-ejemplo.md");
   s.update(
     ana?.entity.id as string,
     {
@@ -82,7 +84,7 @@ describe("the export", () => {
       "schema.json",
       "views.json",
     ]);
-    expect(files.has("persona/ana-ejemplo.md")).toBe(true);
+    expect(files.has("persona/Ana.md")).toBe(true);
     expect(text(files, "README.md")).toContain("Persona (`persona`): 2");
     // The system's own unzip agrees.
     const dir = mkdtempSync(join(tmpdir(), "boni-zip-"));
@@ -101,7 +103,7 @@ describe("the export", () => {
   it("leaves the trash out; Markdown is neutralized and CSV never holds a formula", () => {
     const files = readZip(exportZip(filled(), { now: NOW }));
     expect(text(files, "json/persona.ndjson")).not.toContain("Borrada");
-    const md = text(files, "persona/ana-ejemplo.md");
+    const md = text(files, "persona/Ana.md");
     expect(md).toContain("De un correo: x (https:⁄⁄evil.example/p.png?d=secreto)");
     expect(md).toContain('boni_integrity: "external"');
     expect(text(files, "json/persona.ndjson")).toContain(
@@ -112,7 +114,7 @@ describe("the export", () => {
     expect(csv).toContain(`"'=HYPERLINK(""https://evil.example"")"`);
     expect(csv).toContain("amigo");
     const move = text(files, "csv/movimiento.csv");
-    expect(move).toContain("ana-ejemplo; luis-ejemplo");
+    expect(move).toContain("Ana; luis-ejemplo"); // Ana is titled by her note's heading
     expect(move).toContain(",-1.6,");
     // Links between notes point to the exported notes.
     expect(text(files, "proyecto/curso-ejemplo.md")).toContain('"[[programa-ejemplo]]"');
@@ -183,7 +185,9 @@ describe("the export comes back", () => {
     const files = new Map(exportFiles(filled(), { now: NOW }).map((e) => [e.path, e.data]));
     const b = store();
     importExport(files, b, { apply: true, name: "copia.zip" });
-    const ana = b.list("t_persona").find((x) => x.entity.values.f_title === "ana-ejemplo");
+    const ana = b
+      .list("t_persona")
+      .find((x) => x.entity.values.f_vault_path === "registros/personas/ana-ejemplo.md");
     expect(ana?.labels.f_tags?.integrity).toBe("imported");
     expect(ana?.labels.$body?.integrity).toBe("external");
     expect(ana?.labels.f_tags?.sources).toContainEqual({ kind: "export", id: "copia.zip" });

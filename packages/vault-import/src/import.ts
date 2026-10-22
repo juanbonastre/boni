@@ -22,6 +22,7 @@ import {
 } from "@boni/entities";
 import type { OpMeta, UserStore, Writes, Zone } from "@boni/store";
 import { BODY, MAX_FILE_BYTES } from "@boni/store";
+import { leadingTitle } from "@boni/views";
 import { scanVault } from "./scan.ts";
 import { hasIdentityNumbers, withoutSecrets } from "./secrets.ts";
 
@@ -196,6 +197,8 @@ export interface ImportReport {
   typeProblems: string[];
   /** Types kept from the models by default (unless Juan already chose otherwise). */
   hiddenFromModels: string[];
+  /** Notes titled by their first heading instead of their file's name (that heading leaves the text). */
+  titled: number;
   /** A zone's import: the zone, and how many attachments became rows. */
   zone?: Zone;
   files: number;
@@ -386,6 +389,7 @@ export function importVault(
     hiddenFromModels: [],
     ...(zone ? { zone } : {}),
     files: 0,
+    titled: 0,
   };
 
   // Types whose truth is Boni now: their notes are its mirror, never imported again.
@@ -666,8 +670,33 @@ export function importVault(
   for (const n of notes) {
     const { typeId, def, byProp } = fieldsOf(n);
     const was = existing.get(n.path);
+    // A note without a title property is named by its first "# Heading" when it opens the text (its file name is
+    // often a slug: "redaccion-y-correccion-tfg-tfm"); the heading then leaves the text (Juan, 2026-10-22).
+    const head = !n.file && !byProp.has("title") ? leadingTitle(n.body) : null;
     if (was && was.hash === n.hash) {
       report.unchanged++;
+      // Imported before this rule: titled now, unless it was given another title or text meanwhile.
+      const e = head ? store.get(was.id) : null;
+      if (
+        head &&
+        e &&
+        e.entity.values.f_title === basename(n.path, ".md") &&
+        e.entity.body === n.body
+      ) {
+        report.titled++;
+        if (apply) {
+          const l =
+            e.labels.f_title ?? label("imported", def.sensitivity, source(n), !!def.thirdParty);
+          store.update(
+            was.id,
+            {
+              f_title: { value: head.title, label: l },
+              [BODY]: { value: head.rest || null, label: e.labels[BODY] ?? l },
+            },
+            meta,
+          );
+        }
+      }
       continue;
     }
     const sens: Sensitivity = n.sensitive ? "sensitive" : def.sensitivity;
@@ -685,7 +714,10 @@ export function importVault(
       }
       if (apply) writes[FILE_FIELD] = { value: store.putFile(n.file.data, n.file.mime), label: l };
       report.files++;
-    } else if (!byProp.has("title")) writes.f_title = { value: basename(n.path, ".md"), label: l };
+    } else if (!byProp.has("title")) {
+      writes.f_title = { value: head?.title ?? basename(n.path, ".md"), label: l };
+      if (head) report.titled++;
+    }
     for (const [prop, f] of n.file ? [] : byProp) {
       const raw = n.values[prop] ?? null;
       const target = def.fields.find((x) => x.id === f.id) ?? f;
@@ -695,7 +727,7 @@ export function importVault(
       }
       writes[f.id] = { value: toValue(target, raw, resolve), label: l };
     }
-    writes[BODY] = { value: n.body || null, label: l };
+    writes[BODY] = { value: (head ? head.rest : n.body) || null, label: l };
     writes[PATH_FIELD] = { value: n.path, label: l };
     writes[HASH_FIELD] = { value: n.hash, label: l };
     const id = idOf.get(n.path) as string;

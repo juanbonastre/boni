@@ -3966,20 +3966,6 @@ button.find-row:hover {
   min-width: 0;
   border-radius: 4px;
 }
-.row-body {
-  width: 100%;
-  min-height: 160px;
-  padding: 3px 2px;
-  border: 0;
-  outline: none;
-  resize: none;
-  overflow: hidden;
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 16px;
-  line-height: 1.6;
-}
 .db-open {
   display: none;
   align-items: center;
