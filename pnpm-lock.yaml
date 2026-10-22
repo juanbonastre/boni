@@ -475,6 +475,9 @@ importers:
       '@boni/store':
         specifier: workspace:*
         version: link:../store
+      '@boni/views':
+        specifier: workspace:*
+        version: link:../views
     devDependencies:
       '@types/node':
         specifier: 24.19.2

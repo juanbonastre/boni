@@ -22,7 +22,7 @@ export type PageBlock =
   | ({ id: string; type: "quote"; text: string } & Indent)
   | ({ id: string; type: "callout"; text: string; icon?: string } & Indent)
   /** Plain text in a fixed-width font, its lines kept; never run. */
-  | ({ id: string; type: "code"; text: string } & Indent)
+  | ({ id: string; type: "code"; text: string; lang?: string } & Indent)
   | { id: string; type: "divider" }
   /** A link to another of the user's pages (a subpage), shown with its icon and name. */
   | { id: string; type: "page"; page: string }
@@ -157,7 +157,11 @@ export function pageErrors(spec: unknown): string[] {
         if (!textual([])) errors.push(`${w}: a text block has text`);
         break;
       case "code":
-        if (!textual([], PAGE_LIMITS.code)) errors.push(`${w}: a code block has text`);
+        if (
+          !textual(["lang"], PAGE_LIMITS.code) ||
+          (b.lang !== undefined && (typeof b.lang !== "string" || !/^[\w+-]{1,20}$/.test(b.lang)))
+        )
+          errors.push(`${w}: a code block has text`);
         break;
       case "todo":
         if (!textual(["done"]) || (b.done !== undefined && typeof b.done !== "boolean"))

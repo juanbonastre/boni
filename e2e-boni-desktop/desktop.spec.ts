@@ -42,7 +42,7 @@ collection:
 `;
 const VAULT: Record<string, string> = {
   "_system/colecciones/agenda-docencia.md": DEF,
-  [`agenda/docencia/${iso(today)} Clase de ejemplo.md`]: `---\ntitle: "Clase de ejemplo"\ndate: "${iso(today)}"\nstartTime: "10:00"\nendTime: "11:30"\ncompleted: false\n---\nPreparar los ejercicios del tema 3.\n`,
+  [`agenda/docencia/${iso(today)} Clase de ejemplo.md`]: `---\ntitle: "Clase de ejemplo"\ndate: "${iso(today)}"\nstartTime: "10:00"\nendTime: "11:30"\ncompleted: false\n---\nPreparar los ejercicios del tema 3.\n\n## Material\n\n- Proyector\n- [ ] Fotocopias\n`,
   [`agenda/docencia/${iso(tomorrow)} Tutoría.md`]: `---\ntitle: "Tutoría"\ndate: "${iso(tomorrow)}"\nstartTime: "16:00"\ncompleted: false\n---\n`,
   "registros/personas/ana-ejemplo.md":
     "---\ntype: person\nsummary: Invented colleague.\n---\n# Ana\n",
@@ -179,15 +179,23 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await db.getByRole("radio", { name: "Mes" }).click();
   // Opened as a page: its properties and the note's text, written and kept.
   await db.locator(".db-cal-day.today .db-cal-item").first().click();
-  await expect(w.locator(".row-body")).toHaveValue(/Preparar los ejercicios del tema 3/);
-  await w.locator(".row-body").click();
-  await w.keyboard.press("Control+End");
-  await w.keyboard.type("\nLlevar el proyector.", { delay: 15 });
+  // Its text as a page (Juan, 2026-10-22): a paragraph, a heading, a bullet, a to-do.
+  const doc = w.locator(".row-doc .doc-editor");
+  await expect(doc.locator(".blk-input").first()).toHaveValue(
+    "Preparar los ejercicios del tema 3.",
+  );
+  await expect(doc.locator(".blk-h2 .blk-input")).toHaveValue("Material");
+  await expect(doc.locator(".blk-bullet .blk-input")).toHaveValue("Proyector");
+  await expect(doc.locator(".blk-todo .blk-input")).toHaveValue("Fotocopias");
+  // Written at the end as on a page: a new block, kept as Markdown.
+  await doc.locator(".doc-tail").click();
+  await w.keyboard.type("Llevar el proyector.", { delay: 15 });
   await shot(w, "row");
   await w.waitForTimeout(1200);
   await w.locator(".topbar .crumb", { hasText: "Mi agenda" }).click();
   await db.locator(".db-cal-day.today .db-cal-item").first().click();
-  await expect(w.locator(".row-body")).toHaveValue(/Llevar el proyector/);
+  await expect(doc.locator(".blk-input").last()).toHaveValue("Llevar el proyector.");
+  await expect(doc.locator(".blk-h2 .blk-input")).toHaveValue("Material");
 });
 
 test("a zone moved into Boni: marked as private, its attachment opened from the app", async () => {
@@ -304,7 +312,9 @@ test("a boni:// link opens the note's row in the running app", async () => {
   await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
   const note = `agenda/docencia/${iso(today)} Clase de ejemplo.md`;
   openLink(`boni://note?path=${encodeURIComponent(note)}`);
-  await expect(w.locator(".row-body")).toHaveValue(/Preparar los ejercicios del tema 3/);
+  await expect(w.locator(".row-doc .blk-input").first()).toHaveValue(
+    /Preparar los ejercicios del tema 3/,
+  );
   await expect(w.locator(".topbar")).toContainText("Clase de ejemplo");
 });
 
@@ -346,5 +356,5 @@ test("Boni Calendar's link with peek=1: a small window with the note, gone when 
     `boni://note?path=${encodeURIComponent(`agenda/docencia/${iso(today)} Clase de ejemplo.md`)}&peek=1`,
   );
   await expect.poll(visible).toBe(true);
-  await expect(peek.locator(".row-body")).toHaveValue(/Preparar los ejercicios/);
+  await expect(peek.locator(".row-doc .blk-input").first()).toHaveValue(/Preparar los ejercicios/);
 });

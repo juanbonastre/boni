@@ -1,16 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { editRowValue, setRowBody, useStore } from "../store.ts";
+import { editRowValue, useStore } from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
+import { DocEditor } from "./PageView.tsx";
 
 /**
  * A row of a collection opened as a page, as Notion's: its title big, its properties one per line (the
- * name on the left, the value edited in place on the right), then its text (a note's body, Markdown, as
- * plain text), saved by itself a moment after typing.
+ * name on the left, the value edited in place on the right), then its text with the page's block editor
+ * (headings, lists, to-dos...; kept as Markdown, saved by itself a moment after typing).
  */
 export function RowView() {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const row = useStore((s) => s.row);
+  const doc = useStore((s) => s.rowDoc);
   const type = useStore((s) =>
     s.view.kind === "row"
       ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
@@ -63,7 +65,7 @@ export function RowView() {
               </div>
             ))}
         </div>
-        <RowBody key={`b${row.id}`} value={row.body ?? ""} placeholder={t("db.bodyPlaceholder")} />
+        {doc && <DocEditor key={doc.id} doc={doc} />}
       </div>
     </div>
   );
@@ -97,21 +99,6 @@ function RowTitle({
           (e.target as HTMLTextAreaElement).blur();
         }
       }}
-    />
-  );
-}
-
-function RowBody({ value, placeholder }: { value: string; placeholder: string }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useGrow(ref, value);
-  return (
-    <textarea
-      ref={ref}
-      className="row-body"
-      value={value}
-      placeholder={placeholder}
-      aria-label={placeholder}
-      onChange={(e) => setRowBody(e.target.value)}
     />
   );
 }

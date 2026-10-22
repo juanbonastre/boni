@@ -67,6 +67,9 @@ packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed
                  `page.ts`: a page's blocks (`PageSpec`: heading, text, chart, button), closed (`pageErrors`).
                  `filter.ts`: Notion's filter rules (`filterErrors`, `matchesFilters`), the one matcher for a
                  database view and for a protection rule (the agent depends on views for it).
+                 `markdown.ts`: a note's Markdown as the page editor's blocks and back (`markdownToBlocks`,
+                 `blocksToMarkdown`; what the editor does not paint stays as written), and `leadingTitle` (a note
+                 is titled by its first `# Heading`, which the import takes out of the text).
 packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `src/cli.ts --vault --store [--apply]`,
                  dry run by default; never writes the vault). Zones as everywhere (`scan.ts`: no private/, restricted/,
                  dot folders, _system/ notes, symlinks). Type by folder (agenda by `_system/colecciones`), fields

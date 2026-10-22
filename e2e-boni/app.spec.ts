@@ -441,7 +441,7 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await rayuela.getByRole("button", { name: /^Abrir/ }).click();
   await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
   await expect(page.locator(".row-prop")).toHaveCount(4);
-  await page.locator(".row-body").click();
+  await page.locator(".row-doc .doc-tail").click();
   await page.keyboard.type("Releer el capítulo 7.", { delay: 15 });
   await expect
     .poll(async () =>

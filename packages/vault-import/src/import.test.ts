@@ -240,6 +240,43 @@ describe("importing the vault", () => {
   });
 });
 
+describe("notes titled by their first heading (Juan, 2026-10-22)", () => {
+  const WIKI = {
+    "wiki/como-hacer/redaccion-y-correccion-tfg-tfm.md":
+      "---\ntype: wiki\n---\n# Redacción y corrección de TFG/TFM\n\nPasos inventados.\n",
+    "wiki/como-hacer/sin-titulo.md": "---\ntype: wiki\n---\nSolo texto.\n",
+  };
+  it("names a note by its first heading, which leaves the text; earlier imports are titled once", () => {
+    const s = store();
+    const r = importVault(vault(WIKI), s, { apply: true });
+    expect(r.titled).toBe(1);
+    const notes = s.list("t_nota").map((e) => [e.entity.values.f_title, e.entity.body]);
+    expect(notes).toContainEqual(["Redacción y corrección de TFG/TFM", "Pasos inventados.\n"]);
+    expect(notes).toContainEqual(["sin-titulo", "Solo texto.\n"]);
+    const root = vault(WIKI);
+    expect(importVault(root, s, { apply: true })).toMatchObject({ titled: 0, updated: 0 });
+    // As the import left it before this rule: the slug as title, the heading in the text.
+    const e = s
+      .list("t_nota")
+      .find((x) => x.entity.values.f_title === "Redacción y corrección de TFG/TFM");
+    s.update(
+      e?.entity.id as string,
+      {
+        f_title: { value: "redaccion-y-correccion-tfg-tfm", label: e?.labels.f_title as never },
+        $body: {
+          value: "# Redacción y corrección de TFG/TFM\n\nPasos inventados.\n",
+          label: e?.labels.$body as never,
+        },
+      },
+      { actor: "import" },
+    );
+    expect(importVault(root, s, { apply: true }).titled).toBe(1);
+    expect(s.get(e?.entity.id as string)?.entity.values.f_title).toBe(
+      "Redacción y corrección de TFG/TFM",
+    );
+  });
+});
+
 describe("importing a zone (only Juan gives its folder)", () => {
   /** An invented `private/` folder: notes at its root, a folder with a note, a link and a PDF. */
   const ZONE: Record<string, string> = {

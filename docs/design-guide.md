@@ -257,6 +257,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   the collection's rules: each is Notion's filter editor and a level, listed in words ("Título contiene Tutoría ·
   Restringida"); the pill shows "+N" when there are rules. Whatever would lower something private asks for the
   collection's name, and only on its own page.
+- **Notes as pages** (2026-10-22): a row's text is edited with the page's block editor (headings, lists, to-dos,
+  quotes, code, dividers; "/" offers text blocks only), saved as Markdown; what it does not paint yet (tables,
+  images, inline bold or links) shows as written. A note is titled by its first `# Heading`, never its file's slug.
 - **Peek** (2026-10-22): a note opened from another app (Boni Calendar's "Abrir en Boni") shows in a small frameless
   window, centred where the pointer is: a thin head (its collection, "Abrir en Boni" to take it to the main window,
   ×) that moves the window, and the row as a page below. Losing the focus or Esc puts it away; the next note

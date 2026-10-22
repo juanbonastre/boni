@@ -1,7 +1,9 @@
 import { ChevronRight, FileText, GripVertical, Plus, Smile } from "lucide-react";
 import {
+  createContext,
   type KeyboardEvent,
   type ReactNode,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -104,6 +106,31 @@ function withChildren(blocks: Block[], i: number): Block[] {
  * turn it into a heading, a list or a to-do; Backspace at the start joins it to the one above); on hover
  * every block shows "+" (a block below) and its handle (its menu; drag to move it).
  */
+/** A note's text (a row's body) edits text blocks only: no charts, databases, buttons or subpages in Markdown. */
+const TextOnly = createContext(false);
+
+/**
+ * The block editor alone, on any document: a row's text as a page (Juan, 2026-10-22: notes as pages), with the
+ * page's typing, "/" menu (text blocks only), handles, drag and undo.
+ */
+export function DocEditor({ doc }: { doc: Page }) {
+  return (
+    <TextOnly.Provider value={true}>
+      <div
+        className="doc-editor"
+        onKeyDownCapture={(e) => {
+          if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+          const k = e.key.toLowerCase();
+          if ((k === "z" || k === "y") && undoPage(k === "y" || e.shiftKey)) e.preventDefault();
+        }}
+      >
+        <Blocks page={doc} />
+        <DocTail page={doc} />
+      </div>
+    </TextOnly.Provider>
+  );
+}
+
 export function PageView({ after }: { after?: ReactNode }) {
   const t = useStore((s) => s.t);
   const page = useStore((s) => s.page);
@@ -1044,6 +1071,7 @@ function SlashMenu({
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }) {
   const t = useStore((s) => s.t);
+  const textOnly = useContext(TextOnly);
   const specs = useVisibleCharts();
   const home = useStore((s) => s.home);
   const shortcuts = useStore((s) => s.shortcuts);
@@ -1103,8 +1131,13 @@ function SlashMenu({
       ),
     ];
     const q = fold(query.trim());
-    return q ? all.filter((i) => fold(i.label).includes(q) || fold(i.group).includes(q)) : all;
-  }, [query, specs, home, shortcuts, dataTypes, t]);
+    const allowed = textOnly
+      ? all.filter((i) => i.group === write && i.choice.kind !== "page")
+      : all;
+    return q
+      ? allowed.filter((i) => fold(i.label).includes(q) || fold(i.group).includes(q))
+      : allowed;
+  }, [query, specs, home, shortcuts, dataTypes, t, textOnly]);
   useEffect(() => setActive(0), [query]);
   // The keys stay in the text field: the menu follows them.
   useEffect(() => {

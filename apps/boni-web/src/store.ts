@@ -1,4 +1,10 @@
-import type { DatabaseFilter, DatabaseView, PageSpec } from "@boni/views";
+import {
+  blocksToMarkdown,
+  type DatabaseFilter,
+  type DatabaseView,
+  markdownToBlocks,
+  type PageSpec,
+} from "@boni/views";
 import { useMemo } from "react";
 import { create } from "zustand";
 import {
@@ -164,6 +170,8 @@ interface State {
   dataTypes: DataType[] | null;
   /** The row open as a page, with its text. */
   row: DataRow | null;
+  /** The open row's text as the page editor's blocks (saved back as Markdown). */
+  rowDoc: Page | null;
   rows: Record<string, { rows: DataRow[]; titles: Record<string, string> }>;
   /** The vault note opened from another app (its path), for the peek's "Abrir en Boni". */
   openedNote: string | null;
@@ -263,6 +271,7 @@ export const useStore = create<State>(() => ({
   collectionViews: {},
   openedNote: null,
   row: null,
+  rowDoc: null,
   inbox: [],
   runs: [],
   confirmFlip: false,
@@ -375,7 +384,7 @@ export function navigate(screen: string) {
   else if (screen === "blank") {
     // The peek was hidden: its next note starts empty, never showing the last one for a moment.
     void flushRowBody();
-    set({ row: null, view: { kind: "home" } });
+    set({ row: null, rowDoc: null, view: { kind: "home" } });
   } else if (screen === "settings") openSettings();
   else if (screen === "capture") openScreen(CAPTURE_SCREEN);
   else if (screen.startsWith("shortcut:")) {
@@ -1425,24 +1434,32 @@ function remember(page: Page, typingIn?: string) {
 /** The page's blocks, changed at once here and kept on the server shortly after. `typingIn` names the
  * block being typed in (those keystrokes make one undo step). */
 export function setPageBlocks(blocks: Block[], typingIn?: string) {
-  const page = get().page;
+  const page = editing();
   if (!page) return;
   remember(page, typingIn);
-  const spec: PageSpec = { ...page.spec, version: 1, blocks };
+  putSpec(page, { ...page.spec, version: 1, blocks });
+}
+
+/** A document's blocks kept: a page on the server; a row's text as Markdown, its row's body. */
+function putSpec(page: Page, spec: PageSpec) {
+  if (page.id.startsWith("row:")) {
+    set({ rowDoc: { ...page, spec } });
+    setRowBody(blocksToMarkdown(spec.blocks));
+    return;
+  }
   set({ page: { ...page, spec } });
   savePage(page.id, { spec });
 }
 
 export function undoPage(redo = false): boolean {
-  const page = get().page;
+  const page = editing();
   if (!page || history.page !== page.id) return false;
   const from = redo ? history.future : history.past;
   const spec = from.pop();
   if (!spec) return false;
   (redo ? history.past : history.future).push(page.spec);
   history.typing = "";
-  set({ page: { ...page, spec } });
-  savePage(page.id, { spec });
+  putSpec(page, spec);
   return true;
 }
 
@@ -1733,7 +1750,7 @@ export async function deleteRow(type: string, id: string) {
 
 /** A vault note opened from another app (Boni Calendar's "Abrir en Boni"): the row it became, as a page. */
 export async function openNoteAt(path: string) {
-  set({ openedNote: path, row: null });
+  set({ openedNote: path, row: null, rowDoc: null });
   try {
     const at = await agent.lookupNote(path);
     if (at) return void (await openRow(at.type, at.id));
@@ -1748,12 +1765,17 @@ export async function openRow(type: string, id: string) {
   await flushPage();
   await flushRowBody();
   const from = get().view.kind === "collection" ? ("collection" as const) : undefined;
-  set({ view: { kind: "row", type, id, ...(from ? { from } : {}) }, row: null, panel: null });
+  set({
+    view: { kind: "row", type, id, ...(from ? { from } : {}) },
+    row: null,
+    rowDoc: null,
+    panel: null,
+  });
   if (!get().dataTypes) void loadDataTypes();
   try {
     const row = await agent.dataRow(id);
     const v = get().view;
-    if (row && v.kind === "row" && v.id === id) set({ row });
+    if (row && v.kind === "row" && v.id === id) set({ row, rowDoc: rowDocOf(row) });
   } catch {
     toast(get().t("db.loadError"));
   }
@@ -1772,6 +1794,19 @@ export async function editRowValue(type: string, id: string, field: string, valu
     }
   }
 }
+
+/** A row's text (Markdown) as a page the block editor edits (Juan, 2026-10-22: notes as pages). */
+const rowDocOf = (row: DataRow): Page => ({
+  id: `row:${row.id}`,
+  title: "",
+  icon: "",
+  parent: null,
+  position: 0,
+  spec: { version: 1, blocks: markdownToBlocks(row.body ?? "") },
+});
+
+/** The document being edited: the open row's text on a row, else the open page. */
+const editing = (): Page | null => (get().view.kind === "row" ? get().rowDoc : get().page);
 
 // The text of the open row is sent after a pause in typing, and before leaving it.
 let bodyTimer: ReturnType<typeof setTimeout> | null = null;
