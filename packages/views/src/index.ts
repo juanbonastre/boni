@@ -5,8 +5,10 @@ export { type EntityProfileOptions, entityMonths, entityProfile } from "./entiti
 export * from "./money.ts";
 export {
   DATABASE_LAYOUTS,
+  type DatabaseFilter,
   type DatabaseView,
   emptyPage,
+  FILTER_OPS,
   PAGE_BLOCKS,
   PAGE_LIMITS,
   type PageBlock,

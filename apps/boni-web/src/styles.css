@@ -4033,3 +4033,60 @@ button.find-row:hover {
   align-items: center;
   gap: 5px;
 }
+
+/* A calendar's week: seven tall days, every item with its time; and the view's filter rules. */
+.db-span {
+  display: inline-flex;
+  gap: 2px;
+}
+.db-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  font-size: 12px;
+  color: var(--muted);
+}
+.db-cal-wd {
+  padding: 4px 6px;
+  text-transform: capitalize;
+}
+.db-cal-wd.today {
+  color: var(--accent);
+  font-weight: 600;
+}
+.db-cal-grid.week .db-cal-day {
+  min-height: 360px;
+}
+/* In a week an item has room to grow down: its time over its title, cut between words only. */
+.db-cal-item.tall {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  white-space: normal;
+}
+.db-cal-item.tall .db-cal-text {
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: auto;
+}
+.db-cal-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.db-filters {
+  gap: 8px;
+}
+.db-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.db-filter-row .input {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 30px;
+}
+.btn.ghost.small.on {
+  color: var(--accent);
+}

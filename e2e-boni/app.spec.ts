@@ -455,9 +455,25 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await page.screenshot({ path: `${SHOTS}/db-row.png` });
   await page.locator(".topbar .crumb", { hasText: "Lecturas" }).click();
   await expect(page.locator(".doc-title")).toHaveValue("Lecturas");
-  // The calendar places a row by its date (Ficciones ended today).
+  // Notion's filter: only what matches every rule.
+  await db.getByRole("button", { name: "Filtro" }).click();
+  await page.getByRole("button", { name: "Añadir filtro" }).click();
+  await page.getByRole("combobox", { name: "Propiedad" }).selectOption({ label: "Estado" });
+  await page.getByRole("combobox", { name: "Valor" }).selectOption({ label: "Leído" });
+  await page.keyboard.press("Escape");
+  await expect(db.locator(".db-table tbody tr")).toHaveCount(1);
+  await expect(db.getByRole("button", { name: "Filtro" })).toHaveText("Filtro (1)");
+  await db.getByRole("button", { name: "Filtro" }).click();
+  await page.getByRole("button", { name: "Quitar filtro" }).click();
+  await page.keyboard.press("Escape");
+  await expect(db.locator(".db-table tbody tr")).toHaveCount(3);
+  // The calendar places a row by its date (Ficciones ended today), by month or by week.
   await db.getByRole("radio", { name: "Calendario" }).click();
   await expect(db.locator(".db-cal-day.today")).toContainText("Ficciones");
+  await db.getByRole("radio", { name: "Semana" }).click();
+  await expect(db.locator(".db-cal-grid.week .db-cal-day")).toHaveCount(7);
+  await expect(db.locator(".db-cal-day.today")).toContainText("Ficciones");
+  await page.screenshot({ path: `${SHOTS}/db-week.png` });
   // The layout is the page's: saved with it.
   await expect
     .poll(async () =>

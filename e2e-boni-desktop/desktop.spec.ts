@@ -141,6 +141,12 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await expect(db.locator(".db-cal-day.today")).toContainText("10:00");
   await expect(db.locator(".db-cal-day.today")).toContainText("Clase de ejemplo");
   await shot(w, "calendar");
+  // The week, as Boni Calendar's: seven days, every item with its time.
+  await db.getByRole("radio", { name: "Semana" }).click();
+  await expect(db.locator(".db-cal-grid.week .db-cal-day")).toHaveCount(7);
+  await expect(db.locator(".db-cal-day.today")).toContainText("10:00");
+  await shot(w, "week");
+  await db.getByRole("radio", { name: "Mes" }).click();
   // Opened as a page: its properties and the note's text, written and kept.
   await db.locator(".db-cal-day.today .db-cal-item").first().click();
   await expect(w.locator(".row-body")).toHaveValue(/Preparar los ejercicios del tema 3/);
