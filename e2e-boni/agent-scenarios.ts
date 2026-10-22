@@ -176,6 +176,92 @@ export const PROPOSALS = {
   ],
 };
 
+/** Proposals with the inbox's card (apps/server/src/inboxCard.ts), invented: one detailed, one compact. */
+const DAYS = (target: string, around: string[]) => [
+  { day: around[0], items: [{ title: "Clase de ejemplo", start: "10:00", end: "11:30" }] },
+  {
+    day: target,
+    items: [
+      { title: "Tutoría", start: "09:00", end: "09:30" },
+      { title: "Clase de la tarde", start: "16:00", end: "17:00" },
+    ],
+  },
+  { day: around[1], items: [] },
+];
+export const CARD_DETAILED = {
+  id: "c1",
+  tool: "entities.create",
+  view: {
+    tool: "entities.create",
+    title: "Crear",
+    rows: [
+      {
+        arg: "type",
+        role: "type",
+        value: "docencia",
+        detail: "Docencia",
+        integrity: "model",
+        sources: ["model"],
+        marks: [],
+      },
+      {
+        arg: "values.title",
+        name: "Título",
+        role: "content",
+        value: "Revisar actas",
+        integrity: "external",
+        sources: ["mail"],
+        marks: [],
+      },
+      {
+        arg: "values.date",
+        name: "Fecha",
+        role: "content",
+        value: "2026-10-29",
+        integrity: "external",
+        sources: ["mail"],
+        marks: [],
+      },
+    ],
+  },
+  sources: ["mail:coordinacion@example.edu"],
+  created: 3,
+  card: {
+    action: "create",
+    collection: "Docencia",
+    kind: "event",
+    title: "Revisar actas",
+    day: "2026-10-29",
+    start: "12:00",
+    end: "13:00",
+    source: {
+      kind: "mail",
+      account: "ejemplo@example.edu",
+      from: "Coordinación de ejemplo",
+      subject: "Actas pendientes",
+      excerpt: "Hola, antes del jueves revisad las actas, por favor. Gracias.",
+    },
+    familiar: 0,
+    complete: true,
+    mode: "detailed",
+    context: DAYS("2026-10-29", ["2026-10-28", "2026-10-30"]),
+  },
+};
+export const CARD_COMPACT = {
+  ...CARD_DETAILED,
+  id: "c2",
+  created: 4,
+  card: {
+    ...CARD_DETAILED.card,
+    title: "Enviar notas",
+    start: null,
+    end: null,
+    kind: "task",
+    familiar: 3,
+    mode: "compact",
+  },
+};
+
 /** What run-2 did, as the server tells the Registro (invented). */
 export const RUN_2 = {
   id: "run-2",

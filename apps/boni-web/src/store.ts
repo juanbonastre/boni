@@ -183,6 +183,8 @@ interface State {
   trash: (PageInfo & { deleted: number })[] | null;
   /** Proposals waiting in the inbox, and the agent's latest runs (the log). */
   inbox: Proposal[];
+  /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
+  inboxOpen: boolean;
   runs: RunSummary[];
   /** Flips with every confirmation, so its button is never where the last one was. */
   confirmFlip: boolean;
@@ -273,6 +275,7 @@ export const useStore = create<State>(() => ({
   row: null,
   rowDoc: null,
   inbox: [],
+  inboxOpen: false,
   runs: [],
   confirmFlip: false,
 }));
@@ -464,6 +467,8 @@ async function onChanged(what: string, role: "main" | "widget") {
  */
 async function onTick(minute: number, role: "main" | "widget") {
   await sync().catch(() => 0);
+  // The inbox, every minute in the main window: new proposals open its panel.
+  if (role === "main" && configured(get().settings)) void loadInbox();
   if (!get().settings.live && minute % RELOAD_EVERY_MINUTES === 0) {
     await onChanged("all", role);
     if (role === "widget") await loadWidgets().catch(() => undefined);
@@ -1057,11 +1062,20 @@ export async function declinePending(entryId: string) {
 
 export async function loadInbox() {
   try {
-    set({ inbox: await agent.proposals() });
+    const inbox = await agent.proposals();
+    // Something new since the last look (not the first one, when the window opens): the panel comes out.
+    const fresh = inboxSeen !== null && inbox.some((p) => !inboxSeen?.has(p.id));
+    inboxSeen = new Set([...(inboxSeen ?? []), ...inbox.map((p) => p.id)]);
+    set({ inbox, ...(fresh ? { inboxOpen: true } : {}) });
   } catch {
     // the inbox stays as it was (offline, agent off)
   }
 }
+let inboxSeen: Set<string> | null = null;
+export const toggleInbox = (open = !get().inboxOpen) => {
+  set({ inboxOpen: open });
+  if (open) void loadInbox();
+};
 /** Accepting one proposal (never all at once: each is looked at, docs/nucleo.md 7.5). */
 export async function acceptProposal(id: string) {
   const t = get().t;

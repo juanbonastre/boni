@@ -1,6 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
   ASK_TURN,
+  CARD_COMPACT,
+  CARD_DETAILED,
   confirmTurn,
   EXTENSIONS,
   GUIDE,
@@ -233,7 +235,7 @@ test.describe("on a phone", () => {
 /** The conversation with the agent: a reply, a question, a confirmation, the inbox and the log. */
 const AGENT = {
   "POST api/agent/turn": [TEXT_REPLY, ASK_TURN, confirmTurn("c1")],
-  "GET api/agent/proposals": [PROPOSALS],
+  "GET api/agent/proposals": [{ proposals: [...PROPOSALS.proposals, CARD_DETAILED, CARD_COMPACT] }],
   "GET api/agent/runs": [RUNS],
   "GET api/agent/runs/:id": [RUN_2],
 };
@@ -263,7 +265,7 @@ async function converse(page: Page, l: (typeof C)["es"], issues: string[], where
   }
   await page.locator(".confirm-card").waitFor();
   issues.push(...(await audit(page, `${where} conversation`)));
-  await page.getByRole("button", { name: l.inbox }).click();
+  await page.locator(".chat-tools").getByRole("button", { name: l.inbox }).click();
   await page.locator(".proposal").first().waitFor();
   issues.push(...(await audit(page, `${where} inbox`)));
   await page.keyboard.press("Escape");
@@ -272,6 +274,14 @@ async function converse(page: Page, l: (typeof C)["es"], issues: string[], where
   await page.locator(".log-list li").nth(1).locator(".log-head").click();
   await page.locator(".log-step").first().waitFor();
   issues.push(...(await audit(page, `${where} log`)));
+  if (where !== "phone") {
+    // The inbox as a panel on the right, its cards opened and closed.
+    await page.locator(".topbar").getByRole("button", { name: l.inbox }).click();
+    await page.locator(".inbox-panel .inbox-card").first().waitFor();
+    issues.push(...(await audit(page, `${where} inbox panel`)));
+    await page.locator(".inbox-panel .inbox-card.compact .inbox-more").first().click();
+    issues.push(...(await audit(page, `${where} inbox panel opened`)));
+  }
 }
 for (const language of ["es", "en"] as const) {
   for (const width of [1440, 900]) {

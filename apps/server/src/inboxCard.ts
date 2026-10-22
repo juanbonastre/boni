@@ -1,0 +1,176 @@
+import type { TypeDef } from "@boni/entities";
+import type { ProposalRow, UserStore } from "@boni/store";
+import { calendarDefs } from "./calendarStore.ts";
+import { mailOfRun } from "./mailReview.ts";
+
+/**
+ * What the inbox shows of a proposal, made by code from its real arguments (Juan, 2026-10-22): what it does in
+ * words ("Añadir tarea a Docencia"), where it came from (the mailbox, the sender, the subject; or the note edited
+ * by hand), its day and times, how many times Juan already accepted one like it, and what he has that day and the
+ * days around it (the mini calendar). The card is compact when the source says everything and it happened before,
+ * detailed otherwise; the code decides, never a model. Nothing here is followed or opened: text only.
+ */
+export interface InboxCard {
+  action: "create" | "update" | "delete" | "other";
+  collection: string | null;
+  kind: "event" | "task" | "item";
+  title: string | null;
+  day: string | null;
+  start: string | null;
+  end: string | null;
+  source:
+    | { kind: "mail"; account: string | null; from: string; subject: string; excerpt: string }
+    | { kind: "note"; path: string }
+    | null;
+  /** Proposals like it (same collection and source) Juan accepted before. */
+  familiar: number;
+  /** It has what an entry of its kind needs (a title; a day for tasks and events). */
+  complete: boolean;
+  mode: "compact" | "detailed";
+  /** The day before, the day and the day after, with what is in the calendar on each. */
+  context: { day: string; items: { title: string; start: string | null; end: string | null }[] }[];
+}
+
+type Row = { arg: string; value?: unknown; detail?: unknown; role?: string };
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const EXCERPT = 280;
+
+const rowsOf = (p: ProposalRow): Row[] =>
+  ((p.view as { rows?: Row[] } | null)?.rows ?? []) as Row[];
+const textOf = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
+
+function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+/** A collection's field by the property name a calendar definition uses (column id, or the field's name). */
+function fieldOfProp(def: TypeDef, columns: { id: string; name: string }[], prop: string) {
+  return def.fields.find((f) => (columns.find((c) => c.name === f.name)?.id ?? f.name) === prop);
+}
+
+/** What the calendar has on `days`: every calendar collection's entries on them, by their mapping. */
+function calendarOn(store: UserStore, days: string[]) {
+  const want = new Set(days);
+  const out = new Map<string, { title: string; start: string | null; end: string | null }[]>(
+    days.map((d) => [d, []]),
+  );
+  const schema = store.schema().types;
+  for (const p of calendarDefs(store)) {
+    const def = schema[p.type];
+    const when = p.def.mapping.when as {
+      kind?: string;
+      date?: string;
+      startTime?: string;
+      endTime?: string;
+    };
+    if (!def || when.kind !== "split" || !when.date) continue;
+    const date = fieldOfProp(def, p.def.columns, when.date);
+    const start = when.startTime ? fieldOfProp(def, p.def.columns, when.startTime) : undefined;
+    const end = when.endTime ? fieldOfProp(def, p.def.columns, when.endTime) : undefined;
+    if (!date) continue;
+    for (const s of store.list(p.type)) {
+      const day = s.entity.values[date.id];
+      if (typeof day !== "string" || !want.has(day)) continue;
+      out.get(day)?.push({
+        title: textOf(s.entity.values[def.titleField]).slice(0, 120),
+        start: start ? textOf(s.entity.values[start.id]) || null : null,
+        end: end ? textOf(s.entity.values[end.id]) || null : null,
+      });
+    }
+  }
+  for (const list of out.values())
+    list.sort(
+      (a, b) => (a.start ?? "").localeCompare(b.start ?? "") || a.title.localeCompare(b.title),
+    );
+  return days.map((day) => ({ day, items: out.get(day) ?? [] }));
+}
+
+/** The proposal's source as a key ("mail:<sender>", "vault:<path>"): what "like it" compares. */
+const sourceKey = (p: ProposalRow) => (p.sources[0] ?? "").replace(/@[0-9a-f]{12}$/, "");
+
+export function inboxCard(
+  store: UserStore,
+  p: ProposalRow,
+  o: { mailAccount?: string | null } = {},
+): InboxCard {
+  const rows = rowsOf(p);
+  const row = (arg: string) => rows.find((r) => r.arg === arg);
+  const schema = store.schema().types;
+  const typeRow = row("type");
+  const typeKey = textOf(typeRow?.value);
+  const def = Object.values(schema).find((t) => t.key === typeKey || t.id === typeKey);
+  const collection = textOf(typeRow?.detail) || def?.name || null;
+  const action: InboxCard["action"] =
+    p.tool === "entities.create"
+      ? "create"
+      : p.tool === "entities.update"
+        ? "update"
+        : p.tool === "entities.delete"
+          ? "delete"
+          : "other";
+  // Day and times from the values by their field's type (any collection), else by their shape.
+  let day: string | null = null;
+  const times: string[] = [];
+  for (const r of rows) {
+    if (!r.arg.startsWith("values.")) continue;
+    const key = r.arg.slice("values.".length);
+    const f = def?.fields.find((x) => x.key === key || x.id === key);
+    const v = textOf(r.value);
+    if (!day && (f?.type === "date" || (!f && DAY.test(v))) && DAY.test(v)) day = v;
+    else if ((f?.type === "time" || (!f && TIME.test(v))) && TIME.test(v)) times.push(v);
+  }
+  const title =
+    textOf(
+      row("values.title")?.value ??
+        row(`values.${def?.fields.find((f) => f.id === def.titleField)?.key ?? ""}`)?.value,
+    ) || null;
+  const kind: InboxCard["kind"] = times.length ? "event" : day ? "task" : "item";
+
+  let source: InboxCard["source"] = null;
+  const mail = p.run ? mailOfRun(store, p.run) : null;
+  const m = mail ? store.get(mail) : null;
+  if (m) {
+    const v = m.entity.values;
+    source = {
+      kind: "mail",
+      account: o.mailAccount ?? null,
+      from: textOf(v.f_de_nombre) || textOf(v.f_de),
+      subject: textOf(v.f_asunto).slice(0, 200),
+      excerpt: (m.entity.body ?? "").replace(/\s+/g, " ").trim().slice(0, EXCERPT),
+    };
+  } else {
+    const note = textOf(row("note")?.value);
+    if (note) source = { kind: "note", path: note };
+  }
+
+  const key = sourceKey(p);
+  const familiar = key
+    ? store.journal
+        .proposals("accepted")
+        .filter(
+          (x) =>
+            x.id !== p.id &&
+            x.tool === p.tool &&
+            sourceKey(x) === key &&
+            textOf(rowsOf(x).find((r) => r.arg === "type")?.value) === typeKey,
+        ).length
+    : 0;
+  const complete = action !== "create" || (!!title && (kind === "item" || !!day));
+  return {
+    action,
+    collection,
+    kind,
+    title,
+    day,
+    start: times[0] ?? null,
+    end: times[1] ?? null,
+    source,
+    familiar,
+    complete,
+    mode: complete && familiar >= 2 ? "compact" : "detailed",
+    context: day ? calendarOn(store, [addDays(day, -1), day, addDays(day, 1)]) : [],
+  };
+}

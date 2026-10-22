@@ -29,6 +29,7 @@ import {
   undoRun,
   useStore,
 } from "../store.ts";
+import { ProposalCard } from "./InboxCards.tsx";
 
 /**
  * The conversation with Boni's agent (docs/nucleo.md, 7.14). Everything here is painted by this code from
@@ -471,18 +472,7 @@ export function InboxView() {
       <p className="muted small">{t("inbox.help")}</p>
       {inbox.length === 0 && <p className="muted center-note">{t("inbox.empty")}</p>}
       {inbox.map((p) => (
-        <section key={p.id} className="card proposal">
-          <h3>{p.view?.title ?? p.tool}</h3>
-          {p.view && <CallRows view={p.view} />}
-          <div className="confirm-actions">
-            <button type="button" className="btn primary" onClick={() => void acceptProposal(p.id)}>
-              {t("inbox.accept")}
-            </button>
-            <button type="button" className="btn" onClick={() => void rejectProposal(p.id)}>
-              {t("inbox.reject")}
-            </button>
-          </div>
-        </section>
+        <ProposalCard key={p.id} p={p} />
       ))}
     </div>
   );

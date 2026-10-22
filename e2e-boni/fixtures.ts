@@ -388,6 +388,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           (w as Record<string, unknown>).__emit = (e: unknown) => {
             for (const l of listeners) l(e);
           };
+          // A proposal arrives in the server's inbox (the next look at it finds it).
+          (w as Record<string, unknown>).__pushProposal = (p: { id: string }) => {
+            inbox = [...(inbox ?? []), p];
+          };
           return () => listeners.delete(cb);
         },
         setWidgets: (list: unknown[]) => record("__calls", `setWidgets ${list.length}`),
