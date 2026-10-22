@@ -88,8 +88,8 @@ export interface DesktopHost {
   setLabels(labels: Record<string, string>): void;
   /** The peek window (a note opened from another app) goes away. */
   peekHide?(): void;
-  /** The peek's page listens now: the shell may send it a note. */
-  peekReady?(): void;
+  /** The page (the main window's or the peek's) listens now: the shell may send it a note to open. */
+  pageReady?(): void;
   /** Widget windows: moved or resized by the user (the shell follows the real pointer), hidden from the menu. */
   widget: {
     dragStart(kind: "move" | "resize"): void;
@@ -170,7 +170,7 @@ declare global {
       widgetDragEnd(): void;
       widgetHide(): void;
       peekHide?(): void;
-      peekReady?(): void;
+      pageReady?(): void;
       openFile?(sha256: string, name: string): Promise<"opened" | "shown" | "offline" | "error">;
     };
   }
@@ -196,7 +196,7 @@ function desktopHost(b: NonNullable<Window["boniDesktop"]>): Host {
       openMain: (screen) => b.openMain(screen),
       setLabels: (labels) => b.setLabels(labels),
       peekHide: () => b.peekHide?.(),
-      peekReady: () => b.peekReady?.(),
+      pageReady: () => b.pageReady?.(),
       widget: {
         dragStart: (kind) => b.widgetDragStart(kind),
         dragMove: () => b.widgetDragMove(),

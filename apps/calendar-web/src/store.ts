@@ -305,7 +305,10 @@ export interface AppState {
   extendSeries: () => number;
   /** The note of an event in the vault (read here or through the server), or null (sample data, not saved yet). */
   noteOfEvent: (id: string) => string | null;
-  openNote: (id: string) => Promise<void>;
+  /** Opens an event's note: in Boni's window, or with `peek` in its small window (a double click). */
+  openNote: (id: string, opts?: { peek?: boolean }) => Promise<void>;
+  /** A double click on an event: its note in Boni's peek (Juan, 2026-10-22); false when it has none. */
+  peekEvent: (id: string) => boolean;
   select: (id: string | null, popover?: boolean) => void;
   /** A click on an event: selects it (Shift, Ctrl+Shift: several), or with Ctrl alone opens its note. */
   clickSelect: (id: string, mods: { ctrl: boolean; shift: boolean }) => void;
@@ -1042,10 +1045,19 @@ export const useApp = create<AppState>((set, get) => {
       return path.endsWith(".md") && s.rows.some((r) => r.id === id) ? path : null;
     },
 
-    openNote: async (id) => {
+    openNote: async (id, opts) => {
       const path = get().noteOfEvent(id);
-      const r = path ? await vaultBridge()?.openNote?.(path) : null;
+      const r = path ? await vaultBridge()?.openNote?.(path, opts) : null;
       if (r && !r.ok) get().showToast("vault.openFailed");
+    },
+
+    peekEvent: (id) => {
+      const s = get();
+      if (vaultBridge()?.noteApp !== "boni" || !s.noteOfEvent(id)) return false;
+      // The first click of the two opened its detail: the peek shows the note instead.
+      s.select(id, false);
+      void s.openNote(id, { peek: true });
+      return true;
     },
 
     select: (id, popover = true) =>
@@ -1062,7 +1074,7 @@ export const useApp = create<AppState>((set, get) => {
 
     clickSelect: (id, mods) => {
       const s = get();
-      // Ctrl+click opens the event's note (like a link in Obsidian); an event without one is just selected.
+      // Ctrl+click opens the event's note (in Boni's window); an event without one is just selected.
       if (mods.ctrl && !mods.shift && s.noteOfEvent(id)) return void s.openNote(id);
       const visible = new Set(s.data.calendars.filter((c) => c.visible).map((c) => c.id));
       const r = clickSelection({
