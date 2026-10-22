@@ -81,6 +81,10 @@ try {
     console.log(
       `  identity or bank numbers (kept, sensitive): ${r.identityNumbers} notes; links to no note: ${r.unresolvedLinks}`,
     );
+    if (r.relinked || r.duplicates)
+      console.log(
+        `  links written again: ${r.relinked} notes; extra entities of one note to the trash: ${r.duplicates}`,
+      );
     if (r.hiddenFromModels.length)
       console.log(
         `  kept from the AI (unless you chose otherwise in Boni): ${r.hiddenFromModels.join(", ")}`,
