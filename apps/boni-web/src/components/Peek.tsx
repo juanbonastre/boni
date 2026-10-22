@@ -8,7 +8,8 @@ import { RowView } from "./RowView.tsx";
 /**
  * A note opened from another app (Boni Calendar's "Abrir en Boni"), as a peek: a small window with the row as a
  * page (its properties and text, editable), "Abrir en Boni" to take it to the main window, and gone as soon as
- * it loses the focus or Esc is pressed.
+ * Esc is pressed, its close button is used or Juan clicks in Boni Calendar (Juan, 2026-10-22: not when he
+ * goes to another app).
  */
 export function PeekPage() {
   useTheme();

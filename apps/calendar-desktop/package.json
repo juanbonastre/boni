@@ -1,6 +1,6 @@
 {
   "name": "boni-calendar-desktop",
-  "version": "0.8.4",
+  "version": "0.8.5",
   "private": true,
   "description": "Boni Calendar desktop app (Electron shell)",
   "main": "main.cjs",

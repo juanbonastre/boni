@@ -318,7 +318,7 @@ test("a boni:// link opens the note's row in the running app", async () => {
   await expect(w.locator(".topbar")).toContainText("Clase de ejemplo");
 });
 
-test("Boni Calendar's link with peek=1: a small window with the note, gone when it loses the focus", async () => {
+test("Boni Calendar's link with peek=1: a small window with the note; it stays when another window takes the focus, a click in the calendar puts it away", async () => {
   const a = app as ElectronApplication;
   const note = `agenda/docencia/${iso(tomorrow)} Tutoría.md`;
   openLink(`boni://note?path=${encodeURIComponent(note)}&peek=1`);
@@ -333,6 +333,9 @@ test("Boni Calendar's link with peek=1: a small window with the note, gone when 
   const peek = await peekPage();
   await expect(peek.locator(".peek-head")).toContainText("Docencia");
   await expect(peek.locator(".row-title, .doc-title").first()).toHaveValue("Tutoría");
+  // The note opens on its text: the properties are folded.
+  await expect(peek.locator(".row-props-toggle")).toHaveAttribute("aria-expanded", "false");
+  await expect(peek.locator(".row-prop")).toHaveCount(0);
   await peek.screenshot({ path: join(SHOTS, "desktop-peek.png") });
   const visible = () =>
     a.evaluate(({ BrowserWindow }) =>
@@ -341,7 +344,7 @@ test("Boni Calendar's link with peek=1: a small window with the note, gone when 
       ),
     );
   expect(await visible()).toBe(true);
-  // A click anywhere else: the main window takes the focus and the peek goes.
+  // Another window takes the focus (Juan goes to another app): the peek stays (Juan, 2026-10-22).
   await a.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows()
       .find(
@@ -350,6 +353,10 @@ test("Boni Calendar's link with peek=1: a small window with the note, gone when 
       )
       ?.focus(),
   );
+  await new Promise((r) => setTimeout(r, 1000));
+  expect(await visible()).toBe(true);
+  // A click in Boni Calendar sends boni://peek?hide=1: it goes.
+  openLink("boni://peek?hide=1");
   await expect.poll(visible).toBe(false);
   // The next one opens again, with its own note.
   openLink(
@@ -357,4 +364,7 @@ test("Boni Calendar's link with peek=1: a small window with the note, gone when 
   );
   await expect.poll(visible).toBe(true);
   await expect(peek.locator(".row-doc .blk-input").first()).toHaveValue(/Preparar los ejercicios/);
+  // A hide that arrives just after opening (the same click in the calendar) does not take the new note away.
+  openLink("boni://peek?hide=1");
+  expect(await visible()).toBe(true);
 });
