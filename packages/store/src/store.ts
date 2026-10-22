@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { constants, DatabaseSync } from "node:sqlite";
 import {
@@ -48,6 +49,22 @@ export const BODY = "$body";
 
 export type AiLevel = "visible" | "opaque" | "hidden";
 export const AI_LEVELS: readonly AiLevel[] = ["visible", "opaque", "hidden"];
+
+/**
+ * The vault's zones, moved into Boni with their rule (vault AGENTS.md): no model ever sees a type in one.
+ * `restricted` will open to one conversation when Juan asks; `private` never opens.
+ */
+export type Zone = "restricted" | "private";
+const ZONE_RANK: Record<Zone, number> = { restricted: 1, private: 2 };
+
+/** An attachment kept in the store (a `file` value is its sha256). */
+export interface StoredFile {
+  mime: string;
+  size: number;
+  data: Uint8Array;
+}
+/** The largest attachment the store keeps (the server reads one whole into memory to send it). */
+export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 /** One operation of the log, as stored (`before` / `after` / `label` parsed). */
 export interface LogRow {
@@ -128,7 +145,15 @@ export interface UserStore {
    * (a personal device, `setAiAccess`); no tool of the agent can.
    */
   aiAccess(): Record<TypeId, AiLevel>;
+  /** Refused for a type in a zone (its level is always `hidden`). */
   setAiAccess(type: TypeId, level: AiLevel, by: string): void;
+  /** The types in a vault zone; a zoned type is `hidden` in `aiAccess` whatever was chosen before. */
+  zones(): Record<TypeId, Zone>;
+  /** Puts a type in a zone: only the import Juan runs does it, and a zone is never lowered or removed. */
+  setZone(type: TypeId, zone: Zone, by: string): void;
+  /** Keeps an attachment (by content: the same bytes are kept once) and gives its sha256. */
+  putFile(data: Uint8Array, mime: string): string;
+  getFile(sha256: string): StoredFile | null;
   /**
    * A setting or working state of the user's extensions (docs/extensiones.md 4), outside the operation log
    * and out of readQuery's reach; null when absent. Writing null removes it. Secrets go in sealed by the
@@ -684,7 +709,42 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       const out: Record<TypeId, AiLevel> = {};
       for (const r of db.prepare("SELECT type, level FROM ai_access").all())
         out[r.type as string] = r.level as AiLevel;
+      for (const r of db.prepare("SELECT type FROM zones").all()) out[r.type as string] = "hidden";
       return out;
+    },
+    zones() {
+      const out: Record<TypeId, Zone> = {};
+      for (const r of db.prepare("SELECT type, zone FROM zones").all())
+        out[r.type as string] = r.zone as Zone;
+      return out;
+    },
+    setZone(type, zone, by) {
+      if (!(zone in ZONE_RANK)) throw new StoreError("invalid", `bad zone ${zone}`);
+      if (!fresh().types[type]) throw new StoreError("not-found", `no type ${type}`);
+      const was = db.prepare("SELECT zone FROM zones WHERE type = ?").get(type) as
+        | { zone: Zone }
+        | undefined;
+      if (was && ZONE_RANK[was.zone] >= ZONE_RANK[zone]) return;
+      db.prepare(
+        "INSERT INTO zones (type, zone, at, by) VALUES (?, ?, ?, ?) " +
+          "ON CONFLICT (type) DO UPDATE SET zone = excluded.zone, at = excluded.at, by = excluded.by",
+      ).run(type, zone, now(), by);
+    },
+    putFile(data, mime) {
+      if (data.byteLength > MAX_FILE_BYTES) throw new StoreError("invalid", "file too large");
+      if (!/^[a-z0-9.+-]+\/[a-z0-9.+-]+$/i.test(mime)) throw new StoreError("invalid", "bad type");
+      const sha256 = createHash("sha256").update(data).digest("hex");
+      db.prepare(
+        "INSERT INTO files (sha256, mime, size, data, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+      ).run(sha256, mime.toLowerCase(), data.byteLength, data, now());
+      return sha256;
+    },
+    getFile(sha256) {
+      if (!/^[0-9a-f]{64}$/.test(sha256)) return null;
+      const r = db.prepare("SELECT mime, size, data FROM files WHERE sha256 = ?").get(sha256) as
+        | { mime: string; size: number; data: Uint8Array }
+        | undefined;
+      return r ? { mime: r.mime, size: Number(r.size), data: r.data } : null;
     },
     setting(key) {
       const r = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as
@@ -703,6 +763,8 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
     setAiAccess(type, level, by) {
       if (!AI_LEVELS.includes(level)) throw new StoreError("invalid", `bad level ${level}`);
       if (!fresh().types[type]) throw new StoreError("not-found", `no type ${type}`);
+      if (db.prepare("SELECT 1 FROM zones WHERE type = ?").get(type))
+        throw new StoreError("invalid", `type ${type} is in a zone: no model may see it`);
       db.prepare(
         "INSERT INTO ai_access (type, level, at, by) VALUES (?, ?, ?, ?) " +
           "ON CONFLICT (type) DO UPDATE SET level = excluded.level, at = excluded.at, by = excluded.by",

@@ -32,7 +32,7 @@ import {
   updatePage,
 } from "./pages.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
-import { bodyOf, CORS, header, SAFE, send, tokenOf } from "./reply.ts";
+import { bodyOf, CORS, header, SAFE, send, sendFile, tokenOf } from "./reply.ts";
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
 import type { SecretKey } from "./secret.ts";
 import { serveV1 } from "./v1/http.ts";
@@ -296,6 +296,10 @@ export function makeApp(opts: ServerOptions): App {
         if (route === "POST /api/data/rows/:id/restore") {
           restoreRow(store, params.id ?? "", s.device);
           return send(res, 200, {});
+        }
+        if (route === "GET /api/data/files/:sha") {
+          const f = store.getFile(params.sha ?? "");
+          return f ? sendFile(res, f.mime, f.data) : send(res, 404, { error: "not-found" });
         }
       } catch (e) {
         if (e instanceof DataError)

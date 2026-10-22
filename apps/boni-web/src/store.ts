@@ -1616,6 +1616,13 @@ export async function editCell(type: string, id: string, field: string, value: D
   }
 }
 
+/** An attachment of a row, opened where the host can (the desktop app: with the system's app). */
+export async function openFile(sha256: string, name: string) {
+  const r = (await hostRef.openFile?.(sha256, name)) ?? "error";
+  if (r === "shown") toast(get().t("db.fileShown"));
+  else if (r !== "opened") toast(get().t(r === "offline" ? "db.fileOffline" : "db.fileError"));
+}
+
 export async function addRow(type: string, values: Record<string, DataValue> = {}) {
   try {
     const row = await agent.createRow(type, values);

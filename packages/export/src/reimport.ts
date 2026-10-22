@@ -63,6 +63,8 @@ export function importExport(
     version?: number;
     types?: TypeDef[];
     aiAccess?: Record<string, string>;
+    zones?: Record<string, string>;
+    files?: Record<string, string>;
   };
   if (schema.format !== FORMAT || schema.version !== 1 || !Array.isArray(schema.types))
     throw new ExportFormatError("not a Boni export (version 1)");
@@ -104,12 +106,24 @@ export function importExport(
           store.applySchema({ op: "add_field", type: t.id, field: f }, meta);
     }
 
+  // A zone comes back before anything else of it, so no model sees it even for a moment.
+  if (apply)
+    for (const [type, zone] of Object.entries(schema.zones ?? {}))
+      if (have()[type] && (zone === "restricted" || zone === "private"))
+        store.setZone(type, zone, "import");
+  // Attachments, by content (a `file` value is their sha256).
+  if (apply)
+    for (const [sha, mime] of Object.entries(schema.files ?? {})) {
+      const data = files.get(`files/${sha}`);
+      if (data && !store.getFile(sha)) store.putFile(data, mime);
+    }
   // What the models may see comes back too (never changing a choice already made here).
   if (apply)
     for (const [type, level] of Object.entries(schema.aiAccess ?? {}))
       if (
         have()[type] &&
         !(type in store.aiAccess()) &&
+        !store.zones()[type] &&
         (level === "visible" || level === "opaque" || level === "hidden")
       )
         store.setAiAccess(type, level, "import");

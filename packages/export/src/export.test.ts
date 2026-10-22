@@ -158,6 +158,27 @@ describe("the export comes back", () => {
     expect(importExport(files, b, { apply: true }).existing).toHaveLength(5);
   });
 
+  it("carries a zone's attachments and keeps the zone when re-imported", () => {
+    const zone = mkdtempSync(join(tmpdir(), "boni-zone-"));
+    cleanups.push(() => rmSync(zone, { recursive: true, force: true }));
+    mkdirSync(join(zone, "Documentos"));
+    writeFileSync(join(zone, "Documentos/poliza.pdf"), "%PDF-1.7 inventado");
+    const a = store();
+    importVault(zone, a, { apply: true, zone: "private", now: NOW });
+    const sha = String(a.list("t_private_documentos")[0]?.entity.values.f_boni_file);
+    const files = new Map(exportFiles(a, { now: NOW }).map((e) => [e.path, e.data]));
+    expect(text(files, `files/${sha}`)).toBe("%PDF-1.7 inventado");
+    expect(JSON.parse(text(files, "schema.json")).zones).toEqual({
+      t_private_documentos: "private",
+    });
+    const b = store();
+    importExport(files, b, { apply: true });
+    expect(b.zones()).toEqual({ t_private_documentos: "private" });
+    expect(b.aiAccess()).toEqual({ t_private_documentos: "hidden" });
+    expect(Buffer.from(b.getFile(sha)?.data ?? []).toString()).toBe("%PDF-1.7 inventado");
+    expect(b.getFile(sha)?.mime).toBe("application/pdf");
+  });
+
   it("by default the file's labels are only claims: at most imported, from the export", () => {
     const files = new Map(exportFiles(filled(), { now: NOW }).map((e) => [e.path, e.data]));
     const b = store();

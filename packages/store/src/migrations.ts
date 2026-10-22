@@ -129,6 +129,22 @@ export const MIGRATIONS = [
      value TEXT NOT NULL,
      updated INTEGER NOT NULL
    );`,
+  // 5: the vault's zones moved into Boni (types no model may ever see, set by the import Juan runs and never
+  // lowered) and attachments by content (a `file` value is the sha256 of a row here; immutable, outside the log
+  // and out of readQuery's reach).
+  `CREATE TABLE zones (
+     type TEXT PRIMARY KEY,
+     zone TEXT NOT NULL CHECK (zone IN ('restricted', 'private')),
+     at INTEGER NOT NULL,
+     by TEXT
+   );
+   CREATE TABLE files (
+     sha256 TEXT PRIMARY KEY,
+     mime TEXT NOT NULL,
+     size INTEGER NOT NULL,
+     data BLOB NOT NULL,
+     at INTEGER NOT NULL
+   );`,
 ];
 
 export function migrate(db: DatabaseSync): void {

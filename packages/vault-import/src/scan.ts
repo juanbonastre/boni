@@ -23,12 +23,15 @@ export function importable(path: string): boolean {
 export interface Scanned {
   /** Vault-relative paths with "/". */
   notes: string[];
+  /** Other files (attachments), same rules; only a zone's import takes them (`importVault` with `zone`). */
+  files: string[];
   /** What was passed over and why (counts by reason; never the contents). */
   skipped: Record<string, number>;
 }
 
 export function scanVault(root: string): Scanned {
   const notes: string[] = [];
+  const files: string[] = [];
   const skipped: Record<string, number> = {};
   const skip = (why: string) => {
     skipped[why] = (skipped[why] ?? 0) + 1;
@@ -49,12 +52,15 @@ export function scanVault(root: string): Scanned {
         continue;
       }
       if (!e.isFile()) continue;
-      if (!e.name.toLowerCase().endsWith(".md")) skip("not a note (attachment or other file)");
-      else if (e.name === "README.md") skip("folder index (README.md)");
+      if (!e.name.toLowerCase().endsWith(".md")) {
+        if (!e.name.startsWith(".")) files.push(path);
+        skip("not a note (attachment or other file)");
+      } else if (e.name === "README.md") skip("folder index (README.md)");
       else notes.push(path);
     }
   };
   walk("");
   notes.sort();
-  return { notes, skipped };
+  files.sort();
+  return { notes, files, skipped };
 }

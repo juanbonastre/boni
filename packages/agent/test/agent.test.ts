@@ -739,34 +739,46 @@ describe("what Juan keeps from the models (per type, his choice)", () => {
     ],
   };
 
-  it("hidden: the type is not there for the planner, and its entities are not found", async () => {
-    env = makeEnv();
-    env.store.setAiAccess("t_mov", "hidden", "portatil");
-    const planner = fakePlanner([sum]);
-    const res = await env.agent(planner).turn({ text: "¿cuánto gasté?", origin: PERSONAL });
-    expect(res.status).toBe("stopped");
-    const seen = JSON.stringify(planner.requests[0]?.input);
-    expect(seen).not.toContain("movimiento");
-    expect(seen).not.toContain("importe");
-    const get = fakePlanner([
-      {
-        version: 1,
-        steps: [{ id: "g", op: "call", tool: "entities.get", args: { id: lit("e_mov1") } }],
-      },
-    ]);
-    expect((await env.agent(get).turn({ text: "ese", origin: PERSONAL })).status).toBe("stopped");
-    const search = fakePlanner([
-      {
-        version: 1,
-        steps: [
-          { id: "s", op: "call", tool: "entities.search", args: { text: lit("Cena") } },
-          { id: "r", op: "reply", component: "list", data: { items: ref("$s") } },
-        ],
-      },
-    ]);
-    const found = await env.agent(search).turn({ text: "busca cena", origin: PERSONAL });
-    expect(JSON.stringify(found.replies)).not.toContain("Cena inventada");
-  });
+  it.each([
+    [
+      "hidden",
+      (e: ReturnType<typeof makeEnv>) => e.store.setAiAccess("t_mov", "hidden", "portatil"),
+    ],
+    [
+      "in a vault zone",
+      (e: ReturnType<typeof makeEnv>) => e.store.setZone("t_mov", "private", "import"),
+    ],
+  ])(
+    "%s: the type is not there for the planner, and its entities are not found",
+    async (_, hide) => {
+      env = makeEnv();
+      hide(env);
+      const planner = fakePlanner([sum]);
+      const res = await env.agent(planner).turn({ text: "¿cuánto gasté?", origin: PERSONAL });
+      expect(res.status).toBe("stopped");
+      const seen = JSON.stringify(planner.requests[0]?.input);
+      expect(seen).not.toContain("movimiento");
+      expect(seen).not.toContain("importe");
+      const get = fakePlanner([
+        {
+          version: 1,
+          steps: [{ id: "g", op: "call", tool: "entities.get", args: { id: lit("e_mov1") } }],
+        },
+      ]);
+      expect((await env.agent(get).turn({ text: "ese", origin: PERSONAL })).status).toBe("stopped");
+      const search = fakePlanner([
+        {
+          version: 1,
+          steps: [
+            { id: "s", op: "call", tool: "entities.search", args: { text: lit("Cena") } },
+            { id: "r", op: "reply", component: "list", data: { items: ref("$s") } },
+          ],
+        },
+      ]);
+      const found = await env.agent(search).turn({ text: "busca cena", origin: PERSONAL });
+      expect(JSON.stringify(found.replies)).not.toContain("Cena inventada");
+    },
+  );
 
   it("opaque: code computes and paints for Juan, the planner only gets handles, no reader gets it", async () => {
     env = makeEnv();

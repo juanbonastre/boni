@@ -1,5 +1,5 @@
 import { type FieldDef, label, type Value } from "@boni/entities";
-import { BODY, type UserStore } from "@boni/store";
+import { BODY, type UserStore, type Zone } from "@boni/store";
 
 /**
  * The user's collections as Notion's databases (docs/nucleo.md plan PR 19): their types and fields, their
@@ -22,6 +22,8 @@ export interface DataType {
   titleField: string;
   fields: DataField[];
   count: number;
+  /** A vault zone moved into Boni: no AI sees it. */
+  zone?: Zone;
 }
 export interface DataRow {
   id: string;
@@ -58,6 +60,7 @@ const userTypes = (store: UserStore) =>
   Object.values(store.schema().types).filter((t) => !t.system && !t.archived);
 
 export function listTypes(store: UserStore): DataType[] {
+  const zones = store.zones();
   return userTypes(store)
     .map((t) => ({
       id: t.id,
@@ -76,6 +79,7 @@ export function listTypes(store: UserStore): DataType[] {
           ...(f.relation ? { relation: { target: f.relation.target, many: f.relation.many } } : {}),
         })),
       count: store.list(t.id).length,
+      ...(zones[t.id] ? { zone: zones[t.id] } : {}),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
 }

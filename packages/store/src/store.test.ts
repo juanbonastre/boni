@@ -7,6 +7,7 @@ import { open, seal, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
 import {
   BODY,
   entityLabel,
+  MAX_FILE_BYTES,
   type OpMeta,
   openUserStore,
   restoreBackup,
@@ -124,6 +125,45 @@ describe("the store", () => {
     expect(() => store.setAiAccess("t_libro", "secreto" as never, "portatil")).toThrow(StoreError);
     // Not something a read query (the views, the agent) can see.
     expect(() => store.readQuery("SELECT * FROM ai_access")).toThrow();
+  });
+
+  it("keeps the vault's zones: hidden from every model, never lowered, not something Juan's choice opens", () => {
+    const { store, dir } = fresh();
+    store.setAiAccess("t_persona", "visible", "portatil");
+    store.setZone("t_persona", "restricted", "import");
+    expect(store.aiAccess().t_persona).toBe("hidden");
+    expect(() => store.setAiAccess("t_persona", "visible", "portatil")).toThrow(StoreError);
+    expect(() => store.setAiAccess("t_persona", "hidden", "portatil")).toThrow(StoreError);
+    store.setZone("t_persona", "private", "import");
+    store.setZone("t_persona", "restricted", "import"); // never lowered
+    expect(store.zones()).toEqual({ t_persona: "private" });
+    expect(() => store.setZone("t_nada", "private", "import")).toThrow(StoreError);
+    expect(() => store.setZone("t_libro", "public" as never, "import")).toThrow(StoreError);
+    expect(() => store.readQuery("SELECT * FROM zones")).toThrow();
+    const again = openUserStore(join(dir, "boni.db"));
+    stores.push(again);
+    expect(again.aiAccess().t_persona).toBe("hidden");
+  });
+
+  it("keeps attachments by content, outside the log and out of read queries", () => {
+    const { store } = fresh();
+    const ops = store.log().length;
+    const bytes = new TextEncoder().encode("%PDF-1.7 invented");
+    const sha = store.putFile(bytes, "application/pdf");
+    expect(sha).toMatch(/^[0-9a-f]{64}$/);
+    expect(store.putFile(bytes, "application/pdf")).toBe(sha);
+    const f = store.getFile(sha);
+    expect(f?.mime).toBe("application/pdf");
+    expect(f?.size).toBe(bytes.byteLength);
+    expect(Buffer.from(f?.data ?? []).toString()).toBe("%PDF-1.7 invented");
+    expect(store.getFile("0".repeat(64))).toBeNull();
+    expect(store.getFile("../x")).toBeNull();
+    expect(() => store.putFile(bytes, "not a type")).toThrow(StoreError);
+    expect(() => store.putFile(new Uint8Array(MAX_FILE_BYTES + 1), "image/png")).toThrow(
+      StoreError,
+    );
+    expect(store.log().length).toBe(ops);
+    expect(() => store.readQuery("SELECT * FROM files")).toThrow();
   });
 
   it("keeps extensions' settings and state outside the log, out of read queries, across restarts", () => {

@@ -60,11 +60,16 @@ export interface Proposal {
 /** What the models may see of a collection (Juan's choice; the agent cannot change it). */
 export type AiLevel = "visible" | "opaque" | "hidden";
 export const AI_LEVELS: readonly AiLevel[] = ["visible", "opaque", "hidden"];
+/** A vault zone moved into Boni: no AI ever sees it, and no screen changes that. */
+export type Zone = "restricted" | "private";
+const zoneOf = (v: unknown): Zone | undefined =>
+  v === "restricted" || v === "private" ? v : undefined;
 export interface Visibility {
   id: string;
   name: string;
   level: AiLevel;
   count: number;
+  zone?: Zone;
 }
 
 /** One step of a run as Juan's Registro shows it (`GET api/agent/runs/:id`). */
@@ -408,6 +413,7 @@ export interface DataType {
   titleField: string;
   fields: DataField[];
   count: number;
+  zone?: Zone;
 }
 export type DataValue =
   | string
@@ -433,6 +439,7 @@ function parseDataType(v: unknown): DataType | null {
     icon: str(v.icon, 16) ?? "",
     titleField: str(v.titleField, 80) ?? "",
     count: typeof v.count === "number" ? v.count : 0,
+    ...(zoneOf(v.zone) ? { zone: zoneOf(v.zone) } : {}),
     fields: v.fields.flatMap((f): DataField[] =>
       isObj(f) && typeof f.id === "string" && typeof f.type === "string"
         ? [
@@ -652,7 +659,16 @@ export class AgentApi {
       const name = str(t.name, 120);
       const level = AI_LEVELS.find((l) => l === t.level);
       if (!id || !name || !level) return [];
-      return [{ id, name, level, count: typeof t.count === "number" ? t.count : 0 }];
+      const zone = zoneOf(t.zone);
+      return [
+        {
+          id,
+          name,
+          level,
+          count: typeof t.count === "number" ? t.count : 0,
+          ...(zone ? { zone } : {}),
+        },
+      ];
     });
   }
   // The user's pages (docs/extensiones.md 6).

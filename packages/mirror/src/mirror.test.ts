@@ -109,6 +109,13 @@ const classId = (e: Env) =>
 const pending = (e: Env) => e.store.journal.proposals("pending");
 
 describe("switching a collection to core mode", () => {
+  it("never takes a type in a vault zone back to the vault", () => {
+    const e = env();
+    e.store.setZone(CAL, "private", "import");
+    expect(() => e.mirror.switchToCore(CAL)).toThrow(/zone/);
+    expect(e.mirror.modes().find((m) => m.type === CAL)?.mode).toBe("none");
+  });
+
   it("reports first and writes nothing; applied, the notes only gain the boni_* lines", () => {
     const e = env();
     const report = e.mirror.switchToCore(CAL);

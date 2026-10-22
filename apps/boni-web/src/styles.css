@@ -4000,6 +4000,47 @@ button.find-row:hover {
 .db-card-title {
   position: relative;
 }
+/* An attachment: a quiet chip that opens it (never a link the page follows). */
+.db-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.db-table td .db-file {
+  margin: 6px 8px;
+}
+.db-file span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.db-file:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+/* A vault zone moved into Boni, next to the collection's name. */
+.db-zone {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--hover);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: middle;
+}
 .db-table td.is-title:hover .db-open,
 .db-card-title:hover .db-open,
 .db-open:focus-visible {
