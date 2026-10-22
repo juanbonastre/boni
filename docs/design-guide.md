@@ -248,8 +248,12 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   and a legend. "Filtro" (Notion's): rules of a property, a condition that fits its type (es, contiene, está vacío,
   antes de / después de hoy or a date, mayor que…) and a value; the button shows how many are on. The view (layout, sort, grouping, hidden
   properties) is the page block's; the rows are the collection's (`/api/data/*`, a personal device only).
-  A collection that came from a vault zone carries a quiet lock badge after its name ("Privado" / "Restringido",
-  the reason on hover), and in Ajustes → IA its level is shown, locked. An attachment is a small chip "Abrir archivo"
+  Every collection's head has a quiet pill with what the AI sees of it (Visible, Opaca, Restringida, Privada, each
+  with its icon); it opens the four levels with a line of help each. Privada is locked: elsewhere its menu only says
+  where to unlock it; on the collection's own page (Colecciones → the collection) "Desbloquear…" opens a dialog
+  that asks for the new level and its name typed. **Colecciones** (sidebar): every collection in a table (name,
+  items, what the AI sees, origin), a search and chips by level with their counts; a name opens the collection on a
+  page of its own, the database without repeating its name. An attachment is a small chip "Abrir archivo"
   with a clip (never a link): the desktop app opens it with the system's viewer, a browser downloads it; a kind no
   viewer opens is shown in its folder, with a toast saying so.
 - **More of Notion** (2026-10-22): blocks numbered list (numbers follow on), toggle (its line folds the blocks

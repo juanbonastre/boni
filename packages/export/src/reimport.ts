@@ -7,7 +7,14 @@ import {
   SENSITIVITY_ORDER,
   type TypeDef,
 } from "@boni/entities";
-import { BODY, type OpMeta, type UserStore, type Writes } from "@boni/store";
+import {
+  AI_LEVELS,
+  type AiLevel,
+  BODY,
+  type OpMeta,
+  type UserStore,
+  type Writes,
+} from "@boni/store";
 import { type ExportRecord, FORMAT } from "./export.ts";
 
 /**
@@ -119,14 +126,15 @@ export function importExport(
     }
   // What the models may see comes back too (never changing a choice already made here).
   if (apply)
-    for (const [type, level] of Object.entries(schema.aiAccess ?? {}))
+    for (const [type, raw] of Object.entries(schema.aiAccess ?? {})) {
+      const level = raw === "hidden" ? "restricted" : raw; // an export from before the four levels
       if (
         have()[type] &&
         !(type in store.aiAccess()) &&
-        !store.zones()[type] &&
-        (level === "visible" || level === "opaque" || level === "hidden")
+        (AI_LEVELS as readonly string[]).includes(level)
       )
-        store.setAiAccess(type, level, "import");
+        store.setAiAccess(type, level as AiLevel, "import");
+    }
 
   // Entities: first without relations, then the relations.
   const later: { id: string; writes: Writes }[] = [];

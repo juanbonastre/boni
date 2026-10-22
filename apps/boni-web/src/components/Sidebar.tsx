@@ -1,5 +1,6 @@
 import {
   ChevronRight,
+  Database,
   FileText,
   MessageSquare,
   MoreHorizontal,
@@ -21,6 +22,7 @@ import {
   openPage,
   openSettings,
   showChat,
+  showCollections,
   toggleSidebar,
   useStore,
 } from "../store.ts";
@@ -65,6 +67,14 @@ export function Sidebar() {
           <MessageSquare size={15} strokeWidth={1.8} />
           <span className="nav-name">{t("nav.chat")}</span>
           {inbox.length > 0 && <span className="nav-count">{inbox.length}</span>}
+        </button>
+        <button
+          type="button"
+          className={`nav-row${view.kind === "collections" || view.kind === "collection" ? " active" : ""}`}
+          onClick={showCollections}
+        >
+          <Database size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("nav.collections")}</span>
         </button>
 
         {pages !== null && (

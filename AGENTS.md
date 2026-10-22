@@ -43,9 +43,11 @@ packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native mo
                  read them.
                  `settings` (`setting` / `setSetting`): extensions' settings and working state, outside the log and
                  out of `readQuery`'s reach (secrets go in sealed with the user's data key by the caller).
-                 `zones` / `setZone`: the vault's `restricted/` and `private/` moved into Boni; a zoned type is
-                 `hidden` in `aiAccess` whatever was chosen, `setAiAccess` refuses it, a zone is never lowered,
-                 the mirror never takes it. `putFile` / `getFile`: attachments by sha256 (a `file` value), outside
+                 `aiAccess` has four levels (`visible`, `opaque`, `restricted`, `private`; `closedToAi` for the
+                 last two): lowering a `private` type needs `setAiAccess(..., { unlock: true })`, which the app
+                 sends only from the collection's own page (Colecciones) after Juan types its name. `zones` /
+                 `setZone`: where a type came from (the vault's `restricted/` or `private/`); the import raises it
+                 to that level, and the mirror never takes it. `putFile` / `getFile`: attachments by sha256 (a `file` value), outside
                  the log and `readQuery`, at most `MAX_FILE_BYTES`.
 packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
                  devices with a trust level (personal / shared / ambient; only another personal device raises it),

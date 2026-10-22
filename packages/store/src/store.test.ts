@@ -1,11 +1,14 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { label, type TypeDef } from "@boni/entities";
 import { afterEach, describe, expect, it } from "vitest";
 import { open, seal, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
+import { MIGRATIONS } from "./migrations.ts";
 import {
   BODY,
+  closedToAi,
   entityLabel,
   MAX_FILE_BYTES,
   type OpMeta,
@@ -117,32 +120,63 @@ describe("the store", () => {
   it("keeps what the models may see of each type, Juan's choice", () => {
     const { store } = fresh();
     expect(store.aiAccess()).toEqual({});
-    store.setAiAccess("t_persona", "hidden", "portatil");
+    store.setAiAccess("t_persona", "restricted", "portatil");
     store.setAiAccess("t_libro", "opaque", "portatil");
     store.setAiAccess("t_libro", "visible", "portatil");
-    expect(store.aiAccess()).toEqual({ t_persona: "hidden", t_libro: "visible" });
-    expect(() => store.setAiAccess("t_nada", "hidden", "portatil")).toThrow(StoreError);
+    expect(store.aiAccess()).toEqual({ t_persona: "restricted", t_libro: "visible" });
+    expect(() => store.setAiAccess("t_nada", "restricted", "portatil")).toThrow(StoreError);
     expect(() => store.setAiAccess("t_libro", "secreto" as never, "portatil")).toThrow(StoreError);
     // Not something a read query (the views, the agent) can see.
     expect(() => store.readQuery("SELECT * FROM ai_access")).toThrow();
   });
 
-  it("keeps the vault's zones: hidden from every model, never lowered, not something Juan's choice opens", () => {
+  it("four levels: a private type is locked, a zone raises its collections to its level", () => {
     const { store, dir } = fresh();
-    store.setAiAccess("t_persona", "visible", "portatil");
-    store.setZone("t_persona", "restricted", "import");
-    expect(store.aiAccess().t_persona).toBe("hidden");
-    expect(() => store.setAiAccess("t_persona", "visible", "portatil")).toThrow(StoreError);
-    expect(() => store.setAiAccess("t_persona", "hidden", "portatil")).toThrow(StoreError);
-    store.setZone("t_persona", "private", "import");
-    store.setZone("t_persona", "restricted", "import"); // never lowered
-    expect(store.zones()).toEqual({ t_persona: "private" });
+    store.setAiAccess("t_persona", "private", "portatil");
+    expect(() => store.setAiAccess("t_persona", "visible", "portatil")).toThrow(/private/);
+    expect(() => store.setAiAccess("t_persona", "restricted", "portatil")).toThrow(StoreError);
+    store.setAiAccess("t_persona", "private", "portatil"); // staying private is fine
+    store.setAiAccess("t_persona", "restricted", "portatil", { unlock: true });
+    expect(store.aiAccess().t_persona).toBe("restricted");
+    expect(closedToAi("restricted") && closedToAi("private")).toBe(true);
+    expect(closedToAi("opaque") || closedToAi(undefined)).toBe(false);
+
+    store.setAiAccess("t_libro", "visible", "portatil");
+    store.setZone("t_libro", "restricted", "import");
+    expect(store.aiAccess().t_libro).toBe("restricted");
+    store.setZone("t_libro", "private", "import");
+    store.setZone("t_libro", "restricted", "import"); // never lowered
+    expect(store.zones()).toEqual({ t_libro: "private" });
+    expect(store.aiAccess().t_libro).toBe("private");
+    store.setAiAccess("t_libro", "opaque", "portatil", { unlock: true });
+    store.setZone("t_libro", "restricted", "import"); // a re-import raises it again to the zone's level
+    expect(store.aiAccess().t_libro).toBe("restricted");
     expect(() => store.setZone("t_nada", "private", "import")).toThrow(StoreError);
     expect(() => store.setZone("t_libro", "public" as never, "import")).toThrow(StoreError);
     expect(() => store.readQuery("SELECT * FROM zones")).toThrow();
     const again = openUserStore(join(dir, "boni.db"));
     stores.push(again);
-    expect(again.aiAccess().t_persona).toBe("hidden");
+    expect(again.aiAccess()).toEqual({ t_persona: "restricted", t_libro: "restricted" });
+  });
+
+  it("moves the old levels: hidden becomes restricted, a zone's collections take its level", () => {
+    const dir = mkdtempSync(join(tmpdir(), "boni-store-"));
+    dirs.push(dir);
+    const db = new DatabaseSync(join(dir, "old.db"));
+    for (const m of MIGRATIONS.slice(0, 5)) db.exec(m);
+    db.exec("PRAGMA user_version = 5");
+    db.exec(
+      "INSERT INTO ai_access VALUES ('t_diario', 'hidden', 1, 'import'), ('t_libro', 'opaque', 1, 'p');" +
+        "INSERT INTO zones VALUES ('t_private_root', 'private', 1, 'import'), ('t_libro', 'restricted', 1, 'import');",
+    );
+    db.close();
+    const s = openUserStore(join(dir, "old.db"));
+    stores.push(s);
+    expect(s.aiAccess()).toEqual({
+      t_diario: "restricted",
+      t_libro: "restricted",
+      t_private_root: "private",
+    });
   });
 
   it("keeps attachments by content, outside the log and out of read queries", () => {

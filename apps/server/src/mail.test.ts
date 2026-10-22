@@ -303,7 +303,7 @@ describe("tasks a mail asks for", () => {
         },
         { actor: "user" },
       );
-    store.setAiAccess("t_diario", "hidden", "portatil");
+    store.setAiAccess("t_diario", "restricted", "portatil");
     store.create(
       "t_gestiones",
       { t_gestiones_t: { value: "Renovar el DNI", label: own } },

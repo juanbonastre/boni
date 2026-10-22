@@ -2,6 +2,7 @@ import { MoreHorizontal, PanelLeft, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
+import { CollectionsView, CollectionView } from "./components/Collections.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
@@ -19,12 +20,14 @@ import {
   duplicatePage,
   goBack,
   newPage,
+  openCollection,
   openFind,
   openPage,
   openSettings,
   setChartDrill,
   setPageFull,
   showChat,
+  showCollections,
   showStart,
   toggleSidebar,
   useStore,
@@ -135,6 +138,8 @@ function useShortcuts(mobile: boolean) {
         e.preventDefault();
         if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
         else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
+        else if (s.view.kind === "row" && s.view.from) openCollection(s.view.type);
+        else if (s.view.kind === "collection") showCollections();
         else if (s.view.kind === "row" && s.page) void openPage(s.page.id);
         else showStart();
       }
@@ -204,6 +209,10 @@ function TopBar() {
           </>
         ) : view.kind === "row" ? (
           <RowCrumbs />
+        ) : view.kind === "collections" ? (
+          t("nav.collections")
+        ) : view.kind === "collection" ? (
+          <CollectionCrumbs />
         ) : onPage && page ? (
           <Crumbs page={page} pages={pages ?? []} />
         ) : view.kind === "page" ? (
@@ -273,10 +282,32 @@ function TopBar() {
   );
 }
 
-/** Where an open row is: the page it was opened from, its collection, its title. */
+/** Colecciones / the collection open on its own page. */
+function CollectionCrumbs() {
+  const t = useStore((s) => s.t);
+  const type = useStore((s) =>
+    s.view.kind === "collection"
+      ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
+      : undefined,
+  );
+  return (
+    <span className="crumbs">
+      <span className="crumb-part">
+        <button type="button" className="crumb" onClick={showCollections}>
+          {t("nav.collections")}
+        </button>
+        <span className="crumb-sep">/</span>
+      </span>
+      <span className="crumb current">{type?.name ?? ""}</span>
+    </span>
+  );
+}
+
+/** Where an open row is: the page (or Colecciones) it was opened from, its collection, its title. */
 function RowCrumbs() {
   const t = useStore((s) => s.t);
-  const page = useStore((s) => s.page);
+  const fromCollection = useStore((s) => s.view.kind === "row" && !!s.view.from);
+  const page = useStore((s) => (fromCollection ? null : s.page));
   const row = useStore((s) => s.row);
   const type = useStore((s) =>
     s.view.kind === "row"
@@ -294,9 +325,23 @@ function RowCrumbs() {
           <span className="crumb-sep">/</span>
         </span>
       )}
+      {fromCollection && (
+        <span className="crumb-part">
+          <button type="button" className="crumb" onClick={showCollections}>
+            {t("nav.collections")}
+          </button>
+          <span className="crumb-sep">/</span>
+        </span>
+      )}
       {type && (
         <span className="crumb-part">
-          <span className="crumb">{type.name}</span>
+          {fromCollection ? (
+            <button type="button" className="crumb" onClick={() => openCollection(type.id)}>
+              {type.name}
+            </button>
+          ) : (
+            <span className="crumb">{type.name}</span>
+          )}
           <span className="crumb-sep">/</span>
         </span>
       )}
@@ -388,6 +433,8 @@ function Content() {
   }
   if (view.kind === "page") return <PageView after={<QueueNotes />} />;
   if (view.kind === "row") return <RowView />;
+  if (view.kind === "collections") return <CollectionsView />;
+  if (view.kind === "collection") return <CollectionView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;
 }
 

@@ -8,7 +8,7 @@ import {
   plannerMaySee,
   type TypeDef,
 } from "@boni/entities";
-import { BODY, type StoredEntity, StoreError, type UserStore } from "@boni/store";
+import { BODY, closedToAi, type StoredEntity, StoreError, type UserStore } from "@boni/store";
 import {
   asKey,
   codeLabel,
@@ -633,7 +633,7 @@ const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "e
 /** The read-only view: nothing that writes, nothing of the journal. */
 /**
  * The read-only view, as the models may see it (Juan's choice per type, `store.aiAccess()`, read on every
- * call so a change applies at once): a `hidden` type does not exist here (not in the schema, its entities
+ * call so a change applies at once): a `restricted` or `private` type does not exist here (not in the schema, its entities
  * not found, not in a search); an `opaque` type is there, but every value of its entities carries
  * `noModel`, so the planner gets handles, no reader gets them, and only code computes with them.
  */
@@ -643,7 +643,7 @@ export function readStore(store: UserStore): ReadStore {
   const asSeen = (s: StoredEntity | null, lv = levels()): StoredEntity | null => {
     if (!s) return null;
     const level = lv[s.entity.type] ?? "visible";
-    if (level === "hidden") return null;
+    if (closedToAi(level)) return null;
     if (level === "visible") return s;
     const labels: Record<string, Label> = {};
     for (const k of [...Object.keys(s.entity.values), ...Object.keys(s.labels), BODY])
@@ -655,18 +655,18 @@ export function readStore(store: UserStore): ReadStore {
       const lv = levels();
       const all = store.schema();
       return {
-        types: Object.fromEntries(Object.entries(all.types).filter(([id]) => lv[id] !== "hidden")),
+        types: Object.fromEntries(Object.entries(all.types).filter(([id]) => !closedToAi(lv[id]))),
       };
     },
     get: (id) => asSeen(store.get(id)),
     list: (type) => {
       const lv = levels();
-      if (lv[type] === "hidden") return [];
+      if (closedToAi(lv[type])) return [];
       return store.list(type).map((s) => asSeen(s, lv) as StoredEntity);
     },
     search: (text, o) => {
       const lv = levels();
-      if (o?.type && lv[o.type] === "hidden") return [];
+      if (o?.type && closedToAi(lv[o.type])) return [];
       return store.search(text, o).filter((id) => asSeen(store.get(id), lv) !== null);
     },
   };

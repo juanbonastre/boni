@@ -1,5 +1,5 @@
 import { type FieldDef, label, type Value } from "@boni/entities";
-import { BODY, type UserStore, type Zone } from "@boni/store";
+import { AI_LEVELS, type AiLevel, BODY, StoreError, type UserStore, type Zone } from "@boni/store";
 
 /**
  * The user's collections as Notion's databases (docs/nucleo.md plan PR 19): their types and fields, their
@@ -22,7 +22,9 @@ export interface DataType {
   titleField: string;
   fields: DataField[];
   count: number;
-  /** A vault zone moved into Boni: no AI sees it. */
+  /** How much the models may see of it (Juan's choice). */
+  level: AiLevel;
+  /** The vault zone it came from, if any. */
   zone?: Zone;
 }
 export interface DataRow {
@@ -61,6 +63,7 @@ const userTypes = (store: UserStore) =>
 
 export function listTypes(store: UserStore): DataType[] {
   const zones = store.zones();
+  const levels = store.aiAccess();
   return userTypes(store)
     .map((t) => ({
       id: t.id,
@@ -79,9 +82,34 @@ export function listTypes(store: UserStore): DataType[] {
           ...(f.relation ? { relation: { target: f.relation.target, many: f.relation.many } } : {}),
         })),
       count: store.list(t.id).length,
+      level: levels[t.id] ?? "visible",
       ...(zones[t.id] ? { zone: zones[t.id] } : {}),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
+}
+
+/**
+ * Juan changes how much the models may see of a collection (from a personal device; the agent never can).
+ * Lowering a private one needs `unlock`, which the app sends only from the collection's own page after he
+ * confirms, so it is not undone by a slip.
+ */
+export function setProtection(
+  store: UserStore,
+  typeId: string,
+  body: Record<string, unknown>,
+  device: string,
+): { id: string; level: AiLevel } | { status: number; error: string } {
+  const level = body.level as AiLevel;
+  if (!AI_LEVELS.includes(level)) return { status: 400, error: "bad-level" };
+  const type = store.schema().types[typeId];
+  if (!type || type.system) return { status: 404, error: "not-found" };
+  try {
+    store.setAiAccess(type.id, level, device, { unlock: body.unlock === true });
+  } catch (e) {
+    if (e instanceof StoreError && e.code === "locked") return { status: 409, error: "locked" };
+    throw e;
+  }
+  return { id: type.id, level };
 }
 
 const ROW_LIMIT = 2000;

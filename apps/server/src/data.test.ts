@@ -195,7 +195,21 @@ describe("collections as databases (plan PR 19)", () => {
     expect(await r.text()).toBe("<svg onload=alert(1)/>");
     expect((await call(t, "GET", `/api/data/files/${"0".repeat(64)}`)).status).toBe(404);
     expect((await fetch(`${base}/api/data/files/${sha}`)).status).toBe(401);
-    const types = (await call(t, "GET", "/api/data/types")).body.types as { zone?: string }[];
-    expect(types[0]?.zone).toBe("private");
+    const types = (await call(t, "GET", "/api/data/types")).body.types as {
+      zone?: string;
+      level?: string;
+    }[];
+    expect(types[0]).toMatchObject({ zone: "private", level: "private" });
+    // Its protection, from the collection: locked until unlocked.
+    const protect = (body: unknown) => call(t, "PUT", "/api/data/types/t_libro/protection", body);
+    expect((await protect({ level: "visible" })).status).toBe(409);
+    expect((await protect({ level: "nada" })).status).toBe(400);
+    expect((await protect({ level: "opaque", unlock: true })).body).toEqual({
+      id: "t_libro",
+      level: "opaque",
+    });
+    expect(
+      (await call(t, "PUT", "/api/data/types/t_nada/protection", { level: "opaque" })).status,
+    ).toBe(404);
   });
 });

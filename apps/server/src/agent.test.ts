@@ -228,10 +228,10 @@ describe("the conversation API", () => {
         headers: auth,
         body: JSON.stringify({ level }),
       });
-    expect((await put("hidden")).status).toBe(200);
-    expect((await list()).find((t) => t.id === "t_tarea")).toMatchObject({ level: "hidden" });
+    expect((await put("restricted")).status).toBe(200);
+    expect((await list()).find((t) => t.id === "t_tarea")).toMatchObject({ level: "restricted" });
     expect((await put("secreto")).status).toBe(400);
-    expect((await put("hidden", "memory")).status).toBe(404);
+    expect((await put("restricted", "memory")).status).toBe(404);
     // Not on the public entry; and a shared device cannot change it.
     expect((await fetch(`${pub}/api/agent/visibility`, { headers: auth })).status).toBe(404);
     const s = sessionUser(db, token);
@@ -241,12 +241,14 @@ describe("the conversation API", () => {
     expect((await put("visible")).status).toBe(403);
     trust("personal");
     expect((await put("visible")).status).toBe(200);
-    // A vault zone: hidden and locked, whatever a screen asks.
-    host.store(1).setZone("t_tarea", "restricted", "import");
-    expect((await list()).find((t) => t.id === "t_tarea")).toMatchObject({
-      level: "hidden",
-      zone: "restricted",
-    });
+    // Private is locked: lowering it needs the unlock the collection's page sends.
+    expect((await put("private")).status).toBe(200);
     expect((await put("visible")).status).toBe(409);
+    const unlock = await fetch(`${base}/api/agent/visibility/t_tarea`, {
+      method: "PUT",
+      headers: auth,
+      body: JSON.stringify({ level: "visible", unlock: true }),
+    });
+    expect(unlock.status).toBe(200);
   });
 });
