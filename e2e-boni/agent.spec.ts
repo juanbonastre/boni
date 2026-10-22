@@ -241,7 +241,7 @@ test("what the AI sees: Juan chooses per collection in Settings", async ({ page 
   await openApp(page, "/?still", {
     agent: {
       "GET api/agent/visibility": [VISIBILITY],
-      "PUT api/agent/visibility/:type": [{ id: "t_proyecto", level: "hidden" }],
+      "PUT api/agent/visibility/:type": [{ id: "t_proyecto", level: "restricted" }],
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
@@ -251,12 +251,12 @@ test("what the AI sees: Juan chooses per collection in Settings", async ({ page 
   await modal.getByRole("tab", { name: "Lo que ve la IA" }).click();
   await expect(modal.getByRole("heading", { name: "Lo que ve la IA" })).toBeVisible();
   const row = (name: string) => modal.getByRole("combobox", { name });
-  await expect(row("Diario")).toHaveValue("hidden");
+  await expect(row("Diario")).toHaveValue("restricted");
   await expect(row("Movimientos")).toHaveValue("opaque");
-  await row("Proyectos").selectOption("hidden");
-  await expect(row("Proyectos")).toHaveValue("hidden");
+  await row("Proyectos").selectOption("restricted");
+  await expect(row("Proyectos")).toHaveValue("restricted");
   expect(await requests(page, "PUT api/agent/visibility")).toEqual([
-    'PUT api/agent/visibility/t_proyecto {"level":"hidden"}',
+    'PUT api/agent/visibility/t_proyecto {"level":"restricted"}',
   ]);
   await page.screenshot({ path: `${SHOTS}/agent-visibility.png` });
 

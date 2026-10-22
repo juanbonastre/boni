@@ -58,8 +58,9 @@ export interface Proposal {
   created: number;
 }
 /** What the models may see of a collection (Juan's choice; the agent cannot change it). */
-export type AiLevel = "visible" | "opaque" | "hidden";
-export const AI_LEVELS: readonly AiLevel[] = ["visible", "opaque", "hidden"];
+export type AiLevel = "visible" | "opaque" | "restricted" | "private";
+export const AI_LEVELS: readonly AiLevel[] = ["visible", "opaque", "restricted", "private"];
+const levelOf = (v: unknown): AiLevel => AI_LEVELS.find((l) => l === v) ?? "visible";
 /** A vault zone moved into Boni: no AI ever sees it, and no screen changes that. */
 export type Zone = "restricted" | "private";
 const zoneOf = (v: unknown): Zone | undefined =>
@@ -413,6 +414,9 @@ export interface DataType {
   titleField: string;
   fields: DataField[];
   count: number;
+  /** How much the models may see of it. */
+  level: AiLevel;
+  /** The vault zone it came from, if any. */
   zone?: Zone;
 }
 export type DataValue =
@@ -439,6 +443,7 @@ function parseDataType(v: unknown): DataType | null {
     icon: str(v.icon, 16) ?? "",
     titleField: str(v.titleField, 80) ?? "",
     count: typeof v.count === "number" ? v.count : 0,
+    level: levelOf(v.level),
     ...(zoneOf(v.zone) ? { zone: zoneOf(v.zone) } : {}),
     fields: v.fields.flatMap((f): DataField[] =>
       isObj(f) && typeof f.id === "string" && typeof f.type === "string"
@@ -767,6 +772,14 @@ export class AgentApi {
     void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/data/rows"));
   restoreRow = async (id: string) =>
     void (await this.call("POST", `/${encodeURIComponent(id)}/restore`, {}, "api/data/rows"));
+  /** How much the models may see of a collection; `unlock` lowers a private one (its own page only). */
+  setProtection = async (type: string, level: AiLevel, unlock = false) =>
+    void (await this.call(
+      "PUT",
+      `/${encodeURIComponent(type)}/protection`,
+      { level, ...(unlock ? { unlock: true } : {}) },
+      "api/data/types",
+    ));
   extensions = async (): Promise<ExtensionView[]> => {
     const b = await this.call("GET", "extensions");
     return isObj(b) && Array.isArray(b.extensions)

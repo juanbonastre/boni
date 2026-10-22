@@ -1,4 +1,4 @@
-import type { PageSpec } from "@boni/views";
+import type { DatabaseView, PageSpec } from "@boni/views";
 import { useMemo } from "react";
 import { create } from "zustand";
 import {
@@ -79,7 +79,11 @@ export type View =
   | { kind: "log" }
   | { kind: "page"; id: string }
   /** A row of a collection opened as a page (its properties and its text), as Notion's. */
-  | { kind: "row"; type: string; id: string };
+  | { kind: "row"; type: string; id: string; from?: "collection" }
+  /** Every collection: open one, see and change its protection, filter. */
+  | { kind: "collections" }
+  /** One collection on a page of its own (its protection is unlocked only here). */
+  | { kind: "collection"; type: string };
 /**
  * The right side panel (on the phone, a sheet over the whole screen): a server screen (the capture form, maybe
  * filled in by a shortcut), the chart editor or the shortcut editor.
@@ -161,6 +165,8 @@ interface State {
   /** The row open as a page, with its text. */
   row: DataRow | null;
   rows: Record<string, { rows: DataRow[]; titles: Record<string, string> }>;
+  /** How each collection is shown on its own page (this session). */
+  collectionViews: Record<string, DatabaseView>;
   /** Ctrl+K: the quick find over the pages. */
   findOpen: boolean;
   /** The pages in the trash, while its list is open. */
@@ -252,6 +258,7 @@ export const useStore = create<State>(() => ({
   trash: null,
   dataTypes: null,
   rows: {},
+  collectionViews: {},
   row: null,
   inbox: [],
   runs: [],
@@ -1578,6 +1585,39 @@ export async function loadDataTypes(): Promise<DataType[] | null> {
   }
 }
 
+export const showCollections = () => {
+  set({ view: { kind: "collections" }, panel: null });
+  void loadDataTypes();
+};
+export const openCollection = (type: string) =>
+  set({ view: { kind: "collection", type }, panel: null });
+export const setCollectionView = (type: string, v: DatabaseView) =>
+  set({ collectionViews: { ...get().collectionViews, [type]: v } });
+
+/**
+ * How much the models may see of a collection, Juan's choice (at once here, then on the server). A private one
+ * is lowered only with `unlock`, which only the collection's own page sends, after he confirms.
+ */
+export async function changeProtection(type: string, level: AiLevel, unlock = false) {
+  const before = get().dataTypes;
+  const put = (l: AiLevel) =>
+    set({
+      dataTypes: get().dataTypes?.map((x) => (x.id === type ? { ...x, level: l } : x)) ?? null,
+    });
+  const was = before?.find((x) => x.id === type)?.level;
+  put(level);
+  try {
+    await agent.setProtection(type, level, unlock);
+    return true;
+  } catch (e) {
+    if (was) put(was);
+    toast(
+      get().t(e instanceof ApiError && e.code === "locked" ? "protect.locked" : "db.saveError"),
+    );
+    return false;
+  }
+}
+
 export async function loadRows(type: string) {
   try {
     const r = await agent.dataRows(type);
@@ -1660,7 +1700,8 @@ export async function deleteRow(type: string, id: string) {
 export async function openRow(type: string, id: string) {
   await flushPage();
   await flushRowBody();
-  set({ view: { kind: "row", type, id }, row: null, panel: null });
+  const from = get().view.kind === "collection" ? ("collection" as const) : undefined;
+  set({ view: { kind: "row", type, id, ...(from ? { from } : {}) }, row: null, panel: null });
   if (!get().dataTypes) void loadDataTypes();
   try {
     const row = await agent.dataRow(id);

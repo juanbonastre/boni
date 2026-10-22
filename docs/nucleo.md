@@ -824,6 +824,9 @@ sustituto para todo lo que hoy escribe en el vault. Las zonas ya entran (2026-10
 `--zone`, cada colección queda fuera del alcance de cualquier modelo por código (no se puede cambiar desde una
 pantalla), nunca va al espejo, y sus archivos se guardan como adjuntos. `restricted` podrá abrirse para una
 conversación cuando Juan lo pida (pendiente, con el MCP); hasta entonces es tan cerrada como `private`.
+Niveles de protección (Juan, 2026-10-22): Visible, Opaca, Restringida (antes «No la ve») y Privada, que queda
+bloqueada y solo se desbloquea desde la página de la colección. Pendiente: un nivel distinto para un subconjunto de
+una colección (un filtro), qué modelos ven qué, y aplicar los niveles a lo que la IA vea de la interfaz (capturas).
 
 ### 9.4 Obsidian, por fuera (decidido, Juan, 2026-10-20)
 Obsidian es una puerta de entrada a Boni, no una pieza del núcleo. Quien ya vive en Obsidian puede usar Boni Calendar

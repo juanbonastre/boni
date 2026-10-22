@@ -174,7 +174,7 @@ describe("the export comes back", () => {
     const b = store();
     importExport(files, b, { apply: true });
     expect(b.zones()).toEqual({ t_private_documentos: "private" });
-    expect(b.aiAccess()).toEqual({ t_private_documentos: "hidden" });
+    expect(b.aiAccess()).toEqual({ t_private_documentos: "private" });
     expect(Buffer.from(b.getFile(sha)?.data ?? []).toString()).toBe("%PDF-1.7 inventado");
     expect(b.getFile(sha)?.mime).toBe("application/pdf");
   });

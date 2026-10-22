@@ -14,7 +14,7 @@ import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
 import { wrappedKeysIn } from "@boni/identity";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
-import { BODY, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
+import { BODY, closedToAi, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
 import type { AgentHost } from "./agent.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
@@ -921,7 +921,7 @@ export class Mails {
     const types = store.schema().types;
     return ids.flatMap((id) => {
       const t = types[id];
-      if (!t || t.archived || t.system || levels[id] === "hidden") return [];
+      if (!t || t.archived || t.system || closedToAi(levels[id])) return [];
       const all = store.list(id);
       const date = dueField(
         t,

@@ -145,6 +145,22 @@ export const MIGRATIONS = [
      data BLOB NOT NULL,
      at INTEGER NOT NULL
    );`,
+  // 6: four levels of protection (Juan, 2026-10-22): "hidden" becomes "restricted" (closed to the models; one
+  // conversation may open it), "private" is closed and locked. A zone's collections take its level; the zone
+  // table stays as where each came from.
+  `CREATE TABLE ai_access_new (
+     type TEXT PRIMARY KEY,
+     level TEXT NOT NULL CHECK (level IN ('visible', 'opaque', 'restricted', 'private')),
+     at INTEGER NOT NULL,
+     by TEXT
+   );
+   INSERT INTO ai_access_new (type, level, at, by)
+     SELECT type, CASE level WHEN 'hidden' THEN 'restricted' ELSE level END, at, by FROM ai_access;
+   INSERT INTO ai_access_new (type, level, at, by)
+     SELECT type, zone, at, by FROM zones WHERE true
+     ON CONFLICT (type) DO UPDATE SET level = excluded.level, at = excluded.at, by = excluded.by;
+   DROP TABLE ai_access;
+   ALTER TABLE ai_access_new RENAME TO ai_access;`,
 ];
 
 export function migrate(db: DatabaseSync): void {

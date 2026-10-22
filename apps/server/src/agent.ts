@@ -9,6 +9,7 @@ import {
   type ToolRegistry,
 } from "@boni/agent";
 import { openUserStore, type UserStore } from "@boni/store";
+import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 
@@ -256,15 +257,9 @@ async function answerAgent(
       // Juan's choice, from a personal device: never something the agent or a shared device decides.
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const b = await bodyOf(req);
-      const level = b.level;
-      if (level !== "visible" && level !== "opaque" && level !== "hidden") return bad();
       const store = host.store(who.account);
-      const type = store.schema().types[params.type ?? ""];
-      if (!type || type.system) return send(res, 404, { error: "not-found" });
-      // A vault zone stays out of every model's reach: not something to change from a screen.
-      if (store.zones()[type.id]) return send(res, 409, { error: "in-zone" });
-      store.setAiAccess(type.id, level, who.device);
-      return send(res, 200, { id: type.id, level });
+      const r = setProtection(store, params.type ?? "", b, who.device);
+      return "error" in r ? send(res, r.status, { error: r.error }) : send(res, 200, r);
     }
     case "GET /api/agent/extensions": {
       // The installed extensions (docs/extensiones.md 3): what each is, what it asks for, on or off; the

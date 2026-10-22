@@ -198,7 +198,12 @@ test("a zone moved into Boni: marked as private, its attachment opened from the 
   await expect(w.locator(".slash-menu")).toContainText("Documentos");
   await w.keyboard.press("Enter");
   const db = w.locator(".db").last();
-  await expect(db.locator(".db-zone")).toHaveText("Privado");
+  await expect(db.locator(".protect-pill")).toHaveText("Privada");
+  // Locked where it is used: no level lower than Privada from here.
+  await db.locator(".protect-pill").click();
+  await expect(w.locator(".protect-menu")).toContainText("ábrela desde Colecciones");
+  await w.locator(".protect-menu").getByRole("menuitemradio", { name: "Visible" }).click();
+  await expect(db.locator(".protect-pill")).toHaveText("Privada");
   await expect(db.locator(".db-table tbody tr")).toHaveCount(2);
   const file = db.getByRole("button", { name: "Abrir archivo: poliza.pdf" });
   await file.click();
@@ -210,4 +215,37 @@ test("a zone moved into Boni: marked as private, its attachment opened from the 
     .trim();
   expect(saved).toContain("boni-files-");
   expect(execFileSync("cat", [saved]).toString()).toBe("%PDF-1.7 inventado");
+});
+
+test("Colecciones: every collection, filtered by what the AI sees; private unlocked only on its page", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
+  const table = w.locator(".cols-table");
+  await expect(table.locator("tbody tr")).toHaveCount(3); // Docencia, Persona, Documentos
+  await w
+    .locator(".cols-filter")
+    .getByRole("radio", { name: /Privada/ })
+    .click();
+  await expect(table.locator("tbody tr")).toHaveCount(1);
+  await expect(table).toContainText("private/ del vault");
+  await shot(w, "collections");
+  await w.getByRole("button", { name: "Abrir Documentos" }).click();
+  await expect(w.locator(".db-table tbody tr")).toHaveCount(2);
+  // On its own page: unlock, choosing the new level and typing its name.
+  await w.locator(".col-protect .protect-pill").click();
+  await w.locator(".protect-menu").getByRole("menuitemradio", { name: "Desbloquear…" }).click();
+  const dialog = w.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "Desbloquear" })).toBeDisabled();
+  await dialog.locator("select").selectOption("opaque");
+  await dialog.locator("input").fill("Documentos");
+  await shot(w, "unlock");
+  await dialog.getByRole("button", { name: "Desbloquear" }).click();
+  await expect(w.locator(".col-protect .protect-pill")).toHaveText("Opaca");
+  // And back to private from the list, in one click (raising is never locked).
+  await w.locator(".topbar").getByRole("button", { name: "Colecciones" }).click();
+  await w.locator(".cols-filter").getByRole("radio", { name: "Todas" }).click();
+  const row = table.locator("tbody tr", { hasText: "Documentos" });
+  await row.locator(".protect-pill").click();
+  await w.locator(".protect-menu").getByRole("menuitemradio", { name: "Privada" }).click();
+  await expect(row.locator(".protect-pill")).toHaveText("Privada");
 });

@@ -150,6 +150,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         icon: "📚",
         titleField: "f_titulo",
         count: 3,
+        level: "visible",
         fields: [
           { id: "f_titulo", name: "Título", type: "text" },
           {
@@ -166,6 +167,17 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           { id: "f_fin", name: "Terminado", type: "date" },
           { id: "f_fav", name: "Favorito", type: "checkbox" },
         ],
+      };
+      // A collection from the vault's private/ (Colecciones lists it, locked).
+      const documentos = {
+        id: "t_private_documentos",
+        name: "Documentos",
+        icon: "",
+        titleField: "f_title",
+        count: 2,
+        level: "private",
+        zone: "private",
+        fields: [{ id: "f_title", name: "Título", type: "text" }],
       };
       const today = new Date().toISOString().slice(0, 10);
       let rows: { id: string; values: Record<string, unknown>; updated: number }[] = [
@@ -185,7 +197,17 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       let rowSeq = 0;
       const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
         const b = (body ?? {}) as { values?: Record<string, unknown> };
-        if (p === "api/data/types") return [200, JSON.stringify({ types: [libros] })];
+        if (p === "api/data/types") return [200, JSON.stringify({ types: [libros, documentos] })];
+        const protect = /^api\/data\/types\/([^/]+)\/protection$/.exec(p);
+        if (protect) {
+          const t = [libros, documentos].find((x) => x.id === protect[1]);
+          const want = (body ?? {}) as { level?: string; unlock?: boolean };
+          if (!t) return [404, '{"error":"not-found"}'];
+          if (t.level === "private" && want.level !== "private" && !want.unlock)
+            return [409, '{"error":"locked"}'];
+          t.level = String(want.level);
+          return [200, JSON.stringify({ id: t.id, level: t.level })];
+        }
         if (p === "api/data/types/t_libro/rows" && method === "GET")
           return [200, JSON.stringify({ rows, titles: {}, truncated: false })];
         if (p === "api/data/types/t_libro/rows") {

@@ -741,11 +741,11 @@ describe("what Juan keeps from the models (per type, his choice)", () => {
 
   it.each([
     [
-      "hidden",
-      (e: ReturnType<typeof makeEnv>) => e.store.setAiAccess("t_mov", "hidden", "portatil"),
+      "restricted",
+      (e: ReturnType<typeof makeEnv>) => e.store.setAiAccess("t_mov", "restricted", "portatil"),
     ],
     [
-      "in a vault zone",
+      "from a private zone",
       (e: ReturnType<typeof makeEnv>) => e.store.setZone("t_mov", "private", "import"),
     ],
   ])(
@@ -815,7 +815,7 @@ describe("what Juan keeps from the models (per type, his choice)", () => {
     const planner = fakePlanner([sum, sum]);
     const agent = env.agent(planner);
     expect((await agent.turn({ text: "¿cuánto?", origin: PERSONAL })).status).toBe("done");
-    env.store.setAiAccess("t_mov", "hidden", "portatil");
+    env.store.setAiAccess("t_mov", "private", "portatil");
     expect((await agent.turn({ text: "¿cuánto?", origin: PERSONAL })).status).toBe("stopped");
     expect(
       env.registry

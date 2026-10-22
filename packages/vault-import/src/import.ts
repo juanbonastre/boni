@@ -604,7 +604,8 @@ export function importVault(
     if (!hide) continue;
     report.hiddenFromModels.push(typeId);
     if (apply && zone) store.setZone(typeId, zone, "import");
-    else if (apply && !(typeId in store.aiAccess())) store.setAiAccess(typeId, "hidden", "import");
+    else if (apply && !(typeId in store.aiAccess()))
+      store.setAiAccess(typeId, "restricted", "import");
   }
 
   // ------------------------------------------------ entities: first without relations, then relations

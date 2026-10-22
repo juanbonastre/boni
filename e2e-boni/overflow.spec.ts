@@ -31,6 +31,7 @@ const L = {
     edit: /^Editar…/,
     settings: "Ajustes",
     pageMenu: "Más opciones",
+    collections: "Colecciones",
   },
   en: {
     period: "Period",
@@ -40,6 +41,7 @@ const L = {
     edit: /^Edit…/,
     settings: "Settings",
     pageMenu: "More options",
+    collections: "Collections",
   },
 };
 
@@ -119,6 +121,20 @@ for (const language of ["es", "en"] as const) {
       await page.locator(".db-layout").nth(4).click();
       await page.locator(".db-cal-grid").waitFor();
       issues.push(...(await audit(page, "database calendar")));
+      await page.locator(".db .protect-pill").click();
+      await page.locator(".protect-menu").waitFor();
+      issues.push(...(await audit(page, "protection menu")));
+      await page.keyboard.press("Escape");
+      await page.locator(".sidebar").getByRole("button", { name: l.collections }).click();
+      await page.locator(".cols-table").waitFor();
+      issues.push(...(await audit(page, "collections")));
+      await page.locator(".cols-table .protect-pill").nth(1).click();
+      await page.locator(".protect-menu").waitFor();
+      issues.push(...(await audit(page, "protection menu, locked")));
+      await page.keyboard.press("Escape");
+      await page.locator(".cols-name").first().click();
+      await page.locator(".col-protect").waitFor();
+      issues.push(...(await audit(page, "collection page")));
 
       await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
       await page.locator(".modal").waitFor();

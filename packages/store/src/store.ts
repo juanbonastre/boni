@@ -47,13 +47,20 @@ export interface Write {
 export type Writes = Record<string, Write>;
 export const BODY = "$body";
 
-export type AiLevel = "visible" | "opaque" | "hidden";
-export const AI_LEVELS: readonly AiLevel[] = ["visible", "opaque", "hidden"];
-
 /**
- * The vault's zones, moved into Boni with their rule (vault AGENTS.md): no model ever sees a type in one.
- * `restricted` will open to one conversation when Juan asks; `private` never opens.
+ * How much of a collection the models may see (Juan's choice; docs/nucleo.md 7.3): `visible`; `opaque` (the
+ * planner knows it, code computes with it, no model reads its values); `restricted` (closed to them as if it did
+ * not exist; one conversation may open it when Juan says so); `private` (closed, and locked: only an explicit
+ * unlock lowers it, so it is not undone by a slip).
  */
+export type AiLevel = "visible" | "opaque" | "restricted" | "private";
+export const AI_LEVELS: readonly AiLevel[] = ["visible", "opaque", "restricted", "private"];
+const LEVEL_RANK: Record<AiLevel, number> = { visible: 0, opaque: 1, restricted: 2, private: 3 };
+/** Whether no model may see a collection at this level. */
+export const closedToAi = (level: AiLevel | undefined) =>
+  level === "restricted" || level === "private";
+
+/** The vault's zones, where a collection came from; each starts at the level of the same name. */
 export type Zone = "restricted" | "private";
 const ZONE_RANK: Record<Zone, number> = { restricted: 1, private: 2 };
 
@@ -88,7 +95,7 @@ export interface StoredEntity {
 }
 
 export class StoreError extends Error {
-  code: "invalid" | "not-found" | "conflict" | "undo";
+  code: "invalid" | "not-found" | "conflict" | "undo" | "locked";
   constructor(code: StoreError["code"], message: string) {
     super(message);
     this.code = code;
@@ -145,11 +152,11 @@ export interface UserStore {
    * (a personal device, `setAiAccess`); no tool of the agent can.
    */
   aiAccess(): Record<TypeId, AiLevel>;
-  /** Refused for a type in a zone (its level is always `hidden`). */
-  setAiAccess(type: TypeId, level: AiLevel, by: string): void;
-  /** The types in a vault zone; a zoned type is `hidden` in `aiAccess` whatever was chosen before. */
+  /** Lowering a `private` type needs `unlock` (StoreError "locked" otherwise). */
+  setAiAccess(type: TypeId, level: AiLevel, by: string, opts?: { unlock?: boolean }): void;
+  /** The types that came from a vault zone. */
   zones(): Record<TypeId, Zone>;
-  /** Puts a type in a zone: only the import Juan runs does it, and a zone is never lowered or removed. */
+  /** Marks a type as from a zone (only the import Juan runs) and raises its level to the zone's, never lowers it. */
   setZone(type: TypeId, zone: Zone, by: string): void;
   /** Keeps an attachment (by content: the same bytes are kept once) and gives its sha256. */
   putFile(data: Uint8Array, mime: string): string;
@@ -709,7 +716,6 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       const out: Record<TypeId, AiLevel> = {};
       for (const r of db.prepare("SELECT type, level FROM ai_access").all())
         out[r.type as string] = r.level as AiLevel;
-      for (const r of db.prepare("SELECT type FROM zones").all()) out[r.type as string] = "hidden";
       return out;
     },
     zones() {
@@ -724,11 +730,19 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       const was = db.prepare("SELECT zone FROM zones WHERE type = ?").get(type) as
         | { zone: Zone }
         | undefined;
-      if (was && ZONE_RANK[was.zone] >= ZONE_RANK[zone]) return;
-      db.prepare(
-        "INSERT INTO zones (type, zone, at, by) VALUES (?, ?, ?, ?) " +
-          "ON CONFLICT (type) DO UPDATE SET zone = excluded.zone, at = excluded.at, by = excluded.by",
-      ).run(type, zone, now(), by);
+      if (!was || ZONE_RANK[was.zone] < ZONE_RANK[zone])
+        db.prepare(
+          "INSERT INTO zones (type, zone, at, by) VALUES (?, ?, ?, ?) " +
+            "ON CONFLICT (type) DO UPDATE SET zone = excluded.zone, at = excluded.at, by = excluded.by",
+        ).run(type, zone, now(), by);
+      const level = db.prepare("SELECT level FROM ai_access WHERE type = ?").get(type) as
+        | { level: AiLevel }
+        | undefined;
+      if (LEVEL_RANK[level?.level ?? "visible"] < LEVEL_RANK[zone])
+        db.prepare(
+          "INSERT INTO ai_access (type, level, at, by) VALUES (?, ?, ?, ?) " +
+            "ON CONFLICT (type) DO UPDATE SET level = excluded.level, at = excluded.at, by = excluded.by",
+        ).run(type, zone, now(), by);
     },
     putFile(data, mime) {
       if (data.byteLength > MAX_FILE_BYTES) throw new StoreError("invalid", "file too large");
@@ -760,11 +774,14 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
             "ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated = excluded.updated",
         ).run(key, value, now());
     },
-    setAiAccess(type, level, by) {
+    setAiAccess(type, level, by, opts = {}) {
       if (!AI_LEVELS.includes(level)) throw new StoreError("invalid", `bad level ${level}`);
       if (!fresh().types[type]) throw new StoreError("not-found", `no type ${type}`);
-      if (db.prepare("SELECT 1 FROM zones WHERE type = ?").get(type))
-        throw new StoreError("invalid", `type ${type} is in a zone: no model may see it`);
+      const was = db.prepare("SELECT level FROM ai_access WHERE type = ?").get(type) as
+        | { level: AiLevel }
+        | undefined;
+      if (was?.level === "private" && level !== "private" && !opts.unlock)
+        throw new StoreError("locked", `type ${type} is private: only an unlock lowers it`);
       db.prepare(
         "INSERT INTO ai_access (type, level, at, by) VALUES (?, ?, ?, ?) " +
           "ON CONFLICT (type) DO UPDATE SET level = excluded.level, at = excluded.at, by = excluded.by",

@@ -4026,20 +4026,183 @@ button.find-row:hover {
   color: var(--text);
   background: var(--hover);
 }
-/* A vault zone moved into Boni, next to the collection's name. */
-.db-zone {
+/* What the AI sees of a collection: a quiet pill that opens its four levels (Protection.tsx). */
+.protect-pill {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  margin-left: 2px;
-  padding: 1px 6px;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
   border-radius: 4px;
   background: var(--hover);
   color: var(--text-2);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
+  cursor: pointer;
+}
+.protect-pill:hover {
+  color: var(--text);
+}
+.protect-pill.level-restricted,
+.protect-pill.level-private {
+  background: var(--accent-soft, var(--hover));
+  color: var(--text);
+}
+.protect-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+.protect-option.off {
+  opacity: 0.45;
+}
+.protect-help {
+  margin: -2px 10px 6px 34px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.protect-note {
+  margin: 6px 10px;
+}
+.unlock-box {
+  gap: 12px;
+}
+.unlock-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 16px;
+  font-size: 13px;
+}
+.unlock-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 4px 16px 16px;
+}
+/* Colecciones: every collection, a search and a filter by what the AI sees. */
+.cols-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 32px;
+  font-weight: 700;
+}
+.cols-help {
+  margin: 0 0 18px;
+  color: var(--muted);
+}
+.cols-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.cols-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 1 240px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--muted);
+}
+.cols-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.cols-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cols-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.cols-chip.on {
+  border-color: var(--text-2);
+  background: var(--hover);
+  color: var(--text);
+}
+.cols-chip-n {
+  color: var(--muted);
+}
+.cols-table {
+  width: 100%;
+}
+.cols-table th,
+.cols-table td {
+  height: 40px;
+  padding: 0 10px;
   vertical-align: middle;
+}
+.cols-table td.num,
+.cols-table th.num {
+  text-align: right;
+  width: 90px;
+}
+.cols-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.cols-name span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cols-name:hover span:last-child {
+  text-decoration: underline;
+}
+.cols-origin {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.cols-empty {
+  color: var(--muted);
+}
+.col-protect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+@container (max-width: 560px) {
+  .cols-origin {
+    display: none;
+  }
 }
 .db-table td.is-title:hover .db-open,
 .db-card-title:hover .db-open,

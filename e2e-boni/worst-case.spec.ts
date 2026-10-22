@@ -28,7 +28,7 @@ const VISIBILITY_WORST = {
       level: "opaque",
       count: 1284,
     },
-    { id: "t_c", name: "Diario", level: "hidden", count: 0 },
+    { id: "t_c", name: "Diario", level: "private", count: 0 },
     ...VISIBILITY.types,
   ],
 };

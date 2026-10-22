@@ -6,7 +6,6 @@ import {
   Columns3,
   LayoutGrid,
   List,
-  Lock,
   Maximize2,
   Paperclip,
   Plus,
@@ -26,6 +25,7 @@ import {
   useStore,
 } from "../store.ts";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
+import { ProtectionMenu } from "./Protection.tsx";
 
 /**
  * A collection of the user's as a Notion database (plan PR 19): its name, the layouts (table, board, list,
@@ -67,10 +67,13 @@ export function DatabaseBlock({
   source,
   view,
   onView,
+  named = true,
 }: {
   source: string;
   view: DatabaseView;
   onView: (v: DatabaseView) => void;
+  /** Its name and protection in its head (not on the collection's own page, whose title has them). */
+  named?: boolean;
 }) {
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
@@ -100,11 +103,15 @@ export function DatabaseBlock({
   return (
     <section className="db" aria-label={type?.name ?? t("db.title")}>
       <header className="db-head">
-        <h3 className="db-name">
-          {type?.icon && <span className="db-icon">{type.icon}</span>}
-          {type?.name ?? "…"}
-          {type?.zone && <ZoneMark zone={type.zone} />}
-        </h3>
+        {named ? (
+          <h3 className="db-name">
+            {type?.icon && <span className="db-icon">{type.icon}</span>}
+            {type?.name ?? "…"}
+            {type && <ProtectionMenu type={type} />}
+          </h3>
+        ) : (
+          <span className="db-name" />
+        )}
         <div className="db-layouts" role="radiogroup" aria-label={t("db.layout")}>
           {LAYOUTS.map((l) => (
             <button
@@ -655,17 +662,6 @@ function OpenButton({ type, row }: { type: DataType; row: DataRow }) {
       <Maximize2 size={12} strokeWidth={2} />
       {t("db.open")}
     </button>
-  );
-}
-
-/** A vault zone moved into Boni: a lock, and why, where the collection's name is. */
-export function ZoneMark({ zone }: { zone: "restricted" | "private" }) {
-  const t = useStore((s) => s.t);
-  return (
-    <span className="db-zone" title={t(`db.zone.${zone}.help`)}>
-      <Lock size={12} strokeWidth={2} aria-hidden />
-      {t(`db.zone.${zone}`)}
-    </span>
   );
 }
 

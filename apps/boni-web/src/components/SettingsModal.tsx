@@ -536,16 +536,14 @@ function AiVisibility() {
             <div className="setting" key={v.id}>
               <div className="setting-label">
                 <span>{v.name}</span>
-                <span className="muted small">
-                  {v.zone ? t(`db.zone.${v.zone}`) : t("ai.count", { n: v.count })}
-                </span>
+                <span className="muted small">{t("ai.count", { n: v.count })}</span>
               </div>
               <div className="setting-control">
                 <select
                   className="input auto-width"
                   aria-label={v.name}
-                  disabled={!!v.zone}
-                  title={v.zone ? t(`db.zone.${v.zone}.help`) : undefined}
+                  disabled={v.level === "private"}
+                  title={v.level === "private" ? t("protect.lockedHere") : undefined}
                   value={v.level}
                   onChange={(e) => void choose(v.id, e.target.value as AiLevel)}
                 >
@@ -662,7 +660,7 @@ function MailSettings() {
           </div>
           {(() => {
             const offered = (types ?? []).filter(
-              (v) => v.level !== "hidden" && v.id !== mail.state.type,
+              (v) => (v.level === "visible" || v.level === "opaque") && v.id !== mail.state.type,
             );
             const marked = offered.filter((v) => mail.collections.includes(v.id));
             return (

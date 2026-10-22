@@ -13,6 +13,7 @@ export {
   AI_LEVELS,
   type AiLevel,
   BODY,
+  closedToAi,
   entityLabel,
   type LogRow,
   MAX_FILE_BYTES,

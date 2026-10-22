@@ -110,7 +110,7 @@ describe("importing the vault", () => {
     expect(importVault(vault(files), s).hiddenFromModels).toEqual(["t_diario"]);
     expect(s.aiAccess()).toEqual({});
     importVault(vault(files), s, { apply: true });
-    expect(s.aiAccess()).toEqual({ t_diario: "hidden" });
+    expect(s.aiAccess()).toEqual({ t_diario: "restricted" });
     s.setAiAccess("t_diario", "visible", "portatil");
     importVault(vault(files), s, { apply: true });
     expect(s.aiAccess()).toEqual({ t_diario: "visible" });
@@ -257,8 +257,8 @@ describe("importing a zone (only Juan gives its folder)", () => {
     expect(r.skipped).toEqual({ "folder index (README.md)": 1 });
     expect(r.secrets).toHaveLength(1); // left out, as everywhere
     expect(s.zones()).toEqual({ t_private_documentos: "private", t_private_root: "private" });
-    expect(s.aiAccess()).toEqual({ t_private_documentos: "hidden", t_private_root: "hidden" });
-    expect(() => s.setAiAccess("t_private_root", "visible", "portatil")).toThrow();
+    expect(s.aiAccess()).toEqual({ t_private_documentos: "private", t_private_root: "private" });
+    expect(() => s.setAiAccess("t_private_root", "visible", "portatil")).toThrow(); // locked
 
     const docs = s.list("t_private_documentos");
     const pdf = docs.find((e) => e.entity.values[FILE_FIELD]);
