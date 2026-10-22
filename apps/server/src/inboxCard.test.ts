@@ -6,6 +6,7 @@ import { openUserStore, type UserStore } from "@boni/store";
 import { importVault } from "@boni/vault-import";
 import { afterEach, describe, expect, it } from "vitest";
 import { saveCalendarDefs } from "./calendarStore.ts";
+import { ghostRows, listRows } from "./data.ts";
 import { inboxCard } from "./inboxCard.ts";
 
 /** An invented calendar (never real notes) and mail, as the inbox meets them. */
@@ -165,5 +166,24 @@ describe("the inbox's card for a proposal", () => {
       familiar: 2,
       mode: "compact",
     });
+  });
+
+  it("a pending proposal is a ghost row of its collection, never an entity; decided, it is gone", () => {
+    const store = env();
+    proposalFromMail(store, "p1", "r1", "coordinacion@example.edu");
+    expect(ghostRows(store, "t_docencia")).toEqual([
+      {
+        id: "ghost:p1",
+        proposal: "p1",
+        values: { f_title: "Revisar actas de FUP 1", f_date: "2026-10-29" },
+        updated: 2,
+      },
+    ]);
+    const listed = listRows(store, "t_docencia");
+    expect(listed.ghosts).toHaveLength(1);
+    expect(listed.rows.some((r) => r.id.startsWith("ghost:"))).toBe(false);
+    expect(store.list("t_docencia")).toHaveLength(2); // the two classes, not the proposal
+    store.journal.setProposal("p1", "rejected", 5);
+    expect(ghostRows(store, "t_docencia")).toEqual([]);
   });
 });

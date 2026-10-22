@@ -517,6 +517,8 @@ export interface DataRow {
   /** The row's text (a note's body), when it was opened as a page. */
   body?: string;
   type?: string;
+  /** A pending proposal drawn as a row (its id): never an entity, nothing counts it until accepted. */
+  ghost?: string;
 }
 
 function parseDataType(v: unknown): DataType | null {
@@ -833,7 +835,16 @@ export class AgentApi {
         ? b.rows.map(parseRow).filter((x): x is DataRow => !!x)
         : [];
     const titles = isObj(b) && isObj(b.titles) ? (b.titles as Record<string, string>) : {};
-    return { rows, titles };
+    const ghosts =
+      isObj(b) && Array.isArray(b.ghosts)
+        ? b.ghosts.flatMap((g): DataRow[] => {
+            const r = parseRow(g);
+            return r && isObj(g) && typeof g.proposal === "string"
+              ? [{ ...r, ghost: g.proposal }]
+              : [];
+          })
+        : [];
+    return { rows, titles, ghosts };
   };
   createRow = async (type: string, values: Record<string, DataValue>) =>
     parseRow(
