@@ -222,6 +222,11 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  within a second. `src/fromNote.ts`: "Apuntar gasto" with the movements in core mode creates the
                  entity (the mirror writes the note), never a proposal. `e2e/server-boni.spec.ts` runs the migration
                  with the same commands as the NAS.
+                 `src/mcp.ts`: Boni's MCP (`POST /api/mcp`, tailnet, a personal device's session that `cli.ts token
+                 <name> <device>` makes without a password): what vault-mcp did, over the account's collections
+                 (guide = the AGENTS.md note, collections, search, query with Notion's filters, read by id or vault
+                 path, create, edit, append, set_properties, recent_changes, trash, undo by run). Reads through the
+                 agent's view (`readStore`: levels and rules); writes only to what is visible, labelled `model`.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
                  account (`users/<id>.db` next to system.db) and one `@boni/agent` each; the device's trust level is
                  the turn's origin. On only with `ANTHROPIC_API_KEY`; otherwise 503 `agent-off`.

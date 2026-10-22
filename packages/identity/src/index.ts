@@ -6,6 +6,7 @@ export {
   defaultTrust,
   devicesOf,
   hashPassword,
+  issueSession,
   type Listener,
   listAccounts,
   login,

@@ -5,7 +5,13 @@ import { createInterface } from "node:readline/promises";
 import { ensureSystemTypes } from "@boni/agent";
 import { frontmatterData, parseCollectionDef } from "@boni/calendar";
 import { exportZip, importExport, readZip } from "@boni/export";
-import { devicesOf, importAccounts, revokeDevice, wrappedKeysIn } from "@boni/identity";
+import {
+  devicesOf,
+  importAccounts,
+  issueSession,
+  revokeDevice,
+  wrappedKeysIn,
+} from "@boni/identity";
 import { Mirror, type MirrorFs, openMirrorState, type Profile } from "@boni/mirror";
 import { openUserStore, restoreBackup, type UserStore, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
@@ -37,6 +43,7 @@ import { V1Store } from "./v1/store.ts";
  *       --trust-labels keeps the file's provenance labels (only for an export of one's own that never left).
  *   node src/cli.ts restore <name> <backups/user-<id>-<day>.db.sealed> <out.db>
  *       opens one of the account's encrypted copies (store or mirror state) into a plain file; never over a file.
+ *   node src/cli.ts token <name> <device>          a session for an assistant's tools (Boni's MCP), shown once
  *   node src/cli.ts mirror <name> --calendar [--apply | --stop]
  *       the account's calendar from Boni (once every calendar's collection is in core mode): copies the
  *       definitions of _system/colecciones/ into the store; --stop serves it from the vault again.
@@ -169,6 +176,16 @@ try {
     } finally {
       store.close();
     }
+  } else if (cmd === "token") {
+    // A session for an assistant's tools (Boni's MCP), made by the admin: shown once, kept only as a hash.
+    const [name, device] = args;
+    if (!name || !device)
+      throw new Error("Usage: token <name> <device> (e.g. token juan claude-code)");
+    const r = issueSession(db, name, device, { listener: "tailnet" });
+    if (!r) throw new Error(`No account ${name}`);
+    console.log(`A session for ${name} on the device "${r.device.name}" (${r.device.trust}).`);
+    console.log("Its token (shown only now; revoke it with: revoke <name> <device>):");
+    console.log(r.token);
   } else if (cmd === "mirror") {
     const profile = option(args, "--profile");
     const folder = option(profile.rest, "--folder");
@@ -241,7 +258,7 @@ try {
     }
   } else {
     console.log(
-      "Commands: add-user <name> <vault folder> | users | devices <name> | revoke <name> [device] | import-boni <boni.sqlite3> <name> [--apply] | mirror <name> [<type> ...] | export <name> <file.zip> | import-export <file.zip> <name>",
+      "Commands: add-user <name> <vault folder> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | mirror <name> [<type> ...] | export <name> <file.zip> | import-export <file.zip> <name>",
     );
   }
 } catch (e) {
