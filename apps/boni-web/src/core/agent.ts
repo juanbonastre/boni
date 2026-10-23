@@ -203,6 +203,75 @@ export interface RunSummary {
   status: string;
   started: number;
   finished: number | null;
+  /** What it was (the server's `runInfo`; missing from an older server). Outside text, shown only as text. */
+  what?: RunWhat;
+  proposals?: { pending: number; accepted: number; rejected: number; stale: number };
+  /** The first few things it changed, and how many in all. */
+  changes?: RunChange[];
+  changed?: number;
+}
+export type RunWhat =
+  | { kind: "request"; text: string }
+  | { kind: "mail"; subject: string; from: string; account: string | null }
+  | { kind: "measure"; subject: string }
+  | { kind: "review" }
+  | { kind: "note"; path: string; action: "update" | "create" | "delete" }
+  | { kind: "accepted" }
+  | { kind: "other" };
+export interface RunChange {
+  action: "create" | "update" | "delete" | "restore";
+  title: string;
+  collection: string;
+  undone: boolean;
+}
+const count = (v: unknown): number =>
+  typeof v === "number" && Number.isInteger(v) && v >= 0 ? Math.min(v, 1_000_000) : 0;
+function runWhat(v: unknown): RunWhat | undefined {
+  if (!isObj(v)) return undefined;
+  const s = (x: unknown, max = 300) => (typeof x === "string" ? x.slice(0, max) : "");
+  switch (v.kind) {
+    case "request":
+      return { kind: "request", text: s(v.text) };
+    case "mail":
+      return {
+        kind: "mail",
+        subject: s(v.subject),
+        from: s(v.from),
+        account: typeof v.account === "string" ? v.account.slice(0, 200) : null,
+      };
+    case "measure":
+      return { kind: "measure", subject: s(v.subject) };
+    case "note":
+      return {
+        kind: "note",
+        path: s(v.path, 500),
+        action: v.action === "create" || v.action === "delete" ? v.action : "update",
+      };
+    case "review":
+    case "accepted":
+      return { kind: v.kind };
+    default:
+      return { kind: "other" };
+  }
+}
+const ACTIONS = ["create", "update", "delete", "restore"] as const;
+function runChanges(v: unknown): RunChange[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return v
+    .filter(isObj)
+    .slice(0, 20)
+    .flatMap((c) => {
+      const action = ACTIONS.find((a) => a === c.action);
+      if (!action) return [];
+      return [
+        {
+          action,
+          title: typeof c.title === "string" ? c.title.slice(0, 200) : "",
+          collection: typeof c.collection === "string" ? c.collection.slice(0, 200) : "",
+          undone: c.undone === true,
+        },
+      ];
+    });
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -780,6 +849,19 @@ export class AgentApi {
           status: str(r.status, 80) ?? "",
           started: typeof r.started === "number" ? r.started : 0,
           finished: typeof r.finished === "number" ? r.finished : null,
+          ...(isObj(r.what) ? { what: runWhat(r.what) } : {}),
+          ...(isObj(r.proposals)
+            ? {
+                proposals: {
+                  pending: count(r.proposals.pending),
+                  accepted: count(r.proposals.accepted),
+                  rejected: count(r.proposals.rejected),
+                  stale: count(r.proposals.stale),
+                },
+              }
+            : {}),
+          ...(Array.isArray(r.changes) ? { changes: runChanges(r.changes) } : {}),
+          ...(r.changed !== undefined ? { changed: count(r.changed) } : {}),
         },
       ];
     });

@@ -10,7 +10,7 @@ import {
   MAIL_SUGGESTED,
   PROPOSALS,
   RUN_2,
-  RUNS,
+  RUNS_EXPLAINED,
   TEXT_REPLY,
   VISIBILITY,
 } from "./agent-scenarios.ts";
@@ -236,7 +236,7 @@ test.describe("on a phone", () => {
 const AGENT = {
   "POST api/agent/turn": [TEXT_REPLY, ASK_TURN, confirmTurn("c1")],
   "GET api/agent/proposals": [{ proposals: [...PROPOSALS.proposals, CARD_DETAILED, CARD_COMPACT] }],
-  "GET api/agent/runs": [RUNS],
+  "GET api/agent/runs": [RUNS_EXPLAINED],
   "GET api/agent/runs/:id": [RUN_2],
 };
 const C = {

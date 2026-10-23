@@ -14,6 +14,7 @@ import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
+import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
 
 /**
  * The conversation API (docs/nucleo.md, 7; plan PR 11), on the tailnet entry only. Each account has
@@ -28,7 +29,8 @@ import { bodyOf, CORS, SAFE, send } from "./reply.ts";
  *   GET  /api/agent/proposals                -> { proposals } pending, with the view painted by the code
  *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection? } } Juan's corrections, kept
  *   POST /api/agent/proposals/:id/reject
- *   GET  /api/agent/runs                     -> { runs } the latest, for the log
+ *   GET  /api/agent/runs                     -> { runs } the latest, for the log, each with what it was and
+ *                                               what came of it (runInfo.ts)
  *   GET  /api/agent/runs/:id                 -> RunDetail: the request and each step (a personal device only)
  *   POST /api/agent/runs/:id/undo            -> { undone } every operation of that run
  *   GET  /api/agent/events                   -> Server-Sent Events: "notify" ({ text }) and "proposals"
@@ -237,20 +239,30 @@ async function answerAgent(
     case "POST /api/agent/proposals/:id/reject":
       agent.rejectProposal(params.id ?? "");
       return send(res, 200, {});
-    case "GET /api/agent/runs":
+    case "GET /api/agent/runs": {
+      const store = host.store(who.account);
+      const proposals = proposalsByRun(store);
+      const mailAccount = host.mailAccountOf?.(who.account) ?? null;
       return send(res, 200, {
-        runs: host
-          .store(who.account)
-          .journal.runs(50)
-          .map((r) => ({
+        runs: store.journal.runs(50).map((r) => {
+          let info: RunInfo | null = null;
+          try {
+            info = runInfo(store, r, { proposals, mailAccount });
+          } catch {
+            // a run the code cannot describe still shows with its origin and status
+          }
+          return {
             id: r.id,
             origin: r.origin,
             device: r.device,
             status: r.status,
             started: r.started,
             finished: r.finished,
-          })),
+            ...(info ?? {}),
+          };
+        }),
       });
+    }
     case "GET /api/agent/runs/:id": {
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const d = agent.runDetail(params.id ?? "");
