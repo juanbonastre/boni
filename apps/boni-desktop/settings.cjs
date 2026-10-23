@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const B = require("./backup.cjs");
 
 const VERSION = 2;
 
@@ -42,6 +43,13 @@ const DEFAULTS = {
   widgets: {},
   hiddenWidgets: [],
   autostartOffered: false,
+  // The daily copy of everything on this computer (backup.cjs): off until Juan turns it on in "Tus datos".
+  backupOn: false,
+  backupDir: B.DEFAULT_DIR,
+  backupLast: 0,
+  backupBytes: 0,
+  backupError: "",
+  backupFailedAt: 0,
 };
 
 function cleanPlacement(p) {
@@ -89,6 +97,12 @@ function loadSettings(file) {
       ? s.hiddenWidgets.filter((h) => typeof h === "string")
       : [],
     autostartOffered: Boolean(s.autostartOffered),
+    backupOn: s.backupOn === true,
+    backupDir: B.cleanDir(s.backupDir) ?? B.DEFAULT_DIR,
+    backupLast: Number.isFinite(s.backupLast) ? s.backupLast : 0,
+    backupBytes: Number.isFinite(s.backupBytes) ? s.backupBytes : 0,
+    backupError: typeof s.backupError === "string" ? s.backupError.slice(0, 40) : "",
+    backupFailedAt: Number.isFinite(s.backupFailedAt) ? s.backupFailedAt : 0,
     // Kept as they were (the first client's widget mode); unused here.
     ...(typeof raw.widgetMode === "string" ? { widgetMode: raw.widgetMode } : {}),
   };
@@ -132,6 +146,15 @@ function clientView(settings, extra) {
     language: settings.language,
     showWidgets: settings.showWidgets,
     hiddenWidgets: settings.hiddenWidgets,
+    backup: {
+      on: settings.backupOn,
+      dir: settings.backupDir,
+      keep: B.KEEP,
+      last: settings.backupLast || null,
+      bytes: settings.backupBytes,
+      error: settings.backupError || null,
+      running: Boolean(extra?.backupRunning),
+    },
     ...extra,
   };
 }
@@ -152,6 +175,11 @@ function applyPatch(settings, patch) {
   if (h && typeof h.id === "string" && typeof h.hidden === "boolean") {
     const others = settings.hiddenWidgets.filter((id) => id !== h.id);
     next.hiddenWidgets = h.hidden ? [...others, h.id] : others;
+  }
+  if (typeof patch.backupOn === "boolean") next.backupOn = patch.backupOn;
+  if (typeof patch.backupDir === "string") {
+    const d = B.cleanDir(patch.backupDir);
+    if (d) next.backupDir = d;
   }
   if (patch.resetWidgets === true) {
     next.widgets = {};

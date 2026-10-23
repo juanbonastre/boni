@@ -1,5 +1,13 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -10,6 +18,7 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { readZip } from "../packages/export/src/zip.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const SHOTS = join(ROOT, "e2e-boni", "screenshots");
@@ -306,6 +315,33 @@ function openLink(link: string) {
     },
   );
 }
+
+test("the daily copy on this computer: its folder first, then on; a whole zip lands there", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  const real = "/SamsungSSD/Copias/Boni";
+  const before = existsSync(real) ? readdirSync(real).length : -1;
+  await w.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  await w.locator(".settings-nav").getByRole("tab", { name: "Tus datos" }).click();
+  await expect(w.locator(".backup-status")).toHaveText("Todavía no hay ninguna");
+  // The folder first (never the default one on Juan's disk in a test), then on.
+  const copies = join(dir, "copias", "Boni");
+  await w.getByRole("button", { name: /^Carpeta/ }).click();
+  await w.locator("#backup-dir").fill(copies);
+  await w.locator("#backup-dir").press("Enter");
+  await expect(w.getByRole("button", { name: /^Carpeta/ })).toContainText(copies);
+  await w.getByRole("checkbox", { name: "Copia diaria en este equipo" }).check();
+  await expect(w.locator(".backup-status")).not.toHaveText(/Haciendo|Todavía/, { timeout: 30_000 });
+  await shot(w, "backup");
+  const zips = readdirSync(copies).filter((f) => /^boni-\d{4}-\d{2}-\d{2}\.zip$/.test(f));
+  expect(zips).toHaveLength(1);
+  expect(readdirSync(copies).some((f) => f.endsWith(".partial"))).toBe(false);
+  const files = readZip(readFileSync(join(copies, zips[0] as string)));
+  expect(files.has("schema.json")).toBe(true);
+  expect([...files.keys()].some((k) => k.startsWith("files/"))).toBe(true); // the attachments too
+  await expect(w.locator(".backup-status")).toContainText("MB");
+  expect(existsSync(real) ? readdirSync(real).length : -1).toBe(before);
+  await w.keyboard.press("Escape");
+});
 
 test("a boni:// link opens the note's row in the running app", async () => {
   const w = await (app as ElectronApplication).firstWindow();

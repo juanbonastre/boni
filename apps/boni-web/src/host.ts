@@ -37,6 +37,19 @@ export interface ClientSettings {
   autostart: boolean;
   /** Desktop only: whether widgets can be kept below the windows (X11 with wmctrl). */
   layerAvailable: boolean;
+  /**
+   * Desktop only: the daily copy of everything into a folder of this computer (boni-desktop's backup.cjs).
+   * `last` is when the last good copy was made, `error` why the last try failed (a code).
+   */
+  backup?: {
+    on: boolean;
+    dir: string;
+    keep: number;
+    last: number | null;
+    bytes: number;
+    error: string | null;
+    running: boolean;
+  };
 }
 
 export interface SettingsPatch {
@@ -48,6 +61,10 @@ export interface SettingsPatch {
   widgetHidden?: { id: string; hidden: boolean };
   /** Forget where the widgets were moved and show the hidden ones again. */
   resetWidgets?: boolean;
+  /** Desktop only: the daily copy on or off, its folder, or one copy now. */
+  backupOn?: boolean;
+  backupDir?: string;
+  backupNow?: boolean;
 }
 
 export interface LoginForm {

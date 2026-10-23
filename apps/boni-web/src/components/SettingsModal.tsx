@@ -50,7 +50,7 @@ export function SettingsModal() {
   const sections: Section[] = [
     "account",
     ...(linked ? (["ai", "extensions", "mail"] as const) : []),
-    ...(linked && host.saveExport ? (["data"] as const) : []),
+    ...(linked && (host.saveExport || settings.backup) ? (["data"] as const) : []),
     "appearance",
     ...(host.desktop ? (["desktop"] as const) : []),
   ];
@@ -111,7 +111,12 @@ export function SettingsModal() {
             {section === "ai" && <AiVisibility />}
             {section === "extensions" && <Extensions />}
             {section === "mail" && <MailSettings />}
-            {section === "data" && <ExportData />}
+            {section === "data" && (
+              <>
+                {host.saveExport && <ExportData />}
+                {settings.backup && <BackupSettings />}
+              </>
+            )}
             {section === "appearance" && <Appearance />}
             {section === "desktop" && <DesktopSettings />}
           </div>
@@ -498,6 +503,99 @@ function ExportData() {
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+/**
+ * The daily copy on this computer (Juan, 2026-10-23: a copy that does not depend on the NAS): on or off first, then
+ * how the last one went and "Hacer copia ahora", then the folder (rarely changed). The desktop app does the work.
+ */
+function BackupSettings() {
+  const t = useStore((s) => s.t);
+  const b = useStore((s) => s.settings.backup);
+  const lang = useStore((s) => s.settings.language);
+  const [dir, setDir] = useState(b?.dir ?? "");
+  useEffect(() => setDir(b?.dir ?? ""), [b?.dir]);
+  if (!b) return null;
+  const when = (ms: number) =>
+    new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(ms);
+  const size = (n: number) =>
+    n >= 1024 ** 3
+      ? `${(n / 1024 ** 3).toFixed(1)} GB`
+      : `${Math.max(1, Math.round(n / 1024 ** 2))} MB`;
+  const status = b.running
+    ? t("backup.running")
+    : b.error
+      ? t(`backup.error.${b.error}`)
+      : b.last
+        ? t("backup.last", { when: when(b.last), size: size(b.bytes) })
+        : t("backup.none");
+  const commitDir = () => {
+    if (dir.trim() && dir.trim() !== b.dir) void saveSettings({ backupDir: dir.trim() });
+  };
+  return (
+    <>
+      <div className="setting">
+        <div className="setting-label">
+          <span>{t("backup.on")}</span>
+          <span className="muted small">{t("backup.help", { keep: b.keep })}</span>
+        </div>
+        <div className="setting-control">
+          <input
+            type="checkbox"
+            className="switch"
+            aria-label={t("backup.on")}
+            checked={b.on}
+            onChange={(e) => void saveSettings({ backupOn: e.target.checked })}
+          />
+        </div>
+      </div>
+      <div className="setting">
+        <div className="setting-label">
+          <span>{t("backup.state")}</span>
+          <span
+            className={`small backup-status${b.error && !b.running ? " bad" : " muted"}`}
+            role="status"
+          >
+            {status}
+          </span>
+        </div>
+        <div className="setting-control">
+          <button
+            type="button"
+            className="btn"
+            disabled={b.running}
+            onClick={() => void saveSettings({ backupNow: true })}
+          >
+            {t("backup.now")}
+          </button>
+        </div>
+      </div>
+      <Disclosure title={t("backup.dir")} summary={b.dir}>
+        <div className="setting">
+          <div className="setting-label">
+            <label htmlFor="backup-dir">{t("backup.dir")}</label>
+            <span className="muted small">{t("backup.dirHelp")}</span>
+          </div>
+          <div className="setting-control">
+            <input
+              id="backup-dir"
+              className="input"
+              value={dir}
+              spellCheck={false}
+              onChange={(e) => setDir(e.target.value)}
+              onBlur={commitDir}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitDir();
+              }}
+            />
+          </div>
+        </div>
+      </Disclosure>
     </>
   );
 }

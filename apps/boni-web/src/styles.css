@@ -4933,3 +4933,8 @@ button.ghost-open:hover {
 .log-measure {
   margin: 0 0 10px;
 }
+
+/* The daily copy's state: in --bad when the last try failed. */
+.backup-status.bad {
+  color: var(--bad);
+}
