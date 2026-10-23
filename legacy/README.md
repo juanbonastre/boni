@@ -17,5 +17,5 @@ Aquí nada se compila, se analiza ni se prueba (queda fuera de Biome, del espaci
 Docker). Cuando una pieza ya está portada al núcleo, se borra de aquí en el mismo PR.
 
 Portado (y borrado de aquí): `apps/web` → `apps/boni-web`, `e2e` → `e2e-boni`, `api` → `apps/boni-web/api` (2026-10-20,
-con su historial). Quedan como referencia el servidor Python y los envoltorios de escritorio y Android, que aún apuntan a
-`apps/web`.
+con su historial); el envoltorio de escritorio → `apps/boni-desktop` (2026-10-22) y el de Android → `apps/boni-android`
+(2026-10-23). Queda como referencia el servidor Python (retirado del NAS el 2026-10-23).

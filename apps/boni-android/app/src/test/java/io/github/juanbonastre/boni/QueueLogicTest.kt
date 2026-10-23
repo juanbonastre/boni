@@ -6,7 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** The same cases as the page's queue tests (apps/web/src/core/logic.test.ts, "offline queue"). */
+/** The same cases as the page's queue tests (apps/boni-web/src/core/logic.test.ts, "offline queue"). */
 class QueueLogicTest {
     private fun item(id: String, holdUntil: Long? = null, error: String? = null) = JSONObject()
         .put("request", JSONObject().put("action", "expenses.capture").put("client_id", id)

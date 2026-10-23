@@ -4,7 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The offline queue's rules, the same as the page's (`apps/web/src/core/queue.ts`), over the same file
+ * The offline queue's rules, the same as the page's (`apps/boni-web/src/core/queue.ts`), over the same file
  * (`queue.json`: `[{ request, error?, hold_until? }]`). Pure, so it is unit-tested; the worker does the I/O.
  */
 object QueueLogic {

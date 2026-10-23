@@ -8,6 +8,9 @@ plugins {
 // Release signing comes from CI secrets (see .github/workflows/android.yml); other builds use the debug key.
 val keystoreFile: String? = System.getenv("KEYSTORE_FILE")
 val runNumber: Int = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+// Built from this repo since 2026-10-23 (boni-android.yml): the first Boni's repo published up to versionCode 17
+// (0.1.17), so the code starts above it and a phone that has that one takes this one as an update.
+val versionBase = 100
 
 android {
     namespace = "io.github.juanbonastre.boni"
@@ -17,8 +20,8 @@ android {
         applicationId = "io.github.juanbonastre.boni"
         minSdk = 29
         targetSdk = 35
-        versionCode = runNumber
-        versionName = "0.1.$runNumber"
+        versionCode = versionBase + runNumber
+        versionName = "0.2.$runNumber"
     }
 
     signingConfigs {

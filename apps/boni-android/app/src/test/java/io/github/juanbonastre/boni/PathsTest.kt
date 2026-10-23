@@ -24,6 +24,16 @@ class PathsTest {
         assertFalse(Paths.apiRequest("PATCH", "api/v1/charts"))
         assertFalse(Paths.apiRequest("GET", "api/v1/../healthz"))
         assertFalse(Paths.apiRequest("GET", "admin"))
+        // What the page uses besides v1 (as the desktop app's paths.cjs): the agent, pages, data and mail.
+        assertTrue(Paths.apiRequest("GET", "api/agent/proposals"))
+        assertTrue(Paths.apiRequest("POST", "api/agent/proposals/0b6f1c2e-5d4a/accept"))
+        assertTrue(Paths.apiRequest("GET", "api/pages"))
+        assertTrue(Paths.apiRequest("GET", "api/data/types/t_docencia/rows"))
+        assertTrue(Paths.apiRequest("GET", "api/mail"))
+        assertFalse(Paths.apiRequest("GET", "api/agent/../../healthz"))
+        assertFalse(Paths.apiRequest("GET", "api/export"))
+        assertFalse(Paths.apiRequest("POST", "api/apply"))
+        assertFalse(Paths.apiRequest("GET", "api/mcp"))
     }
 
     @Test

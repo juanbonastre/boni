@@ -17,6 +17,11 @@ apps/calendar-android/.gradle/
 apps/calendar-android/**/build/
 apps/calendar-android/local.properties
 apps/calendar-android/app/src/main/assets/web/
+# Boni's Android app (apps/boni-android): the same
+apps/boni-android/.gradle/
+apps/boni-android/**/build/
+apps/boni-android/local.properties
+apps/boni-android/app/src/main/assets/web/
 e2e-boni/screenshots/
 # The web UI the desktop apps copy in at package time
 apps/boni-desktop/web/
