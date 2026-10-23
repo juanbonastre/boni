@@ -276,13 +276,22 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
 apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`legacy/boni/apps/web`, with its history):
                  charts, shortcuts and "Apuntar gasto" over the API v1 (`src/core/api.ts`, `contract.ts`), the same
                  page in a browser, in its desktop shell and in its Android WebView (`src/host.ts`). `api/` is the v1
-                 contract (`examples/` are real server answers the tests parse). Its Android shell is still in
-                 `legacy/boni/apps/android` (it builds from this folder when ported); the desktop one is apps/boni-desktop. The agent's conversation
+                 contract (`examples/` are real server answers the tests parse). Its Android shell is apps/boni-android
+                 and its desktop one apps/boni-desktop. The agent's conversation
                  (`components/Chat.tsx`, `core/agent.ts` over `/api/agent/*`): every answer painted by this code from
                  labelled values, text only as text (never HTML, Markdown or links; outside text marked),
                  confirmations with the real values, their origin and warnings, the accept button changing side;
                  the inbox one proposal at a time, the log with Undo. The server serves the built app at `/boni/` on
                  the tailnet entry (`BONI_BONI_WEB`).
+apps/boni-android/ Boni's Android app (moved from `legacy/boni/apps/android` on 2026-10-23), the same shape as
+                 apps/calendar-android: apps/boni-web's build in a WebView from the APK's assets
+                 (`https://appassets.androidplatform.net`), `window.boniAndroid` (`AndroidBridge.kt`; web side
+                 `src/android.ts`): requests made natively with the token kept by the Keystore (`TokenVault.kt`), only on
+                 the paths `Net.kt` `Paths.apiRequest` allows (the same as boni-desktop's paths.cjs; keep both equal), the
+                 offline queue sent by WorkManager when the network comes back (`QueueWorker.kt`, rules in `QueueLogic.kt`
+                 = `src/core/queue.ts`), home-screen chart widgets and pinned shortcuts. CI `boni-android.yml` (no
+                 `make`): Kotlin tests and a signed APK with the same key as Boni Calendar; releases `boni-android-v0.2.N`
+                 titled "Boni Android …" for Obtainium; versionCode = 100 + run number (the first Boni's repo reached 17).
 apps/boni-desktop/ Boni's desktop app (Electron, package `boni`, `.deb` via `make package-boni`; moved from
                  `legacy/boni/apps/desktop` on 2026-10-22): it bundles apps/boni-web's build (`scripts/copy-web.mjs`),
                  keeps the token in the main process and calls the server for the page (`window.boniDesktop`), only

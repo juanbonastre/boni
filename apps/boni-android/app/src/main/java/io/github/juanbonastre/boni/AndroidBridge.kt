@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
- * What the page asks of the phone, as `window.boniAndroid` (the web side is `apps/web/src/android.ts`), with Boni
+ * What the page asks of the phone, as `window.boniAndroid` (the web side is `apps/boni-web/src/android.ts`), with Boni
  * Calendar's protocol: `call(id, method, args)` runs on a small pool of threads, then the page is told
  * (`__boniReply(id)`) and fetches the answer with `take(id)`. Every answer is `{ ok: true, value }` or
  * `{ ok: false, code, message }`.

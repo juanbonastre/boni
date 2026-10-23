@@ -1,0 +1,78 @@
+name: boni-android
+
+# Boni's Android app: Boni's web app (apps/boni-web) built into the APK's assets, in a WebView shell
+# (apps/boni-android), as Boni Calendar's (android.yml). Same signing key as Boni Calendar (Juan's decision,
+# 2026-10-18), so it installs over the first Boni's 0.1.x app (versionCode starts at 101).
+on:
+  pull_request:
+    paths: ["apps/boni-android/**", "apps/boni-web/**", ".github/workflows/boni-android.yml"]
+  push:
+    branches: [main]
+    paths: ["apps/boni-android/**", "apps/boni-web/**", ".github/workflows/boni-android.yml"]
+  workflow_dispatch:
+
+# Signed releases (for Obtainium) use the same four repository secrets as android.yml: KEYSTORE_BASE64,
+# KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD. Without them the APK is debug-signed and only kept as an artifact.
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Boni's web app into the APK's assets
+        run: |
+          pnpm --filter @boni/boni-web build
+          rm -rf apps/boni-android/app/src/main/assets/web
+          mkdir -p apps/boni-android/app/src/main/assets
+          cp -r apps/boni-web/dist apps/boni-android/app/src/main/assets/web
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "SIGNED=true" >> "$GITHUB_ENV"
+          else
+            echo "No KEYSTORE_BASE64 secret: debug-signed APK as an artifact only, no release."
+          fi
+      - name: Unit tests
+        working-directory: apps/boni-android
+        run: gradle :app:testReleaseUnitTest --no-daemon --stacktrace
+      - name: Build APK
+        working-directory: apps/boni-android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
+      - name: Name APK
+        run: cp apps/boni-android/app/build/outputs/apk/release/app-release.apk "boni-android-0.2.${{ github.run_number }}.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: boni-android-apk
+          path: boni-android-*.apk
+      # A signed build of main becomes a GitHub release that Obtainium installs (filter: titles starting with
+      # "Boni Android"; tags boni-android-v…). Boni Calendar's are "Boni Calendar Android" / calendar-android-v….
+      - name: Release
+        if: env.SIGNED == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: boni-android-v0.2.${{ github.run_number }}
+          name: Boni Android 0.2.${{ github.run_number }}
+          files: boni-android-*.apk

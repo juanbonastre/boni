@@ -6,9 +6,12 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 
-/** Pure rules about addresses and paths (unit-tested): the same as the desktop shell's (settings.cjs, main.cjs). */
+/** Pure rules about addresses and paths (unit-tested): the same as the desktop shell's (paths.cjs, settings.cjs). */
 object Paths {
-    private val API_PATH = Regex("^api/v1/[A-Za-z0-9_\\-./%]*(\\?[A-Za-z0-9_\\-.=&%+]*)?$")
+    // v1 (charts, capture), the agent's conversation and inbox, the pages, the collections as databases and the
+    // mailbox: what the page uses (apps/boni-desktop/paths.cjs). Nothing else on the server.
+    private val API_PATH =
+        Regex("^api/(v1|agent|pages|pages-trash|data|mail)(/[A-Za-z0-9_\\-./%]*)?(\\?[A-Za-z0-9_\\-.=&%+]*)?$")
     private val STORE_NAME = Regex("^[A-Za-z0-9._-]+\\.json$")
     val METHODS = setOf("GET", "POST", "PUT", "DELETE")
 
@@ -26,7 +29,7 @@ object Paths {
         }
     }
 
-    /** A request the page may make: one of the API's methods on a path under api/v1, never outside it. */
+    /** A request the page may make: one of the API's methods on one of those paths, never outside them. */
     fun apiRequest(method: String, path: String): Boolean =
         method in METHODS && API_PATH.matches(path) && !path.contains("..")
 
