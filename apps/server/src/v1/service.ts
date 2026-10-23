@@ -22,6 +22,7 @@ import { CATALOG, Invalid, PALETTE, type V1ChartSpec } from "./contract.ts";
 import { Finanzas } from "./finanzas.ts";
 import { asciiText, baseName, render } from "./note.ts";
 import type { Shortcut, V1Store, Widget } from "./store.ts";
+import type { MoneySource } from "./storeMoney.ts";
 
 /**
  * The Boni API v1's logic between HTTP and the vault, ported from the first Boni's service.py: screens,
@@ -91,6 +92,11 @@ export interface V1Options {
    * and says true; Boni's mirror then writes the note at `path` (never a proposal, it is Juan's own capture).
    */
   intoBoni?: (account: number, path: string, text: string, device: string) => boolean;
+  /**
+   * The account's money from Boni itself when its movements live there (core mode): charts, lists and captures
+   * read it instead of the vault's notes (Juan, 2026-10-23: no more vault). Null: the vault, as before.
+   */
+  moneyOf?: (account: number) => MoneySource | null;
 }
 
 export class V1Service {
@@ -102,12 +108,14 @@ export class V1Service {
   private listeners = new Map<number, Set<(what: Change) => void>>();
   private prints = new Map<number, string>();
   private intoBoni: V1Options["intoBoni"];
+  private moneyOf: V1Options["moneyOf"];
 
   constructor(o: V1Options) {
     this.store = o.store;
     this.tz = o.tz;
     this.writable = o.writable;
     this.intoBoni = o.intoBoni;
+    this.moneyOf = o.moneyOf;
     this.nowMs = o.now ?? Date.now;
   }
 
@@ -124,7 +132,9 @@ export class V1Service {
     return `${wall}${sign}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`;
   }
 
-  private fin(c: Caller): Finanzas {
+  private fin(c: Caller): MoneySource {
+    const own = this.moneyOf?.(c.account);
+    if (own) return own;
     if (!c.vault) throw new Unavailable("this account has no vault on this server");
     let f = this.fins.get(c.vault);
     if (!f) {
@@ -134,8 +144,7 @@ export class V1Service {
     return f;
   }
   /** The vault's lists, or Unavailable when it cannot be read. */
-  private read<T>(c: Caller, f: (fin: Finanzas) => T): T {
-    if (!c.vault) throw new Unavailable("this account has no vault on this server");
+  private read<T>(c: Caller, f: (fin: MoneySource) => T): T {
     try {
       return f(this.fin(c));
     } catch (e) {
@@ -158,7 +167,7 @@ export class V1Service {
     for (const [account, set] of this.listeners) {
       if (!set.size) continue;
       const vault = vaultOf(account);
-      if (!vault) continue;
+      if (!vault && !this.moneyOf?.(account)) continue;
       let print: string;
       try {
         print = this.fin({ account, device: "", vault }).fingerprint();
