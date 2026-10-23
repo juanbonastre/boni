@@ -637,6 +637,20 @@ export class Mirror {
   }
 
   /** The status of the proposal a hand edit became, or null when there is none (or it went stale). */
+  /**
+   * A newer hand edit of a note replaces the ones still waiting for it: each is the note against the mirror's
+   * last text, so the newest holds them all (Juan, 2026-10-23: accepting an older one made the newer "stale").
+   */
+  private supersede(path: string): void {
+    for (const e of this.state.edits()) {
+      if (e.path !== path) continue;
+      const p = this.store.journal.proposal(e.proposal);
+      if (p?.status !== "pending" && p?.status !== "postponed") continue;
+      this.store.journal.setProposal(e.proposal, "stale", Date.now());
+      this.state.dropEdit(e.path, e.sha);
+    }
+  }
+
   private editStatus(path: string, hash: string): string | null {
     const e = this.state.edit(path, hash);
     if (!e) return null;
@@ -690,6 +704,7 @@ export class Mirror {
             report.restored++;
           } else if (status === null) {
             const l = this.noteLabel(t, row.path, GONE);
+            this.supersede(row.path);
             const id = this.o.propose({
               tool: "entities.delete",
               args: { id: leaf(row.entity, l) },
@@ -742,6 +757,7 @@ export class Mirror {
           continue;
         }
         const l = this.noteLabel(t, row.path, h);
+        this.supersede(row.path);
         const id = this.o.propose({
           tool: "entities.update",
           args: { id: leaf(row.entity, l), values: this.valuesVal(p, l) },

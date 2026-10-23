@@ -4486,6 +4486,53 @@ button.find-row:hover {
   flex: none;
   margin-left: auto;
 }
+/* Deciding a proposal (Juan, 2026-10-23): the clicked button keeps its size and turns into a spinner. */
+.decide-btn {
+  position: relative;
+}
+.decide-btn.busy .decide-label {
+  visibility: hidden;
+}
+.decide-btn .spinner {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: decide-spin 0.7s linear infinite;
+}
+@keyframes decide-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .decide-btn .spinner {
+    animation-duration: 2s;
+  }
+}
+.decide-error {
+  flex-basis: 100%;
+  order: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--bad, var(--muted));
+  min-width: 0;
+}
+.decide-error span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.inbox-actions {
+  flex-wrap: wrap;
+}
 .inbox-correct {
   display: flex;
   flex-direction: column;

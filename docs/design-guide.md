@@ -343,7 +343,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   2026-10-23): the ✎ button beside ⤢ (on its page, beside the title) opens a small boxed form under the card's
   content, Título (a text field) and Colección (a select of his collections), with "Boni lo toma como un error suyo
   y aprende de él." and "Deshacer cambios"; Aceptar then sends the changes and the toast says Boni will learn from
-  them. **Ghost rows**: a pending proposal to create an entry also shows in its collection: in
+  them. **Deciding** (Juan, 2026-10-23): the clicked Aceptar / Rechazar keeps its size and turns into a spinner
+  (both off meanwhile) while the server answers; decisions queue in order, so the next card can be decided at
+  once; a decided card simply leaves (no toast for each); a failed one says why under its buttons in `--bad`
+  ("Ya no vale…" for a stale one, "Ya estaba decidida.") with "Quitar", and stays until taken out. **Ghost rows**: a pending proposal to create an entry also shows in its collection: in
   the table, first, read only, in muted text with a solid "Propuesta" tag and ✓ / ✕ beside its title (no dashed
   border on rows: Juan, 2026-10-23, dashed only in calendars); in the calendar layout, a dashed item; a click on its title (table) or on it (calendar) opens the proposal's page. They are proposals, not entities: nothing counts them; a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
   Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it, and a collection by its name alone ("Docencia"; names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation

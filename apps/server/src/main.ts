@@ -118,7 +118,7 @@ const mirrors = new Mirrors({
   write: process.env.BONI_WRITE === "1",
   accounts: () => listUsers(db),
 });
-agent.onChanged = (account) => void mirrors.run(account);
+agent.onChanged = (account) => mirrors.soon(account);
 mirrors.start();
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
 const mails = new Mails({ db, key, host: agent });

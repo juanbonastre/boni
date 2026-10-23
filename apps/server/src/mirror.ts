@@ -34,6 +34,7 @@ export class Mirrors {
   private busy = new Map<number, Promise<void>>();
   private again = new Set<number>();
   private timer: ReturnType<typeof setInterval> | null = null;
+  private waiting = new Map<number, ReturnType<typeof setTimeout>>();
 
   constructor(o: MirrorsOptions) {
     this.o = o;
@@ -59,6 +60,22 @@ export class Mirrors {
     return mirror;
   }
 
+  /**
+   * A round shortly after a change, one for a burst of them (Juan, 2026-10-23: accepting proposals one after
+   * another ran a whole round after each, and the next acceptance waited behind it).
+   */
+  soon(account: number, ms = 1500): void {
+    const t = this.waiting.get(account);
+    if (t) clearTimeout(t);
+    this.waiting.set(
+      account,
+      setTimeout(() => {
+        this.waiting.delete(account);
+        void this.run(account);
+      }, ms),
+    );
+  }
+
   /** Writes what changed and reads the hand edits, once at a time per account (a request meanwhile runs it again). */
   run(account: number): Promise<void> {
     const vault = this.o.accounts().find((a) => a.id === account)?.vault ?? "";
@@ -73,10 +90,14 @@ export class Mirrors {
         const m = this.mirror(account, vault);
         if (!m) return;
         try {
+          const t0 = Date.now();
           await m.sync();
           const scan = await m.scan();
           await m.sync();
           if (scan.proposed) this.o.host.emit(account, "proposals", { n: scan.proposed });
+          // A slow round is what makes requests wait: it says so in the log (boni-status).
+          const ms = Date.now() - t0;
+          if (ms > 2000) console.warn(`mirror ${account}: round took ${ms} ms`);
         } catch (e) {
           console.error(`mirror ${account}: ${(e as Error).message}`);
         }
@@ -95,6 +116,8 @@ export class Mirrors {
 
   async close(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
+    for (const t of this.waiting.values()) clearTimeout(t);
+    this.waiting.clear();
     await Promise.all(this.busy.values());
     for (const o of this.open.values()) o.state.close();
     this.open.clear();

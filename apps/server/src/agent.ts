@@ -11,7 +11,7 @@ import {
 import { openUserStore, type UserStore } from "@boni/store";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
-import { type InboxCard, inboxCard } from "./inboxCard.ts";
+import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 
@@ -201,30 +201,29 @@ async function answerAgent(
           : agent.decline(run, c),
       );
     }
-    case "GET /api/agent/proposals":
+    case "GET /api/agent/proposals": {
+      const store = host.store(who.account);
+      const ctx = inboxContext(store);
+      const mailAccount = host.mailAccountOf?.(who.account) ?? null;
       return send(res, 200, {
-        proposals: host
-          .store(who.account)
-          .journal.proposals("pending")
-          .map((p) => {
-            let card: InboxCard | null = null;
-            try {
-              card = inboxCard(host.store(who.account), p, {
-                mailAccount: host.mailAccountOf?.(who.account) ?? null,
-              });
-            } catch {
-              // a proposal the card cannot read still shows with its rows
-            }
-            return {
-              id: p.id,
-              tool: p.tool,
-              view: p.view,
-              sources: p.sources,
-              created: p.created,
-              card,
-            };
-          }),
+        proposals: store.journal.proposals("pending").map((p) => {
+          let card: InboxCard | null = null;
+          try {
+            card = inboxCard(store, p, { mailAccount }, ctx);
+          } catch {
+            // a proposal the card cannot read still shows with its rows
+          }
+          return {
+            id: p.id,
+            tool: p.tool,
+            view: p.view,
+            sources: p.sources,
+            created: p.created,
+            card,
+          };
+        }),
       });
+    }
     case "POST /api/agent/proposals/:id/accept": {
       // Juan's corrections first (a new title, another collection), as the agent's edits.
       const b = ((await bodyOf(req)) ?? {}) as {
