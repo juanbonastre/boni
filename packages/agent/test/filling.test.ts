@@ -83,10 +83,33 @@ describe("filling a proposal's fields (filling.ts)", () => {
     for (const [a, b] of pairs)
       expect(
         fromAnswers(
-          { f0: a, f0r: b, f1: { type: "noul", noul: 0.5 }, note: { type: "noul", noul: 0.1 } },
+          { f0: a, f0r: b, f1: { type: "noul", noul: 0.49 }, note: { type: "noul", noul: 0.1 } },
           FIELDS,
         ),
       ).toEqual({ values: { prioridad: null, hecho: null }, wantsNote: false });
+    // The thresholds measured on invented mail (eval/fill.ts): 0.5 for a choice (both orders) and a checkbox.
+    expect(
+      fromAnswers(
+        {
+          f0: choice("Alta", 0.5),
+          f0r: choice("Alta", 0.7),
+          f1: { type: "noul", noul: 0.5 },
+          note: { type: "noul", noul: 0.5 },
+        },
+        FIELDS,
+      ),
+    ).toEqual({ values: { prioridad: "o_alta", hecho: true }, wantsNote: true });
+    expect(
+      fromAnswers(
+        {
+          f0: choice("Alta", 0.49),
+          f0r: choice("Alta", 0.9),
+          f1: { type: "noul", noul: 0.49 },
+          note: { type: "noul", noul: 0.49 },
+        },
+        FIELDS,
+      ),
+    ).toEqual({ values: { prioridad: null, hecho: null }, wantsNote: false });
     // An answer outside the options is refused by the code before anything else.
     expect(checkAnswers({ f0: choice("Urgente", 1) }, { f0: q.f0 as never })).toBeNull();
   });
