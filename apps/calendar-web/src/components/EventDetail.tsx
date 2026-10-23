@@ -6,6 +6,7 @@ import {
   formatMinute,
   fromLocal,
   gmtLabel,
+  isProposalId,
   monthNames,
   occurrenceId,
   type PropertyDef,
@@ -184,6 +185,8 @@ function DetailBody({ ev }: { ev: CalEvent }) {
   const close = () => app.clearSelection();
   const tasks = app.supportsTasks(ev.calendarId);
   const locked = app.isLocked(ev.id);
+  // A proposal of Boni's inbox (plan b2): shown as it would be, decided in Boni.
+  const proposal = isProposalId(ev.id);
   const update = (patch: Partial<CalEvent>) => app.editEvents([ev.id], patch);
   const setProp = (id: string, v: PropValue) => update({ props: { ...ev.props, [id]: v } });
   const h24 = app.settings.h24;
@@ -196,7 +199,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
       onDoubleClick={(e) => e.stopPropagation()}
     >
       <div className="detail-head">
-        <span className="detail-kind">{t("event.page")}</span>
+        <span className="detail-kind">{t(proposal ? "event.proposal" : "event.page")}</span>
         <span className="spacer" />
         {app.noteOfEvent(ev.id) && (
           <button
@@ -208,7 +211,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
             <ExternalLink size={15} />
           </button>
         )}
-        <div className="menu-anchor">
+        <div className="menu-anchor" hidden={proposal}>
           <button
             type="button"
             className="icon-btn"
@@ -254,6 +257,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
         </button>
       </div>
 
+      {proposal && <p className="detail-note">{t("event.proposalHelp")}</p>}
       {/* A read-only calendar (a subscription): everything shows, nothing can be changed. */}
       <fieldset className="detail-fields" disabled={locked}>
         <div className="detail-title">

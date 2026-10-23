@@ -3,6 +3,7 @@ import {
   civilFromDays,
   expandAll,
   formatMinute,
+  isProposalId,
   monthNames,
   type ReminderDefaults,
   todayIn,
@@ -51,9 +52,10 @@ export function noticesFor(
   const hours = opts.hours ?? NOTICE_HOURS;
   const today = todayIn(tz, now);
   const to = now + hours * 3_600_000;
-  // Days whose events can remind inside the window (reminders up to a few days before).
+  // Days whose events can remind inside the window (reminders up to a few days before). A proposal waiting in
+  // Boni's inbox never reminds: it is not an event until it is accepted.
   const expanded = expandAll(
-    events.filter((e) => e.title.trim() !== ""),
+    events.filter((e) => e.title.trim() !== "" && !isProposalId(e.id)),
     today - 1,
     today + Math.ceil(hours / 24) + 30,
   );

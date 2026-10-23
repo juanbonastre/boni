@@ -4,6 +4,7 @@ import {
   defsToModel,
   diffRows,
   extendSeries,
+  isProposalId,
   makeModel,
   noteFileName,
   type PropValue,
@@ -20,6 +21,7 @@ import {
 } from "@boni/calendar";
 import { type Entity, type FieldDef, type FieldType, label, type TypeDef } from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
+import { ghostRows } from "./data.ts";
 import type { ApplyResult, Changes, Snapshot } from "./vaults.ts";
 
 /**
@@ -121,6 +123,8 @@ export class StoreCalendar implements CalendarSource {
   private changedAt = new Map<string, { version: number; by: string | null }>();
   private log: { version: number; upserts: Row[]; removes: string[]; full: boolean }[] = [];
   private listeners = new Set<(c: Changes) => void>();
+  private ghostKey = "";
+  private ghostIds = new Set<string>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private daily: ReturnType<typeof setInterval> | null = null;
   private topUpTimer: ReturnType<typeof setTimeout> | null = null;
@@ -224,7 +228,9 @@ export class StoreCalendar implements CalendarSource {
     const defsKey = JSON.stringify(placed);
     const first = this.seenStore < 0;
     const full = !first && defsKey !== this.defsKey;
-    if (!first && !full && storeVersion === this.seenStore) return;
+    const ghostKey = this.store.journal.pendingKey();
+    const ghostsChanged = ghostKey !== this.ghostKey;
+    if (!first && !full && storeVersion === this.seenStore && !ghostsChanged) return;
     this.placed = placed;
     let upserts: Row[] = [];
     let removes: string[] = [];
@@ -280,6 +286,26 @@ export class StoreCalendar implements CalendarSource {
     }
     this.seenStore = storeVersion;
     this.defsKey = defsKey;
+    if (first || full || ghostsChanged) {
+      // The pending proposals drawn as rows (only when they changed: the key is one cheap query a second).
+      const next = new Map<string, Row>();
+      for (const p of placed)
+        for (const g of ghostRows(this.store, p.type)) {
+          const e = { id: g.id, values: g.values, created: g.updated, updated: g.updated };
+          next.set(g.id, this.rowOf(e as unknown as Entity, p));
+        }
+      for (const id of this.ghostIds)
+        if (!next.has(id)) {
+          this.rows.delete(id);
+          if (!removes.includes(id)) removes.push(id);
+        }
+      for (const [id, row] of next) {
+        this.rows.set(id, row);
+        upserts.push(row);
+      }
+      this.ghostIds = new Set(next.keys());
+      this.ghostKey = ghostKey;
+    }
     const changed = first || full || upserts.length > 0 || removes.length > 0;
     if (!changed) return;
     // Versions start from the clock, as the vault's: a device that had an earlier run's version takes a new
@@ -482,6 +508,8 @@ export class StoreCalendar implements CalendarSource {
     const aliases: Record<string, string> = {};
     const touched: string[] = [];
     for (const c of changes) {
+      // A proposal (`ghost:<id>`) is decided in Boni, never written from a device.
+      if (isProposalId(idOf(c))) continue;
       if (c.op === "remove") {
         const eid = this.entityOf.get(c.id);
         if (eid) this.store.remove(eid, meta);

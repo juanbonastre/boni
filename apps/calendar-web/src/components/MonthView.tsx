@@ -2,6 +2,7 @@ import {
   type CivilDay,
   civilFromDays,
   formatMinute,
+  isProposalId,
   layoutSpans,
   monthNames,
   startOfMonth,
@@ -317,7 +318,7 @@ const WeekRow = memo(function WeekRow(p: {
                   type="button"
                   key={`${seg.eventId}:${day}`}
                   data-id={ev.id}
-                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.id === p.newId && !ev.title ? "draft" : ""} ${ev.done ? "done" : ""}`}
+                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.id === p.newId && !ev.title ? "draft" : ""} ${ev.done ? "done" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
                   style={{ "--c": p.calMap.get(ev.calendarId)?.color ?? "#888" } as CSSProperties}
                 >
                   <span className="mchip-time">{formatMinute(seg.start, p.h24)}</span>
@@ -350,7 +351,7 @@ const WeekRow = memo(function WeekRow(p: {
             type="button"
             key={b.id}
             data-id={b.id}
-            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.id === p.newId && !ev.title ? "draft" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""}`}
+            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.id === p.newId && !ev.title ? "draft" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
             style={
               {
                 "--c": p.calMap.get(ev.calendarId)?.color ?? "#888",

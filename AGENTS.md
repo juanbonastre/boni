@@ -163,7 +163,10 @@ apps/calendar-desktop/  Electron shell (chosen over Tauri after measuring, see d
                  origin) a small window loads `<address>/boni/?peek=1` (Boni's page, its own session in the
                  `persist:boni-peek` partition, only that origin; `peek-preload.cjs` gives it `window.boniEmbed`:
                  ready, hide, open in Boni, the notes) and a click in the calendar hides it at once. Without an
-                 address, Boni's own peek (`&peek=1`, hidden by `boni://peek?hide=1`).
+                 address, Boni's own peek (`&peek=1`, hidden by `boni://peek?hide=1`). A proposal of Boni's inbox
+                 (a `ghost:<id>` row, `isProposalId` in core) is drawn dashed and read only (`isLocked`, never a row
+                 change, never a notice); one click calls `boniVault.openProposal`: the peek gets `peek:proposal`
+                 (`boniEmbed.onProposal`), or Boni opens `boni://proposal?id=<id>&peek=1`.
                  `make e2e-calendar-desktop` drives it for real (not in CI).
 legacy/obsidian/ The Obsidian plugin and its tests in the installed Obsidian, out of the build since Juan dropped
                  Obsidian (2026-10-22; to come back with the version for more people, see legacy/README.md).
@@ -241,7 +244,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  (`calendar/defs`; only when every calendar's type is in core mode; `--calendar --stop` goes back to the
                  vault). Same API as `vaults.ts` (`CalendarSource`): rows keep the note path as id, values by property
                  name, a write changes only what differs, with the device's label; Boni's own edits reach the devices
-                 within a second. `src/fromNote.ts`: "Apuntar gasto" with the movements in core mode creates the
+                 within a second. Pending proposals to create an entry of a calendar's collection are rows too
+                 (`ghost:<proposal id>`, read only: `apply` skips them; redrawn when `journal.pendingKey()` changes).
+                 `src/fromNote.ts`: "Apuntar gasto" with the movements in core mode creates the
                  entity (the mirror writes the note), never a proposal. `e2e/server-boni.spec.ts` runs the migration
                  with the same commands as the NAS.
                  `src/mcp.ts`: Boni's MCP (`POST /api/mcp`, tailnet, a personal device's session that `cli.ts token

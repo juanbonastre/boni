@@ -14,7 +14,8 @@ import {
 /**
  * The note peek as a window of Boni Calendar (Juan, 2026-10-22): with Boni's address in Settings → Desktop, a
  * double click on an event shows its note in the calendar's own small window (Boni's page from Boni's server,
- * logged in once), and a click in the calendar puts it away at once. Invented account and vault.
+ * logged in once), and a click in the calendar puts it away at once. A proposal of Boni's inbox drawn in the
+ * calendar opens there too, to accept or reject (plan b2). Invented account and vault.
  */
 const ROOT = join(import.meta.dirname, "..");
 const SHOTS = join(ROOT, "e2e", "screenshots");
@@ -75,6 +76,11 @@ test.beforeAll(async () => {
     ],
     { cwd: ROOT, env },
   );
+  // The collection in Boni (as on the NAS): a note written by hand in its folder becomes a proposal.
+  execFileSync("node", ["apps/server/src/cli.ts", "mirror", "ejemplo", "t_docencia", "--apply"], {
+    cwd: ROOT,
+    env,
+  });
   server = spawn("node", ["apps/server/src/main.ts"], {
     cwd: ROOT,
     env: {
@@ -82,7 +88,8 @@ test.beforeAll(async () => {
       BONI_PORT: String(PORT),
       BONI_WRITE: "1",
       BONI_BONI_WEB: join(ROOT, "apps", "boni-web", "dist"),
-      ANTHROPIC_API_KEY: "",
+      // The mirror works with the agent on (its inbox); no model is called here.
+      ANTHROPIC_API_KEY: "sk-invented-for-tests",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -129,7 +136,10 @@ const peekVisible = () =>
   );
 /** The shell's preload bridges, as the calendar's page calls them (a type only: it is erased in the page). */
 type Bridges = {
-  boniVault: { openNote(path: string, opts?: { peek?: boolean }): Promise<unknown> };
+  boniVault: {
+    openNote(path: string, opts?: { peek?: boolean }): Promise<unknown>;
+    openProposal(id: string): Promise<unknown>;
+  };
   boniDesktop: { setPrefs(patch: Record<string, unknown>): Promise<unknown> };
 };
 const doubleClick = () =>
@@ -188,4 +198,47 @@ test("a double click: the note in the calendar's own window, logged in once; a c
   // Esc puts it away too.
   await peek.keyboard.press("Escape");
   await expect.poll(peekVisible).toBe(false);
+});
+
+test("a proposal drawn in the calendar: one click shows its page in the peek; accepted, the peek goes", async () => {
+  writeFileSync(
+    join(dir, "vault", "agenda/docencia/2026-10-28 Revisión inventada.md"),
+    '---\ntitle: "Revisión inventada"\ndate: "2026-10-28"\nstartTime: "12:00"\n---\n',
+  );
+  const login = await fetch(`${BONI}/api/login`, {
+    method: "POST",
+    body: JSON.stringify({ user: "ejemplo", password: PASSWORD, device: "pruebas" }),
+  });
+  const h = { authorization: `Bearer ${((await login.json()) as { token: string }).token}` };
+  let id = "";
+  await expect
+    .poll(
+      async () => {
+        const r = (await (await fetch(`${BONI}/api/agent/proposals`, { headers: h })).json()) as {
+          proposals?: { id: string }[];
+        };
+        id = r.proposals?.find((p) => JSON.stringify(p).includes("Revisión inventada"))?.id ?? "";
+        return id;
+      },
+      { timeout: 45_000 },
+    )
+    .not.toBe("");
+  // What a click on its dashed event does in Boni Calendar.
+  await main.evaluate((pid) => (window as unknown as Bridges).boniVault.openProposal(pid), id);
+  const peek = await peekPage();
+  await expect.poll(peekVisible).toBe(true);
+  await expect(peek.locator(".peek-head")).toContainText("Propuesta");
+  await expect(peek.locator(".pp-title")).toHaveText("Revisión inventada");
+  await peek.screenshot({ path: join(SHOTS, "calendar-peek-proposal.png") });
+  await peek.getByRole("button", { name: "Aceptar" }).click();
+  await expect.poll(peekVisible, { timeout: 15_000 }).toBe(false);
+  const rows = (await (
+    await fetch(`${BONI}/api/data/types/t_docencia/rows`, { headers: h })
+  ).json()) as { rows: unknown[] };
+  expect(JSON.stringify(rows.rows)).toContain("Revisión inventada");
+  // A bad id never reaches the peek.
+  const bad = await main.evaluate(() =>
+    (window as unknown as Bridges).boniVault.openProposal("../x"),
+  );
+  expect(bad).toMatchObject({ ok: false });
 });

@@ -102,3 +102,13 @@ export interface CalendarData {
   projects: Project[];
   events: CalEvent[];
 }
+
+/**
+ * A pending proposal to create an event (Boni's inbox, plan b2): the server sends it as a row with this id prefix
+ * (`ghost:<proposal id>`). It is drawn dashed and read only, never reminds, and is decided in Boni, not here.
+ */
+export const PROPOSAL_PREFIX = "ghost:";
+export const isProposalId = (id: string): boolean => id.startsWith(PROPOSAL_PREFIX);
+/** The proposal's own id, or null for any other event. */
+export const proposalOf = (id: string): string | null =>
+  isProposalId(id) ? id.slice(PROPOSAL_PREFIX.length) : null;

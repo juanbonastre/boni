@@ -22,6 +22,7 @@ import {
   generateCollectionSample,
   hasReminders,
   inSeries,
+  isProposalId,
   type Locale,
   makeModel,
   makeProjector,
@@ -33,6 +34,7 @@ import {
   parseOccurrenceId,
   parseReminderDefaults,
   projectsOf,
+  proposalOf,
   type Recurrence,
   type Reminder,
   type ReminderDefaults,
@@ -309,6 +311,8 @@ export interface AppState {
   openNote: (id: string, opts?: { peek?: boolean }) => Promise<void>;
   /** A double click on an event: its note in Boni's peek (Juan, 2026-10-22); false when it has none. */
   peekEvent: (id: string) => boolean;
+  /** A proposal of Boni's inbox drawn in the calendar: its page in Boni's peek; false where the host cannot. */
+  openProposal: (id: string) => boolean;
   select: (id: string | null, popover?: boolean) => void;
   /** A click on an event: selects it (Shift, Ctrl+Shift: several), or with Ctrl alone opens its note. */
   clickSelect: (id: string, mods: { ctrl: boolean; shift: boolean }) => void;
@@ -568,9 +572,9 @@ export const useApp = create<AppState>((set, get) => {
       shown.has(id) ? !shown.get(id) : hidden.has(id),
     );
   };
-  /** Only the vault's or the sample's events: what rows are made of. */
+  /** Only the vault's or the sample's events: what rows are made of (never a proposal, decided in Boni). */
   const own = (events: readonly CalEvent[]): CalEvent[] =>
-    events.filter((e) => !isExternalEvent(e));
+    events.filter((e) => !isExternalEvent(e) && !isProposalId(e.id));
 
   /** Stores new rows (and tells the provider what changed). `history: false` for undo and redo. */
   const setRows = (rows: Row[], history = true) => {
@@ -1055,8 +1059,21 @@ export const useApp = create<AppState>((set, get) => {
       if (r && !r.ok) get().showToast("vault.openFailed");
     },
 
+    openProposal: (id) => {
+      const pid = proposalOf(id);
+      const open = vaultBridge()?.openProposal;
+      if (!pid || !open) return false;
+      clearTimeout(detailTimer);
+      get().select(id, false);
+      void open(pid).then((r) => {
+        if (!r.ok) get().showToast("vault.openFailed");
+      });
+      return true;
+    },
+
     peekEvent: (id) => {
       const s = get();
+      if (s.openProposal(id)) return true;
       if (vaultBridge()?.noteApp !== "boni" || !s.noteOfEvent(id)) return false;
       clearTimeout(detailTimer);
       // The first click of the two opened its detail: the peek shows the note instead.
@@ -1079,6 +1096,9 @@ export const useApp = create<AppState>((set, get) => {
 
     clickSelect: (id, mods) => {
       const s = get();
+      // A proposal of Boni's inbox opens in Boni's peek with one click (plan b2): there it is decided. Where the
+      // host cannot, its detail shows it, read only.
+      if (!mods.ctrl && !mods.shift && s.openProposal(id)) return;
       // Ctrl+click opens the event's note (in Boni's window); an event without one is just selected.
       if (mods.ctrl && !mods.shift && s.noteOfEvent(id)) return void s.openNote(id);
       const visible = new Set(s.data.calendars.filter((c) => c.visible).map((c) => c.id));
@@ -1179,6 +1199,8 @@ export const useApp = create<AppState>((set, get) => {
     getEvent: (id) => resolveOccurrence(get().data.events, id),
 
     isLocked: (id) => {
+      // A pending proposal is accepted or rejected in Boni, never edited here.
+      if (isProposalId(id)) return true;
       const ev = get().getEvent(id);
       return !!ev && get().data.calendars.find((c) => c.id === ev.calendarId)?.readOnly === true;
     },
@@ -1331,7 +1353,7 @@ export const useApp = create<AppState>((set, get) => {
       const copies: CalEvent[] = [];
       for (const id of ids) {
         const e = resolveOccurrence(s.data.events, id);
-        if (!e) continue;
+        if (!e || isProposalId(e.id)) continue;
         // A copy of an occurrence is a plain, single event.
         const { seriesId: _a, occurrenceDay: _b, exdates: _c, series: _d, ...rest } = e;
         copies.push({

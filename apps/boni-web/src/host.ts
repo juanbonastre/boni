@@ -161,7 +161,11 @@ export interface EmbedHost {
 declare global {
   interface Window {
     /** Given by Boni Calendar's peek window (its preload) to the page it loads from the server. */
-    boniEmbed?: EmbedHost & { onNote(cb: (path: string | null) => void): void };
+    boniEmbed?: EmbedHost & {
+      onNote(cb: (path: string | null) => void): void;
+      /** A proposal of the inbox to show (one drawn in Boni Calendar); older calendars do not send them. */
+      onProposal?(cb: (id: string) => void): void;
+    };
     boniAndroid?: AndroidNative;
     boniDesktop?: {
       request(method: string, path: string, body?: unknown): Promise<TransportAnswer>;
@@ -275,6 +279,9 @@ export function browserHost(): Host {
   const defaults = embed ? { ...DEFAULTS, serverUrl: location.origin } : DEFAULTS;
   embed?.onNote((path) => {
     for (const l of listeners) l({ type: "navigate", screen: path ? `note:${path}` : "blank" });
+  });
+  embed?.onProposal?.((id) => {
+    for (const l of listeners) l({ type: "navigate", screen: `proposal:${id}` });
   });
   const read = (): ClientSettings => {
     let saved: Partial<ClientSettings> = {};
