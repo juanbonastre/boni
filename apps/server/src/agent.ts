@@ -38,6 +38,8 @@ import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 export interface Providers {
   planner: ModelProvider;
   reader: ModelProvider;
+  /** The `decider` role (Jev): the mail's choices; optional (the reader decides without it). */
+  decider?: ModelProvider;
 }
 
 export interface AgentHostOptions {
@@ -93,6 +95,7 @@ export class AgentHost {
         registry: this.registry,
         planner: p.planner,
         reader: p.reader,
+        ...(p.decider ? { decider: p.decider } : {}),
         ...(this.o.tz ? { tz: this.o.tz } : {}),
         ...(this.o.now ? { now: this.o.now } : {}),
         // To this account's devices only: the recipient is the code's (7.9).

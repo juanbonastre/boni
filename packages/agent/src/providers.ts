@@ -9,7 +9,7 @@ export interface Usage {
   output: number;
 }
 export interface ModelRequest {
-  role: "planner" | "reader";
+  role: "planner" | "reader" | "decider";
   system: string;
   input: unknown;
   schema: object;

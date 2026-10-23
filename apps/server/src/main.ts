@@ -1,5 +1,5 @@
 import { dirname, join } from "node:path";
-import { AnthropicProvider, OpenAIProvider } from "@boni/agent";
+import { AnthropicProvider, JevProvider, OpenAIProvider } from "@boni/agent";
 import { AgentHost } from "./agent.ts";
 import { listUsers } from "./auth.ts";
 import { startBackups } from "./backups.ts";
@@ -37,7 +37,10 @@ import { Vaults } from "./vaults.ts";
  *   BONI_PLANNER_MODEL / BONI_READER_MODEL   default claude-opus-5-5 / claude-haiku-4-5
  *   OPENROUTER_API_KEY  without ANTHROPIC_API_KEY: the agent with OpenRouter's models (the defaults are then
  *                    anthropic/claude-haiku-5.5 / deepseek/deepseek-v4.1-flash); choosing them in the app
- *                    comes with plan PR 20
+ *                    comes with plan PR 20. With it, also the decider (Jev, through OpenRouter's decisions)
+ *   TYPESAFE_API_KEY  the decider (Jev) straight from TypeSafe: the mail's collection and its proposals' fields
+ *                    (docs/extensiones.md 9); without either key the reader decides
+ *   BONI_DECIDER_MODEL  default jev-1.14.0 (TypeSafe) / typesafe/jev-1.14 (OpenRouter); "off": no decider
  */
 const paths = databasePaths();
 const dbPath = paths.system;
@@ -62,6 +65,16 @@ const apiKey = process.env.ANTHROPIC_API_KEY ?? "";
 const routerKey = process.env.OPENROUTER_API_KEY ?? "";
 const router = (model: string) =>
   new OpenAIProvider({ apiKey: routerKey, model, baseURL: "https://openrouter.ai/api/v1" });
+const deciderModel = process.env.BONI_DECIDER_MODEL;
+const typesafeKey = process.env.TYPESAFE_API_KEY ?? "";
+const decider =
+  deciderModel === "off"
+    ? undefined
+    : typesafeKey
+      ? new JevProvider({ apiKey: typesafeKey, via: "typesafe", model: deciderModel })
+      : routerKey
+        ? new JevProvider({ apiKey: routerKey, via: "openrouter", model: deciderModel })
+        : undefined;
 const agent = new AgentHost({
   dataDir: dbPath === ":memory:" ? null : dirname(dbPath),
   providers: apiKey
@@ -76,11 +89,13 @@ const agent = new AgentHost({
           apiKey,
           model: process.env.BONI_READER_MODEL ?? "claude-haiku-4-5",
         }),
+        ...(decider ? { decider } : {}),
       }
     : routerKey
       ? {
           planner: router(process.env.BONI_PLANNER_MODEL ?? "anthropic/claude-haiku-5.5"),
           reader: router(process.env.BONI_READER_MODEL ?? "deepseek/deepseek-v4.1-flash"),
+          ...(decider ? { decider } : {}),
         }
       : null,
   tz,

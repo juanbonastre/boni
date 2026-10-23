@@ -119,7 +119,20 @@ export function confirmView(
         // A field with no value (a task without a due day) is simply not set: no row saying "null".
         if (plain(fv) === null) continue;
         const f = def?.fields.find((x) => x.key === key);
-        rows.push(row(`${name}.${key}`, role, fv, f && trusted(f.label) ? { name: f.name } : {}));
+        const extra: Partial<ConfirmRow> = f && trusted(f.label) ? { name: f.name } : {};
+        // An option by its name, an entry it points to by its title (Juan's own, else the id alone).
+        const raw = plain(fv);
+        if (f?.type === "select" && typeof raw === "string") {
+          const o = f.options?.find((x) => x.id === raw);
+          if (o && trusted(o.label)) extra.detail = o.name;
+        } else if (f?.type === "relation" && typeof raw === "string" && store) {
+          const s = store.get(raw);
+          const t = s ? types.find((x) => x.id === s.entity.type) : undefined;
+          const title = t && s ? s.entity.values[t.titleField] : undefined;
+          const tl = t && s ? s.labels[t.titleField] : undefined;
+          if (typeof title === "string" && tl && trusted(tl)) extra.detail = title;
+        }
+        rows.push(row(`${name}.${key}`, role, fv, extra));
       }
       continue;
     }

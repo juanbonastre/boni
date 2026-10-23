@@ -734,6 +734,155 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
     sdb.close();
     rmSync(d, { recursive: true, force: true });
   });
+
+  it("come with their other fields filled from Juan's own options, and a note (Jev when there is one)", async () => {
+    for (const withJev of [false, true]) {
+      const d = mkdtempSync(join(tmpdir(), "boni-mail-fill-"));
+      const sdb = openDb(join(d, "system.db"));
+      addUser(sdb, "juan", PASSWORD, "");
+      const decided: unknown[] = [];
+      const jev = new ScriptedProvider("jev", (req) => {
+        decided.push(req.input);
+        return {
+          f0: { choice: "Pendiente", confidence: 0.9 },
+          f0r: { choice: "Pendiente", confidence: 0.9 },
+          f1: { choice: "FUP 1", confidence: 0.8 },
+          f1r: { choice: "FUP 1", confidence: 0.85 },
+          f2: { noul: 0.9 },
+          note: { noul: 0.9 },
+        };
+      });
+      const reader = new ScriptedProvider("fake", (req) => {
+        if (/find what it asks of the user/.test(req.system))
+          return {
+            items: [
+              {
+                quote: "revisad las actas de FUP 1",
+                actor: "recipient",
+                kind: "task",
+                title: "Revisar las actas de FUP 1",
+                due: "2026-10-29",
+              },
+            ],
+          };
+        if (/Write "note"/.test(req.system))
+          return { note: "Las actas están en la carpeta del curso." };
+        return {
+          values: { f0: "Pendiente", f1: "FUP 1", f2: true },
+          note: "Las actas están en la carpeta del curso.",
+        };
+      });
+      const h = new AgentHost({
+        dataDir: d,
+        providers: { planner: reader, reader, ...(withJev ? { decider: jev } : {}) },
+      });
+      const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+      const store = h.store(1);
+      const type = (id: string, key: string, name: string, fields: FieldDef[]): TypeDef => ({
+        id,
+        key,
+        name,
+        fields: [
+          { id: `${id}_t`, key: "titulo", name: "Título", type: "text", label: own },
+          ...fields,
+        ],
+        titleField: `${id}_t`,
+        sensitivity: "personal",
+        schemaVersion: 1,
+        label: own,
+      });
+      store.applySchema(
+        { op: "create_type", type: type("t_proy", "proyectos", "Proyectos", []) },
+        { actor: "user" },
+      );
+      const fup = store.create(
+        "t_proy",
+        { t_proy_t: { value: "FUP 1", label: own } },
+        { actor: "user" },
+      );
+      store.create("t_proy", { t_proy_t: { value: "TFG", label: own } }, { actor: "user" });
+      store.applySchema(
+        {
+          op: "create_type",
+          type: type("t_docencia", "docencia", "Docencia", [
+            { id: "t_docencia_d", key: "date", name: "Fecha", type: "date", label: own },
+            {
+              id: "t_docencia_e",
+              key: "estado",
+              name: "Estado",
+              type: "select",
+              options: [
+                { id: "o_pend", name: "Pendiente", label: own },
+                { id: "o_hecha", name: "Hecha", label: own },
+              ],
+              label: own,
+            },
+            {
+              id: "t_docencia_p",
+              key: "proyecto",
+              name: "Proyecto",
+              type: "relation",
+              relation: { target: "t_proy", many: false },
+              label: own,
+            },
+            { id: "t_docencia_u", key: "urgente", name: "Urgente", type: "checkbox", label: own },
+          ]),
+        },
+        { actor: "user" },
+      );
+      const m = new Mails({
+        db: sdb,
+        key,
+        host: h,
+        now: () => NOW,
+        connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+      });
+      box.uidValidity = 21;
+      box.mails = new Map([
+        [1, mail(31, "Actas", "Hola, antes del jueves revisad las actas de FUP 1.")],
+      ]);
+      await m.save(1, {
+        host: "imap.example.com",
+        user: "juan@example.com",
+        password: APP_PASSWORD,
+      });
+      await m.save(1, { collections: ["t_docencia"] });
+      await m.check(1);
+      const [p] = store.journal.proposals("pending");
+      const rows = (p?.view as { rows: { arg: string; value: unknown }[] } | undefined)?.rows ?? [];
+      const v = (arg: string) => rows.find((r) => r.arg === arg)?.value;
+      expect(v("values.title")).toBe("Revisar las actas de FUP 1");
+      expect(v("values.estado")).toBe("o_pend");
+      expect(v("values.proyecto")).toBe(fup.entity.id);
+      expect(v("values.body")).toBe("Las actas están en la carpeta del curso.");
+      expect(String(v("values.urgente"))).toBe("true");
+      // Shown by their names: the option, and the project's title.
+      const shown = (arg: string) =>
+        (rows.find((r) => r.arg === arg) as { detail?: string })?.detail;
+      expect([shown("values.estado"), shown("values.proyecto")]).toEqual(["Pendiente", "FUP 1"]);
+      if (withJev) {
+        // Jev chose among Juan's options; the reader wrote only the note.
+        expect(JSON.stringify(decided[0])).toContain("TFG");
+        expect(
+          reader.requests.some((r) =>
+            /choose the option that the message clearly says/.test(r.system),
+          ),
+        ).toBe(false);
+      } else expect(decided).toEqual([]);
+      // Accepted, it is a row with them.
+      expect((await h.agent(1).acceptProposal(p?.id as string, "personal")).error).toBeNull();
+      const made = store.list("t_docencia")[0]?.entity;
+      expect(made?.values).toMatchObject({
+        t_docencia_e: "o_pend",
+        t_docencia_p: fup.entity.id,
+        t_docencia_u: true,
+      });
+      expect(made?.body).toBe("Las actas están en la carpeta del curso.");
+      h.close();
+      sdb.close();
+      rmSync(d, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the field a due day goes to", () => {
