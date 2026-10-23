@@ -60,7 +60,8 @@ packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accou
 packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed catalogue (`viewErrors` checks every
                  field it names, `viewRows` filters/sorts/limits) and the chart engine `computeChart`, ported function
                  by function from the first Boni's Python engine over a `Profile` (money movements: `moneyProfile`
-                 with the single definition of spending; any type: `entityProfile`, count/sum/avg). It must give
+                 with the single definition of spending, each category's `CategoryKind` from the account's
+                 Categorías or `kindByName`; any type: `entityProfile`, count/sum/avg). It must give
                  the Python numbers exactly (Python's round to even and CPython 3.12's compensated sum included):
                  `golden/cases.json` comes from the original engine (`golden/make_golden.py`); a change to the
                  engine changes them only on purpose.
@@ -265,9 +266,14 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  script imported are known), `reconcile.ts` import and close over a `Book`, `book.ts` that book over
                  the store (`t_movimiento`, `t_deuda`; new movements via `entityFromNote`, `imported` from their
                  statement), `service.ts` the reconciliation over a `MoneyVault`; `storeFiles.ts` gives it the
-                 statements and `reglas.csv` from Boni's "Archivos" (by the path each had) and the categories from
-                 the note `registros/finanzas/categorias.md` (Juan, 2026-10-23: no more vault; new statements via
-                 `upload_file`). Boni's MCP has `finanzas_import` / `finanzas_close` (dry run by default; an applied
+                 statements from Boni's "Archivos" (by the path each had; new ones via `upload_file`).
+                 `collections.ts`: the money's own collections (Juan, 2026-10-23: everything is a collection but
+                 attachments and notes): "Categorías" (name, `Tipo` gasto / ingreso / ni gasto ni ingreso, what goes
+                 in it) and "Reglas" (bank text, merchant, a relation to its category); a movement's `category` is
+                 a relation to Categorías (read and written by the row's name). `moneyCollections` (`cli.ts mirror
+                 <name> --money`, dry run by default) moves the categories note and `reglas.csv` in once, as one
+                 run; whether they are in use is that relation (`moneyCollectionsOn`), so undoing the run goes
+                 back to the note and the file. Boni's MCP has `finanzas_import` / `finanzas_close` (dry run by default; an applied
                  call is one run, undone whole); only with the movements in core mode and not kept from the models. `export/` CSVs are no longer written.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
                  account (`users/<id>.db` next to system.db) and one `@boni/agent` each; the device's trust level is

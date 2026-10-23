@@ -126,13 +126,18 @@ export function propWrites(
     );
     return id;
   };
+  /** A target's entities by the note they are (its name) and, those that never were a note, by title. */
   const byNote = (target: string) => {
-    const m = new Map<string, string>();
+    const notes = new Map<string, string>();
+    const titled = new Map<string, string>();
+    const t = store.schema().types[target];
     for (const e of store.entities(target)) {
       const p = e.values[PATH_FIELD];
-      if (typeof p === "string") m.set(baseName(p).toLowerCase(), e.id);
+      if (typeof p === "string") notes.set(baseName(p).toLowerCase(), e.id);
+      else if (t && typeof e.values[t.titleField] === "string")
+        titled.set(String(e.values[t.titleField]).trim().toLowerCase(), e.id);
     }
-    return m;
+    return { notes, titled };
   };
   const writes: Writes = {};
   for (const [prop, raw] of Object.entries(values)) {
@@ -142,10 +147,18 @@ export function propWrites(
     let value: unknown;
     switch (f.type) {
       case "relation": {
-        const names = byNote(f.relation?.target ?? "");
+        const { notes, titled } = byNote(f.relation?.target ?? "");
+        // `[[note]]` (or a whole title, "comida/restaurante" for a row of Categorías).
         const ids = items
-          .map((x) => LINK.exec(String(x).trim())?.[1]?.split("/").pop()?.toLowerCase())
-          .map((n) => (n ? names.get(n) : undefined))
+          .map((x) => {
+            const s = String(x).trim();
+            const link = LINK.exec(s)?.[1]?.trim();
+            const whole = (link ?? s).toLowerCase();
+            return (
+              titled.get(whole) ??
+              (link ? notes.get(link.split("/").pop()?.toLowerCase() ?? "") : undefined)
+            );
+          })
           .filter((x): x is string => !!x);
         value = f.relation?.many ? ids : (ids[0] ?? null);
         break;

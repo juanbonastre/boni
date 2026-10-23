@@ -1,7 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { type ChartSpec, computeChart, SpecError } from "./chart.ts";
-import { type Debt, type Movement, moneyProfile, moneyRecords, monthsWithData } from "./money.ts";
+import {
+  type Debt,
+  kindByName,
+  kindFrom,
+  type Movement,
+  moneyProfile,
+  moneyRecords,
+  monthsWithData,
+} from "./money.ts";
 import { pyRound, pySum } from "./pyround.ts";
 
 /**
@@ -38,6 +46,26 @@ describe("the chart engine gives what the Python one gave", () => {
         expect(run).toThrow(want.error);
       } else expect(run()).toEqual(want);
     });
+});
+
+describe("the kind of each category", () => {
+  it("by name gives the first Boni's records; the account's kinds change only what they say", () => {
+    const same = moneyRecords(
+      money.movements,
+      money.debts,
+      kindFrom(new Map(money.movements.map((m) => [m.category, kindByName(m.category)]))),
+    );
+    expect(same).toEqual(recs);
+    const cat = money.movements.find((m) => m.amount < 0 && kindByName(m.category) === "gasto")
+      ?.category as string;
+    const other = moneyRecords(money.movements, money.debts, kindFrom(new Map([[cat, "otro"]])));
+    const spent = (r: typeof recs) =>
+      pySum(r.filter((x) => x.category === cat).map((x) => x.spending));
+    expect(spent(recs)).toBeGreaterThan(0);
+    expect(spent(other)).toBe(0);
+    // The rest as they were.
+    expect(other.filter((x) => x.category !== cat)).toEqual(recs.filter((x) => x.category !== cat));
+  });
 });
 
 describe("Python's rounding", () => {

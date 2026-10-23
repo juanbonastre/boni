@@ -1,3 +1,4 @@
+import type { CategoryKind } from "@boni/views";
 import { readRows } from "./sheets.ts";
 import { asciiLow, type BankLine, parseStatement } from "./statements.ts";
 
@@ -72,25 +73,37 @@ const slug = (s: string, max = 40) =>
 
 export type Rule = [pattern: string, merchant: string, category: string];
 
-/** reglas.csv (pattern,merchant,category,notes): longest pattern first. */
-export function parseRules(csv: string): Rule[] {
+/** A bank text as rules compare it: ASCII, lower case. */
+export const rulePattern = (s: string) => asciiLow(s).trim();
+/** Longest pattern first (the first that matches wins). */
+export const sortRules = (rules: Rule[]) => [...rules].sort((a, b) => b[0].length - a[0].length);
+
+/** reglas.csv's rows (pattern,merchant,category,notes), in the file's order. */
+export function parseRuleRows(
+  csv: string,
+): { pattern: string; merchant: string; category: string; notes: string }[] {
   const lines = csv.replace(/\r\n?/g, "\n").split("\n");
   const head = (lines.shift() ?? "").split(",").map((h) => h.trim());
   const col = (n: string) => head.indexOf(n);
-  const rules: Rule[] = [];
+  const rows: { pattern: string; merchant: string; category: string; notes: string }[] = [];
   for (const line of lines) {
     if (!line.trim()) continue;
     const cells = splitCsvLine(line);
-    const pattern = asciiLow(cells[col("pattern")] ?? "").trim();
+    const pattern = rulePattern(cells[col("pattern")] ?? "");
     if (pattern)
-      rules.push([
+      rows.push({
         pattern,
-        (cells[col("merchant")] ?? "").trim(),
-        (cells[col("category")] ?? "").trim(),
-      ]);
+        merchant: (cells[col("merchant")] ?? "").trim(),
+        category: (cells[col("category")] ?? "").trim(),
+        notes: col("notes") < 0 ? "" : (cells[col("notes")] ?? "").trim(),
+      });
   }
-  return rules.sort((a, b) => b[0].length - a[0].length);
+  return rows;
 }
+
+/** reglas.csv as rules: longest pattern first. */
+export const parseRules = (csv: string): Rule[] =>
+  sortRules(parseRuleRows(csv).map((r) => [r.pattern, r.merchant, r.category]));
 function splitCsvLine(line: string): string[] {
   const out: string[] = [];
   let cell = "";
@@ -385,8 +398,12 @@ export function importStatements(
 
 // ------------------------------------------------------------------ close
 
-const isSpending = (category: unknown) =>
-  !NOT_EXPENSE.some((p) => String(category ?? "").startsWith(p));
+const byName = (category: string): CategoryKind =>
+  category.startsWith("ingreso/")
+    ? "ingreso"
+    : NOT_EXPENSE.some((p) => category.startsWith(p))
+      ? "otro"
+      : "gasto";
 
 /** Why a pending movement cannot be `conciliado` yet (empty: ready). */
 export function movementProblems(
@@ -395,13 +412,15 @@ export function movementProblems(
   cats: string[],
   debtsByMovement: Map<string, Record<string, unknown>[]>,
   targets: Set<string>,
+  kindOf: (category: string) => CategoryKind = byName,
 ): string[] {
+  const isSpending = (c: string) => kindOf(c) === "gasto";
   const probs: string[] = [];
   const cat = String(fm.category ?? "");
   const amount = toFloat(fm.amount) ?? 0;
   if (!cat || cat === UNKNOWN) probs.push("sin categoria");
   else if (cats.length && !cats.includes(cat))
-    probs.push(`categoria '${cat}' no esta en categorias.md`);
+    probs.push(`categoria '${cat}' no esta en las categorias`);
   if ((fm.account === "revolut" || fm.account === "ing") && !fm.bank_ref)
     probs.push("sin linea del banco (no esta en los extractos importados)");
   const invited = new Set(asList(fm.invited).map(linkName));
@@ -433,7 +452,12 @@ export interface CloseResult {
 export function closeMonth(
   book: Book,
   month: string | null,
-  o: { cats: string[]; rules: Rule[]; apply: boolean },
+  o: {
+    cats: string[];
+    rules: Rule[];
+    apply: boolean;
+    kindOf?: (category: string) => CategoryKind;
+  },
 ): CloseResult {
   const out = logger();
   const notes = book.movements();
@@ -451,7 +475,14 @@ export function closeMonth(
   const blocked: [MoneyNote, string[]][] = [];
   const noRule = new Set<string>();
   for (const n of pending) {
-    const probs = movementProblems(n.fm, noteName(n.path), o.cats, debtsByMovement, targets);
+    const probs = movementProblems(
+      n.fm,
+      noteName(n.path),
+      o.cats,
+      debtsByMovement,
+      targets,
+      o.kindOf,
+    );
     if (probs.length) blocked.push([n, probs]);
     else ready.push(n);
     if (n.fm.bank_text && !probs.length && !matchRule(o.rules, n.fm.bank_text))
@@ -467,7 +498,7 @@ export function closeMonth(
       `  PENDIENTE ${String(n.fm.date)} ${fmt(toFloat(n.fm.amount) ?? 0)} ${n.path}: ${probs.join("; ")}`,
     );
   if (noRule.size) {
-    out("Textos del banco sin regla (candidatos para reglas.csv):");
+    out("Textos del banco sin regla (candidatos para Reglas):");
     for (const r of [...noRule].sort()) out(`  ${r}`);
   }
   const owed = new Map<string, number>();

@@ -1,8 +1,9 @@
 import type { UserStore } from "@boni/store";
-import type { Debt, Movement } from "@boni/views";
+import type { CategoryKind, Debt, Movement } from "@boni/views";
 import { findByPath } from "../data.ts";
 import { entityFromNote } from "../fromNote.ts";
 import { movementPaths, storeNotes } from "../money/book.ts";
+import { categoryRows } from "../money/collections.ts";
 import { MOV, noteName, type Person, parseDebt, parseMovement, titleFromSlug } from "./finanzas.ts";
 
 /** What the API v1 reads and writes of the money: the vault's notes (`Finanzas`) or Boni's own (`StoreMoney`). */
@@ -10,6 +11,8 @@ export interface MoneySource {
   movements(): Movement[];
   debts(): Debt[];
   categories(): string[];
+  /** What each category is (spending, income, neither), when the account keeps it (Categorías). */
+  categoryKinds?(): Map<string, CategoryKind>;
   people(): Person[];
   fingerprint(): string;
   freeMovementPath(date: string, base: string): string;
@@ -53,8 +56,10 @@ export class StoreMoney implements MoneySource {
       .filter((d): d is Debt & { date: string | null } => d !== null);
   }
 
-  /** The `categories` list of the note that held them (registros/finanzas/categorias.md). */
+  /** The rows of Categorías; before it exists, the `categories` list of registros/finanzas/categorias.md. */
   categories(): string[] {
+    const own = categoryRows(this.store);
+    if (own) return own.map((c) => c.name);
     let hit: { type: string; id: string };
     try {
       hit = findByPath(this.store, CATEGORIES_NOTE);
@@ -65,6 +70,10 @@ export class StoreMoney implements MoneySource {
     const v = note?.fm.categories;
     const list = Array.isArray(v) ? v : typeof v === "string" ? v.split(/[\n,]/) : [];
     return list.map((x) => String(x).trim()).filter(Boolean);
+  }
+
+  categoryKinds(): Map<string, CategoryKind> {
+    return new Map((categoryRows(this.store) ?? []).map((c) => [c.name, c.kind]));
   }
 
   people(): Person[] {

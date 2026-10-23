@@ -3,6 +3,9 @@ import {
   computeChart,
   fold,
   isSpending,
+  type KindOf,
+  kindByName,
+  kindFrom,
   moneyProfile,
   moneyRecords,
   monthsWithData,
@@ -29,6 +32,12 @@ import type { MoneySource } from "./storeMoney.ts";
  * options, charts, widgets, shortcuts and captures (each sent once, by its client id). Per account:
  * its charts and shortcuts, its devices' widgets and preferences, its vault's money notes.
  */
+/** Each category's kind as the account keeps it (Categorías), else by its name. */
+const kindsOf = (f: MoneySource): KindOf => {
+  const kinds = f.categoryKinds?.();
+  return kinds?.size ? kindFrom(kinds) : kindByName;
+};
+
 export class NotFound extends Error {}
 export class Unavailable extends Error {}
 export { Invalid };
@@ -218,9 +227,9 @@ export class V1Service {
     });
     let opts: Option[];
     if (source === "categories") {
-      const cats = this.read(c, (f) => f.categories());
+      const [cats, kindOf] = this.read(c, (f) => [f.categories(), kindsOf(f)] as const);
       // Spending categories first: the form is mostly used for expenses.
-      const order = cats.map((cat, i) => ({ cat, i, later: !isSpending(cat) }));
+      const order = cats.map((cat, i) => ({ cat, i, later: !isSpending(cat, kindOf) }));
       order.sort((a, b) => Number(a.later) - Number(b.later) || a.i - b.i);
       opts = order.map((o) => opt(o.cat, o.cat));
     } else if (source === "people")
@@ -290,9 +299,12 @@ export class V1Service {
       if (e instanceof SpecError) throw new Invalid(e.message);
       throw e;
     }
-    const [movements, debts] = this.read(c, (f) => [f.movements(), f.debts()] as const);
+    const [movements, debts, kindOf] = this.read(
+      c,
+      (f) => [f.movements(), f.debts(), kindsOf(f)] as const,
+    );
     try {
-      const data = computeChart(moneyProfile, spec, moneyRecords(movements, debts), {
+      const data = computeChart(moneyProfile, spec, moneyRecords(movements, debts, kindOf), {
         today: this.today(),
         monthsWithData: monthsWithData(movements),
         drill,

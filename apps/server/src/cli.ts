@@ -27,6 +27,7 @@ import { openUserStore, restoreBackup, type UserStore, wrappedKeyProvider } from
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
 import { CALENDAR_DEFS, calendarDefs, saveCalendarDefs } from "./calendarStore.ts";
 import { mirrorStatePath } from "./mirror.ts";
+import { moneyCollections } from "./money/collections.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
 import { V1Store } from "./v1/store.ts";
@@ -54,6 +55,9 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts restore <name> <backups/user-<id>-<day>.db.sealed> <out.db>
  *       opens one of the account's encrypted copies (store or mirror state) into a plain file; never over a file.
  *   node src/cli.ts token <name> <device>          a session for an assistant's tools (Boni's MCP), shown once
+ *   node src/cli.ts mirror <name> --money [--apply]
+ *       the money's categories note and reglas.csv into the collections Categorías and Reglas, each movement's
+ *       category into a relation to its row (dry run by default; applied, one run that undo takes back).
  *   node src/cli.ts mirror <name> --calendar [--apply | --stop]
  *       the account's calendar from Boni (once every calendar's collection is in core mode): copies the
  *       definitions of _system/colecciones/ into the store; --stop serves it from the vault again.
@@ -245,7 +249,11 @@ try {
         ? types.find((t) => t.type === typeArg || t.name.toLowerCase() === typeArg.toLowerCase())
         : null;
       if (flags.has("--calendar")) moveCalendar(store, user.vault, types, flags);
-      else if (!typeArg) {
+      else if (flags.has("--money")) {
+        const r = moneyCollections(store, { apply: flags.has("--apply") });
+        for (const line of r.report) console.log(line);
+        if (r.run) console.log(`Undo it all: the run ${r.run} (Boni's Registro or MCP undo).`);
+      } else if (!typeArg) {
         for (const t of types)
           console.log(`${t.type}\t${t.mode}${t.profile ? ` (${t.profile})` : ""}\t${t.name}`);
       } else if (!type) throw new Error(`No type ${typeArg} (see: mirror ${name})`);

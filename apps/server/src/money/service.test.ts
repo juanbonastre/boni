@@ -5,6 +5,9 @@ import { openUserStore, type UserStore } from "@boni/store";
 import { CORE_MARK, importVault } from "@boni/vault-import";
 import { afterEach, describe, expect, it } from "vitest";
 import { mcpAnswer } from "../mcp.ts";
+import { StoreMoney } from "../v1/storeMoney.ts";
+import { storeNotes } from "./book.ts";
+import { categoryRows, moneyCollections, ruleRows } from "./collections.ts";
 
 /**
  * The reconciliation on Boni's own movements, through Boni's MCP as Claude uses it: an invented vault imported into
@@ -12,9 +15,9 @@ import { mcpAnswer } from "../mcp.ts";
  */
 const FILES: Record<string, string> = {
   "registros/finanzas/categorias.md":
-    "---\ntype: index\ncategories:\n  - comida/restaurante\n  - suscripciones\n  - otros/desconocido\n---\n\n# Categorias\n",
+    "---\ntype: index\ncategories:\n  - comida/restaurante\n  - ingreso/nomina\n  - suscripciones\n  - otros/desconocido\n---\n\n# Categorias\n\n| Categoria | Que va | Ejemplos |\n|---|---|---|\n| suscripciones | pagos periodicos | Spotify, Ejemplo Cloud |\n\n| Categoria | Que va |\n|---|---|\n| ingreso/nomina | la nomina |\n",
   "registros/finanzas/reglas.csv":
-    "pattern,merchant,category,notes\nspotify,Spotify,suscripciones,\n",
+    "pattern,merchant,category,notes\nspotify,Spotify,suscripciones,la musica\n",
   "registros/personas/ana.md": "---\ntype: person\n---\n\n# Ana\n",
   "registros/finanzas/movimientos/2026/09/2026-09-05-2140-cena-cumple.md":
     '---\ntype: movement\ndate: 2026-09-05\ntime: "21:40"\namount: -60.00\ncurrency: EUR\nmy_share: 30.00\naccount: revolut\ncategory: comida/restaurante\nmerchant:\nconcept: "Cena cumple"\npeople: ["[[ana]]"]\nstatus: pendiente\nsource: manual\nbank_ref:\ncreated: 2026-09-05\n---\n\n# Cena cumple 60,00 EUR\n',
@@ -149,6 +152,84 @@ CARD_PAYMENT,Current,2026-10-02 10:11:12,2026-10-03 08:00:00,Spotify,-10.99,0.00
     // One run, undone whole: the statement is gone again.
     call(e, "undo", { run: up.json.run });
     expect(call(e, "finanzas_import", {}).json.output).not.toContain("2026-10-revolut.csv");
+  });
+
+  it("moves the categories and rules into collections; the movements point to their category; undone whole", () => {
+    const e = env();
+    const CENA = "registros/finanzas/movimientos/2026/09/2026-09-05-2140-cena-cumple.md";
+    const category = () =>
+      storeNotes(e.store)("t_movimiento", "movement").map((n) => [n.path, n.fm.category]);
+    // A category a movement uses that the list does not have: it becomes a row too.
+    call(e, "set_properties", { path: CENA, properties: { category: "ocio/salidas" } });
+
+    const dry = moneyCollections(e.store, { apply: false });
+    expect(dry.report.join("\n")).toContain(
+      "Categorias: 5 (4 de registros/finanzas/categorias.md, 2 con su explicacion)",
+    );
+    expect(dry.report.join("\n")).toContain(
+      "sin estar en la lista (se crean igual): ocio/salidas (1)",
+    );
+    expect(dry.run).toBeNull();
+    expect(categoryRows(e.store)).toBeNull();
+
+    const done = moneyCollections(e.store, { apply: true });
+    expect(categoryRows(e.store)).toEqual([
+      { name: "comida/restaurante", kind: "gasto" },
+      { name: "ingreso/nomina", kind: "ingreso" },
+      { name: "ocio/salidas", kind: "gasto" },
+      { name: "otros/desconocido", kind: "gasto" },
+      { name: "suscripciones", kind: "gasto" },
+    ]);
+    const subs = e.store.entities("t_categoria").find((x) => x.values.f_nombre === "suscripciones");
+    expect(subs?.values).toMatchObject({
+      f_que_va: "pagos periodicos",
+      f_ejemplos: "Spotify, Ejemplo Cloud",
+    });
+    expect(ruleRows(e.store)).toEqual([["spotify", "Spotify", "suscripciones"]]);
+    expect(e.store.entities("t_regla")[0]?.values.f_notas).toBe("la musica");
+    // The file is in the trash: its rules are rows now.
+    expect(e.store.findByValue("f_vault_path", "registros/finanzas/reglas.csv")).toEqual([]);
+    expect(category()).toEqual([[CENA, "ocio/salidas"]]);
+    const mov = e.store.schema().types.t_movimiento;
+    expect(mov?.fields.find((f) => f.name === "category")?.type).toBe("relation");
+    expect(new StoreMoney(e.store).categories()).toContain("ocio/salidas");
+    expect(new StoreMoney(e.store).categoryKinds().get("ingreso/nomina")).toBe("ingreso");
+    expect(() => moneyCollections(e.store, { apply: true })).toThrow("already uses");
+
+    // The reconciliation reads them: Spotify by its rule, into the row of suscripciones.
+    const imported = call(e, "finanzas_import", { dry_run: false });
+    expect(imported.json).toMatchObject({ created: 2, joined: 1 });
+    expect(Object.fromEntries(category())).toMatchObject({
+      "registros/finanzas/movimientos/2026/09/2026-09-02-1011-spotify.md": "suscripciones",
+      "registros/finanzas/movimientos/2026/09/2026-09-06-1200-kiosko-pepe.md": "otros/desconocido",
+    });
+    expect(call(e, "finanzas_close", { month: "2026-09" }).json.output).toContain(
+      "listos para conciliar: 2; siguen pendientes: 1",
+    );
+    // A category set by its name through the MCP, as Claude does in the reconciliation.
+    const set = call(e, "set_properties", {
+      path: CENA,
+      properties: { category: "comida/restaurante" },
+    });
+    expect(Object.fromEntries(category())[CENA]).toBe("comida/restaurante");
+
+    // Undone (the later runs first; while they are in effect the move is not undone): the text as it was, no
+    // collections, the file back.
+    expect(() => e.store.undoRun(done.run as string, { actor: "user" })).toThrow("changed since");
+    call(e, "undo", { run: set.json.run });
+    call(e, "undo", { run: imported.json.run });
+    e.store.undoRun(done.run as string, { actor: "user" });
+    expect(categoryRows(e.store)).toBeNull();
+    expect(
+      e.store.schema().types.t_movimiento?.fields.find((f) => f.name === "category")?.type,
+    ).toBe("text");
+    expect(e.store.findByValue("f_vault_path", "registros/finanzas/reglas.csv")).toHaveLength(1);
+    expect(ruleRows(e.store)).toBeNull();
+    expect(category()).toEqual([[CENA, "ocio/salidas"]]);
+    // And moved again, into the same (emptied) collections.
+    moneyCollections(e.store, { apply: true });
+    expect(categoryRows(e.store)).toHaveLength(5);
+    expect(ruleRows(e.store)).toEqual([["spotify", "Spotify", "suscripciones"]]);
   });
 
   it("refuses while the movements still live in the vault, and without a month", () => {
