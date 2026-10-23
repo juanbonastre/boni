@@ -10,6 +10,7 @@ export type {
 export {
   type KeyProvider,
   open,
+  openFile,
   seal,
   sealFile,
   type WrappedKeys,

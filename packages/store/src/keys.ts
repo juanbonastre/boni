@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { closeSync, openSync, readSync, writeSync } from "node:fs";
+import { closeSync, openSync, readSync, renameSync, rmSync, writeSync } from "node:fs";
 
 /**
  * Per-user keys (docs/nucleo.md, 5.2). Every user has a random 32-byte data key; it is stored only
@@ -57,6 +57,44 @@ export function sealFile(key: Buffer, src: string, dest: string, aad = ""): void
   } finally {
     closeSync(input);
     closeSync(out);
+  }
+}
+
+/**
+ * `open` for a file sealed by `sealFile` (or `seal`), a megabyte at a time, into `dest`: the plain text goes to
+ * `dest.partial` and becomes `dest` only once the tag checks at the end; a wrong key or a changed byte removes it
+ * and throws, leaving nothing behind (restoring a copy must not hold it whole in memory either: sealFile's lesson).
+ */
+export function openFile(key: Buffer, src: string, dest: string, aad = ""): void {
+  if (key.length !== 32) throw new Error("A key is 32 bytes");
+  const input = openSync(src, "r");
+  const partial = `${dest}.partial`;
+  let out: number | null = null;
+  try {
+    const head = Buffer.alloc(IV + TAG);
+    // Read in sequence (no explicit position: it would not move the file's own position for the loop below).
+    if (readSync(input, head, 0, head.length, null) < head.length)
+      throw new Error("Not a sealed box");
+    const d = createDecipheriv("aes-256-gcm", key, head.subarray(0, IV));
+    d.setAAD(Buffer.from(aad));
+    d.setAuthTag(head.subarray(IV, IV + TAG));
+    out = openSync(partial, "w", 0o600);
+    const chunk = Buffer.alloc(1 << 20);
+    for (;;) {
+      const n = readSync(input, chunk, 0, chunk.length, null);
+      if (n === 0) break;
+      writeSync(out, d.update(chunk.subarray(0, n)));
+    }
+    writeSync(out, d.final()); // throws when the tag does not match
+    closeSync(out);
+    out = null;
+    renameSync(partial, dest);
+  } catch (e) {
+    if (out !== null) closeSync(out);
+    rmSync(partial, { force: true });
+    throw e;
+  } finally {
+    closeSync(input);
   }
 }
 

@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { label, type TypeDef } from "@boni/entities";
 import { afterEach, describe, expect, it } from "vitest";
-import { open, seal, sealFile, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
+import { open, openFile, seal, sealFile, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
 import { MIGRATIONS } from "./migrations.ts";
 import {
   BODY,
@@ -581,6 +581,18 @@ describe("keys and backups", () => {
     sealFile(key, join(d, "in"), join(d, "out"), "boni-backup");
     expect(open(key, readFileSync(join(d, "out")), "boni-backup").equals(plainBytes)).toBe(true);
     expect(() => open(key, readFileSync(join(d, "out")), "otra")).toThrow();
+    // And back, a megabyte at a time too: the same bytes; a wrong key or a changed byte leaves no file at all.
+    openFile(key, join(d, "out"), join(d, "back"), "boni-backup");
+    expect(readFileSync(join(d, "back")).equals(plainBytes)).toBe(true);
+    expect(() =>
+      openFile(Buffer.alloc(32, 9), join(d, "out"), join(d, "bad"), "boni-backup"),
+    ).toThrow();
+    const changed = readFileSync(join(d, "out"));
+    changed[2 * (1 << 20)] = (changed[2 * (1 << 20)] ?? 0) ^ 1;
+    writeFileSync(join(d, "changed"), changed);
+    expect(() => openFile(key, join(d, "changed"), join(d, "bad"), "boni-backup")).toThrow();
+    expect(existsSync(join(d, "bad"))).toBe(false);
+    expect(existsSync(join(d, "bad.partial"))).toBe(false);
     rmSync(d, { recursive: true, force: true });
   });
 
