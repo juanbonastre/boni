@@ -19,7 +19,7 @@ import {
   type Value,
 } from "@boni/entities";
 import { type Journal, openJournal } from "./journal.ts";
-import { open, seal, sealFile } from "./keys.ts";
+import { open, openFile, seal, sealFile } from "./keys.ts";
 import { migrate } from "./migrations.ts";
 
 /**
@@ -998,8 +998,9 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
 }
 
 /** Writes the database inside an encrypted backup to `dest` (to open it with `openUserStore`). */
+/** A sealed copy back into a database file, a megabyte at a time (`openFile`); nothing is written on a bad key. */
 export function restoreBackup(src: string, key: Buffer, dest: string): void {
-  writeFileSync(dest, open(key, readFileSync(src), "boni-backup"), { mode: 0o600 });
+  openFile(key, src, dest, "boni-backup");
 }
 
 /** The label of a whole entity: all its fields and body joined (null when nothing is set). */
