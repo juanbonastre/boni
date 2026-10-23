@@ -1,7 +1,9 @@
 import { parseNote } from "@boni/calendar";
 import { CORE_MARK } from "@boni/mirror";
 import type { UserStore } from "@boni/store";
+import { kindFrom } from "@boni/views";
 import { storeBook } from "./book.ts";
+import { categoryRows, ruleRows } from "./collections.ts";
 import {
   type CloseResult,
   closeMonth,
@@ -11,8 +13,9 @@ import {
 } from "./reconcile.ts";
 
 /**
- * The reconciliation for an account (Boni's MCP: `finanzas_import`, `finanzas_close`): its statements, rules and
- * categories read from the vault (never written; `extractos/` stays as the bank gave it), its movements and debts
+ * The reconciliation for an account (Boni's MCP: `finanzas_import`, `finanzas_close`): its statements read as
+ * files (never written; the bank's bytes as they came), its rules and categories from the collections Reglas and
+ * Categorías (`collections.ts`; before they exist, `reglas.csv` and the categories note), its movements and debts
  * in Boni. Only once the movements live in Boni (core mode): before that the vault's own tools did it.
  */
 const FIN = "registros/finanzas";
@@ -30,14 +33,18 @@ function ensureCore(store: UserStore) {
       "los movimientos aun viven en el vault, no en Boni: la conciliacion se hace alli (vault-mcp)",
     );
 }
-const rulesOf = (vault: MoneyVault) => {
+const rulesOf = (store: UserStore, vault: MoneyVault) => {
+  const own = ruleRows(store);
+  if (own) return own;
   try {
     return parseRules(vault.readBytes(`${FIN}/reglas.csv`).toString("utf8"));
   } catch {
     return [];
   }
 };
-const categoriesOf = (vault: MoneyVault): string[] => {
+const categoriesOf = (store: UserStore, vault: MoneyVault): string[] => {
+  const own = categoryRows(store);
+  if (own) return own.map((c) => c.name);
   if (vault.categories) return vault.categories();
   try {
     const v = parseNote(vault.read(`${FIN}/categorias.md`).text).values.categories;
@@ -61,7 +68,7 @@ export function reconcileImport(
     bytes: vault.readBytes(`${FIN}/extractos/${name}`),
   }));
   return importStatements(storeBook(store, { ...(o.run ? { run: o.run } : {}) }), files, {
-    rules: rulesOf(vault),
+    rules: rulesOf(store, vault),
     apply: o.apply,
     today: o.today,
   });
@@ -73,10 +80,12 @@ export function reconcileClose(
   o: { month: string | null; apply: boolean; run?: string },
 ): CloseResult {
   ensureCore(store);
+  const kinds = categoryRows(store);
   const r = closeMonth(storeBook(store, { ...(o.run ? { run: o.run } : {}) }), o.month, {
-    cats: categoriesOf(vault),
-    rules: rulesOf(vault),
+    cats: categoriesOf(store, vault),
+    rules: rulesOf(store, vault),
     apply: o.apply,
+    ...(kinds ? { kindOf: kindFrom(new Map(kinds.map((c) => [c.name, c.kind]))) } : {}),
   });
   if (o.apply)
     r.report.push(

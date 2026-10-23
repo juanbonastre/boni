@@ -7,7 +7,8 @@ import { pySum } from "./pyround.ts";
  * first Boni's `stats/spending.py` and `stats/engine.py` (legacy/boni; same as gastos-app's
  * tools/finanzas.py and the vault's registros/finanzas/README.md). Change it in all of them together.
  *
- * - Only spending categories count: not `ingreso/`, `inversion`, `transferencia/`.
+ * - Only spending categories count: not `ingreso/`, `inversion`, `transferencia/` (by default; with the
+ *   account's "Categorías" collection, each category's kind says it: `CategoryKind`).
  * - An expense counts as Juan's share: `my_share` if set, else the whole amount.
  * - A positive movement of a spending category that `settles` a debt is a friend paying back: 0.
  * - A positive movement that `settles` an expense (a shop refund) reduces spending.
@@ -64,11 +65,31 @@ export interface MoneyRec {
 const NOT_SPENDING = ["ingreso/", "inversion", "transferencia/"];
 const FORGIVEN = new Set(["perdonada", "invitacion"]);
 
-export const isSpending = (category: string) =>
-  !NOT_SPENDING.some((p) => (category || "").startsWith(p));
+/** What a category is: spending, income, or neither (money between own accounts, investments, loans). */
+export type CategoryKind = "gasto" | "ingreso" | "otro";
+export type KindOf = (category: string) => CategoryKind;
+/** The kind by the category's name, as the first Boni defined it (and a category the list does not have). */
+export const kindByName: KindOf = (category) =>
+  (category || "").startsWith("ingreso/")
+    ? "ingreso"
+    : NOT_SPENDING.some((p) => (category || "").startsWith(p))
+      ? "otro"
+      : "gasto";
+/** The kinds the account's categories say, by name; one it does not list, by its name. */
+export const kindFrom =
+  (kinds: ReadonlyMap<string, CategoryKind>): KindOf =>
+  (category) =>
+    kinds.get(category) ?? kindByName(category);
 
-export function movementSpending(m: Movement, debtNames: ReadonlySet<string>): number {
-  if (!isSpending(m.category)) return 0;
+export const isSpending = (category: string, kindOf: KindOf = kindByName) =>
+  kindOf(category) === "gasto";
+
+export function movementSpending(
+  m: Movement,
+  debtNames: ReadonlySet<string>,
+  kindOf: KindOf = kindByName,
+): number {
+  if (!isSpending(m.category, kindOf)) return 0;
   if (m.amount < 0) return m.my_share !== null && m.my_share !== undefined ? m.my_share : -m.amount;
   if (m.amount > 0 && m.settles && !debtNames.has(m.settles)) return -m.amount;
   return 0;
@@ -92,18 +113,22 @@ const rec = (m: Movement, spending: number, income: number, counted: boolean): M
 });
 
 /** One record per movement, plus one per forgiven debt (on its expense's date and fields). */
-export function moneyRecords(movements: Movement[], debts: Debt[]): MoneyRec[] {
+export function moneyRecords(
+  movements: Movement[],
+  debts: Debt[],
+  kindOf: KindOf = kindByName,
+): MoneyRec[] {
   const debtNames = new Set(debts.map((d) => d.name));
   const out = movements.map((m) => {
-    const sp = movementSpending(m, debtNames);
-    const inc = m.category.startsWith("ingreso/") && m.amount > 0 ? m.amount : 0;
-    return rec(m, sp, inc, m.amount < 0 && isSpending(m.category) && sp > 0);
+    const sp = movementSpending(m, debtNames, kindOf);
+    const inc = kindOf(m.category) === "ingreso" && m.amount > 0 ? m.amount : 0;
+    return rec(m, sp, inc, m.amount < 0 && isSpending(m.category, kindOf) && sp > 0);
   });
   const byName = new Map(movements.map((m) => [m.name, m]));
   for (const d of debts)
     if (FORGIVEN.has(d.status) && d.direction === "me-deben") {
       const m = byName.get(d.movement);
-      if (m && isSpending(m.category)) out.push(rec(m, d.amount, 0, false));
+      if (m && isSpending(m.category, kindOf)) out.push(rec(m, d.amount, 0, false));
     }
   return out;
 }

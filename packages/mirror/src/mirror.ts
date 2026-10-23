@@ -197,8 +197,11 @@ export class Mirror {
     }
     return {
       nameOf: (id) => names.get(id) ?? null,
+      // A whole name first (a row titled "comida/restaurante"), then a note's name ("[[dir/note]]").
       resolve: (name, target) =>
-        byName.get(target)?.get(name.split("/").pop()?.toLowerCase() ?? "") ?? null,
+        byName.get(target)?.get(name.toLowerCase()) ??
+        byName.get(target)?.get(name.split("/").pop()?.toLowerCase() ?? "") ??
+        null,
     };
   }
 

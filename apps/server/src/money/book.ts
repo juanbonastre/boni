@@ -12,6 +12,8 @@ import type { Book, MoneyNote, PropValue } from "./reconcile.ts";
 const PATH_FIELD = "f_vault_path";
 const MOVEMENTS = "t_movimiento";
 const DEBTS = "t_deuda";
+/** The account's "Categorías" (collections.ts): a movement's category is read as the row's name. */
+export const CATEGORIES = "t_categoria";
 const EXTRACTS = "registros/finanzas/extractos";
 
 const baseName = (p: string) => (p.split("/").pop() ?? p).replace(/\.md$/i, "");
@@ -44,6 +46,11 @@ export function storeNotes(store: UserStore): (typeId: string, type: string) => 
           (x) => f.options?.find((o) => o.id === x)?.name ?? x,
         );
       case "relation": {
+        if (f.relation?.target === CATEGORIES) {
+          const one = Array.isArray(v) ? v[0] : v;
+          const e = typeof one === "string" ? store.get(one)?.entity : undefined;
+          return e && e.deleted === undefined ? String(e.values.f_nombre ?? "") || null : null;
+        }
         const link = (x: unknown) => {
           const n = typeof x === "string" ? nameOf(x) : null;
           return n ? `[[${n}]]` : null;
