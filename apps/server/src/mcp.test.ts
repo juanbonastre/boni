@@ -113,6 +113,8 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "set_properties",
       "recent_changes",
       "trash",
+      "finanzas_import",
+      "finanzas_close",
       "undo",
     ]);
     expect((await rpc("tools/list", undefined, "nada")).status).toBe(401);

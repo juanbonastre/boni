@@ -1,7 +1,15 @@
 import { createHash } from "node:crypto";
 import { type PropValue, parseNote } from "@boni/calendar";
-import { type FieldDef, type FieldType, label, type TypeDef } from "@boni/entities";
+import {
+  type FieldDef,
+  type FieldType,
+  type Label,
+  label,
+  type SourceRef,
+  type TypeDef,
+} from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
+import { leadingTitle } from "@boni/views";
 
 /**
  * A note made by Boni itself (a captured movement) taken as an entity of a type that lives in Boni (core mode):
@@ -31,19 +39,62 @@ export function entityFromNote(
   path: string,
   text: string,
   device: string,
+  /**
+   * Where the values came from when it is not Juan typing them (a bank statement: `imported`, its file as the
+   * source), and whether the note's first `# Heading` is its title (as the vault's import takes it).
+   */
+  o: {
+    from?: { integrity: "imported"; source: SourceRef };
+    headingTitle?: boolean;
+    /** The run it belongs to (undone whole). */
+    run?: string;
+  } = {},
 ): string {
   const parsed = parseNote(text);
   if (parsed.error) throw new Error(`the note does not parse: ${parsed.error}`);
-  const meta = { actor: "user" as const, device };
+  const meta = {
+    actor: o.from ? ("import" as const) : ("user" as const),
+    device,
+    ...(o.run ? { run: o.run } : {}),
+  };
   const def = () => store.schema().types[typeId] as TypeDef;
   if (!def()) throw new Error(`no type ${typeId}`);
   const l = (f: FieldDef | null) =>
     label(
-      "user",
+      o.from?.integrity ?? "user",
       f?.sensitivity ?? def().sensitivity,
-      [{ kind: "user-edit", id: device }],
+      [o.from?.source ?? { kind: "user-edit", id: device }],
       Boolean(def().thirdParty),
     );
+  const writes = propWrites(store, typeId, parsed.values, l, meta);
+  const t = def();
+  let body = parsed.body;
+  const head = o.headingTitle && !writes[t.titleField] ? leadingTitle(body) : null;
+  if (head) {
+    writes[t.titleField] = { value: head.title, label: l(null) };
+    body = head.rest;
+  }
+  if (!writes[t.titleField]) writes[t.titleField] = { value: baseName(path), label: l(null) };
+  if (t.fields.some((f) => f.id === PATH_FIELD)) {
+    writes[PATH_FIELD] = { value: path, label: l(null) };
+    writes[HASH_FIELD] = { value: createHash("sha256").update(text).digest("hex"), label: l(null) };
+  }
+  if (body) writes[BODY] = { value: body, label: l(null) };
+  return store.create(typeId, writes, meta).entity.id;
+}
+
+/**
+ * Properties by name as a type's writes: each into the field of its name (made when missing), options by name
+ * (made when missing), `[[links]]` to the entity of the target type whose note has that name.
+ */
+export function propWrites(
+  store: UserStore,
+  typeId: string,
+  values: Record<string, PropValue>,
+  l: (f: FieldDef | null) => Label,
+  meta: { actor: "user" | "import" | "agent"; device?: string; run?: string },
+): Writes {
+  const def = () => store.schema().types[typeId] as TypeDef;
   const fieldFor = (prop: string, v: PropValue): FieldDef => {
     const k = keyOf(prop);
     const known = def().fields.find((f) => !f.archived && (f.name === prop || f.key === k));
@@ -84,7 +135,7 @@ export function entityFromNote(
     return m;
   };
   const writes: Writes = {};
-  for (const [prop, raw] of Object.entries(parsed.values)) {
+  for (const [prop, raw] of Object.entries(values)) {
     if (raw === null || raw === "") continue;
     const f = fieldFor(prop, raw);
     const items = Array.isArray(raw) ? raw : [raw];
@@ -122,12 +173,5 @@ export function entityFromNote(
     }
     writes[f.id] = { value, label: l(f) };
   }
-  const t = def();
-  if (!writes[t.titleField]) writes[t.titleField] = { value: baseName(path), label: l(null) };
-  if (t.fields.some((f) => f.id === PATH_FIELD)) {
-    writes[PATH_FIELD] = { value: path, label: l(null) };
-    writes[HASH_FIELD] = { value: createHash("sha256").update(text).digest("hex"), label: l(null) };
-  }
-  if (parsed.body) writes[BODY] = { value: parsed.body, label: l(null) };
-  return store.create(typeId, writes, meta).entity.id;
+  return writes;
 }
