@@ -12,6 +12,14 @@ import type { Lang } from "./i18n.ts";
  * (development, e2e tests) talks to the same origin and keeps everything in localStorage.
  */
 
+/**
+ * How long a request may take: a turn of the agent's conversation runs plans and model calls (minutes at worst);
+ * anything else answers in seconds. Cut sooner, a slow answer looked like "no connection" (Juan, 2026-10-23).
+ * The same in apps/boni-desktop/paths.cjs and apps/boni-android's Net.kt.
+ */
+export const requestTimeout = (path: string) =>
+  /^api\/agent\/(turn|answer|confirm|decline)$/.test(path) ? 180_000 : 30_000;
+
 export type Theme = "system" | "dark" | "light";
 
 /** What the page may know of the settings: never the token itself. */
@@ -331,7 +339,7 @@ export function browserHost(): Host {
               ...(body === undefined ? {} : { "Content-Type": "application/json" }),
             },
             body: body === undefined ? undefined : JSON.stringify(body),
-            signal: AbortSignal.timeout(30_000),
+            signal: AbortSignal.timeout(requestTimeout(path)),
           });
           return { ok: true, status: r.status, body: await r.text() };
         } catch (e) {

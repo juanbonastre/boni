@@ -43,4 +43,12 @@ class PathsTest {
         assertFalse(Paths.storeName(".hidden.json"))
         assertFalse(Paths.storeName("notes.txt"))
     }
+
+    @Test
+    fun aTurnOfTheConversationMayTakeMinutes() {
+        for (p in listOf("api/agent/turn", "api/agent/answer", "api/agent/confirm", "api/agent/decline"))
+            assertEquals(p, 180_000, Paths.timeoutMs(p))
+        for (p in listOf("api/agent/proposals", "api/agent/turnx", "api/v1/charts", "api/agent/turn/x"))
+            assertEquals(p, 30_000, Paths.timeoutMs(p))
+    }
 }
