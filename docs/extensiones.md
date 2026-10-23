@@ -1,6 +1,6 @@
 # Boni extensible: extensiones, memoria y autoconocimiento
 
-Diseño aprobado por Juan (2026-10-21); las decisiones están en la sección 11. Amplía `docs/nucleo.md`: aquel define el
+Diseño aprobado por Juan (2026-10-21); las decisiones están en la sección 12. Amplía `docs/nucleo.md`: aquel define el
 núcleo seguro (entidades, procedencia, agente con planes, políticas, lectores en cuarentena); este define **cómo se
 construye todo lo demás encima** sin que el código se llene de casos especiales. Prioridad: el escritorio (Electron y
 Chrome); el móvil, más adelante.
@@ -387,7 +387,89 @@ Esto no es otro proyecto: es la forma de hacer los PR 16 a 21 sin duplicar códi
 | A7 | Zona peligrosa (parámetros de los principios, con código de autenticación) y definiciones de conectores HTTP desde Boni | — |
 | A8 | El asistente que ve la pantalla, voz y modo señalar (escritorio) | — |
 
-## 11. Decisiones
+## 11. Extensiones con funciones (planificado, 2026-10-23)
+
+**Por qué.** Juan (2026-10-23): Boni es un lienzo en blanco, un "harness" para sus datos; toda extensión se debe poder
+hacer dentro de Boni o con una IA de fuera con el MCP de Boni (Claude), **sin tocar el código de Boni**. Con solo datos
+(secciones 2-3) eso vale para componer (el correo, un conector HTTP, una página), pero no para lógica de verdad. El caso
+que lo enseña es la conciliación bancaria: leer el formato de cada banco (el `.xls` de ING es binario), construir la
+referencia de cada línea idéntica a la de siempre, emparejar con lo apuntado (importe, cuenta, ±3 días, las dudosas),
+aplicar reglas y comprobar el mes. Hoy son ~1.500 líneas en `apps/server/src/money/`; un banco nuevo sería un PR.
+
+**La idea: núcleo funcional en una caja, cáscara imperativa en Boni.** Una extensión puede traer **funciones puras**:
+reciben datos y devuelven datos, en un intérprete aislado sin red, sin disco, sin reloj y sin acceso a Boni. Todo lo
+que toca algo (leer colecciones, guardar, preguntar a Juan, la red) lo sigue haciendo el código de Boni, con la política
+de siempre. Ejemplo: `importar(extractos, movimientos, reglas)` devuelve "crear estos 18, unir estos 4, dudosa esta 1";
+Boni lo enseña como ensayo y, aceptado, lo aplica como un run con Deshacer. Las piezas declarativas (sección 3.1) siguen
+siendo lo primero; las funciones son para lo que no cabe en ellas.
+
+### 11.1 El manifiesto, ampliado
+
+| Parte | Nuevo | En la conciliación |
+|---|---|---|
+| `functions` | Nombre, código (JavaScript), su hash, esquema de entrada y de salida, límites | `leer_revolut`, `leer_ing` (bytes → líneas), `importar`, `cerrar_mes` |
+| `tests` | Ejemplos de entrada y salida que deben pasar antes de activar y en cada versión | Extractos inventados con su resultado |
+| `needs.reads` | Colecciones (y carpetas de Archivos) que sus funciones reciben; las privadas, una a una | Movimiento, Deuda, Categorías, Reglas, `extractos/` |
+| `flows`, `routes` | Una función como paso de un flujo; su resultado como cambios, tarjetas o propuestas | Al subir un extracto: `importar` en seco → tarjeta "18 nuevas, 4 unidas, 1 dudosa"; botón «Cerrar mes» |
+| `learning` | Como hoy | Una categoría corregida propone una Regla |
+
+### 11.2 Quién escribe, quién activa
+
+- **Escribe:** Boni (papel `builder`) o una IA de fuera por el MCP de Boni, con herramientas nuevas:
+  `extensions_describe`, `extensions_propose` (manifiesto y código), `extensions_test`, `extensions_run` (en seco o
+  aplicado, una extensión ya activa).
+- **Activa: solo Juan, en Boni, desde un dispositivo personal**, con una tarjeta pintada por código: lo que pide de más
+  (`moreNeeds`), el hash del código, las pruebas y el ensayo con sus datos reales. Por MCP no se activa nada, con ningún
+  token. P16 se amplía: nada que venga de contenido externo crea ni cambia una extensión.
+- **Tokens del MCP con alcance** (hoy uno lo puede todo lo visible): leer, escribir, proponer extensiones.
+- Versiones guardadas: volver a la anterior es un clic; una versión nueva nunca se activa sola.
+
+### 11.3 Qué datos recibe una función
+
+1. **Los modelos de fuera nunca ven lo privado**: no cambia (un modelo manda los datos a su proveedor).
+2. **Una función sí puede leerlo**, si su manifiesto lo pide para esa colección y Juan lo acepta expresamente al activarla
+   (en la página de la colección, como el `unlock` de hoy). La caja no tiene red: no manda nada a ningún sitio.
+3. **Lo que sale de una función hereda las etiquetas de lo que recibió**: integridad como mucho `model` (lo escribió un
+   modelo) y la sensibilidad más alta. Lo calculado desde lo privado se enseña a Juan y se guarda, pero no vuelve a un
+   modelo (`toPlannerView`) ni sale fuera (P2, P3, P14). Ejemplo: el lector saca "cita jueves 10:00" de un correo; una
+   función mira en Salud (privada) si ya existe; Juan recibe "Añadir a Salud" o "ya la tienes"; ningún modelo ve Salud.
+4. Los secretos nunca entran en la caja (los usan los conectores, en el código).
+
+### 11.4 Amenazas y defensas
+
+| Amenaza | Defensa |
+|---|---|
+| Una inyección (un correo que Claude leyó) propone una extensión maliciosa | Proponer no es activar: la tarjeta de Juan en Boni enseña lo que pide y el ensayo; P16 ampliado |
+| Sacar datos fuera | La caja no tiene red; la salida va etiquetada (11.3) y la política la frena |
+| Leer lo que no debe | Solo recibe lo que declara `needs.reads`; lo privado, colección a colección y aceptado por Juan |
+| Romper datos (error o malicia) | No escribe: devuelve cambios que Boni aplica con la política (ensayo, confirmación si son muchos, P11, comprobación de versión, un run con Deshacer, copia diaria) |
+| Bloquear el servidor | Límites de tiempo, memoria y tamaño de salida por llamada, presupuesto diario (P13); fuera del proceso del servidor |
+| Escapar del intérprete | **Contenedor aparte** sin red, sin volúmenes de datos y sin claves, que solo habla con Boni por un socket; quien escape no encuentra nada |
+| Extensiones de otros (Boni para más gente) | Firmadas, sin actualización automática, cada versión enseña lo que pide de más |
+| Juan no lee JavaScript | La seguridad no depende de revisar el código: depende de la caja, `needs`, las etiquetas, el ensayo y las pruebas |
+
+Riesgo que queda: una función sutilmente incorrecta (un redondeo, una clasificación) que pase sus pruebas. Lo frenan las
+pruebas con datos reales en el ensayo, el ensayo antes de cada cambio grande y Deshacer.
+
+**La pieza técnica:** QuickJS compilado a WebAssembly (`quickjs-emscripten`: no es un módulo nativo; límite de memoria y
+de tiempo por llamada), en un contenedor `boni-sandbox` (Node, `network_mode: none`, raíz de solo lectura, sin
+capacidades, memoria y procesos limitados) que comparte con el servidor solo una carpeta con el socket. Descartados: `vm`
+de Node (no es una frontera), `isolated-vm` (nativo), WASM con Rust (hay que compilar). Entrada y salida en JSON
+validado por su esquema; sin `Date.now` ni `Math.random` (el día y una semilla los pasa Boni), así una función da
+siempre lo mismo.
+
+### 11.5 Fases (sin empezar)
+
+| # | Qué | Hecho cuando |
+|---|---|---|
+| E1 | **La caja:** contenedor `boni-sandbox`, ejecutor QuickJS-WASM, protocolo por socket, límites | Un corpus de fugas en el CI (red, `require`, `process`, bucle infinito, bomba de memoria, salida enorme, salida que no cumple su esquema) falla siempre; medido en el NAS (memoria, arranque) |
+| E2 | **`functions` y `tests` en el manifiesto:** validación, etiquetas de la salida (11.3), solo lo de `needs.reads` | Pruebas de propiedad: lo derivado de lo privado nunca llega al planificador ni a un destino |
+| E3 | **Proponer y activar:** herramientas del MCP (11.2), tokens con alcance, la tarjeta de activación en Boni (lo que pide de más, hash, pruebas, ensayo), versiones y vuelta atrás | Una propuesta hecha por MCP no hace nada hasta aceptarla en la app de escritorio; un token sin alcance no propone |
+| E4 | **La conciliación como primera extensión:** el código de `money/` pasa a sus funciones; «Subir extracto» en la app; lo dudoso como tarjetas; Reglas aprendidas | Con una copia de los datos de Juan da exactamente lo mismo que el código de hoy (como el 2026-10-23); luego se borran `money/` y `finanzas_*` |
+| E5 | **Lo privado por extensión** (11.3, punto 2) | Una extensión con Salud aceptada propone sin que ningún modelo la vea |
+| E6 | Más adelante: compartir extensiones (firma, revisión) | — |
+
+## 12. Decisiones
 
 1. **Nombre: "extensión".** Decidido (Juan, 2026-10-21).
 2. **Frontera:** código = el repo de GitHub, por PR (Claude Code, revisado por Juan); datos = lo que vive en Boni, con
@@ -400,3 +482,7 @@ Esto no es otro proyecto: es la forma de hacer los PR 16 a 21 sin duplicar códi
    catálogo desde Boni** (3.1). Decidido (Juan, 2026-10-21).
 6. **Índices de APIs** (p. ej. `public-apis`): como consulta del papel `builder` para descubrir APIs al definir
    conectores (A7); el conector se arma mejor desde el OpenAPI de cada API. Propuesto (2026-10-21).
+7. **Extensiones con funciones** (sección 11): una extensión no trae código que toque nada; puede traer funciones puras
+   que se ejecutan en una caja sin puertas (contenedor aparte); solo Juan las activa, en Boni; leen lo que declaran y lo
+   privado solo si Juan lo abre para esa extensión, y lo que derivan de ello nunca llega a un modelo. Precisa la decisión 2.
+   Decidido (Juan, 2026-10-23); orden E1-E6, sin empezar.
