@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { wrappedKeysIn } from "@boni/identity";
-import { seal, type UserStore, wrappedKeyProvider } from "@boni/store";
+import { sealFile, type UserStore, wrappedKeyProvider } from "@boni/store";
 import type { Db } from "./db.ts";
 
 /**
@@ -75,7 +75,7 @@ export function backupStoresNow(
       const m = new DatabaseSync(mirror, { readOnly: true });
       try {
         m.prepare("VACUUM INTO ?").run(tmp);
-        writeFileSync(sealed, seal(key, readFileSync(tmp), "boni-backup"), { mode: 0o600 });
+        sealFile(key, tmp, sealed, "boni-backup");
         made.push(sealed);
       } finally {
         m.close();

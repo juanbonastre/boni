@@ -7,7 +7,14 @@ export type {
   RunRow,
   StepRow,
 } from "./journal.ts";
-export { type KeyProvider, open, seal, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
+export {
+  type KeyProvider,
+  open,
+  seal,
+  sealFile,
+  type WrappedKeys,
+  wrappedKeyProvider,
+} from "./keys.ts";
 export { MIGRATIONS, migrate } from "./migrations.ts";
 export {
   type Actor,

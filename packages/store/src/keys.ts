@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { closeSync, openSync, readSync, writeSync } from "node:fs";
 
 /**
  * Per-user keys (docs/nucleo.md, 5.2). Every user has a random 32-byte data key; it is stored only
@@ -28,6 +29,35 @@ export function seal(key: Buffer, plain: Buffer, aad = ""): Buffer {
   c.setAAD(Buffer.from(aad));
   const body = Buffer.concat([c.update(plain), c.final()]);
   return Buffer.concat([iv, c.getAuthTag(), body]);
+}
+
+/**
+ * `seal` for a file, a megabyte at a time, into `dest` (same format: iv, tag, body; the tag is written last
+ * in its place). The server's container has 512 MB: a store with its attachments sealed in memory took three
+ * times its size and the container was killed at every start, before the day's copy was done (2026-10-23).
+ */
+export function sealFile(key: Buffer, src: string, dest: string, aad = ""): void {
+  if (key.length !== 32) throw new Error("A key is 32 bytes");
+  const iv = randomBytes(IV);
+  const c = createCipheriv("aes-256-gcm", key, iv);
+  c.setAAD(Buffer.from(aad));
+  const input = openSync(src, "r");
+  const out = openSync(dest, "w", 0o600);
+  try {
+    writeSync(out, iv);
+    writeSync(out, Buffer.alloc(TAG));
+    const chunk = Buffer.alloc(1 << 20);
+    for (;;) {
+      const n = readSync(input, chunk, 0, chunk.length, null);
+      if (n === 0) break;
+      writeSync(out, c.update(chunk.subarray(0, n)));
+    }
+    writeSync(out, c.final());
+    writeSync(out, c.getAuthTag(), 0, TAG, IV);
+  } finally {
+    closeSync(input);
+    closeSync(out);
+  }
 }
 
 export function open(key: Buffer, sealed: Buffer, aad = ""): Buffer {

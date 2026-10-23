@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { label, type TypeDef } from "@boni/entities";
 import { afterEach, describe, expect, it } from "vitest";
-import { open, seal, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
+import { open, seal, sealFile, type WrappedKeys, wrappedKeyProvider } from "./keys.ts";
 import { MIGRATIONS } from "./migrations.ts";
 import {
   BODY,
@@ -562,6 +562,18 @@ describe("keys and backups", () => {
     bad[bad.length - 1] = (bad[bad.length - 1] ?? 0) ^ 1;
     expect(() => open(key, bad)).toThrow();
     expect(() => open(Buffer.alloc(32, 8), box)).toThrow();
+  });
+
+  it("seals a file a megabyte at a time, in the same format open reads", () => {
+    const key = Buffer.alloc(32, 7);
+    const d = mkdtempSync(join(tmpdir(), "boni-seal-"));
+    const plainBytes = Buffer.alloc(3 * (1 << 20) + 123, 5);
+    plainBytes.write("principio", 0);
+    writeFileSync(join(d, "in"), plainBytes);
+    sealFile(key, join(d, "in"), join(d, "out"), "boni-backup");
+    expect(open(key, readFileSync(join(d, "out")), "boni-backup").equals(plainBytes)).toBe(true);
+    expect(() => open(key, readFileSync(join(d, "out")), "otra")).toThrow();
+    rmSync(d, { recursive: true, force: true });
   });
 
   it("gives each user a stable data key that is only stored wrapped, and only opens as that user's", () => {
