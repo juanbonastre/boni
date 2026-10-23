@@ -47,6 +47,12 @@ export interface ProposalRow {
   status: "pending" | "accepted" | "rejected" | "postponed" | "stale";
   created: number;
   decided: number | null;
+  /** What Juan changed when accepting it (`{ type?: { from, to }, values?: { key: { from, to } } }`). */
+  edits: ProposalEdits | null;
+}
+export interface ProposalEdits {
+  type?: { from: string; to: string };
+  values?: Record<string, { from: unknown; to: unknown }>;
 }
 export interface ConfirmationRow {
   id: string;
@@ -68,10 +74,15 @@ export interface Journal {
   steps(run: string): StepRow[];
   modelCall(r: ModelCallRow): void;
   modelCalls(run: string): ModelCallRow[];
-  addProposal(p: Omit<ProposalRow, "status" | "decided">): void;
+  addProposal(p: Omit<ProposalRow, "status" | "decided" | "edits">): void;
   proposal(id: string): ProposalRow | null;
   proposals(status?: ProposalRow["status"]): ProposalRow[];
-  setProposal(id: string, status: ProposalRow["status"], at: number): void;
+  setProposal(
+    id: string,
+    status: ProposalRow["status"],
+    at: number,
+    edits?: ProposalEdits | null,
+  ): void;
   addConfirmation(c: Omit<ConfirmationRow, "used">): void;
   confirmation(id: string): ConfirmationRow | null;
   /** Marks it used; false when it was used already, expired or is not that hash. */
@@ -105,6 +116,7 @@ export function openJournal(db: DatabaseSync): Journal {
     status: r.status as ProposalRow["status"],
     created: r.created as number,
     decided: (r.decided as number | null) ?? null,
+    edits: p(r.edits),
   });
   return {
     startRun: (r) =>
@@ -195,10 +207,10 @@ export function openJournal(db: DatabaseSync): Journal {
         ? db.prepare("SELECT * FROM proposals WHERE status = ? ORDER BY created, id").all(status)
         : db.prepare("SELECT * FROM proposals ORDER BY created, id").all()
       ).map(proposalOf),
-    setProposal: (id, status, at) =>
+    setProposal: (id, status, at, edits) =>
       void db
-        .prepare("UPDATE proposals SET status = ?, decided = ? WHERE id = ?")
-        .run(status, at, id),
+        .prepare("UPDATE proposals SET status = ?, decided = ?, edits = ? WHERE id = ?")
+        .run(status, at, edits ? j(edits) : null, id),
     addConfirmation: (c) =>
       void db
         .prepare(

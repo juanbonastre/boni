@@ -4486,6 +4486,65 @@ button.find-row:hover {
   flex: none;
   margin-left: auto;
 }
+.inbox-correct {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.inbox-correct-row {
+  display: grid;
+  grid-template-columns: minmax(0, 7em) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  min-width: 0;
+}
+.inbox-correct-row > span {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-correct-row .input {
+  min-width: 0;
+  width: 100%;
+}
+.inbox-correct p {
+  margin: 0;
+}
+.inbox-correct-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.inbox-correct-foot p {
+  flex: 1;
+  min-width: 0;
+}
+.inbox-correct-foot .btn {
+  flex: none;
+}
+.inbox-card-head .inbox-fix {
+  flex: none;
+  margin-top: -4px;
+}
+.icon-btn.inbox-fix.on {
+  color: var(--accent);
+}
+.pp-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pp-title-row .pp-title {
+  flex: 1;
+  min-width: 0;
+}
 .inbox-why {
   margin: 0 0 4px;
   font-size: 12px;

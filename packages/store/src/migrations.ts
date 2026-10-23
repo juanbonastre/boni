@@ -171,6 +171,9 @@ export const MIGRATIONS = [
      at INTEGER NOT NULL,
      by TEXT
    );`,
+  // 8: what Juan changed when accepting a proposal (Juan, 2026-10-23: a corrected title or collection is a
+  // prediction error the reviewer learns from).
+  `ALTER TABLE proposals ADD COLUMN edits TEXT;`,
 ];
 
 export function migrate(db: DatabaseSync): void {

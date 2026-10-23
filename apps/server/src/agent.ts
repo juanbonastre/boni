@@ -12,6 +12,7 @@ import { openUserStore, type UserStore } from "@boni/store";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { type InboxCard, inboxCard } from "./inboxCard.ts";
+import { acceptEdits } from "./proposalEdits.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 
 /**
@@ -25,7 +26,8 @@ import { bodyOf, CORS, SAFE, send } from "./reply.ts";
  *   POST /api/agent/confirm  { run, confirmation }
  *   POST /api/agent/decline  { run, confirmation }
  *   GET  /api/agent/proposals                -> { proposals } pending, with the view painted by the code
- *   POST /api/agent/proposals/:id/accept | /reject
+ *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection? } } Juan's corrections, kept
+ *   POST /api/agent/proposals/:id/reject
  *   GET  /api/agent/runs                     -> { runs } the latest, for the log
  *   GET  /api/agent/runs/:id                 -> RunDetail: the request and each step (a personal device only)
  *   POST /api/agent/runs/:id/undo            -> { undone } every operation of that run
@@ -223,8 +225,16 @@ async function answerAgent(
             };
           }),
       });
-    case "POST /api/agent/proposals/:id/accept":
-      return send(res, 200, after(await agent.acceptProposal(params.id ?? "", who.trust)));
+    case "POST /api/agent/proposals/:id/accept": {
+      // Juan's corrections first (a new title, another collection), as the agent's edits.
+      const b = ((await bodyOf(req)) ?? {}) as {
+        edits?: { title?: unknown; collection?: unknown };
+      };
+      const p = host.store(who.account).journal.proposal(params.id ?? "");
+      const edits = b.edits && p ? acceptEdits(host.store(who.account), p, b.edits) : {};
+      if ("error" in edits) return send(res, 400, { error: edits.error });
+      return send(res, 200, after(await agent.acceptProposal(params.id ?? "", who.trust, edits)));
+    }
     case "POST /api/agent/proposals/:id/reject":
       agent.rejectProposal(params.id ?? "");
       return send(res, 200, {});

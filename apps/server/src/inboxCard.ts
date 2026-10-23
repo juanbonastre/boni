@@ -13,6 +13,8 @@ import { mailOfRun } from "./mailReview.ts";
 export interface InboxCard {
   action: "create" | "update" | "delete" | "other";
   collection: string | null;
+  /** The collection's id (Juan may move the proposal to another one before accepting). */
+  collectionId: string | null;
   kind: "event" | "task" | "item";
   title: string | null;
   day: string | null;
@@ -198,6 +200,7 @@ export function inboxCard(
   return {
     action,
     collection,
+    collectionId: def?.id ?? null,
     kind,
     title,
     day,

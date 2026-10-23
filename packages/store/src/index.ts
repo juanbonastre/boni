@@ -2,6 +2,7 @@ export type {
   ConfirmationRow,
   Journal,
   ModelCallRow,
+  ProposalEdits,
   ProposalRow,
   RunRow,
   StepRow,

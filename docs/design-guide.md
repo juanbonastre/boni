@@ -339,7 +339,11 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   the "Propuesta" tag and what it does, the title large, then sections (small upper-case labels): Propiedades (every
   value, the title and day too), Nota, Por qué, Origen (source line with "Ver correo", subject, the mail's words),
   Esos días (three days); Aceptar / Rechazar at the end go back to where it was opened from, as Esc and the crumb
-  "Bandeja / Propuesta" do. **Ghost rows**: a pending proposal to create an entry also shows in its collection: in
+  "Bandeja / Propuesta" do. A proposal to create something can be **corrected** before accepting (Juan,
+  2026-10-23): the ✎ button beside ⤢ (on its page, beside the title) opens a small boxed form under the card's
+  content, Título (a text field) and Colección (a select of his collections), with "Boni lo toma como un error suyo
+  y aprende de él." and "Deshacer cambios"; Aceptar then sends the changes and the toast says Boni will learn from
+  them. **Ghost rows**: a pending proposal to create an entry also shows in its collection: in
   the table, first, read only, in muted text with a solid "Propuesta" tag and ✓ / ✕ beside its title (no dashed
   border on rows: Juan, 2026-10-23, dashed only in calendars); in the calendar layout, a dashed item; a click on its title (table) or on it (calendar) opens the proposal's page. They are proposals, not entities: nothing counts them; a hand edit of the mirror in Obsidian arrives there too, titled "Cambio hecho a mano en
   Obsidian", with the note's path first and, under "No se aplica", what did not fit its field; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it, and a collection by its name alone ("Docencia"; names and titles that came from outside are not used: the key and the id instead); the **log** lists the requests with Undo for each (a stopped one too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation

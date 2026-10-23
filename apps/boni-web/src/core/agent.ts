@@ -69,6 +69,7 @@ export interface Proposal {
 export interface InboxCard {
   action: "create" | "update" | "delete" | "other";
   collection: string | null;
+  collectionId: string | null;
   kind: "event" | "task" | "item";
   title: string | null;
   day: string | null;
@@ -121,6 +122,7 @@ function parseCard(v: unknown): InboxCard | null {
   return {
     action: actions.find((a) => a === v.action) ?? "other",
     collection: optStr(v.collection, 200),
+    collectionId: optStr(v.collectionId, 100),
     kind: kinds.find((k) => k === v.kind) ?? "item",
     title: optStr(v.title, 300),
     day: optMatch(v.day, DAY_RE),
@@ -753,8 +755,15 @@ export class AgentApi {
       ];
     });
   }
-  accept = async (id: string) =>
-    parseTurn(await this.call("POST", `proposals/${encodeURIComponent(id)}/accept`));
+  /** `edits`: Juan's corrections (a new title, another collection by id), kept for the reviewer. */
+  accept = async (id: string, edits?: { title?: string; collection?: string }) =>
+    parseTurn(
+      await this.call(
+        "POST",
+        `proposals/${encodeURIComponent(id)}/accept`,
+        edits ? { edits } : undefined,
+      ),
+    );
   reject = async (id: string) =>
     void (await this.call("POST", `proposals/${encodeURIComponent(id)}/reject`));
   async runs(): Promise<RunSummary[]> {

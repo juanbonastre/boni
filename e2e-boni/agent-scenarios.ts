@@ -229,6 +229,7 @@ export const CARD_DETAILED = {
   card: {
     action: "create",
     collection: "Docencia",
+    collectionId: "t_docencia",
     kind: "event",
     title: "Revisar actas",
     day: "2026-10-29",

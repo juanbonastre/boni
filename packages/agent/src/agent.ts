@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join, type Label, label, modelMaySee } from "@boni/entities";
-import type { UserStore } from "@boni/store";
+import type { ProposalEdits, UserStore } from "@boni/store";
 import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
 import { checkAnswers, type DecisionQuestion } from "./decider.ts";
 import {
@@ -1289,7 +1289,16 @@ export class Agent {
    * personal device": that satisfies P4, never P2, P3 or P14, and P5 still asks to confirm. A
    * proposal whose entities changed since is stale: it is marked and not run.
    */
-  async acceptProposal(id: string, trust: Origin["trust"]): Promise<TurnResult> {
+  async acceptProposal(
+    id: string,
+    trust: Origin["trust"],
+    /**
+     * Juan's changes before accepting a proposal to create (Juan, 2026-10-23): another collection (its key) and
+     * values that replace the proposal's (null takes one out). What he typed is his (`user`); the journal keeps
+     * what changed, as a prediction the reviewer learns from.
+     */
+    edits?: { type?: string; values?: Record<string, Json | null> },
+  ): Promise<TurnResult> {
     const p = this.o.store.journal.proposal(id);
     const empty = (error: string): TurnResult => ({
       run: "",
@@ -1310,6 +1319,28 @@ export class Agent {
       return empty("stale");
     }
     const args = Object.fromEntries(Object.entries(stored.values).map(([k, v]) => [k, thaw(v)]));
+    let changed: ProposalEdits | null = null;
+    if (edits && (edits.type !== undefined || edits.values)) {
+      if (tool.name !== "entities.create" || args.values?.t !== "rec")
+        return empty("edit-not-allowed");
+      const mine = label("user", "personal", [{ kind: "user-edit", id }]);
+      changed = {};
+      const from = plain(args.type as Val);
+      if (edits.type !== undefined && edits.type !== from) {
+        args.type = leaf(edits.type, mine);
+        changed.type = { from: String(from), to: edits.type };
+      }
+      const fields = { ...args.values.fields };
+      for (const [k, v] of Object.entries(edits.values ?? {})) {
+        const before = fields[k] ? plain(fields[k] as Val) : null;
+        if (JSON.stringify(before) === JSON.stringify(v)) continue;
+        if (v === null) delete fields[k];
+        else fields[k] = leaf(v, mine);
+        changed.values = { ...changed.values, [k]: { from: before, to: v } };
+      }
+      args.values = { ...args.values, fields };
+      if (!changed.type && !changed.values) changed = null;
+    }
     const run = randomUUID();
     const origin: Origin = { kind: "accepted", trust };
     this.o.store.journal.startRun({
@@ -1327,7 +1358,7 @@ export class Agent {
       null,
     );
     st.preset.set("accept", args);
-    this.o.store.journal.setProposal(id, "accepted", this.now());
+    this.o.store.journal.setProposal(id, "accepted", this.now(), changed);
     return this.advance(st);
   }
 

@@ -1,10 +1,11 @@
 import { markdownToBlocks } from "@boni/views";
-import { ChevronDown, FileText, Inbox, Mail, Maximize2, X } from "lucide-react";
+import { ChevronDown, FileText, Inbox, Mail, Maximize2, Pencil, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ConfirmView, InboxCard, Proposal } from "../core/agent.ts";
 import {
   acceptProposal,
   closeProposal,
+  loadDataTypes,
   loadInbox,
   openMail,
   openProposal,
@@ -116,11 +117,87 @@ function useDayFormat() {
   };
 }
 
+/**
+ * Correcting a proposal before accepting it (Juan, 2026-10-23): its title and the collection it goes to. The
+ * server keeps what changed as a mistake of the reading, and the reviewer learns from it.
+ */
+function useCorrection(p: Proposal) {
+  const t = useStore((s) => s.t);
+  const types = useStore((s) => s.dataTypes);
+  const c = p.card;
+  const [edit, setEdit] = useState<{ title: string; collection: string } | null>(null);
+  const can = c?.action === "create" && !!c.collectionId;
+  const start = () => {
+    if (!types) void loadDataTypes();
+    setEdit({ title: c?.title ?? "", collection: c?.collectionId ?? "" });
+  };
+  const edits = () => {
+    if (!edit || !c) return undefined;
+    const out: { title?: string; collection?: string } = {};
+    const title = edit.title.replace(/\s+/g, " ").trim();
+    if (title && title !== c.title) out.title = title;
+    if (edit.collection && edit.collection !== c.collectionId) out.collection = edit.collection;
+    return out.title || out.collection ? out : undefined;
+  };
+  const options = [
+    ...(types ?? []).filter((x) => x.zone === undefined && x.level !== "private"),
+  ].sort((a, b) => a.name.localeCompare(b.name));
+  if (c?.collectionId && !options.some((x) => x.id === c.collectionId))
+    options.unshift({ id: c.collectionId, name: c.collection ?? "" } as (typeof options)[number]);
+  const form = edit && (
+    <div className="inbox-correct">
+      <label className="inbox-correct-row">
+        <span>{t("inbox.correctTitle")}</span>
+        <input
+          className="input"
+          value={edit.title}
+          maxLength={300}
+          onChange={(e) => setEdit({ ...edit, title: e.target.value })}
+        />
+      </label>
+      <label className="inbox-correct-row">
+        <span>{t("inbox.correctCollection")}</span>
+        <select
+          className="input"
+          value={edit.collection}
+          onChange={(e) => setEdit({ ...edit, collection: e.target.value })}
+        >
+          {options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="inbox-correct-foot">
+        <p className="muted small">{t("inbox.correctHelp")}</p>
+        <button type="button" className="btn ghost small" onClick={() => setEdit(null)}>
+          {t("inbox.cancelCorrect")}
+        </button>
+      </div>
+    </div>
+  );
+  const button = can && (
+    <button
+      type="button"
+      className={`icon-btn inbox-fix${edit ? " on" : ""}`}
+      aria-pressed={!!edit}
+      title={t("inbox.correct")}
+      aria-label={t("inbox.correct")}
+      onClick={() => (edit ? setEdit(null) : start())}
+    >
+      <Pencil size={14} strokeWidth={1.8} />
+    </button>
+  );
+  return { form, button, edits };
+}
+
 export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }) {
   const t = useStore((s) => s.t);
   const c = p.card;
   const fmt = useDayFormat();
   const [more, setMore] = useState(c?.mode !== "compact");
+  const fix = useCorrection(p);
   const when = c?.day
     ? `${fmt.long(c.day)}${c.start ? `, ${c.start}${c.end ? `–${c.end}` : ""}` : ""}`
     : null;
@@ -188,6 +265,7 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
     >
       <header className="inbox-card-head">
         <h3>{headline(t, p, c)}</h3>
+        {fix.button}
         <button
           type="button"
           className="icon-btn inbox-open"
@@ -215,8 +293,13 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
           {fields}
         </>
       )}
+      {fix.form}
       <div className="inbox-actions">
-        <button type="button" className="btn primary" onClick={() => void acceptProposal(p.id)}>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={() => void acceptProposal(p.id, fix.edits())}
+        >
           {t("inbox.accept")}
         </button>
         <button type="button" className="btn" onClick={() => void rejectProposal(p.id)}>
@@ -328,13 +411,20 @@ function Why({ why }: { why: NonNullable<InboxCard["why"]> }) {
 export function ProposalPage({ id }: { id: string }) {
   const t = useStore((s) => s.t);
   const p = useStore((s) => s.inbox.find((x) => x.id === id));
-  const fmt = useDayFormat();
   if (!p)
     return (
       <div className="content proposal-page">
         <p className="muted center-note">{t("inbox.gone")}</p>
       </div>
     );
+  return <ProposalPageOf p={p} />;
+}
+
+function ProposalPageOf({ p }: { p: Proposal }) {
+  const t = useStore((s) => s.t);
+  const id = p.id;
+  const fmt = useDayFormat();
+  const fix = useCorrection(p);
   const c = p.card;
   const body = p.view?.rows.find((r) => r.arg === "values.body" || r.arg.endsWith(".body"));
   const rows: ConfirmView | null = p.view
@@ -346,7 +436,7 @@ export function ProposalPage({ id }: { id: string }) {
       }
     : null;
   const decide = async (accept: boolean) => {
-    await (accept ? acceptProposal(id) : rejectProposal(id));
+    await (accept ? acceptProposal(id, fix.edits()) : rejectProposal(id));
     const v = useStore.getState().view;
     if (v.kind === "proposal" && v.id === id) closeProposal();
   };
@@ -357,7 +447,10 @@ export function ProposalPage({ id }: { id: string }) {
           <span className="ghost-tag">{t("ghost.proposed")}</span>
           <span className="muted">{headline(t, p, c)}</span>
         </p>
-        <h2 className="pp-title">{c?.title ?? headline(t, p, c)}</h2>
+        <div className="pp-title-row">
+          <h2 className="pp-title">{c?.title ?? headline(t, p, c)}</h2>
+          {fix.button}
+        </div>
       </header>
       {rows && rows.rows.length > 0 && (
         <section className="pp-section">
@@ -409,6 +502,7 @@ export function ProposalPage({ id }: { id: string }) {
           />
         </section>
       )}
+      {fix.form}
       <div className="inbox-actions">
         <button type="button" className="btn primary" onClick={() => void decide(true)}>
           {t("inbox.accept")}
