@@ -20,6 +20,8 @@ export interface MoneyVault {
   files(dir: string, exts: string[]): string[];
   readBytes(rel: string): Buffer;
   read(rel: string): { text: string };
+  /** The categories, when they are not a note's text to parse (Boni's own: storeFiles). */
+  categories?(): string[];
 }
 
 function ensureCore(store: UserStore) {
@@ -36,6 +38,7 @@ const rulesOf = (vault: MoneyVault) => {
   }
 };
 const categoriesOf = (vault: MoneyVault): string[] => {
+  if (vault.categories) return vault.categories();
   try {
     const v = parseNote(vault.read(`${FIN}/categorias.md`).text).values.categories;
     return Array.isArray(v) ? v.map(String) : [];

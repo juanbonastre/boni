@@ -254,19 +254,21 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `src/mcp.ts`: Boni's MCP (`POST /api/mcp`, tailnet, a personal device's session that `cli.ts token
                  <name> <device>` makes without a password): what vault-mcp did, over the account's collections
                  (guide = the AGENTS.md note, collections, search, query with Notion's filters, read by id or vault
-                 path, create, edit, append, set_properties, recent_changes, trash, undo by run, finanzas_import,
-                 finanzas_close). Reads through the
-                 agent's view (`readStore`: levels and rules); writes only to what is visible, labelled `model`.
+                 path, create, edit, append, set_properties, recent_changes, trash, undo by run, upload_file (a
+                 file into "Archivos" at the vault path it would have had, e.g. a bank statement), finanzas_import,
+                 finanzas_close). Reads through the agent's view (`readStore`: levels and rules); writes only to what
+                 is visible, labelled `model`.
                  `src/money/`: the monthly reconciliation on Boni's own movements (ported from finanzas.py of the
                  gastos-app repo, 2026-10-23; procedure in the vault's registros/finanzas/procedimiento-conciliacion.md):
                  `sheets.ts` reads statements (CSV, .xlsx, the old .xls: OLE2 + BIFF8, no dependencies),
                  `statements.ts` Revolut and ING lines with the script's references (byte for byte, so lines the
                  script imported are known), `reconcile.ts` import and close over a `Book`, `book.ts` that book over
                  the store (`t_movimiento`, `t_deuda`; new movements via `entityFromNote`, `imported` from their
-                 statement), `service.ts` the account's statements, rules and categories read from the vault
-                 (`vault-fs` `files` / `readBytes`, read-only). Boni's MCP has `finanzas_import` / `finanzas_close`
-                 (dry run by default; an applied call is one run, undone whole); only with the movements in core
-                 mode and not kept from the models. `export/` CSVs are no longer written.
+                 statement), `service.ts` the reconciliation over a `MoneyVault`; `storeFiles.ts` gives it the
+                 statements and `reglas.csv` from Boni's "Archivos" (by the path each had) and the categories from
+                 the note `registros/finanzas/categorias.md` (Juan, 2026-10-23: no more vault; new statements via
+                 `upload_file`). Boni's MCP has `finanzas_import` / `finanzas_close` (dry run by default; an applied
+                 call is one run, undone whole); only with the movements in core mode and not kept from the models. `export/` CSVs are no longer written.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
                  account (`users/<id>.db` next to system.db) and one `@boni/agent` each; the device's trust level is
                  the turn's origin. On only with `ANTHROPIC_API_KEY`; otherwise 503 `agent-off`. The Registro's

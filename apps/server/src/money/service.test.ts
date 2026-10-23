@@ -54,7 +54,6 @@ function call(e: { root: string; store: UserStore }, name: string, args: Record<
     "portatil",
     { jsonrpc: "2.0", id: ++n, method: "tools/call", params: { name, arguments: args } },
     () => Date.UTC(2026, 9, 12),
-    e.root,
   ) as { result: { content: { text: string }[]; isError: boolean } };
   const text = out.result.content[0]?.text ?? "";
   return { isError: out.result.isError, text, json: out.result.isError ? null : JSON.parse(text) };
@@ -120,6 +119,36 @@ describe("the reconciliation in Boni (MCP finanzas_import / finanzas_close)", ()
     expect(movements(e.store).every((m) => m.status === "pendiente")).toBe(true);
     call(e, "undo", { run: done.json.run });
     expect(movements(e.store)).toHaveLength(1);
+  });
+
+  it("reads a statement uploaded to Boni (upload_file), never over another file or as a note", () => {
+    const e = env();
+    const csv = `Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance
+CARD_PAYMENT,Current,2026-10-02 10:11:12,2026-10-03 08:00:00,Spotify,-10.99,0.00,EUR,COMPLETED,90.00
+`;
+    const path = "registros/finanzas/extractos/2026-10-revolut.csv";
+    const up = call(e, "upload_file", {
+      path,
+      content_base64: Buffer.from(csv).toString("base64"),
+    });
+    expect(up.json.bytes).toBe(csv.length);
+    expect(call(e, "finanzas_import", {}).json.output).toContain(
+      "2026-10-revolut.csv: revolut, 1 lineas",
+    );
+    const b64 = Buffer.from("x").toString("base64");
+    for (const bad of [
+      path,
+      "registros/finanzas/nota.md",
+      "private/a.csv",
+      "registros/../a.csv",
+      "/abs.csv",
+      "sin-extension",
+    ])
+      expect(call(e, "upload_file", { path: bad, content_base64: b64 }).isError).toBe(true);
+    expect(call(e, "upload_file", { path: "a/b.csv", content_base64: "" }).isError).toBe(true);
+    // One run, undone whole: the statement is gone again.
+    call(e, "undo", { run: up.json.run });
+    expect(call(e, "finanzas_import", {}).json.output).not.toContain("2026-10-revolut.csv");
   });
 
   it("refuses while the movements still live in the vault, and without a month", () => {
