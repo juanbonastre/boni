@@ -11,7 +11,9 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 1920, height: 1080 },
-    channel: process.env.CI ? undefined : "chrome",
+    // The system's Google Chrome, here and in CI (GitHub's Ubuntu runners have it): installing Playwright's own
+    // browser with its system packages took from 12 s to over 10 min per job (apt), most of the CI's time.
+    channel: "chrome",
     launchOptions: { args: ["--enable-gpu-rasterization", "--ignore-gpu-blocklist"] },
     colorScheme: "dark",
     locale: "es-ES",
