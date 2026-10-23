@@ -108,6 +108,7 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "query",
       "read",
       "create",
+      "upload_file",
       "edit",
       "append",
       "set_properties",

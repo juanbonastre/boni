@@ -334,13 +334,7 @@ export function makeApp(opts: ServerOptions): App {
           error: { code: -32700, message: "parse error" },
         });
       }
-      const out = mcpAnswer(
-        opts.agent.store(s.user.id),
-        s.device,
-        body,
-        opts.now ?? Date.now,
-        vaultOf(s.user.id) || null,
-      );
+      const out = mcpAnswer(opts.agent.store(s.user.id), s.device, body, opts.now ?? Date.now);
       // What it wrote reaches the mirror at once.
       opts.agent.onChanged?.(s.user.id);
       if (out === null) {

@@ -1,15 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { readStore } from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
-import { BODY, closedToAi, type StoredEntity, type UserStore, type Writes } from "@boni/store";
+import {
+  BODY,
+  closedToAi,
+  MAX_FILE_BYTES,
+  type StoredEntity,
+  type UserStore,
+  type Writes,
+} from "@boni/store";
+import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "@boni/vault-import";
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
 import { type MoneyVault, reconcileClose, reconcileImport } from "./money/service.ts";
-
-const require = createRequire(import.meta.url);
-const { openVault } = require("../../calendar-desktop/vault-fs.cjs") as {
-  openVault: (root: string) => MoneyVault;
-};
+import { storeFiles } from "./money/storeFiles.ts";
 
 /**
  * Boni's MCP server (Juan, 2026-10-22: everything done through vault-mcp moves to Boni). The assistants that
@@ -34,8 +37,6 @@ interface Ctx {
   store: UserStore;
   device: string;
   now: () => number;
-  /** The account's vault folder (the bank statements, rules and categories are read there). */
-  vault?: string | null;
 }
 type Args = Record<string, unknown>;
 class ToolFail extends Error {}
@@ -200,16 +201,15 @@ function writer(c: Ctx) {
 
 // ------------------------------------------------------------------ the tools
 
-/** The account's vault, read-only here (statements, rules, categories). */
+/** The reconciliation's inputs (statements, rules, categories), read-only here. */
 function moneyVault(c: Ctx): MoneyVault {
   // What Juan keeps from the models: a closed or opaque Movimientos or Deudas is not read here either.
   const levels = c.store.aiAccess();
   for (const t of ["t_movimiento", "t_deuda"])
     if (closedToAi(levels[t]) || levels[t] === "opaque")
       throw new ToolFail("Movimientos or Deudas are kept from the models (Lo que ve la IA)");
-  if (!c.vault)
-    throw new ToolFail("this account has no vault folder (the bank statements live there)");
-  return openVault(c.vault);
+  // The statements, rules and categories from Boni itself (Juan, 2026-10-23: no more vault).
+  return storeFiles(c.store);
 }
 
 interface Tool {
@@ -372,6 +372,47 @@ const TOOLS: Tool[] = [
       }
       const made = c.store.create(t.id, writes, w.meta);
       return { id: made.entity.id, run: w.run };
+    },
+  },
+  {
+    name: "upload_file",
+    description:
+      "Adds a file to Boni (collection Archivos) at the vault path it would have had, e.g. a bank statement at registros/finanzas/extractos/<name>.csv for finanzas_import. content_base64: the file's bytes (at most ~6 MB). Never over another file.",
+    inputSchema: obj({ path: { type: "string" }, content_base64: { type: "string" } }, [
+      "path",
+      "content_base64",
+    ]),
+    call(c, a) {
+      const v = view(c);
+      const t = v.typeNamed("Archivos");
+      if (v.level(t.id) !== "visible") throw new ToolFail(`${t.name} is not writable for a model`);
+      const path = str(a.path, "path", 500);
+      const name = path.split("/").pop() ?? "";
+      if (
+        !/^[^/.][^\\]*$/.test(path) ||
+        path.split("/").some((p) => p === "" || p === "." || p === "..") ||
+        path.toLowerCase().endsWith(".md") ||
+        /^(private|restricted)\//.test(path) ||
+        !name.includes(".")
+      )
+        throw new ToolFail("path: a vault-relative file path (not a note, not a zone)");
+      if (c.store.findByValue(PATH_FIELD, path).length) throw new ToolFail("path: taken");
+      const raw = str(a.content_base64, "content_base64", Math.ceil((MAX_FILE_BYTES * 4) / 3) + 4);
+      const bytes = Buffer.from(raw, "base64");
+      if (!bytes.length) throw new ToolFail("content_base64: empty");
+      const w = writer(c);
+      const sha = c.store.putFile(bytes, mimeOf(name));
+      const made = c.store.create(
+        t.id,
+        {
+          [t.titleField]: { value: name, label: w.lbl(t.id, null) },
+          [FILE_FIELD]: { value: sha, label: w.lbl(t.id, null) },
+          [FOLDER_FIELD]: { value: path.slice(0, path.lastIndexOf("/")), label: w.lbl(t.id, null) },
+          [PATH_FIELD]: { value: path, label: w.lbl(t.id, null) },
+        },
+        w.meta,
+      );
+      return { id: made.entity.id, run: w.run, bytes: bytes.length };
     },
   },
   {
@@ -614,9 +655,8 @@ export function mcpAnswer(
   device: string,
   body: unknown,
   now: () => number = Date.now,
-  vault: string | null = null,
 ): unknown | null {
-  const c: Ctx = { store, device, now, vault };
+  const c: Ctx = { store, device, now };
   if (Array.isArray(body)) {
     const out = body.map((m) => answer(c, m as Rpc)).filter((x) => x !== null);
     return out.length ? out : null;
