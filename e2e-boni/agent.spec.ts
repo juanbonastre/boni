@@ -301,6 +301,38 @@ test("a proposal opens on a page of its own: its values, why, where from, and th
   ).toBe(true);
 });
 
+test("a card can be corrected before accepting: its title and its collection go with the acceptance", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_DETAILED] }],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await card.getByRole("button", { name: "Corregir" }).click();
+  const form = card.locator(".inbox-correct");
+  await expect(form.getByLabel("Título")).toHaveValue("Revisar actas");
+  await expect(form.getByLabel("Colección")).toHaveValue("t_docencia");
+  await form.getByLabel("Título").fill("Revisar las actas de FUP 1");
+  await form.getByLabel("Colección").selectOption({ label: "Libros" });
+  await expect(form).toContainText("aprende");
+  await page.screenshot({ path: `${SHOTS}/inbox-correct.png` });
+  await card.getByRole("button", { name: "Aceptar" }).click();
+  await expect(page.locator(".toast")).toContainText("Boni aprenderá");
+  const sent = (await recorded(page)).requests.find((r) =>
+    r.startsWith("POST api/agent/proposals/c1/accept"),
+  );
+  expect(sent).toContain(
+    JSON.stringify({ edits: { title: "Revisar las actas de FUP 1", collection: "t_libro" } }),
+  );
+});
+
 test("a hand edit in Obsidian waits in the inbox with its note and what will not be applied", async ({
   page,
 }) => {

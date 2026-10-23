@@ -1159,9 +1159,11 @@ export class Mails {
     // the background.
     if (!m.learning) return;
     const since = st.reviewedAt ?? 0;
+    // A correction (Juan changed the title or collection before accepting) counts double: a prediction error.
     const fresh = store.journal
       .proposals()
-      .filter((p) => p.decided !== null && p.decided > since && p.status !== "stale").length;
+      .filter((p) => p.decided !== null && p.decided > since && p.status !== "stale")
+      .reduce((n, p) => n + (p.edits ? 2 : 1), 0);
     if (fresh >= m.learning.every && !st.suggestion) void this.reviewNow(account).catch(() => null);
   }
 

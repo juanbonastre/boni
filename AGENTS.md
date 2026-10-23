@@ -220,6 +220,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  Each item is then filled (reader `fill`, `fillFields`: the collection's selects, relations and
                  checkboxes) and created along with it (`zip`), with the reader's quote as its `why`; with
                  `TYPESAFE_API_KEY` (or `OPENROUTER_API_KEY`) Jev also chooses the collection (both orders agreeing).
+                 Juan may correct a proposal's title or collection before accepting (`proposalEdits.ts`:
+                 the day moves to the new collection's date field, the other filled fields do not); the journal
+                 keeps what changed (`edits`) and the reviewer reads it as a mistake of the reading.
                  Since 15d each mail is read once with `read_message` (headers, where the user is, modules
                  tasks and events); the reading guide (`MailGuide`: Juan's words, rules applied by code, examples)
                  goes to the reader as `$guide`, bound by code. `src/mailReview.ts`: the reviewer, every 20 of

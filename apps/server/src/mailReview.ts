@@ -23,6 +23,11 @@ export interface Decision {
   title: string;
   due: string | null;
   accepted: boolean;
+  /**
+   * What the reading proposed when Juan corrected it before accepting (Juan, 2026-10-23): a prediction error,
+   * like a rejection; `title` and `collection` above are then his.
+   */
+  corrected?: { title?: string; collection?: string };
   at: number;
   /** When the proposal was made (orders decisions taken at the same moment). */
   made: number;
@@ -77,14 +82,28 @@ export function decisions(
       const due = rows.find(
         (r) => r.arg.startsWith("values.") && /^\d{4}-\d{2}-\d{2}$/.test(String(r.value)),
       );
+      const nameOf = (k: string) => Object.values(schema).find((t) => t.key === k)?.name ?? k;
+      // Juan's corrections: his title and collection, and what was proposed.
+      const e = p.edits;
+      const fixedTitle = e?.values?.title?.to;
+      const myTitle = typeof fixedTitle === "string" && fixedTitle !== title ? fixedTitle : null;
+      const myKey = e?.type && e.type.to !== key ? e.type.to : null;
       out.push({
         id: "",
         proposal: p.id,
         mail: m.entity.id,
         sender: String(m.entity.values.f_de ?? "").toLowerCase(),
         userIn: userInOf(m.entity.values),
-        collection: Object.values(schema).find((t) => t.key === key)?.name ?? key,
-        title,
+        collection: nameOf(myKey ?? key),
+        title: myTitle ?? title,
+        ...(myTitle || myKey
+          ? {
+              corrected: {
+                ...(myTitle ? { title } : {}),
+                ...(myKey ? { collection: nameOf(key) } : {}),
+              },
+            }
+          : {}),
         due: due ? String(due.value) : null,
         accepted: status === "accepted",
         at: p.decided,
@@ -207,9 +226,19 @@ export async function review(h: ReviewHost): Promise<Suggestion | null> {
   const { ds } = h;
   if (ds.length < MIN_DECISIONS || !h.targets.length) return null;
   const lines = ds.map((d) =>
-    [d.id, d.sender, d.userIn, d.title, d.collection, d.accepted ? "accepted" : "rejected"].join(
-      " | ",
-    ),
+    [
+      d.id,
+      d.sender,
+      d.userIn,
+      d.title,
+      d.collection,
+      d.accepted ? "accepted" : "rejected",
+      ...(d.corrected
+        ? [
+            `corrected from: ${[d.corrected.title, d.corrected.collection].filter(Boolean).join(" | ")}`,
+          ]
+        : []),
+    ].join(" | "),
   );
   // Their text quotes other people's mail: external, like the mail itself.
   const input = leaf(

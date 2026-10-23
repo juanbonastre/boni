@@ -1079,10 +1079,10 @@ export const toggleInbox = (open = !get().inboxOpen) => {
   if (open) void loadInbox();
 };
 /** Accepting one proposal (never all at once: each is looked at, docs/nucleo.md 7.5). */
-export async function acceptProposal(id: string) {
+export async function acceptProposal(id: string, edits?: { title?: string; collection?: string }) {
   const t = get().t;
   try {
-    const r = await agent.accept(id);
+    const r = await agent.accept(id, edits);
     if (r.pending?.kind === "confirm") {
       // Accepted, but it still needs a confirmation (deleting...): it goes on in the conversation.
       const entry: ChatEntry = {
@@ -1096,7 +1096,12 @@ export async function acceptProposal(id: string) {
         confirmFlip: !s.confirmFlip,
         view: { kind: "chat" },
       }));
-    } else toast(r.error ? agentErrorText(t, r.error) : t("inbox.accepted"));
+    } else
+      toast(
+        r.error
+          ? agentErrorText(t, r.error)
+          : t(edits ? "inbox.acceptedCorrected" : "inbox.accepted"),
+      );
   } catch (e) {
     toast(errorText(t, e));
   }

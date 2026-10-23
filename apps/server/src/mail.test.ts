@@ -16,6 +16,8 @@ import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { dueField, Mails, mailPlan, userIn } from "./mail.ts";
+import { decisions } from "./mailReview.ts";
+import { acceptEdits } from "./proposalEdits.ts";
 import { Vaults } from "./vaults.ts";
 
 /** The mailbox connector against a fake IMAP server (invented mail only). */
@@ -737,7 +739,8 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
 
   it("come with their other fields filled from Juan's own options, and a note (Jev when there is one)", async () => {
     for (const withJev of [false, true]) {
-      const d = mkdtempSync(join(tmpdir(), "boni-mail-fill-"));
+      const d0 = mkdtempSync(join(tmpdir(), "boni-mail-fill-"));
+      const d = d0;
       const sdb = openDb(join(d, "system.db"));
       addUser(sdb, "juan", PASSWORD, "");
       const decided: unknown[] = [];
@@ -869,6 +872,64 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
           ),
         ).toBe(false);
       } else expect(decided).toEqual([]);
+      if (!withJev) {
+        // Corrected before accepting (another title and collection): the row is Juan's, the journal keeps
+        // what was proposed, and the reviewer sees it as a mistake of the reading.
+        store.applySchema(
+          {
+            op: "create_type",
+            type: type("t_gest", "gestiones", "Gestiones", [
+              { id: "t_gest_d", key: "dia", name: "Día", type: "date", label: own },
+            ]),
+          },
+          { actor: "user" },
+        );
+        const edits = acceptEdits(store, p as NonNullable<typeof p>, {
+          title: "Revisar actas FUP 1 (curso 2)",
+          collection: "t_gest",
+        });
+        expect(edits).toEqual({
+          type: "gestiones",
+          values: {
+            title: "Revisar actas FUP 1 (curso 2)",
+            date: null,
+            estado: null,
+            proyecto: null,
+            urgente: null,
+            dia: "2026-10-29",
+          },
+        });
+        expect(acceptEdits(store, p as NonNullable<typeof p>, { collection: "t_nada" })).toEqual({
+          error: "bad-collection",
+        });
+        expect(
+          (await h.agent(1).acceptProposal(p?.id as string, "personal", edits as never)).error,
+        ).toBeNull();
+        const row = store.list("t_gest")[0]?.entity;
+        expect(row?.values).toEqual({
+          t_gest_t: "Revisar actas FUP 1 (curso 2)",
+          t_gest_d: "2026-10-29",
+        });
+        expect(row?.body).toBe("Las actas están en la carpeta del curso.");
+        expect(store.journal.proposal(p?.id as string)?.edits).toMatchObject({
+          type: { from: "docencia", to: "gestiones" },
+          values: {
+            title: { from: "Revisar las actas de FUP 1", to: "Revisar actas FUP 1 (curso 2)" },
+          },
+        });
+        const st = m.state(1);
+        const [d] = decisions(store, st.type as string, () => "to");
+        expect(d).toMatchObject({
+          title: "Revisar actas FUP 1 (curso 2)",
+          collection: "Gestiones",
+          accepted: true,
+          corrected: { title: "Revisar las actas de FUP 1", collection: "Docencia" },
+        });
+        h.close();
+        sdb.close();
+        rmSync(d0, { recursive: true, force: true });
+        continue;
+      }
       // Accepted, it is a row with them.
       expect((await h.agent(1).acceptProposal(p?.id as string, "personal")).error).toBeNull();
       const made = store.list("t_docencia")[0]?.entity;
