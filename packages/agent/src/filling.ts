@@ -23,8 +23,12 @@ export interface FillField {
   options: { value: string; label: string }[];
 }
 export const FILL_LIMITS = { fields: 12, options: 60, label: 80 } as const;
-/** How sure the decider must be: a choice (both orders agreeing), a checkbox set, a note worth writing. */
-export const FILL_THRESHOLDS = { choice: 0.6, check: 0.75, note: 0.5 } as const;
+/**
+ * How sure the decider must be: a choice (both orders agreeing), a checkbox set, a note worth writing. Measured
+ * on invented mail (eval/fill.ts, 2026-10-23, 144 values): 0.5 for both fills the most with no wrong value (at
+ * 0.4 a wrong one appears); the note's question is about as good as a coin at any threshold (to be looked at).
+ */
+export const FILL_THRESHOLDS = { choice: 0.5, check: 0.5, note: 0.5 } as const;
 export const NOTE_MAX = 600;
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
