@@ -181,6 +181,16 @@ export function setPassword(db: SystemDb, name: string, password: string): numbe
   return revokeAll(db, name);
 }
 
+/**
+ * The account's vault folder on the server, or none (Juan, 2026-10-23: no more vault): without one the
+ * mirror writes nothing and the server reads no vault for it.
+ */
+export function setVault(db: SystemDb, name: string, vault: string | null): void {
+  const a = accountByName(db, name);
+  if (!a) throw new Error(`No account "${name}"`);
+  db.prepare("UPDATE accounts SET vault = ? WHERE id = ?").run(vault || null, a.id);
+}
+
 // ---------------------------------------------------------------- devices and sessions
 
 /** The trust a new device gets. Raising it later needs a personal device to confirm (setTrust). */

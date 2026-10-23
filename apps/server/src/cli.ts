@@ -31,6 +31,7 @@ import { moneyCollections } from "./money/collections.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
 import { V1Store } from "./v1/store.ts";
+import { vaultOff, vaultOn } from "./vaultOff.ts";
 
 /**
  * Administration (accounts are never created by sign-up). Same commands as before; they now work on
@@ -55,6 +56,9 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts restore <name> <backups/user-<id>-<day>.db.sealed> <out.db>
  *       opens one of the account's encrypted copies (store or mirror state) into a plain file; never over a file.
  *   node src/cli.ts token <name> <device>          a session for an assistant's tools (Boni's MCP), shown once
+ *   node src/cli.ts mirror <name> --vault-off [--apply] | --vault-on [<folder>] [--apply]
+ *       the account without its vault folder (once its calendar and movements live in Boni): the mirror stops,
+ *       the notes on disk stay as they are; --vault-on gives the folder back.
  *   node src/cli.ts mirror <name> --money [--apply]
  *       the money's categories note and reglas.csv into the collections Categorías and Reglas, each movement's
  *       category into a relation to its row (dry run by default; applied, one run that undo takes back).
@@ -211,6 +215,27 @@ try {
     console.log(`A session for ${name} on the device "${r.device.name}" (${r.device.trust}).`);
     console.log("Its token (shown only now; revoke it with: revoke <name> <device>):");
     console.log(r.token);
+  } else if (cmd === "mirror" && (args.includes("--vault-off") || args.includes("--vault-on"))) {
+    const [name, folder] = args.filter((a) => !a.startsWith("--"));
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!name || !user)
+      throw new Error(
+        "Usage: mirror <name> --vault-off [--apply] | --vault-on [<folder>] [--apply]",
+      );
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    const store = openUserStore(join(dirname(paths.system), "users", `${user.id}.db`));
+    try {
+      const apply = args.includes("--apply");
+      const lines = args.includes("--vault-off")
+        ? vaultOff(db, store, name, {
+            apply,
+            queued: new V1Store(db).queuedCaptures().filter((q) => q.account === user.id).length,
+          })
+        : vaultOn(db, store, name, { apply, folder: folder ?? null });
+      for (const line of lines) console.log(line);
+    } finally {
+      store.close();
+    }
   } else if (cmd === "mirror") {
     const profile = option(args, "--profile");
     const folder = option(profile.rest, "--folder");
