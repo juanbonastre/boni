@@ -9,6 +9,7 @@ import {
   MAIL,
   MAIL_SUGGESTED,
   PROPOSALS,
+  REQUESTS,
   RUN_2,
   RUNS_EXPLAINED,
   TEXT_REPLY,
@@ -244,6 +245,7 @@ const AGENT = {
       ],
     },
   ],
+  "GET api/agent/requests": [REQUESTS],
   "GET api/agent/runs": [RUNS_EXPLAINED],
   "GET api/agent/runs/:id": [RUN_2],
 };

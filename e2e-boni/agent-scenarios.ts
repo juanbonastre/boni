@@ -553,3 +553,57 @@ export const EXTENSIONS = {
     },
   ],
 };
+
+/** Questions from background work (the panel of requests, Juan 2026-10-24), around CARD_COMPACT (created 4). */
+const ask = (
+  id: string,
+  created: number,
+  prompt: unknown,
+  options: unknown[] | null,
+  about: unknown = null,
+) => ({
+  id,
+  run: `run-${id}`,
+  view: {
+    kind: "ask",
+    id,
+    control: options ? "choice" : "text",
+    prompt,
+    options: options ?? [],
+  },
+  created,
+  expires: Date.now() + 7 * 24 * 60 * 60_000 - 60_000,
+  about,
+  open: about ? { type: "t_correo", id: "e_correo1" } : null,
+});
+export const REQUESTS = {
+  requests: [
+    ask(
+      "q1",
+      3,
+      v("¿A qué colección va «Entrega de actas»?", "model"),
+      [v("Docencia", "user"), v("Gestiones", "user")],
+      {
+        kind: "mail",
+        subject: "Entrega de actas del segundo parcial",
+        from: "Secretaría de ejemplo",
+        account: "ejemplo@example.edu",
+      },
+    ),
+    ask("q2", 5, v("¿Qué compraste en la tienda de ejemplo el día 12 (34,99 €)?", "model"), null),
+    ask("q3", 6, v("¿Es la misma persona que «Ana E.»?", "model"), [
+      v("Sí", "user"),
+      v("No", "user"),
+    ]),
+    ask("q4", 7, v("¿Va a Docencia?", "model"), [v("Sí", "user"), v("No", "user")]),
+  ],
+};
+export const ANSWER_GONE = {
+  run: "run-q4",
+  status: "stopped",
+  replies: [],
+  pending: null,
+  proposals: [],
+  notices: [],
+  error: "nothing-pending",
+};

@@ -1,11 +1,23 @@
 import { markdownToBlocks } from "@boni/views";
-import { ChevronDown, FileText, Inbox, Mail, Maximize2, Pencil, Sparkles, X } from "lucide-react";
+import {
+  ChevronDown,
+  FileText,
+  HelpCircle,
+  Inbox,
+  Mail,
+  Maximize2,
+  Pencil,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useEffect, useState } from "react";
-import type { ConfirmView, InboxCard, Proposal } from "../core/agent.ts";
+import type { ConfirmView, InboxCard, InboxRequest, Proposal } from "../core/agent.ts";
 import {
   acceptProposal,
+  answerRequest,
   closeProposal,
   dismissProposal,
+  dismissRequest,
   loadDataTypes,
   loadInbox,
   openMail,
@@ -14,7 +26,7 @@ import {
   toggleInbox,
   useStore,
 } from "../store.ts";
-import { CallRows } from "./Chat.tsx";
+import { CallRows, ValueText } from "./Chat.tsx";
 
 /**
  * The inbox (Juan, 2026-10-22): a panel on the right that comes out when something new arrives, and the same cards
@@ -27,7 +39,7 @@ import { CallRows } from "./Chat.tsx";
 export function InboxPanel() {
   const t = useStore((s) => s.t);
   const open = useStore((s) => s.inboxOpen);
-  const inbox = useStore((s) => s.inbox);
+  const queue = useInboxQueue();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -44,7 +56,7 @@ export function InboxPanel() {
   return (
     <aside className="side-panel inbox-panel" aria-label={t("inbox.title")}>
       <header className="panel-head">
-        <h2>{inbox.length ? t("inbox.titleN", { n: inbox.length }) : t("inbox.title")}</h2>
+        <h2>{queue.length ? t("inbox.titleN", { n: queue.length }) : t("inbox.title")}</h2>
         <button
           type="button"
           className="icon-btn"
@@ -56,19 +68,34 @@ export function InboxPanel() {
         </button>
       </header>
       <div className="panel-body inbox-list">
-        {inbox.length === 0 && <p className="muted center-note">{t("inbox.empty")}</p>}
-        {inbox.map((p) => (
-          <ProposalCard key={p.id} p={p} />
-        ))}
+        {queue.length === 0 && <p className="muted center-note">{t("inbox.empty")}</p>}
+        {queue.map((x) =>
+          "p" in x ? <ProposalCard key={x.p.id} p={x.p} /> : <RequestCard key={x.r.id} r={x.r} />,
+        )}
       </div>
     </aside>
   );
 }
 
+/**
+ * One queue in the order things arrived (Juan, 2026-10-24, option A): proposals and questions mixed, each card
+ * saying what it is.
+ */
+export function useInboxQueue(): ({ p: Proposal } | { r: InboxRequest })[] {
+  const inbox = useStore((s) => s.inbox);
+  const requests = useStore((s) => s.requests);
+  return [
+    ...inbox.map((p) => ({ p, at: p.created })),
+    ...requests.map((r) => ({ r, at: r.created })),
+  ]
+    .sort((a, b) => a.at - b.at)
+    .map((x) => ("p" in x ? { p: x.p } : { r: x.r }));
+}
+
 /** The top bar's way into the inbox: its count, the panel open or closed. */
 export function InboxButton() {
   const t = useStore((s) => s.t);
-  const n = useStore((s) => s.inbox.length);
+  const n = useStore((s) => s.inbox.length + s.requests.length);
   const open = useStore((s) => s.inboxOpen);
   useEffect(() => {
     void loadInbox();
@@ -264,6 +291,10 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
     <section
       className={`card proposal inbox-card${more ? " detailed" : " compact"}${two ? " two" : ""}`}
     >
+      <p className="inbox-kind">
+        <Inbox size={12} strokeWidth={1.8} aria-hidden="true" />
+        {t("inbox.kind.proposal")}
+      </p>
       <header className="inbox-card-head">
         <h3>{headline(t, p, c)}</h3>
         {fix.button}
@@ -316,6 +347,129 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
           <ChevronDown size={13} strokeWidth={1.8} />
         </button>
       </div>
+    </section>
+  );
+}
+
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * A question from background work (Juan, 2026-10-24): what Boni asks, where it came from, its options as pills or
+ * a line to type in, and "Descartar" with how long it still waits. Painted as text from the server's values (what
+ * came from outside keeps its mark); answering sends the choice's number or the typed text, never more.
+ */
+export function RequestCard({ r }: { r: InboxRequest }) {
+  const t = useStore((s) => s.t);
+  const busy = useStore((s) => s.deciding[r.id]);
+  const failed = useStore((s) => s.decideErrors[r.id]);
+  const [text, setText] = useState("");
+  const off = !!busy || !!failed?.gone;
+  // Whole days left, rounded (a new question says 7; less than half a day, "hoy").
+  const days = Math.round((r.expires - Date.now()) / DAY_MS);
+  const about = r.about;
+  return (
+    <section className="card inbox-card request-card">
+      <p className="inbox-kind">
+        <HelpCircle size={12} strokeWidth={1.8} aria-hidden="true" />
+        {t("inbox.kind.question")} ·{" "}
+        {days >= 1 ? t("inbox.expiresIn", { n: days }) : t("inbox.expiresToday")}
+      </p>
+      <h3 className="request-prompt">
+        <ValueText p={r.ask.prompt} />
+      </h3>
+      {about?.kind === "mail" && (
+        <p className="inbox-source">
+          <Mail size={13} strokeWidth={1.8} aria-hidden="true" />
+          <span className="inbox-source-text val-ext" title={t("chat.fromOutside")}>
+            {about.account ?? t("inbox.mail")}
+            {about.from ? ` · ${about.from}` : ""}
+            {about.subject ? ` · ${about.subject}` : ""}
+          </span>
+          {r.open && (
+            <button
+              type="button"
+              className="btn ghost small inbox-see-mail"
+              onClick={() => r.open && openMail(r.open)}
+            >
+              {t("inbox.seeMail")}
+            </button>
+          )}
+        </p>
+      )}
+      {about?.kind === "review" && <p className="inbox-source muted">{t("inbox.fromReview")}</p>}
+      {r.ask.control === "choice" ? (
+        <div className="ask-options">
+          {r.ask.options.map((o, i) => (
+            <button
+              key={i}
+              type="button"
+              className={`pill${busy === "accept" ? " busy" : ""}`}
+              disabled={off}
+              onClick={() => void answerRequest(r.id, { choice: i })}
+            >
+              <ValueText p={o} />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <form
+          className="ask-text"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (text.trim()) void answerRequest(r.id, { text });
+          }}
+        >
+          {/* Never a password field: Boni does not ask for secrets here (docs/nucleo.md, 7.5). */}
+          <input
+            type="text"
+            value={text}
+            maxLength={500}
+            disabled={off}
+            aria-label={t("ask.answer")}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <button
+            type="submit"
+            className={`btn primary decide-btn${busy === "accept" ? " busy" : ""}`}
+            disabled={off || !text.trim()}
+            aria-busy={busy === "accept"}
+            aria-label={busy === "accept" ? t("inbox.answering") : undefined}
+          >
+            <span className="decide-label">{t("inbox.send")}</span>
+            {busy === "accept" && <span className="spinner" aria-hidden="true" />}
+          </button>
+        </form>
+      )}
+      <div className="inbox-actions">
+        {busy === "accept" && r.ask.control === "choice" && (
+          <span className="muted small" role="status">
+            {t("inbox.answering")}
+          </span>
+        )}
+        <span className="spacer" />
+        <button
+          type="button"
+          className={`btn ghost small decide-btn${busy === "reject" ? " busy" : ""}`}
+          disabled={off}
+          title={t("inbox.putAwayHelp")}
+          aria-busy={busy === "reject"}
+          aria-label={busy === "reject" ? t("inbox.puttingAway") : undefined}
+          onClick={() => void dismissRequest(r.id)}
+        >
+          <span className="decide-label">{t("inbox.putAway")}</span>
+          {busy === "reject" && <span className="spinner" aria-hidden="true" />}
+        </button>
+      </div>
+      {failed && (
+        <p className="decide-error" role="alert">
+          <span>{failed.text}</span>
+          {failed.gone && (
+            <button type="button" className="btn ghost small" onClick={() => dismissProposal(r.id)}>
+              {t("inbox.dismiss")}
+            </button>
+          )}
+        </p>
+      )}
     </section>
   );
 }

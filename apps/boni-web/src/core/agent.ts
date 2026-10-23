@@ -266,6 +266,39 @@ function runWhat(v: unknown): RunWhat | undefined {
       return { kind: "other" };
   }
 }
+/** A question (the agent's `ask`): its prompt and options as painted values; null when it is not one. */
+export function parseAsk(p: unknown): Extract<Pending, { kind: "ask" }> | null {
+  if (!isObj(p) || typeof p.id !== "string" || p.kind !== "ask") return null;
+  if (p.control !== "choice" && p.control !== "text") return null;
+  const prompt = parsePainted(p.prompt);
+  if (!prompt) return null;
+  return {
+    kind: "ask",
+    id: p.id.slice(0, 80),
+    control: p.control,
+    prompt,
+    options: (Array.isArray(p.options) ? p.options : [])
+      .slice(0, 20)
+      .map((o) => parsePainted(o))
+      .filter((x): x is Painted => x !== null),
+  };
+}
+
+/**
+ * A question from background work waiting in the panel (Juan, 2026-10-24): what it asks, until when, and where it
+ * came from (the mail being read; outside text, shown only as text).
+ */
+export interface InboxRequest {
+  id: string;
+  run: string;
+  ask: Extract<Pending, { kind: "ask" }>;
+  created: number;
+  expires: number;
+  about: RunWhat | null;
+  /** The mail's own row, for "Ver correo". */
+  open: { type: string; id: string } | null;
+}
+
 const ACTIONS = ["create", "update", "delete", "restore"] as const;
 function runChanges(v: unknown): RunChange[] | undefined {
   if (!Array.isArray(v)) return undefined;
@@ -368,20 +401,7 @@ export function parseTurn(v: unknown): TurnResult {
     if (p.kind === "confirm") {
       const view = parseConfirmView(p.view);
       if (view) pending = { kind: "confirm", id: p.id, view };
-    } else if (p.kind === "ask" && (p.control === "choice" || p.control === "text")) {
-      const prompt = parsePainted(p.prompt);
-      if (prompt)
-        pending = {
-          kind: "ask",
-          id: p.id,
-          control: p.control,
-          prompt,
-          options: (Array.isArray(p.options) ? p.options : [])
-            .slice(0, 20)
-            .map((o) => parsePainted(o))
-            .filter((x): x is Painted => x !== null),
-        };
-    }
+    } else pending = parseAsk(p);
   }
   const status = v.status === "done" || v.status === "waiting" ? v.status : "stopped";
   return {
@@ -847,6 +867,38 @@ export class AgentApi {
     );
   reject = async (id: string) =>
     void (await this.call("POST", `proposals/${encodeURIComponent(id)}/reject`));
+  async requests(): Promise<InboxRequest[]> {
+    const b = await this.call("GET", "requests");
+    const list = isObj(b) && Array.isArray(b.requests) ? b.requests : [];
+    return list
+      .filter(isObj)
+      .slice(0, 200)
+      .flatMap((r) => {
+        const id = str(r.id, 80);
+        const run = str(r.run, 80);
+        const ask = parseAsk(r.view);
+        if (!id || !run || !ask) return [];
+        const open =
+          isObj(r.open) && str(r.open.type, 80) && str(r.open.id, 80)
+            ? { type: r.open.type as string, id: r.open.id as string }
+            : null;
+        return [
+          {
+            id,
+            run,
+            ask,
+            created: typeof r.created === "number" ? r.created : 0,
+            expires: typeof r.expires === "number" ? r.expires : 0,
+            about: runWhat(r.about) ?? null,
+            open,
+          },
+        ];
+      });
+  }
+  answerRequest = async (id: string, a: { choice: number } | { text: string }) =>
+    parseTurn(await this.call("POST", `requests/${encodeURIComponent(id)}/answer`, a));
+  dismissRequest = async (id: string) =>
+    void (await this.call("POST", `requests/${encodeURIComponent(id)}/dismiss`));
   async runs(): Promise<{ runs: RunSummary[]; autoAccept: AutoAccept | null }> {
     const b = await this.call("GET", "runs");
     const list = isObj(b) && Array.isArray(b.runs) ? b.runs : [];

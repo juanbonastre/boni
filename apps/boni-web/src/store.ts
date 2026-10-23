@@ -15,6 +15,7 @@ import {
   type DataType,
   type DataValue,
   type ExtensionView,
+  type InboxRequest,
   type MailGuide,
   type MailInput,
   type MailView,
@@ -186,6 +187,8 @@ interface State {
   trash: (PageInfo & { deleted: number })[] | null;
   /** Proposals waiting in the inbox, and the agent's latest runs (the log). */
   inbox: Proposal[];
+  /** Questions from background work waiting for Juan (Juan, 2026-10-24: one queue with the proposals). */
+  requests: InboxRequest[];
   /** The inbox is being read for a proposal opened by its id (its page waits instead of saying it is gone). */
   inboxLoading: boolean;
   /** Proposals being accepted or rejected right now (their card shows it; another can be decided meanwhile). */
@@ -286,6 +289,7 @@ export const useStore = create<State>(() => ({
   row: null,
   rowDoc: null,
   inbox: [],
+  requests: [],
   inboxLoading: false,
   deciding: {},
   decideErrors: {},
@@ -1078,14 +1082,30 @@ export async function declinePending(entryId: string) {
 
 export async function loadInbox() {
   try {
-    const inbox = await agent.proposals();
+    const [inbox, asked] = await Promise.all([
+      agent.proposals(),
+      // An older server has no questions: the inbox goes on with its proposals.
+      agent.requests().catch((e) => {
+        if (e instanceof OfflineError) throw e;
+        return null;
+      }),
+    ]);
+    const requests = asked ?? get().requests;
     // Something new since the last look (not the first one, when the window opens): the panel comes out.
-    const fresh = inboxSeen !== null && inbox.some((p) => !inboxSeen?.has(p.id));
-    inboxSeen = new Set([...(inboxSeen ?? []), ...inbox.map((p) => p.id)]);
+    const ids = [...inbox.map((p) => p.id), ...requests.map((r) => r.id)];
+    const fresh = inboxSeen !== null && ids.some((id) => !inboxSeen?.has(id));
+    inboxSeen = new Set([...(inboxSeen ?? []), ...ids]);
     // A card whose decision failed stays, saying why, until Juan takes it out (the server no longer lists it).
     const errors = get().decideErrors;
     const kept = get().inbox.filter((p) => errors[p.id] && !inbox.some((x) => x.id === p.id));
-    set({ inbox: [...kept, ...inbox], ...(fresh ? { inboxOpen: true } : {}) });
+    const keptAsked = get().requests.filter(
+      (r) => errors[r.id] && !requests.some((x) => x.id === r.id),
+    );
+    set({
+      inbox: [...kept, ...inbox],
+      requests: [...keptAsked, ...requests],
+      ...(fresh ? { inboxOpen: true } : {}),
+    });
   } catch {
     // the inbox stays as it was (offline, agent off)
   }
@@ -1128,11 +1148,19 @@ function decide(
   deciding = job.catch(() => {});
   return job;
 }
-const dropProposal = (id: string) => set((s) => ({ inbox: s.inbox.filter((p) => p.id !== id) }));
+const dropProposal = (id: string) =>
+  set((s) => ({
+    inbox: s.inbox.filter((p) => p.id !== id),
+    requests: s.requests.filter((r) => r.id !== id),
+  }));
 /** A decision that failed: stale (it changed since) and already decided are not Juan's mistakes. */
 function decideFailed(id: string, code: string | { text: string }) {
   const t = get().t;
-  const gone = code === "stale" || code === "no-such-proposal";
+  const gone =
+    code === "stale" ||
+    code === "no-such-proposal" ||
+    code === "nothing-pending" ||
+    code === "run-expired";
   const text =
     typeof code !== "string"
       ? code.text
@@ -1140,7 +1168,9 @@ function decideFailed(id: string, code: string | { text: string }) {
         ? t("inbox.stale")
         : code === "no-such-proposal"
           ? t("inbox.alreadyDecided")
-          : agentErrorText(t, code);
+          : code === "nothing-pending" || code === "run-expired"
+            ? t("inbox.requestGone")
+            : agentErrorText(t, code);
   set((s) => ({ decideErrors: { ...s.decideErrors, [id]: { text, gone } } }));
 }
 /** Takes a card that can no longer be decided out of the list. */
@@ -1188,6 +1218,33 @@ export function acceptProposal(
     }
   });
 }
+/**
+ * Answering a question of background work (Juan, 2026-10-24): the work goes on with the answer, as background work
+ * (what it makes arrives as proposals, read again once the queue is empty).
+ */
+export function answerRequest(id: string, a: { choice: number } | { text: string }) {
+  return decide(id, "accept", async () => {
+    try {
+      const r = await agent.answerRequest(id, a);
+      if (r.error) decideFailed(id, r.error);
+      else dropProposal(id);
+    } catch (e) {
+      decideFailed(id, { text: errorText(get().t, e) });
+    }
+  });
+}
+/** Putting a question away unanswered: its work ends having done nothing more. */
+export function dismissRequest(id: string) {
+  return decide(id, "reject", async () => {
+    try {
+      await agent.dismissRequest(id);
+      dropProposal(id);
+    } catch (e) {
+      decideFailed(id, { text: errorText(get().t, e) });
+    }
+  });
+}
+
 /** A proposal's own page (from its card, its ghost row or the calendar); Esc and the crumb go back. */
 export async function openProposal(id: string) {
   const v = get().view;

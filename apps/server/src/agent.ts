@@ -13,6 +13,7 @@ import { measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
+import { mailOfRun } from "./mailReview.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
@@ -234,14 +235,32 @@ async function answerAgent(
       });
     }
     case "GET /api/agent/requests": {
+      const store = host.store(who.account);
+      const mailAccount = host.mailAccountOf?.(who.account) ?? null;
       return send(res, 200, {
-        requests: agent.requests().map((r) => ({
-          id: r.id,
-          run: r.run,
-          view: r.view,
-          created: r.created,
-          expires: r.expires,
-        })),
+        requests: agent.requests().map((r) => {
+          // Where it comes from (the mail that was being read), as the Registro says it.
+          let about: RunInfo["what"] | null = null;
+          let open: { type: string; id: string } | null = null;
+          const run = store.journal.run(r.run);
+          try {
+            if (run) about = runInfo(store, run, { mailAccount }).what;
+            const mail = mailOfRun(store, r.run);
+            const m = mail ? store.get(mail) : null;
+            if (m) open = { type: m.entity.type, id: m.entity.id };
+          } catch {
+            // the question shows without where it came from
+          }
+          return {
+            id: r.id,
+            run: r.run,
+            view: r.view,
+            created: r.created,
+            expires: r.expires,
+            about,
+            open,
+          };
+        }),
       });
     }
     case "POST /api/agent/requests/:id/answer": {
