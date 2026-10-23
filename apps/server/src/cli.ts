@@ -1,10 +1,20 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ensureSystemTypes } from "@boni/agent";
 import { frontmatterData, parseCollectionDef } from "@boni/calendar";
-import { exportZip, importExport, readZip } from "@boni/export";
+import { exportChunks, importExport, readZip, releaseSent } from "@boni/export";
 import {
   devicesOf,
   importAccounts,
@@ -153,12 +163,23 @@ try {
     try {
       if (cmd === "export") {
         const v1 = new V1Store(db);
-        const zip = exportZip(store, {
-          views: { charts: v1.charts(user.id), shortcuts: v1.shortcuts(user.id) },
-          log: flags.has("--log"),
-        });
-        writeFileSync(file, zip, { mode: 0o600 });
-        console.log(`${file}: ${zip.length} bytes`);
+        // Written as it is made (exportChunks): never the whole zip in memory.
+        const out = openSync(file, "w", 0o600);
+        let bytes = 0;
+        const release = releaseSent();
+        try {
+          for (const c of exportChunks(store, {
+            views: { charts: v1.charts(user.id), shortcuts: v1.shortcuts(user.id) },
+            log: flags.has("--log"),
+          })) {
+            writeSync(out, c);
+            bytes += c.length;
+            release(c.length);
+          }
+        } finally {
+          closeSync(out);
+        }
+        console.log(`${file}: ${bytes} bytes`);
       } else {
         const r = importExport(readZip(readFileSync(file)), store, {
           apply: flags.has("--apply"),

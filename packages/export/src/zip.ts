@@ -3,11 +3,19 @@ import { crc32, deflateRawSync, inflateRawSync } from "node:zlib";
 /**
  * A minimal ZIP (PKWARE APPNOTE 6.3): deflated entries, UTF-8 names, no ZIP64 (an export is far below
  * 4 GB) and no extra fields. Enough for an export any system opens, and for reading one back.
+ * An entry's data may be a function: it is called only when that entry is written, so a big export (the
+ * attachments) never needs all its files in memory at once (the server's container has 512 MB).
  */
 export interface ZipEntry {
   path: string;
-  data: Buffer;
+  data: Buffer | (() => Buffer);
+  /** Kept as it is, not deflated (attachments: PDF, images and video are compressed already). */
+  stored?: boolean;
 }
+
+/** An entry's bytes (calling its function, when it has one). */
+export const entryData = (e: ZipEntry): Buffer =>
+  typeof e.data === "function" ? e.data() : e.data;
 
 const DOS_EPOCH = Date.UTC(1980, 0, 1);
 
@@ -20,52 +28,83 @@ function dosTime(ms: number): { time: number; date: number } {
   };
 }
 
-export function writeZip(entries: ZipEntry[], at = Date.now()): Buffer {
+/**
+ * The zip as a sequence of chunks, one entry at a time (its header, then its packed data), then the central
+ * directory: what is in memory at any moment is one entry and the directory's small headers.
+ */
+export function* zipChunks(entries: Iterable<ZipEntry>, at = Date.now()): Generator<Buffer> {
   const { time, date } = dosTime(at);
-  const locals: Buffer[] = [];
   const centrals: Buffer[] = [];
   let offset = 0;
+  let count = 0;
   for (const e of entries) {
     const name = Buffer.from(e.path, "utf8");
-    const packed = deflateRawSync(e.data);
-    const crc = crc32(e.data);
+    const plain = entryData(e);
+    const method = e.stored ? 0 : 8;
+    const packed = e.stored ? plain : deflateRawSync(plain);
+    const crc = crc32(plain);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4); // version needed
     local.writeUInt16LE(0x0800, 6); // UTF-8 names
-    local.writeUInt16LE(8, 8); // deflate
+    local.writeUInt16LE(method, 8); // 8 deflate, 0 stored
     local.writeUInt16LE(time, 10);
     local.writeUInt16LE(date, 12);
     local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(packed.length, 18);
-    local.writeUInt32LE(e.data.length, 22);
+    local.writeUInt32LE(plain.length, 22);
     local.writeUInt16LE(name.length, 26);
     local.writeUInt16LE(0, 28);
-    locals.push(local, name, packed);
+    yield Buffer.concat([local, name]);
+    yield packed;
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE(20, 4); // made by
     central.writeUInt16LE(20, 6);
     central.writeUInt16LE(0x0800, 8);
-    central.writeUInt16LE(8, 10);
+    central.writeUInt16LE(method, 10);
     central.writeUInt16LE(time, 12);
     central.writeUInt16LE(date, 14);
     central.writeUInt32LE(crc, 16);
     central.writeUInt32LE(packed.length, 20);
-    central.writeUInt32LE(e.data.length, 24);
+    central.writeUInt32LE(plain.length, 24);
     central.writeUInt16LE(name.length, 28);
     central.writeUInt32LE(offset, 42);
     centrals.push(central, name);
     offset += 30 + name.length + packed.length;
+    count++;
   }
   const dir = Buffer.concat(centrals);
   const end = Buffer.alloc(22);
   end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt16LE(count, 8);
+  end.writeUInt16LE(count, 10);
   end.writeUInt32LE(dir.length, 12);
   end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, dir, end]);
+  yield dir;
+  yield end;
+}
+
+/**
+ * For a loop that sends `zipChunks`: call it with each chunk's size; every `every` bytes it asks V8 to free
+ * what was sent (only when node runs with --expose-gc, as the server's container does). Attachments are read
+ * one at a time, but each one is an external buffer V8 frees late: without this they add up (400 MB of
+ * attachments peaked at 288 MB, 185 MB with it).
+ */
+export function releaseSent(every = 32 * 1024 * 1024): (bytes: number) => void {
+  const gc = (globalThis as { gc?: () => void }).gc;
+  let since = 0;
+  return (bytes) => {
+    since += bytes;
+    if (since < every || !gc) return;
+    since = 0;
+    gc();
+  };
+}
+
+/** The whole zip in memory (small ones: tests, a few files). Big exports go through `zipChunks`. */
+export function writeZip(entries: ZipEntry[], at = Date.now()): Buffer {
+  return Buffer.concat([...zipChunks(entries, at)]);
 }
 
 export class ZipError extends Error {}

@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni/calendar";
-import { exportZip } from "@boni/export";
+import { exportChunks, releaseSent } from "@boni/export";
 import { CORE_MARK } from "@boni/mirror";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
@@ -536,7 +536,9 @@ export function makeApp(opts: ServerOptions): App {
       if (!s) return send(res, 401, { error: "unauthorized" });
       if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       if (!opts.agent?.hasData) return send(res, 503, { error: "no-store" });
-      const zip = exportZip(opts.agent.store(s.user.id), {
+      // Sent as it is made, an entry at a time and at the client's pace (the attachments alone are more than
+      // the container's memory: never the whole zip at once).
+      const chunks = exportChunks(opts.agent.store(s.user.id), {
         views: { charts: v1store.charts(s.user.id), shortcuts: v1store.shortcuts(s.user.id) },
         log: url.searchParams.get("log") === "1",
       });
@@ -545,10 +547,24 @@ export function makeApp(opts: ServerOptions): App {
         ...SAFE,
         "content-type": "application/zip",
         "content-disposition": `attachment; filename="boni-${new Date().toISOString().slice(0, 10)}.zip"`,
-        "content-length": zip.length,
         "cache-control": "no-store",
       });
-      return void res.end(zip);
+      const release = releaseSent();
+      for (const c of chunks) {
+        if (res.destroyed) return;
+        release(c.length);
+        if (!res.write(c))
+          await new Promise<void>((ok) => {
+            const done = () => {
+              res.off("drain", done);
+              res.off("close", done);
+              ok();
+            };
+            res.on("drain", done);
+            res.on("close", done);
+          });
+      }
+      return void res.end();
     }
     if (route === "POST /api/login") {
       const b = await bodyOf(req);
