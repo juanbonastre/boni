@@ -185,6 +185,8 @@ interface State {
   trash: (PageInfo & { deleted: number })[] | null;
   /** Proposals waiting in the inbox, and the agent's latest runs (the log). */
   inbox: Proposal[];
+  /** The inbox is being read for a proposal opened by its id (its page waits instead of saying it is gone). */
+  inboxLoading: boolean;
   /** Proposals being accepted or rejected right now (their card shows it; another can be decided meanwhile). */
   deciding: Record<string, "accept" | "reject">;
   /** Why deciding one failed, in Juan's words, on its card. */
@@ -281,6 +283,7 @@ export const useStore = create<State>(() => ({
   row: null,
   rowDoc: null,
   inbox: [],
+  inboxLoading: false,
   deciding: {},
   decideErrors: {},
   inboxOpen: false,
@@ -395,6 +398,7 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
 /** What the tray, a widget or a phone's launcher shortcut asks the main window to show. */
 export function navigate(screen: string) {
   if (screen.startsWith("note:")) void openNoteAt(screen.slice(5));
+  else if (screen.startsWith("proposal:")) void openProposal(screen.slice(9));
   else if (screen === "blank") {
     // The peek was hidden: its next note starts empty, never showing the last one for a moment.
     void flushRowBody();
@@ -1172,7 +1176,14 @@ export function acceptProposal(id: string, edits?: { title?: string; collection?
 export async function openProposal(id: string) {
   const v = get().view;
   set({ view: { kind: "proposal", id, back: v.kind === "proposal" ? v.back : v } });
-  if (!get().inbox.some((p) => p.id === id)) await loadInbox();
+  if (!get().inbox.some((p) => p.id === id)) {
+    set({ inboxLoading: true });
+    try {
+      await loadInbox();
+    } finally {
+      set({ inboxLoading: false });
+    }
+  }
 }
 export function closeProposal() {
   const v = get().view;

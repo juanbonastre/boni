@@ -237,6 +237,60 @@ describe("the calendar over Boni's collections", () => {
     expect(mine.ok).toBe(true);
   });
 
+  it("draws a pending proposal as a read-only row, never written, gone once decided", async () => {
+    const { store, cal } = env();
+    const v0 = (await cal.snapshot()).version;
+    store.journal.startRun({
+      id: "r1",
+      turn: null,
+      origin: "background",
+      device: null,
+      started: 1,
+    });
+    store.journal.addProposal({
+      id: "p1",
+      run: "r1",
+      tool: "entities.create",
+      args: { values: {}, origins: [] },
+      view: {
+        tool: "entities.create",
+        title: "Crear",
+        rows: [
+          { arg: "type", role: "type", value: "docencia", detail: "Docencia" },
+          { arg: "values.title", value: "Revisar actas inventadas" },
+          { arg: "values.date", value: "2026-10-29" },
+        ],
+      },
+      sources: ["mail:ejemplo@example.edu"],
+      created: 2,
+    });
+    const c = cal.changes(v0);
+    expect(c.upserts.map((r) => [r.id, r.collectionId, r.values.title, r.values.date])).toEqual([
+      ["ghost:p1", "docencia", "Revisar actas inventadas", "2026-10-29"],
+    ]);
+    const before = store.list("t_docencia").length;
+    const ghost = await rowOf(cal, "ghost:p1");
+    // A device cannot change or remove it: it is decided in Boni.
+    const v1 = (await cal.snapshot()).version;
+    const r = await cal.apply(
+      v1,
+      [
+        { op: "upsert", row: { ...ghost, values: { ...ghost.values, title: "Otra" } } },
+        { op: "remove", collectionId: "docencia", id: "ghost:p1" },
+      ],
+      "token-a",
+      "portatil",
+    );
+    expect(r.ok).toBe(true);
+    expect(store.list("t_docencia")).toHaveLength(before);
+    expect((await rowOf(cal, "ghost:p1")).values.title).toBe("Revisar actas inventadas");
+    store.journal.setProposal("p1", "rejected", 5);
+    const v2 = (await cal.snapshot()).version;
+    expect((await cal.snapshot()).rows.some((x) => x.id === "ghost:p1")).toBe(false);
+    expect(cal.changes(v1).removes).toEqual(["ghost:p1"]);
+    expect(v2).toBeGreaterThan(v1);
+  });
+
   it("keeps reminders in the definition, in Boni", async () => {
     const { store, cal } = env();
     expect(

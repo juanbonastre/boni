@@ -204,7 +204,7 @@ function restoreVault() {
   }
 }
 
-const NO_VAULT_NEEDED = new Set(["vault:choose-root", "vault:open-note"]);
+const NO_VAULT_NEEDED = new Set(["vault:choose-root", "vault:open-note", "vault:open-proposal"]);
 
 /** Handlers answer `{ ok: true, value }` or `{ ok: false, code, message }`; errors never cross IPC as exceptions. */
 function handle(channel, fn) {
@@ -325,12 +325,27 @@ handle("vault:open-note", (rel, peek) => {
   const note = notePath(rel).join("/");
   const link = `boni://note?path=${encodeURIComponent(note)}`;
   if (peek === true && prefs.boniUrl) {
-    void showPeek(note);
+    void showPeek("peek:note", note);
     return null;
   }
   clearTimeout(peekHideTimer);
   if (peek === true) boniPeekOpen = true;
   void shell.openExternal(peek === true ? `${link}&peek=1` : link);
+  return null;
+});
+
+handle("vault:open-proposal", (id) => {
+  // A proposal waiting in Boni's inbox, drawn dashed in the calendar (plan b2): a click shows its page in the peek,
+  // where it is accepted or rejected. Its id is checked here; the link is built here.
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id))
+    throw new VaultError("bad-path", "Bad proposal");
+  if (prefs.boniUrl) {
+    void showPeek("peek:proposal", id);
+    return null;
+  }
+  clearTimeout(peekHideTimer);
+  boniPeekOpen = true;
+  void shell.openExternal(`boni://proposal?id=${encodeURIComponent(id)}&peek=1`);
   return null;
 });
 
@@ -391,7 +406,8 @@ function dropPeek() {
   peekWin = null;
   peekReady = null;
 }
-async function showPeek(notePathText) {
+/** Shows the peek on a note (`peek:note`, its vault path) or a proposal (`peek:proposal`, its id). */
+async function showPeek(channel, value) {
   await makePeek();
   const win = peekWin;
   if (!win) return;
@@ -404,7 +420,7 @@ async function showPeek(notePathText) {
     (x) => x !== win && x.webContents.getURL().startsWith("file:"),
   );
   if (owner && win.getParentWindow() !== owner) win.setParentWindow(owner);
-  win.webContents.send("peek:note", notePathText);
+  win.webContents.send(channel, value);
   win.show();
   win.focus();
 }

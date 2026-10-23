@@ -231,6 +231,51 @@ test("Boni's own edits reach the calendar live; a hand edit in the vault no long
     .toContain("Cambio a mano");
 });
 
+test("a proposal waiting in Boni's inbox shows dashed in the calendar, read only, and goes once decided", async ({
+  page,
+}) => {
+  await connect(page);
+  const t = await token();
+  const h = { authorization: `Bearer ${t}` };
+  // A new note written by hand in the calendar's folder: Boni proposes it, it is not an event yet.
+  write(
+    "agenda/docencia/2025-09-19 Revisión propuesta.md",
+    note("Revisión propuesta", "2025-09-19", "10:00"),
+  );
+  const ghost = page.locator(".ev.proposal", { hasText: "Revisión propuesta" });
+  await expect(ghost).toHaveCount(1, { timeout: 45_000 });
+  await expect(ghost).toHaveCSS("outline-style", "dashed");
+  await page
+    .locator(".cols-viewport")
+    .screenshot({ path: "e2e/screenshots/calendar-proposal.png" });
+  // Dragging it moves nothing; its detail says where it is decided, with every field off.
+  const box = await ghost.boundingBox();
+  if (!box) throw new Error("no proposal");
+  await page.mouse.move(box.x + box.width / 2, box.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + 120, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => (await ghost.boundingBox())?.y).toBe(box.y);
+  await ghost.click();
+  await expect(page.locator(".popover .detail-kind")).toHaveText("Propuesta");
+  await expect(page.locator(".popover .detail-note")).toContainText("Bandeja de Boni");
+  await expect(page.locator(".popover .title-input")).toBeDisabled();
+  await page.keyboard.press("Escape");
+  // Still only a proposal: nothing in Boni's rows.
+  const rows = (await (
+    await fetch(`${url}/api/data/types/t_docencia/rows`, { headers: h })
+  ).json()) as { rows: unknown[]; ghosts: unknown[] };
+  expect(JSON.stringify(rows.rows)).not.toContain('"Revisión propuesta"');
+  expect(JSON.stringify(rows.ghosts)).toContain('"Revisión propuesta"');
+  const list = (await (await fetch(`${url}/api/agent/proposals`, { headers: h })).json()) as {
+    proposals: { id: string; view?: { rows: { value?: unknown }[] } }[];
+  };
+  const p = list.proposals.find((x) => JSON.stringify(x).includes("Revisión propuesta"));
+  expect(p).toBeTruthy();
+  await fetch(`${url}/api/agent/proposals/${p?.id}/reject`, { method: "POST", headers: h });
+  await expect(ghost).toHaveCount(0, { timeout: 5000 });
+});
+
 test('"Apuntar gasto" with the movements in Boni: the movement goes into Boni, the mirror writes its note', async () => {
   const t = await token();
   const h = { authorization: `Bearer ${t}` };

@@ -896,6 +896,30 @@ select,
 .mchip.draft::before {
   visibility: hidden;
 }
+/* A proposal waiting in Boni's inbox (plan b2, Juan 2026-10-23: dashed only in calendars): its calendar's colour as a
+   dashed outline over a faint fill, read only (no resize handles); a click opens it in Boni to accept or reject. */
+.ev.proposal,
+.bar.proposal,
+.mchip.proposal {
+  border-left-color: transparent;
+  background: color-mix(in srgb, var(--c) 7%, var(--bg));
+  outline: 1.5px dashed var(--c);
+  outline-offset: -1.5px;
+  cursor: pointer;
+}
+.ev.proposal:hover,
+.bar.proposal:hover,
+.mchip.proposal:hover {
+  background: color-mix(in srgb, var(--c) 15%, var(--bg));
+}
+.mchip.proposal::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--c);
+}
+.ev.proposal .ev-resize,
+.bar.proposal [data-bar-edge] {
+  display: none;
+}
 .ev.dragging {
   opacity: 0.92;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -1178,6 +1202,12 @@ select,
 .detail-kind {
   font-weight: 600;
   font-size: 13px;
+}
+/* A proposal of Boni's inbox, shown read only: where it is decided. */
+.detail-note {
+  margin: 0 16px 4px;
+  font-size: 12px;
+  color: var(--muted);
 }
 .detail-title {
   display: flex;

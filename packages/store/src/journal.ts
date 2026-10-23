@@ -77,6 +77,8 @@ export interface Journal {
   addProposal(p: Omit<ProposalRow, "status" | "decided" | "edits">): void;
   proposal(id: string): ProposalRow | null;
   proposals(status?: ProposalRow["status"]): ProposalRow[];
+  /** The pending proposals' ids in one string: cheap to compare every second (Boni Calendar polls it). */
+  pendingKey(): string;
   setProposal(
     id: string,
     status: ProposalRow["status"],
@@ -207,6 +209,16 @@ export function openJournal(db: DatabaseSync): Journal {
         ? db.prepare("SELECT * FROM proposals WHERE status = ? ORDER BY created, id").all(status)
         : db.prepare("SELECT * FROM proposals ORDER BY created, id").all()
       ).map(proposalOf),
+    pendingKey: () =>
+      String(
+        (
+          db
+            .prepare(
+              "SELECT group_concat(id, ',') AS k FROM (SELECT id FROM proposals WHERE status = 'pending' ORDER BY id)",
+            )
+            .get() as { k: string | null }
+        ).k ?? "",
+      ),
     setProposal: (id, status, at, edits) =>
       void db
         .prepare("UPDATE proposals SET status = ?, decided = ?, edits = ? WHERE id = ?")

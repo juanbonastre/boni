@@ -41,6 +41,11 @@ export interface VaultBridge {
    * or in Obsidian (`noteApp` says which).
    */
   openNote?(path: string, opts?: { peek?: boolean }): Promise<VaultResult<null>>;
+  /**
+   * Opens a proposal waiting in Boni's inbox (a `ghost:` row drawn in the calendar) in Boni's peek, where it is
+   * accepted or rejected (plan b2). Only where Boni opens notes (`noteApp: "boni"`).
+   */
+  openProposal?(id: string): Promise<VaultResult<null>>;
   /** Where `openNote` opens a note; Obsidian when not said. */
   noteApp?: "boni" | "obsidian";
   /** Starts watching these folders (replacing any earlier set); `onChanged` fires after a burst of changes. */

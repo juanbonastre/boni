@@ -8,6 +8,7 @@ import {
   fromLocal,
   gmtLabel,
   isoWeek,
+  isProposalId,
   layoutColumns,
   layoutSpans,
   startOfWeek,
@@ -365,7 +366,7 @@ export function TimeGrid() {
                   type="button"
                   key={s.id}
                   data-id={s.id}
-                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.id === newId && !ev.title ? "draft" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""}`}
+                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.id === newId && !ev.title ? "draft" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
                   style={
                     {
                       "--c": cal?.color ?? "#888",
@@ -612,7 +613,7 @@ const EventBlock = memo(function EventBlock(p: {
   } as CSSProperties;
   return (
     <div
-      className={`ev ${p.selected ? "selected" : ""} ${p.dragging ? "dragging" : ""} ${p.draft ? "draft" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${seg.continuesBefore ? "cut-top" : ""} ${seg.continuesAfter ? "cut-bottom" : ""}`}
+      className={`ev ${p.selected ? "selected" : ""} ${p.dragging ? "dragging" : ""} ${p.draft ? "draft" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${seg.continuesBefore ? "cut-top" : ""} ${seg.continuesAfter ? "cut-bottom" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
       data-id={ev.id}
       style={style}
     >

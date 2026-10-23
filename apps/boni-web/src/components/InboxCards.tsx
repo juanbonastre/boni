@@ -459,19 +459,20 @@ function Why({ why }: { why: NonNullable<InboxCard["why"]> }) {
  * with every value and its note, why it was made, where it came from (with "Ver correo") and the days around it.
  * Accepted or rejected here, it goes back to where it was opened from.
  */
-export function ProposalPage({ id }: { id: string }) {
+export function ProposalPage({ id, onDone }: { id: string; onDone?: () => void }) {
   const t = useStore((s) => s.t);
   const p = useStore((s) => s.inbox.find((x) => x.id === id));
+  const loading = useStore((s) => s.inboxLoading);
   if (!p)
     return (
       <div className="content proposal-page">
-        <p className="muted center-note">{t("inbox.gone")}</p>
+        {!loading && <p className="muted center-note">{t("inbox.gone")}</p>}
       </div>
     );
-  return <ProposalPageOf p={p} />;
+  return <ProposalPageOf p={p} onDone={onDone} />;
 }
 
-function ProposalPageOf({ p }: { p: Proposal }) {
+function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
   const t = useStore((s) => s.t);
   const id = p.id;
   const fmt = useDayFormat();
@@ -488,8 +489,11 @@ function ProposalPageOf({ p }: { p: Proposal }) {
     : null;
   const decide = async (accept: boolean) => {
     await (accept ? acceptProposal(id, fix.edits()) : rejectProposal(id));
-    const v = useStore.getState().view;
-    if (v.kind === "proposal" && v.id === id) closeProposal();
+    const s = useStore.getState();
+    // A failed decision stays on the page, saying why under its buttons.
+    if (s.decideErrors[id]) return;
+    if (s.view.kind === "proposal" && s.view.id === id) closeProposal();
+    onDone?.();
   };
   return (
     <div className="content proposal-page">
