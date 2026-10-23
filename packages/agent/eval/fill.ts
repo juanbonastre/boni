@@ -8,7 +8,8 @@
  * right and is not. A missing value (null where the mail says it) only leaves work to Juan.
  *
  * It also prints Jev's confidences (choice / reversed, or the probability of a checkbox) and replays the same
- * answers under other thresholds, so one run says what lowering them would gain and cost.
+ * answers under other thresholds, so one run says what lowering them would gain and cost; and two other ways of
+ * asking whether a note is worth writing (NOTE_VARIANTS), scored apart.
  *
  *   OPENROUTER_API_KEY=... node packages/agent/eval/fill.ts [runs] [reader model]
  */
@@ -239,10 +240,27 @@ const readInput = (flat: string, extra: Record<string, unknown> = {}) => {
   return { marker, today: "2026-10-23", weekday: "viernes", content: text, ...extra };
 };
 
+/**
+ * Other ways to ask "is a note worth writing?", in the same call (the first run, 2026-10-23: the question now
+ * is about a coin; it asks for a note when the only detail is the place, already a field, and not for a
+ * deadline). Their answers are scored apart; they do not change what is filled.
+ */
+const fieldList = FIELDS.map((f) => `«${f.name}»`).join(", ");
+const NOTE_VARIANTS = {
+  note_b: {
+    type: "noul" as const,
+    instructions: `¿Dice el correo algo más que el destinatario necesite saber o hacer para el elemento que aparece al final tras «Elemento:», que no esté ya en su título, su fecha y hora ni en ${fieldList}? Por ejemplo: un plazo o una hora límite, qué preparar o llevar, requisitos, condiciones o consecuencias, o a quién avisar.`,
+  },
+  note_c: {
+    type: "noul" as const,
+    instructions: `Aparte del título, la fecha, la hora y ${fieldList}, ¿contiene el correo información concreta que haga falta para hacer el elemento que aparece al final tras «Elemento:» (plazos u horas límite, requisitos, materiales, pasos o consecuencias)?`,
+  },
+};
+
 /** As the agent does with a decider: Jev for the values, the reader for the note only when worth it. */
 async function withJev(c: Case) {
   const flat = contentOf(c);
-  const q = fillQuestions(FIELDS);
+  const q = { ...fillQuestions(FIELDS), ...NOTE_VARIANTS };
   const r = await jevP.complete({
     role: "decider",
     system: "",
@@ -400,10 +418,29 @@ for (const r of rules) {
   }
   console.log(`  ${r.name.padEnd(42)} ${fmt(t)}`);
 }
-for (const th of [0.3, 0.5, 0.7]) {
-  const said = kept.filter((k) => {
-    const x = k.answers.note;
-    return (x?.type === "noul" && x.noul >= th) === k.c.note;
-  }).length;
-  console.log(`  note worth writing at >= ${th}: said right ${said}/${kept.length}`);
-}
+for (const q of ["note", "note_b", "note_c"])
+  for (const th of [0.3, 0.5, 0.7]) {
+    const said = kept.filter((k) => {
+      const x = k.answers[q];
+      return (x?.type === "noul" && x.noul >= th) === k.c.note;
+    });
+    const asked = kept.filter((k) => {
+      const x = k.answers[q];
+      return x?.type === "noul" && x.noul >= th;
+    });
+    const missed = kept.filter((k) => k.c.note && !asked.includes(k)).length;
+    console.log(
+      `  ${q === "note" ? "note (now)" : q} worth writing at >= ${th}: said right ${said.length}/${kept.length} (${asked.length - (kept.filter((k) => k.c.note).length - missed)} notes not needed, ${missed} needed and not written)`,
+    );
+  }
+console.log(
+  "  per mail, p(note) now / b / c: " +
+    CASES.map((c, i) => {
+      const a = kept.find((k) => k.c === c)?.answers;
+      const p = (q: string) => {
+        const x = a?.[q];
+        return x?.type === "noul" ? x.noul.toFixed(2) : "-";
+      };
+      return `${i + 1}${c.note ? "*" : ""}:${p("note")}/${p("note_b")}/${p("note_c")}`;
+    }).join(" "),
+);
