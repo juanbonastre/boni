@@ -346,3 +346,73 @@ test('"Apuntar gasto" with the movements in Boni: the movement goes into Boni, t
   expect(JSON.stringify(inbox.proposals)).not.toContain("menu-con-lucia");
   expect(JSON.stringify(inbox.proposals)).not.toContain("Nota nueva");
 });
+
+test("no more vault: the money's collections, then the account without its vault; the calendar and the money go on in Boni", async ({
+  page,
+}) => {
+  // As on the NAS, with the server running.
+  expect(node(["apps/server/src/cli.ts", "mirror", "juan", "--money", "--apply"])).toContain(
+    "Categorias: 2",
+  );
+  expect(node(["apps/server/src/cli.ts", "mirror", "juan", "--vault-off"])).toContain("Dry run");
+  expect(node(["apps/server/src/cli.ts", "mirror", "juan", "--vault-off", "--apply"])).toContain(
+    "has no vault folder",
+  );
+  const before = read(CLASS);
+  // The calendar: still there, its edits into Boni, nothing written into the vault any more.
+  await connect(page);
+  await page.locator(".ev", { hasText: "Tutoría" }).click();
+  await page.locator(".popover .title-input").fill("Tutoría sin vault");
+  await page.locator(".popover .title-input").press("Enter");
+  await page.keyboard.press("Escape");
+  const h = { authorization: `Bearer ${await token()}` };
+  await expect
+    .poll(async () =>
+      JSON.stringify(
+        await (await fetch(`${url}/api/data/types/t_docencia/rows`, { headers: h })).json(),
+      ),
+    )
+    .toContain("Tutoría sin vault");
+  // "Apuntar gasto": the categories from Categorías, the movement into Boni with its category.
+  const options = (await (
+    await fetch(`${url}/api/v1/options/categories`, { headers: h })
+  ).json()) as { options: { value: string }[] };
+  expect(options.options.map((o) => o.value)).toEqual(["bebida/cafe", "comida/restaurante"]);
+  const r = await fetch(`${url}/api/v1/actions`, {
+    method: "POST",
+    headers: h,
+    body: JSON.stringify({
+      action: "expenses.capture",
+      client_id: "5b2e7c1a-9d4f-4e8b-a6c3-2f1d0e9b8a77",
+      values: {
+        kind: "gasto",
+        amount: 2.4,
+        account: "efectivo",
+        category: "bebida/cafe",
+        concept: "Cafe sin vault",
+        shared: false,
+        date: "2026-10-13",
+      },
+      created_at: "2026-10-13T09:00:00+02:00",
+    }),
+  });
+  expect(((await r.json()) as { status: string }).status).toBe("ok");
+  const rows = (await (
+    await fetch(`${url}/api/data/types/t_movimiento/rows`, { headers: h })
+  ).json()) as { rows: { title: string; values: Record<string, unknown> }[] };
+  const cafe = rows.rows.find((x) => JSON.stringify(x).includes("Cafe sin vault"));
+  expect(cafe).toBeTruthy();
+  const cats = (await (
+    await fetch(`${url}/api/data/types/t_categoria/rows`, { headers: h })
+  ).json()) as { rows: { id: string; values: Record<string, unknown> }[] };
+  const cafeCat = cats.rows.find((x) => x.values.f_nombre === "bebida/cafe")?.id;
+  expect(cafeCat).toBeTruthy();
+  expect(Object.values(cafe?.values ?? {})).toContain(cafeCat);
+  // A few mirror rounds later, the vault is as it was.
+  await new Promise((res) => setTimeout(res, 3000));
+  expect(read(CLASS)).toBe(before);
+  expect(read("agenda/docencia/2025-09-18 Tutoría.md")).not.toContain("Tutoría sin vault");
+  expect(
+    read("registros/finanzas/movimientos/2026/10/2026-10-13-0900-cafe-sin-vault.md"),
+  ).toBeNull();
+});

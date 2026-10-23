@@ -20,6 +20,7 @@ export {
   sessionOf,
   setPassword,
   setTrust,
+  setVault,
   type Trust,
   tokenHash,
   verifyPassword,

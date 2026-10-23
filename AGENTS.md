@@ -240,6 +240,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `src/mirror.ts`: the mirror of each account's `core` types (after agent requests, calendar and data
                  writes, and every 30 s; `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run
                  by default, and marks it in the store (`CORE_MARK`) so the vault's import never touches it again.
+                 `cli.ts mirror <name> --vault-off [--apply]` (`vaultOff.ts`; Juan, 2026-10-23: no more vault): the
+                 account without its vault folder, once its calendar and movements live in Boni; the mirror stops
+                 and the server reads no vault for it (the folder is kept in the store, `--vault-on` gives it back).
                  A quiet round must stay cheap at Juan's size (~4,000 notes): no labels, no note texts, links and
                  known paths only when a note changed.
                  `src/calendarStore.ts`: an account's calendar from its own collections (Juan, 2026-10-22: one truth)
