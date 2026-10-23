@@ -424,16 +424,26 @@ siendo lo primero; las funciones son para lo que no cabe en ellas.
 - **Tokens del MCP con alcance** (hoy uno lo puede todo lo visible): leer, escribir, proponer extensiones.
 - Versiones guardadas: volver a la anterior es un clic; una versión nueva nunca se activa sola.
 
-### 11.3 Qué datos recibe una función
+### 11.3 Qué datos recibe una función o un modelo
 
-1. **Los modelos de fuera nunca ven lo privado**: no cambia (un modelo manda los datos a su proveedor).
+1. **Por defecto, lo privado no llega a ningún modelo.** Lo restringido y lo privado («Lo que ve la IA») siguen fuera de
+   los modelos como hoy.
 2. **Una función sí puede leerlo**, si su manifiesto lo pide para esa colección y Juan lo acepta expresamente al activarla
    (en la página de la colección, como el `unlock` de hoy). La caja no tiene red: no manda nada a ningún sitio.
-3. **Lo que sale de una función hereda las etiquetas de lo que recibió**: integridad como mucho `model` (lo escribió un
-   modelo) y la sensibilidad más alta. Lo calculado desde lo privado se enseña a Juan y se guarda, pero no vuelve a un
-   modelo (`toPlannerView`) ni sale fuera (P2, P3, P14). Ejemplo: el lector saca "cita jueves 10:00" de un correo; una
-   función mira en Salud (privada) si ya existe; Juan recibe "Añadir a Salud" o "ya la tienes"; ningún modelo ve Salud.
-4. Los secretos nunca entran en la caja (los usan los conectores, en el código).
+3. **Un modelo también puede, si Juan lo abre para él** (Juan, 2026-10-23). No hay modelo local posible en el NAS
+   (Celeron J4125 sin AVX2 ni GPU), así que será uno de fuera, elegido como el resto de papeles (sección 9, «Modelos»). El
+   permiso es concreto: **esta colección, para este papel de esta extensión, con este modelo y este proveedor** (p. ej.
+   «Salud, para el lector `cita` de Correo, con Claude Haiku 4.5 en Anthropic»). La tarjeta lo dice en grande: «el texto
+   de Salud se enviará a Anthropic». Si cambia el modelo o el proveedor de ese papel, el permiso no pasa al nuevo: se vuelve
+   a pedir. Se prefieren proveedores que no guardan ni entrenan con lo que reciben (en OpenRouter, solo los que lo declaran),
+   y el código lo comprueba al llamar.
+4. **Lo privado solo llega a un lector, nunca al planificador.** El lector (en cuarentena, con esquema de salida fijo)
+   recibe lo que el permiso abre; el planificador recibe asas (`toPlannerView`), como con lo opaco.
+5. **Lo derivado hereda las etiquetas**: integridad como mucho `model` y la sensibilidad más alta de lo que se usó. Se
+   enseña a Juan y se guarda, pero no vuelve a un modelo sin permiso para esa colección ni sale fuera (P2, P3, P14).
+   Ejemplo: el lector saca «cita jueves 10:00» de un correo; una función (o un lector con permiso para Salud) mira si ya
+   existe; Juan recibe «Añadir a Salud» o «ya la tienes»; el planificador nunca ve Salud.
+6. Los secretos nunca entran en la caja ni en un modelo (los usan los conectores, en el código).
 
 ### 11.4 Amenazas y defensas
 
@@ -442,6 +452,7 @@ siendo lo primero; las funciones son para lo que no cabe en ellas.
 | Una inyección (un correo que Claude leyó) propone una extensión maliciosa | Proponer no es activar: la tarjeta de Juan en Boni enseña lo que pide y el ensayo; P16 ampliado |
 | Sacar datos fuera | La caja no tiene red; la salida va etiquetada (11.3) y la política la frena |
 | Leer lo que no debe | Solo recibe lo que declara `needs.reads`; lo privado, colección a colección y aceptado por Juan |
+| Lo privado sale hacia un proveedor de modelos | Solo con un permiso de Juan para esa colección, ese papel, ese modelo y ese proveedor (11.3); solo a un lector; proveedores sin retención; el registro guarda cada llamada con qué colecciones llevaba |
 | Romper datos (error o malicia) | No escribe: devuelve cambios que Boni aplica con la política (ensayo, confirmación si son muchos, P11, comprobación de versión, un run con Deshacer, copia diaria) |
 | Bloquear el servidor | Límites de tiempo, memoria y tamaño de salida por llamada, presupuesto diario (P13); fuera del proceso del servidor |
 | Escapar del intérprete | **Contenedor aparte** sin red, sin volúmenes de datos y sin claves, que solo habla con Boni por un socket; quien escape no encuentra nada |
@@ -460,14 +471,76 @@ siempre lo mismo.
 
 ### 11.5 Fases (sin empezar)
 
-| # | Qué | Hecho cuando |
+| # | Qué | Depende de |
 |---|---|---|
-| E1 | **La caja:** contenedor `boni-sandbox`, ejecutor QuickJS-WASM, protocolo por socket, límites | Un corpus de fugas en el CI (red, `require`, `process`, bucle infinito, bomba de memoria, salida enorme, salida que no cumple su esquema) falla siempre; medido en el NAS (memoria, arranque) |
-| E2 | **`functions` y `tests` en el manifiesto:** validación, etiquetas de la salida (11.3), solo lo de `needs.reads` | Pruebas de propiedad: lo derivado de lo privado nunca llega al planificador ni a un destino |
-| E3 | **Proponer y activar:** herramientas del MCP (11.2), tokens con alcance, la tarjeta de activación en Boni (lo que pide de más, hash, pruebas, ensayo), versiones y vuelta atrás | Una propuesta hecha por MCP no hace nada hasta aceptarla en la app de escritorio; un token sin alcance no propone |
-| E4 | **La conciliación como primera extensión:** el código de `money/` pasa a sus funciones; «Subir extracto» en la app; lo dudoso como tarjetas; Reglas aprendidas | Con una copia de los datos de Juan da exactamente lo mismo que el código de hoy (como el 2026-10-23); luego se borran `money/` y `finanzas_*` |
-| E5 | **Lo privado por extensión** (11.3, punto 2) | Una extensión con Salud aceptada propone sin que ningún modelo la vea |
-| E6 | Más adelante: compartir extensiones (firma, revisión) | — |
+| E1 | La caja | — |
+| E2 | `functions` y `tests` en el manifiesto; etiquetas de la salida | E1 |
+| E3 | Proponer por MCP y activar en Boni; tokens con alcance; versiones | E2 |
+| E4 | La conciliación como primera extensión con funciones; «Subir extracto»; dudas como tarjetas | E3; tarjetas de petición del Lienzo (A4b) |
+| E5 | Lo privado por extensión: para funciones y para un modelo elegido (11.3) | E3; «Modelos» (papeles con perfiles, PR 20) |
+| E6 | Compartir extensiones (firma, revisión) | Boni para más gente |
+
+### 11.6 Cada fase en detalle
+
+**E1. La caja.**
+- `packages/sandbox` (puro, sin E/S): el protocolo (petición: hash del código, función, entrada, límites, día y semilla;
+  respuesta: salida o error `timeout` / `memory` / `output` / `exception`), el subconjunto de JSON Schema con el que se
+  validan entradas y salidas, y los límites por defecto (500 ms, 64 MB, 1 MB de salida).
+- `apps/sandbox`: el ejecutor. Node con `quickjs-emscripten`; un hilo por llamada que se mata al pasar el límite; el
+  código se guarda por su hash mientras vive el proceso. Sin `fetch`, `require`, `process`, temporizadores, `Date.now` ni
+  `Math.random` (el día y una semilla vienen en la petición). Escucha solo en un socket Unix.
+- Contenedor `boni-sandbox`: `network_mode: none`, raíz de solo lectura, `cap_drop: ALL`, `no-new-privileges`, usuario
+  sin privilegios, 128 MB, límite de procesos; de volúmenes, solo la carpeta del socket, compartida con el servidor.
+- En el servidor, `src/sandbox.ts`: el cliente (tiempo de espera, reintento si el ejecutor se reinicia). Sin caja, las
+  funciones no están disponibles y lo dice; nada más se rompe.
+- Pruebas: un **corpus de fugas** en el CI (`apps/sandbox/test/escape/`: red, `require`, `process`, `eval` de algo de
+  fuera, bucle infinito, bomba de memoria, salida enorme, salida fuera de su esquema, recursión, `Proxy` y prototipos
+  en la salida): cada caso tiene que acabar en error y el ejecutor seguir vivo. Medido en el NAS: memoria en reposo,
+  tiempo de una llamada.
+- NAS (Juan): el servicio nuevo en el compose y una acción `boni-deploy` que construya también su imagen (instalación
+  con sus `sha256sum`, comandos en el chat).
+
+**E2. Funciones y pruebas en el manifiesto.**
+- `@boni/extensions`: `functions` (nombre, código, hash, esquema de entrada y de salida, qué colecciones recibe, límites)
+  y `tests` (función, entrada inventada, salida esperada), validados por `manifestErrors`; `moreNeeds` cuenta funciones
+  nuevas, colecciones nuevas y permisos de lo privado.
+- Una función nunca escribe: devuelve un **conjunto de cambios** cerrado (crear, cambiar con la versión que leyó, enlazar,
+  preguntar) que el servidor aplica con una herramienta nueva, `extension.apply`, por la política (ensayo, P4 si toca,
+  P11 si son muchos, un run con Deshacer, una versión distinta = se repite).
+- Etiquetas: la salida lleva la unión de las etiquetas de lo que recibió, integridad como mucho `model`, marcada como
+  derivada (no puede ser un destino).
+- Pruebas: de propiedad (como `adversarial.ts`): con funciones y salidas al azar, lo derivado de lo privado nunca llega
+  al planificador ni a un destino, y un conjunto de cambios no toca nada fuera de lo que declaró.
+
+**E3. Proponer y activar.**
+- Sesiones con **alcance** en `@boni/identity` (`read`, `write`, `extensions:propose`); `cli.ts token <name> <device>
+  --scope …`. El token de Claude actual pasa a `read` + `write` + `extensions:propose`.
+- MCP: `extensions_describe` (el catálogo y las extensiones instaladas), `extensions_propose` (manifiesto y código: se
+  valida, se pasan las pruebas y se ensaya en seco con los datos reales; devuelve el informe), `extensions_test`,
+  `extensions_run` (una extensión ya activa, en seco o aplicada). Ninguna activa.
+- En Boni: Ajustes → Extensiones → la propuesta como tarjeta pintada por código: qué pide de más, los permisos de lo
+  privado (en grande), el hash del código, las pruebas y el ensayo. Activar solo desde un dispositivo personal. Lista
+  de versiones; volver a la anterior es un clic.
+- P16 en el motor de políticas: nada con integridad `external` ni `model` sin un turno de Juan crea o cambia una
+  extensión. Casos nuevos en el corpus de inyecciones: un correo que pide a Claude cambiar una extensión acaba como mucho
+  en una propuesta que no hace nada.
+
+**E4. La conciliación.**
+- Su código (`sheets.ts`, `statements.ts`, `reconcile.ts`) pasa a ser las funciones de un preset `conciliacion`
+  (compilado a un solo archivo JS al construir, como el correo es un preset): se ejecuta en la caja como cualquier otra.
+- Flujos: al subir un extracto a `extractos/`, `importar` en seco y una tarjeta («18 nuevas, 4 unidas, 1 dudosa»);
+  «Cerrar mes» como botón en la página Gastos; las dudosas, tarjetas de pregunta; una categoría corregida propone una Regla.
+- «Subir extracto» en la app (escritorio y Android): un archivo a Archivos con su carpeta, sin pasar por Claude.
+- Prueba de igualdad: con una copia de los datos de Juan (la copia diaria), el preset da exactamente lo mismo que el
+  código de hoy, como se hizo el 2026-10-23 con Categorías. Luego se borran `apps/server/src/money/` y las herramientas
+  `finanzas_*` (las sustituye `extensions_run`); el skill `/gastos` y el procedimiento se actualizan.
+
+**E5. Lo privado por extensión.**
+- Permisos guardados en el almacén (como `aiRules`): colección → extensión → función, o papel + modelo + proveedor.
+  Se conceden solo desde la página de la colección con el `unlock` de hoy; se ven y se quitan allí.
+- `readStore` abre esa colección solo para la ejecución, la función o el lector que el permiso nombra; el planificador
+  sigue con asas. El registro guarda cada llamada a un modelo con las colecciones privadas que llevaba.
+- Necesita «Modelos» (sección 9): elegir modelo y proveedor por papel, y saber si el proveedor guarda o entrena.
 
 ## 12. Decisiones
 
@@ -484,5 +557,8 @@ siempre lo mismo.
    conectores (A7); el conector se arma mejor desde el OpenAPI de cada API. Propuesto (2026-10-21).
 7. **Extensiones con funciones** (sección 11): una extensión no trae código que toque nada; puede traer funciones puras
    que se ejecutan en una caja sin puertas (contenedor aparte); solo Juan las activa, en Boni; leen lo que declaran y lo
-   privado solo si Juan lo abre para esa extensión, y lo que derivan de ello nunca llega a un modelo. Precisa la decisión 2.
-   Decidido (Juan, 2026-10-23); orden E1-E6, sin empezar.
+   privado solo si Juan lo abre para esa extensión. Precisa la decisión 2. Decidido (Juan, 2026-10-23); orden E1-E6, sin
+   empezar.
+8. **Lo privado y los modelos** (11.3): sin modelo local posible en el NAS, Juan puede abrir una colección privada a un
+   modelo de fuera concreto (papel, modelo y proveedor), elegido como el resto; solo a un lector, nunca al planificador.
+   Decidido (Juan, 2026-10-24).
