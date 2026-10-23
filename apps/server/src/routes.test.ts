@@ -152,8 +152,11 @@ describe("the server's two entries", () => {
     expect((await fetch(`${tailnet}/boni/..%2f..%2fdb.sqlite`)).status).toBe(404);
     expect((await fetch(`${pub}/boni/`)).status).toBe(404);
     expect((await fetch(`${pub}/boni/assets/app.js`)).status).toBe(404);
-    // the calendar's app is still at the root, on both
+    // The calendar's app is at the public entry's root; the tailnet's (Boni's address) opens Boni.
     expect(await (await fetch(`${pub}/`)).text()).toContain("Boni Calendar");
+    const root = await fetch(`${tailnet}/`, { redirect: "manual" });
+    expect([root.status, root.headers.get("location")]).toEqual([302, "/boni/"]);
+    expect(await (await fetch(`${tailnet}/`)).text()).toContain("<title>Boni</title>");
   });
 
   it("answers 404 on the public entry for a route off the list, before asking who you are", async () => {

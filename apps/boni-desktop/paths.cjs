@@ -6,4 +6,10 @@ const API_PATH =
 
 const allowedPath = (p) => typeof p === "string" && API_PATH.test(p) && !p.includes("..");
 
-module.exports = { allowedPath };
+// How long a request may take: a turn of the agent's conversation runs plans and model calls (minutes at
+// worst); anything else answers in seconds. Cut sooner, a slow answer looked like "no connection" (Juan,
+// 2026-10-23). The same in apps/boni-web/src/host.ts and apps/boni-android's Net.kt.
+const SLOW_PATH = /^api\/agent\/(turn|answer|confirm|decline)$/;
+const timeoutFor = (p) => (SLOW_PATH.test(p) ? 180_000 : 30_000);
+
+module.exports = { allowedPath, timeoutFor };

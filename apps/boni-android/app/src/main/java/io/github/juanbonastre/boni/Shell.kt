@@ -154,7 +154,7 @@ class Shell private constructor(context: Context) {
         val (server, token) = target()
             ?: return JSONObject().put("ok", false).put("offline", false).put("notConfigured", true)
         return try {
-            val r = Http.send(method, "$server/$path", token, body)
+            val r = Http.send(method, "$server/$path", token, body, timeoutMs = Paths.timeoutMs(path))
             if (r.status == 401 && !sessionEnded) {
                 sessionEnded = true
                 emitSettings()

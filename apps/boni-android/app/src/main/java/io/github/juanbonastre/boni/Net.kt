@@ -29,6 +29,12 @@ object Paths {
         }
     }
 
+    // How long a request may take: a turn of the agent's conversation runs plans and model calls (minutes at
+    // worst); anything else answers in seconds (apps/boni-desktop/paths.cjs `timeoutFor`, the same).
+    private val SLOW_PATH = Regex("^api/agent/(turn|answer|confirm|decline)$")
+
+    fun timeoutMs(path: String): Int = if (SLOW_PATH.matches(path)) 180_000 else 30_000
+
     /** A request the page may make: one of the API's methods on one of those paths, never outside them. */
     fun apiRequest(method: String, path: String): Boolean =
         method in METHODS && API_PATH.matches(path) && !path.contains("..")

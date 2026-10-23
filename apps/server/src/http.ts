@@ -749,6 +749,13 @@ export function makeApp(opts: ServerOptions): App {
   ): Promise<void> => {
     // /boni/... is Boni's web app (tailnet only); everything else is the calendar's.
     const boni = pathname === "/boni" || pathname.startsWith("/boni/");
+    // The tailnet's address is Boni's (`boni.`, Juan 2026-10-23): its root opens Boni, not the calendar's page
+    // (which, logged out, shows invented data). The public entry (`calendar.`) keeps the calendar there.
+    const home = pathname === "/" || pathname === "/index.html";
+    if (home && listener === "tailnet" && boniRoot) {
+      res.writeHead(302, { ...SAFE, location: "/boni/" });
+      return void res.end();
+    }
     if (boni && pathname === "/boni") {
       res.writeHead(301, { ...SAFE, location: "/boni/" });
       return void res.end();

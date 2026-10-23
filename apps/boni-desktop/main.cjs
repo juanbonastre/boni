@@ -19,7 +19,7 @@ const { execFile } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { allowedPath } = require("./paths.cjs");
+const { allowedPath, timeoutFor } = require("./paths.cjs");
 const F = require("./files.cjs");
 const { linkIn, screenOfUrl } = require("./links.cjs");
 const { createLive } = require("./live.cjs");
@@ -659,7 +659,7 @@ ipcMain.handle("api:request", async (_e, method, apiPath, body) => {
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(timeoutFor(apiPath)),
     });
     const text = await r.text();
     if (r.status === 401 && !sessionEnded) {
