@@ -28,6 +28,10 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *   POST /api/agent/confirm  { run, confirmation }
  *   POST /api/agent/decline  { run, confirmation }
  *   GET  /api/agent/proposals                -> { proposals } pending, with the view painted by the code
+ *   GET  /api/agent/requests                 -> { requests } questions from background work waiting for Juan
+ *                                               (the panel of requests; expired ones end first)
+ *   POST /api/agent/requests/:id/answer      { choice | text } -> TurnResult (the run goes on, as background work)
+ *   POST /api/agent/requests/:id/dismiss     put away unanswered: its run ends having done nothing more
  *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection? } } Juan's corrections, kept
  *   POST /api/agent/proposals/:id/reject
  *   GET  /api/agent/runs                     -> { runs } the latest, for the log, each with what it was and
@@ -106,6 +110,7 @@ export class AgentHost {
         ...(this.o.now ? { now: this.o.now } : {}),
         // To this account's devices only: the recipient is the code's (7.9).
         notify: (text, l) => this.emit(account, "notify", { text, integrity: l.integrity }),
+        onRequest: () => this.emit(account, "requests", {}),
       });
       this.agents.set(account, a);
     }
@@ -228,6 +233,32 @@ async function answerAgent(
         }),
       });
     }
+    case "GET /api/agent/requests": {
+      return send(res, 200, {
+        requests: agent.requests().map((r) => ({
+          id: r.id,
+          run: r.run,
+          view: r.view,
+          created: r.created,
+          expires: r.expires,
+        })),
+      });
+    }
+    case "POST /api/agent/requests/:id/answer": {
+      const r = host.store(who.account).journal.request(params.id ?? "");
+      if (!r) return send(res, 404, { error: "not-found" });
+      const b = await bodyOf(req);
+      const answer =
+        typeof b.choice === "number" && Number.isInteger(b.choice)
+          ? { choice: b.choice }
+          : str(b.text, 500)
+            ? { text: b.text as string }
+            : null;
+      if (!answer) return bad();
+      return send(res, 200, after(await agent.answer(r.run, r.id, answer, { trust: who.trust })));
+    }
+    case "POST /api/agent/requests/:id/dismiss":
+      return send(res, 200, { dismissed: agent.dismissRequest(params.id ?? "") });
     case "POST /api/agent/proposals/:id/accept": {
       // Juan's corrections first (a new title, another collection), as the agent's edits.
       const b = ((await bodyOf(req)) ?? {}) as {

@@ -54,6 +54,18 @@ export interface ProposalEdits {
   type?: { from: string; to: string };
   values?: Record<string, { from: unknown; to: unknown }>;
 }
+/** A question to Juan from a run with no turn of his (the panel of requests). */
+export interface RequestRow {
+  id: string;
+  run: string;
+  /** What the panel paints (the agent's `Pending` view, labelled values). */
+  view: unknown;
+  status: "pending" | "answered" | "expired" | "dismissed";
+  created: number;
+  expires: number;
+  decided: number | null;
+  answer: unknown;
+}
 export interface ConfirmationRow {
   id: string;
   run: string;
@@ -89,6 +101,14 @@ export interface Journal {
   confirmation(id: string): ConfirmationRow | null;
   /** Marks it used; false when it was used already, expired or is not that hash. */
   useConfirmation(id: string, hash: string, at: number): boolean;
+  addRequest(r: Omit<RequestRow, "status" | "decided" | "answer">): void;
+  request(id: string): RequestRow | null;
+  requests(status?: RequestRow["status"]): RequestRow[];
+  setRequest(id: string, status: RequestRow["status"], at: number, answer?: unknown): void;
+  /** A waiting run's state (the agent's, as JSON), kept so it survives a restart. */
+  saveRunState(run: string, state: unknown, at: number): void;
+  runState(run: string): unknown;
+  dropRunState(run: string): void;
   /** How much of a daily budget (`key`, e.g. "reader" or "reader:<sender>") was spent on `day`. */
   spent(day: string, key: string): number;
   spend(day: string, key: string, n: number): void;
@@ -119,6 +139,16 @@ export function openJournal(db: DatabaseSync): Journal {
     created: r.created as number,
     decided: (r.decided as number | null) ?? null,
     edits: p(r.edits),
+  });
+  const requestOf = (r: Record<string, unknown>): RequestRow => ({
+    id: r.id as string,
+    run: r.run as string,
+    view: p(r.view),
+    status: r.status as RequestRow["status"],
+    created: r.created as number,
+    expires: r.expires as number,
+    decided: (r.decided as number | null) ?? null,
+    answer: p(r.answer),
   });
   return {
     startRun: (r) =>
@@ -249,6 +279,38 @@ export function openJournal(db: DatabaseSync): Journal {
           "UPDATE confirmations SET used = ? WHERE id = ? AND hash = ? AND used IS NULL AND expires > ?",
         )
         .run(at, id, hash, at).changes > 0,
+    addRequest: (r) =>
+      void db
+        .prepare(
+          "INSERT INTO requests (id, run, view, status, created, expires) VALUES (?, ?, ?, 'pending', ?, ?)",
+        )
+        .run(r.id, r.run, j(r.view), r.created, r.expires),
+    request: (id) => {
+      const r = db.prepare("SELECT * FROM requests WHERE id = ?").get(id);
+      return r ? requestOf(r) : null;
+    },
+    requests: (status) =>
+      (status
+        ? db.prepare("SELECT * FROM requests WHERE status = ? ORDER BY created, id").all(status)
+        : db.prepare("SELECT * FROM requests ORDER BY created, id").all()
+      ).map(requestOf),
+    setRequest: (id, status, at, answer) =>
+      void db
+        .prepare("UPDATE requests SET status = ?, decided = ?, answer = ? WHERE id = ?")
+        .run(status, at, answer === undefined ? null : j(answer), id),
+    saveRunState: (run, state, at) =>
+      void db
+        .prepare(
+          "INSERT INTO waiting_runs (run, state, saved) VALUES (?, ?, ?) ON CONFLICT(run) DO UPDATE SET state = excluded.state, saved = excluded.saved",
+        )
+        .run(run, j(state), at),
+    runState: (run) => {
+      const r = db.prepare("SELECT state FROM waiting_runs WHERE run = ?").get(run) as
+        | { state: string }
+        | undefined;
+      return r ? p(r.state) : null;
+    },
+    dropRunState: (run) => void db.prepare("DELETE FROM waiting_runs WHERE run = ?").run(run),
     spent: (day, key) =>
       (
         db.prepare("SELECT n FROM budgets WHERE day = ? AND key = ?").get(day, key) as

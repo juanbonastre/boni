@@ -95,6 +95,10 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  `toPlannerView` (`view.ts`, the only way into the planner: what it may not see becomes a handle),
                  quarantined readers (`readers.ts`), confirmations painted by code and bound to a hash (`confirm.ts`),
                  and the interpreter and turn (`agent.ts`: ask, confirm, inbox, undo by run, limits).
+                 The panel of requests (Juan, 2026-10-24): background work may `ask` too (asking has no effect;
+                 P7 holds after the answer): the run waits in the journal (`requests`, `waiting_runs`, store
+                 migration 9) for `REQUEST_DAYS` (7), survives a restart, and goes on with `answer(run, ask, a,
+                 { trust })` (typed text is `user` only from a personal device); `dismissRequest`, `expireRequests`.
                  What Juan keeps from the models (per type: visible / opaque / hidden, `store.aiAccess()`) is
                  applied in `readStore`, the agent's only read view: hidden types do not exist there, opaque ones
                  carry `noModel` on every value (planner handles, no reader: R3). Providers:
@@ -286,6 +290,8 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  Boni would accept a mail proposal alone (code's rule over Juan's decisions on ones like it; only
                  measured: the card's `wouldAccept` and the Registro's `autoAccept`, nothing is accepted alone).
                  "Ya lo hice": accept with `done`, the calendar's task column (`taskDoneField`) set to true.
+                 `GET /api/agent/requests`, `POST /api/agent/requests/:id/answer | dismiss`: the panel of requests;
+                 a new one is told to the devices as the live event `requests`.
 apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`legacy/boni/apps/web`, with its history):
                  charts, shortcuts and "Apuntar gasto" over the API v1 (`src/core/api.ts`, `contract.ts`), the same
                  page in a browser, in its desktop shell and in its Android WebView (`src/host.ts`). `api/` is the v1
