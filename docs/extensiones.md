@@ -341,6 +341,25 @@ solo 30 de 38, todos bien, y los 8 restantes (incluidos los 3 fallos) serían un
 algo?" ahorra poco (10 de 54 lecturas, sin perder ninguna petición). Unas 25 veces más barato que Haiku. Uso propuesto:
 elegir la colección (y lo dudoso, al panel de peticiones), detectar duplicados; la extracción sigue en un `reader`.
 
+**`decider` hecho (2026-10-23, `decider.ts`, `filling.ts`).** Juan pidió propuestas con sus columnas rellenas y una
+nota, con Jev decidiendo qué meter. Cómo entra en la arquitectura sin tocar la seguridad:
+- **Jev nunca escribe texto**: solo elige entre opciones que pone el código (las opciones de una selección, las
+  entradas a las que puede apuntar una relación, sí/no de una casilla) o dice la probabilidad de un sí. Lo peor que
+  puede hacer un correo malicioso es moverlo a otra opción de Juan, y todo sigue siendo una propuesta.
+- **Lector `fill`** por cada elemento que pide el correo: los campos los construye el código desde la colección
+  (`fillFields` en el servidor; nunca el título ni la fecha, ni campos ocultos, archivados o sensibles; relaciones
+  solo a colecciones que la IA puede ver, las 40 entradas más recientes tituladas por Juan) y los ata al plan como
+  `$fields_<n>` (como la guía: un plan no puede inventarlos y R1 los deja pasar solo así).
+- **Con Jev**: una llamada por elemento con todas las preguntas a la vez; cada elección se pregunta dos veces con
+  las opciones en orden inverso (Jev tira hacia la primera) y vale solo si coinciden con confianza ≥ 0,6; una
+  casilla se marca con ≥ 0,75; si Jev dice que hay detalles útiles (≥ 0,5), Haiku escribe la nota (lector aparte, sin
+  campos). La colección también la elige Jev en los dos órdenes; si no coinciden o duda, la elige Haiku como antes.
+- **Sin Jev** (sin clave, o caído): Haiku rellena campos y nota en una llamada; mismo resultado comprobado.
+- **Tokens**: con Jev, por correo se ahorra la llamada de clasificación de Haiku y, por elemento, la de relleno (solo
+  queda la de la nota cuando hace falta). Las llamadas al `decider` no gastan el presupuesto diario de lectores (P13).
+- Clave: `TYPESAFE_API_KEY` (directo) u `OPENROUTER_API_KEY` en el entorno del servidor; `BONI_DECIDER_MODEL=off` lo
+  apaga. Pendiente: medir `fill` con correos inventados (como `eval/decide.ts`) antes de bajar los umbrales.
+
 Cada perfil dice proveedor, modelo, clase de privacidad (`local`, `external-api`) y coste. El router elige con dos reglas
 del código: lo que "Lo que ve la IA" restringa por clase de privacidad, y el presupuesto de la extensión. Cambiar de
 modelo un papel es un ajuste, y antes de usarlo se pasa su evaluación (`eval/*.ts`).

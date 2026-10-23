@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 import {
+  FILL_LIMITS,
+  type FillField,
   GUIDE_LIMITS,
   guideValue,
   leaf,
@@ -137,6 +139,87 @@ export interface Target {
   option: string;
   /** The date field a task's due day goes to (`dueField`; none: the day is left out). */
   date: string | null;
+  /** Its fields with a closed set of values, filled per item by the reader `fill` (docs/extensiones.md 9). */
+  fill?: FillField[];
+  /** The name the code binds `fill` to in the plan (`$fields_<n>`). */
+  fillRef?: string;
+}
+
+/** How many entries of a related collection a relation field offers (the latest changed). */
+const RELATION_CHOICES = 40;
+/** The fields bound to the plan: made by code (only code may name them as a reader's fields). */
+export const fieldsValue = (fields: FillField[]) =>
+  leaf(
+    fields as unknown as Parameters<typeof leaf>[0],
+    label("own", "personal", [{ kind: "code", id: "fill" }]),
+  );
+
+/**
+ * What the reader `fill` may set in a collection (Juan, 2026-10-23: proposals with their columns filled): a
+ * select's options, the entries a relation may point to (of a collection the models may see, the latest
+ * changed, titled by Juan or his import, nothing sensitive) and checkboxes. Never the title or the date (the
+ * reading gives them), hidden, archived, sensitive or Boni's own fields.
+ */
+export function fillFields(
+  ro: ReturnType<typeof readStore>,
+  t: TypeDef,
+  date: string | null,
+): FillField[] {
+  const types = ro.schema().types;
+  const out: FillField[] = [];
+  for (const f of t.fields) {
+    if (out.length >= FILL_LIMITS.fields) break;
+    if (f.id === t.titleField || f.key === date || f.hidden || f.archived) continue;
+    if (
+      f.sensitivity === "sensitive" ||
+      f.key.startsWith("boni") ||
+      !/^[a-z0-9_-]{1,64}$/i.test(f.key)
+    )
+      continue;
+    const name = f.name.slice(0, FILL_LIMITS.label);
+    if (f.type === "checkbox") out.push({ key: f.key, name, kind: "check", options: [] });
+    else if (f.type === "select" && f.options?.length)
+      out.push({
+        key: f.key,
+        name,
+        kind: "choice",
+        options: f.options
+          .filter((o) => o.name.trim())
+          .slice(0, FILL_LIMITS.options)
+          .map((o) => ({ value: o.id, label: o.name.slice(0, FILL_LIMITS.label) })),
+      });
+    else if (f.type === "relation" && f.relation && !f.relation.many) {
+      const target = types[f.relation.target];
+      if (!target || target.system || target.archived) continue;
+      const seen = new Set<string>();
+      const options = ro
+        .list(target.id)
+        .filter((e) => {
+          const l = e.labels[target.titleField];
+          const title = e.entity.values[target.titleField];
+          return (
+            typeof title === "string" &&
+            title.trim() !== "" &&
+            l !== undefined &&
+            !l.noModel &&
+            (l.integrity === "user" || l.integrity === "own" || l.integrity === "imported") &&
+            l.sensitivity !== "sensitive"
+          );
+        })
+        .sort((a, b) => b.entity.updated - a.entity.updated)
+        .flatMap((e) => {
+          const label = String(e.entity.values[target.titleField])
+            .replace(/\s+/g, " ")
+            .slice(0, FILL_LIMITS.label);
+          if (seen.has(label)) return [];
+          seen.add(label);
+          return [{ value: e.entity.id, label }];
+        })
+        .slice(0, Math.min(RELATION_CHOICES, FILL_LIMITS.options));
+      if (options.length) out.push({ key: f.key, name, kind: "choice", options });
+    }
+  }
+  return out.filter((f) => f.kind === "check" || f.options.length > 0);
 }
 
 /** Fewer values than this say nothing about what a date field holds. */
@@ -261,25 +344,60 @@ export function mailPlan(
       },
     },
   ];
-  const create = (id: string, module: string, t: Target, when?: unknown) => ({
+  // Each item's other fields and its note (reader `fill`, Jev when there is one): read with the mail and the
+  // item, walked along the items when creating (`zip`).
+  const fillStep = (id: string, module: string, t: Target, when?: unknown) => ({
     id,
-    op: "call",
-    tool: "entities.create",
+    op: "read",
+    reader: "fill",
     each: { ref: `$r.${module}` },
     ...(when ? { when } : {}),
-    why: { ref: "$item.quote" },
-    args: {
-      type: { lit: t.key },
-      values: {
-        fn: "obj",
-        args: [
-          { lit: "title" },
-          { ref: "$item.title" },
-          ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
-        ],
-      },
+    input: {
+      fn: "concat",
+      args: [
+        ...parts,
+        { lit: "\n\nElemento: " },
+        { ref: "$item.title" },
+        { lit: "\nPalabras del correo que lo piden: " },
+        { ref: "$item.quote" },
+      ],
     },
+    params: { fields: { ref: `$${t.fillRef}` } },
   });
+  const create = (id: string, module: string, t: Target, when?: unknown) => {
+    const filled = !!(t.fill?.length && t.fillRef);
+    const step = {
+      id,
+      op: "call",
+      tool: "entities.create",
+      each: { ref: `$r.${module}` },
+      ...(filled ? { zip: { ref: `$${id}_f` } } : {}),
+      ...(when ? { when } : {}),
+      why: { ref: "$item.quote" },
+      args: {
+        type: { lit: t.key },
+        values: {
+          fn: "obj",
+          args: [
+            { lit: "title" },
+            { ref: "$item.title" },
+            ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
+            ...(filled
+              ? [
+                  { lit: "body" },
+                  { ref: "$zip.note" },
+                  ...(t.fill ?? []).flatMap((f) => [
+                    { lit: f.key },
+                    { ref: `$zip.values.${f.key}` },
+                  ]),
+                ]
+              : []),
+          ],
+        },
+      },
+    };
+    return filled ? [fillStep(`${id}_f`, module, t, when), step] : [step];
+  };
   if (chosen.length && targets.length > 1)
     steps.push({
       id: "c",
@@ -297,7 +415,7 @@ export function mailPlan(
   targets.forEach((t, i) => {
     for (const module of chosen)
       steps.push(
-        create(
+        ...create(
           `n${i}_${module}`,
           module,
           t,
@@ -309,7 +427,7 @@ export function mailPlan(
     const r = route(module);
     if (!("propose" in r) || r.propose === "chosen") continue;
     const t = o.fixed?.find((x) => x.id === r.propose.collection);
-    if (t) steps.push(create(`f_${module}`, module, t));
+    if (t) steps.push(...create(`f_${module}`, module, t));
   }
   return { version: 1, steps };
 }
@@ -955,6 +1073,7 @@ export class Mails {
           name: t.name,
           option: option.slice(0, 200),
           date: date?.key ?? null,
+          ...(levels[id] === "opaque" ? {} : { fill: fillFields(ro, t, date?.key ?? null) }),
         },
       ];
     });
@@ -984,6 +1103,12 @@ export class Mails {
       modules: modulesOfManifest(m),
       ...(withGuide ? { guide: guideOf(guide) } : {}),
     };
+    // Each collection's fields to fill, bound by code (`$fields_<n>`).
+    [...targets, ...fixed].forEach((t, i) => {
+      if (!t.fill?.length) return;
+      t.fillRef = `fields_${i}`;
+      bound[t.fillRef] = fieldsValue(t.fill);
+    });
     let n = 0;
     for (const id of st.pending.slice(0, this.o.perCheck ?? 50)) {
       st.pending = st.pending.filter((x) => x !== id);

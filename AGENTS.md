@@ -101,6 +101,14 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  corpus: the attacker plans, the reader repeats the attacker and Juan says yes to everything, and
                  the properties of `test/adversarial.ts` must hold; `random-plans.test.ts` does the same with 300
                  seeded random plans. A change that breaks a property fails CI.
+                 `decider.ts`: the `decider` role, Jev (TypeSafe's decision model, straight or through OpenRouter):
+                 choices among the code's options with a confidence, yes/no probabilities, never text; the code
+                 checks every answer and decides with thresholds. `filling.ts`: reader `fill`, a proposal's other
+                 fields (a select's options, the entries a relation may point to, checkboxes; `fields` bound by
+                 code only) and its note: with Jev each choice asked in both orders and kept only when they agree,
+                 the reader writing the note only when Jev says it is worth it; without Jev the reader fills all.
+                 A call step's `why` is the reason its proposal shows (the reader's quote); `zip` walks a second
+                 list along `each` (`$zip`).
                  `anthropic.ts`: the real provider (Messages API with structured output, no tools, no SDK);
                  `apiSchema` reduces schemas to what that API accepts (the code checks every answer again anyway).
                  `eval/eval.ts`: a small evaluation with the real models, outside CI, run by hand with a budget.
@@ -209,6 +217,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  and collections marked, each new mail runs `mailPlan` in the background (P7: extract_tasks, then
                  classify among the marked collections, each option with up to three of Juan's own titles of it;
                  one `entities.create` per task, which the policy sends to the inbox).
+                 Each item is then filled (reader `fill`, `fillFields`: the collection's selects, relations and
+                 checkboxes) and created along with it (`zip`), with the reader's quote as its `why`; with
+                 `TYPESAFE_API_KEY` (or `OPENROUTER_API_KEY`) Jev also chooses the collection (both orders agreeing).
                  Since 15d each mail is read once with `read_message` (headers, where the user is, modules
                  tasks and events); the reading guide (`MailGuide`: Juan's words, rules applied by code, examples)
                  goes to the reader as `$guide`, bound by code. `src/mailReview.ts`: the reviewer, every 20 of

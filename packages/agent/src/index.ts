@@ -15,6 +15,21 @@ export {
 } from "./agent.ts";
 export { AnthropicProvider, apiSchema, ProviderError } from "./anthropic.ts";
 export { type ConfirmView, confirmHash, confirmView, marksOf } from "./confirm.ts";
+export {
+  checkAnswers,
+  type DecisionAnswers,
+  type DecisionQuestion,
+  JevProvider,
+} from "./decider.ts";
+export {
+  checkFill,
+  FILL_LIMITS,
+  FILL_THRESHOLDS,
+  type FillField,
+  fillQuestions,
+  fromAnswers,
+  readFields,
+} from "./filling.ts";
 export { callFn, FnError } from "./fns.ts";
 export { type OpenAIOptions, OpenAIProvider } from "./openai.ts";
 export {

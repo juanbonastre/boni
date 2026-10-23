@@ -2,6 +2,19 @@ import { createHash, randomUUID } from "node:crypto";
 import { join, type Label, label, modelMaySee } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
+import { checkAnswers, type DecisionQuestion } from "./decider.ts";
+import {
+  checkFill,
+  cleanNote,
+  type FillField,
+  fieldsForReader,
+  fillQuestions,
+  fillSchema,
+  fromAnswers,
+  NOTE_PROMPT,
+  NOTE_SCHEMA,
+  readFields,
+} from "./filling.ts";
 import { callFn, FnError } from "./fns.ts";
 import { type Expr, MAX_EACH, type Plan, planSchema, type Step, validatePlan } from "./plan.ts";
 import { DEFAULT_LIMITS, type Decision, decide, type Origin } from "./policy.ts";
@@ -119,7 +132,8 @@ export interface RunLimits {
 }
 export const RUN_LIMITS: RunLimits = {
   maxStepRuns: 200,
-  maxModelCalls: 20,
+  // A mail with several items: one reading, the collection, and filling each item (docs/extensiones.md 9).
+  maxModelCalls: 40,
   maxBytes: 256_000,
   maxTokens: 200_000,
   maxConfirmations: 3,
@@ -197,6 +211,8 @@ export interface AgentOptions {
   registry: ToolRegistry;
   planner: ModelProvider;
   reader: ModelProvider;
+  /** The `decider` role (Jev): choices among the code's options; without it, the reader decides. */
+  decider?: ModelProvider;
   now?: () => number;
   /** Juan's zone: the civil day `today()` gives. */
   tz?: string;
@@ -634,6 +650,10 @@ export class Agent {
           const items = this.evalAtom(st, step.each);
           if (items.t !== "list") throw new Stop("each-not-a-list");
           if (items.items.length > MAX_EACH) throw new Stop("too-many-items");
+          // A second list walked along (`zip`): the same length, or the step stops.
+          const zip = step.zip ? this.evalAtom(st, step.zip) : null;
+          if (zip && (zip.t !== "list" || zip.items.length !== items.items.length))
+            throw new Stop("zip-length");
           // Which items there are decides that each iteration runs: that is control (P15).
           const control = st.control
             ? join(st.control, decidedBy(items.label))
@@ -641,11 +661,13 @@ export class Agent {
           result = BLOCKED;
           for (; st.iter < items.items.length; st.iter++) {
             st.env.set("item", items.items[st.iter] as Val);
+            if (zip?.t === "list") st.env.set("zip", zip.items[st.iter] as Val);
             const r = await this.execStep(st, step, control);
             if (r === BLOCKED) return this.waiting(st);
             st.partial.push(r);
           }
           st.env.delete("item");
+          st.env.delete("zip");
           result = list(st.partial, control, true);
         } else {
           result = await this.execStep(st, step, st.control);
@@ -851,9 +873,26 @@ export class Agent {
         l.sources.every((s) => s.kind === "guide")
       );
     };
+    // fill: the collection's fields with their options (Juan's option names, the titles a relation may point
+    // to), only as the code bound them: allowed like a classifier's options, since an answer can only be one.
+    const isFields = (k: string, v: Val) => {
+      const l = deepLabel(v);
+      return (
+        k === "fields" &&
+        step.reader === "fill" &&
+        l.sensitivity !== "sensitive" &&
+        l.sources.length > 0 &&
+        l.sources.every((s) => s.kind === "code")
+      );
+    };
     if (external)
       for (const [k, v] of Object.entries(params))
-        if (k !== "options" && !isGuide(k, v) && deepLabel(v).sensitivity !== "public") {
+        if (
+          k !== "options" &&
+          !isGuide(k, v) &&
+          !isFields(k, v) &&
+          deepLabel(v).sensitivity !== "public"
+        ) {
           this.log(st, step, "read", "deny", "R1", { reason: "private-data-to-reader" });
           throw new Stop("R1-private-data-to-reader");
         }
@@ -883,6 +922,15 @@ export class Agent {
       if (!USER_IN.includes(u as UserIn)) throw new Stop("reader-bad-user-in");
       userIn = u as string;
     }
+    let fields: FillField[] = [];
+    if (step.reader === "fill") {
+      const f =
+        params.fields && isFields("fields", params.fields)
+          ? readFields(plain(params.fields))
+          : null;
+      if (!f) throw new Stop("reader-bad-fields");
+      fields = f;
+    }
     let guide: Record<string, unknown> | null = null;
     if (params.guide) {
       const g = isGuide("guide", params.guide) ? readGuide(plain(params.guide)) : null;
@@ -897,6 +945,7 @@ export class Agent {
       };
     }
     const system = mods.length ? readMessagePrompt(mods) : READER_PROMPTS[step.reader];
+    let spend = () => {};
     // P13: what work without a turn may spend per day, overall and per sender.
     if (st.origin.kind === "background") {
       const day = this.today();
@@ -916,38 +965,59 @@ export class Agent {
         this.log(st, step, "read", "deny", "P13", { reason: "daily-budget" });
         throw new Stop("P13-daily-budget");
       }
-      for (const k of keys) this.o.store.journal.spend(day, k, 1);
+      // Spent when a reader model is called (the decider costs next to nothing).
+      spend = () => {
+        for (const k of keys) this.o.store.journal.spend(day, k, 1);
+        spend = () => {};
+      };
     }
     const content = plain(input);
-    const { marker, text } = delimit(
-      typeof content === "string" ? content : JSON.stringify(content),
-    );
-    const out = await this.model(
-      st,
-      this.o.reader,
-      {
-        role: "reader",
-        system,
-        input: {
-          marker,
-          today: this.today(),
-          weekday: weekdayOf(this.today()),
-          ...(userIn ? { user_in: userIn } : {}),
-          ...(guide ? { guide } : {}),
-          content: text,
-          ...(params.instruction ? { instruction: plain(params.instruction) } : {}),
-          ...(params.question ? { question: plain(params.question) } : {}),
-          ...(known?.length ? { known } : {}),
-          ...(options.length ? { options } : {}),
+    const flat = typeof content === "string" ? content : JSON.stringify(content);
+    const { marker, text } = delimit(flat);
+    const read = (sys: string, schema: object, extra: Record<string, unknown> = {}) => {
+      spend();
+      return this.model(
+        st,
+        this.o.reader,
+        {
+          role: "reader",
+          system: sys,
+          input: {
+            marker,
+            today: this.today(),
+            weekday: weekdayOf(this.today()),
+            ...(userIn ? { user_in: userIn } : {}),
+            ...(guide ? { guide } : {}),
+            content: text,
+            ...(params.instruction ? { instruction: plain(params.instruction) } : {}),
+            ...(params.question ? { question: plain(params.question) } : {}),
+            ...(known?.length ? { known } : {}),
+            ...(options.length ? { options } : {}),
+            ...extra,
+          },
+          schema,
+          maxTokens: 4000,
         },
-        schema: mods.length ? readMessageSchema(mods) : READER_SCHEMAS[step.reader],
-        maxTokens: 4000,
-      },
-      createHash("sha256").update(system).digest("hex"),
-    );
-    const checked = mods.length
-      ? checkReadMessage(out, mods)
-      : checkReaderOutput(step.reader, out, options);
+        createHash("sha256").update(sys).digest("hex"),
+      );
+    };
+    let checked: unknown;
+    if (step.reader === "fill") checked = await this.fill(st, fields, flat, read);
+    else {
+      const decided =
+        step.reader === "classify" && this.o.decider
+          ? await this.decideChoice(st, flat, options, params.question)
+          : null;
+      checked = decided
+        ? { choice: decided }
+        : mods.length
+          ? checkReadMessage(await read(system, readMessageSchema(mods)), mods)
+          : checkReaderOutput(
+              step.reader,
+              await read(system, READER_SCHEMAS[step.reader]),
+              options,
+            );
+    }
     if (!checked) {
       this.log(st, step, "read", "deny", "R2", { reason: "reader-output-invalid" });
       throw new Stop("R2-reader-output-invalid");
@@ -958,7 +1028,85 @@ export class Agent {
       ? join(inLabel, ...paramLabels)
       : join(inLabel, modelLabel(st.id), ...paramLabels);
     this.log(st, step, "read", "allow", "P1", { reader: step.reader });
-    return fromJson(checked, outLabel);
+    return fromJson(checked as Json, outLabel);
+  }
+
+  /** One call to the decider, its answers checked again by the code (null: it failed or answered off). */
+  private async decide(st: RunState, state: string, questions: Record<string, DecisionQuestion>) {
+    const decider = this.o.decider;
+    if (!decider) return null;
+    const out = await this.model(
+      st,
+      decider,
+      { role: "decider", system: "", input: { state, questions }, schema: {}, maxTokens: 0 },
+      createHash("sha256").update(JSON.stringify(questions)).digest("hex"),
+    ).catch((e) => {
+      // The decider down: the reader decides instead (a budget or limit stop still stops).
+      if (e instanceof Stop && e.code.startsWith("model-")) return null;
+      throw e;
+    });
+    return out === null ? null : checkAnswers(out, questions);
+  }
+
+  /**
+   * classify by the decider: the options in both orders (it leans to the first), kept only when both agree
+   * with enough confidence; otherwise null and the reader chooses.
+   */
+  private async decideChoice(
+    st: RunState,
+    state: string,
+    options: string[],
+    question: Val | undefined,
+  ): Promise<string | null> {
+    const instructions =
+      typeof (question && plain(question)) === "string"
+        ? (plain(question as Val) as string).slice(0, 500)
+        : "¿Qué opción encaja mejor con este texto?";
+    const criteria = (o: string[]) => Object.fromEntries(o.map((x) => [x, x]));
+    const a = await this.decide(st, state, {
+      c: { type: "choice", instructions, criteria: criteria(options) },
+      r: { type: "choice", instructions, criteria: criteria([...options].reverse()) },
+    });
+    const c = a?.c;
+    const r = a?.r;
+    if (c?.type !== "choice" || r?.type !== "choice" || c.choice !== r.choice) return null;
+    return Math.min(c.confidence, r.confidence) >= 0.6 ? c.choice : null;
+  }
+
+  /**
+   * fill (filling.ts): with a decider, a choice per field and whether a note is worth it, and only then the
+   * reader writes the note; without one, the reader fills everything. Null when an answer is off (R2).
+   */
+  private async fill(
+    st: RunState,
+    fields: FillField[],
+    state: string,
+    read: (sys: string, schema: object, extra?: Record<string, unknown>) => Promise<unknown>,
+  ) {
+    const answers = this.o.decider ? await this.decide(st, state, fillQuestions(fields)) : null;
+    if (answers) {
+      const { values, wantsNote } = fromAnswers(answers, fields);
+      let note: string | null = null;
+      if (wantsNote) {
+        const out = await read(NOTE_PROMPT, NOTE_SCHEMA);
+        if (
+          typeof out !== "object" ||
+          out === null ||
+          Object.keys(out).join() !== "note" ||
+          !(
+            (out as { note: unknown }).note === null ||
+            typeof (out as { note: unknown }).note === "string"
+          )
+        )
+          return null;
+        note = cleanNote((out as { note: unknown }).note);
+      }
+      return { values, note };
+    }
+    return checkFill(
+      await read(READER_PROMPTS.fill, fillSchema(fields), { fields: fieldsForReader(fields) }),
+      fields,
+    );
   }
 
   private execAsk(

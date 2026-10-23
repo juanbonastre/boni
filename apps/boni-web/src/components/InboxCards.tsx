@@ -269,7 +269,12 @@ function FieldRows({
           ? t("inbox.notApplied")
           : (r.name ?? r.arg.replace(/^values\./, "").replace(/^id$/, t("inbox.element")));
         const value = r.detail ?? r.value;
-        const text = typeof value === "string" ? value : JSON.stringify(value);
+        const text =
+          typeof value === "string"
+            ? value
+            : typeof value === "boolean"
+              ? t(value ? "inbox.yes" : "inbox.no")
+              : JSON.stringify(value);
         return (
           <div key={r.arg} className={`inbox-field${ignored ? " warn" : ""}`}>
             <dt>{name}</dt>

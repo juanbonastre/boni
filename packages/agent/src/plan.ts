@@ -16,13 +16,17 @@ export const READERS = [
   "answer_about",
   "read_message",
   "review_reading",
+  "fill",
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
 export const REPLY_COMPONENTS = ["text", "number", "list", "table"] as const;
 
-/** A call's `why` is what its proposal shows as its reason (a reader's quote), never an argument of the tool. */
-export type Step = { id: string; when?: Expr; each?: { ref: string } } & (
+/**
+ * A call's `why` is what its proposal shows as its reason (a reader's quote), never an argument of the tool.
+ * `zip` (only with `each`): a second list of the same length walked along, its item as `$zip`.
+ */
+export type Step = { id: string; when?: Expr; each?: { ref: string }; zip?: { ref: string } } & (
   | { op: "call"; tool: string; args: Record<string, Expr>; why?: Expr }
   | { op: "read"; reader: ReaderKind; input: Expr; params?: Record<string, Expr> }
   | { op: "ask"; control: (typeof ASK_CONTROLS)[number]; prompt: Expr; options?: Expr }
@@ -68,6 +72,7 @@ const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   answer_about: ["question"],
   read_message: ["modules", "user_in", "known", "guide"],
   review_reading: ["options"],
+  fill: ["fields"],
 };
 const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> = {
   text: ["template", "a", "b", "c", "d"],
@@ -156,6 +161,8 @@ export function validatePlan(
   if (raw.steps.length === 0) return { ok: false, errors: ["plan: no-steps"] };
   if (raw.steps.length > MAX_STEPS) return { ok: false, errors: ["plan: too-many-steps"] };
   const seen = new Set<string>(bound);
+  // Whether the step being checked walks a second list along its `each` (`$zip`).
+  let zipped = false;
 
   const checkAtom = (where: string, a: unknown, inEach: boolean) => {
     if (!isObj(a) || Object.keys(a).length !== 1) return errors.push(`${where}: bad-expression`);
@@ -180,7 +187,8 @@ export function validatePlan(
       );
       if (!m) return errors.push(`${where}: bad-ref`);
       const head = m[1] as string;
-      if (head === "item" ? !inEach : !seen.has(head)) errors.push(`${where}: ref-to-unknown-step`);
+      if (head === "item" ? !inEach : head === "zip" ? !(inEach && zipped) : !seen.has(head))
+        errors.push(`${where}: ref-to-unknown-step`);
     } else errors.push(`${where}: bad-expression`);
   };
   const checkExpr = (where: string, e: unknown, inEach: boolean) => {
@@ -219,16 +227,24 @@ export function validatePlan(
       typeof s.id !== "string" ||
       !/^[a-z][a-z0-9_]{0,30}$/.test(s.id) ||
       s.id === "item" ||
+      s.id === "zip" ||
       seen.has(s.id)
     )
       errors.push(`${where}: bad-id`);
     const inEach = s.each !== undefined;
+    zipped = false;
     if (s.when !== undefined) checkExpr(`${where}.when`, s.when, false);
     if (inEach) {
       if (!isObj(s.each) || !onlyKeys(s.each, ["ref"])) errors.push(`${where}.each: bad-ref`);
       else checkAtom(`${where}.each`, s.each, false);
     }
-    const common = ["id", "op", "when", "each"];
+    if (s.zip !== undefined) {
+      if (!inEach || !isObj(s.zip) || !onlyKeys(s.zip, ["ref"]))
+        errors.push(`${where}.zip: bad-ref`);
+      else checkAtom(`${where}.zip`, s.zip, false);
+      zipped = true;
+    }
+    const common = ["id", "op", "when", "each", "zip"];
     switch (s.op) {
       case "call": {
         if (!onlyKeys(s, [...common, "tool", "args", "why"])) errors.push(`${where}: unknown-key`);
@@ -250,7 +266,7 @@ export function validatePlan(
             `${where}.params`,
             s.params ?? {},
             names,
-            s.reader === "classify" ? ["options"] : [],
+            s.reader === "classify" ? ["options"] : s.reader === "fill" ? ["fields"] : [],
             inEach,
           );
         }
