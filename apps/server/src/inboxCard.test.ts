@@ -187,6 +187,28 @@ describe("the inbox's card for a proposal", () => {
     });
   });
 
+  it("says when Boni would have accepted it alone: three like it accepted as they were", () => {
+    const store = env();
+    proposalFromMail(store, "p0", "r0", "coordinacion@example.edu");
+    const p0 = store.journal.proposal("p0") as NonNullable<
+      ReturnType<typeof store.journal.proposal>
+    >;
+    expect(inboxCard(store, p0).wouldAccept).toBe(false);
+    for (const [i, id] of ["a1", "a2", "a3"].entries()) {
+      store.journal.addProposal({ ...p0, id, created: 1 });
+      store.journal.setProposal(id, "accepted", 3 + i);
+    }
+    expect(inboxCard(store, p0).wouldAccept).toBe(true);
+    // A correction of the last one: the reading was wrong, Boni would not.
+    store.journal.addProposal({ ...p0, id: "a4", created: 1 });
+    store.journal.setProposal("a4", "accepted", 9, {
+      type: { from: "docencia", to: "gestiones" },
+    });
+    expect(inboxCard(store, p0).wouldAccept).toBe(false);
+    // No task column in this calendar: "Ya lo hice" is not offered.
+    expect(inboxCard(store, p0).canMarkDone).toBe(false);
+  });
+
   it("a pending proposal is a ghost row of its collection, never an entity; decided, it is gone", () => {
     const store = env();
     proposalFromMail(store, "p1", "r1", "coordinacion@example.edu");

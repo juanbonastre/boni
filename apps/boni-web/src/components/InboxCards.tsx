@@ -1,5 +1,5 @@
 import { markdownToBlocks } from "@boni/views";
-import { ChevronDown, FileText, Inbox, Mail, Maximize2, Pencil, X } from "lucide-react";
+import { ChevronDown, FileText, Inbox, Mail, Maximize2, Pencil, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ConfirmView, InboxCard, Proposal } from "../core/agent.ts";
 import {
@@ -299,9 +299,13 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
         <DecideButtons
           id={p.id}
           accept={() => void acceptProposal(p.id, fix.edits())}
+          {...(c?.canMarkDone
+            ? { done: () => void acceptProposal(p.id, fix.edits(), { done: true }) }
+            : {})}
           reject={() => void rejectProposal(p.id)}
         />
         <span className="spacer" />
+        {c?.wouldAccept && <WouldAccept />}
         <button
           type="button"
           className={`btn ghost small inbox-more${more ? " open" : ""}`}
@@ -317,17 +321,34 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
 }
 
 /**
- * Aceptar and Rechazar of one proposal: the one clicked turns into a spinner while the server answers (Juan,
+ * Boni would have accepted this one alone (Juan, 2026-10-23: measured before it is ever turned on): a quiet mark,
+ * explained on hover; the Registro says how often it would have been right.
+ */
+function WouldAccept() {
+  const t = useStore((s) => s.t);
+  return (
+    <span className="would-accept" title={t("inbox.wouldAcceptHelp")}>
+      <Sparkles size={12} strokeWidth={1.8} aria-hidden="true" />
+      {t("inbox.wouldAccept")}
+    </span>
+  );
+}
+
+/**
+ * Aceptar, Ya lo hice and Rechazar of one proposal: the one clicked turns into a spinner while the server answers (Juan,
  * 2026-10-23), both stay off meanwhile, and other cards can be decided. A failure says why under them; one that
  * can no longer be decided (stale, already decided) can be taken out of the list.
  */
 function DecideButtons({
   id,
   accept,
+  done,
   reject,
 }: {
   id: string;
   accept: () => void;
+  /** "Ya lo hice": only where the proposal can be made already done. */
+  done?: () => void;
   reject: () => void;
 }) {
   const t = useStore((s) => s.t);
@@ -346,6 +367,20 @@ function DecideButtons({
         <span className="decide-label">{t("inbox.accept")}</span>
         {busy === "accept" && <span className="spinner" aria-hidden="true" />}
       </button>
+      {done && (
+        <button
+          type="button"
+          className={`btn decide-btn${busy === "done" ? " busy" : ""}`}
+          disabled={!!busy || !!failed?.gone}
+          aria-busy={busy === "done"}
+          aria-label={busy === "done" ? t("inbox.markingDone") : undefined}
+          title={t("inbox.doneHelp")}
+          onClick={done}
+        >
+          <span className="decide-label">{t("inbox.done")}</span>
+          {busy === "done" && <span className="spinner" aria-hidden="true" />}
+        </button>
+      )}
       <button
         type="button"
         className={`btn decide-btn${busy === "reject" ? " busy" : ""}`}
@@ -487,8 +522,10 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
         ),
       }
     : null;
-  const decide = async (accept: boolean) => {
-    await (accept ? acceptProposal(id, fix.edits()) : rejectProposal(id));
+  const decide = async (how: "accept" | "done" | "reject") => {
+    await (how === "reject"
+      ? rejectProposal(id)
+      : acceptProposal(id, fix.edits(), { done: how === "done" }));
     const s = useStore.getState();
     // A failed decision stays on the page, saying why under its buttons.
     if (s.decideErrors[id]) return;
@@ -501,6 +538,7 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
         <p className="pp-kind">
           <span className="ghost-tag">{t("ghost.proposed")}</span>
           <span className="muted">{headline(t, p, c)}</span>
+          {c?.wouldAccept && <WouldAccept />}
         </p>
         <div className="pp-title-row">
           <h2 className="pp-title">{c?.title ?? headline(t, p, c)}</h2>
@@ -559,7 +597,12 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
       )}
       {fix.form}
       <div className="inbox-actions">
-        <DecideButtons id={id} accept={() => void decide(true)} reject={() => void decide(false)} />
+        <DecideButtons
+          id={id}
+          accept={() => void decide("accept")}
+          {...(c?.canMarkDone ? { done: () => void decide("done") } : {})}
+          reject={() => void decide("reject")}
+        />
       </div>
     </div>
   );

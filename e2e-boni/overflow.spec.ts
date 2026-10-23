@@ -235,7 +235,15 @@ test.describe("on a phone", () => {
 /** The conversation with the agent: a reply, a question, a confirmation, the inbox and the log. */
 const AGENT = {
   "POST api/agent/turn": [TEXT_REPLY, ASK_TURN, confirmTurn("c1")],
-  "GET api/agent/proposals": [{ proposals: [...PROPOSALS.proposals, CARD_DETAILED, CARD_COMPACT] }],
+  "GET api/agent/proposals": [
+    {
+      proposals: [
+        ...PROPOSALS.proposals,
+        { ...CARD_DETAILED, card: { ...CARD_DETAILED.card, canMarkDone: true, wouldAccept: true } },
+        CARD_COMPACT,
+      ],
+    },
+  ],
   "GET api/agent/runs": [RUNS_EXPLAINED],
   "GET api/agent/runs/:id": [RUN_2],
 };

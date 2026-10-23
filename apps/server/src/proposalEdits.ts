@@ -1,5 +1,6 @@
 import { type Json, plain, readStore, type Val } from "@boni/agent";
 import type { ProposalRow, UserStore } from "@boni/store";
+import { taskDoneField } from "./calendarStore.ts";
 import { dueField } from "./mail.ts";
 
 /**
@@ -7,14 +8,15 @@ import { dueField } from "./mail.ts";
  * row and change the collection it goes to; the system takes it as a prediction error and learns from it, see
  * mailReview.ts). Turned into the agent's edits by code: the title replaced; in another collection the title,
  * the note and the day move (the day to that collection's date field), and what was chosen among the first
- * collection's options does not. Null fields: nothing to change.
+ * collection's options does not. Null fields: nothing to change. `done` ("Ya lo hice", Juan 2026-10-23): the task
+ * is made already marked done (its calendar's task column), and the reading counts as right.
  */
 export function acceptEdits(
   store: UserStore,
   p: ProposalRow,
-  req: { title?: unknown; collection?: unknown },
+  req: { title?: unknown; collection?: unknown; done?: unknown },
 ): { type?: string; values?: Record<string, Json | null> } | { error: string } {
-  if (req.title === undefined && req.collection === undefined) return {};
+  if (req.title === undefined && req.collection === undefined && req.done !== true) return {};
   if (p.tool !== "entities.create") return { error: "edit-not-allowed" };
   const stored = (p.args as { values?: { type?: Val; values?: Val } }).values ?? {};
   const ro = readStore(store);
@@ -51,6 +53,13 @@ export function acceptEdits(
       ro.list(t.id).map((e) => e.entity),
     );
     if (dayKey && date) out.values[date.key] = vals[dayKey] ?? null;
+  }
+  if (req.done === true) {
+    const key = out.type ?? oldKey;
+    const t = types.find((x) => x.key === key);
+    const done = t ? taskDoneField(store, t.id) : null;
+    if (!done) return { error: "cannot-mark-done" };
+    out.values[done.key] = true;
   }
   return out;
 }

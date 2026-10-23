@@ -558,6 +558,7 @@ const undoable = (r: RunSummary) =>
 export function LogView() {
   const t = useStore((s) => s.t);
   const runs = useStore((s) => s.runs);
+  const auto = useStore((s) => s.autoAccept);
   const lang = useStore((s) => s.settings.language);
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null | "loading">(null);
@@ -600,6 +601,11 @@ export function LogView() {
   return (
     <div className="agent-page">
       {runs.length === 0 && <p className="muted center-note">{t("log.empty")}</p>}
+      {auto && auto.decided > 0 && (
+        <p className="muted small log-measure">
+          {t(auto.would > 0 ? "log.autoAccept" : "log.autoAccept.none", { ...auto })}
+        </p>
+      )}
       <ul className="log-list">
         {logEntries(runs).map((e) => {
           if ("run" in e) return line(e.run);

@@ -301,6 +301,17 @@ const es = {
   "inbox.alreadyDecided": "Ya estaba decidida.",
   "inbox.dismiss": "Quitar",
   "inbox.accepting": "Aceptando…",
+  "inbox.done": "Ya lo hice",
+  "inbox.doneHelp": "Se apunta ya hecha, y Boni aprende que la lectura era buena",
+  "inbox.markingDone": "Apuntando como hecha…",
+  "inbox.acceptedDone": "Apuntada como hecha",
+  "inbox.wouldAccept": "Boni la habría aceptado",
+  "inbox.wouldAcceptHelp":
+    "Ya aceptaste varias como esta, sin cambios. Boni aún no acepta nada sola: solo lo mide",
+  "log.autoAccept":
+    "De tus últimas {decided} decisiones sobre correos, Boni habría aceptado sola {would} y habría acertado en {right}.",
+  "log.autoAccept.none":
+    "De tus últimas {decided} decisiones sobre correos, Boni no habría aceptado sola ninguna todavía.",
   "inbox.rejecting": "Rechazando…",
   "inbox.correct": "Corregir",
   "inbox.correctTitle": "Título",
@@ -1112,6 +1123,17 @@ const en: Record<Key, string> = {
   "inbox.alreadyDecided": "It was already decided.",
   "inbox.dismiss": "Remove",
   "inbox.accepting": "Accepting…",
+  "inbox.done": "Already done",
+  "inbox.doneHelp": "It is saved as done, and Boni learns the reading was right",
+  "inbox.markingDone": "Saving as done…",
+  "inbox.acceptedDone": "Saved as done",
+  "inbox.wouldAccept": "Boni would have accepted it",
+  "inbox.wouldAcceptHelp":
+    "You accepted several like this one without changes. Boni accepts nothing alone yet: it only measures",
+  "log.autoAccept":
+    "Of your last {decided} decisions on mail, Boni would have accepted {would} alone and been right in {right}.",
+  "log.autoAccept.none":
+    "Of your last {decided} decisions on mail, Boni would not have accepted any alone yet.",
   "inbox.rejecting": "Rejecting…",
   "inbox.correct": "Correct",
   "inbox.correctTitle": "Title",

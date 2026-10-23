@@ -70,6 +70,21 @@ export function calendarDefs(store: UserStore): Placed[] {
   }
 }
 
+/**
+ * The checkbox that marks an entry of `type` done: its calendar's task column (`mapping.task`), the field with
+ * that column's name. Null when the type is no calendar or its calendar has no tasks ("Ya lo hice" needs one).
+ */
+export function taskDoneField(store: UserStore, type: string): FieldDef | null {
+  const p = calendarDefs(store).find((x) => x.type === type);
+  const col = p?.def.mapping.task?.column;
+  if (!p || !col) return null;
+  const name = p.def.columns.find((c) => c.id === col)?.name ?? col;
+  const f = store
+    .schema()
+    .types[type]?.fields.find((x) => (x.name === name || x.key === col) && !x.archived);
+  return f?.type === "checkbox" ? f : null;
+}
+
 /** Keeps the calendars' definitions (as written: `parseCollectionDef` reads them back). */
 export function saveCalendarDefs(
   store: UserStore,

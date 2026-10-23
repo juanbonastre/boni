@@ -334,6 +334,66 @@ test("a card can be corrected before accepting: its title and its collection go 
   );
 });
 
+test("«Ya lo hice» saves a task already done; a card Boni would have accepted says so, and the Registro how often", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    acceptMs: 800,
+    agent: {
+      "GET api/agent/proposals": [
+        {
+          proposals: [
+            {
+              ...CARD_DETAILED,
+              card: { ...CARD_DETAILED.card, canMarkDone: true, wouldAccept: true },
+            },
+          ],
+        },
+      ],
+      "POST api/agent/proposals/:id/accept": [DONE],
+      "GET api/agent/runs": [
+        { ...RUNS_EXPLAINED, autoAccept: { decided: 60, would: 14, right: 13 } },
+      ],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await expect(card.locator(".would-accept")).toHaveText("Boni la habría aceptado");
+  await page.screenshot({ path: `${SHOTS}/inbox-done.png` });
+  await card.getByRole("button", { name: "Ya lo hice" }).click();
+  await expect(card.getByRole("button", { name: "Apuntando como hecha…" })).toBeVisible();
+  await expect(page.locator(".toast")).toContainText("Apuntada como hecha");
+  await expect(page.locator(".inbox-panel .inbox-card")).toHaveCount(0);
+  const sent = (await recorded(page)).requests.find((r) =>
+    r.startsWith("POST api/agent/proposals/c1/accept"),
+  );
+  expect(sent).toContain(JSON.stringify({ edits: { done: true } }));
+  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: "Registro" }).click();
+  await expect(page.locator(".log-measure")).toHaveText(
+    "De tus últimas 60 decisiones sobre correos, Boni habría aceptado sola 14 y habría acertado en 13.",
+  );
+});
+
+test("without a task column there is no «Ya lo hice», and no mark when Boni would not accept it", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: { "GET api/agent/proposals": [{ proposals: [CARD_DETAILED] }] },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await expect(card.getByRole("button", { name: "Aceptar" })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Ya lo hice" })).toHaveCount(0);
+  await expect(card.locator(".would-accept")).toHaveCount(0);
+});
+
 test("accepting shows a spinner on that card, the next one can be decided meanwhile, and a stale one says so", async ({
   page,
 }) => {

@@ -10,6 +10,7 @@ import { create } from "zustand";
 import {
   AgentApi,
   type AiLevel,
+  type AutoAccept,
   type DataRow,
   type DataType,
   type DataValue,
@@ -188,12 +189,14 @@ interface State {
   /** The inbox is being read for a proposal opened by its id (its page waits instead of saying it is gone). */
   inboxLoading: boolean;
   /** Proposals being accepted or rejected right now (their card shows it; another can be decided meanwhile). */
-  deciding: Record<string, "accept" | "reject">;
+  deciding: Record<string, "accept" | "done" | "reject">;
   /** Why deciding one failed, in Juan's words, on its card. */
   decideErrors: Record<string, { text: string; gone: boolean }>;
   /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
   inboxOpen: boolean;
   runs: RunSummary[];
+  /** How often Boni would have accepted alone, and been right (shown on top of the Registro). */
+  autoAccept: AutoAccept | null;
   /** Flips with every confirmation, so its button is never where the last one was. */
   confirmFlip: boolean;
 }
@@ -288,6 +291,7 @@ export const useStore = create<State>(() => ({
   decideErrors: {},
   inboxOpen: false,
   runs: [],
+  autoAccept: null,
   confirmFlip: false,
 }));
 
@@ -1100,7 +1104,11 @@ export const toggleInbox = (open = !get().inboxOpen) => {
  */
 let deciding: Promise<void> = Promise.resolve();
 let decided = 0;
-function decide(id: string, kind: "accept" | "reject", run: () => Promise<void>): Promise<void> {
+function decide(
+  id: string,
+  kind: "accept" | "done" | "reject",
+  run: () => Promise<void>,
+): Promise<void> {
   if (get().deciding[id]) return Promise.resolve();
   set((s) => ({
     deciding: { ...s.deciding, [id]: kind },
@@ -1143,11 +1151,18 @@ export function dismissProposal(id: string) {
   }));
 }
 
-export function acceptProposal(id: string, edits?: { title?: string; collection?: string }) {
-  return decide(id, "accept", async () => {
+/**
+ * `done` ("Ya lo hice", Juan 2026-10-23): the task is made already marked done, and the reading counts as right.
+ */
+export function acceptProposal(
+  id: string,
+  edits?: { title?: string; collection?: string },
+  opts: { done?: boolean } = {},
+) {
+  return decide(id, opts.done ? "done" : "accept", async () => {
     const t = get().t;
     try {
-      const r = await agent.accept(id, edits);
+      const r = await agent.accept(id, opts.done ? { ...edits, done: true } : edits);
       if (r.pending?.kind === "confirm") {
         // Accepted, but it still needs a confirmation (deleting...): it goes on in the conversation.
         const entry: ChatEntry = {
@@ -1165,7 +1180,8 @@ export function acceptProposal(id: string, edits?: { title?: string; collection?
       } else if (r.error) decideFailed(id, r.error);
       else {
         dropProposal(id);
-        if (edits) toast(t("inbox.acceptedCorrected"));
+        if (opts.done) toast(t("inbox.acceptedDone"));
+        else if (edits) toast(t("inbox.acceptedCorrected"));
       }
     } catch (e) {
       decideFailed(id, { text: errorText(t, e) });
@@ -1207,7 +1223,7 @@ export function rejectProposal(id: string) {
 
 export async function loadRuns() {
   try {
-    set({ runs: await agent.runs() });
+    set(await agent.runs());
   } catch {
     // the log stays as it was
   }
