@@ -180,6 +180,60 @@ describe("the conversation API", () => {
     expect(host.store(1).get("e_pan")?.entity.deleted).toBeDefined();
   });
 
+  it("a question from background work waits in the panel and goes on when answered", async () => {
+    const token = await login(base, "juan");
+    const other = await login(base, "otra");
+    const h = { authorization: `Bearer ${token}` };
+    const events: string[] = [];
+    const off = host.subscribe(1, (event) => events.push(event));
+    const ask = (title: string) => ({
+      version: 1,
+      steps: [
+        {
+          id: "q",
+          op: "ask",
+          control: "choice",
+          prompt: lit("¿Qué título le pongo?"),
+          options: { fn: "list", args: [lit(title), lit("Otra cosa")] },
+        },
+        {
+          id: "c",
+          op: "call",
+          tool: "entities.create",
+          args: { type: lit("tarea"), values: { fn: "obj", args: [lit("titulo"), { ref: "$q" }] } },
+        },
+      ],
+    });
+    const r = await host.agent(1).background(ask("Revisar la caldera"));
+    const r2 = await host.agent(1).background(ask("Llamar al fontanero"));
+    off();
+    expect(r.status).toBe("waiting");
+    expect(events.filter((e) => e === "requests")).toHaveLength(2);
+    const list = (await (await fetch(`${base}/api/agent/requests`, { headers: h })).json()) as {
+      requests: { id: string; run: string; view: { prompt: { value: string } } }[];
+    };
+    expect(list.requests.map((x) => x.run)).toEqual([r.run, r2.run]);
+    expect(list.requests[0]?.view.prompt.value).toBe("¿Qué título le pongo?");
+    const [first, second] = list.requests;
+    // Another account cannot answer it (its store has no such request).
+    expect(
+      (await post(base, other, `/api/agent/requests/${first?.id}/answer`, { choice: 0 })).status,
+    ).toBe(404);
+    const done = (await (
+      await post(base, token, `/api/agent/requests/${first?.id}/answer`, { choice: 0 })
+    ).json()) as { status: string; proposals: string[] };
+    expect(done).toMatchObject({ status: "done" });
+    expect(done.proposals).toHaveLength(1);
+    expect(
+      await (await post(base, token, `/api/agent/requests/${second?.id}/dismiss`)).json(),
+    ).toEqual({ dismissed: true });
+    const after = (await (await fetch(`${base}/api/agent/requests`, { headers: h })).json()) as {
+      requests: unknown[];
+    };
+    expect(after.requests).toEqual([]);
+    expect((await fetch(`${pub}/api/agent/requests`, { headers: h })).status).toBe(404);
+  });
+
   it("is only on the tailnet, needs a session, and says when it is off", async () => {
     const token = await login(base, "juan");
     expect((await post(pub, token, "/api/agent/turn", { text: "hola" })).status).toBe(404);

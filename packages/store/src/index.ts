@@ -4,6 +4,7 @@ export type {
   ModelCallRow,
   ProposalEdits,
   ProposalRow,
+  RequestRow,
   RunRow,
   StepRow,
 } from "./journal.ts";

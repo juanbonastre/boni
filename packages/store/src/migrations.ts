@@ -174,6 +174,25 @@ export const MIGRATIONS = [
   // 8: what Juan changed when accepting a proposal (Juan, 2026-10-23: a corrected title or collection is a
   // prediction error the reviewer learns from).
   `ALTER TABLE proposals ADD COLUMN edits TEXT;`,
+  // 9: questions Boni asks Juan with no turn of his (Juan, 2026-10-24: the panel of requests). A background run that
+  // reaches an `ask` waits here, its state saved, and goes on when he answers, also after a restart; unanswered, it
+  // expires (7 days) and ends having done nothing more.
+  `CREATE TABLE requests (
+     id TEXT PRIMARY KEY,
+     run TEXT NOT NULL,
+     view TEXT NOT NULL,
+     status TEXT NOT NULL CHECK (status IN ('pending', 'answered', 'expired', 'dismissed')),
+     created INTEGER NOT NULL,
+     expires INTEGER NOT NULL,
+     decided INTEGER,
+     answer TEXT
+   );
+   CREATE INDEX requests_status ON requests(status);
+   CREATE TABLE waiting_runs (
+     run TEXT PRIMARY KEY,
+     state TEXT NOT NULL,
+     saved INTEGER NOT NULL
+   );`,
 ];
 
 export function migrate(db: DatabaseSync): void {

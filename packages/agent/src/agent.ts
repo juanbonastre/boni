@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join, type Label, label, modelMaySee } from "@boni/entities";
-import type { ProposalEdits, UserStore } from "@boni/store";
+import type { ProposalEdits, RequestRow, UserStore } from "@boni/store";
 import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
 import { checkAnswers, type DecisionQuestion } from "./decider.ts";
 import {
@@ -217,6 +217,8 @@ export interface AgentOptions {
   /** Juan's zone: the civil day `today()` gives. */
   tz?: string;
   notify?: (text: string, l: Label) => void;
+  /** A question from background work now waits in the panel of requests (the devices are told). */
+  onRequest?: (id: string) => void;
   net?: Net;
   limits?: Partial<RunLimits>;
 }
@@ -298,6 +300,27 @@ function fromJson(x: unknown, l: Label): Val {
   if (isObj(x))
     return rec(Object.fromEntries(Object.entries(x).map(([k, v]) => [k, fromJson(v, l)])), l, true);
   return leaf((x ?? null) as Json, l, true);
+}
+
+/**
+ * How long a question to Juan from background work waits (Juan, 2026-10-24): unanswered, it expires and its run
+ * ends having done nothing more.
+ */
+export const REQUEST_DAYS = 7;
+const DAY_MS = 24 * 60 * 60_000;
+
+/** A waiting run as JSON for the journal (its maps as entries), and back. */
+function saveState(st: RunState): unknown {
+  return { ...st, env: [...st.env], answers: [...st.answers], preset: [...st.preset] };
+}
+function loadState(x: unknown): RunState | null {
+  if (!isObj(x) || typeof x.id !== "string" || !Array.isArray(x.env)) return null;
+  return {
+    ...(x as unknown as RunState),
+    env: new Map(x.env as [string, Val][]),
+    answers: new Map((x.answers ?? []) as [string, Val][]),
+    preset: new Map((x.preset ?? []) as [string, Record<string, Val>][]),
+  };
 }
 
 /** A Val kept in the journal (a proposal's arguments) and read back as it was. */
@@ -1114,7 +1137,7 @@ export class Agent {
     step: Extract<Step, { op: "ask" }>,
     control: Label | null,
   ): Val | typeof BLOCKED {
-    if (st.origin.kind === "background") throw new Stop("ask-without-turn");
+    // Background work may ask too (asking has no effect, P7 holds): the run waits in the panel of requests.
     const answered = st.answers.get(step.id);
     if (answered) return answered;
     const prompt = this.evalExpr(st, step.prompt);
@@ -1141,6 +1164,24 @@ export class Agent {
   }
 
   private waiting(st: RunState): TurnResult {
+    if (st.origin.kind === "background" && st.pending?.kind === "ask") {
+      // A question with no turn of Juan's: it waits in the journal (days, a restart), not in memory.
+      const j = this.o.store.journal;
+      st.expiresAt = this.now() + REQUEST_DAYS * DAY_MS;
+      j.saveRunState(st.id, saveState(st), this.now());
+      if (!j.request(st.pending.id)) {
+        j.addRequest({
+          id: st.pending.id,
+          run: st.id,
+          view: st.pending.view,
+          created: this.now(),
+          expires: st.expiresAt,
+        });
+        this.o.onRequest?.(st.pending.id);
+      }
+      this.runs.delete(st.id);
+      return this.result(st, "waiting", null);
+    }
     this.runs.set(st.id, st);
     return this.result(st, "waiting", null);
   }
@@ -1161,6 +1202,7 @@ export class Agent {
 
   private finish(st: RunState, status: "done" | "stopped", error: string | null): TurnResult {
     this.runs.delete(st.id);
+    if (st.origin.kind === "background") this.o.store.journal.dropRunState(st.id);
     // A request that fails halfway because a tool could not do its part leaves nothing half done (a type
     // with only some of its fields): what it wrote is undone. A stop Juan or a limit made (he said no, too
     // many confirmations) keeps what he saw done before it.
@@ -1194,13 +1236,55 @@ export class Agent {
   // ------------------------------------------------------------ Juan answers
 
   private waitingRun(run: string, kind: "ask" | "confirm", id: string): RunState {
-    const st = this.runs.get(run);
+    let st = this.runs.get(run);
+    // A question of background work waits in the journal while its request is pending.
+    if (!st && kind === "ask" && this.o.store.journal.request(id)?.status === "pending")
+      st = loadState(this.o.store.journal.runState(run)) ?? undefined;
     if (st?.pending?.kind !== kind || st.pending.id !== id) throw new Stop("nothing-pending");
     if (this.now() > st.expiresAt) {
       this.runs.delete(run);
+      if (st.origin.kind === "background") this.endRequest(id, "expired");
       throw new Stop("run-expired");
     }
     return st;
+  }
+
+  // ------------------------------------------------------------ the panel of requests
+
+  /** The questions waiting for Juan, oldest first (the expired ones end first). */
+  requests(): RequestRow[] {
+    this.expireRequests();
+    return this.o.store.journal.requests("pending");
+  }
+
+  /** Ends the questions nobody answered in time; how many. */
+  expireRequests(): number {
+    let n = 0;
+    for (const r of this.o.store.journal.requests("pending"))
+      if (r.expires <= this.now()) {
+        this.endRequest(r.id, "expired");
+        n++;
+      }
+    return n;
+  }
+
+  /** Juan puts a question away without answering: its run ends having done nothing more. */
+  dismissRequest(id: string): boolean {
+    const r = this.o.store.journal.request(id);
+    if (r?.status !== "pending") return false;
+    this.endRequest(id, "dismissed");
+    return true;
+  }
+
+  private endRequest(id: string, status: "expired" | "dismissed"): void {
+    const j = this.o.store.journal;
+    const r = j.request(id);
+    if (!r) return;
+    j.setRequest(id, status, this.now());
+    j.dropRunState(r.run);
+    this.runs.delete(r.run);
+    if (j.run(r.run)?.status === "running")
+      j.finishRun(r.run, `stopped:${status}`, j.run(r.run)?.plan, this.now());
   }
 
   /** Juan's answer to an `ask`: what he types is his; an option he picks keeps the option's label (A2). */
@@ -1208,6 +1292,8 @@ export class Agent {
     run: string,
     ask: string,
     a: { choice: number } | { text: string },
+    /** The device that answers a question of background work: what is typed there is Juan's only if personal. */
+    by?: { trust: Origin["trust"] },
   ): Promise<TurnResult> {
     let st: RunState;
     try {
@@ -1225,9 +1311,17 @@ export class Agent {
     }
     const step = st.plan.steps[st.pc] as Extract<Step, { op: "ask" }>;
     let v: Val;
+    const background = st.origin.kind === "background";
     if ("text" in a) {
       if (step.control !== "text") return this.result(st, "waiting", "wrong-answer");
-      v = leaf(a.text.slice(0, 500), this.quoteLabel(st));
+      v = leaf(
+        a.text.slice(0, 500),
+        background
+          ? label(by?.trust === "personal" ? "user" : "ambient", "public", [
+              { kind: "turn", id: ask },
+            ])
+          : this.quoteLabel(st),
+      );
     } else {
       const opts = step.options ? this.evalExpr(st, step.options) : null;
       const chosen = opts && opts.t === "list" ? opts.items[a.choice] : undefined;
@@ -1236,6 +1330,7 @@ export class Agent {
     }
     st.answers.set(step.id, v);
     st.pending = null;
+    if (background) this.o.store.journal.setRequest(ask, "answered", this.now(), a);
     return this.advance(st);
   }
 
