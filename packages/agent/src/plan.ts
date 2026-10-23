@@ -66,7 +66,7 @@ export const MAX_STEPS = 40;
 export const MAX_EACH = 50;
 const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   extract_tasks: ["known"],
-  classify: ["options", "question"],
+  classify: ["options", "question", "ask"],
   summarize: [],
   rewrite: ["instruction"],
   answer_about: ["question"],

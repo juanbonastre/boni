@@ -396,6 +396,20 @@ describe("tasks a mail asks for", () => {
     expect(
       plan.steps.find((x) => x.reader === "classify")?.params?.options.args.map((a) => a.lit),
     ).toEqual(["Docencia", "Gestiones"]);
+    // The live reading asks Juan when the decider is unsure (the panel of requests); by default it does not.
+    expect(JSON.stringify(plan)).not.toContain('"ask"');
+    const live = mailPlan(
+      "e_x",
+      [
+        { key: "docencia", name: "Docencia", option: "Docencia", date: "date" },
+        { key: "gestiones", name: "Gestiones", option: "Gestiones", date: "date" },
+      ],
+      { askWhenUnsure: true },
+    ) as { steps: { reader?: string; params?: { ask?: unknown } }[] };
+    expect(live.steps.find((x) => x.reader === "classify")?.params?.ask).toEqual({
+      fn: "concat",
+      args: [{ lit: "¿A qué colección va «" }, { ref: "$m.asunto" }, { lit: "»?" }],
+    });
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

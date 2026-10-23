@@ -99,6 +99,10 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  P7 holds after the answer): the run waits in the journal (`requests`, `waiting_runs`, store
                  migration 9) for `REQUEST_DAYS` (7), survives a restart, and goes on with `answer(run, ask, a,
                  { trust })` (typed text is `user` only from a personal device); `dismissRequest`, `expireRequests`.
+                 classify's `ask` param (set by code): when the decider answers but disagrees with itself or is not
+                 confident, Juan chooses among the options (the step waits like an `ask`; his answer is the choice
+                 and no model is called again); the decider down, the reader chooses as before. Mail's live
+                 reading uses it (`mailPlan(..., { askWhenUnsure })`, «¿A qué colección va «asunto»?»).
                  What Juan keeps from the models (per type: visible / opaque / hidden, `store.aiAccess()`) is
                  applied in `readStore`, the agent's only read view: hidden types do not exist there, opaque ones
                  carry `noModel` on every value (planner handles, no reader: R3). Providers:

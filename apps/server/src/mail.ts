@@ -297,6 +297,11 @@ export function mailPlan(
     fixed?: Target[];
     /** The plan reads `$guide` (the code binds it: Agent.background). */
     guide?: boolean;
+    /**
+     * When the decider is unsure of the collection, Juan is asked in the panel of requests (Juan, 2026-10-24)
+     * instead of the reader choosing alone. Only for the live reading (a re-reading to measure never asks).
+     */
+    askWhenUnsure?: boolean;
   } = {},
 ): unknown {
   const modules = o.modules ?? MAIL_MODULES;
@@ -409,6 +414,16 @@ export function mailPlan(
         question: {
           lit: "¿En cuál de estas colecciones apuntaría el destinatario lo que este mensaje le pide hacer o a lo que tiene que ir?",
         },
+        ...(o.askWhenUnsure
+          ? {
+              ask: has.has("asunto")
+                ? {
+                    fn: "concat",
+                    args: [{ lit: "¿A qué colección va «" }, { ref: "$m.asunto" }, { lit: "»?" }],
+                  }
+                : { lit: "¿A qué colección va este correo?" },
+            }
+          : {}),
       },
       when: { ref: "$r.all" },
     });
@@ -1142,6 +1157,7 @@ export class Mails {
             boundModules: true,
             ...(m.routes ? { routes: m.routes } : {}),
             fixed,
+            askWhenUnsure: true,
           }),
           bound,
           [],

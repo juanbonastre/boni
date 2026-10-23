@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { REQUEST_DAYS } from "../src/agent.ts";
-import { fakePlanner } from "../src/providers.ts";
+import { fakePlanner, ScriptedProvider } from "../src/providers.ts";
 import { type Env, makeEnv } from "./fixture.ts";
 
 /**
@@ -106,5 +106,90 @@ describe("questions from background work (the panel of requests)", () => {
       "nothing-pending",
     );
     expect(env.store.journal.proposals()).toEqual([]);
+  });
+});
+
+/** A classify that may ask (mail's collection, Juan 2026-10-24): the answer of the decider decides when to. */
+const classify = {
+  version: 1,
+  steps: [
+    {
+      id: "c",
+      op: "read",
+      reader: "classify",
+      input: lit("Entrega de actas del segundo parcial antes del viernes"),
+      params: {
+        options: { fn: "list", args: [lit("Docencia"), lit("Gestiones")] },
+        ask: lit("¿A qué colección va «Entrega de actas»?"),
+      },
+    },
+    {
+      id: "n",
+      op: "call",
+      tool: "entities.create",
+      args: { type: lit("tarea"), values: { fn: "obj", args: [lit("titulo"), ref("$c.choice")] } },
+    },
+  ],
+};
+const jev = (c: [string, number], r: [string, number]) =>
+  new ScriptedProvider("jev", () => ({
+    c: { choice: c[0], confidence: c[1] },
+    r: { choice: r[0], confidence: r[1] },
+  }));
+const titled = (e: Env, id: string) =>
+  JSON.stringify(e.store.journal.proposal(id)?.args).match(/"value":"(Docencia|Gestiones)"/)?.[1];
+
+describe("classify asks Juan only when the decider is unsure", () => {
+  it("the decider disagrees with itself: Juan chooses, and no model is called again", async () => {
+    env = makeEnv();
+    const reader = new ScriptedProvider("fake", () => ({ choice: "Gestiones" }));
+    const decider = jev(["Docencia", 0.9], ["Gestiones", 0.8]);
+    const a = env.agent(fakePlanner([]), reader, { decider });
+    const r = await a.background(classify);
+    expect(r.status).toBe("waiting");
+    if (r.pending?.kind !== "ask") throw new Error("expected a question");
+    expect(r.pending.options.map((o) => (o.t === "v" ? o.value : null))).toEqual([
+      "Docencia",
+      "Gestiones",
+    ]);
+    expect(env.store.journal.requests("pending")).toHaveLength(1);
+    expect(reader.requests).toHaveLength(0);
+    const done = await a.answer(r.run, r.pending.id, { choice: 0 }, { trust: "personal" });
+    expect(done.status).toBe("done");
+    expect(titled(env, done.proposals[0] as string)).toBe("Docencia");
+    expect(decider.requests).toHaveLength(1);
+    expect(reader.requests).toHaveLength(0);
+  });
+
+  it("not confident enough is unsure too; sure, it decides alone", async () => {
+    env = makeEnv();
+    const reader = new ScriptedProvider("fake", () => ({ choice: "Docencia" }));
+    const low = await env
+      .agent(fakePlanner([]), reader, { decider: jev(["Gestiones", 0.5], ["Gestiones", 0.9]) })
+      .background(classify);
+    expect(low.status).toBe("waiting");
+    const sure = await env
+      .agent(fakePlanner([]), reader, { decider: jev(["Gestiones", 0.9], ["Gestiones", 0.7]) })
+      .background(classify);
+    expect(sure.status).toBe("done");
+    expect(titled(env, sure.proposals[0] as string)).toBe("Gestiones");
+  });
+
+  it("with the decider down, or a plan that does not ask, the reader chooses as before", async () => {
+    env = makeEnv();
+    const reader = new ScriptedProvider("fake", () => ({ choice: "Gestiones" }));
+    const down = new ScriptedProvider("jev", () => {
+      throw Object.assign(new Error("x"), { code: "http-529" });
+    });
+    const r = await env.agent(fakePlanner([]), reader, { decider: down }).background(classify);
+    expect(r.status).toBe("done");
+    expect(titled(env, r.proposals[0] as string)).toBe("Gestiones");
+    const quiet = structuredClone(classify);
+    delete (quiet.steps[0] as { params: { ask?: unknown } }).params.ask;
+    const q = await env
+      .agent(fakePlanner([]), reader, { decider: jev(["Docencia", 0.9], ["Gestiones", 0.9]) })
+      .background(quiet);
+    expect(q.status).toBe("done");
+    expect(env.store.journal.requests("pending")).toEqual([]);
   });
 });
