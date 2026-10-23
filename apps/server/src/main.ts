@@ -148,6 +148,12 @@ const host = process.env.BONI_HOST ?? "127.0.0.1";
 const server = serve(app, "tailnet");
 server.listen(port, host, () => console.log(`boni-calendar-server on http://${host}:${port}`));
 console.log(agent.on ? "agent on (tailnet only)" : "agent off (no ANTHROPIC_API_KEY)");
+// Which decider (Jev) is on, never its key: so a deploy can tell whether OPENROUTER_API_KEY reached it.
+console.log(
+  agent.on && decider
+    ? `decider on (Jev via ${typesafeKey ? "typesafe" : "openrouter"})`
+    : "decider off (no TYPESAFE_API_KEY or OPENROUTER_API_KEY)",
+);
 // The public entry (behind Funnel): the same app, only the allow-list.
 const publicPort = process.env.BONI_PUBLIC_PORT ? Number(process.env.BONI_PUBLIC_PORT) : null;
 const publicServer = publicPort === null ? null : serve(app, "public");
