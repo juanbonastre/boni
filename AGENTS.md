@@ -267,7 +267,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  mode and not kept from the models. `export/` CSVs are no longer written.
                  `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
                  account (`users/<id>.db` next to system.db) and one `@boni/agent` each; the device's trust level is
-                 the turn's origin. On only with `ANTHROPIC_API_KEY`; otherwise 503 `agent-off`.
+                 the turn's origin. On only with `ANTHROPIC_API_KEY`; otherwise 503 `agent-off`. The Registro's
+                 runs say what each was and what came of it (`runInfo.ts`: the mail read, the note edited by hand,
+                 the request; its proposals by status; what it changed, from `store.runOps`).
 apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`legacy/boni/apps/web`, with its history):
                  charts, shortcuts and "Apuntar gasto" over the API v1 (`src/core/api.ts`, `contract.ts`), the same
                  page in a browser, in its desktop shell and in its Android WebView (`src/host.ts`). `api/` is the v1

@@ -15,6 +15,7 @@ import {
   RTL,
   RUN_2,
   RUNS,
+  RUNS_EXPLAINED,
   STOPPED,
   TEXT_REPLY,
   VISIBILITY,
@@ -432,6 +433,39 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
     .click();
   await expect(page.locator(".toast")).toContainText("Deshecho (2 cambios)");
   expect(await requests(page, "POST api/agent/runs/")).toEqual(["POST api/agent/runs/run-1/undo"]);
+});
+
+test("the Registro says what each run was and what came of it; quiet readings are one line", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", { agent: { "GET api/agent/runs": [RUNS_EXPLAINED] } });
+  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: "Registro" }).click();
+  const entries = page.locator(".agent-page > .log-list > li");
+  await expect(entries).toHaveCount(5);
+  await expect(entries.nth(0)).toContainText("«Apunta una tarea: llamar al taller el lunes»");
+  await expect(entries.nth(0)).toContainText("Creó «Llamar al taller» en Tareas");
+  // A mail's subject is outside text: shown as typed, never as markup.
+  await expect(entries.nth(1).locator(".log-title")).toHaveText(
+    "Correo «<b>Actas</b> de la reunión inventada del departamento con un asunto muy largo que no cabe»",
+  );
+  await expect(entries.nth(1).locator("b")).toHaveCount(0);
+  await expect(entries.nth(1)).toContainText("de Coordinación de ejemplo");
+  await expect(entries.nth(1)).toContainText("1 propuesta pendiente · 1 propuesta aceptada");
+  // Three mails with nothing to do: one line, opened on a click.
+  await expect(entries.nth(2)).toContainText("3 lecturas sin nada que hacer");
+  await expect(entries.nth(2).locator(".log-group")).toHaveCount(0);
+  await entries.nth(2).locator(".log-head").first().click();
+  await expect(entries.nth(2).locator(".log-group > li")).toHaveCount(3);
+  await expect(entries.nth(2).locator(".log-group")).toContainText("Nada que hacer");
+  await expect(entries.nth(3)).toContainText("Cambio a mano en proyectos/ejemplo-de-proyecto.md");
+  await expect(entries.nth(3)).toContainText("1 propuesta rechazada");
+  await expect(entries.nth(4)).toContainText("Creó «Revisar actas» en Docencia (deshecho)");
+  // Undo only where something is left to undo.
+  const undo = page.getByRole("button", { name: "Deshacer lo que hizo" });
+  await expect(undo).toHaveCount(1);
+  await expect(entries.nth(0).getByRole("button", { name: "Deshacer lo que hizo" })).toBeVisible();
+  await page.screenshot({ path: "e2e-boni/screenshots/registro.png" });
 });
 
 test("what the AI sees: Juan chooses per collection in Settings", async ({ page }) => {

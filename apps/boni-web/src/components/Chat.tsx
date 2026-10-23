@@ -9,6 +9,7 @@ import {
   type Pending,
   type Reply,
   type RunDetail,
+  type RunSummary,
   reveal,
   textOf,
 } from "../core/agent.ts";
@@ -478,48 +479,157 @@ export function InboxView() {
   );
 }
 
+/** A reading that found nothing to do and changed nothing (Juan, 2026-10-22: grouped, not one line each). */
+const quiet = (r: RunSummary) =>
+  r.status === "done" &&
+  (r.what?.kind === "mail" || r.what?.kind === "measure" || r.what?.kind === "review") &&
+  !r.changed &&
+  !(r.proposals && Object.values(r.proposals).some((n) => n > 0));
+
+/** The Registro's entries: one per run, quiet readings in a row as one group. */
+type LogEntry = { run: RunSummary } | { quiet: RunSummary[] };
+function logEntries(runs: RunSummary[]): LogEntry[] {
+  const out: LogEntry[] = [];
+  for (const r of runs) {
+    const last = out.at(-1);
+    if (quiet(r) && last && "quiet" in last) last.quiet.push(r);
+    else out.push(quiet(r) ? { quiet: [r] } : { run: r });
+  }
+  // A single quiet reading is an entry like any other.
+  return out.map((e) =>
+    "quiet" in e && e.quiet.length === 1 ? { run: e.quiet[0] as RunSummary } : e,
+  );
+}
+
+/** What a run was, in Juan's words (made from the server's `what`; an older server gives only the origin). */
+function runTitle(t: T, r: RunSummary): string {
+  const w = r.what;
+  switch (w?.kind) {
+    case "request":
+      return w.text ? t("log.what.request", { text: w.text }) : t("log.origin.turn");
+    case "mail":
+      return t("log.what.mail", { subject: w.subject });
+    case "measure":
+      return t("log.what.measure", { subject: w.subject });
+    case "review":
+      return t("log.what.review");
+    case "note":
+      return t(`log.what.note.${w.action}`, { path: w.path });
+    case "accepted":
+      return t("log.what.accepted");
+    default:
+      return t(`log.origin.${r.origin}`);
+  }
+}
+
+/** What came of it: its proposals, what it changed, or nothing; a stopped run says so. */
+function runResult(t: T, r: RunSummary): string {
+  const parts: string[] = [];
+  if (r.what?.kind === "mail") {
+    if (r.what.from) parts.push(t("log.from", { from: r.what.from }));
+    if (r.what.account) parts.push(t("log.account", { account: r.what.account }));
+  }
+  if (r.status.startsWith("stopped")) parts.push(t("log.status.stopped"));
+  else if (r.status !== "done" && r.status !== "proposed")
+    parts.push(t(`log.status.${r.status.split(":")[0]}`));
+  const p = r.proposals;
+  if (p)
+    for (const k of ["pending", "accepted", "rejected", "stale"] as const)
+      if (p[k] > 0) parts.push(t(`log.result.${k}`, { n: p[k] }));
+  const changes = r.changes ?? [];
+  for (const c of changes)
+    parts.push(
+      `${t(`log.change.${c.action}`, { title: c.title, collection: c.collection })}${c.undone ? ` ${t("log.change.undone")}` : ""}`,
+    );
+  if ((r.changed ?? 0) > changes.length)
+    parts.push(t("log.change.more", { n: (r.changed ?? 0) - changes.length }));
+  if (r.what && quiet(r)) parts.push(t("log.result.nothing"));
+  if (!r.what && !parts.length) parts.push(t(`log.status.${r.status.split(":")[0]}`));
+  return parts.join(" · ");
+}
+
+/** Undo only where there is something to undo (an older server does not say: then as before). */
+const undoable = (r: RunSummary) =>
+  (r.status === "done" || r.status.startsWith("stopped")) &&
+  (r.changed === undefined ||
+    (r.changes ?? []).some((c) => !c.undone) ||
+    (r.changed ?? 0) > (r.changes ?? []).length);
+
 export function LogView() {
   const t = useStore((s) => s.t);
   const runs = useStore((s) => s.runs);
   const lang = useStore((s) => s.settings.language);
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null | "loading">(null);
+  const [groups, setGroups] = useState<Set<string>>(new Set());
+  const when = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
   const toggle = (id: string) => {
     if (open === id) return setOpen(null);
     setOpen(id);
     setDetail("loading");
     void loadRunDetail(id).then(setDetail);
   };
+  const line = (r: RunSummary) => (
+    <li key={r.id} className="log-run">
+      <div className="list-row">
+        <button
+          type="button"
+          className="link-btn list-main small log-head"
+          aria-expanded={open === r.id}
+          onClick={() => toggle(r.id)}
+        >
+          <span className="log-title">{runTitle(t, r)}</span>
+          <span className="log-result muted">
+            {when.format(r.started)} · {runResult(t, r)}
+          </span>
+        </button>
+        {/* A stopped run may have left changes (a limit stopped it after some): it can be undone too. */}
+        {undoable(r) && (
+          <button type="button" className="btn ghost" onClick={() => void undoRun(r.id)}>
+            <Undo2 size={13} strokeWidth={1.8} />
+            {t("chat.undo")}
+          </button>
+        )}
+      </div>
+      {open === r.id && <RunSteps t={t} detail={detail} />}
+    </li>
+  );
   return (
     <div className="agent-page">
       {runs.length === 0 && <p className="muted center-note">{t("log.empty")}</p>}
       <ul className="log-list">
-        {runs.map((r) => (
-          <li key={r.id} className="log-run">
-            <div className="list-row">
+        {logEntries(runs).map((e) => {
+          if ("run" in e) return line(e.run);
+          const first = e.quiet[0] as RunSummary;
+          const last = e.quiet.at(-1) as RunSummary;
+          const shown = groups.has(first.id);
+          return (
+            <li key={`quiet-${first.id}`} className="log-run log-quiet">
               <button
                 type="button"
-                className="link-btn list-main small log-head"
-                aria-expanded={open === r.id}
-                onClick={() => toggle(r.id)}
+                className="link-btn small log-head"
+                aria-expanded={shown}
+                onClick={() =>
+                  setGroups((g) => {
+                    const n = new Set(g);
+                    if (n.has(first.id)) n.delete(first.id);
+                    else n.add(first.id);
+                    return n;
+                  })
+                }
               >
-                {new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
-                  dateStyle: "short",
-                  timeStyle: "short",
-                }).format(r.started)}{" "}
-                · {t(`log.origin.${r.origin}`)} · {t(`log.status.${r.status.split(":")[0]}`)}
+                <span className="log-title">{t("log.quiet", { n: e.quiet.length })}</span>
+                <span className="log-result muted">
+                  {when.format(last.started)} – {when.format(first.started)}
+                </span>
               </button>
-              {/* A stopped run may have left changes (a limit stopped it after some): it can be undone too. */}
-              {(r.status === "done" || r.status.startsWith("stopped")) && (
-                <button type="button" className="btn ghost" onClick={() => void undoRun(r.id)}>
-                  <Undo2 size={13} strokeWidth={1.8} />
-                  {t("chat.undo")}
-                </button>
-              )}
-            </div>
-            {open === r.id && <RunSteps t={t} detail={detail} />}
-          </li>
-        ))}
+              {shown && <ul className="log-list log-group">{e.quiet.map(line)}</ul>}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

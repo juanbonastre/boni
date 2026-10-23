@@ -349,7 +349,15 @@ describe("the store", () => {
       agent("r9"),
     );
     store.remove(keep.entity.id, agent("r9"));
+    // What the run changed, for the Registro.
+    expect(store.runOps("r9")).toEqual([
+      { kind: "create", target: made.entity.id, undone: false },
+      { kind: "update", target: keep.entity.id, undone: false },
+      { kind: "delete", target: keep.entity.id, undone: false },
+    ]);
     store.undoRun("r9", me);
+    expect(store.runOps("r9").every((o) => o.undone)).toBe(true);
+    expect(store.runOps("nada")).toEqual([]);
     expect(store.get(keep.entity.id)?.entity.deleted).toBeUndefined();
     expect(store.get(keep.entity.id)?.entity.values.f_nota).toBeUndefined();
     expect(store.get(made.entity.id)?.entity.deleted).toBeDefined(); // what it made goes to the trash

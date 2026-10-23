@@ -313,6 +313,84 @@ export const RUNS = {
   ],
 };
 
+/** The Registro as the server describes each run (runInfo.ts): invented mail, notes and requests. */
+const at = (h: number, m: number) => Date.UTC(2026, 9, 23, h, m);
+const quietMail = (id: string, m: number, subject: string) => ({
+  id,
+  origin: "background",
+  device: null,
+  status: "done",
+  started: at(10, m),
+  finished: at(10, m),
+  what: { kind: "mail", subject, from: "Boletín de ejemplo", account: "ejemplo@example.edu" },
+  proposals: { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 },
+  changes: [],
+  changed: 0,
+});
+export const RUNS_EXPLAINED = {
+  runs: [
+    {
+      id: "run-a",
+      origin: "turn",
+      device: "portatil",
+      status: "done",
+      started: at(11, 0),
+      finished: at(11, 0),
+      what: { kind: "request", text: "Apunta una tarea: llamar al taller el lunes" },
+      proposals: { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 },
+      changes: [
+        { action: "create", title: "Llamar al taller", collection: "Tareas", undone: false },
+      ],
+      changed: 1,
+    },
+    {
+      id: "run-b",
+      origin: "background",
+      device: null,
+      status: "done",
+      started: at(10, 50),
+      finished: at(10, 50),
+      what: {
+        kind: "mail",
+        subject:
+          "<b>Actas</b> de la reunión inventada del departamento con un asunto muy largo que no cabe",
+        from: "Coordinación de ejemplo",
+        account: "ejemplo@example.edu",
+      },
+      proposals: { pending: 1, accepted: 1, rejected: 0, postponed: 0, stale: 0 },
+      changes: [],
+      changed: 0,
+    },
+    quietMail("run-c", 40, "Boletín semanal inventado"),
+    quietMail("run-d", 30, "Oferta inventada"),
+    quietMail("run-e", 20, "Recordatorio inventado"),
+    {
+      id: "run-f",
+      origin: "mirror",
+      device: null,
+      status: "proposed",
+      started: at(10, 10),
+      finished: at(10, 10),
+      what: { kind: "note", path: "proyectos/ejemplo-de-proyecto.md", action: "update" },
+      proposals: { pending: 0, accepted: 0, rejected: 1, postponed: 0, stale: 0 },
+      changes: [],
+      changed: 0,
+    },
+    {
+      id: "run-g",
+      origin: "accepted",
+      device: null,
+      status: "done",
+      started: at(10, 0),
+      finished: at(10, 0),
+      what: { kind: "accepted" },
+      proposals: { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 },
+      changes: [{ action: "create", title: "Revisar actas", collection: "Docencia", undone: true }],
+      changed: 1,
+    },
+  ],
+};
+
 /** A hand edit of the mirror in Obsidian, as the server paints it (packages/mirror). */
 export const MIRROR_PROPOSAL = {
   proposals: [

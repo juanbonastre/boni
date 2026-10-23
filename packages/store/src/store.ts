@@ -160,6 +160,8 @@ export interface UserStore {
   };
   undo(seq: number, meta: OpMeta): number;
   undoRun(run: string, meta: OpMeta): number[];
+  /** What a run changed, oldest first (schema changes left out), and whether each was undone since (the Registro). */
+  runOps(run: string): { kind: Exclude<OpKind, "schema">; target: EntityId; undone: boolean }[];
   /** A SELECT over the readable tables only (an authorizer refuses anything else). */
   readQuery(sql: string, params?: (string | number | null)[]): Record<string, unknown>[];
   /** The operation log, oldest first, for an export (`log.ndjson`); never the agent's journal. */
@@ -807,6 +809,15 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
         if (!seqs.length) throw new StoreError("undo", `nothing to undo in run "${run}"`);
         return seqs.map((s) => undoOne(s, meta)); // newest first; any conflict rolls all of it back
       }),
+    runOps: (run) =>
+      (
+        db
+          .prepare(
+            `SELECT o.kind, o.target, EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) AS undone
+             FROM ops o WHERE o.run = ? AND o.undoes IS NULL AND o.kind <> 'schema' ORDER BY o.seq`,
+          )
+          .all(run) as { kind: Exclude<OpKind, "schema">; target: string; undone: number }[]
+      ).map((r) => ({ kind: r.kind, target: r.target, undone: r.undone === 1 })),
     aiAccess() {
       const out: Record<TypeId, AiLevel> = {};
       for (const r of db.prepare("SELECT type, level FROM ai_access").all())
