@@ -4462,11 +4462,97 @@ button.find-row:hover {
   gap: 8px;
   padding: 14px 16px;
 }
+.inbox-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
 .inbox-card-head h3 {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: 14px;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+.inbox-card-head .inbox-open {
+  flex: none;
+  margin-top: -4px;
+}
+.inbox-source-text {
+  flex: 0 1 auto;
+}
+.inbox-see-mail {
+  flex: none;
+  margin-left: auto;
+}
+.inbox-why {
+  margin: 0 0 4px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.inbox-why-label {
+  font-weight: 500;
+}
+/* A proposal on a page of its own (Juan, 2026-10-23): read only, its sections one under the other. */
+.proposal-page {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding-top: 18px;
+}
+.pp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pp-kind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  min-width: 0;
+}
+.pp-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.pp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pp-section h3 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pp-why {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.pp-why.verbatim {
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+button.ghost-open {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+button.ghost-open:hover {
+  text-decoration: underline;
 }
 .inbox-source {
   display: flex;

@@ -89,7 +89,9 @@ export type View =
   /** Every collection: open one, see and change its protection, filter. */
   | { kind: "collections" }
   /** One collection on a page of its own (its protection is unlocked only here). */
-  | { kind: "collection"; type: string };
+  | { kind: "collection"; type: string }
+  /** A proposal on a page of its own, read-only (Juan, 2026-10-23): its values, its note, why and where from. */
+  | { kind: "proposal"; id: string; back: View };
 /**
  * The right side panel (on the phone, a sheet over the whole screen): a server screen (the capture form, maybe
  * filled in by a shortcut), the chart editor or the shortcut editor.
@@ -1100,6 +1102,21 @@ export async function acceptProposal(id: string) {
   }
   await loadInbox();
 }
+/** A proposal's own page (from its card, its ghost row or the calendar); Esc and the crumb go back. */
+export async function openProposal(id: string) {
+  const v = get().view;
+  set({ view: { kind: "proposal", id, back: v.kind === "proposal" ? v.back : v } });
+  if (!get().inbox.some((p) => p.id === id)) await loadInbox();
+}
+export function closeProposal() {
+  const v = get().view;
+  if (v.kind !== "proposal") return;
+  if (v.back.kind === "row") void openRow(v.back.type, v.back.id);
+  else if (v.back.kind === "page") void openPage(v.back.id);
+  else set({ view: v.back });
+}
+/** The mail a proposal came from, as its row in Boni ("Ver correo": IMAP gives no webmail link). */
+export const openMail = (at: { type: string; id: string }) => void openRow(at.type, at.id);
 export async function rejectProposal(id: string) {
   try {
     await agent.reject(id);

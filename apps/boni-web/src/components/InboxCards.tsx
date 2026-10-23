@@ -1,8 +1,17 @@
 import { markdownToBlocks } from "@boni/views";
-import { ChevronDown, FileText, Inbox, Mail, X } from "lucide-react";
+import { ChevronDown, FileText, Inbox, Mail, Maximize2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ConfirmView, InboxCard, Proposal } from "../core/agent.ts";
-import { acceptProposal, loadInbox, rejectProposal, toggleInbox, useStore } from "../store.ts";
+import {
+  acceptProposal,
+  closeProposal,
+  loadInbox,
+  openMail,
+  openProposal,
+  rejectProposal,
+  toggleInbox,
+  useStore,
+} from "../store.ts";
 import { CallRows } from "./Chat.tsx";
 
 /**
@@ -129,15 +138,7 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
   const two = wide && more && c?.source?.kind === "mail" && !!c.day && c.context.length > 0;
   const source = (
     <>
-      {c?.source?.kind === "mail" && (
-        <p className="inbox-source">
-          <Mail size={13} strokeWidth={1.8} aria-hidden="true" />
-          <span>
-            {c.source.account ?? t("inbox.mail")}
-            {c.source.from ? ` · ${c.source.from}` : ""}
-          </span>
-        </p>
-      )}
+      {c?.source?.kind === "mail" && <MailSource source={c.source} />}
       {c?.source?.kind === "note" && (
         <p className="inbox-source">
           <FileText size={13} strokeWidth={1.8} aria-hidden="true" />
@@ -154,6 +155,7 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
   );
   const mail = more && c?.source?.kind === "mail" && (c.source.subject || c.source.excerpt) && (
     <div className="inbox-mail">
+      {c.why && <Why why={c.why} />}
       {c.source.subject && <p className="inbox-subject">{c.source.subject}</p>}
       {c.source.excerpt && (
         <p className={`inbox-quote${two ? " long" : ""}`}>«{c.source.excerpt}»</p>
@@ -186,6 +188,15 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
     >
       <header className="inbox-card-head">
         <h3>{headline(t, p, c)}</h3>
+        <button
+          type="button"
+          className="icon-btn inbox-open"
+          onClick={() => void openProposal(p.id)}
+          title={t("inbox.open")}
+          aria-label={t("inbox.open")}
+        >
+          <Maximize2 size={14} strokeWidth={1.8} />
+        </button>
       </header>
       {two ? (
         <div className="inbox-two">
@@ -234,14 +245,17 @@ function FieldRows({
   view,
   card,
   day,
+  all = false,
 }: {
   view: ConfirmView;
   card: InboxCard;
   day: (d: string) => string;
+  /** Every value, the title and the day too (the proposal's own page). */
+  all?: boolean;
 }) {
   const t = useStore((s) => s.t);
   // What the card's line already says (the title, the day, the times) is not repeated below it.
-  const said = new Set([card.title, card.day, card.start, card.end].filter(Boolean));
+  const said = new Set(all ? [] : [card.title, card.day, card.start, card.end].filter(Boolean));
   const rows = view.rows.filter(
     (r) =>
       r.arg !== "type" && r.role !== "type" && !(typeof r.value === "string" && said.has(r.value)),
@@ -264,6 +278,141 @@ function FieldRows({
         );
       })}
     </dl>
+  );
+}
+
+/** Where a mail proposal came from (mailbox and sender), with "Ver correo": its own row in Boni. */
+function MailSource({ source }: { source: Extract<InboxCard["source"], { kind: "mail" }> }) {
+  const t = useStore((s) => s.t);
+  return (
+    <p className="inbox-source">
+      <Mail size={13} strokeWidth={1.8} aria-hidden="true" />
+      <span className="inbox-source-text">
+        {source.account ?? t("inbox.mail")}
+        {source.from ? ` · ${source.from}` : ""}
+      </span>
+      {source.open && (
+        <button
+          type="button"
+          className="btn ghost small inbox-see-mail"
+          onClick={() => source.open && openMail(source.open)}
+        >
+          {t("inbox.seeMail")}
+        </button>
+      )}
+    </p>
+  );
+}
+
+/** Why the proposal was made: the mail's words (in quotes only when the server found them in the mail). */
+function Why({ why }: { why: NonNullable<InboxCard["why"]> }) {
+  const t = useStore((s) => s.t);
+  return (
+    <p className="inbox-why" title={why.verbatim ? undefined : t("inbox.whySummary")}>
+      <span className="inbox-why-label">{t("inbox.why")}: </span>
+      {why.verbatim ? `«${why.text}»` : why.text}
+    </p>
+  );
+}
+
+/**
+ * A proposal on a page of its own (Juan, 2026-10-23: its row could not be opened), read-only: what it would add
+ * with every value and its note, why it was made, where it came from (with "Ver correo") and the days around it.
+ * Accepted or rejected here, it goes back to where it was opened from.
+ */
+export function ProposalPage({ id }: { id: string }) {
+  const t = useStore((s) => s.t);
+  const p = useStore((s) => s.inbox.find((x) => x.id === id));
+  const fmt = useDayFormat();
+  if (!p)
+    return (
+      <div className="content proposal-page">
+        <p className="muted center-note">{t("inbox.gone")}</p>
+      </div>
+    );
+  const c = p.card;
+  const body = p.view?.rows.find((r) => r.arg === "values.body" || r.arg.endsWith(".body"));
+  const rows: ConfirmView | null = p.view
+    ? {
+        ...p.view,
+        rows: p.view.rows.filter(
+          (r) => r !== body && !(r.arg === "note" && c?.source?.kind === "note"),
+        ),
+      }
+    : null;
+  const decide = async (accept: boolean) => {
+    await (accept ? acceptProposal(id) : rejectProposal(id));
+    const v = useStore.getState().view;
+    if (v.kind === "proposal" && v.id === id) closeProposal();
+  };
+  return (
+    <div className="content proposal-page">
+      <header className="pp-head">
+        <p className="pp-kind">
+          <span className="ghost-tag">{t("ghost.proposed")}</span>
+          <span className="muted">{headline(t, p, c)}</span>
+        </p>
+        <h2 className="pp-title">{c?.title ?? headline(t, p, c)}</h2>
+      </header>
+      {rows && rows.rows.length > 0 && (
+        <section className="pp-section">
+          <h3>{t("inbox.properties")}</h3>
+          {c ? <FieldRows view={rows} card={c} day={fmt.long} all /> : <CallRows view={rows} />}
+        </section>
+      )}
+      {body && typeof body.value === "string" && body.value.trim() && (
+        <section className="pp-section">
+          <h3>{t("inbox.note")}</h3>
+          <div className="inbox-body">
+            <MarkdownPreview text={body.value} />
+          </div>
+        </section>
+      )}
+      {c?.why && (
+        <section className="pp-section">
+          <h3>{t("inbox.why")}</h3>
+          <p className={`pp-why${c.why.verbatim ? " verbatim" : ""}`}>
+            {c.why.verbatim ? `«${c.why.text}»` : c.why.text}
+          </p>
+          {!c.why.verbatim && <p className="muted small">{t("inbox.whySummary")}</p>}
+        </section>
+      )}
+      {c?.source && (
+        <section className="pp-section">
+          <h3>{t("inbox.origin")}</h3>
+          {c.source.kind === "mail" ? (
+            <>
+              <MailSource source={c.source} />
+              {c.source.subject && <p className="inbox-subject">{c.source.subject}</p>}
+              {c.source.excerpt && <p className="inbox-quote long">«{c.source.excerpt}»</p>}
+            </>
+          ) : (
+            <p className="inbox-source">
+              <FileText size={13} strokeWidth={1.8} aria-hidden="true" />
+              <span>{c.source.path}</span>
+            </p>
+          )}
+        </section>
+      )}
+      {c?.day && c.context.length > 0 && (
+        <section className="pp-section">
+          <h3>{t("inbox.days")}</h3>
+          <MiniDays
+            days={c.context}
+            proposed={{ day: c.day, start: c.start, end: c.end, title: c.title ?? "" }}
+            short={fmt.short}
+          />
+        </section>
+      )}
+      <div className="inbox-actions">
+        <button type="button" className="btn primary" onClick={() => void decide(true)}>
+          {t("inbox.accept")}
+        </button>
+        <button type="button" className="btn" onClick={() => void decide(false)}>
+          {t("inbox.reject")}
+        </button>
+      </div>
+    </div>
   );
 }
 

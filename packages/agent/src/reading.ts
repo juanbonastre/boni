@@ -139,14 +139,15 @@ const okText = (v: unknown, max: number) =>
   typeof v === "string" && [...v].length <= max && !LINK_OR_HTML.test(v);
 
 /** What the plan gets: per module, the items the user has to do or attend; `all` is every one of them. */
-export type Reading = Record<string, { title: string; due: string | null }[]> & {
-  all: { module: string; title: string; due: string | null }[];
+export type Reading = Record<string, { title: string; due: string | null; quote: string }[]> & {
+  all: { module: string; title: string; due: string | null; quote: string }[];
 };
 
 /**
  * The reader's answer checked again by the code and decided: null when anything is off (the step fails);
  * otherwise only the items whose actor is the recipient and whose kind is an active module's, by module.
- * The quote is checked but not kept: it was there so the model reads before it decides.
+ * The quote is there so the model reads before it decides; it is kept as the proposal's reason (`why`), shown
+ * to the user as the mail's words, never applied.
  */
 export function checkReadMessage(out: unknown, mods: readonly ReadingModule[]): Reading | null {
   if (!isObj(out) || Object.keys(out).join() !== "items" || !Array.isArray(out.items)) return null;
@@ -174,7 +175,7 @@ export function checkReadMessage(out: unknown, mods: readonly ReadingModule[]): 
     const key = `${module}\u0000${title.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const item = { title, due: i.due as string | null };
+    const item = { title, due: i.due as string | null, quote: (i.quote as string).trim() };
     reading[module]?.push(item);
     reading.all.push({ module, ...item });
   }

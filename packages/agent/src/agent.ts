@@ -726,6 +726,8 @@ export class Agent {
       case "propose": {
         const id = randomUUID();
         const origins = originsFor(tool, args, readStore(this.o.store));
+        // The reason the inbox shows with it (a reader's quote of the mail): shown as text, never applied.
+        const why = step.why ? this.evalExpr(st, step.why) : null;
         this.o.store.journal.addProposal({
           id,
           run: st.id,
@@ -733,6 +735,7 @@ export class Agent {
           args: {
             values: Object.fromEntries(Object.entries(args).map(([k, v]) => [k, freeze(v)])),
             origins,
+            ...(why ? { why: freeze(why) } : {}),
           },
           view: confirmView(tool, args, readStore(this.o.store)),
           sources: [

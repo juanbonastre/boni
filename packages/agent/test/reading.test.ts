@@ -37,8 +37,11 @@ describe("reading a message by modules (docs/nucleo.md 7.4b)", () => {
       },
       MODULES,
     );
-    expect(r?.tasks).toEqual([{ title: "Enviar el informe a Lucía", due: "2026-10-23" }]);
-    expect(r?.events).toEqual([{ title: "Reunión con Lucía", due: "2026-10-27" }]);
+    // The quote stays with each item: the proposal shows it as its reason (`why`).
+    expect(r?.tasks).toEqual([
+      { title: "Enviar el informe a Lucía", due: "2026-10-23", quote: "…" },
+    ]);
+    expect(r?.events).toEqual([{ title: "Reunión con Lucía", due: "2026-10-27", quote: "…" }]);
     expect(r?.all.map((i) => i.module)).toEqual(["tasks", "events"]);
   });
 

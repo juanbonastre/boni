@@ -195,7 +195,7 @@ test("the inbox panel: cards say what, from where and the day around it; it open
   await expect(panel).toBeVisible();
   const card = panel.locator(".inbox-card").first();
   await expect(card.locator("h3")).toHaveText("Añadir evento a Docencia");
-  await expect(card.locator(".inbox-source")).toHaveText(
+  await expect(card.locator(".inbox-source-text")).toHaveText(
     "ejemplo@example.edu · Coordinación de ejemplo",
   );
   await expect(card).not.toContainText("Viene de fuera");
@@ -240,6 +240,65 @@ test("the inbox panel: cards say what, from where and the day around it; it open
   );
   await expect(wide.locator(".inbox-col").nth(1).locator(".mini-day")).toHaveCount(3);
   await page.screenshot({ path: `${SHOTS}/inbox-page-two-columns.png` });
+});
+
+test("a proposal opens on a page of its own: its values, why, where from, and the mail itself", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_DETAILED] }],
+      "POST api/agent/proposals/:id/reject": [{}],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  // The card says why (the mail's words) and can show the mail.
+  await expect(card.locator(".inbox-why")).toHaveText(
+    "Por qué: «antes del jueves revisad las actas»",
+  );
+  await expect(card.getByRole("button", { name: "Ver correo" })).toBeVisible();
+  await card.getByRole("button", { name: "Abrir propuesta" }).click();
+  const pp = page.locator(".proposal-page");
+  await expect(pp.locator(".pp-title")).toHaveText("Revisar actas");
+  await expect(pp.locator(".pp-kind")).toContainText("Añadir evento a Docencia");
+  // Every value, the title and the day too; why; where from with the mail; the days around it.
+  await expect(pp.locator(".inbox-fields")).toContainText("Revisar actas");
+  await expect(pp.locator(".inbox-fields")).toContainText("Fecha");
+  await expect(pp.locator(".pp-why")).toHaveText("«antes del jueves revisad las actas»");
+  await expect(pp.locator(".inbox-subject")).toHaveText("Actas pendientes");
+  await expect(pp.locator(".mini-day")).toHaveCount(3);
+  await page.locator(".inbox-panel .panel-head").getByRole("button").click();
+  await page.screenshot({ path: `${SHOTS}/proposal-page.png` });
+  // "Ver correo" opens the mail's row in Boni; back, Esc returns to where it was opened from.
+  await pp.getByRole("button", { name: "Ver correo" }).click();
+  await expect(page.locator(".row-doc .doc-title")).toContainText("Rayuela");
+  await expect(page.locator(".proposal-page")).toHaveCount(0);
+  // From its page, rejecting it goes back.
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  await page
+    .locator(".inbox-panel .inbox-card")
+    .first()
+    .getByRole("button", { name: "Abrir propuesta" })
+    .click();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".proposal-page")).toHaveCount(0);
+  await page
+    .locator(".inbox-panel .inbox-card")
+    .first()
+    .getByRole("button", { name: "Abrir propuesta" })
+    .click();
+  await page.locator(".proposal-page").getByRole("button", { name: "Rechazar" }).click();
+  await expect(page.locator(".proposal-page")).toHaveCount(0);
+  expect(
+    (await recorded(page)).requests.some((r) => r.startsWith("POST api/agent/proposals/c1/reject")),
+  ).toBe(true);
 });
 
 test("a hand edit in Obsidian waits in the inbox with its note and what will not be applied", async ({

@@ -281,6 +281,10 @@ async function converse(page: Page, l: (typeof C)["es"], issues: string[], where
     issues.push(...(await audit(page, `${where} inbox panel`)));
     await page.locator(".inbox-panel .inbox-card.compact .inbox-more").first().click();
     issues.push(...(await audit(page, `${where} inbox panel opened`)));
+    // A proposal on its own page.
+    await page.locator(".inbox-panel .inbox-card.detailed .inbox-open").first().click();
+    await page.locator(".proposal-page .pp-title").waitFor();
+    issues.push(...(await audit(page, `${where} proposal page`)));
   }
 }
 for (const language of ["es", "en"] as const) {
