@@ -30,7 +30,7 @@ import {
   undoRun,
   useStore,
 } from "../store.ts";
-import { ProposalCard } from "./InboxCards.tsx";
+import { ProposalCard, RequestCard, useInboxQueue } from "./InboxCards.tsx";
 
 /**
  * The conversation with Boni's agent (docs/nucleo.md, 7.14). Everything here is painted by this code from
@@ -42,7 +42,7 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
   const t = useStore((s) => s.t);
   const chat = useStore((s) => s.chat);
   const busy = useStore((s) => s.chatBusy);
-  const inbox = useStore((s) => s.inbox);
+  const waiting = useStore((s) => s.inbox.length + s.requests.length);
   const end = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     void loadInbox();
@@ -55,7 +55,7 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
       <div className="chat-tools">
         <button type="button" className="pill" onClick={showInbox}>
           <Inbox size={14} strokeWidth={1.8} />
-          <span>{inbox.length ? t("inbox.titleN", { n: inbox.length }) : t("inbox.title")}</span>
+          <span>{waiting ? t("inbox.titleN", { n: waiting }) : t("inbox.title")}</span>
         </button>
         <button type="button" className="pill" onClick={showLog}>
           <ListChecks size={14} strokeWidth={1.8} />
@@ -464,17 +464,21 @@ function ConfirmCard({ entryId, view }: { entryId: string; view: ConfirmView }) 
 
 export function InboxView() {
   const t = useStore((s) => s.t);
-  const inbox = useStore((s) => s.inbox);
+  const queue = useInboxQueue();
   useEffect(() => {
     void loadInbox();
   }, []);
   return (
     <div className="agent-page">
       <p className="muted small">{t("inbox.help")}</p>
-      {inbox.length === 0 && <p className="muted center-note">{t("inbox.empty")}</p>}
-      {inbox.map((p) => (
-        <ProposalCard key={p.id} p={p} wide />
-      ))}
+      {queue.length === 0 && <p className="muted center-note">{t("inbox.empty")}</p>}
+      {queue.map((x) =>
+        "p" in x ? (
+          <ProposalCard key={x.p.id} p={x.p} wide />
+        ) : (
+          <RequestCard key={x.r.id} r={x.r} />
+        ),
+      )}
     </div>
   );
 }

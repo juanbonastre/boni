@@ -152,6 +152,64 @@ const PROPOSALS_WORST = {
   ],
 };
 
+const v = (value: unknown, integrity: string) => ({
+  t: "v",
+  value,
+  integrity,
+  sensitivity: "public",
+});
+/** Questions with long accented words, long options and a long sender (the panel of requests). */
+const REQUESTS_WORST = {
+  requests: [
+    {
+      id: "wq1",
+      run: "run-wq1",
+      view: {
+        kind: "ask",
+        id: "wq1",
+        control: "choice",
+        prompt: v(
+          "¿A qué colección va «Convocatoria extraordinaria de evaluación de la asignatura Interacción Persona-Ordenador»?",
+          "model",
+        ),
+        options: [
+          v("Docencia — Organización y planificación académica del curso", "user"),
+          v("Gestiones administrativas y trámites de la universidad", "user"),
+          v("Ir", "user"),
+        ],
+      },
+      created: 0,
+      expires: Date.now() + 6 * 24 * 60 * 60_000,
+      about: {
+        kind: "mail",
+        subject:
+          "Convocatoria extraordinaria: calendario de evaluación, rúbricas y criterios de corrección",
+        from: "Vicerrectorado de Ordenación Académica y Profesorado de Ejemplo",
+        account: LONG_ADDRESS,
+      },
+      open: { type: "t_correo", id: "e_correo1" },
+    },
+    {
+      id: "wq2",
+      run: "run-wq2",
+      view: {
+        kind: "ask",
+        id: "wq2",
+        control: "text",
+        prompt: v(
+          "¿Qué compraste en «Electrodomésticos Hernández-Martínez e Hijos, Sociedad Limitada» el día 12 (1.234,56 €)?",
+          "model",
+        ),
+        options: [],
+      },
+      created: 0,
+      expires: Date.now() + 60_000,
+      about: null,
+      open: null,
+    },
+  ],
+};
+
 for (const width of [1440, 900]) {
   test(`the worst realistic data fits (Settings and inbox, ${width} px)`, async ({ page }) => {
     await page.setViewportSize({ width, height: 860 });
@@ -162,6 +220,7 @@ for (const width of [1440, 900]) {
         "GET api/mail/guide": [GUIDE_WORST],
         "GET api/agent/extensions": [EXTENSIONS_WORST],
         "GET api/agent/proposals": [PROPOSALS_WORST],
+        "GET api/agent/requests": [REQUESTS_WORST],
       },
     });
     const issues: string[] = [];

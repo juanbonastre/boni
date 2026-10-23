@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
+  ANSWER_GONE,
   ASK_TURN,
   CARD_COMPACT,
   CARD_DETAILED,
@@ -12,6 +13,7 @@ import {
   MAIL_SUGGESTED,
   MIRROR_PROPOSAL,
   PROPOSALS,
+  REQUESTS,
   RTL,
   RUN_2,
   RUNS,
@@ -751,4 +753,59 @@ test("extensions in Settings: what each does, on or off, and what it uses", asyn
     'PUT api/agent/extensions/correo {"enabled":false}',
   ]);
   await page.screenshot({ path: `${SHOTS}/agent-extensions.png` });
+});
+
+test("the panel: questions and proposals in one queue as they came, each saying what it is (option A)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_COMPACT] }],
+      "GET api/agent/requests": [REQUESTS],
+      "POST api/agent/requests/:id/answer": [DONE, DONE, ANSWER_GONE],
+      "POST api/agent/requests/:id/dismiss": [{ dismissed: true }],
+    },
+  });
+  const top = page.locator(".topbar").getByRole("button", { name: /^Bandeja/ });
+  await expect(top).toHaveText("Bandeja (5)");
+  await top.click();
+  const panel = page.locator(".inbox-panel");
+  const kinds = panel.locator(".inbox-card .inbox-kind");
+  // In the order they arrived: q1 (3), the proposal (4), q2 (5), q3 (6), q4 (7).
+  await expect(kinds).toHaveText([
+    "Pregunta · caduca en 7 días",
+    "Propuesta",
+    "Pregunta · caduca en 7 días",
+    "Pregunta · caduca en 7 días",
+    "Pregunta · caduca en 7 días",
+  ]);
+  const q1 = panel.locator(".request-card").first();
+  await expect(q1.locator(".request-prompt")).toHaveText("¿A qué colección va «Entrega de actas»?");
+  // Where it came from is outside text, marked, with "Ver correo".
+  await expect(q1.locator(".inbox-source-text")).toHaveClass(/val-ext/);
+  await expect(q1.locator(".inbox-source-text")).toContainText("Secretaría de ejemplo");
+  await expect(q1.getByRole("button", { name: "Ver correo" })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/agent-requests.png` });
+
+  await q1.getByRole("button", { name: "Gestiones" }).click();
+  await expect(panel.locator(".request-card")).toHaveCount(3);
+  const q2 = panel.locator(".request-card").first();
+  await q2.getByRole("textbox", { name: "Responder" }).pressSequentially("Una funda de móvil");
+  await q2.getByRole("button", { name: "Enviar" }).click();
+  await expect(panel.locator(".request-card")).toHaveCount(2);
+  await panel.locator(".request-card").first().getByRole("button", { name: "Descartar" }).click();
+  await expect(panel.locator(".request-card")).toHaveCount(1);
+  // One that no longer waits (answered elsewhere): it says so and can be taken out.
+  const q4 = panel.locator(".request-card").first();
+  await q4.getByRole("button", { name: "Sí" }).click();
+  await expect(q4.locator(".decide-error")).toContainText("ya no espera respuesta");
+  await q4.getByRole("button", { name: "Quitar" }).click();
+  await expect(panel.locator(".request-card")).toHaveCount(0);
+  await expect(top).toHaveText("Bandeja (1)");
+  expect(await requests(page, "POST api/agent/requests/")).toEqual([
+    'POST api/agent/requests/q1/answer {"choice":1}',
+    'POST api/agent/requests/q2/answer {"text":"Una funda de móvil"}',
+    "POST api/agent/requests/q3/dismiss",
+    'POST api/agent/requests/q4/answer {"choice":0}',
+  ]);
 });

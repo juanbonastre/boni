@@ -36,7 +36,7 @@ export function Sidebar() {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const settings = useStore((s) => s.settings);
-  const inbox = useStore((s) => s.inbox);
+  const waiting = useStore((s) => s.inbox.length + s.requests.length);
   const pages = useStore((s) => s.pages);
   const [drag, setDrag] = useState<Drag>(null);
 
@@ -66,7 +66,7 @@ export function Sidebar() {
         >
           <MessageSquare size={15} strokeWidth={1.8} />
           <span className="nav-name">{t("nav.chat")}</span>
-          {inbox.length > 0 && <span className="nav-count">{inbox.length}</span>}
+          {waiting > 0 && <span className="nav-count">{waiting}</span>}
         </button>
         <button
           type="button"

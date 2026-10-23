@@ -101,6 +101,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       let inbox = (
         opts.agent?.["GET api/agent/proposals"]?.[0] as { proposals: { id: string }[] } | undefined
       )?.proposals;
+      // The questions as the server keeps them: answering or putting one away takes it out.
+      let asked = (
+        opts.agent?.["GET api/agent/requests"]?.[0] as { requests: { id: string }[] } | undefined
+      )?.requests;
       // The pages as the server keeps them (apps/server/src/pages.ts), with its trash for Undo.
       const pageList = (pages ?? []).map((x, i) => ({
         icon: "",
@@ -267,12 +271,16 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         if (p === "api/agent/proposals" && inbox)
           return [200, JSON.stringify({ proposals: inbox })];
+        if (p === "api/agent/requests" && asked) return [200, JSON.stringify({ requests: asked })];
+        const answered = /^api\/agent\/requests\/([^/]+)\//.exec(p);
+        if (answered && asked) asked = asked.filter((x) => x.id !== answered[1]);
         const decided = /^api\/agent\/proposals\/([^/]+)\//.exec(p);
         if (decided && inbox) inbox = inbox.filter((x) => x.id !== decided[1]);
         if (decided) ghosts = ghosts.filter((g) => g.proposal !== decided[1]);
         if (p.startsWith("api/agent/") || p === "api/mail" || p.startsWith("api/mail/")) {
           const key = `${method} ${p
             .replace(/\/proposals\/[^/]+\//, "/proposals/:id/")
+            .replace(/\/requests\/[^/]+\//, "/requests/:id/")
             .replace(/\/runs\/[^/]+\//, "/runs/:id/")
             .replace(/\/runs\/[^/]+$/, "/runs/:id")
             .replace(/\/visibility\/[^/]+$/, "/visibility/:type")

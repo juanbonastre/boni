@@ -324,7 +324,14 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   each argument with its real value in full (scrolling, never cut), where it came from ("Viene de fuera · un correo")
   and its warnings in `--bad` (invisible or direction-changing characters, shown as `⟦U+202E⟧`, mixed alphabets, an
   international domain with its real name, long text). Its accept button waits 0.7 s and changes side with every
-  confirmation, so nothing is accepted out of habit. The **inbox** (Juan, 2026-10-22) is a panel on the right
+  confirmation, so nothing is accepted out of habit. **Questions from background work** (Juan, 2026-10-24, the panel of
+  requests, option A) share the inbox's one queue, in the order things arrived; every card says what it is on a small
+  muted line on top ("Pregunta · caduca en 7 días", "Propuesta"). A question card: the prompt as its title, where it
+  came from (the mailbox, the sender and the subject, outside text with its mark, and "Ver correo"), its options as
+  pills or a line to type in with "Enviar", and a quiet "Descartar" (Boni does nothing more with it). The clicked
+  answer turns into the same spinner as deciding a proposal; one that no longer waits (answered elsewhere, expired)
+  says so on the card with "Quitar". The counts (top bar, sidebar, conversation) are proposals and questions together,
+  and a new question opens the panel as a new proposal does. The **inbox** (Juan, 2026-10-22) is a panel on the right
   (the top bar's "Bandeja (N)"; it comes out by itself when a new proposal arrives, checked every minute; in a narrow
   window the sidebar gives it room) and the same cards in Conversación → Bandeja. A card says what the proposal does
   in words made by code ("Añadir tarea a Docencia", "Añadir evento a …", "Cambio a mano en «nota»"), where it came
