@@ -19,7 +19,7 @@ import {
   type Value,
 } from "@boni/entities";
 import { type Journal, openJournal } from "./journal.ts";
-import { open, seal } from "./keys.ts";
+import { open, seal, sealFile } from "./keys.ts";
 import { migrate } from "./migrations.ts";
 
 /**
@@ -976,7 +976,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       rmSync(tmp, { force: true });
       db.prepare("VACUUM INTO ?").run(tmp);
       try {
-        writeFileSync(dest, seal(key, readFileSync(tmp), "boni-backup"), { mode: 0o600 });
+        sealFile(key, tmp, dest, "boni-backup");
       } finally {
         rmSync(tmp, { force: true });
       }
