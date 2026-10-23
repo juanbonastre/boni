@@ -194,6 +194,8 @@ export interface UserStore {
   /** Keeps an attachment (by content: the same bytes are kept once) and gives its sha256. */
   putFile(data: Uint8Array, mime: string): string;
   getFile(sha256: string): StoredFile | null;
+  /** An attachment's type and size without its bytes (the export lists them before reading each one). */
+  fileInfo(sha256: string): { mime: string; size: number } | null;
   /**
    * A setting or working state of the user's extensions (docs/extensiones.md 4), outside the operation log
    * and out of readQuery's reach; null when absent. Writing null removes it. Secrets go in sealed by the
@@ -913,6 +915,13 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
         | { mime: string; size: number; data: Uint8Array }
         | undefined;
       return r ? { mime: r.mime, size: Number(r.size), data: r.data } : null;
+    },
+    fileInfo(sha256) {
+      if (!/^[0-9a-f]{64}$/.test(sha256)) return null;
+      const r = db.prepare("SELECT mime, size FROM files WHERE sha256 = ?").get(sha256) as
+        | { mime: string; size: number }
+        | undefined;
+      return r ? { mime: r.mime, size: Number(r.size) } : null;
     },
     setting(key) {
       const r = db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as

@@ -2,7 +2,7 @@ import { formatNote } from "@boni/calendar";
 import type { FieldDef, Label, TypeDef, Value } from "@boni/entities";
 import { type Links, render, safeName } from "@boni/mirror";
 import type { StoredEntity, UserStore } from "@boni/store";
-import { writeZip, type ZipEntry } from "./zip.ts";
+import { writeZip, type ZipEntry, zipChunks } from "./zip.ts";
 
 /**
  * Export in one click (docs/nucleo.md 9.3): everything of an account in files any program reads, so
@@ -256,10 +256,18 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
       for (const s of lists.get(t.id) ?? []) {
         const sha = s.entity.values[f.id];
         if (typeof sha !== "string" || sha in fileTypes) continue;
-        const file = store.getFile(sha);
-        if (!file) continue;
-        fileTypes[sha] = file.mime;
-        out.push({ path: `files/${sha}`, data: Buffer.from(file.data) });
+        const info = store.fileInfo(sha);
+        if (!info) continue;
+        fileTypes[sha] = info.mime;
+        // Read when its turn comes to be written (zipChunks), one attachment at a time.
+        out.push({
+          path: `files/${sha}`,
+          stored: true,
+          data: () => {
+            const d = store.getFile(sha)?.data ?? new Uint8Array();
+            return Buffer.from(d.buffer, d.byteOffset, d.byteLength); // a view, not a copy
+          },
+        });
       }
   out.push({
     path: "schema.json",
@@ -310,3 +318,7 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
 
 export const exportZip = (store: UserStore, o: ExportOptions = {}): Buffer =>
   writeZip(exportFiles(store, o), o.now ?? Date.now());
+
+/** The export as chunks (`zipChunks`): what the server sends and the CLI writes, never whole in memory. */
+export const exportChunks = (store: UserStore, o: ExportOptions = {}): Generator<Buffer> =>
+  zipChunks(exportFiles(store, o), o.now ?? Date.now());

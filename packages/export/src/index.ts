@@ -1,6 +1,7 @@
 export {
   type ExportOptions,
   type ExportRecord,
+  exportChunks,
   exportFiles,
   exportZip,
   FORMAT,
@@ -14,4 +15,12 @@ export {
   type ReimportOptions,
   type ReimportReport,
 } from "./reimport.ts";
-export { readZip, writeZip, type ZipEntry, ZipError } from "./zip.ts";
+export {
+  entryData,
+  readZip,
+  releaseSent,
+  writeZip,
+  type ZipEntry,
+  ZipError,
+  zipChunks,
+} from "./zip.ts";

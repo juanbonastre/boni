@@ -23,4 +23,6 @@ USER node
 VOLUME /data
 EXPOSE 8787
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "--disable-warning=ExperimentalWarning", "apps/server/src/main.ts"]
+# --expose-gc: a long export or copy frees what it already sent (releaseSent in @boni/export): the attachments it
+# reads one at a time otherwise wait for V8 and add up (measured 2026-10-23: 288 MB peak for 400 MB, 185 MB freed).
+CMD ["node", "--expose-gc", "--disable-warning=ExperimentalWarning", "apps/server/src/main.ts"]

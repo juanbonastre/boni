@@ -7,9 +7,9 @@ import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { importVault } from "@boni/vault-import";
 import { afterEach, describe, expect, it } from "vitest";
-import { exportFiles, exportZip } from "./export.ts";
+import { exportChunks, exportFiles, exportZip } from "./export.ts";
 import { ExportFormatError, importExport } from "./reimport.ts";
-import { readZip, writeZip, ZipError } from "./zip.ts";
+import { entryData, readZip, writeZip, type ZipEntry, ZipError, zipChunks } from "./zip.ts";
 
 /** An invented vault (never real notes): people, projects with relations, movements, a calendar. */
 const FILES: Record<string, string> = {
@@ -130,12 +130,12 @@ describe("the export comes back", () => {
     const a = filled();
     const first = exportFiles(a, { now: NOW });
     const b = store();
-    const files = new Map(first.map((e) => [e.path, e.data]));
+    const files = new Map(first.map((e) => [e.path, entryData(e)]));
     const dry = importExport(files, b);
     expect(dry).toMatchObject({ applied: false, created: 5, existing: [], failed: [] });
     expect(b.list("t_persona")).toHaveLength(0);
     a.setAiAccess("t_persona", "opaque", "portatil");
-    const withChoice = new Map(exportFiles(a, { now: NOW }).map((e) => [e.path, e.data]));
+    const withChoice = new Map(exportFiles(a, { now: NOW }).map((e) => [e.path, entryData(e)]));
     const r = importExport(withChoice, b, { apply: true, trustLabels: true });
     expect(b.aiAccess()).toEqual({ t_persona: "opaque" });
     expect(r).toMatchObject({ applied: true, created: 5, failed: [] });
@@ -155,7 +155,9 @@ describe("the export comes back", () => {
         : d.toString("utf8");
     expect(second.map((e) => e.path)).toEqual(first2.map((e) => e.path));
     for (const [i, e] of second.entries())
-      expect(strip(e.path, e.data), e.path).toBe(strip(e.path, first2[i]?.data as Buffer));
+      expect(strip(e.path, entryData(e)), e.path).toBe(
+        strip(e.path, entryData(first2[i] as ZipEntry)),
+      );
     // Again: nothing twice.
     expect(importExport(files, b, { apply: true }).existing).toHaveLength(5);
   });
@@ -168,7 +170,7 @@ describe("the export comes back", () => {
     const a = store();
     importVault(zone, a, { apply: true, zone: "private", now: NOW });
     const sha = String(a.list("t_private_documentos")[0]?.entity.values.f_boni_file);
-    const files = new Map(exportFiles(a, { now: NOW }).map((e) => [e.path, e.data]));
+    const files = new Map(exportFiles(a, { now: NOW }).map((e) => [e.path, entryData(e)]));
     expect(text(files, `files/${sha}`)).toBe("%PDF-1.7 inventado");
     expect(JSON.parse(text(files, "schema.json")).zones).toEqual({
       t_private_documentos: "private",
@@ -181,8 +183,36 @@ describe("the export comes back", () => {
     expect(b.getFile(sha)?.mime).toBe("application/pdf");
   });
 
+  it("streams: an attachment is read only when its turn comes, and the chunks are the same zip", () => {
+    const zone = mkdtempSync(join(tmpdir(), "boni-zone-"));
+    cleanups.push(() => rmSync(zone, { recursive: true, force: true }));
+    mkdirSync(join(zone, "Documentos"));
+    writeFileSync(join(zone, "Documentos/uno.pdf"), "%PDF-1.7 uno inventado");
+    writeFileSync(join(zone, "Documentos/dos.pdf"), "%PDF-1.7 dos inventado");
+    const a = store();
+    importVault(zone, a, { apply: true, zone: "private", now: NOW });
+    let reads = 0;
+    const counted = new Proxy(a, {
+      get: (t, k) =>
+        k === "getFile"
+          ? (sha: string) => {
+              reads++;
+              return t.getFile(sha);
+            }
+          : Reflect.get(t, k),
+    });
+    const chunks = exportChunks(counted, { now: NOW });
+    expect(reads).toBe(0); // nothing read yet: the list says each file's type without its bytes
+    const all: Buffer[] = [];
+    for (const c of chunks) all.push(c);
+    expect(reads).toBe(2);
+    expect(Buffer.concat(all).equals(exportZip(a, { now: NOW }))).toBe(true);
+    expect(text(readZip(Buffer.concat(all)), "README.md")).toContain("Boni");
+    expect(Buffer.concat([...zipChunks([], NOW)]).equals(writeZip([], NOW))).toBe(true);
+  });
+
   it("by default the file's labels are only claims: at most imported, from the export", () => {
-    const files = new Map(exportFiles(filled(), { now: NOW }).map((e) => [e.path, e.data]));
+    const files = new Map(exportFiles(filled(), { now: NOW }).map((e) => [e.path, entryData(e)]));
     const b = store();
     importExport(files, b, { apply: true, name: "copia.zip" });
     const ana = b
