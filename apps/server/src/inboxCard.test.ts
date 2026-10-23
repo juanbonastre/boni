@@ -54,7 +54,13 @@ function env(): UserStore {
 }
 
 /** A mail and the proposal its background run made, as mail.ts leaves them. */
-function proposalFromMail(store: UserStore, id: string, run: string, sender: string) {
+function proposalFromMail(
+  store: UserStore,
+  id: string,
+  run: string,
+  sender: string,
+  why = "antes del jueves revisad las actas de FUP 1",
+) {
   const l = label("user", "personal", []);
   store.applySchema(
     {
@@ -97,7 +103,7 @@ function proposalFromMail(store: UserStore, id: string, run: string, sender: str
     id,
     run,
     tool: "entities.create",
-    args: {},
+    args: { values: {}, origins: [], why: { t: "v", value: why, label: l, derived: false } },
     view: {
       tool: "entities.create",
       title: "Crear",
@@ -135,7 +141,10 @@ describe("the inbox's card for a proposal", () => {
         from: "Coordinación de ejemplo",
         subject: "Actas de FUP 1",
         excerpt: "Hola, antes del jueves revisad las actas de FUP 1. Gracias.",
+        open: { type: "t_correo" },
       },
+      // The reader's quote, found as such in the mail by the code.
+      why: { text: "antes del jueves revisad las actas de FUP 1", verbatim: true },
       familiar: 0,
       complete: true,
       mode: "detailed",
@@ -145,6 +154,16 @@ describe("the inbox's card for a proposal", () => {
       ["2026-10-29", ["Tutoría"]],
       ["2026-10-30", []],
     ]);
+  });
+
+  it("a reason the mail does not say in those words is shown, but not as a quote", () => {
+    const store = env();
+    proposalFromMail(store, "p1", "r1", "coordinacion@example.edu", "Piden revisar actas");
+    const card = inboxCard(
+      store,
+      store.journal.proposal("p1") as NonNullable<ReturnType<typeof store.journal.proposal>>,
+    );
+    expect(card.why).toEqual({ text: "Piden revisar actas", verbatim: false });
   });
 
   it("is compact once Juan accepted two like it from the same source", () => {

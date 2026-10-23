@@ -75,9 +75,19 @@ export interface InboxCard {
   start: string | null;
   end: string | null;
   source:
-    | { kind: "mail"; account: string | null; from: string; subject: string; excerpt: string }
+    | {
+        kind: "mail";
+        account: string | null;
+        from: string;
+        subject: string;
+        excerpt: string;
+        /** The mail's own row in Boni, for "Ver correo". */
+        open: { type: string; id: string } | null;
+      }
     | { kind: "note"; path: string }
     | null;
+  /** Why it was made: the reader's quote of the mail (verbatim when the server found it in the mail). */
+  why: { text: string; verbatim: boolean } | null;
   familiar: number;
   complete: boolean;
   mode: "compact" | "detailed";
@@ -100,6 +110,10 @@ function parseCard(v: unknown): InboxCard | null {
           from: optStr(src.from, 200) ?? "",
           subject: optStr(src.subject, 200) ?? "",
           excerpt: optStr(src.excerpt, 1500) ?? "",
+          open:
+            isObj(src.open) && typeof src.open.type === "string" && typeof src.open.id === "string"
+              ? { type: src.open.type.slice(0, 100), id: src.open.id.slice(0, 100) }
+              : null,
         }
       : src?.kind === "note" && typeof src.path === "string"
         ? { kind: "note", path: src.path.slice(0, 500) }
@@ -113,6 +127,10 @@ function parseCard(v: unknown): InboxCard | null {
     start: optMatch(v.start, TIME_RE),
     end: optMatch(v.end, TIME_RE),
     source,
+    why:
+      isObj(v.why) && typeof v.why.text === "string" && v.why.text.trim()
+        ? { text: v.why.text.slice(0, 300), verbatim: v.why.verbatim === true }
+        : null,
     familiar: typeof v.familiar === "number" ? v.familiar : 0,
     complete: v.complete === true,
     mode: v.mode === "compact" ? "compact" : "detailed",

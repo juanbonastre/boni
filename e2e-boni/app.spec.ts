@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
+import { CARD_DETAILED } from "./agent-scenarios.ts";
 import { EXAMPLES, emit, openApp, recorded } from "./fixtures.ts";
 
 const SHOTS = "e2e-boni/screenshots";
@@ -663,6 +664,17 @@ test("ghost rows: a pending proposal drawn dashed in its collection, accepted or
       },
     ],
     agent: {
+      "GET api/agent/proposals": [
+        {
+          proposals: [
+            {
+              ...CARD_DETAILED,
+              id: "pg1",
+              card: { ...CARD_DETAILED.card, collection: "Libros", title: "Leer Rayuela otra vez" },
+            },
+          ],
+        },
+      ],
       "POST api/agent/proposals/:id/accept": [
         {
           run: "x",
@@ -692,6 +704,11 @@ test("ghost rows: a pending proposal drawn dashed in its collection, accepted or
   await db.getByRole("radio", { name: "Calendario" }).click();
   await expect(db.locator(".db-cal-item.ghost")).toContainText("Leer Rayuela otra vez");
   await db.getByRole("radio", { name: "Tabla" }).click();
+  // Its title opens the proposal on its own page (read only); Esc comes back.
+  await ghost.getByRole("button", { name: "Leer Rayuela otra vez", exact: true }).click();
+  await expect(page.locator(".proposal-page .pp-title")).toHaveText("Leer Rayuela otra vez");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".proposal-page")).toHaveCount(0);
   await ghost.getByRole("button", { name: /^Aceptar/ }).click();
   await expect(db.locator(".db-table tbody tr.ghost-row")).toHaveCount(0);
   expect(

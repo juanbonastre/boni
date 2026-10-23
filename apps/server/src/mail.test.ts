@@ -259,16 +259,22 @@ describe("tasks a mail asks for", () => {
       const kind = /find what it asks of the user/.test(req.system) ? "read_message" : "classify";
       readers.push(kind);
       if (kind === "classify") return { choice: "Gestiones (p. ej.: Renovar el DNI)" };
-      const item = (actor: string, kind: string, title: string, due: string | null) => ({
-        quote: "…",
-        actor,
-        kind,
-        title,
-        due,
-      });
+      const item = (
+        actor: string,
+        kind: string,
+        title: string,
+        due: string | null,
+        quote = "…",
+      ) => ({ quote, actor, kind, title, due });
       return {
         items: [
-          item("recipient", "task", "Enviar el informe", "2026-10-23"),
+          item(
+            "recipient",
+            "task",
+            "Enviar el informe",
+            "2026-10-23",
+            "¿Me envías el informe el jueves?",
+          ),
           item("recipient", "task", "Reservar la sala", null),
           // What the sender will do and a general announcement are never proposed (the code decides).
           item("sender", "task", "Llevar el proyector", "2026-10-22"),
@@ -348,6 +354,9 @@ describe("tasks a mail asks for", () => {
     ]);
     expect(rows.flat().find((x) => x.arg === "values.date")?.value).toBe("2026-10-23");
     expect(rows.flat().filter((x) => x.arg === "values.date")).toHaveLength(1); // no "null" row
+    // Each keeps the reader's quote as its reason (shown by the inbox, never applied).
+    const whys = pending.map((p) => (p.args as { why?: { value: string } }).why?.value).sort();
+    expect(whys).toEqual(["¿Me envías el informe el jueves?", "…"]);
     // Nothing written by itself, in any collection; the diary (hidden) was never an option, and each option
     // carried a few of Juan's own titles of it.
     expect(store.list("t_docencia")).toHaveLength(0);

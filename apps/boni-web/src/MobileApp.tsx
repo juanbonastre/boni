@@ -20,6 +20,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { ChartCard, ChartCardContent, useChartData } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { FormView } from "./components/FormView.tsx";
+import { ProposalPage } from "./components/InboxCards.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { EditorPanel } from "./components/SidePanel.tsx";
 import * as B from "./core/chartBuilder.ts";
@@ -92,7 +93,7 @@ export function MobileApp() {
                 ? t("tab.capture")
                 : tab === "charts"
                   ? t("tab.charts")
-                  : view.kind === "inbox"
+                  : view.kind === "inbox" || view.kind === "proposal"
                     ? t("inbox.title")
                     : view.kind === "log"
                       ? t("log.title")
@@ -110,6 +111,10 @@ export function MobileApp() {
           ) : view.kind === "log" ? (
             <div className="m-scroll">
               <LogView />
+            </div>
+          ) : view.kind === "proposal" ? (
+            <div className="m-scroll">
+              <ProposalPage id={view.id} />
             </div>
           ) : (
             <ChatView compact />

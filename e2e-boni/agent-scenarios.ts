@@ -240,7 +240,10 @@ export const CARD_DETAILED = {
       from: "Coordinación de ejemplo",
       subject: "Actas pendientes",
       excerpt: "Hola, antes del jueves revisad las actas, por favor. Gracias.",
+      // The mail's own row (the fake server has books only: any row shows that it opens).
+      open: { type: "t_libro", id: "r1" },
     },
+    why: { text: "antes del jueves revisad las actas", verbatim: true },
     familiar: 0,
     complete: true,
     mode: "detailed",

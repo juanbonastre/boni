@@ -19,9 +19,22 @@ export interface InboxCard {
   start: string | null;
   end: string | null;
   source:
-    | { kind: "mail"; account: string | null; from: string; subject: string; excerpt: string }
+    | {
+        kind: "mail";
+        account: string | null;
+        from: string;
+        subject: string;
+        excerpt: string;
+        /** The mail's own row in Boni ("Ver correo" opens it: IMAP gives no link to a webmail). */
+        open: { type: string; id: string };
+      }
     | { kind: "note"; path: string }
     | null;
+  /**
+   * Why it was made: the reader's quote of the mail (`verbatim` when the code finds those very words in it; a
+   * model's words are never trusted to be a quote).
+   */
+  why: { text: string; verbatim: boolean } | null;
   /** Proposals like it (same collection and source) Juan accepted before. */
   familiar: number;
   /** It has what an entry of its kind needs (a title; a day for tasks and events). */
@@ -39,6 +52,22 @@ const EXCERPT = 1200;
 const rowsOf = (p: ProposalRow): Row[] =>
   ((p.view as { rows?: Row[] } | null)?.rows ?? []) as Row[];
 const textOf = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v));
+/** Text compared for a quote: lower case, one space, no quote marks or ellipses around. */
+const plain = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[«»"“”'‘’]/g, "")
+    .replace(/(\.\.\.|…)/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** The proposal's reason as the agent stored it (`args.why`, a labelled value): its text, at most 300. */
+function whyOf(p: ProposalRow): string | null {
+  const w = (p.args as { why?: { t?: string; value?: unknown } } | null)?.why;
+  return w?.t === "v" && typeof w.value === "string" && w.value.trim()
+    ? w.value.trim().slice(0, 300)
+    : null;
+}
 
 function addDays(day: string, n: number): string {
   const d = new Date(`${day}T12:00:00Z`);
@@ -132,6 +161,8 @@ export function inboxCard(
   let source: InboxCard["source"] = null;
   const mail = p.run ? mailOfRun(store, p.run) : null;
   const m = mail ? store.get(mail) : null;
+  const said = whyOf(p);
+  let why: InboxCard["why"] = null;
   if (m) {
     const v = m.entity.values;
     source = {
@@ -140,7 +171,12 @@ export function inboxCard(
       from: textOf(v.f_de_nombre) || textOf(v.f_de),
       subject: textOf(v.f_asunto).slice(0, 200),
       excerpt: (m.entity.body ?? "").replace(/\s+/g, " ").trim().slice(0, EXCERPT),
+      open: { type: m.entity.type, id: m.entity.id },
     };
+    if (said) {
+      const text = plain(`${textOf(v.f_asunto)} ${m.entity.body ?? ""}`);
+      why = { text: said, verbatim: plain(said).length > 0 && text.includes(plain(said)) };
+    }
   } else {
     const note = textOf(row("note")?.value);
     if (note) source = { kind: "note", path: note };
@@ -168,6 +204,7 @@ export function inboxCard(
     start: times[0] ?? null,
     end: times[1] ?? null,
     source,
+    why,
     familiar,
     complete,
     mode: complete && familiar >= 2 ? "compact" : "detailed",

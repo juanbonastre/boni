@@ -267,6 +267,7 @@ export function mailPlan(
     tool: "entities.create",
     each: { ref: `$r.${module}` },
     ...(when ? { when } : {}),
+    why: { ref: "$item.quote" },
     args: {
       type: { lit: t.key },
       values: {

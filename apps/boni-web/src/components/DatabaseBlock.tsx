@@ -25,8 +25,8 @@ import {
   loadDataTypes,
   loadRows,
   openFile,
+  openProposal,
   openRow,
-  toggleInbox,
   useStore,
 } from "../store.ts";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
@@ -614,7 +614,18 @@ function TableView({
               {ordered.map((f) => (
                 <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
                   <div className="ghost-cell">
-                    <span className="ghost-text">{ghostText(f, r.values[f.id], locale)}</span>
+                    {f.id === type.titleField ? (
+                      <button
+                        type="button"
+                        className="ghost-text ghost-open"
+                        title={t("inbox.open")}
+                        onClick={() => void openProposal(r.ghost as string)}
+                      >
+                        {ghostText(f, r.values[f.id], locale) || t("page.untitled")}
+                      </button>
+                    ) : (
+                      <span className="ghost-text">{ghostText(f, r.values[f.id], locale)}</span>
+                    )}
                     {f.id === type.titleField && (
                       <>
                         <span className="ghost-tag">{t("ghost.proposed")}</span>
@@ -1347,7 +1358,9 @@ function CalendarView({
                   style={{ ["--c" as string]: it.color }}
                   title={it.row.ghost ? t("ghost.proposed") : undefined}
                   onClick={() =>
-                    it.row.ghost ? toggleInbox(true) : void openRow(it.type.id, it.row.id)
+                    it.row.ghost
+                      ? void openProposal(it.row.ghost)
+                      : void openRow(it.type.id, it.row.id)
                   }
                 >
                   {it.time && <span className="db-cal-time">{it.time}</span>}

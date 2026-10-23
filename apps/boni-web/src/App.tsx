@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { CollectionsView, CollectionView } from "./components/Collections.tsx";
-import { InboxButton, InboxPanel } from "./components/InboxCards.tsx";
+import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
@@ -14,6 +14,7 @@ import { SidePanel } from "./components/SidePanel.tsx";
 import { host } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
+  closeProposal,
   configured,
   deletePage,
   dismissRejected,
@@ -138,7 +139,8 @@ function useShortcuts(mobile: boolean) {
         s.view.kind !== "page"
       ) {
         e.preventDefault();
-        if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
+        if (s.view.kind === "proposal") closeProposal();
+        else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
         else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
         else if (s.view.kind === "row" && s.view.from) openCollection(s.view.type);
         else if (s.view.kind === "collection") showCollections();
@@ -211,6 +213,16 @@ function TopBar() {
           </>
         ) : view.kind === "row" ? (
           <RowCrumbs />
+        ) : view.kind === "proposal" ? (
+          <span className="crumbs">
+            <span className="crumb-part">
+              <button type="button" className="crumb" onClick={closeProposal}>
+                {t("inbox.title")}
+              </button>
+              <span className="crumb-sep">/</span>
+            </span>
+            <span className="crumb current">{t("ghost.proposed")}</span>
+          </span>
         ) : view.kind === "collections" ? (
           t("nav.collections")
         ) : view.kind === "collection" ? (
@@ -436,6 +448,7 @@ function Content() {
   }
   if (view.kind === "page") return <PageView after={<QueueNotes />} />;
   if (view.kind === "row") return <RowView />;
+  if (view.kind === "proposal") return <ProposalPage key={view.id} id={view.id} />;
   if (view.kind === "collections") return <CollectionsView />;
   if (view.kind === "collection") return <CollectionView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;

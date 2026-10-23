@@ -21,8 +21,9 @@ export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
 export const REPLY_COMPONENTS = ["text", "number", "list", "table"] as const;
 
+/** A call's `why` is what its proposal shows as its reason (a reader's quote), never an argument of the tool. */
 export type Step = { id: string; when?: Expr; each?: { ref: string } } & (
-  | { op: "call"; tool: string; args: Record<string, Expr> }
+  | { op: "call"; tool: string; args: Record<string, Expr>; why?: Expr }
   | { op: "read"; reader: ReaderKind; input: Expr; params?: Record<string, Expr> }
   | { op: "ask"; control: (typeof ASK_CONTROLS)[number]; prompt: Expr; options?: Expr }
   | { op: "reply"; component: (typeof REPLY_COMPONENTS)[number]; data: Record<string, Expr> }
@@ -125,7 +126,8 @@ function bareLiterals(raw: unknown): unknown {
     steps: raw.steps.map((s) => {
       if (!isObj(s)) return s;
       const out: Record<string, unknown> = { ...s };
-      for (const k of ["when", "input", "prompt", "options"]) if (k in s) out[k] = expr(s[k]);
+      for (const k of ["when", "input", "prompt", "options", "why"])
+        if (k in s) out[k] = expr(s[k]);
       for (const k of ["args", "params", "data"]) if (k in s) out[k] = map(s[k]);
       return out;
     }),
@@ -229,7 +231,8 @@ export function validatePlan(
     const common = ["id", "op", "when", "each"];
     switch (s.op) {
       case "call": {
-        if (!onlyKeys(s, [...common, "tool", "args"])) errors.push(`${where}: unknown-key`);
+        if (!onlyKeys(s, [...common, "tool", "args", "why"])) errors.push(`${where}: unknown-key`);
+        if (s.why !== undefined) checkExpr(`${where}.why`, s.why, inEach);
         const spec = typeof s.tool === "string" ? catalog.args(s.tool) : null;
         if (!spec) errors.push(`${where}: unknown-tool`);
         else checkArgs(`${where}.args`, s.args ?? {}, spec.names, spec.required, inEach);
