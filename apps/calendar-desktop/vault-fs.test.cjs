@@ -45,6 +45,22 @@ test("scan lists only visible Markdown notes below a folder", () => {
   assert.ok(first.mtimeMs > 0 && first.size > 0);
 });
 
+test("scanAsync lists the same as scan, and refuses the same folders, without blocking", async () => {
+  const { vault } = makeVault();
+  const sync = vault.scan("agenda");
+  const async = await vault.scanAsync("agenda");
+  const key = (l) => l.map((n) => `${n.path}|${n.mtimeMs}|${n.size}`).sort();
+  assert.deepEqual(key(async), key(sync));
+  await assert.rejects(
+    vault.scanAsync("private"),
+    (e) => e instanceof VaultError && e.code === "denied",
+  );
+  await assert.rejects(
+    vault.scanAsync("nada"),
+    (e) => e instanceof VaultError && e.code === "not-found",
+  );
+});
+
 test("paths cannot leave the vault or reach reserved folders and dot folders", () => {
   const { vault } = makeVault();
   assert.equal(

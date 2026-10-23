@@ -89,6 +89,40 @@ function openVault(root, { trashItem } = {}) {
       return out;
     },
 
+    /**
+     * `scan` without blocking: the same list, read with the asynchronous calls (64 at a time), so a server
+     * keeps answering while a large folder on a slow disk is listed (Boni's mirror, every 30 s).
+     */
+    async scanAsync(dir) {
+      const base = resolve(dir, { markdown: false });
+      const st = await fs.promises.stat(base).catch(() => null);
+      if (!st?.isDirectory()) throw new VaultError("not-found", `No such folder: ${dir}`);
+      confined(base);
+      const files = [];
+      const walk = async (abs, rel) => {
+        for (const e of await fs.promises.readdir(abs, { withFileTypes: true })) {
+          if (e.name.startsWith(".")) continue;
+          const childAbs = path.join(abs, e.name);
+          const childRel = `${rel}/${e.name}`;
+          if (e.isDirectory()) await walk(childAbs, childRel);
+          else if (e.isFile() && e.name.toLowerCase().endsWith(".md"))
+            files.push([childAbs, childRel]);
+        }
+      };
+      await walk(base, dir.replace(/[\\/]+$/, ""));
+      const out = [];
+      for (let i = 0; i < files.length; i += 64) {
+        const batch = files.slice(i, i + 64);
+        const stats = await Promise.all(
+          batch.map(([abs]) => fs.promises.stat(abs).catch(() => null)),
+        );
+        stats.forEach((s, j) => {
+          if (s) out.push({ path: batch[j][1], mtimeMs: s.mtimeMs, size: s.size });
+        });
+      }
+      return out;
+    },
+
     read(rel) {
       const abs = resolve(rel);
       const st = statOf(abs);

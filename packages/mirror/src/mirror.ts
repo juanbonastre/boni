@@ -39,6 +39,8 @@ import type { MirroredType, MirrorState, Profile } from "./state.ts";
  */
 export interface MirrorFs {
   scan(dir: string): { path: string; mtimeMs: number; size: number }[];
+  /** The same without blocking (the server's vault); `scan` is used when it is missing. */
+  scanAsync?(dir: string): Promise<{ path: string; mtimeMs: number; size: number }[]>;
   read(path: string): { text: string; mtimeMs: number };
   write(path: string, text: string, expectedMtimeMs: number | null): { conflict: boolean };
   create(path: string, text: string): { exists: boolean };
@@ -256,6 +258,19 @@ export class Mirror {
     if (!dir) return out;
     try {
       for (const f of this.o.fs.scan(dir))
+        if (importable(f.path)) out.set(f.path, `${f.mtimeMs}:${f.size}`);
+    } catch {
+      // A folder that is not there yet has no notes.
+    }
+    return out;
+  }
+
+  /** `notesUnder` without blocking the process when the filesystem can (the periodic scan). */
+  private async notesUnderAsync(dir: string): Promise<Map<string, string>> {
+    if (!dir || !this.o.fs.scanAsync) return this.notesUnder(dir);
+    const out = new Map<string, string>();
+    try {
+      for (const f of await this.o.fs.scanAsync(dir))
         if (importable(f.path)) out.set(f.path, `${f.mtimeMs}:${f.size}`);
     } catch {
       // A folder that is not there yet has no notes.
@@ -683,12 +698,15 @@ export class Mirror {
     let knownMemo: Set<string> | null = null;
     const statePaths = new Set(this.state.refs().map((r) => r.path));
     const sync: SyncReport = { written: 0, created: 0, trashed: 0, held: [] };
+    let walked = 0;
     for (const m of this.state.types()) {
       const t = schema.types[m.type];
       if (!t) continue;
       const refs = this.state.refs(m.type);
-      const under = this.notesUnder(m.folder);
+      const under = await this.notesUnderAsync(m.folder);
       for (const ref of refs) {
+        // Let the server answer in between (a round on the NAS walks thousands of notes).
+        if (++walked % 500 === 0) await new Promise((r) => setImmediate(r));
         const stamp = under.get(ref.path);
         if (stamp && this.stamps.get(ref.path) === stamp) continue;
         const row = this.state.noteAt(ref.path);
