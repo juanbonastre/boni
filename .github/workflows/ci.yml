@@ -61,13 +61,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - id: pw
-        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - run: pnpm exec playwright install --with-deps chromium
+      # The runner's own Google Chrome (playwright configs: channel "chrome"); nothing to install.
+      - run: google-chrome --version
       - run: pnpm exec playwright test --shard=${{ matrix.shard }}/2
         env:
           CI: "1"
@@ -89,13 +84,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - id: pw
-        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - run: pnpm exec playwright install --with-deps chromium
+      # The runner's own Google Chrome (playwright configs: channel "chrome"); nothing to install.
+      - run: google-chrome --version
       - run: pnpm exec playwright test -c playwright.boni.config.ts
         env:
           CI: "1"
