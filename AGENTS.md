@@ -303,7 +303,11 @@ apps/boni-desktop/ Boni's desktop app (Electron, package `boni`, `.deb` via `mak
                  `&peek=1`: a small frameless window made ahead and hidden (`?peek=1`, `PeekPage`), shown on the
                  note and hidden by Esc, its close button or a click in Boni Calendar (which sends
                  `boni://peek?hide=1`; it stays while Juan works in other apps) (the page says `peek-ready` before it is sent one) (v1, agent, pages, data, mail: a new API the app uses must be added
-                 there). Tray, autostart, desktop widgets. **Every change to apps/boni-web ships in a new desktop
+                 there). Tray, autostart, desktop widgets. The daily copy on this computer (`backup.cjs`, Settings → Tus
+                 datos; off by default, `/SamsungSSD/Copias/Boni`, the last 7): the main process streams `GET api/export`
+                 to a hidden `.partial`, renamed only when the zip's end record is there; a missing folder is made only
+                 when the nearest existing one is not empty (an unmounted disk's mount point is) and with 2 GB free. E2E:
+                 set the folder before turning it on (turning it on copies at once). **Every change to apps/boni-web ships in a new desktop
                  version too** (Juan uses the desktop app, not the browser): bump its version, `make package-boni`,
                  and test it in the app itself with `make e2e-boni-desktop` (Playwright `_electron`, temporary profile,
                  the real server with an invented account and vault; opens a window, not in CI).

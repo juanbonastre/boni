@@ -24,6 +24,9 @@ const F = require("./files.cjs");
 const { linkIn, screenOfUrl } = require("./links.cjs");
 const { createLive } = require("./live.cjs");
 const S = require("./settings.cjs");
+const BK = require("./backup.cjs");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 const W = require("./widgets.cjs");
 const autostart = require("./autostart.cjs");
 
@@ -88,6 +91,7 @@ function clientSettings() {
     live: live.live,
     liveUnsupported,
     sessionEnded,
+    backupRunning,
   });
 }
 
@@ -445,6 +449,73 @@ function updateTray() {
   );
 }
 
+// ---------- the daily copy of everything on this computer (backup.cjs) ----------
+let backupRunning = false;
+/** A copy into the chosen folder when one is due today (or `now`, from "Hacer copia ahora"). */
+async function runBackup(now = false) {
+  if (backupRunning || !settings.serverUrl || !settings.token) return;
+  const at = Date.now();
+  const state = {
+    on: settings.backupOn,
+    last: settings.backupLast,
+    failedAt: settings.backupFailedAt,
+  };
+  if (!now && !BK.due(state, at)) return;
+  const dir = settings.backupDir;
+  const done = (fields) => {
+    settings = { ...settings, ...fields };
+    save();
+    broadcast({ type: "settings", settings: clientSettings() });
+  };
+  let ready;
+  try {
+    ready = BK.prepareDir(dir);
+  } catch {
+    ready = "no-folder";
+  }
+  if (ready) return done({ backupError: ready, backupFailedAt: at });
+  backupRunning = true;
+  broadcast({ type: "settings", settings: clientSettings() });
+  const name = BK.nameFor(at);
+  // Hidden while it downloads, never matched as a copy (toRemove): renamed only once complete.
+  const partial = path.join(dir, `.${name}.partial`);
+  try {
+    const r = await net.fetch(new URL("api/export", `${settings.serverUrl}/`).href, {
+      headers: { Authorization: `Bearer ${settings.token}`, "X-Boni-Client": "boni-desktop" },
+      signal: AbortSignal.timeout(60 * 60_000),
+    });
+    if (r.status === 401 || r.status === 403)
+      throw Object.assign(new Error("export"), { code: "forbidden" });
+    if (!r.ok || !r.body) throw Object.assign(new Error(`export ${r.status}`), { code: "error" });
+    await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(partial, { mode: 0o600 }));
+    // A whole zip ends with its directory's end record: a cut download does not.
+    const size = fs.statSync(partial).size;
+    const tail = Buffer.alloc(22);
+    const fd = fs.openSync(partial, "r");
+    try {
+      fs.readSync(fd, tail, 0, 22, Math.max(0, size - 22));
+    } finally {
+      fs.closeSync(fd);
+    }
+    if (size < 22 || tail.readUInt32LE(0) !== 0x06054b50)
+      throw Object.assign(new Error("export cut"), { code: "incomplete" });
+    fs.renameSync(partial, path.join(dir, name));
+    for (const old of BK.toRemove(fs.readdirSync(dir)))
+      fs.rmSync(path.join(dir, old), { force: true });
+    log(`backup: ${name} (${size} bytes)`);
+    backupRunning = false;
+    done({ backupLast: at, backupBytes: size, backupError: "", backupFailedAt: 0 });
+  } catch (e) {
+    fs.rmSync(partial, { force: true });
+    log(`backup: ${e.message}`);
+    backupRunning = false;
+    done({
+      backupError: e.code === "forbidden" || e.code === "incomplete" ? e.code : "offline",
+      backupFailedAt: at,
+    });
+  }
+}
+
 function setSettings(patch) {
   const before = settings;
   settings = S.applyPatch(settings, patch);
@@ -468,6 +539,7 @@ function setSettings(patch) {
     reconcileWidgets();
   }
   updateTray();
+  if (patch?.backupNow === true || (settings.backupOn && !before.backupOn)) void runBackup(true);
   broadcast({ type: "settings", settings: clientSettings() });
   return clientSettings();
 }
@@ -803,6 +875,9 @@ function start() {
     else if (!background || !settings.serverUrl || !settings.token || process.env.BONI_SCREENSHOT)
       openMain();
     setTimeout(tick, 3000);
+    // The daily copy: a minute after start, then every quarter of an hour it checks whether one is due.
+    setTimeout(() => void runBackup(), 60_000);
+    setInterval(() => void runBackup(), 15 * 60_000);
     setInterval(tick, 60_000);
   };
   if (settings.version < S.VERSION) {

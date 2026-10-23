@@ -291,7 +291,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 - This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
   Settings has "Lo que ve la IA" after the account (one row per collection with its count and a three-way segmented
   control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip
-  (where the host can save a file; a toast says how it went).
+  (where the host can save a file; a toast says how it went). In the desktop app, "Tus datos" is the **daily copy on
+  this computer** (Juan, 2026-10-23): the switch "Copia diaria en este equipo" with what it does and how many are kept,
+  then "Última copia" (date · size, "Haciendo la copia…", or why the last try failed, in `--bad`) with "Hacer copia
+  ahora", then the folder in a closed disclosure whose summary is the path.
 - **Charts look as Notion's** (studied in Juan's Notion, 2026-10-21): on a page a chart has no card around it (its
   title, period and total over it), a dotted grid, the value over each column or point ("Data labels"), a band behind
   the column under the pointer (no dimming of the rest), a 1.75 px line with a soft gradient under it, a thin donut
