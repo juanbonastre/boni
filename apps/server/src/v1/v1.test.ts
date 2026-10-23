@@ -1,15 +1,19 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { CORE_MARK } from "@boni/mirror";
+import { openUserStore } from "@boni/store";
+import { importVault } from "@boni/vault-import";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openDb } from "../db.ts";
 import { captureScreen, validateCapture } from "./capture.ts";
 import { CATALOG, DEFAULT_CHARTS, normalizeSpec } from "./contract.ts";
 import { money, parseDec, share } from "./decimal.ts";
-import { parseCategories, parseDebt, parseMovement } from "./finanzas.ts";
+import { Finanzas, parseCategories, parseDebt, parseMovement } from "./finanzas.ts";
 import { baseName, render, slug } from "./note.ts";
 import { V1Service } from "./service.ts";
 import { V1Store } from "./store.ts";
+import { StoreMoney } from "./storeMoney.ts";
 
 /**
  * The port against the ORIGINAL Python server: golden/v1.json is what legacy/boni/server answered for
@@ -111,6 +115,50 @@ describe("the Boni API v1 gives the Python server's answers", () => {
         expect(svc.options(caller, o.source, o.q, o.limit), `${o.source} ${o.q}`).toEqual(
           o.options,
         );
+    });
+
+    it("and the same from Boni itself once the vault is imported (no vault: Juan, 2026-10-23)", () => {
+      // A debt too, so both lists are compared.
+      write(
+        "registros/finanzas/deudas/2026-10-01-lucia-ferri-cena.md",
+        '---\ntype: debt\ndate: 2026-10-01\nmovement: "[[2026-10-01-cena]]"\namount: 12.5\ndirection: me-deben\nstatus: pendiente\n---\n',
+      );
+      const store = openUserStore(":memory:");
+      importVault(dir, store, { apply: true });
+      store.setSetting(`${CORE_MARK}t_movimiento`, "1");
+      const own = new StoreMoney(store);
+      const vault = new Finanzas(dir);
+      // Relations are sets in Boni: their order inside one movement does not count.
+      const sets = (l: ReturnType<typeof vault.movements>) =>
+        l.map((m) => ({
+          ...m,
+          people: [...(m.people ?? [])].sort(),
+          invited: [...(m.invited ?? [])].sort(),
+          related: [...(m.related ?? [])].sort(),
+        }));
+      expect(sets(own.movements())).toEqual(sets(vault.movements()));
+      expect(own.debts()).toEqual(vault.debts());
+      expect([...own.categories()].sort()).toEqual([...vault.categories()].sort());
+      expect(own.people()).toEqual(vault.people());
+      const fromBoni = new V1Service({
+        store: new V1Store(openDb(":memory:")),
+        tz: "Europe/Madrid",
+        writable: false,
+        now: () => Date.UTC(2026, 9, 19, 10, 0),
+        moneyOf: () => own,
+      });
+      const caller = { account: 1, device: "prueba", vault: "" };
+      // Boni keeps a list as a set: the categories (and their groups) come in alphabetical order, not in
+      // categorias.md's (a known, accepted difference); every other list is the Python server's, in its order.
+      const byValue = (l: { value: string }[]) =>
+        [...l].sort((a, b) => (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
+      for (const o of golden.options) {
+        const got = fromBoni.options(caller, o.source, o.q, o.limit) as { value: string }[];
+        if (o.source === "categories" || o.source === "groups")
+          expect(byValue(got), `${o.source} ${o.q}`).toEqual(byValue(o.options));
+        else expect(got, `${o.source} ${o.q}`).toEqual(o.options);
+      }
+      store.close();
     });
   });
 });

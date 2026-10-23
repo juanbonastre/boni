@@ -16,9 +16,11 @@ const EXTRACTS = "registros/finanzas/extractos";
 
 const baseName = (p: string) => (p.split("/").pop() ?? p).replace(/\.md$/i, "");
 
-export function storeBook(store: UserStore, o: { device?: string; run?: string } = {}): Book {
-  const device = o.device ?? "conciliacion";
-  const run = o.run ? { run: o.run } : {};
+/**
+ * Boni's entries of a type as the notes they were: properties by name (an option by its name, a relation as the
+ * `[[note]]` it points to), with `type` set as the note's. What the reconciliation and the charts read.
+ */
+export function storeNotes(store: UserStore): (typeId: string, type: string) => MoneyNote[] {
   const types = () => store.schema().types;
   const noteNames = new Map<string, string>();
   /** The note an entity is (its path's name), for relations. */
@@ -64,10 +66,27 @@ export function storeBook(store: UserStore, o: { device?: string; run?: string }
     const p = s.entity.values[PATH_FIELD];
     return { id: s.entity.id, path: typeof p === "string" ? p : s.entity.id, fm };
   };
-  const notes = (typeId: string, type: string) => {
+  return (typeId: string, type: string) => {
     const t = types()[typeId];
     return t ? store.list(typeId).map((s) => asNote(s, t, type)) : [];
   };
+}
+
+/** The paths every movement had or has (the trash too): a new one never takes one of them. */
+export function movementPaths(store: UserStore): Set<string> {
+  const paths = new Set<string>();
+  for (const s of store.list(MOVEMENTS, { includeDeleted: true })) {
+    const p = s.entity.values[PATH_FIELD];
+    if (typeof p === "string") paths.add(p);
+  }
+  return paths;
+}
+
+export function storeBook(store: UserStore, o: { device?: string; run?: string } = {}): Book {
+  const device = o.device ?? "conciliacion";
+  const run = o.run ? { run: o.run } : {};
+  const types = () => store.schema().types;
+  const notes = storeNotes(store);
   let paths: Set<string> | null = null;
   const from = (statement: string) => ({
     integrity: "imported" as const,
@@ -77,13 +96,7 @@ export function storeBook(store: UserStore, o: { device?: string; run?: string }
     movements: () => notes(MOVEMENTS, "movement"),
     debts: () => notes(DEBTS, "debt"),
     taken(path) {
-      if (!paths) {
-        paths = new Set();
-        for (const s of store.list(MOVEMENTS, { includeDeleted: true })) {
-          const p = s.entity.values[PATH_FIELD];
-          if (typeof p === "string") paths.add(p);
-        }
-      }
+      paths ??= movementPaths(store);
       return paths.has(path);
     },
     create(path, text, statement) {

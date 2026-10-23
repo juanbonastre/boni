@@ -205,7 +205,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  route is `tailnet` unless it is deliberately made public (`:name` segments for parameters).
                  `src/v1/`: the first Boni's API v1 (`/api/v1/*`, `/healthz`; tailnet only) so the Boni apps move
                  here unchanged: same paths, bodies and Spanish error messages. Charts through `@boni/views`, money
-                 notes read from the account's vault (`finanzas.ts`, via `vault-fs.cjs`), "Apuntar gasto" writes the
+                 read from Boni itself once the movements are in core mode (`v1/storeMoney.ts`, `MoneySource`:
+                 the same records as the notes gave; categories come in alphabetical order, a set) and otherwise
+                 from the account's vault notes (`finanzas.ts`, via `vault-fs.cjs`), "Apuntar gasto" writes the
                  movement note with `create` (never over another note; once per client id, queued if the vault is
                  unreachable). Charts, shortcuts, widgets, prefs and captures per account in system.db (`v1/store.ts`);
                  `cli.ts import-boni` brings them, and the accounts, from the old `boni.sqlite3`. `golden/v1.json` is

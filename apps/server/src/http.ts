@@ -46,6 +46,7 @@ import type { SecretKey } from "./secret.ts";
 import { serveV1 } from "./v1/http.ts";
 import { V1Service } from "./v1/service.ts";
 import { V1Store } from "./v1/store.ts";
+import { StoreMoney } from "./v1/storeMoney.ts";
 import type { Vaults } from "./vaults.ts";
 
 /**
@@ -242,6 +243,11 @@ export function makeApp(opts: ServerOptions): App {
       entityFromNote(store, "t_movimiento", path, text, device);
       opts.agent.onChanged?.(account);
       return true;
+    },
+    moneyOf: (account) => {
+      if (!opts.agent?.hasData) return null;
+      const store = opts.agent.store(account);
+      return store.setting(`${CORE_MARK}t_movimiento`) === null ? null : new StoreMoney(store);
     },
     ...(opts.now ? { now: opts.now } : {}),
   });
