@@ -871,10 +871,17 @@ export class Agent {
     st: RunState,
     step: Extract<Step, { op: "read" }>,
     control: Label | null,
-  ): Promise<Val> {
+  ): Promise<Val | typeof BLOCKED> {
+    // classify that asked Juan (below): his answer is the choice; no model is called again.
+    const answered = st.answers.get(step.id);
+    if (answered) return rec({ choice: answered }, deepLabel(answered));
     const input = this.evalExpr(st, step.input);
     const params: Record<string, Val> = {};
     for (const [k, e] of Object.entries(step.params ?? {})) params[k] = this.evalExpr(st, e);
+    // classify's `ask`: what to ask Juan when the decider is unsure (Juan, 2026-10-24). It is never a reader's
+    // input: taken out before anything reaches a model.
+    const askPrompt = step.reader === "classify" ? params.ask : undefined;
+    delete params.ask;
     const inLabel = control ? join(deepLabel(input), control) : deepLabel(input);
     // R3: what Juan keeps from the models (his choice per type) never reaches a reader, not even as a
     // parameter or through the step's control.
@@ -1027,10 +1034,33 @@ export class Agent {
     let checked: unknown;
     if (step.reader === "fill") checked = await this.fill(st, fields, flat, read);
     else {
-      const decided =
+      const verdict =
         step.reader === "classify" && this.o.decider
           ? await this.decideChoice(st, flat, options, params.question)
           : null;
+      if (verdict === "unsure" && askPrompt) {
+        // The decider answered but is not sure: Juan chooses (in the conversation, or in the panel of requests
+        // for background work); his answer comes back here as the choice.
+        const id = randomUUID();
+        const opts = params.options as Val;
+        const items = opts.t === "list" ? opts.items : [];
+        st.pending = {
+          kind: "ask",
+          id,
+          step: st.pc,
+          iter: st.iter,
+          view: {
+            kind: "ask",
+            id,
+            control: "choice",
+            prompt: paint(control ? taint(askPrompt, control) : askPrompt),
+            options: items.map((i) => paint(control ? taint(i, control) : i)),
+          },
+        };
+        this.log(st, step, "read", "ask", "ask", { reader: step.reader, reason: "decider-unsure" });
+        return BLOCKED;
+      }
+      const decided = verdict === "unsure" ? null : verdict;
       checked = decided
         ? { choice: decided }
         : mods.length
@@ -1080,7 +1110,7 @@ export class Agent {
     state: string,
     options: string[],
     question: Val | undefined,
-  ): Promise<string | null> {
+  ): Promise<string | "unsure" | null> {
     const instructions =
       typeof (question && plain(question)) === "string"
         ? (plain(question as Val) as string).slice(0, 500)
@@ -1092,8 +1122,11 @@ export class Agent {
     });
     const c = a?.c;
     const r = a?.r;
-    if (c?.type !== "choice" || r?.type !== "choice" || c.choice !== r.choice) return null;
-    return Math.min(c.confidence, r.confidence) >= 0.6 ? c.choice : null;
+    // No answer (the decider down or off): the reader chooses, as before. An answer that disagrees with
+    // itself, or one it is not confident of: "unsure" (Juan is asked when the plan says so).
+    if (c?.type !== "choice" || r?.type !== "choice") return null;
+    if (c.choice !== r.choice) return "unsure";
+    return Math.min(c.confidence, r.confidence) >= 0.6 ? c.choice : "unsure";
   }
 
   /**
@@ -1309,7 +1342,12 @@ export class Agent {
         error: (e as Stop).code,
       };
     }
-    const step = st.plan.steps[st.pc] as Extract<Step, { op: "ask" }>;
+    const at = st.plan.steps[st.pc] as Step;
+    // An `ask` step, or a classify that asked because its decider was unsure (a choice among its options).
+    const step =
+      at.op === "read"
+        ? { id: at.id, control: "choice" as const, options: at.params?.options }
+        : (at as Extract<Step, { op: "ask" }>);
     let v: Val;
     const background = st.origin.kind === "background";
     if ("text" in a) {
