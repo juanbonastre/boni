@@ -1,6 +1,7 @@
 import type { TypeDef } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
-import { calendarDefs } from "./calendarStore.ts";
+import { decisionHistory, wouldAccept } from "./autoAccept.ts";
+import { calendarDefs, taskDoneField } from "./calendarStore.ts";
 import { mailOfRun } from "./mailReview.ts";
 
 /**
@@ -41,6 +42,13 @@ export interface InboxCard {
   familiar: number;
   /** It has what an entry of its kind needs (a title; a day for tasks and events). */
   complete: boolean;
+  /** "Ya lo hice": its collection has a task column, so it can be made already done. */
+  canMarkDone: boolean;
+  /**
+   * Boni would have accepted it alone (Juan, 2026-10-23: measured first, turned on by him later): the rule of
+   * autoAccept.ts over his decisions on proposals like it.
+   */
+  wouldAccept: boolean;
   mode: "compact" | "detailed";
   /** The day before, the day and the day after, with what is in the calendar on each. */
   context: { day: string; items: { title: string; start: string | null; end: string | null }[] }[];
@@ -126,11 +134,18 @@ function calendarByDay(store: UserStore): Map<string, Item[]> {
 export interface InboxContext {
   calendar: () => Map<string, Item[]>;
   accepted: () => Map<string, number>;
+  /** Juan's decisions on proposals like each one, oldest first (autoAccept.ts). */
+  history: () => Map<string, boolean[]>;
 }
 export function inboxContext(store: UserStore): InboxContext {
   let calendar: Map<string, Item[]> | null = null;
   let accepted: Map<string, number> | null = null;
+  let history: Map<string, boolean[]> | null = null;
   return {
+    history: () => {
+      if (!history) history = decisionHistory(store);
+      return history;
+    },
     calendar: () => {
       if (!calendar) calendar = calendarByDay(store);
       return calendar;
@@ -151,7 +166,7 @@ export function inboxContext(store: UserStore): InboxContext {
 /** The proposal's source as a key ("mail:<sender>", "vault:<path>"): what "like it" compares. */
 const sourceKey = (p: ProposalRow) => (p.sources[0] ?? "").replace(/@[0-9a-f]{12}$/, "");
 /** Proposals "like" each other: the same tool, source and collection. */
-const likeKey = (p: ProposalRow) => {
+export const likeKey = (p: ProposalRow) => {
   const src = sourceKey(p);
   return src
     ? `${p.tool}\u0000${src}\u0000${textOf(rowsOf(p).find((r) => r.arg === "type")?.value)}`
@@ -237,6 +252,12 @@ export function inboxCard(
     why,
     familiar,
     complete,
+    canMarkDone: action === "create" && !!def && !!taskDoneField(store, def.id),
+    wouldAccept:
+      action === "create" &&
+      complete &&
+      source?.kind === "mail" &&
+      wouldAccept(key ? (ctx.history().get(key) ?? []) : []),
     mode: complete && familiar >= 2 ? "compact" : "detailed",
     context: day
       ? [addDays(day, -1), day, addDays(day, 1)].map((d) => ({

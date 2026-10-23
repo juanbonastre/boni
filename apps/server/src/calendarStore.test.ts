@@ -1,11 +1,14 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { leaf, rec } from "@boni/agent";
 import type { Row } from "@boni/calendar";
+import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { importVault } from "@boni/vault-import";
 import { afterEach, describe, expect, it } from "vitest";
-import { calendarDefs, StoreCalendar, saveCalendarDefs } from "./calendarStore.ts";
+import { calendarDefs, StoreCalendar, saveCalendarDefs, taskDoneField } from "./calendarStore.ts";
+import { acceptEdits } from "./proposalEdits.ts";
 
 /** An invented vault (never real notes): one calendar and its definition, as `_system/colecciones/` has it. */
 const RAW = {
@@ -289,6 +292,43 @@ describe("the calendar over Boni's collections", () => {
     expect((await cal.snapshot()).rows.some((x) => x.id === "ghost:p1")).toBe(false);
     expect(cal.changes(v1).removes).toEqual(["ghost:p1"]);
     expect(v2).toBeGreaterThan(v1);
+  });
+
+  it("«Ya lo hice»: the task is made already done, in its calendar's task column", async () => {
+    const { store } = env();
+    expect(taskDoneField(store, "t_docencia")?.name).toBe("Hecha");
+    const l = label("external", "personal", [{ kind: "mail", id: "x" }]);
+    store.journal.startRun({
+      id: "r1",
+      turn: null,
+      origin: "background",
+      device: null,
+      started: 1,
+    });
+    store.journal.addProposal({
+      id: "p1",
+      run: "r1",
+      tool: "entities.create",
+      args: {
+        values: {
+          type: leaf("docencia", l),
+          values: rec(
+            { title: leaf("Revisar actas inventadas", l), date: leaf("2026-10-29", l) },
+            l,
+          ),
+        },
+        origins: [],
+      },
+      view: { tool: "entities.create", title: "Crear", rows: [] },
+      sources: ["mail:ejemplo@example.edu"],
+      created: 2,
+    });
+    const p = store.journal.proposal("p1") as NonNullable<
+      ReturnType<typeof store.journal.proposal>
+    >;
+    const done = taskDoneField(store, "t_docencia")?.key as string;
+    expect(acceptEdits(store, p, { done: true })).toEqual({ values: { [done]: true } });
+    expect(acceptEdits(store, p, { done: "sí" })).toEqual({});
   });
 
   it("keeps reminders in the definition, in Boni", async () => {

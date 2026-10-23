@@ -91,6 +91,10 @@ export interface InboxCard {
   why: { text: string; verbatim: boolean } | null;
   familiar: number;
   complete: boolean;
+  /** "Ya lo hice" can make it already done (its collection has a task column). */
+  canMarkDone: boolean;
+  /** Boni would have accepted it alone (measured only, Juan 2026-10-23). */
+  wouldAccept: boolean;
   mode: "compact" | "detailed";
   context: { day: string; items: { title: string; start: string | null; end: string | null }[] }[];
 }
@@ -135,6 +139,8 @@ function parseCard(v: unknown): InboxCard | null {
         : null,
     familiar: typeof v.familiar === "number" ? v.familiar : 0,
     complete: v.complete === true,
+    canMarkDone: v.canMarkDone === true,
+    wouldAccept: v.wouldAccept === true,
     mode: v.mode === "compact" ? "compact" : "detailed",
     context: Array.isArray(v.context)
       ? v.context.filter(isObj).flatMap((d) => {
@@ -218,6 +224,12 @@ export type RunWhat =
   | { kind: "note"; path: string; action: "update" | "create" | "delete" }
   | { kind: "accepted" }
   | { kind: "other" };
+/** How often Boni would have accepted alone over Juan's last decisions, and been right (the server's rule). */
+export interface AutoAccept {
+  decided: number;
+  would: number;
+  right: number;
+}
 export interface RunChange {
   action: "create" | "update" | "delete" | "restore";
   title: string;
@@ -825,7 +837,7 @@ export class AgentApi {
     });
   }
   /** `edits`: Juan's corrections (a new title, another collection by id), kept for the reviewer. */
-  accept = async (id: string, edits?: { title?: string; collection?: string }) =>
+  accept = async (id: string, edits?: { title?: string; collection?: string; done?: true }) =>
     parseTurn(
       await this.call(
         "POST",
@@ -835,9 +847,16 @@ export class AgentApi {
     );
   reject = async (id: string) =>
     void (await this.call("POST", `proposals/${encodeURIComponent(id)}/reject`));
-  async runs(): Promise<RunSummary[]> {
+  async runs(): Promise<{ runs: RunSummary[]; autoAccept: AutoAccept | null }> {
     const b = await this.call("GET", "runs");
     const list = isObj(b) && Array.isArray(b.runs) ? b.runs : [];
+    const a = isObj(b) && isObj(b.autoAccept) ? b.autoAccept : null;
+    const autoAccept = a
+      ? { decided: count(a.decided), would: count(a.would), right: count(a.right) }
+      : null;
+    return { runs: this.runList(list), autoAccept };
+  }
+  private runList(list: unknown[]): RunSummary[] {
     return list.filter(isObj).flatMap((r) => {
       const id = str(r.id, 80);
       if (!id) return [];

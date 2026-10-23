@@ -9,6 +9,7 @@ import {
   type ToolRegistry,
 } from "@boni/agent";
 import { openUserStore, type UserStore } from "@boni/store";
+import { measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
@@ -30,7 +31,8 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection? } } Juan's corrections, kept
  *   POST /api/agent/proposals/:id/reject
  *   GET  /api/agent/runs                     -> { runs } the latest, for the log, each with what it was and
- *                                               what came of it (runInfo.ts)
+ *                                               what came of it (runInfo.ts), and `autoAccept`: how often
+ *                                               Boni would have accepted alone, and been right (autoAccept.ts)
  *   GET  /api/agent/runs/:id                 -> RunDetail: the request and each step (a personal device only)
  *   POST /api/agent/runs/:id/undo            -> { undone } every operation of that run
  *   GET  /api/agent/events                   -> Server-Sent Events: "notify" ({ text }) and "proposals"
@@ -229,7 +231,7 @@ async function answerAgent(
     case "POST /api/agent/proposals/:id/accept": {
       // Juan's corrections first (a new title, another collection), as the agent's edits.
       const b = ((await bodyOf(req)) ?? {}) as {
-        edits?: { title?: unknown; collection?: unknown };
+        edits?: { title?: unknown; collection?: unknown; done?: unknown };
       };
       const p = host.store(who.account).journal.proposal(params.id ?? "");
       const edits = b.edits && p ? acceptEdits(host.store(who.account), p, b.edits) : {};
@@ -243,7 +245,14 @@ async function answerAgent(
       const store = host.store(who.account);
       const proposals = proposalsByRun(store);
       const mailAccount = host.mailAccountOf?.(who.account) ?? null;
+      let autoAccept: ReturnType<typeof measure> | null = null;
+      try {
+        autoAccept = measure(store);
+      } catch {
+        // the Registro shows without it
+      }
       return send(res, 200, {
+        ...(autoAccept ? { autoAccept } : {}),
         runs: store.journal.runs(50).map((r) => {
           let info: RunInfo | null = null;
           try {

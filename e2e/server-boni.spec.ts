@@ -274,6 +274,35 @@ test("a proposal waiting in Boni's inbox shows dashed in the calendar, read only
   expect(p).toBeTruthy();
   await fetch(`${url}/api/agent/proposals/${p?.id}/reject`, { method: "POST", headers: h });
   await expect(ghost).toHaveCount(0, { timeout: 5000 });
+  // «Ya lo hice» on another one: it is made already done (the calendar's task column), struck through here.
+  write(
+    "agenda/docencia/2025-09-19 Entrega hecha.md",
+    note("Entrega hecha", "2025-09-19", "12:00"),
+  );
+  let id = "";
+  await expect
+    .poll(
+      async () => {
+        const r = (await (await fetch(`${url}/api/agent/proposals`, { headers: h })).json()) as {
+          proposals: { id: string; card?: { canMarkDone?: boolean } }[];
+        };
+        const q = r.proposals.find((x) => JSON.stringify(x).includes("Entrega hecha"));
+        id = q?.card?.canMarkDone ? q.id : "";
+        return id;
+      },
+      { timeout: 45_000 },
+    )
+    .not.toBe("");
+  const accepted = await fetch(`${url}/api/agent/proposals/${id}/accept`, {
+    method: "POST",
+    headers: h,
+    body: JSON.stringify({ edits: { done: true } }),
+  });
+  expect(((await accepted.json()) as { error: unknown }).error).toBeNull();
+  await expect(page.locator(".ev.done", { hasText: "Entrega hecha" })).toHaveCount(1, {
+    timeout: 5000,
+  });
+  await expect(page.locator(".ev.proposal", { hasText: "Entrega hecha" })).toHaveCount(0);
 });
 
 test('"Apuntar gasto" with the movements in Boni: the movement goes into Boni, the mirror writes its note', async () => {
