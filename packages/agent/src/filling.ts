@@ -190,10 +190,14 @@ export function fillQuestions(fields: readonly FillField[]): Record<string, Deci
     q[`f${i}`] = { type: "choice", instructions, criteria: criteria(names) };
     q[`f${i}r`] = { type: "choice", instructions, criteria: criteria([...names].reverse()) };
   });
+  // Measured on invented mail (eval/fill.ts, 2026-10-23): asking what the title, the day, the time and the fields
+  // do not already say (and naming deadlines and consequences) said right 20/24 with no needed note missed, against
+  // 11/24 for "details useful to do it (place, materials, steps, people)", which asked for a note when the place was
+  // the only detail (a field already) and not for "before 14:00".
+  const names = fields.map((f) => `«${f.name}»`).join(", ");
   q.note = {
     type: "noul",
-    instructions:
-      "¿Da el correo detalles útiles para hacer o preparar el elemento que aparece al final tras «Elemento:» que no están ya en su título (lugar, materiales, pasos, personas)?",
+    instructions: `Aparte del título, la fecha, la hora${names ? ` y ${names}` : ""}, ¿contiene el correo información concreta que haga falta para hacer el elemento que aparece al final tras «Elemento:» (plazos u horas límite, requisitos, materiales, pasos o consecuencias)?`,
   };
   return q;
 }
