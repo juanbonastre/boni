@@ -61,6 +61,30 @@ test("scanAsync lists the same as scan, and refuses the same folders, without bl
   );
 });
 
+test("files lists one folder's files by extension; readBytes reads any kind, confined like notes", () => {
+  const { vault, root } = makeVault();
+  fs.mkdirSync(path.join(root, "registros/extractos"), { recursive: true });
+  fs.writeFileSync(path.join(root, "registros/extractos/b.csv"), "a,b\n");
+  fs.writeFileSync(path.join(root, "registros/extractos/a.XLS"), Buffer.from([0xd0, 0xcf]));
+  fs.writeFileSync(path.join(root, "registros/extractos/.oculto.csv"), "x");
+  fs.writeFileSync(path.join(root, "registros/extractos/nota.md"), "x");
+  assert.deepEqual(vault.files("registros/extractos", [".csv", ".xls"]), ["a.XLS", "b.csv"]);
+  assert.deepEqual(vault.files("no/existe", [".csv"]), []);
+  assert.deepEqual([...vault.readBytes("registros/extractos/a.XLS")], [0xd0, 0xcf]);
+  assert.equal(
+    code(() => vault.readBytes("private/x.csv")),
+    "denied",
+  );
+  assert.equal(
+    code(() => vault.readBytes("../x.csv")),
+    "bad-path",
+  );
+  assert.equal(
+    code(() => vault.readBytes("registros/extractos/b.csv", 2)),
+    "too-large",
+  );
+});
+
 test("paths cannot leave the vault or reach reserved folders and dot folders", () => {
   const { vault } = makeVault();
   assert.equal(

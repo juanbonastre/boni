@@ -1,8 +1,15 @@
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { readStore } from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
-import { BODY, type StoredEntity, type UserStore, type Writes } from "@boni/store";
+import { BODY, closedToAi, type StoredEntity, type UserStore, type Writes } from "@boni/store";
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
+import { type MoneyVault, reconcileClose, reconcileImport } from "./money/service.ts";
+
+const require = createRequire(import.meta.url);
+const { openVault } = require("../../calendar-desktop/vault-fs.cjs") as {
+  openVault: (root: string) => MoneyVault;
+};
 
 /**
  * Boni's MCP server (Juan, 2026-10-22: everything done through vault-mcp moves to Boni). The assistants that
@@ -27,6 +34,8 @@ interface Ctx {
   store: UserStore;
   device: string;
   now: () => number;
+  /** The account's vault folder (the bank statements, rules and categories are read there). */
+  vault?: string | null;
 }
 type Args = Record<string, unknown>;
 class ToolFail extends Error {}
@@ -190,6 +199,18 @@ function writer(c: Ctx) {
 }
 
 // ------------------------------------------------------------------ the tools
+
+/** The account's vault, read-only here (statements, rules, categories). */
+function moneyVault(c: Ctx): MoneyVault {
+  // What Juan keeps from the models: a closed or opaque Movimientos or Deudas is not read here either.
+  const levels = c.store.aiAccess();
+  for (const t of ["t_movimiento", "t_deuda"])
+    if (closedToAi(levels[t]) || levels[t] === "opaque")
+      throw new ToolFail("Movimientos or Deudas are kept from the models (Lo que ve la IA)");
+  if (!c.vault)
+    throw new ToolFail("this account has no vault folder (the bank statements live there)");
+  return openVault(c.vault);
+}
 
 interface Tool {
   name: string;
@@ -472,6 +493,54 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "finanzas_import",
+    description:
+      "Monthly reconciliation, step 2 (procedure: the note registros/finanzas/procedimiento-conciliacion.md): reads the bank statements in registros/finanzas/extractos/ (Revolut, ING), joins each new line with the movement Juan noted in the app or creates a pending movement, and applies reglas.csv. Dry run unless dry_run is false; `output` is the report for Juan. Unclear lines are listed, never imported.",
+    inputSchema: obj({ dry_run: { type: "boolean", default: true }, reason: { type: "string" } }),
+    call(c, a) {
+      const apply = a.dry_run === false;
+      const run = apply ? `mcp-${randomUUID()}` : undefined;
+      const r = reconcileImport(c.store, moneyVault(c), {
+        apply,
+        today: new Date(c.now()).toISOString().slice(0, 10),
+        ...(run ? { run } : {}),
+      });
+      return {
+        output: r.report.join("\n"),
+        created: r.created.length,
+        joined: r.joined.length,
+        unclear: r.unclear,
+        ...(run ? { run } : {}),
+      };
+    },
+  },
+  {
+    name: "finanzas_close",
+    description:
+      "Monthly reconciliation, step 5: checks a month's pending movements (category, bank line, shared expenses and their debts, refunds), marks the complete ones conciliado and says what each of the rest needs, which bank texts have no rule and who owes what. Dry run unless dry_run is false.",
+    inputSchema: obj(
+      {
+        month: { type: "string", description: "YYYY-MM" },
+        dry_run: { type: "boolean", default: true },
+        reason: { type: "string" },
+      },
+      ["month"],
+    ),
+    call(c, a) {
+      const month = str(a.month, "month", 7);
+      if (!/^\d{4}-\d{2}$/.test(month)) throw new ToolFail("month: YYYY-MM");
+      const apply = a.dry_run === false;
+      const run = apply ? `mcp-${randomUUID()}` : undefined;
+      const r = reconcileClose(c.store, moneyVault(c), { month, apply, ...(run ? { run } : {}) });
+      return {
+        output: r.report.join("\n"),
+        ready: r.ready.length,
+        blocked: r.blocked.length,
+        ...(run ? { run } : {}),
+      };
+    },
+  },
+  {
     name: "undo",
     description: "Takes back a whole write of this server (its run, as each write returned it).",
     inputSchema: obj({ run: { type: "string" } }, ["run"]),
@@ -545,8 +614,9 @@ export function mcpAnswer(
   device: string,
   body: unknown,
   now: () => number = Date.now,
+  vault: string | null = null,
 ): unknown | null {
-  const c: Ctx = { store, device, now };
+  const c: Ctx = { store, device, now, vault };
   if (Array.isArray(body)) {
     const out = body.map((m) => answer(c, m as Rpc)).filter((x) => x !== null);
     return out.length ? out : null;

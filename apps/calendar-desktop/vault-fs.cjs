@@ -123,6 +123,34 @@ function openVault(root, { trashItem } = {}) {
       return out;
     },
 
+    /** The names of the files directly in `dir` with one of `exts` (".csv"...), sorted; none if it is missing. */
+    files(dir, exts) {
+      const base = resolve(dir, { markdown: false });
+      const st = statOf(base);
+      if (!st?.isDirectory()) return [];
+      confined(base);
+      return fs
+        .readdirSync(base, { withFileTypes: true })
+        .filter(
+          (e) =>
+            e.isFile() &&
+            !e.name.startsWith(".") &&
+            exts.some((x) => e.name.toLowerCase().endsWith(x)),
+        )
+        .map((e) => e.name)
+        .sort();
+    },
+
+    /** A file's bytes, any kind (a bank statement), at most `max`; same confinement as notes. */
+    readBytes(rel, max = 20 * 1024 * 1024) {
+      const abs = resolve(rel, { markdown: false });
+      const st = statOf(abs);
+      if (!st?.isFile()) throw new VaultError("not-found", `No such file: ${rel}`);
+      confined(abs);
+      if (st.size > max) throw new VaultError("too-large", `Too large: ${rel}`);
+      return fs.readFileSync(abs);
+    },
+
     read(rel) {
       const abs = resolve(rel);
       const st = statOf(abs);
