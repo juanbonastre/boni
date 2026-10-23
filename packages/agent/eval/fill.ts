@@ -7,9 +7,12 @@
  * What counts most is a wrong value (a field set to an option the mail does not say): the proposal then looks
  * right and is not. A missing value (null where the mail says it) only leaves work to Juan.
  *
+ * It also prints Jev's confidences (choice / reversed, or the probability of a checkbox) and replays the same
+ * answers under other thresholds, so one run says what lowering them would gain and cost.
+ *
  *   OPENROUTER_API_KEY=... node packages/agent/eval/fill.ts [runs] [reader model]
  */
-import { checkAnswers, JevProvider } from "../src/decider.ts";
+import { checkAnswers, type DecisionAnswers, JevProvider } from "../src/decider.ts";
 import {
   checkFill,
   cleanNote,
@@ -21,6 +24,7 @@ import {
   fromAnswers,
   NOTE_PROMPT,
   NOTE_SCHEMA,
+  optionNames,
 } from "../src/filling.ts";
 import { OpenAIProvider } from "../src/openai.ts";
 import { delimit } from "../src/readers.ts";
@@ -176,6 +180,50 @@ const CASES: Case[] = [
     want: { proyecto: null, tipo: "o_tutoria", lugar: null, urgente: null },
     note: false,
   },
+  {
+    mail: m(
+      "ana@example.com",
+      "Recuperación de IPM",
+      "Juan, hoy no hay clase de IPM; la recuperamos el jueves a las 9 en el aula 1.03.",
+    ),
+    item: "Clase de recuperación de IPM",
+    quote: "la recuperamos el jueves a las 9 en el aula 1.03",
+    want: { proyecto: "p_ipm", tipo: "o_clase", lugar: "l_aula", urgente: null },
+    note: false,
+  },
+  {
+    mail: m(
+      "erasmus@alu.example.com",
+      "Acuerdo de aprendizaje",
+      "Buenos días, ¿me podría firmar el acuerdo de aprendizaje cuanto antes? Me cierra el plazo este viernes y sin su firma no puedo matricularme.",
+    ),
+    item: "Firmar el acuerdo de aprendizaje del alumno Erasmus",
+    quote: "¿me podría firmar el acuerdo de aprendizaje cuanto antes?",
+    want: { proyecto: null, tipo: "o_tramite", lugar: null, urgente: true },
+    note: true,
+  },
+  {
+    mail: m(
+      "cotutor@example.edu",
+      "Seguimiento TFG Lucía",
+      "Te propongo una reunión de seguimiento del TFG de Lucía el lunes a las 11, en tu despacho si te viene bien.",
+    ),
+    item: "Reunión de seguimiento del TFG de Lucía",
+    quote: "Te propongo una reunión de seguimiento del TFG de Lucía el lunes a las 11",
+    want: { proyecto: "p_tfg", tipo: "o_reunion", lugar: "l_despacho", urgente: null },
+    note: false,
+  },
+  {
+    mail: m(
+      "info@congreso.example.org",
+      "Inscripción",
+      "Recuerda inscribirte en el Congreso de ejemplo 2027 antes del 1 de diciembre para mantener la tarifa reducida.",
+    ),
+    item: "Inscribirse en el Congreso de ejemplo 2027",
+    quote: "Recuerda inscribirte en el Congreso de ejemplo 2027 antes del 1 de diciembre",
+    want: { proyecto: "p_cong", tipo: "o_tramite", lugar: null, urgente: null },
+    note: false,
+  },
 ];
 
 const jevP = new JevProvider({ apiKey: key, via: "openrouter" });
@@ -218,7 +266,7 @@ async function withJev(c: Case) {
     tokens += n.usage.input + n.usage.output;
     note = cleanNote((n.json as { note?: unknown } | null)?.note);
   }
-  return { values, wantsNote, note, jevTokens: r.usage.input, tokens };
+  return { values, wantsNote, note, answers, jevTokens: r.usage.input, tokens };
 }
 /** As the agent does without one: the reader fills everything in one call. */
 async function readerOnly(c: Case) {
@@ -236,6 +284,17 @@ async function readerOnly(c: Case) {
     tokens: r.usage.input + r.usage.output,
   };
 }
+
+/** Jev's own answer for field `i`, shown after its value: (choice conf / reversed conf) or (p). */
+function conf(a: DecisionAnswers, i: number): string {
+  const x = a[`f${i}`];
+  const y = a[`f${i}r`];
+  if (x?.type === "noul") return `(${x.noul.toFixed(2)})`;
+  if (x?.type !== "choice" || y?.type !== "choice") return "";
+  const same = x.choice === y.choice ? "" : "≠";
+  return `(${x.confidence.toFixed(2)}${same}/${y.confidence.toFixed(2)})`;
+}
+const kept: { c: Case; answers: DecisionAnswers }[] = [];
 
 type Tally = { right: number; wrong: number; missed: number; extra: number };
 const blank = (): Tally => ({ right: 0, wrong: 0, missed: 0, extra: 0 });
@@ -268,9 +327,10 @@ for (let run = 0; run < runs; run++)
         score(jevT, want, j.values[f.key] ?? null);
         score(rdT, want, r.values?.[f.key] ?? null);
         line.push(
-          `${f.key}=${want ?? "-"} jev:${j.values[f.key] ?? "-"} rd:${r.values?.[f.key] ?? "-"}`,
+          `${f.key}=${want ?? "-"} jev:${j.values[f.key] ?? "-"}${conf(j.answers, FIELDS.indexOf(f))} rd:${r.values?.[f.key] ?? "-"}`,
         );
       }
+      kept.push({ c, answers: j.answers });
       noteCases += c.note ? 1 : 0;
       if (j.wantsNote === c.note) jevNotes++;
       if ((r.note !== null) === c.note) rdNotes++;
@@ -298,3 +358,52 @@ console.log(
 console.log(
   `Tokens: Jev ${jevTokens} in (output free) + reader for notes ${jevReaderTokens}; reader alone ${rdTokens}`,
 );
+
+// ------------------------------------------------------------ the same answers under other thresholds
+/** Jev's answers turned into values by a rule: both orders agreeing (or only the first), and thresholds. */
+function valuesBy(a: DecisionAnswers, rule: { choice: number; check: number; agree: boolean }) {
+  const out: Record<string, string | boolean | null> = {};
+  FIELDS.forEach((f, i) => {
+    out[f.key] = null;
+    const x = a[`f${i}`];
+    if (f.kind === "check") {
+      if (x?.type === "noul" && x.noul >= rule.check) out[f.key] = true;
+      return;
+    }
+    const y = a[`f${i}r`];
+    if (x?.type !== "choice") return;
+    const n = optionNames(f).indexOf(x.choice);
+    if (n < 0) return; // "none"
+    if (rule.agree) {
+      if (y?.type !== "choice" || y.choice !== x.choice) return;
+      if (Math.min(x.confidence, y.confidence) < rule.choice) return;
+    } else if (x.confidence < rule.choice) return;
+    out[f.key] = (f.options[n] as FillField["options"][number]).value;
+  });
+  return out;
+}
+const rules: { name: string; choice: number; check: number; agree: boolean }[] = [
+  { name: "both orders, >= 0.6, check >= 0.75 (now)", choice: 0.6, check: 0.75, agree: true },
+  { name: "both orders, >= 0.5", choice: 0.5, check: 0.75, agree: true },
+  { name: "both orders, >= 0.4", choice: 0.4, check: 0.75, agree: true },
+  { name: "both orders, any confidence", choice: 0, check: 0.75, agree: true },
+  { name: "both orders, >= 0.6, check >= 0.5", choice: 0.6, check: 0.5, agree: true },
+  { name: "first order only, >= 0.6", choice: 0.6, check: 0.75, agree: false },
+  { name: "first order only, >= 0.8", choice: 0.8, check: 0.75, agree: false },
+];
+console.log("\nThe same Jev answers under other rules:");
+for (const r of rules) {
+  const t = blank();
+  for (const k of kept) {
+    const v = valuesBy(k.answers, r);
+    for (const f of FIELDS) score(t, k.c.want[f.key] ?? null, v[f.key] ?? null);
+  }
+  console.log(`  ${r.name.padEnd(42)} ${fmt(t)}`);
+}
+for (const th of [0.3, 0.5, 0.7]) {
+  const said = kept.filter((k) => {
+    const x = k.answers.note;
+    return (x?.type === "noul" && x.noul >= th) === k.c.note;
+  }).length;
+  console.log(`  note worth writing at >= ${th}: said right ${said}/${kept.length}`);
+}
