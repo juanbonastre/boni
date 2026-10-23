@@ -316,6 +316,26 @@ describe("hand edits of the mirror become proposals", () => {
     expect(e.read(path)).toContain('startTime: "12:00"\ncompleted: true\n');
   });
 
+  it("a newer hand edit of the same note replaces the one still waiting, which holds less", async () => {
+    const e = env();
+    e.mirror.switchToCore(CAL, { apply: true });
+    const path = "agenda/docencia/2026-10-19 Clase de ejemplo.md";
+    e.write(path, e.read(path).replace('startTime: "10:00"', 'startTime: "12:00"'));
+    expect(await e.mirror.scan()).toMatchObject({ proposed: 1 });
+    const [first] = pending(e);
+    e.write(path, `${e.read(path)}Apuntes de ejemplo.\n`);
+    expect(await e.mirror.scan()).toMatchObject({ proposed: 1 });
+    // One waits, with both changes; the first is out of the inbox (never accepted over the newer).
+    expect(pending(e)).toHaveLength(1);
+    expect(e.store.journal.proposal(first?.id as string)?.status).toBe("stale");
+    const values =
+      (pending(e)[0]?.view as { rows: { arg: string; value: unknown }[] } | undefined)?.rows
+        .filter((r) => r.arg.startsWith("values."))
+        .map((r) => String(r.value)) ?? [];
+    expect(values).toContain("12:00");
+    expect(values.some((v) => v.includes("Apuntes de ejemplo."))).toBe(true);
+  });
+
   it("rejected, the core's version comes back", async () => {
     const e = env();
     e.mirror.switchToCore(CAL, { apply: true });

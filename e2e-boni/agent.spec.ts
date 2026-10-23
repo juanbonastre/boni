@@ -164,7 +164,7 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
   await expect(page.locator(".proposal").first()).toContainText("Viene de fuera · un correo");
   await page.screenshot({ path: `${SHOTS}/agent-inbox.png` });
   await page.locator(".proposal").first().getByRole("button", { name: "Aceptar" }).click();
-  await expect(page.locator(".toast")).toContainText("Propuesta aceptada");
+  // The card leaving is the sign (no toast for each one: Juan decides many in a row).
   await expect(page.locator(".proposal")).toHaveCount(1);
   await page.locator(".proposal").first().getByRole("button", { name: "Rechazar" }).click();
   await expect(page.locator(".proposal")).toHaveCount(0);
@@ -331,6 +331,39 @@ test("a card can be corrected before accepting: its title and its collection go 
   expect(sent).toContain(
     JSON.stringify({ edits: { title: "Revisar las actas de FUP 1", collection: "t_libro" } }),
   );
+});
+
+test("accepting shows a spinner on that card, the next one can be decided meanwhile, and a stale one says so", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    acceptMs: 1500,
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_DETAILED, CARD_COMPACT] }],
+      "POST api/agent/proposals/:id/accept": [DONE, { ...DONE, status: "stopped", error: "stale" }],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const panel = page.locator(".inbox-panel");
+  const first = panel.locator(".inbox-card", { hasText: "Revisar actas" });
+  const second = panel.locator(".inbox-card", { hasText: "Enviar notas" });
+  await first.getByRole("button", { name: "Aceptar" }).click();
+  // At once: that button is a spinner and both are off; the other card is still free.
+  const busy = first.locator(".decide-btn.busy");
+  await expect(busy).toHaveCount(1);
+  await expect(busy).toHaveAttribute("aria-busy", "true");
+  await expect(first.getByRole("button", { name: "Rechazar" })).toBeDisabled();
+  await page.screenshot({ path: `${SHOTS}/inbox-accepting.png` });
+  await expect(second.getByRole("button", { name: "Aceptar" })).toBeEnabled();
+  await second.getByRole("button", { name: "Aceptar" }).click();
+  // The first leaves when its answer comes; the second was stale: it says so and can be taken out.
+  await expect(first).toHaveCount(0);
+  await expect(second.locator(".decide-error")).toContainText("Ya no vale");
+  await second.getByRole("button", { name: "Quitar" }).click();
+  await expect(panel.locator(".inbox-card")).toHaveCount(0);
 });
 
 test("a hand edit in Obsidian waits in the inbox with its note and what will not be applied", async ({

@@ -5,6 +5,7 @@ import type { ConfirmView, InboxCard, Proposal } from "../core/agent.ts";
 import {
   acceptProposal,
   closeProposal,
+  dismissProposal,
   loadDataTypes,
   loadInbox,
   openMail,
@@ -295,16 +296,11 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
       )}
       {fix.form}
       <div className="inbox-actions">
-        <button
-          type="button"
-          className="btn primary"
-          onClick={() => void acceptProposal(p.id, fix.edits())}
-        >
-          {t("inbox.accept")}
-        </button>
-        <button type="button" className="btn" onClick={() => void rejectProposal(p.id)}>
-          {t("inbox.reject")}
-        </button>
+        <DecideButtons
+          id={p.id}
+          accept={() => void acceptProposal(p.id, fix.edits())}
+          reject={() => void rejectProposal(p.id)}
+        />
         <span className="spacer" />
         <button
           type="button"
@@ -317,6 +313,61 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
         </button>
       </div>
     </section>
+  );
+}
+
+/**
+ * Aceptar and Rechazar of one proposal: the one clicked turns into a spinner while the server answers (Juan,
+ * 2026-10-23), both stay off meanwhile, and other cards can be decided. A failure says why under them; one that
+ * can no longer be decided (stale, already decided) can be taken out of the list.
+ */
+function DecideButtons({
+  id,
+  accept,
+  reject,
+}: {
+  id: string;
+  accept: () => void;
+  reject: () => void;
+}) {
+  const t = useStore((s) => s.t);
+  const busy = useStore((s) => s.deciding[id]);
+  const failed = useStore((s) => s.decideErrors[id]);
+  return (
+    <>
+      <button
+        type="button"
+        className={`btn primary decide-btn${busy === "accept" ? " busy" : ""}`}
+        disabled={!!busy || !!failed?.gone}
+        aria-busy={busy === "accept"}
+        aria-label={busy === "accept" ? t("inbox.accepting") : undefined}
+        onClick={accept}
+      >
+        <span className="decide-label">{t("inbox.accept")}</span>
+        {busy === "accept" && <span className="spinner" aria-hidden="true" />}
+      </button>
+      <button
+        type="button"
+        className={`btn decide-btn${busy === "reject" ? " busy" : ""}`}
+        disabled={!!busy || !!failed?.gone}
+        aria-busy={busy === "reject"}
+        aria-label={busy === "reject" ? t("inbox.rejecting") : undefined}
+        onClick={reject}
+      >
+        <span className="decide-label">{t("inbox.reject")}</span>
+        {busy === "reject" && <span className="spinner" aria-hidden="true" />}
+      </button>
+      {failed && (
+        <p className="decide-error" role="alert">
+          <span>{failed.text}</span>
+          {failed.gone && (
+            <button type="button" className="btn ghost small" onClick={() => dismissProposal(id)}>
+              {t("inbox.dismiss")}
+            </button>
+          )}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -504,12 +555,7 @@ function ProposalPageOf({ p }: { p: Proposal }) {
       )}
       {fix.form}
       <div className="inbox-actions">
-        <button type="button" className="btn primary" onClick={() => void decide(true)}>
-          {t("inbox.accept")}
-        </button>
-        <button type="button" className="btn" onClick={() => void decide(false)}>
-          {t("inbox.reject")}
-        </button>
+        <DecideButtons id={id} accept={() => void decide(true)} reject={() => void decide(false)} />
       </div>
     </div>
   );

@@ -185,6 +185,10 @@ interface State {
   trash: (PageInfo & { deleted: number })[] | null;
   /** Proposals waiting in the inbox, and the agent's latest runs (the log). */
   inbox: Proposal[];
+  /** Proposals being accepted or rejected right now (their card shows it; another can be decided meanwhile). */
+  deciding: Record<string, "accept" | "reject">;
+  /** Why deciding one failed, in Juan's words, on its card. */
+  decideErrors: Record<string, { text: string; gone: boolean }>;
   /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
   inboxOpen: boolean;
   runs: RunSummary[];
@@ -277,6 +281,8 @@ export const useStore = create<State>(() => ({
   row: null,
   rowDoc: null,
   inbox: [],
+  deciding: {},
+  decideErrors: {},
   inboxOpen: false,
   runs: [],
   confirmFlip: false,
@@ -1068,7 +1074,10 @@ export async function loadInbox() {
     // Something new since the last look (not the first one, when the window opens): the panel comes out.
     const fresh = inboxSeen !== null && inbox.some((p) => !inboxSeen?.has(p.id));
     inboxSeen = new Set([...(inboxSeen ?? []), ...inbox.map((p) => p.id)]);
-    set({ inbox, ...(fresh ? { inboxOpen: true } : {}) });
+    // A card whose decision failed stays, saying why, until Juan takes it out (the server no longer lists it).
+    const errors = get().decideErrors;
+    const kept = get().inbox.filter((p) => errors[p.id] && !inbox.some((x) => x.id === p.id));
+    set({ inbox: [...kept, ...inbox], ...(fresh ? { inboxOpen: true } : {}) });
   } catch {
     // the inbox stays as it was (offline, agent off)
   }
@@ -1079,33 +1088,85 @@ export const toggleInbox = (open = !get().inboxOpen) => {
   if (open) void loadInbox();
 };
 /** Accepting one proposal (never all at once: each is looked at, docs/nucleo.md 7.5). */
-export async function acceptProposal(id: string, edits?: { title?: string; collection?: string }) {
-  const t = get().t;
-  try {
-    const r = await agent.accept(id, edits);
-    if (r.pending?.kind === "confirm") {
-      // Accepted, but it still needs a confirmation (deleting...): it goes on in the conversation.
-      const entry: ChatEntry = {
-        id: newId(),
-        request: t("inbox.acceptedRequest"),
-        result: r,
-        error: null,
-      };
+/**
+ * Deciding proposals (Juan, 2026-10-23: accepting took 10-20 s, gave no sign of it, and blocked the next one):
+ * each click marks its card at once (the button turns into a spinner) and joins a queue the server answers in
+ * order, so Juan can go on with the next card; a decided card leaves the list as soon as its answer comes, a
+ * failed one says why on the card, and the inbox is read again once the queue is empty.
+ */
+let deciding: Promise<void> = Promise.resolve();
+let decided = 0;
+function decide(id: string, kind: "accept" | "reject", run: () => Promise<void>): Promise<void> {
+  if (get().deciding[id]) return Promise.resolve();
+  set((s) => ({
+    deciding: { ...s.deciding, [id]: kind },
+    decideErrors: Object.fromEntries(Object.entries(s.decideErrors).filter(([k]) => k !== id)),
+  }));
+  decided++;
+  const job = deciding.then(async () => {
+    try {
+      await run();
+    } finally {
       set((s) => ({
-        chat: [...s.chat, entry],
-        confirmFlip: !s.confirmFlip,
-        view: { kind: "chat" },
+        deciding: Object.fromEntries(Object.entries(s.deciding).filter(([k]) => k !== id)),
       }));
-    } else
-      toast(
-        r.error
-          ? agentErrorText(t, r.error)
-          : t(edits ? "inbox.acceptedCorrected" : "inbox.accepted"),
-      );
-  } catch (e) {
-    toast(errorText(t, e));
-  }
-  await loadInbox();
+      if (--decided === 0) void loadInbox();
+    }
+  });
+  deciding = job.catch(() => {});
+  return job;
+}
+const dropProposal = (id: string) => set((s) => ({ inbox: s.inbox.filter((p) => p.id !== id) }));
+/** A decision that failed: stale (it changed since) and already decided are not Juan's mistakes. */
+function decideFailed(id: string, code: string | { text: string }) {
+  const t = get().t;
+  const gone = code === "stale" || code === "no-such-proposal";
+  const text =
+    typeof code !== "string"
+      ? code.text
+      : code === "stale"
+        ? t("inbox.stale")
+        : code === "no-such-proposal"
+          ? t("inbox.alreadyDecided")
+          : agentErrorText(t, code);
+  set((s) => ({ decideErrors: { ...s.decideErrors, [id]: { text, gone } } }));
+}
+/** Takes a card that can no longer be decided out of the list. */
+export function dismissProposal(id: string) {
+  dropProposal(id);
+  set((s) => ({
+    decideErrors: Object.fromEntries(Object.entries(s.decideErrors).filter(([k]) => k !== id)),
+  }));
+}
+
+export function acceptProposal(id: string, edits?: { title?: string; collection?: string }) {
+  return decide(id, "accept", async () => {
+    const t = get().t;
+    try {
+      const r = await agent.accept(id, edits);
+      if (r.pending?.kind === "confirm") {
+        // Accepted, but it still needs a confirmation (deleting...): it goes on in the conversation.
+        const entry: ChatEntry = {
+          id: newId(),
+          request: t("inbox.acceptedRequest"),
+          result: r,
+          error: null,
+        };
+        dropProposal(id);
+        set((s) => ({
+          chat: [...s.chat, entry],
+          confirmFlip: !s.confirmFlip,
+          view: { kind: "chat" },
+        }));
+      } else if (r.error) decideFailed(id, r.error);
+      else {
+        dropProposal(id);
+        if (edits) toast(t("inbox.acceptedCorrected"));
+      }
+    } catch (e) {
+      decideFailed(id, { text: errorText(t, e) });
+    }
+  });
 }
 /** A proposal's own page (from its card, its ghost row or the calendar); Esc and the crumb go back. */
 export async function openProposal(id: string) {
@@ -1122,13 +1183,15 @@ export function closeProposal() {
 }
 /** The mail a proposal came from, as its row in Boni ("Ver correo": IMAP gives no webmail link). */
 export const openMail = (at: { type: string; id: string }) => void openRow(at.type, at.id);
-export async function rejectProposal(id: string) {
-  try {
-    await agent.reject(id);
-  } catch (e) {
-    toast(errorText(get().t, e));
-  }
-  await loadInbox();
+export function rejectProposal(id: string) {
+  return decide(id, "reject", async () => {
+    try {
+      await agent.reject(id);
+      dropProposal(id);
+    } catch (e) {
+      decideFailed(id, { text: errorText(get().t, e) });
+    }
+  });
 }
 
 export async function loadRuns() {

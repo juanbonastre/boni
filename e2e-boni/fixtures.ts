@@ -34,6 +34,8 @@ export interface Options {
   pages?: FakePage[] | null;
   /** Pending proposals of Libros drawn as ghost rows (`{ id, proposal, values }`); deciding one takes it out. */
   ghosts?: { id: string; proposal: string; values: Record<string, unknown>; updated: number }[];
+  /** How long accepting a proposal takes (ms; default as any request, 20). */
+  acceptMs?: number;
 }
 
 export interface FakePage {
@@ -341,7 +343,14 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           if (!settings.serverUrl || !settings.hasToken)
             return { ok: false, offline: false, notConfigured: true };
           const a = opts.offline ? null : answer(method, path, body);
-          await new Promise((r) => setTimeout(r, 20));
+          await new Promise((r) =>
+            setTimeout(
+              r,
+              opts.acceptMs && /^api\/agent\/proposals\/[^/]+\/accept/.test(path)
+                ? opts.acceptMs
+                : 20,
+            ),
+          );
           if (!a) return { ok: false, offline: true, message: "refused" };
           return { ok: true, status: a[0], body: a[1] };
         },

@@ -82,12 +82,11 @@ function fieldOfProp(def: TypeDef, columns: { id: string; name: string }[], prop
   return def.fields.find((f) => (columns.find((c) => c.name === f.name)?.id ?? f.name) === prop);
 }
 
-/** What the calendar has on `days`: every calendar collection's entries on them, by their mapping. */
-function calendarOn(store: UserStore, days: string[]) {
-  const want = new Set(days);
-  const out = new Map<string, { title: string; start: string | null; end: string | null }[]>(
-    days.map((d) => [d, []]),
-  );
+type Item = { title: string; start: string | null; end: string | null };
+
+/** Every calendar collection's entries by day, by their mapping (made once for all the cards of a request). */
+function calendarByDay(store: UserStore): Map<string, Item[]> {
+  const out = new Map<string, Item[]>();
   const schema = store.schema().types;
   for (const p of calendarDefs(store)) {
     const def = schema[p.type];
@@ -104,7 +103,8 @@ function calendarOn(store: UserStore, days: string[]) {
     if (!date) continue;
     for (const s of store.list(p.type)) {
       const day = s.entity.values[date.id];
-      if (typeof day !== "string" || !want.has(day)) continue;
+      if (typeof day !== "string") continue;
+      if (!out.has(day)) out.set(day, []);
       out.get(day)?.push({
         title: textOf(s.entity.values[def.titleField]).slice(0, 120),
         start: start ? textOf(s.entity.values[start.id]) || null : null,
@@ -116,16 +116,53 @@ function calendarOn(store: UserStore, days: string[]) {
     list.sort(
       (a, b) => (a.start ?? "").localeCompare(b.start ?? "") || a.title.localeCompare(b.title),
     );
-  return days.map((day) => ({ day, items: out.get(day) ?? [] }));
+  return out;
+}
+
+/**
+ * What every card of one request shares, computed once (Juan, 2026-10-23: with many proposals the inbox took
+ * seconds on the NAS): the calendar by day, and how many proposals like each one Juan accepted.
+ */
+export interface InboxContext {
+  calendar: () => Map<string, Item[]>;
+  accepted: () => Map<string, number>;
+}
+export function inboxContext(store: UserStore): InboxContext {
+  let calendar: Map<string, Item[]> | null = null;
+  let accepted: Map<string, number> | null = null;
+  return {
+    calendar: () => {
+      if (!calendar) calendar = calendarByDay(store);
+      return calendar;
+    },
+    accepted: () => {
+      if (!accepted) {
+        accepted = new Map();
+        for (const x of store.journal.proposals("accepted")) {
+          const k = likeKey(x);
+          if (k) accepted.set(k, (accepted.get(k) ?? 0) + 1);
+        }
+      }
+      return accepted;
+    },
+  };
 }
 
 /** The proposal's source as a key ("mail:<sender>", "vault:<path>"): what "like it" compares. */
 const sourceKey = (p: ProposalRow) => (p.sources[0] ?? "").replace(/@[0-9a-f]{12}$/, "");
+/** Proposals "like" each other: the same tool, source and collection. */
+const likeKey = (p: ProposalRow) => {
+  const src = sourceKey(p);
+  return src
+    ? `${p.tool}\u0000${src}\u0000${textOf(rowsOf(p).find((r) => r.arg === "type")?.value)}`
+    : "";
+};
 
 export function inboxCard(
   store: UserStore,
   p: ProposalRow,
   o: { mailAccount?: string | null } = {},
+  ctx: InboxContext = inboxContext(store),
 ): InboxCard {
   const rows = rowsOf(p);
   const row = (arg: string) => rows.find((r) => r.arg === arg);
@@ -184,18 +221,8 @@ export function inboxCard(
     if (note) source = { kind: "note", path: note };
   }
 
-  const key = sourceKey(p);
-  const familiar = key
-    ? store.journal
-        .proposals("accepted")
-        .filter(
-          (x) =>
-            x.id !== p.id &&
-            x.tool === p.tool &&
-            sourceKey(x) === key &&
-            textOf(rowsOf(x).find((r) => r.arg === "type")?.value) === typeKey,
-        ).length
-    : 0;
+  const key = likeKey(p);
+  const familiar = key ? (ctx.accepted().get(key) ?? 0) : 0;
   const complete = action !== "create" || (!!title && (kind === "item" || !!day));
   return {
     action,
@@ -211,6 +238,11 @@ export function inboxCard(
     familiar,
     complete,
     mode: complete && familiar >= 2 ? "compact" : "detailed",
-    context: day ? calendarOn(store, [addDays(day, -1), day, addDays(day, 1)]) : [],
+    context: day
+      ? [addDays(day, -1), day, addDays(day, 1)].map((d) => ({
+          day: d,
+          items: ctx.calendar().get(d) ?? [],
+        }))
+      : [],
   };
 }
