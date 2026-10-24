@@ -1,5 +1,6 @@
 import {
   ChevronRight,
+  Cpu,
   Database,
   FileText,
   MessageSquare,
@@ -23,6 +24,7 @@ import {
   openSettings,
   showChat,
   showCollections,
+  showModels,
   toggleSidebar,
   useStore,
 } from "../store.ts";
@@ -75,6 +77,14 @@ export function Sidebar() {
         >
           <Database size={15} strokeWidth={1.8} />
           <span className="nav-name">{t("nav.collections")}</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-row${view.kind === "models" ? " active" : ""}`}
+          onClick={showModels}
+        >
+          <Cpu size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("nav.models")}</span>
         </button>
 
         {pages !== null && (

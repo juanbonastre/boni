@@ -299,6 +299,171 @@ export interface InboxRequest {
   open: { type: string; id: string } | null;
 }
 
+/** «Modelos» (Juan, 2026-10-24): which model does each role, what it spends, how it treats the data. */
+export const MODEL_ROLES = ["planner", "reader", "decider", "reviewer"] as const;
+export type ModelRole = (typeof MODEL_ROLES)[number];
+export const MODEL_CONNECTIONS = ["openrouter", "anthropic", "typesafe"] as const;
+export type ModelConnection = (typeof MODEL_CONNECTIONS)[number];
+export type ModelPrivacy = "keeps-nothing" | "deletes-in-30-days" | "may-keep" | "unknown";
+export interface ModelChoice {
+  connection: ModelConnection;
+  model: string;
+  zdr: boolean;
+}
+export interface ModelRoleView extends ModelChoice {
+  role: ModelRole;
+  privacy: ModelPrivacy;
+  chosen: boolean;
+  missingKey: boolean;
+}
+export interface ModelEvaluation extends ModelChoice {
+  role: ModelRole;
+  at: number;
+  right: number;
+  total: number;
+  wrong: number;
+  cost: number;
+  cases: { name: string; ok: boolean; note: string }[];
+}
+export interface ModelSpendRow {
+  role: string;
+  provider: string;
+  model: string;
+  calls: number;
+  eur: number;
+  unpriced: number;
+}
+export interface ModelsView {
+  roles: ModelRoleView[];
+  connections: { connection: ModelConnection; mine: boolean; server: boolean }[];
+  budget: { monthlyEur: number; warnAt: number };
+  usdToEur: number;
+  spending: {
+    month: string;
+    eur: number;
+    rows: ModelSpendRow[];
+    byDay: { day: string; eur: number }[];
+  };
+  over: boolean;
+  evaluations: ModelEvaluation[];
+  evaluating: (ModelChoice & { role: ModelRole }) | null;
+}
+export interface CatalogueModel {
+  id: string;
+  name: string;
+  input: number;
+  output: number;
+  context: number;
+  providers: string[];
+  structured: boolean;
+}
+const num = (v: unknown, d = 0) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+const s200 = (v: unknown, max = 200) => (typeof v === "string" ? v.slice(0, max) : "");
+const oneOf = <T extends string>(list: readonly T[], v: unknown): T | null =>
+  list.find((x) => x === v) ?? null;
+function choiceOf(v: Record<string, unknown>): ModelChoice | null {
+  const connection = oneOf(MODEL_CONNECTIONS, v.connection);
+  return connection ? { connection, model: s200(v.model, 120), zdr: v.zdr === true } : null;
+}
+export function parseModels(b: unknown): ModelsView | null {
+  if (!isObj(b)) return null;
+  const roles = (Array.isArray(b.roles) ? b.roles : []).filter(isObj).flatMap((r) => {
+    const role = oneOf(MODEL_ROLES, r.role);
+    const c = choiceOf(r);
+    if (!role || !c) return [];
+    const privacy =
+      oneOf(["keeps-nothing", "deletes-in-30-days", "may-keep", "unknown"] as const, r.privacy) ??
+      "unknown";
+    return [{ ...c, role, privacy, chosen: r.chosen === true, missingKey: r.missingKey === true }];
+  });
+  const sp = isObj(b.spending) ? b.spending : {};
+  const budget = isObj(b.budget) ? b.budget : {};
+  const evaluating = isObj(b.evaluating) ? b.evaluating : null;
+  const evalRole = evaluating ? oneOf(MODEL_ROLES, evaluating.role) : null;
+  const evalChoice = evaluating ? choiceOf(evaluating) : null;
+  return {
+    roles,
+    connections: (Array.isArray(b.connections) ? b.connections : []).filter(isObj).flatMap((c) => {
+      const connection = oneOf(MODEL_CONNECTIONS, c.connection);
+      return connection ? [{ connection, mine: c.mine === true, server: c.server === true }] : [];
+    }),
+    budget: { monthlyEur: num(budget.monthlyEur, 10), warnAt: num(budget.warnAt, 0.8) },
+    usdToEur: num(b.usdToEur, 0.9),
+    spending: {
+      month: s200(sp.month, 7),
+      eur: num(sp.eur),
+      rows: (Array.isArray(sp.rows) ? sp.rows : [])
+        .filter(isObj)
+        .slice(0, 100)
+        .map((r) => ({
+          role: s200(r.role, 40),
+          provider: s200(r.provider, 40),
+          model: s200(r.model, 120),
+          calls: num(r.calls),
+          eur: num(r.eur),
+          unpriced: num(r.unpriced),
+        })),
+      byDay: (Array.isArray(sp.byDay) ? sp.byDay : [])
+        .filter(isObj)
+        .slice(0, 31)
+        .map((d) => ({ day: s200(d.day, 10), eur: num(d.eur) })),
+    },
+    over: b.over === true,
+    evaluations: (Array.isArray(b.evaluations) ? b.evaluations : [])
+      .filter(isObj)
+      .slice(0, 20)
+      .flatMap((e) => {
+        const role = oneOf(MODEL_ROLES, e.role);
+        const c = choiceOf(e);
+        if (!role || !c) return [];
+        return [
+          {
+            ...c,
+            role,
+            at: num(e.at),
+            right: num(e.right),
+            total: num(e.total),
+            wrong: num(e.wrong),
+            cost: num(e.cost),
+            cases: (Array.isArray(e.cases) ? e.cases : [])
+              .filter(isObj)
+              .slice(0, 50)
+              .map((x) => ({
+                name: s200(x.name, 300),
+                ok: x.ok === true,
+                note: s200(x.note, 200),
+              })),
+          },
+        ];
+      }),
+    evaluating: evalRole && evalChoice ? { ...evalChoice, role: evalRole } : null,
+  };
+}
+function parseCatalogue(b: unknown): CatalogueModel[] {
+  const list = isObj(b) && Array.isArray(b.models) ? b.models : [];
+  return list
+    .filter(isObj)
+    .slice(0, 1000)
+    .flatMap((m) =>
+      typeof m.id === "string" && m.id.length <= 120
+        ? [
+            {
+              id: m.id,
+              name: s200(m.name, 120) || m.id,
+              input: num(m.input),
+              output: num(m.output),
+              context: num(m.context),
+              providers: (Array.isArray(m.providers) ? m.providers : [])
+                .filter((x): x is string => typeof x === "string")
+                .slice(0, 60)
+                .map((x) => x.slice(0, 60)),
+              structured: m.structured === true,
+            },
+          ]
+        : [],
+    );
+}
+
 const ACTIONS = ["create", "update", "delete", "restore"] as const;
 function runChanges(v: unknown): RunChange[] | undefined {
   if (!Array.isArray(v)) return undefined;
@@ -897,6 +1062,16 @@ export class AgentApi {
   }
   answerRequest = async (id: string, a: { choice: number } | { text: string }) =>
     parseTurn(await this.call("POST", `requests/${encodeURIComponent(id)}/answer`, a));
+  models = async () => parseModels(await this.call("GET", "models"));
+  catalogue = async () => parseCatalogue(await this.call("GET", "models/catalogue"));
+  evaluateModel = async (role: ModelRole, c: ModelChoice) =>
+    parseModels(await this.call("POST", "models/evaluate", { role, ...c }));
+  setModelRole = async (role: ModelRole, c: ModelChoice | null) =>
+    parseModels(await this.call("PUT", `models/roles/${role}`, c ?? {}));
+  setModelKey = async (connection: ModelConnection, key: string | null) =>
+    parseModels(await this.call("PUT", `models/keys/${connection}`, { key }));
+  setModelBudget = async (b: { monthlyEur?: number; warnAt?: number; usdToEur?: number }) =>
+    parseModels(await this.call("PUT", "models/budget", b));
   dismissRequest = async (id: string) =>
     void (await this.call("POST", `requests/${encodeURIComponent(id)}/dismiss`));
   async runs(): Promise<{ runs: RunSummary[]; autoAccept: AutoAccept | null }> {

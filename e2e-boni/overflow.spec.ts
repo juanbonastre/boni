@@ -8,6 +8,8 @@ import {
   GUIDE,
   MAIL,
   MAIL_SUGGESTED,
+  MODELS_CATALOGUE,
+  MODELS_EVALUATED,
   PROPOSALS,
   REQUESTS,
   RUN_2,
@@ -15,7 +17,7 @@ import {
   TEXT_REPLY,
   VISIBILITY,
 } from "./agent-scenarios.ts";
-import { audit, settingsAudit } from "./audit.ts";
+import { audit, MODELS_TEXT, modelsAudit, settingsAudit } from "./audit.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -322,4 +324,21 @@ for (const language of ["es", "en"] as const) {
     await converse(page, l, issues, "phone");
     expect(issues).toEqual([]);
   });
+}
+
+/** «Modelos»: every section opened, a role's cases and the panel to change it with an evaluation. */
+for (const language of ["es", "en"] as const) {
+  for (const width of [1440, 900]) {
+    test(`«Modelos» fits (${language}, ${width} px)`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 860 });
+      await openApp(page, "/?still", {
+        language,
+        agent: {
+          "GET api/agent/models": [MODELS_EVALUATED],
+          "GET api/agent/models/catalogue": [MODELS_CATALOGUE],
+        },
+      });
+      expect(await modelsAudit(page, MODELS_TEXT[language], `${width}`)).toEqual([]);
+    });
+  }
 }

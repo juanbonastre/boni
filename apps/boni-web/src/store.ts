@@ -90,6 +90,7 @@ export type View =
   | { kind: "row"; type: string; id: string; from?: "collection" }
   /** Every collection: open one, see and change its protection, filter. */
   | { kind: "collections" }
+  | { kind: "models" }
   /** One collection on a page of its own (its protection is unlocked only here). */
   | { kind: "collection"; type: string }
   /** A proposal on a page of its own, read-only (Juan, 2026-10-23): its values, its note, why and where from. */
@@ -214,6 +215,8 @@ const store: TextStore = {
 };
 const api = new BoniApi({ request: (m, p, b) => hostRef.transport.request(m, p, b) });
 const agent = new AgentApi({ request: (m, p, b) => hostRef.transport.request(m, p, b) });
+/** The agent's API, for views that read and change things of their own («Modelos»). */
+export const agentApi = agent;
 /** This page's conversation (the server keeps its history per conversation). */
 const CONVERSATION = newId();
 const queue = new OfflineQueue(store);
@@ -1804,6 +1807,7 @@ export async function loadDataTypes(): Promise<DataType[] | null> {
   }
 }
 
+export const showModels = () => set({ view: { kind: "models" }, panel: null });
 export const showCollections = () => {
   set({ view: { kind: "collections" }, panel: null });
   void loadDataTypes();

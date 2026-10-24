@@ -284,7 +284,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/runs\/[^/]+\//, "/runs/:id/")
             .replace(/\/runs\/[^/]+$/, "/runs/:id")
             .replace(/\/visibility\/[^/]+$/, "/visibility/:type")
-            .replace(/\/extensions\/[^/]+$/, "/extensions/:id")}`;
+            .replace(/\/extensions\/[^/]+$/, "/extensions/:id")
+            .replace(/\/models\/roles\/[^/]+$/, "/models/roles/:role")
+            .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")}`;
           const list = opts.agent?.[key];
           if (!list?.length) return [503, '{"error":"agent-off"}'];
           const n = agentCalls[key] ?? 0;

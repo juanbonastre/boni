@@ -321,7 +321,8 @@ apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`lega
                  (`components/Chat.tsx`, `core/agent.ts` over `/api/agent/*`): every answer painted by this code from
                  labelled values, text only as text (never HTML, Markdown or links; outside text marked),
                  confirmations with the real values, their origin and warnings, the accept button changing side;
-                 the inbox one proposal at a time, the log with Undo. The server serves the built app at `/boni/` on
+                 the inbox one proposal at a time, the log with Undo. «Modelos» (`components/Models.tsx`, over
+                 `/api/agent/models*`): each role's model, spending and budget, keys, evaluate and use. The server serves the built app at `/boni/` on
                  the tailnet entry (`BONI_BONI_WEB`).
 apps/boni-android/ Boni's Android app (moved from `legacy/boni/apps/android` on 2026-10-23), the same shape as
                  apps/calendar-android: apps/boni-web's build in a WebView from the APK's assets
