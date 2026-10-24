@@ -91,6 +91,7 @@ export type View =
   /** Every collection: open one, see and change its protection, filter. */
   | { kind: "collections" }
   | { kind: "models" }
+  | { kind: "audit"; filter: AuditFilter }
   /** One collection on a page of its own (its protection is unlocked only here). */
   | { kind: "collection"; type: string }
   /** A proposal on a page of its own, read-only (Juan, 2026-10-23): its values, its note, why and where from. */
@@ -1808,6 +1809,17 @@ export async function loadDataTypes(): Promise<DataType[] | null> {
 }
 
 export const showModels = () => set({ view: { kind: "models" }, panel: null });
+/** What «Auditoría» shows: an actor's kind (`who`, a prefix) or one actor (`by`), a collection, a run. */
+export interface AuditFilter {
+  who?: string;
+  by?: string;
+  type?: string;
+  run?: string;
+}
+export const showAudit = (filter: AuditFilter) => {
+  set({ view: { kind: "audit", filter }, panel: null });
+  void loadDataTypes();
+};
 export const showCollections = () => {
   set({ view: { kind: "collections" }, panel: null });
   void loadDataTypes();

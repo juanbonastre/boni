@@ -1,6 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
 import {
   ASK_TURN,
+  AUDIT_ACTIONS,
+  AUDIT_DETAIL,
+  AUDIT_SUMMARY,
   CARD_COMPACT,
   CARD_DETAILED,
   confirmTurn,
@@ -17,7 +20,7 @@ import {
   TEXT_REPLY,
   VISIBILITY,
 } from "./agent-scenarios.ts";
-import { audit, MODELS_TEXT, modelsAudit, settingsAudit } from "./audit.ts";
+import { activityAudit, audit, MODELS_TEXT, modelsAudit, settingsAudit } from "./audit.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -256,7 +259,7 @@ const C = {
     chat: "Conversación",
     box: "Escribe a Boni…",
     inbox: /^Bandeja/,
-    log: "Registro",
+    log: "Actividad",
     tab: "Boni",
   },
   en: {
@@ -281,7 +284,7 @@ async function converse(page: Page, l: (typeof C)["es"], issues: string[], where
   await page.locator(".proposal").first().waitFor();
   issues.push(...(await audit(page, `${where} inbox`)));
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: l.log }).click();
+  await page.getByRole("button", { name: l.log, exact: true }).last().click();
   await page.locator(".log-list li").first().waitFor();
   await page.locator(".log-list li").nth(1).locator(".log-head").click();
   await page.locator(".log-step").first().waitFor();
@@ -329,16 +332,25 @@ for (const language of ["es", "en"] as const) {
 /** «Modelos»: every section opened, a role's cases and the panel to change it with an evaluation. */
 for (const language of ["es", "en"] as const) {
   for (const width of [1440, 900]) {
-    test(`«Modelos» fits (${language}, ${width} px)`, async ({ page }) => {
+    test(`«Modelos», «Actividad» and «Auditoría» fit (${language}, ${width} px)`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 860 });
       await openApp(page, "/?still", {
         language,
         agent: {
           "GET api/agent/models": [MODELS_EVALUATED],
           "GET api/agent/models/catalogue": [MODELS_CATALOGUE],
+          "GET api/data/audit/summary": [AUDIT_SUMMARY],
+          "GET api/data/audit/actions": [AUDIT_ACTIONS],
+          "GET api/data/audit/actions/:seq": [AUDIT_DETAIL],
+          "GET api/agent/runs": [RUNS_EXPLAINED],
         },
       });
-      expect(await modelsAudit(page, MODELS_TEXT[language], `${width}`)).toEqual([]);
+      expect([
+        ...(await modelsAudit(page, MODELS_TEXT[language], `${width}`)),
+        ...(await activityAudit(page, MODELS_TEXT[language], `${width}`)),
+      ]).toEqual([]);
     });
   }
 }

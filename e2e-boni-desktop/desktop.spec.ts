@@ -271,16 +271,17 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
 test("«Modelos» over the real server: the budget and a key, kept sealed and never shown again", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  const spend = w.getByRole("button", { name: /^Gasto de/ });
-  await expect(spend).toContainText("0,00 € de 10,00 €");
+  const spend = w.locator("button.kpi").first();
+  await expect(spend).toContainText("0,00 €");
+  await expect(spend).toContainText("de 10,00 €");
   // The agent is off on this server: no model, and it says so.
-  await expect(w.locator(".models")).toContainText("el agente está apagado");
+  await expect(w.locator(".content.dash")).toContainText("el agente está apagado");
   await spend.click();
   await w.getByRole("button", { name: "Cambiar el presupuesto" }).click();
   await w.getByRole("textbox", { name: "Al mes (€)" }).fill("20");
   await w.getByRole("button", { name: "Guardar", exact: true }).click();
-  await expect(spend).toContainText("0,00 € de 20,00 €");
-  await w.getByRole("button", { name: /^Conexiones/ }).click();
+  await expect(spend).toContainText("de 20,00 €");
+  await w.getByRole("button", { name: /^Claves/ }).click();
   const router = w.locator(".models-conn", { hasText: "OpenRouter" });
   await expect(router).toContainText("Sin clave");
   await router.getByRole("button", { name: "Poner tu clave" }).click();
@@ -294,6 +295,26 @@ test("«Modelos» over the real server: the budget and a key, kept sealed and ne
   // Back as it was, for the tests after this one.
   await router.getByRole("button", { name: "Quitar tu clave" }).click();
   await expect(router).toContainText("Sin clave");
+});
+
+test("«Actividad» and «Auditoría» over the real server: Juan's read of a private row, the chain verified", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Actividad" }).click();
+  await expect(w.locator(".kpi")).toHaveCount(4);
+  // The earlier tests changed rows: there are changes, by this device.
+  await expect(w.locator(".kpi").nth(2)).not.toContainText(/Cambios\s*0$/);
+  await shot(w, "activity");
+  await w.getByRole("button", { name: "Abrir la auditoría" }).click();
+  const rows = w.locator(".audit-tr:not(.audit-th)");
+  await expect(rows.first()).toBeVisible();
+  // Opening the private collection's attachment was recorded (Juan's reads of private collections are).
+  await expect(rows.filter({ hasText: "Abrió un adjunto" }).first()).toContainText("Tú ·");
+  await w.getByRole("button", { name: "Verificar la cadena" }).click();
+  await expect(w.locator(".audit-chain.ok")).toHaveText("Cadena verificada");
+  await rows.filter({ hasText: "Abrió un adjunto" }).first().click();
+  await expect(w.locator(".audit-panel .audit-seen li").first()).toBeVisible();
+  await shot(w, "audit");
+  await w.keyboard.press("Escape");
 });
 
 test("a part of a collection with its own level: a rule made from Notion's filter", async () => {

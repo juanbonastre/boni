@@ -172,6 +172,27 @@ describe("the audit", () => {
     ]);
   });
 
+  it("filters actions by kind of actor and by collection", () => {
+    const { s } = fresh();
+    const e = s.create("t_nota", { f_titulo: t("Uno") }, me);
+    const seen = [
+      {
+        entity: e.entity.id,
+        type: "t_nota",
+        version: 1,
+        fields: [],
+        shapes: [],
+        body: null,
+        files: [],
+      },
+    ];
+    s.audit.record({ at: clock, by: "mcp:a", tool: "mcp.read", decision: "allow", seen });
+    s.audit.record({ at: clock, by: "model:reader:x/y", tool: "model.reader", decision: "allow" });
+    expect(s.audit.actions({ byPrefix: "model:" }).map((a) => a.by)).toEqual(["model:reader:x/y"]);
+    expect(s.audit.actions({ type: "t_nota" }).map((a) => a.by)).toEqual(["mcp:a"]);
+    expect(s.audit.changes(0, Date.UTC(2100, 0, 1))).toEqual({ kinds: { create: 1 }, undone: 0 });
+  });
+
   it("counts reads and writes per day, actor and collection", () => {
     const { s } = fresh();
     const e = s.create("t_nota", { f_titulo: t("Uno") }, me);

@@ -7,7 +7,8 @@ export function ticks(max: number, count = 4): number[] {
   const mag = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? 10 * mag;
   const n = Math.max(1, Math.ceil(max / step - 1e-9));
-  return Array.from({ length: n + 1 }, (_, i) => i * step);
+  // Rounded: 3 × 0.1 is 0.30000000000000004 in floating point, and an axis must read 0,3.
+  return Array.from({ length: n + 1 }, (_, i) => Number((i * step).toPrecision(12)));
 }
 
 const group = (whole: number) => String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -47,9 +48,10 @@ export const labelStep = (count: number, maxLabels: number) =>
 
 /** Compact axis tick: 0, 50, 1K, 2,5K. */
 export function compact(value: number): string {
-  if (Math.abs(value) >= 1000) {
-    const k = value / 1000;
-    return `${Number.isInteger(k) ? k : (Math.round(k * 10) / 10).toString().replace(".", ",")}K`;
-  }
+  const short = (x: number, unit: string) =>
+    `${Number.isInteger(x) ? x : (Math.round(x * 10) / 10).toString().replace(".", ",")}${unit}`;
+  // Millions as "M" (a "1000K" label does not fit the axis).
+  if (Math.abs(value) >= 1_000_000) return short(value / 1_000_000, "M");
+  if (Math.abs(value) >= 1000) return short(value / 1000, "K");
   return Number.isInteger(value) ? String(value) : String(value).replace(".", ",");
 }

@@ -68,6 +68,39 @@ export function recordUserRead(
   });
 }
 
+/** Records Juan opening an attachment, on the rows that hold it, when their collection's level asks for it. */
+export function recordFileRead(store: UserStore, device: string, sha: string, now: number): void {
+  const types = store.schema().types;
+  const levels = store.aiAccess();
+  const wanted = auditSettings(store).userReads;
+  const seen: Seen[] = [];
+  for (const def of Object.values(types))
+    for (const f of def.fields.filter((x) => x.type === "file"))
+      for (const hit of store.findByValue(f.id, sha)) {
+        if (!wanted.includes(levels[hit.type] ?? "visible")) continue;
+        const e = store.get(hit.id);
+        if (e)
+          seen.push({
+            entity: hit.id,
+            type: hit.type,
+            version: e.entity.version,
+            fields: [],
+            shapes: [],
+            body: null,
+            files: [sha],
+          });
+      }
+  if (!seen.length) return;
+  store.audit.record({
+    at: now,
+    by: `user:${device}`,
+    tool: "data.file",
+    target: { file: sha.slice(0, 12) },
+    decision: "allow",
+    seen,
+  });
+}
+
 /** Each row's system columns (Juan, 2026-10-24): no one may change them; the app may show or hide them. */
 export interface SystemColumns {
   created: number;
@@ -143,11 +176,27 @@ export function auditSummary(store: UserStore, url: URL, now: number) {
   const { from, to } = range(url, now);
   const byType = store.audit.byType(from, to);
   const types = store.schema().types;
+  const activity = store.audit.activity(from, to);
+  const inRange = (at: number | null) => at !== null && at >= from && at < to;
+  const proposals = store.journal.proposals().filter((p) => inRange(p.created));
+  const runs = store.journal.runs(100_000).filter((r) => inRange(r.started));
+  const readings = store.audit
+    .actions({ from, to, byPrefix: "model:reader:", limit: 1000 })
+    .filter((a) => a.tool === "model.reader").length;
   return {
     from,
     to,
-    activity: store.audit.activity(from, to),
+    activity,
     byType: byType.map((r) => ({ ...r, name: types[r.type]?.name ?? r.type })),
+    totals: {
+      reads: activity.reduce((n, r) => n + r.reads, 0),
+      writes: activity.reduce((n, r) => n + r.writes, 0),
+      ...store.audit.changes(from, to),
+      proposals: proposals.length,
+      accepted: proposals.filter((p) => p.status === "accepted").length,
+      requests: runs.filter((r) => r.origin !== "background").length,
+      readings,
+    },
   };
 }
 
@@ -156,18 +205,56 @@ export function auditActions(store: UserStore, url: URL) {
   const before = Number(url.searchParams.get("before")) || undefined;
   const by = url.searchParams.get("by") ?? undefined;
   const run = url.searchParams.get("run") ?? undefined;
+  const byPrefix = url.searchParams.get("who") ?? undefined;
+  const type = url.searchParams.get("type") ?? undefined;
   const limit = Math.min(Number(url.searchParams.get("limit")) || 50, 200);
   const actions = store.audit.actions({
     ...(before ? { before } : {}),
     ...(by ? { by } : {}),
     ...(run ? { run } : {}),
+    ...(byPrefix ? { byPrefix } : {}),
+    ...(type ? { type } : {}),
     limit,
   });
   const seen = store.audit.accessOf(actions.map((a) => a.seq));
   const all = [...seen.values()].flat();
+  // What each action changed: its own operations, or, for an MCP call, those of its run.
+  const wrote = (a: (typeof actions)[number]) =>
+    (a.tool.startsWith("mcp.") && a.run ? store.log({ run: a.run }) : store.log({ action: a.seq }))
+      .filter((o) => o.kind !== "schema")
+      .map((o) => ({ kind: o.kind, target: o.target }));
+  const changed = actions.map((a) => wrote(a));
+  const titles = names(
+    store,
+    changed.flat().flatMap((w) => {
+      const e = store.get(w.target);
+      return e
+        ? [
+            {
+              entity: w.target,
+              type: e.entity.type,
+              version: 0,
+              fields: [],
+              shapes: [],
+              body: null,
+              files: [],
+            },
+          ]
+        : [];
+    }),
+  );
+  const n = names(store, all);
   return {
-    actions: actions.map((a) => ({ ...a, seen: seen.get(a.seq) ?? [] })),
-    names: names(store, all),
+    actions: actions.map((a, i) => ({
+      ...a,
+      seen: seen.get(a.seq) ?? [],
+      wrote: changed[i] ?? [],
+    })),
+    names: {
+      types: { ...titles.types, ...n.types },
+      fields: n.fields,
+      titles: { ...titles.titles, ...n.titles },
+    },
   };
 }
 

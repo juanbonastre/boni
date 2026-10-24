@@ -1,4 +1,5 @@
 import {
+  Activity,
   ChevronRight,
   Cpu,
   Database,
@@ -24,6 +25,7 @@ import {
   openSettings,
   showChat,
   showCollections,
+  showLog,
   showModels,
   toggleSidebar,
   useStore,
@@ -63,7 +65,7 @@ export function Sidebar() {
         </button>
         <button
           type="button"
-          className={`nav-row${view.kind === "chat" || view.kind === "inbox" || view.kind === "log" ? " active" : ""}`}
+          className={`nav-row${view.kind === "chat" || view.kind === "inbox" ? " active" : ""}`}
           onClick={showChat}
         >
           <MessageSquare size={15} strokeWidth={1.8} />
@@ -85,6 +87,14 @@ export function Sidebar() {
         >
           <Cpu size={15} strokeWidth={1.8} />
           <span className="nav-name">{t("nav.models")}</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-row${view.kind === "log" || view.kind === "audit" ? " active" : ""}`}
+          onClick={showLog}
+        >
+          <Activity size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("activity.title")}</span>
         </button>
 
         {pages !== null && (

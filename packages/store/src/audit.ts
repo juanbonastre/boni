@@ -105,7 +105,11 @@ export interface Audit {
     from?: number;
     to?: number;
     by?: string;
+    /** Actors whose `by` starts with it ("model:", "mcp:", "user:"). */
+    byPrefix?: string;
     run?: string;
+    /** Only actions that saw an entity of this type. */
+    type?: string;
     before?: number;
     limit?: number;
   }): ActionRow[];
@@ -118,6 +122,8 @@ export interface Audit {
   activity(from: number, to: number): { day: string; by: By; reads: number; writes: number }[];
   /** Per type and actor: how many entities were read and how many changed. */
   byType(from: number, to: number): { type: string; by: By; reads: number; writes: number }[];
+  /** Changes in a period by kind (create, update, delete, restore) and how many undid another. */
+  changes(from: number, to: number): { kinds: Record<string, number>; undone: number };
   verify(): Verification;
   storage(): Storage;
 }
@@ -313,11 +319,18 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     actions: (q = {}) => {
       const where: string[] = [];
       const args: (string | number)[] = [];
-      if (q.from !== undefined) where.push("at >= ?"), args.push(q.from);
-      if (q.to !== undefined) where.push("at < ?"), args.push(q.to);
-      if (q.by) where.push("by = ?"), args.push(q.by);
-      if (q.run) where.push("run = ?"), args.push(q.run);
-      if (q.before !== undefined) where.push("seq < ?"), args.push(q.before);
+      const add = (sql: string, ...v: (string | number)[]) => {
+        where.push(sql);
+        args.push(...v);
+      };
+      if (q.from !== undefined) add("at >= ?", q.from);
+      if (q.to !== undefined) add("at < ?", q.to);
+      if (q.by) add("by = ?", q.by);
+      if (q.byPrefix) add("substr(by, 1, ?) = ?", q.byPrefix.length, q.byPrefix);
+      if (q.run) add("run = ?", q.run);
+      if (q.type)
+        add("EXISTS (SELECT 1 FROM access x WHERE x.action = actions.seq AND x.type = ?)", q.type);
+      if (q.before !== undefined) add("seq < ?", q.before);
       return db
         .prepare(
           `SELECT * FROM actions${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY seq DESC LIMIT ?`,
@@ -412,6 +425,19 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
         .all(from, to))
         add(r.type as string, r.who as string, "writes", Number(r.n));
       return [...rows.values()];
+    },
+    changes: (from, to) => {
+      const kinds: Record<string, number> = {};
+      let undone = 0;
+      for (const r of db
+        .prepare(
+          "SELECT kind, count(*) AS n, sum(undoes IS NOT NULL) AS u FROM ops WHERE at >= ? AND at < ? AND kind != 'schema' GROUP BY kind",
+        )
+        .all(from, to)) {
+        kinds[r.kind as string] = Number(r.n);
+        undone += Number(r.u);
+      }
+      return { kinds, undone };
     },
     verify: () => {
       let prev = "";

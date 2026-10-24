@@ -1,4 +1,14 @@
-import { ChevronDown, ChevronRight, KeyRound, Search, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  GraduationCap,
+  KeyRound,
+  Mail,
+  Route,
+  Search,
+  Split,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   type CatalogueModel,
@@ -11,7 +21,9 @@ import {
   type ModelsView as View,
 } from "../core/agent.ts";
 import { ApiError } from "../core/api.ts";
+import { type AuditSummary, shortModel } from "../core/audit.ts";
 import { agentApi, errorText, showLog, toast, useStore } from "../store.ts";
+import { BarList, COLORS, DashChart, dailyChart, daysOf, Kpi } from "./Dash.tsx";
 
 type T = ReturnType<typeof useStore.getState>["t"];
 const same = (a: ModelChoice, b: ModelChoice) =>
@@ -23,16 +35,17 @@ const DECIDERS: ModelChoice[] = [
 ];
 
 /**
- * «Modelos» (Juan, 2026-10-24, option A): one page in sections. The month's spending against the budget, which
- * model does each role (a click shows its route, what it does with the data, what it spent and its evaluation),
- * the connections folded, and the log for what each model did. «Cambiar» opens the panel on the right: a model of
- * OpenRouter's that some provider serves keeping nothing, its evaluation next to the current one's, and then use
- * it (the server refuses a model without a recent evaluation).
+ * «Modelos» (Juan, 2026-10-24): a dashboard. The month's numbers first (spending against the budget, calls, what the
+ * models read and changed), then the four uses with the model of each in large type, and the charts beside them
+ * (spending per day by model, calls per model). A click opens the detail: the spending tile its breakdown and the
+ * budget; a use its panel on the right (what it does, how it treats the data, its evaluation, «Cambiar»: a model of
+ * OpenRouter's that some provider serves keeping nothing, evaluated before it is used).
  */
 export function ModelsView() {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
   const [view, setView] = useState<View | null>(null);
+  const [audit, setAudit] = useState<AuditSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [panel, setPanel] = useState<ModelRole | null>(null);
@@ -47,6 +60,15 @@ export function ModelsView() {
   useEffect(() => {
     void load();
   }, []);
+  // What the models read and changed this month (the audit; only a personal device may read it).
+  useEffect(() => {
+    if (!view?.spending.month) return;
+    const from = Date.parse(`${view.spending.month}-01T00:00:00Z`);
+    agentApi
+      .auditSummary(from, Date.now())
+      .then(setAudit)
+      .catch(() => setAudit(null));
+  }, [view?.spending.month]);
   // While an evaluation runs, look again every few seconds.
   useEffect(() => {
     if (!view?.evaluating) return;
@@ -60,6 +82,7 @@ export function ModelsView() {
       else n.add(k);
       return n;
     });
+  const nf = new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES");
   const eur = (x: number) =>
     new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", {
       minimumFractionDigits: 2,
@@ -71,67 +94,115 @@ export function ModelsView() {
         timeZone: "UTC",
       }).format(new Date(`${view.spending.month}-01T12:00:00Z`))
     : "";
+  const ai = (by: string) => by.startsWith("model:") || by.startsWith("mcp:");
+  const reads = audit
+    ? audit.activity.filter((r) => ai(r.by)).reduce((n, r) => n + r.reads, 0)
+    : null;
+  const writes = audit
+    ? audit.activity.filter((r) => ai(r.by) || r.by === "agent").reduce((n, r) => n + r.writes, 0)
+    : null;
   return (
     <div className="models-view">
-      <div className="content page-doc full">
-        <div className="doc models">
-          <h1 className="cols-title">{t("nav.models")}</h1>
-          <p className="cols-help">{t("models.help")}</p>
-          {error && (
-            <p className="decide-error" role="alert">
-              {error}
-            </p>
-          )}
-          {!view && !error && <div className="page-loading" role="status" aria-busy="true" />}
-          {view && (
-            <>
-              <Spending
-                t={t}
-                view={view}
-                month={month}
-                eur={eur}
-                open={open.has("spend")}
-                onToggle={() => toggle("spend")}
-                onChanged={setView}
+      <div className="content dash">
+        <header className="dash-head">
+          <h1 className="dash-title">{t("nav.models")}</h1>
+          {month && <span className="muted">{month}</span>}
+        </header>
+        {error && (
+          <p className="decide-error" role="alert">
+            {error}
+          </p>
+        )}
+        {!view && !error && <div className="page-loading" role="status" aria-busy="true" />}
+        {view && (
+          <>
+            <div className="kpis">
+              <Kpi
+                label={t("models.kpi.spend")}
+                value={`${eur(view.spending.eur)} €`}
+                note={t("models.kpi.of", { budget: eur(view.budget.monthlyEur) })}
+                meter={{
+                  share:
+                    view.budget.monthlyEur > 0 ? view.spending.eur / view.budget.monthlyEur : 0,
+                  state: view.over
+                    ? "over"
+                    : view.spending.eur >= view.budget.monthlyEur * view.budget.warnAt
+                      ? "warn"
+                      : "ok",
+                }}
+                expanded={open.has("spend")}
+                onClick={() => toggle("spend")}
               />
-              <h2 className="models-section">{t("models.roles")}</h2>
-              {view.roles.length === 0 && <p className="muted">{t("models.noRoles")}</p>}
-              {view.roles.map((r) => (
-                <RoleRow
-                  key={r.role}
+              <Kpi
+                label={t("models.kpi.calls")}
+                value={nf.format(view.spending.rows.reduce((n, r) => n + r.calls, 0))}
+              />
+              <Kpi
+                label={t("models.kpi.reads")}
+                value={reads === null ? "—" : nf.format(reads)}
+                note={t("models.kpi.readsNote")}
+              />
+              <Kpi
+                label={t("models.kpi.writes")}
+                value={writes === null ? "—" : nf.format(writes)}
+                note={t("models.kpi.writesNote")}
+              />
+            </div>
+            {view.over && <p className="models-warn">{t("models.over")}</p>}
+            {open.has("spend") && <Spending t={t} view={view} eur={eur} onChanged={setView} />}
+            <div className="dash-grid">
+              <section className="dash-col">
+                <h2 className="dash-h2">{t("models.roles")}</h2>
+                {view.roles.length === 0 && <p className="muted">{t("models.noRoles")}</p>}
+                <div className="uses">
+                  {view.roles.map((r) => (
+                    <RoleCard
+                      key={r.role}
+                      t={t}
+                      r={r}
+                      view={view}
+                      eur={eur}
+                      on={panel === r.role}
+                      onOpen={() => setPanel(panel === r.role ? null : r.role)}
+                    />
+                  ))}
+                </div>
+                <Connections
                   t={t}
-                  r={r}
                   view={view}
-                  eur={eur}
-                  open={open.has(r.role)}
-                  onToggle={() => toggle(r.role)}
-                  onChange={() => setPanel(r.role)}
+                  open={open.has("connections")}
+                  onToggle={() => toggle("connections")}
                   onChanged={setView}
                 />
-              ))}
-              <Connections
-                t={t}
-                view={view}
-                open={open.has("connections")}
-                onToggle={() => toggle("connections")}
-                onChanged={setView}
-              />
-              <button type="button" className="models-row models-link" onClick={showLog}>
-                <span className="models-row-main">
-                  <span className="models-name">{t("models.activity")}</span>
-                  <span className="muted small">{t("models.toLog")}</span>
-                </span>
-                <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
-              </button>
-            </>
-          )}
-        </div>
+              </section>
+              <section className="dash-col">
+                <h2 className="dash-h2">{t("models.byDayChart")}</h2>
+                <SpendChart t={t} view={view} />
+                <h2 className="dash-h2">{t("models.callsChart")}</h2>
+                <BarList
+                  rows={callsByModel(view)}
+                  series={[{ name: t("models.kpi.calls"), color: "var(--accent)" }]}
+                  format={(n) => nf.format(n)}
+                  empty={t("models.noCalls")}
+                />
+              </section>
+            </div>
+            <button type="button" className="models-row models-link" onClick={showLog}>
+              <span className="models-row-main">
+                <span className="models-name">{t("models.activity")}</span>
+                <span className="muted small">{t("models.toLog")}</span>
+              </span>
+              <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
+            </button>
+          </>
+        )}
       </div>
       {view && panel && (
-        <ChangePanel
+        <RolePanel
           t={t}
           role={panel}
           view={view}
+          eur={eur}
           onClose={() => setPanel(null)}
           onChanged={setView}
         />
@@ -140,27 +211,103 @@ export function ModelsView() {
   );
 }
 
+/** Calls per model this month (evaluations together with their model), most first. */
+function callsByModel(view: View) {
+  const by = new Map<string, number>();
+  for (const r of view.spending.rows) by.set(r.model, (by.get(r.model) ?? 0) + r.calls);
+  return [...by.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([model, calls]) => ({ key: model, label: shortModel(model), values: [calls] }));
+}
+
+/** Spending per day this month, one colour per model. */
+function SpendChart({ t, view }: { t: T; view: View }) {
+  const month = view.spending.month;
+  if (!month || !view.spending.byDay.length)
+    return <p className="muted small">{t("models.noCalls")}</p>;
+  const from = Date.parse(`${month}-01T00:00:00Z`);
+  const to = Math.min(Date.now() + 1, Date.parse(`${nextMonth(month)}-01T00:00:00Z`));
+  const models = [...new Set(view.spending.byDay.flatMap((d) => Object.keys(d.byModel)))];
+  const series = (models.length ? models : [""]).map((m) => ({
+    name: m ? shortModel(m) : t("models.kpi.spend"),
+    values: Object.fromEntries(
+      view.spending.byDay.map((d) => [d.day, m ? (d.byModel[m] ?? 0) : d.eur]),
+    ),
+  }));
+  return (
+    <DashChart
+      data={dailyChart("models-spend", "stacked_bar", daysOf(from, to), series, "EUR")}
+      legend={series.map((s, i) => ({ name: s.name, color: COLORS[i % COLORS.length] as string }))}
+    />
+  );
+}
+const nextMonth = (m: string) => {
+  const [y, mo] = m.split("-").map(Number) as [number, number];
+  return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`;
+};
+
+const ROLE_ICONS: Record<ModelRole, typeof Route> = {
+  planner: Route,
+  reader: Mail,
+  decider: Split,
+  reviewer: GraduationCap,
+};
+
+/** A use with its model in large type, how it treats the data, and what it spent; a click opens its panel. */
+function RoleCard({
+  t,
+  r,
+  view,
+  eur,
+  on,
+  onOpen,
+}: {
+  t: T;
+  r: ModelRoleView;
+  view: View;
+  eur: (x: number) => string;
+  on: boolean;
+  onOpen: () => void;
+}) {
+  const rows = view.spending.rows.filter((x) => x.role === r.role);
+  const spent = rows.reduce((a, x) => a + x.eur, 0);
+  const calls = rows.reduce((a, x) => a + x.calls, 0);
+  const Icon = ROLE_ICONS[r.role];
+  return (
+    <button
+      type="button"
+      className={`use-card${on ? " on" : ""}`}
+      aria-pressed={on}
+      title={r.model}
+      onClick={onOpen}
+    >
+      <span className="use-role">
+        <Icon size={14} strokeWidth={1.8} aria-hidden="true" />
+        {t(`models.role.${r.role}`)}
+      </span>
+      <span className="use-model">{shortModel(r.model)}</span>
+      <span className={`models-badge ${r.privacy}`}>{t(`models.privacy.${r.privacy}`)}</span>
+      <span className="use-spend">
+        {eur(spent)} € · {t("models.calls", { n: calls })}
+      </span>
+    </button>
+  );
+}
+
+/** The month's spending by model and the budget (under the spending tile, when it is open). */
 function Spending({
   t,
   view,
-  month,
   eur,
-  open,
-  onToggle,
   onChanged,
 }: {
   t: T;
   view: View;
-  month: string;
   eur: (x: number) => string;
-  open: boolean;
-  onToggle: () => void;
   onChanged: (v: View) => void;
 }) {
   const [edit, setEdit] = useState<{ monthly: string; warn: string; rate: string } | null>(null);
   const { budget, spending } = view;
-  const share = budget.monthlyEur > 0 ? Math.min(1, spending.eur / budget.monthlyEur) : 0;
-  const max = Math.max(...spending.byDay.map((d) => d.eur), 0.0001);
   const roleName = (role: string) =>
     role.startsWith("eval-")
       ? t("models.evalOf", { role: t(`models.role.${role.slice(5)}`) })
@@ -180,221 +327,93 @@ function Spending({
     }
   };
   return (
-    <section className={`card models-card${open ? " open" : ""}`}>
-      <button type="button" className="models-row" aria-expanded={open} onClick={onToggle}>
-        <span className="models-row-main">
-          <span className="models-name">{t("models.spend", { month })}</span>
-          <span className="models-bar" aria-hidden="true">
-            <span
-              className={`models-bar-fill${view.over ? " over" : share >= budget.warnAt ? " warn" : ""}`}
-              style={{ width: `${Math.round(share * 100)}%` }}
-            />
-          </span>
-        </span>
-        <span className="models-amount">
-          {t("models.spendOf", { eur: eur(spending.eur), budget: eur(budget.monthlyEur) })}
-        </span>
-        {open ? (
-          <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" />
-        ) : (
-          <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
-        )}
-      </button>
-      {view.over && <p className="models-warn">{t("models.over")}</p>}
-      {open && (
-        <div className="models-more">
-          {spending.rows.length > 0 && (
-            <>
-              <h3 className="models-sub">{t("models.byModel")}</h3>
-              <ul className="models-list">
-                {spending.rows.map((r) => (
-                  <li key={`${r.role}|${r.provider}|${r.model}`}>
-                    <span className="models-list-main">
-                      {roleName(r.role)} · {r.model}
-                      <span className="muted small">
-                        {" "}
-                        · {t("models.calls", { n: r.calls })}
-                        {r.unpriced > 0 ? ` · ${t("models.unpriced", { n: r.unpriced })}` : ""}
-                      </span>
+    <section className="card models-card open models-spend">
+      <div className="models-more">
+        {spending.rows.length > 0 && (
+          <>
+            <h3 className="models-sub">{t("models.byModel")}</h3>
+            <ul className="models-list">
+              {spending.rows.map((r) => (
+                <li key={`${r.role}|${r.provider}|${r.model}`}>
+                  <span className="models-list-main">
+                    {roleName(r.role)} · {shortModel(r.model)}
+                    <span className="muted small">
+                      {" "}
+                      · {t("models.calls", { n: r.calls })}
+                      {r.unpriced > 0 ? ` · ${t("models.unpriced", { n: r.unpriced })}` : ""}
                     </span>
-                    <span className="models-amount">{eur(r.eur)} €</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {spending.byDay.length > 0 && (
-            <>
-              <h3 className="models-sub">{t("models.byDay")}</h3>
-              <div className="models-days">
-                {spending.byDay.map((d) => (
-                  <span
-                    key={d.day}
-                    className="models-day"
-                    title={`${d.day}: ${eur(d.eur)} €`}
-                    style={{ height: `${Math.max(4, Math.round((d.eur / max) * 48))}px` }}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-          {edit ? (
-            <div className="models-form">
-              <label>
-                <span>{t("models.monthly")}</span>
-                <input
-                  inputMode="decimal"
-                  value={edit.monthly}
-                  onChange={(e) => setEdit({ ...edit, monthly: e.target.value })}
-                />
-              </label>
-              <label>
-                <span>{t("models.warnAt")}</span>
-                <input
-                  inputMode="numeric"
-                  value={edit.warn}
-                  onChange={(e) => setEdit({ ...edit, warn: e.target.value })}
-                />
-              </label>
-              <label>
-                <span>{t("models.rate")}</span>
-                <input
-                  inputMode="decimal"
-                  value={edit.rate}
-                  onChange={(e) => setEdit({ ...edit, rate: e.target.value })}
-                />
-              </label>
-              <span className="models-actions">
-                <button type="button" className="btn" onClick={() => setEdit(null)}>
-                  {t("models.cancel")}
-                </button>
-                <button type="button" className="btn primary" onClick={() => void save()}>
-                  {t("models.save")}
-                </button>
-              </span>
-            </div>
-          ) : (
-            <p className="models-line">
-              <span className="muted">
-                {t("models.budget", {
-                  eur: eur(budget.monthlyEur),
-                  pct: Math.round(budget.warnAt * 100),
-                })}
-              </span>
-              <button
-                type="button"
-                className="btn ghost small"
-                onClick={() =>
-                  setEdit({
-                    monthly: String(budget.monthlyEur),
-                    warn: String(Math.round(budget.warnAt * 100)),
-                    rate: String(view.usdToEur),
-                  })
-                }
-              >
-                {t("models.budgetEdit")}
+                  </span>
+                  <span className="models-amount">{eur(r.eur)} €</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {edit ? (
+          <div className="models-form">
+            <label>
+              <span>{t("models.monthly")}</span>
+              <input
+                inputMode="decimal"
+                value={edit.monthly}
+                onChange={(e) => setEdit({ ...edit, monthly: e.target.value })}
+              />
+            </label>
+            <label>
+              <span>{t("models.warnAt")}</span>
+              <input
+                inputMode="numeric"
+                value={edit.warn}
+                onChange={(e) => setEdit({ ...edit, warn: e.target.value })}
+              />
+            </label>
+            <label>
+              <span>{t("models.rate")}</span>
+              <input
+                inputMode="decimal"
+                value={edit.rate}
+                onChange={(e) => setEdit({ ...edit, rate: e.target.value })}
+              />
+            </label>
+            <span className="models-actions">
+              <button type="button" className="btn" onClick={() => setEdit(null)}>
+                {t("models.cancel")}
               </button>
-            </p>
-          )}
-        </div>
-      )}
+              <button type="button" className="btn primary" onClick={() => void save()}>
+                {t("models.save")}
+              </button>
+            </span>
+          </div>
+        ) : (
+          <p className="models-line">
+            <span className="muted">
+              {t("models.budget", {
+                eur: eur(budget.monthlyEur),
+                pct: Math.round(budget.warnAt * 100),
+              })}
+            </span>
+            <button
+              type="button"
+              className="btn ghost small"
+              onClick={() =>
+                setEdit({
+                  monthly: String(budget.monthlyEur),
+                  warn: String(Math.round(budget.warnAt * 100)),
+                  rate: String(view.usdToEur),
+                })
+              }
+            >
+              {t("models.budgetEdit")}
+            </button>
+          </p>
+        )}
+      </div>
     </section>
   );
 }
 
 const lastEval = (view: View, role: ModelRole, c: ModelChoice): ModelEvaluation | undefined =>
   view.evaluations.find((e) => e.role === role && same(e, c));
-
-function RoleRow({
-  t,
-  r,
-  view,
-  eur,
-  open,
-  onToggle,
-  onChange,
-  onChanged,
-}: {
-  t: T;
-  r: ModelRoleView;
-  view: View;
-  eur: (x: number) => string;
-  open: boolean;
-  onToggle: () => void;
-  onChange: () => void;
-  onChanged: (v: View) => void;
-}) {
-  const [cases, setCases] = useState(false);
-  const rows = view.spending.rows.filter((x) => x.role === r.role);
-  const spent = rows.reduce((a, x) => a + x.eur, 0);
-  const calls = rows.reduce((a, x) => a + x.calls, 0);
-  const ev = lastEval(view, r.role, r);
-  const back = async () => {
-    try {
-      const v = await agentApi.setModelRole(r.role, null);
-      if (v) onChanged(v);
-    } catch (e) {
-      toast(errorText(t, e));
-    }
-  };
-  return (
-    <section className={`card models-card${open ? " open" : ""}`}>
-      <button type="button" className="models-row" aria-expanded={open} onClick={onToggle}>
-        <span className="models-row-main">
-          <span className="models-name">{t(`models.role.${r.role}`)}</span>
-          <span className="muted small models-route">
-            {r.model} · {t(`models.conn.${r.connection}`)} · {eur(spent)} €
-          </span>
-          <span className={`models-badge ${r.privacy}`}>{t(`models.privacy.${r.privacy}`)}</span>
-        </span>
-        {open ? (
-          <ChevronDown size={15} strokeWidth={1.8} aria-hidden="true" />
-        ) : (
-          <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
-        )}
-      </button>
-      {open && (
-        <div className="models-more">
-          <p className="models-line muted">{t(`models.roleHelp.${r.role}`)}</p>
-          <p className="models-line">{t(`models.privacyHelp.${r.privacy}`)}</p>
-          <p className="models-line">
-            {r.chosen ? t("models.chosen") : t("models.server")}
-            {r.missingKey
-              ? ` · ${t("models.missingKey", { conn: t(`models.conn.${r.connection}`) })}`
-              : ""}
-          </p>
-          <p className="models-line">
-            {t("models.thisMonth", { eur: eur(spent), calls: t("models.calls", { n: calls }) })}
-          </p>
-          <p className="models-line">
-            {ev ? t("models.lastEval", { right: ev.right, total: ev.total }) : t("models.noEval")}
-            {ev && ev.cases.length > 0 && (
-              <button
-                type="button"
-                className="btn ghost small"
-                aria-expanded={cases}
-                onClick={() => setCases(!cases)}
-              >
-                {t("models.cases")}
-              </button>
-            )}
-          </p>
-          {ev && cases && <Cases ev={ev} />}
-          <span className="models-actions">
-            {r.chosen && (
-              <button type="button" className="btn" onClick={() => void back()}>
-                {t("models.backToServer")}
-              </button>
-            )}
-            <button type="button" className="btn primary" onClick={onChange}>
-              {t("models.change")}
-            </button>
-          </span>
-        </div>
-      )}
-    </section>
-  );
-}
 
 function Cases({ ev }: { ev: ModelEvaluation }) {
   return (
@@ -522,19 +541,27 @@ function Connections({
   );
 }
 
-function ChangePanel({
+/**
+ * A use's panel: what it does, how its route treats the data, whose choice it is, what it spent this month and its
+ * last evaluation; «Cambiar» shows the models to pick from, evaluate and use.
+ */
+function RolePanel({
   t,
   role,
   view,
+  eur,
   onClose,
   onChanged,
 }: {
   t: T;
   role: ModelRole;
   view: View;
+  eur: (x: number) => string;
   onClose: () => void;
   onChanged: (v: View) => void;
 }) {
+  const [picking, setPicking] = useState(false);
+  const [cases, setCases] = useState(false);
   const lang = useStore((s) => s.settings.language);
   const usd = (x: number) =>
     new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", { maximumFractionDigits: 3 }).format(
@@ -546,13 +573,24 @@ function ChangePanel({
   const [picked, setPicked] = useState<ModelChoice | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const current = view.roles.find((r) => r.role === role);
+  const rows = view.spending.rows.filter((x) => x.role === role);
+  const spent = rows.reduce((a, x) => a + x.eur, 0);
+  const calls = rows.reduce((a, x) => a + x.calls, 0);
+  const back = async () => {
+    try {
+      const v = await agentApi.setModelRole(role, null);
+      if (v) onChanged(v);
+    } catch (e) {
+      toast(errorText(t, e));
+    }
+  };
   useEffect(() => {
-    if (role === "decider") return;
+    if (role === "decider" || !picking) return;
     agentApi
       .catalogue()
       .then(setCatalogue)
       .catch(() => setFailed(true));
-  }, [role]);
+  }, [role, picking]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) {
@@ -631,8 +669,58 @@ function ChangePanel({
         </button>
       </header>
       <div className="panel-body models-panel-body">
-        <p className="muted small">{t("models.pick")}</p>
-        {role !== "decider" && (
+        {current && (
+          <div className="role-detail">
+            <p className="use-model">{shortModel(current.model)}</p>
+            <p className="muted small">
+              {current.model} · {t(`models.conn.${current.connection}`)}
+            </p>
+            <span className={`models-badge ${current.privacy}`}>
+              {t(`models.privacy.${current.privacy}`)}
+            </span>
+            <p className="models-line muted">{t(`models.roleHelp.${role}`)}</p>
+            <p className="models-line">{t(`models.privacyHelp.${current.privacy}`)}</p>
+            <p className="models-line">
+              {current.chosen ? t("models.chosen") : t("models.server")}
+              {current.missingKey
+                ? ` · ${t("models.missingKey", { conn: t(`models.conn.${current.connection}`) })}`
+                : ""}
+            </p>
+            <p className="models-line">
+              {t("models.thisMonth", { eur: eur(spent), calls: t("models.calls", { n: calls }) })}
+            </p>
+            <p className="models-line">
+              {now
+                ? t("models.lastEval", { right: now.right, total: now.total })
+                : t("models.noEval")}
+              {now && now.cases.length > 0 && (
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  aria-expanded={cases}
+                  onClick={() => setCases(!cases)}
+                >
+                  {t("models.cases")}
+                </button>
+              )}
+            </p>
+            {now && cases && <Cases ev={now} />}
+            {!picking && (
+              <span className="models-actions">
+                {current.chosen && (
+                  <button type="button" className="btn" onClick={() => void back()}>
+                    {t("models.backToServer")}
+                  </button>
+                )}
+                <button type="button" className="btn primary" onClick={() => setPicking(true)}>
+                  {t("models.change")}
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+        {(picking || !current) && <p className="muted small">{t("models.pick")}</p>}
+        {(picking || !current) && role !== "decider" && (
           <label className="cols-search">
             <Search size={14} strokeWidth={1.8} aria-hidden />
             <input
@@ -643,40 +731,44 @@ function ChangePanel({
             />
           </label>
         )}
-        {role !== "decider" && !catalogue && !failed && (
+        {(picking || !current) && role !== "decider" && !catalogue && !failed && (
           <p className="muted small" role="status">
             {t("models.loadingCatalogue")}
           </p>
         )}
         {failed && <p className="decide-error">{t("models.noCatalogue")}</p>}
         {catalogue && shown.length === 0 && <p className="muted small">{t("models.empty")}</p>}
-        <ul className="models-pick">
-          {options.map((o) => (
-            <li key={`${o.connection}|${o.model}`}>
-              <button
-                type="button"
-                className={`models-option${picked && same(picked, o) ? " on" : ""}`}
-                aria-pressed={!!picked && same(picked, o)}
-                title={o.model}
-                onClick={() => setPicked({ connection: o.connection, model: o.model, zdr: o.zdr })}
-              >
-                <span className="models-name">{o.item?.name ?? o.model}</span>
-                {o.item ? (
-                  <>
-                    <span className="muted small">
-                      {t("models.perM", { in: usd(o.item.input), out: usd(o.item.output) })}
-                    </span>
-                    <span className="muted small">
-                      {t("models.providers", { n: o.item.providers.length })}
-                    </span>
-                  </>
-                ) : (
-                  <span className="muted small">{t(`models.conn.${o.connection}`)}</span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
+        {(picking || !current) && (
+          <ul className="models-pick">
+            {options.map((o) => (
+              <li key={`${o.connection}|${o.model}`}>
+                <button
+                  type="button"
+                  className={`models-option${picked && same(picked, o) ? " on" : ""}`}
+                  aria-pressed={!!picked && same(picked, o)}
+                  title={o.model}
+                  onClick={() =>
+                    setPicked({ connection: o.connection, model: o.model, zdr: o.zdr })
+                  }
+                >
+                  <span className="models-name">{o.item?.name ?? o.model}</span>
+                  {o.item ? (
+                    <>
+                      <span className="muted small">
+                        {t("models.perM", { in: usd(o.item.input), out: usd(o.item.output) })}
+                      </span>
+                      <span className="muted small">
+                        {t("models.providers", { n: o.item.providers.length })}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="muted small">{t(`models.conn.${o.connection}`)}</span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {picked && (
           <div className="models-compare">
             {current && (

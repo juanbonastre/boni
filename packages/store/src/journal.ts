@@ -124,7 +124,10 @@ export interface Journal {
   /** Model calls from `from` to `to` (ms), grouped by role, provider and model. */
   spending(from: number, to: number): SpendRow[];
   /** Their cost per UTC day ("YYYY-MM-DD"), in dollars. */
-  spendingByDay(from: number, to: number): { day: string; cost: number }[];
+  spendingByDay(
+    from: number,
+    to: number,
+  ): { day: string; cost: number; byModel: Record<string, number> }[];
   /** A waiting run's state (the agent's, as JSON), kept so it survives a restart. */
   saveRunState(run: string, state: unknown, at: number): void;
   runState(run: string): unknown;
@@ -358,15 +361,25 @@ export function openJournal(db: DatabaseSync): Journal {
           cost: Number(r.cost),
           unpriced: Number(r.unpriced),
         })),
-    spendingByDay: (from, to) =>
-      db
+    spendingByDay: (from, to) => {
+      const days = new Map<
+        string,
+        { day: string; cost: number; byModel: Record<string, number> }
+      >();
+      for (const r of db
         .prepare(
-          `SELECT strftime('%Y-%m-%d', at / 1000, 'unixepoch') AS day,
+          `SELECT strftime('%Y-%m-%d', at / 1000, 'unixepoch') AS day, model,
              coalesce(sum(json_extract(usage, '$.cost')), 0) AS cost
-           FROM model_calls WHERE at >= ? AND at < ? GROUP BY day ORDER BY day`,
+           FROM model_calls WHERE at >= ? AND at < ? GROUP BY day, model ORDER BY day`,
         )
-        .all(from, to)
-        .map((r) => ({ day: r.day as string, cost: Number(r.cost) })),
+        .all(from, to)) {
+        const d = days.get(r.day as string) ?? { day: r.day as string, cost: 0, byModel: {} };
+        d.cost += Number(r.cost);
+        d.byModel[r.model as string] = Number(r.cost);
+        days.set(d.day, d);
+      }
+      return [...days.values()];
+    },
     saveRunState: (run, state, at) =>
       void db
         .prepare(

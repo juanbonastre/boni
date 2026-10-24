@@ -177,7 +177,7 @@ export interface UserStore {
   readQuery(sql: string, params?: (string | number | null)[]): Record<string, unknown>[];
   /** The operation log, oldest first, for an export (`log.ndjson`); never the agent's journal. With `target` or
    * `run`, only that entity's or that run's operations (by their indexes). */
-  log(q?: { target?: string; run?: string }): LogRow[];
+  log(q?: { target?: string; run?: string; action?: number }): LogRow[];
   /**
    * What the models may see of each type: `visible` (the default), `opaque` (the planner knows the type and
    * code works with its values, but no model reads them) or `hidden` (as if it did not exist). Juan sets it
@@ -976,7 +976,9 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
           ? db.prepare("SELECT * FROM ops WHERE target = ? ORDER BY seq").all(q.target)
           : q.run !== undefined
             ? db.prepare("SELECT * FROM ops WHERE run = ? ORDER BY seq").all(q.run)
-            : db.prepare("SELECT * FROM ops ORDER BY seq").all();
+            : q.action !== undefined
+              ? db.prepare("SELECT * FROM ops WHERE action = ? ORDER BY seq").all(q.action)
+              : db.prepare("SELECT * FROM ops ORDER BY seq").all();
       return rows.map((r) => ({
         seq: Number(r.seq),
         at: Number(r.at),

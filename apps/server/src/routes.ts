@@ -96,6 +96,7 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "POST /api/mcp": "tailnet",
   "GET /api/mcp": "tailnet",
   "GET /api/data/lookup": "tailnet",
+  "GET /api/data/notes": "tailnet",
   "GET /api/data/audit/summary": "tailnet",
   "GET /api/data/audit/actions": "tailnet",
   "GET /api/data/audit/actions/:seq": "tailnet",

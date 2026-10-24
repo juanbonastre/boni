@@ -6,6 +6,14 @@ import {
   pageErrors,
 } from "@boni/views";
 import { ApiError, NotConfiguredError, OfflineError, type Transport } from "./api.ts";
+import {
+  parseActions,
+  parseDetail,
+  parseHistory,
+  parseNotes,
+  parseStorage,
+  parseSummary,
+} from "./audit.ts";
 
 /**
  * The agent's conversation API (apps/server/src/agent.ts, docs/nucleo.md 7 and 7.14). What comes back is
@@ -342,7 +350,7 @@ export interface ModelsView {
     month: string;
     eur: number;
     rows: ModelSpendRow[];
-    byDay: { day: string; eur: number }[];
+    byDay: { day: string; eur: number; byModel: Record<string, number> }[];
   };
   over: boolean;
   evaluations: ModelEvaluation[];
@@ -406,7 +414,15 @@ export function parseModels(b: unknown): ModelsView | null {
       byDay: (Array.isArray(sp.byDay) ? sp.byDay : [])
         .filter(isObj)
         .slice(0, 31)
-        .map((d) => ({ day: s200(d.day, 10), eur: num(d.eur) })),
+        .map((d) => ({
+          day: s200(d.day, 10),
+          eur: num(d.eur),
+          byModel: Object.fromEntries(
+            Object.entries(isObj(d.byModel) ? d.byModel : {})
+              .slice(0, 30)
+              .map(([k, v]) => [k.slice(0, 120), num(v)]),
+          ),
+        })),
     },
     over: b.over === true,
     evaluations: (Array.isArray(b.evaluations) ? b.evaluations : [])
@@ -1171,6 +1187,39 @@ export class AgentApi {
     void (await this.call("POST", `/${encodeURIComponent(id)}/restore`, {}, "api/pages"));
   deletePage = async (id: string) =>
     void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/pages"));
+  // The audit (core/audit.ts): who did and saw what, a row's history, storage, the notes by path.
+  auditSummary = async (from: number, to: number) =>
+    parseSummary(
+      await this.call("GET", `summary?from=${from}&to=${to}`, undefined, "api/data/audit/"),
+    );
+  auditActions = async (q: {
+    before?: number;
+    who?: string;
+    type?: string;
+    run?: string;
+    limit?: number;
+  }) => {
+    const qs = Object.entries(q)
+      .filter(([, v]) => v !== undefined && v !== "")
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return parseActions(
+      await this.call("GET", `actions${qs ? `?${qs}` : ""}`, undefined, "api/data/audit/"),
+    );
+  };
+  auditAction = async (seq: number) =>
+    parseDetail(await this.call("GET", `actions/${seq}`, undefined, "api/data/audit/"));
+  rowHistory = async (id: string) =>
+    parseHistory(
+      await this.call("GET", `rows/${encodeURIComponent(id)}`, undefined, "api/data/audit/"),
+    );
+  auditVerify = async () => {
+    const b = await this.call("GET", "verify", undefined, "api/data/audit/");
+    return isObj(b) && b.ok === true;
+  };
+  storage = async () =>
+    parseStorage(await this.call("GET", "storage", undefined, "api/data/audit/"));
+  notes = async () => parseNotes(await this.call("GET", "", undefined, "api/data/notes"));
   // The user's collections as databases (plan PR 19).
   dataTypes = async (): Promise<DataType[]> => {
     const b = await this.call("GET", "", undefined, "api/data/types");

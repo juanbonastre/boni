@@ -389,25 +389,45 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   opciones": "Volver a leer" (a days select, 1 to 30, and "Leer": that mail is read again and its pending proposals
   are replaced; a toast says how many mails) and the mailbox with "Cambiar" and "Desconectar". The password is never
   shown again.
-- **Modelos** (Boni, sidebar under Colecciones; Juan, 2026-10-24, option A with more detail on click): a page of
-  folded cards, each a row with a chevron that a click opens. First the month's spending ("Gasto de octubre", a bar
-  in `--accent`, amber past the warning, `--bad` at the budget, "3,42 € de 10,00 €"; at the budget a `--bad` line
-  says background work stopped); open, it lists each model's € and calls (evaluations as "Evaluación: <role>"), a
-  bar per day and "Cambiar el presupuesto" (al mes, avisar al %, 1 dólar en euros). Then "Qué modelo hace cada
-  cosa": one card per role named by what it does for Juan ("Entender lo que pides", "Leer correos", "Decidir entre
-  opciones", "Revisar lo aprendido"), with the model id, the connection, this month's € and a pill saying what it
-  does with the data (`--good` "No guarda tus datos", muted "Borra lo que recibe en 30 días", `--bad` "Puede
-  guardar tus datos"); open: what the role does, the privacy in a sentence, whose choice it is, the month's spend,
-  the last evaluation with "Ver los casos" (✓ / ✕ per case, the note muted), "Volver al del servidor" and
-  "Cambiar". "Conexiones" folded (which have a key; open: a row per connection, "Poner tu clave" as a password field
-  in place, "Quitar tu clave"; the key never comes back). Last, "Qué ha hecho cada modelo" goes to the Registro.
-  **Cambiar** opens a panel on the right (over the page when narrow; Esc or ✕ closes it): a search and the models of
-  OpenRouter that some provider serves keeping nothing, cheapest first, each a box with its name, price per million
-  tokens and how many such providers (one line each, ellipsized; readers only see models that answer a fixed form,
-  the decider only Jev); the picked one in the accent tint. Under the list, fixed while it scrolls, "Ahora" and
-  "Nuevo" with their scores ("7 de 8 bien · 1 equivocado · La prueba costó 0,012 $"), the cases, "Evaluar"
-  (while it runs, "Evaluando con casos inventados…" and the page looks again every few seconds) and "Usar este
-  modelo", enabled only with a recent evaluation.
+- **Dashboards** (Boni: «Modelos», «Actividad», «Auditoría»; Juan, 2026-10-24: short names, the models and the numbers
+  large, not the whole width, charts, detail on click). A page column of at most 1200 px, centred; the title large with
+  its period beside it (a segmented control where the period can change). First a row of four number tiles (label,
+  a 26 px number, a muted note; a tile that opens more is a button, outlined in `--accent` while open; a limit is a thin
+  bar in `--accent`, amber past the warning, `--bad` at the limit). Then two columns (one when the page is narrower
+  than ~900 px, also when a side panel takes room): cards on the left, charts on the right. Charts are Boni's own
+  (`Chart.tsx`) at 200 px with the legend in HTML above them (a square per series); comparisons of a few things are
+  bar lists (a label up to 11rem, ellipsized with its full text on hover, a bar per series and its value written
+  beside it, a click on a row filters or opens what it is about). Colours follow the thing, never its position:
+  per actor, the Agente `--c1`, the Lector `--c2`, the Revisor `--c3`, the Decisor `--c4`, the MCP `--c7`, people
+  muted, Boni's code `--compare`.
+- **Modelos** (Boni, sidebar): tiles Gasto (against the budget; open: the spending per model and «Cambiar el
+  presupuesto»), Llamadas, Lecturas and Ediciones (what the models and the MCP read and changed this month, from the
+  audit). «Usos»: a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor), the model's
+  short id at 18 px, a pill of what its route does with the data (`--good` «No guarda tus datos», muted «Borra lo que
+  recibe en 30 días», `--bad` «Puede guardar tus datos») and «€ · llamadas»; a click opens the use's panel on the
+  right (over the page when narrow): the model and its route, what the use does, the privacy in a sentence, whose
+  choice it is, this month's spending, the last evaluation with «Ver los casos», «Volver al del servidor» and
+  «Cambiar», which shows the models to choose (search, OpenRouter's models some provider serves keeping nothing,
+  cheapest first, a box each with its name, price per million tokens and providers; readers only those that answer a
+  fixed form, the Decisor only Jev) and under the list, fixed while it scrolls, «Ahora» and «Nuevo» with their scores,
+  «Evaluar» and «Usar este modelo» (enabled only with a recent evaluation). «Claves» folded under the cards (a
+  password field in place; the key never comes back). Right: «Gasto por día» (stacked by model) and «Llamadas por
+  modelo». Last, «Qué han hecho los modelos» goes to Actividad.
+- **Actividad** (Boni, sidebar; it replaces the Registro's flat list): tiles Correos leídos, Propuestas («81 %
+  aceptadas»), Cambios («12 deshechos»), Peticiones tuyas; «Por día» (read and edited, two lines), «Quién edita» (a bar
+  per actor; a click opens the audit of that actor), «Qué cambian» (create / edit / delete as numbers), «Colecciones:
+  leído y editado» (two bars per collection; a click opens its audit), «Abrir la auditoría», and «Ejecuciones» folded
+  at the end (the runs one by one, as the Registro was). On a device that may not read the audit, a muted line says
+  so and the runs are shown.
+- **Auditoría** (Boni, from Actividad; crumbs «Actividad / Auditoría»): read-only, as a collection: «Verificar la
+  cadena» (then `--good` «Cadena verificada» or `--bad` «La cadena no cuadra»), filters (a segmented Todos / Modelos /
+  MCP / Boni / Personas and a select of collections; «Una ejecución ✕» when it shows one run), and a table of actions
+  (Cuándo, Quién with its colour dot, Acción in words — «Buscó «dentista»», «Leyó», «Descargó una web», a refused one
+  in `--bad` «Intentó: …» — and Sobre: the collections and records it saw, «con la nota» when the text reached it, what
+  it changed). Fifty at a time, «Cargar más». A row opens its panel: who and when, «Lo que le llegó» (each record's
+  title, its collection and fields, «con la nota» in amber or «sin la nota» in `--good`, the fields seen only as their
+  shape), «Lo que escribió» (a model's own answer as plain text, or the records it changed), «Argumentos», whether it
+  was allowed, and «Ver toda la ejecución».
 
 ## 7. Keeping it consistent
 - A pull request that changes look or behaviour in Boni Calendar updates this file.
