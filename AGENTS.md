@@ -118,6 +118,12 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  the reader writing the note only when Jev says it is worth it; without Jev the reader fills all.
                  A call step's `why` is the reason its proposal shows (the reader's quote); `zip` walks a second
                  list along `each` (`$zip`).
+                 `models.ts`: «Modelos» (Juan, 2026-10-24), pure: the roles (planner, reader, decider, reviewer), an
+                 account's `ModelsConfig` (a choice per role, the monthly budget, dollars to euros) and its checks,
+                 `privacyOf` (only OpenRouter with `zdr` is "keeps nothing"; Anthropic's own API deletes in 30 days)
+                 and `anthropicCost` (its price table). Every `Usage` carries `cost` in dollars when known (OpenRouter
+                 says it; Anthropic's is computed). `overBudget` stops background model calls (P13); `setProviders`
+                 swaps an agent's models without losing runs; the reviewer may have its own model (role `reviewer`).
                  `anthropic.ts`: the real provider (Messages API with structured output, no tools, no SDK);
                  `apiSchema` reduces schemas to what that API accepts (the code checks every answer again anyway).
                  `eval/eval.ts`: a small evaluation with the real models, outside CI, run by hand with a budget.
@@ -294,6 +300,11 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  Boni would accept a mail proposal alone (code's rule over Juan's decisions on ones like it; only
                  measured: the card's `wouldAccept` and the Registro's `autoAccept`, nothing is accepted alone).
                  "Ya lo hice": accept with `done`, the calendar's task column (`taskDoneField`) set to true.
+                 `src/models.ts` (`AccountModels`, `serveModels`): each account's models, served under
+                 `/api/agent/models` even with the agent off: the choices in its store, its keys sealed with its data
+                 key (never sent back), the server's environment as the default of every role it did not choose, the
+                 month's spending from the journal (`spending`), a notice once at the budget's fraction, the catalogue
+                 of OpenRouter models some provider serves keeping nothing (`/api/v1/endpoints/zdr`, via @boni/net).
                  `GET /api/agent/requests`, `POST /api/agent/requests/:id/answer | dismiss`: the panel of requests;
                  a new one is told to the devices as the live event `requests`.
 apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`legacy/boni/apps/web`, with its history):

@@ -31,6 +31,19 @@ export {
   readFields,
 } from "./filling.ts";
 export { callFn, FnError } from "./fns.ts";
+export {
+  anthropicCost,
+  CONNECTIONS,
+  type Connection,
+  DEFAULT_MODELS,
+  type ModelsConfig,
+  modelsErrors,
+  type Privacy,
+  privacyOf,
+  ROLES,
+  type Role,
+  type RoleChoice,
+} from "./models.ts";
 export { type OpenAIOptions, OpenAIProvider } from "./openai.ts";
 export {
   type Expr,

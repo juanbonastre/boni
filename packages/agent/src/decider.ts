@@ -86,7 +86,7 @@ export class JevProvider implements ModelProvider {
     const b = (await r.json()) as {
       answers?: unknown;
       model?: unknown;
-      usage?: { input_tokens?: unknown; prompt_tokens?: unknown };
+      usage?: { input_tokens?: unknown; prompt_tokens?: unknown; cost?: unknown };
     };
     const answers = checkAnswers(b.answers, input.questions);
     if (!answers) throw Object.assign(new Error("decider"), { code: "bad-answer" });
@@ -96,6 +96,9 @@ export class JevProvider implements ModelProvider {
       usage: {
         input: Number.isFinite(tokens) ? tokens : Math.ceil(input.state.length / 4),
         output: 0,
+        ...(typeof b.usage?.cost === "number" && Number.isFinite(b.usage.cost)
+          ? { cost: b.usage.cost }
+          : {}),
       },
       model: typeof b.model === "string" ? b.model.slice(0, 80) : this.model,
     };

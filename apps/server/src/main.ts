@@ -7,6 +7,7 @@ import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
 import { Mails } from "./mail.ts";
 import { Mirrors } from "./mirror.ts";
+import { AccountModels } from "./models.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -119,6 +120,61 @@ const mirrors = new Mirrors({
   accounts: () => listUsers(db),
 });
 agent.onChanged = (account) => mirrors.soon(account);
+// «Modelos»: each account may choose its own model per role and its own keys; what it chose nothing for runs as
+// above (the environment), described here so the page can show it.
+const plannerModel = process.env.BONI_PLANNER_MODEL;
+const readerModel = process.env.BONI_READER_MODEL;
+const models = new AccountModels({
+  db,
+  key,
+  host: agent,
+  defaults: apiKey
+    ? {
+        planner: { connection: "anthropic", model: plannerModel ?? "claude-opus-5-5" },
+        reader: { connection: "anthropic", model: readerModel ?? "claude-haiku-4-5" },
+        reviewer: { connection: "anthropic", model: readerModel ?? "claude-haiku-4-5" },
+        ...(decider
+          ? {
+              decider: {
+                connection: typesafeKey ? ("typesafe" as const) : ("openrouter" as const),
+                model: deciderModel ?? (typesafeKey ? "jev-1.14.0" : "typesafe/jev-1.14"),
+              },
+            }
+          : {}),
+      }
+    : routerKey
+      ? {
+          planner: {
+            connection: "openrouter",
+            model: plannerModel ?? "anthropic/claude-haiku-5.5",
+          },
+          reader: {
+            connection: "openrouter",
+            model: readerModel ?? "deepseek/deepseek-v4.1-flash",
+          },
+          reviewer: {
+            connection: "openrouter",
+            model: readerModel ?? "deepseek/deepseek-v4.1-flash",
+          },
+          ...(decider
+            ? {
+                decider: {
+                  connection: "openrouter" as const,
+                  model: deciderModel ?? "typesafe/jev-1.14",
+                },
+              }
+            : {}),
+        }
+      : {},
+  serverKeys: {
+    ...(apiKey ? { anthropic: apiKey } : {}),
+    ...(routerKey ? { openrouter: routerKey } : {}),
+    ...(typesafeKey ? { typesafe: typesafeKey } : {}),
+  },
+});
+agent.models = models;
+agent.providersFor = (account) => models.providers(account);
+agent.overBudget = (account) => models.overBudget(account);
 mirrors.start();
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
 const mails = new Mails({ db, key, host: agent });

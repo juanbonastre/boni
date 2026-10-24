@@ -52,7 +52,8 @@ describe("the Anthropic provider", () => {
     const res = await p.complete({ ...req, role: "reader" });
     expect(res).toEqual({
       json: { a: "x" },
-      usage: { input: 10, output: 5 },
+      // Its cost from Anthropic's prices for the model that answered ($4 / $20 per million).
+      usage: { input: 10, output: 5, cost: (10 * 4 + 5 * 20) / 1_000_000 },
       model: "claude-opus-5-5",
     });
     expect(calls[0]?.url).toBe("https://api.anthropic.com/v1/messages");

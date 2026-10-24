@@ -66,6 +66,19 @@ export interface RequestRow {
   decided: number | null;
   answer: unknown;
 }
+/** What model calls cost in a period, per role, provider and model (the «Modelos» page). */
+export interface SpendRow {
+  role: string;
+  provider: string;
+  model: string;
+  calls: number;
+  input: number;
+  output: number;
+  /** US dollars, of the calls whose cost is known. */
+  cost: number;
+  /** Calls with no known cost (an older call, a provider that does not say). */
+  unpriced: number;
+}
 export interface ConfirmationRow {
   id: string;
   run: string;
@@ -105,6 +118,10 @@ export interface Journal {
   request(id: string): RequestRow | null;
   requests(status?: RequestRow["status"]): RequestRow[];
   setRequest(id: string, status: RequestRow["status"], at: number, answer?: unknown): void;
+  /** Model calls from `from` to `to` (ms), grouped by role, provider and model. */
+  spending(from: number, to: number): SpendRow[];
+  /** Their cost per UTC day ("YYYY-MM-DD"), in dollars. */
+  spendingByDay(from: number, to: number): { day: string; cost: number }[];
   /** A waiting run's state (the agent's, as JSON), kept so it survives a restart. */
   saveRunState(run: string, state: unknown, at: number): void;
   runState(run: string): unknown;
@@ -298,6 +315,37 @@ export function openJournal(db: DatabaseSync): Journal {
       void db
         .prepare("UPDATE requests SET status = ?, decided = ?, answer = ? WHERE id = ?")
         .run(status, at, answer === undefined ? null : j(answer), id),
+    spending: (from, to) =>
+      db
+        .prepare(
+          `SELECT role, provider, model, count(*) AS calls,
+             coalesce(sum(json_extract(usage, '$.input')), 0) AS input,
+             coalesce(sum(json_extract(usage, '$.output')), 0) AS output,
+             coalesce(sum(json_extract(usage, '$.cost')), 0) AS cost,
+             sum(json_extract(usage, '$.cost') IS NULL) AS unpriced
+           FROM model_calls WHERE at >= ? AND at < ?
+           GROUP BY role, provider, model ORDER BY cost DESC, calls DESC`,
+        )
+        .all(from, to)
+        .map((r) => ({
+          role: r.role as string,
+          provider: r.provider as string,
+          model: r.model as string,
+          calls: Number(r.calls),
+          input: Number(r.input),
+          output: Number(r.output),
+          cost: Number(r.cost),
+          unpriced: Number(r.unpriced),
+        })),
+    spendingByDay: (from, to) =>
+      db
+        .prepare(
+          `SELECT strftime('%Y-%m-%d', at / 1000, 'unixepoch') AS day,
+             coalesce(sum(json_extract(usage, '$.cost')), 0) AS cost
+           FROM model_calls WHERE at >= ? AND at < ? GROUP BY day ORDER BY day`,
+        )
+        .all(from, to)
+        .map((r) => ({ day: r.day as string, cost: Number(r.cost) })),
     saveRunState: (run, state, at) =>
       void db
         .prepare(

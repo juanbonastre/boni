@@ -70,6 +70,23 @@ describe("the OpenAI-compatible provider", () => {
     });
   });
 
+  it("with zdr, only providers that keep and collect nothing; the cost OpenRouter charged comes back", async () => {
+    const s = stub(() =>
+      ok('{"a":"x"}', { usage: { prompt_tokens: 10, completion_tokens: 5, cost: 0.0012 } }),
+    );
+    const p = new OpenAIProvider({ apiKey: KEY, model: "m", baseURL: OR, zdr: true, fetch: s.f });
+    const r = await p.complete(reader);
+    expect(r.usage).toEqual({ input: 10, output: 5, cost: 0.0012 });
+    expect(s.calls[0]?.body.provider).toEqual({
+      require_parameters: true,
+      zdr: true,
+      data_collection: "deny",
+    });
+    // The planner (text, no format) keeps the zdr demand too.
+    await p.complete({ ...reader, role: "planner", structured: false });
+    expect(s.calls[1]?.body.provider).toEqual({ zdr: true, data_collection: "deny" });
+  });
+
   it("the planner answers in text: the plan is taken from it, nothing forced", async () => {
     const s = stub(() => ok('Aquí está:\n```json\n{"version":1,"steps":[]}\n```'));
     const p = new OpenAIProvider({ apiKey: KEY, model: "m", baseURL: OR, fetch: s.f });

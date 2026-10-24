@@ -193,3 +193,25 @@ describe("classify asks Juan only when the decider is unsure", () => {
     expect(env.store.journal.requests("pending")).toEqual([]);
   });
 });
+
+describe("the month's budget (Modelos)", () => {
+  it("at the limit, background work calls no model; Juan's own requests go on", async () => {
+    env = makeEnv();
+    const reader = new ScriptedProvider("fake", () => ({ choice: "Gestiones" }));
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [{ id: "r", op: "reply", component: "text", data: { template: lit("Hola") } }],
+      },
+    ]);
+    const a = env.agent(planner, reader, { overBudget: () => true });
+    const quiet = structuredClone(classify);
+    delete (quiet.steps[0] as { params: { ask?: unknown } }).params.ask;
+    const bg = await a.background(quiet);
+    expect([bg.status, bg.error]).toEqual(["stopped", "P13-month-budget"]);
+    expect(bg.notices).toContainEqual({ code: "budget" });
+    expect(reader.requests).toHaveLength(0);
+    const turn = await a.turn({ text: "hola", origin: { kind: "turn", trust: "personal" } });
+    expect(turn.status).toBe("done");
+  });
+});
