@@ -51,6 +51,14 @@ packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native mo
                  collection with its own level (Notion's filter as JSON); whatever lowers something private needs
                  `unlock` too. `putFile` / `getFile`: attachments by sha256 (a `file` value), outside
                  the log and `readQuery`, at most `MAX_FILE_BYTES`.
+                 `audit.ts` (`store.audit`; Juan, 2026-10-24): who did and saw what. `actions` (every action of
+                 anyone: a model call, a tool, an MCP call, a page fetched, a user's read where asked; `by` such as
+                 `model:reader:<provider>/<model>`, `mcp:<device>`, `user:<device>`, set by code), `access` (per
+                 action and entity: fields in clear, fields only as shape, the note's text, files; ids, never
+                 values), `entity_meta` (each row's system columns, kept in the same transaction). Operations
+                 carry `by` and `action`; operations and actions are chained by sha256 (`verify`). None of it is
+                 readable by `readQuery` or any model. `blame.ts`: who wrote each line of a note, from
+                 `bodyVersions` (the log's versions). Nothing is deleted by default; `storage()` measures.
 packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
                  devices with a trust level (personal / shared / ambient; only another personal device raises it),
                  sessions stored as sha256 of the token (same scrypt and token hashing as both old servers, so
@@ -272,6 +280,13 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `src/fromNote.ts`: "Apuntar gasto" with the movements in core mode creates the
                  entity (the mirror writes the note), never a proposal. `e2e/server-boni.spec.ts` runs the migration
                  with the same commands as the NAS.
+                 `src/audit.ts`: the audit for the app (`/api/data/audit/*`, personal devices): summary,
+                 actions with names, one action with its model call, a row's history (who saw it, changes,
+                 blame), verify, storage with advice (codes), and which of Juan's own reads are kept
+                 (`audit/userReads`, by level; restricted and private by default). Data rows carry their
+                 system columns (`columns`). The agent records each model call with what reached it
+                 (`exposure`, from each value's `from`/`refs`), every tool and page fetched; the MCP each call
+                 with what went back (properties, text or not) and its arguments without long texts.
                  `src/mcp.ts`: Boni's MCP (`POST /api/mcp`, tailnet, a personal device's session that `cli.ts token
                  <name> <device>` makes without a password): what vault-mcp did, over the account's collections
                  (guide = the AGENTS.md note, collections, search, query with Notion's filters, read by id or vault

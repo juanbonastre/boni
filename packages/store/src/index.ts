@@ -1,3 +1,16 @@
+export {
+  type AccessRow,
+  type ActionInput,
+  type ActionRow,
+  type Audit,
+  type By,
+  byOf,
+  type EntityMeta,
+  type Seen,
+  type Storage,
+  type Verification,
+} from "./audit.ts";
+export { type BlameLine, blame } from "./blame.ts";
 export type {
   ConfirmationRow,
   Journal,

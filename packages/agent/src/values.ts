@@ -11,10 +11,21 @@ export type Json = string | number | boolean | null | Json[] | { [k: string]: Js
 export interface From {
   e: string;
   v: number;
+  /** For the audit (store's audit.ts): the field it is (its id, or `$body` for the note's text) and the type. */
+  f?: string;
+  t?: string;
 }
 
 export type Val =
-  | { t: "v"; value: Json; label: Label; derived: boolean; from?: From }
+  | {
+      t: "v";
+      value: Json;
+      label: Label;
+      derived: boolean;
+      from?: From;
+      /** Entities whose fields code put into this value (an option naming some titles): only for the audit. */
+      refs?: From[];
+    }
   | { t: "list"; items: Val[]; label: Label; derived: boolean }
   | { t: "rec"; fields: Record<string, Val>; label: Label; derived: boolean };
 
@@ -106,7 +117,7 @@ export function parseRef(ref: string): (string | number)[] | null {
 /** Every entity version `v` was read from (a confirmation becomes stale when one of them changes). */
 export function originsOf(v: Val, out: From[] = []): From[] {
   if (v.t === "v") {
-    if (v.from) out.push(v.from);
+    if (v.from) out.push({ e: v.from.e, v: v.from.v });
   } else for (const c of v.t === "list" ? v.items : Object.values(v.fields)) originsOf(c, out);
   return out;
 }

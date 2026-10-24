@@ -5,6 +5,7 @@ import {
   BODY,
   closedToAi,
   MAX_FILE_BYTES,
+  type Seen,
   type StoredEntity,
   type UserStore,
   type Writes,
@@ -37,7 +38,21 @@ interface Ctx {
   store: UserStore;
   device: string;
   now: () => number;
+  /** This call's run: its writes are undone together, and its audit action names it. */
+  run: string;
+  /** What of Juan's entities this call sends back to the model (the audit). */
+  seen: Seen[];
 }
+/** Arguments as the audit keeps them: no long texts (what a call writes is in the operation log anyway). */
+const auditArgs = (a: Args): Record<string, unknown> =>
+  Object.fromEntries(
+    Object.entries(a)
+      .filter(([k]) => !["body", "new_text", "old_text", "text", "content", "data"].includes(k))
+      .map(([k, v]) => [
+        k,
+        typeof v === "string" ? v.slice(0, 300) : JSON.stringify(v ?? null).slice(0, 300),
+      ]),
+  );
 type Args = Record<string, unknown>;
 class ToolFail extends Error {}
 
@@ -92,6 +107,43 @@ function view(c: Ctx) {
         const v = shown(f, s.entity.values[f.id]);
         if (v !== null && v !== undefined && v !== "") props[f.name] = v;
       }
+    // The audit: the fields it got (a relation's entries by their titles), its text or not.
+    const sent: Seen = {
+      entity: s.entity.id,
+      type: t.id,
+      version: s.entity.version,
+      fields: opaque
+        ? []
+        : [
+            ...new Set([
+              t.titleField,
+              ...fields(t)
+                .filter((f) => props[f.name] !== undefined)
+                .map((f) => f.id),
+            ]),
+          ],
+      shapes: [],
+      body: withBody && !opaque && s.entity.body ? "text" : null,
+      files: [],
+    };
+    c.seen.push(sent);
+    if (!opaque)
+      for (const f of fields(t))
+        if (f.type === "relation" && props[f.name] !== undefined)
+          for (const id of [s.entity.values[f.id]].flat()) {
+            const r = ro.get(String(id));
+            const rt = r ? c.store.schema().types[r.entity.type] : undefined;
+            if (r && rt)
+              c.seen.push({
+                entity: r.entity.id,
+                type: rt.id,
+                version: r.entity.version,
+                fields: [rt.titleField],
+                shapes: [],
+                body: null,
+                files: [],
+              });
+          }
     const path = s.entity.values[PATH_FIELD];
     return {
       id: s.entity.id,
@@ -122,8 +174,8 @@ function view(c: Ctx) {
 // ------------------------------------------------------------------ writing
 
 function writer(c: Ctx) {
-  const run = `mcp-${randomUUID()}`;
-  const meta = { actor: "agent" as const, run, device: c.device };
+  const run = c.run;
+  const meta = { actor: "agent" as const, run, device: c.device, by: `mcp:${c.device}` };
   const def = (t: string) => c.store.schema().types[t] as TypeDef;
   const lbl = (t: string, f: FieldDef | null) =>
     label(
@@ -242,6 +294,16 @@ const TOOLS: Tool[] = [
       const v = view(c);
       const hit = c.store.findByValue(PATH_FIELD, "AGENTS.md")[0];
       const agents = hit ? v.ro.get(hit.id) : null;
+      if (agents?.entity.body)
+        c.seen.push({
+          entity: agents.entity.id,
+          type: agents.entity.type,
+          version: agents.entity.version,
+          fields: [],
+          shapes: [],
+          body: "text",
+          files: [],
+        });
       return {
         instructions: agents?.entity.body ?? "(no AGENTS.md note in Boni)",
         tools:
@@ -588,7 +650,10 @@ const TOOLS: Tool[] = [
     call(c, a) {
       const run = str(a.run, "run", 80);
       if (!run.startsWith("mcp-")) throw new ToolFail("only this server's runs");
-      return { undone: c.store.undoRun(run, { actor: "agent", device: c.device }).length };
+      return {
+        undone: c.store.undoRun(run, { actor: "agent", device: c.device, by: `mcp:${c.device}` })
+          .length,
+      };
     },
   },
 ];
@@ -633,14 +698,32 @@ function answer(c: Ctx, m: Rpc): unknown | null {
     case "tools/call": {
       const tool = TOOLS.find((t) => t.name === m.params?.name);
       if (!tool) return fail(-32602, `unknown tool ${String(m.params?.name)}`);
+      const args = (m.params?.arguments as Args) ?? {};
+      c.run = `mcp-${randomUUID()}`;
+      c.seen = [];
+      // Every call is in the audit: who (this device's MCP), what with which arguments (no long texts), what
+      // of Juan's entities went back to the model, and whether it failed.
+      const record = (result: unknown) =>
+        c.store.audit.record({
+          at: c.now(),
+          by: `mcp:${c.device}`,
+          run: c.run,
+          tool: `mcp.${tool.name}`,
+          target: auditArgs(args),
+          decision: "allow",
+          result,
+          seen: c.seen,
+        });
       try {
-        const out = tool.call(c, (m.params?.arguments as Args) ?? {});
+        const out = tool.call(c, args);
+        record(null);
         return reply({
           content: [{ type: "text", text: JSON.stringify(out, null, 1) }],
           isError: false,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
+        record({ error: msg.slice(0, 200) });
         return reply({ content: [{ type: "text", text: msg }], isError: true });
       }
     }
@@ -656,7 +739,7 @@ export function mcpAnswer(
   body: unknown,
   now: () => number = Date.now,
 ): unknown | null {
-  const c: Ctx = { store, device, now };
+  const c: Ctx = { store, device, now, run: "", seen: [] };
   if (Array.isArray(body)) {
     const out = body.map((m) => answer(c, m as Rpc)).filter((x) => x !== null);
     return out.length ? out : null;
