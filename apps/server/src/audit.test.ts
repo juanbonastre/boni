@@ -121,6 +121,30 @@ describe("the audit, over HTTP", () => {
     mine = store.audit.actions().filter((a) => a.seq > before);
     expect(mine[0]).toMatchObject({ tool: "data.rows", result: { rows: 1 } });
     await call("PUT", "/api/data/audit/settings", { userReads: ["restricted", "private"] });
+    // An attachment of a private row, opened: recorded on that row.
+    store.applySchema(
+      {
+        op: "add_field",
+        type: "t_salud",
+        field: { id: "t_salud_f", key: "archivo", name: "Archivo", type: "file", label: L },
+      },
+      { actor: "user" },
+    );
+    const sha = store.putFile(new TextEncoder().encode("informe inventado"), "text/plain");
+    store.update(
+      cita.entity.id,
+      { t_salud_f: { value: sha, label: L } },
+      { actor: "user", device: "portatil-ejemplo" },
+    );
+    const r = await fetch(`${base}/api/data/files/${sha}`, {
+      headers: { authorization: `Bearer ${t}` },
+    });
+    expect(r.status).toBe(200);
+    expect(store.audit.actions({ limit: 1 })[0]).toMatchObject({
+      tool: "data.file",
+      by: "user:portatil-ejemplo",
+    });
+    expect(store.audit.seenBy(cita.entity.id)[0]?.files).toEqual([sha]);
   });
 
   it("gives each row its system columns, and a row's history: who saw it, each change, who wrote each line", async () => {

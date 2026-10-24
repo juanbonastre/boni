@@ -1,7 +1,9 @@
 import { MoreHorizontal, PanelLeft, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ActivityView } from "./components/Activity.tsx";
+import { AuditView } from "./components/Audit.tsx";
 import { ChartCard } from "./components/ChartCard.tsx";
-import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
+import { ChatView, InboxView } from "./components/Chat.tsx";
 import { CollectionsView, CollectionView } from "./components/Collections.tsx";
 import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
 import { ModelsView } from "./components/Models.tsx";
@@ -31,6 +33,7 @@ import {
   setPageFull,
   showChat,
   showCollections,
+  showLog,
   showStart,
   toggleSidebar,
   useStore,
@@ -142,9 +145,10 @@ function useShortcuts(mobile: boolean) {
         e.preventDefault();
         if (s.view.kind === "proposal") closeProposal();
         else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
-        else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
+        else if (s.view.kind === "inbox") showChat();
         else if (s.view.kind === "row" && s.view.from) openCollection(s.view.type);
         else if (s.view.kind === "collection") showCollections();
+        else if (s.view.kind === "audit") showLog();
         else if (s.view.kind === "row" && s.page) void openPage(s.page.id);
         else showStart();
       }
@@ -186,15 +190,15 @@ function TopBar() {
       <h1 className="title">
         {view.kind === "chat" ? (
           t("nav.chat")
-        ) : view.kind === "inbox" || view.kind === "log" ? (
+        ) : view.kind === "log" ? (
+          t("activity.title")
+        ) : view.kind === "inbox" ? (
           <>
             <button type="button" className="title-crumb" onClick={showChat}>
               {t("nav.chat")}
             </button>
             <span className="title-sep">/</span>
-            <span className="title-name">
-              {view.kind === "inbox" ? t("inbox.title") : t("log.title")}
-            </span>
+            <span className="title-name">{t("inbox.title")}</span>
           </>
         ) : view.kind === "chart" && spec ? (
           <>
@@ -228,6 +232,16 @@ function TopBar() {
           t("nav.collections")
         ) : view.kind === "models" ? (
           t("nav.models")
+        ) : view.kind === "audit" ? (
+          <span className="crumbs">
+            <span className="crumb-part">
+              <button type="button" className="crumb" onClick={showLog}>
+                {t("activity.title")}
+              </button>
+              <span className="crumb-sep">/</span>
+            </span>
+            <span className="crumb current">{t("audit.title")}</span>
+          </span>
         ) : view.kind === "collection" ? (
           <CollectionCrumbs />
         ) : onPage && page ? (
@@ -436,12 +450,8 @@ function Content() {
         <InboxView />
       </div>
     );
-  if (view.kind === "log")
-    return (
-      <div className="content">
-        <LogView />
-      </div>
-    );
+  if (view.kind === "log") return <ActivityView />;
+  if (view.kind === "audit") return <AuditView filter={view.filter} />;
   if (view.kind === "chart") {
     return (
       <div className="content">

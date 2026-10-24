@@ -89,42 +89,68 @@ export async function settingsAudit(page: Page, prefix = ""): Promise<string[]> 
   return issues;
 }
 
-/** «Modelos»: words to find its controls by. */
+/** «Modelos», «Actividad» and «Auditoría»: words to find their controls by. */
 export const MODELS_TEXT = {
   es: {
     nav: "Modelos",
-    spend: /^Gasto de/,
-    conns: /^Conexiones/,
+    conns: /^Claves/,
     budget: "Cambiar el presupuesto",
     change: "Cambiar",
     cases: "Ver los casos",
+    activity: "Actividad",
+    openAudit: "Abrir la auditoría",
+    runs: /^Ejecuciones/,
   },
   en: {
     nav: "Models",
-    spend: /^Spending in/,
-    conns: /^Connections/,
+    conns: /^Keys/,
     budget: "Change the budget",
     change: "Change",
     cases: "See the cases",
+    activity: "Activity",
+    openAudit: "Open the audit",
+    runs: /^Runs/,
   },
 };
 
-/** «Modelos» with every section opened, a role's cases and the panel to change it with an evaluation. */
+/** «Modelos» with every part opened: the spending tile, the keys, each use's panel with its cases and the list to change it. */
 export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
   const issues: string[] = [];
   await page.locator(".sidebar").getByRole("button", { name: l.nav }).click();
-  await page.locator(".models-card").first().waitFor();
+  await page.locator(".use-card").first().waitFor();
   issues.push(...(await audit(page, `${where} models`)));
-  await page.getByRole("button", { name: l.spend }).click();
+  await page.locator("button.kpi").first().click();
   await page.getByRole("button", { name: l.budget }).click();
   await page.getByRole("button", { name: l.conns }).click();
-  const roles = page.locator(".models-card .models-row:not([aria-expanded=true])");
-  while ((await roles.count()) > 0) await roles.first().click();
-  for (const c of await page.getByRole("button", { name: l.cases }).all()) await c.click();
   issues.push(...(await audit(page, `${where} models opened`)));
-  await page.getByRole("button", { name: l.change, exact: true }).first().click();
+  const cards = page.locator(".use-card");
+  for (let i = 0; i < (await cards.count()); i++) {
+    await cards.nth(i).click();
+    await page.locator(".models-panel").waitFor();
+    const cases = page.locator(".models-panel").getByRole("button", { name: l.cases });
+    if (await cases.count()) await cases.click();
+    issues.push(...(await audit(page, `${where} models use ${i}`)));
+    // Narrow, the panel covers the page: closed before the next one.
+    await page.keyboard.press("Escape");
+  }
+  await cards.first().click();
+  await page.locator(".models-panel").getByRole("button", { name: l.change, exact: true }).click();
   await page.locator(".models-panel .models-option").first().click();
   await page.locator(".models-compare").waitFor();
   issues.push(...(await audit(page, `${where} models panel`)));
+  return issues;
+}
+
+/** «Actividad» with its runs open, then «Auditoría» with an action open. */
+export async function activityAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
+  const issues: string[] = [];
+  await page.locator(".sidebar").getByRole("button", { name: l.activity }).click();
+  await page.locator(".kpi").first().waitFor();
+  await page.getByRole("button", { name: l.runs }).click();
+  issues.push(...(await audit(page, `${where} activity`)));
+  await page.getByRole("button", { name: l.openAudit }).click();
+  await page.locator(".audit-tr:not(.audit-th)").first().click();
+  await page.locator(".audit-panel .audit-seen, .audit-panel .muted").first().waitFor();
+  issues.push(...(await audit(page, `${where} audit`)));
   return issues;
 }

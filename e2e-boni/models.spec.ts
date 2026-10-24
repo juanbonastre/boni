@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
+  AUDIT_SUMMARY,
   MODELS,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
@@ -10,8 +11,8 @@ import {
 import { openApp, recorded } from "./fixtures.ts";
 
 /**
- * «Modelos» (Juan, 2026-10-24, option A): the month's spending, which model does each role and the connections,
- * each folded in one row that a click opens; «Cambiar» opens a panel to pick, evaluate and use another model.
+ * «Modelos» (Juan, 2026-10-24): a dashboard. The month's numbers, the four uses with the model in large type, the
+ * charts beside them; a click opens the detail (the spending tile its breakdown and the budget, a use its panel).
  */
 const SHOTS = "e2e-boni/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -19,42 +20,60 @@ mkdirSync(SHOTS, { recursive: true });
 const requests = async (page: Page, prefix: string) =>
   (await recorded(page)).requests.filter((r) => r.startsWith(prefix));
 
-test("spending, each role and the connections, folded; a click shows more", async ({ page }) => {
-  await openApp(page, "/?still", { agent: { "GET api/agent/models": [MODELS] } });
+test("the month's numbers, each use with its model, and the charts; a click shows more", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: { "GET api/agent/models": [MODELS], "GET api/data/audit/summary": [AUDIT_SUMMARY] },
+  });
   await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Modelos");
-  const spend = page.getByRole("button", { name: /^Gasto de octubre/ });
-  await expect(spend).toContainText("3,42 € de 10,00 €");
-  const reader = page.getByRole("button", { name: /^Leer correos/ });
-  await expect(reader).toContainText("deepseek/deepseek-v4.1-flash · OpenRouter");
+  const kpis = page.locator(".kpi");
+  await expect(kpis).toHaveCount(4);
+  const spend = page.locator("button.kpi").first();
+  await expect(spend).toContainText("3,42 €");
+  await expect(spend).toContainText("de 10,00 €");
+  await expect(kpis.nth(1)).toContainText("554");
+  // What the models (and the MCP) read and changed this month, from the audit.
+  await expect(kpis.nth(2)).not.toContainText("—");
+  const reader = page.getByRole("button", { name: /^Lector/ });
+  await expect(reader.locator(".use-model")).toHaveText("deepseek-v4.1-flash");
   await expect(reader.locator(".models-badge")).toHaveText("No guarda tus datos");
-  await expect(page.getByRole("button", { name: /^Entender lo que pides/ })).toContainText(
+  await expect(reader).toContainText("0,74 € · 512 llamadas");
+  await expect(page.getByRole("button", { name: /^Agente/ })).toContainText(
     "Borra lo que recibe en 30 días",
   );
-  await expect(page.locator(".models-more")).toHaveCount(0);
+  await expect(page.locator(".dash-legend").first()).toContainText("claude-opus-5-5");
+  await expect(page.locator(".barlist-row")).toHaveText([
+    /deepseek-v4\.1-flash\s*513/,
+    /claude-opus-5-5\s*41/,
+  ]);
   await page.screenshot({ path: `${SHOTS}/models.png` });
 
   await spend.click();
-  const more = page.locator(".models-card").first().locator(".models-more");
-  await expect(more).toContainText("Evaluación: Leer correos · deepseek/deepseek-v4.1-flash");
+  const more = page.locator(".models-spend");
+  await expect(more).toContainText("Evaluación: Lector · deepseek-v4.1-flash");
   await expect(more).toContainText("512 llamadas · 3 sin precio conocido");
-  await expect(more.locator(".models-day")).toHaveCount(24);
   await expect(more).toContainText("Presupuesto: 10,00 € al mes, aviso al 80 %");
 
   await reader.click();
-  const card = page.locator(".models-card", { has: reader });
-  await expect(card).toContainText("Lee cada correo y dice qué te piden");
-  await expect(card).toContainText("OpenRouter solo lo envía a proveedores que no guardan");
-  await expect(card).toContainText("Elegido por ti");
-  await expect(card).toContainText("Este mes: 0,74 € en 512 llamadas");
-  await expect(card).toContainText("Evaluación: 19 de 20 bien");
-  await card.getByRole("button", { name: "Ver los casos" }).click();
-  await expect(card.locator(".models-cases li.fail")).toHaveCount(1);
-  await expect(card.locator(".models-cases li.fail")).toContainText("colección equivocada");
+  const panel = page.locator(".models-panel");
+  await expect(panel.locator("h2")).toHaveText("Lector");
+  await expect(panel).toContainText("Lee cada correo y dice qué te piden");
+  await expect(panel).toContainText("OpenRouter solo lo envía a proveedores que no guardan");
+  await expect(panel).toContainText("Elegido por ti");
+  await expect(panel).toContainText("Este mes: 0,74 € en 512 llamadas");
+  await expect(panel).toContainText("Evaluación: 19 de 20 bien");
+  await panel.getByRole("button", { name: "Ver los casos" }).click();
+  await expect(panel.locator(".models-cases li.fail")).toHaveCount(1);
+  await expect(panel.locator(".models-cases li.fail")).toContainText("colección equivocada");
+  await page.screenshot({ path: `${SHOTS}/models-use.png` });
+  await page.keyboard.press("Escape");
 
-  await page.getByRole("button", { name: /^Conexiones/ }).click();
+  await page.getByRole("button", { name: /^Claves/ }).click();
   const conns = page.locator(".models-card", {
-    has: page.getByRole("button", { name: /^Conexiones/ }),
+    has: page.getByRole("button", { name: /^Claves/ }),
   });
   await expect(conns).toContainText("Se guarda cifrada en Boni");
   await expect(conns.locator(".models-conn")).toHaveText([
@@ -75,10 +94,10 @@ test("change a role: pick from the catalogue, evaluate, compare, use", async ({ 
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  await page.getByRole("button", { name: /^Entender lo que pides/ }).click();
+  await page.getByRole("button", { name: /^Agente/ }).click();
   await page.getByRole("button", { name: "Cambiar" }).click();
   const panel = page.locator(".models-panel");
-  await expect(panel.locator("h2")).toHaveText("Entender lo que pides");
+  await expect(panel.locator("h2")).toHaveText("Agente");
   // The planner takes any model; cheapest first.
   await expect(panel.locator(".models-option .models-name")).toHaveText([
     "Ejemplo: sin esquema",
@@ -100,7 +119,7 @@ test("change a role: pick from the catalogue, evaluate, compare, use", async ({ 
   // Without the key it says where to put it.
   await compare.getByRole("button", { name: "Evaluar" }).click();
   await expect(compare.locator(".decide-error")).toHaveText(
-    "Pon antes tu clave de OpenRouter en Conexiones.",
+    "Pon antes tu clave de OpenRouter en Claves.",
   );
   await compare.getByRole("button", { name: "Evaluar" }).click();
   await expect(compare).toContainText("Evaluando con casos inventados");
@@ -112,8 +131,8 @@ test("change a role: pick from the catalogue, evaluate, compare, use", async ({ 
   await page.screenshot({ path: `${SHOTS}/models-change.png` });
   await compare.getByRole("button", { name: "Usar este modelo" }).click();
   await expect(panel).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Entender lo que pides/ })).toContainText(
-    "z-ai/glm-5.2 · OpenRouter",
+  await expect(page.getByRole("button", { name: /^Agente/ }).locator(".use-model")).toHaveText(
+    "glm-5.2",
   );
   expect(await requests(page, "POST api/agent/models")).toEqual([
     'POST api/agent/models/evaluate {"role":"planner","connection":"openrouter","model":"z-ai/glm-5.2","zdr":true}',
@@ -134,7 +153,7 @@ test("readers only see models that answer a fixed form; the decider only Jev; Es
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  await page.getByRole("button", { name: /^Leer correos/ }).click();
+  await page.getByRole("button", { name: /^Lector/ }).click();
   await page.getByRole("button", { name: "Cambiar" }).click();
   const panel = page.locator(".models-panel");
   await expect(panel.locator(".models-option")).toHaveCount(3);
@@ -143,12 +162,8 @@ test("readers only see models that answer a fixed form; the decider only Jev; Es
   await expect(panel).toHaveCount(0);
   // Escape closed the panel only, not the page.
   await expect(page.locator(".topbar h1")).toHaveText("Modelos");
-  await page.getByRole("button", { name: /^Leer correos/ }).click();
-  await page.getByRole("button", { name: /^Decidir entre opciones/ }).click();
-  await page
-    .locator(".models-card", { hasText: "Decidir entre opciones" })
-    .getByRole("button", { name: "Cambiar" })
-    .click();
+  await page.getByRole("button", { name: /^Decisor/ }).click();
+  await page.getByRole("button", { name: "Cambiar" }).click();
   await expect(panel.locator(".models-option .models-name")).toHaveText([
     "typesafe/jev-1.14",
     "jev-1.14.0",
@@ -172,17 +187,15 @@ test("the budget and a key: changed from the page, the key never shown", async (
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  await page.getByRole("button", { name: /^Gasto de octubre/ }).click();
+  await page.locator("button.kpi").first().click();
   await page.getByRole("button", { name: "Cambiar el presupuesto" }).click();
   await page.getByRole("textbox", { name: "Al mes (€)" }).fill("15");
   await page.getByRole("textbox", { name: "Avisar al (%)" }).fill("90");
   await page.getByRole("button", { name: "Guardar", exact: true }).click();
-  await expect(page.getByRole("button", { name: /^Gasto de octubre/ })).toContainText(
-    "3,42 € de 15,00 €",
-  );
-  await expect(page.locator(".models-card").first()).toContainText("aviso al 90 %");
+  await expect(page.locator("button.kpi").first()).toContainText("de 15,00 €");
+  await expect(page.locator(".models-spend")).toContainText("aviso al 90 %");
 
-  await page.getByRole("button", { name: /^Conexiones/ }).click();
+  await page.getByRole("button", { name: /^Claves/ }).click();
   const typesafe = page.locator(".models-conn", { hasText: "TypeSafe" });
   await typesafe.getByRole("button", { name: "Poner tu clave" }).click();
   const key = typesafe.getByRole("textbox", { name: "Clave de TypeSafe" });

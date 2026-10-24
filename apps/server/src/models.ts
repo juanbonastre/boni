@@ -240,7 +240,7 @@ export class AccountModels {
     month: string;
     eur: number;
     rows: (SpendRow & { eur: number })[];
-    byDay: { day: string; eur: number }[];
+    byDay: { day: string; eur: number; byModel: Record<string, number> }[];
   } {
     const m = this.month();
     const rate = this.config(account).usdToEur;
@@ -250,7 +250,11 @@ export class AccountModels {
       month: m.label,
       eur: rows.reduce((a, r) => a + r.eur, 0),
       rows,
-      byDay: j.spendingByDay(m.from, m.to).map((d) => ({ day: d.day, eur: d.cost * rate })),
+      byDay: j.spendingByDay(m.from, m.to).map((d) => ({
+        day: d.day,
+        eur: d.cost * rate,
+        byModel: Object.fromEntries(Object.entries(d.byModel).map(([k, v]) => [k, v * rate])),
+      })),
     };
   }
 

@@ -262,7 +262,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       };
       const answer = (method: string, path: string, body?: unknown): [number, string] | null => {
         const p = path.split("?")[0]!;
-        if (p.startsWith("api/data/")) return dataAnswer(method, p, body);
+        const audited = p.startsWith("api/data/audit/") || p === "api/data/notes";
+        if (p.startsWith("api/data/") && !audited) return dataAnswer(method, p, body);
         if (p === "api/pages-trash")
           return [
             200,
@@ -277,7 +278,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         const decided = /^api\/agent\/proposals\/([^/]+)\//.exec(p);
         if (decided && inbox) inbox = inbox.filter((x) => x.id !== decided[1]);
         if (decided) ghosts = ghosts.filter((g) => g.proposal !== decided[1]);
-        if (p.startsWith("api/agent/") || p === "api/mail" || p.startsWith("api/mail/")) {
+        if (
+          audited ||
+          p.startsWith("api/agent/") ||
+          p === "api/mail" ||
+          p.startsWith("api/mail/")
+        ) {
           const key = `${method} ${p
             .replace(/\/proposals\/[^/]+\//, "/proposals/:id/")
             .replace(/\/requests\/[^/]+\//, "/requests/:id/")
@@ -286,6 +292,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/visibility\/[^/]+$/, "/visibility/:type")
             .replace(/\/extensions\/[^/]+$/, "/extensions/:id")
             .replace(/\/models\/roles\/[^/]+$/, "/models/roles/:role")
+            .replace(/\/audit\/actions\/[^/]+$/, "/audit/actions/:seq")
+            .replace(/\/audit\/rows\/[^/]+$/, "/audit/rows/:id")
             .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")}`;
           const list = opts.agent?.[key];
           if (!list?.length) return [503, '{"error":"agent-off"}'];

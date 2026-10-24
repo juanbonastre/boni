@@ -13,6 +13,7 @@ import {
   auditSettings,
   auditStorage,
   auditSummary,
+  recordFileRead,
   recordUserRead,
   setAuditSettings,
   systemColumns,
@@ -24,6 +25,7 @@ import {
   DataError,
   findByPath,
   getRow,
+  listNotes,
   listRows,
   listTypes,
   removeRow,
@@ -379,6 +381,7 @@ export function makeApp(opts: ServerOptions): App {
             row: createRow(store, params.type ?? "", b.values ?? {}, s.device),
           });
         }
+        if (route === "GET /api/data/notes") return send(res, 200, listNotes(store));
         if (route === "GET /api/data/lookup")
           return send(res, 200, findByPath(store, url.searchParams.get("path") ?? ""));
         if (route === "GET /api/data/rows/:id") {
@@ -444,6 +447,7 @@ export function makeApp(opts: ServerOptions): App {
         }
         if (route === "GET /api/data/files/:sha") {
           const f = store.getFile(params.sha ?? "");
+          if (f) recordFileRead(store, s.device, params.sha ?? "", now());
           return f ? sendFile(res, f.mime, f.data) : send(res, 404, { error: "not-found" });
         }
       } catch (e) {

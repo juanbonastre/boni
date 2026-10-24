@@ -337,6 +337,51 @@ export function findByPath(store: UserStore, path: string): { type: string; id: 
   return hit;
 }
 
+/**
+ * Every note with the path it had in the vault, for the notes explorer (Juan, 2026-10-24: what the AIs read must be
+ * browsable as in Obsidian): its collection, title, and which AIs saw it and when (the audit's system columns).
+ */
+export function listNotes(store: UserStore): {
+  notes: {
+    id: string;
+    type: string;
+    path: string;
+    title: string;
+    updated: number;
+    ai: string[];
+    aiAt: number | null;
+  }[];
+  types: Record<string, string>;
+} {
+  const out: ReturnType<typeof listNotes>["notes"] = [];
+  const types: Record<string, string> = {};
+  for (const def of userTypes(store)) {
+    for (const e of store.entities(def.id)) {
+      const path = e.values[PATH_FIELD];
+      if (typeof path !== "string" || !path) continue;
+      types[def.id] = def.name;
+      out.push({
+        id: e.id,
+        type: def.id,
+        path,
+        title: String(shown(e.values, def.titleField)[def.titleField] ?? ""),
+        updated: e.updated,
+        ai: [],
+        aiAt: null,
+      });
+    }
+  }
+  const meta = store.audit.meta(out.map((n) => n.id));
+  for (const n of out) {
+    const m = meta.get(n.id);
+    // Models and assistants (the MCP), not Boni's own code nor Juan.
+    n.ai = (m?.viewers ?? []).filter((v) => v.startsWith("model:") || v.startsWith("mcp:"));
+    n.aiAt = n.ai.length ? (m?.seenAt ?? null) : null;
+  }
+  out.sort((a, b) => a.path.localeCompare(b.path));
+  return { notes: out, types };
+}
+
 /** One row with its body (a row opened as a page). */
 export function getRow(store: UserStore, id: string): DataRow & { type: string } {
   const e = store.get(id);

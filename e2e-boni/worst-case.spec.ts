@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 import {
+  AUDIT_ACTIONS_WORST,
+  AUDIT_DETAIL_WORST,
+  AUDIT_SUMMARY_WORST,
   EXTENSIONS,
   GUIDE,
   MAIL,
@@ -9,7 +12,7 @@ import {
   PROPOSALS,
   VISIBILITY,
 } from "./agent-scenarios.ts";
-import { audit, MODELS_TEXT, modelsAudit, settingsAudit } from "./audit.ts";
+import { activityAudit, audit, MODELS_TEXT, modelsAudit, settingsAudit } from "./audit.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -250,16 +253,23 @@ for (const width of [1440, 900]) {
 }
 
 for (const width of [1440, 900]) {
-  test(`the worst realistic data fits («Modelos», ${width} px)`, async ({ page }) => {
+  test(`the worst realistic data fits («Modelos», «Actividad», «Auditoría», ${width} px)`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height: 860 });
     await openApp(page, "/?still", {
       agent: {
         "GET api/agent/models": [MODELS_WORST],
         "GET api/agent/models/catalogue": [MODELS_CATALOGUE_WORST],
+        "GET api/data/audit/summary": [AUDIT_SUMMARY_WORST],
+        "GET api/data/audit/actions": [AUDIT_ACTIONS_WORST],
+        "GET api/data/audit/actions/:seq": [AUDIT_DETAIL_WORST],
       },
     });
     const issues = await modelsAudit(page, MODELS_TEXT.es, `${width}`);
     await page.screenshot({ path: `e2e-boni/screenshots/worst-models-${width}.png` });
+    issues.push(...(await activityAudit(page, MODELS_TEXT.es, `${width}`)));
+    await page.screenshot({ path: `e2e-boni/screenshots/worst-audit-${width}.png` });
     expect(issues).toEqual([]);
   });
 }

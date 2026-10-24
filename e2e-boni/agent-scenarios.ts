@@ -686,10 +686,15 @@ export const MODELS = {
         unpriced: 0,
       },
     ],
-    byDay: Array.from({ length: 24 }, (_, i) => ({
-      day: `2026-10-${String(i + 1).padStart(2, "0")}`,
-      eur: ((i * 7) % 11) / 40,
-    })),
+    byDay: Array.from({ length: 24 }, (_, i) => {
+      const opus = ((i * 7) % 11) / 40;
+      const deepseek = ((i * 5) % 7) / 200;
+      return {
+        day: `2026-10-${String(i + 1).padStart(2, "0")}`,
+        eur: opus + deepseek,
+        byModel: { "claude-opus-5-5": opus, "deepseek/deepseek-v4.1-flash": deepseek },
+      };
+    }),
   },
   over: false,
   evaluations: [
@@ -799,4 +804,275 @@ export const MODELS_CATALOGUE_WORST = {
     providers: Array.from({ length: 30 }, (_, j) => `P${j}`),
     structured: true,
   })),
+};
+
+/** The audit's numbers for a month (apps/server/src/audit.ts `auditSummary`), invented. */
+const ACTORS = [
+  "model:reader:openrouter/deepseek/deepseek-v4.1-flash",
+  "model:planner:anthropic/claude-opus-5-5",
+  "mcp:claude-ejemplo",
+  "agent",
+  "user:portatil",
+];
+export const AUDIT_SUMMARY = {
+  from: Date.UTC(2026, 9, 1),
+  to: Date.UTC(2026, 9, 24, 12),
+  activity: Array.from({ length: 24 }, (_, i) => i).flatMap((i) =>
+    ACTORS.map((by, k) => ({
+      day: `2026-10-${String(i + 1).padStart(2, "0")}`,
+      by,
+      reads: ((i + 3) * (k + 2)) % 17,
+      writes: k === 0 ? 0 : ((i + k) * 3) % 4,
+    })),
+  ),
+  byType: [
+    { type: "t_correo", name: "Correos", by: ACTORS[0], reads: 412, writes: 0 },
+    { type: "t_docencia", name: "Docencia", by: ACTORS[0], reads: 310, writes: 0 },
+    { type: "t_docencia", name: "Docencia", by: ACTORS[3], reads: 20, writes: 38 },
+    { type: "t_gestiones", name: "Gestiones", by: ACTORS[2], reads: 180, writes: 27 },
+    { type: "t_nota", name: "Nota", by: ACTORS[2], reads: 96, writes: 6 },
+    { type: "t_mov", name: "Movimiento", by: ACTORS[4], reads: 140, writes: 12 },
+  ],
+  totals: {
+    reads: 1158,
+    writes: 87,
+    kinds: { create: 61, update: 22, delete: 4 },
+    undone: 12,
+    proposals: 138,
+    accepted: 112,
+    requests: 34,
+    readings: 412,
+  },
+};
+
+/** A page of the audit (apps/server/src/audit.ts `auditActions`), invented. */
+const seenOf = (entity: string, type: string, fields: string[], body: "text" | null = null) => ({
+  entity,
+  type,
+  version: 1,
+  fields,
+  shapes: [],
+  body,
+  files: [],
+});
+export const AUDIT_ACTIONS = {
+  actions: [
+    {
+      seq: 9,
+      at: Date.UTC(2026, 9, 24, 10, 41),
+      by: "model:reader:openrouter/deepseek/deepseek-v4.1-flash",
+      run: "r1",
+      tool: "model.reader",
+      target: null,
+      decision: "allow",
+      rule: null,
+      call: 3,
+      result: { input: 1200, output: 80 },
+      seen: [
+        seenOf("e_c1", "t_correo", ["f_asunto", "f_de"], "text"),
+        seenOf("e_g1", "t_gestiones", ["f_titulo"]),
+        seenOf("e_g2", "t_gestiones", ["f_titulo"]),
+      ],
+      wrote: [],
+    },
+    {
+      seq: 8,
+      at: Date.UTC(2026, 9, 24, 10, 40),
+      by: "mcp:claude-ejemplo",
+      run: "mcp-1",
+      tool: "mcp.search",
+      target: { query: "dentista", collection: "Salud" },
+      decision: "allow",
+      rule: null,
+      call: null,
+      result: null,
+      seen: [
+        seenOf("e_s1", "t_salud", ["f_titulo", "f_fecha"]),
+        seenOf("e_s2", "t_salud", ["f_titulo"]),
+      ],
+      wrote: [],
+    },
+    {
+      seq: 7,
+      at: Date.UTC(2026, 9, 24, 10, 38),
+      by: "mcp:claude-ejemplo",
+      run: "mcp-2",
+      tool: "mcp.append",
+      target: { path: "proyectos/plan-ejemplo.md" },
+      decision: "allow",
+      rule: null,
+      call: null,
+      result: null,
+      seen: [],
+      wrote: [{ kind: "update", target: "e_p1" }],
+    },
+    {
+      seq: 6,
+      at: Date.UTC(2026, 9, 24, 10, 30),
+      by: "model:planner:anthropic/claude-opus-5-5",
+      run: "r2",
+      tool: "model.planner",
+      target: null,
+      decision: "allow",
+      rule: null,
+      call: 2,
+      result: null,
+      seen: [],
+      wrote: [],
+    },
+    {
+      seq: 5,
+      at: Date.UTC(2026, 9, 24, 10, 30),
+      by: "agent",
+      run: "r2",
+      tool: "net.fetch",
+      target: { url: "https://example.com/agenda" },
+      decision: "allow",
+      rule: null,
+      call: null,
+      result: null,
+      seen: [],
+      wrote: [],
+    },
+    {
+      seq: 4,
+      at: Date.UTC(2026, 9, 24, 9, 2),
+      by: "user:portatil",
+      run: null,
+      tool: "data.row",
+      target: { collection: "t_diario" },
+      decision: "allow",
+      rule: null,
+      call: null,
+      result: { rows: 1 },
+      seen: [seenOf("e_d1", "t_diario", ["f_titulo"], "text")],
+      wrote: [],
+    },
+    {
+      seq: 3,
+      at: Date.UTC(2026, 9, 24, 9, 0),
+      by: "agent",
+      run: "r3",
+      tool: "entities.update",
+      target: null,
+      decision: "deny",
+      rule: "P3",
+      call: null,
+      result: { reason: "external-control" },
+      seen: [],
+      wrote: [],
+    },
+  ],
+  names: {
+    types: {
+      t_correo: "Correos",
+      t_gestiones: "Gestiones",
+      t_salud: "Salud",
+      t_diario: "Diario",
+      t_nota: "Nota",
+    },
+    fields: { f_asunto: "Asunto", f_de: "De", f_titulo: "Título", f_fecha: "Fecha" },
+    titles: {
+      e_c1: "Entrega de actas",
+      e_g1: "Renovar el DNI",
+      e_g2: "Pedir cita",
+      e_s1: "Cita dentista 3 nov",
+      e_s2: "Revisión anual",
+      e_p1: "Plan de ejemplo",
+      e_d1: "24 de octubre",
+    },
+  },
+};
+export const AUDIT_DETAIL = {
+  action: AUDIT_ACTIONS.actions[0],
+  names: AUDIT_ACTIONS.names,
+  call: {
+    role: "reader",
+    model: "deepseek/deepseek-v4.1-flash",
+    request: {},
+    response: {
+      items: [{ quote: "¿Me envías las actas?", kind: "task", title: "Enviar las actas" }],
+    },
+  },
+  ops: [],
+};
+
+/** The longest names an account may show in «Actividad» and «Auditoría». */
+const LONG_COLLECTION =
+  "Colección de ejemplo con un nombre larguísimo que no cabe en ninguna parte";
+export const AUDIT_SUMMARY_WORST = {
+  ...AUDIT_SUMMARY,
+  activity: AUDIT_SUMMARY.activity.map((r) => ({
+    ...r,
+    by: r.by.startsWith("model:")
+      ? `${r.by}-${"x".repeat(60)}`
+      : r.by.startsWith("mcp:")
+        ? `mcp:${"dispositivo-".repeat(8)}`
+        : r.by,
+    reads: r.reads * 12345,
+    writes: r.writes * 1234,
+  })),
+  byType: Array.from({ length: 14 }, (_, i) => ({
+    type: `t_${i}`,
+    name: `${LONG_COLLECTION} ${i}`,
+    by: "agent",
+    reads: 123456 - i * 1000,
+    writes: 12345 - i * 100,
+  })),
+  totals: {
+    ...AUDIT_SUMMARY.totals,
+    reads: 123456789,
+    writes: 1234567,
+    readings: 1234567,
+    proposals: 99999,
+    accepted: 88888,
+    requests: 123456,
+    undone: 12345,
+  },
+};
+export const AUDIT_ACTIONS_WORST = {
+  actions: AUDIT_ACTIONS.actions.map((a) => ({
+    ...a,
+    by: a.by.startsWith("model:") ? `${a.by}-${"x".repeat(60)}` : a.by,
+    target: a.target
+      ? Object.fromEntries(
+          Object.entries(a.target).map(([k, v]) => [k, `${v} ${"palabra ".repeat(30)}`]),
+        )
+      : null,
+    seen: Array.from({ length: 60 }, (_, i) => ({
+      entity: `e_${i}`,
+      type: "t_long",
+      version: 1,
+      fields: ["f_a", "f_b", "f_c"],
+      shapes: ["f_d"],
+      body: i % 2 ? "text" : null,
+      files: [],
+    })),
+  })),
+  names: {
+    types: { t_long: LONG_COLLECTION },
+    fields: {
+      f_a: "Una propiedad con un nombre larguísimo",
+      f_b: "Otra propiedad igual de larga",
+      f_c: "Y otra",
+      f_d: "La de la forma",
+    },
+    titles: Object.fromEntries(
+      Array.from({ length: 60 }, (_, i) => [
+        `e_${i}`,
+        `Un registro con un título muy largo «Electrodomésticos Hernández-Martínez e Hijos, Sociedad Limitada» ${i}`,
+      ]),
+    ),
+  },
+};
+export const AUDIT_DETAIL_WORST = {
+  action: AUDIT_ACTIONS_WORST.actions[0],
+  names: AUDIT_ACTIONS_WORST.names,
+  call: {
+    role: "reader",
+    model: "x",
+    request: {},
+    response: { text: "una respuesta muy larga ".repeat(200) },
+  },
+  ops: [],
 };

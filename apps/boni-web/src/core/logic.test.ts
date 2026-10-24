@@ -18,6 +18,8 @@ describe("chart math", () => {
   it("ticks are round", () => {
     expect(M.ticks(182)).toEqual([0, 50, 100, 150, 200]);
     expect(M.ticks(1610)).toEqual([0, 500, 1000, 1500, 2000]);
+    // Small values: no floating-point noise in a label (0,30000000000000004).
+    expect(M.ticks(0.28)).toEqual([0, 0.1, 0.2, 0.3]);
     expect(M.ticks(0)).toEqual([0, 1]);
     expect(M.ticks(37, 3)[0]).toBe(0);
     expect(M.ticks(37, 3).at(-1)!).toBeGreaterThanOrEqual(37);
@@ -29,6 +31,8 @@ describe("chart math", () => {
     expect(M.euros(-60)).toBe("-60,00 €");
     expect(M.compact(2500)).toBe("2,5K");
     expect(M.compact(1000)).toBe("1K");
+    expect(M.compact(1_000_000)).toBe("1M");
+    expect(M.compact(2_500_000)).toBe("2,5M");
     expect(M.compact(150)).toBe("150");
     expect(M.number(1234)).toBe("1.234");
     expect(M.number(2.5)).toBe("2,5");
