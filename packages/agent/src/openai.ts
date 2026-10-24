@@ -23,6 +23,11 @@ export interface OpenAIOptions {
   readerFormat?: "json_schema" | "json_object" | "none";
   /** Where the data goes: a remote API, or a model on Juan's own machines. */
   privacy?: ModelProvider["privacy"];
+  /**
+   * OpenRouter only: route only to providers that keep nothing (`provider.zdr`) and collect nothing
+   * (`provider.data_collection: "deny"`) (Juan, 2026-10-24: option 1). OpenRouter refuses rather than fall back.
+   */
+  zdr?: boolean;
   timeoutMs?: number;
   /** Tests only: a stand-in for the API. */
   fetch?: typeof fetch;
@@ -67,9 +72,14 @@ export class OpenAIProvider implements ModelProvider {
         : format === "json_object"
           ? { response_format: { type: "json_object" } }
           : {}),
-      // OpenRouter: only to a provider that honours the format asked for.
-      ...(this.id === "openrouter" && format !== "none"
-        ? { provider: { require_parameters: true } }
+      // OpenRouter: only to a provider that honours the format asked for, and (zdr) keeps nothing.
+      ...(this.id === "openrouter" && (format !== "none" || this.o.zdr)
+        ? {
+            provider: {
+              ...(format !== "none" ? { require_parameters: true } : {}),
+              ...(this.o.zdr ? { zdr: true, data_collection: "deny" } : {}),
+            },
+          }
         : {}),
     };
     let res: Response;
@@ -97,7 +107,7 @@ export class OpenAIProvider implements ModelProvider {
         message?: { content?: string | null; refusal?: string | null };
         finish_reason?: string;
       }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
       model?: string;
       error?: { message?: string };
     };
@@ -123,7 +133,14 @@ export class OpenAIProvider implements ModelProvider {
     else json = jsonIn(content);
     return {
       json,
-      usage: { input: data.usage?.prompt_tokens ?? 0, output: data.usage?.completion_tokens ?? 0 },
+      usage: {
+        input: data.usage?.prompt_tokens ?? 0,
+        output: data.usage?.completion_tokens ?? 0,
+        // OpenRouter says what it charged (credits = dollars).
+        ...(typeof data.usage?.cost === "number" && Number.isFinite(data.usage.cost)
+          ? { cost: data.usage.cost }
+          : {}),
+      },
       model: data.model ?? this.o.model,
     };
   }

@@ -14,6 +14,7 @@ import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
 import { mailOfRun } from "./mailReview.ts";
+import { type AccountModels, serveModels } from "./models.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
@@ -51,6 +52,8 @@ export interface Providers {
   reader: ModelProvider;
   /** The `decider` role (Jev): the mail's choices; optional (the reader decides without it). */
   decider?: ModelProvider;
+  /** The reviewer's own model (Modelos); without it, the reader's. */
+  reviewer?: ModelProvider;
 }
 
 export interface AgentHostOptions {
@@ -65,12 +68,20 @@ export class AgentHost {
   private o: AgentHostOptions;
   private stores = new Map<number, UserStore>();
   private agents = new Map<number, Agent>();
+  /** The providers each account's agent was last given (they change when Juan chooses other models). */
+  private used = new Map<number, Providers>();
   private registry: ToolRegistry = coreTools().freeze();
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
   /** Called after a request that may have changed an account's data (the mirror writes it out). */
   onChanged: ((account: number) => void) | null = null;
   /** The account's mailbox as the inbox names it (its address), when it has one (mail.ts). */
   mailAccountOf: ((account: number) => string | null) | null = null;
+  /** The account's own models (models.ts, «Modelos»); null or a null answer: the server's. */
+  providersFor: ((account: number) => Providers | null) | null = null;
+  /** The account spent its month's budget (models.ts): background work calls no model. */
+  overBudget: ((account: number) => boolean) | null = null;
+  /** «Modelos» (models.ts): its routes are served here, under /api/agent/models. */
+  models: AccountModels | null = null;
 
   constructor(o: AgentHostOptions) {
     this.o = o;
@@ -80,7 +91,14 @@ export class AgentHost {
     return !!this.o.dataDir;
   }
   get on(): boolean {
-    return !!(this.o.providers && this.o.dataDir);
+    return !!(this.o.dataDir && (this.o.providers || this.providersFor));
+  }
+  /** This account has models to call: the server's, or its own. */
+  onFor(account: number): boolean {
+    return !!this.o.dataDir && !!this.providersOf(account);
+  }
+  private providersOf(account: number): Providers | null {
+    return this.providersFor?.(account) ?? this.o.providers;
   }
 
   store(account: number): UserStore {
@@ -100,13 +118,16 @@ export class AgentHost {
   agent(account: number): Agent {
     let a = this.agents.get(account);
     if (!a) {
-      const p = this.o.providers as Providers;
+      const p = this.providersOf(account);
+      if (!p) throw new Error("agent-off");
       a = new Agent({
         store: this.store(account),
         registry: this.registry,
         planner: p.planner,
         reader: p.reader,
         ...(p.decider ? { decider: p.decider } : {}),
+        ...(p.reviewer ? { reviewer: p.reviewer } : {}),
+        overBudget: () => this.overBudget?.(account) ?? false,
         ...(this.o.tz ? { tz: this.o.tz } : {}),
         ...(this.o.now ? { now: this.o.now } : {}),
         // To this account's devices only: the recipient is the code's (7.9).
@@ -114,6 +135,14 @@ export class AgentHost {
         onRequest: () => this.emit(account, "requests", {}),
       });
       this.agents.set(account, a);
+      this.used.set(account, p);
+    } else {
+      // The account chose other models since (Modelos): the same agent goes on with them.
+      const p = this.providersOf(account);
+      if (p && p !== this.used.get(account)) {
+        a.setProviders(p);
+        this.used.set(account, p);
+      }
     }
     return a;
   }
@@ -147,7 +176,12 @@ export async function serveAgent(
   params: Record<string, string>,
   who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
 ): Promise<void> {
-  if (!host.on) return send(res, 503, { error: "agent-off" });
+  // «Modelos» works with the agent off: a key can be given there.
+  if (route.includes(" /api/agent/models")) {
+    if (!host.models) return send(res, 503, { error: "no-store" });
+    return serveModels(host.models, req, res, route, params, who);
+  }
+  if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
   try {
     await answerAgent(host, req, res, route, params, who);
   } finally {

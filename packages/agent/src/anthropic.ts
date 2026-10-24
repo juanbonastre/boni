@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { anthropicCost } from "./models.ts";
 import type { ModelProvider, ModelRequest, ModelResponse } from "./providers.ts";
 
 /**
@@ -163,7 +164,11 @@ export class AnthropicProvider implements ModelProvider {
     else json = jsonIn(text);
     return {
       json,
-      usage: { input: res.usage.input_tokens, output: res.usage.output_tokens },
+      usage: {
+        input: res.usage.input_tokens,
+        output: res.usage.output_tokens,
+        cost: anthropicCost(res.model, res.usage.input_tokens, res.usage.output_tokens),
+      },
       model: res.model,
     };
   }

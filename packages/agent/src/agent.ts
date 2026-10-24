@@ -213,6 +213,13 @@ export interface AgentOptions {
   reader: ModelProvider;
   /** The `decider` role (Jev): choices among the code's options; without it, the reader decides. */
   decider?: ModelProvider;
+  /** The reviewer's own model (reader `review_reading`); without it, the reader's. */
+  reviewer?: ModelProvider;
+  /**
+   * The month's spending against Juan's budget (Juan, 2026-10-24: 10 € a month): at the limit, background work
+   * calls no model (P13); his own requests go on.
+   */
+  overBudget?: () => boolean;
   now?: () => number;
   /** Juan's zone: the civil day `today()` gives. */
   tz?: string;
@@ -341,6 +348,23 @@ export class Agent {
     this.o = o;
     this.limits = { ...RUN_LIMITS, ...o.limits };
     this.now = o.now ?? Date.now;
+  }
+
+  /** The account's models changed (Modelos): the next model call uses them; runs in progress go on. */
+  setProviders(p: {
+    planner: ModelProvider;
+    reader: ModelProvider;
+    decider?: ModelProvider;
+    reviewer?: ModelProvider;
+  }): void {
+    const { decider: _d, reviewer: _r, ...rest } = this.o;
+    this.o = {
+      ...rest,
+      planner: p.planner,
+      reader: p.reader,
+      ...(p.decider ? { decider: p.decider } : {}),
+      ...(p.reviewer ? { reviewer: p.reviewer } : {}),
+    };
   }
 
   private today(): string {
@@ -537,6 +561,10 @@ export class Agent {
   ) {
     st.counters.modelCalls++;
     if (st.counters.modelCalls > this.limits.maxModelCalls) throw new Stop("P12-model-calls");
+    if (st.origin.kind === "background" && this.o.overBudget?.()) {
+      if (!st.notices.some((n) => n.code === "budget")) st.notices.push({ code: "budget" });
+      throw new Stop("P13-month-budget");
+    }
     let res: Awaited<ReturnType<ModelProvider["complete"]>>;
     try {
       res = await provider.complete(req);
@@ -1006,11 +1034,12 @@ export class Agent {
     const { marker, text } = delimit(flat);
     const read = (sys: string, schema: object, extra: Record<string, unknown> = {}) => {
       spend();
+      const reviewing = step.reader === "review_reading";
       return this.model(
         st,
-        this.o.reader,
+        (reviewing && this.o.reviewer) || this.o.reader,
         {
-          role: "reader",
+          role: reviewing ? "reviewer" : "reader",
           system: sys,
           input: {
             marker,

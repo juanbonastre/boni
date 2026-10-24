@@ -6,6 +6,7 @@ export type {
   ProposalRow,
   RequestRow,
   RunRow,
+  SpendRow,
   StepRow,
 } from "./journal.ts";
 export {
