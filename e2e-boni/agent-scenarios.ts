@@ -607,3 +607,196 @@ export const ANSWER_GONE = {
   notices: [],
   error: "nothing-pending",
 };
+
+/** «Modelos» (apps/server/src/models.ts `view`): invented spending, keys never in it. */
+const choice = (connection: string, model: string, zdr = false) => ({ connection, model, zdr });
+const evaluation = (role: string, c: ReturnType<typeof choice>, right: number, total: number) => ({
+  ...c,
+  role,
+  at: Date.UTC(2026, 9, 24, 9),
+  right,
+  total,
+  wrong: total - right,
+  cost: 0.012,
+  cases: Array.from({ length: total }, (_, i) => ({
+    name: `Caso inventado ${i + 1}: «Reunión de ejemplo»`,
+    ok: i < right,
+    note: i < right ? "" : "puso la tarea en la colección equivocada",
+  })),
+});
+const READER = choice("openrouter", "deepseek/deepseek-v4.1-flash", true);
+export const MODELS = {
+  roles: [
+    {
+      ...choice("anthropic", "claude-opus-5-5"),
+      role: "planner",
+      privacy: "deletes-in-30-days",
+      chosen: false,
+      missingKey: false,
+    },
+    { ...READER, role: "reader", privacy: "keeps-nothing", chosen: true, missingKey: false },
+    {
+      ...choice("openrouter", "typesafe/jev-1.14"),
+      role: "decider",
+      privacy: "may-keep",
+      chosen: false,
+      missingKey: false,
+    },
+    {
+      ...choice("anthropic", "claude-haiku-4-5"),
+      role: "reviewer",
+      privacy: "deletes-in-30-days",
+      chosen: false,
+      missingKey: false,
+    },
+  ],
+  connections: [
+    { connection: "openrouter", mine: true, server: true },
+    { connection: "anthropic", mine: false, server: true },
+    { connection: "typesafe", mine: false, server: false },
+  ],
+  budget: { monthlyEur: 10, warnAt: 0.8 },
+  usdToEur: 0.9,
+  spending: {
+    month: "2026-10",
+    eur: 3.42,
+    rows: [
+      {
+        role: "planner",
+        provider: "anthropic",
+        model: "claude-opus-5-5",
+        calls: 41,
+        eur: 2.61,
+        unpriced: 0,
+      },
+      {
+        role: "reader",
+        provider: "openrouter",
+        model: "deepseek/deepseek-v4.1-flash",
+        calls: 512,
+        eur: 0.74,
+        unpriced: 3,
+      },
+      {
+        role: "eval-reader",
+        provider: "openrouter",
+        model: "deepseek/deepseek-v4.1-flash",
+        calls: 1,
+        eur: 0.07,
+        unpriced: 0,
+      },
+    ],
+    byDay: Array.from({ length: 24 }, (_, i) => ({
+      day: `2026-10-${String(i + 1).padStart(2, "0")}`,
+      eur: ((i * 7) % 11) / 40,
+    })),
+  },
+  over: false,
+  evaluations: [
+    evaluation("reader", READER, 19, 20),
+    evaluation("planner", choice("anthropic", "claude-opus-5-5"), 8, 8),
+  ],
+  evaluating: null,
+};
+const GLM = choice("openrouter", "z-ai/glm-5.2", true);
+export const MODELS_EVALUATING = { ...MODELS, evaluating: { ...GLM, role: "planner" } };
+export const MODELS_EVALUATED = {
+  ...MODELS,
+  evaluations: [evaluation("planner", GLM, 7, 8), ...MODELS.evaluations],
+};
+export const MODELS_USED = {
+  ...MODELS_EVALUATED,
+  roles: MODELS.roles.map((r) =>
+    r.role === "planner" ? { ...r, ...GLM, privacy: "keeps-nothing", chosen: true } : r,
+  ),
+};
+export const MODELS_CATALOGUE = {
+  models: [
+    {
+      id: "z-ai/glm-5.2",
+      name: "Z.ai: GLM 5.2",
+      input: 0.6,
+      output: 2.2,
+      context: 200000,
+      providers: ["A", "B", "C"],
+      structured: true,
+    },
+    {
+      id: "deepseek/deepseek-v4.1-flash",
+      name: "DeepSeek: V4.1 Flash",
+      input: 0.1,
+      output: 0.4,
+      context: 128000,
+      providers: ["A"],
+      structured: true,
+    },
+    {
+      id: "anthropic/claude-opus-5.5",
+      name: "Anthropic: Claude Opus 5.5",
+      input: 4,
+      output: 20,
+      context: 1000000,
+      providers: ["Amazon Bedrock", "Google"],
+      structured: true,
+    },
+    {
+      id: "ejemplo/sin-esquema",
+      name: "Ejemplo: sin esquema",
+      input: 0.05,
+      output: 0.1,
+      context: 32000,
+      providers: ["A"],
+      structured: false,
+    },
+  ],
+};
+/** The longest things a real account may show: long model ids, many rows, an exhausted budget. */
+const LONG =
+  "proveedor-de-ejemplo-con-nombre-largo/modelo-experimental-de-razonamiento-extendido-v12.3-instruct-preview";
+export const MODELS_WORST = {
+  ...MODELS,
+  roles: MODELS.roles.map((r) => ({
+    ...r,
+    model: LONG,
+    connection: "openrouter",
+    missingKey: true,
+    chosen: true,
+  })),
+  budget: { monthlyEur: 1234.56, warnAt: 0.8 },
+  spending: {
+    ...MODELS.spending,
+    eur: 1299.99,
+    rows: Array.from({ length: 12 }, (_, i) => ({
+      role: i % 2 ? "eval-reviewer" : "planner",
+      provider: "openrouter",
+      model: `${LONG}-${i}`,
+      calls: 12345,
+      eur: 123.45,
+      unpriced: 1,
+    })),
+    byDay: Array.from({ length: 31 }, (_, i) => ({
+      day: `2026-10-${String(i + 1).padStart(2, "0")}`,
+      eur: i,
+    })),
+  },
+  over: true,
+  evaluations: MODELS.roles.map((r) => ({
+    ...evaluation(r.role, choice("openrouter", LONG), 1, 3),
+    cases: Array.from({ length: 3 }, (_, i) => ({
+      name: `Un caso inventado con un título muy largo que no cabe en una línea ${i} «Electrodomésticos Hernández-Martínez e Hijos, Sociedad Limitada»`,
+      ok: i === 0,
+      note: "una nota igual de larga sobre lo que salió mal en este caso y por qué",
+    })),
+  })),
+};
+export const MODELS_CATALOGUE_WORST = {
+  models: Array.from({ length: 30 }, (_, i) => ({
+    id: `${LONG}-${i}`,
+    name: `Proveedor de ejemplo: Modelo experimental de razonamiento extendido ${i} (versión preliminar)`,
+    input: 123.45,
+    output: 1234.56,
+    context: 1000000,
+    providers: Array.from({ length: 30 }, (_, j) => `P${j}`),
+    structured: true,
+  })),
+};

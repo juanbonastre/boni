@@ -4,6 +4,7 @@ import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { CollectionsView, CollectionView } from "./components/Collections.tsx";
 import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
+import { ModelsView } from "./components/Models.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
@@ -225,6 +226,8 @@ function TopBar() {
           </span>
         ) : view.kind === "collections" ? (
           t("nav.collections")
+        ) : view.kind === "models" ? (
+          t("nav.models")
         ) : view.kind === "collection" ? (
           <CollectionCrumbs />
         ) : onPage && page ? (
@@ -450,6 +453,7 @@ function Content() {
   if (view.kind === "row") return <RowView />;
   if (view.kind === "proposal") return <ProposalPage key={view.id} id={view.id} />;
   if (view.kind === "collections") return <CollectionsView />;
+  if (view.kind === "models") return <ModelsView />;
   if (view.kind === "collection") return <CollectionView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;
 }

@@ -4,10 +4,12 @@ import {
   GUIDE,
   MAIL,
   MAIL_SUGGESTED,
+  MODELS_CATALOGUE_WORST,
+  MODELS_WORST,
   PROPOSALS,
   VISIBILITY,
 } from "./agent-scenarios.ts";
-import { audit, settingsAudit } from "./audit.ts";
+import { audit, MODELS_TEXT, modelsAudit, settingsAudit } from "./audit.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -243,6 +245,21 @@ for (const width of [1440, 900]) {
     await page.locator(".proposal").first().waitFor();
     issues.push(...(await audit(page, `${width} inbox`)));
     await page.screenshot({ path: `e2e-boni/screenshots/worst-inbox-${width}.png` });
+    expect(issues).toEqual([]);
+  });
+}
+
+for (const width of [1440, 900]) {
+  test(`the worst realistic data fits («Modelos», ${width} px)`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 860 });
+    await openApp(page, "/?still", {
+      agent: {
+        "GET api/agent/models": [MODELS_WORST],
+        "GET api/agent/models/catalogue": [MODELS_CATALOGUE_WORST],
+      },
+    });
+    const issues = await modelsAudit(page, MODELS_TEXT.es, `${width}`);
+    await page.screenshot({ path: `e2e-boni/screenshots/worst-models-${width}.png` });
     expect(issues).toEqual([]);
   });
 }

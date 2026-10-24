@@ -88,3 +88,43 @@ export async function settingsAudit(page: Page, prefix = ""): Promise<string[]> 
   }
   return issues;
 }
+
+/** «Modelos»: words to find its controls by. */
+export const MODELS_TEXT = {
+  es: {
+    nav: "Modelos",
+    spend: /^Gasto de/,
+    conns: /^Conexiones/,
+    budget: "Cambiar el presupuesto",
+    change: "Cambiar",
+    cases: "Ver los casos",
+  },
+  en: {
+    nav: "Models",
+    spend: /^Spending in/,
+    conns: /^Connections/,
+    budget: "Change the budget",
+    change: "Change",
+    cases: "See the cases",
+  },
+};
+
+/** «Modelos» with every section opened, a role's cases and the panel to change it with an evaluation. */
+export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
+  const issues: string[] = [];
+  await page.locator(".sidebar").getByRole("button", { name: l.nav }).click();
+  await page.locator(".models-card").first().waitFor();
+  issues.push(...(await audit(page, `${where} models`)));
+  await page.getByRole("button", { name: l.spend }).click();
+  await page.getByRole("button", { name: l.budget }).click();
+  await page.getByRole("button", { name: l.conns }).click();
+  const roles = page.locator(".models-card .models-row:not([aria-expanded=true])");
+  while ((await roles.count()) > 0) await roles.first().click();
+  for (const c of await page.getByRole("button", { name: l.cases }).all()) await c.click();
+  issues.push(...(await audit(page, `${where} models opened`)));
+  await page.getByRole("button", { name: l.change, exact: true }).first().click();
+  await page.locator(".models-panel .models-option").first().click();
+  await page.locator(".models-compare").waitFor();
+  issues.push(...(await audit(page, `${where} models panel`)));
+  return issues;
+}

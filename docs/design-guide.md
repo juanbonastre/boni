@@ -389,6 +389,25 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   opciones": "Volver a leer" (a days select, 1 to 30, and "Leer": that mail is read again and its pending proposals
   are replaced; a toast says how many mails) and the mailbox with "Cambiar" and "Desconectar". The password is never
   shown again.
+- **Modelos** (Boni, sidebar under Colecciones; Juan, 2026-10-24, option A with more detail on click): a page of
+  folded cards, each a row with a chevron that a click opens. First the month's spending ("Gasto de octubre", a bar
+  in `--accent`, amber past the warning, `--bad` at the budget, "3,42 € de 10,00 €"; at the budget a `--bad` line
+  says background work stopped); open, it lists each model's € and calls (evaluations as "Evaluación: <role>"), a
+  bar per day and "Cambiar el presupuesto" (al mes, avisar al %, 1 dólar en euros). Then "Qué modelo hace cada
+  cosa": one card per role named by what it does for Juan ("Entender lo que pides", "Leer correos", "Decidir entre
+  opciones", "Revisar lo aprendido"), with the model id, the connection, this month's € and a pill saying what it
+  does with the data (`--good` "No guarda tus datos", muted "Borra lo que recibe en 30 días", `--bad` "Puede
+  guardar tus datos"); open: what the role does, the privacy in a sentence, whose choice it is, the month's spend,
+  the last evaluation with "Ver los casos" (✓ / ✕ per case, the note muted), "Volver al del servidor" and
+  "Cambiar". "Conexiones" folded (which have a key; open: a row per connection, "Poner tu clave" as a password field
+  in place, "Quitar tu clave"; the key never comes back). Last, "Qué ha hecho cada modelo" goes to the Registro.
+  **Cambiar** opens a panel on the right (over the page when narrow; Esc or ✕ closes it): a search and the models of
+  OpenRouter that some provider serves keeping nothing, cheapest first, each a box with its name, price per million
+  tokens and how many such providers (one line each, ellipsized; readers only see models that answer a fixed form,
+  the decider only Jev); the picked one in the accent tint. Under the list, fixed while it scrolls, "Ahora" and
+  "Nuevo" with their scores ("7 de 8 bien · 1 equivocado · La prueba costó 0,012 $"), the cases, "Evaluar"
+  (while it runs, "Evaluando con casos inventados…" and the page looks again every few seconds) and "Usar este
+  modelo", enabled only with a recent evaluation.
 
 ## 7. Keeping it consistent
 - A pull request that changes look or behaviour in Boni Calendar updates this file.

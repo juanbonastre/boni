@@ -268,6 +268,34 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
   await expect(row.locator(".protect-pill")).toHaveText("Privada");
 });
 
+test("«Modelos» over the real server: the budget and a key, kept sealed and never shown again", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  const spend = w.getByRole("button", { name: /^Gasto de/ });
+  await expect(spend).toContainText("0,00 € de 10,00 €");
+  // The agent is off on this server: no model, and it says so.
+  await expect(w.locator(".models")).toContainText("el agente está apagado");
+  await spend.click();
+  await w.getByRole("button", { name: "Cambiar el presupuesto" }).click();
+  await w.getByRole("textbox", { name: "Al mes (€)" }).fill("20");
+  await w.getByRole("button", { name: "Guardar", exact: true }).click();
+  await expect(spend).toContainText("0,00 € de 20,00 €");
+  await w.getByRole("button", { name: /^Conexiones/ }).click();
+  const router = w.locator(".models-conn", { hasText: "OpenRouter" });
+  await expect(router).toContainText("Sin clave");
+  await router.getByRole("button", { name: "Poner tu clave" }).click();
+  await router
+    .getByRole("textbox", { name: "Clave de OpenRouter" })
+    .pressSequentially("clave-inventada-0003");
+  await router.getByRole("button", { name: "Guardar" }).click();
+  await expect(router).toContainText("Tu clave");
+  await shot(w, "models");
+  expect(await w.content()).not.toContain("clave-inventada-0003");
+  // Back as it was, for the tests after this one.
+  await router.getByRole("button", { name: "Quitar tu clave" }).click();
+  await expect(router).toContainText("Sin clave");
+});
+
 test("a part of a collection with its own level: a rule made from Notion's filter", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
