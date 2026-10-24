@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -45,7 +45,9 @@ describe("the core does not depend on Obsidian", () => {
             spec.startsWith("@boni/calendar") ||
             spec.includes("vault-fs") ||
             /(^|\/)apps\//.test(spec) ||
-            (spec.startsWith("../../") && !CORE.some((c) => spec.includes(`/${c}/`)))
+            // A relative import that, resolved, leaves the core's packages.
+            (spec.startsWith(".") &&
+              !CORE.some((c) => resolve(dirname(file), spec).startsWith(join(PACKAGES, c) + sep)))
           )
             bad.push(`${file.slice(PACKAGES.length + 1)}: ${spec}`);
         }

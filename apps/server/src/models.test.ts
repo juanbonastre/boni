@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
-import { fakePlanner } from "@boni/agent";
+import { fakePlanner, type ModelProvider } from "@boni/agent";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
@@ -62,6 +62,19 @@ beforeAll(async () => {
     },
     serverKeys: { anthropic: SERVER_KEY },
     now: () => now,
+    // No network: every provider reads like a model that keeps nothing, and says what it cost.
+    makeProvider: (v): ModelProvider => ({
+      id: v.connection,
+      privacy: "external-api",
+      complete: async () => {
+        await new Promise((r) => setTimeout(r, 15));
+        return {
+          json: { items: [] },
+          usage: { input: 100, output: 10, cost: 0.001 },
+          model: v.model,
+        };
+      },
+    }),
   });
   host.models = models;
   host.providersFor = (a) => models.providers(a);
@@ -117,24 +130,48 @@ describe("«Modelos»", () => {
     expect(models.providers(1)).toBeNull();
   });
 
-  it("a role through OpenRouter keeping nothing, with Juan's key; the key never comes back", async () => {
-    // Chosen without its key: it runs on the server's default and says the key is missing.
-    let r = await put("/api/agent/models/roles/reader", {
-      connection: "openrouter",
-      model: "deepseek/deepseek-v4.1-flash",
-      zdr: true,
+  it("a role through OpenRouter keeping nothing, after its evaluation, with Juan's key; the key never comes back", async () => {
+    const deepseek = { connection: "openrouter", model: "deepseek/deepseek-v4.1-flash", zdr: true };
+    const evaluate = (body: unknown) =>
+      fetch(`${base}/api/agent/models/evaluate`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+    // Not before its evaluation; and no evaluation without a key for its connection.
+    expect((await put("/api/agent/models/roles/reader", deepseek)).status).toBe(409);
+    expect(await (await evaluate({ role: "reader", ...deepseek })).json()).toEqual({
+      error: "no-key",
     });
-    expect(r.status).toBe(200);
-    let v = (await r.json()) as { roles: { role: string; chosen: boolean; missingKey: boolean }[] };
-    expect(v.roles.find((x) => x.role === "reader")).toMatchObject({
-      chosen: false,
-      missingKey: true,
-    });
-    r = await put("/api/agent/models/keys/openrouter", { key: MY_KEY });
+    let r = await put("/api/agent/models/keys/openrouter", { key: MY_KEY });
     expect(r.status).toBe(200);
     const text = await r.text();
     expect(text).not.toContain(MY_KEY);
-    v = JSON.parse(text);
+    expect((await evaluate({ role: "reader", ...deepseek })).status).toBe(202);
+    expect((await evaluate({ role: "reader", ...deepseek })).status).toBe(409); // one at a time
+    await models.idle();
+    const evals = (await get("/api/agent/models")).evaluations as {
+      model: string;
+      total: number;
+    }[];
+    // The candidate and the role's current model, to compare them.
+    expect(evals.map((e) => e.model).sort()).toEqual([
+      "claude-haiku-4-5",
+      "deepseek/deepseek-v4.1-flash",
+    ]);
+    expect(evals[0]?.total).toBeGreaterThan(5);
+    // What it cost counts in the month.
+    expect(
+      host
+        .store(1)
+        .journal.spending(0, now + 1)
+        .some((x) => x.role === "eval-reader"),
+    ).toBe(true);
+    r = await put("/api/agent/models/roles/reader", deepseek);
+    expect(r.status).toBe(200);
+    const v = (await r.json()) as {
+      roles: { role: string; chosen: boolean; missingKey: boolean }[];
+    };
     expect(v.roles.find((x) => x.role === "reader")).toMatchObject({
       chosen: true,
       missingKey: false,
@@ -201,13 +238,16 @@ describe("«Modelos»", () => {
         usage: { input: 1000, output: 100, ...(cost === undefined ? {} : { cost }) },
         at,
       });
+    // What the evaluations above cost is in the month already.
+    const before = models.spending(1).eur;
     call(5, now - 1000);
     call(undefined, now - 900);
     call(50, Date.UTC(2026, 8, 30)); // last month: not counted
     expect(models.overBudget(1)).toBe(false);
     expect(notes).toEqual([]);
     const v = await get("/api/agent/models");
-    expect(v.spending).toMatchObject({ month: "2026-10", eur: 4.5 });
+    expect(v.spending).toMatchObject({ month: "2026-10" });
+    expect((v.spending as { eur: number }).eur).toBeCloseTo(before + 4.5, 6);
     expect((v.spending as { rows: { calls: number; unpriced: number }[] }).rows[0]).toMatchObject({
       calls: 2,
       unpriced: 1,
