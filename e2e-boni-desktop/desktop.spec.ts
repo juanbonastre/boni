@@ -317,6 +317,25 @@ test("«Actividad» and «Auditoría» over the real server: Juan's read of a pr
   await w.keyboard.press("Escape");
 });
 
+test("the notes explorer over the real server: the vault's paths, a note's history", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Notas" }).click();
+  const tree = w.locator(".notes-tree");
+  await expect(tree.getByRole("button", { name: /^registros/ })).toBeVisible();
+  await tree.getByRole("button", { name: /^registros/ }).click();
+  await tree.getByRole("button", { name: /^personas/ }).click();
+  await tree.getByRole("button", { name: /ana-ejemplo\.md/ }).click();
+  await expect(w.locator(".topbar .crumbs")).toContainText("Notas");
+  await w.getByRole("button", { name: "Historial" }).click();
+  const h = w.locator(".history-panel");
+  // Imported from the vault: made by the import, its text written by it.
+  await expect(h.locator(".history-cols")).toContainText("Creado porImportación");
+  await expect(h.locator(".audit-seen").first()).toContainText("Importación · Crear");
+  await shot(w, "history");
+  await w.keyboard.press("Escape");
+  await w.keyboard.press("Escape");
+});
+
 test("a part of a collection with its own level: a rule made from Notion's filter", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();

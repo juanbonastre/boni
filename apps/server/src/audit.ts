@@ -306,7 +306,10 @@ export function auditRow(store: UserStore, id: string) {
       entity?: { values?: Record<string, unknown> };
       body?: unknown;
     };
-    const fields = Object.keys(after.values ?? after.entity?.values ?? {});
+    // Boni's own hidden fields (the vault path, the note's hash) are not what anyone changed.
+    const fields = Object.keys(after.values ?? after.entity?.values ?? {}).filter(
+      (f) => !def?.fields.find((x) => x.id === f)?.hidden,
+    );
     const body =
       "body" in after || (after.entity !== undefined && "body" in (after.entity as object));
     return { seq: o.seq, at: o.at, kind: o.kind, by: o.by, run: o.run, fields, body };

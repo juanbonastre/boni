@@ -5718,3 +5718,152 @@ button.audit-tr:hover {
     border-left: 0;
   }
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* A row's history beside its page: its system columns, who wrote what, changes, who saw it. */
+.row-history {
+  margin-left: auto;
+}
+.row-history.on {
+  background: var(--accent-soft);
+}
+.history-cols {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+.history-cols > div {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+  gap: 10px;
+  font-size: 13px;
+}
+.history-cols dt {
+  color: var(--muted);
+}
+.history-cols dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.blame {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.blame-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 3px solid var(--muted);
+}
+.blame-who {
+  font-size: 12px;
+  color: var(--muted);
+}
+.blame-text {
+  margin: 0;
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* A table's system columns: Boni keeps them, nobody edits them. */
+.db-table .sys-col {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.sys-cell {
+  display: block;
+  max-width: 14rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Colecciones: numbers, size and use per collection, the storage advice. */
+.cols-usage {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.cols-advice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--c4) 16%, transparent);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.cols-advice > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--c4);
+}
+/* The notes explorer: the vault's tree, as Obsidian's. */
+.notes-search {
+  align-self: flex-start;
+  flex: none;
+  width: min(360px, 100%);
+}
+.notes-tree,
+.notes-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notes-tree {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px;
+}
+.notes-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.notes-row:hover {
+  background: var(--hover);
+}
+.notes-row > svg {
+  flex: none;
+  color: var(--muted);
+}
+.notes-folder {
+  font-weight: 500;
+}
+.notes-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.notes-ai {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  font-size: 12px;
+}

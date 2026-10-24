@@ -227,7 +227,33 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           return [200, JSON.stringify({ id: t.id, level: t.level })];
         }
         if (p === "api/data/types/t_libro/rows" && method === "GET")
-          return [200, JSON.stringify({ rows, titles: {}, truncated: false, ghosts })];
+          return [
+            200,
+            JSON.stringify({
+              rows,
+              titles: {},
+              truncated: false,
+              ghosts,
+              // Each row's system columns (apps/server/src/audit.ts `systemColumns`).
+              columns: Object.fromEntries(
+                rows.map((r, i) => [
+                  r.id,
+                  {
+                    created: Date.UTC(2026, 9, 1 + i, 9),
+                    updated: r.updated > 1000 ? r.updated : Date.UTC(2026, 9, 20, 9),
+                    version: 2,
+                    createdBy: i === 0 ? "import" : "user:portatil",
+                    updatedBy: i === 1 ? "mcp:claude-ejemplo" : "user:portatil",
+                    editors: ["user:portatil"],
+                    viewers: i === 1 ? ["mcp:claude-ejemplo"] : [],
+                    seenAt: i === 1 ? Date.UTC(2026, 9, 24, 10) : null,
+                    origin: i === 1 ? "model" : "user",
+                    size: 420 + i,
+                  },
+                ]),
+              ),
+            }),
+          ];
         if (p === "api/data/types/t_libro/rows") {
           const row = { id: `n${++rowSeq}`, values: { ...(b.values ?? {}) }, updated: Date.now() };
           rows = [row, ...rows];

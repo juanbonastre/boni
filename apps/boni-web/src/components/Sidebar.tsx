@@ -4,6 +4,7 @@ import {
   Cpu,
   Database,
   FileText,
+  FolderTree,
   MessageSquare,
   MoreHorizontal,
   PanelLeft,
@@ -27,6 +28,7 @@ import {
   showCollections,
   showLog,
   showModels,
+  showNotes,
   toggleSidebar,
   useStore,
 } from "../store.ts";
@@ -79,6 +81,14 @@ export function Sidebar() {
         >
           <Database size={15} strokeWidth={1.8} />
           <span className="nav-name">{t("nav.collections")}</span>
+        </button>
+        <button
+          type="button"
+          className={`nav-row${view.kind === "notes" || (view.kind === "row" && view.from === "notes") ? " active" : ""}`}
+          onClick={showNotes}
+        >
+          <FolderTree size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("nav.notes")}</span>
         </button>
         <button
           type="button"

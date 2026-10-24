@@ -1,4 +1,10 @@
-import { type DatabaseFilter, type DatabaseView, matchesFilters } from "@boni/views";
+import {
+  type DatabaseFilter,
+  type DatabaseView,
+  matchesFilters,
+  SYSTEM_COLUMNS,
+  type SystemColumn,
+} from "@boni/views";
 import {
   Calendar as CalendarIcon,
   Check,
@@ -16,6 +22,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { DataField, DataRow, DataType, DataValue } from "../core/agent.ts";
+import type { SystemColumns } from "../core/audit.ts";
 import type { T } from "../i18n.ts";
 import {
   addRow,
@@ -29,6 +36,7 @@ import {
   openRow,
   useStore,
 } from "../store.ts";
+import { bytes, whoName } from "./Dash.tsx";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 import { ProtectionMenu } from "./Protection.tsx";
 
@@ -150,6 +158,8 @@ export function DatabaseBlock({
           ghosts={data.ghosts ?? []}
           fields={shown}
           titles={data.titles}
+          system={view.system ?? []}
+          columns={data.columns ?? {}}
           onAdd={() => void add()}
         />
       ) : view.layout === "board" ? (
@@ -542,6 +552,30 @@ function ViewOptions({
                 })}
             </>
           )}
+          {view.layout === "table" && (
+            <>
+              <MenuSep />
+              <div className="menu-head">{t("sys.title")}</div>
+              {SYSTEM_COLUMNS.map((c) => {
+                const on = view.system?.includes(c) ?? false;
+                return (
+                  <MenuRow
+                    key={c}
+                    label={t(`sys.${c}`)}
+                    on={on}
+                    onClick={() =>
+                      onView({
+                        ...view,
+                        system: on
+                          ? (view.system ?? []).filter((x) => x !== c)
+                          : [...(view.system ?? []), c],
+                      })
+                    }
+                  />
+                );
+              })}
+            </>
+          )}
           <MenuSep />
           <div className="menu-head">{t("db.properties")}</div>
           {type.fields
@@ -572,12 +606,51 @@ function ViewOptions({
 
 // ---------------------------------------------------------------- table
 
+/** A system column's value in words (dates, who, origin, size); nobody edits it. */
+export function systemText(
+  t: T,
+  col: SystemColumn,
+  c: SystemColumns | undefined,
+  locale: string,
+  lang: string,
+): string {
+  if (!c) return "";
+  const date = (at: number | null) =>
+    at
+      ? new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }).format(at)
+      : "";
+  switch (col) {
+    case "created":
+      return date(c.created);
+    case "updated":
+      return date(c.updated);
+    case "seenAt":
+      return date(c.seenAt);
+    case "createdBy":
+      return c.createdBy ? whoName(t, c.createdBy) : "";
+    case "updatedBy":
+      return c.updatedBy ? whoName(t, c.updatedBy) : "";
+    case "editors":
+      return c.editors.map((b) => whoName(t, b)).join(", ");
+    case "viewers":
+      return c.viewers.map((b) => whoName(t, b)).join(", ");
+    case "origin":
+      return c.origin ? t(`sys.origin.${c.origin}`) : "";
+    case "version":
+      return String(c.version);
+    case "size":
+      return bytes(c.size, lang);
+  }
+}
+
 function TableView({
   type,
   rows,
   ghosts,
   fields,
   titles,
+  system,
+  columns,
   onAdd,
 }: {
   type: DataType;
@@ -585,10 +658,14 @@ function TableView({
   ghosts: DataRow[];
   fields: DataField[];
   titles: Record<string, string>;
+  system: SystemColumn[];
+  columns: Record<string, SystemColumns>;
   onAdd: () => void;
 }) {
   const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language);
   const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
+  const sys = SYSTEM_COLUMNS.filter((c) => system.includes(c));
   // The title column first, as Notion's.
   const ordered = [
     ...fields.filter((f) => f.id === type.titleField),
@@ -602,6 +679,11 @@ function TableView({
             {ordered.map((f) => (
               <th key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
                 {f.name}
+              </th>
+            ))}
+            {sys.map((c) => (
+              <th key={c} className="sys-col">
+                {t(`sys.${c}`)}
               </th>
             ))}
             <th className="row-tools" aria-label={t("db.actions")} />
@@ -652,6 +734,9 @@ function TableView({
                   </div>
                 </td>
               ))}
+              {sys.map((c) => (
+                <td key={c} className="sys-col" />
+              ))}
               <td className="row-tools" />
             </tr>
           ))}
@@ -663,6 +748,16 @@ function TableView({
                   {f.id === type.titleField && <OpenButton type={type} row={r} />}
                 </td>
               ))}
+              {sys.map((c) => {
+                const text = systemText(t, c, columns[r.id], locale, lang);
+                return (
+                  <td key={c} className="sys-col">
+                    <span className="sys-cell" title={text}>
+                      {text}
+                    </span>
+                  </td>
+                );
+              })}
               <td className="row-tools">
                 <button
                   type="button"

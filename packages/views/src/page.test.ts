@@ -58,6 +58,12 @@ describe("a page (docs/extensiones.md 6)", () => {
     expect(pageErrors({ version: 1, blocks: [], script: "x" })).toHaveLength(1);
     expect(pageErrors({ version: 1, full: "yes", blocks: [] })).toHaveLength(1);
     expect(with_({ id: "x", type: "heading", text: "x", level: 4 })[0]).toMatch(/level/);
+    // System columns: only those Boni keeps.
+    const db = (system: unknown) =>
+      with_({ id: "d", type: "database", source: "t_libro", view: { layout: "table", system } });
+    expect(db(["created", "createdBy", "viewers"])).toEqual([]);
+    expect(db(["password"])[0]).toMatch(/closed view/);
+    expect(db("created")[0]).toMatch(/closed view/);
     expect(with_({ id: "x", type: "todo", text: "x", done: "sí" })[0]).toMatch(/to-do/);
     expect(with_({ id: "x", type: "divider", text: "x" })[0]).toMatch(/divider/);
     expect(with_({ id: "x", type: "text", text: "x", indent: 7 })[0]).toMatch(/text block/);
