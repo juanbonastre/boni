@@ -127,6 +127,9 @@ packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, se
                  `anthropic.ts`: the real provider (Messages API with structured output, no tools, no SDK);
                  `apiSchema` reduces schemas to what that API accepts (the code checks every answer again anyway).
                  `eval/eval.ts`: a small evaluation with the real models, outside CI, run by hand with a budget.
+                 `eval/lib/` (`@boni/agent/evals`): the evaluations as functions scored by code (`evalReader` over
+                 invented mail, `evalDecider` by the agent's own both-orders rule, `evalPlanner` in a store of its
+                 own with the production tools, `evalRole`); the by-hand scripts and the server's «Modelos» use them.
                  `reading.ts`: reading a message by modules (docs/nucleo.md 7.4b; reader `read_message`): a long
                  base prompt plus each module's part (`MODULES`: tasks, events), reasoned items (quote, actor,
                  kind, then title and day) and `checkReadMessage`, where the code keeps only what the recipient
@@ -305,6 +308,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  key (never sent back), the server's environment as the default of every role it did not choose, the
                  month's spending from the journal (`spending`), a notice once at the budget's fraction, the catalogue
                  of OpenRouter models some provider serves keeping nothing (`/api/v1/endpoints/zdr`, via @boni/net).
+                 A model takes a role only after its evaluation (`POST /api/agent/models/evaluate`, one at a time,
+                 in the background, the role's current model too for comparison; recent = 30 days; what it costs is
+                 a journal model call, so it counts in the month); `PUT .../roles/:role` answers 409 without one.
                  `GET /api/agent/requests`, `POST /api/agent/requests/:id/answer | dismiss`: the panel of requests;
                  a new one is told to the devices as the live event `requests`.
 apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`legacy/boni/apps/web`, with its history):

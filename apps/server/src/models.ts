@@ -15,6 +15,7 @@ import {
   type Role,
   type RoleChoice,
 } from "@boni/agent";
+import { type EvalResult, evalRole } from "@boni/agent/evals";
 import { wrappedKeysIn } from "@boni/identity";
 import { fetchText } from "@boni/net";
 import { open, type SpendRow, seal, wrappedKeyProvider } from "@boni/store";
@@ -37,6 +38,22 @@ const OPENROUTER = "https://openrouter.ai/api/v1";
 const CONFIG = "models/config";
 const KEYS = "models/keys";
 const WARNED = "models/warned";
+const EVALS = "models/evals";
+/** How recent an evaluation must be for its model to take a role. */
+const EVAL_DAYS = 30;
+
+/** One evaluation kept for the page (the last few per account). */
+export interface Evaluation extends EvalResult {
+  role: Role;
+  connection: Connection;
+  model: string;
+  zdr: boolean;
+  at: number;
+}
+const same = (
+  e: Pick<Evaluation, "role" | "connection" | "model" | "zdr">,
+  c: Pick<Evaluation, "role" | "connection" | "model" | "zdr">,
+) => e.role === c.role && e.connection === c.connection && e.model === c.model && e.zdr === c.zdr;
 
 export interface ModelsOptions {
   db: Db;
@@ -49,6 +66,11 @@ export interface ModelsOptions {
   now?: () => number;
   /** Tests only: the catalogue's download. */
   fetchCatalogue?: (url: string) => Promise<string>;
+  /** Tests only: how a role's provider is made (default: the real one for its connection). */
+  makeProvider?: (
+    v: Pick<RoleView, "role" | "connection" | "model" | "zdr">,
+    key: string,
+  ) => ModelProvider;
 }
 
 /** A role as the page shows it. */
@@ -70,6 +92,9 @@ export class AccountModels {
   private built = new Map<number, { sig: string; providers: Providers | null }>();
   private spent = new Map<number, { at: number; eur: number }>();
   private cached: { at: number; models: CatalogueModel[] } | null = null;
+  /** The evaluation running for each account (one at a time). */
+  private running = new Map<number, Pick<Evaluation, "role" | "connection" | "model" | "zdr">>();
+  private jobs = new Set<Promise<void>>();
 
   constructor(o: ModelsOptions) {
     this.o = o;
@@ -181,7 +206,7 @@ export class AccountModels {
       const key = this.keyFor(account, v.connection);
       if (!key) continue;
       try {
-        byRole.set(v.role, provider(v, key));
+        byRole.set(v.role, (this.o.makeProvider ?? provider)(v, key));
       } catch {
         // a role whose provider cannot be made runs as the server's default below
       }
@@ -268,6 +293,91 @@ export class AccountModels {
     return list;
   }
 
+  evaluations(account: number): Evaluation[] {
+    const v = this.o.host.store(account).setting(EVALS);
+    try {
+      return v ? (JSON.parse(v) as Evaluation[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** The latest evaluation of this model on this route for this role, if recent enough to take it. */
+  evaluated(
+    account: number,
+    c: Pick<Evaluation, "role" | "connection" | "model" | "zdr">,
+  ): Evaluation | null {
+    const e = this.evaluations(account).find((x) => same(x, c));
+    return e && this.now() - e.at < EVAL_DAYS * 86_400_000 ? e : null;
+  }
+
+  /**
+   * Evaluates `choice` for `role` in the background (Juan, 2026-10-24: a model takes a role only after this), and
+   * the role's current model too when it has no recent evaluation, so the page can compare them. What it costs is
+   * written in the journal like any model call, so it counts in the month's spending.
+   */
+  evaluate(account: number, role: Role, choice: RoleChoice): "started" | "busy" | "no-key" {
+    if (this.running.has(account)) return "busy";
+    const key = this.keyFor(account, choice.connection);
+    if (!key) return "no-key";
+    const candidate = {
+      role,
+      connection: choice.connection,
+      model: choice.model,
+      zdr: !!choice.zdr,
+    };
+    const current = this.roles(account).find((r) => r.role === role);
+    const reader = this.roles(account).find((r) => r.role === "reader");
+    const make = (v: Pick<RoleView, "role" | "connection" | "model" | "zdr">) => {
+      const k = this.keyFor(account, v.connection);
+      return k ? (this.o.makeProvider ?? provider)(v, k) : null;
+    };
+    const readerP = reader ? make(reader) : null;
+    this.running.set(account, candidate);
+    const job = (async () => {
+      try {
+        const runs: Pick<Evaluation, "role" | "connection" | "model" | "zdr">[] = [candidate];
+        if (current && !same(candidate, current) && !this.evaluated(account, current))
+          runs.push(current);
+        for (const c of runs) {
+          const model = make(c);
+          if (!model) continue;
+          const r = await evalRole(role, model, readerP ?? model);
+          this.o.host.store(account).journal.modelCall({
+            run: `eval:${this.now()}`,
+            role: `eval-${role}`,
+            provider: c.connection,
+            model: c.model,
+            promptHash: "eval",
+            request: { evaluation: role },
+            response: { right: r.right, total: r.total },
+            usage: { input: r.tokens, output: 0, cost: r.cost },
+            at: this.now(),
+          });
+          const kept = [
+            { ...c, ...r, at: this.now() },
+            ...this.evaluations(account).filter((x) => !same(x, c)),
+          ];
+          this.o.host.store(account).setSetting(EVALS, JSON.stringify(kept.slice(0, 20)));
+        }
+      } catch (e) {
+        console.error(`models ${account}: evaluation failed (${(e as Error).message})`);
+      } finally {
+        this.running.delete(account);
+        this.spent.delete(account);
+        this.o.host.emit(account, "models", {});
+      }
+    })();
+    this.jobs.add(job);
+    void job.finally(() => this.jobs.delete(job));
+    return "started";
+  }
+
+  /** Tests and shutdown: every evaluation running has ended. */
+  async idle(): Promise<void> {
+    await Promise.all([...this.jobs]);
+  }
+
   /** What the page reads. */
   view(account: number) {
     const c = this.config(account);
@@ -284,6 +394,8 @@ export class AccountModels {
       usdToEur: c.usdToEur,
       spending,
       over: c.budget.monthlyEur > 0 && spending.eur >= c.budget.monthlyEur,
+      evaluations: this.evaluations(account).map(({ cases, ...rest }) => ({ ...rest, cases })),
+      evaluating: this.running.get(account) ?? null,
     };
   }
 }
@@ -370,6 +482,8 @@ export function catalogueOf(models: unknown, zdr: unknown): CatalogueModel[] {
  * The «Modelos» routes, under the agent's (`/api/agent/models…`, tailnet only): they work with the agent off, so a
  * key can be given. Changing anything needs a personal device.
  */
+const bad = (res: ServerResponse) => send(res, 400, { error: "bad-request" });
+
 export async function serveModels(
   models: AccountModels,
   req: IncomingMessage,
@@ -378,7 +492,7 @@ export async function serveModels(
   params: Record<string, string>,
   who: { account: number; trust: "personal" | "shared" | "ambient" },
 ): Promise<void> {
-  if (route.startsWith("PUT ") && who.trust !== "personal")
+  if ((route.startsWith("PUT ") || route.startsWith("POST ")) && who.trust !== "personal")
     return send(res, 403, { error: "personal-device-only" });
   switch (route) {
     case "GET /api/agent/models":
@@ -395,12 +509,19 @@ export async function serveModels(
       const b = await bodyOf(req);
       const c = models.config(who.account);
       if (b.connection === undefined) delete c.roles[role];
-      else
-        c.roles[role] = {
+      else {
+        const choice: RoleChoice = {
           connection: b.connection as Connection,
           model: String(b.model ?? ""),
           ...(b.zdr === true ? { zdr: true } : {}),
         };
+        c.roles[role] = choice;
+        const errors = modelsErrors(c);
+        if (errors.length) return send(res, 400, { error: "invalid", errors });
+        // A model takes a role only after its evaluation (Juan, 2026-10-24).
+        if (!models.evaluated(who.account, { role, ...choice, zdr: !!choice.zdr }))
+          return send(res, 409, { error: "needs-evaluation" });
+      }
       const errors = models.saveConfig(who.account, c);
       return errors.length
         ? send(res, 400, { error: "invalid", errors })
@@ -418,6 +539,21 @@ export async function serveModels(
         return send(res, 400, { error: "bad-key" });
       models.setKey(who.account, connection, key);
       return send(res, 200, models.view(who.account));
+    }
+    case "POST /api/agent/models/evaluate": {
+      const b = await bodyOf(req);
+      const role = ROLES.find((r) => r === b.role);
+      if (!role) return bad(res);
+      const choice: RoleChoice = {
+        connection: b.connection as Connection,
+        model: String(b.model ?? ""),
+        ...(b.zdr === true ? { zdr: true } : {}),
+      };
+      if (modelsErrors({ ...DEFAULT_MODELS, roles: { [role]: choice } }).length) return bad(res);
+      const r = models.evaluate(who.account, role, choice);
+      return r === "started"
+        ? send(res, 202, models.view(who.account))
+        : send(res, 409, { error: r });
     }
     case "PUT /api/agent/models/budget": {
       const b = await bodyOf(req);
