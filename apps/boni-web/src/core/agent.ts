@@ -8,11 +8,13 @@ import {
 import { ApiError, NotConfiguredError, OfflineError, type Transport } from "./api.ts";
 import {
   parseActions,
+  parseColumns,
   parseDetail,
   parseHistory,
   parseNotes,
   parseStorage,
   parseSummary,
+  type SystemColumns,
 } from "./audit.ts";
 
 /**
@@ -1239,6 +1241,13 @@ export class AgentApi {
         ? b.rows.map(parseRow).filter((x): x is DataRow => !!x)
         : [];
     const titles = isObj(b) && isObj(b.titles) ? (b.titles as Record<string, string>) : {};
+    // Each row's system columns (Juan, 2026-10-24), when the server keeps them.
+    const columns: Record<string, SystemColumns> = {};
+    if (isObj(b) && isObj(b.columns))
+      for (const [id, c] of Object.entries(b.columns)) {
+        const p = parseColumns(c);
+        if (p) columns[id] = p;
+      }
     const ghosts =
       isObj(b) && Array.isArray(b.ghosts)
         ? b.ghosts.flatMap((g): DataRow[] => {
@@ -1248,7 +1257,7 @@ export class AgentApi {
               : [];
           })
         : [];
-    return { rows, titles, ghosts };
+    return { rows, titles, ghosts, columns };
   };
   createRow = async (type: string, values: Record<string, DataValue>) =>
     parseRow(

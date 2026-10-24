@@ -154,3 +154,26 @@ export async function activityAudit(page: Page, l: (typeof MODELS_TEXT)["es"], w
   issues.push(...(await audit(page, `${where} audit`)));
   return issues;
 }
+
+/** The notes explorer opened, a note's history, a table with system columns, and Colecciones' usage. */
+export async function notesAudit(
+  page: Page,
+  l: { notes: string; history: string; cols: string },
+  where: string,
+) {
+  const issues: string[] = [];
+  await page.locator(".sidebar").getByRole("button", { name: l.notes }).click();
+  await page.locator(".notes-tree .notes-row").first().waitFor();
+  for (const f of await page.locator(".notes-folder").all()) await f.click();
+  issues.push(...(await audit(page, `${where} notes`)));
+  // A note the fake server has as a row (the fixtures' Libros).
+  await page.locator(".notes-tree .notes-row", { hasText: "plan-ejemplo" }).click();
+  await page.getByRole("button", { name: l.history }).click();
+  await page.locator(".history-panel .history-cols").waitFor();
+  issues.push(...(await audit(page, `${where} history`)));
+  await page.keyboard.press("Escape");
+  await page.locator(".sidebar").getByRole("button", { name: l.cols }).click();
+  await page.locator(".cols-usage .kpi").first().waitFor();
+  issues.push(...(await audit(page, `${where} collections usage`)));
+  return issues;
+}

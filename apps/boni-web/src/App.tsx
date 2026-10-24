@@ -7,6 +7,7 @@ import { ChatView, InboxView } from "./components/Chat.tsx";
 import { CollectionsView, CollectionView } from "./components/Collections.tsx";
 import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
 import { ModelsView } from "./components/Models.tsx";
+import { NotesView } from "./components/Notes.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
@@ -34,6 +35,7 @@ import {
   showChat,
   showCollections,
   showLog,
+  showNotes,
   showStart,
   toggleSidebar,
   useStore,
@@ -146,6 +148,7 @@ function useShortcuts(mobile: boolean) {
         if (s.view.kind === "proposal") closeProposal();
         else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
         else if (s.view.kind === "inbox") showChat();
+        else if (s.view.kind === "row" && s.view.from === "notes") showNotes();
         else if (s.view.kind === "row" && s.view.from) openCollection(s.view.type);
         else if (s.view.kind === "collection") showCollections();
         else if (s.view.kind === "audit") showLog();
@@ -232,6 +235,8 @@ function TopBar() {
           t("nav.collections")
         ) : view.kind === "models" ? (
           t("nav.models")
+        ) : view.kind === "notes" ? (
+          t("nav.notes")
         ) : view.kind === "audit" ? (
           <span className="crumbs">
             <span className="crumb-part">
@@ -338,8 +343,9 @@ function CollectionCrumbs() {
 /** Where an open row is: the page (or Colecciones) it was opened from, its collection, its title. */
 function RowCrumbs() {
   const t = useStore((s) => s.t);
-  const fromCollection = useStore((s) => s.view.kind === "row" && !!s.view.from);
-  const page = useStore((s) => (fromCollection ? null : s.page));
+  const fromCollection = useStore((s) => s.view.kind === "row" && s.view.from === "collection");
+  const fromNotes = useStore((s) => s.view.kind === "row" && s.view.from === "notes");
+  const page = useStore((s) => (fromCollection || fromNotes ? null : s.page));
   const row = useStore((s) => s.row);
   const type = useStore((s) =>
     s.view.kind === "row"
@@ -361,6 +367,14 @@ function RowCrumbs() {
         <span className="crumb-part">
           <button type="button" className="crumb" onClick={showCollections}>
             {t("nav.collections")}
+          </button>
+          <span className="crumb-sep">/</span>
+        </span>
+      )}
+      {fromNotes && (
+        <span className="crumb-part">
+          <button type="button" className="crumb" onClick={showNotes}>
+            {t("nav.notes")}
           </button>
           <span className="crumb-sep">/</span>
         </span>
@@ -464,6 +478,7 @@ function Content() {
   if (view.kind === "proposal") return <ProposalPage key={view.id} id={view.id} />;
   if (view.kind === "collections") return <CollectionsView />;
   if (view.kind === "models") return <ModelsView />;
+  if (view.kind === "notes") return <NotesView />;
   if (view.kind === "collection") return <CollectionView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;
 }

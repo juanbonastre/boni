@@ -1076,3 +1076,126 @@ export const AUDIT_DETAIL_WORST = {
   },
   ops: [],
 };
+
+/** The notes by path (apps/server/src/data.ts `listNotes`), invented. */
+const note = (id: string, path: string, ai: string[] = []) => ({
+  id,
+  type: path.startsWith("proyectos/") ? "t_proyecto" : "t_nota",
+  path,
+  title: path.split("/").pop()?.replace(/\.md$/, "") ?? path,
+  updated: Date.UTC(2026, 9, 20),
+  ai,
+  aiAt: ai.length ? Date.UTC(2026, 9, 24, 10) : null,
+});
+export const NOTES = {
+  notes: [
+    note("n1", "AGENTS.md", ["mcp:claude-ejemplo", "model:planner:anthropic/claude-opus-5-5"]),
+    note("n2", "README.md"),
+    note("n3", "_system/changelog.md", ["mcp:claude-ejemplo"]),
+    note("n4", "_system/conventions.md"),
+    { ...note("r1", "proyectos/plan-ejemplo.md", ["mcp:claude-ejemplo"]), type: "t_libro" },
+    note("n6", "proyectos/otro-ejemplo.md"),
+    note("n7", "wiki/infra/nas/servidor-ejemplo.md", ["mcp:claude-ejemplo"]),
+    note("n8", "wiki/temas/diseno-ejemplo.md"),
+  ],
+  types: { t_nota: "Nota", t_proyecto: "Proyecto" },
+};
+/** A row's history (apps/server/src/audit.ts `auditRow`), invented. */
+export const ROW_HISTORY = {
+  columns: {
+    created: Date.UTC(2026, 9, 15, 9),
+    updated: Date.UTC(2026, 9, 24, 10, 38),
+    version: 4,
+    createdBy: "user:portatil",
+    updatedBy: "mcp:claude-ejemplo",
+    editors: [
+      "user:portatil",
+      "mcp:claude-ejemplo",
+      "model:reader:openrouter/deepseek/deepseek-v4.1-flash",
+    ],
+    viewers: ["mcp:claude-ejemplo", "model:planner:anthropic/claude-opus-5-5"],
+    seenAt: Date.UTC(2026, 9, 24, 10, 40),
+    origin: "model",
+    size: 2345,
+  },
+  seenBy: [
+    {
+      action: 9,
+      at: Date.UTC(2026, 9, 24, 10, 40),
+      by: "mcp:claude-ejemplo",
+      tool: "mcp.read",
+      entity: "e_p1",
+      type: "t_proyecto",
+      version: 4,
+      fields: ["f_titulo", "f_estado"],
+      shapes: [],
+      body: "text",
+      files: [],
+    },
+    {
+      action: 6,
+      at: Date.UTC(2026, 9, 23, 18, 0),
+      by: "model:planner:anthropic/claude-opus-5-5",
+      tool: "model.planner",
+      entity: "e_p1",
+      type: "t_proyecto",
+      version: 3,
+      fields: ["f_titulo"],
+      shapes: [],
+      body: null,
+      files: [],
+    },
+  ],
+  changes: [
+    {
+      seq: 1,
+      at: Date.UTC(2026, 9, 15, 9),
+      kind: "create",
+      by: "user:portatil",
+      fields: ["f_titulo", "f_estado"],
+      body: true,
+    },
+    {
+      seq: 5,
+      at: Date.UTC(2026, 9, 23, 18, 1),
+      kind: "update",
+      by: "model:reader:openrouter/deepseek/deepseek-v4.1-flash",
+      fields: [],
+      body: true,
+    },
+    {
+      seq: 8,
+      at: Date.UTC(2026, 9, 24, 10, 38),
+      kind: "update",
+      by: "mcp:claude-ejemplo",
+      fields: [],
+      body: true,
+    },
+  ],
+  blame: [
+    { text: "# Plan de ejemplo", by: "user:portatil", at: 1, seq: 1 },
+    { text: "Boni es el núcleo: un servidor, una cuenta.", by: "user:portatil", at: 1, seq: 1 },
+    {
+      text: "Propuesta del correo: revisar el presupuesto.",
+      by: "model:reader:openrouter/deepseek/deepseek-v4.1-flash",
+      at: 5,
+      seq: 5,
+    },
+    { text: "- 24 oct: «Modelos» desplegado.", by: "mcp:claude-ejemplo", at: 8, seq: 8 },
+  ],
+  names: {
+    types: { t_proyecto: "Proyecto" },
+    fields: { f_titulo: "Título", f_estado: "Estado" },
+    titles: { e_p1: "Plan de ejemplo" },
+  },
+};
+export const STORAGE = {
+  types: [
+    { type: "t_libro", name: "Libros", rows: 3, bytes: 4200, history: 9100 },
+    { type: "t_proyecto", name: "Proyecto", rows: 82, bytes: 820_000, history: 2_400_000 },
+  ],
+  modelCalls: { rows: 1200, bytes: 130_000_000 },
+  audit: { actions: 900, access: 4000, bytes: 450_000 },
+  total: 420_000_000,
+  advice: [{ code: "model-texts", bytes: 130_000_000 }],
+};

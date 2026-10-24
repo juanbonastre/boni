@@ -13,14 +13,24 @@ import {
   MAIL_SUGGESTED,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
+  NOTES,
   PROPOSALS,
   REQUESTS,
+  ROW_HISTORY,
   RUN_2,
   RUNS_EXPLAINED,
+  STORAGE,
   TEXT_REPLY,
   VISIBILITY,
 } from "./agent-scenarios.ts";
-import { activityAudit, audit, MODELS_TEXT, modelsAudit, settingsAudit } from "./audit.ts";
+import {
+  activityAudit,
+  audit,
+  MODELS_TEXT,
+  modelsAudit,
+  notesAudit,
+  settingsAudit,
+} from "./audit.ts";
 import { openApp } from "./fixtures.ts";
 
 /**
@@ -351,6 +361,31 @@ for (const language of ["es", "en"] as const) {
         ...(await modelsAudit(page, MODELS_TEXT[language], `${width}`)),
         ...(await activityAudit(page, MODELS_TEXT[language], `${width}`)),
       ]).toEqual([]);
+    });
+  }
+}
+
+/** The notes explorer, a note's history and the collections' usage. */
+const N = {
+  es: { notes: "Notas", history: "Historial", cols: "Colecciones" },
+  en: { notes: "Notes", history: "History", cols: "Collections" },
+};
+for (const language of ["es", "en"] as const) {
+  for (const width of [1440, 900]) {
+    test(`the notes, a note's history and the collections' usage fit (${language}, ${width} px)`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 860 });
+      await openApp(page, "/?still", {
+        language,
+        agent: {
+          "GET api/data/notes": [NOTES],
+          "GET api/data/audit/rows/:id": [ROW_HISTORY],
+          "GET api/data/audit/storage": [STORAGE],
+          "GET api/data/audit/summary": [AUDIT_SUMMARY],
+        },
+      });
+      expect(await notesAudit(page, N[language], `${width}`)).toEqual([]);
     });
   }
 }

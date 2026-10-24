@@ -16,6 +16,8 @@ export {
   type PageBlock,
   type PageSpec,
   pageErrors,
+  SYSTEM_COLUMNS,
+  type SystemColumn,
   TEXT_BLOCKS,
 } from "./page.ts";
 export { pyRound, pySum } from "./pyround.ts";

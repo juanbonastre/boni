@@ -428,6 +428,23 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   title, its collection and fields, «con la nota» in amber or «sin la nota» in `--good`, the fields seen only as their
   shape), «Lo que escribió» (a model's own answer as plain text, or the records it changed), «Argumentos», whether it
   was allowed, and «Ver toda la ejecución».
+- **Notas** (Boni, sidebar, under Colecciones; Juan, 2026-10-24: what the AIs read must be browsable as in Obsidian):
+  every note at the path it had, as Obsidian's file tree in one bordered box (folders first, each with a chevron and
+  a folder icon, then notes with a file icon; 32 px rows, indented 18 px per level). A spark in `--accent` marks a note
+  an AI has read (who and when on hover) and a folder counts them; a search lists matches flat by path. A note opens
+  as its row's page, with the crumbs «Notas / collection / title»; Esc goes back to the tree.
+- **Historial** (a row's page, the button beside its collection's name): a panel on the right with its system
+  columns (two columns, name muted), «Quién escribió qué» (the text in blocks by author, each with a 3 px left border
+  in that author's colour and the author's name above in small muted text), «Cambios» (newest first: who · what, then
+  when and which fields, Boni's hidden fields left out) and «Quién lo ha visto» («con la nota» amber, «sin la nota»
+  `--good`), and «Ver la auditoría de la colección».
+- **System columns** (any table; Juan, 2026-10-24): Creado, Creado por, Modificado, Modificado por, Editores, Visto
+  por, Último acceso de una IA, Origen, Versión, Tamaño. None shown by default; the view's «Opciones» has a «Columnas
+  de sistema» group to show each. Their cells are muted 12.5 px text, ellipsized (full text on hover), never editable.
+- **Colecciones** gains, above the list, the tiles Registros, Almacenamiento, Historial and Textos de los modelos,
+  Boni's storage advice when something grows (an amber-tinted line with a bulb; nothing is deleted by itself), and two
+  bar lists: «Tamaño por colección» (data and history; a click opens the collection) and «Uso en 30 días» (read and
+  edited; a click opens its audit).
 
 ## 7. Keeping it consistent
 - A pull request that changes look or behaviour in Boni Calendar updates this file.

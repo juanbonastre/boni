@@ -28,6 +28,7 @@ import {
   type Visibility,
 } from "./core/agent.ts";
 import { ApiError, BoniApi, NotConfiguredError, OfflineError } from "./core/api.ts";
+import type { SystemColumns } from "./core/audit.ts";
 import { normalize } from "./core/chartBuilder.ts";
 import { ChartRepository, type ChartState } from "./core/charts.ts";
 import { newId, nowIso, today } from "./core/clock.ts";
@@ -87,7 +88,8 @@ export type View =
   | { kind: "log" }
   | { kind: "page"; id: string }
   /** A row of a collection opened as a page (its properties and its text), as Notion's. */
-  | { kind: "row"; type: string; id: string; from?: "collection" }
+  | { kind: "row"; type: string; id: string; from?: "collection" | "notes" }
+  | { kind: "notes" }
   /** Every collection: open one, see and change its protection, filter. */
   | { kind: "collections" }
   | { kind: "models" }
@@ -178,7 +180,15 @@ interface State {
   row: DataRow | null;
   /** The open row's text as the page editor's blocks (saved back as Markdown). */
   rowDoc: Page | null;
-  rows: Record<string, { rows: DataRow[]; titles: Record<string, string>; ghosts?: DataRow[] }>;
+  rows: Record<
+    string,
+    {
+      rows: DataRow[];
+      titles: Record<string, string>;
+      ghosts?: DataRow[];
+      columns?: Record<string, SystemColumns>;
+    }
+  >;
   /** The vault note opened from another app (its path), for the peek's "Abrir en Boni". */
   openedNote: string | null;
   /** How each collection is shown on its own page (this session). */
@@ -1809,6 +1819,11 @@ export async function loadDataTypes(): Promise<DataType[] | null> {
 }
 
 export const showModels = () => set({ view: { kind: "models" }, panel: null });
+/** The notes explorer: every note by the path it had (Juan, 2026-10-24: what the AIs read, browsable). */
+export const showNotes = () => {
+  set({ view: { kind: "notes" }, panel: null });
+  void loadDataTypes();
+};
 /** What «Auditoría» shows: an actor's kind (`who`, a prefix) or one actor (`by`), a collection, a run. */
 export interface AuditFilter {
   who?: string;
@@ -1975,7 +1990,13 @@ export async function openNoteAt(path: string) {
 export async function openRow(type: string, id: string) {
   await flushPage();
   await flushRowBody();
-  const from = get().view.kind === "collection" ? ("collection" as const) : undefined;
+  const kind = get().view.kind;
+  const from =
+    kind === "collection"
+      ? ("collection" as const)
+      : kind === "notes"
+        ? ("notes" as const)
+        : undefined;
   set({
     view: { kind: "row", type, id, ...(from ? { from } : {}) },
     row: null,

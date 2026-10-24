@@ -47,7 +47,23 @@ export interface DatabaseView {
   span?: "month" | "week";
   /** Notion's filter: only the rows that match every rule. */
   filter?: DatabaseFilter[];
+  /** System columns shown (Juan, 2026-10-24): kept by Boni, never edited by anyone; none by default. */
+  system?: SystemColumn[];
 }
+/** Each row's system columns, in the order a table shows them. */
+export const SYSTEM_COLUMNS = [
+  "created",
+  "createdBy",
+  "updated",
+  "updatedBy",
+  "editors",
+  "viewers",
+  "seenAt",
+  "origin",
+  "version",
+  "size",
+] as const;
+export type SystemColumn = (typeof SYSTEM_COLUMNS)[number];
 export interface DatabaseFilter {
   field: string;
   op: (typeof FILTER_OPS)[number];
@@ -205,7 +221,17 @@ export function pageErrors(spec: unknown): string[] {
           typeof b.source !== "string" ||
           !ID.test(b.source) ||
           !v ||
-          !only(v, ["layout", "group", "date", "sort", "hide", "also", "span", "filter"]) ||
+          !only(v, [
+            "layout",
+            "group",
+            "date",
+            "sort",
+            "hide",
+            "also",
+            "span",
+            "filter",
+            "system",
+          ]) ||
           (v.span !== undefined && v.span !== "month" && v.span !== "week") ||
           (v.filter !== undefined && filterErrors(v.filter).length > 0) ||
           (v.also !== undefined &&
@@ -215,7 +241,10 @@ export function pageErrors(spec: unknown): string[] {
           !okField(v.date) ||
           !sortOk ||
           (v.hide !== undefined &&
-            (!Array.isArray(v.hide) || v.hide.length > 100 || !v.hide.every((f) => okField(f))))
+            (!Array.isArray(v.hide) || v.hide.length > 100 || !v.hide.every((f) => okField(f)))) ||
+          (v.system !== undefined &&
+            (!Array.isArray(v.system) ||
+              !v.system.every((c) => (SYSTEM_COLUMNS as readonly unknown[]).includes(c))))
         )
           errors.push(`${w}: a database names its collection and a closed view`);
         break;

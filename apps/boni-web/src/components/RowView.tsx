@@ -1,7 +1,8 @@
-import { ChevronRight, Eye, EyeOff } from "lucide-react";
+import { ChevronRight, Eye, EyeOff, History } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { editRowValue, setPropHidden, toggleRowProps, useStore } from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
+import { HistoryPanel } from "./History.tsx";
 import { DocEditor } from "./PageView.tsx";
 
 /**
@@ -17,6 +18,7 @@ export function RowView() {
   const row = useStore((s) => s.row);
   const doc = useStore((s) => s.rowDoc);
   const [hiddenOpen, setHiddenOpen] = useState(false);
+  const [history, setHistory] = useState(false);
   const type = useStore((s) =>
     s.view.kind === "row"
       ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
@@ -42,101 +44,113 @@ export function RowView() {
   const title =
     typeof row.values[type.titleField] === "string" ? (row.values[type.titleField] as string) : "";
   return (
-    <div className="content page-doc">
-      <div className="doc row-doc">
-        <div className="row-kind">
-          {type.icon && <span>{type.icon}</span>}
-          {type.name}
-        </div>
-        {titleField && (
-          <RowTitle
-            key={row.id}
-            value={title}
-            placeholder={t("page.untitled")}
-            onSave={(v) => void editRowValue(type.id, row.id, type.titleField, v || null)}
-          />
-        )}
-        {props.length > 0 && (
-          <button
-            type="button"
-            className={`row-props-toggle${shown ? " open" : ""}`}
-            aria-expanded={shown}
-            onClick={() => toggleRowProps(type.id)}
-          >
-            <ChevronRight size={14} strokeWidth={2} />
-            {shown
-              ? t("row.hideProps")
-              : visible.length
-                ? t("row.showProps", { n: visible.length })
-                : t("row.hiddenProps", { n: hidden.length })}
-          </button>
-        )}
-        {shown && (
-          <div className="row-props">
-            {visible.map((f) => (
-              <div key={f.id} className="row-prop">
-                <span className="row-prop-name">{f.name}</span>
-                <div className="row-prop-value">
-                  <Cell
-                    type={type}
-                    field={f}
-                    row={row}
-                    titles={{}}
-                    onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="icon-btn row-prop-eye"
-                  title={t("row.hideProp", { name: f.name })}
-                  aria-label={t("row.hideProp", { name: f.name })}
-                  onClick={() => setPropHidden(type.id, f.id, true)}
-                >
-                  <EyeOff size={14} strokeWidth={1.8} />
-                </button>
-              </div>
-            ))}
-            {hidden.length > 0 && (
-              <>
-                <button
-                  type="button"
-                  className={`row-props-toggle row-hidden-toggle${hiddenOpen ? " open" : ""}`}
-                  aria-expanded={hiddenOpen}
-                  onClick={() => setHiddenOpen(!hiddenOpen)}
-                >
-                  <ChevronRight size={14} strokeWidth={2} />
-                  {t("row.hiddenProps", { n: hidden.length })}
-                </button>
-                {hiddenOpen &&
-                  hidden.map((f) => (
-                    <div key={f.id} className="row-prop row-prop-hidden">
-                      <span className="row-prop-name">{f.name}</span>
-                      <div className="row-prop-value">
-                        <Cell
-                          type={type}
-                          field={f}
-                          row={row}
-                          titles={{}}
-                          onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="icon-btn row-prop-eye"
-                        title={t("row.showProp", { name: f.name })}
-                        aria-label={t("row.showProp", { name: f.name })}
-                        onClick={() => setPropHidden(type.id, f.id, false)}
-                      >
-                        <Eye size={14} strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  ))}
-              </>
-            )}
+    <div className="models-view">
+      <div className="content page-doc">
+        <div className="doc row-doc">
+          <div className="row-kind">
+            {type.icon && <span>{type.icon}</span>}
+            {type.name}
+            <button
+              type="button"
+              className={`btn ghost small row-history${history ? " on" : ""}`}
+              aria-pressed={history}
+              onClick={() => setHistory(!history)}
+            >
+              <History size={13} strokeWidth={1.8} aria-hidden="true" />
+              {t("history.title")}
+            </button>
           </div>
-        )}
-        {doc && <DocEditor key={doc.id} doc={doc} />}
+          {titleField && (
+            <RowTitle
+              key={row.id}
+              value={title}
+              placeholder={t("page.untitled")}
+              onSave={(v) => void editRowValue(type.id, row.id, type.titleField, v || null)}
+            />
+          )}
+          {props.length > 0 && (
+            <button
+              type="button"
+              className={`row-props-toggle${shown ? " open" : ""}`}
+              aria-expanded={shown}
+              onClick={() => toggleRowProps(type.id)}
+            >
+              <ChevronRight size={14} strokeWidth={2} />
+              {shown
+                ? t("row.hideProps")
+                : visible.length
+                  ? t("row.showProps", { n: visible.length })
+                  : t("row.hiddenProps", { n: hidden.length })}
+            </button>
+          )}
+          {shown && (
+            <div className="row-props">
+              {visible.map((f) => (
+                <div key={f.id} className="row-prop">
+                  <span className="row-prop-name">{f.name}</span>
+                  <div className="row-prop-value">
+                    <Cell
+                      type={type}
+                      field={f}
+                      row={row}
+                      titles={{}}
+                      onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-btn row-prop-eye"
+                    title={t("row.hideProp", { name: f.name })}
+                    aria-label={t("row.hideProp", { name: f.name })}
+                    onClick={() => setPropHidden(type.id, f.id, true)}
+                  >
+                    <EyeOff size={14} strokeWidth={1.8} />
+                  </button>
+                </div>
+              ))}
+              {hidden.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    className={`row-props-toggle row-hidden-toggle${hiddenOpen ? " open" : ""}`}
+                    aria-expanded={hiddenOpen}
+                    onClick={() => setHiddenOpen(!hiddenOpen)}
+                  >
+                    <ChevronRight size={14} strokeWidth={2} />
+                    {t("row.hiddenProps", { n: hidden.length })}
+                  </button>
+                  {hiddenOpen &&
+                    hidden.map((f) => (
+                      <div key={f.id} className="row-prop row-prop-hidden">
+                        <span className="row-prop-name">{f.name}</span>
+                        <div className="row-prop-value">
+                          <Cell
+                            type={type}
+                            field={f}
+                            row={row}
+                            titles={{}}
+                            onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="icon-btn row-prop-eye"
+                          title={t("row.showProp", { name: f.name })}
+                          aria-label={t("row.showProp", { name: f.name })}
+                          onClick={() => setPropHidden(type.id, f.id, false)}
+                        >
+                          <Eye size={14} strokeWidth={1.8} />
+                        </button>
+                      </div>
+                    ))}
+                </>
+              )}
+            </div>
+          )}
+          {doc && <DocEditor key={doc.id} doc={doc} />}
+        </div>
       </div>
+      {history && <HistoryPanel id={row.id} type={type.id} onClose={() => setHistory(false)} />}
     </div>
   );
 }
