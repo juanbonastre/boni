@@ -18,6 +18,8 @@ import {
   type TypeId,
   type Value,
 } from "@boni/entities";
+import { type Audit, auditWriter, type By, byOf, openAudit } from "./audit.ts";
+import type { BlameVersion } from "./blame.ts";
 import { type Journal, openJournal } from "./journal.ts";
 import { open, openFile, seal, sealFile } from "./keys.ts";
 import { migrate } from "./migrations.ts";
@@ -37,6 +39,11 @@ export interface OpMeta {
   device?: string;
   /** The agent run (or import) this change belongs to: `undoRun` undoes all of them. */
   run?: string;
+  /** Who made it, for the audit (`model:planner:<provider>/<model>`, `mcp:<device>`…); by default from the actor
+   * and device. Set by code, never by a model. */
+  by?: By;
+  /** The audit action this change was made in. */
+  action?: number;
 }
 
 /** A value to write, with where it came from. `$body` is the entity's free text. */
@@ -96,6 +103,8 @@ export interface LogRow {
   after: unknown;
   label: unknown;
   undoes: number | null;
+  /** Who made it (the audit's `by`). */
+  by: string;
 }
 
 export interface StoredEntity {
@@ -162,10 +171,13 @@ export interface UserStore {
   undoRun(run: string, meta: OpMeta): number[];
   /** What a run changed, oldest first (schema changes left out), and whether each was undone since (the Registro). */
   runOps(run: string): { kind: Exclude<OpKind, "schema">; target: EntityId; undone: boolean }[];
+  /** Every version of an entity's text with who wrote it, oldest first (for `blame`). */
+  bodyVersions(id: EntityId): BlameVersion[];
   /** A SELECT over the readable tables only (an authorizer refuses anything else). */
   readQuery(sql: string, params?: (string | number | null)[]): Record<string, unknown>[];
-  /** The operation log, oldest first, for an export (`log.ndjson`); never the agent's journal. */
-  log(): LogRow[];
+  /** The operation log, oldest first, for an export (`log.ndjson`); never the agent's journal. With `target` or
+   * `run`, only that entity's or that run's operations (by their indexes). */
+  log(q?: { target?: string; run?: string }): LogRow[];
   /**
    * What the models may see of each type: `visible` (the default), `opaque` (the planner knows the type and
    * code works with its values, but no model reads them) or `hidden` (as if it did not exist). Juan sets it
@@ -207,6 +219,8 @@ export interface UserStore {
   backupTo(path: string, key: Buffer): void;
   /** The agent's runs, proposals and confirmations, in this same database. */
   journal: Journal;
+  /** Who did and saw what (audit.ts): never readable by `readQuery` nor by any tool of a model. */
+  audit: Audit;
   close(): void;
 }
 
@@ -222,6 +236,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
   );
   db.enableDefensive(true);
   migrate(db);
+  const audited = auditWriter(db);
 
   let schema: Schema = loadSchema();
   // Another connection to this file (the vault import, `cli.ts mirror`, a second server process) may have
@@ -278,13 +293,15 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
   ): number {
     const r = db
       .prepare(
-        "INSERT INTO ops (at, actor, device, run, kind, target, before, after, label, undoes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO ops (at, actor, device, run, by, action, kind, target, before, after, label, undoes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         now(),
         meta.actor,
         meta.device ?? null,
         meta.run ?? null,
+        meta.by ?? byOf(meta.actor, meta.device),
+        meta.action ?? null,
         kind,
         target,
         before === null ? null : JSON.stringify(before),
@@ -292,7 +309,9 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
         l ? JSON.stringify(l) : null,
         undoes ?? null,
       );
-    return Number(r.lastInsertRowid);
+    const seq = Number(r.lastInsertRowid);
+    audited.op(seq, kind, target, meta.by ?? byOf(meta.actor, meta.device));
+    return seq;
   }
 
   // ------------------------------------------------------------ reading
@@ -950,24 +969,28 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
           "ON CONFLICT (type) DO UPDATE SET level = excluded.level, at = excluded.at, by = excluded.by",
       ).run(type, level, now(), by);
     },
-    log() {
+    log(q = {}) {
       const parse = (x: unknown) => (typeof x === "string" ? JSON.parse(x) : null);
-      return db
-        .prepare("SELECT * FROM ops ORDER BY seq")
-        .all()
-        .map((r) => ({
-          seq: Number(r.seq),
-          at: Number(r.at),
-          actor: r.actor as string,
-          device: (r.device as string | null) ?? null,
-          run: (r.run as string | null) ?? null,
-          kind: r.kind as string,
-          target: r.target as string,
-          before: parse(r.before),
-          after: parse(r.after),
-          label: parse(r.label),
-          undoes: r.undoes === null ? null : Number(r.undoes),
-        }));
+      const rows =
+        q.target !== undefined
+          ? db.prepare("SELECT * FROM ops WHERE target = ? ORDER BY seq").all(q.target)
+          : q.run !== undefined
+            ? db.prepare("SELECT * FROM ops WHERE run = ? ORDER BY seq").all(q.run)
+            : db.prepare("SELECT * FROM ops ORDER BY seq").all();
+      return rows.map((r) => ({
+        seq: Number(r.seq),
+        at: Number(r.at),
+        actor: r.actor as string,
+        device: (r.device as string | null) ?? null,
+        run: (r.run as string | null) ?? null,
+        kind: r.kind as string,
+        target: r.target as string,
+        before: parse(r.before),
+        after: parse(r.after),
+        label: parse(r.label),
+        undoes: r.undoes === null ? null : Number(r.undoes),
+        by: (r.by as string | null) ?? byOf(r.actor as string, r.device as string | null),
+      }));
     },
     readQuery(sql, params = []) {
       db.setAuthorizer((action, a1, a2) => {
@@ -1001,7 +1024,36 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
         rmSync(tmp, { force: true });
       }
     },
+    bodyVersions: (id) => {
+      const out: BlameVersion[] = [];
+      for (const r of db
+        .prepare(
+          "SELECT seq, at, actor, device, by, kind, after FROM ops WHERE target = ? AND kind IN ('create', 'update') ORDER BY seq",
+        )
+        .all(id) as {
+        seq: number;
+        at: number;
+        actor: string;
+        device: string | null;
+        by: string | null;
+        kind: string;
+        after: string | null;
+      }[]) {
+        const after = r.after ? (JSON.parse(r.after) as Record<string, unknown>) : {};
+        const text =
+          r.kind === "create" ? (after.entity as { body?: string } | undefined)?.body : after.body;
+        if (text === undefined) continue;
+        out.push({
+          text: (text as string | null) ?? null,
+          by: r.by ?? byOf(r.actor, r.device),
+          at: r.at,
+          seq: r.seq,
+        });
+      }
+      return out;
+    },
     journal: openJournal(db),
+    audit: openAudit(db, tx),
     close: () => db.close(),
   };
 }

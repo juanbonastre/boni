@@ -1,8 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join, type Label, label, modelMaySee } from "@boni/entities";
-import type { ProposalEdits, RequestRow, UserStore } from "@boni/store";
+import type { ProposalEdits, RequestRow, Seen, UserStore } from "@boni/store";
 import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
 import { checkAnswers, type DecisionQuestion } from "./decider.ts";
+import { exposure } from "./exposure.ts";
 import {
   checkFill,
   cleanNote,
@@ -553,11 +554,45 @@ export class Agent {
       .map((s) => (f ? (s.entity.values[f.id] as Json) : null));
   }
 
+  /** What of Juan's entities the planner gets (the audit): the history as it sees it, and the memories. */
+  private plannerSees(st: RunState): Seen[] {
+    const vals = (st.conversation ? (this.conversations.get(st.conversation) ?? []) : [])
+      .slice(-10)
+      .flatMap((h) => h.replies.flatMap((r) => Object.values(r.data)));
+    const seen = exposure(vals, "planner", (e) => this.o.store.get(e)?.entity.type);
+    const def = this.o.store.schema().types.memory;
+    const f = def?.fields.find((x) => x.key === "text");
+    if (def && f)
+      for (const s of this.o.store.list(def.id)) {
+        const l = s.labels[f.id];
+        if (l && (l.integrity === "user" || l.integrity === "own" || l.integrity === "imported"))
+          seen.push({
+            entity: s.entity.id,
+            type: def.id,
+            version: s.entity.version,
+            fields: [f.id],
+            shapes: [],
+            body: null,
+            files: [],
+          });
+      }
+    return seen;
+  }
+
+  /** The audit's record of something the run did (store's audit.ts); `by` is set here, never by a model. */
+  private audit(
+    st: RunState,
+    a: Omit<Parameters<UserStore["audit"]["record"]>[0], "at" | "run">,
+  ): number {
+    return this.o.store.audit.record({ ...a, at: this.now(), run: st.id });
+  }
+
   private async model(
     st: RunState,
     provider: ModelProvider,
     req: ModelRequest,
     promptHash: string,
+    seen: Seen[] = [],
   ) {
     st.counters.modelCalls++;
     if (st.counters.modelCalls > this.limits.maxModelCalls) throw new Stop("P12-model-calls");
@@ -571,12 +606,19 @@ export class Agent {
     } catch (e) {
       // A fixed code: what the provider said never goes on (into a plan or a reply).
       const code = (e as { code?: unknown }).code;
-      throw new Stop(
-        `model-${typeof code === "string" && /^[a-z0-9-]{1,30}$/.test(code) ? code : "failed"}`,
-      );
+      const stop = `model-${typeof code === "string" && /^[a-z0-9-]{1,30}$/.test(code) ? code : "failed"}`;
+      // What was sent counts as seen even if no answer came back.
+      this.audit(st, {
+        by: `model:${req.role}:${provider.id}`,
+        tool: `model.${req.role}`,
+        decision: "allow",
+        result: { error: stop },
+        seen,
+      });
+      throw new Stop(stop);
     }
     st.counters.tokens += res.usage.input + res.usage.output;
-    this.o.store.journal.modelCall({
+    const call = this.o.store.journal.modelCall({
       run: st.id,
       role: req.role,
       provider: provider.id,
@@ -587,12 +629,21 @@ export class Agent {
       usage: res.usage,
       at: this.now(),
     });
+    this.audit(st, {
+      by: `model:${req.role}:${provider.id}/${res.model}`,
+      tool: `model.${req.role}`,
+      decision: "allow",
+      call,
+      result: { input: res.usage.input, output: res.usage.output },
+      seen,
+    });
     if (st.counters.tokens > this.limits.maxTokens) throw new Stop("P12-tokens");
     return res.json;
   }
 
   private async planFor(st: RunState): Promise<Plan> {
     const input = this.plannerInput(st);
+    const seen = this.plannerSees(st);
     const ask = (extra: Record<string, unknown>) =>
       this.model(
         st,
@@ -607,6 +658,7 @@ export class Agent {
           maxTokens: 16000,
         },
         PLANNER_PROMPT_HASH,
+        seen,
       );
     // Deferred tools (7.11) wait until the catalogue is long enough to need them: today the planner
     // gets every tool it may use, with its arguments.
@@ -794,6 +846,13 @@ export class Agent {
     switch (d.kind) {
       case "deny":
         this.log(st, step, "call", "deny", d.rule, { ...info, reason: d.reason });
+        this.audit(st, {
+          by: "agent",
+          tool: tool.name,
+          decision: "deny",
+          rule: d.rule,
+          result: { reason: d.reason },
+        });
         st.notices.push({ code: "denied", rule: d.rule });
         throw new Stop(`${d.rule}-${d.reason}`);
       case "propose": {
@@ -822,6 +881,13 @@ export class Agent {
         });
         st.proposals.push(id);
         this.log(st, step, "call", "propose", d.rule, { ...info, proposal: id });
+        this.audit(st, {
+          by: "agent",
+          tool: tool.name,
+          decision: "allow",
+          rule: d.rule,
+          result: { proposed: id },
+        });
         return leaf({ proposal: id }, codeLabel("proposal"));
       }
       case "confirm": {
@@ -870,9 +936,15 @@ export class Agent {
     args: Record<string, Val>,
     control: Label | null,
   ): Promise<Val> {
+    // A change is made in its own audit action (its operations name it); a read is recorded with what it read.
+    const writes = tool.effect !== "read" && tool.effect !== "notify";
+    const action = writes
+      ? this.audit(st, { by: "agent", tool: tool.name, decision: "allow", result: null })
+      : null;
     const caps = makeCaps({
       store: this.o.store,
       run: st.id,
+      ...(action !== null ? { action } : {}),
       ...(st.origin.device ? { device: st.origin.device } : {}),
       now: this.now,
       ...(this.o.notify ? { notify: this.o.notify } : {}),
@@ -880,6 +952,14 @@ export class Agent {
     });
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
     const result = await tool.run(capFor as never, args, control ?? neutral);
+    if (!writes)
+      this.audit(st, {
+        by: "agent",
+        tool: tool.name,
+        decision: "allow",
+        target: { effect: tool.effect },
+        seen: exposure([result], "clear", (e) => this.o.store.get(e)?.entity.type),
+      });
     if (tool.effect !== "read" && tool.effect !== "notify") st.counters.writes++;
     if (tool.effect === "schema" && !st.notices.some((n) => n.code === "schema-changed"))
       st.notices.push({ code: "schema-changed" });
@@ -910,6 +990,12 @@ export class Agent {
     // input: taken out before anything reaches a model.
     const askPrompt = step.reader === "classify" ? params.ask : undefined;
     delete params.ask;
+    // What of Juan's entities this reading sends to a model (the audit): everything it gets is in clear.
+    const seen = exposure(
+      [input, ...Object.values(params)],
+      "clear",
+      (e) => this.o.store.get(e)?.entity.type,
+    );
     const inLabel = control ? join(deepLabel(input), control) : deepLabel(input);
     // R3: what Juan keeps from the models (his choice per type) never reaches a reader, not even as a
     // parameter or through the step's control.
@@ -1058,14 +1144,15 @@ export class Agent {
           maxTokens: 4000,
         },
         createHash("sha256").update(sys).digest("hex"),
+        seen,
       );
     };
     let checked: unknown;
-    if (step.reader === "fill") checked = await this.fill(st, fields, flat, read);
+    if (step.reader === "fill") checked = await this.fill(st, fields, flat, read, seen);
     else {
       const verdict =
         step.reader === "classify" && this.o.decider
-          ? await this.decideChoice(st, flat, options, params.question)
+          ? await this.decideChoice(st, flat, options, params.question, seen)
           : null;
       if (verdict === "unsure" && askPrompt) {
         // The decider answered but is not sure: Juan chooses (in the conversation, or in the panel of requests
@@ -1114,7 +1201,12 @@ export class Agent {
   }
 
   /** One call to the decider, its answers checked again by the code (null: it failed or answered off). */
-  private async decide(st: RunState, state: string, questions: Record<string, DecisionQuestion>) {
+  private async decide(
+    st: RunState,
+    state: string,
+    questions: Record<string, DecisionQuestion>,
+    seen: Seen[],
+  ) {
     const decider = this.o.decider;
     if (!decider) return null;
     const out = await this.model(
@@ -1122,6 +1214,7 @@ export class Agent {
       decider,
       { role: "decider", system: "", input: { state, questions }, schema: {}, maxTokens: 0 },
       createHash("sha256").update(JSON.stringify(questions)).digest("hex"),
+      seen,
     ).catch((e) => {
       // The decider down: the reader decides instead (a budget or limit stop still stops).
       if (e instanceof Stop && e.code.startsWith("model-")) return null;
@@ -1139,16 +1232,22 @@ export class Agent {
     state: string,
     options: string[],
     question: Val | undefined,
+    seen: Seen[],
   ): Promise<string | "unsure" | null> {
     const instructions =
       typeof (question && plain(question)) === "string"
         ? (plain(question as Val) as string).slice(0, 500)
         : "¿Qué opción encaja mejor con este texto?";
     const criteria = (o: string[]) => Object.fromEntries(o.map((x) => [x, x]));
-    const a = await this.decide(st, state, {
-      c: { type: "choice", instructions, criteria: criteria(options) },
-      r: { type: "choice", instructions, criteria: criteria([...options].reverse()) },
-    });
+    const a = await this.decide(
+      st,
+      state,
+      {
+        c: { type: "choice", instructions, criteria: criteria(options) },
+        r: { type: "choice", instructions, criteria: criteria([...options].reverse()) },
+      },
+      seen,
+    );
     const c = a?.c;
     const r = a?.r;
     // No answer (the decider down or off): the reader chooses, as before. An answer that disagrees with
@@ -1167,8 +1266,11 @@ export class Agent {
     fields: FillField[],
     state: string,
     read: (sys: string, schema: object, extra?: Record<string, unknown>) => Promise<unknown>,
+    seen: Seen[],
   ) {
-    const answers = this.o.decider ? await this.decide(st, state, fillQuestions(fields)) : null;
+    const answers = this.o.decider
+      ? await this.decide(st, state, fillQuestions(fields), seen)
+      : null;
     if (answers) {
       const { values, wantsNote } = fromAnswers(answers, fields);
       let note: string | null = null;

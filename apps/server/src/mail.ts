@@ -3,15 +3,18 @@ import type { Duplex } from "node:stream";
 import {
   FILL_LIMITS,
   type FillField,
+  type From,
   GUIDE_LIMITS,
   guideValue,
   leaf,
+  list,
   plain,
   type ReadingGuide,
   readMessagePrompt,
   readStore,
   resolveModules,
   type UserIn,
+  type Val,
 } from "@boni/agent";
 import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
@@ -143,16 +146,32 @@ export interface Target {
   fill?: FillField[];
   /** The name the code binds `fill` to in the plan (`$fields_<n>`). */
   fillRef?: string;
+  /** The entries whose titles `option` names, and those `fill` offers: the audit says a model saw them. */
+  optionRefs?: From[];
+  fillRefs?: From[];
 }
 
 /** How many entries of a related collection a relation field offers (the latest changed). */
 const RELATION_CHOICES = 40;
 /** The fields bound to the plan: made by code (only code may name them as a reader's fields). */
-export const fieldsValue = (fields: FillField[]) =>
-  leaf(
+export const fieldsValue = (fields: FillField[], refs: From[] = []) => ({
+  ...leaf(
     fields as unknown as Parameters<typeof leaf>[0],
     label("own", "personal", [{ kind: "code", id: "fill" }]),
+  ),
+  ...(refs.length ? { refs } : {}),
+});
+/** The collections the reader chooses among, bound as `$options` (made by code, with the entries they name). */
+export const optionsValue = (targets: Target[]) => {
+  const l = label("own", "personal", [{ kind: "code", id: "options" }]);
+  return list(
+    targets.map((t) => ({
+      ...leaf(t.option, l),
+      ...(t.optionRefs?.length ? { refs: t.optionRefs } : {}),
+    })),
+    l,
   );
+};
 
 /**
  * What the reader `fill` may set in a collection (Juan, 2026-10-23: proposals with their columns filled): a
@@ -164,6 +183,7 @@ export function fillFields(
   ro: ReturnType<typeof readStore>,
   t: TypeDef,
   date: string | null,
+  refs: From[] = [],
 ): FillField[] {
   const types = ro.schema().types;
   const out: FillField[] = [];
@@ -213,10 +233,18 @@ export function fillFields(
             .slice(0, FILL_LIMITS.label);
           if (seen.has(label)) return [];
           seen.add(label);
-          return [{ value: e.entity.id, label }];
+          return [{ value: e.entity.id, label, at: e.entity.version }];
         })
         .slice(0, Math.min(RELATION_CHOICES, FILL_LIMITS.options));
-      if (options.length) out.push({ key: f.key, name, kind: "choice", options });
+      for (const o of options)
+        refs.push({ e: o.value, v: o.at, f: target.titleField, t: target.id });
+      if (options.length)
+        out.push({
+          key: f.key,
+          name,
+          kind: "choice",
+          options: options.map(({ value, label }) => ({ value, label })),
+        });
     }
   }
   return out.filter((f) => f.kind === "check" || f.options.length > 0);
@@ -410,7 +438,7 @@ export function mailPlan(
       reader: "classify",
       input: text,
       params: {
-        options: { fn: "list", args: targets.map((t) => ({ lit: t.option })) },
+        options: { ref: "$options" },
         question: {
           lit: "¿En cuál de estas colecciones apuntaría el destinatario lo que este mensaje le pide hacer o a lo que tiene que ir?",
         },
@@ -1078,9 +1106,13 @@ export class Mails {
                 );
               })
               .sort((a, b) => b.entity.updated - a.entity.updated)
-              .slice(0, 3)
-              .map((e) => String(e.entity.values[t.titleField]).replace(/\s+/g, " ").slice(0, 40));
-      const option = examples.length ? `${t.name} (p. ej.: ${examples.join("; ")})` : t.name;
+              .slice(0, 3);
+      const titles = examples.map((e) =>
+        String(e.entity.values[t.titleField]).replace(/\s+/g, " ").slice(0, 40),
+      );
+      const option = titles.length ? `${t.name} (p. ej.: ${titles.join("; ")})` : t.name;
+      const fillRefs: From[] = [];
+      const fill = levels[id] === "opaque" ? null : fillFields(ro, t, date?.key ?? null, fillRefs);
       return [
         {
           id: t.id,
@@ -1088,7 +1120,13 @@ export class Mails {
           name: t.name,
           option: option.slice(0, 200),
           date: date?.key ?? null,
-          ...(levels[id] === "opaque" ? {} : { fill: fillFields(ro, t, date?.key ?? null) }),
+          optionRefs: examples.map((e) => ({
+            e: e.entity.id,
+            v: e.entity.version,
+            f: t.titleField,
+            t: t.id,
+          })),
+          ...(fill ? { fill, fillRefs } : {}),
         },
       ];
     });
@@ -1114,7 +1152,7 @@ export class Mails {
     const guide = this.guide(account);
     const version = this.readingVersion(account);
     const withGuide = !!(guide.instructions || guide.examples.length);
-    const bound: Record<string, ReturnType<typeof guideValue>> = {
+    const bound: Record<string, Val> = {
       modules: modulesOfManifest(m),
       ...(withGuide ? { guide: guideOf(guide) } : {}),
     };
@@ -1122,7 +1160,7 @@ export class Mails {
     [...targets, ...fixed].forEach((t, i) => {
       if (!t.fill?.length) return;
       t.fillRef = `fields_${i}`;
-      bound[t.fillRef] = fieldsValue(t.fill);
+      bound[t.fillRef] = fieldsValue(t.fill, t.fillRefs);
     });
     let n = 0;
     for (const id of st.pending.slice(0, this.o.perCheck ?? 50)) {
@@ -1147,8 +1185,9 @@ export class Mails {
         const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto"].filter(
           (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
         );
+        const chosen = only.length ? only : targets;
         const r = await agent.background(
-          mailPlan(id, only.length ? only : targets, {
+          mailPlan(id, chosen, {
             has: e.entity.body ? [...has, "body"] : has,
             known: from ? this.known(store, from) : [],
             userIn: userIn(s.user, v.f_para, v.f_cc),
@@ -1159,7 +1198,7 @@ export class Mails {
             fixed,
             askWhenUnsure: true,
           }),
-          bound,
+          { ...bound, options: optionsValue(chosen) },
           [],
           budgetOf(m),
         );

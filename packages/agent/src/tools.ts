@@ -200,9 +200,9 @@ export class ToolRegistry {
 /** An entity as a record: one value per field (by key) with that field's label, read at this version. */
 export function entityVal(s: StoredEntity, def: TypeDef | undefined): Val {
   const code = codeLabel("store");
-  const from = { e: s.entity.id, v: s.entity.version };
+  const at = { e: s.entity.id, v: s.entity.version, t: s.entity.type };
   const fields: Record<string, Val> = {
-    id: leafFrom(s.entity.id, code, from),
+    id: leafFrom(s.entity.id, code, at),
     type: leaf(def ? typeName(def) : s.entity.type, code),
   };
   for (const f of def?.fields ?? []) {
@@ -210,6 +210,7 @@ export function entityVal(s: StoredEntity, def: TypeDef | undefined): Val {
     const v = s.entity.values[f.id];
     if (v === undefined) continue;
     const l = s.labels[f.id] ?? code;
+    const from = { ...at, f: f.id };
     // A select's value by its option's name ("Leído", not "o_leido"); writes take the name back.
     const option = (id: unknown) => f.options?.find((o) => o.id === id);
     if (f.type === "select" && option(v)) {
@@ -225,7 +226,7 @@ export function entityVal(s: StoredEntity, def: TypeDef | undefined): Val {
     } else fields[fieldName(f)] = leafFrom(v as Json, l, from);
   }
   if (s.entity.body !== undefined)
-    fields.body = leafFrom(s.entity.body, s.labels[BODY] ?? code, from);
+    fields.body = leafFrom(s.entity.body, s.labels[BODY] ?? code, { ...at, f: BODY });
   return rec(fields, code);
 }
 
@@ -635,6 +636,8 @@ export interface CapsContext {
   now: () => number;
   notify?: (text: string, l: Label) => void;
   net?: Net;
+  /** The audit action a change is made in (its operations name it). */
+  action?: number;
 }
 
 const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "external";
@@ -719,7 +722,12 @@ export function readStore(store: UserStore, now: () => number = Date.now): ReadS
 
 export function makeCaps(c: CapsContext): Caps {
   const ro = readStore(c.store, c.now);
-  const meta = { actor: "agent" as const, run: c.run, ...(c.device ? { device: c.device } : {}) };
+  const meta = {
+    actor: "agent" as const,
+    run: c.run,
+    ...(c.device ? { device: c.device } : {}),
+    ...(c.action !== undefined ? { action: c.action } : {}),
+  };
   const toWrites = (def: TypeDef, values: Val, extra: Label) => {
     if (values.t !== "rec") throw new ToolError("values-not-a-record");
     const writes: Record<string, { value: unknown; label: Label }> = {};
@@ -928,8 +936,38 @@ export function makeCaps(c: CapsContext): Caps {
     read: { store: ro },
     write: { store: ro, writer },
     write_irreversible: { store: ro, writer },
-    egress: { store: ro, net: { fetchText: (u) => net.fetchText(u) } },
-    send: { store: ro, net: { send: (m) => net.send(m) } },
+    egress: {
+      store: ro,
+      net: {
+        fetchText: (u) => {
+          // Every page fetched for a run is in the audit (where, never what came back).
+          c.store.audit.record({
+            at: c.now(),
+            by: "agent",
+            run: c.run,
+            tool: "net.fetch",
+            target: { url: String(u).slice(0, 300) },
+            decision: "allow",
+          });
+          return net.fetchText(u);
+        },
+      },
+    },
+    send: {
+      store: ro,
+      net: {
+        send: (m) => {
+          c.store.audit.record({
+            at: c.now(),
+            by: "agent",
+            run: c.run,
+            tool: "net.send",
+            decision: "allow",
+          });
+          return net.send(m);
+        },
+      },
+    },
     schedule: { store: ro, jobs },
     schema: { store: ro, schema },
     memory: { store: ro, memory },

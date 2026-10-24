@@ -1,11 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
+import { chainExisting } from "./audit.ts";
 
 /**
  * The per-user database's tables (docs/nucleo.md, 5.1). Numbered migrations, as in the calendar
  * server's db.ts: `PRAGMA user_version` says how many ran. Types of the user are data in `types`,
  * never tables: nothing here is generated from a schema, and the agent never writes DDL.
  */
-export const MIGRATIONS = [
+export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   `CREATE TABLE types (
      id TEXT PRIMARY KEY,
      def TEXT NOT NULL
@@ -193,6 +194,55 @@ export const MIGRATIONS = [
      state TEXT NOT NULL,
      saved INTEGER NOT NULL
    );`,
+  // 10: the audit (Juan, 2026-10-24; audit.ts): who did what and saw what, models above all. Every operation says
+  // who made it (`by`) and in which action, and is chained by hash; actions and what each saw (ids, never values),
+  // chained too; each entity's system columns. Existing operations are chained and their entities' columns filled
+  // from the history, in code.
+  (db) => {
+    db.exec(`ALTER TABLE ops ADD COLUMN by TEXT;
+     ALTER TABLE ops ADD COLUMN action INTEGER;
+     ALTER TABLE ops ADD COLUMN hash TEXT;
+     CREATE INDEX ops_at ON ops(at);
+     CREATE TABLE actions (
+       seq INTEGER PRIMARY KEY AUTOINCREMENT,
+       at INTEGER NOT NULL,
+       by TEXT NOT NULL,
+       run TEXT,
+       tool TEXT NOT NULL,
+       target TEXT,
+       decision TEXT NOT NULL CHECK (decision IN ('allow', 'deny')),
+       rule TEXT,
+       call INTEGER,
+       result TEXT,
+       hash TEXT NOT NULL
+     );
+     CREATE INDEX actions_at ON actions(at);
+     CREATE INDEX actions_run ON actions(run);
+     CREATE INDEX actions_by ON actions(by, at);
+     CREATE TABLE access (
+       action INTEGER NOT NULL,
+       entity TEXT NOT NULL,
+       type TEXT NOT NULL,
+       version INTEGER NOT NULL,
+       fields TEXT NOT NULL,
+       shapes TEXT NOT NULL,
+       body TEXT CHECK (body IN ('text', 'shape')),
+       files TEXT NOT NULL,
+       PRIMARY KEY (action, entity)
+     );
+     CREATE INDEX access_entity ON access(entity, action);
+     CREATE INDEX access_type ON access(type, action);
+     CREATE TABLE entity_meta (
+       entity TEXT PRIMARY KEY,
+       created_by TEXT,
+       updated_by TEXT,
+       editors TEXT NOT NULL DEFAULT '[]',
+       viewers TEXT NOT NULL DEFAULT '[]',
+       seen_at INTEGER,
+       seen_by TEXT
+     );`);
+    chainExisting(db);
+  },
 ];
 
 export function migrate(db: DatabaseSync): void {
@@ -201,7 +251,9 @@ export function migrate(db: DatabaseSync): void {
   for (let v = version; v < MIGRATIONS.length; v++) {
     db.exec("BEGIN");
     try {
-      db.exec(MIGRATIONS[v] as string);
+      const m = MIGRATIONS[v] as string | ((db: DatabaseSync) => void);
+      if (typeof m === "string") db.exec(m);
+      else m(db);
       db.exec(`PRAGMA user_version = ${v + 1}`);
       db.exec("COMMIT");
     } catch (e) {

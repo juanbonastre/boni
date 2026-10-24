@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { createServer, type Server, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ScriptedProvider } from "@boni/agent";
+import { plain, ScriptedProvider } from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
@@ -15,7 +15,7 @@ import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from 
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
-import { dueField, Mails, mailPlan, userIn } from "./mail.ts";
+import { dueField, Mails, mailPlan, optionsValue, userIn } from "./mail.ts";
 import { decisions } from "./mailReview.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { Vaults } from "./vaults.ts";
@@ -369,6 +369,13 @@ describe("tasks a mail asks for", () => {
       "Docencia",
       "Gestiones (p. ej.: Renovar el DNI)",
     ]);
+    // The audit says that reader saw the title of Juan's entry the option named, and nothing else of it.
+    const dni = store.list("t_gestiones")[0]?.entity.id as string;
+    expect(store.audit.seenBy(dni).map((x) => [x.tool, x.fields, x.body])).toContainEqual([
+      "model.reader",
+      ["t_gestiones_t"],
+      null,
+    ]);
     // Read again: the two pending proposals of that mail are withdrawn (not "rejected") and made again;
     // one Juan already decided stays as it was; mail older than the days asked is left alone.
     store.journal.setProposal(pending[0]?.id ?? "", "rejected", NOW);
@@ -389,13 +396,18 @@ describe("tasks a mail asks for", () => {
       (extracts.at(i)?.input as { known?: string[] } | undefined)?.known;
     expect(knownOf(-2)?.sort()).toEqual(["Enviar el informe", "Reservar la sala"]);
     expect(knownOf(-1)).toBeUndefined();
-    const plan = mailPlan("e_x", [
+    const two = [
       { key: "docencia", name: "Docencia", option: "Docencia", date: "date" },
       { key: "gestiones", name: "Gestiones", option: "Gestiones", date: "date" },
-    ]) as { steps: { reader?: string; params?: { options: { args: { lit: string }[] } } }[] };
-    expect(
-      plan.steps.find((x) => x.reader === "classify")?.params?.options.args.map((a) => a.lit),
-    ).toEqual(["Docencia", "Gestiones"]);
+    ];
+    const plan = mailPlan("e_x", two) as {
+      steps: { reader?: string; params?: { options: unknown } }[];
+    };
+    // The options are bound by code (with the entries they name, for the audit), never written in the plan.
+    expect(plan.steps.find((x) => x.reader === "classify")?.params?.options).toEqual({
+      ref: "$options",
+    });
+    expect(plain(optionsValue(two))).toEqual(["Docencia", "Gestiones"]);
     // The live reading asks Juan when the decider is unsure (the panel of requests); by default it does not.
     expect(JSON.stringify(plan)).not.toContain('"ask"');
     const live = mailPlan(

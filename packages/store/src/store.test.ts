@@ -181,7 +181,7 @@ describe("the store", () => {
     const dir = mkdtempSync(join(tmpdir(), "boni-store-"));
     dirs.push(dir);
     const db = new DatabaseSync(join(dir, "old.db"));
-    for (const m of MIGRATIONS.slice(0, 5)) db.exec(m);
+    for (const m of MIGRATIONS.slice(0, 5)) db.exec(m as string);
     db.exec("PRAGMA user_version = 5");
     db.exec(
       "INSERT INTO ai_access VALUES ('t_diario', 'hidden', 1, 'import'), ('t_libro', 'opaque', 1, 'p');" +

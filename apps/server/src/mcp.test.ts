@@ -195,4 +195,37 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     expect((await tool("read", { path: "proyectos/nuevo-inventado.md" })).error).toBe(true);
     expect((await tool("undo", { run: "import-1" })).error).toBe(true);
   });
+
+  it("leaves every call in the audit: what went back to the model (fields, the text or not) and what it wrote", async () => {
+    const store = host.store(1);
+    const before = store.audit.actions({ limit: 1 })[0]?.seq ?? 0;
+    const found = (await tool("search", { query: "otro proyecto" })).json as { id: string }[];
+    const otro = found[0]?.id as string;
+    await tool("read", { id: otro });
+    await tool("read", { path: "diario/2026-10-20.md" });
+    const made = await tool("create", { collection: "Proyecto", title: "Auditado inventado" });
+    const actions = store.audit
+      .actions()
+      .filter((a) => a.seq > before)
+      .reverse();
+    expect(actions.map((a) => [a.by, a.tool])).toEqual([
+      ["mcp:claude-code", "mcp.search"],
+      ["mcp:claude-code", "mcp.read"],
+      ["mcp:claude-code", "mcp.read"],
+      ["mcp:claude-code", "mcp.create"],
+    ]);
+    const seen = store.audit.accessOf(actions.map((a) => a.seq));
+    // The search gave its properties, not its text; the read gave the text too; the private diary nothing.
+    expect(seen.get(actions[0]?.seq as number)?.find((x) => x.entity === otro)?.body).toBeNull();
+    expect(seen.get(actions[1]?.seq as number)?.find((x) => x.entity === otro)?.body).toBe("text");
+    expect(actions[2]?.result).toMatchObject({ error: expect.any(String) });
+    expect(seen.get(actions[2]?.seq as number)).toEqual([]);
+    // Its arguments are kept, without long texts; what it wrote is the operation log's, by the same run.
+    expect(actions[0]?.target).toEqual({ query: "otro proyecto" });
+    expect(actions[3]?.run).toBe(made.json.run);
+    expect(store.audit.meta([made.json.id]).get(made.json.id)).toMatchObject({
+      createdBy: "mcp:claude-code",
+    });
+    expect(store.audit.verify().ok).toBe(true);
+  });
 });

@@ -97,8 +97,11 @@ export interface Journal {
   runs(limit?: number): RunRow[];
   step(r: Omit<StepRow, "seq">): void;
   steps(run: string): StepRow[];
-  modelCall(r: ModelCallRow): void;
+  /** Keeps a model call; gives its number (the audit's action refers to it). */
+  modelCall(r: ModelCallRow): number;
   modelCalls(run: string): ModelCallRow[];
+  /** One model call by its number (the audit's action names it). */
+  modelCallById(id: number): ModelCallRow | null;
   addProposal(p: Omit<ProposalRow, "status" | "decided" | "edits">): void;
   proposal(id: string): ProposalRow | null;
   proposals(status?: ProposalRow["status"]): ProposalRow[];
@@ -211,21 +214,23 @@ export function openJournal(db: DatabaseSync): Journal {
           at: r.at as number,
         })),
     modelCall: (r) =>
-      void db
-        .prepare(
-          "INSERT INTO model_calls (run, role, provider, model, prompt_hash, request, response, usage, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run(
-          r.run,
-          r.role,
-          r.provider,
-          r.model,
-          r.promptHash,
-          j(r.request),
-          j(r.response),
-          j(r.usage),
-          r.at,
-        ),
+      Number(
+        db
+          .prepare(
+            "INSERT INTO model_calls (run, role, provider, model, prompt_hash, request, response, usage, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            r.run,
+            r.role,
+            r.provider,
+            r.model,
+            r.promptHash,
+            j(r.request),
+            j(r.response),
+            j(r.usage),
+            r.at,
+          ).lastInsertRowid,
+      ),
     modelCalls: (run) =>
       db
         .prepare("SELECT * FROM model_calls WHERE run = ? ORDER BY rowid")
@@ -241,6 +246,22 @@ export function openJournal(db: DatabaseSync): Journal {
           usage: p(r.usage),
           at: r.at as number,
         })),
+    modelCallById: (id) => {
+      const r = db.prepare("SELECT * FROM model_calls WHERE rowid = ?").get(id);
+      return r
+        ? {
+            run: r.run as string,
+            role: r.role as string,
+            provider: r.provider as string,
+            model: r.model as string,
+            promptHash: r.prompt_hash as string,
+            request: p(r.request),
+            response: p(r.response),
+            usage: p(r.usage),
+            at: r.at as number,
+          }
+        : null;
+    },
     addProposal: (x) =>
       void db
         .prepare(

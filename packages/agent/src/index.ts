@@ -21,6 +21,7 @@ export {
   type DecisionQuestion,
   JevProvider,
 } from "./decider.ts";
+export { exposure } from "./exposure.ts";
 export {
   checkFill,
   FILL_LIMITS,
@@ -96,5 +97,5 @@ export {
   ToolRegistry,
   typeName,
 } from "./tools.ts";
-export { deepLabel, type Json, leaf, list, plain, rec, type Val } from "./values.ts";
+export { deepLabel, type From, type Json, leaf, list, plain, rec, type Val } from "./values.ts";
 export { schemaView, toPlannerView } from "./view.ts";

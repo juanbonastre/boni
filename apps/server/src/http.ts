@@ -6,6 +6,17 @@ import { exportChunks, releaseSent } from "@boni/export";
 import { CORE_MARK } from "@boni/mirror";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
+import {
+  auditAction,
+  auditActions,
+  auditRow,
+  auditSettings,
+  auditStorage,
+  auditSummary,
+  recordUserRead,
+  setAuditSettings,
+  systemColumns,
+} from "./audit.ts";
 import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
 import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import {
@@ -351,12 +362,17 @@ export function makeApp(opts: ServerOptions): App {
       if (!opts.agent?.hasData) return send(res, 503, { error: "no-store" });
       if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const store = opts.agent.store(s.user.id);
+      const now = opts.now ?? Date.now;
       // A change made here reaches the mirror (and so the vault) at once.
       if (req.method !== "GET") res.on("finish", () => opts.agent?.onChanged?.(s.user.id));
       try {
         if (route === "GET /api/data/types") return send(res, 200, { types: listTypes(store) });
-        if (route === "GET /api/data/types/:type/rows")
-          return send(res, 200, listRows(store, params.type ?? ""));
+        if (route === "GET /api/data/types/:type/rows") {
+          const out = listRows(store, params.type ?? "");
+          const ids = out.rows.map((r) => r.id);
+          recordUserRead(store, s.device, "data.rows", params.type ?? "", ids, false, now());
+          return send(res, 200, { ...out, columns: systemColumns(store, ids) });
+        }
         if (route === "POST /api/data/types/:type/rows") {
           const b = (await bodyOf(req)) as { values?: unknown };
           return send(res, 200, {
@@ -365,8 +381,31 @@ export function makeApp(opts: ServerOptions): App {
         }
         if (route === "GET /api/data/lookup")
           return send(res, 200, findByPath(store, url.searchParams.get("path") ?? ""));
-        if (route === "GET /api/data/rows/:id")
-          return send(res, 200, { row: getRow(store, params.id ?? "") });
+        if (route === "GET /api/data/rows/:id") {
+          const row = getRow(store, params.id ?? "");
+          recordUserRead(store, s.device, "data.row", row.type, [row.id], true, now());
+          return send(res, 200, { row, columns: systemColumns(store, [row.id])[row.id] });
+        }
+        // The audit (audit.ts): who did and saw what, a row's history, storage, and which reads are kept.
+        if (route === "GET /api/data/audit/summary")
+          return send(res, 200, auditSummary(store, url, now()));
+        if (route === "GET /api/data/audit/actions")
+          return send(res, 200, auditActions(store, url));
+        if (route === "GET /api/data/audit/actions/:seq") {
+          const a = auditAction(store, Number(params.seq));
+          return a ? send(res, 200, a) : send(res, 404, { error: "not-found" });
+        }
+        if (route === "GET /api/data/audit/rows/:id") {
+          const a = auditRow(store, params.id ?? "");
+          return a ? send(res, 200, a) : send(res, 404, { error: "not-found" });
+        }
+        if (route === "GET /api/data/audit/verify") return send(res, 200, store.audit.verify());
+        if (route === "GET /api/data/audit/storage") return send(res, 200, auditStorage(store));
+        if (route === "GET /api/data/audit/settings") return send(res, 200, auditSettings(store));
+        if (route === "PUT /api/data/audit/settings") {
+          const r = setAuditSettings(store, await bodyOf(req));
+          return r ? send(res, 200, r) : send(res, 400, { error: "bad-request" });
+        }
         if (route === "PUT /api/data/rows/:id") {
           const b = (await bodyOf(req)) as { values?: unknown; body?: unknown };
           return send(res, 200, {
