@@ -12,7 +12,8 @@ import { pySum } from "./pyround.ts";
  */
 
 export interface EntityProfileOptions {
-  /** The date (or datetime) field that places an entity in time. */
+  /** The date (or datetime) field that places an entity in time; "" for a type without one (every entity
+   * counts, only the period "all" means anything). */
   dateField: string;
   /** Titles of related entities, for labels ("" when unknown). */
   titleOf?: (id: string) => string;
@@ -37,7 +38,7 @@ export function entityProfile(def: TypeDef, o: EntityProfileOptions): Profile<En
     return [fn, field(id)];
   };
   return {
-    day: (e) => asDay(e.values[o.dateField]) ?? "0000-01-01",
+    day: (e) => (o.dateField ? (asDay(e.values[o.dateField]) ?? "0000-01-01") : "2000-01-01"),
     values(e, id) {
       if (id === "date") return [asDay(e.values[o.dateField]) ?? ""];
       const v = e.values[id];
@@ -69,7 +70,8 @@ export function entityProfile(def: TypeDef, o: EntityProfileOptions): Profile<En
       return fn === "avg" ? (nums.length ? total / nums.length : 0) : total;
     },
     relevant(e, m) {
-      if (e.deleted !== undefined || asDay(e.values[o.dateField]) === null) return false;
+      if (e.deleted !== undefined || (o.dateField && asDay(e.values[o.dateField]) === null))
+        return false;
       const [fn, f] = parseMeasure(m);
       return fn === "count" || !f || numberOf(f, e.values[f.id]) !== null;
     },

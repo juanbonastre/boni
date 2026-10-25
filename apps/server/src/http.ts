@@ -1,7 +1,12 @@
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import { formatReminderDefaults, parseReminderDefaults, type RowChange } from "@boni/calendar";
+import {
+  formatReminderDefaults,
+  parseReminderDefaults,
+  type RowChange,
+  toLocal,
+} from "@boni/calendar";
 import { exportChunks, releaseSent } from "@boni/export";
 import { CORE_MARK } from "@boni/mirror";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
@@ -19,6 +24,7 @@ import {
   systemColumns,
 } from "./audit.ts";
 import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
+import { BlocksError, computeBlocks } from "./blocks.ts";
 import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import {
   createRow,
@@ -381,6 +387,16 @@ export function makeApp(opts: ServerOptions): App {
             row: createRow(store, params.type ?? "", b.values ?? {}, s.device),
           });
         }
+        if (route === "POST /api/data/blocks") {
+          // A page's numbers and charts (blocks.ts), "today" in the server's zone like the API v1.
+          const day = toLocal(now(), opts.tz ?? "Europe/Madrid").day;
+          const today = new Date(day * 86_400_000).toISOString().slice(0, 10);
+          return send(
+            res,
+            200,
+            computeBlocks(store, await bodyOf(req), { today, device: s.device, now: now() }),
+          );
+        }
         if (route === "GET /api/data/notes") return send(res, 200, listNotes(store));
         if (route === "GET /api/data/lookup")
           return send(res, 200, findByPath(store, url.searchParams.get("path") ?? ""));
@@ -453,6 +469,7 @@ export function makeApp(opts: ServerOptions): App {
       } catch (e) {
         if (e instanceof DataError)
           return send(res, e.code === "not-found" ? 404 : 400, { error: e.code });
+        if (e instanceof BlocksError) return send(res, 400, { error: e.code });
         throw e;
       }
     }

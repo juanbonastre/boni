@@ -434,9 +434,9 @@ function Blocks({ page }: { page: Page }) {
             setPageBlocks(page.spec.blocks.map((x) => (x.id === b.id ? { ...b, view } : x)))
           }
         />
-      ) : (
+      ) : isText(b) ? (
         <TextField block={b} page={page} number={numbers.get(b.id)} hidden={hidden} />
-      )}
+      ) : null}
     </BlockRow>
   );
   return (

@@ -1,3 +1,4 @@
+import { catalogueErrors, type Place } from "./catalogue.ts";
 import { filterErrors } from "./filter.ts";
 
 /**
@@ -11,7 +12,29 @@ import { filterErrors } from "./filter.ts";
 /** Nesting, as Notion's Tab: how far a block is indented under the one above (0 = not at all). */
 type Indent = { indent?: 1 | 2 | 3 | 4 };
 
-export type PageBlock =
+/**
+ * A number, a bar list or a chart over one of the user's collections, with the settings of the block catalogue
+ * (catalogue.ts): what it counts, in which rows and when. Computed by the code from the user's data.
+ */
+export interface DataBlock {
+  id: string;
+  type: "number" | "bars" | "graph";
+  title: string;
+  collection: string;
+  measure: "count" | "sum" | "avg";
+  field?: string;
+  groupBy?: string;
+  period: "month" | "30d" | "12m" | "year" | "all";
+  date?: string;
+  filterField?: string;
+  filterValue?: string;
+  shape?: "bar" | "hbar" | "line" | "area" | "donut";
+  color?: string;
+  bg?: boolean;
+}
+export const DATA_BLOCKS = ["number", "bars", "graph"] as const;
+
+export type PageBlock = (
   | ({ id: string; type: "heading"; text: string; level?: 1 | 2 | 3 } & Indent)
   | ({ id: string; type: "text"; text: string } & Indent)
   | ({ id: string; type: "bullet"; text: string } & Indent)
@@ -29,7 +52,12 @@ export type PageBlock =
   | { id: string; type: "chart"; chart: string }
   /** A collection of the user's shown as a Notion database view (plan PR 19). */
   | { id: string; type: "database"; source: string; view: DatabaseView }
-  | { id: string; type: "action"; screen: string; label: string; shortcut?: string };
+  | { id: string; type: "action"; screen: string; label: string; shortcut?: string }
+  | DataBlock
+) & {
+  /** Its place on the page's grid of 12 columns; a block without one is a row of its own, the whole width. */
+  at?: Place;
+};
 
 /** How a database block shows its collection: Notion's layouts and their settings, all closed. */
 export interface DatabaseView {
@@ -112,6 +140,7 @@ export const PAGE_BLOCKS = [
   "chart",
   "database",
   "action",
+  ...DATA_BLOCKS,
 ] as const;
 export const PAGE_LIMITS = {
   blocks: 1000,
@@ -146,6 +175,8 @@ export function pageErrors(spec: unknown): string[] {
     return [`page: at most ${PAGE_LIMITS.blocks} blocks`];
   const errors: string[] = [];
   const ids = new Set<string>();
+  /** Each row's columns and their widths, which add up to at most 12. */
+  const rows = new Map<string, Map<number, number>>();
   spec.blocks.forEach((b, i) => {
     const w = `blocks[${i}]`;
     if (!isObj(b) || typeof b.id !== "string" || !ID.test(b.id)) {
@@ -154,10 +185,40 @@ export function pageErrors(spec: unknown): string[] {
     }
     if (ids.has(b.id)) errors.push(`${w}: id used twice`);
     ids.add(b.id);
+    if (b.at !== undefined) {
+      const at = b.at;
+      if (
+        !isObj(at) ||
+        !only(at, ["row", "col", "w", "h"]) ||
+        typeof at.row !== "string" ||
+        !ID.test(at.row) ||
+        !Number.isInteger(at.col) ||
+        (at.col as number) < 0 ||
+        (at.col as number) > 11 ||
+        !Number.isInteger(at.w) ||
+        (at.w as number) < 1 ||
+        (at.w as number) > 12 ||
+        (at.h !== undefined && at.h !== "s" && at.h !== "m" && at.h !== "l")
+      )
+        errors.push(`${w}: at { row, col 0-11, w 1-12, h s|m|l }`);
+      else {
+        let cols = rows.get(at.row);
+        if (!cols) {
+          cols = new Map();
+          rows.set(at.row, cols);
+        }
+        const had = cols.get(at.col as number);
+        if (had !== undefined && had !== at.w)
+          errors.push(`${w}: a column has one width (row ${at.row}, column ${String(at.col)})`);
+        cols.set(at.col as number, at.w as number);
+      }
+    }
     const indentOk =
       b.indent === undefined || (typeof b.indent === "number" && [1, 2, 3, 4].includes(b.indent));
     const textual = (extra: string[], max: number = PAGE_LIMITS.text) =>
-      only(b, ["id", "type", "text", "indent", ...extra]) && text(b.text, max, true) && indentOk;
+      only(b, ["at", "id", "type", "text", "indent", ...extra]) &&
+      text(b.text, max, true) &&
+      indentOk;
     switch (b.type) {
       case "heading":
         if (
@@ -196,14 +257,22 @@ export function pageErrors(spec: unknown): string[] {
           errors.push(`${w}: a callout has text and an emoji`);
         break;
       case "divider":
-        if (!only(b, ["id", "type"])) errors.push(`${w}: a divider has nothing else`);
+        if (!only(b, ["at", "id", "type"])) errors.push(`${w}: a divider has nothing else`);
         break;
       case "page":
-        if (!only(b, ["id", "type", "page"]) || typeof b.page !== "string" || !ID.test(b.page))
+        if (
+          !only(b, ["at", "id", "type", "page"]) ||
+          typeof b.page !== "string" ||
+          !ID.test(b.page)
+        )
           errors.push(`${w}: a page link names its page`);
         break;
       case "chart":
-        if (!only(b, ["id", "type", "chart"]) || typeof b.chart !== "string" || !ID.test(b.chart))
+        if (
+          !only(b, ["at", "id", "type", "chart"]) ||
+          typeof b.chart !== "string" ||
+          !ID.test(b.chart)
+        )
           errors.push(`${w}: a chart names its chart`);
         break;
       case "database": {
@@ -217,7 +286,7 @@ export function pageErrors(spec: unknown): string[] {
             v.sort.field !== undefined &&
             (v.sort.desc === undefined || typeof v.sort.desc === "boolean"));
         if (
-          !only(b, ["id", "type", "source", "view"]) ||
+          !only(b, ["at", "id", "type", "source", "view"]) ||
           typeof b.source !== "string" ||
           !ID.test(b.source) ||
           !v ||
@@ -251,7 +320,7 @@ export function pageErrors(spec: unknown): string[] {
       }
       case "action":
         if (
-          !only(b, ["id", "type", "screen", "label", "shortcut"]) ||
+          !only(b, ["at", "id", "type", "screen", "label", "shortcut"]) ||
           typeof b.screen !== "string" ||
           !ID.test(b.screen) ||
           !text(b.label, PAGE_LIMITS.label) ||
@@ -259,9 +328,21 @@ export function pageErrors(spec: unknown): string[] {
         )
           errors.push(`${w}: an action names a screen and has a label`);
         break;
+      case "number":
+      case "bars":
+      case "graph":
+        for (const p of catalogueErrors(b))
+          errors.push(
+            `${w}: ${p.key ? `${p.key} ` : ""}${p.code === "missing" ? "is missing" : p.code === "not-allowed" ? "is not allowed here" : "is not valid"}`,
+          );
+        break;
       default:
         errors.push(`${w}: unknown block "${String(b.type)}"`);
     }
   });
+  for (const [row, cols] of rows) {
+    const total = [...cols.values()].reduce((a, x) => a + x, 0);
+    if (total > 12) errors.push(`row ${row}: its columns are ${total} twelfths wide (at most 12)`);
+  }
   return errors;
 }
