@@ -28,6 +28,7 @@ jobs:
     outputs:
       calendar: ${{ steps.diff.outputs.calendar }}
       boni: ${{ steps.diff.outputs.boni }}
+      desktop: ${{ steps.diff.outputs.desktop }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,7 +36,8 @@ jobs:
       - id: diff
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "calendar=true" >> "$GITHUB_OUTPUT"; echo "boni=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "calendar=true" >> "$GITHUB_OUTPUT"; echo "boni=true" >> "$GITHUB_OUTPUT"
+            echo "desktop=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
           printf '%s\n' "$files"
@@ -43,6 +45,13 @@ jobs:
           has() { printf '%s\n' "$files" | grep -Eq "$1|$shared" && echo true || echo false; }
           echo "calendar=$(has '^(apps/calendar-web/|apps/calendar-desktop/|packages/calendar/|e2e/|playwright\.config\.ts)')" >> "$GITHUB_OUTPUT"
           echo "boni=$(has '^(apps/boni-web/|e2e-boni/|playwright\.boni\.config\.ts)')" >> "$GITHUB_OUTPUT"
+          echo "desktop=$(has '^(apps/boni-web/|apps/boni-desktop/|apps/server/|packages/|e2e-boni-desktop/|playwright\.boni-desktop\.config\.ts)')" >> "$GITHUB_OUTPUT"
+          # I-05 (docs/principios.md): every change to Boni's web app ships in a new desktop version.
+          if printf '%s\n' "$files" | grep -q '^apps/boni-web/src/' &&
+             ! git diff "origin/${{ github.base_ref }}...HEAD" -- apps/boni-desktop/package.json | grep -q '^+  "version"'; then
+            echo "::error::apps/boni-web changed: bump apps/boni-desktop/package.json's version (docs/principios.md, I-05)"
+            exit 1
+          fi
 
   # The calendar's suite in two halves on two machines; Boni's on a third. All start without waiting for `check`.
   e2e-calendar:
@@ -93,18 +102,48 @@ jobs:
         if: always()
         with:
           name: screenshots-boni
-          path: e2e-boni/screenshots
+          path: |
+            e2e-boni/screenshots
+            e2e-boni/__screens__
+            test-results
+
+  # I-06 (docs/principios.md): Boni's desktop app driven for real, as on Juan's computer, on a virtual screen: the
+  # real server with an invented account and vault, a temporary profile.
+  e2e-boni-desktop:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Ubuntu 24.04 keeps unprivileged namespaces from AppArmor-less programs; Electron's sandbox needs them.
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: xvfb-run -a --server-args="-screen 0 1920x1080x24" make e2e-boni-desktop
+        env:
+          CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-boni-desktop
+          path: |
+            e2e-boni/screenshots
+            test-results
 
   # The check `main` requires: the suites that ran passed (a skipped one is not needed by the change).
   e2e:
-    needs: [changes, e2e-calendar, e2e-boni]
+    needs: [changes, e2e-calendar, e2e-boni, e2e-boni-desktop]
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - run: |
-          echo "changes=${{ needs.changes.result }} calendar=${{ needs.e2e-calendar.result }} boni=${{ needs.e2e-boni.result }}"
+          echo "changes=${{ needs.changes.result }} calendar=${{ needs.e2e-calendar.result }} boni=${{ needs.e2e-boni.result }} desktop=${{ needs.e2e-boni-desktop.result }}"
           [ "${{ needs.changes.result }}" = success ] || exit 1
-          for r in "${{ needs.e2e-calendar.result }}" "${{ needs.e2e-boni.result }}"; do
+          for r in "${{ needs.e2e-calendar.result }}" "${{ needs.e2e-boni.result }}" "${{ needs.e2e-boni-desktop.result }}"; do
             case "$r" in success | skipped) ;; *) exit 1 ;; esac
           done
 

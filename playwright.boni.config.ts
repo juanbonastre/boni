@@ -8,6 +8,10 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: [["list"]],
+  // Reference captures (e2e-boni/screens.spec.ts) are made on CI's machine, whose fonts are not this computer's: only
+  // CI compares them; a new one comes from the «screens» workflow (docs/principios.md, I-07).
+  ignoreSnapshots: !process.env.CI,
+  snapshotPathTemplate: "{testDir}/__screens__/{arg}{ext}",
   use: {
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 1280, height: 900 },

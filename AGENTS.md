@@ -8,7 +8,9 @@ Project notes live in Juan's vault (`proyectos/boni-plan.md`, `proyectos/boni-ca
 
 **Before working, read in the vault** (they are not loaded by themselves): `proyectos/boni-plan.md` → "Cómo trabajar
 en Boni (leer primero)" and the last entries of its Registro (the state and the next step), and
-`proyectos/boni-calendar.md` → "Errores y soluciones". Say in your first reply what you read. Rules about how to work
+`proyectos/boni-calendar.md` → "Errores y soluciones"; and in this repo **`docs/principios.md`**: the rules that must
+not break, each with the test that guards it (a decision of Juan's that code can check enters there with its test, in
+the same PR). Say in your first reply what you read. Rules about how to work
 are written there (or here, for code), never left in a chat. Juan uses **Boni's desktop app** (`apps/boni-desktop`):
 UI work is done and tested for it (see that folder below).
 
@@ -393,6 +395,10 @@ apps/boni-desktop/ Boni's desktop app (Electron, package `boni`, `.deb` via `mak
                  the real server with an invented account and vault; opens a window, not in CI).
 bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots (Boni Calendar);
                  e2e-boni/ the same for apps/boni-web (`playwright.boni.config.ts`, a fake server from `api/examples`).
+                 `e2e-boni/screens.spec.ts`: reference captures of the main screens (`__screens__/`, made on CI's
+                 machine; compared only in CI; new ones from the «screens» workflow). CI also runs
+                 `e2e-boni-desktop` on a virtual screen and refuses a change to apps/boni-web without a new desktop
+                 version.
 docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.
 legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, real names replaced. Reference only:
                  not built, linted or tested here; delete each piece once it is ported to the core.
