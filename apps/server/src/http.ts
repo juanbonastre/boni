@@ -24,7 +24,7 @@ import {
   systemColumns,
 } from "./audit.ts";
 import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
-import { BlocksError, computeBlocks } from "./blocks.ts";
+import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
 import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import {
   createRow,
@@ -50,21 +50,20 @@ import { mcpAnswer } from "./mcp.ts";
 import {
   createPage,
   getPage,
-  getSystemPage,
   listPages,
   listTrash,
   PageError,
-  putSystemPage,
   removePage,
   restorePage,
-  restoreSystemPage,
   seedFromV1,
+  seedTemplates,
   updatePage,
 } from "./pages.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
 import { bodyOf, CORS, header, SAFE, send, sendFile, tokenOf } from "./reply.ts";
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
 import type { SecretKey } from "./secret.ts";
+import { isSystemCollection, systemCollections } from "./systemCollections.ts";
 import { serveV1 } from "./v1/http.ts";
 import { V1Service } from "./v1/service.ts";
 import { V1Store } from "./v1/store.ts";
@@ -386,14 +385,24 @@ export function makeApp(opts: ServerOptions): App {
       if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const store = opts.agent.store(s.user.id);
       const now = opts.now ?? Date.now;
+      // Boni's own records as read-only collections (systemCollections.ts), made only when a route needs them.
+      const sys = () =>
+        systemCollections(store, {
+          now: now(),
+          usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
+        });
       // A change made here reaches the mirror (and so the vault) at once.
       if (req.method !== "GET") res.on("finish", () => opts.agent?.onChanged?.(s.user.id));
       try {
-        if (route === "GET /api/data/types") return send(res, 200, { types: listTypes(store) });
+        if (route === "GET /api/data/types")
+          return send(res, 200, { types: listTypes(store, sys()) });
         if (route === "GET /api/data/types/:type/rows") {
-          const out = listRows(store, params.type ?? "");
+          const type = params.type ?? "";
+          if (isSystemCollection(type))
+            return send(res, 200, { ...listRows(store, type, sys()), columns: {} });
+          const out = listRows(store, type);
           const ids = out.rows.map((r) => r.id);
-          recordUserRead(store, s.device, "data.rows", params.type ?? "", ids, false, now());
+          recordUserRead(store, s.device, "data.rows", type, ids, false, now());
           return send(res, 200, { ...out, columns: systemColumns(store, ids) });
         }
         if (route === "POST /api/data/types/:type/rows") {
@@ -402,14 +411,17 @@ export function makeApp(opts: ServerOptions): App {
             row: createRow(store, params.type ?? "", b.values ?? {}, s.device),
           });
         }
-        if (route === "POST /api/data/blocks") {
-          // A page's numbers and charts (blocks.ts), "today" in the server's zone like the API v1.
+        if (route === "POST /api/data/blocks" || route === "POST /api/data/blocks/rows") {
+          // A page's numbers and charts (blocks.ts), or the rows one of them counts; "today" in the server's
+          // zone like the API v1.
           const day = toLocal(now(), opts.tz ?? "Europe/Madrid").day;
           const today = new Date(day * 86_400_000).toISOString().slice(0, 10);
+          const o = { today, device: s.device, now: now(), sys };
+          const body = await bodyOf(req);
           return send(
             res,
             200,
-            computeBlocks(store, await bodyOf(req), { today, device: s.device, now: now() }),
+            route.endsWith("/rows") ? blockRowsOf(store, body, o) : computeBlocks(store, body, o),
           );
         }
         if (route === "GET /api/data/notes") return send(res, 200, listNotes(store));
@@ -503,28 +515,16 @@ export function makeApp(opts: ServerOptions): App {
       const id = params.id ?? "";
       if (route === "GET /api/pages") {
         seedFromV1(store, v1store, s.user.id);
+        seedTemplates(store);
         return send(res, 200, { pages: listPages(store) });
       }
       if (route === "GET /api/pages-trash") return send(res, 200, { pages: listTrash(store) });
-      if (route === "GET /api/pages/system/:name") {
-        try {
-          return send(res, 200, { page: getSystemPage(store, params.name ?? "") });
-        } catch {
-          return send(res, 404, { error: "not-found" });
-        }
-      }
       if (route === "GET /api/pages/:id") {
         const p = getPage(store, id);
         return p ? send(res, 200, { page: p }) : send(res, 404, { error: "not-found" });
       }
       if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       try {
-        if (route === "PUT /api/pages/system/:name")
-          return send(res, 200, {
-            page: putSystemPage(store, params.name ?? "", await bodyOf(req)),
-          });
-        if (route === "DELETE /api/pages/system/:name")
-          return send(res, 200, { page: restoreSystemPage(store, params.name ?? "") });
         if (route === "POST /api/pages")
           return send(res, 200, { page: createPage(store, await bodyOf(req), s.device) });
         if (route === "PUT /api/pages/:id")

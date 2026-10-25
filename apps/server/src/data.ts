@@ -1,6 +1,7 @@
-import { type FieldDef, label, type Value } from "@boni/entities";
+import { type Entity, type FieldDef, label, type TypeDef, type Value } from "@boni/entities";
 import { AI_LEVELS, type AiLevel, BODY, StoreError, type UserStore, type Zone } from "@boni/store";
 import { filterErrors } from "@boni/views";
+import type { SystemCollections } from "./systemCollections.ts";
 
 /**
  * The user's collections as Notion's databases (docs/nucleo.md plan PR 19): their types and fields, their
@@ -31,6 +32,8 @@ export interface DataType {
   rules: { id: string; filter: unknown[]; level: AiLevel }[];
   /** How its rows open as pages: properties unfolded or not, and the ones hidden one by one (Juan, 2026-10-22). */
   rowUi: RowUi;
+  /** Boni's own records (systemCollections.ts): read only, never seen by a model. */
+  system?: true;
 }
 export interface RowUi {
   open: boolean;
@@ -115,27 +118,45 @@ function shown(values: Record<string, Value>, titleField: string): Record<string
 const userTypes = (store: UserStore) =>
   Object.values(store.schema().types).filter((t) => !t.system && !t.archived);
 
-export function listTypes(store: UserStore): DataType[] {
+const fieldsOf = (t: TypeDef): DataField[] =>
+  t.fields
+    .filter((f) => !f.hidden && !f.archived)
+    .map((f) => ({
+      id: f.id,
+      name: f.name,
+      type: f.type,
+      ...(f.options
+        ? { options: f.options.map((o) => ({ id: o.id, name: o.name, color: o.color })) }
+        : {}),
+      ...(f.relation ? { relation: { target: f.relation.target, many: f.relation.many } } : {}),
+    }));
+
+/** The user's collections, and Boni's own records after them when given (read only, `private`: no model sees them). */
+export function listTypes(store: UserStore, sys?: SystemCollections): DataType[] {
   const zones = store.zones();
   const levels = store.aiAccess();
   const rules = store.aiRules();
-  return userTypes(store)
+  const own = Object.values(sys?.types ?? {}).map(
+    (t): DataType => ({
+      id: t.id,
+      name: t.name,
+      icon: t.icon ?? "",
+      titleField: t.titleField,
+      fields: fieldsOf(t),
+      count: sys?.rows(t.id).length ?? 0,
+      level: "private",
+      rules: [],
+      rowUi: { open: false, hidden: [] },
+      system: true,
+    }),
+  );
+  const mine = userTypes(store)
     .map((t) => ({
       id: t.id,
       name: t.name,
       icon: t.icon ?? "",
       titleField: t.titleField,
-      fields: t.fields
-        .filter((f) => !f.hidden && !f.archived)
-        .map((f) => ({
-          id: f.id,
-          name: f.name,
-          type: f.type,
-          ...(f.options
-            ? { options: f.options.map((o) => ({ id: o.id, name: o.name, color: o.color })) }
-            : {}),
-          ...(f.relation ? { relation: { target: f.relation.target, many: f.relation.many } } : {}),
-        })),
+      fields: fieldsOf(t),
       count: store.count(t.id),
       level: levels[t.id] ?? "visible",
       ...(zones[t.id] ? { zone: zones[t.id] } : {}),
@@ -145,6 +166,7 @@ export function listTypes(store: UserStore): DataType[] {
       rowUi: rowUiOf(store, t.id),
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "es"));
+  return [...mine, ...own];
 }
 
 /**
@@ -258,18 +280,38 @@ export function ghostRows(store: UserStore, typeId: string): GhostRow[] {
 export function listRows(
   store: UserStore,
   type: string,
+  sys?: SystemCollections,
 ): { rows: DataRow[]; titles: Record<string, string>; truncated: boolean; ghosts: GhostRow[] } {
+  const mine = sys?.types[type];
+  if (mine) {
+    // Boni's own records: the latest first, no relations, no proposals.
+    const all = [...(sys?.rows(type) ?? [])].sort((a, b) => b.updated - a.updated);
+    const rows = all
+      .slice(0, ROW_LIMIT)
+      .map((e) => ({ id: e.id, values: e.values, updated: e.updated }));
+    return { rows, titles: {}, truncated: all.length > rows.length, ghosts: [] };
+  }
   const def = userTypes(store).find((t) => t.id === type);
   if (!def) throw new DataError("not-found");
-  const all = store
-    .entities(type)
-    .sort((a, b) => b.updated - a.updated)
-    .map((e) => ({
-      id: e.id,
-      values: shown(e.values, def.titleField),
-      updated: e.updated,
-    }));
-  const rows = all.slice(0, ROW_LIMIT);
+  const all = store.entities(type).sort((a, b) => b.updated - a.updated);
+  return {
+    ...asShown(store, def, all.slice(0, ROW_LIMIT)),
+    truncated: all.length > ROW_LIMIT,
+    ghosts: ghostRows(store, type),
+  };
+}
+
+/** Rows of a type as a table shows them, with the titles of what their relations point to. */
+export function asShown(
+  store: UserStore,
+  def: TypeDef,
+  entities: readonly Entity[],
+): { rows: DataRow[]; titles: Record<string, string> } {
+  const rows = entities.map((e) => ({
+    id: e.id,
+    values: shown(e.values, def.titleField),
+    updated: e.updated,
+  }));
   const titles: Record<string, string> = {};
   const types = store.schema().types;
   for (const f of def.fields.filter((x) => x.type === "relation")) {
@@ -283,7 +325,7 @@ export function listRows(
       }
     }
   }
-  return { rows, titles, truncated: all.length > rows.length, ghosts: ghostRows(store, type) };
+  return { rows, titles };
 }
 
 const writesOf = (

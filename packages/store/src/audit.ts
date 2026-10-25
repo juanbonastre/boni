@@ -120,6 +120,11 @@ export interface Audit {
   meta(ids: string[]): Map<string, EntityMeta>;
   /** Counts per UTC day and actor: what was read and what was changed (the «Actividad» charts). */
   activity(from: number, to: number): { day: string; by: By; reads: number; writes: number }[];
+  /** Per UTC day, actor and type: how many entities were read and how many changed (Boni's «Actividad de Boni»). */
+  activityByType(
+    from: number,
+    to: number,
+  ): { day: string; by: By; type: string; reads: number; writes: number }[];
   /** Per type and actor: how many entities were read and how many changed. */
   byType(from: number, to: number): { type: string; by: By; reads: number; writes: number }[];
   /** Changes in a period by kind (create, update, delete, restore) and how many undid another. */
@@ -399,6 +404,39 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
         add(r.day as string, r.who as string, "writes", Number(r.n));
       return [...rows.values()].sort(
         (a, b) => a.day.localeCompare(b.day) || a.by.localeCompare(b.by),
+      );
+    },
+    activityByType: (from, to) => {
+      const day = (col: string) => `strftime('%Y-%m-%d', ${col} / 1000, 'unixepoch')`;
+      const rows = new Map<
+        string,
+        { day: string; by: By; type: string; reads: number; writes: number }
+      >();
+      const add = (d: string, by: By, type: string, k: "reads" | "writes", n: number) => {
+        const key = `${d}|${by}|${type}`;
+        const r = rows.get(key) ?? { day: d, by, type, reads: 0, writes: 0 };
+        r[k] += n;
+        rows.set(key, r);
+      };
+      for (const r of db
+        .prepare(
+          `SELECT ${day("x.at")} AS day, x.by, a.type, count(*) AS n FROM access a JOIN actions x ON x.seq = a.action
+           WHERE x.at >= ? AND x.at < ? AND x.decision = 'allow' GROUP BY day, x.by, a.type`,
+        )
+        .all(from, to))
+        add(r.day as string, r.by as string, r.type as string, "reads", Number(r.n));
+      for (const r of db
+        .prepare(
+          `SELECT ${day("o.at")} AS day, e.type,
+             coalesce(o.by, CASE o.actor WHEN 'user' THEN 'user:' || coalesce(o.device, '?') ELSE o.actor END) AS who,
+             count(*) AS n FROM ops o JOIN entities e ON e.id = o.target
+           WHERE o.at >= ? AND o.at < ? AND o.kind != 'schema' GROUP BY day, e.type, who`,
+        )
+        .all(from, to))
+        add(r.day as string, r.who as string, r.type as string, "writes", Number(r.n));
+      return [...rows.values()].sort(
+        (a, b) =>
+          a.day.localeCompare(b.day) || a.by.localeCompare(b.by) || a.type.localeCompare(b.type),
       );
     },
     byType: (from, to) => {

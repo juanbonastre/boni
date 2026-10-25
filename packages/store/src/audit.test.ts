@@ -44,6 +44,7 @@ const fresh = () => {
   return { s, path };
 };
 const t = (v: string, l = JUAN) => ({ value: v, label: l });
+const DAY_AHEAD = 86_400_000;
 
 describe("the audit", () => {
   it("says who made each entity and who changed it; a model can not say it was someone else", () => {
@@ -227,6 +228,44 @@ describe("the audit", () => {
         { day: "2026-10-24", by: "mcp:claude-ejemplo", reads: 1, writes: 1 },
       ]),
     );
+    // The same per collection too (Boni's «Actividad de Boni»).
+    expect(s.audit.activityByType(from, to)).toEqual(
+      expect.arrayContaining([
+        { day: "2026-10-24", by: "mcp:claude-ejemplo", type: "t_nota", reads: 1, writes: 1 },
+        { day: "2026-10-24", by: "user:portatil", type: "t_nota", reads: 0, writes: 1 },
+      ]),
+    );
+    expect(s.audit.activityByType(to, to + 1)).toEqual([]);
+    // Calls to models in a period, oldest first, cost in dollars or null when unknown.
+    s.journal.modelCall({
+      run: "r1",
+      role: "reader",
+      provider: "fake",
+      model: "m-ejemplo",
+      promptHash: "h",
+      request: {},
+      response: {},
+      usage: { input: 10, output: 2, cost: 0.5 },
+      at: clock,
+    });
+    s.journal.modelCall({
+      run: "r1",
+      role: "planner",
+      provider: "fake",
+      model: "m-ejemplo",
+      promptHash: "h",
+      request: {},
+      response: {},
+      usage: null,
+      at: clock + 1,
+    });
+    const calls = s.journal.modelCallsIn(from, to + DAY_AHEAD);
+    expect(calls.map((c) => [c.role, c.input, c.output, c.cost])).toEqual([
+      ["reader", 10, 2, 0.5],
+      ["planner", 0, 0, null],
+    ]);
+    expect(new Set(calls.map((c) => c.n)).size).toBe(2);
+    expect(s.journal.modelCallsIn(clock + 2, clock + 3)).toEqual([]);
     const st = s.audit.storage();
     expect(st.types).toEqual([expect.objectContaining({ type: "t_nota", rows: 1 })]);
     expect(st.audit.actions).toBe(1);

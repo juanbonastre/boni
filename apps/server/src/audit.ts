@@ -36,7 +36,7 @@ export function setAuditSettings(store: UserStore, body: unknown): { userReads: 
 export function recordUserRead(
   store: UserStore,
   device: string,
-  tool: "data.row" | "data.rows" | "data.blocks",
+  tool: "data.row" | "data.rows" | "data.blocks" | "data.blocks.rows",
   type: string,
   ids: string[],
   withBody: boolean,

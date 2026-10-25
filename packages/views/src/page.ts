@@ -21,10 +21,7 @@ export interface DataBlock {
   type: "number" | "bars" | "graph";
   /** Empty: it shows what it counts. */
   title?: string;
-  /** "boni": one of Boni's own numbers (`source`, catalogue.ts BONI_SOURCES), computed by the app. */
-  from?: "collection" | "boni";
-  source?: string;
-  collection?: string;
+  collection: string;
   measure?: "count" | "sum" | "avg";
   field?: string;
   groupBy?: string;
@@ -37,8 +34,18 @@ export interface DataBlock {
   bg?: boolean;
 }
 export const DATA_BLOCKS = ["number", "bars", "graph"] as const;
-/** Blocks of Boni's own (its models, a link to its screens), from the block catalogue. */
-export const BONI_BLOCKS = ["models", "model-keys", "link"] as const;
+/** Blocks of Boni's own (a link to its screens), from the block catalogue. */
+export const BONI_BLOCKS = ["link"] as const;
+/**
+ * Kinds of block that are no more (design audit, Juan 2026-10-25: everything shown comes from collections; Boni's
+ * models are in Ajustes): a stored page that has one loses it when read (`withoutRetired`), never the whole page.
+ */
+export const RETIRED_BLOCKS = ["models", "model-keys"] as const;
+/** Boni's template pages (templates.ts): a page made from one says which, so it can be restored. */
+export const PAGE_TEMPLATES = ["uso-ia", "actividad"] as const;
+export type PageTemplate = (typeof PAGE_TEMPLATES)[number];
+export const isPageTemplate = (x: unknown): x is PageTemplate =>
+  (PAGE_TEMPLATES as readonly unknown[]).includes(x);
 
 export type PageBlock = (
   | ({ id: string; type: "heading"; text: string; level?: 1 | 2 | 3 } & Indent)
@@ -70,9 +77,7 @@ export type PageBlock = (
       color?: string;
     }
   | DataBlock
-  | { id: string; type: "models"; title?: string }
-  | { id: string; type: "model-keys" }
-  | { id: string; type: "link"; title?: string; to: "activity" | "audit" }
+  | { id: string; type: "link"; title?: string; to: "activity" | "audit" | "settings-models" }
 ) & {
   /** Its place on the page's grid of 12 columns; a block without one is a row of its own, the whole width. */
   at?: Place;
@@ -137,7 +142,35 @@ export interface PageSpec {
   version: 1;
   /** The page uses the window's whole width (charts side by side) instead of a reading column. */
   full?: boolean;
+  /** The Boni template it was made from (templates.ts), so it says «De Boni» or «Modificada» and can be restored. */
+  template?: PageTemplate;
   blocks: PageBlock[];
+}
+
+/**
+ * A stored page as it reads now: blocks of a retired kind (`RETIRED_BLOCKS`) and Boni's own numbers (a data block
+ * with `from: "boni"`, before they were collections) are left out, so the rest of the page still shows. Anything
+ * else is left as it was (`pageErrors` judges it).
+ */
+export function withoutRetired(spec: unknown): unknown {
+  if (!isObj(spec) || !Array.isArray(spec.blocks)) return spec;
+  const gone = (b: unknown) =>
+    isObj(b) &&
+    ((RETIRED_BLOCKS as readonly unknown[]).includes(b.type) ||
+      ((DATA_BLOCKS as readonly unknown[]).includes(b.type) && b.from === "boni"));
+  const old = (b: unknown) => isObj(b) && "from" in b;
+  if (!spec.blocks.some((b) => gone(b) || old(b))) return spec;
+  return {
+    ...spec,
+    blocks: spec.blocks
+      .filter((b) => !gone(b))
+      .map((b) => {
+        // A data block that only said where its data came from («Una colección») keeps the rest.
+        if (!isObj(b) || !("from" in b)) return b;
+        const { from: _f, source: _s, ...rest } = b;
+        return rest;
+      }),
+  };
 }
 
 /** The blocks that hold text the user writes in place (and can turn into one another). */
@@ -187,10 +220,11 @@ export function pageErrors(spec: unknown): string[] {
     !isObj(spec) ||
     spec.version !== 1 ||
     !Array.isArray(spec.blocks) ||
-    !only(spec, ["version", "full", "blocks"]) ||
-    (spec.full !== undefined && typeof spec.full !== "boolean")
+    !only(spec, ["version", "full", "template", "blocks"]) ||
+    (spec.full !== undefined && typeof spec.full !== "boolean") ||
+    (spec.template !== undefined && !isPageTemplate(spec.template))
   )
-    return ["page: { version: 1, full?, blocks: [...] }"];
+    return ["page: { version: 1, full?, template?, blocks: [...] }"];
   if (spec.blocks.length > PAGE_LIMITS.blocks)
     return [`page: at most ${PAGE_LIMITS.blocks} blocks`];
   const errors: string[] = [];
@@ -356,8 +390,6 @@ export function pageErrors(spec: unknown): string[] {
       case "number":
       case "bars":
       case "graph":
-      case "models":
-      case "model-keys":
       case "link":
         for (const p of catalogueErrors(b))
           errors.push(

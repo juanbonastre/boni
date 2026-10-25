@@ -15,6 +15,7 @@ export type {
   ConfirmationRow,
   Journal,
   ModelCallRow,
+  ModelCallUse,
   ProposalEdits,
   ProposalRow,
   RequestRow,

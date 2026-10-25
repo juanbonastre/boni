@@ -3,21 +3,21 @@ import { label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import {
   emptyPage,
-  isSystemPage,
   PAGE_LIMITS,
+  PAGE_TEMPLATES,
   type PageSpec,
   pageErrors,
-  type SystemPage,
-  systemPage,
+  templatePage,
+  withoutRetired,
 } from "@boni/views";
 import type { V1Store } from "./v1/store.ts";
 
 /**
  * The user's pages (docs/extensiones.md 6, plan A4): entities of the system type `page` in the user's own
- * store (versioned, undoable, exported), only ever written by this code on the user's behalf. Nothing is on
- * a new account: the start screen and the sidebar are what the user makes. An account that used the first
- * Boni gets, once, a page "Gastos" with what its fixed home showed (its charts there, its capture and its
- * shortcuts), as data it can change or delete.
+ * store (versioned, undoable, exported), only ever written by this code on the user's behalf. A new account has
+ * only Boni's template pages («Uso de la IA», «Actividad»; `seedTemplates`): the start screen and the sidebar are
+ * what the user makes. An account that used the first Boni gets, once, a page "Gastos" with what its fixed home
+ * showed (its charts there, its capture and its shortcuts), as data it can change or delete.
  */
 
 export interface PageInfo {
@@ -48,7 +48,8 @@ function toPage(e: { id: string; values: Record<string, unknown>; updated: numbe
   const x = e.values;
   let spec: PageSpec = emptyPage();
   try {
-    const s = JSON.parse(String(x.f_spec ?? ""));
+    // Blocks of a kind that is no more are left out as it is read (the stored text changes on the next save).
+    const s = withoutRetired(JSON.parse(String(x.f_spec ?? "")));
     if (!pageErrors(s).length) spec = s as PageSpec;
   } catch {
     // An unreadable spec shows as an empty page; the stored text is left as it was.
@@ -219,46 +220,15 @@ export function seedFromV1(store: UserStore, v1: V1Store, account: number): void
 }
 
 /**
- * Boni's own screens as pages (packages/views systemPages.ts): Boni's version unless the user changed it; the
- * changed one is kept in the account's settings (every device shows it), and restoring takes it out.
+ * Once per account: Boni's template pages (packages/views templates.ts: «Uso de la IA», «Actividad»), pages like any
+ * other over Boni's own records. Removed, they stay removed (the trash brings them back).
  */
-const SYSTEM_KEY = "pages/system/";
-
-export interface SystemPageView {
-  name: SystemPage;
-  spec: PageSpec;
-  modified: boolean;
-}
-
-function systemName(name: string): SystemPage {
-  if (!isSystemPage(name)) throw new PageError("not-found");
-  return name;
-}
-
-export function getSystemPage(store: UserStore, name: string): SystemPageView {
-  const n = systemName(name);
-  try {
-    const kept = JSON.parse(store.setting(`${SYSTEM_KEY}${n}`) ?? "null");
-    if (kept && !pageErrors(kept).length)
-      return { name: n, spec: kept as PageSpec, modified: true };
-  } catch {
-    // Unreadable: Boni's version (the stored text is left as it was).
+export function seedTemplates(store: UserStore): void {
+  if (!store.schema().types.page || store.setting("pages/templates")) return;
+  store.setSetting("pages/templates", String(Date.now()));
+  for (const name of PAGE_TEMPLATES) {
+    const t = templatePage(name);
+    const p = createPage(store, { title: t.title, spec: t.spec });
+    updatePage(store, p.id, { icon: t.icon });
   }
-  return { name: n, spec: systemPage(n), modified: false };
-}
-
-/** The user's version; the same as Boni's is no change at all (the page is Boni's again). */
-export function putSystemPage(store: UserStore, name: string, body: unknown): SystemPageView {
-  const n = systemName(name);
-  const spec = (body as { spec?: unknown } | null)?.spec;
-  if (pageErrors(spec).length) throw new PageError("bad-spec");
-  const own = JSON.stringify(spec) !== JSON.stringify(systemPage(n));
-  store.setSetting(`${SYSTEM_KEY}${n}`, own ? JSON.stringify(spec) : null);
-  return getSystemPage(store, n);
-}
-
-export function restoreSystemPage(store: UserStore, name: string): SystemPageView {
-  const n = systemName(name);
-  store.setSetting(`${SYSTEM_KEY}${n}`, null);
-  return getSystemPage(store, n);
 }

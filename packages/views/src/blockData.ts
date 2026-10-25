@@ -1,6 +1,13 @@
 import type { Entity, TypeDef } from "@boni/entities";
 import { type BlockProblem, type CatalogueData, catalogueErrors } from "./catalogue.ts";
-import { type ChartData, type ChartSpec, computeChart, type Period, SpecError } from "./chart.ts";
+import {
+  type ChartData,
+  type ChartSpec,
+  chartRecords,
+  computeChart,
+  type Period,
+  SpecError,
+} from "./chart.ts";
 import { entityMonths, entityProfile } from "./entities.ts";
 import type { DataBlock } from "./page.ts";
 
@@ -87,10 +94,7 @@ export function computeBlock(
 ): BlockResult {
   const problems = catalogueErrors(b, catalogueData(Object.values(types)));
   if (problems.length) return { problems };
-  // Boni's own numbers are the app's (from its models and audit), not a collection's.
-  if (b.from === "boni")
-    return { problems: [{ block: b.id, key: "from", code: "not-allowed", value: "boni" }] };
-  const def = types[b.collection ?? ""] as TypeDef;
+  const def = types[b.collection] as TypeDef;
   const dateField = blockDateField(b, def);
   const rows = entities(def.id);
   try {
@@ -103,6 +107,40 @@ export function computeBlock(
     return { data };
   } catch (e) {
     // The catalogue offers nothing the engine refuses; if it ever does, the block says so.
+    if (e instanceof SpecError)
+      return { problems: [{ block: b.id, key: "", code: "bad", value: e.message }] };
+    throw e;
+  }
+}
+
+/**
+ * The rows a data block counts (a click on it: «Lo que cuenta»), from the same selection as its number, so the
+ * list always adds up to what the block shows. `drill` narrows it to one point (a bar's or a chart's key).
+ */
+export function blockRows(
+  b: DataBlock,
+  types: Readonly<Record<string, TypeDef>>,
+  entities: (type: string) => Entity[],
+  o: { today: string; titleOf?: (id: string) => string; drill?: string | null },
+): { rows: Entity[] } | { problems: BlockProblem[] } {
+  const problems = catalogueErrors(b, catalogueData(Object.values(types)));
+  if (problems.length) return { problems };
+  const def = types[b.collection] as TypeDef;
+  const dateField = blockDateField(b, def);
+  const all = entities(def.id);
+  try {
+    const rows = chartRecords(
+      entityProfile(def, { dateField, ...(o.titleOf ? { titleOf: o.titleOf } : {}) }),
+      blockChartSpec(b),
+      all,
+      {
+        today: o.today,
+        monthsWithData: new Set(),
+        ...(o.drill !== undefined && b.type !== "number" ? { drill: o.drill } : {}),
+      },
+    );
+    return { rows };
+  } catch (e) {
     if (e instanceof SpecError)
       return { problems: [{ block: b.id, key: "", code: "bad", value: e.message }] };
     throw e;
