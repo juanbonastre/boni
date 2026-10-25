@@ -6,6 +6,7 @@ import {
   type CatalogueData,
   catalogueErrors,
   catalogueForAI,
+  fitAfter,
   newBlock,
   optionsOf,
   PLACE_SETTINGS,
@@ -125,6 +126,21 @@ describe("the block catalogue (one list for the panel, the checks and the AI)", 
     for (const s of PLACE_SETTINGS) expect(text).toContain(`${s.key}: `);
     expect(text).toContain("o_cafe=Café");
     expect(text).toContain("@day|@week|@month");
+  });
+
+  it("fits the settings after the one the user changed (another collection, other fields)", () => {
+    const b = graph({ filterField: "f_cat", filterValue: "o_cafe" });
+    const moved = fitAfter({ ...b, collection: "t_ideas" }, "collection", DATA);
+    expect(moved).toMatchObject({ collection: "t_ideas", measure: "count", period: "all" });
+    expect(moved).not.toHaveProperty("groupBy");
+    expect(moved).not.toHaveProperty("field");
+    expect(moved).not.toHaveProperty("filterField");
+    expect(catalogueErrors(moved, DATA).map((p) => p.key)).toEqual(["groupBy"]);
+    // Only what comes after: the title before it is never touched.
+    const counted = fitAfter({ ...b, measure: "count" }, "measure", DATA);
+    expect(counted).not.toHaveProperty("field");
+    expect(counted.title).toBe(b.title);
+    expect(fitAfter({ ...b, measure: "avg" }, "measure", DATA).field).toBe("f_importe");
   });
 
   it("adds a new block that is already valid", () => {

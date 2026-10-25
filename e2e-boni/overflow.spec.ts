@@ -50,6 +50,9 @@ const L = {
     settings: "Ajustes",
     pageMenu: "Más opciones",
     collections: "Colecciones",
+    number: "Cifra",
+    filterRows: "Solo algunas filas",
+    add: "Añadir un bloque",
   },
   en: {
     period: "Period",
@@ -60,6 +63,9 @@ const L = {
     settings: "Settings",
     pageMenu: "More options",
     collections: "Collections",
+    number: "Number",
+    filterRows: "Only some rows",
+    add: "Add a block",
   },
 };
 
@@ -124,6 +130,28 @@ for (const language of ["es", "en"] as const) {
       await blk.hover();
       await blk.locator(".blk-handle button").click();
       issues.push(...(await audit(page, "block handle menu")));
+      await page.keyboard.press("Escape");
+      // A number from a collection, its panel (drawn from the block catalogue), the "+" menu, its click menu.
+      await page.locator(".doc-tail").click();
+      await page.keyboard.type(`/${l.number}`, { delay: 20 });
+      await page
+        .locator(".slash-menu")
+        .getByRole("menuitem", { name: l.number, exact: true })
+        .click();
+      await page.locator(".side-panel .block-panel").waitFor();
+      await page.locator(".blk-number .kpi-value").filter({ hasText: "3" }).waitFor();
+      issues.push(...(await audit(page, "block panel")));
+      await page.locator(".side-panel").getByRole("button", { name: l.filterRows }).click();
+      issues.push(...(await audit(page, "block panel, some rows")));
+      await page.keyboard.press("Escape");
+      const num = page.locator(".blk-number").first();
+      await num.hover();
+      await num.getByRole("button", { name: l.add }).click();
+      await page.locator(".add-menu").waitFor();
+      issues.push(...(await audit(page, "add menu (+)")));
+      await page.keyboard.press("Escape");
+      await num.locator(".kpi-value").click();
+      issues.push(...(await audit(page, "block click menu")));
       await page.keyboard.press("Escape");
       await page.locator(".topbar").getByRole("button", { name: l.pageMenu }).click();
       issues.push(...(await audit(page, "page menu")));

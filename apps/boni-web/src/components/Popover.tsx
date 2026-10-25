@@ -116,6 +116,73 @@ export function PopButton({
   );
 }
 
+/**
+ * A menu where the pointer was (a click or a right click on a block), kept inside the window. Outside click or
+ * Esc closes it. It is opened by a click, so listening for the next press can start at once.
+ */
+export function PointMenu({
+  x,
+  y,
+  label,
+  width = 230,
+  onClose,
+  children,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  width?: number;
+  onClose: () => void;
+  children: (close: () => void) => ReactNode;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const r = box.current?.getBoundingClientRect();
+    if (!r) return;
+    setPos({
+      left: Math.round(Math.max(4, Math.min(x, window.innerWidth - r.width - 4))),
+      top: Math.round(Math.max(4, Math.min(y, window.innerHeight - r.height - 4))),
+    });
+  }, [x, y]);
+  useEffect(() => {
+    const outside = (e: MouseEvent) => {
+      if (box.current?.contains(e.target as Node)) return;
+      if ((e.target as Element).closest?.(".pop-box")) return;
+      onClose();
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      e.preventDefault();
+      onClose();
+    };
+    document.addEventListener("mousedown", outside);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", outside);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [onClose]);
+  return (
+    <div
+      ref={box}
+      className="pop-box"
+      role="dialog"
+      aria-label={label}
+      style={{
+        left: pos?.left ?? x,
+        top: pos?.top ?? y,
+        width,
+        visibility: pos ? "visible" : "hidden",
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children(onClose)}
+    </div>
+  );
+}
+
 /** One row of a menu: a label, a tick when chosen. */
 export function MenuRow({
   label,

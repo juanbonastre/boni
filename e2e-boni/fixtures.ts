@@ -209,6 +209,55 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
         const b = (body ?? {}) as { values?: Record<string, unknown> };
         if (p === "api/data/types") return [200, JSON.stringify({ types: [libros, documentos] })];
+        // A page's numbers and charts (apps/server/src/blocks.ts), counted over the books here.
+        if (p === "api/data/blocks") {
+          const list = ((body ?? {}) as { blocks?: Record<string, unknown>[] }).blocks ?? [];
+          const results = Object.fromEntries(
+            list.map((x) => {
+              if (x.collection !== "t_libro")
+                return [
+                  x.id,
+                  {
+                    problems: [
+                      { block: x.id, key: "collection", code: "not-in-data", value: x.collection },
+                    ],
+                  },
+                ];
+              const field = libros.fields.find((f) => f.id === x.groupBy) as
+                | { options?: { id: string; name: string }[] }
+                | undefined;
+              const by = new Map<string, number>();
+              for (const r of rows) {
+                const k = String(r.values[String(x.groupBy)] ?? "");
+                by.set(k, (by.get(k) ?? 0) + 1);
+              }
+              const points =
+                x.type === "number"
+                  ? []
+                  : [...by].map(([k, v]) => ({
+                      key: k || "_",
+                      label: field?.options?.find((o) => o.id === k)?.name ?? (k || "(vacío)"),
+                      value: v,
+                      partial: false,
+                      no_data: false,
+                    }));
+              const kind = x.type === "graph" ? x.shape : x.type === "bars" ? "hbar" : "number";
+              const data = {
+                chart_id: "",
+                title: x.title,
+                subtitle: "octubre 2026 · hasta hoy",
+                kind,
+                measure: "count",
+                unit: "",
+                series: [{ key: "main", name: "", points, role: "main" }],
+                total: rows.length,
+                computed_at: new Date().toISOString(),
+              };
+              return [x.id, { data }];
+            }),
+          );
+          return [200, JSON.stringify({ results })];
+        }
         const rowUi = /^api\/data\/types\/([^/]+)\/row-ui$/.exec(p);
         if (rowUi) {
           const t = [libros, documentos].find((x) => x.id === rowUi[1]);

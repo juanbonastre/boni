@@ -107,7 +107,7 @@ export const HEIGHTS: readonly Option[] = [
 /** A block's size, for every kind (charts also have a height): the same for the panel and the AI. */
 export const PLACE_SETTINGS: readonly Setting[] = [
   { key: "w", label: "Ancho", type: "choice", options: WIDTHS, section: "look" },
-  { key: "h", label: "Alto", type: "choice", options: HEIGHTS, section: "look" },
+  { key: "h", label: "Altura", type: "choice", options: HEIGHTS, section: "look" },
 ];
 
 export const PERIODS: readonly Option[] = [
@@ -246,7 +246,7 @@ export const CATALOGUE: readonly BlockKind[] = [
     w: 6,
     ai: "a ranked list with a bar per value of a select field (a category, a person)",
     settings: [TITLE, ...dataSettings("groupFields"), BG],
-    defaults: { title: "Por categoría", measure: "count", period: "month" },
+    defaults: { title: "Lista de barras", measure: "count", period: "month" },
   },
   {
     type: "graph",
@@ -263,7 +263,7 @@ export const CATALOGUE: readonly BlockKind[] = [
       BG,
     ],
     defaults: {
-      title: "Por mes",
+      title: "Gráfica",
       shape: "bar",
       groupBy: "@month",
       measure: "count",
@@ -328,10 +328,8 @@ const fieldsOf = (data: CatalogueData, block: Block) =>
 const DATES: readonly FieldType[] = ["date", "datetime"];
 const hasDate = (fs: CatalogueField[]) => fs.some((f) => DATES.includes(f.type));
 const GROUPABLE: readonly FieldType[] = ["select", "multiselect", "relation", "checkbox"];
-const byField = (fs: CatalogueField[], types: readonly FieldType[], prefix = "") =>
-  fs
-    .filter((f) => types.includes(f.type))
-    .map((f) => ({ value: f.id, label: prefix ? `${prefix} ${f.name.toLowerCase()}` : f.name }));
+const byField = (fs: CatalogueField[], types: readonly FieldType[]) =>
+  fs.filter((f) => types.includes(f.type)).map((f) => ({ value: f.id, label: f.name }));
 
 /** The values a setting may take on this block, with the user's data (for a list that comes from it). */
 export function optionsOf(s: Setting, block: Block, data: CatalogueData): readonly Option[] {
@@ -345,9 +343,9 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
     case "numberFields":
       return byField(fs, ["number", "money", "duration"]);
     case "groupFields":
-      return byField(fs, GROUPABLE, "Por");
+      return byField(fs, GROUPABLE);
     case "timeOrGroupFields":
-      return [...(hasDate(fs) ? TIME_GROUPS : []), ...byField(fs, GROUPABLE, "Por")];
+      return [...(hasDate(fs) ? TIME_GROUPS : []), ...byField(fs, GROUPABLE)];
     case "periods":
       return hasDate(fs) ? PERIODS : PERIODS.filter((p) => p.value === "all");
     case "filterFields":
@@ -430,6 +428,44 @@ export function catalogueErrors(block: unknown, data?: CatalogueData): BlockProb
       out.push({ block: id, key: s.key, code: "not-in-data", value: v });
   }
   return out;
+}
+
+/**
+ * The user changed one setting in the panel: the settings after it that depend on it are fitted to the new
+ * value (another collection has other fields): one that no longer applies is taken out, a required one that is
+ * no longer among the offered values takes the first that is, an optional one is left empty. Only what comes
+ * after the changed setting moves; nothing is changed for an AI's page behind anyone's back (that is
+ * `catalogueErrors`' job: say it).
+ */
+export function fitAfter(
+  block: Readonly<Record<string, unknown>>,
+  changed: string,
+  data: CatalogueData,
+): Record<string, unknown> {
+  const kind = kindOf(String(block.type));
+  if (!kind) return { ...block };
+  const b: Record<string, unknown> = { ...block };
+  const from = kind.settings.findIndex((s) => s.key === changed);
+  for (const s of kind.settings.slice(from + 1)) {
+    if (!applies(s, b)) {
+      delete b[s.key];
+      continue;
+    }
+    if (s.type !== "choice" || typeof s.options !== "string") continue;
+    const opts = optionsOf(s, b, data);
+    if (opts.some((o) => o.value === b[s.key])) continue;
+    if (s.optional || !opts[0]) delete b[s.key];
+    else b[s.key] = opts[0].value;
+  }
+  // A sum or an average of a collection with no number field cannot be: it counts rows.
+  if (
+    b.measure &&
+    b.measure !== "count" &&
+    b.field === undefined &&
+    kind.settings.some((s) => s.key === "field")
+  )
+    b.measure = "count";
+  return b;
 }
 
 /** A catalogue block as it is added: the kind's defaults, the first collection's fields where it needs them. */

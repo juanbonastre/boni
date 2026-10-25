@@ -17,6 +17,7 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { BlockPanel } from "./components/BlockPanel.tsx";
 import { ChartCard, ChartCardContent, useChartData } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { FormView } from "./components/FormView.tsx";
@@ -564,6 +565,9 @@ function Sheet() {
         isNew={panel.isNew}
       />
     );
+  } else if (panel.kind === "block") {
+    title = t("block.menuTitle");
+    body = <BlockPanel key={panel.id} id={panel.id} />;
   } else {
     title = panel.isNew ? t("charts.newTitle") : t("charts.editTitle");
     body = <ChartEditorSheet key={panel.spec.id || "new"} spec={panel.spec} isNew={panel.isNew} />;

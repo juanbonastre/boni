@@ -16,6 +16,7 @@ import {
   parseSummary,
   type SystemColumns,
 } from "./audit.ts";
+import { type BlockResult, type DataBlock, parseBlockResults } from "./blocks.ts";
 
 /**
  * The agent's conversation API (apps/server/src/agent.ts, docs/nucleo.md 7 and 7.14). What comes back is
@@ -1222,6 +1223,11 @@ export class AgentApi {
   storage = async () =>
     parseStorage(await this.call("GET", "storage", undefined, "api/data/audit/"));
   notes = async () => parseNotes(await this.call("GET", "", undefined, "api/data/notes"));
+  /** A page's data blocks computed from the user's collections: each one's numbers or its problems. */
+  blocks = async (blocks: Omit<DataBlock, "at">[]): Promise<Record<string, BlockResult>> => {
+    const b = await this.call("POST", "", { blocks }, "api/data/blocks");
+    return parseBlockResults(b);
+  };
   // The user's collections as databases (plan PR 19).
   dataTypes = async (): Promise<DataType[]> => {
     const b = await this.call("GET", "", undefined, "api/data/types");

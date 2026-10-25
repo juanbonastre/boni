@@ -2,6 +2,7 @@ import type { UserStore } from "@boni/store";
 import {
   type BlockResult,
   blockDateField,
+  type ChartData,
   computeBlock,
   DATA_BLOCKS,
   type DataBlock,
@@ -29,7 +30,7 @@ export function computeBlocks(
   store: UserStore,
   body: unknown,
   o: { today: string; device: string; now: number },
-): { results: Record<string, BlockResult> } {
+): { results: Record<string, BlockResult | { data: ChartData & { computed_at: string } }> } {
   const blocks = (body as { blocks?: unknown } | null)?.blocks;
   if (!Array.isArray(blocks) || blocks.length > MAX_BLOCKS) throw new BlocksError("bad-blocks");
   const types = store.schema().types;
@@ -43,7 +44,7 @@ export function computeBlocks(
     const def = e ? types[e.type] : undefined;
     return e && def ? String(e.values[def.titleField] ?? "") : "";
   };
-  const results: Record<string, BlockResult> = {};
+  const results: Record<string, BlockResult | { data: ChartData & { computed_at: string } }> = {};
   const used = new Map<string, Set<string>>();
   for (const b of blocks) {
     const id = typeof (b as { id?: unknown })?.id === "string" ? (b as { id: string }).id : "";
@@ -52,7 +53,9 @@ export function computeBlocks(
     const block = b as DataBlock;
     // Boni's own types (pages, proposals…) are not collections the catalogue offers: such a block is refused.
     const out = computeBlock(block, types, rowsOf, { today: o.today, titleOf });
-    results[id] = out;
+    // When it was computed, as every chart the app shows says.
+    results[id] =
+      "data" in out ? { data: { ...out.data, computed_at: new Date(o.now).toISOString() } } : out;
     const def = types[block.collection];
     if ("data" in out && def) {
       const fields = used.get(def.id) ?? new Set<string>();
