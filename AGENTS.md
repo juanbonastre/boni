@@ -76,6 +76,14 @@ packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed
                  `page.ts`: a page's blocks (`PageSpec`: heading, text, chart, button), closed (`pageErrors`).
                  `filter.ts`: Notion's filter rules (`filterErrors`, `matchesFilters`), the one matcher for a
                  database view and for a protection rule (the agent depends on views for it).
+                 `catalogue.ts` (Juan, 2026-10-24): the block catalogue, ONE list of the kinds of block and every
+                 setting each takes, from which come the user's panel of a block, the checks (`catalogueErrors`:
+                 a value not among what the user's data offers is `not-in-data`, never replaced) and what an AI
+                 is told (`catalogueForAI`). A setting added there reaches all three. Blocks sit on a grid of 12
+                 columns (`at: { row, col, w, h }`; a row's columns add up to at most 12). `blockData.ts`: a data
+                 block (number, bars, graph) computed from a collection with the chart engine (`computeBlock`).
+                 `randomPage.test-util.ts`: random users and random pages from the catalogue (300 seeds must be
+                 valid and compute; a broken setting must give problems, never a chart).
                  `markdown.ts`: a note's Markdown as the page editor's blocks and back (`markdownToBlocks`,
                  `blocksToMarkdown`; what the editor does not paint stays as written), and `leadingTitle` (a note
                  is titled by its first `# Heading`, which the import takes out of the text).
@@ -259,6 +267,9 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  goes to the reader as `$guide`, bound by code. `src/mailReview.ts`: the reviewer, every 20 of
                  Juan's decisions (or "Revisar ahora"): it suggests rules and examples, the code checks them
                  against his decisions and re-reads decided mail to measure; kept only if better, until he answers.
+                 `src/blocks.ts`: a page's data blocks computed from the user's collections (`POST
+                 /api/data/blocks`, a personal device; each block's numbers or its problems; a read of the rows
+                 used, audited like a table listed, only the fields used).
                  `src/pages.ts`: the user's pages (system type `page` in the user's store, `/api/pages`): nothing
                  fixed on screen, the sidebar and the start are what the user makes; `seedFromV1` gives an account
                  that used the first Boni, once, a page "Gastos" with what its home showed.

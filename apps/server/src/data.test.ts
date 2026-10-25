@@ -289,4 +289,59 @@ describe("collections as databases (plan PR 19)", () => {
     expect(store.aiRules()).toEqual([]);
     expect((await call(t, "PUT", "/api/data/rules/r_nada", rule)).status).toBe(404);
   });
+
+  it("computes a page's numbers and charts from a collection, and says what is wrong with a block", async () => {
+    const t = await token();
+    for (const [titulo, estado, paginas] of [
+      ["Niebla", "o_leido", 200],
+      ["Ficciones", "o_leido", 180],
+      ["Pedro Páramo", "o_leyendo", 120],
+    ] as const)
+      await call(t, "POST", "/api/data/types/t_libro/rows", {
+        values: { f_titulo: titulo, f_estado: estado, f_paginas: paginas },
+      });
+    const base = { collection: "t_libro", period: "all", title: "Libros" };
+    const r = await call(t, "POST", "/api/data/blocks", {
+      blocks: [
+        {
+          ...base,
+          id: "n",
+          type: "number",
+          measure: "count",
+          filterField: "f_estado",
+          filterValue: "o_leido",
+        },
+        { ...base, id: "b", type: "bars", measure: "sum", field: "f_paginas", groupBy: "f_estado" },
+        // Books have no date: no time axis, no "this month"; a field that is not there; Boni's own pages.
+        { ...base, id: "x", type: "graph", shape: "bar", measure: "count", groupBy: "@month" },
+        { ...base, id: "y", type: "bars", measure: "count", groupBy: "f_nada" },
+        { ...base, id: "z", type: "number", measure: "count", collection: "page" },
+      ],
+    });
+    expect(r.status).toBe(200);
+    const res = r.body.results as Record<
+      string,
+      { data?: Record<string, unknown>; problems?: unknown[] }
+    >;
+    // The book made by the first test (Rayuela, «Leído», deleted and restored) counts as well.
+    expect(res.n?.data?.total).toBe(3);
+    const series = (res.b?.data?.series ?? []) as { points: { label: string; value: number }[] }[];
+    const bars = series[0]?.points;
+    expect(bars?.map((p) => [p.label, p.value])).toEqual([
+      ["Leído", 980],
+      ["Leyendo", 120],
+    ]);
+    expect(res.x?.problems).toEqual([
+      { block: "x", key: "groupBy", code: "not-in-data", value: "@month" },
+    ]);
+    expect(res.y?.problems).toEqual([
+      { block: "y", key: "groupBy", code: "not-in-data", value: "f_nada" },
+    ]);
+    expect(res.z?.problems?.[0]).toMatchObject({ key: "collection", code: "not-in-data" });
+    expect(
+      (await call(t, "POST", "/api/data/blocks", { blocks: [{ id: "h", type: "heading" }] }))
+        .status,
+    ).toBe(400);
+    expect((await call(t, "POST", "/api/data/blocks", { blocks: "todo" })).status).toBe(400);
+  });
 });

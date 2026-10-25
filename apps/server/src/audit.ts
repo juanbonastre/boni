@@ -29,15 +29,19 @@ export function setAuditSettings(store: UserStore, body: unknown): { userReads: 
   return auditSettings(store);
 }
 
-/** Records a read of Juan's own (a row opened, a table listed) when its collection's level asks for it. */
+/**
+ * Records a read of Juan's own (a row opened, a table listed, a page's numbers and charts computed from rows)
+ * when its collection's level asks for it; `only` narrows it to the fields that were used.
+ */
 export function recordUserRead(
   store: UserStore,
   device: string,
-  tool: "data.row" | "data.rows",
+  tool: "data.row" | "data.rows" | "data.blocks",
   type: string,
   ids: string[],
   withBody: boolean,
   now: number,
+  only?: readonly string[],
 ): void {
   const level = store.aiAccess()[type] ?? "visible";
   if (!auditSettings(store).userReads.includes(level)) return;
@@ -50,7 +54,9 @@ export function recordUserRead(
         entity: id,
         type,
         version: e.entity.version,
-        fields: Object.keys(e.entity.values).filter((f) => def.fields.some((x) => x.id === f)),
+        fields: Object.keys(e.entity.values).filter(
+          (f) => def.fields.some((x) => x.id === f) && (!only || only.includes(f)),
+        ),
         shapes: [],
         body: withBody && e.entity.body ? "text" : null,
         files: [],

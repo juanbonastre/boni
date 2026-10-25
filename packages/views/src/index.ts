@@ -1,3 +1,11 @@
+export {
+  type BlockResult,
+  blockChartSpec,
+  blockDateField,
+  catalogueData,
+  computeBlock,
+} from "./blockData.ts";
+export * from "./catalogue.ts";
 export * from "./chart.ts";
 export * from "./chartStyle.ts";
 export * from "./dates.ts";
@@ -6,7 +14,9 @@ export { filterErrors, matchesFilters } from "./filter.ts";
 export { blocksToMarkdown, leadingTitle, markdownToBlocks } from "./markdown.ts";
 export * from "./money.ts";
 export {
+  DATA_BLOCKS,
   DATABASE_LAYOUTS,
+  type DataBlock,
   type DatabaseFilter,
   type DatabaseView,
   emptyPage,
