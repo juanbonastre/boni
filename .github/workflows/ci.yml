@@ -47,7 +47,8 @@ jobs:
           echo "boni=$(has '^(apps/boni-web/|e2e-boni/|playwright\.boni\.config\.ts)')" >> "$GITHUB_OUTPUT"
           echo "desktop=$(has '^(apps/boni-web/|apps/boni-desktop/|apps/server/|packages/|e2e-boni-desktop/|playwright\.boni-desktop\.config\.ts)')" >> "$GITHUB_OUTPUT"
           # I-05 (docs/principios.md): every change to Boni's web app ships in a new desktop version.
-          if printf '%s\n' "$files" | grep -q '^apps/boni-web/src/' &&
+          # (its tests are not shipped: a test alone needs no new version)
+          if printf '%s\n' "$files" | grep '^apps/boni-web/src/' | grep -vqE '\.test\.tsx?$' &&
              ! git diff "origin/${{ github.base_ref }}...HEAD" -- apps/boni-desktop/package.json | grep -q '^+  "version"'; then
             echo "::error::apps/boni-web changed: bump apps/boni-desktop/package.json's version (docs/principios.md, I-05)"
             exit 1
