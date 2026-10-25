@@ -24,6 +24,7 @@ import {
   setWidth,
   type Where,
 } from "../core/grid.ts";
+import { PALETTE } from "../core/palette.ts";
 import { catText } from "../i18n.ts";
 import {
   blockId,
@@ -895,18 +896,41 @@ function ButtonLabel({
   );
 }
 
+/**
+ * A button: opens its screen empty, filled with its own values, or saves them at once (the block catalogue's
+ * «Al pulsarlo»). A button of the first pages runs its saved shortcut.
+ */
 function ActionButton({ block }: { block: Extract<Block, { type: "action" }> }) {
   const t = useStore((s) => s.t);
   const shortcuts = useStore((s) => s.shortcuts);
+  const legacy = block.shortcut ? shortcuts.find((s) => s.id === block.shortcut) : undefined;
+  const mode = block.shortcut ? (legacy?.mode ?? "open") : (block.mode ?? "empty");
+  const hex = block.shortcut
+    ? (legacy?.color ?? null)
+    : (PALETTE.find((c) => c.name === block.color)?.hex ?? null);
   const run = () => {
-    if (!block.shortcut) return openScreen(block.screen);
-    const sc = shortcuts.find((s) => s.id === block.shortcut);
-    if (sc) void runShortcut(sc);
-    else toast(t("shortcut.gone"));
+    if (block.shortcut) {
+      if (legacy) void runShortcut(legacy);
+      else toast(t("shortcut.gone"));
+      return;
+    }
+    if (mode === "empty") return openScreen(block.screen);
+    void runShortcut({
+      id: block.id,
+      label: block.label,
+      screen: block.screen,
+      values: block.values ?? {},
+      mode: mode === "save" ? "save" : "open",
+      color: hex,
+    });
   };
   return (
-    <button type="button" className={block.shortcut ? "pill" : "btn primary"} onClick={run}>
-      {!block.shortcut && <Plus size={15} strokeWidth={2} />}
+    <button type="button" className={mode === "empty" ? "btn primary" : "pill"} onClick={run}>
+      {mode === "empty" ? (
+        <Plus size={15} strokeWidth={2} />
+      ) : hex ? (
+        <span className="swatch" style={{ ["--c" as string]: hex }} aria-hidden="true" />
+      ) : null}
       {block.label}
     </button>
   );
@@ -1193,8 +1217,10 @@ function pick(choice: Choice, block: TextBlock, blocks: Block[], index: number) 
       const b = newBlock(choice.type, block.id, catalogueOf(useStore.getState().dataTypes));
       if (!b) return;
       const w = catalogueKind(choice.type)?.w ?? 12;
-      const at = block.at ?? { row: newRowId(blocks), col: 0, w };
-      putInstead({ ...b, at } as unknown as Block);
+      // A button goes in the page's flow, where buttons one after another share a row (only what they need).
+      const at =
+        block.at ?? (choice.type === "action" ? null : { row: newRowId(blocks), col: 0, w });
+      putInstead({ ...b, ...(at ? { at } : {}) } as unknown as Block);
       openBlockPanel(block.id);
       return;
     }
@@ -1284,7 +1310,7 @@ function useBlockItems(query: string): SlashItem[] {
         choice: { kind: k },
       })),
       { group: write, label: t("block.kind.page"), choice: { kind: "page" } },
-      ...CATALOGUE.filter((k) => k.settings.some((x) => x.key === "collection")).map(
+      ...CATALOGUE.filter((k) => k.type !== "heading" && k.type !== "text").map(
         (k): SlashItem => ({
           group: catText(t, k.group),
           label: catText(t, k.name),

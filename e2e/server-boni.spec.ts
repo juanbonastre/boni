@@ -127,10 +127,10 @@ async function connect(page: Page) {
   await expect(page.locator(".modal")).toContainText("En directo");
   await page.keyboard.press("Escape");
 }
-async function token() {
+async function token(device = "portatil-boni") {
   const r = await fetch(`${url}/api/login`, {
     method: "POST",
-    body: JSON.stringify({ user: "juan", password: PASSWORD, device: "portatil-boni" }),
+    body: JSON.stringify({ user: "juan", password: PASSWORD, device }),
   });
   return ((await r.json()) as { token: string }).token;
 }
@@ -345,6 +345,41 @@ test('"Apuntar gasto" with the movements in Boni: the movement goes into Boni, t
   // The only proposal is the earlier hand edit of the class; nothing of the capture.
   expect(JSON.stringify(inbox.proposals)).not.toContain("menu-con-lucia");
   expect(JSON.stringify(inbox.proposals)).not.toContain("Nota nueva");
+  // A shortcut that saves at once is counted at once; Undo in its notice takes the movement out (the same device).
+  const cafe = "5b1d2c3e-4f50-4a6b-8c7d-9e0f1a2b3c4d";
+  const saved = await fetch(`${url}/api/v1/actions`, {
+    method: "POST",
+    headers: h,
+    body: JSON.stringify({
+      action: "expenses.capture",
+      client_id: cafe,
+      values: {
+        kind: "gasto",
+        amount: 1.6,
+        account: "efectivo",
+        category: "comida/restaurante",
+        concept: "Cafe deshecho",
+        date: "2026-10-13",
+      },
+      created_at: new Date().toISOString(),
+    }),
+  });
+  expect(((await saved.json()) as { status: string }).status).toBe("ok");
+  const rowsNow = async () =>
+    JSON.stringify(
+      await (await fetch(`${url}/api/data/types/t_movimiento/rows`, { headers: h })).json(),
+    );
+  expect(await rowsNow()).toContain("Cafe deshecho");
+  const other = { authorization: `Bearer ${await token("movil-ejemplo")}` };
+  expect(
+    (await fetch(`${url}/api/v1/actions/${cafe}`, { method: "DELETE", headers: other })).status,
+  ).toBe(404);
+  const undone = await fetch(`${url}/api/v1/actions/${cafe}`, { method: "DELETE", headers: h });
+  expect(undone.status).toBe(200);
+  expect(await rowsNow()).not.toContain("Cafe deshecho");
+  expect(
+    (await fetch(`${url}/api/v1/actions/${cafe}`, { method: "DELETE", headers: h })).status,
+  ).toBe(422);
 });
 
 test("no more vault: the money's collections, then the account without its vault; the calendar and the money go on in Boni", async ({

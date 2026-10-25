@@ -308,6 +308,8 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  file into "Archivos" at the vault path it would have had, e.g. a bank statement), finanzas_import,
                  finanzas_close). Reads through the agent's view (`readStore`: levels and rules); writes only to what
                  is visible, labelled `model`.
+                 `DELETE /api/v1/actions/:id` (`undoAction`): a capture just saved, out again (its notice's Undo; the
+                 same device, `UNDO_MS`; only a movement kept in Boni, to its trash).
                  `src/money/`: the monthly reconciliation on Boni's own movements (ported from finanzas.py of the
                  gastos-app repo, 2026-10-23; procedure in the vault's registros/finanzas/procedimiento-conciliacion.md):
                  `sheets.ts` reads statements (CSV, .xlsx, the old .xls: OLE2 + BIFF8, no dependencies),

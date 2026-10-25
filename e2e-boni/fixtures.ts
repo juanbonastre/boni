@@ -424,6 +424,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         if (p.endsWith("/widgets") && method === "GET") return ok("widgets.json");
         if (p.includes("/widgets"))
           return [200, '{"id":"w-new","chart_id":"eating-out","size":"medium"}'];
+        // Undo of a capture just saved (apps/server/src/v1/service.ts undoAction).
+        if (/\/actions\/[^/]+$/.test(p) && method === "DELETE")
+          return [
+            200,
+            JSON.stringify({ status: "ok", message: "Deshecho", field_errors: {}, navigate: null }),
+          ];
         if (p.endsWith("/actions")) {
           if (opts.action === "offline") return null;
           return ok(

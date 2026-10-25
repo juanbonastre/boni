@@ -58,6 +58,19 @@ export function FormView({
     errorRef.current?.scrollIntoView({ block: "nearest" });
   }, [formError]);
 
+  // Opening the form puts the caret in the first field still to fill (the amount when capturing an expense), so
+  // Tab goes through the rest at once (Juan, 2026-10-24).
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    const first = fields.find(
+      (f) => f.required && F.isVisible(f, values) && !folded(f) && F.isEmpty(values[f.id] ?? null),
+    );
+    const el = first
+      ? formRef.current?.querySelector<HTMLElement>(`#f-${CSS.escape(first.id)}`)
+      : null;
+    el?.focus();
+  }, []);
+
   const set = (id: string, v: Json) => {
     setValues((vs) => ({ ...vs, [id]: v }));
     markPanelEdited();
@@ -82,6 +95,7 @@ export function FormView({
 
   return (
     <form
+      ref={formRef}
       className="form"
       onSubmit={(e) => {
         e.preventDefault();

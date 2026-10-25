@@ -34,6 +34,7 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "GET /api/v1/screens/:id": "tailnet",
   "GET /api/v1/options/:source": "tailnet",
   "POST /api/v1/actions": "tailnet",
+  "DELETE /api/v1/actions/:id": "tailnet",
   "GET /api/v1/charts": "tailnet",
   "POST /api/v1/charts": "tailnet",
   "GET /api/v1/charts/catalog": "tailnet",

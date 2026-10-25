@@ -42,6 +42,8 @@ export class NotFound extends Error {}
 export class Unavailable extends Error {}
 export { Invalid };
 
+/** How long a saved capture can be undone from its notice. */
+export const UNDO_MS = 10 * 60_000;
 export const QUEUED_MESSAGE = "Guardado en Boni: se escribira en cuanto vuelva la conexion";
 const VALUES_MONTHS = 24; // option lists made from movements look at the last 24 months
 const STATUSES: Record<string, string> = { pendiente: "Pendiente", conciliado: "Conciliado" };
@@ -101,6 +103,8 @@ export interface V1Options {
    * and says true; Boni's mirror then writes the note at `path` (never a proposal, it is Juan's own capture).
    */
   intoBoni?: (account: number, path: string, text: string, device: string) => boolean;
+  /** The movement a capture made in Boni, to the trash again (Undo); false when it is not Boni's. */
+  outOfBoni?: (account: number, path: string, device: string) => boolean;
   /**
    * The account's money from Boni itself when its movements live there (core mode): charts, lists and captures
    * read it instead of the vault's notes (Juan, 2026-10-23: no more vault). Null: the vault, as before.
@@ -117,6 +121,7 @@ export class V1Service {
   private listeners = new Map<number, Set<(what: Change) => void>>();
   private prints = new Map<number, string>();
   private intoBoni: V1Options["intoBoni"];
+  private outOfBoni: V1Options["outOfBoni"];
   private moneyOf: V1Options["moneyOf"];
 
   constructor(o: V1Options) {
@@ -124,6 +129,7 @@ export class V1Service {
     this.tz = o.tz;
     this.writable = o.writable;
     this.intoBoni = o.intoBoni;
+    this.outOfBoni = o.outOfBoni;
     this.moneyOf = o.moneyOf;
     this.nowMs = o.now ?? Date.now;
   }
@@ -440,6 +446,30 @@ export class V1Service {
       return result("queued", QUEUED_MESSAGE);
     }
     return this.process(c, req.client_id, true);
+  }
+
+  /**
+   * Undo of a capture just saved (a shortcut that saves at once, Juan 2026-10-25: counted at once, Undo takes it
+   * out): only the device that sent it, within `UNDO_MS`, and only a movement kept in Boni (to its trash).
+   */
+  undoAction(c: Caller, clientId: string): ActionResult {
+    const cap = this.store.capture(c.account, clientId);
+    if (!cap || cap.device !== c.device) throw new NotFound(clientId);
+    if (cap.status !== "written" || !cap.path)
+      throw new Invalid("Esta captura no se puede deshacer");
+    if (this.nowMs() - cap.created > UNDO_MS) throw new Invalid("Ya no se puede deshacer");
+    if (!this.outOfBoni?.(c.account, cap.path, c.device))
+      throw new Invalid("Esta captura no se puede deshacer");
+    const done = result("ok", "Deshecho");
+    this.store.finishCapture(
+      c.account,
+      clientId,
+      "undone",
+      done as unknown as Record<string, unknown>,
+      null,
+      null,
+    );
+    return done;
   }
 
   /** Writes the queued captures again (the vault was unreachable). Returns how many were written. */

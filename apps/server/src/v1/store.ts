@@ -41,6 +41,8 @@ export interface Capture {
   status: string;
   result: Record<string, unknown> | null;
   path: string | null;
+  /** When it reached the server (ms). */
+  created: number;
 }
 
 export class V1Store {
@@ -298,6 +300,7 @@ export class V1Store {
           status: string;
           result: string | null;
           path: string | null;
+          created: number;
         }
       | undefined;
     return r
@@ -309,6 +312,7 @@ export class V1Store {
           status: r.status,
           result: r.result ? JSON.parse(r.result) : null,
           path: r.path,
+          created: r.created,
         }
       : null;
   }

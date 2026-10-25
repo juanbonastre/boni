@@ -132,4 +132,7 @@ export class BoniApi {
       )
     ).options ?? [];
   action = (request: ActionRequest) => this.call<ActionResult>("POST", "actions", request);
+  /** Takes a capture just saved out again (its notice's Undo; the same device, minutes after). */
+  undoAction = (clientId: string) =>
+    this.call<ActionResult>("DELETE", `actions/${encodeURIComponent(clientId)}`);
 }

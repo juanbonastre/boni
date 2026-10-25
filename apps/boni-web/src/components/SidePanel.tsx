@@ -90,14 +90,17 @@ export function SidePanel() {
 /** A server screen in the panel: its form (the capture). */
 function ScreenPanel({ screen }: { screen: Screen }) {
   const t = useStore((s) => s.t);
+  // A button or shortcut that opens the form with data fills it in (as on the phone).
+  const filled = useStore((s) => (s.panel?.kind === "screen" ? s.panel : null));
   return (
     <div className="panel-body">
       {screen.components.map((c, i) => {
         if (c.type === "form") {
           return (
             <FormView
-              key={c.id}
+              key={`${c.id}:${filled?.shortcut ?? ""}`}
               form={c}
+              {...(filled?.values ? { initial: filled.values } : {})}
               today={todayIso()}
               loadOptions={optionList}
               onSubmit={async (values) => {
