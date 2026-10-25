@@ -51,8 +51,10 @@ export interface Setting {
   label: string;
   type: "text" | "choice" | "toggle" | "color";
   options?: readonly Option[] | DataOptions;
-  /** Only shown, and only allowed, when another setting has (or has not) one of these values. */
-  when?: { key: string; is?: readonly unknown[]; not?: readonly unknown[] };
+  /** Only shown, and only allowed, when other settings have (or have not) one of these values (all of them). */
+  when?: When | readonly When[];
+  /** What a choice left out means (shown chosen in the panel). */
+  default?: string | number;
   /** May be left out (a choice not made, a toggle off). */
   optional?: boolean;
   /** A text that must be there but may be empty (a paragraph being written). */
@@ -65,12 +67,18 @@ export interface Setting {
   ai?: string;
 }
 
+export interface When {
+  key: string;
+  is?: readonly unknown[];
+  not?: readonly unknown[];
+}
+
 export interface BlockKind {
   /** The block's `type` in a page. */
   type: string;
   /** Spanish, in the «+» menu and the panel's title. */
   name: string;
-  group: "Cifras y gráficas" | "Para escribir" | "Tus datos" | "Botones";
+  group: "Cifras y gráficas" | "Para escribir" | "Tus datos" | "Botones" | "De Boni";
   /** Its width in twelfths when added, and whether its height can be chosen (charts). */
   w: number;
   h?: Height;
@@ -150,6 +158,52 @@ export const COLORS = [
 ] as const;
 
 const TITLE: Setting = { key: "title", label: "Nombre", type: "text", max: 120, section: "data" };
+/** A data block's name may be left empty: it shows what it counts («Gasto», the collection's name). */
+const DATA_TITLE: Setting = { ...TITLE, optional: true };
+const TITLE_OPTIONAL = DATA_TITLE;
+const FROM_COLLECTION: When = { key: "from", not: ["boni"] };
+/** Boni's own numbers (its models and what they did), by name: computed by the code, never a query. */
+export const BONI_SOURCES = {
+  number: [
+    { value: "spend", label: "Gasto de los modelos" },
+    { value: "calls", label: "Llamadas a modelos" },
+    { value: "reads", label: "Registros que vieron las IAs" },
+    { value: "writes", label: "Cambios que hicieron las IAs" },
+  ],
+  bars: [
+    { value: "callsByModel", label: "Llamadas por modelo" },
+    { value: "spendByModel", label: "Gasto por modelo" },
+    { value: "readsByType", label: "Lecturas de las IAs por colección" },
+    { value: "whoEdits", label: "Quién edita" },
+  ],
+  graph: [
+    { value: "spendByDay", label: "Gasto por día, por modelo" },
+    { value: "readsByDay", label: "Lecturas y ediciones por día" },
+  ],
+} as const satisfies Record<string, readonly Option[]>;
+const FROM = (kind: keyof typeof BONI_SOURCES): Setting[] => [
+  {
+    key: "from",
+    label: "Datos de",
+    type: "choice",
+    options: [
+      { value: "collection", label: "Una colección" },
+      { value: "boni", label: "Boni (modelos y actividad)" },
+    ],
+    optional: true,
+    default: "collection",
+    section: "data",
+    ai: "collection (the default) or boni (Boni's own numbers: its models and what they did)",
+  },
+  {
+    key: "source",
+    label: "Qué",
+    type: "choice",
+    options: BONI_SOURCES[kind],
+    when: { key: "from", is: ["boni"] },
+    section: "data",
+  },
+];
 const BG: Setting = {
   key: "bg",
   label: "Con fondo",
@@ -159,75 +213,84 @@ const BG: Setting = {
 };
 
 /** The settings that say what a number, a bar list or a chart counts, in which rows and when. */
-const dataSettings = (group: DataOptions | null): Setting[] => [
-  {
-    key: "collection",
-    label: "Colección",
-    type: "choice",
-    options: "collections",
-    section: "data",
-  },
-  ...(group
-    ? [
-        {
-          key: "groupBy",
-          label: "Agrupar",
-          type: "choice" as const,
-          options: group,
-          section: "data" as const,
-          ai:
-            group === "timeOrGroupFields"
-              ? "@day|@week|@month (by time) or a select field of the collection"
-              : "a select field of the collection",
-        },
-      ]
-    : []),
-  { key: "measure", label: "Qué cuenta", type: "choice", options: MEASURES, section: "data" },
-  {
-    key: "field",
-    label: "De",
-    type: "choice",
-    options: "numberFields",
-    when: { key: "measure", not: ["count"] },
-    section: "data",
-    ai: "a number field of the collection",
-  },
-  {
-    key: "period",
-    label: "Periodo",
-    type: "choice",
-    options: "periods",
-    section: "data",
-    ai: "month|30d|12m|year|all (only all for a collection without a date field)",
-  },
-  {
-    key: "date",
-    label: "Fecha que cuenta",
-    type: "choice",
-    options: "dateFields",
-    optional: true,
-    section: "filter",
-    ai: "a date field of the collection; the first one when left out",
-  },
-  {
-    key: "filterField",
-    label: "Solo las filas con",
-    type: "choice",
-    options: "filterFields",
-    optional: true,
-    section: "filter",
-    ai: "a select field of the collection; all rows when left out",
-  },
-  {
-    key: "filterValue",
-    label: "Igual a",
-    type: "choice",
-    options: "filterValues",
-    when: { key: "filterField", not: [undefined, ""] },
-    section: "filter",
-    ai: "one of that field's options, by its id as listed in Data",
-  },
-];
+const dataSettings = (group: DataOptions | null): Setting[] =>
+  collectionOnly([
+    {
+      key: "collection",
+      label: "Colección",
+      type: "choice",
+      options: "collections",
+      section: "data",
+    },
+    ...(group
+      ? [
+          {
+            key: "groupBy",
+            label: "Agrupar",
+            type: "choice" as const,
+            options: group,
+            section: "data" as const,
+            ai:
+              group === "timeOrGroupFields"
+                ? "@day|@week|@month (by time) or a select field of the collection"
+                : "a select field of the collection",
+          },
+        ]
+      : []),
+    { key: "measure", label: "Qué cuenta", type: "choice", options: MEASURES, section: "data" },
+    {
+      key: "field",
+      label: "De",
+      type: "choice",
+      options: "numberFields",
+      when: { key: "measure", not: ["count"] },
+      section: "data",
+      ai: "a number field of the collection",
+    },
+    {
+      key: "period",
+      label: "Periodo",
+      type: "choice",
+      options: "periods",
+      section: "data",
+      ai: "month|30d|12m|year|all (only all for a collection without a date field)",
+    },
+    {
+      key: "date",
+      label: "Fecha que cuenta",
+      type: "choice",
+      options: "dateFields",
+      optional: true,
+      section: "filter",
+      ai: "a date field of the collection; the first one when left out",
+    },
+    {
+      key: "filterField",
+      label: "Solo las filas con",
+      type: "choice",
+      options: "filterFields",
+      optional: true,
+      section: "filter",
+      ai: "a select field of the collection; all rows when left out",
+    },
+    {
+      key: "filterValue",
+      label: "Igual a",
+      type: "choice",
+      options: "filterValues",
+      when: { key: "filterField", not: [undefined, ""] },
+      section: "filter",
+      ai: "one of that field's options, by its id as listed in Data",
+    },
+  ]);
+/** Settings of a collection's data apply only when the block's data come from a collection. */
+const collectionOnly = (list: Setting[]): Setting[] =>
+  list.map((s) => ({
+    ...s,
+    when: s.when
+      ? [FROM_COLLECTION, ...(Array.isArray(s.when) ? s.when : [s.when])]
+      : FROM_COLLECTION,
+  }));
 
 export const CATALOGUE: readonly BlockKind[] = [
   {
@@ -236,7 +299,7 @@ export const CATALOGUE: readonly BlockKind[] = [
     group: "Cifras y gráficas",
     w: 3,
     ai: "one big number: a count, sum or average of a collection's rows in a period",
-    settings: [TITLE, ...dataSettings(null), BG],
+    settings: [DATA_TITLE, ...FROM("number"), ...dataSettings(null), BG],
     defaults: { title: "Cifra", measure: "count", period: "month", bg: true },
   },
   {
@@ -245,7 +308,7 @@ export const CATALOGUE: readonly BlockKind[] = [
     group: "Cifras y gráficas",
     w: 6,
     ai: "a ranked list with a bar per value of a select field (a category, a person)",
-    settings: [TITLE, ...dataSettings("groupFields"), BG],
+    settings: [DATA_TITLE, ...FROM("bars"), ...dataSettings("groupFields"), BG],
     defaults: { title: "Lista de barras", measure: "count", period: "month" },
   },
   {
@@ -256,9 +319,12 @@ export const CATALOGUE: readonly BlockKind[] = [
     h: "m",
     ai: "a chart over time (@day|@week|@month) or by a select field; donut for few parts of a whole",
     settings: [
-      TITLE,
-      { key: "shape", label: "Forma", type: "choice", options: SHAPES, section: "look" },
-      { key: "color", label: "Color", type: "color", optional: true, section: "look" },
+      DATA_TITLE,
+      ...FROM("graph"),
+      ...collectionOnly([
+        { key: "shape", label: "Forma", type: "choice", options: SHAPES, section: "look" },
+        { key: "color", label: "Color", type: "color", optional: true, section: "look" },
+      ]),
       ...dataSettings("timeOrGroupFields"),
       BG,
     ],
@@ -305,6 +371,45 @@ export const CATALOGUE: readonly BlockKind[] = [
     ],
     defaults: { text: "" },
   },
+  {
+    type: "models",
+    name: "Tarjetas de modelo",
+    group: "De Boni",
+    w: 7,
+    ai: "Boni's uses (planner, reader, decider, reviewer), each with its model and what it spent; a click opens it",
+    settings: [TITLE_OPTIONAL],
+    defaults: {},
+  },
+  {
+    type: "model-keys",
+    name: "Claves",
+    group: "De Boni",
+    w: 7,
+    ai: "the connections to the model providers and their keys (never shown)",
+    settings: [],
+    defaults: {},
+  },
+  {
+    type: "link",
+    name: "Enlace",
+    group: "De Boni",
+    w: 12,
+    ai: "a row that opens another of Boni's screens",
+    settings: [
+      TITLE_OPTIONAL,
+      {
+        key: "to",
+        label: "Lleva a",
+        type: "choice",
+        options: [
+          { value: "activity", label: "Actividad" },
+          { value: "audit", label: "Auditoría" },
+        ],
+        section: "data",
+      },
+    ],
+    defaults: { to: "activity" },
+  },
 ];
 
 const NO_DATA: CatalogueData = { collections: [] };
@@ -316,11 +421,13 @@ type Block = Readonly<Record<string, unknown>>;
 
 /** Whether a setting applies to a block as it is now (a setting that does not is not allowed on it either). */
 export function applies(s: Setting, block: Block): boolean {
-  if (!s.when) return true;
-  const v = block[s.when.key];
-  if (s.when.is) return s.when.is.includes(v);
-  if (s.when.not) return !s.when.not.includes(v);
-  return true;
+  const all = (!s.when ? [] : Array.isArray(s.when) ? s.when : [s.when]) as readonly When[];
+  return all.every((w) => {
+    const v = block[w.key];
+    if (w.is) return w.is.includes(v);
+    if (w.not) return !w.not.includes(v);
+    return true;
+  });
 }
 
 const fieldsOf = (data: CatalogueData, block: Block) =>
@@ -451,20 +558,18 @@ export function fitAfter(
       delete b[s.key];
       continue;
     }
-    if (s.type !== "choice" || typeof s.options !== "string") continue;
+    if (s.type !== "choice") continue;
     const opts = optionsOf(s, b, data);
     if (opts.some((o) => o.value === b[s.key])) continue;
+    // A sum or an average of a collection with no number field cannot be: it counts rows.
+    if (s.key === "field" && !opts[0]) {
+      b.measure = "count";
+      delete b.field;
+      continue;
+    }
     if (s.optional || !opts[0]) delete b[s.key];
     else b[s.key] = opts[0].value;
   }
-  // A sum or an average of a collection with no number field cannot be: it counts rows.
-  if (
-    b.measure &&
-    b.measure !== "count" &&
-    b.field === undefined &&
-    kind.settings.some((s) => s.key === "field")
-  )
-    b.measure = "count";
   return b;
 }
 
@@ -491,12 +596,16 @@ export function newBlock(
   return b;
 }
 
-const whenText = (w: NonNullable<Setting["when"]>) =>
-  w.is
-    ? `${w.key} is ${w.is.map(String).join("|")}`
-    : w.not?.some((x) => x === undefined)
-      ? `${w.key} is set`
-      : `${w.key} is not ${(w.not ?? []).map(String).join("|")}`;
+const whenText = (when: NonNullable<Setting["when"]>) =>
+  ((Array.isArray(when) ? when : [when]) as readonly When[])
+    .map((w) =>
+      w.is
+        ? `${w.key} is ${w.is.map(String).join("|")}`
+        : w.not?.some((x) => x === undefined)
+          ? `${w.key} is set`
+          : `${w.key} is not ${(w.not ?? []).map(String).join("|")}`,
+    )
+    .join(" and ");
 
 /**
  * The catalogue as an AI is told it: the same kinds and settings the user's panel shows (sizes included),

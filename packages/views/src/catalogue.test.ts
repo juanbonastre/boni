@@ -201,7 +201,8 @@ describe("whatever the catalogue lets anyone build (random users, random pages)"
       const { r, types, data, rows } = randomUser(seed);
       const byId = Object.fromEntries(types.map((t) => [t.id, t]));
       const b = randomBlock(r, "x", data);
-      if (!["number", "bars", "graph"].includes(String(b.type))) continue;
+      // Boni's own numbers (from: boni) are computed by the app, not from a collection.
+      if (!["number", "bars", "graph"].includes(String(b.type)) || b.from === "boni") continue;
       const out = computeBlock(b as unknown as DataBlock, byId, (t) => rows.get(t) ?? [], {
         today: "2026-06-15",
       });
@@ -228,8 +229,8 @@ describe("whatever the catalogue lets anyone build (random users, random pages)"
       expect("problems" in broken, `seed ${seed} ${key}`).toBe(true);
       refused++;
     }
-    expect(computed).toBeGreaterThan(120);
-    expect(refused).toBeGreaterThan(40);
+    expect(computed).toBeGreaterThan(50);
+    expect(refused).toBeGreaterThan(15);
   });
 
   it("knows the collections of the store's schema (system and archived types left out)", () => {

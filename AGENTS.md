@@ -82,6 +82,7 @@ packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed
                  is told (`catalogueForAI`). A setting added there reaches all three. Blocks sit on a grid of 12
                  columns (`at: { row, col, w, h }`; a row's columns add up to at most 12). `blockData.ts`: a data
                  block (number, bars, graph) computed from a collection with the chart engine (`computeBlock`).
+                 `systemPages.ts`: Boni's screens as pages of blocks («Modelos»; `systemPage`, `systemChanges`).
                  `randomPage.test-util.ts`: random users and random pages from the catalogue (300 seeds must be
                  valid and compute; a broken setting must give problems, never a chart).
                  `markdown.ts`: a note's Markdown as the page editor's blocks and back (`markdownToBlocks`,
@@ -270,6 +271,8 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `src/blocks.ts`: a page's data blocks computed from the user's collections (`POST
                  /api/data/blocks`, a personal device; each block's numbers or its problems; a read of the rows
                  used, audited like a table listed, only the fields used).
+                 `src/pages.ts`: Boni's screens as pages too (`/api/pages/system/:name`: Boni's version unless the
+                 account changed it, kept in the store's settings; DELETE restores it).
                  `src/pages.ts`: the user's pages (system type `page` in the user's store, `/api/pages`): nothing
                  fixed on screen, the sidebar and the start are what the user makes; `seedFromV1` gives an account
                  that used the first Boni, once, a page "Gastos" with what its home showed.
@@ -353,7 +356,9 @@ apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`lega
                  Pages on a grid of 12 (`core/grid.ts`: rows of columns,
                  moves and widths, pure) with the block catalogue's data blocks (`components/DataBlockView.tsx`,
                  `POST /api/data/blocks`) and each block's panel drawn from the catalogue (`components/BlockPanel.tsx`).
-                 «Modelos» (`components/Models.tsx`, over
+                 Boni's own blocks (`components/BoniBlocks.tsx`, numbers from its models and audit) and its screens as
+                 pages (`components/SystemPage.tsx`: «Modelos», «De Boni» / «Modificada», restore).
+                 «Modelos»'s parts (`components/Models.tsx`, over
                  `/api/agent/models*`): each role's model, spending and budget, keys, evaluate and use. The server serves the built app at `/boni/` on
                  the tailnet entry (`BONI_BONI_WEB`).
 apps/boni-android/ Boni's Android app (moved from `legacy/boni/apps/android` on 2026-10-23), the same shape as

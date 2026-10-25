@@ -19,12 +19,16 @@ type Indent = { indent?: 1 | 2 | 3 | 4 };
 export interface DataBlock {
   id: string;
   type: "number" | "bars" | "graph";
-  title: string;
-  collection: string;
-  measure: "count" | "sum" | "avg";
+  /** Empty: it shows what it counts. */
+  title?: string;
+  /** "boni": one of Boni's own numbers (`source`, catalogue.ts BONI_SOURCES), computed by the app. */
+  from?: "collection" | "boni";
+  source?: string;
+  collection?: string;
+  measure?: "count" | "sum" | "avg";
   field?: string;
   groupBy?: string;
-  period: "month" | "30d" | "12m" | "year" | "all";
+  period?: "month" | "30d" | "12m" | "year" | "all";
   date?: string;
   filterField?: string;
   filterValue?: string;
@@ -33,6 +37,8 @@ export interface DataBlock {
   bg?: boolean;
 }
 export const DATA_BLOCKS = ["number", "bars", "graph"] as const;
+/** Blocks of Boni's own (its models, a link to its screens), from the block catalogue. */
+export const BONI_BLOCKS = ["models", "model-keys", "link"] as const;
 
 export type PageBlock = (
   | ({ id: string; type: "heading"; text: string; level?: 1 | 2 | 3 } & Indent)
@@ -54,6 +60,9 @@ export type PageBlock = (
   | { id: string; type: "database"; source: string; view: DatabaseView }
   | { id: string; type: "action"; screen: string; label: string; shortcut?: string }
   | DataBlock
+  | { id: string; type: "models"; title?: string }
+  | { id: string; type: "model-keys" }
+  | { id: string; type: "link"; title?: string; to: "activity" | "audit" }
 ) & {
   /** Its place on the page's grid of 12 columns; a block without one is a row of its own, the whole width. */
   at?: Place;
@@ -141,6 +150,7 @@ export const PAGE_BLOCKS = [
   "database",
   "action",
   ...DATA_BLOCKS,
+  ...BONI_BLOCKS,
 ] as const;
 export const PAGE_LIMITS = {
   blocks: 1000,
@@ -331,6 +341,9 @@ export function pageErrors(spec: unknown): string[] {
       case "number":
       case "bars":
       case "graph":
+      case "models":
+      case "model-keys":
+      case "link":
         for (const p of catalogueErrors(b))
           errors.push(
             `${w}: ${p.key ? `${p.key} ` : ""}${p.code === "missing" ? "is missing" : p.code === "not-allowed" ? "is not allowed here" : "is not valid"}`,

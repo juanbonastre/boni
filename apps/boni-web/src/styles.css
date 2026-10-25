@@ -2990,8 +2990,15 @@ span.page-icon {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   column-gap: 16px;
-  align-items: start;
+  align-items: stretch;
   margin: 10px 0;
+}
+/* Numbers side by side are as tall as the tallest (one with a bar under it). */
+.grid-col > .blk-number:only-child {
+  flex: 1;
+}
+.grid-col > .blk-number:only-child > .kpi {
+  height: 100%;
 }
 .grid-col {
   grid-column: span var(--span, 12);
@@ -2999,6 +3006,12 @@ span.page-icon {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  /* What is inside a column fits the column (the use cards go one under another in a narrow one). */
+  container-type: inline-size;
+}
+/* The grid measures the page, not the window: a side panel beside it narrows it. */
+.content.page-doc {
+  container-type: inline-size;
 }
 .grid-col > .doc-actions,
 .grid-col > .doc-charts {
@@ -3009,7 +3022,7 @@ span.page-icon {
   left: 0;
   top: -26px;
 }
-/* On a narrow window the columns go one under another. */
+/* On a narrow page the columns go one under another. */
 @container (max-width: 640px) {
   .grid-row {
     grid-template-columns: minmax(0, 1fr);
@@ -5388,6 +5401,8 @@ button.ghost-open:hover {
   .models-view > .side-panel {
     position: absolute;
     inset: 0;
+    /* Over the page's blocks (a block with the focus rises to 30). */
+    z-index: 40;
     width: auto;
     border-left: 0;
   }
@@ -5519,7 +5534,8 @@ button.kpi[aria-expanded="true"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
-@container (max-width: 520px) {
+/* Two use cards side by side while each has room (about 190 px); one under another below. */
+@container (max-width: 400px) {
   .uses {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -5867,6 +5883,8 @@ button.audit-tr:hover {
   .models-view > .side-panel {
     position: absolute;
     inset: 0;
+    /* Over the page's blocks (a block with the focus rises to 30). */
+    z-index: 40;
     width: auto;
     border-left: 0;
   }
@@ -6019,4 +6037,97 @@ button.audit-tr:hover {
   gap: 3px;
   color: var(--accent);
   font-size: 12px;
+}
+
+/* One of Boni's screens as a page («Modelos»): its name, «De Boni» or «Modificada» with what changed. */
+.content.page-doc.system-page .doc {
+  width: min(1100px, 100%);
+}
+.system-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin: 0 0 18px;
+}
+.system-title {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.system-pill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.system-pill.changed {
+  cursor: pointer;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+.system-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.system-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.system-changes-head {
+  margin: 0;
+  font-weight: 600;
+  font-size: 14px;
+}
+.system-changes ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.system-changes li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.system-change-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.system-sign {
+  width: 14px;
+  flex: none;
+  text-align: center;
+  font-weight: 700;
+  color: var(--muted);
+}
+.system-sign.add {
+  color: var(--good);
+}
+.system-sign.remove {
+  color: var(--bad);
+}
+.system-changes .btn {
+  align-self: flex-start;
 }

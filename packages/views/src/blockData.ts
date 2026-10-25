@@ -9,7 +9,7 @@ import type { DataBlock } from "./page.ts";
  * collections with the chart engine (chart.ts, entities.ts), so it gives the same numbers as any other chart.
  */
 
-const PERIOD: Record<DataBlock["period"], Period> = {
+const PERIOD: Record<NonNullable<DataBlock["period"]>, Period> = {
   month: { kind: "this_month" },
   "30d": { kind: "last_days", days: 30 },
   "12m": { kind: "last_months", months: 12 },
@@ -20,13 +20,14 @@ const GRANULARITY = { "@day": "day", "@week": "week", "@month": "month" } as con
 
 /** The engine's chart for a data block. */
 export function blockChartSpec(b: DataBlock): ChartSpec {
-  const measure = b.measure === "count" || !b.field ? "count" : `${b.measure}:${b.field}`;
+  const measure =
+    !b.measure || b.measure === "count" || !b.field ? "count" : `${b.measure}:${b.field}`;
   const time =
     b.groupBy && b.groupBy in GRANULARITY
       ? GRANULARITY[b.groupBy as keyof typeof GRANULARITY]
       : null;
   return {
-    title: b.title,
+    title: b.title || "—",
     kind: b.type === "number" ? "number" : b.type === "bars" ? "hbar" : (b.shape ?? "bar"),
     measure,
     x:
@@ -35,7 +36,7 @@ export function blockChartSpec(b: DataBlock): ChartSpec {
         : time
           ? { field: "date", granularity: time }
           : { field: b.groupBy },
-    period: PERIOD[b.period],
+    period: PERIOD[b.period ?? "all"],
     filters:
       b.filterField && b.filterValue
         ? [{ field: b.filterField, op: "in", values: [b.filterValue] }]
@@ -86,7 +87,10 @@ export function computeBlock(
 ): BlockResult {
   const problems = catalogueErrors(b, catalogueData(Object.values(types)));
   if (problems.length) return { problems };
-  const def = types[b.collection] as TypeDef;
+  // Boni's own numbers are the app's (from its models and audit), not a collection's.
+  if (b.from === "boni")
+    return { problems: [{ block: b.id, key: "from", code: "not-allowed", value: "boni" }] };
+  const def = types[b.collection ?? ""] as TypeDef;
   const dateField = blockDateField(b, def);
   const rows = entities(def.id);
   try {

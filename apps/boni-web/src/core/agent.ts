@@ -2,8 +2,10 @@ import {
   type DatabaseFilter,
   emptyPage,
   filterErrors,
+  isSystemPage,
   type PageSpec,
   pageErrors,
+  type SystemPage,
 } from "@boni/views";
 import { ApiError, NotConfiguredError, OfflineError, type Transport } from "./api.ts";
 import {
@@ -779,6 +781,18 @@ function parsePage(b: unknown): Page | null {
   return { ...i, spec };
 }
 
+/** One of Boni's screens as a page (packages/views systemPages.ts): Boni's, or the user's changed version. */
+export interface SystemPageView {
+  name: SystemPage;
+  spec: PageSpec;
+  modified: boolean;
+}
+function parseSystemPage(b: unknown): SystemPageView | null {
+  const v = isObj(b) ? b.page : null;
+  if (!isObj(v) || !isSystemPage(v.name) || pageErrors(v.spec).length) return null;
+  return { name: v.name, spec: v.spec as PageSpec, modified: v.modified === true };
+}
+
 /** A collection of the user's as a database (plan PR 19): its fields, and its rows. */
 export interface DataField {
   id: string;
@@ -1175,6 +1189,12 @@ export class AgentApi {
     },
   ) =>
     parsePage((await this.call("PUT", `/${encodeURIComponent(id)}`, input, "api/pages")) as never);
+  systemPage = async (name: SystemPage) =>
+    parseSystemPage(await this.call("GET", `/system/${name}`, undefined, "api/pages"));
+  saveSystemPage = async (name: SystemPage, spec: PageSpec) =>
+    parseSystemPage(await this.call("PUT", `/system/${name}`, { spec }, "api/pages"));
+  restoreSystemPage = async (name: SystemPage) =>
+    parseSystemPage(await this.call("DELETE", `/system/${name}`, undefined, "api/pages"));
   trash = async (): Promise<(PageInfo & { deleted: number })[]> => {
     const b = await this.call("GET", "", undefined, "api/pages-trash");
     return isObj(b) && Array.isArray(b.pages)

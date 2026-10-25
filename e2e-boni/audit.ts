@@ -95,6 +95,7 @@ export const MODELS_TEXT = {
     nav: "Modelos",
     conns: /^Claves/,
     budget: "Cambiar el presupuesto",
+    spending: "Gasto y presupuesto…",
     change: "Cambiar",
     cases: "Ver los casos",
     activity: "Actividad",
@@ -105,6 +106,7 @@ export const MODELS_TEXT = {
     nav: "Models",
     conns: /^Keys/,
     budget: "Change the budget",
+    spending: "Spending and budget…",
     change: "Change",
     cases: "See the cases",
     activity: "Activity",
@@ -119,8 +121,13 @@ export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], whe
   await page.locator(".sidebar").getByRole("button", { name: l.nav }).click();
   await page.locator(".use-card").first().waitFor();
   issues.push(...(await audit(page, `${where} models`)));
-  await page.locator("button.kpi").first().click();
+  // The spending number's menu opens its breakdown and the budget in the panel; the keys open in place.
+  await page.locator(".kpi").first().click();
+  issues.push(...(await audit(page, `${where} models number menu`)));
+  await page.getByRole("menuitemradio", { name: l.spending }).click();
   await page.getByRole("button", { name: l.budget }).click();
+  issues.push(...(await audit(page, `${where} models spending`)));
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: l.conns }).click();
   issues.push(...(await audit(page, `${where} models opened`)));
   const cards = page.locator(".use-card");

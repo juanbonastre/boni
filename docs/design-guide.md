@@ -254,6 +254,13 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   list). Dragging a number's or chart's right edge changes its width in columns (a chart's corner, also its height:
   low, medium, high). A value that is not in the user's data (a field removed, an AI's mistake) is shown in the
   block («No se puede mostrar: …», «Modifícalo») and in the panel as it is, marked, never as another value.
+- **Boni's screens as pages** (Juan, 2026-10-24; `packages/views/src/systemPages.ts`, `components/SystemPage.tsx`):
+  «Modelos» is a page of blocks that comes with Boni (its numbers, the uses, the keys, spending by day and by model,
+  a link to Actividad), edited like any page. Beside its name, «De Boni»; once changed, «Modificada», which opens the
+  list of changes (+ added, − removed, ✎ changed, ⤢ another size, ↕ where the blocks are) and «Restaurar la de
+  Boni» (Undo in the notice). The account keeps the changed page (every device). Boni's own blocks («De Boni» in
+  the catalogue: Boni's numbers by name, «Tarjetas de modelo», «Claves», «Enlace») can go on any page too; a use
+  opens its panel on the right, the spending number's menu «Gasto y presupuesto…».
 - **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`): "/" + a collection's name puts it on a
   page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Opciones" (sort, a board's
   grouping select, a calendar's date, visible properties) and "Nuevo". Table: the title column first, 34 px rows,

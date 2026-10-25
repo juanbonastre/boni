@@ -11,8 +11,8 @@ import {
 import { openApp, recorded } from "./fixtures.ts";
 
 /**
- * «Modelos» (Juan, 2026-10-24): a dashboard. The month's numbers, the four uses with the model in large type, the
- * charts beside them; a click opens the detail (the spending tile its breakdown and the budget, a use its panel).
+ * «Modelos» (Juan, 2026-10-24): a page of Boni's blocks. The month's numbers, the four uses with the model in large
+ * type, the charts beside them; a use opens its panel, the spending number its breakdown and budget (from its menu).
  */
 const SHOTS = "e2e-boni/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -31,7 +31,7 @@ test("the month's numbers, each use with its model, and the charts; a click show
   await expect(page.locator(".topbar h1")).toHaveText("Modelos");
   const kpis = page.locator(".kpi");
   await expect(kpis).toHaveCount(4);
-  const spend = page.locator("button.kpi").first();
+  const spend = page.locator(".kpi").first();
   await expect(spend).toContainText("3,42 €");
   await expect(spend).toContainText("de 10,00 €");
   await expect(kpis.nth(1)).toContainText("554");
@@ -51,7 +51,9 @@ test("the month's numbers, each use with its model, and the charts; a click show
   ]);
   await page.screenshot({ path: `${SHOTS}/models.png` });
 
+  // A click on the number opens its menu (as every block's); the spending and budget open from it.
   await spend.click();
+  await page.getByRole("menuitemradio", { name: "Gasto y presupuesto…" }).click();
   const more = page.locator(".models-spend");
   await expect(more).toContainText("Evaluación: Lector · deepseek-v4.1-flash");
   await expect(more).toContainText("512 llamadas · 3 sin precio conocido");
@@ -187,12 +189,13 @@ test("the budget and a key: changed from the page, the key never shown", async (
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  await page.locator("button.kpi").first().click();
+  await page.locator(".kpi").first().click();
+  await page.getByRole("menuitemradio", { name: "Gasto y presupuesto…" }).click();
   await page.getByRole("button", { name: "Cambiar el presupuesto" }).click();
   await page.getByRole("textbox", { name: "Al mes (€)" }).fill("15");
   await page.getByRole("textbox", { name: "Avisar al (%)" }).fill("90");
   await page.getByRole("button", { name: "Guardar", exact: true }).click();
-  await expect(page.locator("button.kpi").first()).toContainText("de 15,00 €");
+  await expect(page.locator(".kpi").first()).toContainText("de 15,00 €");
   await expect(page.locator(".models-spend")).toContainText("aviso al 90 %");
 
   await page.getByRole("button", { name: /^Claves/ }).click();
@@ -208,4 +211,36 @@ test("the budget and a key: changed from the page, the key never shown", async (
     'PUT api/agent/models/budget {"monthlyEur":15,"warnAt":0.9,"usdToEur":0.9}',
     'PUT api/agent/models/keys/typesafe {"key":"clave-inventada-de-ejemplo-123"}',
   ]);
+});
+
+test("«Modelos» is a page of blocks: modified, its changes listed, restored as Boni's with Undo", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: { "GET api/agent/models": [MODELS], "GET api/data/audit/summary": [AUDIT_SUMMARY] },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  const pill = page.locator(".system-head .system-pill");
+  await expect(pill).toHaveText("De Boni");
+  // The keys block is all one button: its menu opens with a right click (or its handle); deleting it makes the
+  // page the user's.
+  const keys = page.locator(".blk-model-keys");
+  await keys.click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Borrar" }).click();
+  await expect(keys).toHaveCount(0);
+  await expect(pill).toHaveText("Modificada");
+  await expect
+    .poll(async () => (await requests(page, "PUT api/pages/system/models")).length)
+    .toBe(1);
+  await pill.click();
+  await expect(page.locator(".system-changes li")).toHaveText(["−Quitado: Claves"]);
+  await page.screenshot({ path: `${SHOTS}/models-modified.png` });
+  await page.getByRole("button", { name: "Restaurar la de Boni" }).click();
+  await expect(pill).toHaveText("De Boni");
+  await expect(keys).toHaveCount(1);
+  expect(await requests(page, "DELETE api/pages/system/models")).toHaveLength(1);
+  // Undo in the notice: the user's version again.
+  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
+  await expect(keys).toHaveCount(0);
+  await expect(pill).toHaveText("Modificada");
 });

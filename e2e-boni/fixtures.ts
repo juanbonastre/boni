@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
+import { systemPage } from "../packages/views/src/systemPages.ts";
 
 /** The server's documented answers (`api/examples`): the fake server below answers with them. */
 const DIR = join(import.meta.dirname, "..", "apps", "boni-web", "api", "examples");
@@ -71,7 +72,7 @@ export const PAGE_FROM_HOME: FakePage = {
 export async function openApp(page: Page, url = "/", opts: Options = {}): Promise<void> {
   const pages = opts.pages === undefined ? [PAGE_FROM_HOME] : opts.pages;
   await page.addInitScript(
-    ({ examples, opts, pages }) => {
+    ({ examples, opts, pages, boniModels }) => {
       const w = window as unknown as Record<string, unknown>;
       const record = (key: string, v: string) => {
         const list = (w[key] as string[] | undefined) ?? [];
@@ -96,6 +97,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         layerAvailable: true,
       };
       const agentCalls: Record<string, number> = {};
+      let modelsPage: unknown = null;
       let ghosts = opts.ghosts ?? [];
       // The inbox as the server keeps it: accepting or rejecting a proposal takes it out.
       let inbox = (
@@ -344,6 +346,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             200,
             JSON.stringify({ pages: trash.map((x) => ({ ...x, spec: undefined, deleted: 1 })) }),
           ];
+        // Boni's screens as pages (apps/server/src/pages.ts): Boni's until changed, the account's after.
+        if (p === "api/pages/system/models") {
+          if (method === "PUT") modelsPage = ((body ?? {}) as { spec?: unknown }).spec ?? null;
+          if (method === "DELETE") modelsPage = null;
+          const spec = modelsPage ?? boniModels;
+          const modified =
+            modelsPage !== null && JSON.stringify(modelsPage) !== JSON.stringify(boniModels);
+          return [200, JSON.stringify({ page: { name: "models", spec, modified } })];
+        }
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         if (p === "api/agent/proposals" && inbox)
           return [200, JSON.stringify({ proposals: inbox })];
@@ -510,7 +521,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         widgetHide: () => record("__calls", "hide"),
       };
     },
-    { examples: EXAMPLES, opts, pages },
+    { examples: EXAMPLES, opts, pages, boniModels: systemPage("models") },
   );
   await page.goto(url);
 }
