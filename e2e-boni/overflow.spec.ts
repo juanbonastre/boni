@@ -53,6 +53,8 @@ const L = {
     number: "Cifra",
     filterRows: "Solo algunas filas",
     add: "Añadir un bloque",
+    blockMenu: /^Mover o modificar/,
+    modify: "Modificar…",
   },
   en: {
     period: "Period",
@@ -66,6 +68,8 @@ const L = {
     number: "Number",
     filterRows: "Only some rows",
     add: "Add a block",
+    blockMenu: /^Move or modify/,
+    modify: "Modify…",
   },
 };
 
@@ -152,6 +156,14 @@ for (const language of ["es", "en"] as const) {
       await page.keyboard.press("Escape");
       await num.locator(".kpi-value").click();
       issues.push(...(await audit(page, "block click menu")));
+      await page.keyboard.press("Escape");
+      // A button's panel: its data with the capture's own form.
+      const button = page.locator(".doc-actions .blk").nth(1);
+      await button.hover();
+      await button.getByRole("button", { name: l.blockMenu }).click();
+      await page.getByRole("menuitemradio", { name: l.modify }).click();
+      await page.locator(".side-panel .block-panel-values .form").waitFor();
+      issues.push(...(await audit(page, "button panel")));
       await page.keyboard.press("Escape");
       await page.locator(".topbar").getByRole("button", { name: l.pageMenu }).click();
       issues.push(...(await audit(page, "page menu")));

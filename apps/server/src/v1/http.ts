@@ -239,6 +239,11 @@ export async function serveV1(
           svc.action(c, { action, client_id: clientId, values: b.values, created_at: createdAt }),
         );
       }
+      case "DELETE /api/v1/actions/:id": {
+        const clientId = canonicalUuid(id);
+        if (!clientId) throw new BadRequest("client_id: no es un UUID");
+        return send(res, 200, svc.undoAction(c, clientId));
+      }
       case "GET /api/v1/charts":
         return send(res, 200, { charts: svc.store.charts(c.account) });
       case "POST /api/v1/charts":

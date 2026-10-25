@@ -25,6 +25,8 @@ export interface CatalogueCollection {
 }
 export interface CatalogueData {
   collections: CatalogueCollection[];
+  /** The screens a button may open (the server's forms), when known; else Boni's capture. */
+  screens?: Option[];
 }
 
 export interface Option {
@@ -43,13 +45,15 @@ export type DataOptions =
   | "filterFields"
   | "filterValues"
   | "dateFields"
-  | "periods";
+  | "periods"
+  | "screens";
 
 export interface Setting {
   key: string;
   /** Spanish: the control's label. Short (docs/design-guide.md; wiki §9: no AI-sounding names). */
   label: string;
-  type: "text" | "choice" | "toggle" | "color";
+  /** `values`: a form's values by field id (a button's data), edited with the form itself. */
+  type: "text" | "choice" | "toggle" | "color" | "values";
   options?: readonly Option[] | DataOptions;
   /** Only shown, and only allowed, when other settings have (or have not) one of these values (all of them). */
   when?: When | readonly When[];
@@ -372,6 +376,55 @@ export const CATALOGUE: readonly BlockKind[] = [
     defaults: { text: "" },
   },
   {
+    type: "action",
+    name: "Botón",
+    group: "Botones",
+    w: 3,
+    ai: "a button that opens a screen (Apuntar gasto) empty, filled with values, or saves those values at once",
+    settings: [
+      { key: "label", label: "Nombre", type: "text", max: 80, section: "data" },
+      {
+        key: "screen",
+        label: "Qué abre",
+        type: "choice",
+        options: "screens",
+        section: "data",
+        ai: "capture-expense (Apuntar gasto)",
+      },
+      {
+        key: "mode",
+        label: "Al pulsarlo",
+        type: "choice",
+        options: [
+          { value: "empty", label: "Abrir vacío" },
+          { value: "open", label: "Abrir con datos" },
+          { value: "save", label: "Apuntar al momento" },
+        ],
+        optional: true,
+        default: "empty",
+        section: "data",
+      },
+      {
+        key: "values",
+        label: "Con estos datos",
+        type: "values",
+        optional: true,
+        when: { key: "mode", is: ["open", "save"] },
+        section: "data",
+        ai: "the form's values by field id, e.g. {amount: 1.6, category: <an option of the form>}",
+      },
+      {
+        key: "color",
+        label: "Color",
+        type: "color",
+        optional: true,
+        when: { key: "mode", is: ["open", "save"] },
+        section: "look",
+      },
+    ],
+    defaults: { label: "Apuntar gasto", screen: "capture-expense" },
+  },
+  {
     type: "models",
     name: "Tarjetas de modelo",
     group: "De Boni",
@@ -413,6 +466,20 @@ export const CATALOGUE: readonly BlockKind[] = [
 ];
 
 const NO_DATA: CatalogueData = { collections: [] };
+/** A form's values: a few fields by id, each a short text, a number, a yes/no or a short list of texts. */
+const formValuesOk = (v: unknown): boolean =>
+  isRecord(v) &&
+  Object.keys(v).length <= 40 &&
+  Object.entries(v).every(
+    ([k, x]) =>
+      /^[a-z_][a-z0-9_]{0,40}$/i.test(k) &&
+      ((typeof x === "string" && x.length <= 500) ||
+        (typeof x === "number" && Number.isFinite(x)) ||
+        typeof x === "boolean" ||
+        (Array.isArray(x) &&
+          x.length <= 20 &&
+          x.every((y) => typeof y === "string" && y.length <= 200))),
+  );
 export const kindOf = (type: string): BlockKind | undefined =>
   CATALOGUE.find((k) => k.type === type);
 export const CATALOGUE_TYPES = CATALOGUE.map((k) => k.type);
@@ -453,6 +520,8 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
       return byField(fs, GROUPABLE);
     case "timeOrGroupFields":
       return [...(hasDate(fs) ? TIME_GROUPS : []), ...byField(fs, GROUPABLE)];
+    case "screens":
+      return data.screens ?? [{ value: "capture-expense", label: "Apuntar gasto" }];
     case "periods":
       return hasDate(fs) ? PERIODS : PERIODS.filter((p) => p.value === "all");
     case "filterFields":
@@ -510,6 +579,10 @@ export function catalogueErrors(block: unknown, data?: CatalogueData): BlockProb
     }
     if (s.type === "toggle") {
       if (typeof v !== "boolean") out.push({ block: id, key: s.key, code: "bad", value: v });
+      continue;
+    }
+    if (s.type === "values") {
+      if (!formValuesOk(v)) out.push({ block: id, key: s.key, code: "bad" });
       continue;
     }
     if (s.type === "color" || typeof s.options !== "string") {
@@ -615,6 +688,7 @@ export function catalogueForAI(data: CatalogueData): string {
   const values = (s: Setting) => {
     if (s.type === "text") return `text (≤${s.max ?? 200})`;
     if (s.type === "toggle") return "true|false";
+    if (s.type === "values") return s.ai ?? "form values";
     if (s.type === "color") return COLORS.join("|");
     if (typeof s.options === "string") return s.ai ?? s.options;
     return (s.options ?? []).map((o) => o.value).join("|");

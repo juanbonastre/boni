@@ -929,8 +929,10 @@ export async function orderShortcuts(ids: string[]) {
 }
 
 /**
- * A tap on a shortcut. `open` (or a form it cannot fill completely): the form filled in. `save`: the capture goes
- * at once, through the offline queue, held back while its toast offers Undo; it survives closing the app.
+ * A tap on a shortcut. `open` (or a form it cannot fill completely): the form filled in. `save`: the capture is
+ * sent at once, so what it counts shows at once (Juan, 2026-10-25), and its notice's Undo takes it out again.
+ * Without a connection it goes through the offline queue, held back while its notice offers Undo; it survives
+ * closing the app.
  */
 export async function runShortcut(sc: Shortcut) {
   const t = get().t;
@@ -950,6 +952,28 @@ export async function runShortcut(sc: Shortcut) {
     values: F.payload(form, filledValues(form, sc.values, today())),
     created_at: nowIso(),
   };
+  if (configured(get().settings)) {
+    try {
+      const r = await api.action(request);
+      if (r.status === "ok") {
+        charts.invalidate();
+        refresh();
+        hostRef.desktop?.broadcastRefresh();
+        toast(t("shortcut.logged", { label: sc.label }), {
+          label: t("toast.undo"),
+          run: () => void undoCapture(request.client_id),
+        });
+        return;
+      }
+      if (r.status === "queued") return toast(r.message || t("submit.queuedServer"));
+      openScreen(sc.screen, sc.values, sc.id);
+      toast(r.message || t("form.check"));
+      return;
+    } catch (e) {
+      // Without a connection: the queue below.
+      if (!(e instanceof OfflineError)) return toast(errorText(t, e));
+    }
+  }
   await queue.add(request, Date.now() + DELETE_AFTER_MS);
   await countQueue();
   const timer = setTimeout(() => void sync().catch(() => 0), DELETE_AFTER_MS + 100);
@@ -960,6 +984,20 @@ export async function runShortcut(sc: Shortcut) {
       void queue.dismiss(request.client_id).then(countQueue);
     },
   });
+}
+
+/** A capture just saved, out again (the notice's Undo): what counted it shows without it at once. */
+async function undoCapture(clientId: string) {
+  const t = get().t;
+  try {
+    await api.undoAction(clientId);
+    charts.invalidate();
+    refresh();
+    hostRef.desktop?.broadcastRefresh();
+    toast(t("shortcut.undone"));
+  } catch (e) {
+    toast(e instanceof ApiError ? t("shortcut.undoFailed") : errorText(t, e));
+  }
 }
 
 // ---------- widgets of this computer (kept on the device too: they appear at login without network) ----------

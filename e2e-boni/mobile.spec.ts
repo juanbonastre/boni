@@ -89,22 +89,16 @@ test("a capture in a sheet: required fields first, the rest folded; sent once; i
   await expect(page.locator(".toast")).toHaveText("Atajo creado");
 });
 
-test("a shortcut that saves at once waits for its Undo; one that opens fills the form", async ({
+test("a shortcut that saves at once is counted at once and its Undo takes it out", async ({
   page,
 }) => {
   await openApp(page, "/?still");
   await page.locator(".m-shortcut-main", { hasText: "Café" }).tap();
-  await expect(page.locator(".toast")).toContainText("Apuntando «Café»…");
-  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).tap();
-  await page.waitForTimeout(6500);
-  expect(await sent(page, "POST api/v1/actions")).toHaveLength(0);
-
-  await page.locator(".m-shortcut-main", { hasText: "Café" }).tap();
-  await expect(page.locator(".m-status")).toHaveCount(0); // held back: not "1 not sent"
-  await expect
-    .poll(async () => (await sent(page, "POST api/v1/actions")).length, { timeout: 9000 })
-    .toBe(1);
-  const values = body((await sent(page, "POST api/v1/actions"))[0]!).values;
+  await expect(page.locator(".toast")).toContainText("«Café» apuntado");
+  const posted = await sent(page, "POST api/v1/actions");
+  expect(posted).toHaveLength(1);
+  const id = body(posted[0]!).client_id as string;
+  const values = body(posted[0]!).values;
   expect(values).toMatchObject({
     kind: "gasto",
     amount: 1.6,
@@ -112,6 +106,22 @@ test("a shortcut that saves at once waits for its Undo; one that opens fills the
     category: "bebida/cafe",
   });
   expect(values.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).tap();
+  await expect(page.locator(".toast")).toContainText("Deshecho: ya no cuenta");
+  expect(await sent(page, `DELETE api/v1/actions/${id}`)).toHaveLength(1);
+});
+
+test("without a connection a shortcut that saves at once waits for its Undo; one that opens fills the form", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", { action: "offline" });
+  await page.locator(".m-shortcut-main", { hasText: "Café" }).tap();
+  await expect(page.locator(".toast")).toContainText("Apuntando «Café»…");
+  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).tap();
+  await page.waitForTimeout(6500);
+  // Only the first attempt reached the network; undone, nothing waits to be sent.
+  expect(await sent(page, "POST api/v1/actions")).toHaveLength(1);
+  await expect(page.locator(".m-status")).toHaveCount(0);
 
   // "open": the form with the shortcut's values; what it fills in is not folded
   await page.locator(".m-shortcut-main", { hasText: "Comida con Pablo" }).tap();

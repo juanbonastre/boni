@@ -58,7 +58,17 @@ export type PageBlock = (
   | { id: string; type: "chart"; chart: string }
   /** A collection of the user's shown as a Notion database view (plan PR 19). */
   | { id: string; type: "database"; source: string; view: DatabaseView }
-  | { id: string; type: "action"; screen: string; label: string; shortcut?: string }
+  | {
+      id: string;
+      type: "action";
+      screen: string;
+      label: string;
+      /** A saved shortcut the button runs (the first pages); new buttons keep their own data instead. */
+      shortcut?: string;
+      mode?: "empty" | "open" | "save";
+      values?: Record<string, string | number | boolean | string[]>;
+      color?: string;
+    }
   | DataBlock
   | { id: string; type: "models"; title?: string }
   | { id: string; type: "model-keys" }
@@ -329,13 +339,18 @@ export function pageErrors(spec: unknown): string[] {
         break;
       }
       case "action":
-        if (
-          !only(b, ["at", "id", "type", "screen", "label", "shortcut"]) ||
-          typeof b.screen !== "string" ||
-          !ID.test(b.screen) ||
-          !text(b.label, PAGE_LIMITS.label) ||
-          (b.shortcut !== undefined && (typeof b.shortcut !== "string" || !ID.test(b.shortcut)))
-        )
+        // A button of the first pages runs a saved shortcut; any other is the block catalogue's.
+        if (b.shortcut !== undefined) {
+          if (
+            !only(b, ["at", "id", "type", "screen", "label", "shortcut"]) ||
+            typeof b.screen !== "string" ||
+            !ID.test(b.screen) ||
+            !text(b.label, PAGE_LIMITS.label) ||
+            typeof b.shortcut !== "string" ||
+            !ID.test(b.shortcut)
+          )
+            errors.push(`${w}: an action names a screen and has a label`);
+        } else if (catalogueErrors(b).length)
           errors.push(`${w}: an action names a screen and has a label`);
         break;
       case "number":

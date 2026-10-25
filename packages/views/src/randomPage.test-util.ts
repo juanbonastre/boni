@@ -179,6 +179,10 @@ function tryBlock(r: Rng, id: string, data: CatalogueData): Record<string, unkno
       b[s.key] = r.next() < 0.5;
       continue;
     }
+    if (s.type === "values") {
+      b[s.key] = r.pick([{}, { amount: 1.6, concept: "Café" }]);
+      continue;
+    }
     const opts = optionsOf(s, b, data);
     if (!opts.length) {
       // Nothing to choose from (a collection without a number field): the block counts rows instead.

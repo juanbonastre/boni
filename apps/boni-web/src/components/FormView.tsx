@@ -58,6 +58,23 @@ export function FormView({
     errorRef.current?.scrollIntoView({ block: "nearest" });
   }, [formError]);
 
+  // Opening the form to capture puts the caret in the first field still to fill (the amount when capturing an
+  // expense), so Tab goes through the rest at once (Juan, 2026-10-24). Not a shortcut's or a button's data: there
+  // the user chooses what to change.
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (mode !== "capture") return;
+    // Only a field typed into (an amount, a text): a list opened by itself would cover the form.
+    const first = fields.find(
+      (f) => f.required && F.isVisible(f, values) && !folded(f) && F.isEmpty(values[f.id] ?? null),
+    );
+    if (first?.type !== "amount" && first?.type !== "text") return;
+    const el = first
+      ? formRef.current?.querySelector<HTMLElement>(`#f-${CSS.escape(first.id)}`)
+      : null;
+    el?.focus();
+  }, []);
+
   const set = (id: string, v: Json) => {
     setValues((vs) => ({ ...vs, [id]: v }));
     markPanelEdited();
@@ -82,6 +99,7 @@ export function FormView({
 
   return (
     <form
+      ref={formRef}
       className="form"
       onSubmit={(e) => {
         e.preventDefault();

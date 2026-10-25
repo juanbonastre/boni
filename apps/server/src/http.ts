@@ -266,6 +266,18 @@ export function makeApp(opts: ServerOptions): App {
       opts.agent.onChanged?.(account);
       return true;
     },
+    outOfBoni: (account, path, device) => {
+      if (!opts.agent?.hasData) return false;
+      const store = opts.agent.store(account);
+      if (store.setting(`${CORE_MARK}t_movimiento`) === null) return false;
+      try {
+        removeRow(store, findByPath(store, path).id, device);
+      } catch {
+        return false;
+      }
+      opts.agent.onChanged?.(account);
+      return true;
+    },
     moneyOf: (account) => {
       if (!opts.agent?.hasData) return null;
       const store = opts.agent.store(account);

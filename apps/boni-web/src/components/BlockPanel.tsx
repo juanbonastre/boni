@@ -13,10 +13,22 @@ import {
 import { ChevronDown } from "lucide-react";
 import { useEffect, useState } from "react";
 import { catalogueOf } from "../core/blocks.ts";
+import type { Shortcut } from "../core/contract.ts";
 import { setHeight, setWidth } from "../core/grid.ts";
 import { PALETTE } from "../core/palette.ts";
+import { formOf, shortcutValues } from "../core/shortcuts.ts";
 import { catText, type T } from "../i18n.ts";
-import { closePanel, loadDataTypes, setPageBlocks, toast, useStore } from "../store.ts";
+import {
+  closePanel,
+  loadDataTypes,
+  loadScreen,
+  optionList,
+  setPageBlocks,
+  toast,
+  todayIso,
+  useStore,
+} from "../store.ts";
+import { FormView } from "./FormView.tsx";
 
 /**
  * A block's settings in the side panel («Modificar…»): a control for each setting its kind has in the block
@@ -31,10 +43,14 @@ export function BlockPanel({ id }: { id: string }) {
   useEffect(() => {
     if (!dataTypes) void loadDataTypes();
   }, []);
+  const shortcuts = useStore((s) => s.shortcuts);
   const blocks = page?.spec.blocks ?? [];
   const block = blocks.find((b) => b.id === id);
   const kind = block ? kindOf(block.type) : undefined;
-  const raw = block as unknown as Record<string, unknown> | undefined;
+  // A button of the first pages runs a saved shortcut: shown with that shortcut's data, and saved as its own.
+  const raw = (block?.type === "action" && block.shortcut ? ownButton(block, shortcuts) : block) as
+    | Record<string, unknown>
+    | undefined;
   const [filterOpen, setFilterOpen] = useState(Boolean(raw?.filterField));
   if (!block || !raw) return <p className="muted panel-body">{t("block.panel.gone")}</p>;
   const data = catalogueOf(dataTypes);
@@ -111,6 +127,19 @@ export function BlockPanel({ id }: { id: string }) {
   );
 }
 
+/** A button of the first pages as a button of the catalogue, with its shortcut's data. */
+function ownButton(b: Extract<PageBlock, { type: "action" }>, shortcuts: Shortcut[]) {
+  const sc = shortcuts.find((s) => s.id === b.shortcut);
+  const color = PALETTE.find((c) => c.hex === sc?.color)?.name;
+  const { shortcut: _s, ...rest } = b;
+  return {
+    ...rest,
+    mode: sc?.mode ?? "open",
+    values: sc?.values ?? {},
+    ...(color ? { color } : {}),
+  };
+}
+
 /** A kind's name in the interface's language (the panel's title). */
 export const kindName = (t: T, k: BlockKind | undefined, type: string) =>
   k ? catText(t, k.name) : t(`block.kind.${type}`);
@@ -129,6 +158,15 @@ function SettingControl({
   const t = useStore((st) => st.t);
   const label = catText(t, s.label);
   const value = block[s.key];
+  if (s.type === "values")
+    return (
+      <ValuesControl
+        label={label}
+        screen={String(block.screen ?? "")}
+        value={value}
+        set={(v) => set(s.key, v)}
+      />
+    );
   if (s.type === "text") {
     const text = String(value ?? "");
     const max = s.max ?? 200;
@@ -215,6 +253,46 @@ function SettingControl({
       empty={s.optional ? "—" : undefined}
       onChange={(v) => set(s.key, v)}
     />
+  );
+}
+
+/** A button's data: the screen's own form (as the phone's shortcut editor), saved with its button. */
+function ValuesControl({
+  label,
+  screen,
+  value,
+  set,
+}: {
+  label: string;
+  screen: string;
+  value: unknown;
+  set: (v: unknown) => void;
+}) {
+  const t = useStore((st) => st.t);
+  const form = useStore((st) => formOf(st.screens[screen]));
+  useEffect(() => {
+    if (!form && screen) void loadScreen(screen).catch(() => undefined);
+  }, [screen]);
+  if (!form) return <p className="muted small">{t("chart.loading")}</p>;
+  return (
+    <div className="block-panel-values">
+      <h3 className="block-panel-head">{label}</h3>
+      <FormView
+        key={JSON.stringify(value ?? {})}
+        form={form}
+        today={todayIso()}
+        loadOptions={optionList}
+        initial={(value ?? {}) as Shortcut["values"]}
+        collapse
+        mode="values"
+        submitLabel={t("block.saveValues")}
+        onSubmit={async (values) => {
+          set(shortcutValues(form, values));
+          toast(t("block.valuesSaved"));
+          return {};
+        }}
+      />
+    </div>
   );
 }
 

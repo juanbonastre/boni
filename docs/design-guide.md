@@ -254,6 +254,13 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   list). Dragging a number's or chart's right edge changes its width in columns (a chart's corner, also its height:
   low, medium, high). A value that is not in the user's data (a field removed, an AI's mistake) is shown in the
   block («No se puede mostrar: …», «Modifícalo») and in the panel as it is, marked, never as another value.
+- **Buttons** (Juan, 2026-10-24; the catalogue's «Botón»): «Nombre», «Qué abre» (Apuntar gasto), «Al pulsarlo»
+  (Abrir vacío / Abrir con datos / Apuntar al momento), «Con estos datos» (the capture's own form, as the phone's
+  shortcut editor; «Guardar los datos») and «Color». A button of the first pages that ran a saved shortcut keeps its
+  data as its own once modified. «Apuntar al momento» is sent at once, so the numbers and charts that count it change
+  at once; its notice says ««Café» apuntado» with «Deshacer», which takes it out again (the same device, within 10
+  minutes); without a connection it waits in the queue for its Undo as before. Buttons one after another share a row,
+  each only as wide as it needs. Opening a form puts the caret in the first field still to fill (the amount).
 - **Boni's screens as pages** (Juan, 2026-10-24; `packages/views/src/systemPages.ts`, `components/SystemPage.tsx`):
   «Modelos» is a page of blocks that comes with Boni (its numbers, the uses, the keys, spending by day and by model,
   a link to Actividad), edited like any page. Beside its name, «De Boni»; once changed, «Modificada», which opens the
