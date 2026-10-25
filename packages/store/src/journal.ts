@@ -332,8 +332,8 @@ export function openJournal(db: DatabaseSync): Journal {
     },
     requests: (status) =>
       (status
-        ? db.prepare("SELECT * FROM requests WHERE status = ? ORDER BY created, id").all(status)
-        : db.prepare("SELECT * FROM requests ORDER BY created, id").all()
+        ? db.prepare("SELECT * FROM requests WHERE status = ? ORDER BY created, rowid").all(status)
+        : db.prepare("SELECT * FROM requests ORDER BY created, rowid").all()
       ).map(requestOf),
     setRequest: (id, status, at, answer) =>
       void db
