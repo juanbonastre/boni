@@ -1,7 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
-import { emptyPage, PAGE_LIMITS, type PageSpec, pageErrors } from "@boni/views";
+import {
+  emptyPage,
+  isSystemPage,
+  PAGE_LIMITS,
+  type PageSpec,
+  pageErrors,
+  type SystemPage,
+  systemPage,
+} from "@boni/views";
 import type { V1Store } from "./v1/store.ts";
 
 /**
@@ -208,4 +216,49 @@ export function seedFromV1(store: UserStore, v1: V1Store, account: number): void
       ],
     },
   });
+}
+
+/**
+ * Boni's own screens as pages (packages/views systemPages.ts): Boni's version unless the user changed it; the
+ * changed one is kept in the account's settings (every device shows it), and restoring takes it out.
+ */
+const SYSTEM_KEY = "pages/system/";
+
+export interface SystemPageView {
+  name: SystemPage;
+  spec: PageSpec;
+  modified: boolean;
+}
+
+function systemName(name: string): SystemPage {
+  if (!isSystemPage(name)) throw new PageError("not-found");
+  return name;
+}
+
+export function getSystemPage(store: UserStore, name: string): SystemPageView {
+  const n = systemName(name);
+  try {
+    const kept = JSON.parse(store.setting(`${SYSTEM_KEY}${n}`) ?? "null");
+    if (kept && !pageErrors(kept).length)
+      return { name: n, spec: kept as PageSpec, modified: true };
+  } catch {
+    // Unreadable: Boni's version (the stored text is left as it was).
+  }
+  return { name: n, spec: systemPage(n), modified: false };
+}
+
+/** The user's version; the same as Boni's is no change at all (the page is Boni's again). */
+export function putSystemPage(store: UserStore, name: string, body: unknown): SystemPageView {
+  const n = systemName(name);
+  const spec = (body as { spec?: unknown } | null)?.spec;
+  if (pageErrors(spec).length) throw new PageError("bad-spec");
+  const own = JSON.stringify(spec) !== JSON.stringify(systemPage(n));
+  store.setSetting(`${SYSTEM_KEY}${n}`, own ? JSON.stringify(spec) : null);
+  return getSystemPage(store, n);
+}
+
+export function restoreSystemPage(store: UserStore, name: string): SystemPageView {
+  const n = systemName(name);
+  store.setSetting(`${SYSTEM_KEY}${n}`, null);
+  return getSystemPage(store, n);
 }

@@ -4,6 +4,7 @@ import {
   type DatabaseView,
   markdownToBlocks,
   type PageSpec,
+  type SystemPage,
 } from "@boni/views";
 import { useMemo } from "react";
 import { create } from "zustand";
@@ -24,6 +25,7 @@ import {
   type Proposal,
   type RunDetail,
   type RunSummary,
+  type SystemPageView,
   type TurnResult,
   type Visibility,
 } from "./core/agent.ts";
@@ -182,6 +184,8 @@ interface State {
   row: DataRow | null;
   /** The open row's text as the page editor's blocks (saved back as Markdown). */
   rowDoc: Page | null;
+  /** One of Boni's screens as a page («Modelos»), edited like any page; `modified` when it is not Boni's. */
+  systemDoc: (Page & { system: SystemPage; modified: boolean }) | null;
   rows: Record<
     string,
     {
@@ -304,6 +308,7 @@ export const useStore = create<State>(() => ({
   openedNote: null,
   row: null,
   rowDoc: null,
+  systemDoc: null,
   inbox: [],
   requests: [],
   inboxLoading: false,
@@ -1646,6 +1651,12 @@ export function setPageBlocks(blocks: Block[], typingIn?: string) {
 
 /** A document's blocks kept: a page on the server; a row's text as Markdown, its row's body. */
 function putSpec(page: Page, spec: PageSpec) {
+  const sys = get().systemDoc;
+  if (sys && page.id === sys.id) {
+    set({ systemDoc: { ...sys, spec } });
+    saveSystemPage(sys.system, spec);
+    return;
+  }
   if (page.id.startsWith("row:")) {
     set({ rowDoc: { ...page, spec } });
     setRowBody(blocksToMarkdown(spec.blocks));
@@ -1822,7 +1833,66 @@ export async function loadDataTypes(): Promise<DataType[] | null> {
   }
 }
 
-export const showModels = () => set({ view: { kind: "models" }, panel: null });
+export const showModels = () => {
+  set({ view: { kind: "models" }, panel: null });
+  void openSystemPage("models");
+};
+
+/** One of Boni's screens as a page: Boni's own or the account's version of it. */
+export async function openSystemPage(name: SystemPage) {
+  try {
+    const p = await agent.systemPage(name);
+    if (!p) return;
+    set({ systemDoc: systemDocOf(p) });
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
+}
+const systemDocOf = (p: SystemPageView) => ({
+  id: `system:${p.name}`,
+  title: "",
+  icon: "",
+  parent: null,
+  position: 0,
+  spec: p.spec,
+  system: p.name,
+  modified: p.modified,
+});
+let systemTimer: ReturnType<typeof setTimeout> | null = null;
+function saveSystemPage(name: SystemPage, spec: PageSpec) {
+  if (systemTimer) clearTimeout(systemTimer);
+  systemTimer = setTimeout(() => {
+    systemTimer = null;
+    agent
+      .saveSystemPage(name, spec)
+      .then((p) => {
+        const doc = get().systemDoc;
+        if (p && doc?.system === name) set({ systemDoc: { ...doc, modified: p.modified } });
+      })
+      .catch((e) => toast(errorText(get().t, e)));
+  }, SAVE_AFTER_MS);
+}
+/** «Restaurar la de Boni»: Boni's version again, with Undo in the toast (the user's version back). */
+export async function restoreSystemPage(name: SystemPage, label: string) {
+  const t = get().t;
+  const before = get().systemDoc;
+  if (systemTimer) clearTimeout(systemTimer);
+  try {
+    const p = await agent.restoreSystemPage(name);
+    if (!p) return;
+    set({ systemDoc: systemDocOf(p) });
+    toast(t("system.restored", { name: label }), {
+      label: t("toast.undo"),
+      run: () => {
+        if (!before) return;
+        set({ systemDoc: before });
+        void agent.saveSystemPage(name, before.spec);
+      },
+    });
+  } catch (e) {
+    toast(errorText(t, e));
+  }
+}
 /** The notes explorer: every note by the path it had (Juan, 2026-10-24: what the AIs read, browsable). */
 export const showNotes = () => {
   set({ view: { kind: "notes" }, panel: null });
@@ -2066,7 +2136,12 @@ const rowDocOf = (row: DataRow): Page => ({
 });
 
 /** The document being edited: the open row's text on a row, else the open page. */
-const editing = (): Page | null => (get().view.kind === "row" ? get().rowDoc : get().page);
+const editing = (): Page | null => {
+  const v = get().view.kind;
+  if (v === "row") return get().rowDoc;
+  if (v === "models") return get().systemDoc;
+  return get().page;
+};
 
 // The text of the open row is sent after a pause in typing, and before leaving it.
 let bodyTimer: ReturnType<typeof setTimeout> | null = null;

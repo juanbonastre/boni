@@ -56,7 +56,7 @@ export function computeBlocks(
     // When it was computed, as every chart the app shows says.
     results[id] =
       "data" in out ? { data: { ...out.data, computed_at: new Date(o.now).toISOString() } } : out;
-    const def = types[block.collection];
+    const def = block.collection ? types[block.collection] : undefined;
     if ("data" in out && def) {
       const fields = used.get(def.id) ?? new Set<string>();
       for (const f of [blockDateField(block, def), block.groupBy, block.field, block.filterField])

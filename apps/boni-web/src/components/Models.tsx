@@ -21,9 +21,9 @@ import {
   type ModelsView as View,
 } from "../core/agent.ts";
 import { ApiError } from "../core/api.ts";
-import { type AuditSummary, shortModel } from "../core/audit.ts";
-import { agentApi, errorText, showLog, toast, useStore } from "../store.ts";
-import { BarList, COLORS, DashChart, dailyChart, daysOf, Kpi } from "./Dash.tsx";
+import { shortModel } from "../core/audit.ts";
+import { agentApi, errorText, toast, useStore } from "../store.ts";
+import { COLORS, DashChart, dailyChart, daysOf } from "./Dash.tsx";
 
 type T = ReturnType<typeof useStore.getState>["t"];
 const same = (a: ModelChoice, b: ModelChoice) =>
@@ -34,185 +34,7 @@ const DECIDERS: ModelChoice[] = [
   { connection: "typesafe", model: "jev-1.14.0", zdr: false },
 ];
 
-/**
- * «Modelos» (Juan, 2026-10-24): a dashboard. The month's numbers first (spending against the budget, calls, what the
- * models read and changed), then the four uses with the model of each in large type, and the charts beside them
- * (spending per day by model, calls per model). A click opens the detail: the spending tile its breakdown and the
- * budget; a use its panel on the right (what it does, how it treats the data, its evaluation, «Cambiar»: a model of
- * OpenRouter's that some provider serves keeping nothing, evaluated before it is used).
- */
-export function ModelsView() {
-  const t = useStore((s) => s.t);
-  const lang = useStore((s) => s.settings.language);
-  const [view, setView] = useState<View | null>(null);
-  const [audit, setAudit] = useState<AuditSummary | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  const [panel, setPanel] = useState<ModelRole | null>(null);
-  const load = async () => {
-    try {
-      setView(await agentApi.models());
-      setError(null);
-    } catch (e) {
-      setError(errorText(t, e));
-    }
-  };
-  useEffect(() => {
-    void load();
-  }, []);
-  // What the models read and changed this month (the audit; only a personal device may read it).
-  useEffect(() => {
-    if (!view?.spending.month) return;
-    const from = Date.parse(`${view.spending.month}-01T00:00:00Z`);
-    agentApi
-      .auditSummary(from, Date.now())
-      .then(setAudit)
-      .catch(() => setAudit(null));
-  }, [view?.spending.month]);
-  // While an evaluation runs, look again every few seconds.
-  useEffect(() => {
-    if (!view?.evaluating) return;
-    const id = setInterval(() => void load(), 4000);
-    return () => clearInterval(id);
-  }, [view?.evaluating]);
-  const toggle = (k: string) =>
-    setOpen((o) => {
-      const n = new Set(o);
-      if (n.has(k)) n.delete(k);
-      else n.add(k);
-      return n;
-    });
-  const nf = new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES");
-  const eur = (x: number) =>
-    new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(x);
-  const month = view?.spending.month
-    ? new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
-        month: "long",
-        timeZone: "UTC",
-      }).format(new Date(`${view.spending.month}-01T12:00:00Z`))
-    : "";
-  const ai = (by: string) => by.startsWith("model:") || by.startsWith("mcp:");
-  const reads = audit
-    ? audit.activity.filter((r) => ai(r.by)).reduce((n, r) => n + r.reads, 0)
-    : null;
-  const writes = audit
-    ? audit.activity.filter((r) => ai(r.by) || r.by === "agent").reduce((n, r) => n + r.writes, 0)
-    : null;
-  return (
-    <div className="models-view">
-      <div className="content dash">
-        <header className="dash-head">
-          <h1 className="dash-title">{t("nav.models")}</h1>
-          {month && <span className="muted">{month}</span>}
-        </header>
-        {error && (
-          <p className="decide-error" role="alert">
-            {error}
-          </p>
-        )}
-        {!view && !error && <div className="page-loading" role="status" aria-busy="true" />}
-        {view && (
-          <>
-            <div className="kpis">
-              <Kpi
-                label={t("models.kpi.spend")}
-                value={`${eur(view.spending.eur)} €`}
-                note={t("models.kpi.of", { budget: eur(view.budget.monthlyEur) })}
-                meter={{
-                  share:
-                    view.budget.monthlyEur > 0 ? view.spending.eur / view.budget.monthlyEur : 0,
-                  state: view.over
-                    ? "over"
-                    : view.spending.eur >= view.budget.monthlyEur * view.budget.warnAt
-                      ? "warn"
-                      : "ok",
-                }}
-                expanded={open.has("spend")}
-                onClick={() => toggle("spend")}
-              />
-              <Kpi
-                label={t("models.kpi.calls")}
-                value={nf.format(view.spending.rows.reduce((n, r) => n + r.calls, 0))}
-              />
-              <Kpi
-                label={t("models.kpi.reads")}
-                value={reads === null ? "—" : nf.format(reads)}
-                note={t("models.kpi.readsNote")}
-              />
-              <Kpi
-                label={t("models.kpi.writes")}
-                value={writes === null ? "—" : nf.format(writes)}
-                note={t("models.kpi.writesNote")}
-              />
-            </div>
-            {view.over && <p className="models-warn">{t("models.over")}</p>}
-            {open.has("spend") && <Spending t={t} view={view} eur={eur} onChanged={setView} />}
-            <div className="dash-grid">
-              <section className="dash-col">
-                <h2 className="dash-h2">{t("models.roles")}</h2>
-                {view.roles.length === 0 && <p className="muted">{t("models.noRoles")}</p>}
-                <div className="uses">
-                  {view.roles.map((r) => (
-                    <RoleCard
-                      key={r.role}
-                      t={t}
-                      r={r}
-                      view={view}
-                      eur={eur}
-                      on={panel === r.role}
-                      onOpen={() => setPanel(panel === r.role ? null : r.role)}
-                    />
-                  ))}
-                </div>
-                <Connections
-                  t={t}
-                  view={view}
-                  open={open.has("connections")}
-                  onToggle={() => toggle("connections")}
-                  onChanged={setView}
-                />
-              </section>
-              <section className="dash-col">
-                <h2 className="dash-h2">{t("models.byDayChart")}</h2>
-                <SpendChart t={t} view={view} />
-                <h2 className="dash-h2">{t("models.callsChart")}</h2>
-                <BarList
-                  rows={callsByModel(view)}
-                  series={[{ name: t("models.kpi.calls"), color: "var(--accent)" }]}
-                  format={(n) => nf.format(n)}
-                  empty={t("models.noCalls")}
-                />
-              </section>
-            </div>
-            <button type="button" className="models-row models-link" onClick={showLog}>
-              <span className="models-row-main">
-                <span className="models-name">{t("models.activity")}</span>
-                <span className="muted small">{t("models.toLog")}</span>
-              </span>
-              <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
-            </button>
-          </>
-        )}
-      </div>
-      {view && panel && (
-        <RolePanel
-          t={t}
-          role={panel}
-          view={view}
-          eur={eur}
-          onClose={() => setPanel(null)}
-          onChanged={setView}
-        />
-      )}
-    </div>
-  );
-}
-
-/** Calls per model this month (evaluations together with their model), most first. */
-function callsByModel(view: View) {
+export function callsByModel(view: View) {
   const by = new Map<string, number>();
   for (const r of view.spending.rows) by.set(r.model, (by.get(r.model) ?? 0) + r.calls);
   return [...by.entries()]
@@ -221,7 +43,7 @@ function callsByModel(view: View) {
 }
 
 /** Spending per day this month, one colour per model. */
-function SpendChart({ t, view }: { t: T; view: View }) {
+export function SpendChart({ t, view }: { t: T; view: View }) {
   const month = view.spending.month;
   if (!month || !view.spending.byDay.length)
     return <p className="muted small">{t("models.noCalls")}</p>;
@@ -254,7 +76,7 @@ const ROLE_ICONS: Record<ModelRole, typeof Route> = {
 };
 
 /** A use with its model in large type, how it treats the data, and what it spent; a click opens its panel. */
-function RoleCard({
+export function RoleCard({
   t,
   r,
   view,
@@ -295,7 +117,7 @@ function RoleCard({
 }
 
 /** The month's spending by model and the budget (under the spending tile, when it is open). */
-function Spending({
+export function Spending({
   t,
   view,
   eur,
@@ -428,7 +250,7 @@ function Cases({ ev }: { ev: ModelEvaluation }) {
   );
 }
 
-function Connections({
+export function Connections({
   t,
   view,
   open,
@@ -545,7 +367,7 @@ function Connections({
  * A use's panel: what it does, how its route treats the data, whose choice it is, what it spent this month and its
  * last evaluation; «Cambiar» shows the models to pick from, evaluate and use.
  */
-function RolePanel({
+export function RolePanel({
   t,
   role,
   view,

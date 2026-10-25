@@ -5,6 +5,7 @@ import type { BlockResult, DataBlock } from "../core/blocks.ts";
 import { PALETTE } from "../core/palette.ts";
 import { catText, type T } from "../i18n.ts";
 import { agentApi, openBlockPanel, useStore } from "../store.ts";
+import { BoniData } from "./BoniBlocks.tsx";
 import { ChartCardContent } from "./ChartCard.tsx";
 import { BarList, Kpi } from "./Dash.tsx";
 
@@ -81,6 +82,10 @@ export function DataBlockView({
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
+  const collection = useStore((s) => s.dataTypes?.find((d) => d.id === block.collection)?.name);
+  if (block.from === "boni") return <BoniData block={block} />;
+  // A block without a name of its own shows what it counts.
+  const title = block.title || collection || catText(t, kindOf(block.type)?.name ?? "");
   const nf = new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", { maximumFractionDigits: 2 });
   const fmt = (n: number, unit: string | undefined) =>
     unit === "EUR"
@@ -111,7 +116,7 @@ export function DataBlockView({
   if (block.type === "number")
     return (
       <Kpi
-        label={block.title}
+        label={title}
         value={data?.total != null ? fmt(data.total, data.unit) : "—"}
         note={note ?? sub}
       />
@@ -120,11 +125,11 @@ export function DataBlockView({
     const points = data?.series[0]?.points ?? [];
     return (
       <div className="data-blk-bars">
-        <h2 className="dash-h2">{block.title}</h2>
+        <h2 className="dash-h2">{title}</h2>
         {note && <p className="muted small">{note}</p>}
         <BarList
           rows={points.map((p) => ({ key: p.key, label: p.label, values: [p.value] }))}
-          series={[{ name: block.title, color: "var(--accent)" }]}
+          series={[{ name: title, color: "var(--accent)" }]}
           format={(n) => fmt(n, data?.unit)}
           empty={data ? t("chart.empty") : t("chart.loading")}
         />
@@ -135,7 +140,7 @@ export function DataBlockView({
   return (
     <div className="data-blk-chart" style={{ height: HEIGHTS[block.at?.h ?? "m"] }}>
       <ChartCardContent
-        title={block.title}
+        title={title}
         color={color}
         // Values written on the bars only when there are few; no average line (nothing that does not help).
         style={{ labels: (data?.series[0]?.points.length ?? 0) <= 12, reference: "none" }}

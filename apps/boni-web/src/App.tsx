@@ -6,7 +6,6 @@ import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView } from "./components/Chat.tsx";
 import { CollectionsView, CollectionView } from "./components/Collections.tsx";
 import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
-import { ModelsView } from "./components/Models.tsx";
 import { NotesView } from "./components/Notes.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
@@ -15,6 +14,7 @@ import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
+import { SystemPageView } from "./components/SystemPage.tsx";
 import { host } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
@@ -477,7 +477,7 @@ function Content() {
   if (view.kind === "row") return <RowView />;
   if (view.kind === "proposal") return <ProposalPage key={view.id} id={view.id} />;
   if (view.kind === "collections") return <CollectionsView />;
-  if (view.kind === "models") return <ModelsView />;
+  if (view.kind === "models") return <SystemPageView name="models" />;
   if (view.kind === "notes") return <NotesView />;
   if (view.kind === "collection") return <CollectionView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;

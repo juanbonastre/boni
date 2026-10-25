@@ -224,9 +224,9 @@ test("a page of numbers and charts from a collection: each block's panel from th
   const panel = w.locator(".side-panel");
   await expect(panel.locator("h2")).toHaveText("Cifra");
   const choose = (label: string, option: string) =>
-    panel.locator(".field", { hasText: label }).locator("select").selectOption({ label: option });
+    panel.getByRole("combobox", { name: label, exact: true }).selectOption({ label: option });
   await choose("Colección", "Pertenencia");
-  await panel.locator(".field", { hasText: "Nombre" }).locator("input").fill("Cosas");
+  await panel.getByRole("textbox", { name: "Nombre", exact: true }).fill("Cosas");
   await choose("Periodo", "Desde siempre");
   const number = w.locator(".blk-number");
   await expect(number.locator(".kpi-value")).toHaveText("3");
@@ -345,12 +345,14 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
 test("«Modelos» over the real server: the budget and a key, kept sealed and never shown again", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  const spend = w.locator("button.kpi").first();
+  const spend = w.locator(".kpi").first();
   await expect(spend).toContainText("0,00 €");
   await expect(spend).toContainText("de 10,00 €");
   // The agent is off on this server: no model, and it says so.
-  await expect(w.locator(".content.dash")).toContainText("el agente está apagado");
+  await expect(w.locator(".system-page")).toContainText("el agente está apagado");
+  // The spending number's menu opens its breakdown and the budget.
   await spend.click();
+  await w.getByRole("menuitemradio", { name: "Gasto y presupuesto…" }).click();
   await w.getByRole("button", { name: "Cambiar el presupuesto" }).click();
   await w.getByRole("textbox", { name: "Al mes (€)" }).fill("20");
   await w.getByRole("button", { name: "Guardar", exact: true }).click();
@@ -369,6 +371,22 @@ test("«Modelos» over the real server: the budget and a key, kept sealed and ne
   // Back as it was, for the tests after this one.
   await router.getByRole("button", { name: "Quitar tu clave" }).click();
   await expect(router).toContainText("Sin clave");
+  await w.keyboard.press("Escape");
+  // A page of blocks kept by the server: modified, still so after another visit, then Boni's again.
+  const pill = w.locator(".system-head .system-pill");
+  await expect(pill).toHaveText("De Boni");
+  await w.locator(".blk-model-keys").click({ button: "right" });
+  await w.getByRole("menuitemradio", { name: "Borrar" }).click();
+  await expect(pill).toHaveText("Modificada");
+  await w.waitForTimeout(1200);
+  await w.locator(".sidebar").getByRole("button", { name: "Actividad" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  await expect(pill).toHaveText("Modificada");
+  await expect(w.locator(".blk-model-keys")).toHaveCount(0);
+  await pill.click();
+  await w.getByRole("button", { name: "Restaurar la de Boni" }).click();
+  await expect(pill).toHaveText("De Boni");
+  await expect(w.locator(".blk-model-keys")).toHaveCount(1);
 });
 
 test("«Actividad» and «Auditoría» over the real server: Juan's read of a private row, the chain verified", async () => {

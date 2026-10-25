@@ -47,6 +47,7 @@ import {
   useVisibleCharts,
 } from "../store.ts";
 import { kindName } from "./BlockPanel.tsx";
+import { BoniScope, KeysBlock, LinkBlock, ModelsBlock, useBoni } from "./BoniBlocks.tsx";
 import { ACCENT } from "./Chart.tsx";
 import { ChartCard, ChartCardContent } from "./ChartCard.tsx";
 import { DataBlockView, useBlockResults } from "./DataBlockView.tsx";
@@ -161,7 +162,8 @@ export function PageView({ after }: { after?: ReactNode }) {
         />
       </div>
     );
-  return (
+  const boni = page.spec.blocks.some(usesBoni);
+  const doc = (
     <div className={`content page-doc${page.spec.full ? " full" : ""}`}>
       <div
         className="doc"
@@ -181,7 +183,19 @@ export function PageView({ after }: { after?: ReactNode }) {
       </div>
     </div>
   );
+  // A page with Boni's own blocks loads Boni's numbers once and opens a use or the spending on its right.
+  return boni ? (
+    <div className="models-view">
+      <BoniScope active>{doc}</BoniScope>
+    </div>
+  ) : (
+    doc
+  );
 }
+
+/** Whether a block shows Boni's own numbers or parts («De Boni» in the catalogue). */
+export const usesBoni = (b: Block) =>
+  (isDataBlock(b) && b.from === "boni") || b.type === "models" || b.type === "model-keys";
 
 /** Emojis to choose a page's icon from (one tap, as Notion's picker; no images). */
 const EMOJIS = [
@@ -344,7 +358,7 @@ function PageTitle({ page }: { page: Page }) {
 }
 
 /** Below the last block: a click writes at the end (a new line unless the last one is empty). */
-function DocTail({ page }: { page: Page }) {
+export function DocTail({ page }: { page: Page }) {
   const t = useStore((s) => s.t);
   const blocks = page.spec.blocks;
   const last = blocks[blocks.length - 1];
@@ -395,7 +409,7 @@ function layoutOf(blocks: Block[]) {
  * The blocks: on their own, the whole width, as a Notion page's text (consecutive charts share a grid, buttons a
  * row), or in rows of columns on the page's grid of 12 (packages/views `Place`), one under another in each column.
  */
-function Blocks({ page }: { page: Page }) {
+export function Blocks({ page }: { page: Page }) {
   const specs = useVisibleCharts();
   // While a chart is being edited its height follows the draft.
   const panel = useStore((s) => s.panel);
@@ -403,7 +417,11 @@ function Blocks({ page }: { page: Page }) {
   const blocks = page.spec.blocks;
   const { hidden, numbers } = useMemo(() => layoutOf(blocks), [blocks]);
   const visible = blocks.filter((b) => !hidden.has(b.id));
-  const dataBlocks = useMemo(() => blocks.filter(isDataBlock), [blocks]);
+  // Boni's own numbers are the app's (BoniBlocks.tsx); the server computes the collections'.
+  const dataBlocks = useMemo(
+    () => blocks.filter(isDataBlock).filter((b) => b.from !== "boni"),
+    [blocks],
+  );
   const { results, failure } = useBlockResults(dataBlocks);
   const drop = () => {
     const from = blocks.findIndex((b) => b.id === drag?.id);
@@ -442,6 +460,12 @@ function Blocks({ page }: { page: Page }) {
     >
       {isDataBlock(b) ? (
         <DataBlockView block={b} result={results[b.id]} failure={failure} />
+      ) : b.type === "models" ? (
+        <ModelsBlock title={b.title} />
+      ) : b.type === "model-keys" ? (
+        <KeysBlock />
+      ) : b.type === "link" ? (
+        <LinkBlock block={b} />
       ) : b.type === "chart" ? (
         specs.some((s) => s.id === b.chart) ? (
           <ChartCard chartId={b.chart} />
@@ -556,7 +580,7 @@ function ChartGone() {
 /** Clicks on these are the block's own (using it: a button, a bar, a field), not a request for its menu. */
 const OWN = "button, a, input, select, textarea, label, [role='button'], .chart-card svg";
 /** Blocks whose menu also opens with a click on them (Juan, 2026-10-24); text is clicked to write in it. */
-const CLICK_MENU = new Set(["number", "bars", "graph", "chart", "divider"]);
+const CLICK_MENU = new Set(["number", "bars", "graph", "chart", "divider", "models", "model-keys"]);
 const ALLOWED_WIDTHS = [2, 3, 4, 6, 8, 9, 12];
 
 /**
@@ -752,6 +776,7 @@ const TURN_INTO: TextKind[] = [
 /** The handle's menu: turn into (text blocks), the button's text, duplicate, move, delete. */
 function BlockMenu({ block, page, close }: { block: Block; page: Page; close: () => void }) {
   const t = useStore((s) => s.t);
+  const boni = useBoni();
   const spec = useStore((s) =>
     block.type === "chart" ? s.chartSpecs.find((c) => c.id === block.chart) : null,
   );
@@ -795,6 +820,15 @@ function BlockMenu({ block, page, close }: { block: Block; page: Page; close: ()
           <ButtonLabel block={block} blocks={blocks} />
           <MenuSep />
         </>
+      )}
+      {isDataBlock(block) && block.from === "boni" && block.source === "spend" && boni && (
+        <MenuRow
+          label={t("boni.spending")}
+          onClick={() => {
+            close();
+            boni.setOpen("spending");
+          }}
+        />
       )}
       {(catalogueKind(block.type) || block.at) && !isText(block) && (
         <MenuRow

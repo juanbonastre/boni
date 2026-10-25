@@ -160,4 +160,34 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
     const trash = (await call(t, "GET", "/api/pages-trash")).body.pages as { id: string }[];
     expect(trash.map((p) => p.id)).toContain(made.id);
   });
+
+  it("Boni's own screens as pages: Boni's until changed, kept for the account, restored", async () => {
+    const t = await token("ana");
+    const get = async () =>
+      (await call(t, "GET", "/api/pages/system/models")).body.page as {
+        spec: { blocks: { id: string }[] };
+        modified: boolean;
+      };
+    const boni = await get();
+    expect(boni.modified).toBe(false);
+    expect(boni.spec.blocks.map((b) => b.id)).toContain("uses");
+    const mine = { ...boni.spec, blocks: boni.spec.blocks.filter((b) => b.id !== "keys") };
+    expect((await call(t, "PUT", "/api/pages/system/models", { spec: mine })).status).toBe(200);
+    expect((await get()).modified).toBe(true);
+    // Another device of the account sees the same page.
+    const other = await token("ana", "movil-ejemplo");
+    const seen = (await call(other, "GET", "/api/pages/system/models")).body.page as {
+      modified: boolean;
+    };
+    expect(seen.modified).toBe(true);
+    // Only blocks of the catalogue; only Boni's screens.
+    const bad = { ...mine, blocks: [{ id: "x", type: "html" }] };
+    expect((await call(t, "PUT", "/api/pages/system/models", { spec: bad })).status).toBe(400);
+    expect((await call(t, "GET", "/api/pages/system/nada")).status).toBe(404);
+    // Restored: Boni's again; putting back Boni's own blocks is no change either.
+    expect((await call(t, "DELETE", "/api/pages/system/models")).status).toBe(200);
+    expect((await get()).modified).toBe(false);
+    await call(t, "PUT", "/api/pages/system/models", { spec: boni.spec });
+    expect((await get()).modified).toBe(false);
+  });
 });

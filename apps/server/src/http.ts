@@ -50,11 +50,14 @@ import { mcpAnswer } from "./mcp.ts";
 import {
   createPage,
   getPage,
+  getSystemPage,
   listPages,
   listTrash,
   PageError,
+  putSystemPage,
   removePage,
   restorePage,
+  restoreSystemPage,
   seedFromV1,
   updatePage,
 } from "./pages.ts";
@@ -491,12 +494,25 @@ export function makeApp(opts: ServerOptions): App {
         return send(res, 200, { pages: listPages(store) });
       }
       if (route === "GET /api/pages-trash") return send(res, 200, { pages: listTrash(store) });
+      if (route === "GET /api/pages/system/:name") {
+        try {
+          return send(res, 200, { page: getSystemPage(store, params.name ?? "") });
+        } catch {
+          return send(res, 404, { error: "not-found" });
+        }
+      }
       if (route === "GET /api/pages/:id") {
         const p = getPage(store, id);
         return p ? send(res, 200, { page: p }) : send(res, 404, { error: "not-found" });
       }
       if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       try {
+        if (route === "PUT /api/pages/system/:name")
+          return send(res, 200, {
+            page: putSystemPage(store, params.name ?? "", await bodyOf(req)),
+          });
+        if (route === "DELETE /api/pages/system/:name")
+          return send(res, 200, { page: restoreSystemPage(store, params.name ?? "") });
         if (route === "POST /api/pages")
           return send(res, 200, { page: createPage(store, await bodyOf(req), s.device) });
         if (route === "PUT /api/pages/:id")
