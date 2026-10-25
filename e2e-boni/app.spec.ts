@@ -201,7 +201,7 @@ test("the editor in the side panel: the card shows the preview; a new chart gets
 
   // A new chart from "/" on the page: saved, it takes that line's place.
   await page.locator(".doc-tail").click();
-  await page.keyboard.type("/nueva", { delay: 20 });
+  await page.keyboard.type("/gráfica de", { delay: 20 });
   await expect(page.locator(".slash-menu")).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.locator(".chart-card.new")).toBeVisible();
@@ -275,15 +275,15 @@ test('pages as Notion\'s: made from the sidebar, written in place, blocks by "/"
   // The chart's handle: moved to the top. The heading's: deleted (Undo in the toast).
   const chart = page.locator(".blk-chart").first();
   await chart.hover();
-  await chart.getByRole("button", { name: "Mover o cambiar: Gráfica" }).click();
+  await chart.getByRole("button", { name: "Mover o modificar: Gráfica" }).click();
   await page.screenshot({ path: `${SHOTS}/page-handle.png` });
   await page.getByRole("menuitemradio", { name: "Subir" }).click();
   await chart.hover();
-  await chart.getByRole("button", { name: "Mover o cambiar: Gráfica" }).click();
+  await chart.getByRole("button", { name: "Mover o modificar: Gráfica" }).click();
   await page.getByRole("menuitemradio", { name: "Subir" }).click();
   const heading = page.locator(".blk-h1");
   await heading.hover();
-  await heading.getByRole("button", { name: "Mover o cambiar: Título 1" }).click();
+  await heading.getByRole("button", { name: "Mover o modificar: Título 1" }).click();
   await page.getByRole("menuitemradio", { name: "Borrar" }).click();
   await expect(page.locator(".blk-h1")).toHaveCount(0);
   await expect(page.locator(".toast")).toContainText("Bloque borrado");

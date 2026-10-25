@@ -349,7 +349,11 @@ apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`lega
                  confirmations with the real values, their origin and warnings, the accept button changing side;
                  the inbox one proposal at a time, the log with Undo. Dashboards over the audit (`components/Dash.tsx`:
                  tiles, bar lists, Boni's charts; `Activity.tsx` replaces the Registro's list, `Audit.tsx`, `Notes.tsx`
-                 the notes by path, `History.tsx` a row's history and blame; system columns in tables, `view.system`). «Modelos» (`components/Models.tsx`, over
+                 the notes by path, `History.tsx` a row's history and blame; system columns in tables, `view.system`).
+                 Pages on a grid of 12 (`core/grid.ts`: rows of columns,
+                 moves and widths, pure) with the block catalogue's data blocks (`components/DataBlockView.tsx`,
+                 `POST /api/data/blocks`) and each block's panel drawn from the catalogue (`components/BlockPanel.tsx`).
+                 «Modelos» (`components/Models.tsx`, over
                  `/api/agent/models*`): each role's model, spending and budget, keys, evaluate and use. The server serves the built app at `/boni/` on
                  the tailnet entry (`BONI_BONI_WEB`).
 apps/boni-android/ Boni's Android app (moved from `legacy/boni/apps/android` on 2026-10-23), the same shape as

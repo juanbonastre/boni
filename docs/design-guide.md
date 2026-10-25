@@ -230,13 +230,30 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   "### ", "- ", "[] " and "---" turn a text line into that block, "/" opens the block menu under the line (grouped "Para
   escribir", "Gráficas", "Botones", filtered by what follows the "/", arrows and Enter, Esc closes). The hint "Escribe,
   o «/» para elegir un bloque" shows only on the focused empty line. On hover every block shows in its left gutter
-  "+" (a line below with the menu open) and its handle (its menu: turn into, duplicate, up, down, delete with Undo;
-  drag it to move it); side by side, a chart's gutter sits above its top left corner. A click under the last block
+  "+" (the block menu with a box to filter it, no "/" to type; the block goes after this one) and its handle (its
+  menu: turn into, «Modificar…», duplicate, up, down, delete with Undo; drag it to move it); side by side, a chart's
+  gutter sits above its top left corner. A click under the last block
   writes at the end. Changes show at once and go to the server together half a second later (and before the window
   closes or another page opens). A new page (sidebar "+", a row's "+" for a subpage) opens at once, untitled, with the
   caret in its name. Sidebar rows: page icon, which turns into a chevron to fold its subpages on hover; "…" and "+"
   on the right on hover; a row is dragged to move the page (top quarter: before, bottom: after, middle: inside).
   Capturing or editing a chart happens in the side panel with the page in view.
+- **The page's grid and the block catalogue** (Juan, 2026-10-24/25; `packages/views/src/catalogue.ts`,
+  `components/BlockPanel.tsx`, `DataBlockView.tsx`, `core/grid.ts`): a page is rows of columns on a grid of 12 (a block
+  on its own is a row of its own, the whole width), and in each column the blocks go one under another (Notion's
+  columns). Dragging a block onto another's side (its outer 15 %) makes a column there, with the block's own width when
+  the row has room, else half of the other's; above or below puts it in that column; a row left with one column becomes
+  the whole width again. "+" after a block in a row of several columns adds into its column; after a block alone, on
+  a row of its own. On a window narrower than 640 px the columns go one under another. Numbers («Cifra»), bar lists
+  and charts («Gráfica») of any collection: what they count (rows, a sum or an average of a number field), grouped
+  by time (por día / semana / mes, the axis with dates) or a select field, in a period, only the rows of one option.
+  A click on a number or a chart opens its menu (the handle's; right click too); buttons and text are used with the
+  click. «Modificar…» opens the block's panel on the right, drawn from the catalogue: «Datos», «Aspecto» (shape,
+  colour, «Con fondo», «Ancho», «Altura») and «Solo algunas filas» folded; a setting that depends on another follows
+  it (another collection, its fields). Every setting an AI may set has its control there (the AI is given the same
+  list). Dragging a number's or chart's right edge changes its width in columns (a chart's corner, also its height:
+  low, medium, high). A value that is not in the user's data (a field removed, an AI's mistake) is shown in the
+  block («No se puede mostrar: …», «Modifícalo») and in the panel as it is, marked, never as another value.
 - **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`): "/" + a collection's name puts it on a
   page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Opciones" (sort, a board's
   grouping select, a calendar's date, visible properties) and "Nuevo". Table: the title column first, 34 px rows,

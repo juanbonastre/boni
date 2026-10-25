@@ -106,7 +106,9 @@ export type Panel =
   | null
   | { kind: "screen"; id: string; values?: F.Values; shortcut?: string }
   | { kind: "edit"; spec: ChartSpec; isNew: boolean }
-  | { kind: "shortcut"; shortcut: Shortcut; isNew: boolean };
+  | { kind: "shortcut"; shortcut: Shortcut; isNew: boolean }
+  /** A block of the open page: a control for each of its settings in the block catalogue. */
+  | { kind: "block"; id: string };
 /** The phone's tabs: capturing (shortcuts), the charts and the conversation with Boni. */
 export type Tab = "capture" | "charts" | "boni";
 
@@ -535,6 +537,8 @@ export const showTab = (tab: Tab) => set({ tab, view: { kind: "home" } });
 export const openEditor = (spec: ChartSpec, isNew = false) =>
   set({ panel: { kind: "edit", spec: normalize(spec), isNew }, ...FRESH_PANEL });
 export const closePanel = () => set({ panel: null, chartForPage: null, ...FRESH_PANEL });
+/** A block's settings in the side panel («Modificar…»). */
+export const openBlockPanel = (id: string) => set({ panel: { kind: "block", id }, ...FRESH_PANEL });
 export const markPanelEdited = () => {
   if (get().panel && !get().panelEdited) set({ panelEdited: true });
 };

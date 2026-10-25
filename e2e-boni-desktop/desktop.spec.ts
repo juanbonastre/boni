@@ -19,6 +19,7 @@ import {
   test,
 } from "@playwright/test";
 import { readZip } from "../packages/export/src/zip.ts";
+import { applies, CATALOGUE } from "../packages/views/src/catalogue.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const SHOTS = join(ROOT, "e2e-boni", "screenshots");
@@ -55,6 +56,10 @@ const VAULT: Record<string, string> = {
   [`agenda/docencia/${iso(tomorrow)} Tutoría.md`]: `---\ntitle: "Tutoría"\ndate: "${iso(tomorrow)}"\nstartTime: "16:00"\ncompleted: false\n---\n`,
   "registros/personas/ana-ejemplo.md":
     "---\ntype: person\nsummary: Invented colleague.\n---\n# Ana\n",
+  // Invented belongings: a number, a date and a list (its values become a select's options).
+  "registros/pertenencias/cafetera.md": `---\nprecio: 210\ncomprado: "${iso(today)}"\ntipo: [cocina]\n---\n# Cafetera\n`,
+  "registros/pertenencias/cortacesped.md": `---\nprecio: 180\ncomprado: "${iso(today)}"\ntipo: [jardín]\n---\n# Cortacésped\n`,
+  "registros/pertenencias/horno.md": `---\nprecio: 240\ncomprado: "${iso(new Date(Date.now() - 86_400_000))}"\ntipo: [cocina]\n---\n# Horno\n`,
 };
 
 /** An invented `private/` folder (the AI never reads Juan's): a note and a PDF in a folder. */
@@ -207,6 +212,75 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await expect(doc.locator(".blk-h2 .blk-input")).toHaveValue("Material");
 });
 
+test("a page of numbers and charts from a collection: each block's panel from the catalogue, side by side on the grid", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  await w.locator(".sidebar").getByRole("button", { name: "Nueva página" }).first().click();
+  await w.keyboard.type("Lectura", { delay: 20 });
+  await w.keyboard.press("Enter");
+  // From "/": a number, and its panel opens at once.
+  await w.keyboard.type("/cifra", { delay: 20 });
+  await expect(w.locator(".slash-menu")).toContainText("Cifra");
+  await w.keyboard.press("Enter");
+  const panel = w.locator(".side-panel");
+  await expect(panel.locator("h2")).toHaveText("Cifra");
+  const choose = (label: string, option: string) =>
+    panel.locator(".field", { hasText: label }).locator("select").selectOption({ label: option });
+  await choose("Colección", "Pertenencia");
+  await panel.locator(".field", { hasText: "Nombre" }).locator("input").fill("Cosas");
+  await choose("Periodo", "Desde siempre");
+  const number = w.locator(".blk-number");
+  await expect(number.locator(".kpi-value")).toHaveText("3");
+  // Every setting of the catalogue that applies has its control (Juan, 2026-10-24): the sum reveals «De».
+  await choose("Qué cuenta", "La suma de…");
+  await expect(number.locator(".kpi-value")).toHaveText("630");
+  await panel.getByRole("button", { name: "Solo algunas filas" }).click();
+  await choose("Solo las filas con", "tipo");
+  const kind = CATALOGUE.find((k) => k.type === "number");
+  const now = { measure: "sum", filterField: "x" };
+  for (const st of kind?.settings ?? [])
+    if (applies(st, now))
+      await expect(panel.getByText(st.label, { exact: true }).first()).toBeVisible();
+  await expect(panel.getByText("Ancho", { exact: true })).toBeVisible();
+  await choose("Igual a", "cocina");
+  await expect(number.locator(".kpi-value")).toHaveText("450");
+  await shot(w, "block-panel");
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  // «+» opens the catalogue without typing "/": a bar list after the number.
+  await number.hover();
+  await number.getByRole("button", { name: "Añadir un bloque" }).click();
+  await w.keyboard.type("barras", { delay: 20 });
+  await w.keyboard.press("Enter");
+  await expect(panel.locator("h2")).toHaveText("Lista de barras");
+  await choose("Colección", "Pertenencia");
+  await choose("Periodo", "Desde siempre");
+  await choose("Agrupar", "tipo");
+  const bars = w.locator(".blk-bars");
+  await expect(bars).toContainText("cocina");
+  await expect(bars).toContainText("jardín");
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  // A chart, then the bars dragged beside the number: one row, two columns.
+  await bars.hover();
+  await bars.getByRole("button", { name: "Añadir un bloque" }).click();
+  await w.keyboard.type("gráfica", { delay: 20 });
+  await w.locator(".add-menu").getByRole("menuitem", { name: "Gráfica", exact: true }).click();
+  await choose("Colección", "Pertenencia");
+  await choose("Agrupar", "Por día");
+  await choose("Periodo", "Últimos 30 días");
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  await expect(w.locator(".blk-graph .chart-card")).toBeVisible();
+  const handle = bars.locator(".blk-handle");
+  const box = await number.boundingBox();
+  if (!box) throw new Error("no number block");
+  await handle.dragTo(number, { targetPosition: { x: box.width - 4, y: box.height / 2 } });
+  await expect(w.locator(".grid-row").first().locator(".grid-col")).toHaveCount(2);
+  // A click on a number opens its menu (as its handle does); «Modificar…» opens its panel.
+  await number.locator(".kpi-value").click();
+  await w.getByRole("menuitemradio", { name: "Modificar…" }).click();
+  await expect(panel.locator("h2")).toHaveText("Cifra");
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  await shot(w, "grid");
+});
+
 test("a zone moved into Boni: marked as private, its attachment opened from the app", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Nueva página" }).first().click();
@@ -239,7 +313,7 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
   const table = w.locator(".cols-table");
-  await expect(table.locator("tbody tr")).toHaveCount(3); // Docencia, Persona, Documentos
+  await expect(table.locator("tbody tr")).toHaveCount(4); // Docencia, Pertenencia, Persona, Documentos
   await w
     .locator(".cols-filter")
     .getByRole("radio", { name: /Privada/ })

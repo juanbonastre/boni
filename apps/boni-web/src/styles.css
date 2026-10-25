@@ -2965,17 +2965,170 @@ span.page-icon {
 .blk.dragging {
   opacity: 0.4;
 }
-.blk.drop-before {
+.blk.drop-above {
   box-shadow: 0 -2px 0 var(--accent);
 }
-.blk.drop-after {
+.blk.drop-below {
   box-shadow: 0 2px 0 var(--accent);
 }
-.doc-actions > .blk.drop-before {
+/* Beside a block: a column of its own there. */
+.blk.drop-left {
   box-shadow: -3px 0 0 var(--accent);
 }
-.doc-actions > .blk.drop-after {
+.blk.drop-right {
   box-shadow: 3px 0 0 var(--accent);
+}
+.doc-actions > .blk.drop-above {
+  box-shadow: -3px 0 0 var(--accent);
+}
+.doc-actions > .blk.drop-below {
+  box-shadow: 3px 0 0 var(--accent);
+}
+
+/* The page's grid of 12 columns (packages/views Place): rows of columns, blocks one under another in each. */
+.grid-row {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: 16px;
+  align-items: start;
+  margin: 10px 0;
+}
+.grid-col {
+  grid-column: span var(--span, 12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.grid-col > .doc-actions,
+.grid-col > .doc-charts {
+  margin: 0;
+}
+/* Beside another column there is no margin for the handle: it sits just above the block's top left corner. */
+.grid-col:not(:first-child) .blk > .blk-gutter {
+  left: 0;
+  top: -26px;
+}
+/* On a narrow window the columns go one under another. */
+@container (max-width: 640px) {
+  .grid-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 12px;
+  }
+  .grid-col {
+    grid-column: auto;
+  }
+}
+/* A number, a bar list or a chart from a collection; «Con fondo» puts it on a card. */
+.blk-number:not(.blk-bg) .kpi {
+  padding-left: 0;
+  padding-right: 0;
+  border-color: transparent;
+  background: transparent;
+}
+.blk-bars.blk-bg > .data-blk-bars,
+.blk-graph.blk-bg > .data-blk-chart {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.data-blk-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.data-blk-chart {
+  display: flex;
+  min-width: 0;
+}
+.data-blk-chart > .chart-card {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border-color: transparent;
+  padding: 6px 0 4px;
+}
+.blk-graph.blk-bg .chart-card .surface-fill,
+.blk-graph.blk-bg .chart-card .pill-bg {
+  fill: var(--surface);
+}
+.blk-graph:not(.blk-bg) .chart-card .surface-fill,
+.blk-graph:not(.blk-bg) .chart-card .pill-bg {
+  fill: var(--bg);
+}
+.data-blk-bad {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--bad);
+  border-radius: 10px;
+  color: var(--text);
+}
+.data-blk-name {
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.blk-clickable {
+  cursor: pointer;
+}
+.blk-clickable:hover {
+  background: var(--hover);
+}
+/* Its corner: drag to change the width (and a chart's height). */
+.blk-resize {
+  position: absolute;
+  right: -6px;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: ew-resize;
+  opacity: 0;
+}
+.blk-resize.corner {
+  top: auto;
+  bottom: -6px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  border-radius: 0 0 4px 0;
+}
+.blk:hover > .blk-resize {
+  opacity: 1;
+}
+/* The "+" menu: the catalogue with a box to filter it. */
+.add-menu-search {
+  margin: 4px 4px 6px;
+  width: calc(100% - 8px);
+}
+/* A block's panel: «Datos», «Aspecto», and the rows it counts folded. */
+.block-panel-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.block-panel-head {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.block-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+select.input.invalid {
+  border-color: var(--bad);
 }
 .blk-body {
   position: relative;

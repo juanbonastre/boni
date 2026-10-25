@@ -1,3 +1,4 @@
+import { kindOf } from "@boni/views";
 import { Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { OfflineError } from "../core/api.ts";
@@ -19,6 +20,7 @@ import {
   todayIso,
   useStore,
 } from "../store.ts";
+import { BlockPanel, kindName } from "./BlockPanel.tsx";
 import { EditorForm } from "./editorFields.tsx";
 import { FormView } from "./FormView.tsx";
 
@@ -30,6 +32,7 @@ export function SidePanel() {
   const t = useStore((s) => s.t);
   const panel = useStore((s) => s.panel);
   const screens = useStore((s) => s.screens);
+  const page = useStore((s) => s.page);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -45,13 +48,18 @@ export function SidePanel() {
   }, []);
 
   if (!panel) return null;
+  const block =
+    panel.kind === "block" ? page?.spec.blocks.find((b) => b.id === panel.id) : undefined;
+  const blockTitle = block ? kindName(t, kindOf(block.type), block.type) : t("block.menuTitle");
   const screen = panel.kind === "screen" ? screens[panel.id] : null;
   const title =
     panel.kind === "edit"
       ? panel.isNew
         ? t("charts.newTitle")
         : t("charts.editTitle")
-      : (screen?.title ?? t("chart.loading"));
+      : panel.kind === "block"
+        ? blockTitle
+        : (screen?.title ?? t("chart.loading"));
   return (
     <aside className="side-panel" aria-label={title}>
       <div className="panel-head">
@@ -68,6 +76,8 @@ export function SidePanel() {
       </div>
       {panel.kind === "edit" ? (
         <EditorPanel key={panel.spec.id || "new"} initial={panel.spec} isNew={panel.isNew} />
+      ) : panel.kind === "block" ? (
+        <BlockPanel key={panel.id} id={panel.id} />
       ) : screen ? (
         <ScreenPanel screen={screen} />
       ) : (
