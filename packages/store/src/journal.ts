@@ -67,6 +67,19 @@ export interface RequestRow {
   answer: unknown;
 }
 /** What model calls cost in a period, per role, provider and model (the «Modelos» page). */
+export interface ModelCallUse {
+  /** Its row in the journal: stable, for the collection's row id. */
+  n: number;
+  run: string;
+  role: string;
+  provider: string;
+  model: string;
+  input: number;
+  output: number;
+  /** US dollars; null when unknown. */
+  cost: number | null;
+  at: number;
+}
 export interface SpendRow {
   role: string;
   provider: string;
@@ -123,6 +136,10 @@ export interface Journal {
   setRequest(id: string, status: RequestRow["status"], at: number, answer?: unknown): void;
   /** Model calls from `from` to `to` (ms), grouped by role, provider and model. */
   spending(from: number, to: number): SpendRow[];
+  /** Each model call in a period (oldest first): what Boni shows as its read-only collection «Llamadas a modelos». */
+  modelCallsIn(from: number, to: number): ModelCallUse[];
+  /** The last model call's number (0 with none): it changes whenever one is recorded. */
+  lastModelCall(): number;
   /** Their cost per UTC day ("YYYY-MM-DD"), in dollars. */
   spendingByDay(
     from: number,
@@ -339,6 +356,29 @@ export function openJournal(db: DatabaseSync): Journal {
       void db
         .prepare("UPDATE requests SET status = ?, decided = ?, answer = ? WHERE id = ?")
         .run(status, at, answer === undefined ? null : j(answer), id),
+    lastModelCall: () =>
+      (db.prepare("SELECT coalesce(max(rowid), 0) AS n FROM model_calls").get() as { n: number }).n,
+    modelCallsIn: (from, to) =>
+      db
+        .prepare(
+          `SELECT rowid AS n, run, role, provider, model, at,
+             coalesce(json_extract(usage, '$.input'), 0) AS input,
+             coalesce(json_extract(usage, '$.output'), 0) AS output,
+             json_extract(usage, '$.cost') AS cost
+           FROM model_calls WHERE at >= ? AND at < ? ORDER BY at, rowid`,
+        )
+        .all(from, to)
+        .map((r) => ({
+          n: Number(r.n),
+          run: r.run as string,
+          role: r.role as string,
+          provider: r.provider as string,
+          model: r.model as string,
+          input: Number(r.input),
+          output: Number(r.output),
+          cost: r.cost === null ? null : Number(r.cost),
+          at: Number(r.at),
+        })),
     spending: (from, to) =>
       db
         .prepare(

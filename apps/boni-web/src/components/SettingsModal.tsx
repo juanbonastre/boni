@@ -38,6 +38,7 @@ import {
   useVisibleCharts,
 } from "../store.ts";
 import { ACCENT } from "./Chart.tsx";
+import { ModelsSettings } from "./ModelsSettings.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
 
 /** Settings (Boni Calendar's modal): account, appearance and, on the desktop, the tray and the widgets. */
@@ -46,15 +47,25 @@ export function SettingsModal() {
   const settings = useStore((s) => s.settings);
   const close = () => openSettings(false);
   const linked = configured(settings);
-  type Section = "account" | "ai" | "extensions" | "mail" | "data" | "appearance" | "desktop";
+  type Section =
+    | "account"
+    | "models"
+    | "ai"
+    | "extensions"
+    | "mail"
+    | "data"
+    | "appearance"
+    | "desktop";
   const sections: Section[] = [
     "account",
-    ...(linked ? (["ai", "extensions", "mail"] as const) : []),
+    // What was the page «Modelos» (design audit, 2026-10-25): what configures Boni lives here.
+    ...(linked ? (["models", "ai", "extensions", "mail"] as const) : []),
     ...(linked && (host.saveExport || settings.backup) ? (["data"] as const) : []),
     "appearance",
     ...(host.desktop ? (["desktop"] as const) : []),
   ];
-  const [chosen, setSection] = useState<Section>("account");
+  const asked = useStore((s) => s.settingsSection) as Section | null;
+  const [chosen, setSection] = useState<Section>(asked ?? "account");
   const section: Section = sections.includes(chosen) ? chosen : "account";
 
   useEffect(() => {
@@ -108,6 +119,7 @@ export function SettingsModal() {
           >
             <h3>{t(`settings.section.${section}`)}</h3>
             {section === "account" && <Account />}
+            {section === "models" && <ModelsSettings />}
             {section === "ai" && <AiVisibility />}
             {section === "extensions" && <Extensions />}
             {section === "mail" && <MailSettings />}

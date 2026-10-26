@@ -4,6 +4,14 @@ import type { Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { label } from "@boni/entities";
+import {
+  DATA_BLOCKS,
+  PAGE_TEMPLATES,
+  type PageSpec,
+  templateChanges,
+  templatePage,
+} from "@boni/views";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
@@ -80,15 +88,17 @@ const call = async (t: string, method: string, path: string, body?: unknown) => 
 };
 
 describe("the user's pages (docs/extensiones.md 6)", () => {
-  it("a new account has none; what the first Boni's home showed becomes one page, once", async () => {
+  it("a new account has Boni's templates; what the first Boni's home showed becomes one page, once", async () => {
     const ana = await token("ana");
-    expect((await call(ana, "GET", "/api/pages")).body).toEqual({ pages: [] });
+    const titles = async (t: string) =>
+      ((await call(t, "GET", "/api/pages")).body.pages as { title: string }[]).map((p) => p.title);
+    expect(await titles(ana)).toEqual(["Uso de la IA", "Actividad"]);
     const juan = await token("juan");
     const first = (await call(juan, "GET", "/api/pages")).body.pages as {
       id: string;
       title: string;
     }[];
-    expect(first.map((p) => p.title)).toEqual(["Gastos"]);
+    expect(first.map((p) => p.title)).toEqual(["Gastos", "Uso de la IA", "Actividad"]);
     const page = (await call(juan, "GET", `/api/pages/${first[0]?.id}`)).body.page as {
       spec: { blocks: { type: string; label?: string; chart?: string }[] };
     };
@@ -98,9 +108,9 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
     expect(types).toContain("chart");
     // Deleted, it does not come back by itself; Undo restores it.
     expect((await call(juan, "DELETE", `/api/pages/${first[0]?.id}`)).status).toBe(200);
-    expect((await call(juan, "GET", "/api/pages")).body).toEqual({ pages: [] });
+    expect(await titles(juan)).toEqual(["Uso de la IA", "Actividad"]);
     expect((await call(juan, "POST", `/api/pages/${first[0]?.id}/restore`)).status).toBe(200);
-    expect(((await call(juan, "GET", "/api/pages")).body.pages as unknown[]).length).toBe(1);
+    expect((await titles(juan)).length).toBe(3);
     expect((await call(juan, "DELETE", `/api/pages/${first[0]?.id}`)).status).toBe(200);
   });
 
@@ -155,39 +165,81 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
       id: string;
       parent: string | null;
     }[];
-    expect(left).toEqual([expect.objectContaining({ id: sub.id, parent: null })]);
+    expect(left).toContainEqual(expect.objectContaining({ id: sub.id, parent: null }));
+    expect(left.some((p) => p.id === made.id)).toBe(false);
     // The removed page waits in the trash.
     const trash = (await call(t, "GET", "/api/pages-trash")).body.pages as { id: string }[];
     expect(trash.map((p) => p.id)).toContain(made.id);
   });
 
-  it("Boni's own screens as pages: Boni's until changed, kept for the account, restored", async () => {
+  it("Boni's templates: blocks over Boni's own records that compute, changed and restored like any page", async () => {
     const t = await token("ana");
-    const get = async () =>
-      (await call(t, "GET", "/api/pages/system/models")).body.page as {
-        spec: { blocks: { id: string }[] };
-        modified: boolean;
+    const pages = (await call(t, "GET", "/api/pages")).body.pages as {
+      id: string;
+      title: string;
+    }[];
+    for (const name of PAGE_TEMPLATES) {
+      const made = templatePage(name);
+      const id = pages.find((p) => p.title === made.title)?.id ?? "";
+      const page = (await call(t, "GET", `/api/pages/${id}`)).body.page as {
+        icon: string;
+        spec: PageSpec;
       };
-    const boni = await get();
-    expect(boni.modified).toBe(false);
-    expect(boni.spec.blocks.map((b) => b.id)).toContain("uses");
-    const mine = { ...boni.spec, blocks: boni.spec.blocks.filter((b) => b.id !== "keys") };
-    expect((await call(t, "PUT", "/api/pages/system/models", { spec: mine })).status).toBe(200);
-    expect((await get()).modified).toBe(true);
-    // Another device of the account sees the same page.
-    const other = await token("ana", "movil-ejemplo");
-    const seen = (await call(other, "GET", "/api/pages/system/models")).body.page as {
-      modified: boolean;
+      expect(page.icon).toBe(made.icon);
+      expect(page.spec).toEqual(made.spec);
+      // Every number and chart computes from Boni's collections (none comes back with problems).
+      const blocks = page.spec.blocks.filter((b) =>
+        (DATA_BLOCKS as readonly string[]).includes(b.type),
+      );
+      expect(blocks.length).toBeGreaterThan(3);
+      const out = (await call(t, "POST", "/api/data/blocks", { blocks })).body.results as Record<
+        string,
+        { problems?: unknown }
+      >;
+      for (const b of blocks) expect(out[b.id]?.problems, `${name} ${b.id}`).toBeUndefined();
+      // The database block lists one of them.
+      const db = page.spec.blocks.find((b) => b.type === "database") as
+        | { source: string }
+        | undefined;
+      if (db) expect((await call(t, "GET", `/api/data/types/${db.source}/rows`)).status).toBe(200);
+      // Changed like any page; restored by putting Boni's version back.
+      const mine = { ...page.spec, blocks: page.spec.blocks.slice(1) };
+      expect((await call(t, "PUT", `/api/pages/${id}`, { spec: mine })).status).toBe(200);
+      expect(templateChanges(name, mine).length).toBeGreaterThan(0);
+      await call(t, "PUT", `/api/pages/${id}`, { spec: made.spec });
+      const back = (await call(t, "GET", `/api/pages/${id}`)).body.page as { spec: PageSpec };
+      expect(templateChanges(name, back.spec)).toEqual([]);
+    }
+    // Removed, a template is not made again.
+    const uso = pages.find((p) => p.title === "Uso de la IA")?.id ?? "";
+    await call(t, "DELETE", `/api/pages/${uso}`);
+    const now = (await call(t, "GET", "/api/pages")).body.pages as { title: string }[];
+    expect(now.some((p) => p.title === "Uso de la IA")).toBe(false);
+  });
+
+  it("a page stored with a retired block keeps the rest (design audit, 2026-10-25)", async () => {
+    const t = await token("ana");
+    const made = (await call(t, "POST", "/api/pages", { title: "Antigua" })).body.page as {
+      id: string;
     };
-    expect(seen.modified).toBe(true);
-    // Only blocks of the catalogue; only Boni's screens.
-    const bad = { ...mine, blocks: [{ id: "x", type: "html" }] };
-    expect((await call(t, "PUT", "/api/pages/system/models", { spec: bad })).status).toBe(400);
-    expect((await call(t, "GET", "/api/pages/system/nada")).status).toBe(404);
-    // Restored: Boni's again; putting back Boni's own blocks is no change either.
-    expect((await call(t, "DELETE", "/api/pages/system/models")).status).toBe(200);
-    expect((await get()).modified).toBe(false);
-    await call(t, "PUT", "/api/pages/system/models", { spec: boni.spec });
-    expect((await get()).modified).toBe(false);
+    host.store(2).update(
+      made.id,
+      {
+        f_spec: {
+          value: JSON.stringify({
+            version: 1,
+            blocks: [
+              { id: "m", type: "models" },
+              { id: "s", type: "number", from: "boni", source: "spend" },
+              { id: "t", type: "text", text: "Lo que escribí" },
+            ],
+          }),
+          label: label("own", "personal", [{ kind: "code", id: "pages" }]),
+        },
+      },
+      { actor: "system" },
+    );
+    const page = (await call(t, "GET", `/api/pages/${made.id}`)).body.page as { spec: PageSpec };
+    expect(page.spec.blocks).toEqual([{ id: "t", type: "text", text: "Lo que escribí" }]);
   });
 });

@@ -253,7 +253,7 @@ for (const width of [1440, 900]) {
 }
 
 for (const width of [1440, 900]) {
-  test(`the worst realistic data fits («Modelos», «Actividad», «Auditoría», ${width} px)`, async ({
+  test(`the worst realistic data fits («Modelos», «Registro», «Auditoría», ${width} px)`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 860 });

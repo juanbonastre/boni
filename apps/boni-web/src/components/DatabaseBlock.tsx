@@ -120,7 +120,7 @@ export function DatabaseBlock({
           <h3 className="db-name">
             {type?.icon && <span className="db-icon">{type.icon}</span>}
             {type?.name ?? "…"}
-            {type && <ProtectionMenu type={type} />}
+            {type?.system ? <SystemPill /> : type && <ProtectionMenu type={type} />}
           </h3>
         ) : (
           <span className="db-name" />
@@ -144,10 +144,12 @@ export function DatabaseBlock({
         </div>
         {type && <FilterButton type={type} view={view} onView={onView} />}
         {type && <ViewOptions type={type} view={view} onView={onView} />}
-        <button type="button" className="btn primary small" onClick={() => void add()}>
-          <Plus size={14} strokeWidth={2} />
-          {t("db.new")}
-        </button>
+        {!type?.system && (
+          <button type="button" className="btn primary small" onClick={() => void add()}>
+            <Plus size={14} strokeWidth={2} />
+            {t("db.new")}
+          </button>
+        )}
       </header>
       {!type || !data ? (
         <div className="db-loading">{t("chart.loading")}</div>
@@ -744,8 +746,14 @@ function TableView({
             <tr key={r.id}>
               {ordered.map((f) => (
                 <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
-                  <Cell type={type} field={f} row={r} titles={titles} />
-                  {f.id === type.titleField && <OpenButton type={type} row={r} />}
+                  {type.system ? (
+                    <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
+                  ) : (
+                    <>
+                      <Cell type={type} field={f} row={r} titles={titles} />
+                      {f.id === type.titleField && <OpenButton type={type} row={r} />}
+                    </>
+                  )}
                 </td>
               ))}
               {sys.map((c) => {
@@ -759,25 +767,39 @@ function TableView({
                 );
               })}
               <td className="row-tools">
-                <button
-                  type="button"
-                  className="icon-btn tiny"
-                  title={t("db.delete")}
-                  aria-label={`${t("db.delete")}: ${titleOf(type, r)}`}
-                  onClick={() => void deleteRow(type.id, r.id)}
-                >
-                  <Trash2 size={13} strokeWidth={1.8} />
-                </button>
+                {!type.system && (
+                  <button
+                    type="button"
+                    className="icon-btn tiny"
+                    title={t("db.delete")}
+                    aria-label={`${t("db.delete")}: ${titleOf(type, r)}`}
+                    onClick={() => void deleteRow(type.id, r.id)}
+                  >
+                    <Trash2 size={13} strokeWidth={1.8} />
+                  </button>
+                )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <button type="button" className="db-add-row" onClick={onAdd}>
-        <Plus size={14} strokeWidth={1.8} />
-        {t("db.new")}
-      </button>
+      {!type.system && (
+        <button type="button" className="db-add-row" onClick={onAdd}>
+          <Plus size={14} strokeWidth={1.8} />
+          {t("db.new")}
+        </button>
+      )}
     </div>
+  );
+}
+
+/** Instead of its protection: Boni's own records are read only and no model sees them. */
+export function SystemPill() {
+  const t = useStore((s) => s.t);
+  return (
+    <span className="collection-system-pill" title={t("collection.systemHint")}>
+      {t("collection.system")}
+    </span>
   );
 }
 

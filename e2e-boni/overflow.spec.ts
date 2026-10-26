@@ -30,8 +30,9 @@ import {
   modelsAudit,
   notesAudit,
   settingsAudit,
+  templatesAudit,
 } from "./audit.ts";
-import { openApp } from "./fixtures.ts";
+import { openApp, PAGE_FROM_HOME, TEMPLATE } from "./fixtures.ts";
 
 /**
  * Text fits its box, everywhere (Boni Calendar's rule): no control breaks its label over two lines and nothing
@@ -154,8 +155,13 @@ for (const language of ["es", "en"] as const) {
       await page.locator(".add-menu").waitFor();
       issues.push(...(await audit(page, "add menu (+)")));
       await page.keyboard.press("Escape");
+      // A click lists what it counts; the right click opens its menu.
       await num.locator(".kpi-value").click();
-      issues.push(...(await audit(page, "block click menu")));
+      await page.locator(".side-panel .rows-panel").waitFor();
+      issues.push(...(await audit(page, "block rows")));
+      await page.keyboard.press("Escape");
+      await num.locator(".kpi-value").click({ button: "right" });
+      issues.push(...(await audit(page, "block menu (right click)")));
       await page.keyboard.press("Escape");
       // A button's panel: its data with the capture's own form.
       const button = page.locator(".doc-actions .blk").nth(1);
@@ -309,14 +315,14 @@ const C = {
     chat: "Conversación",
     box: "Escribe a Boni…",
     inbox: /^Bandeja/,
-    log: "Actividad",
+    log: "Registro",
     tab: "Boni",
   },
   en: {
     chat: "Conversation",
     box: "Write to Boni…",
     inbox: /^Inbox/,
-    log: "Activity",
+    log: "Activity log",
     tab: "Boni",
   },
 };
@@ -379,10 +385,10 @@ for (const language of ["es", "en"] as const) {
   });
 }
 
-/** «Modelos»: every section opened, a role's cases and the panel to change it with an evaluation. */
+/** Ajustes → Modelos: every section opened, a role's cases and the panel to change it; the template pages. */
 for (const language of ["es", "en"] as const) {
   for (const width of [1440, 900]) {
-    test(`«Modelos», «Actividad» and «Auditoría» fit (${language}, ${width} px)`, async ({
+    test(`«Modelos», the template pages, «Registro» and «Auditoría» fit (${language}, ${width} px)`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: 860 });
@@ -396,9 +402,11 @@ for (const language of ["es", "en"] as const) {
           "GET api/data/audit/actions/:seq": [AUDIT_DETAIL],
           "GET api/agent/runs": [RUNS_EXPLAINED],
         },
+        pages: [PAGE_FROM_HOME, TEMPLATE("uso-ia"), TEMPLATE("actividad")],
       });
       expect([
         ...(await modelsAudit(page, MODELS_TEXT[language], `${width}`)),
+        ...(await templatesAudit(page, MODELS_TEXT[language], `${width}`)),
         ...(await activityAudit(page, MODELS_TEXT[language], `${width}`)),
       ]).toEqual([]);
     });

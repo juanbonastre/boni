@@ -2,10 +2,9 @@ import {
   type DatabaseFilter,
   emptyPage,
   filterErrors,
-  isSystemPage,
   type PageSpec,
   pageErrors,
-  type SystemPage,
+  withoutRetired,
 } from "@boni/views";
 import { ApiError, NotConfiguredError, OfflineError, type Transport } from "./api.ts";
 import {
@@ -777,20 +776,25 @@ function parsePage(b: unknown): Page | null {
   const v = isObj(b) ? b.page : null;
   const i = parsePageInfo(v);
   if (!i || !isObj(v)) return null;
-  const spec = pageErrors(v.spec).length ? emptyPage() : (v.spec as PageSpec);
+  // Blocks of a kind that is no more are left out (packages/views `withoutRetired`), never the whole page.
+  const raw = withoutRetired(v.spec);
+  const spec = pageErrors(raw).length ? emptyPage() : (raw as PageSpec);
   return { ...i, spec };
 }
 
-/** One of Boni's screens as a page (packages/views systemPages.ts): Boni's, or the user's changed version. */
-export interface SystemPageView {
-  name: SystemPage;
-  spec: PageSpec;
-  modified: boolean;
-}
-function parseSystemPage(b: unknown): SystemPageView | null {
-  const v = isObj(b) ? b.page : null;
-  if (!isObj(v) || !isSystemPage(v.name) || pageErrors(v.spec).length) return null;
-  return { name: v.name, spec: v.spec as PageSpec, modified: v.modified === true };
+/** Rows as a collection's table lists them: each checked, the titles relations point to, the system columns. */
+function rowList(b: unknown) {
+  const rows =
+    isObj(b) && Array.isArray(b.rows) ? b.rows.map(parseRow).filter((x): x is DataRow => !!x) : [];
+  const titles = isObj(b) && isObj(b.titles) ? (b.titles as Record<string, string>) : {};
+  // Each row's system columns (Juan, 2026-10-24), when the server keeps them.
+  const columns: Record<string, SystemColumns> = {};
+  if (isObj(b) && isObj(b.columns))
+    for (const [id, c] of Object.entries(b.columns)) {
+      const p = parseColumns(c);
+      if (p) columns[id] = p;
+    }
+  return { rows, titles, columns };
 }
 
 /** A collection of the user's as a database (plan PR 19): its fields, and its rows. */
@@ -816,6 +820,8 @@ export interface DataType {
   rules: ProtectionRule[];
   /** How its rows open as pages (the account's, every device): properties unfolded, and those hidden. */
   rowUi: { open: boolean; hidden: string[] };
+  /** Boni's own records (calls to models, its activity): read only, never seen by a model. */
+  system?: true;
 }
 export interface ProtectionRule {
   id: string;
@@ -849,6 +855,7 @@ function parseDataType(v: unknown): DataType | null {
     titleField: str(v.titleField, 80) ?? "",
     count: typeof v.count === "number" ? v.count : 0,
     level: levelOf(v.level),
+    ...(v.system === true ? { system: true as const } : {}),
     rules: Array.isArray(v.rules)
       ? v.rules.flatMap((r): ProtectionRule[] =>
           isObj(r) && typeof r.id === "string" && filterErrors(r.filter).length === 0
@@ -1189,12 +1196,6 @@ export class AgentApi {
     },
   ) =>
     parsePage((await this.call("PUT", `/${encodeURIComponent(id)}`, input, "api/pages")) as never);
-  systemPage = async (name: SystemPage) =>
-    parseSystemPage(await this.call("GET", `/system/${name}`, undefined, "api/pages"));
-  saveSystemPage = async (name: SystemPage, spec: PageSpec) =>
-    parseSystemPage(await this.call("PUT", `/system/${name}`, { spec }, "api/pages"));
-  restoreSystemPage = async (name: SystemPage) =>
-    parseSystemPage(await this.call("DELETE", `/system/${name}`, undefined, "api/pages"));
   trash = async (): Promise<(PageInfo & { deleted: number })[]> => {
     const b = await this.call("GET", "", undefined, "api/pages-trash");
     return isObj(b) && Array.isArray(b.pages)
@@ -1248,6 +1249,28 @@ export class AgentApi {
     const b = await this.call("POST", "", { blocks }, "api/data/blocks");
     return parseBlockResults(b);
   };
+  /** The rows a data block counts (or one of its bars or points: `drill`), as its collection's table lists them. */
+  blockRows = async (
+    block: Omit<DataBlock, "at">,
+    drill?: string,
+  ): Promise<
+    | {
+        rows: DataRow[];
+        total: number;
+        titles: Record<string, string>;
+        columns: Record<string, SystemColumns>;
+      }
+    | { problems: unknown[] }
+  > => {
+    const b = await this.call(
+      "POST",
+      "",
+      { block, ...(drill ? { drill } : {}) },
+      "api/data/blocks/rows",
+    );
+    if (isObj(b) && Array.isArray(b.problems)) return { problems: b.problems };
+    return { ...rowList(b), total: isObj(b) && typeof b.total === "number" ? b.total : 0 };
+  };
   // The user's collections as databases (plan PR 19).
   dataTypes = async (): Promise<DataType[]> => {
     const b = await this.call("GET", "", undefined, "api/data/types");
@@ -1262,18 +1285,7 @@ export class AgentApi {
       undefined,
       "api/data/types",
     );
-    const rows =
-      isObj(b) && Array.isArray(b.rows)
-        ? b.rows.map(parseRow).filter((x): x is DataRow => !!x)
-        : [];
-    const titles = isObj(b) && isObj(b.titles) ? (b.titles as Record<string, string>) : {};
-    // Each row's system columns (Juan, 2026-10-24), when the server keeps them.
-    const columns: Record<string, SystemColumns> = {};
-    if (isObj(b) && isObj(b.columns))
-      for (const [id, c] of Object.entries(b.columns)) {
-        const p = parseColumns(c);
-        if (p) columns[id] = p;
-      }
+    const { rows, titles, columns } = rowList(b);
     const ghosts =
       isObj(b) && Array.isArray(b.ghosts)
         ? b.ghosts.flatMap((g): DataRow[] => {

@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { systemPage } from "../packages/views/src/systemPages.ts";
+import { templatePage } from "../packages/views/src/templates.ts";
+import { boniEngine, boniTypes } from "./boni-records.ts";
 
 /** The server's documented answers (`api/examples`): the fake server below answers with them. */
 const DIR = join(import.meta.dirname, "..", "apps", "boni-web", "api", "examples");
@@ -48,6 +49,12 @@ export interface FakePage {
   spec: { version: 1; full?: boolean; blocks: Record<string, unknown>[] };
 }
 
+/** A template page as the server seeds it (apps/server/src/pages.ts `seedTemplates`). */
+export const TEMPLATE = (name: "uso-ia" | "actividad"): FakePage => {
+  const t = templatePage(name);
+  return { id: name, title: t.title, icon: t.icon, spec: t.spec as FakePage["spec"] };
+};
+
 /** What an account that used the first Boni gets once (apps/server/src/pages.ts, seedFromV1). */
 export const PAGE_FROM_HOME: FakePage = {
   id: "gastos",
@@ -69,10 +76,12 @@ export const PAGE_FROM_HOME: FakePage = {
  * Opens the page with a stand-in for the desktop shell (`window.boniDesktop`, as preload.cjs gives it): its
  * requests are answered from api/examples, its files live in memory, and what the page asks is recorded.
  */
+const engined = new WeakSet<Page>();
+
 export async function openApp(page: Page, url = "/", opts: Options = {}): Promise<void> {
   const pages = opts.pages === undefined ? [PAGE_FROM_HOME] : opts.pages;
   await page.addInitScript(
-    ({ examples, opts, pages, boniModels }) => {
+    ({ examples, opts, pages, boni }) => {
       const w = window as unknown as Record<string, unknown>;
       const record = (key: string, v: string) => {
         const list = (w[key] as string[] | undefined) ?? [];
@@ -97,7 +106,6 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         layerAvailable: true,
       };
       const agentCalls: Record<string, number> = {};
-      let modelsPage: unknown = null;
       let ghosts = opts.ghosts ?? [];
       // The inbox as the server keeps it: accepting or rejecting a proposal takes it out.
       let inbox = (
@@ -210,7 +218,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       let rowSeq = 0;
       const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
         const b = (body ?? {}) as { values?: Record<string, unknown> };
-        if (p === "api/data/types") return [200, JSON.stringify({ types: [libros, documentos] })];
+        if (p === "api/data/types")
+          return [200, JSON.stringify({ types: [libros, documentos, ...boni] })];
         // A page's numbers and charts (apps/server/src/blocks.ts), counted over the books here.
         if (p === "api/data/blocks") {
           const list = ((body ?? {}) as { blocks?: Record<string, unknown>[] }).blocks ?? [];
@@ -346,15 +355,6 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             200,
             JSON.stringify({ pages: trash.map((x) => ({ ...x, spec: undefined, deleted: 1 })) }),
           ];
-        // Boni's screens as pages (apps/server/src/pages.ts): Boni's until changed, the account's after.
-        if (p === "api/pages/system/models") {
-          if (method === "PUT") modelsPage = ((body ?? {}) as { spec?: unknown }).spec ?? null;
-          if (method === "DELETE") modelsPage = null;
-          const spec = modelsPage ?? boniModels;
-          const modified =
-            modelsPage !== null && JSON.stringify(modelsPage) !== JSON.stringify(boniModels);
-          return [200, JSON.stringify({ page: { name: "models", spec, modified } })];
-        }
         if (p === "api/pages" || p.startsWith("api/pages/")) return pageAnswer(method, p, body);
         if (p === "api/agent/proposals" && inbox)
           return [200, JSON.stringify({ proposals: inbox })];
@@ -444,6 +444,57 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         return [404, examples["error.json"]!];
       };
+      // Boni's own collections (boni-records.ts): counted in Node with the real engine, as the server would; a block
+      // of Libros' rows, picked here by its filter and the bar clicked.
+      const day = () => new Date().toISOString().slice(0, 10);
+      const call = (kind: string, b: unknown) =>
+        (w.__boniEngine as (k: string, b: unknown, t: string) => Promise<unknown>)(kind, b, day());
+      const isSys = (x: unknown) =>
+        String((x as { collection?: unknown })?.collection ?? "").startsWith("t_sys_");
+      const engine = async (
+        method: string,
+        path: string,
+        body?: unknown,
+      ): Promise<[number, string] | null> => {
+        const p = path.split("?")[0]!;
+        const own = /^api\/data\/types\/(t_sys_[a-z]+)\/rows$/.exec(p);
+        if (own && method === "GET") return [200, JSON.stringify(await call("list", own[1]))];
+        if (p === "api/data/blocks/rows") {
+          const b = (body ?? {}) as { block?: Record<string, unknown>; drill?: string };
+          if (isSys(b.block)) return [200, JSON.stringify(await call("rows", b))];
+          const x = b.block ?? {};
+          const picked = rows.filter(
+            (r) =>
+              (!x.filterField || r.values[String(x.filterField)] === x.filterValue) &&
+              (!b.drill || String(r.values[String(x.groupBy)] ?? "") === b.drill),
+          );
+          return [
+            200,
+            JSON.stringify({
+              type: "t_libro",
+              rows: picked,
+              total: picked.length,
+              titles: {},
+              columns: {},
+            }),
+          ];
+        }
+        if (p === "api/data/blocks") {
+          const list = ((body ?? {}) as { blocks?: unknown[] }).blocks ?? [];
+          if (!list.some(isSys)) return null;
+          const mine = (await call("blocks", { blocks: list.filter(isSys) })) as {
+            results: object;
+          };
+          const rest = list.filter((x) => !isSys(x));
+          const theirs = rest.length
+            ? (JSON.parse(answer(method, path, { blocks: rest })?.[1] ?? "{}") as {
+                results?: object;
+              })
+            : {};
+          return [200, JSON.stringify({ results: { ...theirs.results, ...mine.results } })];
+        }
+        return null;
+      };
       w.boniDesktop = {
         async request(method: string, path: string, body?: unknown) {
           record(
@@ -452,7 +503,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           );
           if (!settings.serverUrl || !settings.hasToken)
             return { ok: false, offline: false, notConfigured: true };
-          const a = opts.offline ? null : answer(method, path, body);
+          const a = opts.offline
+            ? null
+            : ((await engine(method, path, body)) ?? answer(method, path, body));
           await new Promise((r) =>
             setTimeout(
               r,
@@ -527,8 +580,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         widgetHide: () => record("__calls", "hide"),
       };
     },
-    { examples: EXAMPLES, opts, pages, boniModels: systemPage("models") },
+    { examples: EXAMPLES, opts, pages, boni: boniTypes(new Date().toISOString().slice(0, 10)) },
   );
+  if (!engined.has(page)) {
+    engined.add(page);
+    await page.exposeFunction("__boniEngine", boniEngine);
+  }
   await page.goto(url);
 }
 
@@ -545,4 +602,10 @@ export async function emit(page: Page, event: unknown) {
     (e) => (window as unknown as { __emit: (e: unknown) => void }).__emit(e),
     event,
   );
+}
+
+/** Boni's log of runs («Registro»): from the conversation's tools (it is no longer in the sidebar). */
+export async function openLog(page: Page, names = { chat: "Conversación", log: "Registro" }) {
+  await page.locator(".sidebar").getByRole("button", { name: names.chat }).click();
+  await page.locator(".chat-tools").getByRole("button", { name: names.log }).click();
 }

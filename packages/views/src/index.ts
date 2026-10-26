@@ -2,6 +2,7 @@ export {
   type BlockResult,
   blockChartSpec,
   blockDateField,
+  blockRows,
   catalogueData,
   computeBlock,
 } from "./blockData.ts";
@@ -22,22 +23,20 @@ export {
   type DatabaseView,
   emptyPage,
   FILTER_OPS,
+  isPageTemplate,
   PAGE_BLOCKS,
   PAGE_LIMITS,
+  PAGE_TEMPLATES,
   type PageBlock,
   type PageSpec,
+  type PageTemplate,
   pageErrors,
+  RETIRED_BLOCKS,
   SYSTEM_COLUMNS,
   type SystemColumn,
   TEXT_BLOCKS,
+  withoutRetired,
 } from "./page.ts";
 export { pyRound, pySum } from "./pyround.ts";
-export {
-  isSystemPage,
-  SYSTEM_PAGES,
-  type SystemChange,
-  type SystemPage,
-  systemChanges,
-  systemPage,
-} from "./systemPages.ts";
+export { SYS, type TemplateChange, templateChanges, templatePage } from "./templates.ts";
 export { type ViewComponent, type ViewSpec, viewErrors, viewRows } from "./views.ts";

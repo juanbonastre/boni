@@ -12,6 +12,7 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
+import { mcpAnswer } from "./mcp.ts";
 import { Vaults } from "./vaults.ts";
 
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -343,5 +344,138 @@ describe("collections as databases (plan PR 19)", () => {
         .status,
     ).toBe(400);
     expect((await call(t, "POST", "/api/data/blocks", { blocks: "todo" })).status).toBe(400);
+  });
+});
+
+describe("what a block counts, and Boni's own records as collections (design audit, 2026-10-25)", () => {
+  it("lists the rows a number counts, and those of one bar (D-08)", async () => {
+    const t = await token();
+    const base = { collection: "t_libro", period: "all", title: "Libros" };
+    const n = {
+      ...base,
+      id: "n",
+      type: "number",
+      measure: "count",
+      filterField: "f_estado",
+      filterValue: "o_leido",
+    };
+    const total = (
+      (await call(t, "POST", "/api/data/blocks", { blocks: [n] })).body.results as Record<
+        string,
+        { data: { total: number } }
+      >
+    ).n?.data.total;
+    const r = await call(t, "POST", "/api/data/blocks/rows", { block: n });
+    expect(r.status).toBe(200);
+    const rows = r.body.rows as { values: Record<string, unknown> }[];
+    expect(rows.length).toBe(total);
+    expect(r.body.total).toBe(total);
+    expect(rows.every((x) => x.values.f_estado === "o_leido")).toBe(true);
+    // One bar of a bar list: only its rows.
+    const b = { ...base, id: "b", type: "bars", measure: "count", groupBy: "f_estado" };
+    const one = await call(t, "POST", "/api/data/blocks/rows", { block: b, drill: "o_leyendo" });
+    const leyendo = one.body.rows as { values: Record<string, unknown> }[];
+    expect(leyendo.length).toBeGreaterThan(0);
+    expect(leyendo.every((x) => x.values.f_estado === "o_leyendo")).toBe(true);
+    // A block that is not valid says what is wrong; one that is not a data block is refused.
+    const bad = await call(t, "POST", "/api/data/blocks/rows", {
+      block: { ...n, filterField: "f_nada" },
+    });
+    expect(bad.body.problems).toBeTruthy();
+    expect(
+      (await call(t, "POST", "/api/data/blocks/rows", { block: { id: "h", type: "heading" } }))
+        .status,
+    ).toBe(400);
+  });
+
+  it("shows calls to models and Boni's activity as read-only collections no model sees (D-04)", async () => {
+    const t = await token();
+    const store = host.store(1);
+    const at = Date.now();
+    for (const [role, cost] of [
+      ["reader", 0.2],
+      ["planner", 1],
+      ["eval-reader", null],
+    ] as const)
+      store.journal.modelCall({
+        run: "r_ejemplo",
+        role,
+        provider: "openrouter",
+        model: "ejemplo/modelo-de-prueba",
+        promptHash: "h",
+        request: {},
+        response: {},
+        usage: { input: 100, output: 20, ...(cost === null ? {} : { cost }) },
+        at,
+      });
+    const types = (await call(t, "GET", "/api/data/types")).body.types as {
+      id: string;
+      system?: boolean;
+      level: string;
+      count: number;
+      fields: { id: string; options?: { id: string; name: string }[] }[];
+    }[];
+    const calls = types.find((x) => x.id === "t_sys_llamadas");
+    const activity = types.find((x) => x.id === "t_sys_actividad");
+    expect(calls).toMatchObject({ system: true, level: "private", count: 3 });
+    expect(calls?.fields.find((f) => f.id === "f_uso")?.options?.map((o) => o.name)).toEqual([
+      "Agente",
+      "Evaluación",
+      "Lector",
+    ]);
+    // The books written in the tests above are Boni's activity: «Tú · <device>» changed «Libros».
+    expect(activity?.system).toBe(true);
+    const acts = (await call(t, "GET", "/api/data/types/t_sys_actividad/rows")).body.rows as {
+      values: Record<string, unknown>;
+    }[];
+    expect(acts.some((a) => a.values.f_titulo === "Tú · portatil-ejemplo · cambió Libros")).toBe(
+      true,
+    );
+    // Counted with the same blocks as any collection, in euros at the account's rate.
+    const spent = await call(t, "POST", "/api/data/blocks", {
+      blocks: [
+        {
+          id: "g",
+          type: "number",
+          title: "Gasto",
+          collection: "t_sys_llamadas",
+          measure: "sum",
+          field: "f_coste",
+          period: "month",
+        },
+      ],
+    });
+    const g = (spent.body.results as Record<string, { data: { total: number } }>).g;
+    expect(g?.data.total).toBeCloseTo(1.2 * 0.9, 2);
+    // Read only: no row added, edited or deleted.
+    expect(
+      (await call(t, "POST", "/api/data/types/t_sys_llamadas/rows", { values: {} })).status,
+    ).toBe(404);
+    const row = (
+      (await call(t, "GET", "/api/data/types/t_sys_llamadas/rows")).body.rows as { id: string }[]
+    )[0];
+    expect(
+      (await call(t, "PUT", `/api/data/rows/${row?.id}`, { values: { f_tokens: 1 } })).status,
+    ).toBe(404);
+    expect((await call(t, "DELETE", `/api/data/rows/${row?.id}`)).status).toBe(404);
+    expect(
+      (await call(t, "PUT", "/api/data/types/t_sys_llamadas/protection", { level: "visible" }))
+        .status,
+    ).toBe(404);
+    // Not in the store: the agent's view and the MCP never see them.
+    expect(store.schema().types.t_sys_llamadas).toBeUndefined();
+    const mcp = mcpAnswer(
+      store,
+      "portatil-ejemplo",
+      {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "collections", arguments: {} },
+      },
+      Date.now,
+    ) as { result: { content: { text: string }[] } };
+    expect(mcp.result.content[0]?.text).not.toContain("t_sys_");
+    expect(mcp.result.content[0]?.text).not.toContain("Llamadas a modelos");
   });
 });

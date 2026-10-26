@@ -12,7 +12,7 @@ import {
   useStore,
 } from "../store.ts";
 import { BarList, bytes, Kpi } from "./Dash.tsx";
-import { DatabaseBlock } from "./DatabaseBlock.tsx";
+import { DatabaseBlock, SystemPill } from "./DatabaseBlock.tsx";
 import { LEVEL_ICONS, ProtectionMenu } from "./Protection.tsx";
 
 /**
@@ -30,9 +30,12 @@ export function CollectionsView() {
   }, []);
   const q = query.trim().toLocaleLowerCase("es");
   const shown = (types ?? []).filter(
-    (x) => (!q || x.name.toLocaleLowerCase("es").includes(q)) && (!level || x.level === level),
+    (x) =>
+      (!q || x.name.toLocaleLowerCase("es").includes(q)) &&
+      (!level || (x.level === level && !x.system)),
   );
-  const count = (l: AiLevel) => (types ?? []).filter((x) => x.level === l).length;
+  // Boni's own records are not a level the user chose: they are not counted in the filter.
+  const count = (l: AiLevel) => (types ?? []).filter((x) => x.level === l && !x.system).length;
   return (
     <div className="content page-doc full">
       <div className="doc cols">
@@ -97,9 +100,7 @@ export function CollectionsView() {
                     </button>
                   </td>
                   <td className="num">{x.count}</td>
-                  <td>
-                    <ProtectionMenu type={x} />
-                  </td>
+                  <td>{x.system ? <SystemPill /> : <ProtectionMenu type={x} />}</td>
                   <td className="cols-origin">{x.zone ? t(`db.zone.${x.zone}`) : ""}</td>
                 </tr>
               ))}
@@ -143,7 +144,7 @@ export function CollectionView() {
         </h1>
         <div className="col-protect">
           <span className="muted small">{t("col.ai")}</span>
-          <ProtectionMenu type={type} canUnlock />
+          {type.system ? <SystemPill /> : <ProtectionMenu type={type} canUnlock />}
           {type.zone && <span className="muted small">· {t(`db.zone.${type.zone}`)}</span>}
         </div>
         <DatabaseBlock

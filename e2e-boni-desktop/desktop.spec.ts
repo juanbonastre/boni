@@ -169,9 +169,11 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await form.locator("input").nth(3).fill("portatil-ejemplo");
   await w.getByRole("button", { name: "Entrar" }).click();
   await w.keyboard.press("Escape");
-  // No pages yet: the welcome; the first page from there.
-  await expect(w.locator(".welcome")).toBeVisible();
-  await w.locator(".welcome").getByRole("button", { name: "Nueva página" }).click();
+  // A new account has only Boni's template pages (the server made them); a page of the user's from the sidebar.
+  const tree = w.locator(".sidebar");
+  await expect(tree.getByRole("button", { name: "Uso de la IA", exact: true })).toBeVisible();
+  await expect(tree.getByRole("button", { name: "Actividad", exact: true })).toBeVisible();
+  await tree.getByRole("button", { name: "Nueva página" }).first().click();
   await w.keyboard.type("Mi agenda", { delay: 20 });
   await w.keyboard.press("Enter");
   await w.keyboard.type("/docencia", { delay: 20 });
@@ -273,8 +275,12 @@ test("a page of numbers and charts from a collection: each block's panel from th
   if (!box) throw new Error("no number block");
   await handle.dragTo(number, { targetPosition: { x: box.width - 4, y: box.height / 2 } });
   await expect(w.locator(".grid-row").first().locator(".grid-col")).toHaveCount(2);
-  // A click on a number opens its menu (as its handle does); «Modificar…» opens its panel.
+  // A click on a number lists what it counts (I-04); its menu is the right click's (and its handle's).
   await number.locator(".kpi-value").click();
+  await expect(panel.locator("h2")).toHaveText("Lo que cuenta");
+  await expect(panel.locator(".rows-panel-count")).toContainText("Pertenencia");
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  await number.locator(".kpi-value").click({ button: "right" });
   await w.getByRole("menuitemradio", { name: "Modificar…" }).click();
   await expect(panel.locator("h2")).toHaveText("Cifra");
   await panel.getByRole("button", { name: "Cerrar" }).click();
@@ -313,7 +319,11 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
   const table = w.locator(".cols-table");
-  await expect(table.locator("tbody tr")).toHaveCount(4); // Docencia, Pertenencia, Persona, Documentos
+  // Docencia, Pertenencia, Persona, Documentos, and Boni's own two (read only, no level of the user's).
+  await expect(table.locator("tbody tr")).toHaveCount(6);
+  await expect(table.locator("tbody tr", { hasText: "Llamadas a modelos" })).toContainText(
+    "De Boni · solo lectura",
+  );
   await w
     .locator(".cols-filter")
     .getByRole("radio", { name: /Privada/ })
@@ -342,17 +352,15 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
   await expect(row.locator(".protect-pill")).toHaveText("Privada");
 });
 
-test("«Modelos» over the real server: the budget and a key, kept sealed and never shown again", async () => {
+test("Ajustes → Modelos over the real server: the budget and a key, kept sealed and never shown again", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  const spend = w.locator(".kpi").first();
+  await w.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  await w.locator(".modal").getByRole("tab", { name: "Modelos" }).click();
+  const spend = w.locator(".modal .kpi").first();
   await expect(spend).toContainText("0,00 €");
   await expect(spend).toContainText("de 10,00 €");
   // The agent is off on this server: no model, and it says so.
-  await expect(w.locator(".system-page")).toContainText("el agente está apagado");
-  // The spending number's menu opens its breakdown and the budget.
-  await spend.click();
-  await w.getByRole("menuitemradio", { name: "Gasto y presupuesto…" }).click();
+  await expect(w.locator(".models-settings")).toContainText("el agente está apagado");
   await w.getByRole("button", { name: "Cambiar el presupuesto" }).click();
   await w.getByRole("textbox", { name: "Al mes (€)" }).fill("20");
   await w.getByRole("button", { name: "Guardar", exact: true }).click();
@@ -372,26 +380,43 @@ test("«Modelos» over the real server: the budget and a key, kept sealed and ne
   await router.getByRole("button", { name: "Quitar tu clave" }).click();
   await expect(router).toContainText("Sin clave");
   await w.keyboard.press("Escape");
-  // A page of blocks kept by the server: modified, still so after another visit, then Boni's again.
-  const pill = w.locator(".system-head .system-pill");
+  await expect(w.locator(".modal")).toHaveCount(0);
+});
+
+test("Boni's template pages over the real server: counted from its records, modified, restored", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  // The server made them for the account (seedTemplates): «Actividad» counts what the earlier tests changed.
+  await w.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
+  const changes = w.locator(".blk-number").nth(1);
+  await expect(changes.locator(".kpi-value")).not.toHaveText(/^(—|0)$/);
+  await changes.click();
+  const panel = w.locator(".side-panel");
+  await expect(panel.locator(".rows-panel-count")).toContainText("Actividad de Boni");
+  await expect(panel.locator(".rows-panel-list li", { hasText: "Tú · " }).first()).toBeVisible();
+  await shot(w, "activity-rows");
+  await w.keyboard.press("Escape");
+  // «Uso de la IA», modified: still so after another visit, then Boni's again.
+  await w.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  const pill = w.locator(".template-head .system-pill");
   await expect(pill).toHaveText("De Boni");
-  await w.locator(".blk-model-keys").click({ button: "right" });
+  await w.locator(".blk-link").click({ button: "right" });
   await w.getByRole("menuitemradio", { name: "Borrar" }).click();
   await expect(pill).toHaveText("Modificada");
   await w.waitForTimeout(1200);
-  await w.locator(".sidebar").getByRole("button", { name: "Actividad" }).click();
-  await w.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
   await expect(pill).toHaveText("Modificada");
-  await expect(w.locator(".blk-model-keys")).toHaveCount(0);
+  await expect(w.locator(".blk-link")).toHaveCount(0);
   await pill.click();
   await w.getByRole("button", { name: "Restaurar la de Boni" }).click();
   await expect(pill).toHaveText("De Boni");
-  await expect(w.locator(".blk-model-keys")).toHaveCount(1);
+  await expect(w.locator(".blk-link")).toHaveCount(1);
 });
 
-test("«Actividad» and «Auditoría» over the real server: Juan's read of a private row, the chain verified", async () => {
+test("«Registro» and «Auditoría» over the real server: Juan's read of a private row, the chain verified", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Actividad" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Conversación" }).click();
+  await w.locator(".chat-tools").getByRole("button", { name: "Registro" }).click();
   await expect(w.locator(".kpi")).toHaveCount(4);
   // The earlier tests changed rows: there are changes, by this device.
   await expect(w.locator(".kpi").nth(2)).not.toContainText(/Cambios\s*0$/);

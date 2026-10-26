@@ -4,8 +4,7 @@ import { ApiError, OfflineError } from "../core/api.ts";
 import type { BlockResult, DataBlock } from "../core/blocks.ts";
 import { PALETTE } from "../core/palette.ts";
 import { catText, type T } from "../i18n.ts";
-import { agentApi, openBlockPanel, useStore } from "../store.ts";
-import { BoniData } from "./BoniBlocks.tsx";
+import { agentApi, openBlockPanel, openRowsPanel, useStore } from "../store.ts";
 import { ChartCardContent } from "./ChartCard.tsx";
 import { BarList, Kpi } from "./Dash.tsx";
 
@@ -13,6 +12,7 @@ import { BarList, Kpi } from "./Dash.tsx";
  * A page's data blocks (the block catalogue's number, bar list and chart), computed by the server from the user's
  * collections. They are asked for together, again when one changes and whenever the app refreshes (a capture
  * saved, the window back in front). A block whose settings are not valid says so; it never shows another chart.
+ * A click on a bar or a chart's point lists the rows it counts (`openRowsPanel`; a click on the block, all of them).
  */
 
 type Failure = "offline" | "personal" | null;
@@ -83,7 +83,6 @@ export function DataBlockView({
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
   const collection = useStore((s) => s.dataTypes?.find((d) => d.id === block.collection)?.name);
-  if (block.from === "boni") return <BoniData block={block} />;
   // A block without a name of its own shows what it counts.
   const title = block.title || collection || catText(t, kindOf(block.type)?.name ?? "");
   const nf = new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", { maximumFractionDigits: 2 });
@@ -131,6 +130,7 @@ export function DataBlockView({
           rows={points.map((p) => ({ key: p.key, label: p.label, values: [p.value] }))}
           series={[{ name: title, color: "var(--accent)" }]}
           format={(n) => fmt(n, data?.unit)}
+          onSelect={(key) => openRowsPanel(block.id, key, points.find((p) => p.key === key)?.label)}
           empty={data ? t("chart.empty") : t("chart.loading")}
         />
       </div>
@@ -144,6 +144,9 @@ export function DataBlockView({
         color={color}
         // Values written on the bars only when there are few; no average line (nothing that does not help).
         style={{ labels: (data?.series[0]?.points.length ?? 0) <= 12, reference: "none" }}
+        onDrill={(key) =>
+          openRowsPanel(block.id, key, data?.series[0]?.points.find((p) => p.key === key)?.label)
+        }
         state={{
           data: data ? { ...data, kind: block.shape ?? "bar", subtitle: sub ?? null } : null,
           loading: !data && !failure,

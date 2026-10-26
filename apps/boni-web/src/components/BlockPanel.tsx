@@ -26,6 +26,7 @@ import {
   setPageBlocks,
   toast,
   todayIso,
+  useEditing,
   useStore,
 } from "../store.ts";
 import { FormView } from "./FormView.tsx";
@@ -38,7 +39,7 @@ import { FormView } from "./FormView.tsx";
  */
 export function BlockPanel({ id }: { id: string }) {
   const t = useStore((s) => s.t);
-  const page = useStore((s) => s.page);
+  const page = useEditing();
   const dataTypes = useStore((s) => s.dataTypes);
   useEffect(() => {
     if (!dataTypes) void loadDataTypes();

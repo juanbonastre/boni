@@ -165,49 +165,6 @@ const TITLE: Setting = { key: "title", label: "Nombre", type: "text", max: 120, 
 /** A data block's name may be left empty: it shows what it counts («Gasto», the collection's name). */
 const DATA_TITLE: Setting = { ...TITLE, optional: true };
 const TITLE_OPTIONAL = DATA_TITLE;
-const FROM_COLLECTION: When = { key: "from", not: ["boni"] };
-/** Boni's own numbers (its models and what they did), by name: computed by the code, never a query. */
-export const BONI_SOURCES = {
-  number: [
-    { value: "spend", label: "Gasto de los modelos" },
-    { value: "calls", label: "Llamadas a modelos" },
-    { value: "reads", label: "Registros que vieron las IAs" },
-    { value: "writes", label: "Cambios que hicieron las IAs" },
-  ],
-  bars: [
-    { value: "callsByModel", label: "Llamadas por modelo" },
-    { value: "spendByModel", label: "Gasto por modelo" },
-    { value: "readsByType", label: "Lecturas de las IAs por colección" },
-    { value: "whoEdits", label: "Quién edita" },
-  ],
-  graph: [
-    { value: "spendByDay", label: "Gasto por día, por modelo" },
-    { value: "readsByDay", label: "Lecturas y ediciones por día" },
-  ],
-} as const satisfies Record<string, readonly Option[]>;
-const FROM = (kind: keyof typeof BONI_SOURCES): Setting[] => [
-  {
-    key: "from",
-    label: "Datos de",
-    type: "choice",
-    options: [
-      { value: "collection", label: "Una colección" },
-      { value: "boni", label: "Boni (modelos y actividad)" },
-    ],
-    optional: true,
-    default: "collection",
-    section: "data",
-    ai: "collection (the default) or boni (Boni's own numbers: its models and what they did)",
-  },
-  {
-    key: "source",
-    label: "Qué",
-    type: "choice",
-    options: BONI_SOURCES[kind],
-    when: { key: "from", is: ["boni"] },
-    section: "data",
-  },
-];
 const BG: Setting = {
   key: "bg",
   label: "Con fondo",
@@ -217,85 +174,75 @@ const BG: Setting = {
 };
 
 /** The settings that say what a number, a bar list or a chart counts, in which rows and when. */
-const dataSettings = (group: DataOptions | null): Setting[] =>
-  collectionOnly([
-    {
-      key: "collection",
-      label: "Colección",
-      type: "choice",
-      options: "collections",
-      section: "data",
-    },
-    ...(group
-      ? [
-          {
-            key: "groupBy",
-            label: "Agrupar",
-            type: "choice" as const,
-            options: group,
-            section: "data" as const,
-            ai:
-              group === "timeOrGroupFields"
-                ? "@day|@week|@month (by time) or a select field of the collection"
-                : "a select field of the collection",
-          },
-        ]
-      : []),
-    { key: "measure", label: "Qué cuenta", type: "choice", options: MEASURES, section: "data" },
-    {
-      key: "field",
-      label: "De",
-      type: "choice",
-      options: "numberFields",
-      when: { key: "measure", not: ["count"] },
-      section: "data",
-      ai: "a number field of the collection",
-    },
-    {
-      key: "period",
-      label: "Periodo",
-      type: "choice",
-      options: "periods",
-      section: "data",
-      ai: "month|30d|12m|year|all (only all for a collection without a date field)",
-    },
-    {
-      key: "date",
-      label: "Fecha que cuenta",
-      type: "choice",
-      options: "dateFields",
-      optional: true,
-      section: "filter",
-      ai: "a date field of the collection; the first one when left out",
-    },
-    {
-      key: "filterField",
-      label: "Solo las filas con",
-      type: "choice",
-      options: "filterFields",
-      optional: true,
-      section: "filter",
-      ai: "a select field of the collection; all rows when left out",
-    },
-    {
-      key: "filterValue",
-      label: "Igual a",
-      type: "choice",
-      options: "filterValues",
-      when: { key: "filterField", not: [undefined, ""] },
-      section: "filter",
-      ai: "one of that field's options, by its id as listed in Data",
-    },
-  ]);
-/** Settings of a collection's data apply only when the block's data come from a collection. */
-const collectionOnly = (list: Setting[]): Setting[] =>
-  list.map((s) => ({
-    ...s,
-    when: s.when
-      ? [FROM_COLLECTION, ...(Array.isArray(s.when) ? s.when : [s.when])]
-      : FROM_COLLECTION,
-  }));
-
+const dataSettings = (group: DataOptions | null): Setting[] => [
+  {
+    key: "collection",
+    label: "Colección",
+    type: "choice",
+    options: "collections",
+    section: "data",
+  },
+  ...(group
+    ? [
+        {
+          key: "groupBy",
+          label: "Agrupar",
+          type: "choice" as const,
+          options: group,
+          section: "data" as const,
+          ai:
+            group === "timeOrGroupFields"
+              ? "@day|@week|@month (by time) or a select field of the collection"
+              : "a select field of the collection",
+        },
+      ]
+    : []),
+  { key: "measure", label: "Qué cuenta", type: "choice", options: MEASURES, section: "data" },
+  {
+    key: "field",
+    label: "De",
+    type: "choice",
+    options: "numberFields",
+    when: { key: "measure", not: ["count"] },
+    section: "data",
+    ai: "a number field of the collection",
+  },
+  {
+    key: "period",
+    label: "Periodo",
+    type: "choice",
+    options: "periods",
+    section: "data",
+    ai: "month|30d|12m|year|all (only all for a collection without a date field)",
+  },
+  {
+    key: "date",
+    label: "Fecha que cuenta",
+    type: "choice",
+    options: "dateFields",
+    optional: true,
+    section: "filter",
+    ai: "a date field of the collection; the first one when left out",
+  },
+  {
+    key: "filterField",
+    label: "Solo las filas con",
+    type: "choice",
+    options: "filterFields",
+    optional: true,
+    section: "filter",
+    ai: "a select field of the collection; all rows when left out",
+  },
+  {
+    key: "filterValue",
+    label: "Igual a",
+    type: "choice",
+    options: "filterValues",
+    when: { key: "filterField", not: [undefined, ""] },
+    section: "filter",
+    ai: "one of that field's options, by its id as listed in Data",
+  },
+];
 export const CATALOGUE: readonly BlockKind[] = [
   {
     type: "number",
@@ -303,7 +250,7 @@ export const CATALOGUE: readonly BlockKind[] = [
     group: "Cifras y gráficas",
     w: 3,
     ai: "one big number: a count, sum or average of a collection's rows in a period",
-    settings: [DATA_TITLE, ...FROM("number"), ...dataSettings(null), BG],
+    settings: [DATA_TITLE, ...dataSettings(null), BG],
     defaults: { title: "Cifra", measure: "count", period: "month", bg: true },
   },
   {
@@ -312,7 +259,7 @@ export const CATALOGUE: readonly BlockKind[] = [
     group: "Cifras y gráficas",
     w: 6,
     ai: "a ranked list with a bar per value of a select field (a category, a person)",
-    settings: [DATA_TITLE, ...FROM("bars"), ...dataSettings("groupFields"), BG],
+    settings: [DATA_TITLE, ...dataSettings("groupFields"), BG],
     defaults: { title: "Lista de barras", measure: "count", period: "month" },
   },
   {
@@ -324,11 +271,8 @@ export const CATALOGUE: readonly BlockKind[] = [
     ai: "a chart over time (@day|@week|@month) or by a select field; donut for few parts of a whole",
     settings: [
       DATA_TITLE,
-      ...FROM("graph"),
-      ...collectionOnly([
-        { key: "shape", label: "Forma", type: "choice", options: SHAPES, section: "look" },
-        { key: "color", label: "Color", type: "color", optional: true, section: "look" },
-      ]),
+      { key: "shape", label: "Forma", type: "choice", options: SHAPES, section: "look" },
+      { key: "color", label: "Color", type: "color", optional: true, section: "look" },
       ...dataSettings("timeOrGroupFields"),
       BG,
     ],
@@ -425,24 +369,6 @@ export const CATALOGUE: readonly BlockKind[] = [
     defaults: { label: "Apuntar gasto", screen: "capture-expense" },
   },
   {
-    type: "models",
-    name: "Tarjetas de modelo",
-    group: "De Boni",
-    w: 7,
-    ai: "Boni's uses (planner, reader, decider, reviewer), each with its model and what it spent; a click opens it",
-    settings: [TITLE_OPTIONAL],
-    defaults: {},
-  },
-  {
-    type: "model-keys",
-    name: "Claves",
-    group: "De Boni",
-    w: 7,
-    ai: "the connections to the model providers and their keys (never shown)",
-    settings: [],
-    defaults: {},
-  },
-  {
     type: "link",
     name: "Enlace",
     group: "De Boni",
@@ -455,8 +381,9 @@ export const CATALOGUE: readonly BlockKind[] = [
         label: "Lleva a",
         type: "choice",
         options: [
-          { value: "activity", label: "Actividad" },
+          { value: "activity", label: "Registro de Boni" },
           { value: "audit", label: "Auditoría" },
+          { value: "settings-models", label: "Ajustes: modelos y presupuesto" },
         ],
         section: "data",
       },

@@ -2756,8 +2756,9 @@ html.widget-page body {
   flex: none;
   color: var(--muted);
 }
+/* Wide enough for an emoji (a page's icon is one), as wide as the sidebar's other icons' column. */
 span.page-icon {
-  width: 14px;
+  width: 16px;
   text-align: center;
   font-size: 13px;
 }
@@ -2990,14 +2991,17 @@ span.page-icon {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   column-gap: 16px;
-  align-items: stretch;
+  align-items: start;
   margin: 10px 0;
 }
-/* Numbers side by side are as tall as the tallest (one with a bar under it). */
-.grid-col > .blk-number:only-child {
+/* A row of numbers only: they are as tall as the tallest (one with a bar under it). */
+.grid-row:not(:has(.blk:not(.blk-number))) {
+  align-items: stretch;
+}
+.grid-row:not(:has(.blk:not(.blk-number))) .grid-col > .blk-number:only-child {
   flex: 1;
 }
-.grid-col > .blk-number:only-child > .kpi {
+.grid-row:not(:has(.blk:not(.blk-number))) .grid-col > .blk-number:only-child > .kpi {
   height: 100%;
 }
 .grid-col {
@@ -3023,7 +3027,7 @@ span.page-icon {
   top: -26px;
 }
 /* On a narrow page the columns go one under another. */
-@container (max-width: 640px) {
+@container (max-width: 520px) {
   .grid-row {
     grid-template-columns: minmax(0, 1fr);
     row-gap: 12px;
@@ -5486,6 +5490,13 @@ button.kpi[aria-expanded="true"] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* What the number covers («octubre 2026 - hasta hoy»): on a narrow tile it takes a second line, never losing its end. */
+.kpi-note {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 .kpi-value {
   font-size: 26px;
   font-weight: 600;
@@ -5637,9 +5648,10 @@ button.kpi[aria-expanded="true"] {
   flex-direction: column;
   gap: 6px;
 }
+/* The bars keep room for a short bar and its value; the label gives way (ellipsized) in a narrow column. */
 .barlist-row {
   display: grid;
-  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 11rem) minmax(5.5rem, 1fr);
   align-items: center;
   gap: 12px;
   padding: 2px 0;
@@ -6039,26 +6051,13 @@ button.audit-tr:hover {
   font-size: 12px;
 }
 
-/* One of Boni's screens as a page («Modelos»): its name, «De Boni» or «Modificada» with what changed. */
-.content.page-doc.system-page .doc {
-  width: min(1100px, 100%);
-}
-.system-head {
+/* A page made from one of Boni's templates: «De Boni» or «Modificada» (with what changed) under its name. */
+.template-head {
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
-  margin: 0 0 18px;
-}
-.system-title {
-  margin: 0;
-  font-size: 40px;
-  font-weight: 700;
-  line-height: 1.2;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin: -4px 0 14px;
 }
 .system-pill {
   display: inline-flex;
@@ -6130,4 +6129,88 @@ button.audit-tr:hover {
 }
 .system-changes .btn {
   align-self: flex-start;
+}
+
+/* What a data block counts (a click on it); Ajustes → Modelos; a collection of Boni's own (read only). */
+.rows-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.rows-panel > p {
+  margin: 0;
+}
+.rows-panel-count {
+  font-weight: 600;
+}
+.rows-panel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rows-panel-list li {
+  border-bottom: 1px solid var(--line);
+}
+.rows-panel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 12px;
+  width: 100%;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.rows-panel-row {
+  cursor: pointer;
+}
+button.rows-panel-row:hover {
+  background: var(--hover);
+}
+.rows-panel-sub {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rows-panel-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rows-panel-value {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font-variant-numeric: tabular-nums;
+}
+.models-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.models-settings .settings-group h4 {
+  margin: 0 0 8px;
+}
+.models-settings-role > .side-panel {
+  width: 100%;
+  border-left: 0;
+}
+.collection-system-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
 }

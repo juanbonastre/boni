@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import { AUDIT_ACTIONS, AUDIT_DETAIL, AUDIT_SUMMARY, RUNS_EXPLAINED } from "./agent-scenarios.ts";
-import { openApp, recorded } from "./fixtures.ts";
+import { openApp, openLog, recorded } from "./fixtures.ts";
 
 /**
  * «Actividad» and «Auditoría» (Juan, 2026-10-24): numbers and charts of what was read and changed and by whom, the
@@ -20,13 +20,13 @@ const AUDIT = {
   "GET api/agent/runs": [RUNS_EXPLAINED],
 };
 
-test("Actividad: what was read and changed, by whom and where; the runs folded below", async ({
+test("Registro: what was read and changed, by whom and where; the runs folded below", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AUDIT });
-  await page.locator(".sidebar").getByRole("button", { name: "Actividad" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Actividad");
+  await openLog(page);
+  await expect(page.locator(".topbar h1")).toHaveText("Registro");
   const kpis = page.locator(".kpi");
   await expect(kpis).toHaveText([
     /Correos leídos\s*412/,
@@ -51,7 +51,7 @@ test("Actividad: what was read and changed, by whom and where; the runs folded b
     .toBe(2);
   // A collection's bars open the audit of that collection.
   await page.locator(".barlist-row", { hasText: "Docencia" }).last().click();
-  await expect(page.locator(".topbar")).toContainText("Actividad/Auditoría");
+  await expect(page.locator(".topbar")).toContainText("Registro/Auditoría");
   await expect(page.getByRole("combobox", { name: "Colección" })).toBeVisible();
   expect((await requests(page, "GET api/data/audit/actions")).at(-1)).toContain("type=t_docencia");
 });
@@ -61,7 +61,7 @@ test("Auditoría: who did what on what; a row opens what reached it and what it 
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AUDIT });
-  await page.locator(".sidebar").getByRole("button", { name: "Actividad" }).click();
+  await openLog(page);
   await page.getByRole("button", { name: "Abrir la auditoría" }).click();
   const rows = page.locator(".audit-tr:not(.audit-th)");
   await expect(rows).toHaveCount(7);
@@ -102,7 +102,7 @@ test("Actividad on a device that may not read the audit: the runs, as before", a
       "GET api/agent/runs": [RUNS_EXPLAINED],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Actividad" }).click();
+  await openLog(page);
   await expect(
     page.getByText("La actividad con cifras solo se ve desde un dispositivo personal"),
   ).toBeVisible();

@@ -1,11 +1,12 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  BONI_SOURCES,
   CATALOGUE,
+  DATA_BLOCKS,
   HEIGHTS,
   PERIODS,
   PLACE_SETTINGS,
+  RETIRED_BLOCKS,
   TIME_GROUPS,
 } from "@boni/views";
 import { describe, expect, it } from "vitest";
@@ -54,12 +55,26 @@ describe("principles (docs/principios.md)", () => {
       labels.add(s.label);
       if (Array.isArray(s.options)) for (const o of s.options) labels.add(o.label);
     }
-    for (const o of [...PERIODS, ...TIME_GROUPS, ...HEIGHTS, ...Object.values(BONI_SOURCES).flat()])
-      labels.add(o.label);
+    for (const o of [...PERIODS, ...TIME_GROUPS, ...HEIGHTS]) labels.add(o.label);
     for (const lang of ["es", "en"] as const) {
       const t = translator(lang);
       const missing = [...labels].filter((l) => t(`cat.${l}`) === `cat.${l}`);
       expect(missing, lang).toEqual([]);
     }
+  });
+
+  it("D-04: every number, bar list and chart counts a collection; none has a source of its own", () => {
+    for (const type of DATA_BLOCKS) {
+      const keys = CATALOGUE.find((k) => k.type === type)?.settings.map((s) => s.key) ?? [];
+      expect(keys, type).toContain("collection");
+      expect(keys, type).not.toContain("from");
+      expect(keys, type).not.toContain("source");
+    }
+  });
+
+  it("D-05: configuring Boni is not a block: its models' parts are only in Ajustes", () => {
+    for (const r of RETIRED_BLOCKS) expect(CATALOGUE.some((k) => k.type === r)).toBe(false);
+    const users = files(SRC).filter((f) => /from "\.\/Models\.tsx"/.test(readFileSync(f, "utf8")));
+    expect(users.map((f) => f.slice(SRC.length))).toEqual(["/components/ModelsSettings.tsx"]);
   });
 });

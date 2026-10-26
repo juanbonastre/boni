@@ -476,12 +476,8 @@ export interface ComputeOptions {
   stale?: boolean;
 }
 
-export function computeChart<R>(
-  p: Profile<R>,
-  input: ChartSpec,
-  recs: R[],
-  o: ComputeOptions,
-): ChartData {
+/** A spec ready to compute: normalized, checked, its period, and narrowed to the drilled key if any. */
+function prepared<R>(p: Profile<R>, input: ChartSpec, recs: R[], o: ComputeOptions) {
   let spec = normalized(input);
   validate(p, spec);
   const today = o.today;
@@ -510,12 +506,38 @@ export function computeChart<R>(
   }
   const measure = spec.measure ?? "spending";
   const rules = spec.filters ?? [];
-  const mv = (rs: R[]) => pyRound(p.measure(measure, rs) + 0, 2);
   const select = (a: Day, b: Day) =>
     recs.filter((r) => {
       const d = p.day(r);
       return a <= d && d <= b && p.relevant(r, measure) && rules.every((f) => matches(p, r, f));
     });
+  return { spec, start, end, subPrefix, drill, measure, select };
+}
+
+/**
+ * The records a chart counts in its period (narrowed to `o.drill`, a point's key, if given): what a click on a
+ * number or a bar lists. The same selection as `computeChart`'s total, so the list and the number always agree.
+ * The rest of a top-N ("_rest") is not a key: it lists the whole period.
+ */
+export function chartRecords<R>(
+  p: Profile<R>,
+  input: ChartSpec,
+  recs: R[],
+  o: ComputeOptions,
+): R[] {
+  const { start, end, select } = prepared(p, input, recs, o);
+  return select(start, end);
+}
+
+export function computeChart<R>(
+  p: Profile<R>,
+  input: ChartSpec,
+  recs: R[],
+  o: ComputeOptions,
+): ChartData {
+  const today = o.today;
+  const { spec, start, end, subPrefix, drill, measure, select } = prepared(p, input, recs, o);
+  const mv = (rs: R[]) => pyRound(p.measure(measure, rs) + 0, 2);
 
   const current = select(start, end);
   const cmp = compareRange(spec, start, end, today);

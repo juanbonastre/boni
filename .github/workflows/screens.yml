@@ -1,7 +1,8 @@
 name: screens
 # I-07 (docs/principios.md): the reference captures of Boni's main screens, made on CI's machine (its fonts). Run it
 # by hand on a branch whose look changes on purpose; download the artifact «screens» into e2e-boni/__screens__/,
-# look at each image, and commit them in the same PR.
+# look at each image, and commit them in the same PR. It rewrites every capture («all»): a screen that changed by
+# less than the tolerance would otherwise keep a reference that no longer shows its real look.
 on:
   workflow_dispatch:
 
@@ -16,7 +17,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright test -c playwright.boni.config.ts e2e-boni/screens.spec.ts --update-snapshots
+      - run: pnpm exec playwright test -c playwright.boni.config.ts e2e-boni/screens.spec.ts --update-snapshots=all
         env:
           CI: "1"
       - uses: actions/upload-artifact@v4

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogueData, computeBlock } from "./blockData.ts";
+import { blockRows, catalogueData, computeBlock } from "./blockData.ts";
 import {
   applies,
   CATALOGUE,
@@ -11,6 +11,7 @@ import {
   optionsOf,
   PLACE_SETTINGS,
 } from "./catalogue.ts";
+import { REST } from "./chart.ts";
 import { type DataBlock, pageErrors } from "./page.ts";
 import { randomBlock, randomPage, randomUser, rng } from "./randomPage.test-util.ts";
 
@@ -201,8 +202,7 @@ describe("whatever the catalogue lets anyone build (random users, random pages)"
       const { r, types, data, rows } = randomUser(seed);
       const byId = Object.fromEntries(types.map((t) => [t.id, t]));
       const b = randomBlock(r, "x", data);
-      // Boni's own numbers (from: boni) are computed by the app, not from a collection.
-      if (!["number", "bars", "graph"].includes(String(b.type)) || b.from === "boni") continue;
+      if (!["number", "bars", "graph"].includes(String(b.type))) continue;
       const out = computeBlock(b as unknown as DataBlock, byId, (t) => rows.get(t) ?? [], {
         today: "2026-06-15",
       });
@@ -232,6 +232,42 @@ describe("whatever the catalogue lets anyone build (random users, random pages)"
     expect(computed).toBeGreaterThan(50);
     expect(refused).toBeGreaterThan(15);
   });
+
+  it("lists the very rows a block counts, and a bar's or a point's rows add up to it (D-08)", () => {
+    let checked = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const { r, types, data, rows } = randomUser(seed);
+      const byId = Object.fromEntries(types.map((t) => [t.id, t]));
+      const b = randomBlock(r, "x", data) as unknown as DataBlock;
+      if (!["number", "bars", "graph"].includes(String(b.type))) continue;
+      const o = { today: "2026-06-15" };
+      const all = (t: string) => rows.get(t) ?? [];
+      const out = computeBlock(b, byId, all, o);
+      if (!("data" in out)) continue;
+      const listed = blockRows(b, byId, all, o);
+      if (!("rows" in listed)) throw new Error(`seed ${seed}: ${JSON.stringify(listed)}`);
+      // Counted again over only the rows listed, the block gives the same number.
+      const again = computeBlock(b, byId, () => listed.rows, o);
+      expect("data" in again ? (again.data.total ?? 0) : Number.NaN, `seed ${seed}`).toBeCloseTo(
+        out.data.total ?? 0,
+        2,
+      );
+      if (b.type === "number") continue;
+      for (const pt of out.data.series[0]?.points ?? []) {
+        if (pt.key === REST) continue;
+        const one = blockRows(b, byId, all, { ...o, drill: pt.key });
+        if (!("rows" in one)) throw new Error(`seed ${seed} ${pt.key}`);
+        const sum = computeBlock(b, byId, () => one.rows, o);
+        expect(
+          "data" in sum ? (sum.data.total ?? 0) : Number.NaN,
+          `seed ${seed} ${pt.key}`,
+        ).toBeCloseTo(pt.value ?? 0, 2);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(50);
+    // Every point of 300 random pages counted twice: slower than the rest under a full `make check`.
+  }, 30_000);
 
   it("knows the collections of the store's schema (system and archived types left out)", () => {
     const { types } = randomUser(3);

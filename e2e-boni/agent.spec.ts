@@ -374,7 +374,7 @@ test("«Ya lo hice» saves a task already done; a card Boni would have accepted 
   );
   expect(sent).toContain(JSON.stringify({ edits: { done: true } }));
   await page.getByRole("button", { name: "Conversación" }).click();
-  await page.getByRole("button", { name: "Actividad", exact: true }).last().click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
   await expect(page.locator(".log-measure")).toHaveText(
     "De tus últimas 60 decisiones sobre correos, Boni habría aceptado sola 14 y habría acertado en 13.",
   );
@@ -471,7 +471,7 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
     },
   });
   await page.getByRole("button", { name: "Conversación" }).click();
-  await page.getByRole("button", { name: "Actividad", exact: true }).last().click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
   await expect(page.locator(".log-list li")).toHaveCount(2);
   await expect(page.locator(".log-list li").nth(1)).toContainText("Parado");
   // A click opens what it did: the request, each step and where it stopped, all as text.
@@ -502,7 +502,7 @@ test("the Registro says what each run was and what came of it; quiet readings ar
 }) => {
   await openApp(page, "/?still", { agent: { "GET api/agent/runs": [RUNS_EXPLAINED] } });
   await page.getByRole("button", { name: "Conversación" }).click();
-  await page.getByRole("button", { name: "Actividad", exact: true }).last().click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
   const entries = page.locator(".agent-page > .log-list > li");
   await expect(entries).toHaveCount(5);
   await expect(entries.nth(0)).toContainText("«Apunta una tarea: llamar al taller el lunes»");
