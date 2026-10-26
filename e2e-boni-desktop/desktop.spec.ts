@@ -436,13 +436,13 @@ test("«Registro» and «Auditoría» over the real server: Juan's read of a pri
 
 test("the notes explorer over the real server: the vault's paths, a note's history", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Notas" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
   const tree = w.locator(".notes-tree");
   await expect(tree.getByRole("button", { name: /^registros/ })).toBeVisible();
   await tree.getByRole("button", { name: /^registros/ }).click();
   await tree.getByRole("button", { name: /^personas/ }).click();
   await tree.getByRole("button", { name: /ana-ejemplo\.md/ }).click();
-  await expect(w.locator(".topbar .crumbs")).toContainText("Notas");
+  await expect(w.locator(".topbar .crumbs")).toContainText("Todas las páginas");
   await w.getByRole("button", { name: "Historial" }).click();
   const h = w.locator(".history-panel");
   // Imported from the vault: made by the import, its text written by it.

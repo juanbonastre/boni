@@ -77,4 +77,10 @@ describe("principles (docs/principios.md)", () => {
     const users = files(SRC).filter((f) => /from "\.\/Models\.tsx"/.test(readFileSync(f, "utf8")));
     expect(users.map((f) => f.slice(SRC.length))).toEqual(["/components/ModelsSettings.tsx"]);
   });
+
+  it("D-06: a note is a page: the row's editor is the page's own, not a text-only one", () => {
+    // One kind of page (Juan, 2026-10-26): a note's text is edited with the full editor (every block, «/» and «+»).
+    const found = files(SRC).filter((f) => /TextOnly|text-only/.test(readFileSync(f, "utf8")));
+    expect(found).toEqual([]);
+  });
 });

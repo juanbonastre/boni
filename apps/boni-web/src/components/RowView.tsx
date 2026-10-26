@@ -7,10 +7,11 @@ import { DocEditor } from "./PageView.tsx";
 
 /**
  * A row of a collection opened as a page, as Notion's: its title big, its properties one per line (the
- * name on the left, the value edited in place on the right), then its text with the page's block editor
- * (headings, lists, to-dos...; kept as Markdown, saved by itself a moment after typing). The properties start
- * folded under one line (Juan, 2026-10-22: a note opens on its text); each one can be hidden (the eye on hover,
- * as Notion's), and the hidden ones wait under "N ocultas". The collection keeps both for the account.
+ * name on the left, the value edited in place on the right), then its text with the page's own block editor
+ * (a note is a page, Juan, 2026-10-26: the same "/" and "+", data blocks included; kept as Markdown, the
+ * blocks Markdown cannot say as fenced «boni» blocks, saved by itself a moment after typing). The properties
+ * start folded under one line (Juan, 2026-10-22: a note opens on its text); each one can be hidden (the eye
+ * on hover, as Notion's), and the hidden ones wait under "N ocultas". The collection keeps both for the account.
  */
 export function RowView() {
   const t = useStore((s) => s.t);

@@ -6032,6 +6032,13 @@ button.audit-tr:hover {
   flex: none;
   color: var(--muted);
 }
+/* A page in «Todas las páginas» (its emoji, as the sidebar's): same slot as a note's file icon. */
+.notes-icon {
+  flex: none;
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+}
 .notes-folder {
   font-weight: 500;
 }
