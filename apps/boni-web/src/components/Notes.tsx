@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, FileText, Folder, Search, Sparkles } from "l
 import { useEffect, useMemo, useState } from "react";
 import type { NoteEntry } from "../core/audit.ts";
 import type { T } from "../i18n.ts";
-import { agentApi, errorText, openRow, useStore } from "../store.ts";
+import { agentApi, errorText, openPage, openRow, useStore } from "../store.ts";
 import { whoName } from "./Dash.tsx";
 
 interface FolderNode {
@@ -15,13 +15,15 @@ interface FolderNode {
 }
 
 /**
- * The notes explorer (Juan, 2026-10-24: in Obsidian he saw every file the AIs used; in Boni he must too): every note
- * at the path it had in the vault, as Obsidian's file tree, folders first. A note an AI has read carries a mark
- * (who and when on hover) and its folder says how many; a search lists the matches flat. A note opens as its row's
- * page (with its history).
+ * «Todas las páginas» (Juan, 2026-10-26: notes and pages are one thing, D-06): the user's pages first, then every
+ * note at the path it had in the vault, as Obsidian's file tree, folders first (Juan, 2026-10-24: in Obsidian he
+ * saw every file the AIs used; in Boni he must too). A note an AI has read carries a mark (who and when on hover)
+ * and its folder says how many; a search lists the matching notes flat. A page opens as itself; a note opens as
+ * its row's page (with its history and the page's full editor).
  */
 export function NotesView() {
   const t = useStore((s) => s.t);
+  const pages = useStore((s) => s.pages);
   const [notes, setNotes] = useState<NoteEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -82,6 +84,16 @@ export function NotesView() {
       ) : (
         tree && (
           <ul className="notes-tree" aria-label={t("nav.notes")}>
+            {/* The user's pages first: notes and pages are one thing (Juan, 2026-10-26, D-06). */}
+            {(pages ?? []).map((p) => (
+              <li key={p.id}>
+                <button type="button" className="notes-row" onClick={() => void openPage(p.id)}>
+                  <span className="notes-icon">{p.icon || "📄"}</span>
+                  <span className="notes-name">{p.title || t("page.untitled")}</span>
+                  <span className="muted small">{t("notes.page")}</span>
+                </button>
+              </li>
+            ))}
             <FolderRows t={t} f={tree} depth={0} open={open} toggle={toggle} />
           </ul>
         )

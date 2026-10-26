@@ -1,4 +1,4 @@
-import type { PageBlock } from "./page.ts";
+import { type PageBlock, pageErrors } from "./page.ts";
 
 /**
  * A note's text (Markdown, as the vault kept it and Boni keeps a row's body) as the page editor's blocks, and back
@@ -6,6 +6,9 @@ import type { PageBlock } from "./page.ts";
  * numbered items, to-dos, quotes, code fences, dividers, nested with indentation. Everything else (tables, images,
  * HTML, deeper headings) stays as a paragraph holding its lines as they were, so nothing is lost: a note that is
  * opened and not edited is never written again, and one that is edited keeps what the editor does not know.
+ * A note is a page (Juan, 2026-10-26: the same editor, every block): a block Markdown cannot say (a number, a chart,
+ * a database, a button) travels as a fenced block marked «boni» holding the block as JSON; it comes back the same
+ * block, and anything there that is not a valid block stays a code block as it was, never lost.
  */
 
 type Block = PageBlock;
@@ -34,25 +37,53 @@ export function markdownToBlocks(md: string): Block[] {
     if (para.length) out.push({ id: id(), type: "text", text: para.join("\n") });
     para = [];
   };
+  /** A «boni» fence's block (JSON of one block) as the block, its id never one already used or a later `md<N>`. */
+  const fromBoni = (b: Block): Block => {
+    const taken = new Set(out.map((x) => x.id));
+    const m = /^md(\d+)$/.exec(b.id);
+    if (m) n = Math.max(n, Number(m[1]));
+    if (taken.has(b.id)) return { ...b, id: id() };
+    return b;
+  };
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] as string;
-    // A code fence: its lines as they are, until the closing fence.
-    const fence = /^(\s*)(```|~~~)\s*([\w+-]*)\s*$/.exec(line);
+    // A code fence: its lines as they are, until a closing fence of the same character, at least as long (Markdown).
+    const fence = /^(\s*)(`{3,}|~{3,})\s*([\w+-]*)\s*$/.exec(line);
     if (fence) {
       flush();
+      const marker = fence[2] as string;
+      const char = marker[0] as string;
+      const min = marker.length;
       const body: string[] = [];
       let j = i + 1;
-      while (j < lines.length && !(lines[j] as string).trim().startsWith(fence[2] as string)) {
+      while (j < lines.length) {
+        const c = (lines[j] as string).trim();
+        if (c.length >= min && [...c].every((x) => x === char)) break;
         body.push(lines[j] as string);
         j++;
       }
-      out.push({
+      const code: Block = {
         id: id(),
         type: "code",
         text: body.join("\n"),
         ...(fence[3] ? { lang: fence[3] } : {}),
         ...(indentOf(fence[1] as string) ? { indent: indentOf(fence[1] as string) } : {}),
-      } as Block);
+      };
+      // A block Markdown cannot say travels as a fenced block marked «boni»; what there is not a valid block
+      // stays a code block as it was (Juan, 2026-10-26: one kind of page, nothing is lost).
+      if (code.lang === "boni") {
+        try {
+          const block = JSON.parse(code.text) as Block;
+          if (pageErrors({ version: 1, blocks: [block] }).length === 0) {
+            out.push(fromBoni(block));
+            i = j;
+            continue;
+          }
+        } catch {
+          // not JSON: the code block as it was
+        }
+      }
+      out.push(code);
       i = j;
       continue;
     }
@@ -133,6 +164,19 @@ export function markdownToBlocks(md: string): Block[] {
 
 const LIST = new Set(["bullet", "numbered", "todo"]);
 
+/** A fence long enough that no line of `text` can close it (its longest leading run of the same character, plus one). */
+function fenceFor(text: string): string {
+  let need = 3;
+  for (const line of text.split("\n")) {
+    const c = line[0];
+    if (c !== "`" && c !== "~") continue;
+    let run = 0;
+    while (line[run] === c) run++;
+    need = Math.max(need, run + 1);
+  }
+  return "`".repeat(need);
+}
+
 export function blocksToMarkdown(blocks: readonly Block[]): string {
   const parts: string[] = [];
   let prev: Block | null = null;
@@ -167,7 +211,8 @@ export function blocksToMarkdown(blocks: readonly Block[]): string {
         break;
       case "code": {
         const lang = (b as { lang?: string }).lang ?? "";
-        text = `${pad}\`\`\`${lang}\n${b.text}\n${pad}\`\`\``;
+        const fence = fenceFor(b.text);
+        text = `${pad}${fence}${lang}\n${b.text}\n${pad}${fence}`;
         break;
       }
       case "divider":
@@ -180,8 +225,13 @@ export function blocksToMarkdown(blocks: readonly Block[]): string {
       case "text":
         text = b.text;
         break;
-      default:
-        continue; // charts, databases, buttons, subpages: not in a note's text
+      default: {
+        // A block Markdown cannot say (a chart, a number, a database, a button) travels as a fenced block
+        // marked «boni» holding the block as JSON; it comes back the same block (Juan, 2026-10-26).
+        const json = JSON.stringify(b);
+        const fence = fenceFor(json);
+        text = `${pad}${fence}boni\n${json}\n${pad}${fence}`;
+      }
     }
     // A bullet or a to-do ends the numbering at its level; anything that is not a list ends every one.
     if (b.type === "bullet" || b.type === "todo") counters.length = Math.min(counters.length, ind);

@@ -415,8 +415,8 @@ for (const language of ["es", "en"] as const) {
 
 /** The notes explorer, a note's history and the collections' usage. */
 const N = {
-  es: { notes: "Notas", history: "Historial", cols: "Colecciones" },
-  en: { notes: "Notes", history: "History", cols: "Collections" },
+  es: { notes: "Todas las páginas", history: "Historial", cols: "Colecciones" },
+  en: { notes: "All pages", history: "History", cols: "Collections" },
 };
 for (const language of ["es", "en"] as const) {
   for (const width of [1440, 900]) {

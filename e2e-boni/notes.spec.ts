@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { AUDIT_SUMMARY, NOTES, ROW_HISTORY, STORAGE } from "./agent-scenarios.ts";
-import { openApp } from "./fixtures.ts";
+import { openApp, TEMPLATE } from "./fixtures.ts";
 
 /**
  * Everything the AIs read, browsable (Juan, 2026-10-24): the notes by path with what an AI read, a row's history
@@ -16,23 +16,25 @@ const AGENT = {
   "GET api/data/audit/summary": [AUDIT_SUMMARY],
 };
 
-test("the notes explorer: the vault's tree, the notes an AI read marked; a note opens as its page", async ({
+test("«Todas las páginas»: the user's pages first, then the vault's tree; a note opens as its page", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "/?still", { agent: AGENT });
-  await page.locator(".sidebar").getByRole("button", { name: "Notas" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Notas");
+  await openApp(page, "/?still", { agent: AGENT, pages: [TEMPLATE("uso-ia")] });
+  await page.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Todas las páginas");
   await expect(page.locator(".dash-head")).toContainText("8 notas · 4 leídas por una IA");
   const tree = page.locator(".notes-tree");
-  // Folders first, then the notes of the root.
+  // The user's pages first, then the folders, then the notes of the root.
   await expect(tree.locator(":scope > li > .notes-row .notes-name")).toHaveText([
+    "Uso de la IA",
     "_system",
     "proyectos",
     "wiki",
     "AGENTS.md",
     "README.md",
   ]);
+  await expect(tree.locator(":scope > li").first()).toContainText("Página");
   await expect(
     tree.getByRole("button", { name: /^AGENTS\.md/ }).locator(".notes-ai"),
   ).toHaveAttribute("title", /La ha leído MCP · claude-ejemplo, Agente · claude-opus-5-5/);
@@ -45,7 +47,7 @@ test("the notes explorer: the vault's tree, the notes an AI read marked; a note 
   await page.getByRole("textbox", { name: "Buscar por ruta o título" }).pressSequentially("plan");
   await expect(tree.locator(".notes-row")).toHaveCount(1);
   await tree.getByRole("button", { name: /proyectos\/plan-ejemplo\.md/ }).click();
-  await expect(page.locator(".topbar .crumbs")).toContainText("Notas");
+  await expect(page.locator(".topbar .crumbs")).toContainText("Todas las páginas");
   // Its history beside it: system columns, who wrote what, changes, who saw it.
   await page.getByRole("button", { name: "Historial" }).click();
   const h = page.locator(".history-panel");
@@ -59,7 +61,54 @@ test("the notes explorer: the vault's tree, the notes an AI read marked; a note 
   await page.keyboard.press("Escape");
   await expect(h).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(page.locator(".topbar h1")).toHaveText("Notas");
+  await expect(page.locator(".topbar h1")).toHaveText("Todas las páginas");
+
+  // A page of the list opens as itself.
+  await tree.getByRole("button", { name: /Uso de la IA/ }).click();
+  await expect(page.locator(".page-doc .doc-title")).toHaveValue("Uso de la IA");
+});
+
+test("a note is a page: the full editor, and what Markdown cannot say saved as a marked block", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", { agent: AGENT, pages: [] });
+  await page.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
+  await page
+    .getByRole("textbox", { name: "Buscar por ruta o título" })
+    .pressSequentially("plan-ejemplo");
+  const row = page
+    .locator(".notes-tree")
+    .getByRole("button", { name: /proyectos\/plan-ejemplo\.md/ });
+  await row.click();
+  const doc = page.locator(".doc-editor");
+  // The page's own «/»: a Cifra over the collection the note belongs to, computed like any page's.
+  await doc.locator(".doc-tail").click();
+  await page.keyboard.type("/Cifra", { delay: 20 });
+  await page.locator(".slash-menu").getByRole("menuitem", { name: "Cifra", exact: true }).click();
+  await expect(doc.locator(".blk-number .kpi-value")).toBeVisible();
+  // Leaving by its crumb (the new block's title keeps the focus, as when Juan types) saves the note's text;
+  // the block travels as a fenced «boni» block and comes back the same.
+  await page.locator(".topbar .crumbs").getByRole("button", { name: "Todas las páginas" }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Todas las páginas");
+  await page
+    .getByRole("textbox", { name: "Buscar por ruta o título" })
+    .pressSequentially("plan-ejemplo");
+  await page
+    .locator(".notes-tree")
+    .getByRole("button", { name: /proyectos\/plan-ejemplo\.md/ })
+    .click();
+  await expect(page.locator(".doc-editor .blk-number .kpi-value")).toBeVisible();
+  const body = await page.evaluate(async () => {
+    const r = await (
+      window as unknown as {
+        boniDesktop: { request: (m: string, p: string) => Promise<{ body: string }> };
+      }
+    ).boniDesktop.request("GET", "api/data/rows/r1");
+    return (JSON.parse(r.body) as { row: { body: string } }).row.body;
+  });
+  expect(body).toContain("```boni");
+  expect(body).toContain('"type":"number"');
 });
 
 test("system columns in a table: none by default, chosen from the view's options, never editable", async ({

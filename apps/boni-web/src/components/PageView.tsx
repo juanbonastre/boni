@@ -1,10 +1,8 @@
 import { CATALOGUE, kindOf as catalogueKind, newBlock } from "@boni/views";
 import { ChevronRight, FileText, GripVertical, Plus, Smile } from "lucide-react";
 import {
-  createContext,
   type KeyboardEvent,
   type ReactNode,
-  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -126,28 +124,24 @@ function withChildren(blocks: Block[], i: number): Block[] {
  * turn it into a heading, a list or a to-do; Backspace at the start joins it to the one above); on hover
  * every block shows "+" (a block below) and its handle (its menu; drag to move it).
  */
-/** A note's text (a row's body) edits text blocks only: no charts, databases, buttons or subpages in Markdown. */
-const TextOnly = createContext(false);
-
 /**
- * The block editor alone, on any document: a row's text as a page (Juan, 2026-10-22: notes as pages), with the
- * page's typing, "/" menu (text blocks only), handles, drag and undo.
+ * The block editor alone, on any document: a row's text as a page with the page's own editor (Juan, 2026-10-22/26:
+ * notes are pages, one kind): its typing, "/" menu, handles, drag, undo, data blocks. What Markdown cannot say
+ * travels in the note's text as a fenced block marked «boni» (packages/views/src/markdown.ts).
  */
 export function DocEditor({ doc }: { doc: Page }) {
   return (
-    <TextOnly.Provider value={true}>
-      <div
-        className="doc-editor"
-        onKeyDownCapture={(e) => {
-          if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-          const k = e.key.toLowerCase();
-          if ((k === "z" || k === "y") && undoPage(k === "y" || e.shiftKey)) e.preventDefault();
-        }}
-      >
-        <Blocks page={doc} />
-        <DocTail page={doc} />
-      </div>
-    </TextOnly.Provider>
+    <div
+      className="doc-editor"
+      onKeyDownCapture={(e) => {
+        if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+        const k = e.key.toLowerCase();
+        if ((k === "z" || k === "y") && undoPage(k === "y" || e.shiftKey)) e.preventDefault();
+      }}
+    >
+      <Blocks page={doc} />
+      <DocTail page={doc} />
+    </div>
   );
 }
 
@@ -594,7 +588,6 @@ function BlockRow({
   children: ReactNode;
 }) {
   const t = useStore((s) => s.t);
-  const textOnly = useContext(TextOnly);
   const [menu, setMenu] = useState(false);
   const [adding, setAdding] = useState(false);
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
@@ -605,7 +598,7 @@ function BlockRow({
     ? t(`block.kind.${kind}`)
     : kindName(t, catalogueKind(block.type), block.type);
   const target = drag && drag.over === block.id && drag.id !== block.id ? drag.where : null;
-  const clickRows = !textOnly && CLICK_ROWS.has(block.type);
+  const clickRows = CLICK_ROWS.has(block.type);
   const openAt = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -664,7 +657,7 @@ function BlockRow({
         openRowsPanel(block.id);
       }}
       onContextMenu={(e) => {
-        if (isText(block) || textOnly) return;
+        if (isText(block)) return;
         openAt(e);
       }}
       onDragOver={(e) => {
@@ -674,8 +667,8 @@ function BlockRow({
         const fx = (e.clientX - r.left) / r.width;
         // The sides make a column beside it; above or below it, the same column. Buttons sit in a row.
         if (block.type === "action" && !block.at) onDragOver(fx > 0.5 ? "below" : "above");
-        else if (!textOnly && fx < 0.15) onDragOver("left");
-        else if (!textOnly && fx > 0.85) onDragOver("right");
+        else if (fx < 0.15) onDragOver("left");
+        else if (fx > 0.85) onDragOver("right");
         else onDragOver(e.clientY > r.top + r.height / 2 ? "below" : "above");
       }}
       onDrop={(e) => {
@@ -724,7 +717,7 @@ function BlockRow({
         </span>
       </div>
       {children}
-      {!textOnly && (isDataBlock(block) || block.type === "chart") && (
+      {(isDataBlock(block) || block.type === "chart") && (
         <span
           className={`blk-resize${block.type === "graph" ? " corner" : ""}`}
           title={t("block.resize")}
@@ -1265,7 +1258,6 @@ interface SlashItem {
 /** Every block that can go here, in groups, filtered by a query (the "/" menu and the "+" menu share it). */
 function useBlockItems(query: string): SlashItem[] {
   const t = useStore((s) => s.t);
-  const textOnly = useContext(TextOnly);
   const specs = useVisibleCharts();
   const home = useStore((s) => s.home);
   const shortcuts = useStore((s) => s.shortcuts);
@@ -1330,13 +1322,11 @@ function useBlockItems(query: string): SlashItem[] {
       ),
     ];
     const q = fold(query.trim());
-    const allowed = textOnly
-      ? all.filter((i) => i.group === write && i.choice.kind !== "page")
-      : all;
+    const allowed = all;
     return q
       ? allowed.filter((i) => fold(i.label).includes(q) || fold(i.group).includes(q))
       : allowed;
-  }, [query, specs, home, shortcuts, dataTypes, t, textOnly]);
+  }, [query, specs, home, shortcuts, dataTypes, t]);
   return items;
 }
 

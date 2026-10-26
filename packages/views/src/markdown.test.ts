@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { blocksToMarkdown, leadingTitle, markdownToBlocks } from "./markdown.ts";
-import { pageErrors } from "./page.ts";
+import { type PageBlock, pageErrors } from "./page.ts";
+
+/** A data block as the editor puts it on the grid (invented; never a real collection). */
+const NUMBER: PageBlock = {
+  id: "b1",
+  type: "number",
+  title: "Gasto",
+  collection: "t_movimiento",
+  measure: "count",
+  period: "month",
+  bg: true,
+  at: { row: "r1", col: 0, w: 3 },
+};
 
 /** An invented note with the shapes of the vault's (never a real one). */
 const NOTE = `## Contexto
@@ -58,6 +70,47 @@ describe("notes as pages: Markdown and the editor's blocks", () => {
 
   it("writes back the same note", () => {
     expect(blocksToMarkdown(markdownToBlocks(NOTE))).toBe(NOTE);
+  });
+
+  it("a block Markdown cannot say travels as a fenced «boni» block and comes back the same", () => {
+    const md = blocksToMarkdown([{ id: "md1", type: "text", text: "Un texto" }, NUMBER]);
+    expect(md).toContain('```boni\n{"id":"b1"');
+    const back = markdownToBlocks(md);
+    expect(back[1]).toEqual(NUMBER);
+    expect(pageErrors({ version: 1, blocks: back })).toEqual([]);
+    // And back to the same Markdown (the round trip is closed).
+    expect(blocksToMarkdown(back)).toBe(md);
+  });
+
+  it("a «boni» fence with something that is not a valid block stays a code block", () => {
+    const md = '```boni\nnot json\n```\n\n```boni\n{"type":"wat"}\n```\n';
+    expect(markdownToBlocks(md)).toMatchObject([
+      { type: "code", lang: "boni", text: "not json" },
+      { type: "code", lang: "boni", text: '{"type":"wat"}' },
+    ]);
+  });
+
+  it("a code block with a fence inside uses a longer fence and keeps its text", () => {
+    const code: PageBlock = { id: "c1", type: "code", lang: "js", text: "a();\n```\nb();" };
+    const md = blocksToMarkdown([code]);
+    expect(md).toBe("````js\na();\n```\nb();\n````\n");
+    const back = markdownToBlocks(md)[0] as typeof code;
+    expect(back).toMatchObject({ type: "code", lang: "js", text: "a();\n```\nb();" });
+  });
+
+  it("a «boni» block whose id another block uses comes back with a fresh id", () => {
+    const md = [
+      "```boni",
+      JSON.stringify({ ...NUMBER, id: "md1" }),
+      "```",
+      "```boni",
+      JSON.stringify({ ...NUMBER, id: "md1" }),
+      "```",
+    ].join("\n");
+    const blocks = markdownToBlocks(md);
+    expect(blocks.map((b) => b.id)[0]).toBe("md1");
+    expect(blocks.map((b) => b.id)[1]).not.toBe("md1");
+    expect(blocks[1]).toMatchObject({ type: "number", title: "Gasto" });
   });
 
   it("takes a note's first heading as its title", () => {
