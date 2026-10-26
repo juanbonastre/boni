@@ -431,7 +431,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 - **Dashboards** (Boni: «Registro», «Auditoría»; Juan, 2026-10-24: short names, the models and the numbers
   large, not the whole width, charts, detail on click). A page column of at most 1200 px, centred; the title large with
   its period beside it (a segmented control where the period can change). First a row of four number tiles (label,
-  a 26 px number, a muted note; a tile that opens more is a button, outlined in `--accent` while open; a limit is a thin
+  a 26 px number, a muted note that takes a second line on a narrow tile rather than losing its end, as «octubre
+  2026 - hasta hoy» would; a tile that opens more is a button, outlined in `--accent` while open; a limit is a thin
   bar in `--accent`, amber past the warning, `--bad` at the limit). Then two columns (one when the page is narrower
   than ~900 px, also when a side panel takes room): cards on the left, charts on the right. Charts are Boni's own
   (`Chart.tsx`) at 200 px with the legend in HTML above them (a square per series); comparisons of a few things are

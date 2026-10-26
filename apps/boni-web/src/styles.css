@@ -5490,6 +5490,13 @@ button.kpi[aria-expanded="true"] {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* What the number covers («octubre 2026 - hasta hoy»): on a narrow tile it takes a second line, never losing its end. */
+.kpi-note {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 .kpi-value {
   font-size: 26px;
   font-weight: 600;
