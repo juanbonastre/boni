@@ -18,11 +18,13 @@ import {
   submit,
   toast,
   todayIso,
+  useEditing,
   useStore,
 } from "../store.ts";
 import { BlockPanel, kindName } from "./BlockPanel.tsx";
 import { EditorForm } from "./editorFields.tsx";
 import { FormView } from "./FormView.tsx";
+import { RowsPanel } from "./RowsPanel.tsx";
 
 /**
  * The right side panel (Boni Calendar's side panel): what is being captured or edited, next to the charts, which
@@ -32,7 +34,7 @@ export function SidePanel() {
   const t = useStore((s) => s.t);
   const panel = useStore((s) => s.panel);
   const screens = useStore((s) => s.screens);
-  const page = useStore((s) => s.page);
+  const page = useEditing();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -59,7 +61,9 @@ export function SidePanel() {
         : t("charts.editTitle")
       : panel.kind === "block"
         ? blockTitle
-        : (screen?.title ?? t("chart.loading"));
+        : panel.kind === "rows"
+          ? t("rows.title")
+          : (screen?.title ?? t("chart.loading"));
   return (
     <aside className="side-panel" aria-label={title}>
       <div className="panel-head">
@@ -78,6 +82,13 @@ export function SidePanel() {
         <EditorPanel key={panel.spec.id || "new"} initial={panel.spec} isNew={panel.isNew} />
       ) : panel.kind === "block" ? (
         <BlockPanel key={panel.id} id={panel.id} />
+      ) : panel.kind === "rows" ? (
+        <RowsPanel
+          key={`${panel.id}:${panel.drill ?? ""}`}
+          id={panel.id}
+          drill={panel.drill}
+          label={panel.label}
+        />
       ) : screen ? (
         <ScreenPanel screen={screen} />
       ) : (

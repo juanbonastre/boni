@@ -213,12 +213,14 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   (`--surface`, 10 px radius, `--line-strong` border) and is fully interactive: hover for values, click for a detail;
   dragging anywhere moves it, the bottom-right corner resizes it; on hover it shows its period and its menu (the chart
   controls below, compact), and right click opens the same menu (open or edit in the app, refresh, hide here, remove).
-- **Boni's main window** is laid out as this app: the sidebar (the conversation; "Páginas", the user's pages as a tree,
+- **Boni's main window** is laid out as this app: the sidebar (Buscar, the conversation, Colecciones, Notas; "Páginas",
+  the user's pages as a tree,
   each row with a "…" menu: add a subpage, delete with Undo; settings and the user at the bottom), the main area and
   the right side panel. **Nothing on screen is fixed by the app** (Juan, 2026-10-21): no home of charts, no "Apuntar
   gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
-  pages, a welcome with "Nueva página" and "Hablar con Boni". An account that used the first Boni got, once, a page
-  "Gastos" with what its home showed, as data it can change or delete.
+  pages, a welcome with "Nueva página" and "Hablar con Boni". Every account gets Boni's template pages once («Uso de
+  la IA», «Actividad»); an account that used the first Boni got, once, a page "Gastos" with what its home showed, as
+  data it can change or delete. Modelos is in Ajustes; the Registro opens from the conversation.
 - **A page is a Notion page** (`components/PageView.tsx`, docs/extensiones.md 6; measured on Notion on 2026-10-21):
   always editable in place, no edit mode. A reading column of 708 px centred with 64 px above (or the window's whole
   width, from the top bar's "…": "Ancho completo", where charts sit side by side); the name is the first line (40 px,
@@ -247,8 +249,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   a row of its own. On a window narrower than 640 px the columns go one under another. Numbers («Cifra»), bar lists
   and charts («Gráfica») of any collection: what they count (rows, a sum or an average of a number field), grouped
   by time (por día / semana / mes, the axis with dates) or a select field, in a period, only the rows of one option.
-  A click on a number or a chart opens its menu (the handle's; right click too); buttons and text are used with the
-  click. «Modificar…» opens the block's panel on the right, drawn from the catalogue: «Datos», «Aspecto» (shape,
+  A click uses a block (design audit, Juan 2026-10-25): a number, a bar list or a chart opens «Lo que cuenta» in the
+  side panel (the rows it counts, with its filter and period, picked by the same engine, so they add up to it; a bar
+  or a chart's point lists only its own; a row of the user's opens as its page); buttons and text are used with the
+  click. Every block's menu comes from its handle ⋮⋮ and the right click, the same in all. «Modificar…» opens the block's panel on the right, drawn from the catalogue: «Datos», «Aspecto» (shape,
   colour, «Con fondo», «Ancho», «Altura») and «Solo algunas filas» folded; a setting that depends on another follows
   it (another collection, its fields). Every setting an AI may set has its control there (the AI is given the same
   list). Dragging a number's or chart's right edge changes its width in columns (a chart's corner, also its height:
@@ -261,13 +265,17 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   at once; its notice says ««Café» apuntado» with «Deshacer», which takes it out again (the same device, within 10
   minutes); without a connection it waits in the queue for its Undo as before. Buttons one after another share a row,
   each only as wide as it needs. Opening a form puts the caret in the first field still to fill (the amount).
-- **Boni's screens as pages** (Juan, 2026-10-24; `packages/views/src/systemPages.ts`, `components/SystemPage.tsx`):
-  «Modelos» is a page of blocks that comes with Boni (its numbers, the uses, the keys, spending by day and by model,
-  a link to Actividad), edited like any page. Beside its name, «De Boni»; once changed, «Modificada», which opens the
-  list of changes (+ added, − removed, ✎ changed, ⤢ another size, ↕ where the blocks are) and «Restaurar la de
-  Boni» (Undo in the notice). The account keeps the changed page (every device). Boni's own blocks («De Boni» in
-  the catalogue: Boni's numbers by name, «Tarjetas de modelo», «Claves», «Enlace») can go on any page too; a use
-  opens its panel on the right, the spending number's menu «Gasto y presupuesto…».
+- **Boni's template pages** (design audit, Juan 2026-10-25; `packages/views/src/templates.ts`,
+  `components/TemplatePill.tsx`): «Uso de la IA» (spending, calls, what the AIs read and changed, spending by day, by
+  model, calls by use, a link to Ajustes → Modelos) and «Actividad» (reads and changes, by day, who, in which collection,
+  the table of Boni's activity, links to the Registro and the audit) come with every account as ordinary pages of
+  ordinary blocks, over Boni's own read-only collections («Llamadas a modelos», «Actividad de Boni»). Under the page's
+  name, «De Boni»; once changed, «Modificada», which opens the list of changes (+ added, − removed, ✎ changed, ⤢ another
+  size, ↕ where the blocks are) and «Restaurar la de Boni» (Undo in the notice and Ctrl+Z). Removed, a template stays
+  removed (the trash brings it back).
+- **Boni's own collections** (`apps/server/src/systemCollections.ts`): in Colecciones and in a database block they carry
+  «De Boni · solo lectura» instead of a level of what the AI sees (no AI sees them): no «Nuevo», no editing, no opening
+  a row. They are counted like any collection.
 - **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`): "/" + a collection's name puts it on a
   page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Opciones" (sort, a board's
   grouping select, a calendar's date, visible properties) and "Nuevo". Table: the title column first, 34 px rows,
@@ -420,7 +428,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   opciones": "Volver a leer" (a days select, 1 to 30, and "Leer": that mail is read again and its pending proposals
   are replaced; a toast says how many mails) and the mailbox with "Cambiar" and "Desconectar". The password is never
   shown again.
-- **Dashboards** (Boni: «Modelos», «Actividad», «Auditoría»; Juan, 2026-10-24: short names, the models and the numbers
+- **Dashboards** (Boni: «Registro», «Auditoría»; Juan, 2026-10-24: short names, the models and the numbers
   large, not the whole width, charts, detail on click). A page column of at most 1200 px, centred; the title large with
   its period beside it (a segmented control where the period can change). First a row of four number tiles (label,
   a 26 px number, a muted note; a tile that opens more is a button, outlined in `--accent` while open; a limit is a thin
@@ -431,26 +439,27 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   beside it, a click on a row filters or opens what it is about). Colours follow the thing, never its position:
   per actor, the Agente `--c1`, the Lector `--c2`, the Revisor `--c3`, the Decisor `--c4`, the MCP `--c7`, people
   muted, Boni's code `--compare`.
-- **Modelos** (Boni, sidebar): tiles Gasto (against the budget; open: the spending per model and «Cambiar el
-  presupuesto»), Llamadas, Lecturas and Ediciones (what the models and the MCP read and changed this month, from the
-  audit). «Usos»: a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor), the model's
-  short id at 18 px, a pill of what its route does with the data (`--good` «No guarda tus datos», muted «Borra lo que
-  recibe en 30 días», `--bad` «Puede guardar tus datos») and «€ · llamadas»; a click opens the use's panel on the
-  right (over the page when narrow): the model and its route, what the use does, the privacy in a sentence, whose
-  choice it is, this month's spending, the last evaluation with «Ver los casos», «Volver al del servidor» and
-  «Cambiar», which shows the models to choose (search, OpenRouter's models some provider serves keeping nothing,
-  cheapest first, a box each with its name, price per million tokens and providers; readers only those that answer a
-  fixed form, the Decisor only Jev) and under the list, fixed while it scrolls, «Ahora» and «Nuevo» with their scores,
-  «Evaluar» and «Usar este modelo» (enabled only with a recent evaluation). «Claves» folded under the cards (a
-  password field in place; the key never comes back). Right: «Gasto por día» (stacked by model) and «Llamadas por
-  modelo». Last, «Qué han hecho los modelos» goes to Actividad.
-- **Actividad** (Boni, sidebar; it replaces the Registro's flat list): tiles Correos leídos, Propuestas («81 %
+- **Ajustes → Modelos** (design audit, Juan 2026-10-25: what configures Boni lives in Ajustes, not on a page; it was the
+  sidebar's «Modelos»): «Usos», a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor),
+  the model's short id at 18 px, a pill of what its route does with the data (`--good` «No guarda tus datos», muted
+  «Borra lo que recibe en 30 días», `--bad` «Puede guardar tus datos») and «€ · llamadas»; a click opens the use in
+  place of the list (Esc or its close button goes back to the list, not out of Ajustes): the model and its route, what
+  the use does, the privacy in a sentence, whose choice it is, this month's spending, the last evaluation with «Ver
+  los casos», «Volver al del servidor» and «Cambiar», which shows the models to choose (search, OpenRouter's models
+  some provider serves keeping nothing, cheapest first, a box each with its name, price per million tokens and
+  providers; readers only those that answer a fixed form, the Decisor only Jev) and under the list, fixed while it
+  scrolls, «Ahora» and «Nuevo» with their scores, «Evaluar» and «Usar este modelo» (enabled only with a recent
+  evaluation). Then the month's spending against the budget (a tile with its bar), the spending per model and
+  «Cambiar el presupuesto»; «Claves» folded at the end (a password field in place; the key never comes back). What the
+  models did is the page «Uso de la IA».
+- **Registro** (Boni; from the conversation's «Registro» and the page «Actividad»'s link; it was the sidebar's
+  «Actividad»): tiles Correos leídos, Propuestas («81 %
   aceptadas»), Cambios («12 deshechos»), Peticiones tuyas; «Por día» (read and edited, two lines), «Quién edita» (a bar
   per actor; a click opens the audit of that actor), «Qué cambian» (create / edit / delete as numbers), «Colecciones:
   leído y editado» (two bars per collection; a click opens its audit), «Abrir la auditoría», and «Ejecuciones» folded
   at the end (the runs one by one, as the Registro was). On a device that may not read the audit, a muted line says
   so and the runs are shown.
-- **Auditoría** (Boni, from Actividad; crumbs «Actividad / Auditoría»): read-only, as a collection: «Verificar la
+- **Auditoría** (Boni, from the Registro; crumbs «Registro / Auditoría»): read-only, as a collection: «Verificar la
   cadena» (then `--good` «Cadena verificada» or `--bad` «La cadena no cuadra»), filters (a segmented Todos / Modelos /
   MCP / Boni / Personas and a select of collections; «Una ejecución ✕» when it shows one run), and a table of actions
   (Cuándo, Quién with its colour dot, Acción in words — «Buscó «dentista»», «Leyó», «Descargó una web», a refused one

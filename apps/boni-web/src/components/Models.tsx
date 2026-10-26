@@ -23,7 +23,6 @@ import {
 import { ApiError } from "../core/api.ts";
 import { shortModel } from "../core/audit.ts";
 import { agentApi, errorText, toast, useStore } from "../store.ts";
-import { COLORS, DashChart, dailyChart, daysOf } from "./Dash.tsx";
 
 type T = ReturnType<typeof useStore.getState>["t"];
 const same = (a: ModelChoice, b: ModelChoice) =>
@@ -33,40 +32,6 @@ const DECIDERS: ModelChoice[] = [
   { connection: "openrouter", model: "typesafe/jev-1.14", zdr: false },
   { connection: "typesafe", model: "jev-1.14.0", zdr: false },
 ];
-
-export function callsByModel(view: View) {
-  const by = new Map<string, number>();
-  for (const r of view.spending.rows) by.set(r.model, (by.get(r.model) ?? 0) + r.calls);
-  return [...by.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([model, calls]) => ({ key: model, label: shortModel(model), values: [calls] }));
-}
-
-/** Spending per day this month, one colour per model. */
-export function SpendChart({ t, view }: { t: T; view: View }) {
-  const month = view.spending.month;
-  if (!month || !view.spending.byDay.length)
-    return <p className="muted small">{t("models.noCalls")}</p>;
-  const from = Date.parse(`${month}-01T00:00:00Z`);
-  const to = Math.min(Date.now() + 1, Date.parse(`${nextMonth(month)}-01T00:00:00Z`));
-  const models = [...new Set(view.spending.byDay.flatMap((d) => Object.keys(d.byModel)))];
-  const series = (models.length ? models : [""]).map((m) => ({
-    name: m ? shortModel(m) : t("models.kpi.spend"),
-    values: Object.fromEntries(
-      view.spending.byDay.map((d) => [d.day, m ? (d.byModel[m] ?? 0) : d.eur]),
-    ),
-  }));
-  return (
-    <DashChart
-      data={dailyChart("models-spend", "stacked_bar", daysOf(from, to), series, "EUR")}
-      legend={series.map((s, i) => ({ name: s.name, color: COLORS[i % COLORS.length] as string }))}
-    />
-  );
-}
-const nextMonth = (m: string) => {
-  const [y, mo] = m.split("-").map(Number) as [number, number];
-  return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`;
-};
 
 const ROLE_ICONS: Record<ModelRole, typeof Route> = {
   planner: Route,

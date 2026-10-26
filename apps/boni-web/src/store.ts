@@ -4,7 +4,7 @@ import {
   type DatabaseView,
   markdownToBlocks,
   type PageSpec,
-  type SystemPage,
+  templatePage,
 } from "@boni/views";
 import { useMemo } from "react";
 import { create } from "zustand";
@@ -25,7 +25,6 @@ import {
   type Proposal,
   type RunDetail,
   type RunSummary,
-  type SystemPageView,
   type TurnResult,
   type Visibility,
 } from "./core/agent.ts";
@@ -94,7 +93,6 @@ export type View =
   | { kind: "notes" }
   /** Every collection: open one, see and change its protection, filter. */
   | { kind: "collections" }
-  | { kind: "models" }
   | { kind: "audit"; filter: AuditFilter }
   /** One collection on a page of its own (its protection is unlocked only here). */
   | { kind: "collection"; type: string }
@@ -110,7 +108,9 @@ export type Panel =
   | { kind: "edit"; spec: ChartSpec; isNew: boolean }
   | { kind: "shortcut"; shortcut: Shortcut; isNew: boolean }
   /** A block of the open page: a control for each of its settings in the block catalogue. */
-  | { kind: "block"; id: string };
+  | { kind: "block"; id: string }
+  /** The rows a data block counts (a click on it: «Lo que cuenta»), or those of one of its bars or points. */
+  | { kind: "rows"; id: string; drill?: string; label?: string };
 /** The phone's tabs: capturing (shortcuts), the charts and the conversation with Boni. */
 export type Tab = "capture" | "charts" | "boni";
 
@@ -146,6 +146,8 @@ interface State {
   tab: Tab;
   sidebarOpen: boolean;
   settingsOpen: boolean;
+  /** The section Settings opens on (a link to Ajustes → Modelos), else the first. */
+  settingsSection: string | null;
   /** The server's home screen (its buttons: what can be captured) and the screens it opens (forms). */
   home: Screen | null;
   screens: Record<string, Screen>;
@@ -185,7 +187,6 @@ interface State {
   /** The open row's text as the page editor's blocks (saved back as Markdown). */
   rowDoc: Page | null;
   /** One of Boni's screens as a page («Modelos»), edited like any page; `modified` when it is not Boni's. */
-  systemDoc: (Page & { system: SystemPage; modified: boolean }) | null;
   rows: Record<
     string,
     {
@@ -279,6 +280,7 @@ export const useStore = create<State>(() => ({
   tab: "capture",
   sidebarOpen: true,
   settingsOpen: false,
+  settingsSection: null,
   home: null,
   screens: {},
   editPreview: null,
@@ -308,7 +310,6 @@ export const useStore = create<State>(() => ({
   openedNote: null,
   row: null,
   rowDoc: null,
-  systemDoc: null,
   inbox: [],
   requests: [],
   inboxLoading: false,
@@ -544,6 +545,12 @@ export const openEditor = (spec: ChartSpec, isNew = false) =>
 export const closePanel = () => set({ panel: null, chartForPage: null, ...FRESH_PANEL });
 /** A block's settings in the side panel («Modificar…»). */
 export const openBlockPanel = (id: string) => set({ panel: { kind: "block", id }, ...FRESH_PANEL });
+/** What a data block counts, in the side panel (a click on it; `drill` a bar's or a point's key). */
+export const openRowsPanel = (id: string, drill?: string, label?: string) =>
+  set({
+    panel: { kind: "rows", id, ...(drill ? { drill } : {}), ...(label ? { label } : {}) },
+    ...FRESH_PANEL,
+  });
 export const markPanelEdited = () => {
   if (get().panel && !get().panelEdited) set({ panelEdited: true });
 };
@@ -557,7 +564,8 @@ export const setEditPreview = (p: State["editPreview"]) => set({ editPreview: p 
 /** The editor's draft as it is typed: the card being edited shows its title and colour at once. */
 export const setEditDraft = (spec: ChartSpec) =>
   set((s) => (s.panel?.kind === "edit" ? { panel: { ...s.panel, spec } } : {}));
-export const openSettings = (open = true) => set({ settingsOpen: open });
+export const openSettings = (open = true, section: string | null = null) =>
+  set({ settingsOpen: open, settingsSection: open ? section : null });
 
 /**
  * The phone's Back (Esc): closes the top thing, one at a time: settings, the panel (asking first when something was
@@ -1689,12 +1697,6 @@ export function setPageBlocks(blocks: Block[], typingIn?: string) {
 
 /** A document's blocks kept: a page on the server; a row's text as Markdown, its row's body. */
 function putSpec(page: Page, spec: PageSpec) {
-  const sys = get().systemDoc;
-  if (sys && page.id === sys.id) {
-    set({ systemDoc: { ...sys, spec } });
-    saveSystemPage(sys.system, spec);
-    return;
-  }
   if (page.id.startsWith("row:")) {
     set({ rowDoc: { ...page, spec } });
     setRowBody(blocksToMarkdown(spec.blocks));
@@ -1871,65 +1873,24 @@ export async function loadDataTypes(): Promise<DataType[] | null> {
   }
 }
 
-export const showModels = () => {
-  set({ view: { kind: "models" }, panel: null });
-  void openSystemPage("models");
-};
-
-/** One of Boni's screens as a page: Boni's own or the account's version of it. */
-export async function openSystemPage(name: SystemPage) {
-  try {
-    const p = await agent.systemPage(name);
-    if (!p) return;
-    set({ systemDoc: systemDocOf(p) });
-  } catch (e) {
-    toast(errorText(get().t, e));
-  }
-}
-const systemDocOf = (p: SystemPageView) => ({
-  id: `system:${p.name}`,
-  title: "",
-  icon: "",
-  parent: null,
-  position: 0,
-  spec: p.spec,
-  system: p.name,
-  modified: p.modified,
-});
-let systemTimer: ReturnType<typeof setTimeout> | null = null;
-function saveSystemPage(name: SystemPage, spec: PageSpec) {
-  if (systemTimer) clearTimeout(systemTimer);
-  systemTimer = setTimeout(() => {
-    systemTimer = null;
-    agent
-      .saveSystemPage(name, spec)
-      .then((p) => {
-        const doc = get().systemDoc;
-        if (p && doc?.system === name) set({ systemDoc: { ...doc, modified: p.modified } });
-      })
-      .catch((e) => toast(errorText(get().t, e)));
-  }, SAVE_AFTER_MS);
-}
-/** «Restaurar la de Boni»: Boni's version again, with Undo in the toast (the user's version back). */
-export async function restoreSystemPage(name: SystemPage, label: string) {
-  const t = get().t;
-  const before = get().systemDoc;
-  if (systemTimer) clearTimeout(systemTimer);
-  try {
-    const p = await agent.restoreSystemPage(name);
-    if (!p) return;
-    set({ systemDoc: systemDocOf(p) });
-    toast(t("system.restored", { name: label }), {
-      label: t("toast.undo"),
-      run: () => {
-        if (!before) return;
-        set({ systemDoc: before });
-        void agent.saveSystemPage(name, before.spec);
-      },
-    });
-  } catch (e) {
-    toast(errorText(t, e));
-  }
+/**
+ * «Restaurar la de Boni» on a page made from one of Boni's templates: its blocks as the template has them again,
+ * with Undo (in the toast and Ctrl+Z) bringing the user's back.
+ */
+export function restoreTemplate() {
+  const page = get().page;
+  const name = page?.spec.template;
+  if (!page || !name) return;
+  const before = page.spec;
+  remember(page);
+  putSpec(page, templatePage(name).spec);
+  toast(get().t("system.restored", { name: page.title || get().t("page.untitled") }), {
+    label: get().t("toast.undo"),
+    run: () => {
+      const now = get().page;
+      if (now?.id === page.id) putSpec(now, before);
+    },
+  });
 }
 /** The notes explorer: every note by the path it had (Juan, 2026-10-24: what the AIs read, browsable). */
 export const showNotes = () => {
@@ -2031,7 +1992,11 @@ const putRow = (type: string, row: DataRow) => {
 };
 
 /** A cell changed in a view: at once here, then on the server (its answer is the truth). */
+/** Boni's own records (calls to models, its activity): read only, so nothing here changes or opens them. */
+const readOnly = (type: string) => get().dataTypes?.find((x) => x.id === type)?.system === true;
+
 export async function editCell(type: string, id: string, field: string, value: DataValue) {
+  if (readOnly(type)) return;
   const before = get().rows[type]?.rows.find((r) => r.id === id);
   if (!before) return;
   putRow(type, { ...before, values: { ...before.values, [field]: value } });
@@ -2052,6 +2017,7 @@ export async function openFile(sha256: string, name: string) {
 }
 
 export async function addRow(type: string, values: Record<string, DataValue> = {}) {
+  if (readOnly(type)) return null;
   try {
     const row = await agent.createRow(type, values);
     if (row) putRow(type, row);
@@ -2063,6 +2029,7 @@ export async function addRow(type: string, values: Record<string, DataValue> = {
 }
 
 export async function deleteRow(type: string, id: string) {
+  if (readOnly(type)) return;
   const cur = get().rows[type];
   const t = get().t;
   try {
@@ -2100,6 +2067,7 @@ export async function openNoteAt(path: string) {
 
 /** A row opened as a page: its properties and its text (a note's body). */
 export async function openRow(type: string, id: string) {
+  if (readOnly(type)) return;
   await flushPage();
   await flushRowBody();
   const kind = get().view.kind;
@@ -2173,11 +2141,12 @@ const rowDocOf = (row: DataRow): Page => ({
   spec: { version: 1, blocks: markdownToBlocks(row.body ?? "") },
 });
 
+/** The document being edited (a page, a row's text), for the panels that show one of its blocks. */
+export const useEditing = () => useStore((s) => (s.view.kind === "row" ? s.rowDoc : s.page));
 /** The document being edited: the open row's text on a row, else the open page. */
 const editing = (): Page | null => {
   const v = get().view.kind;
   if (v === "row") return get().rowDoc;
-  if (v === "models") return get().systemDoc;
   return get().page;
 };
 

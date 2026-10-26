@@ -14,7 +14,6 @@ import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
-import { SystemPageView } from "./components/SystemPage.tsx";
 import { host } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
@@ -233,8 +232,6 @@ function TopBar() {
           </span>
         ) : view.kind === "collections" ? (
           t("nav.collections")
-        ) : view.kind === "models" ? (
-          t("nav.models")
         ) : view.kind === "notes" ? (
           t("nav.notes")
         ) : view.kind === "audit" ? (
@@ -477,7 +474,6 @@ function Content() {
   if (view.kind === "row") return <RowView />;
   if (view.kind === "proposal") return <ProposalPage key={view.id} id={view.id} />;
   if (view.kind === "collections") return <CollectionsView />;
-  if (view.kind === "models") return <SystemPageView name="models" />;
   if (view.kind === "notes") return <NotesView />;
   if (view.kind === "collection") return <CollectionView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;

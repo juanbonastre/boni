@@ -102,11 +102,30 @@ export interface SystemCollections {
 }
 
 /**
- * Both collections for one account, over the last `SYSTEM_DAYS` days up to `now`. Their schema depends on the rows
+ * Both collections for one account, over the last `SYSTEM_DAYS` days up to `now` (reused for `FRESH_MS`: at Juan's
+ * size, with tens of thousands of reads recorded, they take about a tenth of a second to make). Their schema depends on the rows
  * (a select's options are the models, actors and collections met), so both are made together; `usdToEur` is the
  * account's rate («Modelos»), a call of unknown cost has no «Coste».
  */
+/** How long one account's are reused while nothing new was recorded (the app lists collections and computes blocks
+ * in a row). */
+const FRESH_MS = 10_000;
+const recent = new WeakMap<UserStore, { at: number; key: string; sys: SystemCollections }>();
+
 export function systemCollections(
+  store: UserStore,
+  o: { now: number; usdToEur: number },
+): SystemCollections {
+  // Anything recorded since (a change, a read, a model call) or another rate makes them again.
+  const key = `${store.version()}|${store.audit.lastAction()}|${store.journal.lastModelCall()}|${o.usdToEur}`;
+  const was = recent.get(store);
+  if (was && was.key === key && o.now >= was.at && o.now - was.at < FRESH_MS) return was.sys;
+  const sys = makeSystemCollections(store, o);
+  recent.set(store, { at: o.now, key, sys });
+  return sys;
+}
+
+function makeSystemCollections(
   store: UserStore,
   o: { now: number; usdToEur: number },
 ): SystemCollections {

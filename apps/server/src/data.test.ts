@@ -348,7 +348,7 @@ describe("collections as databases (plan PR 19)", () => {
 });
 
 describe("what a block counts, and Boni's own records as collections (design audit, 2026-10-25)", () => {
-  it("lists the rows a number counts, and those of one bar (D-06)", async () => {
+  it("lists the rows a number counts, and those of one bar (D-08)", async () => {
     const t = await token();
     const base = { collection: "t_libro", period: "all", title: "Libros" };
     const n = {
@@ -388,7 +388,7 @@ describe("what a block counts, and Boni's own records as collections (design aud
     ).toBe(400);
   });
 
-  it("shows calls to models and Boni's activity as read-only collections no model sees (D-02)", async () => {
+  it("shows calls to models and Boni's activity as read-only collections no model sees (D-04)", async () => {
     const t = await token();
     const store = host.store(1);
     const at = Date.now();

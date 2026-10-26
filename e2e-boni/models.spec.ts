@@ -1,18 +1,18 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
-  AUDIT_SUMMARY,
   MODELS,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
   MODELS_EVALUATING,
   MODELS_USED,
 } from "./agent-scenarios.ts";
-import { openApp, recorded } from "./fixtures.ts";
+import { openApp, recorded, TEMPLATE } from "./fixtures.ts";
 
 /**
- * «Modelos» (Juan, 2026-10-24): a page of Boni's blocks. The month's numbers, the four uses with the model in large
- * type, the charts beside them; a use opens its panel, the spending number its breakdown and budget (from its menu).
+ * Boni's models (design audit, Juan 2026-10-25): what configures them is Ajustes → Modelos (each use with its model in
+ * large type, a click opens it; the month's spending and the budget; the keys). What they did is the template page
+ * «Uso de la IA», ordinary blocks over Boni's own read-only collections; a click on a number lists what it counts.
  */
 const SHOTS = "e2e-boni/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -20,23 +20,24 @@ mkdirSync(SHOTS, { recursive: true });
 const requests = async (page: Page, prefix: string) =>
   (await recorded(page)).requests.filter((r) => r.startsWith(prefix));
 
-test("the month's numbers, each use with its model, and the charts; a click shows more", async ({
+/** Ajustes → Modelos. */
+async function openModels(page: Page) {
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  await page.locator(".modal").getByRole("tab", { name: "Modelos" }).click();
+  await page.locator(".use-card").first().waitFor();
+}
+
+test("Ajustes → Modelos: each use with its model, the month's spending and budget, the keys", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "/?still", {
-    agent: { "GET api/agent/models": [MODELS], "GET api/data/audit/summary": [AUDIT_SUMMARY] },
-  });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Modelos");
-  const kpis = page.locator(".kpi");
-  await expect(kpis).toHaveCount(4);
-  const spend = page.locator(".kpi").first();
+  await openApp(page, "/?still", { agent: { "GET api/agent/models": [MODELS] } });
+  // Not in the sidebar any more: in Ajustes.
+  await expect(page.locator(".sidebar").getByRole("button", { name: "Modelos" })).toHaveCount(0);
+  await openModels(page);
+  const spend = page.locator(".modal .kpi").first();
   await expect(spend).toContainText("3,42 €");
   await expect(spend).toContainText("de 10,00 €");
-  await expect(kpis.nth(1)).toContainText("554");
-  // What the models (and the MCP) read and changed this month, from the audit.
-  await expect(kpis.nth(2)).not.toContainText("—");
   const reader = page.getByRole("button", { name: /^Lector/ });
   await expect(reader.locator(".use-model")).toHaveText("deepseek-v4.1-flash");
   await expect(reader.locator(".models-badge")).toHaveText("No guarda tus datos");
@@ -44,16 +45,9 @@ test("the month's numbers, each use with its model, and the charts; a click show
   await expect(page.getByRole("button", { name: /^Agente/ })).toContainText(
     "Borra lo que recibe en 30 días",
   );
-  await expect(page.locator(".dash-legend").first()).toContainText("claude-opus-5-5");
-  await expect(page.locator(".barlist-row")).toHaveText([
-    /deepseek-v4\.1-flash\s*513/,
-    /claude-opus-5-5\s*41/,
-  ]);
   await page.screenshot({ path: `${SHOTS}/models.png` });
 
-  // A click on the number opens its menu (as every block's); the spending and budget open from it.
-  await spend.click();
-  await page.getByRole("menuitemradio", { name: "Gasto y presupuesto…" }).click();
+  // The spending by model and the budget are there too.
   const more = page.locator(".models-spend");
   await expect(more).toContainText("Evaluación: Lector · deepseek-v4.1-flash");
   await expect(more).toContainText("512 llamadas · 3 sin precio conocido");
@@ -71,7 +65,10 @@ test("the month's numbers, each use with its model, and the charts; a click show
   await expect(panel.locator(".models-cases li.fail")).toHaveCount(1);
   await expect(panel.locator(".models-cases li.fail")).toContainText("colección equivocada");
   await page.screenshot({ path: `${SHOTS}/models-use.png` });
+  // Escape closes the use, not Ajustes.
   await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator(".modal")).toBeVisible();
 
   await page.getByRole("button", { name: /^Claves/ }).click();
   const conns = page.locator(".models-card", {
@@ -83,7 +80,7 @@ test("the month's numbers, each use with its model, and the charts; a click show
     /Anthropic \(directa\) · Clave del servidor/,
     /TypeSafe · Sin clave/,
   ]);
-  await page.screenshot({ path: `${SHOTS}/models-open.png`, fullPage: true });
+  await page.screenshot({ path: `${SHOTS}/models-open.png` });
 });
 
 test("change a role: pick from the catalogue, evaluate, compare, use", async ({ page }) => {
@@ -95,7 +92,7 @@ test("change a role: pick from the catalogue, evaluate, compare, use", async ({ 
       "PUT api/agent/models/roles/:role": [MODELS_USED],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  await openModels(page);
   await page.getByRole("button", { name: /^Agente/ }).click();
   await page.getByRole("button", { name: "Cambiar" }).click();
   const panel = page.locator(".models-panel");
@@ -154,7 +151,7 @@ test("readers only see models that answer a fixed form; the decider only Jev; Es
       "GET api/agent/models/catalogue": [MODELS_CATALOGUE],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  await openModels(page);
   await page.getByRole("button", { name: /^Lector/ }).click();
   await page.getByRole("button", { name: "Cambiar" }).click();
   const panel = page.locator(".models-panel");
@@ -162,8 +159,8 @@ test("readers only see models that answer a fixed form; the decider only Jev; Es
   await expect(panel).not.toContainText("sin esquema");
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  // Escape closed the panel only, not the page.
-  await expect(page.locator(".topbar h1")).toHaveText("Modelos");
+  // Escape closed the use only, not Ajustes.
+  await expect(page.locator(".modal")).toBeVisible();
   await page.getByRole("button", { name: /^Decisor/ }).click();
   await page.getByRole("button", { name: "Cambiar" }).click();
   await expect(panel.locator(".models-option .models-name")).toHaveText([
@@ -173,7 +170,7 @@ test("readers only see models that answer a fixed form; the decider only Jev; Es
   await expect(panel.getByRole("textbox", { name: "Buscar un modelo" })).toHaveCount(0);
 });
 
-test("the budget and a key: changed from the page, the key never shown", async ({ page }) => {
+test("the budget and a key: changed in Ajustes, the key never shown", async ({ page }) => {
   await openApp(page, "/?still", {
     agent: {
       "GET api/agent/models": [MODELS],
@@ -188,14 +185,12 @@ test("the budget and a key: changed from the page, the key never shown", async (
       ],
     },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  await page.locator(".kpi").first().click();
-  await page.getByRole("menuitemradio", { name: "Gasto y presupuesto…" }).click();
+  await openModels(page);
   await page.getByRole("button", { name: "Cambiar el presupuesto" }).click();
   await page.getByRole("textbox", { name: "Al mes (€)" }).fill("15");
   await page.getByRole("textbox", { name: "Avisar al (%)" }).fill("90");
   await page.getByRole("button", { name: "Guardar", exact: true }).click();
-  await expect(page.locator(".kpi").first()).toContainText("de 15,00 €");
+  await expect(page.locator(".modal .kpi").first()).toContainText("de 15,00 €");
   await expect(page.locator(".models-spend")).toContainText("aviso al 90 %");
 
   await page.getByRole("button", { name: /^Claves/ }).click();
@@ -213,34 +208,67 @@ test("the budget and a key: changed from the page, the key never shown", async (
   ]);
 });
 
-test("«Modelos» is a page of blocks: modified, its changes listed, restored as Boni's with Undo", async ({
+test("«Uso de la IA»: blocks over Boni's records; a click lists what a number or a bar counts", async ({
   page,
 }) => {
-  await openApp(page, "/?still", {
-    agent: { "GET api/agent/models": [MODELS], "GET api/data/audit/summary": [AUDIT_SUMMARY] },
-  });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
-  const pill = page.locator(".system-head .system-pill");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", { pages: [TEMPLATE("uso-ia")] });
+  await page.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  const calls = page.locator(".blk-number").nth(1);
+  await expect(calls.locator(".kpi-value")).not.toHaveText("—");
+  const n = Number((await calls.locator(".kpi-value").innerText()).replace(/\D/g, ""));
+  expect(n).toBeGreaterThan(0);
+  await expect(page.locator(".blk-number").first()).toContainText("€");
+  // The rows a number counts: as many as it says, read only (Boni's own).
+  await calls.click();
+  const panel = page.locator(".side-panel");
+  await expect(panel.locator("h2")).toHaveText("Lo que cuenta");
+  await expect(panel.locator(".rows-panel-count")).toContainText(`Llamadas a modelos · ${n} filas`);
+  await expect(panel.locator("button.rows-panel-row")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/uso-ia-rows.png` });
+  // One bar: only its rows, and they add up to it.
+  const bar = page.locator(".blk-bars").last().locator(".barlist-row").first();
+  const value = Number((await bar.locator(".barlist-value").innerText()).replace(/\D/g, ""));
+  const name = await bar.locator(".barlist-label").innerText();
+  await bar.click();
+  await expect(panel.locator(".rows-panel-count")).toContainText(`${name} · ${value} fila`);
+  await expect(panel.locator(".rows-panel-list li")).toHaveCount(value);
+  // The block's menu stays on its handle and the right click.
+  await page.keyboard.press("Escape");
+  await calls.click({ button: "right" });
+  await expect(page.getByRole("menuitemradio", { name: "Modificar…" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  // The link goes to Ajustes → Modelos.
+  await page.getByRole("button", { name: /^Modelos y presupuesto/ }).click();
+  await expect(page.locator(".modal").getByRole("tab", { name: "Modelos" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
+test("a template page is modified like any page, its changes listed, restored as Boni's with Undo", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", { pages: [TEMPLATE("uso-ia")] });
+  await page.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  const pill = page.locator(".template-head .system-pill");
   await expect(pill).toHaveText("De Boni");
-  // The keys block is all one button: its menu opens with a right click (or its handle); deleting it makes the
-  // page the user's.
-  const keys = page.locator(".blk-model-keys");
-  await keys.click({ button: "right" });
+  const link = page.locator(".blk-link");
+  await link.click({ button: "right" });
   await page.getByRole("menuitemradio", { name: "Borrar" }).click();
-  await expect(keys).toHaveCount(0);
+  await expect(link).toHaveCount(0);
   await expect(pill).toHaveText("Modificada");
-  await expect
-    .poll(async () => (await requests(page, "PUT api/pages/system/models")).length)
-    .toBe(1);
+  await expect.poll(async () => (await requests(page, "PUT api/pages/uso-ia")).length).toBe(1);
   await pill.click();
-  await expect(page.locator(".system-changes li")).toHaveText(["−Quitado: Claves"]);
-  await page.screenshot({ path: `${SHOTS}/models-modified.png` });
+  await expect(page.locator(".system-changes li")).toHaveText([
+    "−Quitado: Enlace «Modelos y presupuesto»",
+  ]);
+  await page.screenshot({ path: `${SHOTS}/uso-ia-modified.png` });
   await page.getByRole("button", { name: "Restaurar la de Boni" }).click();
   await expect(pill).toHaveText("De Boni");
-  await expect(keys).toHaveCount(1);
-  expect(await requests(page, "DELETE api/pages/system/models")).toHaveLength(1);
+  await expect(link).toHaveCount(1);
   // Undo in the notice: the user's version again.
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
-  await expect(keys).toHaveCount(0);
+  await expect(link).toHaveCount(0);
   await expect(pill).toHaveText("Modificada");
 });

@@ -121,6 +121,8 @@ export interface Audit {
   /** Counts per UTC day and actor: what was read and what was changed (the «Actividad» charts). */
   activity(from: number, to: number): { day: string; by: By; reads: number; writes: number }[];
   /** Per UTC day, actor and type: how many entities were read and how many changed (Boni's «Actividad de Boni»). */
+  /** The last action's number (0 with none): it changes whenever one is recorded. */
+  lastAction(): number;
   activityByType(
     from: number,
     to: number,
@@ -406,6 +408,8 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
         (a, b) => a.day.localeCompare(b.day) || a.by.localeCompare(b.by),
       );
     },
+    lastAction: () =>
+      (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM actions").get() as { n: number }).n,
     activityByType: (from, to) => {
       const day = (col: string) => `strftime('%Y-%m-%d', ${col} / 1000, 'unixepoch')`;
       const rows = new Map<

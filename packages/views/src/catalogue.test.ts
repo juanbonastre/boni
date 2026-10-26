@@ -233,7 +233,7 @@ describe("whatever the catalogue lets anyone build (random users, random pages)"
     expect(refused).toBeGreaterThan(15);
   });
 
-  it("lists the very rows a block counts, and a bar's or a point's rows add up to it (D-06)", () => {
+  it("lists the very rows a block counts, and a bar's or a point's rows add up to it (D-08)", () => {
     let checked = 0;
     for (let seed = 1; seed <= 300; seed++) {
       const { r, types, data, rows } = randomUser(seed);
@@ -266,7 +266,8 @@ describe("whatever the catalogue lets anyone build (random users, random pages)"
       }
     }
     expect(checked).toBeGreaterThan(50);
-  });
+    // Every point of 300 random pages counted twice: slower than the rest under a full `make check`.
+  }, 30_000);
 
   it("knows the collections of the store's schema (system and archived types left out)", () => {
     const { types } = randomUser(3);

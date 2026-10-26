@@ -89,45 +89,47 @@ export async function settingsAudit(page: Page, prefix = ""): Promise<string[]> 
   return issues;
 }
 
-/** «Modelos», «Actividad» and «Auditoría»: words to find their controls by. */
+/** Ajustes → Modelos, «Registro», «Auditoría» and the template pages: words to find their controls by. */
 export const MODELS_TEXT = {
   es: {
+    settings: "Ajustes",
     nav: "Modelos",
     conns: /^Claves/,
     budget: "Cambiar el presupuesto",
-    spending: "Gasto y presupuesto…",
     change: "Cambiar",
     cases: "Ver los casos",
-    activity: "Actividad",
+    chat: "Conversación",
+    activity: "Registro",
     openAudit: "Abrir la auditoría",
     runs: /^Ejecuciones/,
+    usoIa: "Uso de la IA",
+    actividad: "Actividad",
   },
   en: {
+    settings: "Settings",
     nav: "Models",
     conns: /^Keys/,
     budget: "Change the budget",
-    spending: "Spending and budget…",
     change: "Change",
     cases: "See the cases",
-    activity: "Activity",
+    chat: "Conversation",
+    activity: "Activity log",
     openAudit: "Open the audit",
     runs: /^Runs/,
+    usoIa: "Uso de la IA",
+    actividad: "Actividad",
   },
 };
 
-/** «Modelos» with every part opened: the spending tile, the keys, each use's panel with its cases and the list to change it. */
+/** Ajustes → Modelos with every part opened: the budget, the keys, each use's panel with its cases and the list to change it. */
 export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
   const issues: string[] = [];
-  await page.locator(".sidebar").getByRole("button", { name: l.nav }).click();
+  await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
+  await page.locator(".modal").getByRole("tab", { name: l.nav }).click();
   await page.locator(".use-card").first().waitFor();
   issues.push(...(await audit(page, `${where} models`)));
-  // The spending number's menu opens its breakdown and the budget in the panel; the keys open in place.
-  await page.locator(".kpi").first().click();
-  issues.push(...(await audit(page, `${where} models number menu`)));
-  await page.getByRole("menuitemradio", { name: l.spending }).click();
   await page.getByRole("button", { name: l.budget }).click();
   issues.push(...(await audit(page, `${where} models spending`)));
-  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: l.conns }).click();
   issues.push(...(await audit(page, `${where} models opened`)));
   const cards = page.locator(".use-card");
@@ -137,7 +139,7 @@ export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], whe
     const cases = page.locator(".models-panel").getByRole("button", { name: l.cases });
     if (await cases.count()) await cases.click();
     issues.push(...(await audit(page, `${where} models use ${i}`)));
-    // Narrow, the panel covers the page: closed before the next one.
+    // Back to the list of uses.
     await page.keyboard.press("Escape");
   }
   await cards.first().click();
@@ -145,13 +147,34 @@ export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], whe
   await page.locator(".models-panel .models-option").first().click();
   await page.locator(".models-compare").waitFor();
   issues.push(...(await audit(page, `${where} models panel`)));
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.locator(".modal").waitFor({ state: "detached" });
   return issues;
 }
 
-/** «Actividad» with its runs open, then «Auditoría» with an action open. */
+/** The template pages («Uso de la IA», «Actividad») and what one of their numbers counts. */
+export async function templatesAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
+  const issues: string[] = [];
+  await page.locator(".sidebar").getByRole("button", { name: l.usoIa, exact: true }).click();
+  await page.locator(".blk-number .kpi-value").first().waitFor();
+  await page.locator(".blk-bars .barlist-row").first().waitFor();
+  issues.push(...(await audit(page, `${where} uso-ia`)));
+  await page.locator(".blk-number").first().click();
+  await page.locator(".rows-panel-list li").first().waitFor();
+  issues.push(...(await audit(page, `${where} uso-ia rows`)));
+  await page.keyboard.press("Escape");
+  await page.locator(".sidebar").getByRole("button", { name: l.actividad, exact: true }).click();
+  await page.locator(".db-table tbody tr").first().waitFor();
+  issues.push(...(await audit(page, `${where} actividad`)));
+  return issues;
+}
+
+/** «Registro» with its runs open, then «Auditoría» with an action open. */
 export async function activityAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
   const issues: string[] = [];
-  await page.locator(".sidebar").getByRole("button", { name: l.activity }).click();
+  await page.locator(".sidebar").getByRole("button", { name: l.chat }).click();
+  await page.locator(".chat-tools").getByRole("button", { name: l.activity }).click();
   await page.locator(".kpi").first().waitFor();
   await page.getByRole("button", { name: l.runs }).click();
   issues.push(...(await audit(page, `${where} activity`)));

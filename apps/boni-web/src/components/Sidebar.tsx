@@ -1,7 +1,5 @@
 import {
-  Activity,
   ChevronRight,
-  Cpu,
   Database,
   FileText,
   FolderTree,
@@ -26,8 +24,6 @@ import {
   openSettings,
   showChat,
   showCollections,
-  showLog,
-  showModels,
   showNotes,
   toggleSidebar,
   useStore,
@@ -90,22 +86,7 @@ export function Sidebar() {
           <FolderTree size={15} strokeWidth={1.8} />
           <span className="nav-name">{t("nav.notes")}</span>
         </button>
-        <button
-          type="button"
-          className={`nav-row${view.kind === "models" ? " active" : ""}`}
-          onClick={showModels}
-        >
-          <Cpu size={15} strokeWidth={1.8} />
-          <span className="nav-name">{t("nav.models")}</span>
-        </button>
-        <button
-          type="button"
-          className={`nav-row${view.kind === "log" || view.kind === "audit" ? " active" : ""}`}
-          onClick={showLog}
-        >
-          <Activity size={15} strokeWidth={1.8} />
-          <span className="nav-name">{t("activity.title")}</span>
-        </button>
+        {/* «Modelos» is in Ajustes; what the models and Boni did are pages («Uso de la IA», «Actividad»). */}
 
         {pages !== null && (
           <>

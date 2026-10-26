@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
-import { AUDIT_SUMMARY, MODELS } from "./agent-scenarios.ts";
-import { openApp } from "./fixtures.ts";
+import { MODELS } from "./agent-scenarios.ts";
+import { openApp, TEMPLATE } from "./fixtures.ts";
 
 /**
  * I-07 (docs/principios.md): the main screens do not change their look by mistake. Each is compared with its reference
@@ -27,14 +27,22 @@ test("the start page (Gastos)", async ({ page }) => {
   await shot(page, "gastos");
 });
 
-test("«Modelos»", async ({ page }) => {
-  await open(page, {
-    "GET api/agent/models": [MODELS],
-    "GET api/data/audit/summary": [AUDIT_SUMMARY],
-  });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+test("Ajustes → Modelos", async ({ page }) => {
+  await open(page, { "GET api/agent/models": [MODELS] });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  await page.locator(".modal").getByRole("tab", { name: "Modelos" }).click();
   await page.locator(".use-card").first().waitFor();
   await shot(page, "modelos");
+});
+
+test("«Uso de la IA», a template page over Boni's records", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.clock.install({ time: FIXED });
+  await openApp(page, "/?still", { pages: [TEMPLATE("uso-ia")] });
+  await page.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  await page.locator(".blk-bars .barlist-row").first().waitFor();
+  await page.locator(".data-blk-chart .chart svg").first().waitFor();
+  await shot(page, "uso-ia");
 });
 
 test("Colecciones", async ({ page }) => {
