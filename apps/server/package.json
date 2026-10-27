@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Boni Calendar server: the vault on the NAS, accounts and live changes for every device",
+  "description": "Boni's server: one account per person with its own store, the APIs of Boni, Boni Calendar and the agent, and Boni's MCP",
   "scripts": {
     "start": "node src/main.ts",
     "cli": "node src/cli.ts",

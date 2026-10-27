@@ -115,6 +115,8 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "set_properties",
       "recent_changes",
       "trash",
+      "set_description",
+      "create_collection",
       "finanzas_import",
       "finanzas_close",
       "undo",
@@ -144,6 +146,119 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     expect(plan).toMatchObject({ collection: "Proyecto", properties: { status: "activo" } });
     expect(plan.body).toContain("## Registro");
     expect((await tool("read", { path: "diario/2026-10-20.md" })).error).toBe(true);
+  });
+
+  it("the guide is computed: the instructions, every collection with what goes in it, the tools from the code", async () => {
+    const store = host.store(1);
+    const proyecto = Object.values(store.schema().types).find((t) => t.name === "Proyecto");
+    type Col = { name: string; description?: string; notes: number; level: string };
+    const guide = (await tool("guide")).json as {
+      instructions: string;
+      collections: Col[];
+      tools: { name: string }[];
+    };
+    expect(guide.instructions).toContain("habla en español");
+    expect(guide.collections.map((c) => c.name)).toContain("Proyecto");
+    expect(guide.collections.map((c) => c.name)).not.toContain("Diario");
+    const listed = (await rpc("tools/list")).body as { result: { tools: { name: string }[] } };
+    expect(guide.tools.map((t) => t.name)).toEqual(listed.result.tools.map((t) => t.name));
+    // A collection's description reaches every assistant at once: there is no index to keep up to date by hand.
+    const said = await tool("set_description", {
+      collection: "Proyecto",
+      description: "Proyectos inventados, uno por nota.",
+    });
+    expect(said.error).toBe(false);
+    const described = ((await tool("guide")).json.collections as Col[]).find(
+      (c) => c.name === "Proyecto",
+    );
+    expect(described).toMatchObject({ description: "Proyectos inventados, uno por nota." });
+    expect(
+      ((await tool("collections")).json as Col[]).find((c) => c.name === "Proyecto")?.description,
+    ).toBe("Proyectos inventados, uno por nota.");
+    // The text is a model's, and the change is one run undone like any other write.
+    expect(store.schema().types[proyecto?.id as string]?.description?.label.integrity).toBe(
+      "model",
+    );
+    expect((await tool("undo", { run: said.json.run })).json.undone).toBe(1);
+    expect(
+      ((await tool("guide")).json.collections as Col[]).find((c) => c.name === "Proyecto")
+        ?.description,
+    ).toBeUndefined();
+    // From the first time on, the instructions are found by their id: the note may move.
+    const id = store.setting("mcp/instructions");
+    expect(store.get(id as string)?.entity.body).toContain("habla en español");
+  });
+
+  it("makes a collection, finds a note by its title, reads page by page, trashes several notes in one run", async () => {
+    const made = await tool("create_collection", {
+      name: "Cola inventada",
+      description: "Lo pendiente de un proyecto inventado, una fila por paso.",
+      properties: [
+        { name: "Estado", type: "select", options: ["pendiente", "hecho"] },
+        { name: "Orden", type: "number" },
+      ],
+    });
+    expect(made.error).toBe(false);
+    expect(made.json.properties).toEqual(["Título", "Estado", "Orden"]);
+    const listed = ((await tool("guide")).json.collections as { name: string }[]).find(
+      (c) => c.name === "Cola inventada",
+    );
+    expect(listed).toMatchObject({
+      description: "Lo pendiente de un proyecto inventado, una fila por paso.",
+      notes: 0,
+      level: "visible",
+    });
+    expect(
+      (await tool("create_collection", { name: "cola inventada", description: "x" })).text,
+    ).toContain("already");
+    expect(
+      (
+        await tool("create_collection", {
+          name: "Otra inventada",
+          description: "x",
+          properties: [{ name: "Enlace", type: "relation" }],
+        })
+      ).error,
+    ).toBe(true);
+    // A collection made by mistake goes back with its run while it is empty.
+    const spare = await tool("create_collection", { name: "Sobra inventada", description: "x" });
+    expect((await tool("undo", { run: spare.json.run })).json.undone).toBe(1);
+    expect(
+      ((await tool("collections")).json as { name: string }[]).map((c) => c.name),
+    ).not.toContain("Sobra inventada");
+
+    const ids: string[] = [];
+    for (let i = 1; i <= 3; i++)
+      ids.push(
+        (
+          await tool("create", {
+            collection: "Cola inventada",
+            title: `Paso ${i}`,
+            properties: { Estado: "pendiente", Orden: i },
+          })
+        ).json.id,
+      );
+    // Found by its collection and exact title, with no path.
+    expect((await tool("read", { collection: "Cola inventada", title: "paso 2" })).json.id).toBe(
+      ids[1],
+    );
+    const page = async (offset: number) =>
+      (
+        (await tool("query", { collection: "Cola inventada", limit: 2, offset })).json as {
+          id: string;
+        }[]
+      ).map((n) => n.id);
+    expect([...(await page(0)), ...(await page(2))].sort()).toEqual([...ids].sort());
+    // Several notes in one call are one run, undone together.
+    const gone = await tool("trash", { ids });
+    expect(gone.json.trashed).toBe(3);
+    expect((await tool("query", { collection: "Cola inventada" })).json).toEqual([]);
+    expect((await tool("undo", { run: gone.json.run })).json.undone).toBe(3);
+    expect((await tool("query", { collection: "Cola inventada" })).json).toHaveLength(3);
+    // A call trashes everything it names or nothing: the private diary is not for a model.
+    const diary = host.store(1).findByValue("f_vault_path", "diario/2026-10-20.md")[0]?.id;
+    expect((await tool("trash", { ids: [ids[0], diary] })).error).toBe(true);
+    expect((await tool("read", { id: ids[0] })).error).toBe(false);
   });
 
   it("writes as a model, each call one run that can be undone", async () => {

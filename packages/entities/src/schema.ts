@@ -88,6 +88,12 @@ export interface TypeDef {
   thirdParty?: boolean;
   /** Goes up with every schema change. */
   schemaVersion: number;
+  /**
+   * What goes in it, in a few words (docs/clases.md §2.9): it replaces a folder's README. The user reads it on the
+   * collection's page and Boni's MCP gives it to assistants; the planner does not see it (its text may come from a
+   * model).
+   */
+  description?: { text: string; label: Label };
   /** Boni's own types (memory, proposal, job, miniapp, view): the agent cannot change them. */
   system?: boolean;
   archived?: boolean;
@@ -131,6 +137,9 @@ export const SYSTEM_TYPES = [
   "page",
 ] as const;
 
+/** A collection's description is a few lines, never a document. */
+export const MAX_DESCRIPTION = 2000;
+
 const ID = /^[a-z][a-z0-9_]{1,63}$/;
 /** ASCII only: keys are matched literally by other tools (vault conventions). */
 const KEY = /^[a-z][a-z0-9_-]{0,39}$/;
@@ -167,6 +176,11 @@ export function typeErrors(def: TypeDef, schema: Schema): string[] {
       else if (target !== def.id && !schema.types[target])
         errors.push(`${where}: unknown target "${target}"`);
     } else if (f.relation) errors.push(`${where}: only relation fields have a target`);
+  }
+  if (def.description) {
+    const n = def.description.text.trim().length;
+    if (!n || def.description.text.length > MAX_DESCRIPTION)
+      errors.push(`description: 1 to ${MAX_DESCRIPTION} characters`);
   }
   const title = def.fields.find((f) => f.id === def.titleField);
   if (!title) errors.push(`titleField "${def.titleField}" is not a field`);

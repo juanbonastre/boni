@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup dev build check test e2e bench-chrome desktop package bench-electron \
+.PHONY: help setup dev build check test map e2e bench-chrome desktop package bench-electron \
 	server e2e-boni boni-desktop package-boni e2e-boni-desktop e2e-calendar-desktop
 
 help: ## List available commands
@@ -18,6 +18,9 @@ check: ## Lint, type-check and run unit tests
 	pnpm lint
 	pnpm typecheck
 	pnpm test
+
+map: ## Every package and app with what it is for; P=<path> lists its files (docs/principios.md T-02)
+	@node scripts/map.mjs $(P)
 
 e2e: ## Run Playwright tests (system Chrome): Boni Calendar, then Boni
 	pnpm exec playwright test

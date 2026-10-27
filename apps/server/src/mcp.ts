@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { readStore } from "@boni/agent";
-import { type FieldDef, label, type TypeDef } from "@boni/entities";
+import {
+  type FieldDef,
+  type FieldType,
+  label,
+  MAX_DESCRIPTION,
+  type SelectOption,
+  type TypeDef,
+} from "@boni/entities";
 import {
   BODY,
   closedToAi,
@@ -22,16 +29,24 @@ import { storeFiles } from "./money/storeFiles.ts";
  * recent changes, trash and undo. It is a Model Context Protocol server over HTTP (JSON-RPC 2.0 answered as
  * JSON, no stream), on the tailnet entry only, for a session of the account (`cli.ts token` makes one).
  *
+ * What it says about itself and about the data is computed when it is asked, never written by hand (Juan,
+ * 2026-10-27; docs/contexto.md): `guide` gives the user's instructions for assistants, every collection with what
+ * goes in it (its description) and the tools, from this code. A collection's description replaces a folder's README.
+ *
  * What a model may see is the agent's own view (`readStore`): a restricted or private collection, or a part of
  * one, does not exist here; an opaque one is listed but its values are not given. Writes go only to what is
  * visible, labelled as written by a model (`model`, from this device: never authority for Boni's agent), each
- * call one run that `undo` (or Boni) takes back whole. Notes keep the path they had in the vault, so an
- * assistant finds `proyectos/boni-plan.md` where it always was.
+ * call one run that `undo` (or Boni) takes back whole. A note is found by its id, by its collection and title, or
+ * (while notes keep one) by the path it had in the vault.
  */
 
 const PATH_FIELD = "f_vault_path";
 const HASH_FIELD = "f_vault_hash";
 const PROTOCOL = "2025-06-18";
+/** The record whose text is the user's instructions for assistants (a setting: its id). */
+const INSTRUCTIONS = "mcp/instructions";
+/** Several notes trashed in one call (one run, undone together). */
+const MAX_BATCH = 500;
 const MAX_TEXT = 200_000;
 
 interface Ctx {
@@ -159,16 +174,31 @@ function view(c: Ctx) {
   const find = (ref: Args): StoredEntity => {
     const id = optStr(ref.id, "id", 80);
     const path = optStr(ref.path, "path", 500);
+    const title = optStr(ref.title, "title", 300);
     let s: StoredEntity | null = null;
     if (id) s = ro.get(id);
     else if (path) {
       const hit = c.store.findByValue(PATH_FIELD, path)[0];
       s = hit ? ro.get(hit.id) : null;
-    } else throw new ToolFail("give id or path");
+    } else if (title && ref.collection) {
+      const t = typeNamed(String(ref.collection));
+      const want = title.trim().toLowerCase();
+      const hits = ro.list(t.id).filter(
+        (x) =>
+          String(x.entity.values[t.titleField] ?? "")
+            .trim()
+            .toLowerCase() === want,
+      );
+      if (hits.length > 1)
+        throw new ToolFail(`${hits.length} notes of ${t.name} have that title: use the id`);
+      s = hits[0] ?? null;
+    } else throw new ToolFail("give id, collection and title, or path");
     if (!s || s.entity.deleted !== undefined) throw new ToolFail("not found (or not for a model)");
     return s;
   };
-  return { ro, types, level, typeNamed, fields, asNote, find };
+  /** What goes in a collection, as its description says (none yet: undefined). */
+  const description = (t: TypeDef) => t.description?.text;
+  return { ro, types, level, typeNamed, fields, asNote, find, description };
 }
 
 // ------------------------------------------------------------------ writing
@@ -278,48 +308,104 @@ const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
 });
 const REF = {
   id: { type: "string", description: "The note's id (from search, query or read)" },
+  collection: { type: "string", description: "With `title`: the collection the note is in" },
+  title: { type: "string", description: "With `collection`: the note's exact title" },
   path: {
     type: "string",
-    description: "The path it had in the vault, e.g. proyectos/boni-plan.md",
+    description: "The path it had in the vault, while notes keep one (e.g. proyectos/boni-plan.md)",
   },
 };
+
+/** The record the user keeps as instructions for assistants: the one the setting names, or the vault's AGENTS.md. */
+function instructionsOf(c: Ctx, v: ReturnType<typeof view>): StoredEntity | null {
+  const id = c.store.setting(INSTRUCTIONS);
+  const named = id ? v.ro.get(id) : null;
+  if (named && named.entity.deleted === undefined) return named;
+  // Where the vault kept them (docs/clases.md §4): found by that path once, then by id, so the note can move.
+  const hit = c.store.findByValue(PATH_FIELD, "AGENTS.md")[0];
+  const s = hit ? v.ro.get(hit.id) : null;
+  if (!s || s.entity.deleted !== undefined) return null;
+  c.store.setSetting(INSTRUCTIONS, s.entity.id);
+  return s;
+}
+
+/** The first sentence of a tool's description: enough to choose it (its whole text comes with tools/list). */
+const firstSentence = (text: string) => /^(.+?[.!?])(\s|$)/.exec(text)?.[1] ?? text;
+
+/** A name as ASCII words for ids and keys ("Cola de Boni" → "cola_de_boni"). */
+const slug = (name: string, max = 36) => {
+  const s = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, max);
+  return /^[a-z]/.test(s) ? s : `c_${s}`.slice(0, max);
+};
+
+/** Property types a model may give a new collection (relations and files are made in Boni itself). */
+const NEW_FIELD_TYPES: readonly FieldType[] = [
+  "text",
+  "longtext",
+  "number",
+  "select",
+  "multiselect",
+  "checkbox",
+  "date",
+  "datetime",
+  "time",
+  "url",
+  "email",
+  "phone",
+];
 
 const TOOLS: Tool[] = [
   {
     name: "guide",
     description:
-      "Start here: how to work with Juan's Boni (his instructions for assistants, the note AGENTS.md) and what each tool does.",
+      "Start here: Juan's instructions for assistants, his collections with what goes in each and how many notes they have (computed now), and what each tool does.",
     inputSchema: obj({}),
     call(c) {
       const v = view(c);
-      const hit = c.store.findByValue(PATH_FIELD, "AGENTS.md")[0];
-      const agents = hit ? v.ro.get(hit.id) : null;
-      if (agents?.entity.body)
+      const own = instructionsOf(c, v);
+      if (own?.entity.body)
         c.seen.push({
-          entity: agents.entity.id,
-          type: agents.entity.type,
-          version: agents.entity.version,
+          entity: own.entity.id,
+          type: own.entity.type,
+          version: own.entity.version,
           fields: [],
           shapes: [],
           body: "text",
           files: [],
         });
       return {
-        instructions: agents?.entity.body ?? "(no AGENTS.md note in Boni)",
-        tools:
-          "collections → search / query → read → create, edit, append, set_properties; recent_changes; trash; undo. Notes keep their vault path (proyectos/boni-plan.md). Every write is labelled as a model's and can be undone whole (undo with its run).",
+        instructions: own?.entity.body ?? "(Juan has no instructions for assistants in Boni yet)",
+        collections: v.types().map((t) => {
+          const about = v.description(t);
+          return {
+            name: t.name,
+            ...(about ? { description: about } : {}),
+            notes: c.store.count(t.id),
+            level: v.level(t.id),
+          };
+        }),
+        tools: TOOLS.map((t) => ({ name: t.name, does: firstSentence(t.description) })),
+        writes:
+          "Every write is labelled as a model's and is one run that `undo` takes back whole. Read a note before changing it.",
       };
     },
   },
   {
     name: "collections",
     description:
-      "Juan's collections a model may see: name, how many notes, its properties and level.",
+      "Juan's collections a model may see: name, what goes in it, how many notes, its properties and level.",
     inputSchema: obj({}),
     call(c) {
       const v = view(c);
       return v.types().map((t) => ({
         name: t.name,
+        ...(v.description(t) ? { description: v.description(t) } : {}),
         notes: c.store.count(t.id),
         level: v.level(t.id),
         properties: v.fields(t).map((f) => ({ name: f.name, type: f.type })),
@@ -364,6 +450,7 @@ const TOOLS: Tool[] = [
         collection: { type: "string" },
         filter: { type: "array", items: { type: "object" } },
         limit: { type: "number", description: "At most 200 (default 50)" },
+        offset: { type: "number", description: "Skip this many first (to read on, page by page)" },
       },
       ["collection"],
     ),
@@ -386,14 +473,16 @@ const TOOLS: Tool[] = [
       return v.ro
         .list(t.id)
         .filter((s) => matchesFilters(s.entity.values, typeOf, rules, today))
-        .sort((x, y) => y.entity.updated - x.entity.updated)
+        .sort((x, y) => y.entity.updated - x.entity.updated || (x.entity.id < y.entity.id ? -1 : 1))
+        .slice(Math.max(0, Math.floor(Number(a.offset) || 0)))
         .slice(0, Math.min(200, Math.max(1, Number(a.limit) || 50)))
         .map((s) => v.asNote(s, false));
     },
   },
   {
     name: "read",
-    description: "One note with its properties and text, by id or by its vault path.",
+    description:
+      "One note with its properties and text: by id, by collection and exact title, or by the vault path it had.",
     inputSchema: obj(REF),
     call(c, a) {
       const v = view(c);
@@ -439,7 +528,7 @@ const TOOLS: Tool[] = [
   {
     name: "upload_file",
     description:
-      "Adds a file to Boni (collection Archivos) at the vault path it would have had, e.g. a bank statement at registros/finanzas/extractos/<name>.csv for finanzas_import. content_base64: the file's bytes (at most ~6 MB). Never over another file.",
+      "Adds a file to Boni (collection Archivos), in the folder it would have had in the vault: a bank statement goes to registros/finanzas/extractos/<name>.csv, where finanzas_import reads it. content_base64: the file's bytes (at most ~6 MB). Never over another file.",
     inputSchema: obj({ path: { type: "string" }, content_base64: { type: "string" } }, [
       "path",
       "content_base64",
@@ -584,21 +673,145 @@ const TOOLS: Tool[] = [
   },
   {
     name: "trash",
-    description: "Sends a note to Boni's trash (it can be restored). Ask Juan first.",
-    inputSchema: obj(REF),
+    description:
+      "Sends notes to Boni's trash (they can be restored): one by its reference, or several by `ids`, all in one run that `undo` takes back together. Ask Juan first, saying exactly what goes.",
+    inputSchema: obj({
+      ...REF,
+      ids: {
+        type: "array",
+        items: { type: "string" },
+        description: `Several notes at once (at most ${MAX_BATCH})`,
+      },
+    }),
     call(c, a) {
       const v = view(c);
-      const s = v.find(a);
-      if (v.level(s.entity.type) !== "visible") throw new ToolFail("not writable for a model");
+      let targets: StoredEntity[];
+      if (Array.isArray(a.ids)) {
+        const ids = [...new Set(a.ids.map((x) => str(x, "ids", 80)))];
+        if (!ids.length || ids.length > MAX_BATCH) throw new ToolFail(`ids: 1 to ${MAX_BATCH}`);
+        targets = ids.map((id) => v.find({ id }));
+      } else targets = [v.find(a)];
+      // All checked before any goes: a call trashes everything it names or nothing.
+      for (const s of targets)
+        if (v.level(s.entity.type) !== "visible" || Object.values(s.labels).some((l) => l.noModel))
+          throw new ToolFail(`${s.entity.id}: not writable for a model`);
       const w = writer(c);
-      c.store.remove(s.entity.id, w.meta);
-      return { id: s.entity.id, run: w.run };
+      for (const s of targets) c.store.remove(s.entity.id, w.meta);
+      return targets.length === 1
+        ? { id: targets[0]?.entity.id, run: w.run }
+        : { trashed: targets.length, run: w.run };
+    },
+  },
+  {
+    name: "set_description",
+    description:
+      "Says in a few words what goes in a collection (it replaces a folder's README: Juan reads it on the collection's page and `guide` gives it to every assistant). Empty text takes it away. When Juan asks, or when he agrees to your wording.",
+    inputSchema: obj({ collection: { type: "string" }, description: { type: "string" } }, [
+      "collection",
+      "description",
+    ]),
+    call(c, a) {
+      const v = view(c);
+      const t = v.typeNamed(String(a.collection));
+      if (v.level(t.id) !== "visible") throw new ToolFail(`${t.name} is not writable for a model`);
+      const text = typeof a.description === "string" ? a.description.trim() : "";
+      if (text.length > MAX_DESCRIPTION)
+        throw new ToolFail(`description: at most ${MAX_DESCRIPTION} characters`);
+      const w = writer(c);
+      c.store.applySchema(
+        {
+          op: "describe_type",
+          type: t.id,
+          description: text ? { text, label: w.lbl(t.id, null) } : null,
+        },
+        w.meta,
+      );
+      return { collection: t.name, run: w.run };
+    },
+  },
+  {
+    name: "create_collection",
+    description: `A new collection, only when Juan asks for one: its name, what goes in it (description) and its properties ({name, type, options}; types: ${NEW_FIELD_TYPES.join(", ")}). Every note of it also has a title (title_property, «Título» unless said) and a text of its own. One run: \`undo\` takes it back while it is empty.`,
+    inputSchema: obj(
+      {
+        name: { type: "string" },
+        description: { type: "string" },
+        title_property: { type: "string" },
+        properties: { type: "array", items: { type: "object" } },
+      },
+      ["name", "description"],
+    ),
+    call(c, a) {
+      const v = view(c);
+      const name = str(a.name, "name", 80).trim();
+      if (v.types().some((t) => t.name.toLowerCase() === name.toLowerCase()))
+        throw new ToolFail(`there is a collection "${name}" already`);
+      const about = str(a.description, "description", MAX_DESCRIPTION).trim();
+      const w = writer(c);
+      const lbl = label("model", "personal", [{ kind: "model", id: `mcp:${c.device}` }], false);
+      const taken = c.store.schema().types;
+      let id = `t_${slug(name)}`;
+      for (let n = 2; taken[id]; n++) id = `t_${slug(name, 32)}_${n}`;
+      const fields: FieldDef[] = [];
+      const field = (fname: string, type: FieldType, options?: SelectOption[]) => {
+        let fid = `f_${slug(fname)}`;
+        for (let n = 2; fields.some((f) => f.id === fid); n++) fid = `f_${slug(fname, 32)}_${n}`;
+        if (fields.some((f) => f.name.toLowerCase() === fname.toLowerCase()))
+          throw new ToolFail(`two properties named "${fname}"`);
+        fields.push({
+          id: fid,
+          key: fid.slice(2).replace(/_/g, "-").slice(0, 40),
+          name: fname,
+          type,
+          ...(options ? { options } : {}),
+          label: lbl,
+        });
+      };
+      field(optStr(a.title_property, "title_property", 80)?.trim() || "Título", "text");
+      const props = Array.isArray(a.properties) ? (a.properties as Args[]) : [];
+      if (props.length > 60) throw new ToolFail("properties: at most 60");
+      for (const p of props) {
+        const pname = str(p.name, "properties.name", 80).trim();
+        const type = String(p.type ?? "text") as FieldType;
+        if (!NEW_FIELD_TYPES.includes(type))
+          throw new ToolFail(`${pname}: type is one of ${NEW_FIELD_TYPES.join(", ")}`);
+        let options: SelectOption[] | undefined;
+        if (type === "select" || type === "multiselect") {
+          const names = Array.isArray(p.options)
+            ? p.options.map((o) => str(o, "options", 80).trim())
+            : [];
+          if (!names.length) throw new ToolFail(`${pname}: a ${type} needs its options`);
+          options = [...new Set(names)].map((o, i) => ({
+            id: `o_${slug(o, 30)}_${i}`,
+            name: o,
+            label: lbl,
+          }));
+        }
+        field(pname, type, options);
+      }
+      const def: TypeDef = {
+        id,
+        key: id.slice(2).replace(/_/g, "-").slice(0, 40),
+        name,
+        fields,
+        titleField: (fields[0] as FieldDef).id,
+        sensitivity: "personal",
+        schemaVersion: 1,
+        label: lbl,
+        description: { text: about, label: lbl },
+      };
+      try {
+        c.store.applySchema({ op: "create_type", type: def }, w.meta);
+      } catch (e) {
+        throw new ToolFail(e instanceof Error ? e.message : String(e));
+      }
+      return { collection: name, properties: fields.map((f) => f.name), run: w.run };
     },
   },
   {
     name: "finanzas_import",
     description:
-      "Monthly reconciliation, step 2 (procedure: the note registros/finanzas/procedimiento-conciliacion.md): reads the bank statements in registros/finanzas/extractos/ (Revolut, ING), joins each new line with the movement Juan noted in the app or creates a pending movement, and applies reglas.csv. Dry run unless dry_run is false; `output` is the report for Juan. Unclear lines are listed, never imported.",
+      "Monthly reconciliation, step 2 (procedure: the note registros/finanzas/procedimiento-conciliacion.md): reads the bank statements (Revolut, ING) kept in Archivos in the folder registros/finanzas/extractos (added with upload_file), joins each new line with the movement Juan noted in the app or creates a pending movement, and applies the collection Reglas. Dry run unless dry_run is false; `output` is the report for Juan. Unclear lines are listed, never imported.",
     inputSchema: obj({ dry_run: { type: "boolean", default: true }, reason: { type: "string" } }),
     call(c, a) {
       const apply = a.dry_run === false;
@@ -683,7 +896,7 @@ function answer(c: Ctx, m: Rpc): unknown | null {
         capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "boni", version: "1.0.0" },
         instructions:
-          "Juan's Boni: his notes, projects, agenda and records as collections. Call `guide` first: it has his instructions for assistants.",
+          "Juan's Boni: his data as collections of notes. Call `guide` first: his instructions for assistants, every collection with what goes in it, and the tools.",
       });
     case "ping":
       return reply({});

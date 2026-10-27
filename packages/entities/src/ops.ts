@@ -22,6 +22,8 @@ export type SchemaOp =
   | { op: "remove_type"; type: TypeId } // the inverse of create_type; the store only allows it on an empty type
   | { op: "rename_type"; type: TypeId; key: string; name: string; label: Label }
   | { op: "archive_type"; type: TypeId; archived: boolean }
+  /** What goes in the collection (`null` takes the description away). */
+  | { op: "describe_type"; type: TypeId; description: { text: string; label: Label } | null }
   | {
       op: "add_field";
       type: TypeId;
@@ -125,6 +127,16 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
         type: def.id,
         archived: !!def.archived,
       });
+    case "describe_type":
+      return update(
+        schema,
+        def,
+        (d) => {
+          const { description: _d, ...rest } = d;
+          return op.description ? { ...rest, description: op.description } : rest;
+        },
+        { op: "describe_type", type: def.id, description: def.description ?? null },
+      );
     case "add_field":
       if (def.fields.some((f) => f.id === op.field.id))
         return fail(`field "${op.field.id}" already exists`);

@@ -107,6 +107,11 @@ describe("applySchemaOp", () => {
           { op: "rename_type", type: "t_libro", key: `libro-${i}`, name: `Libro ${i}`, label: L },
           { op: "archive_type", type: "t_libro", archived: r.next() < 0.5 },
           {
+            op: "describe_type",
+            type: "t_libro",
+            description: r.next() < 0.3 ? null : { text: `Los libros leídos ${i}.`, label: L },
+          },
+          {
             op: "rename_field",
             type: "t_libro",
             field: def.titleField,
@@ -139,6 +144,30 @@ describe("applySchemaOp", () => {
         schema = done.schema;
       }
     }
+  });
+
+  it("describe_type: a collection says what goes in it, and the change is undone like any other", () => {
+    const said = applySchemaOp(withLibro(), {
+      op: "describe_type",
+      type: "t_libro",
+      description: { text: "Los libros que leo, con su estado.", label: MAIL },
+    });
+    if (!said.ok) throw new Error(said.error);
+    // The text keeps where it came from (a model or a mail may have written it).
+    expect(said.schema.types.t_libro?.description).toEqual({
+      text: "Los libros que leo, con su estado.",
+      label: MAIL,
+    });
+    const back = applySchemaOp(said.schema, said.inverse);
+    expect(back.ok && back.schema.types.t_libro?.description).toBeUndefined();
+    const too = (text: string) =>
+      applySchemaOp(withLibro(), {
+        op: "describe_type",
+        type: "t_libro",
+        description: { text, label: L },
+      });
+    expect(too("   ").ok).toBe(false);
+    expect(too("x".repeat(2001)).ok).toBe(false);
   });
 
   it("renaming a field keeps its id, so no value has to move", () => {
