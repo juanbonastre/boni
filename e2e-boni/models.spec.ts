@@ -238,12 +238,6 @@ test("«Uso de la IA»: blocks over Boni's records; a click lists what a number 
   await calls.click({ button: "right" });
   await expect(page.getByRole("menuitemradio", { name: "Modificar…" })).toBeVisible();
   await page.keyboard.press("Escape");
-  // The link goes to Ajustes → Modelos.
-  await page.getByRole("button", { name: /^Modelos y presupuesto/ }).click();
-  await expect(page.locator(".modal").getByRole("tab", { name: "Modelos" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
 });
 
 test("a template page is modified like any page, its changes listed, restored as Boni's with Undo", async ({
@@ -253,22 +247,20 @@ test("a template page is modified like any page, its changes listed, restored as
   await page.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
   const pill = page.locator(".template-head .system-pill");
   await expect(pill).toHaveText("De Boni");
-  const link = page.locator(".blk-link");
-  await link.click({ button: "right" });
+  const blocks = page.locator(".blk-number");
+  await blocks.first().click({ button: "right" });
   await page.getByRole("menuitemradio", { name: "Borrar" }).click();
-  await expect(link).toHaveCount(0);
+  await expect(blocks).toHaveCount(3);
   await expect(pill).toHaveText("Modificada");
   await expect.poll(async () => (await requests(page, "PUT api/pages/uso-ia")).length).toBe(1);
   await pill.click();
-  await expect(page.locator(".system-changes li")).toHaveText([
-    "−Quitado: Enlace «Modelos y presupuesto»",
-  ]);
+  await expect(page.locator(".system-changes li")).toHaveText(["−Quitado: Cifra «Gasto en IA»"]);
   await page.screenshot({ path: `${SHOTS}/uso-ia-modified.png` });
   await page.getByRole("button", { name: "Restaurar la de Boni" }).click();
   await expect(pill).toHaveText("De Boni");
-  await expect(link).toHaveCount(1);
+  await expect(blocks).toHaveCount(4);
   // Undo in the notice: the user's version again.
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
-  await expect(link).toHaveCount(0);
+  await expect(blocks).toHaveCount(3);
   await expect(pill).toHaveText("Modificada");
 });

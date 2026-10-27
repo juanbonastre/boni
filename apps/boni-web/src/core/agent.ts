@@ -2,7 +2,9 @@ import {
   type DatabaseFilter,
   emptyPage,
   filterErrors,
+  isPageTemplate,
   type PageSpec,
+  type PageTemplate,
   pageErrors,
   withoutRetired,
 } from "@boni/views";
@@ -753,6 +755,7 @@ export interface PageInfo {
   icon: string;
   parent: string | null;
   position: number;
+  template?: PageTemplate;
 }
 export interface Page extends PageInfo {
   spec: PageSpec;
@@ -768,6 +771,7 @@ function parsePageInfo(v: unknown): PageInfo | null {
     icon: str(v.icon, 16) ?? "",
     parent: str(v.parent, 80),
     position: typeof v.position === "number" ? v.position : 0,
+    ...(isPageTemplate(v.template) ? { template: v.template } : {}),
   };
 }
 

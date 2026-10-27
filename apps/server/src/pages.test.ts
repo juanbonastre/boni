@@ -9,6 +9,7 @@ import {
   DATA_BLOCKS,
   PAGE_TEMPLATES,
   type PageSpec,
+  resolveTemplateLinks,
   templateChanges,
   templatePage,
 } from "@boni/views";
@@ -19,6 +20,7 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
+import { createPage } from "./pages.ts";
 import { V1Store } from "./v1/store.ts";
 import { Vaults } from "./vaults.ts";
 
@@ -35,6 +37,7 @@ beforeAll(async () => {
   db = openDb(join(dir, "system.db"));
   addUser(db, "juan", PASSWORD, "");
   addUser(db, "ana", PASSWORD, "");
+  addUser(db, "old", PASSWORD, "");
   // Juan used the first Boni: a chart on its home and a shortcut. Ana only had its default charts made
   // (the app asked for them), which is not using it.
   const v1 = new V1Store(db);
@@ -92,13 +95,23 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
     const ana = await token("ana");
     const titles = async (t: string) =>
       ((await call(t, "GET", "/api/pages")).body.pages as { title: string }[]).map((p) => p.title);
-    expect(await titles(ana)).toEqual(["Uso de la IA", "Actividad"]);
+    expect(await titles(ana)).toEqual(["Uso de la IA", "Actividad", "Registro"]);
+    const seeded = (await call(ana, "GET", "/api/pages")).body.pages as {
+      id: string;
+      template?: (typeof PAGE_TEMPLATES)[number];
+    }[];
+    const activity = (await call(ana, "GET", `/api/pages/${seeded[1]?.id}`)).body.page as {
+      spec: PageSpec;
+    };
+    expect(activity.spec.blocks.find((b) => b.id === "a7")).toEqual(
+      expect.objectContaining({ to: seeded.find((p) => p.template === "registro")?.id }),
+    );
     const juan = await token("juan");
     const first = (await call(juan, "GET", "/api/pages")).body.pages as {
       id: string;
       title: string;
     }[];
-    expect(first.map((p) => p.title)).toEqual(["Gastos", "Uso de la IA", "Actividad"]);
+    expect(first.map((p) => p.title)).toEqual(["Gastos", "Uso de la IA", "Actividad", "Registro"]);
     const page = (await call(juan, "GET", `/api/pages/${first[0]?.id}`)).body.page as {
       spec: { blocks: { type: string; label?: string; chart?: string }[] };
     };
@@ -108,10 +121,39 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
     expect(types).toContain("chart");
     // Deleted, it does not come back by itself; Undo restores it.
     expect((await call(juan, "DELETE", `/api/pages/${first[0]?.id}`)).status).toBe(200);
-    expect(await titles(juan)).toEqual(["Uso de la IA", "Actividad"]);
+    expect(await titles(juan)).toEqual(["Uso de la IA", "Actividad", "Registro"]);
     expect((await call(juan, "POST", `/api/pages/${first[0]?.id}/restore`)).status).toBe(200);
-    expect((await titles(juan)).length).toBe(3);
+    expect((await titles(juan)).length).toBe(4);
     expect((await call(juan, "DELETE", `/api/pages/${first[0]?.id}`)).status).toBe(200);
+  });
+
+  it("adds Registro to an existing account once and migrates only the retired template links", async () => {
+    const store = host.store(3);
+    const uso = createPage(store, { title: "Uso de la IA", spec: templatePage("uso-ia").spec });
+    const actividad = createPage(store, {
+      title: "Actividad",
+      spec: templatePage("actividad").spec,
+    });
+    store.setSetting("pages/templates", "1");
+    const t = await token("old");
+    const pages = (await call(t, "GET", "/api/pages")).body.pages as {
+      id: string;
+      title: string;
+      template?: (typeof PAGE_TEMPLATES)[number];
+    }[];
+    expect(pages.map((p) => p.title)).toEqual(["Uso de la IA", "Actividad", "Registro"]);
+    const registro = pages.find((p) => p.template === "registro")?.id ?? "";
+    const activity = (await call(t, "GET", `/api/pages/${actividad.id}`)).body.page as {
+      spec: PageSpec;
+    };
+    expect(activity.spec.blocks.filter((b) => b.type === "link")).toEqual([
+      expect.objectContaining({ id: "a7", to: registro }),
+    ]);
+    const ai = (await call(t, "GET", `/api/pages/${uso.id}`)).body.page as { spec: PageSpec };
+    expect(ai.spec.blocks.some((b) => b.id === "u8")).toBe(false);
+    await call(t, "DELETE", `/api/pages/${registro}`);
+    const again = (await call(t, "GET", "/api/pages")).body.pages as { title: string }[];
+    expect(again.some((p) => p.title === "Registro")).toBe(false);
   });
 
   it("are made, renamed, nested and changed only with blocks of the catalogue, from a personal device", async () => {
@@ -177,16 +219,18 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
     const pages = (await call(t, "GET", "/api/pages")).body.pages as {
       id: string;
       title: string;
+      template?: (typeof PAGE_TEMPLATES)[number];
     }[];
     for (const name of PAGE_TEMPLATES) {
       const made = templatePage(name);
+      const expected = resolveTemplateLinks(made.spec, pages);
       const id = pages.find((p) => p.title === made.title)?.id ?? "";
       const page = (await call(t, "GET", `/api/pages/${id}`)).body.page as {
         icon: string;
         spec: PageSpec;
       };
       expect(page.icon).toBe(made.icon);
-      expect(page.spec).toEqual(made.spec);
+      expect(page.spec).toEqual(expected);
       // Every number and chart computes from Boni's collections (none comes back with problems).
       const blocks = page.spec.blocks.filter((b) =>
         (DATA_BLOCKS as readonly string[]).includes(b.type),
@@ -206,9 +250,9 @@ describe("the user's pages (docs/extensiones.md 6)", () => {
       const mine = { ...page.spec, blocks: page.spec.blocks.slice(1) };
       expect((await call(t, "PUT", `/api/pages/${id}`, { spec: mine })).status).toBe(200);
       expect(templateChanges(name, mine).length).toBeGreaterThan(0);
-      await call(t, "PUT", `/api/pages/${id}`, { spec: made.spec });
+      await call(t, "PUT", `/api/pages/${id}`, { spec: expected });
       const back = (await call(t, "GET", `/api/pages/${id}`)).body.page as { spec: PageSpec };
-      expect(templateChanges(name, back.spec)).toEqual([]);
+      expect(templateChanges(name, back.spec, pages)).toEqual([]);
     }
     // Removed, a template is not made again.
     const uso = pages.find((p) => p.title === "Uso de la IA")?.id ?? "";

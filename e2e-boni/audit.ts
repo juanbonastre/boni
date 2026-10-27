@@ -100,7 +100,7 @@ export const MODELS_TEXT = {
     cases: "Ver los casos",
     chat: "Conversación",
     activity: "Registro",
-    openAudit: "Abrir la auditoría",
+    openAudit: "Auditoría",
     runs: /^Ejecuciones/,
     usoIa: "Uso de la IA",
     actividad: "Actividad",
@@ -114,7 +114,7 @@ export const MODELS_TEXT = {
     cases: "See the cases",
     chat: "Conversation",
     activity: "Activity log",
-    openAudit: "Open the audit",
+    openAudit: "Audit",
     runs: /^Runs/,
     usoIa: "Uso de la IA",
     actividad: "Actividad",
@@ -175,10 +175,10 @@ export async function activityAudit(page: Page, l: (typeof MODELS_TEXT)["es"], w
   const issues: string[] = [];
   await page.locator(".sidebar").getByRole("button", { name: l.chat }).click();
   await page.locator(".chat-tools").getByRole("button", { name: l.activity }).click();
-  await page.locator(".kpi").first().waitFor();
-  await page.getByRole("button", { name: l.runs }).click();
+  await page.locator(".log-list li").first().waitFor();
   issues.push(...(await audit(page, `${where} activity`)));
-  await page.getByRole("button", { name: l.openAudit }).click();
+  await page.locator(".sidebar").getByRole("button", { name: l.chat }).click();
+  await page.locator(".chat-tools").getByRole("button", { name: l.openAudit }).click();
   await page.locator(".audit-tr:not(.audit-th)").first().click();
   await page.locator(".audit-panel .audit-seen, .audit-panel .muted").first().waitFor();
   issues.push(...(await audit(page, `${where} audit`)));

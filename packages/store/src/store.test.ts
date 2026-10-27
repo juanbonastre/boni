@@ -84,6 +84,19 @@ function fresh(): { store: UserStore; dir: string } {
 }
 
 describe("the store", () => {
+  it("lists runs by their start period and invalidates readers when one starts or finishes", () => {
+    const { store } = fresh();
+    expect(store.journal.lastRun()).toBe(0);
+    store.journal.startRun({ id: "r1", turn: null, origin: "user", device: "p", started: 100 });
+    const started = store.journal.lastRun();
+    store.journal.startRun({ id: "r2", turn: null, origin: "user", device: "p", started: 200 });
+    store.journal.finishRun("r1", "done", null, 300);
+    expect(store.journal.lastRun()).not.toBe(started);
+    expect(store.journal.runsIn(100, 200).map((r) => r.id)).toEqual(["r1"]);
+    expect(store.journal.runsIn(0, 400).map((r) => r.id)).toEqual(["r1", "r2"]);
+    expect(store.journal.run("r1")).toMatchObject({ status: "done", finished: 300 });
+  });
+
   it("lists its operation log, oldest first, for an export", () => {
     const { store } = fresh();
     const e = store.create(

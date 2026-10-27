@@ -41,6 +41,7 @@ export function BlockPanel({ id }: { id: string }) {
   const t = useStore((s) => s.t);
   const page = useEditing();
   const dataTypes = useStore((s) => s.dataTypes);
+  const pages = useStore((s) => s.pages);
   useEffect(() => {
     if (!dataTypes) void loadDataTypes();
   }, []);
@@ -54,7 +55,7 @@ export function BlockPanel({ id }: { id: string }) {
     | undefined;
   const [filterOpen, setFilterOpen] = useState(Boolean(raw?.filterField));
   if (!block || !raw) return <p className="muted panel-body">{t("block.panel.gone")}</p>;
-  const data = catalogueOf(dataTypes);
+  const data = catalogueOf(dataTypes, pages);
   const settings = (kind?.settings ?? []).filter((s) => applies(s, raw));
   const set = (key: string, value: unknown) => {
     const next: Record<string, unknown> = { ...raw };

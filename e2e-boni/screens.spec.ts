@@ -45,6 +45,17 @@ test("«Uso de la IA», a template page over Boni's records", async ({ page }) =
   await shot(page, "uso-ia");
 });
 
+test("«Registro», a template page over Boni's runs", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.clock.install({ time: new Date("2026-10-27T10:00:00+02:00") });
+  await openApp(page, "/?still", { pages: [TEMPLATE("registro")] });
+  await page.locator(".sidebar").getByRole("button", { name: "Registro", exact: true }).click();
+  await expect(page.locator(".blk-number .kpi-value").first()).not.toHaveText("—");
+  await page.locator(".data-blk-chart .chart svg").first().waitFor();
+  await page.locator(".db-table tbody tr").first().waitFor();
+  await shot(page, "registro");
+});
+
 test("Colecciones", async ({ page }) => {
   await open(page);
   await page.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();

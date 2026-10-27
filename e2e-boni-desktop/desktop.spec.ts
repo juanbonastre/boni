@@ -319,8 +319,8 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
   const table = w.locator(".cols-table");
-  // Docencia, Pertenencia, Persona, Documentos, and Boni's own two (read only, no level of the user's).
-  await expect(table.locator("tbody tr")).toHaveCount(6);
+  // Docencia, Pertenencia, Persona, Documentos, and Boni's own three (read only, no level of the user's).
+  await expect(table.locator("tbody tr")).toHaveCount(7);
   await expect(table.locator("tbody tr", { hasText: "Llamadas a modelos" })).toContainText(
     "De Boni · solo lectura",
   );
@@ -395,16 +395,16 @@ test("Boni's template pages over the real server: counted from its records, modi
   await expect(panel.locator(".rows-panel-list li", { hasText: "Tú · " }).first()).toBeVisible();
   await shot(w, "activity-rows");
   await w.keyboard.press("Escape");
-  // «Uso de la IA», modified: still so after another visit, then Boni's again.
-  await w.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  // «Actividad», modified: still so after another visit, then Boni's again.
+  await w.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
   const pill = w.locator(".template-head .system-pill");
   await expect(pill).toHaveText("De Boni");
   await w.locator(".blk-link").click({ button: "right" });
   await w.getByRole("menuitemradio", { name: "Borrar" }).click();
   await expect(pill).toHaveText("Modificada");
   await w.waitForTimeout(1200);
-  await w.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
   await w.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
   await expect(pill).toHaveText("Modificada");
   await expect(w.locator(".blk-link")).toHaveCount(0);
   await pill.click();
@@ -415,13 +415,12 @@ test("Boni's template pages over the real server: counted from its records, modi
 
 test("«Registro» and «Auditoría» over the real server: Juan's read of a private row, the chain verified", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Conversación" }).click();
-  await w.locator(".chat-tools").getByRole("button", { name: "Registro" }).click();
-  await expect(w.locator(".kpi")).toHaveCount(4);
-  // The earlier tests changed rows: there are changes, by this device.
-  await expect(w.locator(".kpi").nth(2)).not.toContainText(/Cambios\s*0$/);
+  await w.locator(".sidebar").getByRole("button", { name: "Registro", exact: true }).click();
+  await expect(w.locator(".db-table")).toContainText("Fecha");
+  await expect(w.locator(".db-table")).toContainText("Estado");
   await shot(w, "activity");
-  await w.getByRole("button", { name: "Abrir la auditoría" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Conversación" }).click();
+  await w.locator(".chat-tools").getByRole("button", { name: "Auditoría" }).click();
   const rows = w.locator(".audit-tr:not(.audit-th)");
   await expect(rows.first()).toBeVisible();
   // Opening the private collection's attachment was recorded (Juan's reads of private collections are).

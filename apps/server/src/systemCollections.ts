@@ -1,15 +1,16 @@
 import { createHash } from "node:crypto";
 import type { Entity, FieldDef, FieldType, SelectOption, TypeDef } from "@boni/entities";
 import { label } from "@boni/entities";
-import type { UserStore } from "@boni/store";
+import type { ProposalRow, UserStore } from "@boni/store";
 import { SYS } from "@boni/views";
+import { proposalsByRun, type RunWhat, runInfo } from "./runInfo.ts";
 
 /**
  * Boni's own records as collections (Juan, 2026-10-25, design audit: everything shown comes from collections):
- * «Llamadas a modelos» (each call of the journal) and «Actividad de Boni» (per day, actor and collection, what was
- * read and what changed, from the audit). They are made here on each read, never stored: read only, outside the
- * store's schema, so the agent's view and the MCP never see them, and no write can reach them. Pages count them
- * with the same blocks as any collection (the template pages «Uso de la IA» and «Actividad»).
+ * «Llamadas a modelos» (each call of the journal), «Actividad de Boni» (per day, actor and collection, what was
+ * read and what changed, from the audit) and «Ejecuciones» (each run of the journal). They are made here on each
+ * read, never stored: read only, outside the store's schema, so the agent's view and the MCP never see them, and
+ * no write can reach them. Pages count them with the same blocks as any collection.
  *
  * Option ids are stable (a use's or a «Qué»'s by name, the rest by a hash of what they stand for), so a page's
  * filter on one keeps working as rows come and go. Days are UTC, as the audit groups them.
@@ -18,7 +19,8 @@ import { SYS } from "@boni/views";
 // Ids, fields and the «Qué» options are packages/views SYS (the template pages name them).
 export const SYS_CALLS = SYS.calls.id;
 export const SYS_ACTIVITY = SYS.activity.id;
-export const SYSTEM_COLLECTIONS = [SYS_CALLS, SYS_ACTIVITY] as const;
+export const SYS_RUNS = SYS.runs.id;
+export const SYSTEM_COLLECTIONS = [SYS_CALLS, SYS_ACTIVITY, SYS_RUNS] as const;
 export const isSystemCollection = (id: string) =>
   (SYSTEM_COLLECTIONS as readonly string[]).includes(id);
 
@@ -85,6 +87,30 @@ export function whoName(by: string): string {
   return "Boni";
 }
 
+/** What a run was, in Juan's words (as the app's Registro says it, Chat.tsx `runTitle`). */
+function runTitle(w: RunWhat): string {
+  switch (w.kind) {
+    case "request":
+      return w.text ? `Petición: ${w.text}` : "Conversación";
+    case "mail":
+      return `Correo: ${w.subject}`;
+    case "measure":
+      return w.subject ? `Guía medida: ${w.subject}` : "Guía medida";
+    case "review":
+      return "Revisión de la guía";
+    case "note":
+      return w.action === "create"
+        ? "Nota nueva"
+        : w.action === "delete"
+          ? "Nota quitada"
+          : "Nota cambiada";
+    case "accepted":
+      return "Propuesta aceptada";
+    default:
+      return "Ejecución";
+  }
+}
+
 /** Options of a select from the values met, in order of their names; each keeps the id `idOf` gives it. */
 function optionsFrom(
   values: Iterable<string>,
@@ -116,8 +142,8 @@ export function systemCollections(
   store: UserStore,
   o: { now: number; usdToEur: number },
 ): SystemCollections {
-  // Anything recorded since (a change, a read, a model call) or another rate makes them again.
-  const key = `${store.version()}|${store.audit.lastAction()}|${store.journal.lastModelCall()}|${o.usdToEur}`;
+  // Anything recorded since (a change, a read, a model call, a run) or another rate makes them again.
+  const key = `${store.version()}|${store.audit.lastAction()}|${store.journal.lastModelCall()}|${store.journal.lastRun()}|${o.usdToEur}`;
   const was = recent.get(store);
   if (was && was.key === key && o.now >= was.at && o.now - was.at < FRESH_MS) return was.sys;
   const sys = makeSystemCollections(store, o);
@@ -132,6 +158,8 @@ function makeSystemCollections(
   const from = o.now - SYSTEM_DAYS * DAY;
   const calls = store.journal.modelCallsIn(from, o.now + 1);
   const activity = store.audit.activityByType(from, o.now + 1);
+  const runs = store.journal.runsIn(from, o.now + 1);
+  const proposals = runs.length ? proposalsByRun(store) : new Map<string, ProposalRow[]>();
   const schema = store.schema().types;
 
   const uses = optionsFrom(
@@ -164,6 +192,24 @@ function makeSystemCollections(
     { id: READ, name: "Leyó", label: L },
     { id: WROTE, name: "Cambió", label: L },
   ];
+  const statusName = (s: string) =>
+    s === "done"
+      ? "Hecha"
+      : s.startsWith("stopped")
+        ? "Parada"
+        : s === "proposed"
+          ? "Propuesta"
+          : s === "waiting"
+            ? "Esperando"
+            : s;
+  const states = optionsFrom(
+    runs.map((r) => statusName(r.status)),
+    (s) => hashId("e", s),
+    (s) => s,
+  );
+  const runCost = new Map<string, number>();
+  for (const c of calls)
+    if (c.cost !== null) runCost.set(c.run, (runCost.get(c.run) ?? 0) + c.cost);
 
   const types: Record<string, TypeDef> = {
     [SYS_CALLS]: typeDef(SYS_CALLS, "llamadas", "Llamadas a modelos", "🤖", [
@@ -183,10 +229,19 @@ function makeSystemCollections(
       field("f_col", "Colección", "select", cols),
       field("f_filas", "Filas", "number"),
     ]),
+    [SYS_RUNS]: typeDef(SYS_RUNS, "runs", "Ejecuciones", "📜", [
+      field("f_titulo", "Ejecución", "text"),
+      field("f_fecha", "Fecha", "date"),
+      field("f_estado", "Estado", "select", states),
+      field("f_segundos", "Segundos", "number"),
+      field("f_cambios", "Cambios", "number"),
+      field("f_coste", "Coste", "money"),
+    ]),
   };
 
   let callRows: Entity[] | null = null;
   let activityRows: Entity[] | null = null;
+  let runRows: Entity[] | null = null;
   const rows = (type: string): Entity[] => {
     if (type === SYS_CALLS) {
       callRows ??= calls.map((c) => {
@@ -232,6 +287,33 @@ function makeSystemCollections(
         ];
       });
       return activityRows;
+    }
+    if (type === SYS_RUNS) {
+      runRows ??= runs.map((r) => {
+        const info = runInfo(store, r, { proposals, mailAccount: null });
+        const values: Entity["values"] = {
+          f_titulo: runTitle(info.what),
+          f_fecha: day(r.started),
+          f_estado: hashId("e", statusName(r.status)),
+          f_cambios: info.changed,
+        };
+        if (r.finished !== null) values.f_segundos = Math.round((r.finished - r.started) / 1000);
+        const cost = runCost.get(r.id);
+        if (cost !== undefined)
+          values.f_coste = {
+            amount: Math.round(cost * o.usdToEur * 1e6) / 1e6,
+            currency: "EUR",
+          };
+        return {
+          id: `sys_run_${createHash("sha256").update(r.id).digest("hex").slice(0, 16)}`,
+          type,
+          values,
+          created: r.started,
+          updated: r.finished ?? r.started,
+          version: 1,
+        };
+      });
+      return runRows;
     }
     return [];
   };

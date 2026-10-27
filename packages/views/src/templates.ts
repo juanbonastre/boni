@@ -30,6 +30,15 @@ export const SYS = {
     read: "o_que_leyo",
     wrote: "o_que_cambio",
   },
+  runs: {
+    id: "t_sys_runs",
+    title: "f_titulo",
+    date: "f_fecha",
+    status: "f_estado",
+    seconds: "f_segundos",
+    changes: "f_cambios",
+    cost: "f_coste",
+  },
 } as const;
 
 const at = (row: string, col: number, w: number, h?: "s" | "m" | "l") => ({
@@ -40,6 +49,7 @@ const at = (row: string, col: number, w: number, h?: "s" | "m" | "l") => ({
 });
 const C = SYS.calls;
 const A = SYS.activity;
+const R = SYS.runs;
 
 const USO_IA: PageSpec = {
   version: 1,
@@ -126,7 +136,6 @@ const USO_IA: PageSpec = {
       period: "month",
       at: at("r2", 1, 4),
     },
-    { id: "u8", type: "link", title: "Modelos y presupuesto", to: "settings-models" },
   ],
 };
 
@@ -201,19 +210,91 @@ const ACTIVIDAD: PageSpec = {
       source: A.id,
       view: { layout: "table", sort: { field: A.date, desc: true } },
     },
-    { id: "a7", type: "link", title: "Cada ejecución de Boni, con Deshacer", to: "activity" },
-    { id: "a8", type: "link", title: "Auditoría", to: "audit" },
+    { id: "a7", type: "link", title: "Cada ejecución de Boni", to: "registro" },
+  ] as PageBlock[],
+};
+
+const REGISTRO: PageSpec = {
+  version: 1,
+  template: "registro",
+  blocks: [
+    {
+      id: "r1",
+      type: "number",
+      title: "Ejecuciones",
+      collection: R.id,
+      measure: "count",
+      period: "30d",
+      bg: true,
+      at: at("r1", 0, 4),
+    },
+    {
+      id: "r2",
+      type: "number",
+      title: "Cambios",
+      collection: R.id,
+      measure: "sum",
+      field: R.changes,
+      period: "30d",
+      bg: true,
+      at: at("r1", 1, 4),
+    },
+    {
+      id: "r3",
+      type: "number",
+      title: "Tiempo de Boni (segundos)",
+      collection: R.id,
+      measure: "sum",
+      field: R.seconds,
+      period: "30d",
+      bg: true,
+      at: at("r1", 2, 4),
+    },
+    {
+      id: "r4",
+      type: "graph",
+      title: "Ejecuciones por día",
+      shape: "bar",
+      collection: R.id,
+      groupBy: "@day",
+      measure: "count",
+      period: "30d",
+      bg: true,
+      at: at("r2", 0, 12, "s"),
+    },
+    {
+      id: "r5",
+      type: "database",
+      source: R.id,
+      view: { layout: "table", sort: { field: R.date, desc: true } },
+    },
   ] as PageBlock[],
 };
 
 const TEMPLATES: Record<PageTemplate, { title: string; icon: string; spec: PageSpec }> = {
   "uso-ia": { title: "Uso de la IA", icon: "🤖", spec: USO_IA },
   actividad: { title: "Actividad", icon: "🧾", spec: ACTIVIDAD },
+  registro: { title: "Registro", icon: "📜", spec: REGISTRO },
 };
 
 /** A template's page, a fresh copy every time (changing one never changes Boni's). */
 export function templatePage(name: PageTemplate): { title: string; icon: string; spec: PageSpec } {
   return structuredClone(TEMPLATES[name]);
+}
+
+/** Template links name their destination by template until the account's real page ids are known. */
+export function resolveTemplateLinks(
+  spec: PageSpec,
+  pages: readonly { id: string; template?: PageTemplate }[],
+): PageSpec {
+  return {
+    ...spec,
+    blocks: spec.blocks.map((b) => {
+      if (b.type !== "link") return b;
+      const page = pages.find((p) => p.template === b.to);
+      return page ? { ...b, to: page.id } : b;
+    }),
+  };
 }
 
 /** What the user changed of a template page, block by block (added, removed, changed, resized) and whether blocks moved. */
@@ -223,12 +304,18 @@ export interface TemplateChange {
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const withoutPlace = (b: PageBlock) => {
+const withoutPlace = (b: PageBlock, pages: readonly { id: string; template?: PageTemplate }[]) => {
   const { at: _a, ...rest } = b;
-  return rest;
+  if (b.type !== "link") return rest;
+  const page = pages.find((p) => p.id === b.to);
+  return page?.template ? { ...rest, to: page.template } : rest;
 };
 
-export function templateChanges(name: PageTemplate, spec: PageSpec): TemplateChange[] {
+export function templateChanges(
+  name: PageTemplate,
+  spec: PageSpec,
+  pages: readonly { id: string; template?: PageTemplate }[] = [],
+): TemplateChange[] {
   const was = TEMPLATES[name].spec.blocks;
   const now = spec.blocks;
   const out: TemplateChange[] = [];
@@ -237,7 +324,7 @@ export function templateChanges(name: PageTemplate, spec: PageSpec): TemplateCha
   for (const b of now) {
     const old = was.find((x) => x.id === b.id);
     if (!old) continue;
-    if (!same(withoutPlace(old), withoutPlace(b))) out.push({ sign: "✎", block: b });
+    if (!same(withoutPlace(old, pages), withoutPlace(b, pages))) out.push({ sign: "✎", block: b });
     else if (old.at?.w !== b.at?.w || old.at?.h !== b.at?.h) out.push({ sign: "⤢", block: b });
   }
   // Where each kept block is drawn: its row and column and its place in that column (or in the page's flow).

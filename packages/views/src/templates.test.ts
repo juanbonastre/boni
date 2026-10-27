@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PAGE_TEMPLATES, pageErrors, withoutRetired } from "./page.ts";
-import { templateChanges, templatePage } from "./templates.ts";
+import { resolveTemplateLinks, templateChanges, templatePage } from "./templates.ts";
 
 describe("Boni's template pages", () => {
   it("come valid and unchanged (their blocks against Boni's collections: apps/server data.test.ts)", () => {
@@ -16,14 +16,14 @@ describe("Boni's template pages", () => {
   it("say what the user changed: added, removed, changed, resized, moved", () => {
     const { spec } = templatePage("uso-ia");
     const blocks = spec.blocks
-      .filter((b) => b.id !== "u8")
+      .filter((b) => b.id !== "u1")
       .map((b) => (b.id === "u2" ? { ...b, title: "Llamadas del mes" } : b))
       .map((b) => (b.id === "u5" && b.at ? { ...b, at: { ...b.at, h: "l" as const } } : b));
     blocks.push({ id: "nota", type: "text", text: "Mi nota" });
     const signs = templateChanges("uso-ia", { ...spec, blocks }).map(
       (c) => `${c.sign}${c.block?.id ?? ""}`,
     );
-    expect(signs).toEqual(["+nota", "−u8", "✎u2", "⤢u5"]);
+    expect(signs).toEqual(["+nota", "−u1", "✎u2", "⤢u5"]);
     // The list's order of two blocks in different columns draws the same; in one column, it moves them.
     const swap = (i: number, j: number) => {
       const list = [...spec.blocks];
@@ -38,6 +38,14 @@ describe("Boni's template pages", () => {
     const a = templatePage("actividad");
     a.spec.blocks.pop();
     expect(templatePage("actividad").spec.blocks.length).toBe(a.spec.blocks.length + 1);
+  });
+
+  it("resolves a template link to the account's real page, not a fixed screen", () => {
+    const spec = resolveTemplateLinks(templatePage("actividad").spec, [
+      { id: "e_real", template: "registro" },
+    ]);
+    expect(spec.blocks.find((b) => b.id === "a7")).toMatchObject({ type: "link", to: "e_real" });
+    expect(resolveTemplateLinks(spec, [{ id: "e_real", template: "registro" }])).toEqual(spec);
   });
 });
 

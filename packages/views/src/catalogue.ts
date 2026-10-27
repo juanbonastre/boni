@@ -25,6 +25,8 @@ export interface CatalogueCollection {
 }
 export interface CatalogueData {
   collections: CatalogueCollection[];
+  /** The user's pages a link may open. */
+  pages?: Option[];
   /** The screens a button may open (the server's forms), when known; else Boni's capture. */
   screens?: Option[];
 }
@@ -46,6 +48,7 @@ export type DataOptions =
   | "filterValues"
   | "dateFields"
   | "periods"
+  | "pages"
   | "screens";
 
 export interface Setting {
@@ -373,22 +376,18 @@ export const CATALOGUE: readonly BlockKind[] = [
     name: "Enlace",
     group: "De Boni",
     w: 12,
-    ai: "a row that opens another of Boni's screens",
+    ai: "a row that opens another of the user's pages",
     settings: [
       TITLE_OPTIONAL,
       {
         key: "to",
         label: "Lleva a",
         type: "choice",
-        options: [
-          { value: "activity", label: "Registro de Boni" },
-          { value: "audit", label: "Auditoría" },
-          { value: "settings-models", label: "Ajustes: modelos y presupuesto" },
-        ],
+        options: "pages",
         section: "data",
       },
     ],
-    defaults: { to: "activity" },
+    defaults: {},
   },
 ];
 
@@ -447,6 +446,8 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
       return byField(fs, GROUPABLE);
     case "timeOrGroupFields":
       return [...(hasDate(fs) ? TIME_GROUPS : []), ...byField(fs, GROUPABLE)];
+    case "pages":
+      return data.pages ?? [];
     case "screens":
       return data.screens ?? [{ value: "capture-expense", label: "Apuntar gasto" }];
     case "periods":
@@ -593,6 +594,7 @@ export function newBlock(
       }
     }
   }
+  if (type === "link") b.to = data.pages?.[0]?.value;
   return b;
 }
 
@@ -642,5 +644,6 @@ export function catalogueForAI(data: CatalogueData): string {
     });
     return `  ${c.id} (${c.name})\n${fields.join("\n")}`;
   });
-  return `${layout}\n\nBlocks:\n${kinds.join("\n")}\n\nData (collections, their fields and options):\n${collections.join("\n")}`;
+  const pages = (data.pages ?? []).map((p) => `${p.value}=${p.label}`).join(", ");
+  return `${layout}\n\nBlocks:\n${kinds.join("\n")}\n\nData (collections, their fields and options):\n${collections.join("\n")}\n\nPages (ids a link may open):\n${pages}`;
 }

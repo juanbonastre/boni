@@ -1,9 +1,8 @@
 import { MoreHorizontal, PanelLeft, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ActivityView } from "./components/Activity.tsx";
 import { AuditView } from "./components/Audit.tsx";
 import { ChartCard } from "./components/ChartCard.tsx";
-import { ChatView, InboxView } from "./components/Chat.tsx";
+import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { CollectionsView, CollectionView } from "./components/Collections.tsx";
 import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
 import { NotesView } from "./components/Notes.tsx";
@@ -461,7 +460,12 @@ function Content() {
         <InboxView />
       </div>
     );
-  if (view.kind === "log") return <ActivityView />;
+  if (view.kind === "log")
+    return (
+      <div className="content">
+        <LogView />
+      </div>
+    );
   if (view.kind === "audit") return <AuditView filter={view.filter} />;
   if (view.kind === "chart") {
     return (
