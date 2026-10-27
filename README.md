@@ -1,19 +1,22 @@
 # Boni
 
-The Boni monorepo: the Boni core in the making (`docs/nucleo.md`) and its apps. Today it is **Boni Calendar**, a
-calendar app for the desktop with the fluid, keyboard-friendly feel of the best modern calendars, made to be
-self-hosted and shaped around one person's data. Day, week, month and custom N-day views, a mini month, calendars
-grouped by account with show/hide, per-calendar event properties, an event detail popover or side panel, drag to
-create/move/resize, a command palette with natural-language quick create, and smooth wheel / Ctrl+wheel / Shift+wheel.
+A personal system, self-hosted and shaped around one person's data. Everything is a record of a collection, and the
+collections form a tree, like classes. An assistant helps: its model writes plans, and Boni's code decides what each
+step may do. Two kinds of app use the same server and the same account:
 
-Status: Boni Calendar is in daily use (desktop, Android, Obsidian plugin, server); see `docs/estado.md`. The first Boni
-(charts, shortcuts) is kept for reference in `legacy/boni/`.
+- **Boni**: pages, databases, charts, a conversation with the assistant, and quick captures (desktop and Android).
+- **Boni Calendar**: a fluid day, week, month and N-day calendar over any collection with dates (desktop and Android).
+
+How it is built and why: `docs/nucleo.md` (the core: data, store, agent, security), `docs/clases.md` (collections as
+classes), `docs/extensiones.md` (extensions) and `docs/design-guide.md` (the interfaces). The rules that must not
+break, each with the test that guards it: `docs/principios.md`. Where each part lives: `make map`.
 
 ```bash
-pnpm install
-pnpm dev          # http://localhost:5173
-pnpm test         # unit tests
-pnpm exec playwright test   # end-to-end (uses the system Chrome)
+make setup    # install the dependencies (pnpm)
+make check    # lint, types and unit tests
+make map      # every package and app, with what it is for
+make server   # the server locally (environment: apps/server/src/main.ts)
+make e2e      # end-to-end tests on the system Chrome
 ```
 
-The sample data is invented. Nothing leaves the machine.
+Everything in this repository is invented: the sample data, the accounts and the vaults in the tests.

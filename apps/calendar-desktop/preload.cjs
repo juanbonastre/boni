@@ -1,3 +1,7 @@
+/**
+ * What Boni Calendar's page may ask of the desktop shell, and nothing else: downloads, notifications, the desktop's
+ * settings, the benchmark's results and the vault's files (`boniVault`, going away with the vault mode).
+ */
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("hostBridge", {

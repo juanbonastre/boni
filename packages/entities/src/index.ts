@@ -28,6 +28,7 @@ export {
   type FieldId,
   type FieldType,
   fieldOf,
+  MAX_DESCRIPTION,
   type Money,
   type Schema,
   type SelectOption,

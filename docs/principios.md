@@ -2,7 +2,8 @@
 
 Las reglas vigentes de Boni, cortas, cada una con su fecha y **la prueba que la vigila**. Se leen antes de cada paso
 (Juan, 2026-10-25: «que a medida que avancemos no se rompa la aplicación»). El porqué y el detalle están en
-`docs/nucleo.md`, `docs/extensiones.md`, `docs/design-guide.md` y, en Boni, `wiki/temas/diseno-de-interfaces.md` §9.
+`docs/nucleo.md`, `docs/clases.md`, `docs/contexto.md`, `docs/extensiones.md`, `docs/design-guide.md` y, en Boni, la
+nota de diseño de interfaces (§9).
 
 Cómo se usa:
 - **Una decisión nueva de Juan que se pueda comprobar con código entra aquí con su prueba, en el mismo PR.** Si un cambio
@@ -20,6 +21,7 @@ Cómo se usa:
 | A-03 | Todo por la tailnet; por Funnel solo la lista blanca de rutas; una ruta nueva es de la tailnet | 2026-10-19 | `apps/server/src/routes.test.ts` |
 | A-04 | Lo que ve la IA lo decide Juan, por colección y por reglas; lo privado solo se desbloquea desde la página de su colección | 2026-10-20 | `packages/store`, `packages/agent` (`readStore`), `apps/server/src/data.test.ts` |
 | A-05 | Boni no cambia su propio código; la configuración peligrosa (proveedores, presupuestos, capacidades) solo con fricción, en Ajustes | 2026-10-21 | Sin prueba (revisión) |
+| A-06 | Lo privado se hereda: una colección es al menos tan cerrada a la IA como su madre, y una consulta de un modelo sobre la madre no devuelve ni cuenta lo de una hija cerrada para él (`docs/clases.md` §2.8) | 2026-10-27 | Pendiente (PR «Clases en el núcleo») |
 
 ## D. Datos
 
@@ -34,6 +36,12 @@ Cómo se usa:
 | D-07 | El motor de gráficas da exactamente los números del original en Python | 2026-10-19 | `packages/views` (`golden/cases.json`), `apps/server/src/v1/v1.test.ts` |
 | D-08 | Lo que cuenta un bloque se puede ver: un clic lista sus filas (o las de una barra o un punto), las mismas que suma, elegidas por el mismo motor | 2026-10-25 | `packages/views/src/catalogue.test.ts` (300 páginas al azar: las filas suman lo mismo), `apps/server/src/data.test.ts`, `e2e-boni/models.spec.ts` |
 | D-09 | Una página guardada con un bloque que ya no existe pierde solo ese bloque, nunca el resto | 2026-10-26 | `packages/views/src/templates.test.ts`, `apps/server/src/pages.test.ts` («a retired block keeps the rest») |
+| D-10 | Las colecciones son clases: una raíz con los campos nativos (título, nota, creado, editado, quién) y cada colección hereda los campos de su madre, con el mismo id; una sola madre (`docs/clases.md`) | 2026-10-27 | Pendiente (PR «Clases en el núcleo») |
+| D-11 | La tabla, las consultas y las gráficas de una colección incluyen los registros de sus descendientes; la colección de cada registro es una columna nativa | 2026-10-27 | Pendiente (PR «Clases en el núcleo») |
+| D-12 | Mover un registro de colección (o una colección de rama) conserva su id y su historia; los valores que se quedan sin campo se archivan, nunca se pierden | 2026-10-27 | Pendiente (PR «Clases en el núcleo») |
+| D-13 | El árbol enseña colecciones y registros con nota (una plantilla vacía no cuenta); cada colección elige si sus notas salen en él | 2026-10-27 | Pendiente (PR «Un solo árbol») |
+| D-14 | Nada del dominio del usuario en el código ni en los prompts: cualquier colección con fecha puede ser calendario y se separa o colorea por el campo que elija el usuario | 2026-10-20 | Pendiente (prueba con el PR que quite los nombres de calendario fijos) |
+| D-15 | Cada colección tiene una descripción (qué va en ella), que sustituye a los README; la escriben el usuario o una IA y se deshace | 2026-10-27 | `packages/entities/src/ops.test.ts` («describe_type»), `apps/server/src/mcp.test.ts` («the guide is computed») |
 
 ## I. Interfaz
 
@@ -49,6 +57,15 @@ Cómo se usa:
 | I-08 | Nada interno a la vista: ni ids, ni rutas del vault, ni nombres de campos de Boni | 2026-10-24 | Sin prueba (revisión de capturas) |
 | I-09 | Maqueta con la app real antes de programar una pantalla nueva | 2026-10-24 | Sin prueba (forma de trabajar) |
 | I-10 | Un bloque de enlace solo abre una página real; si su destino ya no existe, lo dice en vez de abrir una vista fija | 2026-10-27 | `packages/views/src/catalogue.test.ts`, `packages/views/src/templates.test.ts`, `apps/server/src/pages.test.ts`, `e2e-boni/audit.spec.ts` |
+
+## T. Forma de trabajar
+
+| Id | Regla | Desde | Prueba |
+|---|---|---|---|
+| T-01 | Las instrucciones para desarrollar Boni viven en el repo: `AGENTS.md` corto y sin inventarios, y estos principios; lo personal (NAS, despliegue) y cómo trabajar con Juan, en Boni (`docs/contexto.md`) | 2026-10-27 | `scripts/map.test.mjs` («AGENTS.md stays short») |
+| T-02 | Lo que se puede calcular no se escribe a mano: el mapa del código sale de `make map` (la descripción de cada paquete y la primera frase de cada fichero) y la estructura de los datos, del `guide` del MCP | 2026-10-27 | `scripts/map.test.mjs` («every package and file says what it is»), `apps/server/src/mcp.test.ts` («the guide is computed») |
+| T-03 | Cada principio apunta a pruebas que existen | 2026-10-27 | `scripts/map.test.mjs` («principles name files that exist») |
+| T-04 | El estado y la Cola del desarrollo son registros de Boni, no notas largas ni ficheros del repo | 2026-10-27 | Sin prueba (forma de trabajar) |
 
 ## Sustituidas
 

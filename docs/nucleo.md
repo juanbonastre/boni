@@ -148,6 +148,9 @@ publica con su propio prefijo de etiqueta (`boni-android-v…`, `calendar-androi
 
 ### 4.1 Tipos, campos y entidades
 
+> **Ampliado (Juan, 2026-10-27):** las colecciones forman un árbol de clases: una raíz con los campos nativos, cada
+> colección hereda los campos de su madre y su tabla incluye los registros de sus hijas (`docs/clases.md`).
+
 ```ts
 type FieldType =
   | "text" | "longtext"            // longtext = Markdown
@@ -756,6 +759,10 @@ interface ViewSpec {
 
 ## 9. Importación, espejo y exportación
 
+> **Superado (Juan, 2026-10-27):** ya no hay vault. La importación del vault, el espejo, las zonas por carpeta y
+> Boni Calendar sin servidor salen del código (`docs/clases.md` §4); la exportación (9.3) se queda. Lo demás de esta
+> sección queda como historia.
+
 ### 9.1 Importación del vault (primera migración)
 - **Cómo se lee:** con `vault-fs.cjs` y sus reglas (nunca `private/` ni `restricted/`, ni carpetas con punto). En el
   NAS el contenedor ya tiene esas dos carpetas tapadas con montajes vacíos.
@@ -868,6 +875,9 @@ En el NAS lo genera el servidor. En el producto alojado lo genera el dispositivo
 importación desde Notion y CSV, más adelante.
 
 ## 10. El calendario como módulo
+
+> **Ampliado (Juan, 2026-10-27):** un calendario es una vista de cualquier colección con un campo de fecha, que el
+> usuario puede separar o colorear por uno de sus campos; nada en el código nombra sus colecciones (`docs/clases.md` §2.10).
 - **`packages/calendar` no cambia de fondo.** `CollectionProvider` ya separa las filas de dónde viven. Se añade un
   `coreProvider` que traduce entidades a `Row` (con `Row.id` = id de la entidad y los valores por `key` del campo), y la
   web del calendario funciona igual contra el núcleo.
@@ -877,7 +887,7 @@ importación desde Notion y CSV, más adelante.
   `/api/external`, `/api/reminders`, `/api/push`, `/api/collections/reminders`. Avisos, UnifiedPush, calendarios
   externos y la prolongación de series se mueven tal cual. Las apps del calendario ya instaladas siguen funcionando sin
   actualizarse.
-- Como el id de fila deja de ser la ruta de la nota, se cumple la idea pendiente de `docs/estado.md` ("un índice con id
+- Como el id de fila deja de ser la ruta de la nota, se cumple la idea pendiente del antiguo `docs/estado.md` ("un índice con id
   propio por evento").
 
 ## 11. Transición desde los dos servidores, sin romper nada

@@ -1,521 +1,69 @@
 # AGENTS.md — Boni
 
-The Boni monorepo (`juanbonastre/boni`, renamed from `boni-calendar` on 2026-10-19). Today it holds **Boni Calendar**:
-a desktop and phone calendar app with the UX of a modern day/week/month calendar, built for one user (Juan), and its
-server. It is growing into the Boni core (entities, agent, views) and the Boni apps, following the approved design in
-`docs/nucleo.md`: one server, one account, several apps published separately (each with its own release tag prefix).
-Project notes live in Juan's vault (`proyectos/boni-plan.md`, `proyectos/boni-calendar.md`).
+Boni is a personal system: one server, one account per person, the person's data as collections, an assistant whose
+model plans while code decides what is allowed, and the apps over it (Boni and Boni Calendar, on the desktop and on
+Android). This monorepo holds all of it. **The repo is public:** everything in it is invented.
 
-**Before working, read in the vault** (they are not loaded by themselves): `proyectos/boni-plan.md` → "Cómo trabajar
-en Boni (leer primero)" and the last entries of its Registro (the state and the next step), and
-`proyectos/boni-calendar.md` → "Errores y soluciones"; and in this repo **`docs/principios.md`**: the rules that must
-not break, each with the test that guards it (a decision of Juan's that code can check enters there with its test, in
-the same PR). Say in your first reply what you read. Rules about how to work
-are written there (or here, for code), never left in a chat. Juan uses **Boni's desktop app** (`apps/boni-desktop`):
-UI work is done and tested for it (see that folder below).
+Before a big step read `docs/principios.md`: the rules that must not break, each with the test that guards it.
+Design, in Spanish (Juan's docs): `docs/nucleo.md` (the core: data, store, agent, security), `docs/clases.md`
+(collections as classes), `docs/contexto.md` (what is written and what is computed for agents), `docs/extensiones.md`
+(extensions), `docs/design-guide.md` (every UI). Code, comments, commits and AI-facing text are in English.
 
-Names that devices depend on stay as they were when folders moved: the desktop package `boni-calendar-desktop` (its
-userData folder and the `.deb`), the Android `applicationId` and the workflow file `android.yml` (its run number is the
-`versionCode`), the Obsidian plugin id `boni-calendar`, the IndexedDB stores `boni-calendar-server*`, the server's start
-log line and the Docker image tag on the NAS.
+## Where things are
 
-## Layout
+- `make map` lists every package and app with its description; `make map P=<path>` lists its files, each with the first
+  sentence of the comment it starts with. Nothing here lists folders by hand (T-02): a new package gets a
+  `description` in its `package.json`, a new source file starts with a comment saying what it is for.
+- Working on Boni Calendar's UI or its engine (`apps/calendar-web`, `packages/calendar`): read
+  `docs/agents/calendar.md` first.
+- Juan's data, his instructions for assistants, the project's state and its queue live in **Boni**, through Boni's MCP
+  (`guide` first). So does everything about his machines (NAS, deploy, ssh, agent-sudo): never in this repo.
 
-```
-packages/calendar/ Pure TypeScript, no DOM: civil-day/timezone math (time.ts), data model (model.ts), overlap and
-                 lane layout (layout.ts), per-day segments (queries.ts), quick-create text parser (quick.ts),
-                 deterministic sample data (sample.ts). Collections (phase 2): typed tables, calendar views with
-                 column mappings and row providers (collections.ts, projection.ts, codec.ts, provider.ts,
-                 validate.ts, sampleCollections.ts). Notes with YAML properties (notes.ts: `parseNote`, `patchNote` change only
-                 the edited lines, `formatNote`). iCalendar feeds into read-only events (ical.ts, `parseIcal`). Vitest.
-packages/entities/ The core's data model (pure, no I/O; docs/nucleo.md, 4): types, fields and values (`checkValue`,
-                 `convertValue`), provenance labels (`join` keeps the lowest integrity and the highest sensitivity;
-                 `derive` marks values a plan computed, which `canBeDestination` refuses) and schema operations
-                 (`applySchemaOp`: each returns its inverse; Boni's own types only with `{ system: true }`). Values are
-                 kept by field id; keys are ASCII. Property tests use a seeded generator (`random.test-util.ts`).
-packages/store/  One SQLite per user (`openUserStore`, node:sqlite, no native modules): entities, links, a label per
-                 field (`field_prov`, raised to the field's and type's sensitivity), an FTS5 index, and an operation log
-                 with before and after. Undo is a new operation (`undo`, `undoRun` for a whole agent run, all or
-                 nothing); it refuses while a later change of the same entity is still in effect. `null` is never
-                 stored (same as a missing key). `readQuery` runs SELECTs under an authorizer (readable tables only,
-                 no pragmas but `data_version`, no `load_extension`). Keys: a data key per user, stored only wrapped
-                 (`wrappedKeyProvider`); backups are `VACUUM INTO` sealed with it (AES-256-GCM).
-                 `journal.ts` (`store.journal`): the agent's runs, steps (with the rule that decided), model calls,
-                 proposals, confirmations (hash-bound, used once, expiring) and daily budgets; `readQuery` cannot
-                 read them.
-                 `settings` (`setting` / `setSetting`): extensions' settings and working state, outside the log and
-                 out of `readQuery`'s reach (secrets go in sealed with the user's data key by the caller).
-                 `aiAccess` has four levels (`visible`, `opaque`, `restricted`, `private`; `closedToAi` for the
-                 last two): lowering a `private` type needs `setAiAccess(..., { unlock: true })`, which the app
-                 sends only from the collection's own page (Colecciones) after Juan types its name. `zones` /
-                 `setZone`: where a type came from (the vault's `restricted/` or `private/`); the import raises it
-                 to that level, and the mirror never takes it. `aiRules` / `setAiRule` / `removeAiRule`: a part of a
-                 collection with its own level (Notion's filter as JSON); whatever lowers something private needs
-                 `unlock` too. `putFile` / `getFile`: attachments by sha256 (a `file` value), outside
-                 the log and `readQuery`, at most `MAX_FILE_BYTES`.
-                 `audit.ts` (`store.audit`; Juan, 2026-10-24): who did and saw what. `actions` (every action of
-                 anyone: a model call, a tool, an MCP call, a page fetched, a user's read where asked; `by` such as
-                 `model:reader:<provider>/<model>`, `mcp:<device>`, `user:<device>`, set by code), `access` (per
-                 action and entity: fields in clear, fields only as shape, the note's text, files; ids, never
-                 values), `entity_meta` (each row's system columns, kept in the same transaction). Operations
-                 carry `by` and `action`; operations and actions are chained by sha256 (`verify`). None of it is
-                 readable by `readQuery` or any model. `blame.ts`: who wrote each line of a note, from
-                 `bodyVersions` (the log's versions). Nothing is deleted by default; `storage()` measures.
-packages/identity/ The single Boni account (system.db; docs/nucleo.md, 6): accounts made by the admin (`src/cli.ts`),
-                 devices with a trust level (personal / shared / ambient; only another personal device raises it),
-                 sessions stored as sha256 of the token (same scrypt and token hashing as both old servers, so
-                 `import-accounts` moves their accounts and sessions and devices stay logged in), account data,
-                 push addresses, and each account's data key, wrapped (`wrappedKeysIn` for @boni/store). The
-                 server uses it since plan PR 6.
-packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed catalogue (`viewErrors` checks every
-                 field it names, `viewRows` filters/sorts/limits) and the chart engine `computeChart`, ported function
-                 by function from the first Boni's Python engine over a `Profile` (money movements: `moneyProfile`
-                 with the single definition of spending, each category's `CategoryKind` from the account's
-                 Categorías or `kindByName`; any type: `entityProfile`, count/sum/avg). It must give
-                 the Python numbers exactly (Python's round to even and CPython 3.12's compensated sum included):
-                 `golden/cases.json` comes from the original engine (`golden/make_golden.py`); a change to the
-                 engine changes them only on purpose.
-                 `page.ts`: a page's blocks (`PageSpec`: heading, text, chart, button), closed (`pageErrors`).
-                 `filter.ts`: Notion's filter rules (`filterErrors`, `matchesFilters`), the one matcher for a
-                 database view and for a protection rule (the agent depends on views for it).
-                 `catalogue.ts` (Juan, 2026-10-24): the block catalogue, ONE list of the kinds of block and every
-                 setting each takes, from which come the user's panel of a block, the checks (`catalogueErrors`:
-                 a value not among what the user's data offers is `not-in-data`, never replaced) and what an AI
-                 is told (`catalogueForAI`). A setting added there reaches all three. Blocks sit on a grid of 12
-                 columns (`at: { row, col, w, h }`; a row's columns add up to at most 12). `blockData.ts`: a data
-                 block (number, bars, graph) computed from a collection with the chart engine (`computeBlock`), and
-                 the rows it counts (`blockRows`, the engine's own selection, `chartRecords`: they add up to it).
-                 Pages hold no Boni-only blocks (design audit, Juan 2026-10-25): what Boni shows of itself is
-                 read-only collections (`SYS`); a stored page loses only retired blocks (`withoutRetired`).
-                 `templates.ts`: Boni's template pages («Uso de la IA», «Actividad», «Registro»; `templatePage`,
-                 `templateChanges`), each account's once, restorable (`PageSpec.template`). Links resolve only to real
-                 pages, including when a template is restored.
-                 `randomPage.test-util.ts`: random users and random pages from the catalogue (300 seeds must be
-                 valid and compute; a broken setting must give problems, never a chart).
-                 `markdown.ts`: a note's Markdown as the page editor's blocks and back (`markdownToBlocks`,
-                 `blocksToMarkdown`; what the editor does not paint stays as written), and `leadingTitle` (a note
-                 is titled by its first `# Heading`, which the import takes out of the text).
-packages/vault-import/ The vault as Boni's first import (docs/nucleo.md, 9.1; `src/cli.ts --vault --store [--apply]`,
-                 dry run by default; never writes the vault). Zones as everywhere (`scan.ts`: no private/, restricted/,
-                 dot folders, _system/ notes, symlinks). Type by folder (agenda by `_system/colecciones`), fields
-                 inferred from all values (names kept, keys ASCII), `[[links]]` that all resolve to one type become
-                 relations, every value `imported` with its note as the source; access secrets are left out
-                 (`secrets.ts`), identity numbers make a value sensitive. Re-runs update only changed notes (hidden
-                 path and hash fields) and trash notes that are gone; the whole run is one `undoRun`. A note Boni's mirror
-                 writes for a type in core mode (its `boni_id`) is never imported as a note of its own, `boni_*` lines are
-                 never fields, a new value of a list field becomes a new option, and attachments are read one at a
-                 time (the server's container has 384 MB). A calendar note's `Key: [[link]]` lines that its
-                 collection's template writes (`Area: [[docencia]]`) become properties (`liftTemplateLinks`).
-                 `--zone restricted|private --vault <that folder>`: one of the vault's zones, run by Juan alone
-                 (no agent-sudo action on purpose: the server and the AI never see those folders); a type per
-                 first-level folder put in the zone, attachments a row each (`f_boni_file`), paths kept as
-                 `<zone>/...` so each import only ever touches its own rows; its report is counts only
-                 (`--details`, names and paths, is for Juan).
-packages/agent/  The agent engine (docs/nucleo.md, 7; the model is untrusted, security is code): the plan language
-                 (`plan.ts`, flat steps; expressions are literals, quotes of whole spans of the request, references or
-                 one level of the closed pure functions of `fns.ts`), labelled values (`values.ts`: per item, `derived`,
-                 the entity version each came from), the tool registry that fails closed with capabilities per effect
-                 class (`tools.ts`), the policy engine `decide` (`policy.ts`, rules P0-P16 in order, deny by default),
-                 `toPlannerView` (`view.ts`, the only way into the planner: what it may not see becomes a handle),
-                 quarantined readers (`readers.ts`), confirmations painted by code and bound to a hash (`confirm.ts`),
-                 and the interpreter and turn (`agent.ts`: ask, confirm, inbox, undo by run, limits).
-                 The panel of requests (Juan, 2026-10-24): background work may `ask` too (asking has no effect;
-                 P7 holds after the answer): the run waits in the journal (`requests`, `waiting_runs`, store
-                 migration 9) for `REQUEST_DAYS` (7), survives a restart, and goes on with `answer(run, ask, a,
-                 { trust })` (typed text is `user` only from a personal device); `dismissRequest`, `expireRequests`.
-                 classify's `ask` param (set by code): when the decider answers but disagrees with itself or is not
-                 confident, Juan chooses among the options (the step waits like an `ask`; his answer is the choice
-                 and no model is called again); the decider down, the reader chooses as before. Mail's live
-                 reading uses it (`mailPlan(..., { askWhenUnsure })`, «¿A qué colección va «asunto»?»).
-                 What Juan keeps from the models (per type: visible / opaque / hidden, `store.aiAccess()`) is
-                 applied in `readStore`, the agent's only read view: hidden types do not exist there, opaque ones
-                 carry `noModel` on every value (planner handles, no reader: R3). Providers:
-                 `fake` and `adversary` only (the real one comes later). `test/injections/*.json` is the injection
-                 corpus: the attacker plans, the reader repeats the attacker and Juan says yes to everything, and
-                 the properties of `test/adversarial.ts` must hold; `random-plans.test.ts` does the same with 300
-                 seeded random plans. A change that breaks a property fails CI.
-                 `decider.ts`: the `decider` role, Jev (TypeSafe's decision model, straight or through OpenRouter):
-                 choices among the code's options with a confidence, yes/no probabilities, never text; the code
-                 checks every answer and decides with thresholds. `filling.ts`: reader `fill`, a proposal's other
-                 fields (a select's options, the entries a relation may point to, checkboxes; `fields` bound by
-                 code only) and its note: with Jev each choice asked in both orders and kept only when they agree,
-                 the reader writing the note only when Jev says it is worth it; without Jev the reader fills all.
-                 A call step's `why` is the reason its proposal shows (the reader's quote); `zip` walks a second
-                 list along `each` (`$zip`).
-                 `models.ts`: «Modelos» (Juan, 2026-10-24), pure: the roles (planner, reader, decider, reviewer), an
-                 account's `ModelsConfig` (a choice per role, the monthly budget, dollars to euros) and its checks,
-                 `privacyOf` (only OpenRouter with `zdr` is "keeps nothing"; Anthropic's own API deletes in 30 days)
-                 and `anthropicCost` (its price table). Every `Usage` carries `cost` in dollars when known (OpenRouter
-                 says it; Anthropic's is computed). `overBudget` stops background model calls (P13); `setProviders`
-                 swaps an agent's models without losing runs; the reviewer may have its own model (role `reviewer`).
-                 `anthropic.ts`: the real provider (Messages API with structured output, no tools, no SDK);
-                 `apiSchema` reduces schemas to what that API accepts (the code checks every answer again anyway).
-                 `eval/eval.ts`: a small evaluation with the real models, outside CI, run by hand with a budget.
-                 `eval/lib/` (`@boni/agent/evals`): the evaluations as functions scored by code (`evalReader` over
-                 invented mail, `evalDecider` by the agent's own both-orders rule, `evalPlanner` in a store of its
-                 own with the production tools, `evalRole`); the by-hand scripts and the server's «Modelos» use them.
-                 `reading.ts`: reading a message by modules (docs/nucleo.md 7.4b; reader `read_message`): a long
-                 base prompt plus each module's part (`MODULES`: tasks, events), reasoned items (quote, actor,
-                 kind, then title and day) and `checkReadMessage`, where the code keeps only what the recipient
-                 does in an active module. `eval/mail.ts` measures it on invented mail shaped like the real
-                 failures; run it before and after changing the prompt (Haiku 4.5, the server's reader, 5 runs).
-                 `test/boundary.test.ts`: the core (entities, store, agent, views) depends on nothing of the vault,
-                 the calendar, the apps or Obsidian; Obsidian is an integration at the edge (docs/nucleo.md, 9.4).
-packages/mirror/ The Markdown mirror (docs/nucleo.md 9.2, 9.4; an edge, never imported by the core): for each type in
-                 `core` mode one note per entity in the vault, in a profile (`vault`: where the import found it, with
-                 its properties, via `propertyFields`; `generic`: `Boni/<Type>/<title>.md`), only the changed lines
-                 (`patchNote`), `boni_id` / `boni_integrity` / `boni_omitted` in the frontmatter, low-integrity text
-                 neutralized (P17). Properties are compared by meaning (`sameProp`: lists are sets, links the note
-                 they point to). A note that is not the mirror's last version is never overwritten: the hand edit,
-                 compared three-way with the mirror's last text, becomes a proposal (`Agent.propose`); new notes in
-                 the type's folder (import rules, `importable`) propose an entity, removed ones its removal; rejected,
-                 the core's version comes back. A note titled by its first `# Heading` (no title property) keeps it: the
-                 heading is its title both ways (`bodyFor`, `readOwnTitle`). `switchToCore` reports first, with each
-                 changed property's values. State in its own SQLite (`state.ts`).
-packages/export/ Export in one click (docs/nucleo.md 9.3): `exportZip` (json/<type>.ndjson the faithful copy with labels,
-                 schema.json with each type and a JSON Schema, <type>/*.md through the mirror's `render`, csv/ with no
-                 formulas, views.json, optional log.ndjson from `store.log()`), a minimal zip of its own (`zip.ts`,
-                 `readZip` checks names, CRC and size) and `importExport` (dry run by default; the file's labels are
-                 capped at `imported` unless `trustLabels`). Exporting again what was re-imported gives the same files.
-packages/extensions/ Extensions (docs/extensiones.md 3): the manifest (types, sources, readers, flows, routes,
-                 learning, needs), closed, validated against the build's catalogue (`manifestErrors`), and
-                 `moreNeeds` (what a new version asks for). Pure, no I/O. The server keeps each account's
-                 installed extensions as entities of the system type `extension` (`apps/server/src/extensions.ts`:
-                 `CATALOGUE`, the presets, `ensurePresets`); mail is the first one: its modules, routes,
-                 learning and budget come from its manifest, and off it fetches and reads nothing.
-packages/mail/   Mail as a source (an edge, like the mirror; docs/nucleo.md decision of 2026-10-20): `ImapReader`, a
-                 read-only IMAP client with no dependencies (EXAMINE, BODY.PEEK, an allow-list of commands checked before
-                 sending; TLS only, `connect` for tests) and `parseMessage` (headers, encoded words, multipart, charsets;
-                 the plain part first, HTML as text without its hidden elements, counted; attachments by name only).
-packages/net/    Safe outbound HTTP (`fetchText`): public addresses only, checked by the `lookup` Node connects with
-                 (no DNS rebinding), every redirect again, IPv4 hidden in IPv6 judged as IPv4, size and time limits.
-                 Every download the server or the agent makes on someone's behalf goes through it (today `feeds.ts`).
-apps/calendar-web/ React 19 + Vite UI. Runs in any browser and inside the desktop shell.
-  src/engine/    Viewport (smooth scroll / zoom / horizontal motion) and the per-day event index.
-  src/components/ TimeGrid (day, week, N days), MonthView, Sidebar, EventDetail, Modals, ...
-  src/store.ts   zustand store: data, settings, view, selection, drag, undo history.
-apps/calendar-desktop/  Electron shell (chosen over Tauri after measuring, see docs/rendimiento.md): window, packaging (.deb, AppImage).
-                 Background mode (`desktop-prefs.cjs`, `window.boniDesktop`): closing hides to the tray, optional
-                 autostart entry (`--hidden`), so reminders arrive with the window closed. `vault-fs.cjs` is the
-                 only code that touches the vault's files (confined to the root, never `private/` or `restricted/`,
-                 atomic writes with a conflict check); the UI reaches it through `window.boniVault` (`vaultBridge.ts`).
-                 With the bridge's `noteApp: "boni"`, Ctrl+click and "Abrir en Boni" open an event's note in Boni's
-                 desktop app (`boni://note?path=...`). A double click opens the calendar's own note peek (Juan,
-                 2026-10-22): with Boni's address in Settings → Desktop (`desktop-prefs.cjs` `boniUrl`, an https
-                 origin) a small window loads `<address>/boni/?peek=1` (Boni's page, its own session in the
-                 `persist:boni-peek` partition, only that origin; `peek-preload.cjs` gives it `window.boniEmbed`:
-                 ready, hide, open in Boni, the notes) and a click in the calendar hides it at once. Without an
-                 address, Boni's own peek (`&peek=1`, hidden by `boni://peek?hide=1`). A proposal of Boni's inbox
-                 (a `ghost:<id>` row, `isProposalId` in core) is drawn dashed and read only (`isLocked`, never a row
-                 change, never a notice); one click calls `boniVault.openProposal`: the peek gets `peek:proposal`
-                 (`boniEmbed.onProposal`), or Boni opens `boni://proposal?id=<id>&peek=1`.
-                 `make e2e-calendar-desktop` drives it for real (not in CI).
-legacy/obsidian/ The Obsidian plugin and its tests in the installed Obsidian, out of the build since Juan dropped
-                 Obsidian (2026-10-22; to come back with the version for more people, see legacy/README.md).
-apps/calendar-android/ The same app on Android (Kotlin shell, `make`-less: CI builds it, android.yml): the built web UI in a
-                 WebView from the APK's assets. `AndroidBridge.kt` is `window.boniAndroid` (async calls, answers
-                 fetched with `take`; web side `src/android.ts`): the vault through the Storage Access Framework
-                 (`VaultSaf.kt`, folder chosen once; same rules as vault-fs.cjs, trash = the vault's `.trash`), index
-                 in the app's files, downloads for external calendars. Signed releases (secrets) for Obtainium.
-                 Reminders: `Notices.kt` (exact alarms + notifications, re-armed at boot), `ServerSync.kt` (with a
-                 server the app fetches `/api/reminders` itself: on a UnifiedPush message via `BoniPushService.kt`,
-                 connector 3.0.x, at boot and every few hours).
-apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeScript directly, no build. Reuses
-                 packages/calendar, the web's vault loader (`loadVault`), writer (`vault/provider.ts`) and the desktop's
-                 `vault-fs.cjs`, so it reads and writes the vault with the apps' rules; the vault stays the truth.
-                 Node only strips types there: no parameter properties or enums in any file the server imports
-                 (`write.test.ts` loads the server the way its container does). SQLite (`node:sqlite`) only for
-                 the single Boni account's system.db (@boni/identity, next to BONI_DB: accounts made by the admin,
-                 `src/cli.ts`, devices, sessions as token hashes, per-account data); on its first start it imports
-                 the old boni-calendar.db's accounts and sessions once (`startup.ts`), leaving that file as it was. API: snapshot,
-                 changes since a version, live stream (SSE), `POST /api/apply` (only with `BONI_WRITE=1`; per-row
-                 version check, a session's own writes are not conflicts); serves the web app; CORS open.
-                 With writing on it tops up open-ended series itself (`topUpSeries`, after changes and every 6 h).
-                 Client side: `apps/calendar-web/src/remote.ts` (login, snapshot, changes, live stream with reconnection, last
-                 snapshot in IndexedDB) and the store's `source: "server"` (`connectServer`, `loadServer`), which applies
-                 server data through the same path as a vault read (`applyLoad`). Its rows are notes too (id = path),
-                 so "Open note in Obsidian" works there as well (a host without a vault folder opens
-                 `obsidian://open?file=`, Obsidian's open vault). Writes: `serverWriter.ts` is the store's provider
-                 there (optimistic, outbox in IndexedDB sent in order, pending changes shown over the server's
-                 rows until its stream brings that version, temporary ids mapped through `aliases`). Phase 4: the
-                 account's prefs (`ACCOUNT_PREFS` in store.ts) and external calendars live on the server
-                 (`account.ts`, the list encrypted with `secret.ts`; `feeds.ts` downloads them, public addresses
-                 only); the store syncs them (`syncAccount`, `pushAccount`, "account" stream event). Dockerfile for the NAS.
-                 Two entries over one app (`makeApp` + `serve`): the tailnet's has every route, the public one
-                 (`BONI_PUBLIC_PORT`, for Funnel) only the allow-list of `routes.ts`, answering 404 for anything else
-                 before authentication. Every route must be listed there (`routes.test.ts` reads http.ts); a new
-                 route is `tailnet` unless it is deliberately made public (`:name` segments for parameters).
-                 `src/v1/`: the first Boni's API v1 (`/api/v1/*`, `/healthz`; tailnet only) so the Boni apps move
-                 here unchanged: same paths, bodies and Spanish error messages. Charts through `@boni/views`, money
-                 read from Boni itself once the movements are in core mode (`v1/storeMoney.ts`, `MoneySource`:
-                 the same records as the notes gave; categories come in alphabetical order, a set) and otherwise
-                 from the account's vault notes (`finanzas.ts`, via `vault-fs.cjs`), "Apuntar gasto" writes the
-                 movement note with `create` (never over another note; once per client id, queued if the vault is
-                 unreachable). Charts, shortcuts, widgets, prefs and captures per account in system.db (`v1/store.ts`);
-                 `cli.ts import-boni` brings them, and the accounts, from the old `boni.sqlite3`. `golden/v1.json` is
-                 what the original Python server answered (`golden/make_golden.py`); `v1.test.ts` must match it.
-                 `GET /api/export` (tailnet, personal devices) and `cli.ts export` / `import-export`.
-                 Daily copies of each account's store and mirror state, sealed with the account's data key
-                 (`backupStoresNow`, `cli.ts restore`); `BONI_TRUSTED_PROXIES` for the public entry behind an internal network.
-                 `src/mail.ts`: each account's mailbox (`@boni/mail`, read-only; Settings → Correo, `/api/mail`, a
-                 personal device; the app password encrypted with `secret.ts`, never sent back): every 5 minutes new
-                 mail becomes entities of the account's "Correos" (made by the code; every value `external`, the sender
-                 as its source), from the last UID, starting over by date when UIDVALIDITY changes. With the agent on
-                 and collections marked, each new mail runs `mailPlan` in the background (P7: extract_tasks, then
-                 classify among the marked collections, each option with up to three of Juan's own titles of it;
-                 one `entities.create` per task, which the policy sends to the inbox).
-                 Each item is then filled (reader `fill`, `fillFields`: the collection's selects, relations and
-                 checkboxes) and created along with it (`zip`), with the reader's quote as its `why`; with
-                 `TYPESAFE_API_KEY` (or `OPENROUTER_API_KEY`) Jev also chooses the collection (both orders agreeing).
-                 Juan may correct a proposal's title or collection before accepting (`proposalEdits.ts`:
-                 the day moves to the new collection's date field, the other filled fields do not); the journal
-                 keeps what changed (`edits`) and the reviewer reads it as a mistake of the reading.
-                 Since 15d each mail is read once with `read_message` (headers, where the user is, modules
-                 tasks and events); the reading guide (`MailGuide`: Juan's words, rules applied by code, examples)
-                 goes to the reader as `$guide`, bound by code. `src/mailReview.ts`: the reviewer, every 20 of
-                 Juan's decisions (or "Revisar ahora"): it suggests rules and examples, the code checks them
-                 against his decisions and re-reads decided mail to measure; kept only if better, until he answers.
-                 `src/blocks.ts`: a page's data blocks computed from the user's collections (`POST
-                 /api/data/blocks`, a personal device; each block's numbers or its problems; a read of the rows
-                 used, audited like a table listed, only the fields used).
-                 `POST /api/data/blocks/rows`: the rows one block (or one of its bars or points) counts.
-                 `src/systemCollections.ts`: Boni's own records as read-only collections, made on each read and never
-                 stored («Llamadas a modelos» from the journal, in euros at the account's rate; «Actividad de Boni»
-                 per day, actor and collection from the audit; «Ejecuciones» from the journal, run information and
-                 model calls): listed and counted like any collection, refused for
-                 writes, outside the store's schema so neither the agent nor the MCP ever sees them.
-                 `src/pages.ts`: the user's pages (system type `page` in the user's store, `/api/pages`): nothing
-                 fixed on screen, the sidebar and the start are what the user makes; `seedTemplates` gives each
-                 account, once, Boni's template pages; `seedFromV1` gives an account that used the first Boni, once,
-                 a page "Gastos" with what its home showed.
-                 `src/mirror.ts`: the mirror of each account's `core` types (after agent requests, calendar and data
-                 writes, and every 30 s; `BONI_WRITE=1` and the agent on); `cli.ts mirror` switches a type, dry run
-                 by default, and marks it in the store (`CORE_MARK`) so the vault's import never touches it again.
-                 `cli.ts mirror <name> --vault-off [--apply]` (`vaultOff.ts`; Juan, 2026-10-23: no more vault): the
-                 account without its vault folder, once its calendar and movements live in Boni; the mirror stops
-                 and the server reads no vault for it (the folder is kept in the store, `--vault-on` gives it back).
-                 A quiet round must stay cheap at Juan's size (~4,000 notes): no labels, no note texts, links and
-                 known paths only when a note changed.
-                 `src/calendarStore.ts`: an account's calendar from its own collections (Juan, 2026-10-22: one truth)
-                 once `cli.ts mirror <name> --calendar --apply` copied `_system/colecciones/` into the store
-                 (`calendar/defs`; only when every calendar's type is in core mode; `--calendar --stop` goes back to the
-                 vault). Same API as `vaults.ts` (`CalendarSource`): rows keep the note path as id, values by property
-                 name, a write changes only what differs, with the device's label; Boni's own edits reach the devices
-                 within a second. Pending proposals to create an entry of a calendar's collection are rows too
-                 (`ghost:<proposal id>`, read only: `apply` skips them; redrawn when `journal.pendingKey()` changes).
-                 `src/fromNote.ts`: "Apuntar gasto" with the movements in core mode creates the
-                 entity (the mirror writes the note), never a proposal. `e2e/server-boni.spec.ts` runs the migration
-                 with the same commands as the NAS.
-                 `src/audit.ts`: the audit for the app (`/api/data/audit/*`, personal devices): summary,
-                 actions with names, one action with its model call, a row's history (who saw it, changes,
-                 blame), verify, storage with advice (codes), and which of Juan's own reads are kept
-                 (`audit/userReads`, by level; restricted and private by default). Data rows carry their
-                 system columns (`columns`). The agent records each model call with what reached it
-                 (`exposure`, from each value's `from`/`refs`), every tool and page fetched; the MCP each call
-                 with what went back (properties, text or not) and its arguments without long texts.
-                 `src/mcp.ts`: Boni's MCP (`POST /api/mcp`, tailnet, a personal device's session that `cli.ts token
-                 <name> <device>` makes without a password): what vault-mcp did, over the account's collections
-                 (guide = the AGENTS.md note, collections, search, query with Notion's filters, read by id or vault
-                 path, create, edit, append, set_properties, recent_changes, trash, undo by run, upload_file (a
-                 file into "Archivos" at the vault path it would have had, e.g. a bank statement), finanzas_import,
-                 finanzas_close). Reads through the agent's view (`readStore`: levels and rules); writes only to what
-                 is visible, labelled `model`.
-                 `DELETE /api/v1/actions/:id` (`undoAction`): a capture just saved, out again (its notice's Undo; the
-                 same device, `UNDO_MS`; only a movement kept in Boni, to its trash).
-                 `src/money/`: the monthly reconciliation on Boni's own movements (ported from finanzas.py of the
-                 gastos-app repo, 2026-10-23; procedure in the vault's registros/finanzas/procedimiento-conciliacion.md):
-                 `sheets.ts` reads statements (CSV, .xlsx, the old .xls: OLE2 + BIFF8, no dependencies),
-                 `statements.ts` Revolut and ING lines with the script's references (byte for byte, so lines the
-                 script imported are known), `reconcile.ts` import and close over a `Book`, `book.ts` that book over
-                 the store (`t_movimiento`, `t_deuda`; new movements via `entityFromNote`, `imported` from their
-                 statement), `service.ts` the reconciliation over a `MoneyVault`; `storeFiles.ts` gives it the
-                 statements from Boni's "Archivos" (by the path each had; new ones via `upload_file`).
-                 `collections.ts`: the money's own collections (Juan, 2026-10-23: everything is a collection but
-                 attachments and notes): "Categorías" (name, `Tipo` gasto / ingreso / ni gasto ni ingreso, what goes
-                 in it) and "Reglas" (bank text, merchant, a relation to its category); a movement's `category` is
-                 a relation to Categorías (read and written by the row's name). `moneyCollections` (`cli.ts mirror
-                 <name> --money`, dry run by default) moves the categories note and `reglas.csv` in once, as one
-                 run; whether they are in use is that relation (`moneyCollectionsOn`), so undoing the run goes
-                 back to the note and the file. Boni's MCP has `finanzas_import` / `finanzas_close` (dry run by default; an applied
-                 call is one run, undone whole); only with the movements in core mode and not kept from the models. `export/` CSVs are no longer written.
-                 `src/agent.ts`: the agent's conversation API (`/api/agent/*`, tailnet only): one `@boni/store` per
-                 account (`users/<id>.db` next to system.db) and one `@boni/agent` each; the device's trust level is
-                 the turn's origin. On only with `ANTHROPIC_API_KEY`; otherwise 503 `agent-off`. The Registro's
-                 runs say what each was and what came of it (`runInfo.ts`: the mail read, the note edited by hand,
-                 the request; its proposals by status; what it changed, from `store.runOps`). `autoAccept.ts`: when
-                 Boni would accept a mail proposal alone (code's rule over Juan's decisions on ones like it; only
-                 measured: the card's `wouldAccept` and the Registro's `autoAccept`, nothing is accepted alone).
-                 "Ya lo hice": accept with `done`, the calendar's task column (`taskDoneField`) set to true.
-                 `src/models.ts` (`AccountModels`, `serveModels`): each account's models, served under
-                 `/api/agent/models` even with the agent off: the choices in its store, its keys sealed with its data
-                 key (never sent back), the server's environment as the default of every role it did not choose, the
-                 month's spending from the journal (`spending`), a notice once at the budget's fraction, the catalogue
-                 of OpenRouter models some provider serves keeping nothing (`/api/v1/endpoints/zdr`, via @boni/net).
-                 A model takes a role only after its evaluation (`POST /api/agent/models/evaluate`, one at a time,
-                 in the background, the role's current model too for comparison; recent = 30 days; what it costs is
-                 a journal model call, so it counts in the month); `PUT .../roles/:role` answers 409 without one.
-                 `GET /api/agent/requests`, `POST /api/agent/requests/:id/answer | dismiss`: the panel of requests;
-                 a new one is told to the devices as the live event `requests`.
-apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`legacy/boni/apps/web`, with its history):
-                 charts, shortcuts and "Apuntar gasto" over the API v1 (`src/core/api.ts`, `contract.ts`), the same
-                 page in a browser, in its desktop shell and in its Android WebView (`src/host.ts`). `api/` is the v1
-                 contract (`examples/` are real server answers the tests parse). Its Android shell is apps/boni-android
-                 and its desktop one apps/boni-desktop. The agent's conversation
-                 (`components/Chat.tsx`, `core/agent.ts` over `/api/agent/*`): every answer painted by this code from
-                 labelled values, text only as text (never HTML, Markdown or links; outside text marked),
-                 confirmations with the real values, their origin and warnings, the accept button changing side;
-                 the inbox one proposal at a time, the detailed run log with Undo and the audit. Dashboard pieces
-                 (`components/Dash.tsx`: tiles, bar lists, Boni's charts; `Audit.tsx`, `Notes.tsx` the notes by path,
-                 `History.tsx` a row's history and blame; system columns in tables, `view.system`).
-                 Pages on a grid of 12 (`core/grid.ts`: rows of columns,
-                 moves and widths, pure) with the block catalogue's data blocks (`components/DataBlockView.tsx`,
-                 `POST /api/data/blocks`) and each block's panel drawn from the catalogue (`components/BlockPanel.tsx`).
-                 A click on a data block lists what it counts (`components/RowsPanel.tsx`); its menu is on the handle.
-                 Boni's link block (`components/BoniBlocks.tsx`) and the template pages' «De Boni» / «Modificada» /
-                 restore (`components/TemplatePill.tsx`). Ajustes → Modelos (`components/ModelsSettings.tsx`, the
-                 parts in `components/Models.tsx`, over `/api/agent/models*`): each role's model, spending and budget,
-                 keys, evaluate and use; only Ajustes uses them (principle D-05). The server serves the built app at `/boni/` on
-                 the tailnet entry (`BONI_BONI_WEB`).
-apps/boni-android/ Boni's Android app (moved from `legacy/boni/apps/android` on 2026-10-23), the same shape as
-                 apps/calendar-android: apps/boni-web's build in a WebView from the APK's assets
-                 (`https://appassets.androidplatform.net`), `window.boniAndroid` (`AndroidBridge.kt`; web side
-                 `src/android.ts`): requests made natively with the token kept by the Keystore (`TokenVault.kt`), only on
-                 the paths `Net.kt` `Paths.apiRequest` allows (the same as boni-desktop's paths.cjs; keep both equal), the
-                 offline queue sent by WorkManager when the network comes back (`QueueWorker.kt`, rules in `QueueLogic.kt`
-                 = `src/core/queue.ts`), home-screen chart widgets and pinned shortcuts. CI `boni-android.yml` (no
-                 `make`): Kotlin tests and a signed APK with the same key as Boni Calendar; releases `boni-android-v0.2.N`
-                 titled "Boni Android …" for Obtainium; versionCode = 100 + run number (the first Boni's repo reached 17).
-apps/boni-desktop/ Boni's desktop app (Electron, package `boni`, `.deb` via `make package-boni`; moved from
-                 `legacy/boni/apps/desktop` on 2026-10-22): it bundles apps/boni-web's build (`scripts/copy-web.mjs`),
-                 keeps the token in the main process and calls the server for the page (`window.boniDesktop`), only
-                 on the paths `paths.cjs` allows; attachments are downloaded by the main process into a private
-                 temporary folder removed on quit and opened only when a viewer opens their kind (`files.cjs`;
-                 anything else is shown in its folder, never run). `boni://note?path=<vault path>` (the .deb
-                 registers the scheme; `links.cjs` takes only that shape) opens the row a vault note became
-                 (`GET /api/data/lookup?path=`): Boni Calendar's desktop app opens its notes in Boni this way, with
-                 `&peek=1`: a small frameless window made ahead and hidden (`?peek=1`, `PeekPage`), shown on the
-                 note and hidden by Esc, its close button or a click in Boni Calendar (which sends
-                 `boni://peek?hide=1`; it stays while Juan works in other apps) (the page says `peek-ready` before it is sent one) (v1, agent, pages, data, mail: a new API the app uses must be added
-                 there). Tray, autostart, desktop widgets. The daily copy on this computer (`backup.cjs`, Settings → Tus
-                 datos; off by default, `/SamsungSSD/Copias/Boni`, the last 7): the main process streams `GET api/export`
-                 to a hidden `.partial`, renamed only when the zip's end record is there; a missing folder is made only
-                 when the nearest existing one is not empty (an unmounted disk's mount point is) and with 2 GB free. E2E:
-                 set the folder before turning it on (turning it on copies at once). **Every change to apps/boni-web ships in a new desktop
-                 version too** (Juan uses the desktop app, not the browser): bump its version, `make package-boni`,
-                 and test it in the app itself with `make e2e-boni-desktop` (Playwright `_electron`, temporary profile,
-                 the real server with an invented account and vault; opens a window, not in CI).
-bench/           Smoothness benchmark runners and results. e2e/  Playwright tests and screenshots (Boni Calendar);
-                 e2e-boni/ the same for apps/boni-web (`playwright.boni.config.ts`, a fake server from `api/examples`).
-                 `e2e-boni/screens.spec.ts`: reference captures of the main screens (`__screens__/`, made on CI's
-                 machine; compared only in CI; new ones from the «screens» workflow). CI also runs
-                 `e2e-boni-desktop` on a virtual screen and refuses a change to apps/boni-web without a new desktop
-                 version.
-docs/            decisions and status. docs/nucleo.md: the approved design of the Boni core this repo is growing into.
-legacy/boni/     the first Boni (repo boni-pruebas, archived) with its history, real names replaced. Reference only:
-                 not built, linted or tested here; delete each piece once it is ported to the core.
-```
+## Commands (Makefile)
 
-## Commands (use the Makefile)
+- `make setup` installs · `make check` lints, type-checks and runs the unit tests (it must pass before every commit;
+  with `ANTHROPIC_BASE_URL` set in your shell, run it as `env -u ANTHROPIC_BASE_URL make check`) · `make map`
+- `make e2e` (Playwright on the system Chrome) · `make e2e-boni` (Boni's only) · `make e2e-boni-desktop` (Boni's real
+  desktop app; opens a window)
+- `make package-boni` (Boni's desktop `.deb`) · `make package` (Boni Calendar's `.deb` and AppImage) · `make server`
+- `make bench-chrome` / `make bench-electron`: the calendar grid's smoothness (`docs/rendimiento.md`)
 
-- `make setup` install dependencies · `make dev` UI dev server · `make check` lint + types + unit tests
-- `make e2e` Playwright (uses the system Chrome; screenshots land in `e2e/screenshots/` and `e2e-boni/screenshots/`);
-  `make e2e-boni` only Boni's
-- `make desktop` run the Electron app · `make package` build `.deb` + AppImage into `release/`
-- `make bench-chrome` / `make bench-electron` smoothness benchmark in a real window (see `docs/rendimiento.md`)
+## How a change is made
 
-## Rules
+1. A branch from `main`; nothing is pushed to `main` directly.
+2. `make check && git commit && git push` (a failure stops the chain), then a PR. Merge it yourself when CI is green
+   (with Android changes, also wait for the APK build). While CI runs, go on with the next thing.
+3. Every change to `apps/boni-web` ships in a new desktop version: bump `apps/boni-desktop/package.json`, then
+   `make package-boni` and `make e2e-boni-desktop` (CI refuses the change otherwise, I-05).
+4. A visual or behavioural change updates `docs/design-guide.md` in the same PR. A new screen starts as a mockup with the
+   real app (I-09). The main screens have reference captures, made by the «screens» workflow (I-07).
+5. A decision of Juan's that code can check enters `docs/principios.md` with its test, in the same PR.
+6. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
+   the built web app, phone-sized viewports, typing at a person's pace where timing matters. On his screen, capture only
+   the app window and delete the captures afterwards. Say what you verified and what you could not.
 
-- **Design consistency:** `docs/design-guide.md` is the visual and interaction reference for *all* Boni apps (this one is
-  the reference). Read it before touching the UI and update it in the same PR as any visual or behavioural change.
+## Hard rules
 
-- **Hosts:** the app runs standalone (browser tab, desktop shell) or inside another app (the Obsidian plugin). Everything
-  it needs from where it runs comes through `src/host.ts` (`mountApp` in `mount.tsx`): the vault bridge, a small storage
-  for settings and UI state, and whether it owns the window. So in UI code: no `window.boniVault` or `localStorage`
-  (use the host), no `document.querySelector` / `elementFromPoint` (use `findInApp` / `elementsAt`), `eventTarget(e)`
-  instead of `e.target` in window listeners (shadow roots retarget it), keyboard listeners only through `onKeys` (in
-  another app shortcuts work only while the calendar has the focus), overlays positioned inside `appRect()` (the app's
-  root is their containing block) and `cqh`/`cqw` instead of `vh`/`vw`. `styles.css` is scoped at build time
-  (`scopeCss.ts`): `:root` there means the app's root (theme, `mod-select`), every other selector ends up under it.
-  `e2e/embed.spec.ts` mounts the app inside a stand-in host page (`embed.html`, built only for the tests).
-  Network downloads go through `host.fetchText` (desktop: the main process, `net:fetch-text`; Obsidian: `requestUrl`).
-
-- **External calendars** (`src/external.ts`): subscriptions by iCal address, read-only. Their address lives in
-  `settings.externals` (device storage, never the vault: a private address is a secret; with a server, the account
-  keeps them encrypted and downloads them), the last copy in IndexedDB.
-  The store merges them into `data` (`withExternal`) but they are never rows: `reconcileRows` only ever sees the own
-  events (`isExternalEvent` filters them out), so nothing of them can reach a provider or the vault.
-
-- **Language:** code, comments, commits and AI-facing docs in English. UI strings only through `src/i18n.ts`
-  (Spanish first, English second, real accents in the UI). Docs for Juan in `docs/` are Spanish.
-- **No personal data, ever.** The repo is public. Sample data is invented (`ejemplo.*@example.*`); no hostnames,
-  tokens or paths of Juan's machines. Secrets never go in the repo.
-- **Time:** events store instants (epoch ms) + an IANA timezone, all-day events store civil days. All wall-clock
-  math goes through `packages/calendar/src/time.ts`. Never use `Date` local getters in UI code.
-- **Performance rules for the grid (they are what keeps it at 60 fps):**
-  - Wheel input only moves targets in `Viewport`; per-frame work writes `transform` / `height` to a handful of
-    elements directly (no React state, no CSS variables that cascade over the events).
-  - Event and label positions are percentages of the column height, never `calc(var(--hh) ...)` per element.
-  - Zoom is a compositor `scaleY` while animating and one real re-layout when it settles (`ZOOM_STRETCH_LIMIT`).
-    Text (`.ev-body`, hour labels, now label) is counter-scaled with `--inv` and sits on its own layers
-    (`will-change: transform`) so letters keep their size during the animation.
-  - Only a few days around the viewport are rendered (`BLOCK` in `TimeGrid.tsx`).
-  - Re-run `make bench-chrome` after touching the grid and compare with `bench/results/`.
-- **Sharp text (pixel alignment):** anything that sits on a GPU layer must sit on whole device pixels, or its text is
-  resampled and looks soft. So: strip translations are snapped (`snapPx`), column width and month row height are whole
-  device pixels, the committed hour height is a multiple of `HH_STEP` (4 px, so a 15-minute slot is whole pixels), boxes that
-  are centred with `translateY(-50%)` have an even explicit height, popover positions are rounded, and text layers
-  (`will-change`) exist only while zooming (`.zoom-armed`). `e2e/interactions.spec.ts` ("layout sits on whole pixels") guards it.
-- **The vault (phase 2, step 2):** the app reads `_system/colecciones/*.md` (one definition per collection: folder, columns,
-  mapping; `collectionDef.ts`) and then every note of each folder (`apps/calendar-web/src/vault/loadVault.ts`, through
-  `window.boniVault`). Row id = note path; every property of a note is kept in the row, the columns only choose what the
-  calendar shows, so unknown keys survive an edit. The vault is shown read-only until writing lands. Notes it cannot place
-  are listed in Settings, never hidden. `vault/sync.ts` keeps an index of parsed notes (kept in memory and in
-  `userData/vault-index-*.json`, never in the vault or the repo): a note is read and parsed again only when its mtime or
-  size changed, an unchanged note keeps the very same row object, and a watcher (`vault-fs.cjs`, plus window focus)
-  triggers a cheap re-scan. Anything that compares definitions must keep object identity when they did not change. Never put real titles, paths or note contents in the repo (tests use invented notes).
-  **Writing** (opt-in, `settings.vaultWrite`): `vault/provider.ts` turns row changes into note changes: only differing
-  properties are patched (`patchNote`), a new row becomes a note once it has a title (until then the UI shows it as a
-  draft, `newEventId`: a tinted range only, dropped by `discardDraft` when its detail closes untitled) (name from `newNote.name`,
-  properties from `newNote.properties` (the area, Juan 2026-10-22; a move to another collection swaps them:
-  `withNewRowProperties`, `withMovedRowProperties`, also in the server's `StoreCalendar`), counter on the
-  file name only), a row that changes collection moves its file (and its `Area:` line), a removed row goes to the system
-  trash (text kept in memory so Undo can restore it), existing notes are never renamed, and a note whose mtime changed since
-  it was read is never overwritten (`VaultWriteError` conflict -> toast and reload). Reads and writes share one lock
-  (`withLock` in `vault/sync.ts`). A new row keeps its temporary id for the session (`aliases` maps it to the path).
-  **Series in the vault are separate notes, never a master** (`series.ts` in core; the calendar's mapping has
-  `series: { id, rule }`, two text columns): every note of a series is a plain event with the same `series` id and the rule.
-  Repeating an event creates one note per occurrence up to 12 months ahead (`makeSeries`); on every read with writing on,
-  open-ended series are topped up after their last note (`extendSeries`, never refilling gaps); edits and deletions go through
-  `editSeries` with the same this/following/all scope (marking done only touches that note; deleting "all" only removes notes
-  from today on; a deletion that takes the end ends the series with an `until`); changing the rule replaces the later notes.
-  A calendar maps `series` or `recurrence`, not both.
-  **Reminders** (phase 5, `reminders.ts` in core): a definition's `reminders: { timed: "10m", allDay: "0d@09:00" }` are its
-  calendar's defaults (`CalendarView.reminders`); an event's own list lives in a text column mapped as `reminders`
-  ("1h, 10m", "none"; empty = the calendar's), added to the definition the first time an event needs it. Definitions are
-  changed only through `vault/definitions.ts` (`patchCollectionReminders`, those lines only; the server does the same via
-  `PUT /api/collections/reminders`). `upcomingAlerts` (core) and `noticesFor` (web) make the notifications; hosts show them
-  through `host.notify` (desktop: `boniNotify`, main-process timers).
-- **Rows are the truth (phase 2):** the store keeps `collections`, `views` and `rows`; `data.events`, `data.calendars` and
-  `data.projects` are *derived* (events are the projection of rows through each calendar's mapping, memoised per row
-  object). Never write them: edit through the store actions, which turn event changes into row changes (`reconcileRows`)
-  and hand them to the `CollectionProvider`. `isTask`/`done` come from the calendar's task column (`supportsTasks`).
-- **Recurring events:** a series is ONE stored event (the "master": `recurrence`, `exdates`) and is never rendered
-  directly. `expandAll` (core) turns it into occurrences (`id = "<master>~<day>"`, `seriesId`, `occurrenceDay`) for the
-  window the views publish (`store.win`, with hysteresis). All edits and deletions go through `editOccurrence` with a
-  scope (`this` / `following` / `all`) via the store (`editEvents`, `removeEvents`, `finishDrag`), which ask the user
-  when a series is involved. Never write to `data.events` directly with an occurrence id.
-  Keep occurrence objects stable (`OccurrenceCache`) - segments and layouts are cached on object identity.
-- **Month view rows** are positioned relative to an epoch (`EPOCH_WEEKS`) so scrolling never moves existing rows
-  (moving them repaints the whole layer). Keep row props stable so `WeekRow` stays memoised.
-- **Text fits its box:** labels of controls never wrap and nothing sticks out of its box. Fix it with the general layout
-  rule in `styles.css` (rows wrap the control under the label; controls ellipsize), never with a per-element patch.
-  `e2e/overflow.spec.ts` walks every surface in both languages and at a narrow window: a new surface must be added there.
-- **Tests:** pure logic in `packages/calendar` and `apps/calendar-web/src/engine` gets unit tests; user-visible behaviour gets a
-  Playwright test and, when the look changes, a screenshot check by eye.
-- **Test it the way Juan uses it** (vault `AGENTS.md`, "Working with Juan") before asking him: the server locally with the built
-  web app (`BONI_WEB=apps/calendar-web/dist BONI_WRITE=1`, an invented vault in the scratchpad), phone-sized viewports, and the real
-  desktop app on his X11 screen with Playwright's `_electron` (`--user-data-dir` and `XDG_CONFIG_HOME` temporary, never his
-  config). The desktop shell loads `apps/calendar-desktop/web/` (the copy from the last `make package`) when it exists: run
-  `node scripts/copy-web.mjs` there first. Screenshots on his screen: the app window (`page.screenshot`) or a crop, never the
-  full screen; delete them afterwards. Tests type at a person's pace where timing matters (a fast `fill` hid a bug).
-- Biome is the linter/formatter; React hook dependency lint is off on purpose (the grid is an imperative engine).
+- No personal data, ever: invented samples (`ejemplo.*@example.*`), no hostnames, tokens or paths of Juan's machines,
+  no secrets.
+- Nothing of the user's domain in code or prompts (names of collections, areas, categories): the data explains itself
+  (D-14). Boni's money code still names its collections; that is the transition, not a pattern to copy.
+- UI strings only through each app's `i18n.ts`, Spanish first and English second, with real accents (I-02).
+- Time: instants (epoch ms) plus an IANA timezone; all-day items are civil days; wall-clock math only through
+  `packages/calendar/src/time.ts`; no `Date` local getters in UI code.
+- The model is untrusted: it writes plans that code interprets, and every call goes through the policy engine (A-01).
+  Text from a model or from outside is painted as plain text, never as HTML, Markdown or links.
+- The core (`packages/entities`, `store`, `agent`, `views`) depends on no app (A-02).
+- Server: every route is listed in `apps/server/src/routes.ts` and is tailnet-only unless made public on purpose
+  (A-03). Node only strips types there, so no parameter properties or enums in the files it loads (`write.test.ts`).
+  Files and copies are streamed, never read whole into memory (the container has 384 MB). Every download made on
+  someone's behalf goes through `@boni/net`.
+- The user's data lives in the user's store, with the operation log and Undo; `system.db` keeps only accounts,
+  devices, sessions and keys (D-02).
+- Names that devices depend on stay as they are: the desktop package `boni-calendar-desktop` (its userData folder and
+  the `.deb`), the Android `applicationId`, the workflow `android.yml` (its run number is the versionCode), the
+  IndexedDB stores `boni-calendar-server*`, the server's start log line and the Docker image tag.
+- Boni Android's `Net.kt` (`Paths.apiRequest`) and Boni desktop's `paths.cjs` allow the same paths: a new API the app
+  uses goes into both.
+- Evaluations with real models (`packages/agent/eval`) are run by hand with a budget, never in CI.
+- Biome lints and formats; React's hook-dependency lint is off on purpose (the calendar grid is an imperative engine).
