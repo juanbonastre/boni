@@ -1,3 +1,4 @@
+/** Checks of collection and calendar view definitions before the calendar uses them (`validateModel`). */
 import type { CalendarView, Collection, ColumnType } from "./collections.ts";
 
 export interface ModelIssue {

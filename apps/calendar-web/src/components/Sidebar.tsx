@@ -1,3 +1,4 @@
+/** The calendar's sidebar: search, new event, the small month and the list of calendars. */
 import { PanelLeft, Search, SquarePen } from "lucide-react";
 import { t } from "../i18n.ts";
 import { useApp } from "../store.ts";

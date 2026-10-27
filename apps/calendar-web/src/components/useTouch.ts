@@ -1,3 +1,4 @@
+/** Touch on the phone: tap, long press to pick something up or open the menu, and dragging what was picked up. */
 import { type PointerEvent as RPE, useRef } from "react";
 
 type PE = RPE<HTMLDivElement>;

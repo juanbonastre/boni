@@ -1,3 +1,4 @@
+/** The month view: weeks as rows on an epoch so scrolling never moves them, all-day bars and timed chips per day. */
 import {
   type CivilDay,
   civilFromDays,

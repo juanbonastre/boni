@@ -1,3 +1,4 @@
+/** Where a calendar's rows live (a `CollectionProvider`) and the row changes handed to it. */
 import type { CollectionSnapshot, Row } from "./collections.ts";
 
 export type RowChange =

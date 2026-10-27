@@ -1,3 +1,4 @@
+/** Settings → Data with a server: log this device in, see the connection and log out. */
 import { type ReactNode, useState } from "react";
 import { t } from "../i18n.ts";
 import { RemoteError } from "../remote.ts";

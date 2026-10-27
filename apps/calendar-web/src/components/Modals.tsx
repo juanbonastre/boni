@@ -1,3 +1,7 @@
+/**
+ * The calendar's dialogs: Settings, a calendar's properties and its calendar view (which column plays which role), the
+ * command palette and the help.
+ */
 import {
   assignRole,
   candidateColumns,

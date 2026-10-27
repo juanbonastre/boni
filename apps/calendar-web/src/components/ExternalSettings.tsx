@@ -1,3 +1,4 @@
+/** Settings → External calendars: subscriptions by iCal address, read-only, added, edited and removed. */
 import { PALETTE } from "@boni/calendar";
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";

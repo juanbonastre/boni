@@ -1,3 +1,7 @@
+/**
+ * The calendar's own model of what it paints: accounts, calendars and their properties, projects, events (timed or
+ * all-day, with their repetition) and the proposal rows of Boni's inbox (`ghost:` ids).
+ */
 import type { Reminder } from "./reminders.ts";
 import type { CivilDay } from "./time.ts";
 

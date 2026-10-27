@@ -1,3 +1,7 @@
+/**
+ * Quick create: one line of text (e.g. «dentista mañana 10-11») read as an event: its title, day, times and calendar,
+ * in Spanish or English.
+ */
 import { type CivilDay, daysFromCivil, weekday } from "./time.ts";
 
 export interface QuickContext {
