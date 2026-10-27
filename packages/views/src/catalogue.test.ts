@@ -36,6 +36,10 @@ const DATA: CatalogueData = {
     },
     { id: "t_ideas", name: "Ideas", fields: [{ id: "f_titulo", name: "Título", type: "text" }] },
   ],
+  pages: [
+    { value: "p_registro", label: "Registro" },
+    { value: "p_notas", label: "Notas" },
+  ],
 };
 const graph = (extra: Record<string, unknown> = {}) => ({
   id: "g",
@@ -126,6 +130,7 @@ describe("the block catalogue (one list for the panel, the checks and the AI)", 
     }
     for (const s of PLACE_SETTINGS) expect(text).toContain(`${s.key}: `);
     expect(text).toContain("o_cafe=Café");
+    expect(text).toContain("p_registro=Registro");
     expect(text).toContain("@day|@week|@month");
   });
 

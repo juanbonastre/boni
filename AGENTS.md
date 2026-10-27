@@ -87,8 +87,9 @@ packages/views/  Declarative views (docs/nucleo.md, 8): `ViewSpec` from a closed
                  the rows it counts (`blockRows`, the engine's own selection, `chartRecords`: they add up to it).
                  Pages hold no Boni-only blocks (design audit, Juan 2026-10-25): what Boni shows of itself is
                  read-only collections (`SYS`); a stored page loses only retired blocks (`withoutRetired`).
-                 `templates.ts`: Boni's template pages («Uso de la IA», «Actividad»; `templatePage`,
-                 `templateChanges`), each account's once, restorable (`PageSpec.template`).
+                 `templates.ts`: Boni's template pages («Uso de la IA», «Actividad», «Registro»; `templatePage`,
+                 `templateChanges`), each account's once, restorable (`PageSpec.template`). Links resolve only to real
+                 pages, including when a template is restored.
                  `randomPage.test-util.ts`: random users and random pages from the catalogue (300 seeds must be
                  valid and compute; a broken setting must give problems, never a chart).
                  `markdown.ts`: a note's Markdown as the page editor's blocks and back (`markdownToBlocks`,
@@ -280,7 +281,8 @@ apps/server/     Boni Calendar Server (docs/servidor.md): Node 24 running TypeSc
                  `POST /api/data/blocks/rows`: the rows one block (or one of its bars or points) counts.
                  `src/systemCollections.ts`: Boni's own records as read-only collections, made on each read and never
                  stored («Llamadas a modelos» from the journal, in euros at the account's rate; «Actividad de Boni»
-                 per day, actor and collection from the audit): listed and counted like any collection, refused for
+                 per day, actor and collection from the audit; «Ejecuciones» from the journal, run information and
+                 model calls): listed and counted like any collection, refused for
                  writes, outside the store's schema so neither the agent nor the MCP ever sees them.
                  `src/pages.ts`: the user's pages (system type `page` in the user's store, `/api/pages`): nothing
                  fixed on screen, the sidebar and the start are what the user makes; `seedTemplates` gives each
@@ -362,9 +364,9 @@ apps/boni-web/   Boni's web app (React + Vite), moved from the first Boni (`lega
                  (`components/Chat.tsx`, `core/agent.ts` over `/api/agent/*`): every answer painted by this code from
                  labelled values, text only as text (never HTML, Markdown or links; outside text marked),
                  confirmations with the real values, their origin and warnings, the accept button changing side;
-                 the inbox one proposal at a time, the log with Undo. Dashboards over the audit (`components/Dash.tsx`:
-                 tiles, bar lists, Boni's charts; `Activity.tsx` replaces the Registro's list, `Audit.tsx`, `Notes.tsx`
-                 the notes by path, `History.tsx` a row's history and blame; system columns in tables, `view.system`).
+                 the inbox one proposal at a time, the detailed run log with Undo and the audit. Dashboard pieces
+                 (`components/Dash.tsx`: tiles, bar lists, Boni's charts; `Audit.tsx`, `Notes.tsx` the notes by path,
+                 `History.tsx` a row's history and blame; system columns in tables, `view.system`).
                  Pages on a grid of 12 (`core/grid.ts`: rows of columns,
                  moves and widths, pure) with the block catalogue's data blocks (`components/DataBlockView.tsx`,
                  `POST /api/data/blocks`) and each block's panel drawn from the catalogue (`components/BlockPanel.tsx`).

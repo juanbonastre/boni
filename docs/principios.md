@@ -48,6 +48,7 @@ Cómo se usa:
 | I-07 | Las pantallas principales no cambian de aspecto sin querer | 2026-10-25 | `e2e-boni/screens.spec.ts` (capturas de referencia) |
 | I-08 | Nada interno a la vista: ni ids, ni rutas del vault, ni nombres de campos de Boni | 2026-10-24 | Sin prueba (revisión de capturas) |
 | I-09 | Maqueta con la app real antes de programar una pantalla nueva | 2026-10-24 | Sin prueba (forma de trabajar) |
+| I-10 | Un bloque de enlace solo abre una página real; si su destino ya no existe, lo dice en vez de abrir una vista fija | 2026-10-27 | `packages/views/src/catalogue.test.ts`, `packages/views/src/templates.test.ts`, `apps/server/src/pages.test.ts`, `e2e-boni/audit.spec.ts` |
 
 ## Sustituidas
 

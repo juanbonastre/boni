@@ -1,4 +1,4 @@
-import { CornerDownLeft, Inbox, ListChecks, Undo2 } from "lucide-react";
+import { CornerDownLeft, Inbox, ListChecks, ShieldCheck, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   type ConfirmView,
@@ -25,6 +25,7 @@ import {
   loadRunDetail,
   rejectProposal,
   sendTurn,
+  showAudit,
   showInbox,
   showLog,
   undoRun,
@@ -60,6 +61,10 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
         <button type="button" className="pill" onClick={showLog}>
           <ListChecks size={14} strokeWidth={1.8} />
           <span>{t("log.title")}</span>
+        </button>
+        <button type="button" className="pill" onClick={() => showAudit({})}>
+          <ShieldCheck size={14} strokeWidth={1.8} />
+          <span>{t("audit.title")}</span>
         </button>
       </div>
       <div className="chat-thread" aria-live="polite">

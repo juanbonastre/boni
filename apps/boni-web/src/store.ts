@@ -4,6 +4,7 @@ import {
   type DatabaseView,
   markdownToBlocks,
   type PageSpec,
+  resolveTemplateLinks,
   templatePage,
 } from "@boni/views";
 import { useMemo } from "react";
@@ -1883,7 +1884,7 @@ export function restoreTemplate() {
   if (!page || !name) return;
   const before = page.spec;
   remember(page);
-  putSpec(page, templatePage(name).spec);
+  putSpec(page, resolveTemplateLinks(templatePage(name).spec, get().pages ?? []));
   toast(get().t("system.restored", { name: page.title || get().t("page.untitled") }), {
     label: get().t("toast.undo"),
     run: () => {

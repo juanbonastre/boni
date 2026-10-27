@@ -42,7 +42,7 @@ export const BONI_BLOCKS = ["link"] as const;
  */
 export const RETIRED_BLOCKS = ["models", "model-keys"] as const;
 /** Boni's template pages (templates.ts): a page made from one says which, so it can be restored. */
-export const PAGE_TEMPLATES = ["uso-ia", "actividad"] as const;
+export const PAGE_TEMPLATES = ["uso-ia", "actividad", "registro"] as const;
 export type PageTemplate = (typeof PAGE_TEMPLATES)[number];
 export const isPageTemplate = (x: unknown): x is PageTemplate =>
   (PAGE_TEMPLATES as readonly unknown[]).includes(x);
@@ -77,7 +77,7 @@ export type PageBlock = (
       color?: string;
     }
   | DataBlock
-  | { id: string; type: "link"; title?: string; to: "activity" | "audit" | "settings-models" }
+  | { id: string; type: "link"; title?: string; to: string }
 ) & {
   /** Its place on the page's grid of 12 columns; a block without one is a row of its own, the whole width. */
   at?: Place;

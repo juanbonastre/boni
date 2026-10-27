@@ -17,6 +17,7 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AuditView } from "./components/Audit.tsx";
 import { BlockPanel } from "./components/BlockPanel.tsx";
 import { ChartCard, ChartCardContent, useChartData } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
@@ -99,7 +100,9 @@ export function MobileApp() {
                     ? t("inbox.title")
                     : view.kind === "log"
                       ? t("log.title")
-                      : t("tab.boni")
+                      : view.kind === "audit"
+                        ? t("audit.title")
+                        : t("tab.boni")
             }
           />
           {tab === "capture" ? (
@@ -114,6 +117,8 @@ export function MobileApp() {
             <div className="m-scroll">
               <LogView />
             </div>
+          ) : view.kind === "audit" ? (
+            <AuditView filter={view.filter} />
           ) : view.kind === "proposal" ? (
             <div className="m-scroll">
               <ProposalPage id={view.id} />

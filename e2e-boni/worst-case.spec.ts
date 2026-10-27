@@ -10,6 +10,7 @@ import {
   MODELS_CATALOGUE_WORST,
   MODELS_WORST,
   PROPOSALS,
+  RUNS_EXPLAINED,
   VISIBILITY,
 } from "./agent-scenarios.ts";
 import { activityAudit, audit, MODELS_TEXT, modelsAudit, settingsAudit } from "./audit.ts";
@@ -264,6 +265,7 @@ for (const width of [1440, 900]) {
         "GET api/data/audit/summary": [AUDIT_SUMMARY_WORST],
         "GET api/data/audit/actions": [AUDIT_ACTIONS_WORST],
         "GET api/data/audit/actions/:seq": [AUDIT_DETAIL_WORST],
+        "GET api/agent/runs": [RUNS_EXPLAINED],
       },
     });
     const issues = await modelsAudit(page, MODELS_TEXT.es, `${width}`);

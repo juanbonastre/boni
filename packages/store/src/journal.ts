@@ -108,6 +108,8 @@ export interface Journal {
   setPlan(id: string, plan: unknown): void;
   run(id: string): RunRow | null;
   runs(limit?: number): RunRow[];
+  /** Each run that started in the period, oldest first (the read-only collection «Ejecuciones»). */
+  runsIn(from: number, to: number): RunRow[];
   step(r: Omit<StepRow, "seq">): void;
   steps(run: string): StepRow[];
   /** Keeps a model call; gives its number (the audit's action refers to it). */
@@ -140,6 +142,8 @@ export interface Journal {
   modelCallsIn(from: number, to: number): ModelCallUse[];
   /** The last model call's number (0 with none): it changes whenever one is recorded. */
   lastModelCall(): number;
+  /** A fingerprint of the runs: it changes when one starts or finishes. */
+  lastRun(): number;
   /** Their cost per UTC day ("YYYY-MM-DD"), in dollars. */
   spendingByDay(
     from: number,
@@ -209,6 +213,11 @@ export function openJournal(db: DatabaseSync): Journal {
     },
     runs: (limit = 50) =>
       db.prepare("SELECT * FROM runs ORDER BY started DESC LIMIT ?").all(limit).map(runOf),
+    runsIn: (from, to) =>
+      db
+        .prepare("SELECT * FROM runs WHERE started >= ? AND started < ? ORDER BY started, rowid")
+        .all(from, to)
+        .map(runOf),
     step: (r) => {
       const seq = (
         db
@@ -358,6 +367,12 @@ export function openJournal(db: DatabaseSync): Journal {
         .run(status, at, answer === undefined ? null : j(answer), id),
     lastModelCall: () =>
       (db.prepare("SELECT coalesce(max(rowid), 0) AS n FROM model_calls").get() as { n: number }).n,
+    lastRun: () =>
+      (
+        db
+          .prepare("SELECT coalesce(max(rowid), 0) + coalesce(max(finished), 0) AS n FROM runs")
+          .get() as { n: number }
+      ).n,
     modelCallsIn: (from, to) =>
       db
         .prepare(

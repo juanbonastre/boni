@@ -51,11 +51,29 @@ function fakeStore(today: string, types: Record<string, TypeDef>) {
     reads: Math.floor(rnd() * 20),
     writes: Math.floor(rnd() * 4),
   }));
+  const runs = Array.from({ length: 40 }, (_, n) => {
+    const started = end - Math.floor(rnd() * 30) * DAY - 4000;
+    return {
+      id: `r${n}`,
+      turn: null,
+      origin: "other",
+      device: "portatil-ejemplo",
+      status: n % 7 === 0 ? "stopped:limit" : "done",
+      plan: null,
+      started,
+      finished: started + 4000,
+    };
+  }).sort((a, b) => a.started - b.started);
   return {
     journal: {
       lastModelCall: () => calls.length,
       modelCallsIn: (from: number, to: number) => calls.filter((c) => c.at >= from && c.at < to),
+      modelCalls: () => [],
+      proposals: () => [],
+      lastRun: () => runs.length + Math.max(...runs.map((r) => r.finished)),
+      runsIn: (from: number, to: number) => runs.filter((r) => r.started >= from && r.started < to),
     },
+    runOps: () => [],
     audit: {
       lastAction: () => 0,
       activityByType: () => activity,

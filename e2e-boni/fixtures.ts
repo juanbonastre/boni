@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
-import { templatePage } from "../packages/views/src/templates.ts";
+import { resolveTemplateLinks, templatePage } from "../packages/views/src/templates.ts";
 import { boniEngine, boniTypes } from "./boni-records.ts";
 
 /** The server's documented answers (`api/examples`): the fake server below answers with them. */
@@ -46,13 +46,21 @@ export interface FakePage {
   icon?: string;
   parent?: string | null;
   position?: number;
+  template?: "uso-ia" | "actividad" | "registro";
   spec: { version: 1; full?: boolean; blocks: Record<string, unknown>[] };
 }
 
 /** A template page as the server seeds it (apps/server/src/pages.ts `seedTemplates`). */
-export const TEMPLATE = (name: "uso-ia" | "actividad"): FakePage => {
+export const TEMPLATE = (name: "uso-ia" | "actividad" | "registro"): FakePage => {
   const t = templatePage(name);
-  return { id: name, title: t.title, icon: t.icon, spec: t.spec as FakePage["spec"] };
+  const spec = resolveTemplateLinks(t.spec, [{ id: "registro", template: "registro" }]);
+  return {
+    id: name,
+    title: t.title,
+    icon: t.icon,
+    template: name,
+    spec: spec as FakePage["spec"],
+  };
 };
 
 /** What an account that used the first Boni gets once (apps/server/src/pages.ts, seedFromV1). */

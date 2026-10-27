@@ -50,8 +50,10 @@ export function catalogueOf(
         }[];
       }[]
     | null,
+  pages: readonly { id: string; title: string }[] | null = [],
 ): CatalogueData {
   return {
+    pages: (pages ?? []).map((p) => ({ value: p.id, label: p.title })),
     collections: (types ?? []).map((t) => ({
       id: t.id,
       name: t.name,

@@ -32,7 +32,8 @@ const SIGNS: Record<TemplateChange["sign"], string> = {
 
 export function TemplatePill({ page, name }: { page: Page; name: PageTemplate }) {
   const t = useStore((s) => s.t);
-  const list = templateChanges(name, page.spec);
+  const pages = useStore((s) => s.pages);
+  const list = templateChanges(name, page.spec, pages ?? []);
   if (!list.length)
     return (
       <div className="template-head">

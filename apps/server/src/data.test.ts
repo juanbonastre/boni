@@ -392,6 +392,14 @@ describe("what a block counts, and Boni's own records as collections (design aud
     const t = await token();
     const store = host.store(1);
     const at = Date.now();
+    store.journal.startRun({
+      id: "r_ejemplo",
+      turn: null,
+      origin: "other",
+      device: "portatil-ejemplo",
+      started: at - 5000,
+    });
+    store.journal.finishRun("r_ejemplo", "done", null, at);
     for (const [role, cost] of [
       ["reader", 0.2],
       ["planner", 1],
@@ -417,7 +425,9 @@ describe("what a block counts, and Boni's own records as collections (design aud
     }[];
     const calls = types.find((x) => x.id === "t_sys_llamadas");
     const activity = types.find((x) => x.id === "t_sys_actividad");
+    const runs = types.find((x) => x.id === "t_sys_runs");
     expect(calls).toMatchObject({ system: true, level: "private", count: 3 });
+    expect(runs).toMatchObject({ system: true, level: "private", count: 1 });
     expect(calls?.fields.find((f) => f.id === "f_uso")?.options?.map((o) => o.name)).toEqual([
       "Agente",
       "Evaluación",
@@ -431,6 +441,18 @@ describe("what a block counts, and Boni's own records as collections (design aud
     expect(acts.some((a) => a.values.f_titulo === "Tú · portatil-ejemplo · cambió Libros")).toBe(
       true,
     );
+    const executions = (await call(t, "GET", "/api/data/types/t_sys_runs/rows")).body.rows as {
+      values: Record<string, unknown>;
+    }[];
+    expect(executions).toHaveLength(1);
+    expect(executions[0]?.values).toMatchObject({
+      f_segundos: 5,
+      f_cambios: 0,
+      f_coste: { amount: 1.08, currency: "EUR" },
+    });
+    expect(runs?.fields.find((f) => f.id === "f_estado")?.options?.map((o) => o.name)).toEqual([
+      "Hecha",
+    ]);
     // Counted with the same blocks as any collection, in euros at the account's rate.
     const spent = await call(t, "POST", "/api/data/blocks", {
       blocks: [

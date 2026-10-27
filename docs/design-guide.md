@@ -219,8 +219,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   the right side panel. **Nothing on screen is fixed by the app** (Juan, 2026-10-21): no home of charts, no "Apuntar
   gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
   pages, a welcome with "Nueva página" and "Hablar con Boni". Every account gets Boni's template pages once («Uso de
-  la IA», «Actividad»); an account that used the first Boni got, once, a page "Gastos" with what its home showed, as
-  data it can change or delete. Modelos is in Ajustes; the Registro opens from the conversation.
+  la IA», «Actividad», «Registro»); an account that used the first Boni got, once, a page "Gastos" with what its home
+  showed, as data it can change or delete. Modelos is in Ajustes; the conversation also keeps the detailed run log.
 - **A page is a Notion page** (`components/PageView.tsx`, docs/extensiones.md 6; measured on Notion on 2026-10-21):
   always editable in place, no edit mode. A reading column of 708 px centred with 64 px above (or the window's whole
   width, from the top bar's "…": "Ancho completo", where charts sit side by side); the name is the first line (40 px,
@@ -267,9 +267,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   each only as wide as it needs. Opening a form puts the caret in the first field still to fill (the amount).
 - **Boni's template pages** (design audit, Juan 2026-10-25; `packages/views/src/templates.ts`,
   `components/TemplatePill.tsx`): «Uso de la IA» (spending, calls, what the AIs read and changed, spending by day, by
-  model, calls by use, a link to Ajustes → Modelos) and «Actividad» (reads and changes, by day, who, in which collection,
-  the table of Boni's activity, links to the Registro and the audit) come with every account as ordinary pages of
-  ordinary blocks, over Boni's own read-only collections («Llamadas a modelos», «Actividad de Boni»). Under the page's
+  model, calls by use), «Actividad» (reads and changes, by day, who, in which collection, the table of Boni's activity,
+  a link to «Registro») and «Registro» (runs, their duration and cost, a daily chart and the table) come with every
+  account as ordinary pages of ordinary blocks, over Boni's own read-only collections («Llamadas a modelos», «Actividad
+  de Boni», «Ejecuciones»). A link block opens only a real page and says if its destination is gone. Under the page's
   name, «De Boni»; once changed, «Modificada», which opens the list of changes (+ added, − removed, ✎ changed, ⤢ another
   size, ↕ where the blocks are) and «Restaurar la de Boni» (Undo in the notice and Ctrl+Z). Removed, a template stays
   removed (the trash brings it back).
@@ -453,14 +454,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   evaluation). Then the month's spending against the budget (a tile with its bar), the spending per model and
   «Cambiar el presupuesto»; «Claves» folded at the end (a password field in place; the key never comes back). What the
   models did is the page «Uso de la IA».
-- **Registro** (Boni; from the conversation's «Registro» and the page «Actividad»'s link; it was the sidebar's
-  «Actividad»): tiles Correos leídos, Propuestas («81 %
-  aceptadas»), Cambios («12 deshechos»), Peticiones tuyas; «Por día» (read and edited, two lines), «Quién edita» (a bar
-  per actor; a click opens the audit of that actor), «Qué cambian» (create / edit / delete as numbers), «Colecciones:
-  leído y editado» (two bars per collection; a click opens its audit), «Abrir la auditoría», and «Ejecuciones» folded
-  at the end (the runs one by one, as the Registro was). On a device that may not read the audit, a muted line says
-  so and the runs are shown.
-- **Auditoría** (Boni, from the Registro; crumbs «Registro / Auditoría»): read-only, as a collection: «Verificar la
+- **Registro** (Boni): an ordinary template page over the read-only «Ejecuciones» collection, with total runs, time and
+  cost, a daily chart and the runs table. «Actividad» links to that page. The conversation's «Registro» keeps the
+  detailed run list with each step and Undo; it does not require access to the audit.
+- **Auditoría** (Boni, from the conversation; crumbs «Registro / Auditoría»): read-only, as a collection: «Verificar la
   cadena» (then `--good` «Cadena verificada» or `--bad` «La cadena no cuadra»), filters (a segmented Todos / Modelos /
   MCP / Boni / Personas and a select of collections; «Una ejecución ✕» when it shows one run), and a table of actions
   (Cuándo, Quién with its colour dot, Acción in words — «Buscó «dentista»», «Leyó», «Descargó una web», a refused one

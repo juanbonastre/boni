@@ -1,40 +1,29 @@
 import { ChevronRight } from "lucide-react";
 import type { T } from "../i18n.ts";
-import { openSettings, showAudit, showLog, useStore } from "../store.ts";
+import { openPage, useStore } from "../store.ts";
 
-/**
- * Boni's own blocks (the block catalogue's «De Boni» group; packages/views catalogue.ts): a link to another of its
- * screens. What Boni counts (its models' spending, what they read and changed) is no longer a block of its own: it
- * is read-only collections any number or chart counts (design audit, Juan 2026-10-25).
- */
+/** Boni's link block opens only one of the account's pages; its destination comes from the catalogue's real ids. */
 
-type To = "activity" | "audit" | "settings-models";
-
-const LINKS: Record<To, { title: string; hint: string }> = {
-  activity: { title: "models.activity", hint: "models.toLog" },
-  audit: { title: "boni.toAudit", hint: "boni.seeAudit" },
-  "settings-models": { title: "boni.toModels", hint: "boni.seeModels" },
-};
-
-/** A link block's name when it has none of its own: Boni's name for where it goes. */
+/** A link block's name when it has none of its own: the destination page's current title. */
 export function boniTitle(t: T, b: { to?: string }): string {
-  return t(LINKS[(b.to as To) ?? "activity"]?.title ?? "models.activity");
+  const page = useStore.getState().pages?.find((p) => p.id === b.to);
+  return page?.title || t("block.pageGone");
 }
 
-/** A row that opens another of Boni's screens. */
-export function LinkBlock({ block }: { block: { title?: string; to: To } }) {
+/** A row that opens another page, or says that its destination was removed. */
+export function LinkBlock({ block }: { block: { title?: string; to: string } }) {
   const t = useStore((s) => s.t);
-  const go = () =>
-    block.to === "audit"
-      ? showAudit({})
-      : block.to === "settings-models"
-        ? openSettings(true, "models")
-        : showLog();
+  const page = useStore((s) => s.pages?.find((p) => p.id === block.to));
   return (
-    <button type="button" className="models-row models-link" onClick={go}>
+    <button
+      type="button"
+      className="models-row models-link"
+      disabled={!page}
+      onClick={() => void openPage(block.to)}
+    >
       <span className="models-row-main">
-        <span className="models-name">{block.title || boniTitle(t, block)}</span>
-        <span className="muted small">{t(LINKS[block.to].hint)}</span>
+        <span className="models-name">{block.title || page?.title || t("block.pageGone")}</span>
+        {!page && <span className="muted small">{t("block.pageGone")}</span>}
       </span>
       <ChevronRight size={15} strokeWidth={1.8} aria-hidden="true" />
     </button>

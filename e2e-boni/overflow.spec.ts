@@ -402,7 +402,7 @@ for (const language of ["es", "en"] as const) {
           "GET api/data/audit/actions/:seq": [AUDIT_DETAIL],
           "GET api/agent/runs": [RUNS_EXPLAINED],
         },
-        pages: [PAGE_FROM_HOME, TEMPLATE("uso-ia"), TEMPLATE("actividad")],
+        pages: [PAGE_FROM_HOME, TEMPLATE("uso-ia"), TEMPLATE("actividad"), TEMPLATE("registro")],
       });
       expect([
         ...(await modelsAudit(page, MODELS_TEXT[language], `${width}`)),

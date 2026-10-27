@@ -6,7 +6,9 @@ import {
   PAGE_LIMITS,
   PAGE_TEMPLATES,
   type PageSpec,
+  type PageTemplate,
   pageErrors,
+  resolveTemplateLinks,
   templatePage,
   withoutRetired,
 } from "@boni/views";
@@ -15,7 +17,7 @@ import type { V1Store } from "./v1/store.ts";
 /**
  * The user's pages (docs/extensiones.md 6, plan A4): entities of the system type `page` in the user's own
  * store (versioned, undoable, exported), only ever written by this code on the user's behalf. A new account has
- * only Boni's template pages («Uso de la IA», «Actividad»; `seedTemplates`): the start screen and the sidebar are
+ * only Boni's template pages («Uso de la IA», «Actividad», «Registro»; `seedTemplates`): the start screen and the sidebar are
  * what the user makes. An account that used the first Boni gets, once, a page "Gastos" with what its fixed home
  * showed (its charts there, its capture and its shortcuts), as data it can change or delete.
  */
@@ -27,6 +29,7 @@ export interface PageInfo {
   parent: string | null;
   position: number;
   updated: number;
+  template?: PageTemplate;
 }
 export interface Page extends PageInfo {
   spec: PageSpec;
@@ -61,6 +64,7 @@ function toPage(e: { id: string; values: Record<string, unknown>; updated: numbe
     parent: typeof x.f_parent === "string" && x.f_parent ? x.f_parent : null,
     position: Number(x.f_position ?? 0) || 0,
     updated: e.updated,
+    ...(spec.template ? { template: spec.template } : {}),
     spec,
   };
 }
@@ -220,15 +224,45 @@ export function seedFromV1(store: UserStore, v1: V1Store, account: number): void
 }
 
 /**
- * Once per account: Boni's template pages (packages/views templates.ts: «Uso de la IA», «Actividad»), pages like any
- * other over Boni's own records. Removed, they stay removed (the trash brings them back).
+ * Once per account and template: Boni's pages over its own records. The old single marker means the first two were
+ * already offered; only «Registro» is added to those accounts. A removed template never comes back by itself.
  */
 export function seedTemplates(store: UserStore): void {
-  if (!store.schema().types.page || store.setting("pages/templates")) return;
-  store.setSetting("pages/templates", String(Date.now()));
+  if (!store.schema().types.page) return;
+  const legacy = store.setting("pages/templates") !== null;
+  const now = String(Date.now());
+  if (!legacy) store.setSetting("pages/templates", now);
   for (const name of PAGE_TEMPLATES) {
+    if (legacy && name !== "registro") continue;
+    const marker = `pages/template/${name}`;
+    if (store.setting(marker)) continue;
+    store.setSetting(marker, now);
     const t = templatePage(name);
-    const p = createPage(store, { title: t.title, spec: t.spec });
+    const spec = resolveTemplateLinks(t.spec, listPages(store));
+    const p = createPage(store, { title: t.title, spec });
     updatePage(store, p.id, { icon: t.icon });
+  }
+  migrateTemplateLinks(store);
+}
+
+/** The fixed destinations retired with ActivityView become real page links (or go away) once, without touching others. */
+function migrateTemplateLinks(store: UserStore): void {
+  const pages = listPages(store);
+  for (const info of pages) {
+    const page = getPage(store, info.id);
+    if (!page?.template) continue;
+    const blocks = page.spec.blocks
+      .filter(
+        (b) =>
+          !(
+            b.type === "link" &&
+            ((b.id === "a8" && b.to === "audit") || (b.id === "u8" && b.to === "settings-models"))
+          ),
+      )
+      .map((b) =>
+        b.type === "link" && b.id === "a7" && b.to === "activity" ? { ...b, to: "registro" } : b,
+      );
+    const spec = resolveTemplateLinks({ ...page.spec, blocks }, pages);
+    if (JSON.stringify(spec) !== JSON.stringify(page.spec)) updatePage(store, page.id, { spec });
   }
 }

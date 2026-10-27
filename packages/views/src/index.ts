@@ -38,5 +38,11 @@ export {
   withoutRetired,
 } from "./page.ts";
 export { pyRound, pySum } from "./pyround.ts";
-export { SYS, type TemplateChange, templateChanges, templatePage } from "./templates.ts";
+export {
+  resolveTemplateLinks,
+  SYS,
+  type TemplateChange,
+  templateChanges,
+  templatePage,
+} from "./templates.ts";
 export { type ViewComponent, type ViewSpec, viewErrors, viewRows } from "./views.ts";

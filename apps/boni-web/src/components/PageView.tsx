@@ -1182,7 +1182,8 @@ function pick(choice: Choice, block: TextBlock, blocks: Block[], index: number) 
   const t = useStore.getState().t;
   switch (choice.kind) {
     case "data": {
-      const b = newBlock(choice.type, block.id, catalogueOf(useStore.getState().dataTypes));
+      const state = useStore.getState();
+      const b = newBlock(choice.type, block.id, catalogueOf(state.dataTypes, state.pages));
       if (!b) return;
       const w = catalogueKind(choice.type)?.w ?? 12;
       // A button goes in the page's flow, where buttons one after another share a row (only what they need).
