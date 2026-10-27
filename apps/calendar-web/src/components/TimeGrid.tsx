@@ -1,3 +1,7 @@
+/**
+ * The day, week and N-day grid: the strip of day columns moved by the `Viewport`, its all-day row, events laid out
+ * side by side, and zoom at 60 fps.
+ */
 import {
   type CalEvent,
   type CalendarDef,

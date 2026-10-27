@@ -1,3 +1,4 @@
+/** The time grid's `Viewport` (scroll, zoom and horizontal motion) shared with the components that follow it. */
 import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
 import { Viewport } from "./engine/viewport.ts";
 

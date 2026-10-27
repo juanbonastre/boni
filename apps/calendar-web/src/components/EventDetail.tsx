@@ -1,3 +1,7 @@
+/**
+ * An event's detail (a popover or the side panel): title, when, repetition, calendar, its properties, task state and
+ * actions.
+ */
 import {
   type CalEvent,
   civilFromDays,

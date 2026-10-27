@@ -1,3 +1,7 @@
+/**
+ * Where the timed events of one day sit side by side: clusters of overlapping events, a column each and the free
+ * columns to the right they may span.
+ */
 import type { CivilDay } from "./time.ts";
 
 export interface TimedItem {

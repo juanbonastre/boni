@@ -1,3 +1,7 @@
+/**
+ * The calendar app's shell: the top bar, the sidebar and the grid or the month, the dialogs and menus, the phone
+ * layout, and the work done at start (reading the data, external calendars, reminders).
+ */
 import { fromLocal, toLocal } from "@boni/calendar";
 import { Plus } from "lucide-react";
 import { useEffect } from "react";

@@ -1,3 +1,4 @@
+/** Every text of the calendar's interface, in Spanish and English (`t`); nothing is written in components directly. */
 import type { Locale } from "@boni/calendar";
 import { appRoot } from "./host.ts";
 

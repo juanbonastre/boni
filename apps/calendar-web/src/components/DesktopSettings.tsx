@@ -1,3 +1,4 @@
+/** Settings → Desktop (the desktop app only): keep running in the tray, open at login and Boni's address. */
 import { type ReactNode, useEffect, useState } from "react";
 import { type DesktopPrefs, getHost } from "../host.ts";
 import { t } from "../i18n.ts";

@@ -1,5 +1,6 @@
 {
   "name": "@boni/calendar-web",
+  "description": "Boni Calendar's web app (React + Vite): day, week, month and N-day views over collections with dates; the same build runs in a browser, in its desktop shell and in its Android WebView",
   "version": "0.0.1",
   "private": true,
   "type": "module",

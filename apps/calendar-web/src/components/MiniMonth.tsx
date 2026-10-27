@@ -1,3 +1,4 @@
+/** The sidebar's small month: the visible days highlighted, a click goes to a day. */
 import {
   addMonths,
   civilFromDays,

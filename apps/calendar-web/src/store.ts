@@ -1,3 +1,7 @@
+/**
+ * The calendar's state (zustand): rows and what derives from them, settings, the view and the visible days, selection,
+ * drag, undo, and the source of the data (the server or the samples).
+ */
 import {
   type Account,
   addMonths,

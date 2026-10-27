@@ -1,3 +1,7 @@
+/**
+ * Repeated events kept as one master: the days of a series (daily, weekly, monthly, yearly; until, count, exceptions),
+ * its occurrences in a window (`expandAll`) and their ids.
+ */
 import type { CalEvent, Recurrence } from "./model.ts";
 import { shiftWhenByDays, whenEndDay, whenStartDay } from "./shift.ts";
 import {

@@ -1,3 +1,4 @@
+/** The calendar's top bar: the month shown, today, previous and next, the kind of view and the panels. */
 import { civilFromDays, monthNames } from "@boni/calendar";
 import { Check, ChevronDown, ChevronLeft, ChevronRight, PanelLeft, PanelRight } from "lucide-react";
 import { useState } from "react";

@@ -1,5 +1,6 @@
 {
   "name": "@boni/boni-web",
+  "description": "Boni's web app (React + Vite): pages, databases, charts, the conversation and quick captures; the same build runs in a browser, in Boni's desktop shell and in its Android WebView",
   "version": "0.0.1",
   "private": true,
   "type": "module",
