@@ -16,7 +16,7 @@ import { pyRound, pySum } from "./pyround.ts";
 
 /**
  * The chart engine (docs/nucleo.md, 8), ported function by function from the first Boni's
- * `server/boni/stats/engine.py` (legacy/boni) so that a chart gives exactly the same numbers; the
+ * `server/boni/stats/engine.py` (the archived repo boni-pruebas) so that a chart gives exactly the same numbers; the
  * golden test runs the original Python on invented data and compares. What was specific to money
  * movements (which fields there are, how a value is labelled, what "spending" means) is a `Profile`,
  * so the same engine draws charts of any entity type.

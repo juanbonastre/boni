@@ -4,7 +4,7 @@ import { pySum } from "./pyround.ts";
 
 /**
  * Money movements as chart records, and the single definition of "spending" (gasto), ported from the
- * first Boni's `stats/spending.py` and `stats/engine.py` (legacy/boni; same as gastos-app's
+ * first Boni's `stats/spending.py` and `stats/engine.py` (the archived repo boni-pruebas; same as gastos-app's
  * tools/finanzas.py and the vault's registros/finanzas/README.md). Change it in all of them together.
  *
  * - Only spending categories count: not `ingreso/`, `inversion`, `transferencia/` (by default; with the

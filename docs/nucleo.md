@@ -137,7 +137,7 @@ apps/
   server/      el Boni server (arranca del actual servidor del calendario)
   calendar-web/  calendar-desktop/  calendar-android/  obsidian-plugin/   (el calendario de hoy, renombrado)
   boni-web/      boni-desktop/      boni-android/                         (Boni: conversación, vistas, captura)
-legacy/boni/   el repo boni archivado, con historial (servidor Python y clientes); se borra pieza a pieza al portarla
+legacy/boni/   el repo boni archivado, con historial; borrado el 2026-10-28, ya portado (el original sigue en boni-pruebas)
 ```
 
 Cada app tiene su workflow, que se lanza solo cuando cambian sus carpetas o los paquetes de los que depende. Cada una
