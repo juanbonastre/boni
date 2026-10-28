@@ -1,4 +1,12 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  writeSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ensureSystemTypes } from "@boni/agent";
@@ -13,6 +21,7 @@ import {
 import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
 import { moneyCollections } from "./money/collections.ts";
+import { planFromNote, reshape, undoReshape } from "./reshape.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
 import { V1Store } from "./v1/store.ts";
@@ -38,6 +47,10 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts money <name> [--apply]
  *       the money's categories note and reglas.csv into the collections Categorías and Reglas, each movement's
  *       category into a relation to its row (dry run by default; applied, one run that undo takes back).
+ *   node src/cli.ts reshape <name> (--plan <file.json> | --plan-note <id>) [--apply]
+ *       the account's tree reshaped as a plan says (src/reshape.ts): a dry run with counts by default; applied, one
+ *       run in one transaction. The plan may live in a note of the account (its first ```json block).
+ *   node src/cli.ts reshape <name> --undo <run>      that reshape taken back whole
  */
 const [cmd, ...args] = process.argv.slice(2);
 const paths = databasePaths();
@@ -187,9 +200,65 @@ try {
     } finally {
       store.close();
     }
+  } else if (cmd === "reshape") {
+    const usage =
+      "Usage: reshape <name> (--plan <file.json> | --plan-note <id>) [--apply] | reshape <name> --undo <run>";
+    const [name] = args.filter((a) => !a.startsWith("--"));
+    const user = listUsers(db).find((u) => u.name === name);
+    const opt = (k: string) => {
+      const i = args.indexOf(k);
+      return i >= 0 ? args[i + 1] : undefined;
+    };
+    if (!name || !user) throw new Error(usage);
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    const store = openUserStore(join(dirname(paths.system), "users", `${user.id}.db`));
+    try {
+      const undo = opt("--undo");
+      if (undo) {
+        console.log(`Deshecho: ${undoReshape(store, undo, "cli")} cambios de ${undo}.`);
+      } else {
+        const file = opt("--plan");
+        const note = opt("--plan-note");
+        const plan = file
+          ? JSON.parse(readFileSync(file, "utf8"))
+          : note
+            ? planFromNote(store, note)
+            : undefined;
+        if (plan === undefined) throw new Error(usage);
+        const apply = args.includes("--apply");
+        // A dry run works on a copy, so the apps go on writing meanwhile (the real one is one transaction).
+        const copy = apply
+          ? null
+          : `${join(dirname(paths.system), "users", `${user.id}`)}.ensayo.db`;
+        if (copy) {
+          rmSync(copy, { force: true });
+          store.copyTo(copy);
+        }
+        const on = copy ? openUserStore(copy) : store;
+        let r: ReturnType<typeof reshape>;
+        try {
+          r = reshape(on, plan, { apply, device: "cli" });
+        } finally {
+          if (copy) {
+            on.close();
+            for (const f of [copy, `${copy}-wal`, `${copy}-shm`]) rmSync(f, { force: true });
+          }
+        }
+        for (const line of r.lines) console.log(line);
+        for (const p of r.problems) console.log(`PROBLEMA: ${p}`);
+        if (r.problems.length) process.exitCode = 1;
+        else if (r.applied)
+          console.log(
+            `Hecho, en una sola ejecución (${r.run}). Para deshacerlo todo: reshape ${name} --undo ${r.run}`,
+          );
+        else console.log("Ensayo: no se ha cambiado nada (añade --apply).");
+      }
+    } finally {
+      store.close();
+    }
   } else {
     console.log(
-      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | money <name> [--apply]",
+      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | money <name> [--apply] | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run>",
     );
   }
 } catch (e) {

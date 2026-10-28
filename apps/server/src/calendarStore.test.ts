@@ -3,7 +3,7 @@ import type { Row } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
-import { calendarDefs, StoreCalendar, taskDoneField } from "./calendarStore.ts";
+import { calendarDefs, StoreCalendar, saveCalendarDefs, taskDoneField } from "./calendarStore.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { seed, type TypeSpec } from "./seed.test-util.ts";
 
@@ -384,5 +384,139 @@ describe("the calendar over Boni's collections", () => {
     expect(def?.reminders?.timed).toEqual([{ kind: "before", minutes: 10 }]);
     expect((await cal.snapshot()).views[0]?.reminders).toBeDefined();
     expect(await cal.setReminders("nada", { reminders: null })).toBe("conflict");
+  });
+
+  it("a calendar over a branch split by a field (D-14): its records wherever they are, new ones where they go", async () => {
+    // Invented: an Agenda with Tareas and Eventos inside, and two calendars by «area» (Casa takes those without one).
+    const { columns, mapping } = RAW;
+    const agendaDef = { ...RAW, columns: columns.filter((c) => c.id !== "completed") };
+    const store = openUserStore(":memory:");
+    seed(
+      store,
+      [
+        { key: "area", name: "Área", folder: "areas/" },
+        {
+          key: "agenda",
+          name: "Agenda",
+          folder: "agenda/",
+          fields: { area: { type: "relation", to: "area" } },
+          calendar: { ...agendaDef, mapping: { title: mapping.title, when: mapping.when } },
+        },
+        {
+          key: "tarea",
+          name: "Tarea",
+          folder: "agenda/tareas/",
+          parent: "agenda",
+          fields: { Hecha: "checkbox" },
+        },
+        { key: "evento", name: "Evento", folder: "agenda/eventos/", parent: "agenda" },
+      ],
+      {
+        "areas/trabajo.md": "---\ntype: area\n---\n# Trabajo\n",
+        "areas/casa.md": "---\ntype: area\n---\n# Casa\n",
+        "agenda/tareas/Informe.md":
+          '---\ntitle: "Informe"\ndate: "2026-11-02"\nHecha: false\narea: "[[trabajo]]"\n---\n',
+        "agenda/eventos/Reunión.md":
+          '---\ntitle: "Reunión"\ndate: "2026-11-03"\nstartTime: "10:00"\narea: "[[trabajo]]"\n---\n',
+        "agenda/eventos/Cena.md": '---\ntitle: "Cena"\ndate: "2026-11-04"\narea: "[[casa]]"\n---\n',
+        "agenda/eventos/Dentista.md": '---\ntitle: "Dentista"\ndate: "2026-11-05"\n---\n',
+      },
+    );
+    const area = (n: string) =>
+      store.list("t_area").find((e) => e.entity.values.f_vault_path === `areas/${n}.md`)?.entity
+        .id as string;
+    const make = { event: "t_evento", task: "t_tarea" };
+    saveCalendarDefs(store, [
+      {
+        type: "t_agenda",
+        raw: { ...RAW, id: "trabajo", name: "Trabajo", folder: "agenda/trabajo" },
+        where: { field: "f_area", value: area("trabajo") },
+        make,
+      },
+      {
+        type: "t_agenda",
+        raw: { ...RAW, id: "casa", name: "Casa", folder: "agenda/casa" },
+        where: { field: "f_area", value: area("casa"), orEmpty: true },
+        make,
+      },
+    ]);
+    const cal = new StoreCalendar(store, { write: true, pollMs: 60_000 });
+    cleanups.push(() => {
+      cal.close();
+      store.close();
+    });
+    const snap = await cal.snapshot();
+    const where = Object.fromEntries(snap.rows.map((r) => [r.values.title, r.collectionId]));
+    expect(where).toEqual({
+      Informe: "trabajo",
+      Reunión: "trabajo",
+      Cena: "casa",
+      Dentista: "casa",
+    });
+    expect(snap.rows.find((r) => r.values.title === "Informe")?.values.completed).toBe(false);
+    expect(snap.rows.find((r) => r.values.title === "Reunión")?.values.completed).toBeUndefined();
+    const entity = (title: string) =>
+      store.list("t_agenda", { deep: true }).find((e) => e.entity.values.f_title === title)?.entity;
+
+    // New: an event where events go, a task where tasks go, each with its calendar's area.
+    const row = (id: string, collectionId: string, values: Row["values"]): Row => ({
+      id,
+      collectionId,
+      values,
+      created: 0,
+      updated: 0,
+    });
+    let r = await cal.apply(
+      snap.version,
+      [
+        { op: "upsert", row: row("ev-1", "trabajo", { title: "Claustro", date: "2026-11-06" }) },
+        {
+          op: "upsert",
+          row: row("ev-2", "casa", { title: "Fontanero", date: "2026-11-07", completed: false }),
+        },
+      ],
+      "token-a",
+      "portatil",
+    );
+    expect(r.ok).toBe(true);
+    expect(entity("Claustro")).toMatchObject({
+      type: "t_evento",
+      values: { f_area: area("trabajo") },
+    });
+    expect(entity("Fontanero")).toMatchObject({
+      type: "t_tarea",
+      values: { f_area: area("casa"), f_hecha: false },
+    });
+
+    // Marked as a task: the same record moves to Tarea; to another calendar: only its area changes.
+    const reunion = (await cal.snapshot()).rows.find((x) => x.values.title === "Reunión") as Row;
+    const id = entity("Reunión")?.id;
+    r = await cal.apply(
+      r.ok ? r.version : 0,
+      [{ op: "upsert", row: { ...reunion, values: { ...reunion.values, completed: false } } }],
+      "token-a",
+      "portatil",
+    );
+    expect(entity("Reunión")).toMatchObject({ id, type: "t_tarea", values: { f_hecha: false } });
+    const cena = (await cal.snapshot()).rows.find((x) => x.values.title === "Cena") as Row;
+    r = await cal.apply(
+      r.ok ? r.version : 0,
+      [{ op: "upsert", row: { ...cena, collectionId: "trabajo" } }],
+      "token-a",
+      "portatil",
+    );
+    expect(entity("Cena")).toMatchObject({ type: "t_evento", values: { f_area: area("trabajo") } });
+    expect((await cal.snapshot()).rows.find((x) => x.values.title === "Cena")?.collectionId).toBe(
+      "trabajo",
+    );
+    // «Ya lo hice» finds the task column in the collection of tasks.
+    expect(taskDoneField(store, "t_tarea")?.id).toBe("f_hecha");
+    // The definitions keep where and what they make.
+    expect(
+      calendarDefs(store).map((p) => [p.def.id, p.where?.orEmpty ?? false, p.make?.task]),
+    ).toEqual([
+      ["trabajo", false, "t_tarea"],
+      ["casa", true, "t_tarea"],
+    ]);
   });
 });

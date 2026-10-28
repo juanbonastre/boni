@@ -320,14 +320,22 @@ export function asShown(
   def: TypeDef,
   entities: readonly Entity[],
 ): { rows: DataRow[]; titles: Record<string, string> } {
-  const rows = entities.map((e) => ({
-    id: e.id,
-    ...(e.type !== def.id ? { type: e.type } : {}),
-    values: shown(e.values, def.titleField),
-    updated: e.updated,
-  }));
-  const titles: Record<string, string> = {};
   const types = store.schema().types;
+  const rows = entities.map((e) => {
+    // A daughter with a title field of her own (moved in with it) shows it in her mother's title column.
+    const own = types[e.type]?.titleField;
+    const values =
+      e.type !== def.id && own && own !== def.titleField && e.values[own] !== undefined
+        ? { ...e.values, [def.titleField]: e.values[own] }
+        : e.values;
+    return {
+      id: e.id,
+      ...(e.type !== def.id ? { type: e.type } : {}),
+      values: shown(values, def.titleField),
+      updated: e.updated,
+    };
+  });
+  const titles: Record<string, string> = {};
   for (const f of def.fields.filter((x) => x.type === "relation")) {
     for (const r of rows) {
       const v = r.values[f.id];
@@ -522,7 +530,7 @@ export function setNotesInTree(store: UserStore, type: string, on: boolean): voi
 }
 
 /** A collection's name as a key (ASCII, for ids and exports). */
-const keyFrom = (name: string) =>
+export const keyFrom = (name: string) =>
   name
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")

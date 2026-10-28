@@ -885,6 +885,39 @@ describe("collections as classes (docs/clases.md; D-11, D-12, A-06)", () => {
     expect(back?.labels.f_hecha?.integrity).toBe("user");
   });
 
+  it("a batch is one transaction: another connection sees all of it at once, and an error takes all of it back", () => {
+    const { store, dir } = fresh();
+    const { tarea } = make(store);
+    const other = openUserStore(join(dir, "boni.db"));
+    stores.push(other);
+    store.batch(() => {
+      store.retype(tarea.entity.id, "t_evento", me);
+      // Not yet for anyone else.
+      expect(other.get(tarea.entity.id)?.entity.type).toBe("t_tarea");
+      store.update(tarea.entity.id, { f_titulo: { value: "Actas", label: JUAN } }, me);
+    });
+    expect(other.get(tarea.entity.id)?.entity).toMatchObject({
+      type: "t_evento",
+      values: { f_titulo: "Actas" },
+    });
+    expect(() =>
+      store.batch(() => {
+        store.applySchema(
+          {
+            op: "add_field",
+            type: "t_agenda",
+            field: { id: "f_lugar", key: "lugar", name: "Lugar", type: "text", label: JUAN },
+          },
+          me,
+        );
+        store.update(tarea.entity.id, { f_titulo: { value: "Otra", label: JUAN } }, me);
+        throw new Error("no");
+      }),
+    ).toThrow("no");
+    expect(store.get(tarea.entity.id)?.entity.values.f_titulo).toBe("Actas");
+    expect(store.schema().types.t_agenda?.fields.some((f) => f.id === "f_lugar")).toBe(false);
+  });
+
   it("a daughter is at least as closed to the AI as her mother", () => {
     const { store } = fresh();
     make(store);

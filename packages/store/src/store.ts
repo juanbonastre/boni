@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { constants, DatabaseSync } from "node:sqlite";
 import {
   ancestors,
@@ -165,7 +165,13 @@ export interface UserStore {
    * fields both share (the same id) stay; the others leave the record, kept in the operation's log (undo puts them
    * back).
    */
-  retype(id: EntityId, type: TypeId, meta: OpMeta): StoredEntity;
+  /** With `writes`, values given in the same operation (checked against the new collection). */
+  retype(id: EntityId, type: TypeId, meta: OpMeta, writes?: Writes): StoredEntity;
+  /**
+   * Many changes as one transaction: other connections see all of them or none, and an error takes all of them back
+   * (a reshape of the whole tree, `apps/server/src/reshape.ts`).
+   */
+  batch<T>(fn: () => T): T;
   /** The last operation on an entity (its number and the device that made it), or null. */
   lastChange(id: EntityId): { seq: number; device: string | null } | null;
   /** How many entities a type has (not in the trash), without reading them. */
@@ -236,6 +242,8 @@ export interface UserStore {
   setSetting(key: string, value: string | null): void;
   /** An encrypted copy of the whole store, coherent while it is in use. */
   backupTo(path: string, key: Buffer): void;
+  /** A plain copy at `path` (never over a file), as the store is now, without stopping its writers (a dry run). */
+  copyTo(path: string): void;
   /** The agent's runs, proposals and confirmations, in this same database. */
   journal: Journal;
   /** Who did and saw what (audit.ts): never readable by `readQuery` nor by any tool of a model. */
@@ -313,8 +321,12 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
     return { types };
   }
 
+  // How deep in `batch` we are: inside one, every method's transaction is part of it (all or nothing).
+  let depth = 0;
   function tx<T>(fn: () => T): T {
+    if (depth > 0) return fn();
     db.exec("BEGIN IMMEDIATE");
+    depth++;
     fresh(); // with the write lock held: nobody else can change it now
     try {
       const out = fn();
@@ -324,6 +336,8 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       db.exec("ROLLBACK");
       schema = loadSchema(); // a failed schema change must not linger in memory
       throw e;
+    } finally {
+      depth--;
     }
   }
 
@@ -820,7 +834,8 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
             .all(t) as unknown as EntityRow[]
         ).map(toEntity),
       ),
-    retype: (id, type, meta) =>
+    batch: (fn) => tx(fn),
+    retype: (id, type, meta, writes) =>
       tx(() => {
         const cur = readEntity(id);
         if (!cur) throw new StoreError("not-found", `no entity "${id}"`);
@@ -836,6 +851,12 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
           if (field && checkValue(field, v).ok) continue;
           state.values[f] = null;
           state.labels[f] = null;
+        }
+        if (writes && Object.keys(writes).length) {
+          const p = prepare(to, writes, meta);
+          Object.assign(state.values, p.values);
+          Object.assign(state.labels, p.labels);
+          if (p.body !== undefined) state.body = p.body;
         }
         return doUpdate(id, state, meta, undefined, undefined, true);
       }),
@@ -1098,6 +1119,10 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       } finally {
         db.setAuthorizer(null);
       }
+    },
+    copyTo(dest) {
+      if (existsSync(dest)) throw new StoreError("invalid", `${dest} exists`);
+      db.prepare("VACUUM INTO ?").run(dest);
     },
     backupTo(dest, key) {
       const tmp = `${dest}.tmp-${process.pid}`;
