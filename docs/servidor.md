@@ -3,6 +3,13 @@
 Servidor propio para que todos los dispositivos usen el mismo calendario, como Notion Calendar (plan aprobado por Juan el
 2026-10-17). Codigo en `apps/server`.
 
+> **Sin vault (2026-10-28, PR «Fuera el vault»).** El servidor ya no lee ni escribe ninguna carpeta de notas: el calendario
+> de una cuenta son sus colecciones en Boni (`calendarStore.ts`, definiciones en `calendar/defs`), el dinero de la API v1
+> también (`v1/storeMoney.ts`; «Apuntar gasto» crea el movimiento en Boni), y se fueron el espejo Markdown, la importación
+> del vault, el modo `core` y los comandos `mirror` de `cli.ts` (`add-user <nombre>` ya no lleva carpeta; mover las
+> categorías es `money <nombre>`). Las copias diarias son solo de `system.db` y de cada almacén. Lo que sigue describe
+> cada fase tal como se hizo: donde habla del vault o del espejo, es historia.
+
 ## Principios
 - **La verdad son las notas del vault.** El servidor lee y escribe el vault con las mismas reglas que las apps (reutiliza
   `packages/calendar`, el lector del vault de la web y el acceso a archivos del escritorio). No hay base de datos paralela de eventos.
@@ -191,7 +198,7 @@ compartido, ambiental) es el origen de cada turno, asi que una confirmacion solo
   imagen Docker la lleva). En el navegador habla con este mismo servidor: la API v1 (gráficas, atajos, apuntar gasto) y la
   del agente (la conversación). El calendario sigue en `/`.
 
-## Espejo Markdown (2026-10-20)
+## Espejo Markdown (2026-10-20; retirado 2026-10-28)
 Para los tipos en modo `core` el núcleo es la verdad y escribe sus notas en el vault de la cuenta (`src/mirror.ts` sobre
 `@boni/mirror`; diseño en `docs/nucleo.md`, 9.2 y 9.4). Solo con `BONI_WRITE=1` y el agente encendido (las propuestas van a su
 bandeja). Corre después de cada petición del agente y cada 30 s.
