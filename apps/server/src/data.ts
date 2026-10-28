@@ -1,4 +1,11 @@
-import { type Entity, type FieldDef, label, type TypeDef, type Value } from "@boni/entities";
+import {
+  branch,
+  type Entity,
+  type FieldDef,
+  label,
+  type TypeDef,
+  type Value,
+} from "@boni/entities";
 import { AI_LEVELS, type AiLevel, BODY, StoreError, type UserStore, type Zone } from "@boni/store";
 import { filterErrors } from "@boni/views";
 import { PATH_FIELD } from "./paths.ts";
@@ -20,6 +27,8 @@ export interface DataField {
 }
 export interface DataType {
   id: string;
+  /** Its mother collection (docs/clases.md): the tree of collections. */
+  parent?: string;
   name: string;
   icon: string;
   titleField: string;
@@ -87,6 +96,8 @@ export interface GhostRow {
 }
 export interface DataRow {
   id: string;
+  /** The row's own collection when it is a daughter's (a mother's table has her daughters' rows: D-11). */
+  type?: string;
   values: Record<string, Value>;
   updated: number;
   /** The row's free text (a note's body, Markdown), only when one row is asked for. */
@@ -148,14 +159,17 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
       system: true,
     }),
   );
+  const types = store.schema();
   const mine = userTypes(store)
     .map((t) => ({
       id: t.id,
+      ...(t.parent ? { parent: t.parent } : {}),
       name: t.name,
       icon: t.icon ?? "",
       titleField: t.titleField,
       fields: fieldsOf(t),
-      count: store.count(t.id),
+      // Her table's rows: hers and her daughters'.
+      count: branch(types, t.id).reduce((n, id) => n + store.count(id), 0),
       level: levels[t.id] ?? "visible",
       ...(zones[t.id] ? { zone: zones[t.id] } : {}),
       rules: rules
@@ -291,7 +305,8 @@ export function listRows(
   }
   const def = userTypes(store).find((t) => t.id === type);
   if (!def) throw new DataError("not-found");
-  const all = store.entities(type).sort((a, b) => b.updated - a.updated);
+  // A mother's table has her daughters' rows too, each with its own collection (docs/clases.md §2.3; D-11).
+  const all = store.entities(type, { deep: true }).sort((a, b) => b.updated - a.updated);
   return {
     ...asShown(store, def, all.slice(0, ROW_LIMIT)),
     truncated: all.length > ROW_LIMIT,
@@ -307,6 +322,7 @@ export function asShown(
 ): { rows: DataRow[]; titles: Record<string, string> } {
   const rows = entities.map((e) => ({
     id: e.id,
+    ...(e.type !== def.id ? { type: e.type } : {}),
     values: shown(e.values, def.titleField),
     updated: e.updated,
   }));

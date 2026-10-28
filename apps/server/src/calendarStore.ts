@@ -561,20 +561,21 @@ export class StoreCalendar implements CalendarSource {
       const eid = this.entityOf.get(c.row.id);
       const before = eid ? (this.rows.get(c.row.id) ?? null) : null;
       if (eid && before && before.collectionId !== c.row.collectionId) {
-        // Moved to another calendar: another collection, so another entity there (its note moves to that folder,
-        // keeping its file name when free) and the old one to the trash. The device maps the row by `aliases`.
+        // Moved to another calendar: the same record goes to that collection (docs/clases.md §2.5: its id and its
+        // history stay; what both share stays), with that calendar's properties; its note's path follows it to that
+        // folder (keeping its file name when free). The device maps the row by `aliases`.
         const from = this.placed.find((x) => x.def.id === before.collectionId)?.def;
         const values = withMovedRowProperties(c.row.values, from, p.def);
+        this.store.retype(eid, p.type, meta);
         const writes = this.writesFor(p, null, { ...c.row, values }, device);
         const was = this.store.get(eid)?.entity.values[PATH_FIELD];
         const name = typeof was === "string" ? was.slice(was.lastIndexOf("/") + 1) : null;
         const path = name ? `${p.def.folder}/${name}` : null;
         if (path && !this.entityOf.has(path))
           writes[PATH_FIELD] = { value: path, label: this.labelFor(p.type, null, device) };
-        const made = this.store.create(p.type, writes, meta);
-        this.store.remove(eid, meta);
-        const id = path && writes[PATH_FIELD] ? path : made.entity.id;
-        aliases[c.row.id] = id;
+        if (Object.keys(writes).length) this.store.update(eid, writes, meta);
+        const id = path && writes[PATH_FIELD] ? path : c.row.id;
+        if (id !== c.row.id) aliases[c.row.id] = id;
         touched.push(id);
       } else if (eid && before) {
         const writes = this.writesFor(p, before, c.row, device);

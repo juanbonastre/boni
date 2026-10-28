@@ -129,3 +129,70 @@ describe("protection rules: a part of a collection with its own level", () => {
     expect(store.aiRules()).toHaveLength(1);
   });
 });
+
+describe("privacy is inherited (docs/clases.md §2.8; A-06)", () => {
+  it("a list of a mother never gives nor counts a record of a daughter closed to the models; her rules reach them", () => {
+    const store = openUserStore(":memory:");
+    stores.push(store);
+    const meta = { actor: "user" as const };
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_agenda",
+          key: "agenda",
+          name: "Agenda",
+          titleField: "f_titulo",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: L,
+          fields: [{ id: "f_titulo", key: "titulo", name: "Título", type: "text", label: L }],
+        },
+      },
+      meta,
+    );
+    for (const id of ["t_evento", "t_cita"])
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key: id.slice(2),
+            name: id.slice(2),
+            parent: id === "t_cita" ? "t_evento" : "t_agenda",
+            titleField: "f_titulo",
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: L,
+            fields: [],
+          },
+        },
+        meta,
+      );
+    const add = (type: string, titulo: string) =>
+      store.create(type, { f_titulo: { value: titulo, label: L } }, meta).entity.id;
+    add("t_agenda", "Nota suelta");
+    add("t_evento", "Clase");
+    const cita = add("t_cita", "Dentista");
+    store.setAiAccess("t_cita", "private", "portatil");
+    const ro = readStore(store);
+    const deep = () =>
+      ro
+        .list("t_agenda", { deep: true })
+        .map((s) => s.entity.values.f_titulo)
+        .sort();
+    expect(deep()).toEqual(["Clase", "Nota suelta"]);
+    expect(ro.get(cita)).toBeNull();
+    expect(ro.list("t_cita")).toEqual([]);
+    // A rule of the mother reaches her daughters' records.
+    store.setAiRule(
+      {
+        type: "t_agenda",
+        filter: [{ field: "f_titulo", op: "is", value: "Clase" }],
+        level: "restricted",
+      },
+      "portatil",
+    );
+    expect(deep()).toEqual(["Nota suelta"]);
+  });
+});

@@ -499,3 +499,47 @@ describe("what a block counts, and Boni's own records as collections (design aud
     expect(mcp.result.content[0]?.text).not.toContain("Llamadas a modelos");
   });
 });
+
+describe("collections as classes (docs/clases.md; D-11)", () => {
+  it("a mother's table has her daughters' rows, each with its own collection; the types say their mother", async () => {
+    const store = host.store(1);
+    const meta = { actor: "user" as const };
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_lectura",
+          key: "lectura",
+          name: "Lecturas",
+          parent: "t_libro",
+          titleField: "f_titulo",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: L,
+          fields: [{ id: "f_pagina", key: "pagina", name: "Página", type: "number", label: L }],
+        },
+      },
+      meta,
+    );
+    const daughter = store.create(
+      "t_lectura",
+      { f_titulo: { value: "Un ensayo inventado", label: L }, f_pagina: { value: 12, label: L } },
+      meta,
+    ).entity.id;
+    const t = await token();
+    const types = (await call(t, "GET", "/api/data/types")).body as {
+      types: { id: string; parent?: string; count: number }[];
+    };
+    const libro = types.types.find((x) => x.id === "t_libro");
+    expect(types.types.find((x) => x.id === "t_lectura")).toMatchObject({ parent: "t_libro" });
+    const rows = (await call(t, "GET", "/api/data/types/t_libro/rows")).body as {
+      rows: { id: string; type?: string; values: Record<string, unknown> }[];
+    };
+    expect(rows.rows.find((r) => r.id === daughter)).toMatchObject({
+      type: "t_lectura",
+      values: { f_titulo: "Un ensayo inventado", f_pagina: 12 },
+    });
+    expect(libro?.count).toBe(rows.rows.length);
+    expect(rows.rows.filter((r) => r.type === undefined).length).toBe(rows.rows.length - 1);
+  });
+});

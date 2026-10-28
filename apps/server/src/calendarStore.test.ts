@@ -169,10 +169,12 @@ describe("the calendar over Boni's collections", () => {
     expect((await cal.snapshot()).rows.some((x) => x.id === id)).toBe(false);
   });
 
-  it("an event moved to another calendar becomes a row of that collection; the old one goes to the trash", async () => {
+  it("an event moved to another calendar is the same record in that collection, with its id and history (D-12)", async () => {
     const { store, cal } = env(true);
     const snap = await cal.snapshot();
     const row = await rowOf(cal, CLASS);
+    const entityId = store.list("t_docencia").find((x) => x.entity.values.f_vault_path === CLASS)
+      ?.entity.id as string;
     const r = await cal.apply(
       snap.version,
       [{ op: "upsert", row: { ...row, collectionId: "planes" } }],
@@ -188,6 +190,9 @@ describe("the calendar over Boni's collections", () => {
       body: "Preparar el tema 3.\n",
     });
     expect(store.list("t_docencia").map((e) => e.entity.values.f_title)).toEqual(["Tutoría"]);
+    // The same record: its id, nothing in the trash.
+    expect(store.get(entityId)?.entity).toMatchObject({ type: "t_planes" });
+    expect(store.get(entityId)?.entity.deleted).toBeUndefined();
     // Its project stays; its area becomes the new calendar's.
     const areaId = (p: string) =>
       store.list("t_area").find((e) => e.entity.values.f_vault_path === `areas/${p}.md`)?.entity.id;

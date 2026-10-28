@@ -71,6 +71,11 @@ export interface FieldDef {
   /** Imported keys that are kept but not shown. */
   hidden?: boolean;
   archived?: boolean;
+  /**
+   * Set on a field a collection inherits (docs/clases.md §2.2): the ancestor that defines it. The copy keeps the same
+   * id, so values follow a record up and down its branch; only the schema operations write it.
+   */
+  from?: TypeId;
   /** Where the field's key and name came from. */
   label: Label;
 }
@@ -80,6 +85,11 @@ export interface TypeDef {
   key: string;
   name: string;
   icon?: string;
+  /**
+   * Its mother collection (docs/clases.md): it has her fields (as copies marked `from`) and its table is part of hers.
+   * None: a daughter of the root, the native fields every record has (title, note, created, edited, who).
+   */
+  parent?: TypeId;
   fields: FieldDef[];
   titleField: FieldId;
   /** Default sensitivity of its entities (movements: sensitive; people: personal). */
@@ -140,6 +150,30 @@ export const SYSTEM_TYPES = [
 /** A collection's description is a few lines, never a document. */
 export const MAX_DESCRIPTION = 2000;
 
+/** A type's ancestors, the nearest first (the root is implicit). */
+export function ancestors(schema: Schema, id: TypeId): TypeId[] {
+  const out: TypeId[] = [];
+  for (
+    let p = schema.types[id]?.parent;
+    p && p !== id && !out.includes(p);
+    p = schema.types[p]?.parent
+  )
+    out.push(p);
+  return out;
+}
+
+/** A type and every collection under it, the type first (breadth first). */
+export function branch(schema: Schema, id: TypeId): TypeId[] {
+  const out = [id];
+  for (let i = 0; i < out.length; i++)
+    for (const t of Object.values(schema.types))
+      if (t.parent === out[i] && !out.includes(t.id)) out.push(t.id);
+  return out;
+}
+
+/** The fields a type defines itself (not the ones it inherits). */
+export const ownFields = (def: TypeDef): FieldDef[] => def.fields.filter((f) => !f.from);
+
 const ID = /^[a-z][a-z0-9_]{1,63}$/;
 /** ASCII only: keys are matched literally by other tools (vault conventions). */
 const KEY = /^[a-z][a-z0-9_-]{0,39}$/;
@@ -177,6 +211,25 @@ export function typeErrors(def: TypeDef, schema: Schema): string[] {
         errors.push(`${where}: unknown target "${target}"`);
     } else if (f.relation) errors.push(`${where}: only relation fields have a target`);
   }
+  if (def.parent !== undefined) {
+    const mother = schema.types[def.parent];
+    if (def.parent === def.id) errors.push("a collection cannot be its own mother");
+    else if (!mother) errors.push(`unknown mother "${def.parent}"`);
+    else {
+      if (!!mother.system !== !!def.system)
+        errors.push("Boni's own types and the user's collections do not inherit from each other");
+      for (let p: string | undefined = def.parent, n = 0; p; p = schema.types[p]?.parent, n++)
+        if (p === def.id || n > 64) {
+          errors.push("a collection cannot go inside its own branch");
+          break;
+        }
+    }
+  }
+  // Two fields with one name in a branch: an inherited one and one of its own.
+  const names = new Set(def.fields.filter((f) => f.from).map((f) => f.name.trim().toLowerCase()));
+  for (const f of def.fields)
+    if (!f.from && names.has(f.name.trim().toLowerCase()))
+      errors.push(`field "${f.key}": its mother already has a field called "${f.name}"`);
   if (def.description) {
     const n = def.description.text.trim().length;
     if (!n || def.description.text.length > MAX_DESCRIPTION)
