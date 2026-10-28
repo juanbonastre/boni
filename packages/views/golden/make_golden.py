@@ -1,20 +1,25 @@
 """Golden results for the chart engine port (packages/views): the ORIGINAL Python engine of the first Boni
-(legacy/boni/server/boni/stats/engine.py) computes every spec below on invented data; the TypeScript engine must
-give the same (chart.test.ts). Run it again only when the cases change:
+(server/boni/stats/engine.py of the archived repo juanbonastre/boni-pruebas) computes every spec below on invented
+data; the TypeScript engine must give the same (chart.test.ts). Run it again only when the cases change:
 
-    /path/to/a/python-with-pydantic make_golden.py
+    BONI_ORIGINAL=/path/to/boni-pruebas/server /path/to/a/python-with-pydantic make_golden.py
 
 Invented data only (the repo is public): a seeded generator, names like ana-ejemplo.
 """
 
 import json
 import random
+import os
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[2] / "legacy" / "boni" / "server"))
+# The first Boni's server/ folder, from a clone of the archived repo juanbonastre/boni-pruebas (BONI_ORIGINAL).
+ORIGINAL = os.environ.get("BONI_ORIGINAL")
+if not ORIGINAL:
+    sys.exit("Set BONI_ORIGINAL to the server/ folder of a clone of juanbonastre/boni-pruebas")
+sys.path.insert(0, ORIGINAL)
 
 from boni.contract import ChartSpec  # noqa: E402
 from boni.sources.finanzas import Debt, Movement  # noqa: E402

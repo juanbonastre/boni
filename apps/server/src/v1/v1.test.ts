@@ -13,7 +13,7 @@ import { V1Store } from "./store.ts";
 import { StoreMoney } from "./storeMoney.ts";
 
 /**
- * The port against the ORIGINAL Python server: golden/v1.json is what legacy/boni/server answered for
+ * The port against the ORIGINAL Python server: golden/v1.json is what the first Boni's server (archived repo boni-pruebas) answered for
  * the same cases (golden/make_golden.py). Every value must be the same.
  */
 const golden = JSON.parse(readFileSync(new URL("./golden/v1.json", import.meta.url), "utf8"));

@@ -1,20 +1,25 @@
 """Golden results for the Boni API v1 port (apps/server/src/v1): the ORIGINAL Python server of the first Boni
-(legacy/boni/server) computes each case; the TypeScript port must give the same (v1.test.ts). Run it again only when the
-cases change, with a Python that has pydantic:
+(server/ of the archived repo juanbonastre/boni-pruebas) computes each case; the TypeScript port must give the same
+(v1.test.ts). Run it again only when the cases change, with a Python that has pydantic:
 
-    /path/to/python make_golden.py && npx biome format --write .
+    BONI_ORIGINAL=/path/to/boni-pruebas/server /path/to/python make_golden.py && npx biome format --write .
 
 Invented values only (the repo is public).
 """
 
 import asyncio
 import json
+import os
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parents[4] / "legacy" / "boni" / "server"))
+# The first Boni's server/ folder, from a clone of the archived repo juanbonastre/boni-pruebas (BONI_ORIGINAL).
+ORIGINAL = os.environ.get("BONI_ORIGINAL")
+if not ORIGINAL:
+    sys.exit("Set BONI_ORIGINAL to the server/ folder of a clone of juanbonastre/boni-pruebas")
+sys.path.insert(0, ORIGINAL)
 
 from boni.contract import ChartSpec  # noqa: E402
 from boni.expenses import capture  # noqa: E402

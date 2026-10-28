@@ -10,7 +10,7 @@ import { type Caller, NotFound, Unavailable, type V1Service } from "./service.ts
 import type { Shortcut, Widget } from "./store.ts";
 
 /**
- * The Boni API v1 (the first Boni's app.py and legacy/boni/api/), served by this server so the Boni
+ * The Boni API v1 (the first Boni's app.py and api/, in the archived repo boni-pruebas), served by this server so the Boni
  * apps move here without a change: same paths, bodies, status codes and error messages
  * ({ error: { code, message } }). Requests are checked here the way its Pydantic models did; the rest
  * is service.ts.

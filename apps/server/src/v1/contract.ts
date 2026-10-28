@@ -6,7 +6,7 @@ import {
 } from "@boni/views";
 
 /**
- * The Boni API v1 contract (the first Boni's server/boni/contract.py and legacy/boni/api/), as the Boni apps
+ * The Boni API v1 contract (the first Boni's server/boni/contract.py and api/, in the archived repo boni-pruebas), as the Boni apps
  * read it. Answers carry every field, defaults written out, as the Pydantic models sent them.
  */
 export const PALETTE = [
