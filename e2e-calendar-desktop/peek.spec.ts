@@ -1,8 +1,8 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { type ChildProcess, spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   type ElectronApplication,
   _electron as electron,
@@ -10,12 +10,13 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { proposeEntries, seedAccount } from "../e2e/server-data.ts";
 
 /**
  * The note peek as a window of Boni Calendar (Juan, 2026-10-22): with Boni's address in Settings → Desktop, a
  * double click on an event shows its note in the calendar's own small window (Boni's page from Boni's server,
  * logged in once), and a click in the calendar puts it away at once. A proposal of Boni's inbox drawn in the
- * calendar opens there too, to accept or reject (plan b2). Invented account and vault.
+ * calendar opens there too, to accept or reject (plan b2). An invented account, its calendar in its collections.
  */
 const ROOT = join(import.meta.dirname, "..");
 const SHOTS = join(ROOT, "e2e", "screenshots");
@@ -23,23 +24,19 @@ const PASSWORD = "una contraseña larga de ejemplo";
 const PORT = 19000 + Math.floor(Math.random() * 1000);
 const BONI = `http://127.0.0.1:${PORT}`;
 const NOTE = "agenda/docencia/2026-10-27 Clase de ejemplo.md";
-const DEF = `---
-type: wiki
-collection:
-  id: docencia
-  name: Docencia
-  folder: agenda/docencia
-  account: Agenda
-  color: "#60a5fa"
-  columns:
-    - { id: title, name: Título, type: text }
-    - { id: date, name: Fecha, type: date }
-    - { id: startTime, name: Hora de inicio, type: time }
-  mapping:
-    title: title
-    when: { kind: split, date: date, startTime: startTime }
----
-`;
+const DOCENCIA = {
+  id: "docencia",
+  name: "Docencia",
+  folder: "agenda/docencia",
+  account: "Agenda",
+  color: "#60a5fa",
+  columns: [
+    { id: "title", name: "Título", type: "text" },
+    { id: "date", name: "Fecha", type: "date" },
+    { id: "startTime", name: "Hora de inicio", type: "time" },
+  ],
+  mapping: { title: "title", when: { kind: "split", date: "date", startTime: "startTime" } },
+};
 
 let dir = "";
 let server: ChildProcess | null = null;
@@ -48,39 +45,21 @@ let main: Page;
 
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-calendar-peek-"));
-  const vault = join(dir, "vault");
-  const files: Record<string, string> = {
-    "_system/colecciones/agenda-docencia.md": DEF,
-    [NOTE]:
-      '---\ntitle: "Clase de ejemplo"\ndate: "2026-10-27"\nstartTime: "10:00"\n---\nPreparar el tema 3.\n',
-  };
-  for (const [p, text] of Object.entries(files)) {
-    mkdirSync(dirname(join(vault, p)), { recursive: true });
-    writeFileSync(join(vault, p), text);
-  }
-  const env = { ...process.env, BONI_DB: join(dir, "boni.db"), BONI_PASSWORD: PASSWORD };
-  execFileSync("node", ["apps/server/src/cli.ts", "add-user", "ejemplo", vault], {
-    cwd: ROOT,
-    env,
-  });
-  mkdirSync(join(dir, "users"));
-  execFileSync(
-    "node",
-    [
-      "packages/vault-import/src/cli.ts",
-      "--vault",
-      vault,
-      "--store",
-      join(dir, "users", "1.db"),
-      "--apply",
-    ],
-    { cwd: ROOT, env },
+  seedAccount(
+    dir,
+    "ejemplo",
+    PASSWORD,
+    [{ key: "docencia", name: "Docencia", folder: "agenda/docencia/", calendar: DOCENCIA }],
+    {
+      [NOTE]:
+        '---\ntitle: "Clase de ejemplo"\ndate: "2026-10-27"\nstartTime: "10:00"\n---\nPreparar el tema 3.\n',
+    },
   );
-  // The collection in Boni (as on the NAS): a note written by hand in its folder becomes a proposal.
-  execFileSync("node", ["apps/server/src/cli.ts", "mirror", "ejemplo", "t_docencia", "--apply"], {
-    cwd: ROOT,
-    env,
-  });
+  // A proposal waiting in Boni's inbox (as a mail read in the background leaves it).
+  proposeEntries(dir, 1, "docencia", [
+    { title: "Revisión inventada", date: "2026-10-28", starttime: "12:00" },
+  ]);
+  const env = { ...process.env, BONI_DB: join(dir, "db.sqlite") };
   server = spawn("node", ["apps/server/src/main.ts"], {
     cwd: ROOT,
     env: {
@@ -88,7 +67,7 @@ test.beforeAll(async () => {
       BONI_PORT: String(PORT),
       BONI_WRITE: "1",
       BONI_BONI_WEB: join(ROOT, "apps", "boni-web", "dist"),
-      // The mirror works with the agent on (its inbox); no model is called here.
+      // The inbox is the agent's; no model is called here.
       ANTHROPIC_API_KEY: "sk-invented-for-tests",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -201,10 +180,6 @@ test("a double click: the note in the calendar's own window, logged in once; a c
 });
 
 test("a proposal drawn in the calendar: one click shows its page in the peek; accepted, the peek goes", async () => {
-  writeFileSync(
-    join(dir, "vault", "agenda/docencia/2026-10-28 Revisión inventada.md"),
-    '---\ntitle: "Revisión inventada"\ndate: "2026-10-28"\nstartTime: "12:00"\n---\n',
-  );
   const login = await fetch(`${BONI}/api/login`, {
     method: "POST",
     body: JSON.stringify({ user: "ejemplo", password: PASSWORD, device: "pruebas" }),

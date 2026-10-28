@@ -517,6 +517,10 @@ export class StoreCalendar implements CalendarSource {
       const next = after.values[prop] ?? null;
       if (before && same(before.values[prop], next)) continue;
       if (next === null && !this.fieldsOf(p).some((x) => x.prop === prop)) continue;
+      // A device edits only the calendar's columns: a property it lacks that is none of them (the area its
+      // collection gives new rows, a project set in Boni) is one it never got back yet (its draft, sent again before
+      // the server's copy arrived), never one it cleared.
+      if (before && next === null && !p.def.columns.some((c) => c.id === prop)) continue;
       const f = this.fieldFor(p, prop, next, device);
       const value = this.fromProp(p.type, f, next, device);
       if (value === undefined) continue;

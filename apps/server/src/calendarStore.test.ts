@@ -147,7 +147,7 @@ describe("the calendar over Boni's collections", () => {
       "token-a",
       "portatil",
     );
-    // Its id is its note's name, as the vault's writer names one (the mirror writes it there).
+    // Its id is the name its note would have had, as the apps name one.
     const id = made.ok ? (made.aliases["ev-nuevo"] as string) : "";
     expect(id).toBe("agenda/docencia/Reunión inventada.md");
     const entityAt = (path: string) =>
@@ -212,6 +212,34 @@ describe("the calendar over Boni's collections", () => {
     expect(id).toBe("agenda/docencia/Reunión inventada.md");
     const made2 = store.list("t_docencia").find((e) => e.entity.values.f_vault_path === id);
     expect(made2?.entity.values.f_area).toBe(areaId("docencia"));
+  });
+
+  it("a device's draft sent again before the server's copy came back keeps what the server added (the area)", async () => {
+    const { store, cal } = env(true);
+    const snap = await cal.snapshot();
+    const draft: Row = {
+      id: "ev-borrador",
+      collectionId: "docencia",
+      values: { title: "Borrador", date: "2026-10-26", startTime: "09:00" },
+      created: 0,
+      updated: 0,
+    };
+    const made = await cal.apply(snap.version, [{ op: "upsert", row: draft }], "t", "portatil");
+    const id = made.ok ? (made.aliases["ev-borrador"] as string) : "";
+    const area = () =>
+      store.list("t_docencia").find((e) => e.entity.values.f_vault_path === id)?.entity.values
+        .f_area;
+    expect(area()).toBeTruthy();
+    // The same draft, a moment later, without the area the server gave it.
+    const again = await cal.apply(
+      made.ok ? made.version : 0,
+      [{ op: "upsert", row: { ...draft, id, values: { ...draft.values, startTime: "10:00" } } }],
+      "t",
+      "portatil",
+    );
+    expect(again.ok).toBe(true);
+    expect((await rowOf(cal, id)).values.startTime).toBe("10:00");
+    expect(area()).toBeTruthy();
   });
 
   it("sends only what changed since a version; a change by someone else after it is a conflict", async () => {
