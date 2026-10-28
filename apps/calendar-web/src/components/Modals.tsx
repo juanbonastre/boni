@@ -22,7 +22,7 @@ import {
 } from "@boni/calendar";
 import { Plus, Trash2, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { getHost, onKeys } from "../host.ts";
+import { onKeys } from "../host.ts";
 import { type Key, t } from "../i18n.ts";
 import { useApp } from "../store.ts";
 import { DesktopSettings } from "./DesktopSettings.tsx";
