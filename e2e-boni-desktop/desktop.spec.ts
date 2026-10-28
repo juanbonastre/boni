@@ -325,8 +325,9 @@ test("«Todas las páginas»: every collection, filtered by what the AI sees; pr
   await shot(w, "unlock");
   await dialog.getByRole("button", { name: "Desbloquear" }).click();
   await expect(w.locator(".col-protect .protect-pill")).toHaveText("Opaca");
+  await expect(dialog).toHaveCount(0);
   // And back to private from the list, in one click (raising is never locked).
-  await w.keyboard.press("Escape");
+  await w.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
   await w.locator(".cols-filter").getByRole("radio", { name: "Todas" }).click();
   const row = table.locator("tbody tr", { hasText: "Documentos" });
   await row.locator(".protect-pill").click();
