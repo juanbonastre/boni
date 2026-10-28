@@ -7,7 +7,8 @@ Servidor propio para que todos los dispositivos usen el mismo calendario, como N
 > de una cuenta son sus colecciones en Boni (`calendarStore.ts`, definiciones en `calendar/defs`), el dinero de la API v1
 > también (`v1/storeMoney.ts`; «Apuntar gasto» crea el movimiento en Boni), y se fueron el espejo Markdown, la importación
 > del vault, el modo `core` y los comandos `mirror` de `cli.ts` (`add-user <nombre>` ya no lleva carpeta; mover las
-> categorías es `money <nombre>`). Las copias diarias son solo de `system.db` y de cada almacén. Lo que sigue describe
+> categorías es `money <nombre>`). Las copias diarias son solo de `system.db` y de cada almacén. Las apps de Boni Calendar
+> tampoco tienen ya modo sin servidor (parte B): sin servidor muestran el calendario de ejemplo. Lo que sigue describe
 > cada fase tal como se hizo: donde habla del vault o del espejo, es historia.
 
 ## Principios

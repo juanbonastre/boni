@@ -111,16 +111,16 @@ slate `#94a3b8`.
   still open. A title typed and then a click elsewhere is kept (no Enter needed: any press outside the detail first saves
   what is being typed). Closing the detail without a title (`Esc`, a click elsewhere, the close button, another
   selection) drops it with no undo step; with a title it becomes an ordinary
-  event (and, with a vault or a server, its note). So untitled notes are never made, and notes are never renamed.
+  event (and, with a server, an entry of its collection). So untitled entries are never made, and notes are never renamed.
 - **Selection:** click selects one and opens its detail; `Shift`+click adds the range from the anchor in chronological
   order; `Ctrl+Shift`+click adds or removes one event. Dragging one selected event moves all of them. Click on empty space
   or `Esc` clears. While `Ctrl`/`Shift` is held the popover lets clicks through, except while typing in a field (`Shift`
   for a capital letter must not fade it).
-- **Ctrl+click opens the event's note** (like a link in Obsidian): in Obsidian in a tab, from the desktop app in
-  Obsidian. An event without a note (sample data, not saved yet) is just selected. Decided by Juan, 2026-10-16; until
-  then `Ctrl`+click toggled the selection and `Ctrl+Shift`+click added a range of one calendar.
-- **Series in the vault:** repeating an event creates one note per occurrence (up to 12 months ahead; open-ended series are
-  topped up whenever the vault is read with writing on, with a toast saying how many were created). The same "this / this and
+- **Ctrl+click opens the event's note** (like a link): from the desktop app, in Boni (a double click, in its peek). An
+  event without a note (sample data, not saved yet) is just selected. Decided by Juan, 2026-10-16; until then
+  `Ctrl`+click toggled the selection and `Ctrl+Shift`+click added a range of one calendar.
+- **Series:** repeating an event creates one entry per occurrence (up to 12 months ahead; the server tops up open-ended
+  series). The same "this / this and
   following / all" question applies; "all" on a deletion keeps the past notes (the dialog says so); marking a task done only
   changes that note; changing the repetition rule replaces the later notes with the ones the new rule makes.
 - **Recurrence:** editing, moving or deleting an occurrence asks "Only this event / This and following events / All
@@ -134,25 +134,17 @@ slate `#94a3b8`.
   other services' calendars (Google Calendar...) by their iCal address, read-only, in their own sidebar group with
   colour and eye like any other. Each row in Settings shows how many events came and when, or why the download
   failed (refresh, edit, remove next to it). The last copy shows without a connection; they refresh when the app
-  opens and every half hour. The address of a private calendar is a secret: it stays on the device, never in the
-  vault. A repetition the app cannot repeat (e.g. "second Tuesday") shows once and Settings says how many.
-- **Data from a server** (Settings → Data → Source: Local folder | Server; a plain browser only has Server): address, user,
+  opens and every half hour. The address of a private calendar is a secret: it stays on the device or in the account,
+  encrypted. A repetition the app cannot repeat (e.g. "second Tuesday") shows once and Settings says how many.
+- **Data from a server** (Settings → Data; without a server, the invented sample): address, user,
   password; the device keeps only a session token. The calendar opens on the last copy kept on the device, then follows the
   server live; Settings says "Live", "Offline: showing the last copy" or "The session ended: log in again". When the server
-  writes, the gestures change the notes through it exactly as in a local vault, also offline: changes show at once and wait
-  on the device until the connection is back. A change the server refuses (the note changed elsewhere) shows the vault's
-  conflict toast and the server's copy. A read-only server sends its calendars read-only. External calendars and the
+  writes, the gestures change its entries, also offline: changes show at once and wait on the device until the connection
+  is back. A change the server refuses (the entry changed elsewhere) shows a conflict toast and the server's copy. A read-only server sends its calendars read-only. External calendars and the
   shared preferences (language, clock, first day, second timezone, week numbers, default duration, snap) belong to the
   account: every device shows the same, changes reach the others live, and the server downloads the calendars (the hint
   under External calendars says so). Theme, density and timezone stay per device. The first time a device joins, its own
   external calendars join the account's, with a toast saying how many.
-- **Data in the vault** (desktop app, Settings → Data): the calendars are always the vault's notes (the invented sample
-  data only shows in a plain browser, for development and tests); writing is opt-in ("Read only" / "Read and write"). With it on, the
-  gestures above change the notes: only the edited properties are rewritten (unknown ones, comments and the body stay as
-  they were), a new event becomes a note when it has a title (file `{date} {title}.md`, with a counter on the file name if
-  taken), moving it to another calendar moves its file, deleting sends it to the trash and Undo brings it back. If a note
-  changed outside the app since it was read, nothing is written: a toast says so and the notes are reloaded. Notes the
-  calendar cannot place are listed in Settings, never hidden.
 - Every edit is optimistic and undoable; one gesture is one undo step.
 
 ## 4b. Quality (learned 2026-10-21)

@@ -27,8 +27,8 @@ tests guard most of them.
 - **External calendars** (`src/external.ts`): read-only iCal subscriptions. The address is a secret (device storage,
   or the account's, encrypted); the last copy is in IndexedDB. They are merged into `data` (`withExternal`) but are
   never rows: `reconcileRows` never sees them (`isExternalEvent`), so nothing of them reaches a provider.
-- **The vault mode** (a folder of notes read from the disk: `src/vault/`, `vault-fs.cjs`, the Android folder bridge) is
-  being removed (`docs/clases.md` §4): do not extend it.
+- **No vault mode** (2026-10-28): the calendar is a server's (or the invented sample). The desktop shell only says
+  where an event's note opens (`window.boniNotes`: Boni or its peek); Android has no such bridge.
 
 ## Hosts
 

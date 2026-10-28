@@ -115,7 +115,7 @@ const peekVisible = () =>
   );
 /** The shell's preload bridges, as the calendar's page calls them (a type only: it is erased in the page). */
 type Bridges = {
-  boniVault: {
+  boniNotes: {
     openNote(path: string, opts?: { peek?: boolean }): Promise<unknown>;
     openProposal(id: string): Promise<unknown>;
   };
@@ -123,7 +123,7 @@ type Bridges = {
 };
 const doubleClick = () =>
   main.evaluate(
-    (path) => (window as unknown as Bridges).boniVault.openNote(path, { peek: true }),
+    (path) => (window as unknown as Bridges).boniNotes.openNote(path, { peek: true }),
     NOTE,
   );
 
@@ -199,7 +199,7 @@ test("a proposal drawn in the calendar: one click shows its page in the peek; ac
     )
     .not.toBe("");
   // What a click on its dashed event does in Boni Calendar.
-  await main.evaluate((pid) => (window as unknown as Bridges).boniVault.openProposal(pid), id);
+  await main.evaluate((pid) => (window as unknown as Bridges).boniNotes.openProposal(pid), id);
   const peek = await peekPage();
   await expect.poll(peekVisible).toBe(true);
   await expect(peek.locator(".peek-head")).toContainText("Propuesta");
@@ -213,7 +213,7 @@ test("a proposal drawn in the calendar: one click shows its page in the peek; ac
   expect(JSON.stringify(rows.rows)).toContain("Revisión inventada");
   // A bad id never reaches the peek.
   const bad = await main.evaluate(() =>
-    (window as unknown as Bridges).boniVault.openProposal("../x"),
+    (window as unknown as Bridges).boniNotes.openProposal("../x"),
   );
   expect(bad).toMatchObject({ ok: false });
 });

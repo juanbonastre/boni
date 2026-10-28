@@ -8,14 +8,11 @@ Código anterior al núcleo de Boni, guardado como referencia mientras se porta 
   las personas reales y un comercio real de sus ejemplos y pruebas cambiados por otros inventados. El repo archivado
   conserva el original.
 
-- **`obsidian/`**: el plugin de Obsidian de Boni Calendar (`plugin/`), sus pruebas en el Obsidian instalado (`e2e/`) y su
-  configuración de Playwright. Juan dejó el soporte de Obsidian el 2026-10-22 (todo pasa a Boni); se retomará con la
-  versión para más gente. Para volver: moverlo a `apps/obsidian-plugin` y `e2e-obsidian`, y recuperar los objetivos
-  `plugin`, `install-obsidian`, `e2e-obsidian` y `bench-obsidian` del Makefile (historial de git).
-
 Aquí nada se compila, se analiza ni se prueba (queda fuera de Biome, del espacio de trabajo de pnpm, del CI y de la imagen
 Docker). Cuando una pieza ya está portada al núcleo, se borra de aquí en el mismo PR.
 
 Portado (y borrado de aquí): `apps/web` → `apps/boni-web`, `e2e` → `e2e-boni`, `api` → `apps/boni-web/api` (2026-10-20,
 con su historial); el envoltorio de escritorio → `apps/boni-desktop` (2026-10-22) y el de Android → `apps/boni-android`
 (2026-10-23). Queda como referencia el servidor Python (retirado del NAS el 2026-10-23).
+El plugin de Obsidian de Boni Calendar (`obsidian/`) se borró el 2026-10-28 con el modo sin servidor de Boni Calendar (PR
+«Fuera el vault», parte B): leía un vault, que ya no existe. Si vuelve, se rehace sobre el servidor (historial de git).

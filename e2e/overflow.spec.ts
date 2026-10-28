@@ -110,20 +110,13 @@ async function open(page: Page, locale: "es" | "en") {
 }
 
 /**
- * Settings with the vault section (where long labels live): only with a vault, so the page is opened
- * again with a minimal desktop bridge (an empty vault: the calendar shows its notice).
+ * Settings as the desktop app shows them (its own section: keep running in the tray, open at login), with the
+ * data section scrolled through: the page is opened again with minimal desktop bridges.
  */
-async function vaultSettings(page: Page, locale: "es" | "en"): Promise<string[]> {
+async function desktopSettings(page: Page, locale: "es" | "en"): Promise<string[]> {
   await page.addInitScript(() => {
-    const ok = (value: unknown) => ({ ok: true, value });
-    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge
-    (window as any).boniVault = {
-      getRoot: async () => ok("/una/ruta/bastante/larga/hasta/el/vault/de/ejemplo"),
-      chooseRoot: async () => ok(null),
-      scan: async () => ok([]),
-      read: async () => ({ ok: false, code: "not-found", message: "x" }),
-    };
-    // The desktop app's own section (keep running in the tray, open at login).
+    // biome-ignore lint/suspicious/noExplicitAny: test double of the desktop shell's notes bridge
+    (window as any).boniNotes = { noteApp: "boni" };
     // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge
     (window as any).boniDesktop = {
       getPrefs: async () => ({ background: true, autostart: false }),
@@ -132,37 +125,18 @@ async function vaultSettings(page: Page, locale: "es" | "en"): Promise<string[]>
     };
   });
   await page.addInitScript(
-    ({ locale }) =>
-      localStorage.setItem("boni-calendar:settings", JSON.stringify({ vaultWrite: true, locale })),
+    ({ locale }) => localStorage.setItem("boni-calendar:settings", JSON.stringify({ locale })),
     { locale },
   );
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
-  await page.locator(".vault-notice").waitFor();
+  await page.waitForSelector(".ev");
   await page.keyboard.press("Control+,");
   await page.waitForTimeout(200);
-  await page.evaluate(() => {
-    // biome-ignore lint/suspicious/noExplicitAny: test hook exposed by main.tsx
-    (window as any).__app.setState({
-      vault: {
-        status: "ready",
-        root: "/x",
-        notes: 2745,
-        ignored: [
-          {
-            path: "agenda/docencia/una nota con un nombre muy largo que no cabe.md",
-            reason: "no-date",
-          },
-        ],
-        problems: [],
-      },
-    });
-  });
-  await page.waitForTimeout(200);
-  await page.locator(".vault-list summary").first().click();
-  const issues = await audit(page, "settings with the vault");
+  const issues = await audit(page, "settings of the desktop app");
   await page.locator(".modal-body").evaluate((el) => {
     el.scrollTop = el.scrollHeight;
   });
+  issues.push(...(await audit(page, "settings of the desktop app, scrolled")));
   await page.locator(".modal").screenshot({
     path: `e2e/screenshots/settings-data-${await page.evaluate(() => window.innerWidth)}.png`,
   });
@@ -180,7 +154,7 @@ async function walkEverything(page: Page): Promise<string[]> {
   await check("view menu");
   await page.keyboard.press("Escape");
 
-  // settings (without a vault: the vault section is checked by vaultSettings), with the form of a
+  // settings (the desktop app's own section is checked by desktopSettings), with the form of a
   // new external calendar, then with one that failed to download
   await page.keyboard.press("Control+,");
   await page.waitForTimeout(200);
@@ -272,7 +246,7 @@ for (const locale of ["es", "en"] as const) {
       await page.setViewportSize({ width: w, height: h });
       await open(page, locale);
       const issues = await walkEverything(page);
-      issues.push(...(await vaultSettings(page, locale)));
+      issues.push(...(await desktopSettings(page, locale)));
       expect(issues, issues.join("\n")).toEqual([]);
     });
   }
