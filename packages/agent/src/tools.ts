@@ -1,4 +1,5 @@
 import {
+  ancestors,
   type FieldDef,
   type FieldType,
   join,
@@ -78,7 +79,8 @@ export interface ArgSpec {
 export interface ReadStore {
   schema(): ReturnType<UserStore["schema"]>;
   get(id: string): StoredEntity | null;
-  list(type: string): StoredEntity[];
+  /** `deep`: the collection's whole branch (docs/clases.md §2.3), each record judged by its own collection. */
+  list(type: string, opts?: { deep?: boolean }): StoredEntity[];
   search(text: string, opts?: { type?: string; limit?: number }): string[];
 }
 /** Writes made by a tool: each value with its own label, the run's meta, P17 applied. */
@@ -650,6 +652,8 @@ const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "e
  * row is closed is not in the schema; an `opaque` one is there, but every value carries `noModel`, so the planner
  * gets handles, no reader gets them, and only code computes with them. A rule that closes and cannot be read
  * (a field gone, a bad shape) closes every row; one that opens and cannot be read opens nothing.
+ * A collection is at least as closed as its mother, and her rules reach her daughters' records (A-06): a list of a
+ * mother never gives, nor counts, a record of a daughter closed to the models.
  */
 export function readStore(store: UserStore, now: () => number = Date.now): ReadStore {
   const kept = (l: Label | undefined): Label => ({ ...(l ?? codeLabel("store")), noModel: true });
@@ -662,7 +666,9 @@ export function readStore(store: UserStore, now: () => number = Date.now): ReadS
   type Snap = ReturnType<typeof snapshot>;
   const levelOf = (s: StoredEntity, v: Snap): AiLevel => {
     const typeLevel = v.levels[s.entity.type] ?? "visible";
-    const mine = v.rules.filter((r) => r.type === s.entity.type);
+    if (!v.rules.length) return typeLevel;
+    const line = [s.entity.type, ...ancestors({ types: v.types }, s.entity.type)];
+    const mine = v.rules.filter((r) => line.includes(r.type));
     if (!mine.length) return typeLevel;
     const def = v.types[s.entity.type];
     const typeOf = (id: string) => def?.fields.find((f) => f.id === id)?.type;
@@ -704,10 +710,10 @@ export function readStore(store: UserStore, now: () => number = Date.now): ReadS
       };
     },
     get: (id) => asSeen(store.get(id)),
-    list: (type) => {
+    list: (type, o) => {
       const v = snapshot();
-      if (!typeShown(type, v)) return [];
-      return store.list(type).flatMap((s) => {
+      if (!typeShown(type, v) && !o?.deep) return [];
+      return store.list(type, { deep: !!o?.deep }).flatMap((s) => {
         const seen = asSeen(s, v);
         return seen ? [seen] : [];
       });

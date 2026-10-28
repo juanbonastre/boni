@@ -181,7 +181,7 @@ function view(c: Ctx) {
     } else if (title && ref.collection) {
       const t = typeNamed(String(ref.collection));
       const want = title.trim().toLowerCase();
-      const hits = ro.list(t.id).filter(
+      const hits = ro.list(t.id, { deep: true }).filter(
         (x) =>
           String(x.entity.values[t.titleField] ?? "")
             .trim()
@@ -196,7 +196,10 @@ function view(c: Ctx) {
   };
   /** What goes in a collection, as its description says (none yet: undefined). */
   const description = (t: TypeDef) => t.description?.text;
-  return { ro, types, level, typeNamed, fields, asNote, find, description };
+  /** The name of the collection a collection is inside (its mother), when the model may see her. */
+  const mother = (t: TypeDef) =>
+    t.parent ? types().find((m) => m.id === t.parent)?.name : undefined;
+  return { ro, types, level, typeNamed, fields, asNote, find, description, mother };
 }
 
 // ------------------------------------------------------------------ writing
@@ -382,6 +385,7 @@ const TOOLS: Tool[] = [
           const about = v.description(t);
           return {
             name: t.name,
+            ...(v.mother(t) ? { inside: v.mother(t) } : {}),
             ...(about ? { description: about } : {}),
             notes: c.store.count(t.id),
             level: v.level(t.id),
@@ -396,12 +400,13 @@ const TOOLS: Tool[] = [
   {
     name: "collections",
     description:
-      "Juan's collections a model may see: name, what goes in it, how many notes, its properties and level.",
+      "Juan's collections a model may see: name, the collection it is inside (its mother: a mother's queries include it), what goes in it, how many notes, its properties and level.",
     inputSchema: obj({}),
     call(c) {
       const v = view(c);
       return v.types().map((t) => ({
         name: t.name,
+        ...(v.mother(t) ? { inside: v.mother(t) } : {}),
         ...(v.description(t) ? { description: v.description(t) } : {}),
         notes: c.store.count(t.id),
         level: v.level(t.id),
@@ -441,7 +446,7 @@ const TOOLS: Tool[] = [
   {
     name: "query",
     description:
-      "The notes of a collection that match Notion-style filters on its properties ({property, op, value}; ops: is, is_not, contains, not_contains, empty, not_empty, checked, unchecked, before, after, gt, lt; value 'today' for dates), newest first.",
+      "The notes of a collection, the collections inside it included (each note says its own), that match Notion-style filters on its properties ({property, op, value}; ops: is, is_not, contains, not_contains, empty, not_empty, checked, unchecked, before, after, gt, lt; value 'today' for dates), newest first.",
     inputSchema: obj(
       {
         collection: { type: "string" },
@@ -468,7 +473,7 @@ const TOOLS: Tool[] = [
       const typeOf = (id: string) => t.fields.find((f) => f.id === id)?.type;
       const today = new Date(c.now()).toISOString().slice(0, 10);
       return v.ro
-        .list(t.id)
+        .list(t.id, { deep: true })
         .filter((s) => matchesFilters(s.entity.values, typeOf, rules, today))
         .sort((x, y) => y.entity.updated - x.entity.updated || (x.entity.id < y.entity.id ? -1 : 1))
         .slice(Math.max(0, Math.floor(Number(a.offset) || 0)))
@@ -728,11 +733,12 @@ const TOOLS: Tool[] = [
   },
   {
     name: "create_collection",
-    description: `A new collection, only when Juan asks for one: its name, what goes in it (description) and its properties ({name, type, options}; types: ${NEW_FIELD_TYPES.join(", ")}). Every note of it also has a title (title_property, «Título» unless said) and a text of its own. One run: \`undo\` takes it back while it is empty.`,
+    description: `A new collection, only when Juan asks for one: its name, what goes in it (description) and its properties ({name, type, options}; types: ${NEW_FIELD_TYPES.join(", ")}). Every note of it also has a title (title_property, «Título» unless said) and a text of its own. Inside another collection (inside): it has that one's properties too, and that one's queries include it. One run: \`undo\` takes it back while it is empty.`,
     inputSchema: obj(
       {
         name: { type: "string" },
         description: { type: "string" },
+        inside: { type: "string", description: "The collection it goes inside (its mother)" },
         title_property: { type: "string" },
         properties: { type: "array", items: { type: "object" } },
       },
@@ -744,6 +750,7 @@ const TOOLS: Tool[] = [
       if (v.types().some((t) => t.name.toLowerCase() === name.toLowerCase()))
         throw new ToolFail(`there is a collection "${name}" already`);
       const about = str(a.description, "description", MAX_DESCRIPTION).trim();
+      const mother = a.inside === undefined ? null : v.typeNamed(str(a.inside, "inside", 80));
       const w = writer(c);
       const lbl = label("model", "personal", [{ kind: "model", id: `mcp:${c.device}` }], false);
       const taken = c.store.schema().types;
@@ -764,7 +771,9 @@ const TOOLS: Tool[] = [
           label: lbl,
         });
       };
-      field(optStr(a.title_property, "title_property", 80)?.trim() || "Título", "text");
+      // Inside another, the title is its mother's.
+      if (!mother)
+        field(optStr(a.title_property, "title_property", 80)?.trim() || "Título", "text");
       const props = Array.isArray(a.properties) ? (a.properties as Args[]) : [];
       if (props.length > 60) throw new ToolFail("properties: at most 60");
       for (const p of props) {
@@ -790,9 +799,10 @@ const TOOLS: Tool[] = [
         id,
         key: id.slice(2).replace(/_/g, "-").slice(0, 40),
         name,
+        ...(mother ? { parent: mother.id } : {}),
         fields,
-        titleField: (fields[0] as FieldDef).id,
-        sensitivity: "personal",
+        titleField: mother ? mother.titleField : (fields[0] as FieldDef).id,
+        sensitivity: mother ? mother.sensitivity : "personal",
         schemaVersion: 1,
         label: lbl,
         description: { text: about, label: lbl },

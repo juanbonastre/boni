@@ -787,3 +787,115 @@ describe("two processes on one store", () => {
     await worker.terminate();
   });
 });
+
+describe("collections as classes (docs/clases.md; D-11, D-12, A-06)", () => {
+  const field = (
+    id: string,
+    name: string,
+    type: "text" | "date" | "checkbox" | "number" = "text",
+  ) => ({
+    id,
+    key: id.slice(2),
+    name,
+    type,
+    label: JUAN,
+  });
+  const make = (store: UserStore) => {
+    const t = (id: string, fields: ReturnType<typeof field>[], parent?: string): TypeDef => ({
+      id,
+      key: id.slice(2),
+      name: id.slice(2),
+      fields,
+      titleField: "f_titulo",
+      sensitivity: "personal",
+      schemaVersion: 1,
+      label: JUAN,
+      ...(parent ? { parent } : {}),
+    });
+    store.applySchema(
+      {
+        op: "create_type",
+        type: t("t_agenda", [field("f_titulo", "Título"), field("f_fecha", "Fecha", "date")]),
+      },
+      me,
+    );
+    store.applySchema(
+      {
+        op: "create_type",
+        type: t("t_tarea", [field("f_hecha", "Hecha", "checkbox")], "t_agenda"),
+      },
+      me,
+    );
+    store.applySchema(
+      { op: "create_type", type: t("t_evento", [field("f_lugar", "Lugar")], "t_agenda") },
+      me,
+    );
+    const w = (v: unknown) => ({ value: v as never, label: JUAN });
+    const tarea = store.create(
+      "t_tarea",
+      { f_titulo: w("Entregar actas"), f_fecha: w("2026-10-29"), f_hecha: w(false) },
+      me,
+    );
+    const evento = store.create(
+      "t_evento",
+      { f_titulo: w("Clase"), f_fecha: w("2026-10-28"), f_lugar: w("Aula 1") },
+      me,
+    );
+    return { tarea, evento };
+  };
+
+  it("a mother's list includes her daughters' records, and a change to her schema reaches them, also after reopening", () => {
+    const { store, dir } = fresh();
+    make(store);
+    expect(store.list("t_agenda")).toHaveLength(0);
+    expect(store.list("t_agenda", { deep: true }).map((s) => s.entity.values.f_titulo)).toEqual([
+      "Entregar actas",
+      "Clase",
+    ]);
+    expect(store.entities("t_agenda", { deep: true })).toHaveLength(2);
+    store.applySchema(
+      {
+        op: "rename_field",
+        type: "t_agenda",
+        field: "f_fecha",
+        key: "dia",
+        name: "Día",
+        label: JUAN,
+      },
+      me,
+    );
+    // Another connection reads the branch as it was written.
+    const again = openUserStore(join(dir, "boni.db"));
+    stores.push(again);
+    expect(again.schema().types.t_tarea?.fields.find((f) => f.id === "f_fecha")?.name).toBe("Día");
+  });
+
+  it("a record moved to another collection keeps its id and the values both share; undo puts back the rest", () => {
+    const { store } = fresh();
+    const { tarea } = make(store);
+    const moved = store.retype(tarea.entity.id, "t_evento", me);
+    expect(moved.entity.id).toBe(tarea.entity.id);
+    expect(moved.entity.type).toBe("t_evento");
+    expect(moved.entity.values).toEqual({ f_titulo: "Entregar actas", f_fecha: "2026-10-29" });
+    const seq = store.version();
+    store.undo(seq, me);
+    const back = store.get(tarea.entity.id);
+    expect(back?.entity.type).toBe("t_tarea");
+    expect(back?.entity.values).toMatchObject({ f_hecha: false });
+    expect(back?.labels.f_hecha?.integrity).toBe("user");
+  });
+
+  it("a daughter is at least as closed to the AI as her mother", () => {
+    const { store } = fresh();
+    make(store);
+    expect(store.aiAccess()).toEqual({});
+    store.setAiAccess("t_agenda", "opaque", "portatil");
+    expect(store.aiAccess()).toMatchObject({
+      t_agenda: "opaque",
+      t_tarea: "opaque",
+      t_evento: "opaque",
+    });
+    store.setAiAccess("t_evento", "private", "portatil");
+    expect(store.aiAccess()).toMatchObject({ t_tarea: "opaque", t_evento: "private" });
+  });
+});

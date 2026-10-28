@@ -1,7 +1,9 @@
 import type { Label } from "./label.ts";
 import {
+  branch,
   type FieldDef,
   type FieldType,
+  ownFields,
   type Schema,
   type SelectOption,
   SYSTEM_TYPES,
@@ -15,6 +17,10 @@ import {
  * alike. Each one checks the result and returns its inverse, so every schema change can be undone by
  * applying the inverse as a new operation. Values are not touched here: the store converts or keeps
  * them (convertValue) in the same transaction and logs the before and after.
+ *
+ * Collections are classes (docs/clases.md): a daughter has her mother's fields as copies marked `from`, kept in step
+ * here. A change to a collection reaches its whole branch; an inherited field is changed only in the collection that
+ * defines it; moving a collection (`set_parent`) keeps what its new mother does not give as its own archived fields.
  */
 
 export type SchemaOp =
@@ -40,7 +46,12 @@ export type SchemaOp =
       options?: SelectOption[];
     }
   | { op: "set_options"; type: TypeId; field: string; options: SelectOption[] }
-  | { op: "archive_field"; type: TypeId; field: string; archived: boolean };
+  | { op: "archive_field"; type: TypeId; field: string; archived: boolean }
+  /**
+   * Moves a collection (and its branch) under another mother (`null`: the root). `own` (its own fields after the
+   * move) is given only by the inverse, to put back exactly what was there.
+   */
+  | { op: "set_parent"; type: TypeId; parent: TypeId | null; own?: FieldDef[] };
 
 export type OpResult =
   | { ok: true; schema: Schema; inverse: SchemaOp }
@@ -59,7 +70,32 @@ function withType(schema: Schema, def: TypeDef): Schema {
   return { types: { ...schema.types, [def.id]: def } };
 }
 
-/** `def` changed by `change`, with its schemaVersion one up, checked against `schema`. */
+/** A daughter's fields: her mother's (as inherited copies) and then her own. */
+function inherit(schema: Schema, def: TypeDef): TypeDef {
+  const mother = def.parent ? schema.types[def.parent] : undefined;
+  const inherited = (mother?.fields ?? []).map((f) => ({ ...f, from: f.from ?? mother?.id }));
+  return { ...def, fields: [...inherited, ...ownFields(def)] } as TypeDef;
+}
+
+/**
+ * Every collection under `id` with its inherited fields made again from the new schema (a schema version up where
+ * they changed), each checked.
+ */
+function resync(schema: Schema, id: TypeId, inverse: SchemaOp): OpResult {
+  let out = schema;
+  for (const t of branch(schema, id).slice(1)) {
+    const def = out.types[t] as TypeDef;
+    const next = inherit(out, def);
+    if (JSON.stringify(next.fields) === JSON.stringify(def.fields)) continue;
+    const bumped = { ...next, schemaVersion: def.schemaVersion + 1 };
+    const errors = typeErrors(bumped, out);
+    if (errors.length) return fail(`${t}: ${errors.join("; ")}`);
+    out = withType(out, bumped);
+  }
+  return { ok: true, schema: out, inverse };
+}
+
+/** `def` changed by `change`, with its schemaVersion one up, checked against `schema`; its branch follows. */
 function update(
   schema: Schema,
   def: TypeDef,
@@ -68,9 +104,7 @@ function update(
 ): OpResult {
   const next = { ...change(def), schemaVersion: def.schemaVersion + 1 };
   const errors = typeErrors(next, schema);
-  return errors.length
-    ? fail(errors.join("; "))
-    : { ok: true, schema: withType(schema, next), inverse };
+  return errors.length ? fail(errors.join("; ")) : resync(withType(schema, next), def.id, inverse);
 }
 
 /** `archived: false` is written as no key at all, so archiving and restoring gives back the same data. */
@@ -91,7 +125,8 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
   if (op.op === "create_type") {
     if (schema.types[op.type.id]) return fail(`type "${op.type.id}" already exists`);
     if (op.type.system && !ctx.system) return fail("only Boni's code makes system types");
-    const def = { ...op.type, schemaVersion: 1 };
+    if (op.type.fields.some((f) => f.from)) return fail("a new collection's fields are its own");
+    const def = inherit(schema, { ...op.type, schemaVersion: 1 });
     const errors = typeErrors(def, schema);
     return errors.length
       ? fail(errors.join("; "))
@@ -103,6 +138,9 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
 
   switch (op.op) {
     case "remove_type": {
+      const daughters = Object.values(schema.types).filter((t) => t.parent === def.id);
+      if (daughters.length)
+        return fail(`"${def.id}" has collections inside: ${daughters.map((t) => t.id).join(", ")}`);
       const users = Object.values(schema.types).filter(
         (t) => t.id !== def.id && t.fields.some((f) => f.relation?.target === def.id),
       );
@@ -137,7 +175,34 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
         },
         { op: "describe_type", type: def.id, description: def.description ?? null },
       );
+    case "set_parent": {
+      const parent = op.parent ?? undefined;
+      if (parent && !schema.types[parent]) return fail(`unknown mother "${parent}"`);
+      if (parent && branch(schema, def.id).includes(parent))
+        return fail("a collection cannot go inside its own branch");
+      // What the new mother does not give stays as the collection's own field, archived (its values are kept).
+      const coming = new Set((parent ? schema.types[parent]?.fields : [])?.map((f) => f.id));
+      const kept = def.fields
+        .filter((f) => f.from && !coming.has(f.id))
+        .map((f) => {
+          const { from: _f, ...own } = f;
+          return f.id === def.titleField ? own : withArchived(own, true);
+        });
+      const { parent: _p, ...rest } = def;
+      const moved: TypeDef = {
+        ...rest,
+        ...(parent ? { parent } : {}),
+        fields: op.own ?? [...kept, ...ownFields(def)],
+      };
+      return update(schema, def, () => inherit(schema, moved), {
+        op: "set_parent",
+        type: def.id,
+        parent: def.parent ?? null,
+        own: ownFields(def),
+      });
+    }
     case "add_field":
+      if (op.field.from) return fail("a new field is the collection's own");
       if (def.fields.some((f) => f.id === op.field.id))
         return fail(`field "${op.field.id}" already exists`);
       return update(
@@ -158,6 +223,8 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
 
   const field = def.fields.find((f) => f.id === op.field);
   if (!field) return fail(`unknown field "${op.field}" in "${def.id}"`);
+  if (field.from)
+    return fail(`"${field.name}" is inherited from "${field.from}": it is changed there`);
   switch (op.op) {
     case "remove_field":
       if (def.titleField === field.id) return fail("the title field cannot be removed");

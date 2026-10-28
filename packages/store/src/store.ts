@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { constants, DatabaseSync } from "node:sqlite";
 import {
+  ancestors,
   applySchemaOp,
+  branch,
   checkValue,
   convertValue,
   type Entity,
@@ -130,6 +132,8 @@ interface FieldState {
   values: Record<string, Value>;
   labels: Record<string, Label | null>;
   body?: string | null;
+  /** The record's collection, when the operation moved it (`retype`). */
+  type?: TypeId;
 }
 
 interface OpRow {
@@ -152,9 +156,16 @@ export interface UserStore {
   remove(id: EntityId, meta: OpMeta): void;
   restore(id: EntityId, meta: OpMeta): void;
   get(id: EntityId): StoredEntity | null;
-  list(type: TypeId, opts?: { includeDeleted?: boolean }): StoredEntity[];
+  /** A type's entities; `deep`: its whole branch's too (docs/clases.md §2.3), the type's first. */
+  list(type: TypeId, opts?: { includeDeleted?: boolean; deep?: boolean }): StoredEntity[];
   /** A type's entities (not in the trash) without their labels, in one query: for a view's rows. */
-  entities(type: TypeId): Entity[];
+  entities(type: TypeId, opts?: { deep?: boolean }): Entity[];
+  /**
+   * Moves a record to another collection keeping its id and its history (docs/clases.md §2.5): the values of the
+   * fields both share (the same id) stay; the others leave the record, kept in the operation's log (undo puts them
+   * back).
+   */
+  retype(id: EntityId, type: TypeId, meta: OpMeta): StoredEntity;
   /** The last operation on an entity (its number and the device that made it), or null. */
   lastChange(id: EntityId): { seq: number; device: string | null } | null;
   /** How many entities a type has (not in the trash), without reading them. */
@@ -485,7 +496,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
     };
     db.prepare(
       `INSERT INTO entities (id, type, vals, body, created, updated, version, deleted) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET vals = excluded.vals, body = excluded.body, updated = excluded.updated,
+       ON CONFLICT(id) DO UPDATE SET type = excluded.type, vals = excluded.vals, body = excluded.body, updated = excluded.updated,
        version = excluded.version, deleted = excluded.deleted`,
     ).run(
       e.id,
@@ -601,6 +612,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       body = p.body;
     }
     const before: FieldState = { values: {}, labels: {} };
+    if (state.type !== undefined && state.type !== cur.entity.type) before.type = cur.entity.type;
     for (const f of Object.keys(values)) {
       before.values[f] = cur.entity.values[f] ?? null;
       before.labels[f] = cur.labels[f] ?? null;
@@ -611,6 +623,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
     }
     const entity: Entity = {
       ...cur.entity,
+      ...(state.type !== undefined ? { type: state.type } : {}),
       values: { ...cur.entity.values, ...values },
       updated: now(),
       version: cur.entity.version + 1,
@@ -625,6 +638,7 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       labels,
       version: entity.version,
       ...(body !== undefined ? { body } : {}),
+      ...(before.type !== undefined ? { type: entity.type } : {}),
     };
     const real = Object.values(labels).filter((l): l is Label => l !== null);
     const seq = logOp(
@@ -681,21 +695,24 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       ).n;
       if (n > 0) throw new StoreError("invalid", `"${op.type}" still has ${n} entities`);
       db.prepare("DELETE FROM types WHERE id = ?").run(op.type);
-    } else {
-      const next = r.schema.types[typeId] as TypeDef;
-      db.prepare(
-        "INSERT INTO types (id, def) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET def = excluded.def",
-      ).run(typeId, JSON.stringify(next));
     }
+    // The type and, when it is a mother, every collection of its branch that changed with it.
+    for (const [id, next] of Object.entries(r.schema.types))
+      if (JSON.stringify(schema.types[id]) !== JSON.stringify(next))
+        db.prepare(
+          "INSERT INTO types (id, def) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET def = excluded.def",
+        ).run(id, JSON.stringify(next));
     const prev = schema;
     schema = r.schema;
     // A field that changes type converts its values; what does not convert is left empty (and kept in the log).
     if (op.op === "change_field_type" || restoreValues) {
       const oldField = prev.types[typeId]?.fields.find((f) => "field" in op && f.id === op.field);
       const newField = schema.types[typeId]?.fields.find((f) => "field" in op && f.id === op.field);
-      for (const row of db.prepare("SELECT id FROM entities WHERE type = ?").all(typeId) as {
-        id: string;
-      }[]) {
+      // The field is the same (by id) in every collection of the branch: their values change too.
+      const rows = branch(schema, typeId).flatMap(
+        (t) => db.prepare("SELECT id FROM entities WHERE type = ?").all(t) as { id: string }[],
+      );
+      for (const row of rows) {
         const e = readEntity(row.id) as StoredEntity;
         const fid = (op as { field: string }).field;
         const old = e.entity.values[fid];
@@ -791,13 +808,37 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
     remove: (id, meta) => void tx(() => doDelete(id, meta, true)),
     restore: (id, meta) => void tx(() => doDelete(id, meta, false)),
     get: readEntity,
-    list: (type, o = {}) => readType(type, !!o.includeDeleted),
-    entities: (type) =>
-      (
-        db
-          .prepare("SELECT * FROM entities WHERE type = ? AND deleted IS NULL ORDER BY created, id")
-          .all(type) as unknown as EntityRow[]
-      ).map(toEntity),
+    list: (type, o = {}) =>
+      (o.deep ? branch(schema, type) : [type]).flatMap((t) => readType(t, !!o.includeDeleted)),
+    entities: (type, o = {}) =>
+      (o.deep ? branch(schema, type) : [type]).flatMap((t) =>
+        (
+          db
+            .prepare(
+              "SELECT * FROM entities WHERE type = ? AND deleted IS NULL ORDER BY created, id",
+            )
+            .all(t) as unknown as EntityRow[]
+        ).map(toEntity),
+      ),
+    retype: (id, type, meta) =>
+      tx(() => {
+        const cur = readEntity(id);
+        if (!cur) throw new StoreError("not-found", `no entity "${id}"`);
+        if (cur.entity.deleted !== undefined)
+          throw new StoreError("invalid", `"${id}" is in the trash`);
+        const from = typeOf(cur.entity.type);
+        const to = typeOf(type);
+        if (!!from.system !== !!to.system || to.archived)
+          throw new StoreError("invalid", `"${id}" cannot move to "${type}"`);
+        const state: FieldState = { values: {}, labels: {}, type };
+        for (const [f, v] of Object.entries(cur.entity.values)) {
+          const field = to.fields.find((x) => x.id === f);
+          if (field && checkValue(field, v).ok) continue;
+          state.values[f] = null;
+          state.labels[f] = null;
+        }
+        return doUpdate(id, state, meta, undefined, undefined, true);
+      }),
     lastChange: (id) => {
       const r = db
         .prepare("SELECT seq, device FROM ops WHERE target = ? ORDER BY seq DESC LIMIT 1")
@@ -874,9 +915,17 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
           .all(run) as { kind: Exclude<OpKind, "schema">; target: string; undone: number }[]
       ).map((r) => ({ kind: r.kind, target: r.target, undone: r.undone === 1 })),
     aiAccess() {
-      const out: Record<TypeId, AiLevel> = {};
+      const own: Record<TypeId, AiLevel> = {};
       for (const r of db.prepare("SELECT type, level FROM ai_access").all())
-        out[r.type as string] = r.level as AiLevel;
+        own[r.type as string] = r.level as AiLevel;
+      // A collection is at least as closed to the AI as its mother (docs/clases.md §2.8; A-06).
+      const out: Record<TypeId, AiLevel> = { ...own };
+      for (const id of Object.keys(schema.types)) {
+        let level = own[id];
+        for (const a of ancestors(schema, id))
+          if (levelRank(own[a]) > levelRank(level)) level = own[a];
+        if (level && level !== "visible") out[id] = level;
+      }
       return out;
     },
     aiRules() {

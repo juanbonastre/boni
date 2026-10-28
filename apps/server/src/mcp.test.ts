@@ -359,3 +359,41 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     expect(notes.find((n) => n.path === "diario/2026-10-20.md")?.ai).toEqual([]);
   });
 });
+
+describe("collections as classes through the MCP (docs/clases.md)", () => {
+  it("a collection made inside another: it has her properties, and her queries include its notes", async () => {
+    const made = await tool("create_collection", {
+      name: "Cursos",
+      description: "Cursos inventados.",
+      inside: "Proyecto",
+      properties: [{ name: "Horas", type: "number" }],
+    });
+    expect(made.error, made.text).toBe(false);
+    const cols = (await tool("collections")).json as {
+      name: string;
+      inside?: string;
+      properties: { name: string }[];
+    }[];
+    const cursos = cols.find((x) => x.name === "Cursos");
+    expect(cursos?.inside).toBe("Proyecto");
+    expect(cursos?.properties.map((p) => p.name)).toEqual(
+      expect.arrayContaining(["status", "Horas"]),
+    );
+    const note = await tool("create", {
+      collection: "Cursos",
+      title: "Curso inventado",
+      properties: { status: "activo", Horas: 3 },
+    });
+    expect(note.error, note.text).toBe(false);
+    const active = (
+      await tool("query", {
+        collection: "Proyecto",
+        filter: [{ property: "status", op: "is", value: "activo" }],
+      })
+    ).json as { title: string; collection: string }[];
+    expect(active.map((n) => [n.title, n.collection])).toContainEqual([
+      "Curso inventado",
+      "Cursos",
+    ]);
+  });
+});

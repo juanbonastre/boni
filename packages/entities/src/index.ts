@@ -21,6 +21,8 @@ export {
 } from "./label.ts";
 export { applySchemaOp, type OpContext, type OpResult, type SchemaOp } from "./ops.ts";
 export {
+  ancestors,
+  branch,
   type Entity,
   type EntityId,
   FIELD_TYPES,
@@ -30,6 +32,7 @@ export {
   fieldOf,
   MAX_DESCRIPTION,
   type Money,
+  ownFields,
   type Schema,
   type SelectOption,
   SYSTEM_TYPES,

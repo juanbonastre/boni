@@ -258,3 +258,133 @@ describe("applySchemaOp", () => {
       });
   });
 });
+
+describe("collections as classes (docs/clases.md; D-10)", () => {
+  const field = (id: string, name: string, type: FieldType = "text"): FieldDef => ({
+    id,
+    key: id.slice(2),
+    name,
+    type,
+    label: L,
+  });
+  const type = (id: string, fields: FieldDef[], parent?: string): TypeDef => ({
+    id,
+    key: id.slice(2),
+    name: id.slice(2),
+    fields,
+    titleField: parent ? "f_titulo" : (fields[0]?.id ?? "f_titulo"),
+    sensitivity: "personal",
+    schemaVersion: 1,
+    label: L,
+    ...(parent ? { parent } : {}),
+  });
+  const ok = (s: Schema, op: SchemaOp) => {
+    const r = applySchemaOp(s, op);
+    if (!r.ok) throw new Error(r.error);
+    return r;
+  };
+  /** Agenda (title, date) → Tarea (+ done) → Urgente; and Proyectos apart. */
+  const tree = (): Schema => {
+    let s = ok(empty, {
+      op: "create_type",
+      type: type("t_agenda", [field("f_titulo", "Título"), field("f_fecha", "Fecha", "date")]),
+    }).schema;
+    s = ok(s, {
+      op: "create_type",
+      type: type("t_tarea", [field("f_hecha", "Hecha", "checkbox")], "t_agenda"),
+    }).schema;
+    s = ok(s, { op: "create_type", type: type("t_urgente", [], "t_tarea") }).schema;
+    s = ok(s, {
+      op: "create_type",
+      type: type("t_proyectos", [field("f_nombre", "Nombre"), field("f_fecha", "Fecha", "date")]),
+    }).schema;
+    return s;
+  };
+  const ids = (s: Schema, t: string) =>
+    s.types[t]?.fields.map((f) => `${f.id}${f.from ? `<${f.from}` : ""}`);
+
+  it("a daughter has her mother's fields, with the same ids, then her own; a change to the mother reaches the branch", () => {
+    let s = tree();
+    expect(ids(s, "t_tarea")).toEqual(["f_titulo<t_agenda", "f_fecha<t_agenda", "f_hecha"]);
+    expect(ids(s, "t_urgente")).toEqual([
+      "f_titulo<t_agenda",
+      "f_fecha<t_agenda",
+      "f_hecha<t_tarea",
+    ]);
+    expect(s.types.t_urgente?.titleField).toBe("f_titulo");
+    s = ok(s, { op: "add_field", type: "t_agenda", field: field("f_lugar", "Lugar") }).schema;
+    s = ok(s, {
+      op: "rename_field",
+      type: "t_agenda",
+      field: "f_fecha",
+      key: "dia",
+      name: "Día",
+      label: L,
+    }).schema;
+    expect(ids(s, "t_urgente")).toEqual([
+      "f_titulo<t_agenda",
+      "f_fecha<t_agenda",
+      "f_lugar<t_agenda",
+      "f_hecha<t_tarea",
+    ]);
+    expect(s.types.t_urgente?.fields.find((f) => f.id === "f_fecha")?.name).toBe("Día");
+  });
+
+  it("an inherited field is changed only where it is defined; a name is used once in a branch", () => {
+    const s = tree();
+    const r = applySchemaOp(s, {
+      op: "archive_field",
+      type: "t_tarea",
+      field: "f_fecha",
+      archived: true,
+    });
+    expect(r.ok ? "" : r.error).toContain("inherited");
+    const twice = applySchemaOp(s, {
+      op: "add_field",
+      type: "t_tarea",
+      field: field("f_otra", "Fecha"),
+    });
+    expect(twice.ok ? "" : twice.error).toContain("already has a field called");
+    // Adding to the mother a name a daughter already uses is refused too.
+    const below = applySchemaOp(s, {
+      op: "add_field",
+      type: "t_agenda",
+      field: field("f_h2", "Hecha"),
+    });
+    expect(below.ok).toBe(false);
+    const gone = applySchemaOp(s, { op: "remove_type", type: "t_tarea" });
+    expect(gone.ok ? "" : gone.error).toContain("collections inside");
+    const loop = applySchemaOp(s, { op: "set_parent", type: "t_agenda", parent: "t_urgente" });
+    expect(loop.ok ? "" : loop.error).toContain("own branch");
+  });
+
+  it("moving a collection keeps what the new mother does not give, archived, and the move is undone exactly", () => {
+    const s = tree();
+    const r = ok(s, { op: "set_parent", type: "t_tarea", parent: "t_proyectos" });
+    // Fecha is the same id in both mothers: inherited again. Título is kept (the title, not archived).
+    expect(ids(r.schema, "t_tarea")).toEqual([
+      "f_nombre<t_proyectos",
+      "f_fecha<t_proyectos",
+      "f_titulo",
+      "f_hecha",
+    ]);
+    expect(
+      r.schema.types.t_tarea?.fields.find((f) => f.id === "f_titulo")?.archived,
+    ).toBeUndefined();
+    expect(ids(r.schema, "t_urgente")).toEqual([
+      "f_nombre<t_proyectos",
+      "f_fecha<t_proyectos",
+      "f_titulo<t_tarea",
+      "f_hecha<t_tarea",
+    ]);
+    const back = ok(r.schema, r.inverse);
+    expect(shape(back.schema)).toEqual(shape(s));
+    // To the root: everything inherited stays, as its own fields.
+    const root = ok(s, { op: "set_parent", type: "t_urgente", parent: null });
+    expect(ids(root.schema, "t_urgente")).toEqual(["f_titulo", "f_fecha", "f_hecha"]);
+    expect(root.schema.types.t_urgente?.fields.find((f) => f.id === "f_fecha")?.archived).toBe(
+      true,
+    );
+    expect(shape(ok(root.schema, root.inverse).schema)).toEqual(shape(s));
+  });
+});

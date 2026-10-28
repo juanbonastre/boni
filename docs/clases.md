@@ -101,7 +101,12 @@ Cada paso es un PR con sus pruebas, y se despliega al cerrarse:
    (`docs/contexto.md`).
 2. Fuera el vault: espejo, importación, la lectura del vault en el servidor, Boni Calendar sin servidor, `legacy/`.
 3. Clases en el núcleo: madre de cada colección, raíz con los campos nativos, campos heredados, consultas que incluyen a
-   las hijas, mover sin perder, privacidad heredada y la API del árbol.
+   las hijas, mover sin perder, privacidad heredada y la API del árbol. **Hecho (2026-10-28):** `TypeDef.parent`, los
+   campos heredados como copias marcadas `from` que las operaciones mantienen al día, `set_parent` (lo que la nueva madre
+   no da queda archivado y se deshace exacto), `store.retype` (mover un registro conservando su id) y las listas de una
+   rama (`deep`); el nivel de la IA se hereda y las reglas de una madre alcanzan a sus hijas; la API de datos y el MCP
+   dan la madre de cada colección y las filas de las hijas; Boni Calendar mueve un evento sin crear otro. La raíz es
+   implícita: sus campos nativos son los de toda entidad (título, nota, creado, editado; quién, en la auditoría).
 4. Un solo árbol en la interfaz, en lugar de «Colecciones» y «Todas las páginas».
 5. Migrar los datos de cada cuenta a su árbol (ensayo antes y una sola ejecución que se deshace entera).
 6. Sin rutas: fuera `f_vault_path`.

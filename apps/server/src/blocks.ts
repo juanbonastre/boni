@@ -44,7 +44,9 @@ function sources(store: UserStore, blocks: readonly unknown[], getSys: Sys | und
   const types = { ...store.schema().types, ...(sys?.types ?? {}) };
   const cache = new Map<string, ReturnType<UserStore["entities"]>>();
   const rowsOf = (type: string) => {
-    if (!cache.has(type)) cache.set(type, sys?.types[type] ? sys.rows(type) : store.entities(type));
+    // A collection's numbers count her daughters' records too (docs/clases.md §2.3).
+    if (!cache.has(type))
+      cache.set(type, sys?.types[type] ? sys.rows(type) : store.entities(type, { deep: true }));
     return cache.get(type) ?? [];
   };
   const titleOf = (id: string) => {
