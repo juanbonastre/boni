@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostStorage } from "./host.ts";
-import { memoryVault } from "./vault/testing.ts";
 
 /** The store reads the host when it is first imported, so every test starts from fresh modules. */
 async function fresh() {
@@ -23,36 +22,31 @@ describe("host", () => {
   it("gives the store the host's bridge, storage and starting settings", async () => {
     const host = await fresh();
     const storage = memoryStorage();
-    const { bridge } = memoryVault({});
-    host.setHost({
-      vault: bridge,
-      storage,
-      keys: "root",
-      settings: { vaultWrite: true },
-    });
-    const { vaultBridge } = await import("./vaultBridge.ts");
+    const bridge = { noteApp: "boni" as const };
+    host.setHost({ notes: bridge, storage, keys: "root", settings: { weekNumbers: true } });
+    const { notesBridge } = await import("./notesBridge.ts");
     const { useApp } = await import("./store.ts");
-    expect(vaultBridge()).toBe(bridge);
+    expect(notesBridge()).toBe(bridge);
     const s = useApp.getState();
-    expect(s.settings.vaultWrite).toBe(true);
-    expect(s.source).toBe("vault");
+    expect(s.settings.weekNumbers).toBe(true);
+    expect(s.source).toBe("sample");
     s.setSettings({ h24: false });
     expect(JSON.parse(storage.data.get("boni-calendar:settings") ?? "{}")).toMatchObject({
       h24: false,
-      vaultWrite: true,
+      weekNumbers: true,
     });
   });
 
   it("lets what the user saved win over the host's starting settings", async () => {
     const host = await fresh();
     host.setHost({
-      vault: null,
-      storage: memoryStorage({ "boni-calendar:settings": JSON.stringify({ vaultWrite: false }) }),
+      notes: null,
+      storage: memoryStorage({ "boni-calendar:settings": JSON.stringify({ weekNumbers: false }) }),
       keys: "window",
-      settings: { vaultWrite: true },
+      settings: { weekNumbers: true },
     });
     const { useApp } = await import("./store.ts");
-    expect(useApp.getState().settings.vaultWrite).toBe(false);
+    expect(useApp.getState().settings.weekNumbers).toBe(false);
   });
 
   it("listens for keys on the window, or only inside the app's root when it shares the window", async () => {
@@ -67,13 +61,13 @@ describe("host", () => {
     const press = (el: HTMLElement, key: string) =>
       el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
 
-    host.setHost({ vault: null, storage: memoryStorage(), keys: "window" });
+    host.setHost({ notes: null, storage: memoryStorage(), keys: "window" });
     let off = host.onKeys((e) => seen.push(e.key));
     press(outside, "a");
     press(inside, "b");
     off();
 
-    host.setHost({ vault: null, storage: memoryStorage(), keys: "root" });
+    host.setHost({ notes: null, storage: memoryStorage(), keys: "root" });
     off = host.onKeys((e) => seen.push(e.key));
     press(outside, "c");
     press(inside, "d");

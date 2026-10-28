@@ -1,6 +1,8 @@
 import type { CollectionProvider, CollectionSnapshot, Row, RowChange } from "@boni/calendar";
 import { type Outbox, type Remote, RemoteError } from "./remote.ts";
-import { aliases } from "./vault/sync.ts";
+
+/** Ids the app gave to rows before the server made them, and the id the server gave them (a note's path). */
+export const aliases = new Map<string, string>();
 
 /**
  * Writing through Boni Calendar Server: the store's provider while the source is a server. Changes are

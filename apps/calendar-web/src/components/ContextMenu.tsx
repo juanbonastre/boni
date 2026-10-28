@@ -25,9 +25,9 @@ import {
 import { isExternalCalendar } from "../external.ts";
 import { appRect, appRoot, eventTarget, findInApp, onKeys } from "../host.ts";
 import { t } from "../i18n.ts";
+import { notesBridge } from "../notesBridge.ts";
 import { type CtxTarget, useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
-import { vaultBridge } from "../vaultBridge.ts";
 import { propertiesOf } from "./CalendarList.tsx";
 import { lastPointerWasTouch } from "./useTouch.ts";
 
@@ -213,7 +213,7 @@ function EventItems({ id, close }: { id: string; close: () => void }) {
       )}
       {!multi && app.noteOfEvent(id) && (
         <Item icon={<ExternalLink size={14} />} onClick={run(() => void app.openNote(id))}>
-          {t(vaultBridge()?.noteApp === "boni" ? "event.openInBoni" : "ctx.openNote")}
+          {t(notesBridge()?.noteApp === "boni" ? "event.openInBoni" : "ctx.openNote")}
         </Item>
       )}
       {canTask && allTasks && (

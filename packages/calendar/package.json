@@ -1,5 +1,6 @@
 {
   "name": "@boni/calendar",
+  "description": "Boni Calendar's engine, pure TypeScript: time and timezones, collections seen as calendars, layout, repetitions, reminders and quick create",
   "version": "0.0.1",
   "private": true,
   "type": "module",

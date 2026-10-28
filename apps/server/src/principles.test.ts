@@ -40,7 +40,7 @@ describe("principles (docs/principios.md)", () => {
     db.close();
   });
 
-  it("A-07: no vault mode: neither the server nor the packages read or write a folder of notes", () => {
+  it("A-07: no vault mode: neither the server, the packages nor Boni Calendar's apps read or write a folder of notes", () => {
     const root = join(import.meta.dirname, "..", "..", "..");
     const sources = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -54,12 +54,14 @@ describe("principles (docs/principios.md)", () => {
       );
     const dirs = [
       join(root, "apps", "server", "src"),
+      join(root, "apps", "calendar-web", "src"),
+      join(root, "apps", "calendar-desktop"),
       ...readdirSync(join(root, "packages")).map((p) => join(root, "packages", p, "src")),
     ].filter((d) => existsSync(d));
     const bad = dirs
       .flatMap(sources)
       .filter((f) =>
-        /vault-fs\.cjs|@boni\/vault-import|@boni\/mirror|calendar-web\/src\/vault\//.test(
+        /vault-fs\.cjs|@boni\/vault-import|@boni\/mirror|calendar-web\/src\/vault\/|boniVault|VaultSaf/.test(
           readFileSync(f, "utf8"),
         ),
       )
@@ -67,5 +69,24 @@ describe("principles (docs/principios.md)", () => {
     expect(bad).toEqual([]);
     expect(existsSync(join(root, "packages", "mirror"))).toBe(false);
     expect(existsSync(join(root, "packages", "vault-import"))).toBe(false);
+    for (const gone of [
+      ["apps", "calendar-web", "src", "vault"],
+      ["apps", "calendar-desktop", "vault-fs.cjs"],
+      [
+        "apps",
+        "calendar-android",
+        "app",
+        "src",
+        "main",
+        "java",
+        "io",
+        "github",
+        "juanbonastre",
+        "bonicalendar",
+        "VaultSaf.kt",
+      ],
+      ["legacy", "obsidian"],
+    ])
+      expect(existsSync(join(root, ...gone)), gone.join("/")).toBe(false);
   });
 });

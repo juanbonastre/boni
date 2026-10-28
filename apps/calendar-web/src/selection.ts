@@ -1,3 +1,6 @@
+/**
+ * Selecting events with the mouse and keys: a click, Shift for a chronological range, Ctrl+Shift to add or remove one.
+ */
 import { type CalEvent, fromLocal } from "@boni/calendar";
 
 export interface ClickInput {

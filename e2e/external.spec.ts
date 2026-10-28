@@ -177,45 +177,20 @@ test("the last copy shows without a connection, and a failed download says so", 
   await expect(page.locator(".ext-settings .setting", { hasText: "Mal" })).toHaveCount(0);
 });
 
-test("external events never become notes of the vault", async ({ page }) => {
+test("external events are never edited or deleted with the calendar's own", async ({ page }) => {
   await page.addInitScript((feed) => {
     const ok = (value: unknown) => ({ ok: true, value });
-    const writes: string[] = [];
-    // biome-ignore lint/suspicious/noExplicitAny: test hooks
-    (window as any).__writes = writes;
     // biome-ignore lint/suspicious/noExplicitAny: test double of the desktop shell
     (window as any).boniNet = { fetchText: async () => ok(feed) };
-    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge
-    (window as any).boniVault = {
-      getRoot: async () => ok("/vault/vacio"),
-      chooseRoot: async () => ok("/vault/vacio"),
-      scan: async () => ok([]),
-      read: async () => ({ ok: false, code: "not-found", message: "x" }),
-      write: async (p: string) => {
-        writes.push(`write ${p}`);
-        return ok({ conflict: false, mtimeMs: 1, size: 1 });
-      },
-      create: async (p: string) => {
-        writes.push(`create ${p}`);
-        return ok({ exists: false, mtimeMs: 1, size: 1 });
-      },
-      trash: async (p: string) => {
-        writes.push(`trash ${p}`);
-        return ok(null);
-      },
-    };
-    localStorage.setItem("boni-calendar:settings", JSON.stringify({ vaultWrite: true }));
   }, FEED);
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
-  await page.locator(".vault-notice").waitFor();
+  await page.waitForSelector(".ev");
   await addCalendar(page, "Calendario de ejemplo", "https://example.com/ejemplo.ics");
   await page.keyboard.press("Escape");
   await expect(taller(page).first()).toBeAttached();
   await page.keyboard.press("Control+a");
   await page.keyboard.press("Delete");
   await page.waitForTimeout(500);
+  // The sample's own events went; the external one is still there (it is never a row).
   await expect(taller(page).first()).toBeAttached();
-  expect(await page.evaluate(() => (window as never as { __writes: string[] }).__writes)).toEqual(
-    [],
-  );
 });

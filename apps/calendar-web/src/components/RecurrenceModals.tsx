@@ -1,3 +1,7 @@
+/**
+ * Dialogs for repeated events: which ones a change touches (this, this and the following, all) and the custom
+ * repetition.
+ */
 import { civilFromDays, monthNames, type Recurrence, weekdayNames } from "@boni/calendar";
 import { useEffect, useState } from "react";
 import { onKeys } from "../host.ts";

@@ -1,3 +1,6 @@
+/**
+ * Pointer interactions of the time grid: select, create by dragging, move and resize, with auto-scroll near the edges.
+ */
 import {
   allDaySpan,
   type CivilDay,

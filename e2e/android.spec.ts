@@ -27,12 +27,8 @@ test("without network permission, Settings says so and opens the app's permissio
     };
   });
   await page.goto("/?now=2025-09-17T14:29&tz=Europe/Madrid");
-  await page.locator(".vault-notice").waitFor();
+  await page.waitForSelector(".ev");
   await page.keyboard.press("Control+,");
-  await page
-    .locator(".modal .setting", { hasText: "Origen" })
-    .getByRole("radio", { name: "Servidor" })
-    .click();
   const hint = page.locator(".modal .network-hint");
   await expect(hint).toContainText("no tiene permiso de red");
   await hint.getByRole("button", { name: "Abrir permisos" }).click();

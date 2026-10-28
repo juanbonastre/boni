@@ -156,43 +156,14 @@ test("the last copy shows without a connection, and logging out goes back", asyn
   await expect(page.locator(".ev", { hasText: "Clase del servidor" })).toHaveCount(0);
 });
 
-test("with a vault folder, the device chooses between the folder and a server", async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    const ok = (value: unknown) => ({ ok: true, value });
-    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge
-    (window as any).boniVault = {
-      getRoot: async () => ok("/vault/ejemplo"),
-      chooseRoot: async () => ok("/vault/ejemplo"),
-      scan: async () => ok([]),
-      read: async () => ({ ok: false, code: "not-found", message: "x" }),
-    };
-  });
-  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
-  await page.locator(".vault-notice").waitFor();
-  await page.keyboard.press("Control+,");
-  const origin = page.locator(".modal .setting", { hasText: "Origen" });
-  await expect(origin).toBeVisible();
-  await expect(page.locator(".modal")).toContainText("Carpeta del vault");
-  await origin.getByRole("radio", { name: "Servidor" }).click();
-  await expect(page.locator(".modal .server-form")).toBeVisible();
-});
-
-test("with a server, an event still opens its note in Obsidian on a device that can", async ({
-  page,
-}) => {
+test("with a server, an event opens its note where the device opens notes", async ({ page }) => {
   await page.addInitScript(() => {
     const ok = (value: unknown) => ({ ok: true, value });
     const opened: string[] = [];
     // biome-ignore lint/suspicious/noExplicitAny: what the test double below recorded
     (window as any).__opened = opened;
-    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge (an empty folder)
-    (window as any).boniVault = {
-      getRoot: async () => ok("/vault/ejemplo"),
-      chooseRoot: async () => ok("/vault/ejemplo"),
-      scan: async () => ok([]),
-      read: async () => ({ ok: false, code: "not-found", message: "x" }),
+    // biome-ignore lint/suspicious/noExplicitAny: test double of the desktop shell's notes bridge
+    (window as any).boniNotes = {
       openNote: async (path: string) => {
         opened.push(path);
         return ok(null);
@@ -200,12 +171,8 @@ test("with a server, an event still opens its note in Obsidian on a device that 
     };
   });
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
-  await page.locator(".vault-notice").waitFor();
+  await page.waitForSelector(".ev");
   await page.keyboard.press("Control+,");
-  await page
-    .locator(".modal .setting", { hasText: "Origen" })
-    .getByRole("radio", { name: "Servidor" })
-    .click();
   const form = page.locator(".modal .server-form");
   await form.locator("input").nth(0).fill(url);
   await form.locator("input").nth(1).fill("juan");
@@ -229,13 +196,9 @@ test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and 
     const opened: [string, boolean][] = [];
     // biome-ignore lint/suspicious/noExplicitAny: what the test double below recorded
     (window as any).__opened = opened;
-    // biome-ignore lint/suspicious/noExplicitAny: test double of the preload bridge (an empty folder)
-    (window as any).boniVault = {
+    // biome-ignore lint/suspicious/noExplicitAny: test double of the desktop shell's notes bridge
+    (window as any).boniNotes = {
       noteApp: "boni",
-      getRoot: async () => ok("/vault/ejemplo"),
-      chooseRoot: async () => ok("/vault/ejemplo"),
-      scan: async () => ok([]),
-      read: async () => ({ ok: false, code: "not-found", message: "x" }),
       openNote: async (path: string, opts?: { peek?: boolean }) => {
         opened.push([path, opts?.peek === true]);
         return ok(null);
@@ -243,12 +206,8 @@ test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and 
     };
   });
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
-  await page.locator(".vault-notice").waitFor();
+  await page.waitForSelector(".ev");
   await page.keyboard.press("Control+,");
-  await page
-    .locator(".modal .setting", { hasText: "Origen" })
-    .getByRole("radio", { name: "Servidor" })
-    .click();
   const form = page.locator(".modal .server-form");
   await form.locator("input").nth(0).fill(url);
   await form.locator("input").nth(1).fill("juan");

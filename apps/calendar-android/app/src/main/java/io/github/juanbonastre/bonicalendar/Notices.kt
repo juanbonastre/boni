@@ -14,7 +14,7 @@ import org.json.JSONArray
 import java.io.File
 
 /**
- * Reminders as system alarms (phase 5). The page (local vault) or the server (ServerSync) hands over the
+ * Reminders as system alarms (phase 5). The page or the server (ServerSync) hands over the
  * notices of the coming hours, already worded; each becomes an exact alarm that shows a notification,
  * also with the app closed. The list is kept in the app's files so it survives a restart of the phone.
  * A new list replaces the previous one; a notice is never shown twice.

@@ -1,3 +1,7 @@
+/**
+ * An event's detail (a popover or the side panel): title, when, repetition, calendar, its properties, task state and
+ * actions.
+ */
 import {
   type CalEvent,
   civilFromDays,
@@ -52,10 +56,10 @@ import {
 } from "react";
 import { appRect, appRoot, findInApp } from "../host.ts";
 import { t } from "../i18n.ts";
+import { notesBridge } from "../notesBridge.ts";
 import { presetOf, type RecPreset, recurrenceLabel, ruleOf } from "../recurrence.ts";
 import { useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
-import { vaultBridge } from "../vaultBridge.ts";
 import { ChoicePicker, DateField, DraftInput, TimeInput } from "./fields.tsx";
 import { Menu } from "./Menu.tsx";
 import { RecurrenceModal } from "./RecurrenceModals.tsx";
@@ -205,7 +209,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
           <button
             type="button"
             className="icon-btn"
-            title={t(vaultBridge()?.noteApp === "boni" ? "event.openInBoni" : "event.openNote")}
+            title={t(notesBridge()?.noteApp === "boni" ? "event.openInBoni" : "event.openNote")}
             onClick={() => void app.openNote(ev.id)}
           >
             <ExternalLink size={15} />

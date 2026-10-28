@@ -1,6 +1,6 @@
+import type { NotesBridge } from "./notesBridge.ts";
 import type { Notice } from "./notifications.ts";
 import type { Settings } from "./store.ts";
-import type { VaultBridge } from "./vaultBridge.ts";
 
 /** What a host needs to ask Boni Calendar Server for this device's reminders (`GET /api/reminders`). */
 export interface ServerSync {
@@ -26,13 +26,13 @@ export interface HostStorage {
 
 /**
  * What the app needs from the place it runs in. The standalone app (a browser tab or the desktop
- * shell) owns the whole window, keeps its settings in localStorage and finds the vault bridge on
- * `window.boniVault`. Another host (the Obsidian plugin) mounts it inside one of its own elements
- * and hands over its own bridge and storage.
+ * shell) owns the whole window, keeps its settings in localStorage and finds where notes open on
+ * `window.boniNotes`. Another host (a page that embeds it, like the e2e's) mounts it inside one of its own
+ * elements and hands over its own bridge and storage.
  */
 export interface Host {
-  /** Notes of the vault, or null when there is none (plain browser: sample data only). */
-  vault: VaultBridge | null;
+  /** Where events' notes open (the desktop shell), or null (a plain browser, Android). */
+  notes: NotesBridge | null;
   storage: HostStorage;
   /**
    * "window": the app is the whole page and its shortcuts work wherever the focus is. "root": the
@@ -41,8 +41,6 @@ export interface Host {
   keys: "window" | "root";
   /** Settings the app starts with until the user changes them. */
   settings?: Partial<Settings>;
-  /** The host always shows the vault it runs in (the Obsidian plugin): there is no folder to choose. */
-  fixedVault?: boolean;
   /**
    * Downloads a text over the network (external calendars). The desktop shell and Obsidian do it
    * outside the page, so the browser's cross-origin rules do not apply; without it, `fetch`.
@@ -105,7 +103,7 @@ export const localStorageStore: HostStorage = {
   },
 };
 
-let host: Host = { vault: null, storage: localStorageStore, keys: "window" };
+let host: Host = { notes: null, storage: localStorageStore, keys: "window" };
 let root: HTMLElement | null = null;
 
 /** Set before the store is first imported: the store reads the host when it is created. */

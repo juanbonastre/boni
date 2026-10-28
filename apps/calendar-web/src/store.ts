@@ -1,3 +1,7 @@
+/**
+ * The calendar's state (zustand): rows and what derives from them, settings, the view and the visible days, selection,
+ * drag, undo, and the source of the data (the server or the samples).
+ */
 import {
   type Account,
   addMonths,
@@ -71,6 +75,7 @@ import {
 } from "./external.ts";
 import { appRoot, getHost } from "./host.ts";
 import { setLocale } from "./i18n.ts";
+import { notesBridge } from "./notesBridge.ts";
 import {
   applyChanges,
   forgetSnapshot,
@@ -85,20 +90,7 @@ import {
   saveSnapshot,
 } from "./remote.ts";
 import { clickSelection, orderedVisibleIds } from "./selection.ts";
-import { ServerWriter } from "./serverWriter.ts";
-import { EVENT_REMINDERS_COLUMN, patchCollectionReminders } from "./vault/definitions.ts";
-import type { IgnoredNote, VaultLoad } from "./vault/loadVault.ts";
-import { makeVaultProvider, VaultWriteError } from "./vault/provider.ts";
-import {
-  aliases,
-  noteOf,
-  readVault,
-  resetVaultIndex,
-  serialized,
-  stopWatchingVault,
-  watchVault,
-} from "./vault/sync.ts";
-import { vaultBridge } from "./vaultBridge.ts";
+import { aliases, ServerWriter } from "./serverWriter.ts";
 
 export type ViewKind = "day" | "week" | "days" | "month";
 export type Theme = "dark" | "light" | "system";
@@ -114,15 +106,20 @@ export interface Settings {
   defaultDuration: number;
   snap: number;
   density: "compact" | "comfortable";
-  /** Lets the app change the vault's notes. Off until the user turns it on in Settings. */
-  vaultWrite: boolean;
   /** Calendars of other services read by their iCal address (kept on this device only). */
   externals: ExternalCal[];
-  /** Boni Calendar Server this device uses instead of a vault folder (the session token is kept apart). */
+  /** Boni Calendar Server this device uses (the session token is kept apart); none: the sample. */
   server: { url: string; user: string } | null;
 }
 
-export interface VaultState {
+/** A note the server could not show as a row, and why. */
+export interface IgnoredNote {
+  path: string;
+  reason: string;
+}
+
+/** What the last read of the server's calendar found. */
+export interface LoadState {
   status: "idle" | "loading" | "ready" | "error";
   root: string | null;
   notes: number;
@@ -202,7 +199,6 @@ const DEFAULT_SETTINGS: Settings = {
   defaultDuration: 60,
   snap: 15,
   density: "comfortable",
-  vaultWrite: false,
   externals: [],
   server: null,
 };
@@ -237,7 +233,7 @@ export interface AppState {
   views: CalendarView[];
   rows: Row[];
   /** What `rows` were read from. */
-  source: "sample" | "vault" | "server";
+  source: "sample" | "server";
   /** The connection to Boni Calendar Server (source "server"). */
   remote: RemoteState;
   /**
@@ -245,7 +241,7 @@ export interface AppState {
    * never written anywhere. `events` per calendar, in the order of `settings.externals`.
    */
   external: { byCal: Record<string, CalEvent[]>; status: Record<string, ExternalStatus> };
-  vault: VaultState;
+  loaded: LoadState;
   projector: Projector;
   provider: CollectionProvider;
   data: CalendarData;
@@ -360,13 +356,9 @@ export interface AppState {
   showToast: (text: string, undo?: boolean, params?: Record<string, string | number>) => void;
   clearToast: () => void;
   resetData: () => void;
-  /** Reads the vault (definitions and notes) and shows it. */
-  loadVault: () => Promise<void>;
-  /** Asks for the vault folder (desktop app) and reads it; true when one is set. */
-  chooseVaultRoot: () => Promise<boolean>;
   /** Logs this device in to a Boni Calendar Server and shows its calendar; throws on a bad login. */
   connectServer: (url: string, user: string, password: string) => Promise<void>;
-  /** Leaves the server (ends this device's session) and goes back to the vault folder or the sample. */
+  /** Leaves the server (ends this device's session) and goes back to the sample. */
   disconnectServer: () => Promise<void>;
   /** Shows the server's calendar (the last copy first) and follows its changes live. */
   loadServer: () => Promise<void>;
@@ -515,12 +507,8 @@ function stopFollowing() {
   server.writer = null;
 }
 const serverKey = (c: { url: string; user: string }) => `${c.url}|${c.user}`;
-/** One writer for the whole session, so notes it sent to the trash can still be brought back by Undo. */
-let vaultProvider: CollectionProvider | null = null;
-function vaultWriter(bridge: Parameters<typeof makeVaultProvider>[0]): CollectionProvider {
-  vaultProvider = vaultProvider ?? makeVaultProvider(bridge);
-  return vaultProvider;
-}
+/** The column an event's own reminders go to, added to its calendar the first time one has them. */
+const EVENT_REMINDERS_COLUMN = { id: "avisos", name: "Avisos" };
 
 /** How long a click waits before showing an event's detail where a double click opens its note (ms). */
 export const DOUBLE_CLICK_MS = 300;
@@ -542,16 +530,12 @@ export const useApp = create<AppState>((set, get) => {
   let wideSidebar = ui.sidebarOpen ?? true;
   const hidden = new Set(ui.hiddenCalendars ?? []);
   setLocale(settings.locale);
-  // With the vault as the source the first picture is empty (no flash of sample data) until it loads.
-  // With a vault (desktop app, Obsidian) the calendars are its notes; invented sample data only
-  // in a plain browser (development, tests).
-  const wantVault = !!vaultBridge();
-  // A device logged in to a server shows the server's calendar (the last copy until it connects).
+  // A device logged in to a server shows the server's calendar (the last copy until it connects; the first
+  // picture is empty, no flash of sample data); otherwise invented sample data.
   const wantServer = !!settings.server && !!getHost().storage.get(SERVER_TOKEN_KEY);
-  const snapshot: CollectionSnapshot =
-    wantVault || wantServer
-      ? { accounts: [], collections: [], views: [], rows: [] }
-      : makeSnapshot(settings, hidden);
+  const snapshot: CollectionSnapshot = wantServer
+    ? { accounts: [], collections: [], views: [], rows: [] }
+    : makeSnapshot(settings, hidden);
 
   const persistUi = () => {
     const s = get();
@@ -587,12 +571,11 @@ export const useApp = create<AppState>((set, get) => {
     void s.provider.apply(diffRows(s.rows, rows)).catch(writeFailed);
   };
 
-  /** A write to the vault did not happen: say so and show what the notes really say. */
+  /** A write did not happen: say so and show what the server really has. */
   const writeFailed = (e: unknown) => {
-    console.error("vault write failed", e);
-    const conflict = e instanceof VaultWriteError && e.kind === "conflict";
-    get().showToast(conflict ? "vault.conflict" : "vault.saveFailed");
-    void get().loadVault();
+    console.error("write failed", e);
+    get().showToast("vault.saveFailed");
+    if (get().source === "server") void get().loadServer();
   };
 
   /** Applies an edited event list as row changes, with undo history. */
@@ -631,11 +614,11 @@ export const useApp = create<AppState>((set, get) => {
    * visible or hidden as the user left it, and a selection survives if its event still exists.
    */
   const applyLoad = (
-    r: Pick<VaultLoad, "snapshot" | "notes" | "ignored" | "problems">,
+    r: { snapshot: CollectionSnapshot; notes: number; ignored: IgnoredNote[]; problems: string[] },
     root: string | null,
-    source: "vault" | "server",
     provider: () => CollectionProvider,
   ) => {
+    const source = "server" as const;
     const s = get();
     const hidden = new Set(load<UiPersist>(UI_KEY).hiddenCalendars ?? []);
     const wasVisible = new Map(s.views.map((v) => [v.id, v.visible]));
@@ -654,7 +637,7 @@ export const useApp = create<AppState>((set, get) => {
         visible: wasVisible.get(v.id) ?? !hidden.has(v.id),
       };
     });
-    const vault: VaultState = {
+    const loaded: LoadState = {
       status: "ready",
       root,
       notes: r.notes,
@@ -670,7 +653,7 @@ export const useApp = create<AppState>((set, get) => {
       JSON.stringify(s.views) === JSON.stringify(views) &&
       JSON.stringify(s.accounts) === JSON.stringify(r.snapshot.accounts);
     if (sameRows && sameDefs) {
-      if (JSON.stringify(s.vault) !== JSON.stringify(vault)) set({ vault });
+      if (JSON.stringify(s.loaded) !== JSON.stringify(loaded)) set({ loaded });
       return;
     }
     const sameCollections =
@@ -699,7 +682,7 @@ export const useApp = create<AppState>((set, get) => {
       anchorId: s.anchorId && ids.has(now(s.anchorId)) ? now(s.anchorId) : null,
       popoverId: s.popoverId && ids.has(now(s.popoverId)) ? now(s.popoverId) : null,
       newEventId: s.newEventId ? now(s.newEventId) : null,
-      vault,
+      loaded,
     });
   };
 
@@ -726,19 +709,14 @@ export const useApp = create<AppState>((set, get) => {
     set((s) => ({ data: merge(s.data) }));
   };
 
-  /** Writes a calendar's reminders where its definition lives: the vault folder or the server. */
+  /** Writes a calendar's reminders where its definition lives: the server. */
   const persistReminders = async (
     collectionId: string,
     edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
   ) => {
     const s = get();
     try {
-      if (s.source === "server") {
-        await server.remote?.setCollectionReminders(collectionId, edit);
-      } else if (s.source === "vault") {
-        const bridge = vaultBridge();
-        if (bridge) await patchCollectionReminders(bridge, collectionId, edit);
-      }
+      if (s.source === "server") await server.remote?.setCollectionReminders(collectionId, edit);
     } catch (e) {
       writeFailed(e);
     }
@@ -843,10 +821,10 @@ export const useApp = create<AppState>((set, get) => {
   return {
     ...snapshot,
     ...derive(snapshot, settings.tz),
-    source: wantServer ? "server" : wantVault ? "vault" : "sample",
+    source: wantServer ? "server" : "sample",
     remote: { status: wantServer ? "connecting" : "off" },
-    vault: {
-      status: wantVault || wantServer ? "loading" : "idle",
+    loaded: {
+      status: wantServer ? "loading" : "idle",
       root: null,
       notes: 0,
       ignored: [],
@@ -900,8 +878,6 @@ export const useApp = create<AppState>((set, get) => {
       }
       // Rows without their own timezone follow the app's.
       if (patch.tz !== undefined) setDefinitions({ collections: [...get().collections] });
-      // Turning writing on or off changes which calendars are read-only.
-      if (patch.vaultWrite !== undefined && get().source === "vault") void get().loadVault();
       if (patch.firstDay !== undefined) {
         // Re-align the visible range (week/month rows) to the new first day of the week.
         const vis = useVisible.getState().start;
@@ -1046,22 +1022,21 @@ export const useApp = create<AppState>((set, get) => {
 
     noteOfEvent: (id) => {
       const s = get();
-      if (s.source === "vault") return noteOf(id);
       // With a server the rows are its notes too (id = path); the device opens them when its host can.
-      if (s.source !== "server" || !vaultBridge()?.openNote) return null;
+      if (s.source !== "server" || !notesBridge()?.openNote) return null;
       const path = aliases.get(id) ?? id;
       return path.endsWith(".md") && s.rows.some((r) => r.id === id) ? path : null;
     },
 
     openNote: async (id, opts) => {
       const path = get().noteOfEvent(id);
-      const r = path ? await vaultBridge()?.openNote?.(path, opts) : null;
+      const r = path ? await notesBridge()?.openNote?.(path, opts) : null;
       if (r && !r.ok) get().showToast("vault.openFailed");
     },
 
     openProposal: (id) => {
       const pid = proposalOf(id);
-      const open = vaultBridge()?.openProposal;
+      const open = notesBridge()?.openProposal;
       if (!pid || !open) return false;
       clearTimeout(detailTimer);
       get().select(id, false);
@@ -1074,7 +1049,7 @@ export const useApp = create<AppState>((set, get) => {
     peekEvent: (id) => {
       const s = get();
       if (s.openProposal(id)) return true;
-      if (vaultBridge()?.noteApp !== "boni" || !s.noteOfEvent(id)) return false;
+      if (notesBridge()?.noteApp !== "boni" || !s.noteOfEvent(id)) return false;
       clearTimeout(detailTimer);
       // The first click of the two opened its detail: the peek shows the note instead.
       s.select(id, false);
@@ -1113,7 +1088,7 @@ export const useApp = create<AppState>((set, get) => {
       // Where a double click opens the note's peek, the detail waits for a moment: a second click opens the peek
       // without the detail showing and going (Juan, 2026-10-22).
       clearTimeout(detailTimer);
-      const wait = r.popover && vaultBridge()?.noteApp === "boni" && !!s.noteOfEvent(id);
+      const wait = r.popover && notesBridge()?.noteApp === "boni" && !!s.noteOfEvent(id);
       set({
         selectedIds: r.ids,
         selectedId: r.ids.length === 1 ? (r.ids[0] ?? null) : null,
@@ -1455,7 +1430,6 @@ export const useApp = create<AppState>((set, get) => {
 
     resetData: () => {
       const s = get();
-      if (s.source === "vault") return void get().loadVault();
       const snap = makeSnapshot(s.settings, new Set());
       const d = derive(snap, s.settings.tz);
       set({
@@ -1472,62 +1446,15 @@ export const useApp = create<AppState>((set, get) => {
       });
     },
 
-    loadVault: async () => {
-      const bridge = vaultBridge();
-      if (!bridge) return;
-      await serialized(async () => {
-        if (get().collections.length === 0) {
-          set((s) => ({ vault: { ...s.vault, status: "loading", message: undefined } }));
-        }
-        try {
-          const root = await bridge.getRoot();
-          if (root.ok && !root.value) {
-            set((st) => ({ vault: { ...st.vault, status: "error", message: "no-root" } }));
-            return;
-          }
-          // Writing is not switched on yet: the vault is shown read-only.
-          const r = await readVault(bridge, { readOnly: !get().settings.vaultWrite });
-          applyLoad(r, root.ok ? root.value : null, "vault", () => vaultWriter(bridge));
-          watchVault(bridge, r.folders, () => void get().loadVault());
-          // Series kept as notes keep going as time passes (only when writing is on).
-          if (get().settings.vaultWrite) {
-            const n = get().extendSeries();
-            if (n > 0) get().showToast("vault.seriesExtended", false, { n });
-          }
-        } catch (e) {
-          set((s) => ({
-            vault: { ...s.vault, status: "error", message: String((e as Error).message ?? e) },
-          }));
-        }
-      });
-    },
-
-    chooseVaultRoot: async () => {
-      const bridge = vaultBridge();
-      if (!bridge) return false;
-      const r = await bridge.chooseRoot();
-      if (!r.ok) {
-        set((s) => ({ vault: { ...s.vault, status: "error", message: r.message } }));
-        return false;
-      }
-      if (r.value) {
-        resetVaultIndex();
-        set((s) => ({ vault: { ...s.vault, root: r.value } }));
-        await get().loadVault();
-      }
-      return !!r.value;
-    },
-
     connectServer: async (url, user, password) => {
       const device = navigator.userAgent.includes("Android")
         ? "Android"
-        : vaultBridge()
+        : notesBridge()
           ? "Escritorio"
           : "Navegador";
       const token = await login(url, user, password, device);
       getHost().storage.set(SERVER_TOKEN_KEY, token);
       stopFollowing();
-      stopWatchingVault(vaultBridge());
       get().setSettings({ server: { url: url.trim().replace(/\/+$/, ""), user } });
       set({ remote: { status: "connecting" } });
       await get().loadServer();
@@ -1546,14 +1473,9 @@ export const useApp = create<AppState>((set, get) => {
       getHost().storage.set(SERVER_TOKEN_KEY, "");
       get().setSettings({ server: null });
       set({ remote: { status: "off" } });
-      // Back to the vault folder (desktop, Android) or to the sample (a plain browser).
-      if (vaultBridge()) {
-        set({ source: "vault", collections: [], views: [], rows: [] });
-        await get().loadVault();
-      } else {
-        set({ source: "sample" });
-        get().resetData();
-      }
+      // Back to the sample.
+      set({ source: "sample" });
+      get().resetData();
     },
 
     loadServer: async () => {
@@ -1594,7 +1516,6 @@ export const useApp = create<AppState>((set, get) => {
             problems: snap.problems,
           },
           label,
-          "server",
           () => writer,
         );
       };

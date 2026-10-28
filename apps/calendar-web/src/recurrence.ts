@@ -1,3 +1,4 @@
+/** The repetition presets of the event detail (none, daily, weekly…) and how a repetition reads in words. */
 import type { Locale } from "@boni/calendar";
 import { civilFromDays, monthNames, type Recurrence, weekdayNames } from "@boni/calendar";
 import { t } from "./i18n.ts";

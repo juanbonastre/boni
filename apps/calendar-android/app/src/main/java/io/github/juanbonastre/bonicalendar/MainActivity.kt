@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import org.json.JSONObject
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.webkit.ConsoleMessage
@@ -19,7 +18,6 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -101,25 +99,6 @@ class MainActivity : ComponentActivity() {
         })
     }
 
-    private var onVaultPicked: ((Uri?) -> Unit)? = null
-    private val pickTree = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { tree ->
-        if (tree != null) {
-            // Keep the access across restarts.
-            contentResolver.takePersistableUriPermission(
-                tree,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
-            )
-        }
-        onVaultPicked?.invoke(tree)
-        onVaultPicked = null
-    }
-
-    /** Asks for the vault's folder (once: the access is kept). */
-    fun pickVault(done: (Uri?) -> Unit) {
-        onVaultPicked = done
-        pickTree.launch(null)
-    }
-
     /** The event of the notification that opened the app, until the page asks for it. */
     @Volatile private var pendingOpen: String? = null
 
@@ -145,7 +124,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Coming back to the app: the calendar checks the vault for changes (Syncthing may have brought some). */
+    /** Coming back to the app: the page looks for changes (the server's, when the stream was cut). */
     override fun onResume() {
         super.onResume()
         if (::web.isInitialized) web.evaluateJavascript("window.dispatchEvent(new Event('focus'))", null)

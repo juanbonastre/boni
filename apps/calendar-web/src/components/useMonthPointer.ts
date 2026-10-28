@@ -1,3 +1,4 @@
+/** Pointer interactions of the month view: select, move across days, resize all-day bars and drag to create. */
 import {
   allDaySpan,
   type CivilDay,

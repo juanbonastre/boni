@@ -13,11 +13,10 @@ export async function mountApp(container: HTMLElement, host: Host): Promise<{ un
   container.classList.add("boni");
   // Sharing the window: the root takes the focus when clicked, so the shortcuts know it is ours.
   if (host.keys === "root") container.tabIndex = -1;
-  const [{ App }, { ViewportProvider }, { useApp }, { stopWatchingVault }] = await Promise.all([
+  const [{ App }, { ViewportProvider }, { useApp }] = await Promise.all([
     import("./App.tsx"),
     import("./ViewportContext.tsx"),
     import("./store.ts"),
-    import("./vault/sync.ts"),
   ]);
   const root = createRoot(container);
   root.render(
@@ -29,10 +28,8 @@ export async function mountApp(container: HTMLElement, host: Host): Promise<{ un
   );
   const app = useApp.getState();
   if (app.source === "server") void app.loadServer();
-  else if (app.source === "vault") void app.loadVault();
   return {
     unmount() {
-      stopWatchingVault(host.vault);
       root.unmount();
       container.classList.remove("boni");
       setAppRoot(null);

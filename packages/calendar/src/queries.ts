@@ -1,3 +1,7 @@
+/**
+ * Questions about events by day: the segments a timed event leaves in each day it touches, which events fall in a
+ * range of days and how long they last.
+ */
 import type { CalEvent } from "./model.ts";
 import { type CivilDay, fromLocal, toLocal } from "./time.ts";
 

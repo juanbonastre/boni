@@ -3,7 +3,7 @@ import { type AndroidNative, androidHost } from "./android.ts";
 import { initClock } from "./clock.ts";
 import { type Host, localStorageStore } from "./host.ts";
 import { mountApp } from "./mount.tsx";
-import type { VaultBridge } from "./vaultBridge.ts";
+import type { NotesBridge } from "./notesBridge.ts";
 import "./page.css";
 import "./styles.css";
 
@@ -15,14 +15,14 @@ function parseIso(iso: string, tz: string): number | null {
   return fromLocal(day, Number(m[4] ?? 0) * 60 + Number(m[5] ?? 0), tz);
 }
 
-/** The standalone app: a browser tab, or the desktop shell (which exposes `window.boniVault`). */
+/** The standalone app: a browser tab, or the desktop shell (which exposes `window.boniNotes`). */
 async function boot() {
   const params = new URLSearchParams(location.search);
   initClock(location.search, params.get("tz") ?? systemTimeZone(), parseIso);
   const root = document.getElementById("root");
   if (!root) return;
   const w = window as unknown as {
-    boniVault?: VaultBridge;
+    boniNotes?: NotesBridge;
     boniNet?: Pick<Host, "fetchText">;
     boniNotify?: Host["notify"];
     boniDesktop?: Host["desktop"];
@@ -31,15 +31,10 @@ async function boot() {
   await mountApp(
     root,
     w.boniAndroid
-      ? // The Android app: the vault through the phone's storage, writing on from the start (Juan).
-        {
-          ...androidHost(w.boniAndroid),
-          storage: localStorageStore,
-          keys: "window",
-          settings: { vaultWrite: true },
-        }
+      ? // The Android app: its downloads and reminders through the phone.
+        { ...androidHost(w.boniAndroid), storage: localStorageStore, keys: "window" }
       : {
-          vault: w.boniVault ?? null,
+          notes: w.boniNotes ?? null,
           storage: localStorageStore,
           keys: "window",
           // The desktop shell downloads external calendars itself; a plain browser uses fetch.

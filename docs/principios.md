@@ -22,7 +22,7 @@ Cómo se usa:
 | A-04 | Lo que ve la IA lo decide Juan, por colección y por reglas; lo privado solo se desbloquea desde la página de su colección | 2026-10-20 | `packages/store`, `packages/agent` (`readStore`), `apps/server/src/data.test.ts` |
 | A-05 | Boni no cambia su propio código; la configuración peligrosa (proveedores, presupuestos, capacidades) solo con fricción, en Ajustes | 2026-10-21 | Sin prueba (revisión) |
 | A-06 | Lo privado se hereda: una colección es al menos tan cerrada a la IA como su madre, y una consulta de un modelo sobre la madre no devuelve ni cuenta lo de una hija cerrada para él (`docs/clases.md` §2.8) | 2026-10-27 | Pendiente (PR «Clases en el núcleo») |
-| A-07 | Sin modo vault: ni el servidor ni los paquetes leen o escriben una carpeta de notas; los datos de cada cuenta viven en su almacén (fuera el espejo y la importación del vault) | 2026-10-27 | `apps/server/src/principles.test.ts` («A-07») |
+| A-07 | Sin modo vault: ni el servidor, ni los paquetes, ni las apps de Boni Calendar (web, escritorio, Android) leen o escriben una carpeta de notas; los datos de cada cuenta viven en su almacén y el calendario sale de un servidor (fuera el espejo, la importación del vault y el plugin de Obsidian) | 2026-10-27 | `apps/server/src/principles.test.ts` («A-07») |
 
 ## D. Datos
 

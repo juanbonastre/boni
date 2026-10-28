@@ -1,3 +1,7 @@
+/**
+ * Editing a repeated event with a scope (this one, this and the following, all): how the master and its occurrences
+ * change.
+ */
 import type { CalEvent, Recurrence, When } from "./model.ts";
 import { makeOccurrence, occurrencesBefore, parseOccurrenceId } from "./recurrence.ts";
 import { whenStartDay } from "./shift.ts";

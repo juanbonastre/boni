@@ -1,3 +1,7 @@
+/**
+ * The calendar app's shell: the top bar, the sidebar and the grid or the month, the dialogs and menus, the phone
+ * layout, and the work done at start (reading the data, external calendars, reminders).
+ */
 import { fromLocal, toLocal } from "@boni/calendar";
 import { Plus } from "lucide-react";
 import { useEffect } from "react";
@@ -186,49 +190,22 @@ function useFocusOnPress() {
   }, []);
 }
 
-/** Shown over the grid while the vault loads, or when there is nothing to show because it failed. */
-function VaultNotice() {
+/** Shown over the grid while the server's calendar is not there yet (no copy on this device): why. */
+function ServerNotice() {
   const source = useApp((s) => s.source);
-  const vault = useApp((s) => s.vault);
   const remote = useApp((s) => s.remote);
   const empty = useApp((s) => s.collections.length === 0);
-  if (source === "server") {
-    // Nothing to show yet from the server (no copy on this device): say why.
-    if (!empty || remote.status === "live") return null;
-    return (
-      <div className="vault-notice" role="status">
-        <span>
-          {remote.status === "login"
-            ? t("server.status.login")
-            : remote.status === "offline"
-              ? t("server.unreachable", { message: remote.message ?? "" })
-              : t("server.status.connecting")}
-        </span>
-        {remote.status !== "connecting" && (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => useApp.getState().set({ settingsOpen: true })}
-          >
-            {t("vault.openSettings")}
-          </button>
-        )}
-      </div>
-    );
-  }
-  if (source !== "vault" || !empty || vault.status === "idle") return null;
-  const text =
-    vault.status === "loading"
-      ? t("vault.loading")
-      : vault.status === "error"
-        ? vault.message === "no-root"
-          ? t("vault.noRoot")
-          : `${t("vault.error")}: ${vault.message ?? ""}`
-        : t("vault.empty");
+  if (source !== "server" || !empty || remote.status === "live") return null;
   return (
     <div className="vault-notice" role="status">
-      <span>{text}</span>
-      {vault.status !== "loading" && (
+      <span>
+        {remote.status === "login"
+          ? t("server.status.login")
+          : remote.status === "offline"
+            ? t("server.unreachable", { message: remote.message ?? "" })
+            : t("server.status.connecting")}
+      </span>
+      {remote.status !== "connecting" && (
         <button
           type="button"
           className="btn"
@@ -417,7 +394,7 @@ export function App() {
         <TopBar />
         <div className="stage">
           {view === "month" ? <MonthView /> : <TimeGrid />}
-          <VaultNotice />
+          <ServerNotice />
         </div>
       </main>
       <EventDetail />
