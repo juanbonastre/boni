@@ -391,7 +391,7 @@ export const RUNS_EXPLAINED = {
   ],
 };
 
-/** A hand edit of the mirror in Obsidian, as the server paints it (packages/mirror). */
+/** A hand edit of the mirror in Obsidian (the Markdown mirror, retired 2026-10-28), as the server paints it. */
 export const MIRROR_PROPOSAL = {
   proposals: [
     {

@@ -297,9 +297,6 @@ importers:
       '@boni/mail':
         specifier: workspace:*
         version: link:../../packages/mail
-      '@boni/mirror':
-        specifier: workspace:*
-        version: link:../../packages/mirror
       '@boni/net':
         specifier: workspace:*
         version: link:../../packages/net
@@ -310,9 +307,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/views
     devDependencies:
-      '@boni/vault-import':
-        specifier: workspace:*
-        version: link:../../packages/vault-import
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
@@ -369,16 +363,10 @@ importers:
       '@boni/entities':
         specifier: workspace:*
         version: link:../entities
-      '@boni/mirror':
-        specifier: workspace:*
-        version: link:../mirror
       '@boni/store':
         specifier: workspace:*
         version: link:../store
     devDependencies:
-      '@boni/vault-import':
-        specifier: workspace:*
-        version: link:../vault-import
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
@@ -417,34 +405,6 @@ importers:
         specifier: 5.0.4
         version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(happy-dom@21.0.1)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
-  packages/mirror:
-    dependencies:
-      '@boni/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@boni/calendar':
-        specifier: workspace:*
-        version: link:../calendar
-      '@boni/entities':
-        specifier: workspace:*
-        version: link:../entities
-      '@boni/store':
-        specifier: workspace:*
-        version: link:../store
-      '@boni/vault-import':
-        specifier: workspace:*
-        version: link:../vault-import
-      '@boni/views':
-        specifier: workspace:*
-        version: link:../views
-    devDependencies:
-      '@types/node':
-        specifier: 24.19.2
-        version: 24.19.2
-      vitest:
-        specifier: 5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(happy-dom@21.0.1)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-
   packages/net:
     devDependencies:
       '@types/node':
@@ -459,28 +419,6 @@ importers:
       '@boni/entities':
         specifier: workspace:*
         version: link:../entities
-    devDependencies:
-      '@types/node':
-        specifier: 24.19.2
-        version: 24.19.2
-      vitest:
-        specifier: 5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@24.19.2)(happy-dom@21.0.1)(vite@8.3.4(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-
-  packages/vault-import:
-    dependencies:
-      '@boni/calendar':
-        specifier: workspace:*
-        version: link:../calendar
-      '@boni/entities':
-        specifier: workspace:*
-        version: link:../entities
-      '@boni/store':
-        specifier: workspace:*
-        version: link:../store
-      '@boni/views':
-        specifier: workspace:*
-        version: link:../views
     devDependencies:
       '@types/node':
         specifier: 24.19.2
