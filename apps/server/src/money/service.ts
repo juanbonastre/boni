@@ -1,5 +1,4 @@
 import { parseNote } from "@boni/calendar";
-import { CORE_MARK } from "@boni/mirror";
 import type { UserStore } from "@boni/store";
 import { kindFrom } from "@boni/views";
 import { storeBook } from "./book.ts";
@@ -16,10 +15,10 @@ import {
  * The reconciliation for an account (Boni's MCP: `finanzas_import`, `finanzas_close`): its statements read as
  * files (never written; the bank's bytes as they came), its rules and categories from the collections Reglas and
  * Categorías (`collections.ts`; before they exist, `reglas.csv` and the categories note), its movements and debts
- * in Boni. Only once the movements live in Boni (core mode): before that the vault's own tools did it.
+ * in Boni (the collection Movimiento).
  */
 const FIN = "registros/finanzas";
-export interface MoneyVault {
+export interface MoneyFiles {
   files(dir: string, exts: string[]): string[];
   readBytes(rel: string): Buffer;
   read(rel: string): { text: string };
@@ -27,27 +26,25 @@ export interface MoneyVault {
   categories?(): string[];
 }
 
-function ensureCore(store: UserStore) {
-  if (store.setting(`${CORE_MARK}t_movimiento`) === null)
-    throw new Error(
-      "los movimientos aun viven en el vault, no en Boni: la conciliacion se hace alli (vault-mcp)",
-    );
+function ensureMovements(store: UserStore) {
+  if (!store.schema().types.t_movimiento)
+    throw new Error("esta cuenta no tiene movimientos en Boni (la coleccion Movimiento)");
 }
-const rulesOf = (store: UserStore, vault: MoneyVault) => {
+const rulesOf = (store: UserStore, files: MoneyFiles) => {
   const own = ruleRows(store);
   if (own) return own;
   try {
-    return parseRules(vault.readBytes(`${FIN}/reglas.csv`).toString("utf8"));
+    return parseRules(files.readBytes(`${FIN}/reglas.csv`).toString("utf8"));
   } catch {
     return [];
   }
 };
-const categoriesOf = (store: UserStore, vault: MoneyVault): string[] => {
+const categoriesOf = (store: UserStore, files: MoneyFiles): string[] => {
   const own = categoryRows(store);
   if (own) return own.map((c) => c.name);
-  if (vault.categories) return vault.categories();
+  if (files.categories) return files.categories();
   try {
-    const v = parseNote(vault.read(`${FIN}/categorias.md`).text).values.categories;
+    const v = parseNote(files.read(`${FIN}/categorias.md`).text).values.categories;
     return Array.isArray(v) ? v.map(String) : [];
   } catch {
     return [];
@@ -56,19 +53,19 @@ const categoriesOf = (store: UserStore, vault: MoneyVault): string[] => {
 
 export function reconcileImport(
   store: UserStore,
-  vault: MoneyVault,
+  files: MoneyFiles,
   o: { apply: boolean; today: string; run?: string },
 ): ImportResult {
-  ensureCore(store);
-  const names = vault
+  ensureMovements(store);
+  const names = files
     .files(`${FIN}/extractos`, [".csv", ".xlsx", ".xls"])
     .filter((n) => !n.includes(".sync-conflict-"));
-  const files = names.map((name) => ({
+  const statements = names.map((name) => ({
     name,
-    bytes: vault.readBytes(`${FIN}/extractos/${name}`),
+    bytes: files.readBytes(`${FIN}/extractos/${name}`),
   }));
-  return importStatements(storeBook(store, { ...(o.run ? { run: o.run } : {}) }), files, {
-    rules: rulesOf(store, vault),
+  return importStatements(storeBook(store, { ...(o.run ? { run: o.run } : {}) }), statements, {
+    rules: rulesOf(store, files),
     apply: o.apply,
     today: o.today,
   });
@@ -76,14 +73,14 @@ export function reconcileImport(
 
 export function reconcileClose(
   store: UserStore,
-  vault: MoneyVault,
+  files: MoneyFiles,
   o: { month: string | null; apply: boolean; run?: string },
 ): CloseResult {
-  ensureCore(store);
+  ensureMovements(store);
   const kinds = categoryRows(store);
   const r = closeMonth(storeBook(store, { ...(o.run ? { run: o.run } : {}) }), o.month, {
-    cats: categoriesOf(store, vault),
-    rules: rulesOf(store, vault),
+    cats: categoriesOf(store, files),
+    rules: rulesOf(store, files),
     apply: o.apply,
     ...(kinds ? { kindOf: kindFrom(new Map(kinds.map((c) => [c.name, c.kind]))) } : {}),
   });

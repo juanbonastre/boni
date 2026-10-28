@@ -1,11 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import type { Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { issueSession } from "@boni/identity";
-import { importVault } from "@boni/vault-import";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
@@ -14,10 +13,10 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
-import { Vaults } from "./vaults.ts";
+import { seed } from "./seed.test-util.ts";
 
-/** An invented vault (never real notes): the instructions, two projects, a journal entry kept from the AI. */
-const VAULT: Record<string, string> = {
+/** Invented notes (never real ones): the instructions, two projects, a journal entry kept from the AI. */
+const NOTES: Record<string, string> = {
   "AGENTS.md": "# AGENTS.md\n\nInstrucciones inventadas: habla en español.\n",
   "proyectos/boni-plan.md":
     "---\ntype: project\nstatus: activo\nsummary: Plan inventado.\n---\n# Plan\n\n## Registro\n- 2026-10-01 - Empezado.\n",
@@ -35,18 +34,26 @@ let token = "";
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-mcp-"));
-  const vault = join(dir, "vault");
-  for (const [p, t] of Object.entries(VAULT)) {
-    mkdirSync(dirname(join(vault, p)), { recursive: true });
-    writeFileSync(join(vault, p), t);
-  }
   db = openDb(join(dir, "system.db"));
-  addUser(db, "ana", "una contraseña larga de ejemplo", "");
+  addUser(db, "ana", "una contraseña larga de ejemplo");
   host = new AgentHost({ dataDir: dir, providers: null });
-  importVault(vault, host.store(1), { apply: true });
+  seed(
+    host.store(1),
+    [
+      { key: "nota", name: "Nota", folder: "" },
+      { key: "proyecto", name: "Proyecto", folder: "proyectos/" },
+      {
+        key: "diario",
+        name: "Diario",
+        folder: "diario/",
+        sensitivity: "sensitive",
+        ai: "restricted",
+      },
+    ],
+    NOTES,
+  );
   app = makeApp({
     db,
-    vaults: new Vaults(),
     key: randomBytes(32),
     feeds: new Feeds(async () => ""),
     guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),

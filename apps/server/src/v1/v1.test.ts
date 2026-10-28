@@ -1,15 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { CORE_MARK } from "@boni/mirror";
-import { openUserStore } from "@boni/store";
-import { importVault } from "@boni/vault-import";
+import { readFileSync } from "node:fs";
+import { openUserStore, type UserStore } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { openDb } from "../db.ts";
+import { seed } from "../seed.test-util.ts";
 import { captureScreen, validateCapture } from "./capture.ts";
 import { CATALOG, DEFAULT_CHARTS, normalizeSpec } from "./contract.ts";
 import { money, parseDec, share } from "./decimal.ts";
-import { Finanzas, parseCategories, parseDebt, parseMovement } from "./finanzas.ts";
+import { parseDebt, parseMovement } from "./finanzas.ts";
 import { baseName, render, slug } from "./note.ts";
 import { V1Service } from "./service.ts";
 import { V1Store } from "./store.ts";
@@ -71,94 +68,82 @@ describe("the Boni API v1 gives the Python server's answers", () => {
         s.share,
       );
     for (const s of golden.slugs) expect(slug(s.text, s.max), s.text).toBe(s.slug);
-    for (const c of golden.categories) expect(parseCategories(c.text)).toEqual(c.categories);
     for (const m of golden.movements) expect(parseMovement(m.row), m.row.path).toEqual(m.movement);
     for (const d of golden.debts) expect(parseDebt(d.row), d.row.path).toEqual(d.debt);
   });
 
-  describe("option lists, over an invented vault", () => {
-    let dir: string;
+  describe("option lists, over invented money in Boni", () => {
+    let store: UserStore;
     let svc: V1Service;
-    const write = (rel: string, text: string) => {
-      mkdirSync(dirname(join(dir, rel)), { recursive: true });
-      writeFileSync(join(dir, rel), text);
-    };
     beforeAll(() => {
-      dir = mkdtempSync(join(tmpdir(), "boni-v1-"));
-      write(
-        "registros/finanzas/categorias.md",
-        `---\ntype: wiki\ncategories:\n${CATS.map((c) => `  - ${c}`).join("\n")}\n---\n`,
-      );
-      write("registros/personas/lucia-ferri.md", "---\ntype: person\nsummary: Amiga\n---\n");
-      write("registros/personas/tomas.md", "---\ntype: person\n---\n");
+      const notes: Record<string, string> = {
+        "registros/finanzas/categorias.md": `---\ntype: wiki\ncategories:\n${CATS.map((c) => `  - ${c}`).join("\n")}\n---\n`,
+        "registros/personas/lucia-ferri.md": "---\ntype: person\nsummary: Amiga\n---\n",
+        "registros/personas/tomas.md": "---\ntype: person\n---\n",
+        // A debt too, so both lists are read.
+        "registros/finanzas/deudas/2026-10-01-lucia-ferri-cena.md":
+          '---\ntype: debt\ndate: 2026-10-01\nmovement: "[[2026-10-01-cena]]"\namount: 12.5\ndirection: me-deben\nstatus: pendiente\n---\n',
+      };
       for (const m of golden.movements_for_options) {
         const related = m.related.length
           ? `related:\n${m.related.map((r: string) => `  - "[[${r}]]"`).join("\n")}\n`
           : "related: []\n";
-        write(
-          `registros/finanzas/movimientos/${m.date.slice(0, 4)}/${m.date.slice(5, 7)}/${m.name}.md`,
-          `---\ntype: movement\ndate: ${m.date}\namount: ${m.amount}\ncategory: ${m.category}\nmerchant: "${m.merchant}"\n${related}status: ${m.status}\nsource: ${m.source}\n---\n`,
-        );
+        notes[
+          `registros/finanzas/movimientos/${m.date.slice(0, 4)}/${m.date.slice(5, 7)}/${m.name}.md`
+        ] =
+          `---\ntype: movement\ndate: ${m.date}\namount: ${m.amount}\ncategory: ${m.category}\nmerchant: "${m.merchant}"\n${related}status: ${m.status}\nsource: ${m.source}\n---\n`;
       }
-      svc = new V1Service({
-        store: new V1Store(openDb(":memory:")),
-        tz: "Europe/Madrid",
-        writable: false,
-        now: () => Date.UTC(2026, 9, 19, 10, 0),
-      });
-    });
-    afterAll(() => rmSync(dir, { recursive: true, force: true }));
-
-    it("are the same lists, in the same order", () => {
-      const caller = { account: 1, device: "prueba", vault: dir };
-      for (const o of golden.options)
-        expect(svc.options(caller, o.source, o.q, o.limit), `${o.source} ${o.q}`).toEqual(
-          o.options,
-        );
-    });
-
-    it("and the same from Boni itself once the vault is imported (no vault: Juan, 2026-10-23)", () => {
-      // A debt too, so both lists are compared.
-      write(
-        "registros/finanzas/deudas/2026-10-01-lucia-ferri-cena.md",
-        '---\ntype: debt\ndate: 2026-10-01\nmovement: "[[2026-10-01-cena]]"\namount: 12.5\ndirection: me-deben\nstatus: pendiente\n---\n',
+      store = openUserStore(":memory:");
+      seed(
+        store,
+        [
+          { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
+          {
+            key: "movimiento",
+            name: "Movimiento",
+            folder: "registros/finanzas/movimientos/",
+            // Links to notes that are not here stay what they say (as the import kept them).
+            fields: { date: "date", related: { type: "multiselect" } },
+          },
+          {
+            key: "deuda",
+            name: "Deuda",
+            folder: "registros/finanzas/deudas/",
+            fields: { date: "date", movement: { type: "relation", to: "movimiento" } },
+          },
+          {
+            key: "nota",
+            name: "Nota",
+            folder: "",
+            fields: { categories: { type: "multiselect" } },
+          },
+        ],
+        notes,
       );
-      const store = openUserStore(":memory:");
-      importVault(dir, store, { apply: true });
-      store.setSetting(`${CORE_MARK}t_movimiento`, "1");
       const own = new StoreMoney(store);
-      const vault = new Finanzas(dir);
-      // Relations are sets in Boni: their order inside one movement does not count.
-      const sets = (l: ReturnType<typeof vault.movements>) =>
-        l.map((m) => ({
-          ...m,
-          people: [...(m.people ?? [])].sort(),
-          invited: [...(m.invited ?? [])].sort(),
-          related: [...(m.related ?? [])].sort(),
-        }));
-      expect(sets(own.movements())).toEqual(sets(vault.movements()));
-      expect(own.debts()).toEqual(vault.debts());
-      expect([...own.categories()].sort()).toEqual([...vault.categories()].sort());
-      expect(own.people()).toEqual(vault.people());
-      const fromBoni = new V1Service({
+      expect(own.debts()).toHaveLength(1);
+      svc = new V1Service({
         store: new V1Store(openDb(":memory:")),
         tz: "Europe/Madrid",
         writable: false,
         now: () => Date.UTC(2026, 9, 19, 10, 0),
         moneyOf: () => own,
       });
-      const caller = { account: 1, device: "prueba", vault: "" };
+    });
+    afterAll(() => store.close());
+
+    it("are the Python server's lists, in its order (the categories as a set)", () => {
+      const caller = { account: 1, device: "prueba" };
       // Boni keeps a list as a set: the categories (and their groups) come in alphabetical order, not in
       // categorias.md's (a known, accepted difference); every other list is the Python server's, in its order.
       const byValue = (l: { value: string }[]) =>
         [...l].sort((a, b) => (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
       for (const o of golden.options) {
-        const got = fromBoni.options(caller, o.source, o.q, o.limit) as { value: string }[];
+        const got = svc.options(caller, o.source, o.q, o.limit) as { value: string }[];
         if (o.source === "categories" || o.source === "groups")
           expect(byValue(got), `${o.source} ${o.q}`).toEqual(byValue(o.options));
         else expect(got, `${o.source} ${o.q}`).toEqual(o.options);
       }
-      store.close();
     });
   });
 });

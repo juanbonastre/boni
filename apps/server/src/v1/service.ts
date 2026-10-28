@@ -22,15 +22,14 @@ import {
   validateCapture,
 } from "./capture.ts";
 import { CATALOG, Invalid, PALETTE, type V1ChartSpec } from "./contract.ts";
-import { Finanzas } from "./finanzas.ts";
 import { asciiText, baseName, render } from "./note.ts";
 import type { Shortcut, V1Store, Widget } from "./store.ts";
 import type { MoneySource } from "./storeMoney.ts";
 
 /**
- * The Boni API v1's logic between HTTP and the vault, ported from the first Boni's service.py: screens,
- * options, charts, widgets, shortcuts and captures (each sent once, by its client id). Per account:
- * its charts and shortcuts, its devices' widgets and preferences, its vault's money notes.
+ * The Boni API v1's logic between HTTP and the account's money in Boni, ported from the first Boni's service.py:
+ * screens, options, charts, widgets, shortcuts and captures (each sent once, by its client id). Per account: its
+ * charts and shortcuts, its devices' widgets and preferences, its movements and debts.
  */
 /** Each category's kind as the account keeps it (Categorías), else by its name. */
 const kindsOf = (f: MoneySource): KindOf => {
@@ -77,8 +76,6 @@ const result = (
 export interface Caller {
   account: number;
   device: string;
-  /** The account's vault on this server; "" when it has none. */
-  vault: string;
 }
 
 const nice = (s: string) => {
@@ -95,20 +92,17 @@ export interface V1Options {
   store: V1Store;
   /** The server's time zone (BONI_TZ): "today" and the time a capture was saved. */
   tz: string;
-  /** Whether the server may write notes (BONI_WRITE). */
+  /** Whether the server may write (BONI_WRITE). */
   writable: boolean;
   now?: () => number;
   /**
-   * When the account's movements live in Boni (core mode): takes a captured movement note as an entity there
-   * and says true; Boni's mirror then writes the note at `path` (never a proposal, it is Juan's own capture).
+   * Takes a captured movement note as an entity of the account's Movimiento, at `path` (the note it would have
+   * been), and says true; false when the account has no movements in Boni. Never a proposal: Juan's own capture.
    */
   intoBoni?: (account: number, path: string, text: string, device: string) => boolean;
-  /** The movement a capture made in Boni, to the trash again (Undo); false when it is not Boni's. */
+  /** The movement a capture made, to the trash again (Undo); false when it is not there. */
   outOfBoni?: (account: number, path: string, device: string) => boolean;
-  /**
-   * The account's money from Boni itself when its movements live there (core mode): charts, lists and captures
-   * read it instead of the vault's notes (Juan, 2026-10-23: no more vault). Null: the vault, as before.
-   */
+  /** The account's money in Boni (charts, lists, captures); null when it has no movements there. */
   moneyOf?: (account: number) => MoneySource | null;
 }
 
@@ -117,7 +111,6 @@ export class V1Service {
   private tz: string;
   private writable: boolean;
   private nowMs: () => number;
-  private fins = new Map<string, Finanzas>();
   private listeners = new Map<number, Set<(what: Change) => void>>();
   private prints = new Map<number, string>();
   private intoBoni: V1Options["intoBoni"];
@@ -149,16 +142,10 @@ export class V1Service {
 
   private fin(c: Caller): MoneySource {
     const own = this.moneyOf?.(c.account);
-    if (own) return own;
-    if (!c.vault) throw new Unavailable("this account has no vault on this server");
-    let f = this.fins.get(c.vault);
-    if (!f) {
-      f = new Finanzas(c.vault);
-      this.fins.set(c.vault, f);
-    }
-    return f;
+    if (!own) throw new Unavailable("this account has no movements in Boni");
+    return own;
   }
-  /** The vault's lists, or Unavailable when it cannot be read. */
+  /** The money's lists, or Unavailable when they cannot be read. */
   private read<T>(c: Caller, f: (fin: MoneySource) => T): T {
     try {
       return f(this.fin(c));
@@ -177,15 +164,13 @@ export class V1Service {
   publish(account: number, what: Change): void {
     for (const l of this.listeners.get(account) ?? []) l(what);
   }
-  /** Tells the listening accounts when their money notes changed (another device, the reconciliation). */
-  checkData(vaultOf: (account: number) => string): void {
+  /** Tells the listening accounts when their money changed (another device, the reconciliation). */
+  checkData(): void {
     for (const [account, set] of this.listeners) {
       if (!set.size) continue;
-      const vault = vaultOf(account);
-      if (!vault && !this.moneyOf?.(account)) continue;
       let print: string;
       try {
-        print = this.fin({ account, device: "", vault }).fingerprint();
+        print = this.fin({ account, device: "" }).fingerprint();
       } catch {
         continue;
       }
@@ -472,14 +457,13 @@ export class V1Service {
     return done;
   }
 
-  /** Writes the queued captures again (the vault was unreachable). Returns how many were written. */
-  flushOutbox(vaultOf: (account: number) => string | null): number {
+  /** Writes the queued captures again (they could not be written when sent). Returns how many were written. */
+  flushOutbox(): number {
     let written = 0;
     for (const q of this.store.queuedCaptures()) {
-      const vault = vaultOf(q.account);
       const cap = this.store.capture(q.account, q.clientId);
-      if (vault === null || !cap) continue;
-      const r = this.process({ account: q.account, device: cap.device, vault }, q.clientId, false);
+      if (!cap) continue;
+      const r = this.process({ account: q.account, device: cap.device }, q.clientId, false);
       if (r.status === "ok") written++;
     }
     return written;
@@ -539,26 +523,19 @@ export class V1Service {
       this.store.discardCapture(c.account, clientId);
       return result("error", "Este servidor no escribe notas (BONI_WRITE)");
     }
-    const queued = result("queued", QUEUED_MESSAGE, { navigate: "home" });
     if (cats === null) {
-      this.store.finishCapture(
-        c.account,
-        clientId,
-        "queued",
-        queued as unknown as Record<string, unknown>,
-        null,
-        "vault unavailable",
-      );
-      return queued;
+      // No movements in Boni to write it to: nothing kept, so the app may send it again.
+      this.store.discardCapture(c.account, clientId);
+      return result("error", "Esta cuenta no tiene movimientos en Boni");
     }
+    const queued = result("queued", QUEUED_MESSAGE, { navigate: "home" });
     let path: string;
     try {
       const text = render(draft, today);
-      const fin = this.fin(c);
-      const free = fin.freeMovementPath(draft.date, baseName(draft));
-      path = this.intoBoni?.(c.account, free, text, cap.device)
-        ? free
-        : fin.createMovement(draft.date, baseName(draft), text);
+      const free = this.fin(c).freeMovementPath(draft.date, baseName(draft));
+      if (!this.intoBoni?.(c.account, free, text, cap.device))
+        throw new Error("this account has no movements in Boni");
+      path = free;
     } catch (e) {
       const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
       const code = (e as { code?: string }).code;
@@ -575,7 +552,7 @@ export class V1Service {
         console.error(`v1: capture ${clientId} failed: ${msg}`);
         return res;
       }
-      // The vault could not be reached (a volume not mounted...): written later by the outbox.
+      // It could not be written now: written later by the outbox.
       this.store.finishCapture(
         c.account,
         clientId,

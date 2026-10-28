@@ -1,17 +1,17 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { createServer as createHttp, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { definitionNote } from "@boni/calendar-web/src/vault/testing.ts";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds, isPrivateAddress, makeFetcher } from "./feeds.ts";
 import { makeServer } from "./http.ts";
 import { decrypt, encrypt, loadKey } from "./secret.ts";
-import { Vaults } from "./vaults.ts";
+import { calendarDef, seed } from "./seed.test-util.ts";
 
 /** Phase 4: preferences and external calendars kept per account on the server. */
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -20,26 +20,37 @@ const ICS = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n";
 
 let dir: string;
 let db: Db;
-let vaults: Vaults;
+let host: AgentHost;
 let base: string;
 let server: Server;
 const fetched: string[] = [];
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-server-account-"));
-  const def = join(dir, "vault", "_system/colecciones/docencia.md");
-  mkdirSync(dirname(def), { recursive: true });
-  writeFileSync(def, definitionNote("docencia", "Docencia", "agenda/docencia", "docencia"));
   db = openDb(join(dir, "db.sqlite"));
-  addUser(db, "juan", PASSWORD, join(dir, "vault"));
-  addUser(db, "otra", PASSWORD, join(dir, "vault"));
-  vaults = new Vaults();
+  addUser(db, "juan", PASSWORD);
+  addUser(db, "otra", PASSWORD);
+  // Each account with a calendar of its own (no entries needed).
+  host = new AgentHost({ dataDir: dir, providers: null });
+  for (const account of [1, 2])
+    seed(
+      host.store(account),
+      [
+        {
+          key: "docencia",
+          name: "Docencia",
+          folder: "agenda/docencia/",
+          calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
+        },
+      ],
+      {},
+    );
   const feeds = new Feeds(async (url) => {
     fetched.push(url);
     if (url.includes("roto")) throw new Error("HTTP 404");
     return ICS;
   });
-  server = makeServer({ db, vaults, key: loadKey(join(dir, "db.sqlite")), feeds });
+  server = makeServer({ db, key: loadKey(join(dir, "db.sqlite")), feeds, agent: host });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 });
@@ -47,7 +58,7 @@ beforeAll(async () => {
 afterAll(async () => {
   server.closeAllConnections();
   await new Promise((r) => server.close(r));
-  vaults.close();
+  host.close();
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });

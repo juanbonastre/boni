@@ -1,16 +1,13 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { leaf, rec } from "@boni/agent";
 import type { Row } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
-import { importVault } from "@boni/vault-import";
 import { afterEach, describe, expect, it } from "vitest";
-import { calendarDefs, StoreCalendar, saveCalendarDefs, taskDoneField } from "./calendarStore.ts";
+import { calendarDefs, StoreCalendar, taskDoneField } from "./calendarStore.ts";
 import { acceptEdits } from "./proposalEdits.ts";
+import { seed, type TypeSpec } from "./seed.test-util.ts";
 
-/** An invented vault (never real notes): one calendar and its definition, as `_system/colecciones/` has it. */
+/** Invented notes (never real ones): one calendar and its definition, as `_system/colecciones/` had it. */
 const RAW = {
   id: "docencia",
   name: "Docencia",
@@ -30,10 +27,8 @@ const RAW = {
     task: { column: "completed" },
   },
 };
-const DEF = `---\ntype: wiki\ncollection:\n  id: docencia\n  name: Docencia\n  folder: agenda/docencia\n  account: Agenda\n  color: "#60a5fa"\n  columns:\n    - { id: title, name: Título, type: text }\n    - { id: date, name: Fecha, type: date }\n    - { id: startTime, name: Hora de inicio, type: time }\n    - { id: endTime, name: Hora de fin, type: time }\n    - { id: completed, name: Hecha, type: checkbox }\n  mapping:\n    title: title\n    when: { kind: split, date: date, startTime: startTime, endTime: endTime }\n    task: { column: completed }\n---\n`;
 const CLASS = "agenda/docencia/2026-10-22 Clase de ejemplo.md";
-const VAULT: Record<string, string> = {
-  "_system/colecciones/agenda-docencia.md": DEF,
+const NOTES: Record<string, string> = {
   [CLASS]:
     '---\ntitle: "Clase de ejemplo"\ndate: "2026-10-22"\nstartTime: "10:00"\nendTime: "11:30"\ncompleted: false\nproject: "[[curso-ejemplo]]"\n---\nPreparar el tema 3.\n',
   "agenda/docencia/2026-10-23 Tutoría.md":
@@ -53,39 +48,51 @@ const areaOf = (area: string) => ({
 });
 /** With `planes`: a second calendar, to move events between them. */
 const PLANES = { ...RAW, id: "planes", name: "Planes", folder: "agenda/planes" };
+const PROJECT = { project: { type: "relation" as const, to: "proyecto" } };
 function env(two = false): { store: UserStore; cal: StoreCalendar } {
-  const root = mkdtempSync(join(tmpdir(), "boni-cal-"));
-  const files: Record<string, string> = two
+  const types: TypeSpec[] = [
+    { key: "proyecto", name: "Proyecto", folder: "proyectos/" },
+    ...(two
+      ? [
+          { key: "area", name: "Área", folder: "areas/" },
+          {
+            key: "docencia",
+            name: "Docencia",
+            folder: "agenda/docencia/",
+            fields: PROJECT,
+            calendar: { ...RAW, newNote: areaOf("docencia") },
+          },
+          {
+            key: "planes",
+            name: "Planes",
+            folder: "agenda/planes/",
+            calendar: { ...PLANES, newNote: areaOf("planes") },
+          },
+        ]
+      : [
+          {
+            key: "docencia",
+            name: "Docencia",
+            folder: "agenda/docencia/",
+            fields: PROJECT,
+            calendar: RAW,
+          },
+        ]),
+  ];
+  const notes: Record<string, string> = two
     ? {
-        ...VAULT,
-        "_system/colecciones/agenda-planes.md": DEF.replace(/docencia/g, "planes").replace(
-          "Docencia",
-          "Planes",
-        ),
+        ...NOTES,
         "agenda/planes/2026-10-25 Cena.md": '---\ntitle: "Cena"\ndate: "2026-10-25"\n---\n',
         "areas/docencia.md": "---\ntype: area\n---\n# Docencia\n",
         "areas/planes.md": "---\ntype: area\n---\n# Planes\n",
       }
-    : VAULT;
-  for (const [p, t] of Object.entries(files)) {
-    mkdirSync(dirname(join(root, p)), { recursive: true });
-    writeFileSync(join(root, p), t);
-  }
+    : NOTES;
   const store = openUserStore(":memory:");
-  importVault(root, store, { apply: true });
-  saveCalendarDefs(store, [
-    ...(two
-      ? [
-          { type: "t_docencia", raw: { ...RAW, newNote: areaOf("docencia") } },
-          { type: "t_planes", raw: { ...PLANES, newNote: areaOf("planes") } },
-        ]
-      : [{ type: "t_docencia", raw: RAW }]),
-  ]);
+  seed(store, types, notes);
   const cal = new StoreCalendar(store, { write: true, pollMs: 60_000 });
   cleanups.push(() => {
     cal.close();
     store.close();
-    rmSync(root, { recursive: true, force: true });
   });
   return { store, cal };
 }

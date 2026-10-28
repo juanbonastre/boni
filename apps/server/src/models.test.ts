@@ -14,7 +14,6 @@ import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { AccountModels, catalogueOf, serveModels } from "./models.ts";
-import { Vaults } from "./vaults.ts";
 
 /** «Modelos» over HTTP with invented keys (never real ones) and no model calls. */
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -22,7 +21,6 @@ const SERVER_KEY = "clave-del-servidor-inventada-0001";
 const MY_KEY = "clave-de-openrouter-inventada-0002";
 let dir: string;
 let db: Db;
-let vaults: Vaults;
 let app: App;
 let host: AgentHost;
 let models: AccountModels;
@@ -46,8 +44,7 @@ const put = (path: string, body: unknown) =>
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-models-"));
   db = openDb(join(dir, "system.db"));
-  addUser(db, "juan", PASSWORD, "");
-  vaults = new Vaults();
+  addUser(db, "juan", PASSWORD);
   const planner = fakePlanner([]);
   host = new AgentHost({ dataDir: dir, providers: { planner, reader: planner }, now: () => now });
   const key = randomBytes(32);
@@ -82,7 +79,6 @@ beforeAll(async () => {
   host.subscribe(1, (event, data) => event === "notify" && notes.push(data));
   app = makeApp({
     db,
-    vaults,
     key,
     feeds: new Feeds(async () => ""),
     guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
@@ -106,7 +102,6 @@ afterAll(async () => {
   }
   app.close();
   host.close();
-  vaults.close();
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });

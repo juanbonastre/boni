@@ -16,24 +16,22 @@ import type { Db } from "./db.ts";
 /**
  * The calendar server's accounts, now the single Boni account (@boni/identity). Accounts are made by
  * the administrator (cli.ts), never by sign-up; a device logs in once and keeps a session token, of
- * which only the hash is stored. A calendar account is one with a vault folder.
+ * which only the hash is stored.
  */
 export interface User {
   id: number;
   name: string;
-  /** Absolute path of the user's vault on the server ("" for an account without the calendar). */
-  vault: string;
 }
 
 export { hashPassword, SESSION_IDLE_MS, tokenHash, verifyPassword };
 
-export function addUser(db: Db, name: string, password: string, vault: string): User {
-  const a = addAccount(db, name, password, { vault });
-  return { id: a.id, name: a.name, vault };
+export function addUser(db: Db, name: string, password: string): User {
+  const a = addAccount(db, name, password);
+  return { id: a.id, name: a.name };
 }
 
 export function listUsers(db: Db): User[] {
-  return listAccounts(db).map((a) => ({ id: a.id, name: a.name, vault: a.vault ?? "" }));
+  return listAccounts(db).map((a) => ({ id: a.id, name: a.name }));
 }
 
 /** A new session for a device, or null when the name or the password is wrong. */
@@ -48,14 +46,14 @@ export function login(
   return r
     ? {
         token: r.token,
-        user: { id: r.account.id, name: r.account.name, vault: r.account.vault ?? "" },
+        user: { id: r.account.id, name: r.account.name },
       }
     : null;
 }
 
 export function userOf(db: Db, token: string | null | undefined): User | null {
   const s = sessionOf(db, token);
-  return s ? { id: s.account.id, name: s.account.name, vault: s.account.vault ?? "" } : null;
+  return s ? { id: s.account.id, name: s.account.name } : null;
 }
 
 /** The account and the device of a session (the Boni API v1 keeps widgets and preferences per device). */
@@ -66,7 +64,7 @@ export function sessionUser(
   const s = sessionOf(db, token);
   return s
     ? {
-        user: { id: s.account.id, name: s.account.name, vault: s.account.vault ?? "" },
+        user: { id: s.account.id, name: s.account.name },
         device: s.device.name,
         trust: s.device.trust,
       }

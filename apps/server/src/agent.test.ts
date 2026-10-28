@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -13,14 +13,12 @@ import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
-import { Vaults } from "./vaults.ts";
 
 /** The conversation API over HTTP with a scripted planner (no model, no network). */
 const PASSWORD = "una contraseña larga de ejemplo";
 const lit = (v: unknown) => ({ lit: v });
 let dir: string;
 let db: Db;
-let vaults: Vaults;
 let app: App;
 let host: AgentHost;
 let off: App;
@@ -51,11 +49,9 @@ const post = (at: string, token: string, path: string, body: unknown = {}) =>
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-agent-http-"));
-  mkdirSync(join(dir, "vault"));
   db = openDb(join(dir, "system.db"));
-  addUser(db, "juan", PASSWORD, join(dir, "vault"));
-  addUser(db, "otra", PASSWORD, "");
-  vaults = new Vaults();
+  addUser(db, "juan", PASSWORD);
+  addUser(db, "otra", PASSWORD);
   const planner = fakePlanner([]);
   planner.complete = async () => ({
     json: plans.shift(),
@@ -65,7 +61,6 @@ beforeAll(async () => {
   host = new AgentHost({ dataDir: dir, providers: { planner, reader: planner } });
   const opts = {
     db,
-    vaults,
     key: randomBytes(32),
     feeds: new Feeds(async () => ""),
     guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
@@ -110,7 +105,6 @@ afterAll(async () => {
   app.close();
   off.close();
   host.close();
-  vaults.close();
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });

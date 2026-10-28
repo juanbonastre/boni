@@ -1,6 +1,7 @@
 import { type Entity, type FieldDef, label, type TypeDef, type Value } from "@boni/entities";
 import { AI_LEVELS, type AiLevel, BODY, StoreError, type UserStore, type Zone } from "@boni/store";
 import { filterErrors } from "@boni/views";
+import { PATH_FIELD } from "./paths.ts";
 import type { SystemCollections } from "./systemCollections.ts";
 
 /**
@@ -99,9 +100,6 @@ export class DataError extends Error {
     this.code = code;
   }
 }
-
-/** The vault path a note was imported from (vault-import's hidden field). */
-const PATH_FIELD = "f_vault_path";
 
 /** A row as a view shows it: a note imported without a title property takes its file's name, as
  * Obsidian shows it (only for display; editing the title writes the property). */

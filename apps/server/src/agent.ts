@@ -72,8 +72,6 @@ export class AgentHost {
   private used = new Map<number, Providers>();
   private registry: ToolRegistry = coreTools().freeze();
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
-  /** Called after a request that may have changed an account's data (the mirror writes it out). */
-  onChanged: ((account: number) => void) | null = null;
   /** The account's mailbox as the inbox names it (its address), when it has one (mail.ts). */
   mailAccountOf: ((account: number) => string | null) | null = null;
   /** The account's own models (models.ts, «Modelos»); null or a null answer: the server's. */
@@ -182,11 +180,7 @@ export async function serveAgent(
     return serveModels(host.models, req, res, route, params, who);
   }
   if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
-  try {
-    await answerAgent(host, req, res, route, params, who);
-  } finally {
-    if (route.startsWith("POST ")) host.onChanged?.(who.account);
-  }
+  await answerAgent(host, req, res, route, params, who);
 }
 
 async function answerAgent(

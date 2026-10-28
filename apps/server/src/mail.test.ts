@@ -18,7 +18,6 @@ import { LoginGuard } from "./limits.ts";
 import { dueField, Mails, mailPlan, optionsValue, userIn } from "./mail.ts";
 import { decisions } from "./mailReview.ts";
 import { acceptEdits } from "./proposalEdits.ts";
-import { Vaults } from "./vaults.ts";
 
 /** The mailbox connector against a fake IMAP server (invented mail only). */
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -112,7 +111,7 @@ beforeAll(async () => {
   await fakeImap();
   dir = mkdtempSync(join(tmpdir(), "boni-mail-"));
   db = openDb(join(dir, "system.db"));
-  addUser(db, "juan", PASSWORD, "");
+  addUser(db, "juan", PASSWORD);
   host = new AgentHost({ dataDir: dir, providers: null });
   mails = new Mails({
     db,
@@ -123,7 +122,6 @@ beforeAll(async () => {
   });
   app = makeApp({
     db,
-    vaults: new Vaults(),
     key,
     feeds: new Feeds(async () => ""),
     guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
@@ -255,7 +253,7 @@ describe("tasks a mail asks for", () => {
   it("become proposals in a collection the reader picks among the marked ones, never writes", async () => {
     const d = mkdtempSync(join(tmpdir(), "boni-mail-agent-"));
     const sdb = openDb(join(d, "system.db"));
-    addUser(sdb, "juan", PASSWORD, "");
+    addUser(sdb, "juan", PASSWORD);
     const readers: string[] = [];
     const reader = new ScriptedProvider("fake", (req) => {
       const kind = /find what it asks of the user/.test(req.system) ? "read_message" : "classify";
@@ -432,7 +430,7 @@ describe("the reading guide (docs/nucleo.md 7.4b)", () => {
   it("his words reach the reader; rules are code: never read, or straight to one collection", async () => {
     const d = mkdtempSync(join(tmpdir(), "boni-mail-guide-"));
     const sdb = openDb(join(d, "system.db"));
-    addUser(sdb, "juan", PASSWORD, "");
+    addUser(sdb, "juan", PASSWORD);
     const reader = new ScriptedProvider("fake", (req) =>
       /find what it asks of the user/.test(req.system)
         ? {
@@ -534,7 +532,7 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
   it("learns from Juan's decisions, proposes only what they show, measured, and waits for him", async () => {
     const d = mkdtempSync(join(tmpdir(), "boni-mail-review-"));
     const sdb = openDb(join(d, "system.db"));
-    addUser(sdb, "juan", PASSWORD, "");
+    addUser(sdb, "juan", PASSWORD);
     let reviewerSays: unknown = null;
     const reader = new ScriptedProvider("fake", (req) => {
       if (/decisions a user made/.test(req.system)) return reviewerSays;
@@ -645,7 +643,7 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
   it("is installed as a preset; off, nothing is fetched; its own module and fixed route are data", async () => {
     const d = mkdtempSync(join(tmpdir(), "boni-mail-ext-"));
     const sdb = openDb(join(d, "system.db"));
-    addUser(sdb, "juan", PASSWORD, "");
+    addUser(sdb, "juan", PASSWORD);
     const reader = new ScriptedProvider("fake", (req) =>
       /find what it asks of the user/.test(req.system)
         ? {
@@ -768,7 +766,7 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
       const d0 = mkdtempSync(join(tmpdir(), "boni-mail-fill-"));
       const d = d0;
       const sdb = openDb(join(d, "system.db"));
-      addUser(sdb, "juan", PASSWORD, "");
+      addUser(sdb, "juan", PASSWORD);
       const decided: unknown[] = [];
       const jev = new ScriptedProvider("jev", (req) => {
         decided.push(req.input);

@@ -17,10 +17,10 @@ import {
   type UserStore,
   type Writes,
 } from "@boni/store";
-import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "@boni/vault-import";
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
-import { type MoneyVault, reconcileClose, reconcileImport } from "./money/service.ts";
+import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
+import { FILE_FIELD, FOLDER_FIELD, HASH_FIELD, mimeOf, PATH_FIELD } from "./paths.ts";
 
 /**
  * Boni's MCP server (Juan, 2026-10-22: everything done through vault-mcp moves to Boni). The assistants that
@@ -40,8 +40,6 @@ import { storeFiles } from "./money/storeFiles.ts";
  * (while notes keep one) by the path it had in the vault.
  */
 
-const PATH_FIELD = "f_vault_path";
-const HASH_FIELD = "f_vault_hash";
 const PROTOCOL = "2025-06-18";
 /** The record whose text is the user's instructions for assistants (a setting: its id). */
 const INSTRUCTIONS = "mcp/instructions";
@@ -284,13 +282,12 @@ function writer(c: Ctx) {
 // ------------------------------------------------------------------ the tools
 
 /** The reconciliation's inputs (statements, rules, categories), read-only here. */
-function moneyVault(c: Ctx): MoneyVault {
+function moneyFiles(c: Ctx): MoneyFiles {
   // What Juan keeps from the models: a closed or opaque Movimientos or Deudas is not read here either.
   const levels = c.store.aiAccess();
   for (const t of ["t_movimiento", "t_deuda"])
     if (closedToAi(levels[t]) || levels[t] === "opaque")
       throw new ToolFail("Movimientos or Deudas are kept from the models (Lo que ve la IA)");
-  // The statements, rules and categories from Boni itself (Juan, 2026-10-23: no more vault).
   return storeFiles(c.store);
 }
 
@@ -816,7 +813,7 @@ const TOOLS: Tool[] = [
     call(c, a) {
       const apply = a.dry_run === false;
       const run = apply ? `mcp-${randomUUID()}` : undefined;
-      const r = reconcileImport(c.store, moneyVault(c), {
+      const r = reconcileImport(c.store, moneyFiles(c), {
         apply,
         today: new Date(c.now()).toISOString().slice(0, 10),
         ...(run ? { run } : {}),
@@ -847,7 +844,7 @@ const TOOLS: Tool[] = [
       if (!/^\d{4}-\d{2}$/.test(month)) throw new ToolFail("month: YYYY-MM");
       const apply = a.dry_run === false;
       const run = apply ? `mcp-${randomUUID()}` : undefined;
-      const r = reconcileClose(c.store, moneyVault(c), { month, apply, ...(run ? { run } : {}) });
+      const r = reconcileClose(c.store, moneyFiles(c), { month, apply, ...(run ? { run } : {}) });
       return {
         output: r.report.join("\n"),
         ready: r.ready.length,

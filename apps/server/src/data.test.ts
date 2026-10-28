@@ -13,7 +13,6 @@ import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { mcpAnswer } from "./mcp.ts";
-import { Vaults } from "./vaults.ts";
 
 const PASSWORD = "una contraseña larga de ejemplo";
 let dir: string;
@@ -28,11 +27,10 @@ const L = label("user", "personal", [{ kind: "user-edit", id: "test" }]);
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-data-"));
   db = openDb(join(dir, "system.db"));
-  addUser(db, "ana", PASSWORD, "");
+  addUser(db, "ana", PASSWORD);
   host = new AgentHost({ dataDir: dir, providers: null });
   app = makeApp({
     db,
-    vaults: new Vaults(),
     key: randomBytes(32),
     feeds: new Feeds(async () => ""),
     guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),

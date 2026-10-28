@@ -57,7 +57,7 @@ describe("moving to the single account at start", () => {
     expect(lines[0]).toMatch(
       /accounts moved to .*system\.db .*juan; 1 sessions, 1 account data, 1 push/,
     );
-    expect(userOf(first.db, "token-del-movil")).toEqual({ id: 1, name: "juan", vault: "/vault" });
+    expect(userOf(first.db, "token-del-movil")).toEqual({ id: 1, name: "juan" });
     expect(first.db.prepare("SELECT endpoint FROM push").get()).toEqual({
       endpoint: "https://ntfy.example/upX",
     });
