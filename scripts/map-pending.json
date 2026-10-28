@@ -1,12 +1,6 @@
 {
   "why": "Folders and files that do not yet say what they are for. They get it the next time they change for real (a change in an app's folder ships new app versions, so it is not made for a comment alone); this list may only shrink (docs/principios.md, T-02).",
-  "workspaces": [
-    "apps/boni-android",
-    "apps/boni-web",
-    "apps/calendar-android",
-    "apps/calendar-web",
-    "packages/calendar"
-  ],
+  "workspaces": ["apps/boni-android", "apps/calendar-android"],
   "files": [
     "apps/boni-web/src/Widget.tsx",
     "apps/boni-web/src/components/Audit.tsx",
@@ -16,34 +10,6 @@
     "apps/boni-web/src/components/Notes.tsx",
     "apps/boni-web/src/components/PageView.tsx",
     "apps/boni-web/src/components/QuickFind.tsx",
-    "apps/boni-web/src/components/useChartAnim.ts",
-    "apps/calendar-web/src/App.tsx",
-    "apps/calendar-web/src/ViewportContext.tsx",
-    "apps/calendar-web/src/components/DesktopSettings.tsx",
-    "apps/calendar-web/src/components/EventDetail.tsx",
-    "apps/calendar-web/src/components/ExternalSettings.tsx",
-    "apps/calendar-web/src/components/MiniMonth.tsx",
-    "apps/calendar-web/src/components/Modals.tsx",
-    "apps/calendar-web/src/components/MonthView.tsx",
-    "apps/calendar-web/src/components/RecurrenceModals.tsx",
-    "apps/calendar-web/src/components/ServerSettings.tsx",
-    "apps/calendar-web/src/components/Sidebar.tsx",
-    "apps/calendar-web/src/components/TimeGrid.tsx",
-    "apps/calendar-web/src/components/TopBar.tsx",
-    "apps/calendar-web/src/components/useGridPointer.ts",
-    "apps/calendar-web/src/components/useMonthPointer.ts",
-    "apps/calendar-web/src/components/useTouch.ts",
-    "apps/calendar-web/src/i18n.ts",
-    "apps/calendar-web/src/recurrence.ts",
-    "apps/calendar-web/src/selection.ts",
-    "apps/calendar-web/src/store.ts",
-    "packages/calendar/src/layout.ts",
-    "packages/calendar/src/model.ts",
-    "packages/calendar/src/provider.ts",
-    "packages/calendar/src/queries.ts",
-    "packages/calendar/src/quick.ts",
-    "packages/calendar/src/recurrence.ts",
-    "packages/calendar/src/recurrenceEdit.ts",
-    "packages/calendar/src/validate.ts"
+    "apps/boni-web/src/components/useChartAnim.ts"
   ]
 }
