@@ -205,10 +205,16 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   (`--surface`, 10 px radius, `--line-strong` border) and is fully interactive: hover for values, click for a detail;
   dragging anywhere moves it, the bottom-right corner resizes it; on hover it shows its period and its menu (the chart
   controls below, compact), and right click opens the same menu (open or edit in the app, refresh, hide here, remove).
-- **Boni's main window** is laid out as this app: the sidebar (Buscar, the conversation, Colecciones, «Todas las páginas»; "Páginas",
-  the user's pages as a tree,
-  each row with a "…" menu: add a subpage, delete with Undo; settings and the user at the bottom), the main area and
-  the right side panel. **Nothing on screen is fixed by the app** (Juan, 2026-10-21): no home of charts, no "Apuntar
+- **Boni's main window** is laid out as this app: the sidebar, the main area and the right side panel. The sidebar
+  (Juan, 2026-10-28; docs/clases.md §2.7): Buscar, the conversation and «Todas las páginas» at the top; then two
+  sections, each folded and unfolded by a click on its name (a chevron beside it on hover; kept on this device):
+  «Recientes» (the last five pages, collections and notes opened here, newest first, hidden while there are none) and
+  «Páginas», only to open, add and delete: the user's pages as a tree (each row's "…": add a subpage, duplicate,
+  delete with Undo; "+" by the name of the section makes a page), then the collections, each inside its mother and
+  folded by default, with its records that have a note under it when its eye says so (on hover: the eye, "…" with
+  «Nueva nota», «Nueva colección dentro» typed in place, «Eliminar colección», only an empty one; "+" makes a note),
+  then «Boni», folded: Boni's template pages and its own collections, read only. The trash, settings and the user
+  at the bottom. **Nothing on screen is fixed by the app** (Juan, 2026-10-21): no home of charts, no "Apuntar
   gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
   pages, a welcome with "Nueva página" and "Hablar con Boni". Every account gets Boni's template pages once («Uso de
   la IA», «Actividad», «Registro»); an account that used the first Boni got, once, a page "Gastos" with what its home
@@ -266,7 +272,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   name, «De Boni»; once changed, «Modificada», which opens the list of changes (+ added, − removed, ✎ changed, ⤢ another
   size, ↕ where the blocks are) and «Restaurar la de Boni» (Undo in the notice and Ctrl+Z). Removed, a template stays
   removed (the trash brings it back).
-- **Boni's own collections** (`apps/server/src/systemCollections.ts`): in Colecciones and in a database block they carry
+- **Boni's own collections** (`apps/server/src/systemCollections.ts`): in «Todas las páginas» and in a database block they carry
   «De Boni · solo lectura» instead of a level of what the AI sees (no AI sees them): no «Nuevo», no editing, no opening
   a row. They are counted like any collection.
 - **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`): "/" + a collection's name puts it on a
@@ -282,10 +288,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   properties) is the page block's; the rows are the collection's (`/api/data/*`, a personal device only).
   Every collection's head has a quiet pill with what the AI sees of it (Visible, Opaca, Restringida, Privada, each
   with its icon); it opens the four levels with a line of help each. Privada is locked: elsewhere its menu only says
-  where to unlock it; on the collection's own page (Colecciones → the collection) "Desbloquear…" opens a dialog
-  that asks for the new level and its name typed. **Colecciones** (sidebar): every collection in a table (name,
-  items, what the AI sees, origin), a search and chips by level with their counts; a name opens the collection on a
-  page of its own, the database without repeating its name. "Una parte con otro nivel…" (in the pill's menu) opens
+  where to unlock it; on the collection's own page (its name in the tree) "Desbloquear…" opens a dialog that asks
+  for the new level and its name typed. A collection's page shows its mother above its name and in the crumbs; Esc
+  goes up to the mother (from the top, to «Todas las páginas»). "Una parte con otro nivel…" (in the pill's menu) opens
   the collection's rules: each is Notion's filter editor and a level, listed in words ("Título contiene Tutoría ·
   Restringida"); the pill shows "+N" when there are rules. Whatever would lower something private asks for the
   collection's name, and only on its own page.
@@ -458,14 +463,19 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   title, its collection and fields, «con la nota» in amber or «sin la nota» in `--good`, the fields seen only as their
   shape), «Lo que escribió» (a model's own answer as plain text, or the records it changed), «Argumentos», whether it
   was allowed, and «Ver toda la ejecución».
-- **«Todas las páginas»** (Boni, sidebar, under Colecciones; Juan, 2026-10-26: notes and pages are one thing,
-  the user's pages first, then the notes; 2026-10-24: what the AIs read must be browsable as in Obsidian):
-  the user's pages first (their emoji, title and a muted «Página»), then every note at the path it had, as Obsidian's
-  file tree in one bordered box (folders first, each with a chevron and a folder icon, then notes with a file icon;
-  32 px rows, indented 18 px per level). A spark in `--accent` marks a note an AI has read (who and when on hover)
-  and a folder counts them; a search lists matches flat by path. A note opens as its row's page, with the crumbs
-  «Todas las páginas / collection / title» and the page's own editor («/» and «+», data blocks included; the blocks
-  Markdown cannot say are kept in the note's text as fenced «boni» blocks); Esc goes back to the tree.
+- **«Todas las páginas»** (Boni, the sidebar's top; Juan, 2026-10-28: everything, with every way to manage it): the
+  sidebar's «Páginas» as a table (Nombre, Elementos, Lo que ve la IA, En la barra, Origen, "…"), each line indented
+  18 px under its mother: the user's pages, the collections (a chevron opens one: its daughters, then all its notes,
+  whatever its eye says; «Ninguno de sus registros tiene nota» when there are none) and «Boni», folded. A search
+  (names and the notes' titles) or a level's chip lists what matches flat, each line with where it is, muted, after
+  its name. The eye is a column; each collection's pill changes what the AI sees. "…" on a collection: «Nueva nota»,
+  «Nueva colección dentro», «Mover a…» (the menu becomes the list of where it can go, «Al primer nivel» first, each
+  with its mothers: never into itself or a daughter, never where it is) and «Eliminar colección»; on a note:
+  «Mover a…» (it keeps its id and history) and «Mover a la papelera». «Nueva colección» beside the chips names one in
+  place at the top. A spark in `--accent` marks a note an AI has read (who and when on hover). A note opens as its
+  row's page, with the crumbs «Todas las páginas / its mothers / collection / title» and the page's own editor («/»
+  and «+», data blocks included; the blocks Markdown cannot say are kept in the note's text as fenced «boni»
+  blocks); Esc comes back. Below the table, what the collections take (next item).
 - **Historial** (a row's page, the button beside its collection's name): a panel on the right with its system
   columns (two columns, name muted), «Quién escribió qué» (the text in blocks by author, each with a 3 px left border
   in that author's colour and the author's name above in small muted text), «Cambios» (newest first: who · what, then
@@ -474,7 +484,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 - **System columns** (any table; Juan, 2026-10-24): Creado, Creado por, Modificado, Modificado por, Editores, Visto
   por, Último acceso de una IA, Origen, Versión, Tamaño. None shown by default; the view's «Opciones» has a «Columnas
   de sistema» group to show each. Their cells are muted 12.5 px text, ellipsized (full text on hover), never editable.
-- **Colecciones** gains, above the list, the tiles Registros, Almacenamiento, Historial and Textos de los modelos,
+- **«Todas las páginas»** ends with the tiles Registros, Almacenamiento, Historial and Textos de los modelos,
   Boni's storage advice when something grows (an amber-tinted line with a bulb; nothing is deleted by itself), and two
   bar lists: «Tamaño por colección» (data and history; a click opens the collection) and «Uso en 30 días» (read and
   edited; a click opens its audit).

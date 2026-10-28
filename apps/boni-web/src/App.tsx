@@ -1,11 +1,11 @@
 import { MoreHorizontal, PanelLeft, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
+import { AllPagesView } from "./components/AllPages.tsx";
 import { AuditView } from "./components/Audit.tsx";
 import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
-import { CollectionsView, CollectionView } from "./components/Collections.tsx";
+import { CollectionView } from "./components/Collections.tsx";
 import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
-import { NotesView } from "./components/Notes.tsx";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
@@ -30,10 +30,9 @@ import {
   openSettings,
   setChartDrill,
   setPageFull,
+  showAllPages,
   showChat,
-  showCollections,
   showLog,
-  showNotes,
   showStart,
   toggleSidebar,
   useStore,
@@ -146,11 +145,17 @@ function useShortcuts(mobile: boolean) {
         if (s.view.kind === "proposal") closeProposal();
         else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
         else if (s.view.kind === "inbox") showChat();
-        else if (s.view.kind === "row" && s.view.from === "notes") showNotes();
-        else if (s.view.kind === "row" && s.view.from) openCollection(s.view.type);
-        else if (s.view.kind === "collection") showCollections();
-        else if (s.view.kind === "audit") showLog();
-        else if (s.view.kind === "row" && s.page) void openPage(s.page.id);
+        else if (s.view.kind === "row" && s.view.from === "allPages") showAllPages();
+        else if (s.view.kind === "row" && s.view.from === "page" && s.page)
+          void openPage(s.page.id);
+        else if (s.view.kind === "row") openCollection(s.view.type);
+        else if (s.view.kind === "collection") {
+          // Up the tree: her mother, or «Todas las páginas» from the top.
+          const type = s.view.type;
+          const mother = s.dataTypes?.find((x) => x.id === type)?.parent;
+          if (mother) openCollection(mother);
+          else showAllPages();
+        } else if (s.view.kind === "audit") showLog();
         else showStart();
       }
     };
@@ -229,9 +234,7 @@ function TopBar() {
             </span>
             <span className="crumb current">{t("ghost.proposed")}</span>
           </span>
-        ) : view.kind === "collections" ? (
-          t("nav.collections")
-        ) : view.kind === "notes" ? (
+        ) : view.kind === "allPages" ? (
           t("nav.notes")
         ) : view.kind === "audit" ? (
           <span className="crumbs">
@@ -337,18 +340,21 @@ function CollectionCrumbs() {
   );
 }
 
-/** Where an open row is: the page (or Colecciones) it was opened from, its collection, its title. */
+/**
+ * Where an open row is: the page it was opened from (or «Todas las páginas»), its collection after her mothers
+ * (docs/clases.md: the tree), its title.
+ */
 function RowCrumbs() {
   const t = useStore((s) => s.t);
-  const fromCollection = useStore((s) => s.view.kind === "row" && s.view.from === "collection");
-  const fromNotes = useStore((s) => s.view.kind === "row" && s.view.from === "notes");
-  const page = useStore((s) => (fromCollection || fromNotes ? null : s.page));
+  const from = useStore((s) => (s.view.kind === "row" ? s.view.from : undefined));
+  const page = useStore((s) => (from === "page" ? s.page : null));
   const row = useStore((s) => s.row);
-  const type = useStore((s) =>
-    s.view.kind === "row"
-      ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
-      : undefined,
-  );
+  const types = useStore((s) => s.dataTypes);
+  const id = useStore((s) => (s.view.kind === "row" ? s.view.type : ""));
+  const chain: { id: string; name: string }[] = [];
+  for (let c = types?.find((x) => x.id === id); c; c = types?.find((x) => x.id === c?.parent))
+    chain.unshift({ id: c.id, name: c.name });
+  const type = types?.find((x) => x.id === id);
   const title = row && type ? row.values[type.titleField] : null;
   return (
     <span className="crumbs">
@@ -360,34 +366,22 @@ function RowCrumbs() {
           <span className="crumb-sep">/</span>
         </span>
       )}
-      {fromCollection && (
+      {from === "allPages" && (
         <span className="crumb-part">
-          <button type="button" className="crumb" onClick={showCollections}>
-            {t("nav.collections")}
-          </button>
-          <span className="crumb-sep">/</span>
-        </span>
-      )}
-      {fromNotes && (
-        <span className="crumb-part">
-          <button type="button" className="crumb" onClick={showNotes}>
+          <button type="button" className="crumb" onClick={showAllPages}>
             {t("nav.notes")}
           </button>
           <span className="crumb-sep">/</span>
         </span>
       )}
-      {type && (
-        <span className="crumb-part">
-          {fromCollection ? (
-            <button type="button" className="crumb" onClick={() => openCollection(type.id)}>
-              {type.name}
-            </button>
-          ) : (
-            <span className="crumb">{type.name}</span>
-          )}
+      {chain.map((c) => (
+        <span key={c.id} className="crumb-part">
+          <button type="button" className="crumb" onClick={() => openCollection(c.id)}>
+            {c.name}
+          </button>
           <span className="crumb-sep">/</span>
         </span>
-      )}
+      ))}
       <span className="crumb current">
         {typeof title === "string" && title ? title : t("page.untitled")}
       </span>
@@ -478,8 +472,7 @@ function Content() {
   if (view.kind === "page") return <PageView after={<QueueNotes />} />;
   if (view.kind === "row") return <RowView />;
   if (view.kind === "proposal") return <ProposalPage key={view.id} id={view.id} />;
-  if (view.kind === "collections") return <CollectionsView />;
-  if (view.kind === "notes") return <NotesView />;
+  if (view.kind === "allPages") return <AllPagesView />;
   if (view.kind === "collection") return <CollectionView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;
 }

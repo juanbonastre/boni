@@ -2,7 +2,7 @@ import {
   ChevronRight,
   Database,
   FileText,
-  FolderTree,
+  Library,
   MessageSquare,
   MoreHorizontal,
   PanelLeft,
@@ -11,7 +11,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { PageInfo } from "../core/agent.ts";
 import {
   deletePage,
@@ -19,12 +19,15 @@ import {
   loadTrash,
   movePage,
   newPage,
+  openCollection,
   openFind,
   openPage,
+  openRow,
   openSettings,
+  type Recent,
+  showAllPages,
   showChat,
-  showCollections,
-  showNotes,
+  toggleFold,
   toggleSidebar,
   useStore,
 } from "../store.ts";
@@ -32,8 +35,9 @@ import { CollectionTree } from "./CollectionTree.tsx";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 /**
- * The sidebar: the conversation with Boni, the user's pages (a tree: a page can hold subpages) and, at the
- * bottom, settings and who is logged in. Nothing else is fixed here: what the user sees is what they made.
+ * The sidebar (Juan, 2026-10-28): search, the conversation with Boni and «Todas las páginas» (the whole tree, to
+ * manage it); then «Recientes» and «Páginas» (the user's pages and the tree of collections, to open, add and
+ * delete), each folded by its heading; at the bottom, the trash, settings and who is logged in.
  */
 export function Sidebar() {
   const t = useStore((s) => s.t);
@@ -41,7 +45,11 @@ export function Sidebar() {
   const settings = useStore((s) => s.settings);
   const waiting = useStore((s) => s.inbox.length + s.requests.length);
   const pages = useStore((s) => s.pages);
+  const tree = useStore((s) => s.tree);
   const [drag, setDrag] = useState<Drag>(null);
+  const folded = useStore((s) => s.fold.sections);
+  const fold = (x: string) => toggleFold("sections", x);
+  const own = (pages ?? []).filter((p) => !p.template);
 
   return (
     <nav className="sidebar" aria-label={t("sidebar.label")}>
@@ -71,8 +79,55 @@ export function Sidebar() {
           <span className="nav-name">{t("nav.chat")}</span>
           {waiting > 0 && <span className="nav-count">{waiting}</span>}
         </button>
-        {/* One tree (docs/clases.md §2.7): collections, their records with a note, Boni's own things. */}
-        <CollectionTree />
+        <button
+          type="button"
+          className={`nav-row${view.kind === "allPages" ? " active" : ""}`}
+          onClick={showAllPages}
+        >
+          <Library size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("nav.notes")}</span>
+        </button>
+        {/* «Modelos» is in Ajustes; what the models and Boni did are pages («Uso de la IA», «Actividad»). */}
+        <RecentSection open={!folded.includes("recent")} toggle={() => fold("recent")} />
+        {(pages !== null || tree !== null) && (
+          <>
+            <SectionHead
+              name={t("nav.pages")}
+              open={!folded.includes("pages")}
+              toggle={() => fold("pages")}
+              add={
+                <button
+                  type="button"
+                  className="icon-btn tiny"
+                  onClick={() => void newPage()}
+                  title={t("page.new")}
+                  aria-label={t("page.new")}
+                >
+                  <Plus size={13} strokeWidth={2} />
+                </button>
+              }
+            />
+            {!folded.includes("pages") && (
+              <ul className="nav-list" aria-label={t("nav.pages")}>
+                <PageTree pages={own} parent={null} depth={0} drag={drag} setDrag={setDrag} />
+                {/* One tree (docs/clases.md §2.7): collections, their records with a note, Boni's own things. */}
+                <CollectionTree />
+                {own.length === 0 && !tree?.collections.length && (
+                  <li>
+                    <button
+                      type="button"
+                      className="nav-row muted-row"
+                      onClick={() => void newPage()}
+                    >
+                      <Plus size={14} strokeWidth={1.8} />
+                      <span className="nav-name">{t("page.new")}</span>
+                    </button>
+                  </li>
+                )}
+              </ul>
+            )}
+          </>
+        )}
       </div>
       {pages !== null && (
         <button type="button" className="nav-row trash-row" onClick={() => void loadTrash()}>
@@ -92,6 +147,103 @@ export function Sidebar() {
         )}
       </div>
     </nav>
+  );
+}
+
+/** A section's heading: a click on its name folds it (as Notion's); `add` is its own button, if any. */
+function SectionHead({
+  name,
+  open,
+  toggle,
+  add,
+}: {
+  name: string;
+  open: boolean;
+  toggle: () => void;
+  add?: ReactNode;
+}) {
+  return (
+    <div className="group-head">
+      <button type="button" className="group-fold" aria-expanded={open} onClick={toggle}>
+        <span>{name}</span>
+        <ChevronRight size={12} strokeWidth={2} className="group-chev" aria-hidden="true" />
+      </button>
+      {add}
+    </div>
+  );
+}
+
+/** «Recientes»: the last pages, collections and notes opened on this device (gone ones are left out). */
+function RecentSection({ open, toggle }: { open: boolean; toggle: () => void }) {
+  const t = useStore((s) => s.t);
+  const view = useStore((s) => s.view);
+  const recent = useStore((s) => s.recent);
+  const pages = useStore((s) => s.pages);
+  const types = useStore((s) => s.dataTypes);
+  const row = useStore((s) => s.row);
+  const items = recent.flatMap((r): { r: Recent; name: string; icon: ReactNode }[] => {
+    if (r.kind === "page") {
+      const p = pages?.find((x) => x.id === r.id);
+      if (pages && !p) return [];
+      const name = (p ? p.title : r.title) || t("page.untitled");
+      return [{ r, name, icon: p?.icon ? <span className="page-icon">{p.icon}</span> : null }];
+    }
+    const type = types?.find((x) => x.id === (r.kind === "row" ? r.type : r.id));
+    if (types && !type) return [];
+    if (r.kind === "collection")
+      return [
+        {
+          r,
+          name: type?.name ?? r.title,
+          icon: type?.icon ? (
+            <span className="page-icon">{type.icon}</span>
+          ) : (
+            <Database size={14} strokeWidth={1.8} className="page-icon" />
+          ),
+        },
+      ];
+    // The note open now says its title as it is being written.
+    const live = row?.id === r.id && type ? row.values[type.titleField] : undefined;
+    const title = typeof live === "string" ? live : r.title;
+    return [{ r, name: title || t("page.untitled"), icon: null }];
+  });
+  if (!items.length) return null;
+  const isOpen = (r: Recent) =>
+    r.kind === "page"
+      ? view.kind === "page" && view.id === r.id
+      : r.kind === "collection"
+        ? view.kind === "collection" && view.type === r.id
+        : view.kind === "row" && view.id === r.id;
+  return (
+    <>
+      <SectionHead name={t("nav.recent")} open={open} toggle={toggle} />
+      {open && (
+        <ul className="nav-list" aria-label={t("nav.recent")}>
+          {items.map(({ r, name, icon }) => (
+            <li key={`${r.kind}:${r.id}`}>
+              <div className={`chart-row tree-row${isOpen(r) ? " active" : ""}`}>
+                <span className="page-toggle static">
+                  {icon ?? <FileText size={14} strokeWidth={1.8} className="page-icon" />}
+                </span>
+                <button
+                  type="button"
+                  className="chart-main"
+                  onClick={() =>
+                    r.kind === "page"
+                      ? void openPage(r.id)
+                      : r.kind === "collection"
+                        ? openCollection(r.id)
+                        : void openRow(r.type, r.id)
+                  }
+                >
+                  <span className="nav-name">{name}</span>
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

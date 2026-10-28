@@ -8,8 +8,8 @@ import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 /**
  * What the models may see of a collection (Juan, 2026-10-22): Visible, Opaca, Restringida, Privada. It is changed
- * from the collection itself, wherever it shows; a private one is locked, and only its own page (Colecciones →
- * the collection) offers to unlock it, after he types its name, so it is never lowered by a slip.
+ * from the collection itself, wherever it shows; a private one is locked, and only its own page (its name in the
+ * tree) offers to unlock it, after he types its name, so it is never lowered by a slip.
  */
 
 export const LEVEL_ICONS: Record<AiLevel, ReactNode> = {

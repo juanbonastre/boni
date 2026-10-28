@@ -82,15 +82,6 @@ export interface Storage {
   total: number;
   advice: { code: string; bytes: number; type?: string }[];
 }
-export interface NoteEntry {
-  id: string;
-  type: string;
-  path: string;
-  title: string;
-  updated: number;
-  ai: string[];
-  aiAt: number | null;
-}
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -269,24 +260,6 @@ export function parseStorage(b: unknown): Storage {
       bytes: num(a.bytes),
       ...(typeof a.type === "string" ? { type: a.type } : {}),
     })),
-  };
-}
-export function parseNotes(b: unknown): { notes: NoteEntry[]; types: Record<string, string> } {
-  const o = isObj(b) ? b : {};
-  return {
-    notes: arr(o.notes)
-      .slice(0, 20000)
-      .map((n) => ({
-        id: str(n.id, 80),
-        type: str(n.type, 80),
-        path: str(n.path, 500),
-        title: str(n.title, 300),
-        updated: num(n.updated),
-        ai: strs(n.ai, 20),
-        aiAt: typeof n.aiAt === "number" ? n.aiAt : null,
-      }))
-      .filter((n) => n.id && n.path),
-    types: map(o.types),
   };
 }
 

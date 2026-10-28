@@ -543,3 +543,65 @@ describe("collections as classes (docs/clases.md; D-11)", () => {
     expect(rows.rows.filter((r) => r.type === undefined).length).toBe(rows.rows.length - 1);
   });
 });
+
+describe("the tree (docs/clases.md §2.7; D-13)", () => {
+  it("collections are made, moved and taken out of the tree; a record moves keeping its id; notes show by the eye", async () => {
+    const t = await token();
+    const made = await call(t, "POST", "/api/data/types", { name: "Ideas" });
+    expect(made.status).toBe(200);
+    const ideas = made.body.id as string;
+    expect((await call(t, "POST", "/api/data/types", { name: "ideas" })).status).toBe(409);
+    const inside = await call(t, "POST", "/api/data/types", { name: "Sueltas", parent: ideas });
+    const sueltas = inside.body.id as string;
+    const store = host.store(1);
+    expect(store.schema().types[sueltas]?.parent).toBe(ideas);
+    // A folder of notes (no properties of its own) shows its notes; a note that is only headings does not count.
+    const meta = { actor: "user" as const };
+    const note = store.create(
+      sueltas,
+      { f_titulo: { value: "Una idea", label: L }, $body: { value: "Algo que pensar.", label: L } },
+      meta,
+    ).entity.id;
+    store.create(
+      sueltas,
+      {
+        f_titulo: { value: "Plantilla", label: L },
+        $body: { value: "# Notas\n\n## Más\n", label: L },
+      },
+      meta,
+    );
+    const tree = (await call(t, "GET", "/api/data/tree")).body as {
+      collections: { id: string; parent?: string; notes: boolean; count: number }[];
+      notes: { id: string }[];
+    };
+    expect(tree.collections.find((c) => c.id === sueltas)).toMatchObject({
+      parent: ideas,
+      notes: true,
+    });
+    expect(tree.collections.find((c) => c.id === ideas)?.count).toBe(2);
+    expect(tree.notes.map((n) => n.id)).toEqual([note]);
+    expect((await call(t, "PUT", `/api/data/types/${sueltas}/tree`, { notes: false })).status).toBe(
+      200,
+    );
+    expect(((await call(t, "GET", "/api/data/tree")).body.notes as unknown[]).length).toBe(0);
+    // «Todas las páginas» lists a collection's notes whatever its eye says.
+    const all = (await call(t, "GET", `/api/data/tree?type=${sueltas}`)).body.notes as {
+      id: string;
+    }[];
+    expect(all.map((n) => n.id)).toEqual([note]);
+    // A record moved to another collection keeps its id; a collection moved to the root.
+    expect((await call(t, "PUT", `/api/data/rows/${note}/type`, { type: ideas })).status).toBe(200);
+    expect(store.get(note)?.entity.type).toBe(ideas);
+    expect(
+      (await call(t, "PUT", `/api/data/types/${sueltas}/parent`, { parent: null })).status,
+    ).toBe(200);
+    expect(store.schema().types[sueltas]?.parent).toBeUndefined();
+    // Out of the tree only when nothing is left in it.
+    expect((await call(t, "DELETE", `/api/data/types/${ideas}`)).status).toBe(409);
+    expect((await call(t, "DELETE", `/api/data/types/${sueltas}`)).status).toBe(409);
+    const empty = (await call(t, "POST", "/api/data/types", { name: "Vacía" })).body.id as string;
+    expect((await call(t, "DELETE", `/api/data/types/${empty}`)).status).toBe(200);
+    const types = (await call(t, "GET", "/api/data/types")).body.types as { id: string }[];
+    expect(types.some((x) => x.id === empty)).toBe(false);
+  });
+});

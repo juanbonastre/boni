@@ -224,10 +224,179 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       ];
       const gone: typeof rows = [];
       let rowSeq = 0;
+      // The tree (apps/server/src/data.ts `treeOf`): each collection's mother and whether its notes show in the
+      // sidebar (a folder of notes by default), and the records with a note. Collections made here are empty.
+      const madeCols: {
+        id: string;
+        name: string;
+        icon: string;
+        titleField: string;
+        count: number;
+        level: string;
+        fields: { id: string; name: string; type: string }[];
+        rowUi: { open: boolean; hidden: string[] };
+      }[] = [];
+      const parents: Record<string, string> = {};
+      const eye: Record<string, boolean> = { t_libro: false, t_private_documentos: true };
+      const treeNotes = [
+        {
+          id: "r1",
+          type: "t_libro",
+          title: "Rayuela",
+          ai: ["mcp:claude-ejemplo", "model:planner:anthropic/claude-opus-5-5"],
+          aiAt: Date.UTC(2026, 9, 24, 10),
+        },
+        {
+          id: "d1",
+          type: "t_private_documentos",
+          title: "Contrato de ejemplo",
+          ai: [],
+          aiAt: null,
+        },
+        { id: "d2", type: "t_private_documentos", title: "Póliza de ejemplo", ai: [], aiAt: null },
+      ];
+      const madeRows: {
+        id: string;
+        type: string;
+        values: Record<string, unknown>;
+        body: string;
+      }[] = [];
+      const userCols = () => [libros, documentos, ...madeCols];
+      const own = (id: string) =>
+        (id === "t_libro" ? rows.length : id === documentos.id ? 2 : 0) +
+        madeRows.filter((r) => r.type === id).length;
+      const deep = (id: string): number =>
+        own(id) +
+        userCols()
+          .filter((c) => parents[c.id] === id)
+          .reduce((n, c) => n + deep(c.id), 0);
+      const treeAnswer = (type: string | null): [number, string] => {
+        const notes = treeNotes.concat(
+          madeRows
+            .filter((r) => r.body)
+            .map((r) => ({
+              id: r.id,
+              type: r.type,
+              title: String(r.values.f_titulo ?? ""),
+              ai: [],
+              aiAt: null,
+            })),
+        );
+        if (type) return [200, JSON.stringify({ notes: notes.filter((n) => n.type === type) })];
+        return [
+          200,
+          JSON.stringify({
+            collections: userCols().map((c) => ({
+              id: c.id,
+              ...(parents[c.id] ? { parent: parents[c.id] } : {}),
+              name: c.name,
+              icon: c.icon,
+              count: deep(c.id),
+              level: c.level,
+              notes: eye[c.id] ?? true,
+            })),
+            notes: notes.filter((n) => eye[n.type] ?? true),
+          }),
+        ];
+      };
       const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
         const b = (body ?? {}) as { values?: Record<string, unknown> };
+        if (p === "api/data/types" && method === "POST") {
+          const want = (body ?? {}) as { name?: string; parent?: string };
+          const name = String(want.name ?? "").trim();
+          if (!name) return [400, '{"error":"bad-body"}'];
+          if (userCols().some((c) => c.name.toLowerCase() === name.toLowerCase()))
+            return [409, '{"error":"taken"}'];
+          const id = `t_hecha_${madeCols.length + 1}`;
+          madeCols.push({
+            id,
+            name,
+            icon: "",
+            titleField: "f_titulo",
+            count: 0,
+            level: "visible",
+            fields: [{ id: "f_titulo", name: "Título", type: "text" }],
+            rowUi: { open: false, hidden: [] },
+          });
+          if (want.parent) parents[id] = want.parent;
+          return [200, JSON.stringify({ id })];
+        }
         if (p === "api/data/types")
-          return [200, JSON.stringify({ types: [libros, documentos, ...boni] })];
+          return [
+            200,
+            JSON.stringify({
+              types: [
+                libros,
+                documentos,
+                ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
+                ...boni,
+              ],
+            }),
+          ];
+        const typeOp = /^api\/data\/types\/([^/]+)(?:\/(tree|parent))?$/.exec(p);
+        if (typeOp && (method === "PUT" || method === "DELETE")) {
+          const id = typeOp[1]!;
+          if (!userCols().some((c) => c.id === id)) return [404, '{"error":"not-found"}'];
+          if (typeOp[2] === "tree") {
+            eye[id] = Boolean((body as { notes?: boolean }).notes);
+            return [200, "{}"];
+          }
+          if (typeOp[2] === "parent") {
+            const to = (body as { parent?: string | null }).parent;
+            if (to) parents[id] = to;
+            else delete parents[id];
+            return [200, "{}"];
+          }
+          if (method === "DELETE" && !typeOp[2]) {
+            if (deep(id) > 0 || treeNotes.some((n) => n.type === id))
+              return [409, '{"error":"not-empty"}'];
+            madeCols.splice(
+              madeCols.findIndex((c) => c.id === id),
+              1,
+            );
+            return [200, "{}"];
+          }
+        }
+        const moved = /^api\/data\/rows\/([^/]+)\/type$/.exec(p);
+        if (moved && method === "PUT") {
+          const to = String((body as { type?: string }).type ?? "");
+          const n = treeNotes.find((x) => x.id === moved[1]);
+          if (!n || !userCols().some((c) => c.id === to)) return [404, '{"error":"not-found"}'];
+          n.type = to;
+          return [200, "{}"];
+        }
+        const madeList = /^api\/data\/types\/(t_hecha_\d+|t_private_documentos)\/rows$/.exec(p);
+        if (madeList && method === "GET" && madeList[1] !== documentos.id)
+          return [
+            200,
+            JSON.stringify({
+              rows: madeRows.filter((r) => r.type === madeList[1]),
+              titles: {},
+              truncated: false,
+              ghosts: [],
+              columns: {},
+            }),
+          ];
+        if (madeList && method === "POST") {
+          const row = {
+            id: `m${madeRows.length + 1}`,
+            type: madeList[1]!,
+            values: { ...(b.values ?? {}) },
+            body: "",
+          };
+          madeRows.push(row);
+          return [200, JSON.stringify({ row })];
+        }
+        const madeRow = /^api\/data\/rows\/(m\d+)$/.exec(p);
+        const mr = madeRow && madeRows.find((r) => r.id === madeRow[1]);
+        if (mr) {
+          if (method === "PUT") {
+            Object.assign(mr.values, b.values ?? {});
+            const text = (body as { body?: string }).body;
+            if (text !== undefined) mr.body = text;
+          }
+          return [200, JSON.stringify({ row: { ...mr, updated: 1 } })];
+        }
         // A page's numbers and charts (apps/server/src/blocks.ts), counted over the books here.
         if (p === "api/data/blocks") {
           const list = ((body ?? {}) as { blocks?: Record<string, unknown>[] }).blocks ?? [];
@@ -279,14 +448,14 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         const rowUi = /^api\/data\/types\/([^/]+)\/row-ui$/.exec(p);
         if (rowUi) {
-          const t = [libros, documentos].find((x) => x.id === rowUi[1]);
+          const t = userCols().find((x) => x.id === rowUi[1]);
           if (!t) return [404, '{"error":"not-found"}'];
           t.rowUi = { ...t.rowUi, ...((body ?? {}) as Partial<typeof t.rowUi>) };
           return [200, JSON.stringify(t.rowUi)];
         }
         const protect = /^api\/data\/types\/([^/]+)\/protection$/.exec(p);
         if (protect) {
-          const t = [libros, documentos].find((x) => x.id === protect[1]);
+          const t = userCols().find((x) => x.id === protect[1]);
           const want = (body ?? {}) as { level?: string; unlock?: boolean };
           if (!t) return [404, '{"error":"not-found"}'];
           if (t.level === "private" && want.level !== "private" && !want.unlock)
@@ -356,7 +525,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       };
       const answer = (method: string, path: string, body?: unknown): [number, string] | null => {
         const p = path.split("?")[0]!;
-        const audited = p.startsWith("api/data/audit/") || p === "api/data/notes";
+        const tree = /^api\/data\/tree(?:\?type=([^&]+))?$/.exec(path);
+        if (tree && method === "GET")
+          return treeAnswer(tree[1] ? decodeURIComponent(tree[1]) : null);
+        const audited = p.startsWith("api/data/audit/");
         if (p.startsWith("api/data/") && !audited) return dataAnswer(method, p, body);
         if (p === "api/pages-trash")
           return [
@@ -595,6 +767,18 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
     await page.exposeFunction("__boniEngine", boniEngine);
   }
   await page.goto(url);
+}
+
+/**
+ * Something of the sidebar's «Páginas» opened by its name: one of Boni's template pages or own collections unfolds
+ * the «Boni» branch first (it starts folded).
+ */
+export async function openInTree(page: Page, name: string): Promise<void> {
+  const list = page.locator(".sidebar").getByRole("list", { name: /^(Páginas|Pages)$/ });
+  const item = list.getByRole("button", { name, exact: true });
+  if (!(await item.count()))
+    await list.getByRole("button", { name: /^(Mostrar subpáginas|Show subpages): Boni$/ }).click();
+  await item.click();
 }
 
 export async function recorded(page: Page): Promise<Shell> {

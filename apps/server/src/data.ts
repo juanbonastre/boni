@@ -393,51 +393,6 @@ export function findByPath(store: UserStore, path: string): { type: string; id: 
   return hit;
 }
 
-/**
- * Every note with the path it had in the vault, for the notes explorer (Juan, 2026-10-24: what the AIs read must be
- * browsable as in Obsidian): its collection, title, and which AIs saw it and when (the audit's system columns).
- */
-export function listNotes(store: UserStore): {
-  notes: {
-    id: string;
-    type: string;
-    path: string;
-    title: string;
-    updated: number;
-    ai: string[];
-    aiAt: number | null;
-  }[];
-  types: Record<string, string>;
-} {
-  const out: ReturnType<typeof listNotes>["notes"] = [];
-  const types: Record<string, string> = {};
-  for (const def of userTypes(store)) {
-    for (const e of store.entities(def.id)) {
-      const path = e.values[PATH_FIELD];
-      if (typeof path !== "string" || !path) continue;
-      types[def.id] = def.name;
-      out.push({
-        id: e.id,
-        type: def.id,
-        path,
-        title: String(shown(e.values, def.titleField)[def.titleField] ?? ""),
-        updated: e.updated,
-        ai: [],
-        aiAt: null,
-      });
-    }
-  }
-  const meta = store.audit.meta(out.map((n) => n.id));
-  for (const n of out) {
-    const m = meta.get(n.id);
-    // Models and assistants (the MCP), not Boni's own code nor Juan.
-    n.ai = (m?.viewers ?? []).filter((v) => v.startsWith("model:") || v.startsWith("mcp:"));
-    n.aiAt = n.ai.length ? (m?.seenAt ?? null) : null;
-  }
-  out.sort((a, b) => a.path.localeCompare(b.path));
-  return { notes: out, types };
-}
-
 /** One row with its body (a row opened as a page). */
 export function getRow(store: UserStore, id: string): DataRow & { type: string } {
   const e = store.get(id);
@@ -564,4 +519,117 @@ export function treeOf(store: UserStore): {
 export function setNotesInTree(store: UserStore, type: string, on: boolean): void {
   if (!userTypes(store).some((t) => t.id === type)) throw new DataError("not-found");
   store.setSetting(`${TREE_UI}${type}`, on ? "1" : "0");
+}
+
+/** A collection's name as a key (ASCII, for ids and exports). */
+const keyFrom = (name: string) =>
+  name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 30) || "coleccion";
+
+/**
+ * A new collection of the user's (docs/clases.md): at the root, with a title of its own; inside another (`parent`),
+ * with her fields and her title. Its name is used once.
+ */
+export function createCollection(store: UserStore, body: unknown, device?: string): { id: string } {
+  const b = (body && typeof body === "object" ? body : {}) as { name?: unknown; parent?: unknown };
+  const name = typeof b.name === "string" ? b.name.trim().slice(0, 80) : "";
+  if (!name) throw new DataError("bad-body");
+  const types = userTypes(store);
+  const mother = typeof b.parent === "string" ? types.find((t) => t.id === b.parent) : undefined;
+  if (b.parent !== undefined && b.parent !== null && !mother) throw new DataError("not-found");
+  if (types.some((t) => t.name.toLowerCase() === name.toLowerCase())) throw new DataError("taken");
+  const all = store.schema().types;
+  let key = keyFrom(name);
+  for (let n = 2; all[`t_${key}`]; n++) key = `${keyFrom(name).slice(0, 26)}_${n}`;
+  const l = label("user", "personal", [{ kind: "user-edit", id: device ?? "?" }]);
+  const def: TypeDef = {
+    id: `t_${key}`,
+    key: key.replace(/_/g, "-"),
+    name,
+    ...(mother ? { parent: mother.id } : {}),
+    fields: mother
+      ? []
+      : [{ id: "f_titulo", key: "titulo", name: "Título", type: "text", label: l }],
+    titleField: mother ? mother.titleField : "f_titulo",
+    sensitivity: mother?.sensitivity ?? "personal",
+    schemaVersion: 1,
+    label: l,
+  };
+  try {
+    store.applySchema({ op: "create_type", type: def }, meta(device));
+  } catch {
+    throw new DataError("bad-body");
+  }
+  return { id: def.id };
+}
+
+/** A collection out of the tree (archived, undone like any change): only when nothing is left in its branch. */
+export function deleteCollection(store: UserStore, type: string, device?: string): void {
+  if (!userTypes(store).some((t) => t.id === type)) throw new DataError("not-found");
+  const schema = store.schema();
+  const live = branch(schema, type).filter((id) => !schema.types[id]?.archived);
+  if (live.length > 1 || live.some((id) => store.count(id) > 0)) throw new DataError("not-empty");
+  store.applySchema({ op: "archive_type", type, archived: true }, meta(device));
+}
+
+/** A collection moved under another (`parent: null`: to the root), with its whole branch. */
+export function moveCollection(
+  store: UserStore,
+  type: string,
+  body: unknown,
+  device?: string,
+): void {
+  const parent = (body as { parent?: unknown } | null)?.parent;
+  const mine = userTypes(store);
+  if (!mine.some((t) => t.id === type)) throw new DataError("not-found");
+  if (parent !== null && (typeof parent !== "string" || !mine.some((t) => t.id === parent)))
+    throw new DataError("bad-body");
+  try {
+    store.applySchema({ op: "set_parent", type, parent: parent ?? null }, meta(device));
+  } catch {
+    throw new DataError("bad-body");
+  }
+}
+
+/** A record moved to another collection, keeping its id and its history (docs/clases.md §2.5). */
+export function moveRow(store: UserStore, id: string, body: unknown, device?: string): void {
+  const type = (body as { type?: unknown } | null)?.type;
+  const mine = userTypes(store);
+  const e = store.get(id);
+  if (!e || e.entity.deleted !== undefined || !mine.some((t) => t.id === e.entity.type))
+    throw new DataError("not-found");
+  if (typeof type !== "string" || !mine.some((t) => t.id === type)) throw new DataError("bad-body");
+  store.retype(id, type, meta(device));
+}
+
+/** Every record with a note of one collection, for «Todas las páginas» (its own, at most 2,000). */
+export function treeNotes(
+  store: UserStore,
+  type: string,
+): { id: string; type: string; title: string; ai: string[]; aiAt: number | null }[] {
+  const def = userTypes(store).find((t) => t.id === type);
+  if (!def) throw new DataError("not-found");
+  const notes = store
+    .entities(type)
+    .filter((e) => hasNote(e.body))
+    .slice(0, 2000);
+  const meta = store.audit.meta(notes.map((e) => e.id));
+  return notes.map((e) => {
+    // Which AIs read it (Juan, 2026-10-24: what the AIs read must be browsable): models and assistants (the
+    // MCP), not Boni's own code nor Juan.
+    const m = meta.get(e.id);
+    const ai = (m?.viewers ?? []).filter((v) => v.startsWith("model:") || v.startsWith("mcp:"));
+    return {
+      id: e.id,
+      type,
+      title: String(shown(e.values, def.titleField)[def.titleField] ?? ""),
+      ai,
+      aiAt: ai.length ? (m?.seenAt ?? null) : null,
+    };
+  });
 }

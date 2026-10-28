@@ -1077,29 +1077,6 @@ export const AUDIT_DETAIL_WORST = {
   ops: [],
 };
 
-/** The notes by path (apps/server/src/data.ts `listNotes`), invented. */
-const note = (id: string, path: string, ai: string[] = []) => ({
-  id,
-  type: path.startsWith("proyectos/") ? "t_proyecto" : "t_nota",
-  path,
-  title: path.split("/").pop()?.replace(/\.md$/, "") ?? path,
-  updated: Date.UTC(2026, 9, 20),
-  ai,
-  aiAt: ai.length ? Date.UTC(2026, 9, 24, 10) : null,
-});
-export const NOTES = {
-  notes: [
-    note("n1", "AGENTS.md", ["mcp:claude-ejemplo", "model:planner:anthropic/claude-opus-5-5"]),
-    note("n2", "README.md"),
-    note("n3", "_system/changelog.md", ["mcp:claude-ejemplo"]),
-    note("n4", "_system/conventions.md"),
-    { ...note("r1", "proyectos/plan-ejemplo.md", ["mcp:claude-ejemplo"]), type: "t_libro" },
-    note("n6", "proyectos/otro-ejemplo.md"),
-    note("n7", "wiki/infra/nas/servidor-ejemplo.md", ["mcp:claude-ejemplo"]),
-    note("n8", "wiki/temas/diseno-ejemplo.md"),
-  ],
-  types: { t_nota: "Nota", t_proyecto: "Proyecto" },
-};
 /** A row's history (apps/server/src/audit.ts `auditRow`), invented. */
 export const ROW_HISTORY = {
   columns: {

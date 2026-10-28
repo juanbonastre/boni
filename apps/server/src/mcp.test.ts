@@ -8,7 +8,7 @@ import { issueSession } from "@boni/identity";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
-import { listNotes } from "./data.ts";
+import { findByPath, treeNotes } from "./data.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -350,13 +350,14 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       createdBy: "mcp:claude-code",
     });
     expect(store.audit.verify().ok).toBe(true);
-    // The notes explorer lists each note by its path, with the assistants that read it (the guide read AGENTS.md).
-    const notes = listNotes(store).notes;
-    expect(notes.map((n) => n.path)).toEqual(
-      expect.arrayContaining(["AGENTS.md", "proyectos/otro.md"]),
-    );
-    expect(notes.find((n) => n.path === "AGENTS.md")?.ai).toEqual(["mcp:claude-code"]);
-    expect(notes.find((n) => n.path === "diario/2026-10-20.md")?.ai).toEqual([]);
+    // «Todas las páginas» lists each note with the assistants that read it (the guide read AGENTS.md).
+    const aiOf = (path: string) => {
+      const at = findByPath(store, path);
+      return treeNotes(store, at.type).find((n) => n.id === at.id)?.ai;
+    };
+    expect(aiOf("AGENTS.md")).toEqual(["mcp:claude-code"]);
+    expect(aiOf("proyectos/otro.md")).toEqual(["mcp:claude-code"]);
+    expect(aiOf("diario/2026-10-20.md")).toEqual([]);
   });
 });
 

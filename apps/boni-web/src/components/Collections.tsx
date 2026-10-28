@@ -1,7 +1,6 @@
 import type { DatabaseView } from "@boni/views";
-import { Lightbulb, Search } from "lucide-react";
+import { Lightbulb } from "lucide-react";
 import { useEffect, useState } from "react";
-import { AI_LEVELS, type AiLevel } from "../core/agent.ts";
 import type { AuditSummary, Storage } from "../core/audit.ts";
 import {
   agentApi,
@@ -13,106 +12,7 @@ import {
 } from "../store.ts";
 import { BarList, bytes, Kpi } from "./Dash.tsx";
 import { DatabaseBlock, SystemPill } from "./DatabaseBlock.tsx";
-import { LEVEL_ICONS, ProtectionMenu } from "./Protection.tsx";
-
-/**
- * Colecciones (Juan, 2026-10-22): every collection in one place, as Notion's list of databases. A search and
- * a filter by what the AI sees; each row opens the collection on a page of its own and shows (and changes)
- * its protection there and then.
- */
-export function CollectionsView() {
-  const t = useStore((s) => s.t);
-  const types = useStore((s) => s.dataTypes);
-  const [query, setQuery] = useState("");
-  const [level, setLevel] = useState<AiLevel | null>(null);
-  useEffect(() => {
-    if (!types) void loadDataTypes();
-  }, []);
-  const q = query.trim().toLocaleLowerCase("es");
-  const shown = (types ?? []).filter(
-    (x) =>
-      (!q || x.name.toLocaleLowerCase("es").includes(q)) &&
-      (!level || (x.level === level && !x.system)),
-  );
-  // Boni's own records are not a level the user chose: they are not counted in the filter.
-  const count = (l: AiLevel) => (types ?? []).filter((x) => x.level === l && !x.system).length;
-  return (
-    <div className="content page-doc full">
-      <div className="doc cols">
-        <h1 className="cols-title">{t("nav.collections")}</h1>
-        <p className="cols-help">{t("col.help")}</p>
-        <CollectionsUsage />
-        <div className="cols-tools">
-          <label className="cols-search">
-            <Search size={14} strokeWidth={1.8} aria-hidden />
-            <input
-              value={query}
-              placeholder={t("col.search")}
-              aria-label={t("col.search")}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-          <div className="cols-filter" role="radiogroup" aria-label={t("col.ai")}>
-            {[null, ...AI_LEVELS].map((l) => (
-              <button
-                key={l ?? "all"}
-                type="button"
-                role="radio"
-                aria-checked={level === l}
-                className={`cols-chip${level === l ? " on" : ""}`}
-                onClick={() => setLevel(l)}
-              >
-                {l && LEVEL_ICONS[l]}
-                {l ? t(`ai.level.${l}`) : t("col.all")}
-                {l && <span className="cols-chip-n">{count(l)}</span>}
-              </button>
-            ))}
-          </div>
-        </div>
-        {types === null ? (
-          <div className="page-loading" role="status" aria-busy="true" />
-        ) : !types.length ? (
-          <p className="cols-empty">{t("col.none")}</p>
-        ) : !shown.length ? (
-          <p className="cols-empty">{t("col.empty")}</p>
-        ) : (
-          <table className="db-table cols-table">
-            <thead>
-              <tr>
-                <th>{t("col.name")}</th>
-                <th className="num">{t("col.items")}</th>
-                <th>{t("col.ai")}</th>
-                <th className="cols-origin">{t("col.origin")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((x) => (
-                <tr key={x.id}>
-                  <td className="is-title">
-                    <button
-                      type="button"
-                      className="cols-name"
-                      aria-label={t("col.open", { name: x.name })}
-                      onClick={() => openCollection(x.id)}
-                    >
-                      {x.icon && <span className="db-icon">{x.icon}</span>}
-                      <span>{x.name}</span>
-                    </button>
-                  </td>
-                  <td className="num">{x.count}</td>
-                  <td>{x.system ? <SystemPill /> : <ProtectionMenu type={x} />}</td>
-                  <td className="cols-origin">{x.zone ? t(`db.zone.${x.zone}`) : ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const DEFAULT_VIEW: DatabaseView = { layout: "table" };
+import { ProtectionMenu } from "./Protection.tsx";
 
 /** One collection on a page of its own: its name, its protection (unlocked only here) and its rows. */
 export function CollectionView() {
@@ -160,12 +60,14 @@ export function CollectionView() {
   );
 }
 
+const DEFAULT_VIEW: DatabaseView = { layout: "table" };
+
 /**
  * How the collections are used and what they take (Juan, 2026-10-24): the records, the storage and its parts, size
  * and use per collection (what was read and changed in 30 days), and Boni's advice when something grows (nothing is
  * deleted by itself). A collection's bars open its audit.
  */
-function CollectionsUsage() {
+export function CollectionsUsage() {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
   const [st, setSt] = useState<Storage | null>(null);
