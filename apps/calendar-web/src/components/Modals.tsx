@@ -25,7 +25,6 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { getHost, onKeys } from "../host.ts";
 import { type Key, t } from "../i18n.ts";
 import { useApp } from "../store.ts";
-import { vaultBridge } from "../vaultBridge.ts";
 import { DesktopSettings } from "./DesktopSettings.tsx";
 import { ExternalSettings } from "./ExternalSettings.tsx";
 import { ChoicePicker, DraftInput } from "./fields.tsx";
@@ -130,120 +129,12 @@ const TIMEZONES = [
   "UTC",
 ];
 
-/**
- * Settings → Data: where the calendars come from. With a vault folder (desktop, Android) the device
- * chooses between that folder and a Boni Calendar Server; a plain browser can only use a server; the
- * Obsidian plugin chooses between the vault it runs in (the default: it works alone) and a server
- * (docs/nucleo.md 9.4: connecting to Boni is optional).
- */
+/** Where the calendars come from: a Boni Calendar Server (without one, invented sample data). */
 function DataSettings() {
-  const source = useApp((s) => s.source);
-  const hasServer = useApp((s) => !!s.settings.server);
-  const folder = !!vaultBridge();
-  const fixed = !!getHost().fixedVault;
-  const [mode, setMode] = useState<"local" | "server">(
-    source === "server" || hasServer || (!folder && !fixed) ? "server" : "local",
-  );
-  const choose = (m: "local" | "server") => {
-    setMode(m);
-    if (m === "local" && useApp.getState().settings.server)
-      void useApp.getState().disconnectServer();
-  };
   return (
     <>
       <h3>{t("settings.data")}</h3>
-      {(folder || fixed) && (
-        <Field label={t("settings.origin")}>
-          <Segmented
-            value={mode}
-            onChange={choose}
-            options={[
-              {
-                v: "local",
-                label: t(fixed ? "settings.origin.thisVault" : "settings.origin.local"),
-              },
-              { v: "server", label: t("settings.origin.server") },
-            ]}
-          />
-        </Field>
-      )}
-      {mode === "server" ? <ServerSettings /> : <VaultSettings />}
-    </>
-  );
-}
-
-/** The vault the calendars come from (desktop app, Obsidian): its folder, writing, what was read. */
-function VaultSettings() {
-  const writeOn = useApp((s) => s.settings.vaultWrite);
-  const source = useApp((s) => s.source);
-  const vault = useApp((s) => s.vault);
-  const app = useApp.getState();
-  useEffect(() => {
-    void vaultBridge()
-      ?.getRoot()
-      .then((r) => r.ok && useApp.setState((s) => ({ vault: { ...s.vault, root: r.value } })));
-  }, []);
-  const reason = (r: string) => (r === "no-date" ? t("vault.reason.no-date") : r);
-  const fixedVault = !!getHost().fixedVault;
-  return (
-    <>
-      <Field label={t("settings.vaultFolder")}>
-        <span className="vault-path" title={vault.root ?? undefined}>
-          {/* bdi keeps the path's own direction inside the right-to-left box that cuts it from the left */}
-          <bdi>{vault.root ?? t("settings.vaultNone")}</bdi>
-        </span>
-        {!fixedVault && (
-          <button type="button" className="btn" onClick={() => void app.chooseVaultRoot()}>
-            {t("settings.vaultChoose")}
-          </button>
-        )}
-      </Field>
-      {source === "vault" && (
-        <>
-          <Field label={t("settings.vaultWrite")} hint={t("settings.vaultWriteHint")}>
-            <Segmented
-              value={writeOn}
-              onChange={(v) => useApp.getState().setSettings({ vaultWrite: v })}
-              options={[
-                { v: false, label: t("settings.vaultWrite.off") },
-                { v: true, label: t("settings.vaultWrite.on") },
-              ]}
-            />
-          </Field>
-          <Field label={t("settings.vaultStatus", { n: vault.notes, m: vault.ignored.length })}>
-            <button type="button" className="btn" onClick={() => void app.loadVault()}>
-              {t("settings.vaultReload")}
-            </button>
-          </Field>
-          {vault.ignored.length > 0 && (
-            <details className="vault-list">
-              <summary>
-                {t("settings.vaultIgnored")} ({vault.ignored.length})
-              </summary>
-              <ul>
-                {vault.ignored.map((n) => (
-                  <li key={n.path}>
-                    <span className="vault-note-path">{n.path}</span>
-                    <span className="muted">{reason(n.reason)}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-          {vault.problems.length > 0 && (
-            <details className="vault-list" open>
-              <summary>
-                {t("settings.vaultProblems")} ({vault.problems.length})
-              </summary>
-              <ul>
-                {vault.problems.map((p) => (
-                  <li key={p}>{p}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </>
-      )}
+      <ServerSettings />
     </>
   );
 }

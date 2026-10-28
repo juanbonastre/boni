@@ -29,7 +29,7 @@ function Row({
 export function ServerSettings() {
   const cfg = useApp((s) => s.settings.server);
   const remote = useApp((s) => s.remote);
-  const notes = useApp((s) => s.vault.notes);
+  const notes = useApp((s) => s.loaded.notes);
   const [url, setUrl] = useState(cfg?.url ?? "https://");
   const [user, setUser] = useState(cfg?.user ?? "");
   const [password, setPassword] = useState("");

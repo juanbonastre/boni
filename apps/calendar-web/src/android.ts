@@ -1,5 +1,5 @@
 import type { Host } from "./host.ts";
-import type { VaultBridge, VaultResult } from "./vaultBridge.ts";
+import type { NotesBridge, NotesResult } from "./notesBridge.ts";
 
 /**
  * The Android app's side of the page (`window.boniAndroid`, apps/calendar-android/AndroidBridge.kt). A call
@@ -11,11 +11,11 @@ export interface AndroidNative {
   take(id: string): string;
 }
 
-type Answer = VaultResult<unknown>;
+type Answer = NotesResult<unknown>;
 
-/** The vault bridge and the downloader over the Android app (same contract as the desktop shell). */
+/** The downloader, the network and the reminders over the Android app (notes do not open on the phone). */
 export function androidHost(native: AndroidNative): {
-  vault: VaultBridge;
+  notes: NotesBridge | null;
   fetchText: NonNullable<Host["fetchText"]>;
   network: NonNullable<Host["network"]>;
   notify: NonNullable<Host["notify"]>;
@@ -34,27 +34,15 @@ export function androidHost(native: AndroidNative): {
     }
     done(answer);
   };
-  const call = <T>(method: string, ...args: unknown[]): Promise<VaultResult<T>> =>
+  const call = <T>(method: string, ...args: unknown[]): Promise<NotesResult<T>> =>
     new Promise((resolve) => {
       const id = String(++seq);
       pending.set(id, resolve as (a: Answer) => void);
       native.call(id, method, JSON.stringify(args));
     });
 
-  const vault: VaultBridge = {
-    getRoot: () => call("getRoot"),
-    chooseRoot: () => call("chooseRoot"),
-    scan: (dir) => call("scan", dir),
-    read: (path) => call("read", path),
-    write: (path, text, expected) => call("write", path, text, expected),
-    create: (path, text) => call("create", path, text),
-    rename: (from, to) => call("rename", from, to),
-    trash: (path) => call("trash", path),
-    cacheRead: () => call("cacheRead"),
-    cacheWrite: (text) => call("cacheWrite", text),
-  };
   return {
-    vault,
+    notes: null,
     fetchText: (url) => call<string>("fetchText", url),
     network: {
       allowed: async () => {

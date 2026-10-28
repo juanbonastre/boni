@@ -37,7 +37,7 @@ async function boot() {
     document.head.append(style);
     pane.append(container);
   }
-  await mountApp(container, { vault: null, storage, keys: "root" });
+  await mountApp(container, { notes: null, storage, keys: "root" });
   const { useApp } = await import("./store.ts");
   (window as unknown as { __app: unknown }).__app = useApp;
 }

@@ -1,8 +1,7 @@
 import type { Row, RowChange } from "@boni/calendar";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Outbox, type Remote, RemoteError } from "./remote.ts";
-import { ServerWriter } from "./serverWriter.ts";
-import { aliases } from "./vault/sync.ts";
+import { aliases, ServerWriter } from "./serverWriter.ts";
 
 const row = (id: string, title: string): Row => ({
   id,
