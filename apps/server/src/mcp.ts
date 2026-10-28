@@ -199,7 +199,7 @@ function view(c: Ctx) {
   /** The name of the collection a collection is inside (its mother), when the model may see her. */
   const mother = (t: TypeDef) =>
     t.parent ? types().find((m) => m.id === t.parent)?.name : undefined;
-  return { ro, types, level, typeNamed, fields, asNote, find, description, mother };
+  return { ro, types, level, typeNamed, fields, shown, asNote, find, description, mother };
 }
 
 // ------------------------------------------------------------------ writing
@@ -446,7 +446,7 @@ const TOOLS: Tool[] = [
   {
     name: "query",
     description:
-      "The notes of a collection, the collections inside it included (each note says its own), that match Notion-style filters on its properties ({property, op, value}; ops: is, is_not, contains, not_contains, empty, not_empty, checked, unchecked, before, after, gt, lt; value 'today' for dates), newest first.",
+      "The notes of a collection, the collections inside it included (each note says its own), that match Notion-style filters on its properties as notes show them: options and related notes by their names ({property, op, value}; ops: is, is_not, contains, not_contains, empty, not_empty, checked, unchecked, before, after, gt, lt; value 'today' for dates), newest first.",
     inputSchema: obj(
       {
         collection: { type: "string" },
@@ -472,9 +472,33 @@ const TOOLS: Tool[] = [
       if (filterErrors(rules).length) throw new ToolFail("bad filter");
       const typeOf = (id: string) => t.fields.find((f) => f.id === id)?.type;
       const today = new Date(c.now()).toISOString().slice(0, 10);
+      // A model names options and related notes as notes show them (never by id): compare what it sees, in any case.
+      const named = new Map(
+        v
+          .fields(t)
+          .filter((f) => ["select", "multiselect", "relation"].includes(f.type))
+          .filter((f) => rules.some((r) => r.field === f.id))
+          .map((f) => [f.id, f]),
+      );
+      const fold = (x: unknown) =>
+        String(x ?? "")
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "");
+      const seen = (values: Record<string, unknown>) => {
+        const out = { ...values };
+        for (const [id, f] of named) {
+          const x = v.shown(f, values[id]);
+          out[id] = Array.isArray(x) ? x.map(fold) : x;
+        }
+        return out;
+      };
+      const asSeen = rules.map((r) =>
+        named.has(r.field) && typeof r.value === "string" ? { ...r, value: fold(r.value) } : r,
+      );
       return v.ro
         .list(t.id, { deep: true })
-        .filter((s) => matchesFilters(s.entity.values, typeOf, rules, today))
+        .filter((s) => matchesFilters(seen(s.entity.values), typeOf, asSeen, today))
         .sort((x, y) => y.entity.updated - x.entity.updated || (x.entity.id < y.entity.id ? -1 : 1))
         .slice(Math.max(0, Math.floor(Number(a.offset) || 0)))
         .slice(0, Math.min(200, Math.max(1, Number(a.limit) || 50)))

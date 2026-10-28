@@ -262,6 +262,13 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     expect((await tool("query", { collection: "Cola inventada" })).json).toEqual([]);
     expect((await tool("undo", { run: gone.json.run })).json.undone).toBe(3);
     expect((await tool("query", { collection: "Cola inventada" })).json).toHaveLength(3);
+    // A filter names an option as notes show it (any case), never by its id.
+    await tool("set_properties", { id: ids[2], properties: { Estado: "hecho" } });
+    const done = await tool("query", {
+      collection: "Cola inventada",
+      filter: [{ property: "Estado", op: "is", value: "Hecho" }],
+    });
+    expect((done.json as { id: string }[]).map((n) => n.id)).toEqual([ids[2]]);
     // A call trashes everything it names or nothing: the private diary is not for a model.
     const diary = host.store(1).findByValue("f_vault_path", "diario/2026-10-20.md")[0]?.id;
     expect((await tool("trash", { ids: [ids[0], diary] })).error).toBe(true);
@@ -396,5 +403,50 @@ describe("collections as classes through the MCP (docs/clases.md)", () => {
       "Curso inventado",
       "Cursos",
     ]);
+  });
+
+  it("a filter names a related note by its title, as notes show it", async () => {
+    const store = host.store(1);
+    const l = store.schema().types.t_proyecto?.label as never;
+    const me = { actor: "user" as const, device: "prueba" };
+    store.applySchema(
+      {
+        op: "add_field",
+        type: "t_proyecto",
+        field: {
+          id: "f_madre",
+          key: "madre",
+          name: "Madre",
+          type: "relation",
+          relation: { target: "t_proyecto", many: false },
+          label: l,
+        },
+      },
+      me,
+    );
+    const at = (path: string) => store.findByValue("f_vault_path", path)[0]?.id as string;
+    store.update(
+      at("proyectos/otro.md"),
+      { f_madre: { value: at("proyectos/boni-plan.md"), label: l } },
+      me,
+    );
+    const titled = String(
+      (await tool("read", { id: at("proyectos/boni-plan.md") })).json.title,
+    ).toUpperCase();
+    for (const [op, value] of [
+      ["is", titled],
+      ["contains", titled.slice(0, 3)],
+    ])
+      expect(
+        (
+          (
+            await tool("query", {
+              collection: "Proyecto",
+              filter: [{ property: "Madre", op, value }],
+            })
+          ).json as { id: string }[]
+        ).map((n) => n.id),
+      ).toEqual([at("proyectos/otro.md")]);
+    store.applySchema({ op: "remove_field", type: "t_proyecto", field: "f_madre" }, me);
   });
 });
