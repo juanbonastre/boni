@@ -1,6 +1,6 @@
 /**
  * What Boni Calendar's page may ask of the desktop shell, and nothing else: downloads, notifications, the desktop's
- * settings, the benchmark's results and the vault's files (`boniVault`, going away with the vault mode).
+ * settings, the benchmark's results and where an event's note opens (`boniNotes`).
  */
 const { contextBridge, ipcRenderer } = require("electron");
 
@@ -26,26 +26,10 @@ contextBridge.exposeInMainWorld("boniDesktop", {
   setLabels: (labels) => ipcRenderer.send("desktop:labels", labels),
 });
 
-// Notes of the user's vault. Every call resolves to { ok: true, value } or { ok: false, code, message }.
-contextBridge.exposeInMainWorld("boniVault", {
-  getRoot: () => ipcRenderer.invoke("vault:get-root"),
-  chooseRoot: () => ipcRenderer.invoke("vault:choose-root"),
-  scan: (dir) => ipcRenderer.invoke("vault:scan", dir),
-  read: (path) => ipcRenderer.invoke("vault:read", path),
-  write: (path, text, expectedMtimeMs) =>
-    ipcRenderer.invoke("vault:write", path, text, expectedMtimeMs),
-  create: (path, text) => ipcRenderer.invoke("vault:create", path, text),
-  rename: (from, to) => ipcRenderer.invoke("vault:rename", from, to),
-  trash: (path) => ipcRenderer.invoke("vault:trash", path),
-  openNote: (path, opts) => ipcRenderer.invoke("vault:open-note", path, opts?.peek === true),
-  openProposal: (id) => ipcRenderer.invoke("vault:open-proposal", id),
+// Where an event's note opens: Boni's desktop app (or its peek). Every call resolves to { ok: true, value } or
+// { ok: false, code, message }.
+contextBridge.exposeInMainWorld("boniNotes", {
+  openNote: (path, opts) => ipcRenderer.invoke("notes:open-note", path, opts?.peek === true),
+  openProposal: (id) => ipcRenderer.invoke("notes:open-proposal", id),
   noteApp: "boni",
-  watch: (dirs) => ipcRenderer.invoke("vault:watch", dirs),
-  onChanged: (cb) => {
-    const listener = () => cb();
-    ipcRenderer.on("vault:changed", listener);
-    return () => ipcRenderer.removeListener("vault:changed", listener);
-  },
-  cacheRead: () => ipcRenderer.invoke("vault:cache-read"),
-  cacheWrite: (text) => ipcRenderer.invoke("vault:cache-write", text),
 });

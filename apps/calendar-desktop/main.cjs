@@ -6,7 +6,6 @@
 const {
   app,
   BrowserWindow,
-  dialog,
   ipcMain,
   Menu,
   Notification,
@@ -17,9 +16,7 @@ const {
   Tray,
 } = require("electron");
 const fs = require("node:fs");
-const crypto = require("node:crypto");
 const path = require("node:path");
-const { notePath, openVault, VaultError } = require("./vault-fs.cjs");
 const {
   autostartDir,
   boniOrigin,
@@ -181,37 +178,27 @@ function createWindow(hidden = false) {
   }
 }
 
-// ---- vault (the folder of Markdown notes the calendar reads and writes) ----
-const vaultFile = () => path.join(app.getPath("userData"), "vault.json");
-let vault = null;
-let stopWatching = null;
-
-function useVault(root) {
-  stopWatching?.();
-  stopWatching = null;
-  vault = openVault(root, { trashItem: (p) => shell.trashItem(p) });
-  fs.writeFileSync(vaultFile(), JSON.stringify({ root: vault.root }));
-  return vault.root;
-}
-
-function restoreVault() {
-  try {
-    vault = openVault(JSON.parse(fs.readFileSync(vaultFile(), "utf8")).root, {
-      trashItem: (p) => shell.trashItem(p),
-    });
-  } catch {
-    vault = null; // nothing chosen yet, or the folder is gone
+// ---- where an event's note opens (Boni's desktop app; the notes themselves live in Boni) ----
+class NoteError extends Error {
+  constructor(code, message) {
+    super(message ?? code);
+    this.code = code;
   }
 }
-
-const NO_VAULT_NEEDED = new Set(["vault:choose-root", "vault:open-note", "vault:open-proposal"]);
+/** A note's path as the calendar's rows keep it (relative, Markdown, never a dot folder or `..`), or a NoteError. */
+function notePath(rel) {
+  if (typeof rel !== "string" || rel === "" || path.isAbsolute(rel) || rel.includes("\0"))
+    throw new NoteError("bad-path", `Bad path: ${rel}`);
+  const parts = rel.split(/[\\/]+/).filter(Boolean);
+  if (parts.some((p) => p === ".." || p.startsWith(".")) || !rel.toLowerCase().endsWith(".md"))
+    throw new NoteError("bad-path", `Not allowed: ${rel}`);
+  return parts;
+}
 
 /** Handlers answer `{ ok: true, value }` or `{ ok: false, code, message }`; errors never cross IPC as exceptions. */
 function handle(channel, fn) {
   ipcMain.handle(channel, async (e, ...args) => {
     try {
-      if (!NO_VAULT_NEEDED.has(channel) && !vault)
-        throw new VaultError("no-vault", "No vault chosen");
       return { ok: true, value: await fn.apply({ sender: e.sender }, args) };
     } catch (e) {
       return { ok: false, code: e.code ?? "error", message: String(e.message ?? e) };
@@ -279,47 +266,9 @@ ipcMain.on("notify:schedule", (e, list) => {
   }
 });
 
-handle("vault:get-root", () => vault?.root ?? null);
-handle("vault:scan", (dir) => vault.scan(dir));
-handle("vault:read", (rel) => vault.read(rel));
-handle("vault:write", (rel, text, expectedMtimeMs) => vault.write(rel, text, expectedMtimeMs));
-handle("vault:watch", function (dirs) {
-  stopWatching?.();
-  const sender = this.sender;
-  stopWatching = vault.watch(dirs, () => {
-    if (sender && !sender.isDestroyed()) sender.send("vault:changed");
-  });
-  return null;
-});
-// The cache holds parsed notes so the next start does not parse them again. It lives in userData
-// (never in the vault or the repo) and is keyed by the vault folder.
-const cacheFile = () =>
-  path.join(
-    app.getPath("userData"),
-    `vault-index-${crypto.createHash("sha1").update(vault.root).digest("hex").slice(0, 12)}.json`,
-  );
-handle("vault:cache-read", () => {
-  try {
-    return fs.readFileSync(cacheFile(), "utf8");
-  } catch {
-    return null;
-  }
-});
-handle("vault:cache-write", (text) => {
-  if (typeof text !== "string") throw new VaultError("bad-path", "Bad cache");
-  const tmp = `${cacheFile()}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, text);
-  fs.renameSync(tmp, cacheFile());
-  return null;
-});
-handle("vault:rename", (from, to) => vault.rename(from, to));
-handle("vault:trash", async (rel) => {
-  await vault.trash(rel);
-  return null;
-});
-handle("vault:open-note", (rel, peek) => {
+handle("notes:open-note", (rel, peek) => {
   // The notes live in Boni (Juan, 2026-10-22). Ctrl+click and "Abrir en Boni": Boni's desktop app opens the row a
-  // note became (boni://note?path=<the note's vault path>). A double click: the calendar's own peek, a small window
+  // note became (boni://note?path=<the note's path>). A double click: the calendar's own peek, a small window
   // with Boni's note page from Boni's server (Settings → Desktop gives its address); without one, Boni's peek
   // (`&peek=1`). Paths and URLs are built here from a checked path, never by the UI.
   const note = notePath(rel).join("/");
@@ -334,11 +283,11 @@ handle("vault:open-note", (rel, peek) => {
   return null;
 });
 
-handle("vault:open-proposal", (id) => {
+handle("notes:open-proposal", (id) => {
   // A proposal waiting in Boni's inbox, drawn dashed in the calendar (plan b2): a click shows its page in the peek,
   // where it is accepted or rejected. Its id is checked here; the link is built here.
   if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id))
-    throw new VaultError("bad-path", "Bad proposal");
+    throw new NoteError("bad-path", "Bad proposal");
   if (prefs.boniUrl) {
     void showPeek("peek:proposal", id);
     return null;
@@ -406,7 +355,7 @@ function dropPeek() {
   peekWin = null;
   peekReady = null;
 }
-/** Shows the peek on a note (`peek:note`, its vault path) or a proposal (`peek:proposal`, its id). */
+/** Shows the peek on a note (`peek:note`, its path) or a proposal (`peek:proposal`, its id). */
 async function showPeek(channel, value) {
   await makePeek();
   const win = peekWin;
@@ -442,7 +391,7 @@ ipcMain.on("peek:open-in-boni", (e, rel) => {
 });
 
 // A click in the calendar puts a peek away: its own at once; Boni's (no address set) by boni://peek?hide=1, a
-// moment later so that the click which opens another note (it reaches vault:open-note just after) does not hide it.
+// moment later so that the click which opens another note (it reaches notes:open-note just after) does not hide it.
 let boniPeekOpen = false;
 let peekHideTimer = null;
 function peekClick() {
@@ -454,18 +403,6 @@ function peekClick() {
     void shell.openExternal("boni://peek?hide=1");
   }, 250);
 }
-handle("vault:create", (rel, text) => vault.create(rel, text));
-ipcMain.handle("vault:choose-root", async (e) => {
-  try {
-    const win = BrowserWindow.fromWebContents(e.sender);
-    const r = await dialog.showOpenDialog(win, { properties: ["openDirectory"] });
-    if (r.canceled || !r.filePaths[0]) return { ok: true, value: null };
-    return { ok: true, value: useVault(r.filePaths[0]) };
-  } catch (err) {
-    return { ok: false, code: err.code ?? "error", message: String(err.message ?? err) };
-  }
-});
-
 ipcMain.on("save-bench", (_e, json) => {
   const out = process.env.BONI_BENCH_OUT;
   if (out) fs.writeFileSync(out, json);
@@ -486,7 +423,6 @@ if (
   });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
-    restoreVault();
     const bench = Boolean(process.env.BONI_BENCH_OUT || process.env.BONI_SCREENSHOT);
     if (!bench) {
       prefs = loadPrefs(prefsFile());
