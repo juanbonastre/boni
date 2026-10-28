@@ -10,15 +10,14 @@ import {
 } from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
 import { leadingTitle } from "@boni/views";
+import { HASH_FIELD, PATH_FIELD } from "./paths.ts";
 
 /**
- * A note made by Boni itself (a captured movement) taken as an entity of a type that lives in Boni (core mode):
- * each property into the field of its name (made when missing), options by name, `[[links]]` to the entity of
- * the target type whose note has that name; the note's path kept, so Boni's mirror writes the note just there.
- * The values are the user's (the capture came from one of his devices).
+ * A note made by Boni itself (a captured movement, a statement's line) taken as an entity of a type: each
+ * property into the field of its name (made when missing), options by name, `[[links]]` to the entity of the
+ * target type whose note has that name; the path that note would have had kept, which is how it is found again
+ * until notes stop having paths. The values are the user's (the capture came from one of his devices).
  */
-const PATH_FIELD = "f_vault_path";
-const HASH_FIELD = "f_vault_hash";
 
 const keyOf = (name: string) => {
   const k = name
@@ -41,7 +40,7 @@ export function entityFromNote(
   device: string,
   /**
    * Where the values came from when it is not Juan typing them (a bank statement: `imported`, its file as the
-   * source), and whether the note's first `# Heading` is its title (as the vault's import takes it).
+   * source), and whether the note's first `# Heading` is its title (as Juan's first import took it).
    */
   o: {
     from?: { integrity: "imported"; source: SourceRef };

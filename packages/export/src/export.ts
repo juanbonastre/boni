@@ -1,7 +1,7 @@
 import { formatNote } from "@boni/calendar";
 import type { FieldDef, Label, TypeDef, Value } from "@boni/entities";
-import { type Links, render, safeName } from "@boni/mirror";
 import type { StoredEntity, UserStore } from "@boni/store";
+import { type Links, render, safeName } from "./markdown.ts";
 import { writeZip, type ZipEntry, zipChunks } from "./zip.ts";
 
 /**
@@ -11,13 +11,13 @@ import { writeZip, type ZipEntry, zipChunks } from "./zip.ts";
  *   schema.json              every type as Boni keeps it, and a JSON Schema for each type's records
  *   json/<type>.ndjson       one entity per line: values by field key, body, labels, times (the faithful copy;
  *                            `importExport` reads it back)
- *   <type>/<title>.md        Markdown with YAML properties, as the generic mirror writes it (Obsidian opens it)
+ *   <type>/<title>.md        Markdown with YAML properties (markdown.ts; Obsidian or any editor opens it)
  *   csv/<type>.csv           for a spreadsheet
  *   files/<sha256>           the attachments (`file` values), their types in schema.json
  *   views.json               the account's charts and shortcuts (what the server passes)
  *   log.ndjson               the operation log, when asked for
  * Boni's own types (memory, jobs) go only to json/. Entities in the trash are left out. Text from a model or
- * from outside is neutralized in the Markdown (P17) like in the mirror; the NDJSON keeps it as it is.
+ * from outside is neutralized in the Markdown (P17); the NDJSON keeps it as it is.
  */
 export const FORMAT = "boni-export";
 export const VERSION = 1;
@@ -212,7 +212,6 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
   }
   const links: Links = {
     nameOf: (id) => notePath.get(id)?.split("/").pop()?.replace(/\.md$/, "") ?? null,
-    resolve: () => null,
   };
   const title = (id: string) => titleOf.get(id) ?? id;
 
@@ -223,15 +222,8 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
       data: enc(list.map((s) => `${JSON.stringify(toRecord(s, t))}\n`).join("")),
     });
     if (t.system) continue;
-    const m = {
-      type: t.id,
-      profile: "generic" as const,
-      folder: t.key,
-      props: {},
-      schema: t.schemaVersion,
-    };
     for (const s of list) {
-      const r = render(s, t, m, links);
+      const r = render(s, t, links);
       out.push({
         path: notePath.get(s.entity.id) as string,
         data: enc(formatNote(r.props, r.body)),

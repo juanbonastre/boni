@@ -20,11 +20,9 @@
     "@boni/agent": "workspace:*",
     "@boni/calendar": "workspace:*",
     "@boni/entities": "workspace:*",
-    "@boni/mirror": "workspace:*",
     "@boni/store": "workspace:*"
   },
   "devDependencies": {
-    "@boni/vault-import": "workspace:*",
     "@types/node": "24.19.2",
     "vitest": "5.0.4"
   }

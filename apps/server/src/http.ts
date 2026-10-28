@@ -8,7 +8,6 @@ import {
   toLocal,
 } from "@boni/calendar";
 import { exportChunks, releaseSent } from "@boni/export";
-import { CORE_MARK } from "@boni/mirror";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
 import {
@@ -23,7 +22,7 @@ import {
   setAuditSettings,
   systemColumns,
 } from "./audit.ts";
-import { login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
+import { listUsers, login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
 import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
 import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import {
@@ -68,7 +67,6 @@ import { serveV1 } from "./v1/http.ts";
 import { V1Service } from "./v1/service.ts";
 import { V1Store } from "./v1/store.ts";
 import { StoreMoney } from "./v1/storeMoney.ts";
-import type { Vaults } from "./vaults.ts";
 
 /**
  * The server's HTTP API (JSON), all under /api, every call but login with `Authorization: Bearer
@@ -85,7 +83,7 @@ import type { Vaults } from "./vaults.ts";
  *   PUT  /api/account/externals { externals }  -> { updated } (stored encrypted)
  *   GET  /api/external?id=X[&fresh=1] -> { text, at }: that external calendar, downloaded by the server
  *   PUT  /api/collections/reminders { collectionId, reminders?, eventColumn? } -> {} (with BONI_WRITE):
- *        a calendar's reminders, written in its definition note
+ *        a calendar's reminders, kept in its definition
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
  *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change)
  *   GET  /api/mail · PUT /api/mail { host, port, user, password?, folder, collections, on } · POST /api/mail/check ·
@@ -100,7 +98,8 @@ import type { Vaults } from "./vaults.ts";
  */
 export interface ServerOptions {
   db: Db;
-  vaults: Vaults;
+  /** Whether devices may change the calendar and the v1 captures be written (BONI_WRITE). */
+  write?: boolean;
   /** Encrypts the account's secrets (secret.ts). */
   key: SecretKey;
   /** Downloads external calendars for the accounts (feeds.ts). */
@@ -183,7 +182,8 @@ export function serve(app: App, listener: Listener): Server {
  * streams of the other.
  */
 export function makeApp(opts: ServerOptions): App {
-  const { db, vaults, key, feeds, push } = opts;
+  const { db, key, feeds, push } = opts;
+  const writable = opts.write === true;
   const routes = opts.routes ?? ROUTES;
   const guard = opts.guard ?? new LoginGuard();
   /** Live streams of each account, told when its prefs or calendars change. */
@@ -193,8 +193,8 @@ export function makeApp(opts: ServerOptions): App {
     push?.changed([userId]);
   };
   /**
-   * An account's calendar: from its own collections in Boni once they moved there (their definitions are in the
-   * store, `calendar/defs`), else from its vault as before.
+   * An account's calendar: its own collections in Boni (their definitions are in its store, `calendar/defs`);
+   * none when it keeps none.
    */
   const storeCalendars = new Map<number, StoreCalendar>();
   const onStore = (account: number): boolean => {
@@ -205,43 +205,24 @@ export function makeApp(opts: ServerOptions): App {
       return false;
     }
   };
-  const calendarOf = (user: { id: number; vault: string }): CalendarSource | null => {
-    if (onStore(user.id)) {
-      let c = storeCalendars.get(user.id);
-      if (!c) {
-        c = new StoreCalendar((opts.agent as NonNullable<typeof opts.agent>).store(user.id), {
-          write: vaults.writable,
-        });
-        storeCalendars.set(user.id, c);
-        const id = user.id;
-        c.subscribe(() => push?.changed([id]));
-      }
-      return c;
+  const calendarOf = (user: { id: number }): CalendarSource | null => {
+    if (!onStore(user.id)) return null;
+    let c = storeCalendars.get(user.id);
+    if (!c) {
+      c = new StoreCalendar((opts.agent as NonNullable<typeof opts.agent>).store(user.id), {
+        write: writable,
+      });
+      storeCalendars.set(user.id, c);
+      const id = user.id;
+      c.subscribe(() => push?.changed([id]));
     }
-    return user.vault ? vaults.get(user.vault) : null;
-  };
-  /** With push on, a change in a vault tells the devices of every account that uses it. */
-  const watched = new Set<string>();
-  const watchVault = (root: string) => {
-    if (!push || watched.has(root)) return;
-    watched.add(root);
-    const v = vaults.get(root);
-    v.subscribe(() => {
-      const users = db.prepare("SELECT id FROM accounts WHERE vault = ?").all(root) as {
-        id: number;
-      }[];
-      push.changed(users.map((u) => u.id));
-    });
-    void v.snapshot().catch((e) => console.warn("vault", e));
+    return c;
   };
   if (push) {
-    // A vault is read (and its series topped up) only for accounts whose calendar still lives there.
-    for (const u of db
-      .prepare("SELECT id, vault FROM accounts WHERE vault IS NOT NULL AND vault != ''")
-      .all() as { id: number; vault: string }[]) {
+    // Each calendar watched from the start: a change tells the account's devices (and its series are topped up).
+    for (const u of listUsers(db)) {
       try {
-        if (onStore(u.id)) calendarOf({ id: u.id, vault: u.vault });
-        else watchVault(u.vault);
+        calendarOf(u);
       } catch (e) {
         console.warn("calendar", e instanceof Error ? e.message : e);
       }
@@ -252,60 +233,51 @@ export function makeApp(opts: ServerOptions): App {
 
   const tz = opts.tz ?? "Europe/Madrid";
   const v1store = new V1Store(db);
+  /** The account's store when it keeps its movements in Boni (the collection Movimiento). */
+  const moneyStore = (account: number) => {
+    if (!opts.agent?.hasData) return null;
+    const store = opts.agent.store(account);
+    return store.schema().types.t_movimiento ? store : null;
+  };
   const v1 = new V1Service({
     store: v1store,
     tz,
-    writable: vaults.writable,
-    // "Apuntar gasto" with the movements in Boni: the movement goes into Boni and its mirror writes the note.
+    writable,
+    // "Apuntar gasto": the movement goes into Boni, with the path its note would have had.
     intoBoni: (account, path, text, device) => {
-      if (!opts.agent?.hasData) return false;
-      const store = opts.agent.store(account);
-      if (store.setting(`${CORE_MARK}t_movimiento`) === null) return false;
+      const store = moneyStore(account);
+      if (!store) return false;
       entityFromNote(store, "t_movimiento", path, text, device);
-      opts.agent.onChanged?.(account);
       return true;
     },
     outOfBoni: (account, path, device) => {
-      if (!opts.agent?.hasData) return false;
-      const store = opts.agent.store(account);
-      if (store.setting(`${CORE_MARK}t_movimiento`) === null) return false;
+      const store = moneyStore(account);
+      if (!store) return false;
       try {
         removeRow(store, findByPath(store, path).id, device);
       } catch {
         return false;
       }
-      opts.agent.onChanged?.(account);
       return true;
     },
     moneyOf: (account) => {
-      if (!opts.agent?.hasData) return null;
-      const store = opts.agent.store(account);
-      return store.setting(`${CORE_MARK}t_movimiento`) === null ? null : new StoreMoney(store);
+      const store = moneyStore(account);
+      return store ? new StoreMoney(store) : null;
     },
     ...(opts.now ? { now: opts.now } : {}),
   });
-  const vaultOf = (id: number): string | null => {
-    const r = db.prepare("SELECT vault FROM accounts WHERE id = ?").get(id) as
-      | { vault: string | null }
-      | undefined;
-    return r ? (r.vault ?? "") : null;
-  };
-  const hasVault = () =>
-    !!db.prepare("SELECT 1 FROM accounts WHERE vault IS NOT NULL AND vault != '' LIMIT 1").get();
-  // Captures that could not be written yet, and the apps told when their money notes change.
+  const hasMoney = () => listUsers(db).some((u) => moneyStore(u.id) !== null);
+  // Captures that could not be written yet, and the apps told when their money changes.
   const flush = () => {
     try {
-      const n = v1.flushOutbox(vaultOf);
+      const n = v1.flushOutbox();
       if (n) console.log(`v1 outbox: ${n} capture(s) written`);
     } catch (e) {
       console.error("v1 outbox", e);
     }
   };
   flush();
-  const timers = [
-    setInterval(flush, 60_000),
-    setInterval(() => v1.checkData((id) => vaultOf(id) ?? ""), 60_000),
-  ];
+  const timers = [setInterval(flush, 60_000), setInterval(() => v1.checkData(), 60_000)];
   for (const t of timers) t.unref();
 
   const authed = (req: IncomingMessage, res: ServerResponse): User | null => {
@@ -329,7 +301,7 @@ export function makeApp(opts: ServerOptions): App {
     if (!allowed(route, listener, routes)) return send(res, 404, { error: "not-found" });
     if (route === "GET /healthz" || url.pathname.startsWith("/api/v1/"))
       return serveV1(
-        { svc: v1, db, guard, tz, hasVault, proxies: opts.trustedProxies },
+        { svc: v1, db, guard, tz, hasMoney, proxies: opts.trustedProxies },
         req,
         res,
         url,
@@ -368,8 +340,6 @@ export function makeApp(opts: ServerOptions): App {
         });
       }
       const out = mcpAnswer(opts.agent.store(s.user.id), s.device, body, opts.now ?? Date.now);
-      // What it wrote reaches the mirror at once.
-      opts.agent.onChanged?.(s.user.id);
       if (out === null) {
         res.writeHead(202, { ...CORS, ...SAFE });
         return void res.end();
@@ -391,8 +361,6 @@ export function makeApp(opts: ServerOptions): App {
           now: now(),
           usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
         });
-      // A change made here reaches the mirror (and so the vault) at once.
-      if (req.method !== "GET") res.on("finish", () => opts.agent?.onChanged?.(s.user.id));
       try {
         if (route === "GET /api/data/types")
           return send(res, 200, { types: listTypes(store, sys()) });
@@ -678,30 +646,27 @@ export function makeApp(opts: ServerOptions): App {
     }
     const user = authed(req, res);
     if (!user) return;
-    // An account without a calendar (no vault, nothing moved to Boni) has none here.
-    const vault = calendarOf(user);
-    if (!vault) return send(res, 403, { error: "no-calendar" });
-    if (!onStore(user.id)) watchVault(user.vault);
+    // An account that keeps no calendar has none here.
+    const calendar = calendarOf(user);
+    if (!calendar) return send(res, 403, { error: "no-calendar" });
     switch (route) {
       case "POST /api/logout":
         logout(db, tokenOf(req) ?? "");
         return send(res, 200, {});
       case "GET /api/me":
-        return send(res, 200, { user: { name: user.name }, write: vault.writable });
+        return send(res, 200, { user: { name: user.name }, write: calendar.writable });
       case "POST /api/apply": {
-        if (!vault.writable) return send(res, 403, { error: "read-only" });
+        if (!calendar.writable) return send(res, 403, { error: "read-only" });
         const b = await bodyOf(req);
         const base = Number(b.base);
         if (!Number.isInteger(base) || !Array.isArray(b.changes))
           return send(res, 400, { error: "bad-request" });
-        const r = await vault.apply(
+        const r = await calendar.apply(
           base,
           b.changes as RowChange[],
           tokenOf(req) ?? "",
           sessionUser(db, tokenOf(req))?.device,
         );
-        // Boni's mirror writes the change into the vault now, not at its next round.
-        if (r.ok && onStore(user.id)) opts.agent?.onChanged?.(user.id);
         return r.ok
           ? send(res, 200, r)
           : send(res, 409, { error: "conflict", conflict: r.conflict });
@@ -741,7 +706,7 @@ export function makeApp(opts: ServerOptions): App {
         }
       }
       case "PUT /api/collections/reminders": {
-        if (!vault.writable) return send(res, 403, { error: "read-only" });
+        if (!calendar.writable) return send(res, 403, { error: "read-only" });
         const b = await bodyOf(req);
         if (typeof b.collectionId !== "string") return send(res, 400, { error: "bad-request" });
         // Only what parses as reminders is written (never free text into a definition).
@@ -751,7 +716,7 @@ export function makeApp(opts: ServerOptions): App {
             : b.reminders === undefined
               ? undefined
               : formatReminderDefaults(parseReminderDefaults(b.reminders));
-        const r = await vault.setReminders(b.collectionId, {
+        const r = await calendar.setReminders(b.collectionId, {
           ...(reminders !== undefined ? { reminders } : {}),
           ...(b.eventColumn === true ? { eventColumn: true } : {}),
         });
@@ -767,7 +732,7 @@ export function makeApp(opts: ServerOptions): App {
         }
         const hours = Math.min(14 * 24, Math.max(1, Number(q.get("hours")) || 7 * 24));
         const notices = await noticesOfAccount(
-          vault,
+          calendar,
           readAccount(db, key, user.id),
           feeds,
           user.id,
@@ -791,15 +756,15 @@ export function makeApp(opts: ServerOptions): App {
         push?.unregister(tokenHash(tokenOf(req) ?? ""));
         return send(res, 200, {});
       case "GET /api/snapshot":
-        return send(res, 200, await vault.snapshot());
+        return send(res, 200, await calendar.snapshot());
       case "GET /api/changes": {
-        await vault.snapshot();
+        await calendar.snapshot();
         const since = Number(url.searchParams.get("since"));
         if (!Number.isInteger(since)) return send(res, 400, { error: "since" });
-        return send(res, 200, vault.changes(since));
+        return send(res, 200, calendar.changes(since));
       }
       case "GET /api/stream": {
-        await vault.snapshot();
+        await calendar.snapshot();
         res.writeHead(200, {
           ...CORS,
           ...SAFE,
@@ -808,7 +773,7 @@ export function makeApp(opts: ServerOptions): App {
           connection: "keep-alive",
         });
         res.write(": connected\n\n");
-        const off = vault.subscribe((c) =>
+        const off = calendar.subscribe((c) =>
           res.write(`event: changes\ndata: ${JSON.stringify(c)}\n\n`),
         );
         const onAccount = (updated: number) =>

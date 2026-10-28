@@ -1,8 +1,7 @@
 # Boni Calendar server. Build from the repository root:
 #   docker build -f apps/server/Dockerfile -t boni-calendar-server .
-# It runs TypeScript directly (Node 24) and reuses packages/calendar, the web app's vault loader and the
-# desktop shell's vault access, so the server applies exactly the apps' rules. Data: /data (SQLite);
-# the vault is mounted where the account says (see docs/servidor.md).
+# It runs TypeScript directly (Node 24) and reuses packages/calendar, so the server applies the apps' rules.
+# Data: /data (system.db and each account's store, SQLite; see docs/servidor.md).
 FROM node:24-alpine
 RUN corepack enable && apk add --no-cache tini
 WORKDIR /app

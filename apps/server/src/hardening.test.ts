@@ -13,39 +13,52 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { label } from "@boni/entities";
 import { wrappedKeysIn } from "@boni/identity";
-import { openMirrorState } from "@boni/mirror";
 import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { AgentHost } from "./agent.ts";
 import { addUser, SESSION_IDLE_MS } from "./auth.ts";
 import { backupNow, backupStoresNow } from "./backups.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { makeServer } from "./http.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
-import { Vaults } from "./vaults.ts";
+import { calendarDef, seed } from "./seed.test-util.ts";
 
 /** Phase 6: what the server needs before it is reachable from the internet. */
 const PASSWORD = "una contraseña larga de ejemplo";
 let dir: string;
 let db: Db;
-let vaults: Vaults;
+let host: AgentHost;
 let base: string;
 let server: ReturnType<typeof makeServer>;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-server-hardening-"));
-  mkdirSync(join(dir, "vault", "_system/colecciones"), { recursive: true });
   mkdirSync(join(dir, "web"));
   mkdirSync(join(dir, "web2"));
   writeFileSync(join(dir, "web", "index.html"), "<!doctype html><title>Boni Calendar</title>");
   writeFileSync(join(dir, "web2", "secreto.txt"), "no");
   db = openDb(join(dir, "db.sqlite"));
-  addUser(db, "juan", PASSWORD, join(dir, "vault"));
-  addUser(db, "otra", PASSWORD, join(dir, "vault"));
-  vaults = new Vaults();
+  addUser(db, "juan", PASSWORD);
+  addUser(db, "otra", PASSWORD);
+  // Each account with a calendar of its own (its data apart from the backups' test below).
+  host = new AgentHost({ dataDir: join(dir, "data"), providers: null });
+  for (const account of [1, 2])
+    seed(
+      host.store(account),
+      [
+        {
+          key: "docencia",
+          name: "Docencia",
+          folder: "agenda/docencia/",
+          calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
+        },
+      ],
+      {},
+    );
   server = makeServer({
     db,
-    vaults,
+    agent: host,
     key: randomBytes(32),
     feeds: new Feeds(async () => ""),
     webDir: join(dir, "web"),
@@ -58,7 +71,7 @@ beforeAll(async () => {
 afterAll(async () => {
   server.closeAllConnections();
   await new Promise((r) => server.close(r));
-  vaults.close();
+  host.close();
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -156,7 +169,7 @@ describe("backups", () => {
     expect(existsSync(join(out, "secret.key"))).toBe(false);
   });
 
-  it("each account's store and mirror state, encrypted with the account's key", () => {
+  it("each account's store, encrypted with the account's key", () => {
     const users = join(dir, "users");
     mkdirSync(users, { recursive: true });
     const store = openUserStore(join(users, "1.db"));
@@ -178,16 +191,11 @@ describe("backups", () => {
       { actor: "user" },
     );
     store.create("t_libro", { f_titulo: { value: "MARCA-LIBRO", label: own } }, { actor: "user" });
-    const mirror = openMirrorState(join(users, "1.mirror.db"));
-    mirror.setSynced(7);
-    mirror.close();
     const out = join(dir, "backups-stores");
     const master = randomBytes(32);
     const o = { usersDir: users, accounts: () => [1, 2], store: () => store, master };
     for (let d = 1; d <= 4; d++) backupStoresNow(db, out, 2, o, new Date(Date.UTC(2026, 9, d)));
     expect(readdirSync(out).sort()).toEqual([
-      "mirror-1-2026-10-03.db.sealed",
-      "mirror-1-2026-10-04.db.sealed",
       "user-1-2026-10-03.db.sealed",
       "user-1-2026-10-04.db.sealed",
     ]);
@@ -199,10 +207,6 @@ describe("backups", () => {
     const back = openUserStore(join(dir, "back.db"));
     expect(back.list("t_libro").map((s) => s.entity.values.f_titulo)).toEqual(["MARCA-LIBRO"]);
     back.close();
-    restoreBackup(join(out, "mirror-1-2026-10-04.db.sealed"), key, join(dir, "mirror-back.db"));
-    const m = openMirrorState(join(dir, "mirror-back.db"));
-    expect(m.synced()).toBe(7);
-    m.close();
     const other = wrappedKeyProvider(master, wrappedKeysIn(db)).dataKey("2");
     expect(() =>
       restoreBackup(join(out, "user-1-2026-10-04.db.sealed"), other, join(dir, "x.db")),

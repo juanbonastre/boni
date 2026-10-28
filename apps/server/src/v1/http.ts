@@ -122,8 +122,8 @@ export interface V1Http {
   /** Proxies whose X-Forwarded-For is trusted besides loopback (limits.ts). */
   proxies?: ReadonlySet<string>;
   tz: string;
-  /** Whether any account has a vault here (for /healthz). */
-  hasVault: () => boolean;
+  /** Whether any account keeps its money in Boni here (for /healthz). */
+  hasMoney: () => boolean;
 }
 
 /** Serves one v1 request (`route` from routes.ts, already allowed on this entry). */
@@ -143,7 +143,7 @@ export async function serveV1(
         status: "ok",
         version: VERSION,
         api_version: API_VERSION,
-        sources: { vault: o.hasVault() ? "ok" : "not_configured" },
+        sources: { boni: o.hasMoney() ? "ok" : "not_configured" },
       });
     if (route === "POST /api/v1/login") {
       const b = await body(req);
@@ -178,7 +178,7 @@ export async function serveV1(
     if (!token) return err(res, 401, "unauthorized", "Falta la sesión: entra con tu usuario");
     const s = sessionUser(db, token);
     if (!s) return err(res, 401, "unauthorized", "La sesión ha terminado: vuelve a entrar");
-    const c: Caller = { account: s.user.id, device: s.device, vault: s.user.vault };
+    const c: Caller = { account: s.user.id, device: s.device };
     const id = params.id ?? "";
     switch (route) {
       case "GET /api/v1/me":
@@ -301,7 +301,7 @@ export async function serveV1(
   } catch (e) {
     if (e instanceof NotFound) return err(res, 404, "not_found", `No existe: ${e.message}`);
     if (e instanceof Unavailable) {
-      console.warn(`v1: vault unavailable: ${e.message}`);
+      console.warn(`v1: money unavailable: ${e.message}`);
       return err(res, 503, "source_unavailable", "No se puede llegar a los datos ahora mismo");
     }
     if (e instanceof BadRequest) return err(res, 422, "bad_request", e.message);

@@ -1,42 +1,30 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { type ChildProcess, spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer as createHttp } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { definitionNote } from "../apps/calendar-web/src/vault/testing.ts";
+import { calendarDef } from "../apps/server/src/seed.test-util.ts";
+import { mcpOf, seedAccount, titleInStore } from "./server-data.ts";
 
 /**
- * The app with Boni Calendar Server: a real server (apps/server) on an invented vault and account,
- * the app connecting to it from its own origin (like the desktop and Android apps do).
+ * The app with Boni Calendar Server: a real server (apps/server) with an invented account whose calendar is in
+ * its own collections, the app connecting to it from its own origin (like the desktop and Android apps do).
  */
 const NOW = "2025-09-17T14:29";
 const PASSWORD = "una contraseña larga de ejemplo";
 test.describe.configure({ mode: "serial" });
 
 const note = (title: string, date: string, start: string) =>
-  `---\ntitle: "${title}"\ndate: "${date}"\nstartTime: "${start}"\nendTime: "${start.replace(/^(\d\d)/, (h) => String(Number(h) + 1).padStart(2, "0"))}"\ntimezone: "Europe/Madrid"\ncompleted:\n---\nArea: [[docencia]]\n`;
+  `---\ntitle: "${title}"\ndate: "${date}"\nstartTime: "${start}"\nendTime: "${start.replace(/^(\d\d)/, (h) => String(Number(h) + 1).padStart(2, "0"))}"\ntimezone: "Europe/Madrid"\ncompleted:\n---\n`;
 
 let dir: string;
 let proc: ChildProcess | null = null;
 let url: string;
-
-const read = (rel: string) =>
-  existsSync(join(dir, "vault", rel)) ? readFileSync(join(dir, "vault", rel), "utf8") : null;
-
-function write(rel: string, text: string) {
-  mkdirSync(dirname(join(dir, "vault", rel)), { recursive: true });
-  writeFileSync(join(dir, "vault", rel), text);
-}
+let mcp: ReturnType<typeof mcpOf>;
+/** An entry's title as Boni has it (null: no entry with that path). */
+const titleOf = async (path: string) => (await mcp.read(path))?.title ?? null;
 
 const freePort = () =>
   new Promise<number>((resolve) => {
@@ -77,26 +65,28 @@ function stopServer() {
 
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-e2e-server-"));
-  write(
-    "_system/colecciones/docencia.md",
-    definitionNote("docencia", "Docencia", "agenda/docencia", "docencia"),
-  );
-  write(
-    "agenda/docencia/2025-09-17 Clase del servidor.md",
-    note("Clase del servidor", "2025-09-17", "09:00"),
-  );
-  execFileSync(
-    process.execPath,
+  seedAccount(
+    dir,
+    "juan",
+    PASSWORD,
     [
-      "--disable-warning=ExperimentalWarning",
-      "apps/server/src/cli.ts",
-      "add-user",
-      "juan",
-      join(dir, "vault"),
+      {
+        key: "docencia",
+        name: "Docencia",
+        folder: "agenda/docencia/",
+        calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
+      },
     ],
-    { env: { ...process.env, BONI_DB: join(dir, "db.sqlite"), BONI_PASSWORD: PASSWORD } },
+    {
+      "agenda/docencia/2025-09-17 Clase del servidor.md": note(
+        "Clase del servidor",
+        "2025-09-17",
+        "09:00",
+      ),
+    },
   );
   await startServer();
+  mcp = mcpOf(dir, () => url, "juan");
 });
 
 test.afterAll(() => {
@@ -126,15 +116,18 @@ test("a browser logs in to the server and shows its calendar, live", async ({ pa
   await expect(page.locator(".modal")).toContainText("En directo · 1 nota");
   await page.screenshot({ path: "e2e/screenshots/server-settings.png" });
   await page.keyboard.press("Escape");
-  // The vault's note, not the sample data.
+  // The account's entry, not the sample data.
   await expect(page.locator(".ev", { hasText: "Clase del servidor" })).toHaveCount(1);
   await expect(page.locator(".ev", { hasText: "Clase FUP" })).toHaveCount(0);
 
-  // Changed on the server's side (Obsidian, Syncthing): it shows up without reloading.
-  write(
-    "agenda/docencia/2025-09-18 Llegada en vivo.md",
-    note("Llegada en vivo", "2025-09-18", "11:00"),
-  );
+  // Made in Boni meanwhile (an assistant, a page): it shows up without reloading.
+  const made = await mcp.call("create", {
+    collection: "Docencia",
+    title: "Llegada en vivo",
+    path: "agenda/docencia/2025-09-18 Llegada en vivo.md",
+    properties: { Fecha: "2025-09-18", Inicio: "11:00", Fin: "12:00", Zona: "Europe/Madrid" },
+  });
+  expect(made.error, made.text).toBe(false);
   await expect(page.locator(".ev", { hasText: "Llegada en vivo" })).toHaveCount(1, {
     timeout: 5000,
   });
@@ -298,7 +291,7 @@ test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and 
   await expect.poll(async () => (await opened()).at(-1)).toEqual([path, true]);
 });
 
-test("edits go to the notes through the server: only the edited line, new events, deletions", async ({
+test("edits go to Boni through the server: only the edited property, new events, deletions", async ({
   page,
 }) => {
   await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
@@ -306,16 +299,16 @@ test("edits go to the notes through the server: only the edited line, new events
   await expect(page.locator(".modal")).toContainText("En directo");
   await page.keyboard.press("Escape");
   const path = "agenda/docencia/2025-09-17 Clase del servidor.md";
-  const before = read(path) as string;
+  const before = (await mcp.read(path))?.properties as Record<string, unknown>;
   await page.locator(".ev", { hasText: "Clase del servidor" }).click();
   await page.locator(".popover .title-input").fill("Clase renombrada");
   await page.locator(".popover .title-input").press("Enter");
-  await expect.poll(() => read(path)).toContain('title: "Clase renombrada"');
-  const changed = (read(path) as string).split("\n").filter((l, i) => l !== before.split("\n")[i]);
-  expect(changed).toEqual(['title: "Clase renombrada"']);
+  await expect.poll(() => titleOf(path)).toBe("Clase renombrada");
+  const after = (await mcp.read(path))?.properties as Record<string, unknown>;
+  expect(Object.keys(after).filter((k) => after[k] !== before[k])).toEqual(["Título"]);
   await page.keyboard.press("Escape");
 
-  // A new event becomes a note once it has a title; the server's copy replaces the device's one.
+  // A new event becomes an entry once it has a title; the server's copy replaces the device's one.
   const cols = await page.locator(".cols-viewport").boundingBox();
   if (!cols) throw new Error("no grid");
   const x = cols.x + (cols.width / 7) * 3.5; // Thursday 18
@@ -331,9 +324,13 @@ test("edits go to the notes through the server: only the edited line, new events
   await page.waitForTimeout(800);
   await page.locator(".popover .title-input").fill("Tutoría inventada");
   await page.locator(".popover .title-input").press("Enter");
-  const made = "agenda/docencia/2025-09-18 Tutoría inventada.md";
-  await expect.poll(() => read(made)).toContain('title: "Tutoría inventada"');
-  expect(read(made)).toContain("Area: [[docencia]]");
+  // An entry of Docencia (made in Boni: no note path), with the area its collection gives new entries, kept
+  // while the device sent its draft again.
+  const made = async () => {
+    const r = await mcp.call("read", { collection: "Docencia", title: "Tutoría inventada" });
+    return r.error ? null : (JSON.parse(r.text) as { properties: Record<string, unknown> });
+  };
+  await expect.poll(async () => (await made())?.properties.area).toBe("[[docencia]]");
   await page.waitForTimeout(1000);
   await expect(page.locator(".ev", { hasText: "Tutoría inventada" })).toHaveCount(1);
   await expect(page.locator(".popover .title-input")).toHaveValue("Tutoría inventada");
@@ -343,8 +340,7 @@ test("edits go to the notes through the server: only the edited line, new events
   await page.keyboard.press("Escape");
   await page.locator(".ev", { hasText: "Tutoría inventada" }).click();
   await page.keyboard.press("Delete");
-  await expect.poll(() => read(made)).toBeNull();
-  expect(readdirSync(join(dir, "vault", ".trash"))).toContain("2025-09-18 Tutoría inventada.md");
+  await expect.poll(made).toBeNull();
   await expect(page.locator(".ev", { hasText: "Tutoría inventada" })).toHaveCount(0);
 });
 
@@ -364,16 +360,14 @@ test("without a connection, edits wait on the device (also over a restart) and g
   await page.locator(".popover .title-input").press("Enter");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(500);
-  expect(read(path)).toContain('title: "Llegada en vivo"');
+  expect(titleInStore(dir, 1, path)).toBe("Llegada en vivo");
 
   // Closed and opened again without a connection: the change is still there.
   await page.reload();
   await expect(page.locator(".ev", { hasText: "Cambiada sin conexión" })).toHaveCount(1);
 
   await startServer();
-  await expect
-    .poll(() => read(path), { timeout: 15_000 })
-    .toContain('title: "Cambiada sin conexión"');
+  await expect.poll(() => titleOf(path), { timeout: 15_000 }).toBe("Cambiada sin conexión");
   await expect(page.locator(".ev", { hasText: "Cambiada sin conexión" })).toHaveCount(1);
 });
 

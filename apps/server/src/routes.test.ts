@@ -5,19 +5,20 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { allowed, ROUTES, routeOf } from "./routes.ts";
-import { Vaults } from "./vaults.ts";
+import { calendarDef, seed } from "./seed.test-util.ts";
 
 /** The two entries of the server (routes.ts): the whole API on the tailnet, the allow-list in public. */
 const PASSWORD = "una contraseña larga de ejemplo";
 let dir: string;
 let db: Db;
-let vaults: Vaults;
+let host: AgentHost;
 const servers: Server[] = [];
 let tailnet: string;
 let pub: string;
@@ -31,18 +32,29 @@ async function listen(s: Server): Promise<string> {
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-server-routes-"));
-  mkdirSync(join(dir, "vault", "_system/colecciones"), { recursive: true });
   mkdirSync(join(dir, "web"));
   writeFileSync(join(dir, "web", "index.html"), "<!doctype html><title>Boni Calendar</title>");
   mkdirSync(join(dir, "boni-web", "assets"), { recursive: true });
   writeFileSync(join(dir, "boni-web", "index.html"), "<!doctype html><title>Boni</title>");
   writeFileSync(join(dir, "boni-web", "assets", "app.js"), "console.log(1)");
   db = openDb(join(dir, "db.sqlite"));
-  addUser(db, "juan", PASSWORD, join(dir, "vault"));
-  vaults = new Vaults();
+  addUser(db, "juan", PASSWORD);
+  host = new AgentHost({ dataDir: dir, providers: null });
+  seed(
+    host.store(1),
+    [
+      {
+        key: "docencia",
+        name: "Docencia",
+        folder: "agenda/docencia/",
+        calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
+      },
+    ],
+    {},
+  );
   const opts = {
     db,
-    vaults,
+    agent: host,
     key: randomBytes(32),
     feeds: new Feeds(async () => ""),
     webDir: join(dir, "web"),
@@ -66,7 +78,7 @@ afterAll(async () => {
     s.closeAllConnections();
     await new Promise((r) => s.close(r));
   }
-  vaults.close();
+  host.close();
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });

@@ -1,15 +1,15 @@
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
 import type { StoredEntity, UserStore } from "@boni/store";
 import { entityFromNote, propWrites } from "../fromNote.ts";
+import { PATH_FIELD } from "../paths.ts";
 import type { Book, MoneyNote, PropValue } from "./reconcile.ts";
 
 /**
- * The reconciliation's book over Boni's own movements and debts (core mode): each entity as the note the script
- * read (its properties by name: an option by its name, a relation as the `[[note]]` it points to), a new movement
- * made from the script's note text (Boni's mirror writes the note), a change by property name. What comes from a
+ * The reconciliation's book over Boni's own movements and debts: each entity as the note the script read (its
+ * properties by name: an option by its name, a relation as the `[[note]]` it points to), a new movement made from
+ * the script's note text (kept as the entry, with the path that note would have had), a change by property name. What comes from a
  * statement is `imported` with the statement as its source; the close's marks are the code's.
  */
-const PATH_FIELD = "f_vault_path";
 const MOVEMENTS = "t_movimiento";
 const DEBTS = "t_deuda";
 /** The account's "Categorías" (collections.ts): a movement's category is read as the row's name. */

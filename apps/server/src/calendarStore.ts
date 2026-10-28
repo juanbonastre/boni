@@ -1,6 +1,7 @@
 import {
   type CalEvent,
   type CollectionDef,
+  type CollectionSnapshot,
   defsToModel,
   diffRows,
   extendSeries,
@@ -22,14 +23,14 @@ import {
 import { type Entity, type FieldDef, type FieldType, label, type TypeDef } from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
 import { ghostRows } from "./data.ts";
-import type { ApplyResult, Changes, Snapshot } from "./vaults.ts";
+import { HASH_FIELD, PATH_FIELD } from "./paths.ts";
 
 /**
- * Boni Calendar over Boni's own collections (Juan, 2026-10-22: no vault, one truth): the same API the apps
- * use with a vault (a snapshot, changes since a version, a live stream, writes with a conflict check,
- * reminders in a definition, series kept going), with the account's store as the truth. Each calendar is a
- * collection (a type) and its definition (columns, mapping, colour, reminders) lives in the store's settings
- * (`calendar/defs`), copied from `_system/colecciones/` when the collection moved to Boni.
+ * Boni Calendar over Boni's own collections (Juan, 2026-10-22: no vault, one truth): the API the apps use (a
+ * snapshot, changes since a version, a live stream, writes with a conflict check, reminders in a definition,
+ * series kept going), with the account's store as the truth. Each calendar is a collection (a type) and its
+ * definition (columns, mapping, colour, reminders) lives in the store's settings (`calendar/defs`), copied from
+ * `_system/colecciones/` when the collections moved to Boni.
  *
  * A row is an entity seen as the apps know it: its id the note path it came from (so devices, aliases and
  * "Abrir en Boni" keep working) or, for a row made in Boni, the entity's id; its values by property name (the
@@ -37,12 +38,33 @@ import type { ApplyResult, Changes, Snapshot } from "./vaults.ts";
  * changes only the properties that differ from what the store has, with Juan's label from that device.
  */
 
+/** What a client needs to show the calendar: definitions and rows (`ignored` and `problems` stay empty here). */
+export interface Snapshot extends CollectionSnapshot {
+  version: number;
+  ignored: { path: string; reason: string }[];
+  problems: string[];
+}
+
+/**
+ * What changed between two versions: rows added or changed, rows gone. `full` when the definitions changed (or
+ * the version is too old to know): the client takes a new snapshot instead.
+ */
+export interface Changes {
+  version: number;
+  full?: boolean;
+  upserts: Row[];
+  removes: string[];
+}
+
+/** What a write through the server came to. */
+export type ApplyResult =
+  | { ok: true; version: number; aliases: Record<string, string> }
+  | { ok: false; conflict: string[] };
+
 /** The calendars of an account in Boni: each type and the definition the apps read. */
 export const CALENDAR_DEFS = "calendar/defs";
-const PATH_FIELD = "f_vault_path";
-const HASH_FIELD = "f_vault_hash";
 const KEEP = 500;
-/** The column added the first time an event gets reminders of its own (as the vault's writer does). */
+/** The column added the first time an event gets reminders of its own (as the apps' writer did). */
 const EVENT_REMINDERS_COLUMN = { id: "avisos", name: "Avisos", type: "text" as const };
 
 /** A calendar kept in Boni: its type, and its definition as written (the `collection:` map) and as read. */
@@ -52,7 +74,7 @@ export interface Placed {
   def: CollectionDef;
 }
 
-/** The calendars kept in a store (none: the account's calendar still comes from its vault). */
+/** The calendars kept in a store (none: the account has no calendar). */
 export function calendarDefs(store: UserStore): Placed[] {
   const text = store.setting(CALENDAR_DEFS);
   if (!text) return [];
@@ -93,7 +115,7 @@ export function saveCalendarDefs(
   store.setSetting(CALENDAR_DEFS, JSON.stringify(list.map((p) => ({ type: p.type, raw: p.raw }))));
 }
 
-/** What the server serves as an account's calendar: its vault (until it moves) or its store. */
+/** What the server serves as an account's calendar (its store: `StoreCalendar`). */
 export interface CalendarSource {
   readonly writable: boolean;
   snapshot(): Promise<Snapshot>;
@@ -323,8 +345,8 @@ export class StoreCalendar implements CalendarSource {
     }
     const changed = first || full || upserts.length > 0 || removes.length > 0;
     if (!changed) return;
-    // Versions start from the clock, as the vault's: a device that had an earlier run's version takes a new
-    // snapshot, never stuck "ahead".
+    // Versions start from the clock: a device that had an earlier run's version takes a new snapshot, never
+    // stuck "ahead".
     this.version = first ? Math.max(Date.now(), this.version + 1) : this.version + 1;
     if (first) return;
     for (const r of full ? [...this.rows.values()] : upserts)
@@ -495,6 +517,10 @@ export class StoreCalendar implements CalendarSource {
       const next = after.values[prop] ?? null;
       if (before && same(before.values[prop], next)) continue;
       if (next === null && !this.fieldsOf(p).some((x) => x.prop === prop)) continue;
+      // A device edits only the calendar's columns: a property it lacks that is none of them (the area its
+      // collection gives new rows, a project set in Boni) is one it never got back yet (its draft, sent again before
+      // the server's copy arrived), never one it cleared.
+      if (before && next === null && !p.def.columns.some((c) => c.id === prop)) continue;
       const f = this.fieldFor(p, prop, next, device);
       const value = this.fromProp(p.type, f, next, device);
       if (value === undefined) continue;
@@ -557,8 +583,8 @@ export class StoreCalendar implements CalendarSource {
       } else {
         const row = { ...c.row, values: withNewRowProperties(c.row.values, p.def) };
         const writes = this.writesFor(p, null, row, device);
-        // Its note's name, as the vault's writer names one ("2026-10-27 Clase"): kept as the row's id, and where
-        // the mirror writes the note. Untitled, the mirror waits for the title and names it by that.
+        // Its note's name, as the apps name one ("2026-10-27 Clase"): kept as the row's id (devices know rows by
+        // it until notes stop having paths). Untitled, the entity's own id.
         const path = String(row.values[p.def.mapping.title] ?? "").trim()
           ? uniqueNotePath(p.def.folder, noteFileName(p.def, row.values), (x) =>
               this.entityOf.has(x),

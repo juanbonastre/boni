@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { openDb } from "./db.ts";
 import { V1Store } from "./v1/store.ts";
@@ -36,5 +38,34 @@ describe("principles (docs/principios.md)", () => {
       "a table of the user's data in system.db: it belongs in the user's store",
     ).toEqual([]);
     db.close();
+  });
+
+  it("A-07: no vault mode: neither the server nor the packages read or write a folder of notes", () => {
+    const root = join(import.meta.dirname, "..", "..", "..");
+    const sources = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.name === "node_modules"
+          ? []
+          : e.isDirectory()
+            ? sources(join(dir, e.name))
+            : /\.(ts|tsx|cjs|mjs)$/.test(e.name) && !/\.test\.|test-util/.test(e.name)
+              ? [join(dir, e.name)]
+              : [],
+      );
+    const dirs = [
+      join(root, "apps", "server", "src"),
+      ...readdirSync(join(root, "packages")).map((p) => join(root, "packages", p, "src")),
+    ].filter((d) => existsSync(d));
+    const bad = dirs
+      .flatMap(sources)
+      .filter((f) =>
+        /vault-fs\.cjs|@boni\/vault-import|@boni\/mirror|calendar-web\/src\/vault\//.test(
+          readFileSync(f, "utf8"),
+        ),
+      )
+      .map((f) => f.slice(root.length + 1));
+    expect(bad).toEqual([]);
+    expect(existsSync(join(root, "packages", "mirror"))).toBe(false);
+    expect(existsSync(join(root, "packages", "vault-import"))).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import type { UserStore } from "@boni/store";
-import { FILE_FIELD, FOLDER_FIELD, PATH_FIELD } from "@boni/vault-import";
+import { FILE_FIELD, FOLDER_FIELD, PATH_FIELD } from "../paths.ts";
 import { StoreMoney } from "../v1/storeMoney.ts";
-import type { MoneyVault } from "./service.ts";
+import type { MoneyFiles } from "./service.ts";
 
 /** The import's type for the vault's other files (a row each: the file, its folder, its path). */
 const FILES = "t_archivo";
@@ -11,7 +11,7 @@ const FILES = "t_archivo";
  * and the categories the vault had are rows of "Archivos" (each with the folder and path it had) and a note, so
  * they are read here by those paths. A new statement becomes such a row (MCP `upload_file`).
  */
-export function storeFiles(store: UserStore): MoneyVault {
+export function storeFiles(store: UserStore): MoneyFiles {
   const byPath = (rel: string) =>
     store
       .findByValue(PATH_FIELD, rel)

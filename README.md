@@ -19,4 +19,4 @@ make server   # the server locally (environment: apps/server/src/main.ts)
 make e2e      # end-to-end tests on the system Chrome
 ```
 
-Everything in this repository is invented: the sample data, the accounts and the vaults in the tests.
+Everything in this repository is invented: the sample data, the accounts and the notes in the tests.

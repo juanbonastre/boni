@@ -1,13 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
-import { importVault } from "@boni/vault-import";
 import { afterEach, describe, expect, it } from "vitest";
-import { saveCalendarDefs } from "./calendarStore.ts";
 import { ghostRows, listRows } from "./data.ts";
 import { inboxCard } from "./inboxCard.ts";
+import { seed } from "./seed.test-util.ts";
 
 /** An invented calendar (never real notes) and mail, as the inbox meets them. */
 const RAW = {
@@ -23,7 +19,6 @@ const RAW = {
   ],
   mapping: { title: "title", when: { kind: "split", date: "date", startTime: "startTime" } },
 };
-const DEF = `---\ntype: wiki\ncollection:\n  id: docencia\n  name: Docencia\n  folder: agenda/docencia\n  account: Agenda\n  color: "#60a5fa"\n  columns:\n    - { id: title, name: Título, type: text }\n    - { id: date, name: Fecha, type: date }\n    - { id: startTime, name: Hora de inicio, type: time }\n  mapping:\n    title: title\n    when: { kind: split, date: date, startTime: startTime }\n---\n`;
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -31,25 +26,14 @@ afterEach(() => {
 });
 
 function env(): UserStore {
-  const root = mkdtempSync(join(tmpdir(), "boni-inbox-"));
-  const files: Record<string, string> = {
-    "_system/colecciones/agenda-docencia.md": DEF,
+  const store = openUserStore(":memory:");
+  seed(store, [{ key: "docencia", name: "Docencia", folder: "agenda/docencia/", calendar: RAW }], {
     "agenda/docencia/2026-10-28 Clase.md":
       '---\ntitle: "Clase de ejemplo"\ndate: "2026-10-28"\nstartTime: "10:00"\n---\n',
     "agenda/docencia/2026-10-29 Tutoría.md":
       '---\ntitle: "Tutoría"\ndate: "2026-10-29"\nstartTime: "09:00"\n---\n',
-  };
-  for (const [p, t] of Object.entries(files)) {
-    mkdirSync(dirname(join(root, p)), { recursive: true });
-    writeFileSync(join(root, p), t);
-  }
-  const store = openUserStore(":memory:");
-  importVault(root, store, { apply: true });
-  saveCalendarDefs(store, [{ type: "t_docencia", raw: RAW }]);
-  cleanups.push(() => {
-    store.close();
-    rmSync(root, { recursive: true, force: true });
   });
+  cleanups.push(() => store.close());
   return store;
 }
 

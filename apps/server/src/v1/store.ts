@@ -330,7 +330,7 @@ export class V1Store {
       )
       .run(status, JSON.stringify(result), path, error, Date.now(), a, clientId);
   }
-  /** Captures waiting to be written (the vault could not be reached), oldest first. */
+  /** Captures waiting to be written (they could not be written when sent), oldest first. */
   queuedCaptures(): { account: number; clientId: string }[] {
     return (
       this.db

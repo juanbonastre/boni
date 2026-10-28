@@ -1,16 +1,8 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
   type ElectronApplication,
   _electron as electron,
@@ -18,7 +10,9 @@ import {
   type Page,
   test,
 } from "@playwright/test";
+import { seed } from "../apps/server/src/seed.test-util.ts";
 import { readZip } from "../packages/export/src/zip.ts";
+import { openUserStore } from "../packages/store/src/index.ts";
 import { applies, CATALOGUE } from "../packages/views/src/catalogue.ts";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -29,29 +23,30 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 const today = new Date();
 const tomorrow = new Date(Date.now() + 86_400_000);
 
-/** An invented vault with the shapes of the real one (never real notes): the agenda, people, a note. */
-const DEF = `---
-type: wiki
-collection:
-  id: docencia
-  name: Docencia
-  folder: agenda/docencia
-  account: Agenda
-  color: "#60a5fa"
-  columns:
-    - { id: title, name: Título, type: text }
-    - { id: date, name: Fecha, type: date }
-    - { id: startTime, name: Hora de inicio, type: time }
-    - { id: endTime, name: Hora de fin, type: time }
-    - { id: completed, name: Hecha, type: checkbox }
-  mapping:
-    title: title
-    when: { kind: split, date: date, startTime: startTime, endTime: endTime }
-    task: { column: completed }
----
-`;
-const VAULT: Record<string, string> = {
-  "_system/colecciones/agenda-docencia.md": DEF,
+/**
+ * Invented data with the shapes of Juan's (never real notes), as it came into Boni: the agenda (a calendar),
+ * people, belongings, and a folder of the private zone with a note and a PDF.
+ */
+const DOCENCIA = {
+  id: "docencia",
+  name: "Docencia",
+  folder: "agenda/docencia",
+  account: "Agenda",
+  color: "#60a5fa",
+  columns: [
+    { id: "title", name: "Título", type: "text" },
+    { id: "date", name: "Fecha", type: "date" },
+    { id: "startTime", name: "Hora de inicio", type: "time" },
+    { id: "endTime", name: "Hora de fin", type: "time" },
+    { id: "completed", name: "Hecha", type: "checkbox" },
+  ],
+  mapping: {
+    title: "title",
+    when: { kind: "split", date: "date", startTime: "startTime", endTime: "endTime" },
+    task: { column: "completed" },
+  },
+};
+const NOTES: Record<string, string> = {
   [`agenda/docencia/${iso(today)} Clase de ejemplo.md`]: `---\ntitle: "Clase de ejemplo"\ndate: "${iso(today)}"\nstartTime: "10:00"\nendTime: "11:30"\ncompleted: false\n---\nPreparar los ejercicios del tema 3.\n\n## Material\n\n- Proyector\n- [ ] Fotocopias\n`,
   [`agenda/docencia/${iso(tomorrow)} Tutoría.md`]: `---\ntitle: "Tutoría"\ndate: "${iso(tomorrow)}"\nstartTime: "16:00"\ncompleted: false\n---\n`,
   "registros/personas/ana-ejemplo.md":
@@ -60,12 +55,9 @@ const VAULT: Record<string, string> = {
   "registros/pertenencias/cafetera.md": `---\nprecio: 210\ncomprado: "${iso(today)}"\ntipo: [cocina]\n---\n# Cafetera\n`,
   "registros/pertenencias/cortacesped.md": `---\nprecio: 180\ncomprado: "${iso(today)}"\ntipo: [jardín]\n---\n# Cortacésped\n`,
   "registros/pertenencias/horno.md": `---\nprecio: 240\ncomprado: "${iso(new Date(Date.now() - 86_400_000))}"\ntipo: [cocina]\n---\n# Horno\n`,
-};
-
-/** An invented `private/` folder (the AI never reads Juan's): a note and a PDF in a folder. */
-const ZONE: Record<string, string> = {
-  "Documentos/seguro.md": '---\nvence: "2027-01-01"\n---\nPóliza inventada.\n',
-  "Documentos/poliza.pdf": "%PDF-1.7 inventado",
+  // The private zone (the AI never reads Juan's): a note and a PDF in a folder.
+  "private/Documentos/seguro.md": '---\nvence: "2027-01-01"\n---\nPóliza inventada.\n',
+  "private/Documentos/poliza.pdf": "%PDF-1.7 inventado",
 };
 
 let dir = "";
@@ -74,49 +66,35 @@ let app: ElectronApplication | null = null;
 
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-desktop-"));
-  const vault = join(dir, "vault");
-  for (const [p, text] of Object.entries(VAULT)) {
-    mkdirSync(dirname(join(vault, p)), { recursive: true });
-    writeFileSync(join(vault, p), text);
-  }
   const env = { ...process.env, BONI_DB: join(dir, "boni-calendar.db"), BONI_PASSWORD: PASSWORD };
-  execFileSync("node", ["apps/server/src/cli.ts", "add-user", "ejemplo", vault], {
-    cwd: ROOT,
-    env,
-  });
+  execFileSync("node", ["apps/server/src/cli.ts", "add-user", "ejemplo"], { cwd: ROOT, env });
   mkdirSync(join(dir, "users"), { recursive: true });
-  execFileSync(
-    "node",
+  const store = openUserStore(join(dir, "users", "1.db"));
+  seed(
+    store,
     [
-      "packages/vault-import/src/cli.ts",
-      "--vault",
-      vault,
-      "--store",
-      join(dir, "users", "1.db"),
-      "--apply",
+      { key: "docencia", name: "Docencia", folder: "agenda/docencia/", calendar: DOCENCIA },
+      { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
+      {
+        key: "pertenencia",
+        name: "Pertenencia",
+        folder: "registros/pertenencias/",
+        fields: { precio: "number", comprado: "date", tipo: { type: "multiselect" } },
+      },
+      // A folder of the zone, as Juan imported it himself: every type kept from the AI.
+      {
+        key: "private_documentos",
+        name: "Documentos",
+        folder: "private/Documentos/",
+        sensitivity: "sensitive",
+        zone: "private",
+        files: true,
+        fields: { vence: "date" },
+      },
     ],
-    { cwd: ROOT, env },
+    NOTES,
   );
-  // A zone, as Juan imports it himself: its own folder, every type kept from the AI.
-  const zone = join(dir, "zone");
-  for (const [p, text] of Object.entries(ZONE)) {
-    mkdirSync(dirname(join(zone, p)), { recursive: true });
-    writeFileSync(join(zone, p), text);
-  }
-  execFileSync(
-    "node",
-    [
-      "packages/vault-import/src/cli.ts",
-      "--zone",
-      "private",
-      "--vault",
-      zone,
-      "--store",
-      join(dir, "users", "1.db"),
-      "--apply",
-    ],
-    { cwd: ROOT, env },
-  );
+  store.close();
   server = spawn("node", ["apps/server/src/main.ts"], {
     cwd: ROOT,
     env: { ...env, BONI_PORT: String(PORT), BONI_WRITE: "1", ANTHROPIC_API_KEY: "" },

@@ -22,7 +22,6 @@ import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { createPage } from "./pages.ts";
 import { V1Store } from "./v1/store.ts";
-import { Vaults } from "./vaults.ts";
 
 const PASSWORD = "una contraseña larga de ejemplo";
 let dir: string;
@@ -35,9 +34,9 @@ let base = "";
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-pages-"));
   db = openDb(join(dir, "system.db"));
-  addUser(db, "juan", PASSWORD, "");
-  addUser(db, "ana", PASSWORD, "");
-  addUser(db, "old", PASSWORD, "");
+  addUser(db, "juan", PASSWORD);
+  addUser(db, "ana", PASSWORD);
+  addUser(db, "old", PASSWORD);
   // Juan used the first Boni: a chart on its home and a shortcut. Ana only had its default charts made
   // (the app asked for them), which is not using it.
   const v1 = new V1Store(db);
@@ -54,7 +53,6 @@ beforeAll(async () => {
   host = new AgentHost({ dataDir: dir, providers: null });
   app = makeApp({
     db,
-    vaults: new Vaults(),
     key: randomBytes(32),
     feeds: new Feeds(async () => ""),
     guard: new LoginGuard({ perUser: 50, perAddress: 100, windowMs: 60_000, perMinute: 100 }),

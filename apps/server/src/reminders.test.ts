@@ -1,18 +1,20 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer as createHttp, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fromLocal, todayIn } from "@boni/calendar";
-import { definitionNote } from "@boni/calendar-web/src/vault/testing.ts";
+import { label } from "@boni/entities";
+import type { UserStore } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { makeServer } from "./http.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
-import { Vaults } from "./vaults.ts";
+import { calendarDef, seed } from "./seed.test-util.ts";
 
 /** Phase 5: the account's reminders for a device that is not running the calendar, and UnifiedPush. */
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -23,7 +25,8 @@ const at = (h: number, m = 0) => fromLocal(tomorrow, h * 60 + m, TZ);
 
 let dir: string;
 let db: Db;
-let vaults: Vaults;
+let agent: AgentHost;
+let store: UserStore;
 let push: Push;
 let base: string;
 let server: ReturnType<typeof makeServer>;
@@ -32,30 +35,32 @@ let distributorUrl: string;
 const posted: { url: string; auth: string; body: string }[] = [];
 let gone = false;
 
-const vaultPath = (rel: string) => join(dir, "vault", rel);
-function write(rel: string, text: string) {
-  mkdirSync(dirname(vaultPath(rel)), { recursive: true });
-  writeFileSync(vaultPath(rel), text);
-}
 const lesson = (title: string, start: string) =>
   `---\ntitle: "${title}"\ndate: "${iso(tomorrow)}"\nstartTime: "${start}"\nendTime: "11:00"\nlocation: "Aula 1"\ncompleted:\n---\n`;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-server-reminders-"));
-  write(
-    "_system/colecciones/docencia.md",
-    definitionNote("docencia", "Docencia", "agenda/docencia", "docencia").replace(
-      "  newNote:",
-      '  reminders: { timed: "10m", allDay: "0d@09:00" }\n  newNote:',
-    ),
-  );
-  write(
-    `agenda/docencia/${iso(tomorrow)} Clase de ejemplo.md`,
-    lesson("Clase de ejemplo", "10:00"),
-  );
   db = openDb(join(dir, "db.sqlite"));
-  addUser(db, "juan", PASSWORD, join(dir, "vault"));
-  vaults = new Vaults();
+  addUser(db, "juan", PASSWORD);
+  agent = new AgentHost({ dataDir: dir, providers: null });
+  store = agent.store(1);
+  seed(
+    store,
+    [
+      {
+        key: "docencia",
+        name: "Docencia",
+        folder: "agenda/docencia/",
+        calendar: {
+          ...calendarDef("docencia", "Docencia", "agenda/docencia"),
+          reminders: { timed: "10m", allDay: "0d@09:00" },
+        },
+      },
+    ],
+    {
+      [`agenda/docencia/${iso(tomorrow)} Clase de ejemplo.md`]: lesson("Clase de ejemplo", "10:00"),
+    },
+  );
   // The UnifiedPush distributor (the ntfy server) as a test double.
   distributor = createHttp((req, res) => {
     let body = "";
@@ -84,10 +89,10 @@ beforeAll(async () => {
   ].join("\r\n");
   server = makeServer({
     db,
-    vaults,
     key: loadKey(join(dir, "db.sqlite")),
     feeds: new Feeds(async () => feed),
     push,
+    agent,
   });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -98,7 +103,7 @@ afterAll(async () => {
   server.closeAllConnections();
   await new Promise((r) => server.close(r));
   distributor.close();
-  vaults.close();
+  agent.close();
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -159,7 +164,17 @@ describe("UnifiedPush", () => {
     ).toBe(400);
     expect((await call(t, "PUT", "/api/push", { endpoint: distributorUrl })).status).toBe(200);
     posted.length = 0;
-    write(`agenda/docencia/${iso(tomorrow)} Otra clase.md`, lesson("Otra clase", "10:30"));
+    // A new class, made in Boni (a page, the MCP): the calendar sees it and tells the device.
+    const l = label("user", "personal", []);
+    store.create(
+      "t_docencia",
+      {
+        f_title: { value: "Otra clase", label: l },
+        f_date: { value: iso(tomorrow), label: l },
+        f_starttime: { value: "10:30", label: l },
+      },
+      { actor: "user", device: "boni" },
+    );
     await expect.poll(() => posted.length, { timeout: 5000 }).toBeGreaterThan(0);
     expect(posted[0]).toEqual({
       url: "/upInventado123?up=1",

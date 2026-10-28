@@ -1,35 +1,34 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import type { UserStore } from "@boni/store";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { AgentHost } from "../agent.ts";
 import { addUser } from "../auth.ts";
 import { type Db, openDb } from "../db.ts";
 import { Feeds } from "../feeds.ts";
 import { type App, makeApp, serve } from "../http.ts";
 import { LoginGuard } from "../limits.ts";
-import { Vaults } from "../vaults.ts";
+import { seed } from "../seed.test-util.ts";
 
-/** The Boni API v1 over HTTP, as the Boni apps call it, on an invented vault. */
+/** The Boni API v1 over HTTP, as the Boni apps call it, on invented money in the account's store. */
 const PASSWORD = "una contraseña larga de ejemplo";
 const example = (name: string) =>
   JSON.parse(readFileSync(new URL(`./golden/examples/${name}.json`, import.meta.url), "utf8"));
 let dir: string;
 let db: Db;
-let vaults: Vaults;
+let host: AgentHost;
+let store: UserStore;
+let ids: Map<string, string>;
 let app: App;
 const servers: Server[] = [];
 let base: string;
 let pub: string;
 let token: string;
 
-const vault = (rel: string) => join(dir, "vault", rel);
-function write(rel: string, text: string) {
-  mkdirSync(dirname(vault(rel)), { recursive: true });
-  writeFileSync(vault(rel), text);
-}
 async function listen(s: Server): Promise<string> {
   servers.push(s);
   await new Promise<void>((r) => s.listen(0, "127.0.0.1", () => r()));
@@ -50,35 +49,56 @@ const movement = (date: string, amount: number, category: string, merchant: stri
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-v1-http-"));
-  mkdirSync(vault("_system/colecciones"), { recursive: true });
-  write(
-    "registros/finanzas/categorias.md",
-    "---\ntype: wiki\ncategories:\n  - comida/restaurante\n  - bebida/cafe\n  - ingreso/nomina\n---\n",
-  );
-  write("registros/personas/lucia-ferri.md", "---\ntype: person\nsummary: Amiga inventada\n---\n");
-  write(
-    "registros/finanzas/movimientos/2026/10/2026-10-02-cafe.md",
-    movement("2026-10-02", -1.6, "bebida/cafe", "Bar Ejemplo"),
-  );
-  write(
-    "registros/finanzas/movimientos/2026/10/2026-10-05-cena.md",
-    movement("2026-10-05", -30, "comida/restaurante", "Casa Inventada"),
-  );
-  write(
-    "registros/finanzas/movimientos/2026/09/2026-09-10-cena.md",
-    movement("2026-09-10", -20, "comida/restaurante", "Casa Inventada"),
-  );
-  write(
-    "private/finanzas.md",
-    "---\ntype: movement\ndate: 2026-10-01\namount: -999\ncategory: bebida/cafe\n---\n",
-  );
   db = openDb(":memory:");
-  addUser(db, "juan", PASSWORD, join(dir, "vault"));
-  addUser(db, "sinvault", PASSWORD, "");
-  vaults = new Vaults({ write: true });
+  addUser(db, "juan", PASSWORD);
+  addUser(db, "sindatos", PASSWORD);
+  host = new AgentHost({ dataDir: dir, providers: null });
+  store = host.store(1);
+  // The money as it came into Boni (never real notes), and a private collection the charts never count.
+  ids = seed(
+    store,
+    [
+      { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
+      {
+        key: "movimiento",
+        name: "Movimiento",
+        folder: "registros/finanzas/movimientos/",
+        sensitivity: "sensitive",
+        fields: { date: "date", people: { type: "relation", to: "persona", many: true } },
+      },
+      { key: "nota", name: "Nota", folder: "", fields: { categories: { type: "multiselect" } } },
+      { key: "privado", name: "Privado", folder: "private/", zone: "private" },
+    ],
+    {
+      "registros/finanzas/categorias.md":
+        "---\ntype: wiki\ncategories:\n  - comida/restaurante\n  - bebida/cafe\n  - ingreso/nomina\n---\n",
+      "registros/personas/lucia-ferri.md": "---\ntype: person\nsummary: Amiga inventada\n---\n",
+      "registros/finanzas/movimientos/2026/10/2026-10-02-cafe.md": movement(
+        "2026-10-02",
+        -1.6,
+        "bebida/cafe",
+        "Bar Ejemplo",
+      ),
+      "registros/finanzas/movimientos/2026/10/2026-10-05-cena.md": movement(
+        "2026-10-05",
+        -30,
+        "comida/restaurante",
+        "Casa Inventada",
+      ),
+      "registros/finanzas/movimientos/2026/09/2026-09-10-cena.md": movement(
+        "2026-09-10",
+        -20,
+        "comida/restaurante",
+        "Casa Inventada",
+      ),
+      "private/finanzas.md":
+        "---\ntype: movement\ndate: 2026-10-01\namount: -999\ncategory: bebida/cafe\n---\n",
+    },
+  );
   app = makeApp({
     db,
-    vaults,
+    write: true,
+    agent: host,
     key: randomBytes(32),
     feeds: new Feeds(async () => ""),
     guard: new LoginGuard({ perUser: 3, perAddress: 100, windowMs: 60_000, perMinute: 100 }),
@@ -105,7 +125,7 @@ afterAll(async () => {
     s.closeAllConnections();
     await new Promise((r) => s.close(r));
   }
-  vaults.close();
+  host.close();
   db.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -116,7 +136,7 @@ describe("the Boni API v1", () => {
       status: "ok",
       version: "0.5.0",
       api_version: "1",
-      sources: { vault: "ok" },
+      sources: { boni: "ok" },
     });
     expect(await json("GET", "/api/v1/me")).toEqual({
       status: 200,
@@ -167,7 +187,7 @@ describe("the Boni API v1", () => {
     expect((await json("GET", "/api/v1/options/people?limit=0")).status).toBe(422);
   });
 
-  it("computes the charts from the vault's money notes (never private/)", async () => {
+  it("computes the charts from the account's movements (never a private collection)", async () => {
     const { status, body } = await json("GET", "/api/v1/charts/spending-by-category/data");
     expect(status).toBe(200);
     expect(body).toMatchObject({
@@ -272,27 +292,35 @@ describe("the Boni API v1", () => {
     const req = example("action-request");
     const ok = await json("POST", "/api/v1/actions", req);
     expect(ok.body).toEqual(example("action-result-ok"));
-    const path = vault("registros/finanzas/movimientos/2026/10/2026-10-12-1830-menu-con-lucia.md");
-    const text = readFileSync(path, "utf8");
-    expect(text).toContain("amount: -12.50\n");
-    expect(text).toContain('people: ["[[lucia-ferri]]"]\n');
-    expect(text).toContain("created: 2026-10-12\n");
+    // An entry of Movimiento with the note's values, by the path that note would have had.
+    const path = "registros/finanzas/movimientos/2026/10/2026-10-12-1830-menu-con-lucia.md";
+    const made = () =>
+      store
+        .list("t_movimiento")
+        .filter((s) => String(s.entity.values.f_vault_path).startsWith(path.slice(0, -3)));
+    expect(made()).toHaveLength(1);
+    expect(made()[0]?.entity.values).toMatchObject({
+      f_amount: -12.5,
+      f_people: [ids.get("registros/personas/lucia-ferri.md")],
+      f_created: "2026-10-12",
+    });
+    expect(made()[0]?.labels.f_amount?.integrity).toBe("user");
     const event = new TextDecoder().decode((await reader.read()).value);
     expect(event).toMatch(/^event: changed\ndata: \{"what":"data","at":"[^"]+"\}\n\n$/);
     await reader.cancel();
 
-    // Sent again (an offline queue): the same answer, no second note.
+    // Sent again (an offline queue): the same answer, no second entry.
     expect(
       (await json("POST", "/api/v1/actions", { ...req, client_id: req.client_id.toUpperCase() }))
         .body,
     ).toEqual(example("action-result-ok"));
-    expect(existsSync(path.replace(".md", "-2.md"))).toBe(false);
+    expect(made()).toHaveLength(1);
     // The account it was paid with is this device's default from now on.
     const account = (
       await json("GET", "/api/v1/screens/capture-expense")
     ).body.components[0].fields.find((f: { id: string }) => f.id === "account");
     expect(account.default).toBe("revolut");
-    // The same capture again with another id: a new note next to it, never over it.
+    // The same capture again with another id: a new entry next to it, never over it.
     const again = await json("POST", "/api/v1/actions", {
       ...req,
       client_id: "1f8a4c9e-3b5d-4e1a-9c2f-7d6b5a4e3c21",
@@ -334,11 +362,11 @@ describe("the Boni API v1", () => {
     ).toBe(422);
   });
 
-  it("an account without a vault logs in but has no data here", async () => {
+  it("an account without movements in Boni logs in but has no data here", async () => {
     const r = await call(
       "POST",
       "/api/v1/login",
-      { user: "sinvault", password: PASSWORD, device: "" },
+      { user: "sindatos", password: PASSWORD, device: "" },
       "",
     );
     const b = (await r.json()) as { token: string; device: string };

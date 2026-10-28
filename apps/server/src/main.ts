@@ -6,12 +6,10 @@ import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
 import { Mails } from "./mail.ts";
-import { Mirrors } from "./mirror.ts";
 import { AccountModels } from "./models.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
-import { Vaults } from "./vaults.ts";
 
 /**
  * Boni Calendar server. Environment:
@@ -23,14 +21,14 @@ import { Vaults } from "./vaults.ts";
  *   BONI_PUBLIC_HOST  address of that entry                    default 0.0.0.0
  *   BONI_WEB    the built web app to serve (apps/calendar-web/dist)     optional
  *   BONI_BONI_WEB  Boni's built web app (apps/boni-web/dist), at /boni/ on the tailnet entry   optional
- *   BONI_WRITE  "1": devices may change the notes (the vault must be mounted writable)   default read-only
+ *   BONI_WRITE  "1": devices may change the calendar, and captures are written   default read-only
  *   BONI_SECRET_KEY  32 bytes in base64 to encrypt accounts' secrets   default: secret.key next to the DB
  *   BONI_FEEDS_ALLOW_PRIVATE  "1": external calendars may be on private addresses (tests only)
  *   BONI_PUSH_HOSTS  hosts devices may register as UnifiedPush addresses, comma separated (e.g. the ntfy
  *                    server); push is off without it
  *   BONI_PUSH_TOKEN  sent as a bearer token when posting to them (an ntfy account that may write up* topics)
  *   BONI_BACKUPS     daily copies to keep in backups/ next to the databases (system.db, and each account's
- *                    store and mirror state, encrypted with the account's key)   default 14 (0: none)
+ *                    store, encrypted with the account's key)   default 14 (0: none)
  *   BONI_TRUSTED_PROXIES  addresses whose X-Forwarded-For is trusted besides loopback, comma separated (the
  *                    public node's sidecar on an internal network)   optional
  *   BONI_TZ     the time zone of the Boni API v1 and of the agent ("today")   default Europe/Madrid
@@ -50,7 +48,6 @@ const key = loadKey(dbPath); // secret.key next to the databases, as before
 const feeds = new Feeds(
   makeFetcher({ allowPrivate: process.env.BONI_FEEDS_ALLOW_PRIVATE === "1" }),
 );
-const vaults = new Vaults({ write: process.env.BONI_WRITE === "1" });
 const hosts = (process.env.BONI_PUSH_HOSTS ?? "")
   .split(",")
   .map((h) => h.trim().toLowerCase())
@@ -102,7 +99,7 @@ const agent = new AgentHost({
   tz,
 });
 const keep = Number(process.env.BONI_BACKUPS ?? 14);
-// system.db, and each account's store and mirror state (encrypted with the account's data key).
+// system.db, and each account's store (encrypted with the account's data key).
 const stopBackups =
   dbPath !== ":memory:" && keep > 0
     ? startBackups(db, join(dirname(dbPath), "backups"), keep, {
@@ -112,14 +109,6 @@ const stopBackups =
         master: key,
       })
     : () => {};
-// The Markdown mirror of the types switched to core mode (`cli.ts mirror`).
-const mirrors = new Mirrors({
-  host: agent,
-  dataDir: dbPath === ":memory:" ? null : dirname(dbPath),
-  write: process.env.BONI_WRITE === "1",
-  accounts: () => listUsers(db),
-});
-agent.onChanged = (account) => mirrors.soon(account);
 // «Modelos»: each account may choose its own model per role and its own keys; what it chose nothing for runs as
 // above (the environment), described here so the page can show it.
 const plannerModel = process.env.BONI_PLANNER_MODEL;
@@ -175,14 +164,13 @@ const models = new AccountModels({
 agent.models = models;
 agent.providersFor = (account) => models.providers(account);
 agent.overBudget = (account) => models.overBudget(account);
-mirrors.start();
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
 const mails = new Mails({ db, key, host: agent });
 agent.mailAccountOf = (account) => mails.settings(account)?.user || null;
 mails.start(() => listUsers(db));
 const app = makeApp({
   db,
-  vaults,
+  write: process.env.BONI_WRITE === "1",
   key,
   feeds,
   ...(push ? { push } : {}),
@@ -225,12 +213,10 @@ if (publicServer && publicPort !== null) {
 const stop = () => {
   stopBackups();
   app.close();
-  void mirrors.close();
   void mails.close();
   agent.close();
   server.close();
   publicServer?.close();
-  vaults.close();
   db.close();
   process.exit(0);
 };

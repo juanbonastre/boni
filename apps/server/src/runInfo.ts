@@ -17,7 +17,7 @@ export type RunWhat =
   | { kind: "measure"; subject: string }
   /** The reviewer reading Juan's decisions (mailReview.ts). */
   | { kind: "review" }
-  /** A note changed, made or removed by hand in the vault (the mirror's proposal). */
+  /** A note changed, made or removed by hand in the vault (a proposal of the Markdown mirror, retired 2026-10-28). */
   | { kind: "note"; path: string; action: "update" | "create" | "delete" }
   /** A proposal Juan accepted. */
   | { kind: "accepted" }

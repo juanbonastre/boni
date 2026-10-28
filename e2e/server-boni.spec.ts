@@ -1,43 +1,28 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { definitionNote } from "../apps/calendar-web/src/vault/testing.ts";
+import { calendarDef } from "../apps/server/src/seed.test-util.ts";
+import { proposeEntries, seedAccount } from "./server-data.ts";
 
 /**
- * The migration to Boni (Juan, 2026-10-22: one truth): an invented vault imported into an account's Boni, its
- * calendar's collection switched to core mode and the calendar moved (`cli.ts mirror ... --calendar`), the
- * same commands as on the NAS. Then Boni Calendar against that server: its events come from Boni, its edits
- * go to Boni (and the mirror writes them into the vault), Boni's own edits reach it live, and a note edited by
- * hand in the vault no longer changes the calendar.
+ * Boni Calendar against Boni (Juan, 2026-10-22: one truth): an account whose calendar and money are its own
+ * collections (invented, as Juan's came into Boni). Its events come from Boni, its edits go to Boni, Boni's own
+ * edits reach it live, the inbox's proposals show in it, and "Apuntar gasto" puts the movement into Boni.
  */
 const NOW = "2025-09-17T14:29";
 const PASSWORD = "una contraseña larga de ejemplo";
 test.describe.configure({ mode: "serial" });
 
 const note = (title: string, date: string, start: string) =>
-  `---\ntitle: "${title}"\ndate: "${date}"\nstartTime: "${start}"\nendTime: "${start.replace(/^(\d\d)/, (h) => String(Number(h) + 1).padStart(2, "0"))}"\ntimezone: "Europe/Madrid"\ncompleted:\n---\nArea: [[docencia]]\n`;
+  `---\ntitle: "${title}"\ndate: "${date}"\nstartTime: "${start}"\nendTime: "${start.replace(/^(\d\d)/, (h) => String(Number(h) + 1).padStart(2, "0"))}"\ntimezone: "Europe/Madrid"\ncompleted:\n---\n`;
 const CLASS = "agenda/docencia/2025-09-17 Clase del servidor.md";
 
 let dir: string;
 let proc: ChildProcess | null = null;
 let url: string;
-const read = (rel: string) =>
-  existsSync(join(dir, "vault", rel)) ? readFileSync(join(dir, "vault", rel), "utf8") : null;
-function write(rel: string, text: string) {
-  mkdirSync(dirname(join(dir, "vault", rel)), { recursive: true });
-  writeFileSync(join(dir, "vault", rel), text);
-}
 const node = (args: string[]) =>
   execFileSync(process.execPath, ["--disable-warning=ExperimentalWarning", ...args], {
     env: { ...process.env, BONI_DB: join(dir, "db.sqlite"), BONI_PASSWORD: PASSWORD },
@@ -51,42 +36,44 @@ const freePort = () =>
   });
 
 test.beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "boni-e2e-migration-"));
-  write(
-    "_system/colecciones/docencia.md",
-    definitionNote("docencia", "Docencia", "agenda/docencia", "docencia"),
+  dir = mkdtempSync(join(tmpdir(), "boni-e2e-boni-"));
+  seedAccount(
+    dir,
+    "juan",
+    PASSWORD,
+    [
+      {
+        key: "docencia",
+        name: "Docencia",
+        folder: "agenda/docencia/",
+        calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
+      },
+      { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
+      {
+        key: "movimiento",
+        name: "Movimiento",
+        folder: "registros/finanzas/movimientos/",
+        sensitivity: "sensitive",
+        fields: { date: "date", people: { type: "relation", to: "persona", many: true } },
+      },
+      { key: "nota", name: "Nota", folder: "", fields: { categories: { type: "multiselect" } } },
+    ],
+    {
+      [CLASS]: note("Clase del servidor", "2025-09-17", "09:00"),
+      "agenda/docencia/2025-09-18 Tutoría.md": note("Tutoría", "2025-09-18", "12:00"),
+      // Money: a movement, a person, the categories.
+      "registros/finanzas/categorias.md":
+        "---\ntype: wiki\ncategories:\n  - comida/restaurante\n  - bebida/cafe\n---\n",
+      "registros/personas/lucia-ferri.md": "---\ntype: person\nsummary: Amiga inventada\n---\n",
+      "registros/finanzas/movimientos/2026/10/2026-10-02-cafe.md":
+        '---\ntype: movement\ndate: 2026-10-02\namount: -1.6\ncurrency: EUR\naccount: ing\ncategory: bebida/cafe\nmerchant: "Bar Ejemplo"\npeople: ["[[lucia-ferri]]"]\nstatus: pendiente\nsource: banco\n---\n',
+    },
   );
-  write(CLASS, note("Clase del servidor", "2025-09-17", "09:00"));
-  write("agenda/docencia/2025-09-18 Tutoría.md", note("Tutoría", "2025-09-18", "12:00"));
-  // Money, as the vault keeps it: a movement, a person, the categories.
-  write(
-    "registros/finanzas/categorias.md",
-    "---\ntype: wiki\ncategories:\n  - comida/restaurante\n  - bebida/cafe\n---\n",
-  );
-  write("registros/personas/lucia-ferri.md", "---\ntype: person\nsummary: Amiga inventada\n---\n");
-  write(
-    "registros/finanzas/movimientos/2026/10/2026-10-02-cafe.md",
-    '---\ntype: movement\ndate: 2026-10-02\namount: -1.6\ncurrency: EUR\naccount: ing\ncategory: bebida/cafe\nmerchant: "Bar Ejemplo"\npeople: ["[[lucia-ferri]]"]\nstatus: pendiente\nsource: banco\n---\n',
-  );
-  node(["apps/server/src/cli.ts", "add-user", "juan", join(dir, "vault")]);
-  mkdirSync(join(dir, "users"));
-  // As on the NAS: the import, the collection switched to Boni, then the calendar.
-  node([
-    "packages/vault-import/src/cli.ts",
-    "--vault",
-    join(dir, "vault"),
-    "--store",
-    join(dir, "users", "1.db"),
-    "--apply",
+  // Two proposals waiting in the inbox (as a mail read in the background leaves them: values by field key).
+  proposeEntries(dir, 1, "docencia", [
+    { title: "Revisión propuesta", date: "2025-09-19", starttime: "10:00", endtime: "11:00" },
+    { title: "Entrega hecha", date: "2025-09-19", starttime: "12:00", endtime: "13:00" },
   ]);
-  const dry = node(["apps/server/src/cli.ts", "mirror", "juan", "--calendar"]);
-  expect(dry).toContain("docencia: vault");
-  for (const t of ["t_docencia", "t_movimiento", "t_persona"])
-    node(["apps/server/src/cli.ts", "mirror", "juan", t, "--apply"]);
-  expect(node(["apps/server/src/cli.ts", "mirror", "juan", "--calendar", "--apply"])).toContain(
-    "The calendar comes from Boni now (1 calendars).",
-  );
-  expect(read(CLASS)).toContain("boni_id:");
   const port = await freePort();
   url = `http://127.0.0.1:${port}`;
   proc = spawn(
@@ -98,7 +85,7 @@ test.beforeAll(async () => {
         BONI_DB: join(dir, "db.sqlite"),
         BONI_PORT: String(port),
         BONI_WRITE: "1",
-        // The mirror works with the agent on (its inbox); no model is called here.
+        // The inbox is the agent's; no model is called here.
         ANTHROPIC_API_KEY: "sk-invented-for-tests",
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -134,10 +121,11 @@ async function token(device = "portatil-boni") {
   });
   return ((await r.json()) as { token: string }).token;
 }
+type Rows = { rows: { id: string; title?: string; values: Record<string, unknown> }[] };
+const rowsOf = async (type: string, h: Record<string, string>) =>
+  (await (await fetch(`${url}/api/data/types/${type}/rows`, { headers: h })).json()) as Rows;
 
-test("the calendar comes from Boni: its edits go to Boni and the mirror writes them into the vault", async ({
-  page,
-}) => {
+test("the calendar comes from Boni: its edits go to Boni", async ({ page }) => {
   await connect(page);
   await expect(page.locator(".ev", { hasText: "Clase del servidor" })).toHaveCount(1);
   await expect(page.locator(".ev", { hasText: "Tutoría" })).toHaveCount(1);
@@ -145,22 +133,14 @@ test("the calendar comes from Boni: its edits go to Boni and the mirror writes t
   await page.locator(".popover .title-input").fill("Clase renombrada en el calendario");
   await page.locator(".popover .title-input").press("Enter");
   await page.keyboard.press("Escape");
-  // In Boni (its rows, as Boni's own pages see them)...
-  const t = await token();
-  const h = { authorization: `Bearer ${t}` };
+  // In Boni (its rows, as Boni's own pages see them).
+  const h = { authorization: `Bearer ${await token()}` };
   await expect
-    .poll(async () => {
-      const r = await fetch(`${url}/api/data/types/t_docencia/rows`, { headers: h });
-      return JSON.stringify(await r.json());
-    })
+    .poll(async () => JSON.stringify(await rowsOf("t_docencia", h)))
     .toContain("Clase renombrada en el calendario");
-  // ...and in the vault, written by the mirror.
-  await expect
-    .poll(() => read(CLASS), { timeout: 15_000 })
-    .toContain('title: "Clase renombrada en el calendario"');
 });
 
-test("a new event typed in the calendar gets its note named by its title, never «Sin título»", async ({
+test("a new event typed in the calendar is an entry titled as typed, never «Sin título»", async ({
   page,
 }) => {
   await connect(page);
@@ -177,73 +157,40 @@ test("a new event typed in the calendar gets its note named by its title, never 
     .pressSequentially("Resonancia inventada", { delay: 80 });
   await page.locator(".popover .title-input").press("Enter");
   await page.keyboard.press("Escape");
-  const notes = () =>
-    readdirSync(join(dir, "vault", "agenda", "docencia")).filter((f) => f.endsWith(".md"));
+  const h = { authorization: `Bearer ${await token()}` };
+  const titles = async () => {
+    const r = await rowsOf("t_docencia", h);
+    return r.rows.map((row) => String(row.values.f_title ?? ""));
+  };
   await expect
-    .poll(() => notes().filter((f) => f.includes("Resonancia inventada")), { timeout: 40_000 })
+    .poll(async () => (await titles()).filter((t) => t === "Resonancia inventada"), {
+      timeout: 40_000,
+    })
     .toHaveLength(1);
-  expect(notes().some((f) => f.startsWith("Sin título"))).toBe(false);
-  const text = read(
-    `agenda/docencia/${notes().find((f) => f.includes("Resonancia inventada"))}`,
-  ) as string;
-  expect(text).toContain('title: "Resonancia inventada"');
-  expect(text).not.toMatch(/^\w+:\s*$/m); // no empty properties
+  expect((await titles()).filter((t) => t === "" || t.startsWith("Sin título"))).toEqual([]);
 });
 
-test("Boni's own edits reach the calendar live; a hand edit in the vault no longer does", async ({
-  page,
-}) => {
+test("Boni's own edits reach the calendar live", async ({ page }) => {
   await connect(page);
-  const t = await token();
-  const h = { authorization: `Bearer ${t}` };
-  const rows = (
-    (await (await fetch(`${url}/api/data/types/t_docencia/rows`, { headers: h })).json()) as {
-      rows: { id: string; values: Record<string, unknown> }[];
-    }
-  ).rows;
-  const tut = rows.find((r) => JSON.stringify(r.values).includes("Tutoría"));
-  const titleField = Object.keys(tut?.values ?? {}).find((k) => tut?.values[k] === "Tutoría");
+  const h = { authorization: `Bearer ${await token()}` };
+  const tut = (await rowsOf("t_docencia", h)).rows.find((r) => r.values.f_title === "Tutoría");
   await fetch(`${url}/api/data/rows/${tut?.id}`, {
     method: "PUT",
     headers: h,
-    body: JSON.stringify({ values: { [titleField as string]: "Tutoría cambiada en Boni" } }),
+    body: JSON.stringify({ values: { f_title: "Tutoría cambiada en Boni" } }),
   });
   await expect(page.locator(".ev", { hasText: "Tutoría cambiada en Boni" })).toHaveCount(1, {
     timeout: 5000,
   });
-  // Obsidian (or anything) changes a note by hand: the calendar keeps Boni's truth.
-  write(
-    CLASS,
-    (read(CLASS) as string).replace("Clase renombrada en el calendario", "Cambio a mano"),
-  );
-  await page.waitForTimeout(2500);
-  await expect(page.locator(".ev", { hasText: "Cambio a mano" })).toHaveCount(0);
-  await expect(page.locator(".ev", { hasText: "Clase renombrada en el calendario" })).toHaveCount(
-    1,
-  );
-  // The hand edit waits in Boni's inbox for Juan to accept or reject it.
-  await expect
-    .poll(
-      async () =>
-        JSON.stringify(await (await fetch(`${url}/api/agent/proposals`, { headers: h })).json()),
-      { timeout: 40_000 },
-    )
-    .toContain("Cambio a mano");
 });
 
 test("a proposal waiting in Boni's inbox shows dashed in the calendar, read only, and goes once decided", async ({
   page,
 }) => {
   await connect(page);
-  const t = await token();
-  const h = { authorization: `Bearer ${t}` };
-  // A new note written by hand in the calendar's folder: Boni proposes it, it is not an event yet.
-  write(
-    "agenda/docencia/2025-09-19 Revisión propuesta.md",
-    note("Revisión propuesta", "2025-09-19", "10:00"),
-  );
+  const h = { authorization: `Bearer ${await token()}` };
   const ghost = page.locator(".ev.proposal", { hasText: "Revisión propuesta" });
-  await expect(ghost).toHaveCount(1, { timeout: 45_000 });
+  await expect(ghost).toHaveCount(1, { timeout: 15_000 });
   await expect(ghost).toHaveCSS("outline-style", "dashed");
   await page
     .locator(".cols-viewport")
@@ -268,32 +215,16 @@ test("a proposal waiting in Boni's inbox shows dashed in the calendar, read only
   expect(JSON.stringify(rows.rows)).not.toContain('"Revisión propuesta"');
   expect(JSON.stringify(rows.ghosts)).toContain('"Revisión propuesta"');
   const list = (await (await fetch(`${url}/api/agent/proposals`, { headers: h })).json()) as {
-    proposals: { id: string; view?: { rows: { value?: unknown }[] } }[];
+    proposals: { id: string; card?: { canMarkDone?: boolean } }[];
   };
   const p = list.proposals.find((x) => JSON.stringify(x).includes("Revisión propuesta"));
   expect(p).toBeTruthy();
   await fetch(`${url}/api/agent/proposals/${p?.id}/reject`, { method: "POST", headers: h });
   await expect(ghost).toHaveCount(0, { timeout: 5000 });
-  // «Ya lo hice» on another one: it is made already done (the calendar's task column), struck through here.
-  write(
-    "agenda/docencia/2025-09-19 Entrega hecha.md",
-    note("Entrega hecha", "2025-09-19", "12:00"),
-  );
-  let id = "";
-  await expect
-    .poll(
-      async () => {
-        const r = (await (await fetch(`${url}/api/agent/proposals`, { headers: h })).json()) as {
-          proposals: { id: string; card?: { canMarkDone?: boolean } }[];
-        };
-        const q = r.proposals.find((x) => JSON.stringify(x).includes("Entrega hecha"));
-        id = q?.card?.canMarkDone ? q.id : "";
-        return id;
-      },
-      { timeout: 45_000 },
-    )
-    .not.toBe("");
-  const accepted = await fetch(`${url}/api/agent/proposals/${id}/accept`, {
+  // «Ya lo hice» on the other one: it is made already done (the calendar's task column), struck through here.
+  const done = list.proposals.find((x) => JSON.stringify(x).includes("Entrega hecha"));
+  expect(done?.card?.canMarkDone).toBe(true);
+  const accepted = await fetch(`${url}/api/agent/proposals/${done?.id}/accept`, {
     method: "POST",
     headers: h,
     body: JSON.stringify({ edits: { done: true } }),
@@ -305,9 +236,8 @@ test("a proposal waiting in Boni's inbox shows dashed in the calendar, read only
   await expect(page.locator(".ev.proposal", { hasText: "Entrega hecha" })).toHaveCount(0);
 });
 
-test('"Apuntar gasto" with the movements in Boni: the movement goes into Boni, the mirror writes its note', async () => {
-  const t = await token();
-  const h = { authorization: `Bearer ${t}` };
+test('"Apuntar gasto": the movement goes into Boni, never as a proposal; Undo takes it out', async () => {
+  const h = { authorization: `Bearer ${await token()}` };
   const r = await fetch(`${url}/api/v1/actions`, {
     method: "POST",
     headers: h,
@@ -329,22 +259,14 @@ test('"Apuntar gasto" with the movements in Boni: the movement goes into Boni, t
     }),
   });
   expect(((await r.json()) as { status: string }).status).toBe("ok");
-  const rows = JSON.stringify(
-    await (await fetch(`${url}/api/data/types/t_movimiento/rows`, { headers: h })).json(),
-  );
+  const rows = JSON.stringify(await rowsOf("t_movimiento", h));
   expect(rows).toContain("Bar Pepe");
-  const path = "registros/finanzas/movimientos/2026/10/2026-10-12-1830-menu-con-lucia.md";
-  await expect.poll(() => read(path), { timeout: 15_000 }).toContain("Bar Pepe");
-  expect(read(path)).toContain("[[lucia-ferri]]");
-  expect(read(path)).toContain("boni_id:");
   // Juan's own capture is never a proposal in his inbox.
-  await new Promise((r) => setTimeout(r, 1500));
   const inbox = (await (await fetch(`${url}/api/agent/proposals`, { headers: h })).json()) as {
     proposals: unknown[];
   };
-  // The only proposal is the earlier hand edit of the class; nothing of the capture.
   expect(JSON.stringify(inbox.proposals)).not.toContain("menu-con-lucia");
-  expect(JSON.stringify(inbox.proposals)).not.toContain("Nota nueva");
+  expect(JSON.stringify(inbox.proposals)).not.toContain("Bar Pepe");
   // A shortcut that saves at once is counted at once; Undo in its notice takes the movement out (the same device).
   const cafe = "5b1d2c3e-4f50-4a6b-8c7d-9e0f1a2b3c4d";
   const saved = await fetch(`${url}/api/v1/actions`, {
@@ -365,10 +287,7 @@ test('"Apuntar gasto" with the movements in Boni: the movement goes into Boni, t
     }),
   });
   expect(((await saved.json()) as { status: string }).status).toBe("ok");
-  const rowsNow = async () =>
-    JSON.stringify(
-      await (await fetch(`${url}/api/data/types/t_movimiento/rows`, { headers: h })).json(),
-    );
+  const rowsNow = async () => JSON.stringify(await rowsOf("t_movimiento", h));
   expect(await rowsNow()).toContain("Cafe deshecho");
   const other = { authorization: `Bearer ${await token("movil-ejemplo")}` };
   expect(
@@ -382,32 +301,11 @@ test('"Apuntar gasto" with the movements in Boni: the movement goes into Boni, t
   ).toBe(422);
 });
 
-test("no more vault: the money's collections, then the account without its vault; the calendar and the money go on in Boni", async ({
-  page,
-}) => {
+test("the money's collections: the categories move into Categorías, and a capture is filed under its row", async () => {
   // As on the NAS, with the server running.
-  expect(node(["apps/server/src/cli.ts", "mirror", "juan", "--money", "--apply"])).toContain(
-    "Categorias: 2",
-  );
-  expect(node(["apps/server/src/cli.ts", "mirror", "juan", "--vault-off"])).toContain("Dry run");
-  expect(node(["apps/server/src/cli.ts", "mirror", "juan", "--vault-off", "--apply"])).toContain(
-    "has no vault folder",
-  );
-  const before = read(CLASS);
-  // The calendar: still there, its edits into Boni, nothing written into the vault any more.
-  await connect(page);
-  await page.locator(".ev", { hasText: "Tutoría" }).click();
-  await page.locator(".popover .title-input").fill("Tutoría sin vault");
-  await page.locator(".popover .title-input").press("Enter");
-  await page.keyboard.press("Escape");
+  expect(node(["apps/server/src/cli.ts", "money", "juan"])).toContain("simulacion");
+  expect(node(["apps/server/src/cli.ts", "money", "juan", "--apply"])).toContain("Categorias: 2");
   const h = { authorization: `Bearer ${await token()}` };
-  await expect
-    .poll(async () =>
-      JSON.stringify(
-        await (await fetch(`${url}/api/data/types/t_docencia/rows`, { headers: h })).json(),
-      ),
-    )
-    .toContain("Tutoría sin vault");
   // "Apuntar gasto": the categories from Categorías, the movement into Boni with its category.
   const options = (await (
     await fetch(`${url}/api/v1/options/categories`, { headers: h })
@@ -424,7 +322,7 @@ test("no more vault: the money's collections, then the account without its vault
         amount: 2.4,
         account: "efectivo",
         category: "bebida/cafe",
-        concept: "Cafe sin vault",
+        concept: "Cafe con categoria",
         shared: false,
         date: "2026-10-13",
       },
@@ -432,22 +330,12 @@ test("no more vault: the money's collections, then the account without its vault
     }),
   });
   expect(((await r.json()) as { status: string }).status).toBe("ok");
-  const rows = (await (
-    await fetch(`${url}/api/data/types/t_movimiento/rows`, { headers: h })
-  ).json()) as { rows: { title: string; values: Record<string, unknown> }[] };
-  const cafe = rows.rows.find((x) => JSON.stringify(x).includes("Cafe sin vault"));
+  const cafe = (await rowsOf("t_movimiento", h)).rows.find((x) =>
+    JSON.stringify(x).includes("Cafe con categoria"),
+  );
   expect(cafe).toBeTruthy();
-  const cats = (await (
-    await fetch(`${url}/api/data/types/t_categoria/rows`, { headers: h })
-  ).json()) as { rows: { id: string; values: Record<string, unknown> }[] };
+  const cats = await rowsOf("t_categoria", h);
   const cafeCat = cats.rows.find((x) => x.values.f_nombre === "bebida/cafe")?.id;
   expect(cafeCat).toBeTruthy();
   expect(Object.values(cafe?.values ?? {})).toContain(cafeCat);
-  // A few mirror rounds later, the vault is as it was.
-  await new Promise((res) => setTimeout(res, 3000));
-  expect(read(CLASS)).toBe(before);
-  expect(read("agenda/docencia/2025-09-18 Tutoría.md")).not.toContain("Tutoría sin vault");
-  expect(
-    read("registros/finanzas/movimientos/2026/10/2026-10-13-0900-cafe-sin-vault.md"),
-  ).toBeNull();
 });

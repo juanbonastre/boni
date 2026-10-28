@@ -1,17 +1,14 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { openUserStore, type UserStore } from "@boni/store";
-import { CORE_MARK, importVault } from "@boni/vault-import";
 import { afterEach, describe, expect, it } from "vitest";
 import { mcpAnswer } from "../mcp.ts";
+import { seed, type TypeSpec } from "../seed.test-util.ts";
 import { StoreMoney } from "../v1/storeMoney.ts";
 import { storeNotes } from "./book.ts";
 import { categoryRows, moneyCollections, ruleRows } from "./collections.ts";
 
 /**
- * The reconciliation on Boni's own movements, through Boni's MCP as Claude uses it: an invented vault imported into
- * a store (the movements in core mode), its statements read from the vault, the movements made in the store.
+ * The reconciliation on Boni's own movements, through Boni's MCP as Claude uses it: invented money in a store as it
+ * came into Boni (the statements and reglas.csv rows of "Archivos", the categories a note), the movements made there.
  */
 const FILES: Record<string, string> = {
   "registros/finanzas/categorias.md":
@@ -35,23 +32,48 @@ afterEach(() => {
   for (const c of cleanups.splice(0)) c();
 });
 
-function env(core = true): { root: string; store: UserStore } {
-  const root = mkdtempSync(join(tmpdir(), "boni-money-"));
-  for (const [p, t] of Object.entries(FILES)) {
-    mkdirSync(dirname(join(root, p)), { recursive: true });
-    writeFileSync(join(root, p), t);
-  }
+const TYPES: TypeSpec[] = [
+  { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
+  {
+    key: "movimiento",
+    name: "Movimiento",
+    folder: "registros/finanzas/movimientos/",
+    sensitivity: "sensitive",
+    fields: { date: "date", people: { type: "relation", to: "persona", many: true } },
+  },
+  {
+    key: "deuda",
+    name: "Deuda",
+    folder: "registros/finanzas/deudas/",
+    sensitivity: "sensitive",
+    thirdParty: true,
+    fields: {
+      date: "date",
+      person: { type: "relation", to: "persona" },
+      movement: { type: "relation", to: "movimiento" },
+    },
+  },
+  { key: "nota", name: "Nota", folder: "", fields: { categories: { type: "multiselect" } } },
+  { key: "archivo", name: "Archivos", folder: "registros/finanzas/", files: true },
+];
+
+/** The money as it came into Boni; without `movements`, an account that keeps none there. */
+function env(movements = true): { store: UserStore } {
   const store = openUserStore(":memory:");
-  importVault(root, store, { apply: true });
-  if (core) store.setSetting(`${CORE_MARK}t_movimiento`, "vault");
-  cleanups.push(() => {
-    store.close();
-    rmSync(root, { recursive: true, force: true });
-  });
-  return { root, store };
+  const types = movements
+    ? TYPES
+    : TYPES.filter((t) => t.key !== "movimiento" && t.key !== "deuda");
+  const files = movements
+    ? FILES
+    : Object.fromEntries(
+        Object.entries(FILES).filter(([p]) => !/\/(movimientos|deudas)\//.test(p)),
+      );
+  seed(store, types, files);
+  cleanups.push(() => store.close());
+  return { store };
 }
 let n = 0;
-function call(e: { root: string; store: UserStore }, name: string, args: Record<string, unknown>) {
+function call(e: { store: UserStore }, name: string, args: Record<string, unknown>) {
   const out = mcpAnswer(
     e.store,
     "portatil",
@@ -67,7 +89,7 @@ const movements = (s: UserStore) => {
   return s.list("t_movimiento").map((x) => ({
     title: x.entity.values[t?.titleField as string],
     ref: x.entity.values[by("bank_ref")],
-    // An option by its name, or the text itself (a field with one value in the vault is text).
+    // An option by its name, or the text itself (a field with one value as it came in is text).
     status:
       t?.fields
         .find((f) => f.name === "status")
@@ -93,7 +115,7 @@ describe("the reconciliation in Boni (MCP finanzas_import / finanzas_close)", ()
     const spotify = ms.find(
       (m) => m.path === "registros/finanzas/movimientos/2026/09/2026-09-02-1011-spotify.md",
     );
-    // Titled by its heading, as the vault's import would; the statement's values as imported from it.
+    // Titled by its heading, as Juan's import did; the statement's values as imported from it.
     expect(spotify).toMatchObject({
       title: "Spotify 10,99 EUR",
       status: "pendiente",
@@ -232,10 +254,10 @@ CARD_PAYMENT,Current,2026-10-02 10:11:12,2026-10-03 08:00:00,Spotify,-10.99,0.00
     expect(ruleRows(e.store)).toEqual([["spotify", "Spotify", "suscripciones"]]);
   });
 
-  it("refuses while the movements still live in the vault, and without a month", () => {
+  it("refuses without the movements in Boni, and without a month", () => {
     const e = env(false);
     expect(call(e, "finanzas_import", {})).toMatchObject({ isError: true });
-    expect(call(e, "finanzas_import", {}).text).toContain("aun viven en el vault");
+    expect(call(e, "finanzas_import", {}).text).toContain("no tiene movimientos en Boni");
     expect(call(env(), "finanzas_close", { month: "septiembre" }).isError).toBe(true);
     // Movimientos kept from the models: not read through here either.
     const shut = env();

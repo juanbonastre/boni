@@ -3,7 +3,7 @@ import { readRows } from "./sheets.ts";
 import { asciiLow, type BankLine, parseStatement } from "./statements.ts";
 
 /**
- * The monthly reconciliation (registros/finanzas/README.md and procedimiento-conciliacion.md in Juan's vault),
+ * The monthly reconciliation (procedimiento-conciliacion.md in Juan's Boni),
  * ported from `finanzas.py` of the gastos-app repo (2026-10-23) so it runs on Boni's own movements once they live
  * in Boni: `importStatements` turns new bank lines into movements and joins them with what Juan noted in the app;
  * `closeMonth` checks a month's pending movements and marks the complete ones `conciliado`. Both are a dry run

@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { type FieldDef, type Label, label, type TypeDef } from "@boni/entities";
 import type { OpMeta, UserStore, Writes } from "@boni/store";
-import { CORE_MARK, PATH_FIELD } from "@boni/vault-import";
 import { type CategoryKind, kindByName } from "@boni/views";
+import { PATH_FIELD } from "../paths.ts";
 import { CATEGORIES, storeNotes } from "./book.ts";
 import { parseRuleRows, type Rule, rulePattern, sortRules } from "./reconcile.ts";
 
@@ -10,8 +10,8 @@ import { parseRuleRows, type Rule, rulePattern, sortRules } from "./reconcile.ts
  * The money's own collections (Juan, 2026-10-23: in Boni everything is a collection, but for attachments and
  * notes): "Categorías" (a row per category: its name, its kind, what goes in it) and "Reglas" (a bank text, the
  * merchant and category it means). A movement's `category` points to a row of Categorías. They replace the
- * vault's `registros/finanzas/categorias.md` list and `reglas.csv`; `moneyCollections` moves those in once
- * (`cli.ts mirror <name> --money`).
+ * `registros/finanzas/categorias.md` list and `reglas.csv` the money came with; `moneyCollections` moves those in
+ * once (`cli.ts money <name>`).
  */
 export { CATEGORIES };
 export const RULES = "t_regla";
@@ -160,8 +160,7 @@ export function moneyCollections(
   o: { apply: boolean; device?: string },
 ): MoneyMove {
   const report: string[] = [];
-  if (store.setting(`${CORE_MARK}${MOVEMENTS}`) === null)
-    throw new Error("the movements are not in core mode yet (mirror <name> movimiento first)");
+  if (!has(store, MOVEMENTS)) throw new Error("no movements in Boni (the collection Movimiento)");
   if (moneyCollectionsOn(store))
     throw new Error("the money already uses Categorías: nothing to move");
   const mov = store.schema().types[MOVEMENTS] as TypeDef;

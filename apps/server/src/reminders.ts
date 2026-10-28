@@ -19,13 +19,13 @@ import type { Feeds } from "./feeds.ts";
  * in the device's timezone and language; external calendars that remind are downloaded here too.
  */
 export async function noticesOfAccount(
-  vault: Pick<CalendarSource, "snapshot">,
+  calendar: Pick<CalendarSource, "snapshot">,
   account: Account,
   feeds: Feeds,
   userId: number,
   opts: { tz: string; hours: number; locale: "es" | "en"; h24: boolean; now?: number },
 ): Promise<Notice[]> {
-  const snap = await vault.snapshot();
+  const snap = await calendar.snapshot();
   const model = makeModel(snap.collections, snap.views, { defaultTz: opts.tz });
   const events: CalEvent[] = [];
   for (const row of snap.rows) {

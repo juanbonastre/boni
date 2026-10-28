@@ -1,12 +1,11 @@
 import type { UserStore } from "@boni/store";
 import type { CategoryKind, Debt, Movement } from "@boni/views";
 import { findByPath } from "../data.ts";
-import { entityFromNote } from "../fromNote.ts";
 import { movementPaths, storeNotes } from "../money/book.ts";
 import { categoryRows } from "../money/collections.ts";
 import { MOV, noteName, type Person, parseDebt, parseMovement, titleFromSlug } from "./finanzas.ts";
 
-/** What the API v1 reads and writes of the money: the vault's notes (`Finanzas`) or Boni's own (`StoreMoney`). */
+/** What the API v1 reads of an account's money (`StoreMoney`), and where a captured movement goes. */
 export interface MoneySource {
   movements(): Movement[];
   debts(): Debt[];
@@ -16,28 +15,24 @@ export interface MoneySource {
   people(): Person[];
   fingerprint(): string;
   freeMovementPath(date: string, base: string): string;
-  createMovement(date: string, base: string, content: string): string;
 }
 
 const MOVEMENTS = "t_movimiento";
 const DEBTS = "t_deuda";
 const CATEGORIES_NOTE = "registros/finanzas/categorias.md";
-/** In the order the vault's folders gave them (Finanzas sorts by path): lists that keep the first seen match. */
+/** In the order of their notes' paths (as the first Boni read them): lists that keep the first seen match. */
 const byPath = <T extends { path: string }>(l: T[]) =>
   [...l].sort((a, b) => (a.path < b.path ? -1 : 1));
 
 /**
- * The money read from Boni itself once the movements live there (core mode; Juan, 2026-10-23: no more vault, so
- * the charts cannot read the notes the mirror writes). The same records the vault's notes gave (`parseMovement`,
- * `parseDebt` over each entry's properties by name), so every chart gives the same numbers.
+ * The money read from Boni itself (Juan, 2026-10-23: no more vault). The same records the first Boni's notes gave
+ * (`parseMovement`, `parseDebt` over each entry's properties by name), so every chart gives the same numbers.
  */
 export class StoreMoney implements MoneySource {
   // No parameter properties: the server runs TypeScript with Node's type stripping (AGENTS.md).
   private store: UserStore;
-  private device: string;
-  constructor(store: UserStore, device = "v1") {
+  constructor(store: UserStore) {
     this.store = store;
-    this.device = device;
   }
 
   private typeOf(key: string): string | null {
@@ -106,11 +101,5 @@ export class StoreMoney implements MoneySource {
       if (!taken.has(path)) return path;
     }
     throw new Error("could not find a free note name");
-  }
-
-  createMovement(date: string, base: string, content: string): string {
-    const path = this.freeMovementPath(date, base);
-    entityFromNote(this.store, MOVEMENTS, path, content, this.device);
-    return path;
   }
 }
