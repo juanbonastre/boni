@@ -64,9 +64,43 @@ function filled(): UserStore {
 }
 const text = (files: Map<string, Buffer>, p: string) => files.get(p)?.toString("utf8") ?? "";
 
+describe("a zip written a piece at a time", () => {
+  it("reads back the same as one written whole, also with the system's unzip", () => {
+    const pieces = [
+      Buffer.from("una línea\n"),
+      Buffer.alloc(0),
+      Buffer.from("otra línea\n".repeat(1000)),
+    ];
+    const zip = writeZip(
+      [
+        { path: "a.txt", data: Buffer.from("entera\n") },
+        { path: "log.ndjson", chunks: () => pieces },
+        { path: "b.txt", data: () => Buffer.from("al final\n") },
+      ],
+      NOW,
+    );
+    const files = readZip(zip);
+    expect(files.get("log.ndjson")?.equals(Buffer.concat(pieces))).toBe(true);
+    expect(files.get("a.txt")?.toString()).toBe("entera\n");
+    expect(files.get("b.txt")?.toString()).toBe("al final\n");
+    const dir = mkdtempSync(join(tmpdir(), "boni-zip-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    writeFileSync(join(dir, "x.zip"), zip);
+    let tested = "";
+    try {
+      tested = execFileSync("unzip", ["-t", join(dir, "x.zip")], { encoding: "utf8" });
+    } catch (e) {
+      if ((e as { code?: string }).code !== "ENOENT") throw e;
+      tested = "No errors detected (no unzip here)";
+    }
+    expect(tested).toContain("No errors detected");
+  });
+});
+
 describe("the export", () => {
   it("is a zip any program opens, with every format", () => {
-    const zip = exportZip(filled(), { now: NOW, log: true, views: { charts: [] } });
+    const store = filled();
+    const zip = exportZip(store, { now: NOW, log: true, views: { charts: [] } });
     const files = readZip(zip);
     expect([...files.keys()].filter((p) => !p.endsWith(".md") || p === "README.md")).toEqual([
       "README.md",
@@ -85,6 +119,13 @@ describe("the export", () => {
       "views.json",
     ]);
     expect(files.has("persona/Ana.md")).toBe(true);
+    // The log, written a page at a time, is the same as the whole log written at once.
+    expect(text(files, "log.ndjson")).toBe(
+      store
+        .log()
+        .map((r) => `${JSON.stringify(r)}\n`)
+        .join(""),
+    );
     expect(text(files, "README.md")).toContain("Persona (`persona`): 2");
     // The system's own unzip agrees.
     const dir = mkdtempSync(join(tmpdir(), "boni-zip-"));

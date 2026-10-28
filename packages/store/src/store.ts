@@ -107,6 +107,9 @@ export interface LogRow {
   by: string;
 }
 
+/** An operation without what it changed: who, what kind, on what, when (cheap at any size of the log). */
+export type RecentOp = Omit<LogRow, "before" | "after" | "label">;
+
 export interface StoredEntity {
   entity: Entity;
   /** By field id (and `$body`). */
@@ -175,9 +178,14 @@ export interface UserStore {
   bodyVersions(id: EntityId): BlameVersion[];
   /** A SELECT over the readable tables only (an authorizer refuses anything else). */
   readQuery(sql: string, params?: (string | number | null)[]): Record<string, unknown>[];
-  /** The operation log, oldest first, for an export (`log.ndjson`); never the agent's journal. With `target` or
-   * `run`, only that entity's or that run's operations (by their indexes). */
+  /** The operation log, oldest first; never the agent's journal. With `target`, `run` or `action`, only that entity's,
+   * run's or action's operations (by their indexes). Without one it is the whole log with every before and after:
+   * read it with `logPage` or `recentOps` instead, never whole (a big store's log is more than the server's memory). */
   log(q?: { target?: string; run?: string; action?: number }): LogRow[];
+  /** The operations after `afterSeq`, oldest first, at most `limit`: the whole log a page at a time (an export). */
+  logPage(afterSeq: number, limit: number): LogRow[];
+  /** The latest operations, newest first, without what each changed (what changed lately, at any size). */
+  recentOps(limit: number): RecentOp[];
   /**
    * What the models may see of each type: `visible` (the default), `opaque` (the planner knows the type and
    * code works with its values, but no model reads them) or `hidden` (as if it did not exist). Juan sets it
@@ -223,6 +231,32 @@ export interface UserStore {
   audit: Audit;
   close(): void;
 }
+
+/** An operation's row without what it changed. */
+const opHead = (r: Record<string, unknown>): RecentOp => ({
+  seq: Number(r.seq),
+  at: Number(r.at),
+  actor: r.actor as string,
+  device: (r.device as string | null) ?? null,
+  run: (r.run as string | null) ?? null,
+  kind: r.kind as string,
+  target: r.target as string,
+  undoes: r.undoes === null ? null : Number(r.undoes),
+  by: (r.by as string | null) ?? byOf(r.actor as string, r.device as string | null),
+});
+const parseJson = (x: unknown) => (typeof x === "string" ? JSON.parse(x) : null);
+/** An operation's row with what it changed (keys in the order an export has always written them). */
+const logRow = (r: Record<string, unknown>): LogRow => {
+  const { undoes, by, ...head } = opHead(r);
+  return {
+    ...head,
+    before: parseJson(r.before),
+    after: parseJson(r.after),
+    label: parseJson(r.label),
+    undoes,
+    by,
+  };
+};
 
 export function openUserStore(path: string, opts: { now?: () => number } = {}): UserStore {
   const now = opts.now ?? Date.now;
@@ -970,7 +1004,6 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       ).run(type, level, now(), by);
     },
     log(q = {}) {
-      const parse = (x: unknown) => (typeof x === "string" ? JSON.parse(x) : null);
       const rows =
         q.target !== undefined
           ? db.prepare("SELECT * FROM ops WHERE target = ? ORDER BY seq").all(q.target)
@@ -979,20 +1012,21 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
             : q.action !== undefined
               ? db.prepare("SELECT * FROM ops WHERE action = ? ORDER BY seq").all(q.action)
               : db.prepare("SELECT * FROM ops ORDER BY seq").all();
-      return rows.map((r) => ({
-        seq: Number(r.seq),
-        at: Number(r.at),
-        actor: r.actor as string,
-        device: (r.device as string | null) ?? null,
-        run: (r.run as string | null) ?? null,
-        kind: r.kind as string,
-        target: r.target as string,
-        before: parse(r.before),
-        after: parse(r.after),
-        label: parse(r.label),
-        undoes: r.undoes === null ? null : Number(r.undoes),
-        by: (r.by as string | null) ?? byOf(r.actor as string, r.device as string | null),
-      }));
+      return rows.map(logRow);
+    },
+    logPage(afterSeq, limit) {
+      return db
+        .prepare("SELECT * FROM ops WHERE seq > ? ORDER BY seq LIMIT ?")
+        .all(afterSeq, Math.max(1, Math.min(10_000, Math.floor(limit))))
+        .map(logRow);
+    },
+    recentOps(limit) {
+      return db
+        .prepare(
+          "SELECT seq, at, actor, device, run, kind, target, undoes, by FROM ops ORDER BY seq DESC LIMIT ?",
+        )
+        .all(Math.max(1, Math.min(10_000, Math.floor(limit))))
+        .map(opHead);
     },
     readQuery(sql, params = []) {
       db.setAuthorizer((action, a1, a2) => {

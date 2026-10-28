@@ -111,6 +111,45 @@ describe("the store", () => {
     expect(log.at(-1)?.seq).toBeGreaterThan(log.at(-2)?.seq ?? 0);
   });
 
+  it("reads the log a page at a time, and the latest operations without what they changed", () => {
+    const { store } = fresh();
+    for (let i = 0; i < 7; i++) {
+      const e = store.create("t_libro", { f_titulo: { value: `Libro ${i}`, label: JUAN } }, me);
+      store.update(e.entity.id, { f_titulo: { value: `Libro ${i} bis`, label: JUAN } }, me);
+    }
+    const whole = store.log();
+    // Pages of 3 put back together are the whole log, row for row.
+    const paged = [];
+    for (let after = 0; ; ) {
+      const page = store.logPage(after, 3);
+      if (!page.length) break;
+      expect(page.length).toBeLessThanOrEqual(3);
+      paged.push(...page);
+      after = page.at(-1)?.seq ?? after;
+    }
+    expect(paged).toEqual(whole);
+    // The latest, newest first, as the log has them but without before, after or label (what makes it big).
+    const recent = store.recentOps(4);
+    expect(recent.map((r) => r.seq)).toEqual(
+      whole
+        .slice(-4)
+        .map((r) => r.seq)
+        .reverse(),
+    );
+    expect(recent[0]).toEqual({
+      seq: whole.at(-1)?.seq,
+      at: whole.at(-1)?.at,
+      actor: "user",
+      device: "portatil",
+      run: null,
+      kind: "update",
+      target: whole.at(-1)?.target,
+      undoes: null,
+      by: whole.at(-1)?.by,
+    });
+    expect(store.recentOps(1000)).toHaveLength(whole.length);
+  });
+
   it("counts a type and finds entities by a value without reading them one by one", () => {
     const { store } = fresh();
     const a = store.create("t_libro", { f_titulo: { value: "Uno", label: JUAN } }, me);
