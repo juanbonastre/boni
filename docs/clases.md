@@ -111,6 +111,11 @@ Cada paso es un PR con sus pruebas, y se despliega al cerrarse:
    lateral tiene arriba Buscar, Conversación y «Todas las páginas» (el árbol entero para gestionarlo: buscar, filtrar
    por lo que ve la IA, el ojo, crear, mover y eliminar), y debajo «Recientes» y «Páginas» (para abrir, añadir y
    eliminar, con el ojo), plegables. Las páginas de antes siguen arriba de «Páginas» hasta el paso 5.
-5. Migrar los datos de cada cuenta a su árbol (ensayo antes y una sola ejecución que se deshace entera).
+5. Migrar los datos de cada cuenta a su árbol (ensayo antes y una sola ejecución que se deshace entera). **Hecho el
+   código (2026-10-28):** `cli.ts reshape <cuenta> --plan-note <id>` lee el plan de una nota de la cuenta (datos, con sus
+   nombres: nada del dominio en el código) y crea colecciones, mueve registros conservando su id (lo que el destino no
+   tiene viaja archivado), pone colecciones dentro de otras, apunta los calendarios a una rama separada por un campo
+   (`where`, `make`) y archiva lo que queda vacío; el ensayo trabaja sobre una copia y solo da cuentas, y lo aplicado es
+   una transacción que `--undo` deshace entera. Una hija con título propio lo conserva (no hereda el de su madre).
 6. Sin rutas: fuera `f_vault_path`.
 7. Interfaces.

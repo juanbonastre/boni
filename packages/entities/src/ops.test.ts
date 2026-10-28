@@ -361,18 +361,13 @@ describe("collections as classes (docs/clases.md; D-10)", () => {
   it("moving a collection keeps what the new mother does not give, archived, and the move is undone exactly", () => {
     const s = tree();
     const r = ok(s, { op: "set_parent", type: "t_tarea", parent: "t_proyectos" });
-    // Fecha is the same id in both mothers: inherited again. Título is kept (the title, not archived).
-    expect(ids(r.schema, "t_tarea")).toEqual([
-      "f_nombre<t_proyectos",
-      "f_fecha<t_proyectos",
-      "f_titulo",
-      "f_hecha",
-    ]);
+    // Fecha is the same id in both mothers: inherited again. Título is kept (the title, not archived), and with a
+    // title of her own she does not take her new mother's (Nombre).
+    expect(ids(r.schema, "t_tarea")).toEqual(["f_fecha<t_proyectos", "f_titulo", "f_hecha"]);
     expect(
       r.schema.types.t_tarea?.fields.find((f) => f.id === "f_titulo")?.archived,
     ).toBeUndefined();
     expect(ids(r.schema, "t_urgente")).toEqual([
-      "f_nombre<t_proyectos",
       "f_fecha<t_proyectos",
       "f_titulo<t_tarea",
       "f_hecha<t_tarea",
@@ -386,5 +381,38 @@ describe("collections as classes (docs/clases.md; D-10)", () => {
       true,
     );
     expect(shape(ok(root.schema, root.inverse).schema)).toEqual(shape(s));
+  });
+
+  it("an existing collection goes inside a mother: fields with her ids become hers, a title of its own stays", () => {
+    let s = ok(empty, {
+      op: "create_type",
+      type: type("t_cuentas", [field("f_titulo", "Título")]),
+    }).schema;
+    // Two collections made apart, one with the same title field (by id) and one with its own.
+    s = ok(s, {
+      op: "create_type",
+      type: type("t_gastos", [
+        field("f_titulo", "Título"),
+        field("f_importe", "Importe", "number"),
+      ]),
+    }).schema;
+    s = ok(s, {
+      op: "create_type",
+      type: type("t_reglas", [field("f_texto", "Texto"), field("f_nota", "Nota")]),
+    }).schema;
+    const a = ok(s, { op: "set_parent", type: "t_gastos", parent: "t_cuentas" });
+    expect(ids(a.schema, "t_gastos")).toEqual(["f_titulo<t_cuentas", "f_importe"]);
+    const b = ok(a.schema, { op: "set_parent", type: "t_reglas", parent: "t_cuentas" });
+    expect(ids(b.schema, "t_reglas")).toEqual(["f_texto", "f_nota"]);
+    expect(b.schema.types.t_reglas?.titleField).toBe("f_texto");
+    // Both undone exactly.
+    expect(shape(ok(ok(b.schema, b.inverse).schema, a.inverse).schema)).toEqual(shape(s));
+    // The same id holding another kind of value is refused.
+    const clash = ok(s, {
+      op: "create_type",
+      type: type("t_otra", [field("f_nombre", "Nombre"), field("f_titulo", "Título", "number")]),
+    }).schema;
+    const r = applySchemaOp(clash, { op: "set_parent", type: "t_otra", parent: "t_cuentas" });
+    expect(r.ok ? "" : r.error).toContain("is a number here");
   });
 });

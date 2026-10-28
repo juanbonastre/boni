@@ -70,11 +70,22 @@ function withType(schema: Schema, def: TypeDef): Schema {
   return { types: { ...schema.types, [def.id]: def } };
 }
 
-/** A daughter's fields: her mother's (as inherited copies) and then her own. */
+/**
+ * A daughter's fields: her mother's (as inherited copies) and then her own. The title is each record's own
+ * (docs/clases.md §1): a daughter with a title field of her own keeps it and does not take her mother's. A field of
+ * her own with the id of one her mother gives becomes that one (its values stay where they are: values go by id).
+ */
 function inherit(schema: Schema, def: TypeDef): TypeDef {
   const mother = def.parent ? schema.types[def.parent] : undefined;
-  const inherited = (mother?.fields ?? []).map((f) => ({ ...f, from: f.from ?? mother?.id }));
-  return { ...def, fields: [...inherited, ...ownFields(def)] } as TypeDef;
+  const ownTitle = ownFields(def).some((f) => f.id === def.titleField);
+  const inherited = (mother?.fields ?? [])
+    .filter((f) => !(ownTitle && f.id === mother?.titleField && f.id !== def.titleField))
+    .map((f) => ({ ...f, from: f.from ?? mother?.id }));
+  const given = new Set(inherited.map((f) => f.id));
+  return {
+    ...def,
+    fields: [...inherited, ...ownFields(def).filter((f) => !given.has(f.id))],
+  } as TypeDef;
 }
 
 /**
@@ -180,6 +191,12 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
       if (parent && !schema.types[parent]) return fail(`unknown mother "${parent}"`);
       if (parent && branch(schema, def.id).includes(parent))
         return fail("a collection cannot go inside its own branch");
+      // A field she has with the id of one the new mother gives becomes that one: only when it holds the same kind.
+      for (const f of parent ? (schema.types[parent]?.fields ?? []) : []) {
+        const mine = ownFields(def).find((x) => x.id === f.id);
+        if (mine && mine.type !== f.type)
+          return fail(`"${mine.name}" is a ${mine.type} here and a ${f.type} in "${parent}"`);
+      }
       // What the new mother does not give stays as the collection's own field, archived (its values are kept).
       const coming = new Set((parent ? schema.types[parent]?.fields : [])?.map((f) => f.id));
       const kept = def.fields

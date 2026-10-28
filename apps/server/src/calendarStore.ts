@@ -20,7 +20,15 @@ import {
   withMovedRowProperties,
   withNewRowProperties,
 } from "@boni/calendar";
-import { type Entity, type FieldDef, type FieldType, label, type TypeDef } from "@boni/entities";
+import {
+  branch,
+  type Entity,
+  type FieldDef,
+  type FieldType,
+  label,
+  type Schema,
+  type TypeDef,
+} from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
 import { ghostRows } from "./data.ts";
 import { HASH_FIELD, PATH_FIELD } from "./paths.ts";
@@ -67,11 +75,33 @@ const KEEP = 500;
 /** The column added the first time an event gets reminders of its own (as the apps' writer did). */
 const EVENT_REMINDERS_COLUMN = { id: "avisos", name: "Avisos", type: "text" as const };
 
-/** A calendar kept in Boni: its type, and its definition as written (the `collection:` map) and as read. */
+/**
+ * Which records of a calendar's branch it shows (D-14: a calendar is any collection with a date, split by a field the
+ * user chooses): those whose `field` holds `value` (for a relation, the id of the record it points to) and, with
+ * `orEmpty`, those where it holds nothing.
+ */
+export interface Where {
+  field: string;
+  value: string;
+  orEmpty?: boolean;
+}
+/** Where a calendar over a branch makes its records: tasks (a value in its task column) and events. */
+export interface Make {
+  event: string;
+  task?: string;
+}
+
+/**
+ * A calendar kept in Boni: its type, and its definition as written (the `collection:` map) and as read. With
+ * `where`, the calendar is the type's whole branch (her daughters' records too) filtered by a field; with `make`,
+ * its new records go to one of her daughters, and a record marked as a task (or no longer one) moves between them.
+ */
 export interface Placed {
   type: string;
   raw: Record<string, unknown>;
   def: CollectionDef;
+  where?: Where;
+  make?: Make;
 }
 
 /** The calendars kept in a store (none: the account has no calendar). */
@@ -79,17 +109,51 @@ export function calendarDefs(store: UserStore): Placed[] {
   const text = store.setting(CALENDAR_DEFS);
   if (!text) return [];
   try {
-    const list = JSON.parse(text) as { type?: unknown; raw?: unknown }[];
-    const types = store.schema().types;
+    const list = JSON.parse(text) as {
+      type?: unknown;
+      raw?: unknown;
+      where?: unknown;
+      make?: unknown;
+    }[];
+    const schema = store.schema();
+    const types = schema.types;
     return list.flatMap((x) => {
       if (typeof x.type !== "string" || !types[x.type] || !x.raw || typeof x.raw !== "object")
         return [];
       const r = parseCollectionDef(x.raw);
-      return r.ok ? [{ type: x.type, raw: x.raw as Record<string, unknown>, def: r.def }] : [];
+      if (!r.ok) return [];
+      const placed: Placed = { type: x.type, raw: x.raw as Record<string, unknown>, def: r.def };
+      const w = x.where as Partial<Where> | undefined;
+      if (w && typeof w.field === "string" && typeof w.value === "string")
+        placed.where = { field: w.field, value: w.value, ...(w.orEmpty ? { orEmpty: true } : {}) };
+      // Only daughters of the calendar's own branch, never archived.
+      const inBranch = (t: unknown): t is string =>
+        typeof t === "string" &&
+        !!types[t] &&
+        !types[t]?.archived &&
+        branch(schema, x.type as string).includes(t);
+      const m = x.make as Partial<Make> | undefined;
+      if (m && inBranch(m.event))
+        placed.make = { event: m.event, ...(inBranch(m.task) ? { task: m.task } : {}) };
+      return [placed];
     });
   } catch {
     return [];
   }
+}
+
+/** Whether a record belongs to a calendar: its type in the calendar's branch, its field as `where` says. */
+function inCalendar(
+  schema: Schema,
+  p: Placed,
+  e: { type: string; values: Record<string, unknown> },
+) {
+  if (e.type !== p.type && !(p.where && branch(schema, p.type).includes(e.type))) return false;
+  if (!p.where) return true;
+  const v = e.values[p.where.field];
+  const empty = v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length);
+  if (empty) return !!p.where.orEmpty;
+  return Array.isArray(v) ? v.includes(p.where.value) : v === p.where.value;
 }
 
 /**
@@ -97,7 +161,10 @@ export function calendarDefs(store: UserStore): Placed[] {
  * that column's name. Null when the type is no calendar or its calendar has no tasks ("Ya lo hice" needs one).
  */
 export function taskDoneField(store: UserStore, type: string): FieldDef | null {
-  const p = calendarDefs(store).find((x) => x.type === type);
+  const schema = store.schema();
+  const p = calendarDefs(store).find(
+    (x) => x.type === type || (x.where && branch(schema, x.type).includes(type)),
+  );
   const col = p?.def.mapping.task?.column;
   if (!p || !col) return null;
   const name = p.def.columns.find((c) => c.id === col)?.name ?? col;
@@ -110,9 +177,19 @@ export function taskDoneField(store: UserStore, type: string): FieldDef | null {
 /** Keeps the calendars' definitions (as written: `parseCollectionDef` reads them back). */
 export function saveCalendarDefs(
   store: UserStore,
-  list: readonly { type: string; raw: Record<string, unknown> }[],
+  list: readonly { type: string; raw: Record<string, unknown>; where?: Where; make?: Make }[],
 ): void {
-  store.setSetting(CALENDAR_DEFS, JSON.stringify(list.map((p) => ({ type: p.type, raw: p.raw }))));
+  store.setSetting(
+    CALENDAR_DEFS,
+    JSON.stringify(
+      list.map((p) => ({
+        type: p.type,
+        raw: p.raw,
+        ...(p.where ? { where: p.where } : {}),
+        ...(p.make ? { make: p.make } : {}),
+      })),
+    ),
+  );
 }
 
 /** What the server serves as an account's calendar (its store: `StoreCalendar`). */
@@ -181,8 +258,9 @@ export class StoreCalendar implements CalendarSource {
 
   // ------------------------------------------------------------ rows
 
-  private fieldsOf(p: Placed): { prop: string; field: FieldDef }[] {
-    const def = this.store.schema().types[p.type];
+  /** The fields a calendar shows of a record of `type` (her own collection's: a branch's daughters differ). */
+  private fieldsOf(p: Placed, type = p.type): { prop: string; field: FieldDef }[] {
+    const def = this.store.schema().types[type];
     if (!def) return [];
     return def.fields
       .filter((f) => !f.hidden && !f.archived && f.id !== PATH_FIELD && f.id !== HASH_FIELD)
@@ -239,7 +317,7 @@ export class StoreCalendar implements CalendarSource {
 
   private rowOf(e: Entity, p: Placed): Row {
     const values: Record<string, PropValue> = {};
-    for (const { prop, field } of this.fieldsOf(p)) {
+    for (const { prop, field } of this.fieldsOf(p, e.type)) {
       const v = this.toProp(field, e.values[field.id]);
       if (v !== null) values[prop] = v;
     }
@@ -254,8 +332,26 @@ export class StoreCalendar implements CalendarSource {
     };
   }
 
-  private placedOfType(type: string) {
-    return this.placed.find((p) => p.type === type);
+  /** The calendar a record is in (the first that takes it), or none. */
+  private placedOf(e: { type: string; values: Record<string, unknown> }) {
+    const schema = this.store.schema();
+    return this.placed.find((p) => inCalendar(schema, p, e));
+  }
+
+  /** The records a calendar takes, each once (the first calendar that takes it wins). */
+  private entitiesOf(p: Placed, taken: Set<string>): Entity[] {
+    const schema = this.store.schema();
+    const types = p.where
+      ? branch(schema, p.type).filter((t) => !schema.types[t]?.archived)
+      : [p.type];
+    const out: Entity[] = [];
+    for (const t of types)
+      for (const e of this.store.entities(t))
+        if (!taken.has(e.id) && inCalendar(schema, p, e)) {
+          taken.add(e.id);
+          out.push(e);
+        }
+    return out;
   }
 
   /** Reads what changed in the store since the last look; a new version when anything did. */
@@ -276,9 +372,16 @@ export class StoreCalendar implements CalendarSource {
       const next = new Map<string, Row>();
       this.entityOf.clear();
       this.rowIdOf.clear();
+      const taken = new Set<string>();
       for (const p of placed)
-        for (const e of this.store.entities(p.type)) {
+        for (const e of this.entitiesOf(p, taken)) {
           const row = this.rowOf(e, p);
+          // Two records of one note (an old import's duplicates) show as one row: the last made, as a
+          // collection's own order has it (wherever in a branch each one is).
+          const had = next.get(row.id);
+          const hadId = this.entityOf.get(row.id) ?? "";
+          if (had && (had.created > row.created || (had.created === row.created && hadId > e.id)))
+            continue;
           next.set(row.id, row);
           this.entityOf.set(row.id, e.id);
           this.rowIdOf.set(e.id, row.id);
@@ -289,10 +392,9 @@ export class StoreCalendar implements CalendarSource {
     } else {
       const ch = this.store.changesSince(this.seenStore);
       for (const s of ch.entities) {
-        const p = this.placedOfType(s.entity.type);
-        if (!p) continue;
         const was = this.rowIdOf.get(s.entity.id);
-        if (s.entity.deleted !== undefined) {
+        const p = s.entity.deleted === undefined ? this.placedOf(s.entity) : undefined;
+        if (!p || s.entity.deleted !== undefined) {
           if (was) {
             this.rows.delete(was);
             this.entityOf.delete(was);
@@ -326,11 +428,16 @@ export class StoreCalendar implements CalendarSource {
     if (first || full || ghostsChanged) {
       // The pending proposals drawn as rows (only when they changed: the key is one cheap query a second).
       const next = new Map<string, Row>();
-      for (const p of placed)
-        for (const g of ghostRows(this.store, p.type)) {
-          const e = { id: g.id, values: g.values, created: g.updated, updated: g.updated };
-          next.set(g.id, this.rowOf(e as unknown as Entity, p));
-        }
+      const schema = this.store.schema();
+      for (const p of placed) {
+        const types = p.where ? branch(schema, p.type) : [p.type];
+        for (const type of types)
+          for (const g of ghostRows(this.store, type)) {
+            const e = { id: g.id, type, values: g.values, created: g.updated, updated: g.updated };
+            if (next.has(g.id) || !inCalendar(schema, p, e)) continue;
+            next.set(g.id, this.rowOf(e as unknown as Entity, p));
+          }
+      }
       for (const id of this.ghostIds)
         if (!next.has(id)) {
           this.rows.delete(id);
@@ -421,7 +528,8 @@ export class StoreCalendar implements CalendarSource {
       this.store.applySchema(
         {
           op: "set_options",
-          type,
+          // An inherited field is changed in the collection it comes from.
+          type: field?.from ?? type,
           field: f.id,
           options: [...(field?.options ?? []), { id, name, label: this.labelFor(type, f, device) }],
         },
@@ -471,9 +579,12 @@ export class StoreCalendar implements CalendarSource {
     );
   }
 
-  /** The field of a property, made (from its value's shape) when the type does not have one yet. */
-  private fieldFor(p: Placed, prop: string, v: PropValue, device: string): FieldDef {
-    const known = this.fieldsOf(p).find((x) => x.prop === prop)?.field;
+  /**
+   * The field of a property for a record of `of`, made (from its value's shape) when it does not have one yet: in
+   * the calendar's own collection, so every daughter of a branch gets it too.
+   */
+  private fieldFor(p: Placed, of: string, prop: string, v: PropValue, device: string): FieldDef {
+    const known = this.fieldsOf(p, of).find((x) => x.prop === prop)?.field;
     if (known) return known;
     const col = p.def.columns.find((c) => c.id === prop);
     const type: FieldType =
@@ -510,25 +621,54 @@ export class StoreCalendar implements CalendarSource {
     return field;
   }
 
-  private writesFor(p: Placed, before: Row | null, after: Row, device: string): Writes {
+  private writesFor(
+    p: Placed,
+    type: string,
+    before: Row | null,
+    after: Row,
+    device: string,
+  ): Writes {
     const writes: Writes = {};
     const props = new Set([...Object.keys(after.values), ...Object.keys(before?.values ?? {})]);
     for (const prop of props) {
       const next = after.values[prop] ?? null;
       if (before && same(before.values[prop], next)) continue;
-      if (next === null && !this.fieldsOf(p).some((x) => x.prop === prop)) continue;
+      if (next === null && !this.fieldsOf(p, type).some((x) => x.prop === prop)) continue;
       // A device edits only the calendar's columns: a property it lacks that is none of them (the area its
       // collection gives new rows, a project set in Boni) is one it never got back yet (its draft, sent again before
       // the server's copy arrived), never one it cleared.
       if (before && next === null && !p.def.columns.some((c) => c.id === prop)) continue;
-      const f = this.fieldFor(p, prop, next, device);
-      const value = this.fromProp(p.type, f, next, device);
+      const f = this.fieldFor(p, type, prop, next, device);
+      const value = this.fromProp(type, f, next, device);
       if (value === undefined) continue;
-      writes[f.id] = { value, label: this.labelFor(p.type, f, device) };
+      writes[f.id] = { value, label: this.labelFor(type, f, device) };
     }
     if (!before || (before.body ?? "") !== (after.body ?? ""))
-      writes[BODY] = { value: after.body || null, label: this.labelFor(p.type, null, device) };
+      writes[BODY] = { value: after.body || null, label: this.labelFor(type, null, device) };
     return writes;
+  }
+
+  /** Whether a row is a task: its calendar's task column holds a value (done or not). */
+  private isTask(p: Placed, row: Row): boolean {
+    const col = p.def.mapping.task?.column;
+    return !!col && row.values[col] !== undefined && row.values[col] !== null;
+  }
+
+  /** The collection a row of calendar `p` belongs in: with `make`, its tasks' or its events'; else the calendar's. */
+  private homeOf(p: Placed, row: Row): string {
+    if (!p.make) return p.type;
+    return this.isTask(p, row) ? (p.make.task ?? p.make.event) : p.make.event;
+  }
+
+  /** The field value that puts a record in calendar `p` (its `where`), when it does not hold it yet. */
+  private whereWrite(p: Placed, type: string, eid: string | null, writes: Writes, device: string) {
+    if (!p.where) return;
+    const cur = eid ? this.store.get(eid)?.entity : undefined;
+    if (cur && inCalendar(this.store.schema(), p, cur)) return;
+    const f = this.store.schema().types[type]?.fields.find((x) => x.id === p.where?.field);
+    if (!f) return;
+    const value = f.type === "relation" && f.relation?.many ? [p.where.value] : p.where.value;
+    writes[f.id] = { value, label: this.labelFor(type, f, device) };
   }
 
   async apply(
@@ -566,24 +706,33 @@ export class StoreCalendar implements CalendarSource {
         // folder (keeping its file name when free). The device maps the row by `aliases`.
         const from = this.placed.find((x) => x.def.id === before.collectionId)?.def;
         const values = withMovedRowProperties(c.row.values, from, p.def);
-        this.store.retype(eid, p.type, meta);
-        const writes = this.writesFor(p, null, { ...c.row, values }, device);
+        // Into the collection it belongs in there (within one branch it may stay where it is: only its field changes).
+        const home = this.homeOf(p, { ...c.row, values });
+        if (this.store.get(eid)?.entity.type !== home) this.store.retype(eid, home, meta);
+        const writes = this.writesFor(p, home, null, { ...c.row, values }, device);
+        this.whereWrite(p, home, eid, writes, device);
         const was = this.store.get(eid)?.entity.values[PATH_FIELD];
         const name = typeof was === "string" ? was.slice(was.lastIndexOf("/") + 1) : null;
         const path = name ? `${p.def.folder}/${name}` : null;
         if (path && !this.entityOf.has(path))
-          writes[PATH_FIELD] = { value: path, label: this.labelFor(p.type, null, device) };
+          writes[PATH_FIELD] = { value: path, label: this.labelFor(home, null, device) };
         if (Object.keys(writes).length) this.store.update(eid, writes, meta);
         const id = path && writes[PATH_FIELD] ? path : c.row.id;
         if (id !== c.row.id) aliases[c.row.id] = id;
         touched.push(id);
       } else if (eid && before) {
-        const writes = this.writesFor(p, before, c.row, device);
+        // Marked as a task, or no longer one: to the collection of tasks or of events (same record).
+        const type = this.store.get(eid)?.entity.type ?? p.type;
+        const home = this.homeOf(p, c.row);
+        if (p.make && home !== type) this.store.retype(eid, home, meta);
+        const writes = this.writesFor(p, p.make ? home : type, before, c.row, device);
         if (Object.keys(writes).length) this.store.update(eid, writes, meta);
         touched.push(c.row.id);
       } else {
         const row = { ...c.row, values: withNewRowProperties(c.row.values, p.def) };
-        const writes = this.writesFor(p, null, row, device);
+        const home = this.homeOf(p, row);
+        const writes = this.writesFor(p, home, null, row, device);
+        this.whereWrite(p, home, null, writes, device);
         // Its note's name, as the apps name one ("2026-10-27 Clase"): kept as the row's id (devices know rows by
         // it until notes stop having paths). Untitled, the entity's own id.
         const path = String(row.values[p.def.mapping.title] ?? "").trim()
@@ -591,8 +740,8 @@ export class StoreCalendar implements CalendarSource {
               this.entityOf.has(x),
             )
           : null;
-        if (path) writes[PATH_FIELD] = { value: path, label: this.labelFor(p.type, null, device) };
-        const made = this.store.create(p.type, writes, meta);
+        if (path) writes[PATH_FIELD] = { value: path, label: this.labelFor(home, null, device) };
+        const made = this.store.create(home, writes, meta);
         const id = path ?? made.entity.id;
         aliases[c.row.id] = id;
         touched.push(id);
@@ -629,7 +778,7 @@ export class StoreCalendar implements CalendarSource {
     if (!parseCollectionDef(raw).ok) return "conflict";
     saveCalendarDefs(
       this.store,
-      placed.map((x) => (x === p ? { type: x.type, raw } : x)),
+      placed.map((x) => (x === p ? { ...x, raw } : x)),
     );
     this.poll();
     return "ok";
