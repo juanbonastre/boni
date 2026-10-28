@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Only for external calendars (iCal addresses the user adds); the vault itself is local. -->
+    <!-- The server (Boni Calendar Server) and external calendars (iCal addresses the user adds). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Reminders (phase 5): notifications at an exact time, also after the phone restarts. A calendar may
          use USE_EXACT_ALARM (granted with the app); before Android 13 the older permission does it. -->
