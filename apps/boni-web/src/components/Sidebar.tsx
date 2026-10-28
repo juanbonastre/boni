@@ -28,6 +28,7 @@ import {
   toggleSidebar,
   useStore,
 } from "../store.ts";
+import { CollectionTree } from "./CollectionTree.tsx";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 
 /**
@@ -70,55 +71,8 @@ export function Sidebar() {
           <span className="nav-name">{t("nav.chat")}</span>
           {waiting > 0 && <span className="nav-count">{waiting}</span>}
         </button>
-        <button
-          type="button"
-          className={`nav-row${view.kind === "collections" || view.kind === "collection" ? " active" : ""}`}
-          onClick={showCollections}
-        >
-          <Database size={15} strokeWidth={1.8} />
-          <span className="nav-name">{t("nav.collections")}</span>
-        </button>
-        <button
-          type="button"
-          className={`nav-row${view.kind === "notes" || (view.kind === "row" && view.from === "notes") ? " active" : ""}`}
-          onClick={showNotes}
-        >
-          <FolderTree size={15} strokeWidth={1.8} />
-          <span className="nav-name">{t("nav.notes")}</span>
-        </button>
-        {/* «Modelos» is in Ajustes; what the models and Boni did are pages («Uso de la IA», «Actividad»). */}
-
-        {pages !== null && (
-          <>
-            <div className="group-head">
-              <span>{t("nav.pages")}</span>
-              <button
-                type="button"
-                className="icon-btn tiny"
-                onClick={() => void newPage()}
-                title={t("page.new")}
-                aria-label={t("page.new")}
-              >
-                <Plus size={13} strokeWidth={2} />
-              </button>
-            </div>
-            <ul className="nav-list" aria-label={t("nav.pages")}>
-              <PageTree pages={pages} parent={null} depth={0} drag={drag} setDrag={setDrag} />
-              {pages.length === 0 && (
-                <li>
-                  <button
-                    type="button"
-                    className="nav-row muted-row"
-                    onClick={() => void newPage()}
-                  >
-                    <Plus size={14} strokeWidth={1.8} />
-                    <span className="nav-name">{t("page.new")}</span>
-                  </button>
-                </li>
-              )}
-            </ul>
-          </>
-        )}
+        {/* One tree (docs/clases.md §2.7): collections, their records with a note, Boni's own things. */}
+        <CollectionTree />
       </div>
       {pages !== null && (
         <button type="button" className="nav-row trash-row" onClick={() => void loadTrash()}>

@@ -499,3 +499,69 @@ export function restoreRow(store: UserStore, id: string, device?: string) {
     throw new DataError("not-found");
   store.restore(id, meta(device));
 }
+
+// ------------------------------------------------------------------ the tree (docs/clases.md §2.7)
+
+/** Where a collection's choice of showing its notes in the tree is kept (the account's, on every device). */
+export const TREE_UI = "ui/tree/";
+
+/**
+ * Whether a collection's records with a note show in the tree: the user's choice; by default only in a collection
+ * with no properties of its own besides the title (a folder of notes), so the tree has no noise.
+ */
+export function notesInTree(store: UserStore, def: TypeDef): boolean {
+  const v = store.setting(`${TREE_UI}${def.id}`);
+  if (v === "1" || v === "0") return v === "1";
+  return fieldsOf(def).every((f) => f.id === def.titleField);
+}
+
+/** A note that is more than an empty template: headings and blank lines alone do not count. */
+const hasNote = (body: string | undefined) => !!body && /[^\s#]/.test(body.replace(/^#+.*$/gm, ""));
+
+export interface TreeCollection {
+  id: string;
+  parent?: string;
+  name: string;
+  icon: string;
+  count: number;
+  level: AiLevel;
+  /** Whether its records with a note show in the tree. */
+  notes: boolean;
+}
+
+/** The tree: every collection of the user with its mother, and the records with a note of those that show them. */
+export function treeOf(store: UserStore): {
+  collections: TreeCollection[];
+  notes: { id: string; type: string; title: string }[];
+} {
+  const types = userTypes(store);
+  const levels = store.aiAccess();
+  const notes: { id: string; type: string; title: string }[] = [];
+  const collections = types.map((t) => {
+    const show = notesInTree(store, t);
+    if (show)
+      for (const e of store.entities(t.id))
+        if (hasNote(e.body))
+          notes.push({
+            id: e.id,
+            type: t.id,
+            title: String(shown(e.values, t.titleField)[t.titleField] ?? ""),
+          });
+    return {
+      id: t.id,
+      ...(t.parent ? { parent: t.parent } : {}),
+      name: t.name,
+      icon: t.icon ?? "",
+      // Her table's rows: hers and her daughters'.
+      count: branch(store.schema(), t.id).reduce((k, id) => k + store.count(id), 0),
+      level: levels[t.id] ?? "visible",
+      notes: show,
+    };
+  });
+  return { collections, notes };
+}
+
+export function setNotesInTree(store: UserStore, type: string, on: boolean): void {
+  if (!userTypes(store).some((t) => t.id === type)) throw new DataError("not-found");
+  store.setSetting(`${TREE_UI}${type}`, on ? "1" : "0");
+}

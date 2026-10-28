@@ -26,6 +26,7 @@ import {
   type Proposal,
   type RunDetail,
   type RunSummary,
+  type Tree,
   type TurnResult,
   type Visibility,
 } from "./core/agent.ts";
@@ -183,6 +184,8 @@ interface State {
   chartForPage: { page: string; block: string } | null;
   /** The user's collections (as databases), and the rows loaded of each. */
   dataTypes: DataType[] | null;
+  /** The tree of the sidebar (docs/clases.md §2.7): collections and the records with a note they show. */
+  tree: Tree | null;
   /** The row open as a page, with its text. */
   row: DataRow | null;
   /** The open row's text as the page editor's blocks (saved back as Markdown). */
@@ -306,6 +309,7 @@ export const useStore = create<State>(() => ({
   findOpen: false,
   trash: null,
   dataTypes: null,
+  tree: null,
   rows: {},
   collectionViews: {},
   openedNote: null,
@@ -1527,6 +1531,8 @@ export async function loadPages(): Promise<PageInfo[] | null> {
 
 /** At start and after a reconnection: the pages again, and the start page if none is open. */
 async function startPages() {
+  void loadTree();
+  void loadDataTypes();
   const pages = await loadPages();
   const v = get().view;
   if (v.kind === "home" || (v.kind === "page" && !pages?.some((p) => p.id === v.id)))
@@ -1863,6 +1869,31 @@ export async function deletePage(id: string) {
 }
 
 // ------------------------------------------------------------------ databases (plan PR 19)
+
+/** The sidebar's tree, again from the server. */
+export async function loadTree(): Promise<Tree | null> {
+  try {
+    const tree = await agent.tree();
+    set({ tree });
+    return tree;
+  } catch {
+    return get().tree;
+  }
+}
+
+/** Whether a collection's records with a note show in the tree (the account's choice, on every device). */
+export async function setNotesInTree(type: string, notes: boolean) {
+  const tree = get().tree;
+  if (tree)
+    set({
+      tree: {
+        ...tree,
+        collections: tree.collections.map((c) => (c.id === type ? { ...c, notes } : c)),
+      },
+    });
+  await agent.setNotesInTree(type, notes);
+  await loadTree();
+}
 
 export async function loadDataTypes(): Promise<DataType[] | null> {
   try {

@@ -119,6 +119,7 @@ export function CollectionView() {
   const t = useStore((s) => s.t);
   const id = useStore((s) => (s.view.kind === "collection" ? s.view.type : ""));
   const type = useStore((s) => s.dataTypes?.find((x) => x.id === id));
+  const mother = useStore((s) => s.dataTypes?.find((x) => x.id === type?.parent));
   const view = useStore((s) => s.collectionViews[id]) ?? DEFAULT_VIEW;
   useEffect(() => {
     void loadDataTypes();
@@ -137,7 +138,8 @@ export function CollectionView() {
   return (
     <div className="content page-doc full">
       <div className="doc">
-        <div className="row-kind">{t("nav.collections")}</div>
+        {/* Its mother, where it is in the tree (a collection at the root has none). */}
+        <div className="row-kind">{mother?.name ?? ""}</div>
         <h1 className="cols-title">
           {type.icon && <span>{type.icon}</span>}
           {type.name}

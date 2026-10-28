@@ -809,8 +809,29 @@ export interface DataField {
   options?: { id: string; name: string; color?: string }[];
   relation?: { target: string; many: boolean };
 }
+/** A collection in the tree: its mother, its name and whether its records with a note show under it. */
+export interface TreeCollection {
+  id: string;
+  parent?: string;
+  name: string;
+  icon: string;
+  count: number;
+  notes: boolean;
+}
+export interface TreeNote {
+  id: string;
+  type: string;
+  title: string;
+}
+export interface Tree {
+  collections: TreeCollection[];
+  notes: TreeNote[];
+}
+
 export interface DataType {
   id: string;
+  /** Its mother collection (docs/clases.md): its table is part of hers. */
+  parent?: string;
   name: string;
   icon: string;
   titleField: string;
@@ -854,6 +875,7 @@ function parseDataType(v: unknown): DataType | null {
   if (!isObj(v) || typeof v.id !== "string" || !Array.isArray(v.fields)) return null;
   return {
     id: v.id,
+    ...(typeof v.parent === "string" ? { parent: v.parent } : {}),
     name: str(v.name, 200) ?? v.id,
     icon: str(v.icon, 16) ?? "",
     titleField: str(v.titleField, 80) ?? "",
@@ -1275,6 +1297,36 @@ export class AgentApi {
     if (isObj(b) && Array.isArray(b.problems)) return { problems: b.problems };
     return { ...rowList(b), total: isObj(b) && typeof b.total === "number" ? b.total : 0 };
   };
+  /** The tree (docs/clases.md §2.7): every collection with its mother, and the records with a note it shows. */
+  tree = async (): Promise<Tree> => {
+    const b = await this.call("GET", "", undefined, "api/data/tree");
+    const cols = isObj(b) && Array.isArray(b.collections) ? b.collections : [];
+    const notes = isObj(b) && Array.isArray(b.notes) ? b.notes : [];
+    return {
+      collections: cols.flatMap((c): TreeCollection[] =>
+        isObj(c) && typeof c.id === "string"
+          ? [
+              {
+                id: c.id,
+                ...(typeof c.parent === "string" ? { parent: c.parent } : {}),
+                name: str(c.name, 200) ?? c.id,
+                icon: str(c.icon, 16) ?? "",
+                count: typeof c.count === "number" ? c.count : 0,
+                notes: c.notes === true,
+              },
+            ]
+          : [],
+      ),
+      notes: notes.flatMap((n): TreeNote[] =>
+        isObj(n) && typeof n.id === "string" && typeof n.type === "string"
+          ? [{ id: n.id, type: n.type, title: str(n.title, 300) ?? "" }]
+          : [],
+      ),
+    };
+  };
+  /** Whether a collection's records with a note show in the tree. */
+  setNotesInTree = async (type: string, notes: boolean) =>
+    void (await this.call("PUT", `/${encodeURIComponent(type)}/tree`, { notes }, "api/data/types"));
   // The user's collections as databases (plan PR 19).
   dataTypes = async (): Promise<DataType[]> => {
     const b = await this.call("GET", "", undefined, "api/data/types");

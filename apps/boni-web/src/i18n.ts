@@ -281,6 +281,11 @@ const es = {
   "ai.level.private.help":
     "Ninguna IA la ve, nunca. Queda bloqueada: solo se desbloquea desde su página en Colecciones.",
   "nav.collections": "Colecciones",
+  "tree.label": "Colecciones y notas",
+  "tree.boni": "Boni",
+  "tree.notesShow": "Mostrar sus notas en el árbol",
+  "tree.notesHide": "Ocultar sus notas del árbol",
+  "db.collection": "Colección",
   "peek.open": "Abrir en Boni",
   "inbox.add.task": "Añadir tarea a {collection}",
   "inbox.add.event": "Añadir evento a {collection}",
@@ -1519,6 +1524,11 @@ const en: Record<Key, string> = {
   "ai.level.private.help":
     "No AI ever sees it. It stays locked: it is unlocked only from its page in Collections.",
   "nav.collections": "Collections",
+  "tree.label": "Collections and notes",
+  "tree.boni": "Boni",
+  "tree.notesShow": "Show its notes in the tree",
+  "tree.notesHide": "Hide its notes from the tree",
+  "db.collection": "Collection",
   "peek.open": "Open in Boni",
   "inbox.add.task": "Add a task to {collection}",
   "inbox.add.event": "Add an event to {collection}",

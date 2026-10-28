@@ -35,9 +35,11 @@ import {
   listTypes,
   removeRow,
   restoreRow,
+  setNotesInTree,
   setProtection,
   setRowUi,
   setRule,
+  treeOf,
   updateRow,
 } from "./data.ts";
 import type { Db } from "./db.ts";
@@ -362,6 +364,13 @@ export function makeApp(opts: ServerOptions): App {
           usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
         });
       try {
+        if (route === "GET /api/data/tree") return send(res, 200, treeOf(store));
+        if (route === "PUT /api/data/types/:type/tree") {
+          const b = await bodyOf(req);
+          if (typeof b.notes !== "boolean") return send(res, 400, { error: "bad-request" });
+          setNotesInTree(store, params.type ?? "", b.notes);
+          return send(res, 200, {});
+        }
         if (route === "GET /api/data/types")
           return send(res, 200, { types: listTypes(store, sys()) });
         if (route === "GET /api/data/types/:type/rows") {

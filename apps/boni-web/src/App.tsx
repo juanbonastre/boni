@@ -315,23 +315,24 @@ function TopBar() {
   );
 }
 
-/** Colecciones / the collection open on its own page. */
+/** The collection open on its own page, after its mothers (docs/clases.md: the tree). */
 function CollectionCrumbs() {
-  const t = useStore((s) => s.t);
-  const type = useStore((s) =>
-    s.view.kind === "collection"
-      ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
-      : undefined,
-  );
+  const types = useStore((s) => s.dataTypes);
+  const id = useStore((s) => (s.view.kind === "collection" ? s.view.type : ""));
+  const chain: { id: string; name: string }[] = [];
+  for (let c = types?.find((x) => x.id === id); c; c = types?.find((x) => x.id === c?.parent))
+    chain.unshift({ id: c.id, name: c.name });
   return (
     <span className="crumbs">
-      <span className="crumb-part">
-        <button type="button" className="crumb" onClick={showCollections}>
-          {t("nav.collections")}
-        </button>
-        <span className="crumb-sep">/</span>
-      </span>
-      <span className="crumb current">{type?.name ?? ""}</span>
+      {chain.slice(0, -1).map((c) => (
+        <span key={c.id} className="crumb-part">
+          <button type="button" className="crumb" onClick={() => openCollection(c.id)}>
+            {c.name}
+          </button>
+          <span className="crumb-sep">/</span>
+        </span>
+      ))}
+      <span className="crumb current">{chain.at(-1)?.name ?? ""}</span>
     </span>
   );
 }
