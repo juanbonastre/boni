@@ -14,6 +14,10 @@ async function open(page: Page, agent: Record<string, unknown[]> = {}) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.clock.install({ time: FIXED });
   await openApp(page, "/?still", { agent });
+  // The start page shown, and so in «Recientes»: every capture has the same sidebar.
+  await expect(page.locator(".sidebar").getByRole("list", { name: "Recientes" })).toHaveText(
+    "Gastos",
+  );
 }
 const shot = (page: Page, name: string) =>
   expect(page).toHaveScreenshot(`${name}.png`, {
