@@ -4,18 +4,29 @@ import { crc32, deflateRawSync, inflateRawSync } from "node:zlib";
  * A minimal ZIP (PKWARE APPNOTE 6.3): deflated entries, UTF-8 names, no ZIP64 (an export is far below
  * 4 GB) and no extra fields. Enough for an export any system opens, and for reading one back.
  * An entry's data may be a function: it is called only when that entry is written, so a big export (the
- * attachments) never needs all its files in memory at once (the server's container has 512 MB).
+ * attachments) never needs all its files in memory at once (the server's container has 384 MB). An entry too big
+ * to hold even alone (the operation log) gives its bytes a piece at a time (`chunks`).
  */
 export interface ZipEntry {
   path: string;
-  data: Buffer | (() => Buffer);
+  /** Its bytes, or a function called only when the entry is written. */
+  data?: Buffer | (() => Buffer);
+  /**
+   * Its bytes a piece at a time, written as they come: kept as they are (stored), with the CRC and sizes after
+   * them (a data descriptor), so only one piece is ever in memory.
+   */
+  chunks?: () => Iterable<Buffer>;
   /** Kept as it is, not deflated (attachments: PDF, images and video are compressed already). */
   stored?: boolean;
 }
 
-/** An entry's bytes (calling its function, when it has one). */
+/** An entry's bytes (calling its function, or putting its pieces together, when it has them). */
 export const entryData = (e: ZipEntry): Buffer =>
-  typeof e.data === "function" ? e.data() : e.data;
+  e.chunks
+    ? Buffer.concat([...e.chunks()])
+    : typeof e.data === "function"
+      ? e.data()
+      : (e.data ?? Buffer.alloc(0));
 
 const DOS_EPOCH = Date.UTC(1980, 0, 1);
 
@@ -39,6 +50,49 @@ export function* zipChunks(entries: Iterable<ZipEntry>, at = Date.now()): Genera
   let count = 0;
   for (const e of entries) {
     const name = Buffer.from(e.path, "utf8");
+    if (e.chunks) {
+      // Its header first, with no CRC or sizes yet (bit 3: they follow the data), then each piece as it comes.
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0);
+      local.writeUInt16LE(20, 4);
+      local.writeUInt16LE(0x0808, 6); // UTF-8 names, sizes in a data descriptor
+      local.writeUInt16LE(0, 8); // stored
+      local.writeUInt16LE(time, 10);
+      local.writeUInt16LE(date, 12);
+      local.writeUInt16LE(name.length, 26);
+      yield Buffer.concat([local, name]);
+      let crc = 0;
+      let size = 0;
+      for (const piece of e.chunks()) {
+        if (!piece.length) continue;
+        crc = crc32(piece, crc);
+        size += piece.length;
+        yield piece;
+      }
+      const descriptor = Buffer.alloc(16);
+      descriptor.writeUInt32LE(0x08074b50, 0);
+      descriptor.writeUInt32LE(crc, 4);
+      descriptor.writeUInt32LE(size, 8);
+      descriptor.writeUInt32LE(size, 12);
+      yield descriptor;
+      const central = Buffer.alloc(46);
+      central.writeUInt32LE(0x02014b50, 0);
+      central.writeUInt16LE(20, 4);
+      central.writeUInt16LE(20, 6);
+      central.writeUInt16LE(0x0808, 8);
+      central.writeUInt16LE(0, 10);
+      central.writeUInt16LE(time, 12);
+      central.writeUInt16LE(date, 14);
+      central.writeUInt32LE(crc, 16);
+      central.writeUInt32LE(size, 20);
+      central.writeUInt32LE(size, 24);
+      central.writeUInt16LE(name.length, 28);
+      central.writeUInt32LE(offset, 42);
+      centrals.push(central, name);
+      offset += 30 + name.length + size + 16;
+      count++;
+      continue;
+    }
     const plain = entryData(e);
     const method = e.stored ? 0 : 8;
     const packed = e.stored ? plain : deflateRawSync(plain);

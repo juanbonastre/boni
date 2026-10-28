@@ -291,16 +291,9 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
     ),
   });
   out.push({ path: "views.json", data: enc(`${JSON.stringify(o.views ?? {}, null, 2)}\n`) });
-  if (o.log)
-    out.push({
-      path: "log.ndjson",
-      data: enc(
-        store
-          .log()
-          .map((r) => `${JSON.stringify(r)}\n`)
-          .join(""),
-      ),
-    });
+  // Written a page of operations at a time as its turn comes: a big store's log is more than the server's memory,
+  // even alone (2026-10-28: an invented store of 500 MB had a log of 280 MB).
+  if (o.log) out.push({ path: "log.ndjson", chunks: () => logChunks(store) });
   out.push({
     path: "README.md",
     data: enc(
@@ -314,6 +307,16 @@ export function exportFiles(store: UserStore, o: ExportOptions = {}): ZipEntry[]
     ),
   });
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/** The operation log as NDJSON, one line per operation, oldest first, a page at a time. */
+function* logChunks(store: UserStore): Generator<Buffer> {
+  for (let after = 0; ; ) {
+    const page = store.logPage(after, 200);
+    if (!page.length) return;
+    yield enc(page.map((r) => `${JSON.stringify(r)}\n`).join(""));
+    after = (page[page.length - 1] as { seq: number }).seq;
+  }
 }
 
 export const exportZip = (store: UserStore, o: ExportOptions = {}): Buffer =>

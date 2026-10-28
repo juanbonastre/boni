@@ -644,10 +644,10 @@ const TOOLS: Tool[] = [
     call(c, a) {
       const v = view(c);
       const n = Math.min(100, Math.max(1, Number(a.limit) || 30));
+      // Only the latest operations, without what each changed: the whole log of a big store is more than the
+      // server's memory (2026-10-28: reading it to keep the last ones stopped the server).
       return c.store
-        .log()
-        .slice(-n * 4)
-        .reverse()
+        .recentOps(n * 4)
         .flatMap((r) => {
           if (r.kind === "schema") return [];
           const s = v.ro.get(r.target);

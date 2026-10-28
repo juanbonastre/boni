@@ -46,6 +46,7 @@ export {
   MAX_FILE_BYTES,
   type OpMeta,
   openUserStore,
+  type RecentOp,
   restoreBackup,
   type StoredEntity,
   type StoredFile,
