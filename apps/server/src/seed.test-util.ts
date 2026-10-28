@@ -45,6 +45,8 @@ export interface TypeSpec {
   files?: boolean;
   /** A calendar of Boni Calendar: its definition (the `collection:` map); its columns are the fields. */
   calendar?: Record<string, unknown>;
+  /** The collection it is inside (its mother's key, declared before it): it has her fields and her title. */
+  parent?: string;
 }
 
 const SCHEMA = label("imported", "public", [{ kind: "vault", id: "seed" }]);
@@ -105,7 +107,7 @@ function fieldsOf(t: TypeSpec): { fields: FieldDef[]; title: string } {
     out.push(fieldOf(prop, spec));
     if (prop === "title") title = fieldId(keyOf(prop));
   }
-  if (!title) {
+  if (!title && !t.parent) {
     out.unshift({ id: "f_title", key: "title", name: "Título", type: "text", label: SCHEMA });
     title = "f_title";
   }
@@ -114,6 +116,8 @@ function fieldsOf(t: TypeSpec): { fields: FieldDef[]; title: string } {
       { id: FILE_FIELD, key: "boni-archivo", name: "Archivo", type: "file", label: SCHEMA },
       { id: FOLDER_FIELD, key: "carpeta", name: "Carpeta", type: "text", label: SCHEMA },
     );
+  // A daughter inherits her mother's (the path included).
+  if (t.parent) return { fields: out, title };
   out.push(
     {
       id: PATH_FIELD,
@@ -188,12 +192,14 @@ export function seed(
   // The collections first, then their links (a link may point to a collection made after it).
   for (const t of types) {
     const { fields, title } = fieldsOf(withOptions(t));
+    const mother = t.parent ? store.schema().types[typeId(t.parent)] : undefined;
     const def: TypeDef = {
       id: typeId(t.key),
       key: t.key,
       name: t.name,
+      ...(mother ? { parent: mother.id } : {}),
       fields: fields.filter((f) => f.type !== "relation"),
-      titleField: title,
+      titleField: title || (mother?.titleField ?? "f_title"),
       sensitivity: t.sensitivity ?? "personal",
       ...(t.thirdParty ? { thirdParty: true } : {}),
       schemaVersion: 1,

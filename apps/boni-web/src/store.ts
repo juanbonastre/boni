@@ -26,6 +26,7 @@ import {
   type Proposal,
   type RunDetail,
   type RunSummary,
+  type Tree,
   type TurnResult,
   type Visibility,
 } from "./core/agent.ts";
@@ -77,10 +78,20 @@ const FILES = {
   shortcuts: "shortcuts.json",
   pages: "pages.json",
   lastPage: "last-page.json",
+  recent: "recent.json",
+  sidebar: "sidebar.json",
 };
+/** How many recent pages the sidebar keeps. */
+const RECENT_MAX = 5;
 const OPTION_LIST_LIMIT = 500;
 const RELOAD_EVERY_MINUTES = 15;
 const DELETE_AFTER_MS = 6000;
+
+/** Something opened lately (the sidebar's «Recientes», on this device). */
+export type Recent =
+  | { kind: "page"; id: string; title: string }
+  | { kind: "collection"; id: string; title: string }
+  | { kind: "row"; id: string; type: string; title: string };
 
 export type View =
   | { kind: "home" }
@@ -90,10 +101,10 @@ export type View =
   | { kind: "log" }
   | { kind: "page"; id: string }
   /** A row of a collection opened as a page (its properties and its text), as Notion's. */
-  | { kind: "row"; type: string; id: string; from?: "collection" | "notes" }
-  | { kind: "notes" }
-  /** Every collection: open one, see and change its protection, filter. */
-  | { kind: "collections" }
+  /** Where it was opened from, to go back there (none: the tree, «Recientes», a search: back to its collection). */
+  | { kind: "row"; type: string; id: string; from?: "collection" | "allPages" | "page" }
+  /** «Todas las páginas» (Juan, 2026-10-28): the whole tree, to manage (filter, protection, the eye, move). */
+  | { kind: "allPages" }
   | { kind: "audit"; filter: AuditFilter }
   /** One collection on a page of its own (its protection is unlocked only here). */
   | { kind: "collection"; type: string }
@@ -183,6 +194,12 @@ interface State {
   chartForPage: { page: string; block: string } | null;
   /** The user's collections (as databases), and the rows loaded of each. */
   dataTypes: DataType[] | null;
+  /** The tree of the sidebar (docs/clases.md §2.7): collections and the records with a note they show. */
+  tree: Tree | null;
+  /** What was opened last on this device, newest first (the sidebar's «Recientes»). */
+  recent: Recent[];
+  /** The sidebar's folded sections and unfolded branches of the tree, on this device. */
+  fold: { sections: string[]; branches: string[] };
   /** The row open as a page, with its text. */
   row: DataRow | null;
   /** The open row's text as the page editor's blocks (saved back as Markdown). */
@@ -306,6 +323,9 @@ export const useStore = create<State>(() => ({
   findOpen: false,
   trash: null,
   dataTypes: null,
+  tree: null,
+  recent: [],
+  fold: { sections: [], branches: [] },
   rows: {},
   collectionViews: {},
   openedNote: null,
@@ -376,6 +396,25 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
     readJson<{ pages: PageInfo[] }>(h.store, FILES.pages),
     readJson<{ page: Page }>(h.store, FILES.lastPage),
   ]);
+  void readJson<{ items?: unknown }>(h.store, FILES.recent).then((r) => {
+    const ok = (x: unknown): x is Recent => {
+      const o = x as Partial<Record<string, unknown>> | null;
+      return (
+        !!o &&
+        typeof o.id === "string" &&
+        typeof o.title === "string" &&
+        (o.kind === "page" ||
+          o.kind === "collection" ||
+          (o.kind === "row" && typeof o.type === "string"))
+      );
+    };
+    if (Array.isArray(r?.items)) set({ recent: r.items.filter(ok).slice(0, RECENT_MAX) });
+  });
+  void readJson<{ sections?: unknown; branches?: unknown }>(h.store, FILES.sidebar).then((f) => {
+    const ids = (v: unknown) =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 500) : [];
+    if (f) set({ fold: { sections: ids(f.sections), branches: ids(f.branches) } });
+  });
   // The device's copy of the pages and of the last one opened: the window opens on it without network.
   const cachedPages = Array.isArray(pages?.pages) ? pages.pages : null;
   const lastPage = last?.page && cachedPages?.some((p) => p.id === last.page.id) ? last.page : null;
@@ -1527,6 +1566,8 @@ export async function loadPages(): Promise<PageInfo[] | null> {
 
 /** At start and after a reconnection: the pages again, and the start page if none is open. */
 async function startPages() {
+  void loadTree();
+  void loadDataTypes();
   const pages = await loadPages();
   const v = get().view;
   if (v.kind === "home" || (v.kind === "page" && !pages?.some((p) => p.id === v.id)))
@@ -1544,6 +1585,7 @@ export async function openPage(id: string) {
     const v = get().view;
     if (!page || v.kind !== "page" || v.id !== id) return;
     set({ page });
+    noteRecent({ kind: "page", id, title: page.title });
     await keep(FILES.lastPage, { page });
   } catch {
     if (!get().page) toast(get().t("page.loadError"));
@@ -1864,6 +1906,90 @@ export async function deletePage(id: string) {
 
 // ------------------------------------------------------------------ databases (plan PR 19)
 
+/** The sidebar's tree, again from the server. */
+export async function loadTree(): Promise<Tree | null> {
+  try {
+    const tree = await agent.tree();
+    set({ tree });
+    return tree;
+  } catch {
+    return get().tree;
+  }
+}
+
+/** A new collection (at the root or inside `parent`), opened on its page unless `stay`. Whether it was made. */
+export async function newCollection(name: string, parent?: string, stay = false) {
+  try {
+    const id = await agent.createCollection(name, parent);
+    await Promise.all([loadDataTypes(), loadTree()]);
+    if (id && !stay) openCollection(id);
+    return true;
+  } catch (e) {
+    toast(get().t(e instanceof ApiError && e.code === "taken" ? "tree.taken" : "tree.failed"));
+    return false;
+  }
+}
+
+/** A collection out of the tree: only an empty one (otherwise it says why). */
+export async function deleteCollection(type: string) {
+  try {
+    await agent.deleteCollection(type);
+    forgetRecent(type);
+    await Promise.all([loadDataTypes(), loadTree()]);
+  } catch (e) {
+    toast(
+      get().t(e instanceof ApiError && e.code === "not-empty" ? "tree.notEmpty" : "tree.failed"),
+    );
+  }
+}
+
+/** A collection moved under another (`null`: the root), or a record to another collection. */
+export async function moveInTree(
+  what: { collection: string } | { row: string },
+  to: string | null,
+) {
+  try {
+    if ("collection" in what) await agent.moveCollection(what.collection, to);
+    else if (to) await agent.moveRow(what.row, to);
+    await Promise.all([loadDataTypes(), loadTree()]);
+  } catch {
+    toast(get().t("tree.failed"));
+  }
+}
+
+/** A note of the tree to the trash (its toast's Undo brings it back). */
+export async function trashNote(type: string, id: string) {
+  await deleteRow(type, id);
+  forgetRecent(id);
+  void loadTree();
+}
+
+/** A new note in a collection: a record of it, opened as a page to write in. */
+export async function newNoteIn(type: string) {
+  const row = await addRow(type);
+  if (!row) return;
+  void loadTree();
+  await openRow(type, row.id);
+}
+
+/** Whether a collection's records with a note show in the tree (the account's choice, on every device). */
+export async function setNotesInTree(type: string, notes: boolean) {
+  const tree = get().tree;
+  if (tree)
+    set({
+      tree: {
+        ...tree,
+        collections: tree.collections.map((c) => (c.id === type ? { ...c, notes } : c)),
+      },
+    });
+  try {
+    await agent.setNotesInTree(type, notes);
+  } catch {
+    toast(get().t("tree.failed"));
+  }
+  await loadTree();
+}
+
 export async function loadDataTypes(): Promise<DataType[] | null> {
   try {
     const dataTypes = await agent.dataTypes();
@@ -1893,11 +2019,42 @@ export function restoreTemplate() {
     },
   });
 }
-/** The notes explorer: every note by the path it had (Juan, 2026-10-24: what the AIs read, browsable). */
-export const showNotes = () => {
-  set({ view: { kind: "notes" }, panel: null });
+/** «Todas las páginas»: the whole tree, with what manages it. */
+export const showAllPages = () => {
+  set({ view: { kind: "allPages" }, panel: null });
   void loadDataTypes();
+  void loadTree();
 };
+
+/**
+ * The sidebar's folding, kept on this device: `sections` lists the folded sections, `branches` the unfolded
+ * branches of the tree. Flips `id` in its list, or sets it (`on`: in the list).
+ */
+export function toggleFold(kind: "sections" | "branches", id: string, on?: boolean) {
+  const cur = get().fold[kind];
+  const want = on ?? !cur.includes(id);
+  if (want === cur.includes(id)) return;
+  const fold = { ...get().fold, [kind]: want ? [...cur, id] : cur.filter((x) => x !== id) };
+  set({ fold });
+  void keep(FILES.sidebar, fold);
+}
+
+/** Something gone out of «Recientes». */
+function forgetRecent(id: string) {
+  const recent = get().recent.filter((r) => r.id !== id);
+  set({ recent });
+  void keep(FILES.recent, { items: recent });
+}
+
+/** Something opened: first in «Recientes» (on this device). */
+export function noteRecent(item: Recent) {
+  const recent = [
+    item,
+    ...get().recent.filter((r) => !(r.kind === item.kind && r.id === item.id)),
+  ].slice(0, RECENT_MAX);
+  set({ recent });
+  void keep(FILES.recent, { items: recent });
+}
 /** What «Auditoría» shows: an actor's kind (`who`, a prefix) or one actor (`by`), a collection, a run. */
 export interface AuditFilter {
   who?: string;
@@ -1909,12 +2066,11 @@ export const showAudit = (filter: AuditFilter) => {
   set({ view: { kind: "audit", filter }, panel: null });
   void loadDataTypes();
 };
-export const showCollections = () => {
-  set({ view: { kind: "collections" }, panel: null });
-  void loadDataTypes();
-};
-export const openCollection = (type: string) =>
+export const openCollection = (type: string) => {
   set({ view: { kind: "collection", type }, panel: null });
+  const name = get().dataTypes?.find((x) => x.id === type)?.name;
+  if (name) noteRecent({ kind: "collection", id: type, title: name });
+};
 export const setCollectionView = (type: string, v: DatabaseView) =>
   set({ collectionViews: { ...get().collectionViews, [type]: v } });
 
@@ -2044,7 +2200,7 @@ export async function deleteRow(type: string, id: string) {
       run: () =>
         void agent
           .restoreRow(id)
-          .then(() => loadRows(type))
+          .then(() => Promise.all([loadRows(type), loadTree()]))
           .catch(() => toast(t("db.saveError"))),
     });
   } catch {
@@ -2072,12 +2228,7 @@ export async function openRow(type: string, id: string) {
   await flushPage();
   await flushRowBody();
   const kind = get().view.kind;
-  const from =
-    kind === "collection"
-      ? ("collection" as const)
-      : kind === "notes"
-        ? ("notes" as const)
-        : undefined;
+  const from = kind === "collection" || kind === "allPages" || kind === "page" ? kind : undefined;
   set({
     view: { kind: "row", type, id, ...(from ? { from } : {}) },
     row: null,
@@ -2088,8 +2239,15 @@ export async function openRow(type: string, id: string) {
   try {
     const row = await agent.dataRow(id);
     const v = get().view;
-    if (row && v.kind === "row" && v.id === id) set({ row, rowDoc: rowDocOf(row) });
-  } catch {
+    if (row && v.kind === "row" && v.id === id) {
+      set({ row, rowDoc: rowDocOf(row) });
+      const def = get().dataTypes?.find((x) => x.id === type);
+      const title = def ? row.values[def.titleField] : null;
+      noteRecent({ kind: "row", id, type, title: typeof title === "string" ? title : "" });
+    }
+  } catch (e) {
+    // Gone since (in the trash): out of «Recientes» too.
+    if (e instanceof ApiError && e.status === 404) forgetRecent(id);
     toast(get().t("db.loadError"));
   }
 }

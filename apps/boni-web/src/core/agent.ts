@@ -14,7 +14,6 @@ import {
   parseColumns,
   parseDetail,
   parseHistory,
-  parseNotes,
   parseStorage,
   parseSummary,
   type SystemColumns,
@@ -809,8 +808,32 @@ export interface DataField {
   options?: { id: string; name: string; color?: string }[];
   relation?: { target: string; many: boolean };
 }
+/** A collection in the tree: its mother, its name and whether its records with a note show under it. */
+export interface TreeCollection {
+  id: string;
+  parent?: string;
+  name: string;
+  icon: string;
+  count: number;
+  notes: boolean;
+}
+export interface TreeNote {
+  id: string;
+  type: string;
+  title: string;
+  /** The models and assistants that read it, and when last («Todas las páginas» only). */
+  ai?: string[];
+  aiAt?: number | null;
+}
+export interface Tree {
+  collections: TreeCollection[];
+  notes: TreeNote[];
+}
+
 export interface DataType {
   id: string;
+  /** Its mother collection (docs/clases.md): its table is part of hers. */
+  parent?: string;
   name: string;
   icon: string;
   titleField: string;
@@ -854,6 +877,7 @@ function parseDataType(v: unknown): DataType | null {
   if (!isObj(v) || typeof v.id !== "string" || !Array.isArray(v.fields)) return null;
   return {
     id: v.id,
+    ...(typeof v.parent === "string" ? { parent: v.parent } : {}),
     name: str(v.name, 200) ?? v.id,
     icon: str(v.icon, 16) ?? "",
     titleField: str(v.titleField, 80) ?? "",
@@ -1247,7 +1271,6 @@ export class AgentApi {
   };
   storage = async () =>
     parseStorage(await this.call("GET", "storage", undefined, "api/data/audit/"));
-  notes = async () => parseNotes(await this.call("GET", "", undefined, "api/data/notes"));
   /** A page's data blocks computed from the user's collections: each one's numbers or its problems. */
   blocks = async (blocks: Omit<DataBlock, "at">[]): Promise<Record<string, BlockResult>> => {
     const b = await this.call("POST", "", { blocks }, "api/data/blocks");
@@ -1275,6 +1298,86 @@ export class AgentApi {
     if (isObj(b) && Array.isArray(b.problems)) return { problems: b.problems };
     return { ...rowList(b), total: isObj(b) && typeof b.total === "number" ? b.total : 0 };
   };
+  /** The tree (docs/clases.md §2.7): every collection with its mother, and the records with a note it shows. */
+  tree = async (): Promise<Tree> => {
+    const b = await this.call("GET", "", undefined, "api/data/tree");
+    const cols = isObj(b) && Array.isArray(b.collections) ? b.collections : [];
+    const notes = isObj(b) && Array.isArray(b.notes) ? b.notes : [];
+    return {
+      collections: cols.flatMap((c): TreeCollection[] =>
+        isObj(c) && typeof c.id === "string"
+          ? [
+              {
+                id: c.id,
+                ...(typeof c.parent === "string" ? { parent: c.parent } : {}),
+                name: str(c.name, 200) ?? c.id,
+                icon: str(c.icon, 16) ?? "",
+                count: typeof c.count === "number" ? c.count : 0,
+                notes: c.notes === true,
+              },
+            ]
+          : [],
+      ),
+      notes: notes.flatMap((n): TreeNote[] =>
+        isObj(n) && typeof n.id === "string" && typeof n.type === "string"
+          ? [{ id: n.id, type: n.type, title: str(n.title, 300) ?? "" }]
+          : [],
+      ),
+    };
+  };
+  /** Whether a collection's records with a note show in the tree. */
+  setNotesInTree = async (type: string, notes: boolean) =>
+    void (await this.call("PUT", `/${encodeURIComponent(type)}/tree`, { notes }, "api/data/types"));
+  /** Every record with a note of one collection (for «Todas las páginas», whatever its eye says). */
+  treeNotes = async (type: string): Promise<TreeNote[]> => {
+    const b = await this.call(
+      "GET",
+      `?type=${encodeURIComponent(type)}`,
+      undefined,
+      "api/data/tree",
+    );
+    return isObj(b) && Array.isArray(b.notes)
+      ? b.notes.flatMap((x): TreeNote[] =>
+          isObj(x) && typeof x.id === "string" && typeof x.type === "string"
+            ? [
+                {
+                  id: x.id,
+                  type: x.type,
+                  title: str(x.title, 300) ?? "",
+                  ai: Array.isArray(x.ai)
+                    ? x.ai.filter((a): a is string => typeof a === "string").slice(0, 20)
+                    : [],
+                  aiAt: typeof x.aiAt === "number" ? x.aiAt : null,
+                },
+              ]
+            : [],
+        )
+      : [];
+  };
+  /** A new collection, at the root or inside another; its id. */
+  createCollection = async (name: string, parent?: string): Promise<string> => {
+    const b = await this.call(
+      "POST",
+      "",
+      { name, ...(parent ? { parent } : {}) },
+      "api/data/types",
+    );
+    return isObj(b) && typeof b.id === "string" ? b.id : "";
+  };
+  /** A collection out of the tree (only when nothing is left in it). */
+  deleteCollection = async (type: string) =>
+    void (await this.call("DELETE", `/${encodeURIComponent(type)}`, undefined, "api/data/types"));
+  /** A collection moved under another (`null`: the root). */
+  moveCollection = async (type: string, parent: string | null) =>
+    void (await this.call(
+      "PUT",
+      `/${encodeURIComponent(type)}/parent`,
+      { parent },
+      "api/data/types",
+    ));
+  /** A record moved to another collection (it keeps its id). */
+  moveRow = async (id: string, type: string) =>
+    void (await this.call("PUT", `/${encodeURIComponent(id)}/type`, { type }, "api/data/rows"));
   // The user's collections as databases (plan PR 19).
   dataTypes = async (): Promise<DataType[]> => {
     const b = await this.call("GET", "", undefined, "api/data/types");

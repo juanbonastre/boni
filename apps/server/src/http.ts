@@ -26,18 +26,24 @@ import { listUsers, login, logout, sessionUser, tokenHash, type User, userOf } f
 import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
 import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import {
+  createCollection,
   createRow,
   DataError,
+  deleteCollection,
   findByPath,
   getRow,
-  listNotes,
   listRows,
   listTypes,
+  moveCollection,
+  moveRow,
   removeRow,
   restoreRow,
+  setNotesInTree,
   setProtection,
   setRowUi,
   setRule,
+  treeNotes,
+  treeOf,
   updateRow,
 } from "./data.ts";
 import type { Db } from "./db.ts";
@@ -181,6 +187,9 @@ export function serve(app: App, listener: Listener): Server {
  * app, so a failed login on one counts on the other and a change made through one reaches the live
  * streams of the other.
  */
+/** Data errors that say the request clashes with what is there (409), not that it is malformed. */
+const CONFLICTS = new Set(["taken", "not-empty"]);
+
 export function makeApp(opts: ServerOptions): App {
   const { db, key, feeds, push } = opts;
   const writable = opts.write === true;
@@ -362,6 +371,30 @@ export function makeApp(opts: ServerOptions): App {
           usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
         });
       try {
+        if (route === "GET /api/data/tree") {
+          const type = url.searchParams.get("type");
+          return send(res, 200, type ? { notes: treeNotes(store, type) } : treeOf(store));
+        }
+        if (route === "POST /api/data/types")
+          return send(res, 200, createCollection(store, await bodyOf(req), s.device));
+        if (route === "DELETE /api/data/types/:type") {
+          deleteCollection(store, params.type ?? "", s.device);
+          return send(res, 200, {});
+        }
+        if (route === "PUT /api/data/types/:type/parent") {
+          moveCollection(store, params.type ?? "", await bodyOf(req), s.device);
+          return send(res, 200, {});
+        }
+        if (route === "PUT /api/data/rows/:id/type") {
+          moveRow(store, params.id ?? "", await bodyOf(req), s.device);
+          return send(res, 200, {});
+        }
+        if (route === "PUT /api/data/types/:type/tree") {
+          const b = await bodyOf(req);
+          if (typeof b.notes !== "boolean") return send(res, 400, { error: "bad-request" });
+          setNotesInTree(store, params.type ?? "", b.notes);
+          return send(res, 200, {});
+        }
         if (route === "GET /api/data/types")
           return send(res, 200, { types: listTypes(store, sys()) });
         if (route === "GET /api/data/types/:type/rows") {
@@ -392,7 +425,6 @@ export function makeApp(opts: ServerOptions): App {
             route.endsWith("/rows") ? blockRowsOf(store, body, o) : computeBlocks(store, body, o),
           );
         }
-        if (route === "GET /api/data/notes") return send(res, 200, listNotes(store));
         if (route === "GET /api/data/lookup")
           return send(res, 200, findByPath(store, url.searchParams.get("path") ?? ""));
         if (route === "GET /api/data/rows/:id") {
@@ -463,7 +495,9 @@ export function makeApp(opts: ServerOptions): App {
         }
       } catch (e) {
         if (e instanceof DataError)
-          return send(res, e.code === "not-found" ? 404 : 400, { error: e.code });
+          return send(res, e.code === "not-found" ? 404 : CONFLICTS.has(e.code) ? 409 : 400, {
+            error: e.code,
+          });
         if (e instanceof BlocksError) return send(res, 400, { error: e.code });
         throw e;
       }
@@ -505,7 +539,9 @@ export function makeApp(opts: ServerOptions): App {
         }
       } catch (e) {
         if (e instanceof PageError)
-          return send(res, e.code === "not-found" ? 404 : 400, { error: e.code });
+          return send(res, e.code === "not-found" ? 404 : CONFLICTS.has(e.code) ? 409 : 400, {
+            error: e.code,
+          });
         throw e;
       }
     }

@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import { openInTree } from "./fixtures.ts";
 
 /**
  * The checks the overflow and worst-case tests share: text fits its box and no control breaks its label over
@@ -156,7 +157,7 @@ export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], whe
 /** The template pages («Uso de la IA», «Actividad») and what one of their numbers counts. */
 export async function templatesAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
   const issues: string[] = [];
-  await page.locator(".sidebar").getByRole("button", { name: l.usoIa, exact: true }).click();
+  await openInTree(page, l.usoIa);
   await page.locator(".blk-number .kpi-value").first().waitFor();
   await page.locator(".blk-bars .barlist-row").first().waitFor();
   issues.push(...(await audit(page, `${where} uso-ia`)));
@@ -164,7 +165,7 @@ export async function templatesAudit(page: Page, l: (typeof MODELS_TEXT)["es"], 
   await page.locator(".rows-panel-list li").first().waitFor();
   issues.push(...(await audit(page, `${where} uso-ia rows`)));
   await page.keyboard.press("Escape");
-  await page.locator(".sidebar").getByRole("button", { name: l.actividad, exact: true }).click();
+  await openInTree(page, l.actividad);
   await page.locator(".db-table tbody tr").first().waitFor();
   issues.push(...(await audit(page, `${where} actividad`)));
   return issues;
@@ -185,25 +186,20 @@ export async function activityAudit(page: Page, l: (typeof MODELS_TEXT)["es"], w
   return issues;
 }
 
-/** The notes explorer opened, a note's history, a table with system columns, and Colecciones' usage. */
-export async function notesAudit(
-  page: Page,
-  l: { notes: string; history: string; cols: string },
-  where: string,
-) {
+/** «Todas las páginas» with every collection open, a note's history, and the collections' usage below. */
+export async function notesAudit(page: Page, l: { notes: string; history: string }, where: string) {
   const issues: string[] = [];
   await page.locator(".sidebar").getByRole("button", { name: l.notes }).click();
-  await page.locator(".notes-tree .notes-row").first().waitFor();
-  for (const f of await page.locator(".notes-folder").all()) await f.click();
-  issues.push(...(await audit(page, `${where} notes`)));
+  await page.locator(".all-table tbody tr").first().waitFor();
+  for (const f of await page.locator(".all-table .page-toggle:not(.static)").all()) await f.click();
+  await page.locator(".all-table .notes-ai").first().waitFor();
+  await page.locator(".cols-usage .kpi").first().waitFor();
+  issues.push(...(await audit(page, `${where} all pages`)));
   // A note the fake server has as a row (the fixtures' Libros).
-  await page.locator(".notes-tree .notes-row", { hasText: "plan-ejemplo" }).click();
+  await page.locator(".all-table .all-row", { hasText: "Rayuela" }).locator(".cols-name").click();
   await page.getByRole("button", { name: l.history }).click();
   await page.locator(".history-panel .history-cols").waitFor();
   issues.push(...(await audit(page, `${where} history`)));
   await page.keyboard.press("Escape");
-  await page.locator(".sidebar").getByRole("button", { name: l.cols }).click();
-  await page.locator(".cols-usage .kpi").first().waitFor();
-  issues.push(...(await audit(page, `${where} collections usage`)));
   return issues;
 }

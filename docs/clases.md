@@ -107,7 +107,10 @@ Cada paso es un PR con sus pruebas, y se despliega al cerrarse:
    rama (`deep`); el nivel de la IA se hereda y las reglas de una madre alcanzan a sus hijas; la API de datos y el MCP
    dan la madre de cada colección y las filas de las hijas; Boni Calendar mueve un evento sin crear otro. La raíz es
    implícita: sus campos nativos son los de toda entidad (título, nota, creado, editado; quién, en la auditoría).
-4. Un solo árbol en la interfaz, en lugar de «Colecciones» y «Todas las páginas».
+4. Un solo árbol en la interfaz, en lugar de «Colecciones» y «Todas las páginas». **Hecho (2026-10-28):** la barra
+   lateral tiene arriba Buscar, Conversación y «Todas las páginas» (el árbol entero para gestionarlo: buscar, filtrar
+   por lo que ve la IA, el ojo, crear, mover y eliminar), y debajo «Recientes» y «Páginas» (para abrir, añadir y
+   eliminar, con el ojo), plegables. Las páginas de antes siguen arriba de «Páginas» hasta el paso 5.
 5. Migrar los datos de cada cuenta a su árbol (ensayo antes y una sola ejecución que se deshace entera).
 6. Sin rutas: fuera `f_vault_path`.
 7. Interfaces.

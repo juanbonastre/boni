@@ -668,6 +668,11 @@ function TableView({
   const lang = useStore((s) => s.settings.language);
   const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
   const sys = SYSTEM_COLUMNS.filter((c) => system.includes(c));
+  // A mother's table has her daughters' rows: each one's collection is a column (docs/clases.md §2.3; D-11).
+  const names = useStore((s) => s.dataTypes);
+  const mixed = rows.some((r) => r.type && r.type !== type.id);
+  const collectionOf = (r: DataRow) =>
+    names?.find((x) => x.id === (r.type ?? type.id))?.name ?? type.name;
   // The title column first, as Notion's.
   const ordered = [
     ...fields.filter((f) => f.id === type.titleField),
@@ -683,6 +688,7 @@ function TableView({
                 {f.name}
               </th>
             ))}
+            {mixed && <th>{t("db.collection")}</th>}
             {sys.map((c) => (
               <th key={c} className="sys-col">
                 {t(`sys.${c}`)}
@@ -736,6 +742,7 @@ function TableView({
                   </div>
                 </td>
               ))}
+              {mixed && <td />}
               {sys.map((c) => (
                 <td key={c} className="sys-col" />
               ))}
@@ -756,6 +763,11 @@ function TableView({
                   )}
                 </td>
               ))}
+              {mixed && (
+                <td>
+                  <span className="db-ro">{collectionOf(r)}</span>
+                </td>
+              )}
               {sys.map((c) => {
                 const text = systemText(t, c, columns[r.id], locale, lang);
                 return (

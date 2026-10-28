@@ -147,10 +147,12 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await form.locator("input").nth(3).fill("portatil-ejemplo");
   await w.getByRole("button", { name: "Entrar" }).click();
   await w.keyboard.press("Escape");
-  // A new account has only Boni's template pages (the server made them); a page of the user's from the sidebar.
+  // A new account has only Boni's template pages (the server made them, in the tree's «Boni» branch: unfolded,
+  // it stays so on this device); a page of the user's from the sidebar.
   const tree = w.locator(".sidebar");
-  await expect(tree.getByRole("button", { name: "Uso de la IA", exact: true })).toBeVisible();
-  await expect(tree.getByRole("button", { name: "Actividad", exact: true })).toBeVisible();
+  await inTree(w).getByRole("button", { name: "Mostrar subpáginas: Boni" }).click();
+  await expect(inTree(w).getByRole("button", { name: "Uso de la IA", exact: true })).toBeVisible();
+  await expect(inTree(w).getByRole("button", { name: "Actividad", exact: true })).toBeVisible();
   await tree.getByRole("button", { name: "Nueva página" }).first().click();
   await w.keyboard.type("Mi agenda", { delay: 20 });
   await w.keyboard.press("Enter");
@@ -277,7 +279,7 @@ test("a zone moved into Boni: marked as private, its attachment opened from the 
   await expect(db.locator(".protect-pill")).toHaveText("Privada");
   // Locked where it is used: no level lower than Privada from here.
   await db.locator(".protect-pill").click();
-  await expect(w.locator(".protect-menu")).toContainText("ábrela desde Colecciones");
+  await expect(w.locator(".protect-menu")).toContainText("abre la colección");
   await w.locator(".protect-menu").getByRole("menuitemradio", { name: "Visible" }).click();
   await expect(db.locator(".protect-pill")).toHaveText("Privada");
   await expect(db.locator(".db-table tbody tr")).toHaveCount(2);
@@ -293,12 +295,14 @@ test("a zone moved into Boni: marked as private, its attachment opened from the 
   expect(execFileSync("cat", [saved]).toString()).toBe("%PDF-1.7 inventado");
 });
 
-test("Colecciones: every collection, filtered by what the AI sees; private unlocked only on its page", async () => {
+test("«Todas las páginas»: every collection, filtered by what the AI sees; private unlocked only on its page", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
   const table = w.locator(".cols-table");
-  // Docencia, Pertenencia, Persona, Documentos, and Boni's own three (read only, no level of the user's).
-  await expect(table.locator("tbody tr")).toHaveCount(7);
+  // The user's pages, Docencia, Documentos, Persona, Pertenencia, and Boni's own things (read only, no level of
+  // the user's).
+  await expect(table.locator("tbody .cols-name", { hasText: "Pertenencia" })).toBeVisible();
+  await table.getByRole("button", { name: "Mostrar subpáginas: Boni" }).click();
   await expect(table.locator("tbody tr", { hasText: "Llamadas a modelos" })).toContainText(
     "De Boni · solo lectura",
   );
@@ -321,8 +325,9 @@ test("Colecciones: every collection, filtered by what the AI sees; private unloc
   await shot(w, "unlock");
   await dialog.getByRole("button", { name: "Desbloquear" }).click();
   await expect(w.locator(".col-protect .protect-pill")).toHaveText("Opaca");
+  await expect(dialog).toHaveCount(0);
   // And back to private from the list, in one click (raising is never locked).
-  await w.locator(".topbar").getByRole("button", { name: "Colecciones" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
   await w.locator(".cols-filter").getByRole("radio", { name: "Todas" }).click();
   const row = table.locator("tbody tr", { hasText: "Documentos" });
   await row.locator(".protect-pill").click();
@@ -364,7 +369,7 @@ test("Ajustes → Modelos over the real server: the budget and a key, kept seale
 test("Boni's template pages over the real server: counted from its records, modified, restored", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   // The server made them for the account (seedTemplates): «Actividad» counts what the earlier tests changed.
-  await w.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
+  await inTree(w).getByRole("button", { name: "Actividad", exact: true }).click();
   const changes = w.locator(".blk-number").nth(1);
   await expect(changes.locator(".kpi-value")).not.toHaveText(/^(—|0)$/);
   await changes.click();
@@ -374,15 +379,15 @@ test("Boni's template pages over the real server: counted from its records, modi
   await shot(w, "activity-rows");
   await w.keyboard.press("Escape");
   // «Actividad», modified: still so after another visit, then Boni's again.
-  await w.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
+  await inTree(w).getByRole("button", { name: "Actividad", exact: true }).click();
   const pill = w.locator(".template-head .system-pill");
   await expect(pill).toHaveText("De Boni");
   await w.locator(".blk-link").click({ button: "right" });
   await w.getByRole("menuitemradio", { name: "Borrar" }).click();
   await expect(pill).toHaveText("Modificada");
   await w.waitForTimeout(1200);
-  await w.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
-  await w.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
+  await inTree(w).getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  await inTree(w).getByRole("button", { name: "Actividad", exact: true }).click();
   await expect(pill).toHaveText("Modificada");
   await expect(w.locator(".blk-link")).toHaveCount(0);
   await pill.click();
@@ -393,7 +398,7 @@ test("Boni's template pages over the real server: counted from its records, modi
 
 test("«Registro» and «Auditoría» over the real server: Juan's read of a private row, the chain verified", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Registro", exact: true }).click();
+  await inTree(w).getByRole("button", { name: "Registro", exact: true }).click();
   await expect(w.locator(".db-table")).toContainText("Fecha");
   await expect(w.locator(".db-table")).toContainText("Estado");
   await shot(w, "activity");
@@ -411,15 +416,15 @@ test("«Registro» and «Auditoría» over the real server: Juan's read of a pri
   await w.keyboard.press("Escape");
 });
 
-test("the notes explorer over the real server: the vault's paths, a note's history", async () => {
+test("«Todas las páginas» over the real server: a collection's notes, a note's history", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
-  const tree = w.locator(".notes-tree");
-  await expect(tree.getByRole("button", { name: /^registros/ })).toBeVisible();
-  await tree.getByRole("button", { name: /^registros/ }).click();
-  await tree.getByRole("button", { name: /^personas/ }).click();
-  await tree.getByRole("button", { name: /ana-ejemplo\.md/ }).click();
+  const table = w.locator(".all-table");
+  // Docencia has fields of its own: its notes are not in the sidebar, but they are all here.
+  await table.getByRole("button", { name: "Mostrar subpáginas: Docencia" }).click();
+  await table.getByRole("button", { name: "Clase de ejemplo", exact: true }).click();
   await expect(w.locator(".topbar .crumbs")).toContainText("Todas las páginas");
+  await expect(w.locator(".topbar .crumbs")).toContainText("Docencia");
   await w.getByRole("button", { name: "Historial" }).click();
   const h = w.locator(".history-panel");
   // Imported from the vault: made by the import, its text written by it.
@@ -432,7 +437,7 @@ test("the notes explorer over the real server: the vault's paths, a note's histo
 
 test("a part of a collection with its own level: a rule made from Notion's filter", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
   await w.getByRole("button", { name: "Abrir Docencia" }).click();
   await w.locator(".col-protect .protect-pill").click();
   await w
@@ -455,6 +460,11 @@ test("a part of a collection with its own level: a rule made from Notion's filte
   await w.keyboard.press("Escape");
   await expect(w.locator(".col-protect .protect-pill")).toContainText("+1");
 });
+
+/** The sidebar's «Páginas»: the user's pages, the tree of collections and Boni's branch. */
+function inTree(w: Page) {
+  return w.locator(".sidebar").getByRole("list", { name: "Páginas" });
+}
 
 /** A second start with a link, as the system does: it hands the link to the running app and leaves. */
 function openLink(link: string) {
@@ -507,7 +517,7 @@ test("the daily copy on this computer: its folder first, then on; a whole zip la
 
 test("a boni:// link opens the note's row in the running app", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
   const note = `agenda/docencia/${iso(today)} Clase de ejemplo.md`;
   openLink(`boni://note?path=${encodeURIComponent(note)}`);
   await expect(w.locator(".row-doc .blk-input").first()).toHaveValue(

@@ -7,7 +7,6 @@
     "apps/boni-web/src/components/CardControls.tsx",
     "apps/boni-web/src/components/FormView.tsx",
     "apps/boni-web/src/components/Models.tsx",
-    "apps/boni-web/src/components/Notes.tsx",
     "apps/boni-web/src/components/PageView.tsx",
     "apps/boni-web/src/components/QuickFind.tsx",
     "apps/boni-web/src/components/useChartAnim.ts"

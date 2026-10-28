@@ -532,6 +532,39 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The sidebar's sections («Recientes», «Páginas»): a click on the name folds them, as Notion's. */
+.group-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin-left: -4px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.group-fold:hover {
+  background: var(--hover);
+  color: var(--text-2);
+}
+.group-fold > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-chev {
+  flex: none;
+  opacity: 0;
+  transition: transform 120ms var(--ease-out);
+}
+.group-head:hover .group-chev,
+.group-fold:focus-visible .group-chev,
+.group-fold[aria-expanded="false"] .group-chev {
+  opacity: 1;
+}
+.group-fold[aria-expanded="true"] .group-chev {
+  transform: rotate(90deg);
+}
 .nav-list {
   list-style: none;
   margin: 0;
@@ -2752,7 +2785,9 @@ html.widget-page body {
 .chart-row:focus-within .row-action {
   opacity: 1;
 }
-.page-row .page-icon {
+.page-row .page-icon,
+.tree-row .page-icon,
+.all-row .page-icon {
   flex: none;
   color: var(--muted);
 }
@@ -3444,10 +3479,12 @@ button.crumb:hover {
   color: var(--muted);
   opacity: 0.6;
 }
-.page-row {
+.page-row,
+.tree-row {
   padding-right: 2px;
 }
-.page-row .chart-main {
+.page-row .chart-main,
+.tree-row .chart-main {
   padding-left: 4px;
 }
 .page-toggle {
@@ -3470,11 +3507,31 @@ button.crumb:hover {
 .page-toggle.open .page-chev {
   transform: rotate(90deg);
 }
-.page-row:hover .page-toggle:not(.static) .page-icon-slot {
+.page-row:hover .page-toggle:not(.static) .page-icon-slot,
+.tree-row:hover .page-toggle:not(.static) .page-icon-slot,
+.all-row:hover .page-toggle:not(.static) .page-icon-slot {
   display: none;
 }
-.page-row:hover .page-toggle:not(.static) .page-chev {
+.page-row:hover .page-toggle:not(.static) .page-chev,
+.tree-row:hover .page-toggle:not(.static) .page-chev,
+.all-row:hover .page-toggle:not(.static) .page-chev {
   display: block;
+}
+/* A new collection's name, typed in place in the tree. */
+.tree-new input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  margin: 2px 4px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+}
+.tree-new input:focus {
+  border-color: var(--accent);
 }
 .page-icon-slot {
   display: grid;
@@ -4490,6 +4547,48 @@ button.find-row:hover {
 .cols-empty {
   color: var(--muted);
 }
+/* «Todas las páginas»: the tree as a table, each line under its mother; a search lists it flat, with where. */
+.all-new {
+  margin-left: auto;
+}
+.all-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.all-name .page-toggle {
+  margin-left: 0;
+}
+.all-name .cols-name {
+  min-width: 0;
+}
+.all-note {
+  font-weight: 400;
+}
+.all-where {
+  min-width: 0;
+  margin-left: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.all-table th.all-eye,
+.all-table td.all-eye {
+  width: 96px;
+  text-align: center;
+}
+.all-table th.all-act,
+.all-table td.all-act {
+  width: 44px;
+  text-align: right;
+}
+.all-move {
+  max-height: 320px;
+  overflow-y: auto;
+}
 .col-protect {
   display: flex;
   align-items: center;
@@ -4497,7 +4596,8 @@ button.find-row:hover {
   margin: 0 0 18px;
 }
 @container (max-width: 560px) {
-  .cols-origin {
+  .cols-origin,
+  .all-table .all-eye {
     display: none;
   }
 }
@@ -5974,7 +6074,7 @@ button.audit-tr:hover {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  margin-bottom: 20px;
+  margin: 32px 0 20px;
 }
 .cols-advice {
   display: flex;

@@ -13,7 +13,6 @@ import {
   MAIL_SUGGESTED,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
-  NOTES,
   PROPOSALS,
   REQUESTS,
   ROW_HISTORY,
@@ -50,7 +49,7 @@ const L = {
     edit: /^Editar…/,
     settings: "Ajustes",
     pageMenu: "Más opciones",
-    collections: "Colecciones",
+    collections: "Todas las páginas",
     number: "Cifra",
     filterRows: "Solo algunas filas",
     add: "Añadir un bloque",
@@ -65,7 +64,7 @@ const L = {
     edit: /^Edit…/,
     settings: "Settings",
     pageMenu: "More options",
-    collections: "Collections",
+    collections: "All pages",
     number: "Number",
     filterRows: "Only some rows",
     add: "Add a block",
@@ -192,11 +191,23 @@ for (const language of ["es", "en"] as const) {
       await page.locator(".sidebar").getByRole("button", { name: l.collections }).click();
       await page.locator(".cols-table").waitFor();
       issues.push(...(await audit(page, "collections")));
-      await page.locator(".cols-table .protect-pill").nth(1).click();
+      await page
+        .locator(".cols-table tr", { hasText: "Documentos" })
+        .locator(".protect-pill")
+        .click();
       await page.locator(".protect-menu").waitFor();
       issues.push(...(await audit(page, "protection menu, locked")));
       await page.keyboard.press("Escape");
-      await page.locator(".cols-name").first().click();
+      // The tree's menus: a collection's, and «Mover a…».
+      await page.locator(".cols-table .page-toggle:not(.static)").first().click();
+      await page.locator(".cols-table .all-act .icon-btn").nth(1).click();
+      await page.locator(".menu-list").waitFor();
+      issues.push(...(await audit(page, "collection menu")));
+      await page.locator(".menu-list .menu-item").nth(2).click();
+      await page.locator(".all-move").waitFor();
+      issues.push(...(await audit(page, "move to")));
+      await page.keyboard.press("Escape");
+      await page.locator(".cols-table tr", { hasText: "Libros" }).locator(".cols-name").click();
       await page.locator(".col-protect").waitFor();
       issues.push(...(await audit(page, "collection page")));
 
@@ -413,10 +424,10 @@ for (const language of ["es", "en"] as const) {
   }
 }
 
-/** The notes explorer, a note's history and the collections' usage. */
+/** «Todas las páginas» with a collection open, a note's history and the collections' usage. */
 const N = {
-  es: { notes: "Todas las páginas", history: "Historial", cols: "Colecciones" },
-  en: { notes: "All pages", history: "History", cols: "Collections" },
+  es: { notes: "Todas las páginas", history: "Historial" },
+  en: { notes: "All pages", history: "History" },
 };
 for (const language of ["es", "en"] as const) {
   for (const width of [1440, 900]) {
@@ -427,7 +438,6 @@ for (const language of ["es", "en"] as const) {
       await openApp(page, "/?still", {
         language,
         agent: {
-          "GET api/data/notes": [NOTES],
           "GET api/data/audit/rows/:id": [ROW_HISTORY],
           "GET api/data/audit/storage": [STORAGE],
           "GET api/data/audit/summary": [AUDIT_SUMMARY],

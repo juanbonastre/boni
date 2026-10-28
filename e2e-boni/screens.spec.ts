@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { MODELS } from "./agent-scenarios.ts";
-import { openApp, TEMPLATE } from "./fixtures.ts";
+import { openApp, openInTree, TEMPLATE } from "./fixtures.ts";
 
 /**
  * I-07 (docs/principios.md): the main screens do not change their look by mistake. Each is compared with its reference
@@ -14,6 +14,10 @@ async function open(page: Page, agent: Record<string, unknown[]> = {}) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.clock.install({ time: FIXED });
   await openApp(page, "/?still", { agent });
+  // The start page shown, and so in «Recientes»: every capture has the same sidebar.
+  await expect(page.locator(".sidebar").getByRole("list", { name: "Recientes" })).toHaveText(
+    "Gastos",
+  );
 }
 const shot = (page: Page, name: string) =>
   expect(page).toHaveScreenshot(`${name}.png`, {
@@ -39,7 +43,7 @@ test("«Uso de la IA», a template page over Boni's records", async ({ page }) =
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.clock.install({ time: FIXED });
   await openApp(page, "/?still", { pages: [TEMPLATE("uso-ia")] });
-  await page.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  await openInTree(page, "Uso de la IA");
   await page.locator(".blk-bars .barlist-row").first().waitFor();
   await page.locator(".data-blk-chart .chart svg").first().waitFor();
   await shot(page, "uso-ia");
@@ -49,18 +53,18 @@ test("«Registro», a template page over Boni's runs", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.clock.install({ time: new Date("2026-10-27T10:00:00+02:00") });
   await openApp(page, "/?still", { pages: [TEMPLATE("registro")] });
-  await page.locator(".sidebar").getByRole("button", { name: "Registro", exact: true }).click();
+  await openInTree(page, "Registro");
   await expect(page.locator(".blk-number .kpi-value").first()).not.toHaveText("—");
   await page.locator(".data-blk-chart .chart svg").first().waitFor();
   await page.locator(".db-table tbody tr").first().waitFor();
   await shot(page, "registro");
 });
 
-test("Colecciones", async ({ page }) => {
+test("Todas las páginas", async ({ page }) => {
   await open(page);
-  await page.locator(".sidebar").getByRole("button", { name: "Colecciones" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
   await page.locator(".cols-table tbody tr").first().waitFor();
-  await shot(page, "colecciones");
+  await shot(page, "todas-las-paginas");
 });
 
 test("Ajustes", async ({ page }) => {
