@@ -98,15 +98,18 @@ function env(two = false): { store: UserStore; cal: StoreCalendar } {
 }
 const rowOf = async (cal: StoreCalendar, id: string) =>
   (await cal.snapshot()).rows.find((r) => r.id === id) as Row;
+/** The record an invented note became (rows are known by the record's id). */
+const idAt = (store: UserStore, path: string) =>
+  store.findByValue("f_vault_path", path)[0]?.id as string;
 
 describe("the calendar over Boni's collections", () => {
-  it("serves the rows as the apps know them: the note's path as id, values by property", async () => {
+  it("serves the rows as the apps know them: the record's id, values by property", async () => {
     const { store, cal } = env();
     expect(calendarDefs(store).map((p) => p.def.id)).toEqual(["docencia"]);
     const snap = await cal.snapshot();
     expect(snap.collections.map((c) => c.id)).toEqual(["docencia"]);
     expect(snap.views[0]).toMatchObject({ id: "docencia", color: "#60a5fa" });
-    const row = await rowOf(cal, CLASS);
+    const row = await rowOf(cal, idAt(store, CLASS));
     expect(row).toMatchObject({
       collectionId: "docencia",
       values: {
@@ -124,11 +127,11 @@ describe("the calendar over Boni's collections", () => {
   it("writes what a device changed, only that, with Juan's label; new and removed rows too", async () => {
     const { store, cal } = env();
     const snap = await cal.snapshot();
-    const row = await rowOf(cal, CLASS);
+    const row = await rowOf(cal, idAt(store, CLASS));
     const moved: Row = { ...row, values: { ...row.values, startTime: "12:00", completed: true } };
     const r = await cal.apply(snap.version, [{ op: "upsert", row: moved }], "token-a", "portatil");
     expect(r.ok).toBe(true);
-    const e = store.list("t_docencia").find((x) => x.entity.values.f_vault_path === CLASS);
+    const e = store.get(idAt(store, CLASS));
     expect(e?.entity.values).toMatchObject({ f_starttime: "12:00", f_completed: true });
     expect(e?.labels.f_starttime).toMatchObject({ integrity: "user" });
     expect(e?.labels.f_title?.integrity).toBe("imported"); // untouched
@@ -147,14 +150,11 @@ describe("the calendar over Boni's collections", () => {
       "token-a",
       "portatil",
     );
-    // Its id is the name its note would have had, as the apps name one.
+    // Its id is the record's (no path is made up for it).
     const id = made.ok ? (made.aliases["ev-nuevo"] as string) : "";
-    expect(id).toBe("agenda/docencia/Reunión inventada.md");
-    const entityAt = (path: string) =>
-      store
-        .list("t_docencia", { includeDeleted: true })
-        .find((e) => e.entity.values.f_vault_path === path);
+    const entityAt = (x: string) => store.get(x);
     expect(entityAt(id)?.entity.values.f_title).toBe("Reunión inventada");
+    expect(entityAt(id)?.entity.values.f_vault_path).toBeUndefined();
     expect(store.schema().types.t_docencia?.fields.some((f) => f.name === "avisos")).toBe(true);
     expect((await rowOf(cal, id)).values.avisos).toBe("1h");
 
@@ -172,19 +172,18 @@ describe("the calendar over Boni's collections", () => {
   it("an event moved to another calendar is the same record in that collection, with its id and history (D-12)", async () => {
     const { store, cal } = env(true);
     const snap = await cal.snapshot();
-    const row = await rowOf(cal, CLASS);
-    const entityId = store.list("t_docencia").find((x) => x.entity.values.f_vault_path === CLASS)
-      ?.entity.id as string;
+    const entityId = idAt(store, CLASS);
+    const row = await rowOf(cal, entityId);
     const r = await cal.apply(
       snap.version,
       [{ op: "upsert", row: { ...row, collectionId: "planes" } }],
       "token-a",
       "portatil",
     );
-    const moved = "agenda/planes/2026-10-22 Clase de ejemplo.md";
-    expect(r).toMatchObject({ ok: true, aliases: { [CLASS]: moved } });
+    // The same row, by the same id, in the other calendar.
+    expect(r).toMatchObject({ ok: true, aliases: {} });
     const rows = (await cal.snapshot()).rows.filter((x) => x.values.title === "Clase de ejemplo");
-    expect(rows.map((x) => [x.id, x.collectionId])).toEqual([[moved, "planes"]]);
+    expect(rows.map((x) => [x.id, x.collectionId])).toEqual([[entityId, "planes"]]);
     expect(rows[0]).toMatchObject({
       values: { date: "2026-10-22", startTime: "10:00" },
       body: "Preparar el tema 3.\n",
@@ -214,9 +213,10 @@ describe("the calendar over Boni's collections", () => {
       "portatil",
     );
     const id = made.ok ? (made.aliases["ev-nuevo"] as string) : "";
-    expect(id).toBe("agenda/docencia/Reunión inventada.md");
-    const made2 = store.list("t_docencia").find((e) => e.entity.values.f_vault_path === id);
-    expect(made2?.entity.values.f_area).toBe(areaId("docencia"));
+    expect(store.get(id)?.entity).toMatchObject({
+      type: "t_docencia",
+      values: { f_area: areaId("docencia") },
+    });
   });
 
   it("a device's draft sent again before the server's copy came back keeps what the server added (the area)", async () => {
@@ -231,9 +231,7 @@ describe("the calendar over Boni's collections", () => {
     };
     const made = await cal.apply(snap.version, [{ op: "upsert", row: draft }], "t", "portatil");
     const id = made.ok ? (made.aliases["ev-borrador"] as string) : "";
-    const area = () =>
-      store.list("t_docencia").find((e) => e.entity.values.f_vault_path === id)?.entity.values
-        .f_area;
+    const area = () => store.get(id)?.entity.values.f_area;
     expect(area()).toBeTruthy();
     // The same draft, a moment later, without the area the server gave it.
     const again = await cal.apply(
@@ -260,16 +258,16 @@ describe("the calendar over Boni's collections", () => {
     const c = cal.changes(v0);
     expect(c.full).toBeUndefined();
     expect(c.upserts.map((r) => [r.id, r.values.title])).toEqual([
-      [CLASS, "Clase cambiada en Boni"],
+      [e?.entity.id, "Clase cambiada en Boni"],
     ]);
-    const row = await rowOf(cal, CLASS);
+    const row = await rowOf(cal, e?.entity.id as string);
     const stale = await cal.apply(
       v0,
       [{ op: "upsert", row: { ...row, values: { ...row.values, title: "Otra" } } }],
       "token-a",
       "portatil",
     );
-    expect(stale).toEqual({ ok: false, conflict: [CLASS] });
+    expect(stale).toEqual({ ok: false, conflict: [e?.entity.id] });
     // The same device's own change is not a conflict for it.
     const mine = await cal.apply(
       v0,
@@ -518,5 +516,47 @@ describe("the calendar over Boni's collections", () => {
       ["trabajo", false, "t_tarea"],
       ["casa", true, "t_tarea"],
     ]);
+  });
+
+  it("a row known by an older id is the same record: its note's path, or a new row's id sent again", async () => {
+    const { store, cal } = env();
+    const snap = await cal.snapshot();
+    const id = idAt(store, CLASS);
+    const row = await rowOf(cal, id);
+    // A device that still knows the class by its note's path (rows were known by it until 2026-10-29).
+    const r = await cal.apply(
+      snap.version,
+      [{ op: "upsert", row: { ...row, id: CLASS, values: { ...row.values, startTime: "09:00" } } }],
+      "token-a",
+      "portatil",
+    );
+    expect(r).toMatchObject({ ok: true, aliases: { [CLASS]: id } });
+    expect(store.get(id)?.entity.values.f_starttime).toBe("09:00");
+    // A new row sent again before the device heard back: still one record.
+    const fresh: Row = {
+      id: "ev-doble",
+      collectionId: "docencia",
+      values: { title: "Una vez", date: "2026-10-30" },
+      created: 0,
+      updated: 0,
+    };
+    const a = await cal.apply(
+      r.ok ? r.version : 0,
+      [{ op: "upsert", row: fresh }],
+      "token-a",
+      "portatil",
+    );
+    const b = await cal.apply(
+      a.ok ? a.version : 0,
+      [{ op: "upsert", row: fresh }],
+      "token-a",
+      "portatil",
+    );
+    const made = a.ok ? a.aliases["ev-doble"] : "";
+    expect(made).toMatch(/^e_/);
+    expect(b).toMatchObject({ ok: true, aliases: { "ev-doble": made } });
+    expect(
+      store.list("t_docencia").filter((e) => e.entity.values.f_title === "Una vez"),
+    ).toHaveLength(1);
   });
 });

@@ -117,5 +117,9 @@ Cada paso es un PR con sus pruebas, y se despliega al cerrarse:
    tiene viaja archivado), pone colecciones dentro de otras, apunta los calendarios a una rama separada por un campo
    (`where`, `make`) y archiva lo que queda vacío; el ensayo trabaja sobre una copia y solo da cuentas, y lo aplicado es
    una transacción que `--undo` deshace entera. Una hija con título propio lo conserva (no hereda el de su madre).
-6. Sin rutas: fuera `f_vault_path`.
+6. Sin rutas: fuera `f_vault_path`. **Hecha la primera parte (2026-10-29):** un registro se conoce por su id en Boni
+   Calendar (sus filas), en los enlaces `boni://note?id=` y en lo que escribe el MCP (`create` y `upload_file` ya no
+   inventan rutas; un archivo es su carpeta y su nombre). Lo que queda: el dinero («Apuntar gasto» y la conciliación
+   aún nombran sus movimientos por la ruta de su nota), y después archivar los campos de la ruta. Una ruta vieja aún
+   sirve para leer una nota con el MCP y para que un dispositivo con cambios pendientes los entregue.
 7. Interfaces.

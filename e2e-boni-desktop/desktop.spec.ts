@@ -61,6 +61,9 @@ const NOTES: Record<string, string> = {
 };
 
 let dir = "";
+/** The records of the class and the tutorial (links into Boni name a record by its id). */
+let classId = "";
+let tutorialId = "";
 let server: ChildProcess | null = null;
 let app: ElectronApplication | null = null;
 
@@ -94,6 +97,9 @@ test.beforeAll(async () => {
     ],
     NOTES,
   );
+  const idAt = (path: string) => store.findByValue("f_vault_path", path)[0]?.id as string;
+  classId = idAt(`agenda/docencia/${iso(today)} Clase de ejemplo.md`);
+  tutorialId = idAt(`agenda/docencia/${iso(tomorrow)} Tutoría.md`);
   store.close();
   server = spawn("node", ["apps/server/src/main.ts"], {
     cwd: ROOT,
@@ -515,11 +521,10 @@ test("the daily copy on this computer: its folder first, then on; a whole zip la
   await w.keyboard.press("Escape");
 });
 
-test("a boni:// link opens the note's row in the running app", async () => {
+test("a boni:// link opens a record by its id in the running app", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
-  const note = `agenda/docencia/${iso(today)} Clase de ejemplo.md`;
-  openLink(`boni://note?path=${encodeURIComponent(note)}`);
+  openLink(`boni://note?id=${classId}`);
   await expect(w.locator(".row-doc .blk-input").first()).toHaveValue(
     /Preparar los ejercicios del tema 3/,
   );
@@ -532,8 +537,7 @@ test("a boni:// link with the window closed: the window opens on the note at the
     a.windows().find((x) => !x.url().includes("peek=1") && !x.url().includes("widget="));
   await main()?.close(); // Boni goes on in the tray
   await expect.poll(() => main()).toBeUndefined();
-  const note = `agenda/docencia/${iso(today)} Clase de ejemplo.md`;
-  openLink(`boni://note?path=${encodeURIComponent(note)}`);
+  openLink(`boni://note?id=${classId}`);
   await expect.poll(() => main()).toBeDefined();
   const w = main() as NonNullable<ReturnType<typeof main>>;
   await expect(w.locator(".row-doc .blk-input").first()).toHaveValue(
@@ -543,8 +547,7 @@ test("a boni:// link with the window closed: the window opens on the note at the
 
 test("Boni Calendar's link with peek=1: a small window with the note; it stays when another window takes the focus, a click in the calendar puts it away", async () => {
   const a = app as ElectronApplication;
-  const note = `agenda/docencia/${iso(tomorrow)} Tutoría.md`;
-  openLink(`boni://note?path=${encodeURIComponent(note)}&peek=1`);
+  openLink(`boni://note?id=${tutorialId}&peek=1`);
   const peekPage = async () => {
     for (let i = 0; i < 100; i++) {
       const p = a.windows().find((x) => x.url().includes("peek=1"));
@@ -582,9 +585,7 @@ test("Boni Calendar's link with peek=1: a small window with the note; it stays w
   openLink("boni://peek?hide=1");
   await expect.poll(visible).toBe(false);
   // The next one opens again, with its own note.
-  openLink(
-    `boni://note?path=${encodeURIComponent(`agenda/docencia/${iso(today)} Clase de ejemplo.md`)}&peek=1`,
-  );
+  openLink(`boni://note?id=${classId}&peek=1`);
   await expect.poll(visible).toBe(true);
   await expect(peek.locator(".row-doc .blk-input").first()).toHaveValue(/Preparar los ejercicios/);
   // A hide that arrives just after opening (the same click in the calendar) does not take the new note away.

@@ -2,22 +2,20 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { linkIn, screenOfUrl } = require("./links.cjs");
 
-test("a boni:// link opens a vault note's row, nothing else", () => {
-  const p = encodeURIComponent("agenda/docencia/2026-10-22 Clase de ejemplo.md");
-  assert.deepEqual(screenOfUrl(`boni://note?path=${p}`), {
-    screen: "note:agenda/docencia/2026-10-22 Clase de ejemplo.md",
-    peek: false,
-  });
-  assert.equal(screenOfUrl(`boni://note?path=${p}&peek=1`)?.peek, true);
+test("a boni:// link opens a record by its id, nothing else (notes have no paths)", () => {
+  const id = "e_01m5m5fkq7w3mhh4ywc6aa22zz";
+  assert.deepEqual(screenOfUrl(`boni://note?id=${id}`), { screen: `note:${id}`, peek: false });
+  assert.equal(screenOfUrl(`boni://note?id=${id}&peek=1`)?.peek, true);
   for (const bad of [
-    "boni://note?path=..%2Fsecreto.md",
-    "boni://note?path=%2Fetc%2Fpasswd.md",
-    "boni://note?path=a%2Fb.txt",
+    "boni://note?path=agenda%2Fdocencia%2Fclase.md",
+    "boni://note?id=..%2Fsecreto",
+    "boni://note?id=a%2Fb",
     "boni://note",
-    "boni://settings?x=1",
-    "https://example.com/?path=a.md",
+    "boni://settings?id=x",
+    "https://example.com/?id=e_1",
     "no es una url",
-    "boni://note?path=a%0Ab.md",
+    "boni://note?id=a%0Ab",
+    `boni://note?id=${"a".repeat(101)}`,
   ])
     assert.equal(screenOfUrl(bad), null, bad);
 });
@@ -47,5 +45,5 @@ test("boni://proposal opens a proposal of the inbox by its id, nothing else", ()
 
 test("finds the link among the arguments of a start", () => {
   assert.equal(linkIn(["/opt/Boni/boni", "--background"]), undefined);
-  assert.equal(linkIn(["/opt/Boni/boni", "boni://note?path=a.md"]), "boni://note?path=a.md");
+  assert.equal(linkIn(["/opt/Boni/boni", "boni://note?id=e_1"]), "boni://note?id=e_1");
 });

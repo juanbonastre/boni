@@ -180,14 +180,14 @@ export interface Host {
 export interface EmbedHost {
   ready(): void;
   hide(): void;
-  openInBoni(path: string): void;
+  openInBoni(id: string): void;
 }
 
 declare global {
   interface Window {
     /** Given by Boni Calendar's peek window (its preload) to the page it loads from the server. */
     boniEmbed?: EmbedHost & {
-      onNote(cb: (path: string | null) => void): void;
+      onNote(cb: (id: string | null) => void): void;
       /** A proposal of the inbox to show (one drawn in Boni Calendar); older calendars do not send them. */
       onProposal?(cb: (id: string) => void): void;
     };
@@ -302,8 +302,8 @@ export function browserHost(): Host {
   const embed = typeof window === "undefined" ? undefined : window.boniEmbed;
   // In Boni Calendar's peek the page is served by Boni's server: its address is this page's.
   const defaults = embed ? { ...DEFAULTS, serverUrl: location.origin } : DEFAULTS;
-  embed?.onNote((path) => {
-    for (const l of listeners) l({ type: "navigate", screen: path ? `note:${path}` : "blank" });
+  embed?.onNote((id) => {
+    for (const l of listeners) l({ type: "navigate", screen: id ? `note:${id}` : "blank" });
   });
   embed?.onProposal?.((id) => {
     for (const l of listeners) l({ type: "navigate", screen: `proposal:${id}` });
@@ -448,7 +448,7 @@ export function browserHost(): Host {
           embed: {
             ready: () => embed.ready(),
             hide: () => embed.hide(),
-            openInBoni: (path: string) => embed.openInBoni(path),
+            openInBoni: (id: string) => embed.openInBoni(id),
           },
         }
       : {}),

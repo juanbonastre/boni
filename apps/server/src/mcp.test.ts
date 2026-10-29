@@ -309,11 +309,11 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       title: "Nuevo inventado",
       properties: { status: "activo" },
       body: "Hecho por el MCP.",
-      path: "proyectos/nuevo-inventado.md",
     });
-    expect((await tool("read", { path: "proyectos/nuevo-inventado.md" })).json.title).toBe(
-      "Nuevo inventado",
-    );
+    // Known by its id: a new note has no path.
+    const fresh = (await tool("read", { id: made.json.id })).json;
+    expect(fresh.title).toBe("Nuevo inventado");
+    expect(fresh.path).toBeUndefined();
     expect((await tool("create", { collection: "Diario", title: "x" })).error).toBe(true);
 
     const changes = (await tool("recent_changes", { limit: 5 })).json as {
@@ -322,7 +322,7 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     }[];
     expect(changes[0]).toMatchObject({ run: made.json.run, by: "claude-code" });
     expect((await tool("undo", { run: made.json.run })).json.undone).toBe(1);
-    expect((await tool("read", { path: "proyectos/nuevo-inventado.md" })).error).toBe(true);
+    expect((await tool("read", { id: made.json.id })).error).toBe(true);
     expect((await tool("undo", { run: "import-1" })).error).toBe(true);
   });
 

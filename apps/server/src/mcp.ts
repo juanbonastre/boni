@@ -518,14 +518,13 @@ const TOOLS: Tool[] = [
   {
     name: "create",
     description:
-      "A new note in a collection: its title, properties by name, its text; optionally the vault path it is written at.",
+      "A new note in a collection: its title, properties by name, its text. It is known by its id (notes have no paths).",
     inputSchema: obj(
       {
         collection: { type: "string" },
         title: { type: "string" },
         properties: { type: "object" },
         body: { type: "string" },
-        path: { type: "string" },
       },
       ["collection", "title"],
     ),
@@ -538,15 +537,6 @@ const TOOLS: Tool[] = [
       writes[t.titleField] = { value: str(a.title, "title", 300), label: w.lbl(t.id, null) };
       const body = optStr(a.body, "body");
       if (body) writes[BODY] = { value: body, label: w.lbl(t.id, null) };
-      const path = optStr(a.path, "path", 500);
-      if (path) {
-        if (!t.fields.some((f) => f.id === PATH_FIELD))
-          throw new ToolFail(`${t.name} keeps no paths`);
-        if (!/^[^/.][^\\]*\.md$/.test(path) || path.split("/").includes(".."))
-          throw new ToolFail("path: a vault-relative .md path");
-        if (c.store.findByValue(PATH_FIELD, path).length) throw new ToolFail("path: taken");
-        writes[PATH_FIELD] = { value: path, label: w.lbl(t.id, null) };
-      }
       const made = c.store.create(t.id, writes, w.meta);
       return { id: made.entity.id, run: w.run };
     },
@@ -554,7 +544,7 @@ const TOOLS: Tool[] = [
   {
     name: "upload_file",
     description:
-      "Adds a file to Boni (collection Archivos), in the folder it would have had in the vault: a bank statement goes to registros/finanzas/extractos/<name>.csv, where finanzas_import reads it. content_base64: the file's bytes (at most ~6 MB). Never over another file.",
+      "Adds a file to Boni (collection Archivos): `path` is its folder and name, a bank statement registros/finanzas/extractos/<name>.csv, where finanzas_import reads it. content_base64: the file's bytes (at most ~6 MB). Never over another file of that folder and name.",
     inputSchema: obj({ path: { type: "string" }, content_base64: { type: "string" } }, [
       "path",
       "content_base64",
@@ -573,7 +563,11 @@ const TOOLS: Tool[] = [
         !name.includes(".")
       )
         throw new ToolFail("path: a vault-relative file path (not a note, not a zone)");
-      if (c.store.findByValue(PATH_FIELD, path).length) throw new ToolFail("path: taken");
+      const folder = path.slice(0, path.lastIndexOf("/"));
+      const taken = c.store
+        .entities(t.id)
+        .some((e) => e.values[FOLDER_FIELD] === folder && e.values[t.titleField] === name);
+      if (taken) throw new ToolFail("path: taken");
       const raw = str(a.content_base64, "content_base64", Math.ceil((MAX_FILE_BYTES * 4) / 3) + 4);
       const bytes = Buffer.from(raw, "base64");
       if (!bytes.length) throw new ToolFail("content_base64: empty");
@@ -584,8 +578,7 @@ const TOOLS: Tool[] = [
         {
           [t.titleField]: { value: name, label: w.lbl(t.id, null) },
           [FILE_FIELD]: { value: sha, label: w.lbl(t.id, null) },
-          [FOLDER_FIELD]: { value: path.slice(0, path.lastIndexOf("/")), label: w.lbl(t.id, null) },
-          [PATH_FIELD]: { value: path, label: w.lbl(t.id, null) },
+          [FOLDER_FIELD]: { value: folder, label: w.lbl(t.id, null) },
         },
         w.meta,
       );

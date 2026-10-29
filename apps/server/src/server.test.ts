@@ -127,10 +127,12 @@ describe("the calendar from the server", () => {
     // Versions start from the clock: they keep growing when the server starts again.
     expect(snap.version).toBeGreaterThanOrEqual(started);
     expect(snap.collections.map((c) => c.id)).toEqual(["docencia"]);
-    expect(snap.rows.map((r) => r.id).sort()).toEqual([
-      "agenda/docencia/2026-10-19 Clase de ejemplo.md",
-      "agenda/docencia/2026-10-20 Tutoría inventada.md",
+    // Each row is known by its record's id (notes have no paths).
+    expect(snap.rows.map((r) => r.values.title).sort()).toEqual([
+      "Clase de ejemplo",
+      "Tutoría inventada",
     ]);
+    expect(snap.rows.every((r) => /^e_/.test(r.id))).toBe(true);
     expect(JSON.stringify(snap)).not.toContain("Nunca");
   });
 

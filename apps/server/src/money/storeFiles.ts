@@ -1,5 +1,5 @@
 import type { UserStore } from "@boni/store";
-import { FILE_FIELD, FOLDER_FIELD, PATH_FIELD } from "../paths.ts";
+import { FILE_FIELD, FOLDER_FIELD } from "../paths.ts";
 import { StoreMoney } from "../v1/storeMoney.ts";
 import type { MoneyFiles } from "./service.ts";
 
@@ -7,27 +7,26 @@ import type { MoneyFiles } from "./service.ts";
 const FILES = "t_archivo";
 
 /**
- * The reconciliation's inputs from Boni itself (Juan, 2026-10-23: no more vault): the bank statements, `reglas.csv`
- * and the categories the vault had are rows of "Archivos" (each with the folder and path it had) and a note, so
- * they are read here by those paths. A new statement becomes such a row (MCP `upload_file`).
+ * The reconciliation's inputs from Boni itself (Juan, 2026-10-23: no more vault): the bank statements and
+ * `reglas.csv` are rows of "Archivos", each a file with its name (its title) and the folder it is in, so they are read
+ * here by folder and name. A new statement becomes such a row (MCP `upload_file`).
  */
 export function storeFiles(store: UserStore): MoneyFiles {
-  const byPath = (rel: string) =>
-    store
-      .findByValue(PATH_FIELD, rel)
-      .map((h) => store.get(h.id)?.entity)
-      .find((e) => e && e.deleted === undefined);
+  const nameOf = (e: { type: string; values: Record<string, unknown> }) => {
+    const t = store.schema().types[e.type];
+    return t ? String(e.values[t.titleField] ?? "") : "";
+  };
+  const byPath = (rel: string) => {
+    const dir = rel.slice(0, rel.lastIndexOf("/"));
+    const name = rel.slice(rel.lastIndexOf("/") + 1);
+    return store.entities(FILES).find((e) => e.values[FOLDER_FIELD] === dir && nameOf(e) === name);
+  };
   return {
     files(dir, exts) {
       return store
-        .list(FILES)
-        .filter((s) => s.entity.values[FOLDER_FIELD] === dir)
-        .map(
-          (s) =>
-            String(s.entity.values[PATH_FIELD] ?? "")
-              .split("/")
-              .pop() ?? "",
-        )
+        .entities(FILES)
+        .filter((e) => e.values[FOLDER_FIELD] === dir)
+        .map(nameOf)
         .filter((n) => n && exts.some((x) => n.toLowerCase().endsWith(x)))
         .sort();
     },

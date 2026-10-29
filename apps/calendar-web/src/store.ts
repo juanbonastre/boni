@@ -1022,15 +1022,15 @@ export const useApp = create<AppState>((set, get) => {
 
     noteOfEvent: (id) => {
       const s = get();
-      // With a server the rows are its notes too (id = path); the device opens them when its host can.
+      // With a server each row is a record of Boni (its id): the device opens it there when its host can.
       if (s.source !== "server" || !notesBridge()?.openNote) return null;
-      const path = aliases.get(id) ?? id;
-      return path.endsWith(".md") && s.rows.some((r) => r.id === id) ? path : null;
+      const record = aliases.get(id) ?? id;
+      return !isProposalId(record) && s.rows.some((r) => r.id === id) ? record : null;
     },
 
     openNote: async (id, opts) => {
-      const path = get().noteOfEvent(id);
-      const r = path ? await notesBridge()?.openNote?.(path, opts) : null;
+      const record = get().noteOfEvent(id);
+      const r = record ? await notesBridge()?.openNote?.(record, opts) : null;
       if (r && !r.ok) get().showToast("vault.openFailed");
     },
 
