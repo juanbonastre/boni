@@ -309,7 +309,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   opens the peek, so a double click never flashes the detail. It shows in a small frameless
   window, centred where the pointer is: a thin head (its collection, "Abrir en Boni" to take it to the main window,
   ×) that moves the window, and the row as a page below. Esc, × or a click in Boni Calendar put it away (it stays,
-  on top, while Juan works in another app); the next note never shows the last one for a moment.
+  on top, while Juan works in another app); the next note never shows the last one for a moment. On the phone
+  there is no peek: in Boni Calendar for Android an event's detail has «Abrir en Boni», which opens Boni's Android app
+  on that record (a `boni://note?id=` link) as a page in Boni's tab, titled by its collection, across the screen with a
+  smaller title; Back goes back to the calendar.
 - **Speed** (2026-10-22): formatters (dates, money) are made once, never per cell; the server counts and finds by
   SQL and lists a type in two queries. Measure with an invented vault of Juan's size (~4,000 notes) in the real app. An attachment is a small chip "Abrir archivo"
   with a clip (never a link): the desktop app opens it with the system's viewer, a browser downloads it; a kind no

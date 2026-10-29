@@ -1049,7 +1049,8 @@ export const useApp = create<AppState>((set, get) => {
     peekEvent: (id) => {
       const s = get();
       if (s.openProposal(id)) return true;
-      if (notesBridge()?.noteApp !== "boni" || !s.noteOfEvent(id)) return false;
+      const bridge = notesBridge();
+      if (bridge?.noteApp !== "boni" || bridge.peek === false || !s.noteOfEvent(id)) return false;
       clearTimeout(detailTimer);
       // The first click of the two opened its detail: the peek shows the note instead.
       s.select(id, false);
@@ -1088,7 +1089,9 @@ export const useApp = create<AppState>((set, get) => {
       // Where a double click opens the note's peek, the detail waits for a moment: a second click opens the peek
       // without the detail showing and going (Juan, 2026-10-22).
       clearTimeout(detailTimer);
-      const wait = r.popover && notesBridge()?.noteApp === "boni" && !!s.noteOfEvent(id);
+      const bridge = notesBridge();
+      const wait =
+        r.popover && bridge?.noteApp === "boni" && bridge.peek !== false && !!s.noteOfEvent(id);
       set({
         selectedIds: r.ids,
         selectedId: r.ids.length === 1 ? (r.ids[0] ?? null) : null,

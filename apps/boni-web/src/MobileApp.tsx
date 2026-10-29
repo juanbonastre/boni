@@ -24,6 +24,7 @@ import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { FormView } from "./components/FormView.tsx";
 import { ProposalPage } from "./components/InboxCards.tsx";
 import { RowsPanel } from "./components/RowsPanel.tsx";
+import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { EditorPanel } from "./components/SidePanel.tsx";
 import * as B from "./core/chartBuilder.ts";
@@ -84,6 +85,12 @@ export function MobileApp() {
   const toastState = useStore((s) => s.toast);
   const [menu, setMenu] = useState<Menu | null>(null);
   const chartOpen = view.kind === "chart";
+  // A record opened from Boni Calendar («Abrir en Boni»): its collection names the screen.
+  const rowType = useStore((s) =>
+    s.view.kind === "row"
+      ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
+      : undefined,
+  );
   return (
     <div className="m-app">
       {chartOpen ? (
@@ -102,7 +109,9 @@ export function MobileApp() {
                       ? t("log.title")
                       : view.kind === "audit"
                         ? t("audit.title")
-                        : t("tab.boni")
+                        : view.kind === "row"
+                          ? (rowType?.name ?? t("tab.boni"))
+                          : t("tab.boni")
             }
           />
           {tab === "capture" ? (
@@ -122,6 +131,10 @@ export function MobileApp() {
           ) : view.kind === "proposal" ? (
             <div className="m-scroll">
               <ProposalPage id={view.id} />
+            </div>
+          ) : view.kind === "row" ? (
+            <div className="m-scroll m-row">
+              <RowView />
             </div>
           ) : (
             <ChatView compact />
