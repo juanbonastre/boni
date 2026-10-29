@@ -33,6 +33,8 @@ export interface SourceRef {
     | "turn"
     | "user-edit"
     | "vault"
+    /** A file of the account (a bank statement among its attachments). */
+    | "file"
     | "mail"
     | "web"
     | "ical"

@@ -36,7 +36,11 @@ export type SchemaOp =
       field: FieldDef /** Position (default last): undoing a removal puts it back. */;
       at?: number;
     }
-  | { op: "remove_field"; type: TypeId; field: string } // the inverse of add_field
+  /**
+   * The inverse of add_field. `restore`: the fields of the same id her daughters had of their own before her (they
+   * took hers), given back to them (given only by the inverse).
+   */
+  | { op: "remove_field"; type: TypeId; field: string; restore?: Record<TypeId, FieldDef> }
   | { op: "rename_field"; type: TypeId; field: string; key: string; name: string; label: Label }
   | {
       op: "change_field_type";
@@ -218,10 +222,16 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
         own: ownFields(def),
       });
     }
-    case "add_field":
+    case "add_field": {
       if (op.field.from) return fail("a new field is the collection's own");
       if (def.fields.some((f) => f.id === op.field.id))
         return fail(`field "${op.field.id}" already exists`);
+      // A daughter with a field of that id of her own takes the mother's: undone, she gets hers back.
+      const restore: Record<TypeId, FieldDef> = {};
+      for (const t of branch(schema, def.id).slice(1)) {
+        const own = ownFields(schema.types[t] as TypeDef).find((f) => f.id === op.field.id);
+        if (own) restore[t] = own;
+      }
       return update(
         schema,
         def,
@@ -234,8 +244,10 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
           op: "remove_field",
           type: def.id,
           field: op.field.id,
+          ...(Object.keys(restore).length ? { restore } : {}),
         },
       );
+    }
   }
 
   const field = def.fields.find((f) => f.id === op.field);
@@ -243,9 +255,9 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
   if (field.from)
     return fail(`"${field.name}" is inherited from "${field.from}": it is changed there`);
   switch (op.op) {
-    case "remove_field":
+    case "remove_field": {
       if (def.titleField === field.id) return fail("the title field cannot be removed");
-      return update(
+      const r = update(
         schema,
         def,
         (d) => ({ ...d, fields: d.fields.filter((f) => f.id !== field.id) }),
@@ -256,6 +268,19 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
           at: def.fields.indexOf(field),
         },
       );
+      if (!r.ok || !op.restore) return r;
+      let out = r.schema;
+      for (const [t, own] of Object.entries(op.restore)) {
+        const d = out.types[t];
+        if (!d || d.fields.some((f) => f.id === own.id)) continue;
+        out = withType(out, {
+          ...d,
+          fields: [...d.fields, own],
+          schemaVersion: d.schemaVersion + 1,
+        });
+      }
+      return { ...r, schema: out };
+    }
     case "rename_field":
       return update(
         schema,

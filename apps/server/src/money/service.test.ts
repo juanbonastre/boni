@@ -4,22 +4,29 @@ import { mcpAnswer } from "../mcp.ts";
 import { seed, type TypeSpec } from "../seed.test-util.ts";
 import { StoreMoney } from "../v1/storeMoney.ts";
 import { storeNotes } from "./book.ts";
-import { categoryRows, moneyCollections, ruleRows } from "./collections.ts";
+import { categoryRows, ruleRows } from "./collections.ts";
 
 /**
- * The reconciliation on Boni's own movements, through Boni's MCP as Claude uses it: invented money in a store as it
- * came into Boni (the statements and reglas.csv rows of "Archivos", the categories a note), the movements made there.
+ * The reconciliation on Boni's own movements, through Boni's MCP as Claude uses it: invented money in a store (the
+ * statements rows of "Archivos", the categories and rules rows of their collections), the movements made there.
  */
+const CENA = "registros/finanzas/movimientos/2026-09-05-2140-cena-cumple.md";
 const FILES: Record<string, string> = {
-  "registros/finanzas/categorias.md":
-    "---\ntype: index\ncategories:\n  - comida/restaurante\n  - ingreso/nomina\n  - suscripciones\n  - otros/desconocido\n---\n\n# Categorias\n\n| Categoria | Que va | Ejemplos |\n|---|---|---|\n| suscripciones | pagos periodicos | Spotify, Ejemplo Cloud |\n\n| Categoria | Que va |\n|---|---|\n| ingreso/nomina | la nomina |\n",
-  "registros/finanzas/reglas.csv":
-    "pattern,merchant,category,notes\nspotify,Spotify,suscripciones,la musica\n",
+  "registros/finanzas/categorias/comida-restaurante.md":
+    "---\nnombre: comida/restaurante\ntipo: gasto\n---\n\n# comida/restaurante\n",
+  "registros/finanzas/categorias/ingreso-nomina.md":
+    "---\nnombre: ingreso/nomina\ntipo: ingreso\n---\n\n# ingreso/nomina\n",
+  "registros/finanzas/categorias/suscripciones.md":
+    "---\nnombre: suscripciones\ntipo: gasto\nque_va: pagos periodicos\n---\n\n# suscripciones\n",
+  "registros/finanzas/categorias/otros-desconocido.md":
+    "---\nnombre: otros/desconocido\ntipo: gasto\n---\n\n# otros/desconocido\n",
+  "registros/finanzas/reglas/spotify.md":
+    '---\ntexto: spotify\ncomercio: Spotify\ncategoria: "[[suscripciones]]"\nnotas: la musica\n---\n\n# spotify\n',
   "registros/personas/ana.md": "---\ntype: person\n---\n\n# Ana\n",
-  "registros/finanzas/movimientos/2026/09/2026-09-05-2140-cena-cumple.md":
-    '---\ntype: movement\ndate: 2026-09-05\ntime: "21:40"\namount: -60.00\ncurrency: EUR\nmy_share: 30.00\naccount: revolut\ncategory: comida/restaurante\nmerchant:\nconcept: "Cena cumple"\npeople: ["[[ana]]"]\nstatus: pendiente\nsource: manual\nbank_ref:\ncreated: 2026-09-05\n---\n\n# Cena cumple 60,00 EUR\n',
+  [CENA]:
+    '---\ndate: 2026-09-05\ntime: "21:40"\namount: -60.00\ncurrency: EUR\nmy_share: 30.00\naccount: revolut\ncategory: comida/restaurante\nmerchant:\nconcept: "Cena cumple"\npeople: ["[[ana]]"]\nstatus: pendiente\nsource: manual\nbank_ref:\ncreated: 2026-09-05\n---\n\n# Cena cumple 60,00 EUR\n',
   "registros/finanzas/deudas/2026-09-05-ana-cena.md":
-    '---\ntype: debt\nperson: "[[ana]]"\nmovement: "[[2026-09-05-2140-cena-cumple]]"\namount: 30.00\ndirection: me-deben\nstatus: pendiente\ndate: 2026-09-05\n---\n\n# Ana cena\n',
+    '---\nperson: "[[ana]]"\nmovement: "[[2026-09-05-2140-cena-cumple]]"\namount: 30.00\ndirection: me-deben\nstatus: pendiente\ndate: 2026-09-05\n---\n\n# Ana cena\n',
   "registros/finanzas/extractos/2026-09-revolut.csv": `Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance
 CARD_PAYMENT,Current,2026-09-02 10:11:12,2026-09-03 08:00:00,Spotify,-10.99,0.00,EUR,COMPLETED,100.00
 CARD_PAYMENT,Current,2026-09-05 21:43:09,2026-09-06 09:00:00,La Tasca Ejemplo,-60.00,0.00,EUR,COMPLETED,40.00
@@ -35,11 +42,27 @@ afterEach(() => {
 const TYPES: TypeSpec[] = [
   { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
   {
+    key: "categoria",
+    name: "Categorías",
+    folder: "registros/finanzas/categorias/",
+    fields: { tipo: { type: "select", options: ["gasto", "ingreso", "otro"] } },
+  },
+  {
+    key: "regla",
+    name: "Reglas",
+    folder: "registros/finanzas/reglas/",
+    fields: { categoria: { type: "relation", to: "categoria" } },
+  },
+  {
     key: "movimiento",
     name: "Movimiento",
     folder: "registros/finanzas/movimientos/",
     sensitivity: "sensitive",
-    fields: { date: "date", people: { type: "relation", to: "persona", many: true } },
+    fields: {
+      date: "date",
+      category: { type: "relation", to: "categoria" },
+      people: { type: "relation", to: "persona", many: true },
+    },
   },
   {
     key: "deuda",
@@ -53,12 +76,12 @@ const TYPES: TypeSpec[] = [
       movement: { type: "relation", to: "movimiento" },
     },
   },
-  { key: "nota", name: "Nota", folder: "", fields: { categories: { type: "multiselect" } } },
+  { key: "nota", name: "Nota", folder: "" },
   { key: "archivo", name: "Archivos", folder: "registros/finanzas/", files: true },
 ];
 
-/** The money as it came into Boni; without `movements`, an account that keeps none there. */
-function env(movements = true): { store: UserStore } {
+/** The money in Boni, and each invented note's record; without `movements`, an account that keeps none there. */
+function env(movements = true): { store: UserStore; ids: Map<string, string> } {
   const store = openUserStore(":memory:");
   const types = movements
     ? TYPES
@@ -68,9 +91,9 @@ function env(movements = true): { store: UserStore } {
     : Object.fromEntries(
         Object.entries(FILES).filter(([p]) => !/\/(movimientos|deudas)\//.test(p)),
       );
-  seed(store, types, files);
+  const ids = seed(store, types, files);
   cleanups.push(() => store.close());
-  return { store };
+  return { store, ids };
 }
 let n = 0;
 function call(e: { store: UserStore }, name: string, args: Record<string, unknown>) {
@@ -95,7 +118,6 @@ const movements = (s: UserStore) => {
         .find((f) => f.name === "status")
         ?.options?.find((o) => o.id === x.entity.values[by("status")])?.name ??
       x.entity.values[by("status")],
-    path: x.entity.values.f_vault_path,
     label: x.labels[by("bank_ref")]?.integrity,
   }));
 };
@@ -112,10 +134,8 @@ describe("the reconciliation in Boni (MCP finanzas_import / finanzas_close)", ()
     expect(done.json).toMatchObject({ created: 2, joined: 1 });
     const ms = movements(e.store);
     expect(ms).toHaveLength(3);
-    const spotify = ms.find(
-      (m) => m.path === "registros/finanzas/movimientos/2026/09/2026-09-02-1011-spotify.md",
-    );
-    // Titled by its heading, as Juan's import did; the statement's values as imported from it.
+    const spotify = ms.find((m) => m.title === "Spotify 10,99 EUR");
+    // Titled by its merchant and amount; the statement's values as imported from it.
     expect(spotify).toMatchObject({
       title: "Spotify 10,99 EUR",
       status: "pendiente",
@@ -131,7 +151,7 @@ describe("the reconciliation in Boni (MCP finanzas_import / finanzas_close)", ()
     const close = call(e, "finanzas_close", { month: "2026-09", dry_run: false });
     expect(close.json.output).toContain("listos para conciliar: 2; siguen pendientes: 1");
     expect(close.json.output).toContain("sin categoria");
-    expect(close.json.output).toContain("Te deben: ana 30,00 EUR");
+    expect(close.json.output).toContain("Te deben: Ana 30,00 EUR");
     const after = movements(e.store);
     expect(
       after
@@ -176,82 +196,36 @@ CARD_PAYMENT,Current,2026-10-02 10:11:12,2026-10-03 08:00:00,Spotify,-10.99,0.00
     expect(call(e, "finanzas_import", {}).json.output).not.toContain("2026-10-revolut.csv");
   });
 
-  it("moves the categories and rules into collections; the movements point to their category; undone whole", () => {
+  it("reads the categories and rules from their collections; a category set by its name points to its row", () => {
     const e = env();
-    const CENA = "registros/finanzas/movimientos/2026/09/2026-09-05-2140-cena-cumple.md";
     const category = () =>
-      storeNotes(e.store)("t_movimiento", "movement").map((n) => [n.path, n.fm.category]);
-    // A category a movement uses that the list does not have: it becomes a row too.
-    call(e, "set_properties", { path: CENA, properties: { category: "ocio/salidas" } });
-
-    const dry = moneyCollections(e.store, { apply: false });
-    expect(dry.report.join("\n")).toContain(
-      "Categorias: 5 (4 de registros/finanzas/categorias.md, 2 con su explicacion)",
-    );
-    expect(dry.report.join("\n")).toContain(
-      "sin estar en la lista (se crean igual): ocio/salidas (1)",
-    );
-    expect(dry.run).toBeNull();
-    expect(categoryRows(e.store)).toBeNull();
-
-    const done = moneyCollections(e.store, { apply: true });
+      Object.fromEntries(
+        storeNotes(e.store)("t_movimiento").map((n) => [n.title, n.fm.category] as const),
+      );
     expect(categoryRows(e.store)).toEqual([
       { name: "comida/restaurante", kind: "gasto" },
       { name: "ingreso/nomina", kind: "ingreso" },
-      { name: "ocio/salidas", kind: "gasto" },
       { name: "otros/desconocido", kind: "gasto" },
       { name: "suscripciones", kind: "gasto" },
     ]);
-    const subs = e.store.entities("t_categoria").find((x) => x.values.f_nombre === "suscripciones");
-    expect(subs?.values).toMatchObject({
-      f_que_va: "pagos periodicos",
-      f_ejemplos: "Spotify, Ejemplo Cloud",
-    });
     expect(ruleRows(e.store)).toEqual([["spotify", "Spotify", "suscripciones"]]);
-    expect(e.store.entities("t_regla")[0]?.values.f_notas).toBe("la musica");
-    // The file is in the trash: its rules are rows now.
-    expect(e.store.findByValue("f_vault_path", "registros/finanzas/reglas.csv")).toEqual([]);
-    expect(category()).toEqual([[CENA, "ocio/salidas"]]);
-    const mov = e.store.schema().types.t_movimiento;
-    expect(mov?.fields.find((f) => f.name === "category")?.type).toBe("relation");
-    expect(new StoreMoney(e.store).categories()).toContain("ocio/salidas");
     expect(new StoreMoney(e.store).categoryKinds().get("ingreso/nomina")).toBe("ingreso");
-    expect(() => moneyCollections(e.store, { apply: true })).toThrow("already uses");
+    // The charts name people by their names, and a movement and a debt by their records.
+    const [cena] = new StoreMoney(e.store).movements();
+    expect(cena).toMatchObject({ name: e.ids.get(CENA), people: ["Ana"] });
+    expect(new StoreMoney(e.store).debts()[0]?.movement).toBe(e.ids.get(CENA));
+    expect(new StoreMoney(e.store).people().map((p) => p.label)).toEqual(["Ana"]);
 
     // The reconciliation reads them: Spotify by its rule, into the row of suscripciones.
     const imported = call(e, "finanzas_import", { dry_run: false });
     expect(imported.json).toMatchObject({ created: 2, joined: 1 });
-    expect(Object.fromEntries(category())).toMatchObject({
-      "registros/finanzas/movimientos/2026/09/2026-09-02-1011-spotify.md": "suscripciones",
-      "registros/finanzas/movimientos/2026/09/2026-09-06-1200-kiosko-pepe.md": "otros/desconocido",
+    expect(category()).toMatchObject({
+      "Spotify 10,99 EUR": "suscripciones",
+      "Kiosko Pepe 3,50 EUR": "otros/desconocido",
     });
-    expect(call(e, "finanzas_close", { month: "2026-09" }).json.output).toContain(
-      "listos para conciliar: 2; siguen pendientes: 1",
-    );
     // A category set by its name through the MCP, as Claude does in the reconciliation.
-    const set = call(e, "set_properties", {
-      path: CENA,
-      properties: { category: "comida/restaurante" },
-    });
-    expect(Object.fromEntries(category())[CENA]).toBe("comida/restaurante");
-
-    // Undone (the later runs first; while they are in effect the move is not undone): the text as it was, no
-    // collections, the file back.
-    expect(() => e.store.undoRun(done.run as string, { actor: "user" })).toThrow("changed since");
-    call(e, "undo", { run: set.json.run });
-    call(e, "undo", { run: imported.json.run });
-    e.store.undoRun(done.run as string, { actor: "user" });
-    expect(categoryRows(e.store)).toBeNull();
-    expect(
-      e.store.schema().types.t_movimiento?.fields.find((f) => f.name === "category")?.type,
-    ).toBe("text");
-    expect(e.store.findByValue("f_vault_path", "registros/finanzas/reglas.csv")).toHaveLength(1);
-    expect(ruleRows(e.store)).toBeNull();
-    expect(category()).toEqual([[CENA, "ocio/salidas"]]);
-    // And moved again, into the same (emptied) collections.
-    moneyCollections(e.store, { apply: true });
-    expect(categoryRows(e.store)).toHaveLength(5);
-    expect(ruleRows(e.store)).toEqual([["spotify", "Spotify", "suscripciones"]]);
+    call(e, "set_properties", { id: e.ids.get(CENA), properties: { category: "ingreso/nomina" } });
+    expect(category()["Cena cumple 60,00 EUR"]).toBe("ingreso/nomina");
   });
 
   it("refuses without the movements in Boni, and without a month", () => {

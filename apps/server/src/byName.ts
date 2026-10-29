@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { type PropValue, parseNote } from "@boni/calendar";
+import type { PropValue } from "@boni/calendar";
 import {
+  branch,
   type FieldDef,
   type FieldType,
   type Label,
@@ -9,14 +10,13 @@ import {
   type TypeDef,
 } from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
-import { leadingTitle } from "@boni/views";
-import { HASH_FIELD, PATH_FIELD } from "./paths.ts";
 
 /**
- * A note made by Boni itself (a captured movement, a statement's line) taken as an entity of a type: each
- * property into the field of its name (made when missing), options by name, `[[links]]` to the entity of the
- * target type whose note has that name; the path that note would have had kept, which is how it is found again
- * until notes stop having paths. The values are the user's (the capture came from one of his devices).
+ * Records Boni writes itself by property name (a captured movement, a statement's line): each property into the
+ * field of its name (made when missing), options by name (made when missing), a relation by the id of a record of
+ * its target's branch or by that record's exact title (`[[Title]]` too). Nothing is found by a path: records are
+ * known by their id (D-17). The values are the user's (the capture came from one of his devices) unless `from`
+ * says where they came from.
  */
 
 const keyOf = (name: string) => {
@@ -29,28 +29,24 @@ const keyOf = (name: string) => {
     .slice(0, 36);
   return /^[a-z]/.test(k) ? k : `p-${k || "x"}`;
 };
-const baseName = (p: string) => (p.split("/").pop() ?? p).replace(/\.md$/i, "");
 const LINK = /^\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]$/;
 
-export function entityFromNote(
+export interface ByName {
+  title: string;
+  values: Record<string, PropValue>;
+  /** Its text (Markdown), when it has one. */
+  body?: string;
+}
+
+/** A new record of a type from its title, its properties by name and its text; returns its id. */
+export function createByName(
   store: UserStore,
   typeId: string,
-  path: string,
-  text: string,
+  rec: ByName,
   device: string,
-  /**
-   * Where the values came from when it is not Juan typing them (a bank statement: `imported`, its file as the
-   * source), and whether the note's first `# Heading` is its title (as Juan's first import took it).
-   */
-  o: {
-    from?: { integrity: "imported"; source: SourceRef };
-    headingTitle?: boolean;
-    /** The run it belongs to (undone whole). */
-    run?: string;
-  } = {},
+  /** Where the values came from when it is not the user typing them (a bank statement: `imported`, its file). */
+  o: { from?: { integrity: "imported"; source: SourceRef }; run?: string } = {},
 ): string {
-  const parsed = parseNote(text);
-  if (parsed.error) throw new Error(`the note does not parse: ${parsed.error}`);
   const meta = {
     actor: o.from ? ("import" as const) : ("user" as const),
     device,
@@ -65,26 +61,51 @@ export function entityFromNote(
       [o.from?.source ?? { kind: "user-edit", id: device }],
       Boolean(def().thirdParty),
     );
-  const writes = propWrites(store, typeId, parsed.values, l, meta);
-  const t = def();
-  let body = parsed.body;
-  const head = o.headingTitle && !writes[t.titleField] ? leadingTitle(body) : null;
-  if (head) {
-    writes[t.titleField] = { value: head.title, label: l(null) };
-    body = head.rest;
-  }
-  if (!writes[t.titleField]) writes[t.titleField] = { value: baseName(path), label: l(null) };
-  if (t.fields.some((f) => f.id === PATH_FIELD)) {
-    writes[PATH_FIELD] = { value: path, label: l(null) };
-    writes[HASH_FIELD] = { value: createHash("sha256").update(text).digest("hex"), label: l(null) };
-  }
-  if (body) writes[BODY] = { value: body, label: l(null) };
+  const writes = propWrites(store, typeId, rec.values, l, meta);
+  writes[def().titleField] = { value: rec.title, label: l(null) };
+  if (rec.body) writes[BODY] = { value: rec.body, label: l(null) };
   return store.create(typeId, writes, meta).entity.id;
 }
 
 /**
+ * The records a relation to `target` may point to (her whole branch, D-18): by id, and by title (the first of
+ * each title, case and spaces aside).
+ */
+export function relationTargets(
+  store: UserStore,
+  target: string,
+): { ids: Set<string>; titled: Map<string, string> } {
+  const schema = store.schema();
+  const ids = new Set<string>();
+  const titled = new Map<string, string>();
+  for (const k of branch(schema, target)) {
+    const t = schema.types[k];
+    if (!t) continue;
+    for (const e of store.entities(k)) {
+      ids.add(e.id);
+      const v = e.values[t.titleField];
+      const key = typeof v === "string" ? v.trim().toLowerCase() : "";
+      if (key && !titled.has(key)) titled.set(key, e.id);
+    }
+  }
+  return { ids, titled };
+}
+
+/** A relation's value as the id it names: an id of the branch, or a title (`[[Title]]` too); null if none. */
+export function relationId(
+  targets: { ids: Set<string>; titled: Map<string, string> },
+  v: unknown,
+): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  if (targets.ids.has(s)) return s;
+  const link = LINK.exec(s)?.[1]?.trim();
+  return targets.titled.get((link ?? s).toLowerCase()) ?? null;
+}
+
+/**
  * Properties by name as a type's writes: each into the field of its name (made when missing), options by name
- * (made when missing), `[[links]]` to the entity of the target type whose note has that name.
+ * (made when missing), a relation by id or title.
  */
 export function propWrites(
   store: UserStore,
@@ -125,40 +146,16 @@ export function propWrites(
     );
     return id;
   };
-  /** A target's entities by the note they are (its name) and, those that never were a note, by title. */
-  const byNote = (target: string) => {
-    const notes = new Map<string, string>();
-    const titled = new Map<string, string>();
-    const t = store.schema().types[target];
-    for (const e of store.entities(target)) {
-      const p = e.values[PATH_FIELD];
-      if (typeof p === "string") notes.set(baseName(p).toLowerCase(), e.id);
-      else if (t && typeof e.values[t.titleField] === "string")
-        titled.set(String(e.values[t.titleField]).trim().toLowerCase(), e.id);
-    }
-    return { notes, titled };
-  };
   const writes: Writes = {};
   for (const [prop, raw] of Object.entries(values)) {
-    if (raw === null || raw === "") continue;
+    if (raw === null || raw === "" || (Array.isArray(raw) && !raw.length)) continue;
     const f = fieldFor(prop, raw);
     const items = Array.isArray(raw) ? raw : [raw];
     let value: unknown;
     switch (f.type) {
       case "relation": {
-        const { notes, titled } = byNote(f.relation?.target ?? "");
-        // `[[note]]` (or a whole title, "comida/restaurante" for a row of Categorías).
-        const ids = items
-          .map((x) => {
-            const s = String(x).trim();
-            const link = LINK.exec(s)?.[1]?.trim();
-            const whole = (link ?? s).toLowerCase();
-            return (
-              titled.get(whole) ??
-              (link ? notes.get(link.split("/").pop()?.toLowerCase() ?? "") : undefined)
-            );
-          })
-          .filter((x): x is string => !!x);
+        const targets = relationTargets(store, f.relation?.target ?? "");
+        const ids = items.map((x) => relationId(targets, x)).filter((x): x is string => !!x);
         value = f.relation?.many ? ids : (ids[0] ?? null);
         break;
       }

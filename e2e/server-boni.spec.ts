@@ -1,4 +1,4 @@
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -23,10 +23,6 @@ const CLASS = "agenda/docencia/2025-09-17 Clase del servidor.md";
 let dir: string;
 let proc: ChildProcess | null = null;
 let url: string;
-const node = (args: string[]) =>
-  execFileSync(process.execPath, ["--disable-warning=ExperimentalWarning", ...args], {
-    env: { ...process.env, BONI_DB: join(dir, "db.sqlite"), BONI_PASSWORD: PASSWORD },
-  }).toString();
 const freePort = () =>
   new Promise<number>((resolve) => {
     const s = createServer().listen(0, "127.0.0.1", () => {
@@ -49,22 +45,30 @@ test.beforeAll(async () => {
         calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
       },
       { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
+      { key: "categoria", name: "Categorías", folder: "registros/finanzas/categorias/" },
       {
         key: "movimiento",
         name: "Movimiento",
         folder: "registros/finanzas/movimientos/",
         sensitivity: "sensitive",
-        fields: { date: "date", people: { type: "relation", to: "persona", many: true } },
+        fields: {
+          date: "date",
+          category: { type: "relation", to: "categoria" },
+          people: { type: "relation", to: "persona", many: true },
+        },
       },
-      { key: "nota", name: "Nota", folder: "", fields: { categories: { type: "multiselect" } } },
+      { key: "nota", name: "Nota", folder: "" },
     ],
     {
       [CLASS]: note("Clase del servidor", "2025-09-17", "09:00"),
       "agenda/docencia/2025-09-18 Tutoría.md": note("Tutoría", "2025-09-18", "12:00"),
-      // Money: a movement, a person, the categories.
-      "registros/finanzas/categorias.md":
-        "---\ntype: wiki\ncategories:\n  - comida/restaurante\n  - bebida/cafe\n---\n",
-      "registros/personas/lucia-ferri.md": "---\ntype: person\nsummary: Amiga inventada\n---\n",
+      // Money: a movement, a person, the categories (rows of Categorías).
+      "registros/finanzas/categorias/comida-restaurante.md":
+        "---\nnombre: comida/restaurante\n---\n\n# comida/restaurante\n",
+      "registros/finanzas/categorias/bebida-cafe.md":
+        "---\nnombre: bebida/cafe\n---\n\n# bebida/cafe\n",
+      "registros/personas/lucia-ferri.md":
+        "---\ntype: person\nsummary: Amiga inventada\n---\n\n# Lucia Ferri\n",
       "registros/finanzas/movimientos/2026/10/2026-10-02-cafe.md":
         '---\ntype: movement\ndate: 2026-10-02\namount: -1.6\ncurrency: EUR\naccount: ing\ncategory: bebida/cafe\nmerchant: "Bar Ejemplo"\npeople: ["[[lucia-ferri]]"]\nstatus: pendiente\nsource: banco\n---\n',
     },
@@ -301,10 +305,7 @@ test('"Apuntar gasto": the movement goes into Boni, never as a proposal; Undo ta
   ).toBe(422);
 });
 
-test("the money's collections: the categories move into Categorías, and a capture is filed under its row", async () => {
-  // As on the NAS, with the server running.
-  expect(node(["apps/server/src/cli.ts", "money", "juan"])).toContain("simulacion");
-  expect(node(["apps/server/src/cli.ts", "money", "juan", "--apply"])).toContain("Categorias: 2");
+test("the money's collections: the categories are rows of Categorías, and a capture is filed under its row", async () => {
   const h = { authorization: `Bearer ${await token()}` };
   // "Apuntar gasto": the categories from Categorías, the movement into Boni with its category.
   const options = (await (

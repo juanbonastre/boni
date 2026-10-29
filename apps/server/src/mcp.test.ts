@@ -8,7 +8,7 @@ import { issueSession } from "@boni/identity";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
-import { findByPath, treeNotes } from "./data.ts";
+import { treeNotes } from "./data.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
@@ -31,13 +31,16 @@ let app: App;
 let http: HttpServer;
 let base = "";
 let token = "";
+/** The record each invented note became. */
+let ids = new Map<string, string>();
+const idOf = (path: string) => ids.get(path) as string;
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-mcp-"));
   db = openDb(join(dir, "system.db"));
   addUser(db, "ana", "una contraseña larga de ejemplo");
   host = new AgentHost({ dataDir: dir, providers: null });
-  seed(
+  ids = seed(
     host.store(1),
     [
       { key: "nota", name: "Nota", folder: "" },
@@ -52,6 +55,8 @@ beforeAll(async () => {
     ],
     NOTES,
   );
+  // The note Juan keeps as instructions for assistants (Boni's setting names it).
+  host.store(1).setSetting("mcp/instructions", idOf("AGENTS.md"));
   app = makeApp({
     db,
     key: randomBytes(32),
@@ -139,20 +144,20 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     const cols = (await tool("collections")).json as { name: string }[];
     expect(cols.map((c) => c.name)).toContain("Proyecto");
     expect(cols.map((c) => c.name)).not.toContain("Diario"); // kept from the AI by the import
-    const found = (await tool("search", { query: "plan inventado" })).json as { path: string }[];
-    expect(found.map((f) => f.path)).toContain("proyectos/boni-plan.md");
+    const found = (await tool("search", { query: "plan inventado" })).json as { id: string }[];
+    expect(found.map((f) => f.id)).toContain(idOf("proyectos/boni-plan.md"));
     expect((await tool("search", { query: "privado" })).json).toEqual([]);
     const active = (
       await tool("query", {
         collection: "Proyecto",
         filter: [{ property: "status", op: "is", value: "activo" }],
       })
-    ).json as { path: string }[];
-    expect(active.map((n) => n.path)).toEqual(["proyectos/boni-plan.md"]);
-    const plan = (await tool("read", { path: "proyectos/boni-plan.md" })).json;
+    ).json as { id: string }[];
+    expect(active.map((n) => n.id)).toEqual([idOf("proyectos/boni-plan.md")]);
+    const plan = (await tool("read", { id: idOf("proyectos/boni-plan.md") })).json;
     expect(plan).toMatchObject({ collection: "Proyecto", properties: { status: "activo" } });
     expect(plan.body).toContain("## Registro");
-    expect((await tool("read", { path: "diario/2026-10-20.md" })).error).toBe(true);
+    expect((await tool("read", { id: idOf("diario/2026-10-20.md") })).error).toBe(true);
   });
 
   it("the guide is computed: the instructions, every collection with what goes in it, the tools from the code", async () => {
@@ -270,18 +275,18 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     });
     expect((done.json as { id: string }[]).map((n) => n.id)).toEqual([ids[2]]);
     // A call trashes everything it names or nothing: the private diary is not for a model.
-    const diary = host.store(1).findByValue("f_vault_path", "diario/2026-10-20.md")[0]?.id;
+    const diary = idOf("diario/2026-10-20.md");
     expect((await tool("trash", { ids: [ids[0], diary] })).error).toBe(true);
     expect((await tool("read", { id: ids[0] })).error).toBe(false);
   });
 
   it("writes as a model, each call one run that can be undone", async () => {
     const appended = await tool("append", {
-      path: "proyectos/boni-plan.md",
+      id: idOf("proyectos/boni-plan.md"),
       text: "- 2026-10-22 - Entrada escrita por el MCP.",
     });
     expect(appended.error).toBe(false);
-    const plan = (await tool("read", { path: "proyectos/boni-plan.md" })).json;
+    const plan = (await tool("read", { id: idOf("proyectos/boni-plan.md") })).json;
     expect(plan.body).toMatch(/Empezado\.\n- 2026-10-22 - Entrada escrita por el MCP\.$/);
     const e = host.store(1).get(plan.id);
     expect(e?.labels.$body).toMatchObject({ integrity: "model" });
@@ -332,7 +337,7 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     const found = (await tool("search", { query: "otro proyecto" })).json as { id: string }[];
     const otro = found[0]?.id as string;
     await tool("read", { id: otro });
-    await tool("read", { path: "diario/2026-10-20.md" });
+    await tool("read", { id: idOf("diario/2026-10-20.md") });
     const made = await tool("create", { collection: "Proyecto", title: "Auditado inventado" });
     const actions = store.audit
       .actions()
@@ -359,8 +364,8 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
     expect(store.audit.verify().ok).toBe(true);
     // «Todas las páginas» lists each note with the assistants that read it (the guide read AGENTS.md).
     const aiOf = (path: string) => {
-      const at = findByPath(store, path);
-      return treeNotes(store, at.type).find((n) => n.id === at.id)?.ai;
+      const at = store.get(idOf(path))?.entity;
+      return at ? treeNotes(store, at.type).find((n) => n.id === at.id)?.ai : undefined;
     };
     expect(aiOf("AGENTS.md")).toEqual(["mcp:claude-code"]);
     expect(aiOf("proyectos/otro.md")).toEqual(["mcp:claude-code"]);
@@ -424,7 +429,7 @@ describe("collections as classes through the MCP (docs/clases.md)", () => {
       },
       me,
     );
-    const at = (path: string) => store.findByValue("f_vault_path", path)[0]?.id as string;
+    const at = idOf;
     store.update(
       at("proyectos/otro.md"),
       { f_madre: { value: at("proyectos/boni-plan.md"), label: l } },

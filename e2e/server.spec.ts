@@ -23,10 +23,11 @@ let dir: string;
 let proc: ChildProcess | null = null;
 let url: string;
 let mcp: ReturnType<typeof mcpOf>;
-/** An entry's title as Boni has it (null: no entry with that path). */
-const titleOf = async (path: string) => (await mcp.read(path))?.title ?? null;
-/** The record an invented note became (devices know rows by its id). */
-const idOf = async (path: string) => ((await mcp.read(path)) as { id?: string } | null)?.id ?? "";
+/** The record each invented note became (devices know rows by its id). */
+let ids = new Map<string, string>();
+const idOf = async (path: string) => ids.get(path) ?? "";
+/** An entry's title as Boni has it, by its id or its invented note (null: no such entry). */
+const titleOf = async (ref: string) => (await mcp.read(ids.get(ref) ?? ref))?.title ?? null;
 
 const freePort = () =>
   new Promise<number>((resolve) => {
@@ -67,7 +68,7 @@ function stopServer() {
 
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-e2e-server-"));
-  seedAccount(
+  ids = seedAccount(
     dir,
     "juan",
     PASSWORD,
@@ -261,12 +262,12 @@ test("edits go to Boni through the server: only the edited property, new events,
   await expect(page.locator(".modal")).toContainText("En directo");
   await page.keyboard.press("Escape");
   const path = "agenda/docencia/2025-09-17 Clase del servidor.md";
-  const before = (await mcp.read(path))?.properties as Record<string, unknown>;
+  const before = (await mcp.read(await idOf(path)))?.properties as Record<string, unknown>;
   await page.locator(".ev", { hasText: "Clase del servidor" }).click();
   await page.locator(".popover .title-input").fill("Clase renombrada");
   await page.locator(".popover .title-input").press("Enter");
   await expect.poll(() => titleOf(path)).toBe("Clase renombrada");
-  const after = (await mcp.read(path))?.properties as Record<string, unknown>;
+  const after = (await mcp.read(await idOf(path)))?.properties as Record<string, unknown>;
   expect(Object.keys(after).filter((k) => after[k] !== before[k])).toEqual(["Título"]);
   await page.keyboard.press("Escape");
 

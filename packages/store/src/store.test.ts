@@ -918,6 +918,33 @@ describe("collections as classes (docs/clases.md; D-11, D-12, A-06)", () => {
     expect(store.schema().types.t_agenda?.fields.some((f) => f.id === "f_lugar")).toBe(false);
   });
 
+  it("a relation to a mother takes the records of her whole branch, and only those (D-18)", () => {
+    const { store } = fresh();
+    const { tarea, evento } = make(store);
+    store.applySchema(
+      {
+        op: "add_field",
+        type: "t_tarea",
+        field: {
+          id: "f_sigue",
+          key: "sigue",
+          name: "Sigue a",
+          type: "relation",
+          relation: { target: "t_agenda", many: true },
+          label: JUAN,
+        },
+      },
+      me,
+    );
+    const w = (v: unknown) => ({ value: v as never, label: JUAN });
+    store.update(tarea.entity.id, { f_sigue: w([evento.entity.id]) }, me);
+    expect(store.get(tarea.entity.id)?.entity.values.f_sigue).toEqual([evento.entity.id]);
+    const otra = store.create("t_persona", { f_nombre: w("Ana Ejemplo") }, me);
+    expect(() => store.update(tarea.entity.id, { f_sigue: w([otra.entity.id]) }, me)).toThrow(
+      /no t_agenda/,
+    );
+  });
+
   it("a daughter is at least as closed to the AI as her mother", () => {
     const { store } = fresh();
     make(store);

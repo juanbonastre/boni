@@ -13,6 +13,7 @@ import {
   shiftMonths,
   validate,
 } from "@boni/views";
+import type { ByName } from "../byName.ts";
 import {
   ACCOUNTS,
   ACTION,
@@ -22,7 +23,7 @@ import {
   validateCapture,
 } from "./capture.ts";
 import { CATALOG, Invalid, PALETTE, type V1ChartSpec } from "./contract.ts";
-import { asciiText, baseName, render } from "./note.ts";
+import { asciiText, movementRecord, slug } from "./movement.ts";
 import type { Shortcut, V1Store, Widget } from "./store.ts";
 import type { MoneySource } from "./storeMoney.ts";
 
@@ -96,12 +97,12 @@ export interface V1Options {
   writable: boolean;
   now?: () => number;
   /**
-   * Takes a captured movement note as an entity of the account's Movimiento, at `path` (the note it would have
-   * been), and says true; false when the account has no movements in Boni. Never a proposal: Juan's own capture.
+   * Takes a captured movement as a record of the account's Movimiento and returns its id; null when the account
+   * has no movements in Boni. Never a proposal: Juan's own capture.
    */
-  intoBoni?: (account: number, path: string, text: string, device: string) => boolean;
-  /** The movement a capture made, to the trash again (Undo); false when it is not there. */
-  outOfBoni?: (account: number, path: string, device: string) => boolean;
+  intoBoni?: (account: number, movement: ByName, device: string) => string | null;
+  /** The movement a capture made (its id), to the trash again (Undo); false when it is not there. */
+  outOfBoni?: (account: number, record: string, device: string) => boolean;
   /** The account's money in Boni (charts, lists, captures); null when it has no movements there. */
   moneyOf?: (account: number) => MoneySource | null;
 }
@@ -224,7 +225,7 @@ export class V1Service {
       order.sort((a, b) => Number(a.later) - Number(b.later) || a.i - b.i);
       opts = order.map((o) => opt(o.cat, o.cat));
     } else if (source === "people")
-      opts = this.read(c, (f) => f.people()).map((p) => opt(p.slug, p.label, p.hint));
+      opts = this.read(c, (f) => f.people()).map((p) => opt(p.id, p.label, p.hint));
     else if (source === "groups")
       opts = [
         ...new Set(this.read(c, (f) => f.categories()).map((cat) => cat.split("/", 1)[0] ?? "")),
@@ -440,10 +441,10 @@ export class V1Service {
   undoAction(c: Caller, clientId: string): ActionResult {
     const cap = this.store.capture(c.account, clientId);
     if (!cap || cap.device !== c.device) throw new NotFound(clientId);
-    if (cap.status !== "written" || !cap.path)
+    if (cap.status !== "written" || !cap.record)
       throw new Invalid("Esta captura no se puede deshacer");
     if (this.nowMs() - cap.created > UNDO_MS) throw new Invalid("Ya no se puede deshacer");
-    if (!this.outOfBoni?.(c.account, cap.path, c.device))
+    if (!this.outOfBoni?.(c.account, cap.record, c.device))
       throw new Invalid("Esta captura no se puede deshacer");
     const done = result("ok", "Deshecho");
     this.store.finishCapture(
@@ -485,11 +486,16 @@ export class V1Service {
     // The day the user saved it, not the day the queue was written.
     const today = createdAt ? createdAt.date : this.today();
     let cats: string[] | null = null;
-    let people: Set<string> | null = null;
+    let people: Map<string, string> | null = null;
     try {
       const fin = this.fin(c);
       cats = fin.categories();
-      people = new Set(fin.people().map((p) => p.slug));
+      people = new Map(
+        fin.people().flatMap((p): [string, string][] => [
+          [slug(p.label), p.id],
+          [p.id, p.id],
+        ]),
+      );
     } catch {
       cats = people = null;
     }
@@ -529,17 +535,16 @@ export class V1Service {
       return result("error", "Esta cuenta no tiene movimientos en Boni");
     }
     const queued = result("queued", QUEUED_MESSAGE, { navigate: "home" });
-    let path: string;
+    const movement = movementRecord(draft, today);
+    let record: string;
     try {
-      const text = render(draft, today);
-      const free = this.fin(c).freeMovementPath(draft.date, baseName(draft));
-      if (!this.intoBoni?.(c.account, free, text, cap.device))
-        throw new Error("this account has no movements in Boni");
-      path = free;
+      const made = this.intoBoni?.(c.account, movement, cap.device);
+      if (!made) throw new Error("this account has no movements in Boni");
+      record = made;
     } catch (e) {
       const msg = (e instanceof Error ? e.message : String(e)).slice(0, 500);
       const code = (e as { code?: string }).code;
-      if (code === "bad-path" || code === "denied") {
+      if (code === "invalid" || code === "denied") {
         const res = result("error", `No se pudo escribir: ${msg}`);
         this.store.finishCapture(
           c.account,
@@ -563,15 +568,13 @@ export class V1Service {
       );
       return queued;
     }
-    const res = result("ok", `Guardado: ${(path.split("/").pop() ?? "").replace(/\.md$/, "")}`, {
-      navigate: "home",
-    });
+    const res = result("ok", `Guardado: ${movement.title}`, { navigate: "home" });
     this.store.finishCapture(
       c.account,
       clientId,
       "written",
       res as unknown as Record<string, unknown>,
-      path,
+      record,
       null,
     );
     this.store.setPref(c.account, cap.device, "last_account", draft.account);

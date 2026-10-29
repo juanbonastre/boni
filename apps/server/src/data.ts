@@ -8,7 +8,6 @@ import {
 } from "@boni/entities";
 import { AI_LEVELS, type AiLevel, BODY, StoreError, type UserStore, type Zone } from "@boni/store";
 import { filterErrors } from "@boni/views";
-import { PATH_FIELD } from "./paths.ts";
 import type { SystemCollections } from "./systemCollections.ts";
 
 /**
@@ -110,18 +109,6 @@ export class DataError extends Error {
     super(code);
     this.code = code;
   }
-}
-
-/** A row as a view shows it: a note imported without a title property takes its file's name, as
- * Obsidian shows it (only for display; editing the title writes the property). */
-function shown(values: Record<string, Value>, titleField: string): Record<string, Value> {
-  const title = values[titleField];
-  const path = values[PATH_FIELD];
-  if ((title === undefined || title === null || title === "") && typeof path === "string") {
-    const name = path.split("/").pop()?.replace(/\.md$/i, "") ?? "";
-    if (name) return { ...values, [titleField]: name };
-  }
-  return values;
 }
 
 const userTypes = (store: UserStore) =>
@@ -331,7 +318,7 @@ export function asShown(
     return {
       id: e.id,
       ...(e.type !== def.id ? { type: e.type } : {}),
-      values: shown(values, def.titleField),
+      values,
       updated: e.updated,
     };
   });
@@ -389,28 +376,15 @@ export function createRow(store: UserStore, type: string, values: unknown, devic
   }
 }
 
-/**
- * The record a vault note became, by the hidden path the import kept: only the money's own notes still go by it
- * («Apuntar gasto» takes back the movement it made); everything else knows a record by its id.
- */
-export function findByPath(store: UserStore, path: string): { type: string; id: string } {
-  if (!path || path.length > 500) throw new DataError("not-found");
-  const mine = new Set(userTypes(store).map((t) => t.id));
-  const hit = store.findByValue(PATH_FIELD, path).find((x) => mine.has(x.type));
-  if (!hit) throw new DataError("not-found");
-  return hit;
-}
-
 /** One row with its body (a row opened as a page). */
 export function getRow(store: UserStore, id: string): DataRow & { type: string } {
   const e = store.get(id);
   if (!e || e.entity.deleted !== undefined || !userTypes(store).some((t) => t.id === e.entity.type))
     throw new DataError("not-found");
-  const def = userTypes(store).find((t) => t.id === e.entity.type);
   return {
     id: e.entity.id,
     type: e.entity.type,
-    values: def ? shown(e.entity.values, def.titleField) : e.entity.values,
+    values: e.entity.values,
     updated: e.entity.updated,
     body: e.entity.body ?? "",
   };
@@ -508,7 +482,7 @@ export function treeOf(store: UserStore): {
           notes.push({
             id: e.id,
             type: t.id,
-            title: String(shown(e.values, t.titleField)[t.titleField] ?? ""),
+            title: String(e.values[t.titleField] ?? ""),
           });
     return {
       id: t.id,
@@ -635,7 +609,7 @@ export function treeNotes(
     return {
       id: e.id,
       type,
-      title: String(shown(e.values, def.titleField)[def.titleField] ?? ""),
+      title: String(e.values[def.titleField] ?? ""),
       ai,
       aiAt: ai.length ? (m?.seenAt ?? null) : null,
     };

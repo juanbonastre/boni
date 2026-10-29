@@ -117,9 +117,12 @@ Cada paso es un PR con sus pruebas, y se despliega al cerrarse:
    tiene viaja archivado), pone colecciones dentro de otras, apunta los calendarios a una rama separada por un campo
    (`where`, `make`) y archiva lo que queda vacío; el ensayo trabaja sobre una copia y solo da cuentas, y lo aplicado es
    una transacción que `--undo` deshace entera. Una hija con título propio lo conserva (no hereda el de su madre).
-6. Sin rutas: fuera `f_vault_path`. **Hecha la primera parte (2026-10-29):** un registro se conoce por su id en Boni
-   Calendar (sus filas), en los enlaces `boni://note?id=` y en lo que escribe el MCP (`create` y `upload_file` ya no
-   inventan rutas; un archivo es su carpeta y su nombre). Lo que queda: el dinero («Apuntar gasto» y la conciliación
-   aún nombran sus movimientos por la ruta de su nota), y después archivar los campos de la ruta. Una ruta vieja aún
-   sirve para leer una nota con el MCP y para que un dispositivo con cambios pendientes los entregue.
+6. Sin rutas: fuera `f_vault_path`. **Hecho (2026-10-29):** un registro se conoce por su id en Boni Calendar (sus
+   filas), en los enlaces `boni://note?id=`, en el MCP (ni lee ni enseña rutas) y en el dinero: la conciliación, las
+   gráficas y «Apuntar gasto» trabajan con ids, y las personas de un movimiento, lo que salda y la madre de un proyecto
+   son relaciones (una relación con una madre acepta toda su rama, D-18). Lo que dejó el vault lo limpia la
+   reestructuración, en la misma ejecución que se deshace entera: los enlaces por nombre de fichero pasan a relaciones,
+   un registro sin título toma el encabezado de su texto o el nombre de su fichero, una rama se reparte por el prefijo de
+   su ruta (la wiki en colecciones), los campos de Obsidian se archivan, las incrustaciones `![[…]]` salen del texto y,
+   al final, se archiva la ruta. Desde ahí nada la lee (`paths.test.ts`).
 7. Interfaces.

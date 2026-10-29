@@ -143,7 +143,8 @@ afterEach(() => {
 function fresh(): UserStore {
   const store = openUserStore(":memory:");
   stores.push(store);
-  seed(store, TYPES, NOTES);
+  // As Juan's data came from the vault: each record keeps the path its note had (what the reshape clears away).
+  seed(store, TYPES, NOTES, { vaultPaths: true });
   ensureSystemTypes(store);
   createPage(store, { title: "Agenda vieja" });
   return store;
@@ -316,5 +317,184 @@ describe("reshaping an account's tree (docs/clases.md §7, step 5)", () => {
     expect(() => planFromNote(store, byTitle(store, "Pan")?.id as string)).toThrow(
       "no ```json block",
     );
+  });
+});
+
+describe("clearing away what the vault left (docs/clases.md §7, step 7)", () => {
+  const TYPES7: TypeSpec[] = [
+    { key: "persona", name: "Persona", folder: "personas/" },
+    { key: "finanzas", name: "Finanzas", folder: "finanzas/" },
+    // People as the import left them: options named by the file a person's note had.
+    {
+      key: "movimiento",
+      name: "Movimiento",
+      folder: "finanzas/movimientos/",
+      parent: "finanzas",
+      fields: { people: { type: "multiselect" } },
+    },
+    { key: "deuda", name: "Deuda", folder: "finanzas/deudas/", parent: "finanzas" },
+    { key: "area", name: "Área", folder: "areas/" },
+    { key: "nota", name: "Nota", folder: "" },
+  ];
+  const NOTES7: Record<string, string> = {
+    "personas/ana-ejemplo.md": "---\ntype: person\n---\n# Ana Ejemplo\n",
+    "finanzas/movimientos/2026-09-01-cena.md":
+      '---\ntype: movement\ndate: 2026-09-01\namount: -30\npeople: ["[[ana-ejemplo]]"]\n---\n# Cena 30,00 EUR\n',
+    "finanzas/movimientos/2026-09-02-bizum.md":
+      '---\ntype: movement\ndate: 2026-09-02\namount: 15\nsettles: "[[2026-09-01-ana-cena]]"\npeople: ["[[ana-ejemplo]]", "[[nadie]]"]\n---\n# Bizum 15,00 EUR\n',
+    "finanzas/deudas/2026-09-01-ana-cena.md":
+      '---\ntype: debt\namount: 15\nperson: "[[ana-ejemplo]]"\n---\n# Ana: cena\n',
+    "areas/planes.md": "---\ntype: area\n---\n# Planes\n\nQue va aqui: Ocio.\n\n![[area.base]]\n",
+    "wiki/infra/nas.md":
+      "---\ntype: wiki\nstatus: activo\ndevice: nas\n---\n# El NAS\n\nTexto inventado.\n\n![[diagrama.png]]\n\nMás texto.\n",
+    "AGENTS.md": "# Instrucciones\n\nInventadas.\n",
+  };
+  const PLAN7: ReshapePlan = {
+    links: [
+      { collection: "Movimiento", field: "people", to: "Persona" },
+      { collection: "Movimiento", field: "settles", to: "Finanzas" },
+      { collection: "Deuda", field: "person", to: "Persona" },
+    ],
+    titles: true,
+    collections: [
+      { name: "Wiki", fields: { from: "Nota", ids: ["status"] } },
+      { name: "Infraestructura", inside: "Wiki", fields: { from: "Nota", ids: ["device"] } },
+    ],
+    moves: [
+      { from: "Nota", to: "Infraestructura", where: { field: PATH_FIELD, prefix: "wiki/infra/" } },
+      { from: "Nota", to: "Wiki", where: { field: PATH_FIELD, prefix: "wiki/" } },
+    ],
+    fields: [
+      { collection: "Área", add: [{ name: "Qué va", type: "longtext" }], archive: ["type"] },
+      { collection: "Movimiento", archive: ["type"] },
+      // Loose notes keep no fields of their own.
+      { collection: "Nota", archive: "all" },
+    ],
+    records: [{ title: "Planes", in: "Área", set: { "Qué va": "Ocio." }, text: "" }],
+    embeds: "remove",
+    vaultPaths: "archive",
+  };
+  const L = label("imported", "personal", [{ kind: "vault", id: "prueba" }]);
+  function fresh7() {
+    const store = openUserStore(":memory:");
+    stores.push(store);
+    const ids = seed(store, TYPES7, NOTES7, { vaultPaths: true });
+    // Two notes the import left without a title: one opens with a heading, the other does not.
+    const untitled = (path: string, body: string) =>
+      store.create(
+        "t_nota",
+        { [PATH_FIELD]: { value: path, label: L }, [BODY]: { value: body, label: L } },
+        { actor: "import" },
+      ).entity.id;
+    const series = untitled("wiki/temas/series-temporales.md", "# Series temporales\n\nTexto.\n");
+    const rutina = untitled("wiki/como-hacer/rutina-de-ejercicios.md", "Lunes: pierna.\n");
+    return { store, ids, series, rutina };
+  }
+  const values = (store: UserStore, id: string) => store.get(id)?.entity;
+  const fieldNamed = (store: UserStore, type: string, name: string) =>
+    store.schema().types[type]?.fields.find((f) => f.name === name && !f.archived);
+
+  it("a dry run says what it would do, with counts, and changes nothing", () => {
+    const { store } = fresh7();
+    const before = JSON.stringify(store.schema());
+    const r = reshape(store, PLAN7, { apply: false });
+    expect(r.problems).toEqual([]);
+    expect(r.lines).toEqual(
+      expect.arrayContaining([
+        "«Movimiento»: «people» pasa a ser una relación con «Persona» (2 registros, 2 enlaces; 1 no encuentran registro y quedan solo en el texto archivado).",
+        "«Movimiento»: «settles» pasa a ser una relación con «Finanzas» (1 registros, 1 enlaces).",
+        "«Deuda»: «person» pasa a ser una relación con «Persona» (1 registros, 1 enlaces).",
+        "Títulos: 2 registros sin título lo toman: 1 del encabezado de su texto, 1 del nombre de su fichero.",
+        "«Nota» (los de «wiki/infra/»): 1 registros → 1 a «Infraestructura».",
+        "«Nota» (los de «wiki/»): 2 registros → 2 a «Wiki».",
+        "«Área»: campos nuevos «Qué va»; 1 campos archivados («type»).",
+        "Registros nombrados: 1 con sus valores; 1 se quedan sin texto (dejan de salir como notas en el árbol).",
+        "Incrustaciones de Obsidian (![[…]]): 1 fuera del texto de 1 registros.",
+        "La ruta y la huella que dejó el vault se archivan en 4 colecciones: nada las lee ya.",
+      ]),
+    );
+    expect(JSON.stringify(store.schema())).toBe(before);
+  });
+
+  it("applied, links are relations, titles and text clean, the wiki a tree, no path read; undone whole", () => {
+    const { store, ids, series, rutina } = fresh7();
+    const before = JSON.stringify(store.schema());
+    const r = reshape(store, PLAN7, { apply: true });
+    expect(r.problems).toEqual([]);
+    const ana = ids.get("personas/ana-ejemplo.md") as string;
+    const debt = ids.get("finanzas/deudas/2026-09-01-ana-cena.md") as string;
+    const bizum = ids.get("finanzas/movimientos/2026-09-02-bizum.md") as string;
+    // A movement's people and what it settles are records now (a debt: the relation takes the whole branch).
+    const people = fieldNamed(store, "t_movimiento", "people");
+    const settles = fieldNamed(store, "t_movimiento", "settles");
+    expect(people).toMatchObject({
+      type: "relation",
+      relation: { target: "t_persona", many: true },
+    });
+    expect(settles).toMatchObject({ type: "relation", relation: { target: "t_finanzas" } });
+    expect(values(store, bizum)?.values[people?.id as string]).toEqual([ana]);
+    expect(values(store, bizum)?.values[settles?.id as string]).toBe(debt);
+    // What it was stays, archived (the link that found no record too).
+    const text = store.schema().types.t_movimiento?.fields.find((f) => f.name === "people (texto)");
+    expect(text?.archived).toBe(true);
+    expect(JSON.stringify(values(store, bizum)?.values[text?.id as string])).toContain("nadie");
+    // Titles from the heading (out of the text) or the file's name.
+    expect(values(store, series)).toMatchObject({ type: "t_wiki", body: "Texto.\n" });
+    // Titled where their new collection keeps titles (her own «Título», not Nota's field).
+    const titleOf = (id: string) => {
+      const e = values(store, id);
+      const tf = e ? store.schema().types[e.type]?.titleField : undefined;
+      return tf ? e?.values[tf] : undefined;
+    };
+    expect(store.schema().types.t_wiki?.titleField).not.toBe("f_title");
+    expect(titleOf(series)).toBe("Series temporales");
+    expect(titleOf(rutina)).toBe("Rutina de ejercicios");
+    expect(titleOf(ids.get("wiki/infra/nas.md") as string)).toBe("El NAS");
+    // The wiki as collections, with the fields their notes use; the embed out of the text.
+    const nas = values(store, ids.get("wiki/infra/nas.md") as string);
+    expect(nas?.type).toBe("t_infraestructura");
+    expect(nas?.body).toBe("Texto inventado.\n\nMás texto.\n");
+    expect(store.schema().types.t_infraestructura?.parent).toBe("t_wiki");
+    // An area is a record without a note: what goes in it in a field.
+    const planes = values(store, ids.get("areas/planes.md") as string);
+    const queVa = fieldNamed(store, "t_area", "Qué va");
+    expect(planes?.values[queVa?.id as string]).toBe("Ocio.");
+    expect(planes?.body).toBeUndefined();
+    const nota = store.schema().types.t_nota;
+    expect(nota?.fields.filter((f) => !f.archived && !f.hidden).map((f) => f.id)).toEqual([
+      nota?.titleField,
+    ]);
+    // No collection keeps the vault's path in sight.
+    for (const t of Object.values(store.schema().types))
+      expect(
+        t.fields.some((f) => f.id === PATH_FIELD && !f.archived),
+        t.name,
+      ).toBe(false);
+
+    // Undone whole: the schema as it was (each collection one version on), the records too.
+    undoReshape(store, r.run as string);
+    const shape = (json: string) =>
+      Object.values(JSON.parse(json).types as Record<string, { schemaVersion?: number }>).map(
+        ({ schemaVersion: _v, ...t }) => t,
+      );
+    expect(shape(JSON.stringify(store.schema()))).toEqual(shape(before));
+    expect(values(store, series)?.values.f_title).toBeUndefined();
+    expect(values(store, series)?.type).toBe("t_nota");
+    expect(values(store, ids.get("areas/planes.md") as string)?.body).toContain("![[area.base]]");
+  });
+
+  it("refuses a link from a field that holds no links, naming it", () => {
+    const { store } = fresh7();
+    const r = reshape(
+      store,
+      { links: [{ collection: "Movimiento", field: "amount", to: "Persona" }] },
+      { apply: false },
+    );
+    expect(r.problems).toEqual(["«amount» de «Movimiento» es number: no guarda enlaces"]);
+    expect(planErrors({ titles: "sí", embeds: true, vaultPaths: "borrar" })).toEqual([
+      "«titles» es true",
+      '«embeds» es "remove"',
+      '«vaultPaths» es "archive"',
+    ]);
   });
 });

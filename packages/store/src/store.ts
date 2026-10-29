@@ -487,9 +487,11 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
       if (!checked.ok) throw new StoreError("invalid", `${field.key}: ${checked.error}`);
       if (field.type === "relation" && checked.value !== null) {
         const ids = Array.isArray(checked.value) ? checked.value : [checked.value as string];
+        // A relation to a mother takes any record of her branch, as a reference to a class takes its subclasses.
+        const kinds = branch(schema, field.relation?.target ?? "");
         for (const target of ids) {
           const t = readEntity(target);
-          if (!t || t.entity.deleted !== undefined || t.entity.type !== field.relation?.target)
+          if (!t || t.entity.deleted !== undefined || !kinds.includes(t.entity.type))
             throw new StoreError(
               "invalid",
               `${field.key}: no ${field.relation?.target} "${target}"`,

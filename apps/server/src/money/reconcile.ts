@@ -8,24 +8,31 @@ import { asciiLow, type BankLine, parseStatement } from "./statements.ts";
  * in Boni: `importStatements` turns new bank lines into movements and joins them with what Juan noted in the app;
  * `closeMonth` checks a month's pending movements and marks the complete ones `conciliado`. Both are a dry run
  * unless `apply`; their report is the script's, line by line (Spanish without accents), for Juan or an AI. The
- * movements and debts come through a `Book` (the store, `book.ts`; plain notes in the tests): the logic is the
- * script's and never touches the store itself.
+ * movements and debts come through a `Book` (the store, `book.ts`; plain records in the tests): the logic is the
+ * script's and never touches the store itself. A record is known by its id; a relation (a debt's movement and
+ * person, a movement's people and what it settles) holds ids; the report names records by their titles.
  */
 
-/** A movement or a debt as the script read a note: its path and its properties by name. */
+/** A movement or a debt: its id, its title and its properties by name (a relation as the ids it points to). */
 export interface MoneyNote {
   id: string;
-  path: string;
+  title: string;
   fm: Record<string, unknown>;
 }
-export type PropValue = string | number | boolean | null;
+export type PropValue = string | number | boolean | string[] | null;
+/** A movement to make: its title, its properties by name and its text. */
+export interface NewMovement {
+  title: string;
+  values: Record<string, PropValue>;
+  body: string;
+}
 export interface Book {
   movements(): MoneyNote[];
   debts(): MoneyNote[];
-  /** Whether a note path is taken (a movement's file name is never reused). */
-  taken(path: string): boolean;
-  /** A new movement from its note text (as the script wrote it), from that statement. */
-  create(path: string, text: string, statement: string): void;
+  /** A record's title ("" when there is none). */
+  title(id: string): string;
+  /** A new movement from that statement; returns its id. */
+  create(m: NewMovement, statement: string): string;
   /** Some properties of a movement, by name. */
   update(id: string, props: Record<string, PropValue>, statement?: string): void;
 }
@@ -35,7 +42,6 @@ export interface StatementFile {
   bytes: Buffer;
 }
 
-export const MOV = "registros/finanzas/movimientos";
 export const UNKNOWN = "otros/desconocido";
 const NOT_EXPENSE = ["ingreso/", "inversion", "transferencia/"];
 const MATCH_DAYS = 3;
@@ -54,20 +60,11 @@ const toFloat = (v: unknown): number | null => {
 };
 const asList = (v: unknown): unknown[] =>
   v === null || v === undefined || v === "" ? [] : Array.isArray(v) ? v : [v];
-/** "[[a/b|alias]]" → "b"; plain text as it is. */
-export const linkName = (v: unknown) => {
-  const s = String(v ?? "").trim();
-  const m = /^\[\[([^\]|#]+)/.exec(s);
-  return m ? ((m[1] as string).split("/").pop() as string).trim() : s;
-};
-const noteName = (p: string) => (p.split("/").pop() ?? p).replace(/\.md$/i, "");
-const yq = (s: string) => JSON.stringify(s);
-const slug = (s: string, max = 40) =>
-  asciiLow(s)
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, max)
-    .replace(/^-+|-+$/g, "");
+/** A relation's ids (one or many); anything else (an old text value) as it is. */
+const ids = (v: unknown): string[] =>
+  asList(v)
+    .map((x) => String(x).trim())
+    .filter(Boolean);
 
 // ------------------------------------------------------------------ rules
 
@@ -186,7 +183,7 @@ export function joinCandidates(
       } catch {
         continue;
       }
-      if (gap <= MATCH_DAYS * 1440) pairs.push([gap, i, n.path]);
+      if (gap <= MATCH_DAYS * 1440) pairs.push([gap, i, n.id]);
     }
   });
   pairs.sort((a, b) => a[0] - b[0] || a[1] - b[1] || (a[2] < b[2] ? -1 : a[2] > b[2] ? 1 : 0));
@@ -229,35 +226,35 @@ export function joinCandidates(
   return { joined, unclear };
 }
 
-function newMovementText(ln: BankLine, rule: Rule | null, created: string) {
+function newMovement(ln: BankLine, rule: Rule | null, created: string) {
   const merchant = rule?.[1] || prettyMerchant(ln.text) || "Movimiento";
   const category = rule?.[2] || UNKNOWN;
-  const fm = ["type: movement", `date: ${ln.date}`];
-  if (ln.time) fm.push(`time: "${ln.time}"`);
-  fm.push(
-    `amount: ${fmt(ln.amount)}`,
-    `currency: ${ln.currency}`,
-    "my_share:",
-    `account: ${ln.account}`,
-    `category: ${category}`,
-    `merchant: ${yq(merchant)}`,
-    'concept: ""',
-    "people: []",
-    "invited: []",
-    "related: []",
-    "status: pendiente",
-    `source: ${ln.account}`,
-    `bank_ref: ${ln.ref}`,
-    `bank_text: ${yq(ln.text)}`,
-    `created: ${created}`,
-  );
-  const body = ln.body.join("\n");
-  const text = `---\n${fm.join("\n")}\n---\n\n# ${merchant} ${euro(ln.amount)} EUR\n${body ? `\n${body}\n` : ""}`;
-  return { merchant, category, text };
+  const values: Record<string, PropValue> = {
+    date: ln.date,
+    time: ln.time || null,
+    amount: Number(fmt(ln.amount)),
+    currency: ln.currency,
+    account: ln.account,
+    category,
+    merchant,
+    status: "pendiente",
+    source: ln.account,
+    bank_ref: ln.ref,
+    bank_text: ln.text,
+    created,
+  };
+  const movement: NewMovement = {
+    title: `${merchant} ${euro(ln.amount)} EUR`,
+    values,
+    body: ln.body.join("\n"),
+  };
+  return { category, movement };
 }
 
 export interface ImportResult {
+  /** The new movements' titles. */
   created: string[];
+  /** The titles of the movements a bank line was joined with. */
   joined: string[];
   unclear: string[];
   report: string[];
@@ -281,7 +278,7 @@ export function importStatements(
     (n) => !n.fm.bank_ref && n.fm.status === "pendiente" && n.fm.account !== "efectivo",
   );
   if (!files.length) {
-    out(`No hay extractos en registros/finanzas/extractos/`);
+    out("No hay extractos");
     return { created: [], joined: [], unclear: [], report: out.lines };
   }
   const lines: (BankLine & { file: string })[] = [];
@@ -327,52 +324,44 @@ export function importStatements(
           : 1,
   );
   const { joined, unclear } = joinCandidates(fresh, openApp);
-  const byPath = new Map(openApp.map((n) => [n.path, n]));
+  const byId = new Map(openApp.map((n) => [n.id, n]));
   const edits = new Map<
     string,
     { note: MoneyNote; props: Record<string, PropValue>; file: string }
   >();
-  const creates: { path: string; text: string; file: string }[] = [];
-  const taken = new Set<string>();
+  const creates: { movement: NewMovement; file: string }[] = [];
   let byRule = 0;
   let unknown = 0;
   fresh.forEach((ln, i) => {
     const rule = matchRule(o.rules, ln.text);
     const p = joined.get(i);
     if (p !== undefined) {
-      const note = byPath.get(p) as MoneyNote;
+      const note = byId.get(p) as MoneyNote;
       const props: Record<string, PropValue> = { bank_ref: ln.ref, bank_text: ln.text };
       if (!note.fm.account) props.account = ln.account;
       if (!note.fm.merchant) props.merchant = rule?.[1] || prettyMerchant(ln.text);
       if (!note.fm.time && ln.time) props.time = ln.time;
       edits.set(p, { note, props, file: ln.file });
     } else if (!unclear.has(i)) {
-      const { merchant, category, text } = newMovementText(ln, rule, o.today);
-      const base = `${ln.date}${ln.time ? `-${ln.time.replace(":", "")}` : ""}-${slug(merchant) || "movimiento"}`;
-      const dir = `${MOV}/${ln.date.slice(0, 4)}/${ln.date.slice(5, 7)}`;
-      let path = "";
-      for (let n = 1; ; n++) {
-        path = `${dir}/${base}${n === 1 ? "" : `-${n}`}.md`;
-        if (!taken.has(path) && !book.taken(path)) break;
-      }
-      taken.add(path);
-      creates.push({ path, text, file: ln.file });
+      const { category, movement } = newMovement(ln, rule, o.today);
+      creates.push({ movement, file: ln.file });
       if (category === UNKNOWN) unknown++;
       else byRule++;
     }
   });
+  const named = (id: string) => byId.get(id)?.title || book.title(id) || id;
   out(`Lineas del banco: ${lines.length}; ya importadas: ${already}; nuevas: ${fresh.length}`);
   out(
     `Unidas a notas de la app: ${edits.size}; notas nuevas: ${creates.length} (categoria por regla ${byRule}, sin categoria ${unknown}); dudosas: ${unclear.size}`,
   );
   for (const [i, p] of [...joined.entries()].sort((a, b) => a[0] - b[0])) {
     const ln = fresh[i] as BankLine;
-    out(`  UNIDA   ${ln.date} ${fmt(ln.amount)} ${ln.text}  ->  ${p}`);
+    out(`  UNIDA   ${ln.date} ${fmt(ln.amount)} ${ln.text}  ->  ${named(p)}`);
   }
-  for (const [i, paths] of [...unclear.entries()].sort((a, b) => a[0] - b[0])) {
+  for (const [i, cands] of [...unclear.entries()].sort((a, b) => a[0] - b[0])) {
     const ln = fresh[i] as BankLine;
     out(
-      `  DUDOSA  ${ln.date} ${fmt(ln.amount)} ${ln.text} [${ln.ref}]  posibles notas: ${paths.join(", ")}`,
+      `  DUDOSA  ${ln.date} ${fmt(ln.amount)} ${ln.text} [${ln.ref}]  posibles notas: ${cands.map(named).join(", ")}`,
     );
   }
   if (unclear.size)
@@ -380,19 +369,24 @@ export function importStatements(
       "  (las dudosas no se importan: en la nota correcta pon bank_ref y vuelve a importar, o pon 'separadas')",
     );
   const result = (report: string[]): ImportResult => ({
-    created: creates.map((c) => c.path),
-    joined: [...edits.keys()],
+    created: creates.map((c) => c.movement.title),
+    joined: [...edits.keys()].map(named),
     unclear: [...unclear.keys()].sort((a, b) => a - b).map((i) => (fresh[i] as BankLine).ref),
     report,
   });
   if (!o.apply) {
-    for (const c of creates.slice(0, 2)) out(`\n=== ${c.path}\n${c.text}`);
+    for (const c of creates.slice(0, 2)) {
+      const props = Object.entries(c.movement.values)
+        .filter(([, v]) => v !== null && v !== "")
+        .map(([k, v]) => `${k}: ${String(v)}`);
+      out(`\n=== ${c.movement.title}\n${props.join("\n")}`);
+    }
     out("\n(simulacion: no se ha escrito nada)");
     return result(out.lines);
   }
   for (const e of edits.values()) book.update(e.note.id, e.props, e.file);
-  for (const c of creates) book.create(c.path, c.text, c.file);
-  out(`Escrito: ${edits.size} notas unidas, ${creates.length} notas nuevas en ${MOV}/`);
+  for (const c of creates) book.create(c.movement, c.file);
+  out(`Escrito: ${edits.size} notas unidas, ${creates.length} notas nuevas en Movimiento`);
   return result(out.lines);
 }
 
@@ -405,14 +399,18 @@ const byName = (category: string): CategoryKind =>
       ? "otro"
       : "gasto";
 
-/** Why a pending movement cannot be `conciliado` yet (empty: ready). */
+/**
+ * Why a pending movement (its id and properties) cannot be `conciliado` yet (empty: ready). People, debts and
+ * what it settles are ids; `nameOf` names them in the report.
+ */
 export function movementProblems(
   fm: Record<string, unknown>,
-  name: string,
+  id: string,
   cats: string[],
   debtsByMovement: Map<string, Record<string, unknown>[]>,
   targets: Set<string>,
   kindOf: (category: string) => CategoryKind = byName,
+  nameOf: (id: string) => string = (x) => x,
 ): string[] {
   const isSpending = (c: string) => kindOf(c) === "gasto";
   const probs: string[] = [];
@@ -423,27 +421,29 @@ export function movementProblems(
     probs.push(`categoria '${cat}' no esta en las categorias`);
   if ((fm.account === "revolut" || fm.account === "ing") && !fm.bank_ref)
     probs.push("sin linea del banco (no esta en los extractos importados)");
-  const invited = new Set(asList(fm.invited).map(linkName));
-  const owing = asList(fm.people)
-    .map(linkName)
-    .filter((x) => !invited.has(x));
+  const invited = new Set(ids(fm.invited));
+  const owing = ids(fm.people).filter((x) => !invited.has(x));
   if (amount < 0 && owing.length && isSpending(cat)) {
-    if (toFloat(fm.my_share) === null) probs.push(`compartido sin my_share (${owing.join(", ")})`);
-    const have = new Set((debtsByMovement.get(name) ?? []).map((d) => linkName(d.person)));
+    if (toFloat(fm.my_share) === null)
+      probs.push(`compartido sin my_share (${owing.map(nameOf).join(", ")})`);
+    const have = new Set((debtsByMovement.get(id) ?? []).flatMap((d) => ids(d.person)));
     const missing = owing.filter((x) => !have.has(x));
-    if (missing.length) probs.push(`faltan deudas de: ${missing.join(", ")}`);
+    if (missing.length) probs.push(`faltan deudas de: ${missing.map(nameOf).join(", ")}`);
   }
-  if (amount > 0 && isSpending(cat) && !fm.settles)
+  const settles = ids(fm.settles)[0];
+  if (amount > 0 && isSpending(cat) && !settles)
     probs.push(
       "ingreso de una categoria de gasto sin settles (de que deuda o gasto es el reembolso?)",
     );
-  if (fm.settles && !targets.has(linkName(fm.settles)))
-    probs.push(`settles apunta a una nota que no existe: ${String(fm.settles)}`);
+  if (settles && !targets.has(settles))
+    probs.push(`settles apunta a un registro que no existe: ${settles}`);
   return probs;
 }
 
 export interface CloseResult {
+  /** The titles of the movements marked (or to mark) `conciliado`. */
   ready: string[];
+  /** The titles of those that stay pending, with why. */
   blocked: [string, string[]][];
   report: string[];
 }
@@ -461,13 +461,14 @@ export function closeMonth(
 ): CloseResult {
   const out = logger();
   const notes = book.movements();
-  const debts = book.debts().filter((d) => d.fm.type === "debt" || d.fm.type === undefined);
+  const debts = book.debts();
   const debtsByMovement = new Map<string, Record<string, unknown>[]>();
   for (const d of debts) {
-    const k = linkName(d.fm.movement);
+    const k = ids(d.fm.movement)[0] ?? "";
     debtsByMovement.set(k, [...(debtsByMovement.get(k) ?? []), d.fm]);
   }
-  const targets = new Set([...notes, ...debts].map((n) => noteName(n.path)));
+  const targets = new Set([...notes, ...debts].map((n) => n.id));
+  const nameOf = (id: string) => book.title(id) || id;
   const pending = notes.filter(
     (n) => n.fm.status === "pendiente" && (!month || String(n.fm.date ?? "").startsWith(month)),
   );
@@ -475,14 +476,7 @@ export function closeMonth(
   const blocked: [MoneyNote, string[]][] = [];
   const noRule = new Set<string>();
   for (const n of pending) {
-    const probs = movementProblems(
-      n.fm,
-      noteName(n.path),
-      o.cats,
-      debtsByMovement,
-      targets,
-      o.kindOf,
-    );
+    const probs = movementProblems(n.fm, n.id, o.cats, debtsByMovement, targets, o.kindOf, nameOf);
     if (probs.length) blocked.push([n, probs]);
     else ready.push(n);
     if (n.fm.bank_text && !probs.length && !matchRule(o.rules, n.fm.bank_text))
@@ -495,7 +489,7 @@ export function closeMonth(
   );
   for (const [n, probs] of blocked)
     out(
-      `  PENDIENTE ${String(n.fm.date)} ${fmt(toFloat(n.fm.amount) ?? 0)} ${n.path}: ${probs.join("; ")}`,
+      `  PENDIENTE ${String(n.fm.date)} ${fmt(toFloat(n.fm.amount) ?? 0)} ${n.title}: ${probs.join("; ")}`,
     );
   if (noRule.size) {
     out("Textos del banco sin regla (candidatos para Reglas):");
@@ -506,7 +500,7 @@ export function closeMonth(
   for (const d of debts) {
     if (d.fm.status !== "pendiente") continue;
     const m = (d.fm.direction ?? "me-deben") === "me-deben" ? owed : owe;
-    const who = linkName(d.fm.person);
+    const who = nameOf(ids(d.fm.person)[0] ?? "");
     m.set(who, (m.get(who) ?? 0) + (toFloat(d.fm.amount) ?? 0));
   }
   const sum = (m: Map<string, number>) =>
@@ -517,8 +511,8 @@ export function closeMonth(
   if (owed.size) out(`Te deben: ${sum(owed)}`);
   if (owe.size) out(`Debes: ${sum(owe)}`);
   const result = (): CloseResult => ({
-    ready: ready.map((n) => n.path),
-    blocked: blocked.map(([n, p]) => [n.path, p]),
+    ready: ready.map((n) => n.title),
+    blocked: blocked.map(([n, p]) => [n.title, p]),
     report: out.lines,
   });
   if (!o.apply) {

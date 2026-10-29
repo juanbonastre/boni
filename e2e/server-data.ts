@@ -15,7 +15,8 @@ import { openUserStore } from "../packages/store/src/index.ts";
 
 /**
  * An account of a real server for the e2e, with invented data in its own store (never real notes): made with the
- * admin's command, then its collections and entries seeded before the server starts (`BONI_DB` in `dir`).
+ * admin's command, then its collections and entries seeded before the server starts (`BONI_DB` in `dir`); returns
+ * the record each invented note became.
  */
 export function seedAccount(
   dir: string,
@@ -23,7 +24,7 @@ export function seedAccount(
   password: string,
   types: TypeSpec[],
   notes: Record<string, string | Uint8Array>,
-): void {
+): Map<string, string> {
   execFileSync(
     process.execPath,
     ["--disable-warning=ExperimentalWarning", "apps/server/src/cli.ts", "add-user", name],
@@ -40,7 +41,7 @@ export function seedAccount(
   mkdirSync(join(dir, "users"), { recursive: true });
   const store = openUserStore(join(dir, "users", `${id}.db`));
   try {
-    seed(store, types, notes);
+    return seed(store, types, notes);
   } finally {
     store.close();
   }
@@ -125,11 +126,11 @@ export function mcpOf(dir: string, url: () => string, name: string) {
   };
   return {
     call,
-    /** An entry by the path its note had: its title, properties by name and text; null when there is none. */
+    /** An entry by its id: its title, properties by name and text; null when there is none. */
     async read(
-      path: string,
+      id: string,
     ): Promise<{ title: string; properties: Record<string, unknown>; body: string } | null> {
-      const r = await call("read", { path });
+      const r = await call("read", { id });
       return r.error ? null : JSON.parse(r.text);
     },
   };
