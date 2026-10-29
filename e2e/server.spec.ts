@@ -25,6 +25,8 @@ let url: string;
 let mcp: ReturnType<typeof mcpOf>;
 /** An entry's title as Boni has it (null: no entry with that path). */
 const titleOf = async (path: string) => (await mcp.read(path))?.title ?? null;
+/** The record an invented note became (devices know rows by its id). */
+const idOf = async (path: string) => ((await mcp.read(path)) as { id?: string } | null)?.id ?? "";
 
 const freePort = () =>
   new Promise<number>((resolve) => {
@@ -124,7 +126,6 @@ test("a browser logs in to the server and shows its calendar, live", async ({ pa
   const made = await mcp.call("create", {
     collection: "Docencia",
     title: "Llegada en vivo",
-    path: "agenda/docencia/2025-09-18 Llegada en vivo.md",
     properties: { Fecha: "2025-09-18", Inicio: "11:00", Fin: "12:00", Zona: "Europe/Madrid" },
   });
   expect(made.error, made.text).toBe(false);
@@ -182,10 +183,11 @@ test("with a server, an event opens its note where the device opens notes", asyn
   await page.keyboard.press("Escape");
   await page.locator(".ev", { hasText: "Clase del servidor" }).click();
   await page.locator(".popover").getByRole("button", { name: "Abrir nota en Obsidian" }).click();
+  // By its record's id (notes have no paths).
+  const id = await idOf("agenda/docencia/2025-09-17 Clase del servidor.md");
+  expect(id).toMatch(/^e_/);
   // biome-ignore lint/suspicious/noExplicitAny: reads what the test double recorded
-  expect(await page.evaluate(() => (window as any).__opened)).toEqual([
-    "agenda/docencia/2025-09-17 Clase del servidor.md",
-  ]);
+  expect(await page.evaluate(() => (window as any).__opened)).toEqual([id]);
 });
 
 test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and the button open it in Boni", async ({
@@ -215,7 +217,8 @@ test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and 
   await form.getByRole("button", { name: "Conectar" }).click();
   await expect(page.locator(".modal")).toContainText("En directo");
   await page.keyboard.press("Escape");
-  const path = "agenda/docencia/2025-09-17 Clase del servidor.md";
+  // Rows are known by their record's id: that is what opens in Boni.
+  const path = await idOf("agenda/docencia/2025-09-17 Clase del servidor.md");
   // biome-ignore lint/suspicious/noExplicitAny: reads what the test double recorded
   const opened = () => page.evaluate(() => (window as any).__opened as [string, boolean][]);
   const ev = page.locator(".ev", { hasText: "Clase del servidor" });
@@ -311,22 +314,28 @@ test("without a connection, edits wait on the device (also over a restart) and g
   await expect(page.locator(".modal")).toContainText("En directo");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(2500); // the copy is saved a moment after the last change
+  // Made in Boni (no note path): known by its id.
+  const made = await mcp.call("read", { collection: "Docencia", title: "Llegada en vivo" });
+  const id = (JSON.parse(made.text) as { id: string }).id;
+  const titleNow = async () => {
+    const r = await mcp.call("read", { id });
+    return r.error ? null : (JSON.parse(r.text) as { title: string }).title;
+  };
 
   stopServer();
-  const path = "agenda/docencia/2025-09-18 Llegada en vivo.md";
   await page.locator(".ev", { hasText: "Llegada en vivo" }).click();
   await page.locator(".popover .title-input").fill("Cambiada sin conexión");
   await page.locator(".popover .title-input").press("Enter");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(500);
-  expect(titleInStore(dir, 1, path)).toBe("Llegada en vivo");
+  expect(titleInStore(dir, 1, id)).toBe("Llegada en vivo");
 
   // Closed and opened again without a connection: the change is still there.
   await page.reload();
   await expect(page.locator(".ev", { hasText: "Cambiada sin conexión" })).toHaveCount(1);
 
   await startServer();
-  await expect.poll(() => titleOf(path), { timeout: 15_000 }).toBe("Cambiada sin conexión");
+  await expect.poll(titleNow, { timeout: 15_000 }).toBe("Cambiada sin conexión");
   await expect(page.locator(".ev", { hasText: "Cambiada sin conexión" })).toHaveCount(1);
 });
 

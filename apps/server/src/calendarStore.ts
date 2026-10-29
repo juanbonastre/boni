@@ -7,7 +7,6 @@ import {
   extendSeries,
   isProposalId,
   makeModel,
-  noteFileName,
   type PropValue,
   parseCollectionDef,
   type Row,
@@ -16,7 +15,6 @@ import {
   rowToEvent,
   systemTimeZone,
   todayIn,
-  uniqueNotePath,
   withMovedRowProperties,
   withNewRowProperties,
 } from "@boni/calendar";
@@ -40,10 +38,11 @@ import { HASH_FIELD, PATH_FIELD } from "./paths.ts";
  * definition (columns, mapping, colour, reminders) lives in the store's settings (`calendar/defs`), copied from
  * `_system/colecciones/` when the collections moved to Boni.
  *
- * A row is an entity seen as the apps know it: its id the note path it came from (so devices, aliases and
- * "Abrir en Boni" keep working) or, for a row made in Boni, the entity's id; its values by property name (the
- * name of the column, or the field's own name), options by their names, relations as `[[title]]`. A write
- * changes only the properties that differ from what the store has, with Juan's label from that device.
+ * A row is an entity seen as the apps know it: its id the entity's own (docs/clases.md §4: no paths; a device
+ * that still sends a row by the note path it was known by until 2026-10-29 is understood, and told the id); its
+ * values by property name (the name of the column, or the field's own name), options by their names, relations as
+ * `[[title]]`. A write changes only the properties that differ from what the store has, with Juan's label from
+ * that device.
  */
 
 /** What a client needs to show the calendar: definitions and rows (`ignored` and `problems` stay empty here). */
@@ -238,6 +237,8 @@ export class StoreCalendar implements CalendarSource {
   private log: { version: number; upserts: Row[]; removes: string[]; full: boolean }[] = [];
   private listeners = new Set<(c: Changes) => void>();
   private ghostKey = "";
+  /** A device's temporary id of a row it made -> the record (a resend before it heard back makes no second one). */
+  private madeFrom = new Map<string, string>();
   private ghostIds = new Set<string>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private daily: ReturnType<typeof setInterval> | null = null;
@@ -321,9 +322,8 @@ export class StoreCalendar implements CalendarSource {
       const v = this.toProp(field, e.values[field.id]);
       if (v !== null) values[prop] = v;
     }
-    const path = e.values[PATH_FIELD];
     return {
-      id: typeof path === "string" && path ? path : e.id,
+      id: e.id,
       collectionId: p.def.id,
       values,
       ...(e.body ? { body: e.body } : {}),
@@ -376,12 +376,6 @@ export class StoreCalendar implements CalendarSource {
       for (const p of placed)
         for (const e of this.entitiesOf(p, taken)) {
           const row = this.rowOf(e, p);
-          // Two records of one note (an old import's duplicates) show as one row: the last made, as a
-          // collection's own order has it (wherever in a branch each one is).
-          const had = next.get(row.id);
-          const hadId = this.entityOf.get(row.id) ?? "";
-          if (had && (had.created > row.created || (had.created === row.created && hadId > e.id)))
-            continue;
           next.set(row.id, row);
           this.entityOf.set(row.id, e.id);
           this.rowIdOf.set(e.id, row.id);
@@ -679,72 +673,77 @@ export class StoreCalendar implements CalendarSource {
   ): Promise<ApplyResult> {
     if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
     this.poll();
-    const idOf = (c: RowChange) => (c.op === "upsert" ? c.row.id : c.id);
+    const aliases: Record<string, string> = {};
+    // A row the device knows by an older id is the same record: the temporary id of one it made and sent again
+    // before it heard back, or the note's path rows were known by until 2026-10-29 (the last made, as it showed).
+    const known = (id: string): string => {
+      if (this.rows.has(id) || isProposalId(id)) return id;
+      const made = this.madeFrom.get(id);
+      const hit =
+        made && this.rows.has(made)
+          ? made
+          : this.store
+              .findByValue(PATH_FIELD, id)
+              .map((h) => h.id)
+              .filter((x) => this.rows.has(x))
+              .at(-1);
+      if (!hit) return id;
+      aliases[id] = hit;
+      return hit;
+    };
+    const idOf = (c: RowChange) => known(c.op === "upsert" ? c.row.id : c.id);
     const conflict = changes.map(idOf).filter((id) => {
       const c = this.changedAt.get(id);
       return !!c && c.version > base && c.by !== device;
     });
     if (conflict.length > 0) return { ok: false, conflict: [...new Set(conflict)] };
     const meta = { actor: "user" as const, device };
-    const aliases: Record<string, string> = {};
     const touched: string[] = [];
     for (const c of changes) {
+      const id = idOf(c);
       // A proposal (`ghost:<id>`) is decided in Boni, never written from a device.
-      if (isProposalId(idOf(c))) continue;
+      if (isProposalId(id)) continue;
       if (c.op === "remove") {
-        const eid = this.entityOf.get(c.id);
+        const eid = this.entityOf.get(id);
         if (eid) this.store.remove(eid, meta);
         continue;
       }
       const p = this.placed.find((x) => x.def.id === c.row.collectionId);
       if (!p) continue;
-      const eid = this.entityOf.get(c.row.id);
-      const before = eid ? (this.rows.get(c.row.id) ?? null) : null;
-      if (eid && before && before.collectionId !== c.row.collectionId) {
-        // Moved to another calendar: the same record goes to that collection (docs/clases.md §2.5: its id and its
-        // history stay; what both share stays), with that calendar's properties; its note's path follows it to that
-        // folder (keeping its file name when free). The device maps the row by `aliases`.
+      const row = id === c.row.id ? c.row : { ...c.row, id };
+      const eid = this.entityOf.get(id);
+      const before = eid ? (this.rows.get(id) ?? null) : null;
+      if (eid && before && before.collectionId !== row.collectionId) {
+        // Moved to another calendar: the same record (docs/clases.md §2.5: its id and its history stay; what both
+        // share stays), in the collection it belongs in there (within one branch it may stay: only its field
+        // changes), with that calendar's properties.
         const from = this.placed.find((x) => x.def.id === before.collectionId)?.def;
-        const values = withMovedRowProperties(c.row.values, from, p.def);
-        // Into the collection it belongs in there (within one branch it may stay where it is: only its field changes).
-        const home = this.homeOf(p, { ...c.row, values });
+        const values = withMovedRowProperties(row.values, from, p.def);
+        const home = this.homeOf(p, { ...row, values });
         if (this.store.get(eid)?.entity.type !== home) this.store.retype(eid, home, meta);
-        const writes = this.writesFor(p, home, null, { ...c.row, values }, device);
+        const writes = this.writesFor(p, home, null, { ...row, values }, device);
         this.whereWrite(p, home, eid, writes, device);
-        const was = this.store.get(eid)?.entity.values[PATH_FIELD];
-        const name = typeof was === "string" ? was.slice(was.lastIndexOf("/") + 1) : null;
-        const path = name ? `${p.def.folder}/${name}` : null;
-        if (path && !this.entityOf.has(path))
-          writes[PATH_FIELD] = { value: path, label: this.labelFor(home, null, device) };
         if (Object.keys(writes).length) this.store.update(eid, writes, meta);
-        const id = path && writes[PATH_FIELD] ? path : c.row.id;
-        if (id !== c.row.id) aliases[c.row.id] = id;
         touched.push(id);
       } else if (eid && before) {
         // Marked as a task, or no longer one: to the collection of tasks or of events (same record).
         const type = this.store.get(eid)?.entity.type ?? p.type;
-        const home = this.homeOf(p, c.row);
-        if (p.make && home !== type) this.store.retype(eid, home, meta);
-        const writes = this.writesFor(p, p.make ? home : type, before, c.row, device);
-        if (Object.keys(writes).length) this.store.update(eid, writes, meta);
-        touched.push(c.row.id);
-      } else {
-        const row = { ...c.row, values: withNewRowProperties(c.row.values, p.def) };
         const home = this.homeOf(p, row);
-        const writes = this.writesFor(p, home, null, row, device);
-        this.whereWrite(p, home, null, writes, device);
-        // Its note's name, as the apps name one ("2026-10-27 Clase"): kept as the row's id (devices know rows by
-        // it until notes stop having paths). Untitled, the entity's own id.
-        const path = String(row.values[p.def.mapping.title] ?? "").trim()
-          ? uniqueNotePath(p.def.folder, noteFileName(p.def, row.values), (x) =>
-              this.entityOf.has(x),
-            )
-          : null;
-        if (path) writes[PATH_FIELD] = { value: path, label: this.labelFor(home, null, device) };
-        const made = this.store.create(home, writes, meta);
-        const id = path ?? made.entity.id;
-        aliases[c.row.id] = id;
+        if (p.make && home !== type) this.store.retype(eid, home, meta);
+        const writes = this.writesFor(p, p.make ? home : type, before, row, device);
+        if (Object.keys(writes).length) this.store.update(eid, writes, meta);
         touched.push(id);
+      } else {
+        const fresh = { ...row, values: withNewRowProperties(row.values, p.def) };
+        const home = this.homeOf(p, fresh);
+        const writes = this.writesFor(p, home, null, fresh, device);
+        this.whereWrite(p, home, null, writes, device);
+        const made = this.store.create(home, writes, meta);
+        aliases[c.row.id] = made.entity.id;
+        this.madeFrom.set(c.row.id, made.entity.id);
+        if (this.madeFrom.size > 1000)
+          this.madeFrom.delete(this.madeFrom.keys().next().value as string);
+        touched.push(made.entity.id);
       }
     }
     this.poll();

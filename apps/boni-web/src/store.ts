@@ -2208,17 +2208,17 @@ export async function deleteRow(type: string, id: string) {
   }
 }
 
-/** A vault note opened from another app (Boni Calendar's "Abrir en Boni"): the row it became, as a page. */
-export async function openNoteAt(path: string) {
-  set({ openedNote: path, row: null, rowDoc: null });
+/** A record opened from another app (Boni Calendar's "Abrir en Boni", by its id), as its page. */
+export async function openNoteAt(id: string) {
+  set({ openedNote: id, row: null, rowDoc: null });
   // Not logged in yet (Boni Calendar's peek, the first time): it opens once the login is done.
   if (!configured(get().settings)) return;
   try {
-    const at = await agent.lookupNote(path);
-    if (at) return void (await openRow(at.type, at.id));
+    const row = await agent.dataRow(id);
+    if (row?.type) return void (await openRow(row.type, id));
     toast(get().t("note.notFound"));
-  } catch {
-    toast(get().t("note.offline"));
+  } catch (e) {
+    toast(get().t(e instanceof ApiError && e.status === 404 ? "note.notFound" : "note.offline"));
   }
 }
 

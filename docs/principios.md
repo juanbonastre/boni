@@ -44,6 +44,7 @@ Cómo se usa:
 | D-14 | Nada del dominio del usuario en el código ni en los prompts: cualquier colección con fecha puede ser calendario y se separa o colorea por el campo que elija el usuario | 2026-10-20 | `apps/server/src/calendarStore.test.ts` («a calendar over a branch split by a field»), `apps/server/src/reshape.test.ts` (el plan es datos de la cuenta). Elegir el campo desde la interfaz: pendiente |
 | D-15 | Cada colección tiene una descripción (qué va en ella), que sustituye a los README; la escriben el usuario o una IA y se deshace | 2026-10-27 | `packages/entities/src/ops.test.ts` («describe_type»), `apps/server/src/mcp.test.ts` («the guide is computed») |
 | D-16 | Cambiar la forma del árbol (colecciones nuevas, registros movidos, calendarios) se ensaya antes con cuentas y es una sola ejecución que se deshace entera; nada se pierde (lo que el destino no tiene se archiva) y nada queda más abierto a la IA | 2026-10-27 | `apps/server/src/reshape.test.ts`, `packages/store/src/store.test.ts` («a batch is one transaction») |
+| D-17 | Un registro se conoce por su id, no por una ruta: las filas de Boni Calendar, los enlaces `boni://` y lo que crea el MCP; un dispositivo que aún manda una ruta vieja o repite una fila nueva llega al mismo registro | 2026-10-29 | `apps/server/src/calendarStore.test.ts` («a row known by an older id is the same record»), `apps/boni-desktop/links.test.cjs`, `apps/server/src/mcp.test.ts` («writes as a model») |
 
 ## I. Interfaz
 

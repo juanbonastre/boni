@@ -221,13 +221,15 @@ describe("reshaping an account's tree (docs/clases.md §7, step 5)", () => {
     const calendar = new StoreCalendar(store, { write: true, pollMs: 60_000 });
     try {
       const rows = (await calendar.snapshot()).rows;
+      // The same records (by their ids), each in the calendar it was in.
+      const at = (path: string) => store.findByValue(PATH_FIELD, path)[0]?.id as string;
       expect(Object.fromEntries(rows.map((x) => [x.id, x.collectionId]))).toEqual({
-        "agenda/trabajo/Informe.md": "trabajo",
-        "agenda/trabajo/Claustro.md": "trabajo",
-        "agenda/trabajo/Reunión.md": "trabajo",
-        "agenda/casa/Fontanero.md": "casa",
-        "agenda/medico/Revisión.md": "medico",
-        "agenda/medico/Pedir cita.md": "medico",
+        [at("agenda/trabajo/Informe.md")]: "trabajo",
+        [at("agenda/trabajo/Claustro.md")]: "trabajo",
+        [at("agenda/trabajo/Reunión.md")]: "trabajo",
+        [at("agenda/casa/Fontanero.md")]: "casa",
+        [at("agenda/medico/Revisión.md")]: "medico",
+        [at("agenda/medico/Pedir cita.md")]: "medico",
       });
     } finally {
       calendar.close();

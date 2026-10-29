@@ -425,8 +425,6 @@ export function makeApp(opts: ServerOptions): App {
             route.endsWith("/rows") ? blockRowsOf(store, body, o) : computeBlocks(store, body, o),
           );
         }
-        if (route === "GET /api/data/lookup")
-          return send(res, 200, findByPath(store, url.searchParams.get("path") ?? ""));
         if (route === "GET /api/data/rows/:id") {
           const row = getRow(store, params.id ?? "");
           recordUserRead(store, s.device, "data.row", row.type, [row.id], true, now());

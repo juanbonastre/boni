@@ -390,8 +390,8 @@ export function createRow(store: UserStore, type: string, values: unknown, devic
 }
 
 /**
- * The row a vault note became (Boni Calendar's "Abrir en Boni": its rows are the vault's notes, by path), found
- * by the hidden path the import keeps.
+ * The record a vault note became, by the hidden path the import kept: only the money's own notes still go by it
+ * («Apuntar gasto» takes back the movement it made); everything else knows a record by its id.
  */
 export function findByPath(store: UserStore, path: string): { type: string; id: string } {
   if (!path || path.length > 500) throw new DataError("not-found");

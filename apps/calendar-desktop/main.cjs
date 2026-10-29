@@ -185,14 +185,11 @@ class NoteError extends Error {
     this.code = code;
   }
 }
-/** A note's path as the calendar's rows keep it (relative, Markdown, never a dot folder or `..`), or a NoteError. */
-function notePath(rel) {
-  if (typeof rel !== "string" || rel === "" || path.isAbsolute(rel) || rel.includes("\0"))
-    throw new NoteError("bad-path", `Bad path: ${rel}`);
-  const parts = rel.split(/[\\/]+/).filter(Boolean);
-  if (parts.some((p) => p === ".." || p.startsWith(".")) || !rel.toLowerCase().endsWith(".md"))
-    throw new NoteError("bad-path", `Not allowed: ${rel}`);
-  return parts;
+/** A record's id as the calendar knows its rows (notes have no paths): a plain one, checked before any link. */
+function recordId(id) {
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,100}$/.test(id))
+    throw new NoteError("bad-id", `Bad record id: ${id}`);
+  return id;
 }
 
 /** Handlers answer `{ ok: true, value }` or `{ ok: false, code, message }`; errors never cross IPC as exceptions. */
@@ -266,13 +263,13 @@ ipcMain.on("notify:schedule", (e, list) => {
   }
 });
 
-handle("notes:open-note", (rel, peek) => {
-  // The notes live in Boni (Juan, 2026-10-22). Ctrl+click and "Abrir en Boni": Boni's desktop app opens the row a
-  // note became (boni://note?path=<the note's path>). A double click: the calendar's own peek, a small window
+handle("notes:open-note", (rowId, peek) => {
+  // The notes live in Boni (Juan, 2026-10-22). Ctrl+click and "Abrir en Boni": Boni's desktop app opens the record
+  // (boni://note?id=<its id>: a row's id is its record's). A double click: the calendar's own peek, a small window
   // with Boni's note page from Boni's server (Settings → Desktop gives its address); without one, Boni's peek
-  // (`&peek=1`). Paths and URLs are built here from a checked path, never by the UI.
-  const note = notePath(rel).join("/");
-  const link = `boni://note?path=${encodeURIComponent(note)}`;
+  // (`&peek=1`). Links are built here from a checked id, never by the UI.
+  const note = recordId(rowId);
+  const link = `boni://note?id=${encodeURIComponent(note)}`;
   if (peek === true && prefs.boniUrl) {
     void showPeek("peek:note", note);
     return null;
@@ -355,7 +352,7 @@ function dropPeek() {
   peekWin = null;
   peekReady = null;
 }
-/** Shows the peek on a note (`peek:note`, its path) or a proposal (`peek:proposal`, its id). */
+/** Shows the peek on a note (`peek:note`, its record's id) or a proposal (`peek:proposal`, its id). */
 async function showPeek(channel, value) {
   await makePeek();
   const win = peekWin;
@@ -380,13 +377,12 @@ function hidePeek() {
 }
 const fromPeek = (e) => !!peekWin && !peekWin.isDestroyed() && e.sender === peekWin.webContents;
 ipcMain.on("peek:hide", (e) => fromPeek(e) && hidePeek());
-ipcMain.on("peek:open-in-boni", (e, rel) => {
+ipcMain.on("peek:open-in-boni", (e, id) => {
   if (!fromPeek(e)) return;
   try {
-    const p = notePath(String(rel)).join("/");
-    void shell.openExternal(`boni://note?path=${encodeURIComponent(p)}`);
+    void shell.openExternal(`boni://note?id=${encodeURIComponent(recordId(String(id)))}`);
   } catch {
-    // not a note's path: nothing
+    // not a record's id: nothing
   }
 });
 

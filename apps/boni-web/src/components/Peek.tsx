@@ -24,7 +24,7 @@ import { Account } from "./SettingsModal.tsx";
 export function PeekPage() {
   useTheme();
   const t = useStore((s) => s.t);
-  const path = useStore((s) => s.openedNote);
+  const id = useStore((s) => s.openedNote);
   const type = useStore((s) =>
     s.view.kind === "row"
       ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
@@ -43,7 +43,7 @@ export function PeekPage() {
   useEffect(() => {
     if (!loggedIn) return;
     if (useStore.getState().view.kind === "proposal") void loadInbox();
-    else if (path) void openNoteAt(path);
+    else if (id) void openNoteAt(id);
   }, [loggedIn]);
   useEffect(() => {
     const esc = (e: KeyboardEvent) => {
@@ -79,17 +79,17 @@ export function PeekPage() {
             {t("peek.open")}
           </button>
         )}
-        {path && !proposal && (
+        {id && !proposal && (
           <button
             type="button"
             className="btn ghost small"
             onClick={() => {
               void flushRowBody().then(() => {
                 if (host.desktop) {
-                  host.desktop.openMain(`note:${path}`);
+                  host.desktop.openMain(`note:${id}`);
                   host.desktop.peekHide?.();
                 } else {
-                  host.embed?.openInBoni(path);
+                  host.embed?.openInBoni(id);
                   host.embed?.hide();
                 }
               });

@@ -107,7 +107,7 @@ describe("writing through the server", () => {
     const token = await session();
     const snap = await snapshot(token);
     expect(snap.views.every((v) => !v.readOnly)).toBe(true);
-    const row = snap.rows.find((r) => r.id === LESSON) as Row;
+    const row = snap.rows.find((r) => r.id === lessonId) as Row;
     const r = await apply(token, snap.version, [
       { op: "upsert", row: { ...row, values: { ...row.values, location: "Aula 2" } } },
     ]);
@@ -134,7 +134,7 @@ describe("writing through the server", () => {
     const token = await session();
     const other = await session("otro"); // another device of the same account
     const snap = await snapshot(token);
-    const row = snap.rows.find((r) => r.id === LESSON) as Row;
+    const row = snap.rows.find((r) => r.id === lessonId) as Row;
     // Changed in Boni (a page, the MCP) after this device took its snapshot.
     store.update(
       lessonId,
@@ -145,12 +145,12 @@ describe("writing through the server", () => {
       { op: "upsert", row: { ...row, values: { ...row.values, title: "Pisada" } } },
     ]);
     expect(r.status).toBe(409);
-    expect(r.body.conflict).toEqual([LESSON]);
+    expect(r.body.conflict).toEqual([lessonId]);
     expect(store.get(lessonId)?.entity.body).toContain("Escrito en Boni");
     expect(values(lessonId).f_title).not.toBe("Pisada");
     // With the new version it goes through; a change by another device also counts as a conflict.
     const fresh = await snapshot(other);
-    const row2 = fresh.rows.find((x) => x.id === LESSON) as Row;
+    const row2 = fresh.rows.find((x) => x.id === lessonId) as Row;
     expect(
       (
         await apply(other, fresh.version, [
@@ -170,7 +170,7 @@ describe("writing through the server", () => {
   it("makes an entry of a new row and says its id; a removed row goes to Boni's trash", async () => {
     const token = await session();
     const snap = await snapshot(token);
-    const model = snap.rows.find((r) => r.id === LESSON) as Row;
+    const model = snap.rows.find((r) => r.id === lessonId) as Row;
     const draft: Row = {
       ...model,
       id: "ev-temporal-1",
@@ -178,20 +178,19 @@ describe("writing through the server", () => {
     };
     const r = await apply(token, snap.version, [{ op: "upsert", row: draft }]);
     expect(r.status).toBe(200);
-    const path = "agenda/docencia/2026-10-24 Cena inventada.md";
-    expect(r.body.aliases).toEqual({ "ev-temporal-1": path });
-    const made = (await snapshot(token)).rows.find((x) => x.id === path);
+    // Its id is the record's: no note path is made up for it.
+    const id = r.body.aliases?.["ev-temporal-1"] as string;
+    expect(id).toMatch(/^e_/);
+    const made = (await snapshot(token)).rows.find((x) => x.id === id);
     // Its collection's new rows get the area.
     expect(made?.values).toMatchObject({ title: "Cena inventada", area: "[[docencia]]" });
-    const entity = store.list("t_docencia").find((s) => s.entity.values.f_vault_path === path);
+    expect(store.get(id)?.entity.values.f_vault_path).toBeUndefined();
 
     const now = await snapshot(token);
-    const del = await apply(token, now.version, [
-      { op: "remove", collectionId: "docencia", id: path },
-    ]);
+    const del = await apply(token, now.version, [{ op: "remove", collectionId: "docencia", id }]);
     expect(del.status).toBe(200);
-    expect((await snapshot(token)).rows.some((x) => x.id === path)).toBe(false);
-    expect(store.get(entity?.entity.id as string)?.entity.deleted).toBeDefined();
+    expect((await snapshot(token)).rows.some((x) => x.id === id)).toBe(false);
+    expect(store.get(id)?.entity.deleted).toBeDefined();
   });
 });
 

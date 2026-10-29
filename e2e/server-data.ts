@@ -84,16 +84,13 @@ export function proposeEntries(
   }
 }
 
-/** An entry's title by the path its note had, read from the account's store itself (only while the server is off). */
-export function titleInStore(dir: string, account: number, path: string): string | null {
+/** An entry's title by its id, read from the account's store itself (only while the server is off). */
+export function titleInStore(dir: string, account: number, id: string): string | null {
   const store = openUserStore(join(dir, "users", `${account}.db`));
   try {
-    for (const { type, id } of store.findByValue("f_vault_path", path)) {
-      const t = store.schema().types[type];
-      const e = store.get(id)?.entity;
-      if (t && e && e.deleted === undefined) return String(e.values[t.titleField] ?? "");
-    }
-    return null;
+    const e = store.get(id)?.entity;
+    const t = e ? store.schema().types[e.type] : undefined;
+    return t && e && e.deleted === undefined ? String(e.values[t.titleField] ?? "") : null;
   } finally {
     store.close();
   }

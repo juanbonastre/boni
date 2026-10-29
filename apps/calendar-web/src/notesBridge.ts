@@ -8,10 +8,10 @@ export type NotesResult<T> = { ok: true; value: T } | { ok: false; code: string;
 
 export interface NotesBridge {
   /**
-   * Opens a note: in Boni (the desktop app, a `boni://` link; `peek`: in its small window instead of the main one)
-   * or in Obsidian (`noteApp` says which).
+   * Opens a row's record (by its id: notes have no paths) in Boni, the desktop app (a `boni://` link; `peek`: in
+   * its small window instead of the main one).
    */
-  openNote?(path: string, opts?: { peek?: boolean }): Promise<NotesResult<null>>;
+  openNote?(id: string, opts?: { peek?: boolean }): Promise<NotesResult<null>>;
   /**
    * Opens a proposal waiting in Boni's inbox (a `ghost:` row drawn in the calendar) in Boni's peek, where it is
    * accepted or rejected (plan b2). Only where Boni opens notes (`noteApp: "boni"`).
