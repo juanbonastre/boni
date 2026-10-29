@@ -4,8 +4,8 @@ import { mailOfRun } from "./mailReview.ts";
 /**
  * What a run of the agent was and what came of it, for the Registro (Juan, 2026-10-22: "Segundo plano · Hecho"
  * said nothing). Made by code from the journal and the operation log: which mail a background reading read, the
- * note a hand edit changed, the request Juan wrote; how many proposals it made and how they were decided; what it
- * changed. Text that came from outside (a mail's subject and sender) stays text: the app never renders it as
+ * request Juan wrote; how many proposals it made and how they were decided; what it changed. A run of the retired
+ * Markdown mirror is named by its origin alone (no vault path, D-17). Text that came from outside (a mail's subject and sender) stays text: the app never renders it as
  * markup.
  */
 export type RunWhat =
@@ -17,8 +17,6 @@ export type RunWhat =
   | { kind: "measure"; subject: string }
   /** The reviewer reading Juan's decisions (mailReview.ts). */
   | { kind: "review" }
-  /** A note changed, made or removed by hand in the vault (a proposal of the Markdown mirror, retired 2026-10-28). */
-  | { kind: "note"; path: string; action: "update" | "create" | "delete" }
   /** A proposal Juan accepted. */
   | { kind: "accepted" }
   | { kind: "other" };
@@ -57,25 +55,8 @@ export function proposalsByRun(store: UserStore): Map<string, ProposalRow[]> {
   return out;
 }
 
-function whatOf(
-  store: UserStore,
-  r: RunRow,
-  proposals: ProposalRow[],
-  mailAccount: string | null,
-): RunWhat {
+function whatOf(store: UserStore, r: RunRow, mailAccount: string | null): RunWhat {
   if (r.origin === "accepted") return { kind: "accepted" };
-  if (r.origin === "mirror") {
-    const p = proposals[0];
-    const rows = (p?.view as { rows?: { arg: string; value?: unknown }[] } | null)?.rows ?? [];
-    const path = text(rows.find((x) => x.arg === "note")?.value, 500);
-    const action =
-      p?.tool === "entities.create"
-        ? "create"
-        : p?.tool === "entities.delete"
-          ? "delete"
-          : "update";
-    return path ? { kind: "note", path, action } : { kind: "other" };
-  }
   if (r.origin === "turn" || r.turn) {
     const planner = store.journal.modelCalls(r.id).find((m) => m.role === "planner");
     const req = (planner?.request as { input?: { request?: unknown } } | undefined)?.input?.request;
@@ -125,7 +106,7 @@ export function runInfo(
     });
   }
   return {
-    what: whatOf(store, r, mine, o.mailAccount ?? null),
+    what: whatOf(store, r, o.mailAccount ?? null),
     proposals,
     changes,
     changed: ops.length,

@@ -371,7 +371,7 @@ export const RUNS_EXPLAINED = {
       status: "proposed",
       started: at(10, 10),
       finished: at(10, 10),
-      what: { kind: "note", path: "proyectos/ejemplo-de-proyecto.md", action: "update" },
+      what: { kind: "other" },
       proposals: { pending: 0, accepted: 0, rejected: 1, postponed: 0, stale: 0 },
       changes: [],
       changed: 0,
@@ -387,58 +387,6 @@ export const RUNS_EXPLAINED = {
       proposals: { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 },
       changes: [{ action: "create", title: "Revisar actas", collection: "Docencia", undone: true }],
       changed: 1,
-    },
-  ],
-};
-
-/** A hand edit of the mirror in Obsidian (the Markdown mirror, retired 2026-10-28), as the server paints it. */
-export const MIRROR_PROPOSAL = {
-  proposals: [
-    {
-      id: "pm",
-      tool: "entities.update",
-      view: {
-        tool: "entities.update",
-        title: "Cambio hecho a mano en Obsidian",
-        rows: [
-          {
-            arg: "note",
-            role: "value",
-            value: "agenda/docencia/2026-10-19 Clase de ejemplo.md",
-            integrity: "imported",
-            sources: ["vault"],
-            marks: [],
-          },
-          {
-            arg: "ignored",
-            role: "value",
-            value: "Tipo: no es una de las opciones",
-            integrity: "imported",
-            sources: ["vault"],
-            marks: [],
-          },
-          {
-            arg: "id",
-            role: "entity",
-            value: "e_clase",
-            integrity: "imported",
-            sources: ["vault"],
-            marks: [],
-            detail: "Clase de ejemplo",
-          },
-          {
-            arg: "values.starttime",
-            role: "content",
-            value: "12:00",
-            integrity: "imported",
-            sources: ["vault"],
-            marks: [],
-            name: "Hora de inicio",
-          },
-        ],
-      },
-      sources: ["vault:agenda/docencia/2026-10-19 Clase de ejemplo.md@0123456789ab"],
-      created: 1,
     },
   ],
 };

@@ -88,18 +88,15 @@ export interface InboxCard {
   day: string | null;
   start: string | null;
   end: string | null;
-  source:
-    | {
-        kind: "mail";
-        account: string | null;
-        from: string;
-        subject: string;
-        excerpt: string;
-        /** The mail's own row in Boni, for "Ver correo". */
-        open: { type: string; id: string } | null;
-      }
-    | { kind: "note"; path: string }
-    | null;
+  source: {
+    kind: "mail";
+    account: string | null;
+    from: string;
+    subject: string;
+    excerpt: string;
+    /** The mail's own row in Boni, for "Ver correo". */
+    open: { type: string; id: string } | null;
+  } | null;
   /** Why it was made: the reader's quote of the mail (verbatim when the server found it in the mail). */
   why: { text: string; verbatim: boolean } | null;
   familiar: number;
@@ -133,9 +130,7 @@ function parseCard(v: unknown): InboxCard | null {
               ? { type: src.open.type.slice(0, 100), id: src.open.id.slice(0, 100) }
               : null,
         }
-      : src?.kind === "note" && typeof src.path === "string"
-        ? { kind: "note", path: src.path.slice(0, 500) }
-        : null;
+      : null;
   return {
     action: actions.find((a) => a === v.action) ?? "other",
     collection: optStr(v.collection, 200),
@@ -234,7 +229,6 @@ export type RunWhat =
   | { kind: "mail"; subject: string; from: string; account: string | null }
   | { kind: "measure"; subject: string }
   | { kind: "review" }
-  | { kind: "note"; path: string; action: "update" | "create" | "delete" }
   | { kind: "accepted" }
   | { kind: "other" };
 /** How often Boni would have accepted alone over Juan's last decisions, and been right (the server's rule). */
@@ -266,12 +260,6 @@ function runWhat(v: unknown): RunWhat | undefined {
       };
     case "measure":
       return { kind: "measure", subject: s(v.subject) };
-    case "note":
-      return {
-        kind: "note",
-        path: s(v.path, 500),
-        action: v.action === "create" || v.action === "delete" ? v.action : "update",
-      };
     case "review":
     case "accepted":
       return { kind: v.kind };

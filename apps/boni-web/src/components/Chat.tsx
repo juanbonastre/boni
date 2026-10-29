@@ -522,8 +522,6 @@ function runTitle(t: T, r: RunSummary): string {
       return t("log.what.measure", { subject: w.subject });
     case "review":
       return t("log.what.review");
-    case "note":
-      return t(`log.what.note.${w.action}`, { path: w.path });
     case "accepted":
       return t("log.what.accepted");
     default:

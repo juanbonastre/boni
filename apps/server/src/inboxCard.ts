@@ -21,18 +21,15 @@ export interface InboxCard {
   day: string | null;
   start: string | null;
   end: string | null;
-  source:
-    | {
-        kind: "mail";
-        account: string | null;
-        from: string;
-        subject: string;
-        excerpt: string;
-        /** The mail's own row in Boni ("Ver correo" opens it: IMAP gives no link to a webmail). */
-        open: { type: string; id: string };
-      }
-    | { kind: "note"; path: string }
-    | null;
+  source: {
+    kind: "mail";
+    account: string | null;
+    from: string;
+    subject: string;
+    excerpt: string;
+    /** The mail's own row in Boni ("Ver correo" opens it: IMAP gives no link to a webmail). */
+    open: { type: string; id: string };
+  } | null;
   /**
    * Why it was made: the reader's quote of the mail (`verbatim` when the code finds those very words in it; a
    * model's words are never trusted to be a quote).
@@ -163,7 +160,7 @@ export function inboxContext(store: UserStore): InboxContext {
   };
 }
 
-/** The proposal's source as a key ("mail:<sender>", "vault:<path>"): what "like it" compares. */
+/** The proposal's source as a key ("mail:<sender>"): what "like it" compares. */
 const sourceKey = (p: ProposalRow) => (p.sources[0] ?? "").replace(/@[0-9a-f]{12}$/, "");
 /** Proposals "like" each other: the same tool, source and collection. */
 export const likeKey = (p: ProposalRow) => {
@@ -231,9 +228,6 @@ export function inboxCard(
       const text = plain(`${textOf(v.f_asunto)} ${m.entity.body ?? ""}`);
       why = { text: said, verbatim: plain(said).length > 0 && text.includes(plain(said)) };
     }
-  } else {
-    const note = textOf(row("note")?.value);
-    if (note) source = { kind: "note", path: note };
   }
 
   const key = likeKey(p);

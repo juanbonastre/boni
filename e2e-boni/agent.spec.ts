@@ -11,7 +11,6 @@ import {
   GUIDE,
   MAIL,
   MAIL_SUGGESTED,
-  MIRROR_PROPOSAL,
   PROPOSALS,
   REQUESTS,
   RTL,
@@ -430,39 +429,6 @@ test("accepting shows a spinner on that card, the next one can be decided meanwh
   await expect(panel.locator(".inbox-card")).toHaveCount(0);
 });
 
-test("a hand edit in Obsidian waits in the inbox with its note and what will not be applied", async ({
-  page,
-}) => {
-  await openApp(page, "/?still", {
-    agent: {
-      "GET api/agent/proposals": [MIRROR_PROPOSAL],
-      "POST api/agent/proposals/:id/accept": [DONE],
-    },
-  });
-  await page.getByRole("button", { name: "Conversación" }).click();
-  await page
-    .locator(".chat-tools")
-    .getByRole("button", { name: /^Bandeja/ })
-    .click();
-  const p = page.locator(".proposal");
-  await expect(p).toHaveCount(1);
-  await expect(p).toContainText("Cambio hecho a mano en Obsidian");
-  await expect(p).toContainText("Nota");
-  await expect(p).toContainText("agenda/docencia/2026-10-19 Clase de ejemplo.md");
-  await expect(p).toContainText("No se aplica");
-  await expect(p).toContainText("De tus datos · tu vault");
-  // The element by its title (the id beside it) and each field by its name, never a JSON blob.
-  await expect(p.locator(".confirm-row", { hasText: "e_clase" })).toContainText("Clase de ejemplo");
-  await expect(p.locator(".confirm-row", { hasText: "Hora de inicio" })).toContainText("12:00");
-  await expect(p).not.toContainText("{");
-  await page.screenshot({ path: `${SHOTS}/agent-mirror-proposal.png` });
-  await p.getByRole("button", { name: "Aceptar" }).click();
-  await expect(page.locator(".proposal")).toHaveCount(0);
-  expect(await requests(page, "POST api/agent/proposals/")).toEqual([
-    "POST api/agent/proposals/pm/accept",
-  ]);
-});
-
 test("the log: what each request did, and Undo for it", async ({ page }) => {
   await openApp(page, "/?still", {
     agent: {
@@ -521,7 +487,9 @@ test("the Registro says what each run was and what came of it; quiet readings ar
   await entries.nth(2).locator(".log-head").first().click();
   await expect(entries.nth(2).locator(".log-group > li")).toHaveCount(3);
   await expect(entries.nth(2).locator(".log-group")).toContainText("Nada que hacer");
-  await expect(entries.nth(3)).toContainText("Cambio a mano en proyectos/ejemplo-de-proyecto.md");
+  // A run of the retired Markdown mirror: named by its origin, never by a vault path (I-08, D-17).
+  await expect(entries.nth(3)).toContainText("Cambio en Obsidian");
+  await expect(entries.nth(3)).not.toContainText(".md");
   await expect(entries.nth(3)).toContainText("1 propuesta rechazada");
   await expect(entries.nth(4)).toContainText("Creó «Revisar actas» en Docencia (deshecho)");
   // Undo only where something is left to undo.

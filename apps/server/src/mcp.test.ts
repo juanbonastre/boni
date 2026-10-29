@@ -8,6 +8,7 @@ import { issueSession } from "@boni/identity";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
+import { createByName } from "./byName.ts";
 import { treeNotes } from "./data.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
@@ -452,6 +453,58 @@ describe("collections as classes through the MCP (docs/clases.md)", () => {
           ).json as { id: string }[]
         ).map((n) => n.id),
       ).toEqual([at("proyectos/otro.md")]);
+    store.applySchema({ op: "remove_field", type: "t_proyecto", field: "f_madre" }, me);
+  });
+
+  it("a relation takes a note of its target's branch by id or title, never one of a closed collection (D-18)", async () => {
+    const store = host.store(1);
+    const l = store.schema().types.t_proyecto?.label as never;
+    const me = { actor: "user" as const, device: "prueba" };
+    store.applySchema(
+      {
+        op: "add_field",
+        type: "t_proyecto",
+        field: {
+          id: "f_madre",
+          key: "madre",
+          name: "Madre",
+          type: "relation",
+          relation: { target: "t_proyecto", many: false },
+          label: l,
+        },
+      },
+      me,
+    );
+    for (const name of ["Talleres", "Becas"])
+      expect(
+        (await tool("create_collection", { name, description: "Inventada.", inside: "Proyecto" }))
+          .error,
+      ).toBe(false);
+    const typeOf = (name: string) =>
+      Object.values(store.schema().types).find((t) => t.name === name)?.id as string;
+    expect(
+      (await tool("create", { collection: "Talleres", title: "Taller inventado" })).error,
+    ).toBe(false);
+    store.setAiAccess(typeOf("Becas"), "private", "prueba");
+    const beca = createByName(
+      store,
+      typeOf("Becas"),
+      { title: "Beca inventada", values: {} },
+      "prueba",
+    );
+    const madre = async (value: string) => {
+      const r = await tool("create", {
+        collection: "Proyecto",
+        title: `Hijo de ${value}`,
+        properties: { Madre: value },
+      });
+      return r.error ? r.text : (await tool("read", { id: r.json.id })).json.properties.Madre;
+    };
+    const plan = String((await tool("read", { id: idOf("proyectos/boni-plan.md") })).json.title);
+    expect(await madre(idOf("proyectos/boni-plan.md"))).toBe(plan);
+    expect(await madre("taller INVENTADO")).toBe("Taller inventado");
+    expect(await madre("Beca inventada")).toContain('no "Beca inventada" to point to');
+    expect(await madre(beca)).toContain("to point to");
     store.applySchema({ op: "remove_field", type: "t_proyecto", field: "f_madre" }, me);
   });
 });
