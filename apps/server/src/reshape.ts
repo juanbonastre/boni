@@ -1,13 +1,23 @@
 /**
  * A reshape of an account's tree (docs/clases.md §7, step 5): new collections, records moved into them keeping their
  * ids and every value, collections put inside others, Boni Calendar's calendars pointed at a branch split by a
- * field, and what is left empty or no longer needed archived or sent to the trash. The plan is data, in the account's
- * own words (nothing of them in code, D-14); a dry run says what it would do, with counts only (never a record's
- * content), and the real one is one run in one transaction, undone whole (`undoReshape`).
+ * field, and what is left empty or no longer needed archived or sent to the trash. It also clears away what the
+ * vault left (step 7): links by a note's file name made relations, titles from a note's heading or file name, its
+ * embeds out of the text, fields archived, and last the hidden path each note had. The plan is data, in the
+ * account's own words (nothing of them in code, D-14); a dry run says what it would do, with counts only (never a
+ * record's content), and the real one is one run in one transaction, undone whole (`undoReshape`).
  */
 import { randomUUID } from "node:crypto";
-import { branch, type FieldDef, type Label, label, type TypeDef } from "@boni/entities";
-import { type AiLevel, levelRank, type OpMeta, type UserStore, type Writes } from "@boni/store";
+import { branch, type FieldDef, type Label, label, ownFields, type TypeDef } from "@boni/entities";
+import {
+  type AiLevel,
+  BODY,
+  levelRank,
+  type OpMeta,
+  type UserStore,
+  type Writes,
+} from "@boni/store";
+import { leadingTitle } from "@boni/views";
 import {
   CALENDAR_DEFS,
   calendarDefs,
@@ -17,6 +27,7 @@ import {
 } from "./calendarStore.ts";
 import { keyFrom } from "./data.ts";
 import { listPages } from "./pages.ts";
+import { HASH_FIELD, PATH_FIELD } from "./paths.ts";
 
 /** A record named by its title in a collection (an area for a calendar, say). */
 export interface RecordRef {
@@ -47,6 +58,8 @@ export interface ReshapePlan {
   moves?: {
     from: string;
     to: string;
+    /** Only the records whose field (by id or name; a text: the path a note had, say) starts with `prefix`. */
+    where?: { field: string; prefix: string };
     ifSet?: { field: string; to: string };
     set?: Record<string, RecordRef | string | number | boolean>;
     drop?: string[];
@@ -60,6 +73,33 @@ export interface ReshapePlan {
   }[];
   /** Collections archived (only empty ones) and the user's pages sent to the trash (by their title). */
   trash?: { collections?: string[]; pages?: string[] };
+  /**
+   * Fields whose values name records the vault's way (`[[name]]`, the file name a note had, a title) made relations
+   * to `to` (her whole branch, D-18); the text they were stays, archived.
+   */
+  links?: { collection: string; field: string; to: string }[];
+  /** Records without a title take their text's first heading (out of the text), else the file name their note had. */
+  titles?: boolean;
+  /**
+   * Fields of collections there are: new ones (`add`), and ones archived (kept, out of sight; "all": every one in
+   * sight but the title).
+   */
+  fields?: {
+    collection: string;
+    add?: { name: string; type: "text" | "longtext" | "number" | "checkbox" | "date" }[];
+    archive?: string[] | "all";
+  }[];
+  /** Records named by their title: values set (a field by its name or id) and, with `text: ""`, their text emptied. */
+  records?: {
+    title: string;
+    in: string;
+    set?: Record<string, string | number | boolean>;
+    text?: "";
+  }[];
+  /** Obsidian's embeds (`![[…]]`) out of every record's text. */
+  embeds?: "remove";
+  /** The hidden fields where the vault's import kept each note's path and hash, archived in every collection. */
+  vaultPaths?: "archive";
 }
 
 export interface ReshapeReport {
@@ -96,6 +136,13 @@ const isRef = (v: unknown): v is RecordRef => isObj(v) && isStr(v.title) && isSt
 const strings = (v: unknown) => Array.isArray(v) && v.every((x) => isStr(x));
 const empty = (v: unknown) =>
   v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+/** "wiki/temas/rutina-de-ejercicios.md" → "rutina-de-ejercicios": the name a note's file had. */
+const fileName = (path: string) => (path.split("/").pop() ?? path).replace(/\.md$/i, "").trim();
+/** A file's name as words: "rutina-de-ejercicios" → "Rutina de ejercicios". */
+const readable = (name: string) => {
+  const w = name.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
+  return (w[0]?.toUpperCase() ?? "") + w.slice(1);
+};
 
 /** What is wrong with a plan's shape (closed: an unknown key is a mistake, not ignored). */
 export function planErrors(plan: unknown): string[] {
@@ -104,7 +151,23 @@ export function planErrors(plan: unknown): string[] {
     for (const k of Object.keys(o)) if (!allowed.includes(k)) errors.push(`${where}: «${k}» sobra`);
   };
   if (!isObj(plan)) return ["el plan no es un objeto JSON"];
-  keys(plan, ["collections", "mothers", "moves", "calendars", "trash"], "plan");
+  keys(
+    plan,
+    [
+      "collections",
+      "mothers",
+      "moves",
+      "calendars",
+      "trash",
+      "links",
+      "titles",
+      "fields",
+      "records",
+      "embeds",
+      "vaultPaths",
+    ],
+    "plan",
+  );
   const list = (k: string) => {
     const v = plan[k];
     if (v === undefined) return [];
@@ -141,8 +204,10 @@ export function planErrors(plan: unknown): string[] {
   }
   for (const [i, m] of list("moves").entries()) {
     const w = `moves[${i}]`;
-    keys(m, ["from", "to", "ifSet", "set", "drop"], w);
+    keys(m, ["from", "to", "where", "ifSet", "set", "drop"], w);
     if (!isStr(m.from) || !isStr(m.to)) errors.push(`${w}: faltan «from» y «to»`);
+    if (m.where !== undefined && !(isObj(m.where) && isStr(m.where.field) && isStr(m.where.prefix)))
+      errors.push(`${w}: «where» es { field, prefix }`);
     if (m.ifSet !== undefined && !(isObj(m.ifSet) && isStr(m.ifSet.field) && isStr(m.ifSet.to)))
       errors.push(`${w}: «ifSet» es { field, to }`);
     if (m.set !== undefined) {
@@ -168,6 +233,45 @@ export function planErrors(plan: unknown): string[] {
     )
       errors.push(`${w}: «make» es { event, task? }`);
   }
+  for (const [i, k] of list("links").entries()) {
+    keys(k, ["collection", "field", "to"], `links[${i}]`);
+    if (!isStr(k.collection) || !isStr(k.field) || !isStr(k.to))
+      errors.push(`links[${i}]: es { collection, field, to }`);
+  }
+  if (plan.titles !== undefined && plan.titles !== true) errors.push("«titles» es true");
+  const KINDS = ["text", "longtext", "number", "checkbox", "date"];
+  for (const [i, f] of list("fields").entries()) {
+    const w = `fields[${i}]`;
+    keys(f, ["collection", "add", "archive"], w);
+    if (!isStr(f.collection)) errors.push(`${w}: falta «collection»`);
+    if (
+      f.add !== undefined &&
+      !(
+        Array.isArray(f.add) &&
+        f.add.every((a) => isObj(a) && isStr(a.name, 80) && KINDS.includes(String(a.type)))
+      )
+    )
+      errors.push(`${w}: «add» es una lista de { name, type: ${KINDS.join(" | ")} }`);
+    if (f.archive !== undefined && f.archive !== "all" && !strings(f.archive))
+      errors.push(`${w}: «archive» es una lista o "all"`);
+  }
+  for (const [i, r] of list("records").entries()) {
+    const w = `records[${i}]`;
+    keys(r, ["title", "in", "set", "text"], w);
+    if (!isStr(r.title, 300) || !isStr(r.in)) errors.push(`${w}: faltan «title» e «in»`);
+    if (
+      r.set !== undefined &&
+      !(
+        isObj(r.set) &&
+        Object.values(r.set).every((v) => ["string", "number", "boolean"].includes(typeof v))
+      )
+    )
+      errors.push(`${w}: «set» es un objeto de valores`);
+    if (r.text !== undefined && r.text !== "") errors.push(`${w}: «text» solo puede ser ""`);
+  }
+  if (plan.embeds !== undefined && plan.embeds !== "remove") errors.push('«embeds» es "remove"');
+  if (plan.vaultPaths !== undefined && plan.vaultPaths !== "archive")
+    errors.push('«vaultPaths» es "archive"');
   const t = plan.trash;
   if (t !== undefined) {
     if (!isObj(t)) errors.push("«trash» es { collections?, pages? }");
@@ -248,9 +352,30 @@ class Reshape {
       ["propuestas", () => this.pending(plan)],
       ["colecciones", () => this.collections(plan.collections ?? [])],
       ["madres", () => this.mothers(plan.mothers ?? [])],
+      ["enlaces", () => this.links(plan.links ?? [])],
+      [
+        "títulos",
+        () => {
+          if (plan.titles) this.titles();
+        },
+      ],
       ["registros", () => this.moves(plan.moves ?? [])],
+      ["campos", () => this.fields(plan.fields ?? [])],
+      ["registros nombrados", () => this.records(plan.records ?? [])],
+      [
+        "incrustaciones",
+        () => {
+          if (plan.embeds) this.embeds();
+        },
+      ],
       ["calendarios", () => this.calendars(plan.calendars ?? [])],
       ["papelera", () => this.trash(plan.trash ?? {})],
+      [
+        "rutas",
+        () => {
+          if (plan.vaultPaths) this.vaultPaths();
+        },
+      ],
     ];
     for (const [, step] of steps) {
       try {
@@ -339,8 +464,9 @@ class Reshape {
       const mother = c.inside ? this.typeRef(c.inside) : undefined;
       const motherDef = mother ? this.types[mother] : undefined;
       const source = c.fields ? this.types[this.typeRef(c.fields.from)] : undefined;
+      // A field by its id, or by its exact name.
       const fields: FieldDef[] = (c.fields?.ids ?? []).map((id) => {
-        const f = source?.fields.find((x) => x.id === id && !x.archived);
+        const f = source?.fields.find((x) => (x.id === id || x.name === id) && !x.archived);
         if (!f) throw new Problem(`«${source?.name}» no tiene el campo ${id}`);
         const { from: _from, ...own } = f;
         return c.fields?.hidden?.includes(id) ? { ...own, hidden: true } : own;
@@ -417,7 +543,13 @@ class Reshape {
       const from = this.typeRef(mv.from);
       const to = this.typeRef(mv.to);
       const alt = mv.ifSet ? this.typeRef(mv.ifSet.to) : undefined;
-      const records = this.store.entities(from);
+      const whereField = mv.where ? this.fieldOf(from, mv.where.field).id : null;
+      const records = this.store
+        .entities(from)
+        .filter(
+          (e) =>
+            !mv.where || String(e.values[whereField as string] ?? "").startsWith(mv.where.prefix),
+        );
       const target = (values: Record<string, unknown>) =>
         alt && mv.ifSet && !empty(values[mv.ifSet.field]) ? alt : to;
       // Nothing more open than it was: a closed collection's records never land where the AI sees more.
@@ -463,9 +595,17 @@ class Reshape {
         }
         writesFor.set(t, writes);
       }
+      // A record keeps its title where its new collection keeps titles (they may name it in another field).
+      const fromTitle = (this.types[from] as TypeDef).titleField;
       for (const e of records) {
         const t = target(e.values);
-        this.store.retype(e.id, t, this.meta, writesFor.get(t));
+        const toTitle = (this.types[t] as TypeDef).titleField;
+        const title = e.values[fromTitle];
+        const writes =
+          toTitle !== fromTitle && !empty(title)
+            ? { ...writesFor.get(t), [toTitle]: { value: title, label: this.l } }
+            : writesFor.get(t);
+        this.store.retype(e.id, t, this.meta, writes);
         count.set(t, (count.get(t) ?? 0) + 1);
       }
       const parts = (alt ? [to, alt] : [to])
@@ -481,8 +621,9 @@ class Reshape {
             })
             .join(", ")}`
         : "";
+      const which = mv.where ? ` (los de «${mv.where.prefix}»)` : "";
       this.lines.push(
-        `«${this.name(from)}»: ${records.length} registros${parts.length ? ` → ${parts.join(", ")}` : ""}${setText}.`,
+        `«${this.name(from)}»${which}: ${records.length} registros${parts.length ? ` → ${parts.join(", ")}` : ""}${setText}.`,
       );
     }
   }
@@ -601,6 +742,298 @@ class Reshape {
       );
     }
     if (list.length) saveCalendarDefs(this.store, next);
+  }
+
+  // ------------------------------------------------------------ what the vault left
+
+  /** The user's collections there are (not Boni's own, not archived). */
+  private userTypes(): TypeDef[] {
+    return Object.values(this.types).filter((t) => !t.system && !t.archived);
+  }
+
+  /** A field of a collection by its id or exact name (not archived). */
+  private fieldOf(type: string, ref: string): FieldDef {
+    const def = this.types[type] as TypeDef;
+    const f = def.fields.find((x) => !x.archived && (x.id === ref || x.name === ref));
+    if (!f) throw new Problem(`«${def.name}» no tiene el campo ${ref}`);
+    return f;
+  }
+
+  /** A field id no collection uses yet. */
+  private freeField(base: string): string {
+    const taken = new Set(Object.values(this.types).flatMap((t) => t.fields.map((f) => f.id)));
+    const root = base.slice(0, 60);
+    let id = root;
+    for (let n = 2; taken.has(id); n++) id = `${root}_${n}`;
+    return id;
+  }
+
+  private links(list: NonNullable<ReshapePlan["links"]>): void {
+    for (const k of list) {
+      const type = this.typeRef(k.collection);
+      const old = this.fieldOf(type, k.field);
+      if (old.from)
+        throw new Problem(`«${old.name}» es de «${this.name(old.from)}»: nombra esa colección`);
+      if (!["text", "longtext", "select", "multiselect"].includes(old.type))
+        throw new Problem(
+          `«${old.name}» de «${this.name(type)}» es ${old.type}: no guarda enlaces`,
+        );
+      const target = this.typeRef(k.to);
+      const schema = this.store.schema();
+      // A record of the target's branch by the file name its note had, by its title or by its id (any case).
+      const names = new Map<string, string>();
+      const ids = new Set<string>();
+      const kinds = branch(schema, target);
+      for (const t of kinds)
+        for (const e of this.store.entities(t)) {
+          ids.add(e.id);
+          const path = e.values[PATH_FIELD];
+          if (typeof path === "string") names.set(fileName(path).toLowerCase(), e.id);
+        }
+      for (const t of kinds) {
+        const tf = this.types[t]?.titleField;
+        for (const e of this.store.entities(t)) {
+          const title = tf
+            ? String(e.values[tf] ?? "")
+                .trim()
+                .toLowerCase()
+            : "";
+          if (title && !names.has(title)) names.set(title, e.id);
+        }
+      }
+      const find = (v: string): string | null => {
+        const s = v.trim();
+        if (ids.has(s)) return s;
+        const m = /^\[\[([^\]|#]+)/.exec(s)?.[1]?.trim() ?? s;
+        return names.get((m.split("/").pop() ?? m).toLowerCase()) ?? null;
+      };
+      // A value as the names it holds: an option by its name; a text, each `[[link]]` in it (or the whole text).
+      const named = (v: unknown): string[] =>
+        (Array.isArray(v) ? v : empty(v) ? [] : [v]).flatMap((x) => {
+          if (old.type === "select" || old.type === "multiselect")
+            return [old.options?.find((o) => o.id === x)?.name ?? String(x)];
+          const s = String(x);
+          const links = [...s.matchAll(/\[\[([^\]]+)\]\]/g)].map((m) => `[[${m[1]}]]`);
+          return links.length ? links : s.trim() ? [s] : [];
+        });
+      const found = new Map<string, string[]>();
+      let withValues = 0;
+      let missing = 0;
+      let many = old.type === "multiselect";
+      for (const t of branch(schema, type))
+        for (const e of this.store.entities(t)) {
+          const list = named(e.values[old.id]);
+          if (!list.length) continue;
+          withValues++;
+          if (list.length > 1) many = true;
+          const got = list.map(find);
+          missing += got.filter((x) => !x).length;
+          const linked = [...new Set(got.filter((x): x is string => !!x))];
+          if (linked.length) found.set(e.id, linked);
+        }
+      // The text it was, kept and archived; the relation takes its name and its place.
+      const at = (this.types[type] as TypeDef).fields.indexOf(old);
+      this.store.applySchema(
+        {
+          op: "rename_field",
+          type,
+          field: old.id,
+          key: `${old.key}_texto`.slice(0, 64),
+          name: `${old.name} (texto)`.slice(0, 80),
+          label: this.l,
+        },
+        this.meta,
+      );
+      this.store.applySchema(
+        { op: "archive_field", type, field: old.id, archived: true },
+        this.meta,
+      );
+      const id = this.freeField(`${old.id}_rel`);
+      this.store.applySchema(
+        {
+          op: "add_field",
+          type,
+          field: {
+            id,
+            key: old.key,
+            name: old.name,
+            type: "relation",
+            relation: { target, many },
+            label: this.l,
+          },
+          at,
+        },
+        this.meta,
+      );
+      let links = 0;
+      for (const [rid, got] of found) {
+        this.store.update(rid, { [id]: { value: many ? got : got[0], label: this.l } }, this.meta);
+        links += many ? got.length : 1;
+      }
+      this.lines.push(
+        `«${this.name(type)}»: «${old.name}» pasa a ser una relación con «${this.name(target)}» (${withValues} registros, ${links} enlaces${
+          missing ? `; ${missing} no encuentran registro y quedan solo en el texto archivado` : ""
+        }).`,
+      );
+    }
+  }
+
+  private titles(): void {
+    let fromHead = 0;
+    let fromFile = 0;
+    let still = 0;
+    for (const t of this.userTypes()) {
+      const tf = t.fields.find((f) => f.id === t.titleField);
+      if (tf && tf.type !== "text") continue;
+      for (const e of this.store.entities(t.id)) {
+        if (String(e.values[t.titleField] ?? "").trim()) continue;
+        const head = leadingTitle(e.body ?? "");
+        const path = e.values[PATH_FIELD];
+        const writes: Writes = {};
+        if (head?.title) {
+          writes[t.titleField] = { value: head.title, label: this.l };
+          writes[BODY] = { value: head.rest.trim() ? head.rest : null, label: this.l };
+          fromHead++;
+        } else if (typeof path === "string" && fileName(path)) {
+          writes[t.titleField] = { value: readable(fileName(path)), label: this.l };
+          fromFile++;
+        } else {
+          still++;
+          continue;
+        }
+        this.store.update(e.id, writes, this.meta);
+      }
+    }
+    const parts = [
+      fromHead ? `${fromHead} del encabezado de su texto` : "",
+      fromFile ? `${fromFile} del nombre de su fichero` : "",
+    ].filter(Boolean);
+    this.lines.push(
+      `Títulos: ${fromHead + fromFile} registros sin título lo toman${parts.length ? `: ${parts.join(", ")}` : ""}${
+        still ? `; ${still} siguen sin título` : ""
+      }.`,
+    );
+  }
+
+  private fields(list: NonNullable<ReshapePlan["fields"]>): void {
+    for (const c of list) {
+      const type = this.typeRef(c.collection);
+      const def = () => this.types[type] as TypeDef;
+      const added: string[] = [];
+      for (const a of c.add ?? []) {
+        if (def().fields.some((f) => !f.archived && f.name.toLowerCase() === a.name.toLowerCase()))
+          throw new Problem(`«${def().name}» ya tiene un campo «${a.name}»`);
+        const key = keyFrom(a.name);
+        this.store.applySchema(
+          {
+            op: "add_field",
+            type,
+            field: {
+              id: this.freeField(`f_${key}`),
+              key,
+              name: a.name,
+              type: a.type,
+              label: this.l,
+            },
+          },
+          this.meta,
+        );
+        added.push(`«${a.name}»`);
+      }
+      const gone: string[] = [];
+      const archive =
+        c.archive === "all"
+          ? ownFields(def())
+              .filter((f) => !f.archived && !f.hidden && f.id !== def().titleField)
+              .map((f) => f.id)
+          : (c.archive ?? []);
+      for (const ref of archive) {
+        const f = this.fieldOf(type, ref);
+        if (f.id === def().titleField)
+          throw new Problem(`«${f.name}» es el título de «${def().name}»`);
+        if (f.from) throw new Problem(`«${f.name}» es de «${this.name(f.from)}»: archívalo allí`);
+        this.store.applySchema(
+          { op: "archive_field", type, field: f.id, archived: true },
+          this.meta,
+        );
+        gone.push(`«${f.name}»`);
+      }
+      const parts = [
+        added.length ? `campos nuevos ${added.join(", ")}` : "",
+        gone.length ? `${gone.length} campos archivados (${gone.join(", ")})` : "",
+      ].filter(Boolean);
+      if (parts.length) this.lines.push(`«${def().name}»: ${parts.join("; ")}.`);
+    }
+  }
+
+  private records(list: NonNullable<ReshapePlan["records"]>): void {
+    let emptied = 0;
+    for (const r of list) {
+      const id = this.value({ title: r.title, in: r.in }) as string;
+      const e = this.store.get(id)?.entity;
+      if (!e) continue;
+      const writes: Writes = {};
+      for (const [ref, v] of Object.entries(r.set ?? {}))
+        writes[this.fieldOf(e.type, ref).id] = { value: v, label: this.l };
+      if (r.text === "" && e.body) {
+        writes[BODY] = { value: null, label: this.l };
+        emptied++;
+      }
+      if (Object.keys(writes).length) this.store.update(id, writes, this.meta);
+    }
+    if (list.length)
+      this.lines.push(
+        `Registros nombrados: ${list.length} con sus valores${
+          emptied ? `; ${emptied} se quedan sin texto (dejan de salir como notas en el árbol)` : ""
+        }.`,
+      );
+  }
+
+  private embeds(): void {
+    const EMBED = /!\[\[[^\]\n]*\]\]/g;
+    let notes = 0;
+    let count = 0;
+    for (const t of this.userTypes())
+      for (const e of this.store.entities(t.id)) {
+        const body = e.body ?? "";
+        const hits = body.match(EMBED);
+        if (!hits) continue;
+        const next = body
+          .replace(/^[ \t]*!\[\[[^\]\n]*\]\][ \t]*(\r?\n|$)/gm, "")
+          .replace(EMBED, "")
+          .replace(/\n{3,}/g, "\n\n")
+          .trimEnd();
+        this.store.update(
+          e.id,
+          { [BODY]: { value: next ? `${next}\n` : null, label: this.l } },
+          this.meta,
+        );
+        notes++;
+        count += hits.length;
+      }
+    this.lines.push(
+      `Incrustaciones de Obsidian (![[…]]): ${count} fuera del texto de ${notes} registros.`,
+    );
+  }
+
+  private vaultPaths(): void {
+    let n = 0;
+    for (const t of this.userTypes()) {
+      const own = t.fields.filter(
+        (f) => (f.id === PATH_FIELD || f.id === HASH_FIELD) && !f.archived && !f.from,
+      );
+      for (const f of own)
+        this.store.applySchema(
+          { op: "archive_field", type: t.id, field: f.id, archived: true },
+          this.meta,
+        );
+      if (own.length) n++;
+    }
+    this.lines.push(
+      n
+        ? `La ruta y la huella que dejó el vault se archivan en ${n} colecciones: nada las lee ya.`
+        : "Ninguna colección guarda ya la ruta del vault.",
+    );
   }
 
   private trash(t: NonNullable<ReshapePlan["trash"]>): void {

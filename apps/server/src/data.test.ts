@@ -145,34 +145,13 @@ describe("collections as databases (plan PR 19)", () => {
     expect(
       ((await call(t, "GET", "/api/data/types/t_libro/rows")).body.rows as unknown[]).length,
     ).toBe(1);
-    // A note imported without a title property shows its file's name.
-    host.store(1).applySchema(
-      {
-        op: "add_field",
-        type: "t_libro",
-        field: {
-          id: "f_vault_path",
-          key: "vault_path",
-          name: "Ruta",
-          type: "text",
-          hidden: true,
-          label: L,
-        },
-      },
-      { actor: "system" },
-    );
-    const noTitle = host
-      .store(1)
-      .create(
-        "t_libro",
-        { f_vault_path: { value: "Boni/Libros/La tregua.md", label: L } },
-        { actor: "import" },
-      );
+    // A record without a title is listed and found by its id all the same (nothing is found by a path, D-17).
+    const noTitle = host.store(1).create("t_libro", {}, { actor: "import" });
     const listed = (await call(t, "GET", "/api/data/types/t_libro/rows")).body.rows as {
       id: string;
       values: Record<string, unknown>;
     }[];
-    expect(listed.find((r) => r.id === noTitle.entity.id)?.values.f_titulo).toBe("La tregua");
+    expect(listed.find((r) => r.id === noTitle.entity.id)?.values.f_titulo).toBeUndefined();
     // Opened by its id, it says its collection (Boni Calendar's "Abrir en Boni"; notes have no paths).
     const at = await call(t, "GET", `/api/data/rows/${noTitle.entity.id}`);
     expect(at.body.row).toMatchObject({ id: noTitle.entity.id, type: "t_libro" });

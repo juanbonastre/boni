@@ -1,11 +1,10 @@
 import type { UserStore } from "@boni/store";
 import type { CategoryKind, Debt, Movement } from "@boni/views";
-import { findByPath } from "../data.ts";
-import { movementPaths, storeNotes } from "../money/book.ts";
+import { storeNotes, titleOf } from "../money/book.ts";
 import { categoryRows } from "../money/collections.ts";
-import { MOV, noteName, type Person, parseDebt, parseMovement, titleFromSlug } from "./finanzas.ts";
+import { type Person, parseDebt, parseMovement } from "./finanzas.ts";
 
-/** What the API v1 reads of an account's money (`StoreMoney`), and where a captured movement goes. */
+/** What the API v1 reads of an account's money (`StoreMoney`). */
 export interface MoneySource {
   movements(): Movement[];
   debts(): Debt[];
@@ -14,19 +13,34 @@ export interface MoneySource {
   categoryKinds?(): Map<string, CategoryKind>;
   people(): Person[];
   fingerprint(): string;
-  freeMovementPath(date: string, base: string): string;
 }
 
 const MOVEMENTS = "t_movimiento";
 const DEBTS = "t_deuda";
-const CATEGORIES_NOTE = "registros/finanzas/categorias.md";
-/** In the order of their notes' paths (as the first Boni read them): lists that keep the first seen match. */
-const byPath = <T extends { path: string }>(l: T[]) =>
-  [...l].sort((a, b) => (a.path < b.path ? -1 : 1));
+/** By date and time, then title and id: lists that keep the first seen match read them always in this order. */
+const byDate = <T extends { title: string; id: string; fm: Record<string, unknown> }>(l: T[]) => {
+  const key = (n: T) => `${String(n.fm.date ?? "")} ${String(n.fm.time ?? "")}`;
+  return [...l].sort((a, b) =>
+    key(a) !== key(b)
+      ? key(a) < key(b)
+        ? -1
+        : 1
+      : a.title !== b.title
+        ? a.title < b.title
+          ? -1
+          : 1
+        : a.id < b.id
+          ? -1
+          : 1,
+  );
+};
+/** "[[name|alias]]" → "name": a value written before people were a relation, until the reshape converts it. */
+const oldLink = (s: string) => /^\[\[([^\]|#]+)/.exec(s)?.[1]?.trim() ?? s;
 
 /**
- * The money read from Boni itself (Juan, 2026-10-23: no more vault). The same records the first Boni's notes gave
- * (`parseMovement`, `parseDebt` over each entry's properties by name), so every chart gives the same numbers.
+ * The money read from Boni itself (Juan, 2026-10-23: no more vault): each movement and debt from its properties
+ * by name (`parseMovement`, `parseDebt`), named by its id; a movement's people by their names, so the charts
+ * group and label them as people.
  */
 export class StoreMoney implements MoneySource {
   // No parameter properties: the server runs TypeScript with Node's type stripping (AGENTS.md).
@@ -39,32 +53,38 @@ export class StoreMoney implements MoneySource {
     return Object.values(this.store.schema().types).find((t) => t.key === key)?.id ?? null;
   }
 
+  /** What a list names, by name: a record by its title, anything else as it was written. */
+  private named(v: unknown): string[] {
+    const list = v === null || v === undefined || v === "" ? [] : Array.isArray(v) ? v : [v];
+    return list
+      .map((x) => String(x).trim())
+      .filter(Boolean)
+      .map((x) => titleOf(this.store, x) || oldLink(x));
+  }
+
   movements(): Movement[] {
-    return byPath(storeNotes(this.store)(MOVEMENTS, "movement"))
-      .map((n) => parseMovement({ ...n.fm, path: n.path }))
+    return byDate(storeNotes(this.store)(MOVEMENTS))
+      .map((n) =>
+        parseMovement({
+          ...n.fm,
+          id: n.id,
+          people: this.named(n.fm.people),
+          invited: this.named(n.fm.invited),
+          related: this.named(n.fm.related),
+        }),
+      )
       .filter((m): m is Movement => m !== null);
   }
 
   debts(): Debt[] {
-    return byPath(storeNotes(this.store)(DEBTS, "debt"))
-      .map((n) => parseDebt({ ...n.fm, path: n.path }))
+    return byDate(storeNotes(this.store)(DEBTS))
+      .map((n) => parseDebt({ ...n.fm, id: n.id }))
       .filter((d): d is Debt & { date: string | null } => d !== null);
   }
 
-  /** The rows of Categorías; before it exists, the `categories` list of registros/finanzas/categorias.md. */
+  /** The rows of Categorías (none before the money has them). */
   categories(): string[] {
-    const own = categoryRows(this.store);
-    if (own) return own.map((c) => c.name);
-    let hit: { type: string; id: string };
-    try {
-      hit = findByPath(this.store, CATEGORIES_NOTE);
-    } catch {
-      return [];
-    }
-    const note = storeNotes(this.store)(hit.type, "").find((n) => n.id === hit.id);
-    const v = note?.fm.categories;
-    const list = Array.isArray(v) ? v : typeof v === "string" ? v.split(/[\n,]/) : [];
-    return list.map((x) => String(x).trim()).filter(Boolean);
+    return (categoryRows(this.store) ?? []).map((c) => c.name);
   }
 
   categoryKinds(): Map<string, CategoryKind> {
@@ -74,10 +94,11 @@ export class StoreMoney implements MoneySource {
   people(): Person[] {
     const type = this.typeOf("persona");
     if (!type) return [];
-    return storeNotes(this.store)(type, "person")
+    return storeNotes(this.store)(type)
+      .filter((n) => n.title.trim())
       .map((n) => ({
-        slug: noteName(n.path),
-        label: titleFromSlug(noteName(n.path)),
+        id: n.id,
+        label: n.title.trim(),
         hint: typeof n.fm.summary === "string" && n.fm.summary ? n.fm.summary : null,
       }))
       .sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
@@ -91,15 +112,5 @@ export class StoreMoney implements MoneySource {
       parts.push(`${t}:${list.length}:${Math.max(0, ...list.map((s) => s.entity.updated))}`);
     }
     return parts.join("|");
-  }
-
-  freeMovementPath(date: string, base: string): string {
-    const folder = `${MOV}/${date.slice(0, 4)}/${date.slice(5, 7)}`;
-    const taken = movementPaths(this.store);
-    for (let n = 1; n < 1000; n++) {
-      const path = `${folder}/${n === 1 ? base : `${base}-${n}`}.md`;
-      if (!taken.has(path)) return path;
-    }
-    throw new Error("could not find a free note name");
   }
 }

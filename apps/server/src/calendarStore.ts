@@ -29,17 +29,14 @@ import {
 } from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
 import { ghostRows } from "./data.ts";
-import { HASH_FIELD, PATH_FIELD } from "./paths.ts";
 
 /**
  * Boni Calendar over Boni's own collections (Juan, 2026-10-22: no vault, one truth): the API the apps use (a
  * snapshot, changes since a version, a live stream, writes with a conflict check, reminders in a definition,
  * series kept going), with the account's store as the truth. Each calendar is a collection (a type) and its
- * definition (columns, mapping, colour, reminders) lives in the store's settings (`calendar/defs`), copied from
- * `_system/colecciones/` when the collections moved to Boni.
+ * definition (columns, mapping, colour, reminders) lives in the store's settings (`calendar/defs`).
  *
- * A row is an entity seen as the apps know it: its id the entity's own (docs/clases.md §4: no paths; a device
- * that still sends a row by the note path it was known by until 2026-10-29 is understood, and told the id); its
+ * A row is an entity seen as the apps know it: its id the entity's own (docs/clases.md §4 and D-17: no paths); its
  * values by property name (the name of the column, or the field's own name), options by their names, relations as
  * `[[title]]`. A write changes only the properties that differ from what the store has, with Juan's label from
  * that device.
@@ -230,7 +227,7 @@ export class StoreCalendar implements CalendarSource {
   private defsKey = "";
   private placed: Placed[] = [];
   private rows = new Map<string, Row>();
-  /** Row id -> entity id (a row keeps the note path it came from as its id). */
+  /** Row id -> entity id. */
   private entityOf = new Map<string, string>();
   private rowIdOf = new Map<string, string>();
   private changedAt = new Map<string, { version: number; by: string | null }>();
@@ -264,11 +261,11 @@ export class StoreCalendar implements CalendarSource {
     const def = this.store.schema().types[type];
     if (!def) return [];
     return def.fields
-      .filter((f) => !f.hidden && !f.archived && f.id !== PATH_FIELD && f.id !== HASH_FIELD)
+      .filter((f) => !f.hidden && !f.archived)
       .map((f) => ({ prop: p.def.columns.find((c) => c.name === f.name)?.id ?? f.name, field: f }));
   }
 
-  /** The entity of `type` that `[[name]]` names: by its title or its note's file name (any case). */
+  /** The entity of `type` that `[[name]]` (or a plain name) names: by its title (any case). */
   private linked(type: string, link: string): string | null {
     const name = (/^\[\[([^\]|#]+)/.exec(link.trim())?.[1] ?? link)
       .trim()
@@ -278,11 +275,8 @@ export class StoreCalendar implements CalendarSource {
     if (!name) return null;
     const tf = this.store.schema().types[type]?.titleField;
     for (const s of this.store.list(type)) {
-      const path = s.entity.values[PATH_FIELD];
-      const file =
-        typeof path === "string" ? path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, "") : "";
       const title = tf ? String(s.entity.values[tf] ?? "") : "";
-      if (file.toLowerCase() === name || title.toLowerCase() === name) return s.entity.id;
+      if (title.trim().toLowerCase() === name) return s.entity.id;
     }
     return null;
   }
@@ -675,18 +669,11 @@ export class StoreCalendar implements CalendarSource {
     this.poll();
     const aliases: Record<string, string> = {};
     // A row the device knows by an older id is the same record: the temporary id of one it made and sent again
-    // before it heard back, or the note's path rows were known by until 2026-10-29 (the last made, as it showed).
+    // before it heard back.
     const known = (id: string): string => {
       if (this.rows.has(id) || isProposalId(id)) return id;
       const made = this.madeFrom.get(id);
-      const hit =
-        made && this.rows.has(made)
-          ? made
-          : this.store
-              .findByValue(PATH_FIELD, id)
-              .map((h) => h.id)
-              .filter((x) => this.rows.has(x))
-              .at(-1);
+      const hit = made && this.rows.has(made) ? made : undefined;
       if (!hit) return id;
       aliases[id] = hit;
       return hit;

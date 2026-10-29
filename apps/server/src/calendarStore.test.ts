@@ -88,7 +88,7 @@ function env(two = false): { store: UserStore; cal: StoreCalendar } {
       }
     : NOTES;
   const store = openUserStore(":memory:");
-  seed(store, types, notes);
+  seeded.set(store, seed(store, types, notes));
   const cal = new StoreCalendar(store, { write: true, pollMs: 60_000 });
   cleanups.push(() => {
     cal.close();
@@ -99,8 +99,8 @@ function env(two = false): { store: UserStore; cal: StoreCalendar } {
 const rowOf = async (cal: StoreCalendar, id: string) =>
   (await cal.snapshot()).rows.find((r) => r.id === id) as Row;
 /** The record an invented note became (rows are known by the record's id). */
-const idAt = (store: UserStore, path: string) =>
-  store.findByValue("f_vault_path", path)[0]?.id as string;
+const seeded = new WeakMap<UserStore, Map<string, string>>();
+const idAt = (store: UserStore, path: string) => seeded.get(store)?.get(path) as string;
 
 describe("the calendar over Boni's collections", () => {
   it("serves the rows as the apps know them: the record's id, values by property", async () => {
@@ -154,7 +154,6 @@ describe("the calendar over Boni's collections", () => {
     const id = made.ok ? (made.aliases["ev-nuevo"] as string) : "";
     const entityAt = (x: string) => store.get(x);
     expect(entityAt(id)?.entity.values.f_title).toBe("Reunión inventada");
-    expect(entityAt(id)?.entity.values.f_vault_path).toBeUndefined();
     expect(store.schema().types.t_docencia?.fields.some((f) => f.name === "avisos")).toBe(true);
     expect((await rowOf(cal, id)).values.avisos).toBe("1h");
 
@@ -193,8 +192,7 @@ describe("the calendar over Boni's collections", () => {
     expect(store.get(entityId)?.entity).toMatchObject({ type: "t_planes" });
     expect(store.get(entityId)?.entity.deleted).toBeUndefined();
     // Its project stays; its area becomes the new calendar's.
-    const areaId = (p: string) =>
-      store.list("t_area").find((e) => e.entity.values.f_vault_path === `areas/${p}.md`)?.entity.id;
+    const areaId = (p: string) => idAt(store, `areas/${p}.md`);
     const e = store.list("t_planes").find((x) => x.entity.values.f_title === "Clase de ejemplo");
     expect(e?.entity.values.f_project).toBeTruthy();
     expect(e?.entity.values.f_area).toBe(areaId("planes"));
@@ -249,7 +247,7 @@ describe("the calendar over Boni's collections", () => {
     const { store, cal } = env();
     const v0 = (await cal.snapshot()).version;
     // Boni's own page changes the class (another writer of the same store).
-    const e = store.list("t_docencia").find((x) => x.entity.values.f_vault_path === CLASS);
+    const e = store.get(idAt(store, CLASS));
     store.update(
       e?.entity.id as string,
       { f_title: { value: "Clase cambiada en Boni", label: e?.labels.f_title as never } },
@@ -389,7 +387,7 @@ describe("the calendar over Boni's collections", () => {
     const { columns, mapping } = RAW;
     const agendaDef = { ...RAW, columns: columns.filter((c) => c.id !== "completed") };
     const store = openUserStore(":memory:");
-    seed(
+    const ids = seed(
       store,
       [
         { key: "area", name: "Área", folder: "areas/" },
@@ -420,9 +418,7 @@ describe("the calendar over Boni's collections", () => {
         "agenda/eventos/Dentista.md": '---\ntitle: "Dentista"\ndate: "2026-11-05"\n---\n',
       },
     );
-    const area = (n: string) =>
-      store.list("t_area").find((e) => e.entity.values.f_vault_path === `areas/${n}.md`)?.entity
-        .id as string;
+    const area = (n: string) => ids.get(`areas/${n}.md`) as string;
     const make = { event: "t_evento", task: "t_tarea" };
     saveCalendarDefs(store, [
       {
@@ -518,20 +514,9 @@ describe("the calendar over Boni's collections", () => {
     ]);
   });
 
-  it("a row known by an older id is the same record: its note's path, or a new row's id sent again", async () => {
+  it("a new row sent again before the device heard back is the same record", async () => {
     const { store, cal } = env();
     const snap = await cal.snapshot();
-    const id = idAt(store, CLASS);
-    const row = await rowOf(cal, id);
-    // A device that still knows the class by its note's path (rows were known by it until 2026-10-29).
-    const r = await cal.apply(
-      snap.version,
-      [{ op: "upsert", row: { ...row, id: CLASS, values: { ...row.values, startTime: "09:00" } } }],
-      "token-a",
-      "portatil",
-    );
-    expect(r).toMatchObject({ ok: true, aliases: { [CLASS]: id } });
-    expect(store.get(id)?.entity.values.f_starttime).toBe("09:00");
     // A new row sent again before the device heard back: still one record.
     const fresh: Row = {
       id: "ev-doble",
@@ -540,12 +525,7 @@ describe("the calendar over Boni's collections", () => {
       created: 0,
       updated: 0,
     };
-    const a = await cal.apply(
-      r.ok ? r.version : 0,
-      [{ op: "upsert", row: fresh }],
-      "token-a",
-      "portatil",
-    );
+    const a = await cal.apply(snap.version, [{ op: "upsert", row: fresh }], "token-a", "portatil");
     const b = await cal.apply(
       a.ok ? a.version : 0,
       [{ op: "upsert", row: fresh }],

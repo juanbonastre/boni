@@ -1,12 +1,13 @@
 import { extname } from "node:path";
 
 /**
- * Where a note or an attachment was when it came into Boni: the hidden fields Juan's first import left on what it
- * brought (2026-10-20 to 23; the vault itself is gone), still how a calendar row, a money note or a statement is
- * found until notes stop having paths (docs/clases.md, PR «Sin rutas»). And the type of an attachment by its name.
+ * The fields of the files a collection keeps (an attachment's bytes and the folder it is in), the type of an
+ * attachment by its name, and the hidden fields the vault's import left on what it brought (the path each note had
+ * and its hash): nothing finds a record by them (D-17); only the reshape reads them, to clear them away
+ * (`reshape.ts`).
  */
 
-/** Hidden fields where each entry keeps the path its note had, and that note's hash. */
+/** Hidden fields where each entry the vault's import brought keeps the path its note had, and that note's hash. */
 export const PATH_FIELD = "f_vault_path";
 export const HASH_FIELD = "f_vault_hash";
 /** The field of an attachment's row that holds the file. */

@@ -59,20 +59,30 @@ beforeAll(async () => {
     store,
     [
       { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
+      { key: "categoria", name: "Categorías", folder: "registros/finanzas/categorias/" },
       {
         key: "movimiento",
         name: "Movimiento",
         folder: "registros/finanzas/movimientos/",
         sensitivity: "sensitive",
-        fields: { date: "date", people: { type: "relation", to: "persona", many: true } },
+        fields: {
+          date: "date",
+          category: { type: "relation", to: "categoria" },
+          people: { type: "relation", to: "persona", many: true },
+        },
       },
-      { key: "nota", name: "Nota", folder: "", fields: { categories: { type: "multiselect" } } },
+      { key: "nota", name: "Nota", folder: "" },
       { key: "privado", name: "Privado", folder: "private/", zone: "private" },
     ],
     {
-      "registros/finanzas/categorias.md":
-        "---\ntype: wiki\ncategories:\n  - comida/restaurante\n  - bebida/cafe\n  - ingreso/nomina\n---\n",
-      "registros/personas/lucia-ferri.md": "---\ntype: person\nsummary: Amiga inventada\n---\n",
+      ...Object.fromEntries(
+        ["comida/restaurante", "bebida/cafe", "ingreso/nomina"].map((c) => [
+          `registros/finanzas/categorias/${c.replace("/", "-")}.md`,
+          `---\nnombre: ${c}\n---\n\n# ${c}\n`,
+        ]),
+      ),
+      "registros/personas/lucia-ferri.md":
+        "---\ntype: person\nsummary: Amiga inventada\n---\n\n# Lucia Ferri\n",
       "registros/finanzas/movimientos/2026/10/2026-10-02-cafe.md": movement(
         "2026-10-02",
         -1.6,
@@ -176,7 +186,13 @@ describe("the Boni API v1", () => {
     expect(screen.components[0].fields.map((f: { id: string }) => f.id)).toContain("amount");
     expect((await json("GET", "/api/v1/options/people?q=luc")).body).toEqual({
       source: "people",
-      options: [{ value: "lucia-ferri", label: "Lucia Ferri", hint: "Amiga inventada" }],
+      options: [
+        {
+          value: ids.get("registros/personas/lucia-ferri.md"),
+          label: "Lucia Ferri",
+          hint: "Amiga inventada",
+        },
+      ],
     });
     expect(
       (await json("GET", "/api/v1/options/merchants")).body.options.map(
@@ -292,12 +308,12 @@ describe("the Boni API v1", () => {
     const req = example("action-request");
     const ok = await json("POST", "/api/v1/actions", req);
     expect(ok.body).toEqual(example("action-result-ok"));
-    // An entry of Movimiento with the note's values, by the path that note would have had.
-    const path = "registros/finanzas/movimientos/2026/10/2026-10-12-1830-menu-con-lucia.md";
+    // A record of Movimiento with the capture's values, titled by its concept and amount; the person by the
+    // name this (older) request gives her, as her record.
     const made = () =>
       store
         .list("t_movimiento")
-        .filter((s) => String(s.entity.values.f_vault_path).startsWith(path.slice(0, -3)));
+        .filter((s) => s.entity.values.f_title === "Menu con Lucia 12,50 EUR");
     expect(made()).toHaveLength(1);
     expect(made()[0]?.entity.values).toMatchObject({
       f_amount: -12.5,
@@ -325,7 +341,8 @@ describe("the Boni API v1", () => {
       ...req,
       client_id: "1f8a4c9e-3b5d-4e1a-9c2f-7d6b5a4e3c21",
     });
-    expect(again.body.message).toBe("Guardado: 2026-10-12-1830-menu-con-lucia-2");
+    expect(again.body.message).toBe("Guardado: Menu con Lucia 12,50 EUR");
+    expect(made()).toHaveLength(2);
   });
 
   it("refuses an invalid capture without keeping it, so it can be sent again", async () => {
@@ -341,7 +358,7 @@ describe("the Boni API v1", () => {
       client_id: id,
       values: { amount: "3,2", account: "efectivo", category: "bebida/cafe", concept: "Café" },
     });
-    expect(good.body).toMatchObject({ status: "ok", message: "Guardado: 2026-10-19-cafe" });
+    expect(good.body).toMatchObject({ status: "ok", message: "Guardado: Café 3,20 EUR" });
     expect(
       (await json("POST", "/api/v1/actions", { action: "otra.cosa", client_id: id, values: {} }))
         .body,

@@ -1,6 +1,6 @@
 import { addDays } from "@boni/views";
 import { cmp, type Dec, dec, parseDec, share } from "./decimal.ts";
-import type { MovementDraft } from "./note.ts";
+import type { MovementDraft } from "./movement.ts";
 
 /**
  * "Apuntar gasto": the form the clients render, its validation and the movement draft, ported from the
@@ -140,7 +140,11 @@ function isoDate(s: string): string | null {
 export interface CaptureContext {
   /** null: unknown (the lists could not be read): those checks are skipped. */
   categories: string[] | null;
-  people: ReadonlySet<string> | null;
+  /**
+   * The people a capture may name, to the record each is (Persona): by its id, as the form offers them, or by the
+   * name a device offered before people were records (its title as a slug).
+   */
+  people: ReadonlyMap<string, string> | null;
   /** When the user saved, as civil date and "HH:MM" in the server's zone; null if the app did not say. */
   createdAt: { date: string; time: string } | null;
   today: string;
@@ -174,6 +178,7 @@ export function validateCapture(
     const unknown = who.filter((p) => !c.people?.has(p));
     if (unknown.length) errors.people = `No encuentro: ${unknown.join(", ")}`;
   }
+  const record = (p: string) => c.people?.get(p) ?? p;
   let myShare = shared ? decimal(values.my_share) : null;
   if (shared) {
     if (!who.length) errors.people = "Si pagaste por otros, di con quien";
@@ -203,8 +208,8 @@ export function validateCapture(
       merchant,
       date: d,
       time,
-      people: who,
-      invited,
+      people: dedupe(who.map(record)),
+      invited: dedupe(invited.map(record)),
       related: [],
       myShare,
     },

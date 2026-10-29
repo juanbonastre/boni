@@ -24,13 +24,13 @@ import {
 } from "./audit.ts";
 import { listUsers, login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
 import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
+import { createByName } from "./byName.ts";
 import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import {
   createCollection,
   createRow,
   DataError,
   deleteCollection,
-  findByPath,
   getRow,
   listRows,
   listTypes,
@@ -48,7 +48,6 @@ import {
 } from "./data.ts";
 import type { Db } from "./db.ts";
 import type { Feeds } from "./feeds.ts";
-import { entityFromNote } from "./fromNote.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { MailError, type Mails } from "./mail.ts";
 import { mcpAnswer } from "./mcp.ts";
@@ -252,18 +251,16 @@ export function makeApp(opts: ServerOptions): App {
     store: v1store,
     tz,
     writable,
-    // "Apuntar gasto": the movement goes into Boni, with the path its note would have had.
-    intoBoni: (account, path, text, device) => {
+    // "Apuntar gasto": the movement goes into Boni as a record of Movimiento.
+    intoBoni: (account, movement, device) => {
       const store = moneyStore(account);
-      if (!store) return false;
-      entityFromNote(store, "t_movimiento", path, text, device);
-      return true;
+      return store ? createByName(store, "t_movimiento", movement, device) : null;
     },
-    outOfBoni: (account, path, device) => {
+    outOfBoni: (account, record, device) => {
       const store = moneyStore(account);
       if (!store) return false;
       try {
-        removeRow(store, findByPath(store, path).id, device);
+        removeRow(store, record, device);
       } catch {
         return false;
       }

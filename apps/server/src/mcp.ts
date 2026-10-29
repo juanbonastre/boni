@@ -20,7 +20,7 @@ import {
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
-import { FILE_FIELD, FOLDER_FIELD, HASH_FIELD, mimeOf, PATH_FIELD } from "./paths.ts";
+import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 
 /**
  * Boni's MCP server (Juan, 2026-10-22: everything done through vault-mcp moves to Boni). The assistants that
@@ -36,8 +36,8 @@ import { FILE_FIELD, FOLDER_FIELD, HASH_FIELD, mimeOf, PATH_FIELD } from "./path
  * What a model may see is the agent's own view (`readStore`): a restricted or private collection, or a part of
  * one, does not exist here; an opaque one is listed but its values are not given. Writes go only to what is
  * visible, labelled as written by a model (`model`, from this device: never authority for Boni's agent), each
- * call one run that `undo` (or Boni) takes back whole. A note is found by its id, by its collection and title, or
- * (while notes keep one) by the path it had in the vault.
+ * call one run that `undo` (or Boni) takes back whole. A note is found by its id, or by its collection and title
+ * (D-17: records are known by their id, never by a path).
  */
 
 const PROTOCOL = "2025-06-18";
@@ -90,8 +90,7 @@ function view(c: Ctx) {
     if (!t) throw new ToolFail(`no collection "${name}" (see collections)`);
     return t;
   };
-  const fields = (t: TypeDef) =>
-    t.fields.filter((f) => !f.hidden && !f.archived && f.id !== PATH_FIELD && f.id !== HASH_FIELD);
+  const fields = (t: TypeDef) => t.fields.filter((f) => !f.hidden && !f.archived);
   const titleOf = (id: string) => {
     const e = ro.get(id);
     const t = e ? c.store.schema().types[e.entity.type] : undefined;
@@ -157,12 +156,10 @@ function view(c: Ctx) {
                 files: [],
               });
           }
-    const path = s.entity.values[PATH_FIELD];
     return {
       id: s.entity.id,
       collection: t.name,
       title: opaque ? undefined : String(s.entity.values[t.titleField] ?? ""),
-      ...(typeof path === "string" ? { path } : {}),
       updated: new Date(s.entity.updated).toISOString(),
       version: s.entity.version,
       ...(opaque ? { opaque: true } : { properties: props }),
@@ -171,14 +168,10 @@ function view(c: Ctx) {
   };
   const find = (ref: Args): StoredEntity => {
     const id = optStr(ref.id, "id", 80);
-    const path = optStr(ref.path, "path", 500);
     const title = optStr(ref.title, "title", 300);
     let s: StoredEntity | null = null;
     if (id) s = ro.get(id);
-    else if (path) {
-      const hit = c.store.findByValue(PATH_FIELD, path)[0];
-      s = hit ? ro.get(hit.id) : null;
-    } else if (title && ref.collection) {
+    else if (title && ref.collection) {
       const t = typeNamed(String(ref.collection));
       const want = title.trim().toLowerCase();
       const hits = ro.list(t.id, { deep: true }).filter(
@@ -190,7 +183,7 @@ function view(c: Ctx) {
       if (hits.length > 1)
         throw new ToolFail(`${hits.length} notes of ${t.name} have that title: use the id`);
       s = hits[0] ?? null;
-    } else throw new ToolFail("give id, collection and title, or path");
+    } else throw new ToolFail("give the id, or the collection and the title");
     if (!s || s.entity.deleted !== undefined) throw new ToolFail("not found (or not for a model)");
     return s;
   };
@@ -284,13 +277,17 @@ function writer(c: Ctx) {
 
 // ------------------------------------------------------------------ the tools
 
-/** The reconciliation's inputs (statements, rules, categories), read-only here. */
-function moneyFiles(c: Ctx): MoneyFiles {
-  // What Juan keeps from the models: a closed or opaque Movimientos or Deudas is not read here either.
+/** What Juan keeps from the models: a closed or opaque Movimientos or Deudas is not reconciled here either. */
+function moneyOpen(c: Ctx): void {
   const levels = c.store.aiAccess();
   for (const t of ["t_movimiento", "t_deuda"])
     if (closedToAi(levels[t]) || levels[t] === "opaque")
       throw new ToolFail("Movimientos or Deudas are kept from the models (Lo que ve la IA)");
+}
+
+/** The reconciliation's statements, read-only here. */
+function moneyFiles(c: Ctx): MoneyFiles {
+  moneyOpen(c);
   return storeFiles(c.store);
 }
 
@@ -310,23 +307,13 @@ const REF = {
   id: { type: "string", description: "The note's id (from search, query or read)" },
   collection: { type: "string", description: "With `title`: the collection the note is in" },
   title: { type: "string", description: "With `collection`: the note's exact title" },
-  path: {
-    type: "string",
-    description: "The path it had in the vault, while notes keep one (e.g. proyectos/boni-plan.md)",
-  },
 };
 
-/** The record the user keeps as instructions for assistants: the one the setting names, or the vault's AGENTS.md. */
+/** The record the user keeps as instructions for assistants: the one the setting names. */
 function instructionsOf(c: Ctx, v: ReturnType<typeof view>): StoredEntity | null {
   const id = c.store.setting(INSTRUCTIONS);
   const named = id ? v.ro.get(id) : null;
-  if (named && named.entity.deleted === undefined) return named;
-  // Where the vault kept them (docs/clases.md §4): found by that path once, then by id, so the note can move.
-  const hit = c.store.findByValue(PATH_FIELD, "AGENTS.md")[0];
-  const s = hit ? v.ro.get(hit.id) : null;
-  if (!s || s.entity.deleted !== undefined) return null;
-  c.store.setSetting(INSTRUCTIONS, s.entity.id);
-  return s;
+  return named && named.entity.deleted === undefined ? named : null;
 }
 
 /** The first sentence of a tool's description: enough to choose it (its whole text comes with tools/list). */
@@ -507,8 +494,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "read",
-    description:
-      "One note with its properties and text: by id, by collection and exact title, or by the vault path it had.",
+    description: "One note with its properties and text: by id, or by collection and exact title.",
     inputSchema: obj(REF),
     call(c, a) {
       const v = view(c);
@@ -562,7 +548,7 @@ const TOOLS: Tool[] = [
         /^(private|restricted)\//.test(path) ||
         !name.includes(".")
       )
-        throw new ToolFail("path: a vault-relative file path (not a note, not a zone)");
+        throw new ToolFail("path: a folder and a file name (not a note)");
       const folder = path.slice(0, path.lastIndexOf("/"));
       const taken = c.store
         .entities(t.id)
@@ -682,7 +668,6 @@ const TOOLS: Tool[] = [
                 id: note.id,
                 collection: note.collection,
                 title: note.title,
-                path: note.path,
               },
             },
           ];
@@ -835,7 +820,7 @@ const TOOLS: Tool[] = [
   {
     name: "finanzas_import",
     description:
-      "Monthly reconciliation, step 2 (procedure: the note registros/finanzas/procedimiento-conciliacion.md): reads the bank statements (Revolut, ING) kept in Archivos in the folder registros/finanzas/extractos (added with upload_file), joins each new line with the movement Juan noted in the app or creates a pending movement, and applies the collection Reglas. Dry run unless dry_run is false; `output` is the report for Juan. Unclear lines are listed, never imported.",
+      "Monthly reconciliation, step 2 (its procedure is a note: search «conciliación»): reads the bank statements (Revolut, ING) kept in Archivos in the folder registros/finanzas/extractos (added with upload_file), joins each new line with the movement Juan noted in the app or creates a pending movement, and applies the collection Reglas. Dry run unless dry_run is false; `output` is the report for Juan. Unclear lines are listed, never imported.",
     inputSchema: obj({ dry_run: { type: "boolean", default: true }, reason: { type: "string" } }),
     call(c, a) {
       const apply = a.dry_run === false;
@@ -871,7 +856,8 @@ const TOOLS: Tool[] = [
       if (!/^\d{4}-\d{2}$/.test(month)) throw new ToolFail("month: YYYY-MM");
       const apply = a.dry_run === false;
       const run = apply ? `mcp-${randomUUID()}` : undefined;
-      const r = reconcileClose(c.store, moneyFiles(c), { month, apply, ...(run ? { run } : {}) });
+      moneyOpen(c);
+      const r = reconcileClose(c.store, { month, apply, ...(run ? { run } : {}) });
       return {
         output: r.report.join("\n"),
         ready: r.ready.length,

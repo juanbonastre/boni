@@ -844,8 +844,9 @@ nada si abría (`readStore`). Pendiente: qué modelos ven qué, y aplicar los ni
 **Hecho (2026-10-28, PR «Fuera el vault», servidor y paquetes):** la cuenta de Juan iba sin vault desde el 2026-10-23
 (`--vault-off`); ahora el código tampoco lo tiene: fuera `@boni/mirror`, `@boni/vault-import`, el espejo del servidor,
 el modo `core` y la lectura del vault de la API v1 (principio A-07). La exportación escribe su propio Markdown. Lo que
-queda de las rutas del vault (el campo oculto `f_vault_path`, que identifica notas y filas del calendario) se va con el
-PR «Sin rutas»; el modo sin servidor de Boni Calendar, con el PR de las apps del calendario.
+quedaba de las rutas del vault (el campo oculto `f_vault_path`) se fue con el PR «Sin rutas» (2026-10-29): nada
+identifica un registro por su ruta (D-17) y la reestructuración la archiva; el modo sin servidor de Boni Calendar, con el
+PR de las apps del calendario.
 
 ### 9.4 Obsidian, por fuera (decidido, Juan, 2026-10-20)
 Obsidian es una puerta de entrada a Boni, no una pieza del núcleo. Quien ya vive en Obsidian puede usar Boni Calendar

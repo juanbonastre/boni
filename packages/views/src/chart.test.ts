@@ -48,6 +48,15 @@ describe("the chart engine gives what the Python one gave", () => {
     });
 });
 
+describe("people in the money charts", () => {
+  it("are named as Boni names them (a record's title); an old file name reads as its words", () => {
+    const label = moneyProfile.labeler("people", []);
+    expect(label("María-José Ejemplo")).toBe("María-José Ejemplo");
+    expect(label("ana-ejemplo")).toBe("Ana Ejemplo");
+    expect(label("")).toBe("(nadie)");
+  });
+});
+
 describe("the kind of each category", () => {
   it("by name gives the first Boni's records; the account's kinds change only what they say", () => {
     const same = moneyRecords(

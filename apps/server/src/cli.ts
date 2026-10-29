@@ -20,7 +20,6 @@ import {
 } from "@boni/identity";
 import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
-import { moneyCollections } from "./money/collections.ts";
 import { planFromNote, reshape, undoReshape } from "./reshape.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -44,9 +43,6 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts restore <name> <backups/user-<id>-<day>.db.sealed> <out.db>
  *       opens one of the account's encrypted copies into a plain file; never over a file.
  *   node src/cli.ts token <name> <device>          a session for an assistant's tools (Boni's MCP), shown once
- *   node src/cli.ts money <name> [--apply]
- *       the money's categories note and reglas.csv into the collections Categorías and Reglas, each movement's
- *       category into a relation to its row (dry run by default; applied, one run that undo takes back).
  *   node src/cli.ts reshape <name> (--plan <file.json> | --plan-note <id>) [--apply]
  *       the account's tree reshaped as a plan says (src/reshape.ts): a dry run with counts by default; applied, one
  *       run in one transaction. The plan may live in a note of the account (its first ```json block).
@@ -187,19 +183,6 @@ try {
     console.log(`A session for ${name} on the device "${r.device.name}" (${r.device.trust}).`);
     console.log("Its token (shown only now; revoke it with: revoke <name> <device>):");
     console.log(r.token);
-  } else if (cmd === "money") {
-    const [name] = args.filter((a) => !a.startsWith("--"));
-    const user = listUsers(db).find((u) => u.name === name);
-    if (!name || !user) throw new Error("Usage: money <name> [--apply]");
-    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
-    const store = openUserStore(join(dirname(paths.system), "users", `${user.id}.db`));
-    try {
-      const r = moneyCollections(store, { apply: args.includes("--apply") });
-      for (const line of r.report) console.log(line);
-      if (r.run) console.log(`Undo it all: the run ${r.run} (Boni's Registro or MCP undo).`);
-    } finally {
-      store.close();
-    }
   } else if (cmd === "reshape") {
     const usage =
       "Usage: reshape <name> (--plan <file.json> | --plan-note <id>) [--apply] | reshape <name> --undo <run>";
@@ -258,7 +241,7 @@ try {
     }
   } else {
     console.log(
-      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | money <name> [--apply] | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run>",
+      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run>",
     );
   }
 } catch (e) {

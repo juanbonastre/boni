@@ -7,15 +7,17 @@ import {
   type TypeDef,
 } from "@boni/entities";
 import type { AiLevel, UserStore, Writes, Zone } from "@boni/store";
+import { leadingTitle } from "@boni/views";
+import { createByName, propWrites } from "./byName.ts";
 import { calendarDefs, saveCalendarDefs } from "./calendarStore.ts";
-import { entityFromNote, propWrites } from "./fromNote.ts";
 import { FILE_FIELD, FOLDER_FIELD, HASH_FIELD, mimeOf, PATH_FIELD } from "./paths.ts";
 
 /**
  * Invented data for the server's tests and the e2e (never real notes): collections made as declared, and their
  * entries from note texts by the path each would have had, the way Juan's own data came into Boni (every value
- * `imported` from its note, the path kept in its hidden field, a note titled by its first heading). A file that is
- * not a note becomes a row of a collection that keeps files.
+ * `imported` from its note, a note titled by its first heading or else its file's name). A file that is not a note
+ * becomes a row of a collection that keeps files. `vaultPaths` also keeps each note's path in the hidden fields the
+ * vault's import left, for the tests of what clears them away (`reshape.ts`).
  */
 
 /** A property's field: its type, or a list's options, or the collection a link points to (by its key). */
@@ -49,6 +51,7 @@ export interface TypeSpec {
   parent?: string;
 }
 
+const baseName = (p: string) => (p.split("/").pop() ?? p).replace(/\.md$/i, "");
 const SCHEMA = label("imported", "public", [{ kind: "vault", id: "seed" }]);
 const keyOf = (name: string) => {
   const k = name
@@ -81,7 +84,7 @@ function fieldOf(prop: string, spec: FieldSpec, name = prop): FieldDef {
 }
 
 /** A type's fields as declared: the calendar's columns, then the other declared properties. */
-function fieldsOf(t: TypeSpec): { fields: FieldDef[]; title: string } {
+function fieldsOf(t: TypeSpec, vaultPaths: boolean): { fields: FieldDef[]; title: string } {
   const out: FieldDef[] = [];
   let title = "";
   const cal = t.calendar as
@@ -117,7 +120,7 @@ function fieldsOf(t: TypeSpec): { fields: FieldDef[]; title: string } {
       { id: FOLDER_FIELD, key: "carpeta", name: "Carpeta", type: "text", label: SCHEMA },
     );
   // A daughter inherits her mother's (the path included).
-  if (t.parent) return { fields: out, title };
+  if (t.parent || !vaultPaths) return { fields: out, title };
   out.push(
     {
       id: PATH_FIELD,
@@ -147,7 +150,7 @@ export function seed(
   store: UserStore,
   types: readonly TypeSpec[],
   notes: Readonly<Record<string, string | Uint8Array>>,
-  o: { run?: string } = {},
+  o: { run?: string; vaultPaths?: boolean } = {},
 ): Map<string, string> {
   const meta = { actor: "import" as const, device: "seed", ...(o.run ? { run: o.run } : {}) };
   // A note goes to the collection with the longest folder that holds it (one that keeps files only when no
@@ -191,7 +194,7 @@ export function seed(
   };
   // The collections first, then their links (a link may point to a collection made after it).
   for (const t of types) {
-    const { fields, title } = fieldsOf(withOptions(t));
+    const { fields, title } = fieldsOf(withOptions(t), !!o.vaultPaths);
     const mother = t.parent ? store.schema().types[typeId(t.parent)] : undefined;
     const def: TypeDef = {
       id: typeId(t.key),
@@ -208,7 +211,9 @@ export function seed(
     store.applySchema({ op: "create_type", type: def }, meta);
   }
   for (const t of types)
-    for (const f of fieldsOf(withOptions(t)).fields.filter((x) => x.type === "relation"))
+    for (const f of fieldsOf(withOptions(t), !!o.vaultPaths).fields.filter(
+      (x) => x.type === "relation",
+    ))
       store.applySchema({ op: "add_field", type: typeId(t.key), field: f }, meta);
   for (const t of types) {
     if (t.zone) store.setZone(typeId(t.key), t.zone, "seed");
@@ -225,22 +230,47 @@ export function seed(
     integrity: "imported" as const,
     source: { kind: "vault" as const, id: path },
   });
+  const isRelation = (def: TypeDef, prop: string) =>
+    def.fields.some((f) => f.type === "relation" && (f.name === prop || f.key === keyOf(prop)));
   for (const [path, content] of Object.entries(notes).sort(([a], [b]) => (a < b ? -1 : 1))) {
     const t = typeOf(path);
     const type = typeId(t.key);
-    if (path.endsWith(".md") && typeof content === "string") {
-      ids.set(
-        path,
-        entityFromNote(store, type, path, content, "seed", {
-          from: from(path),
-          headingTitle: true,
-          ...(o.run ? { run: o.run } : {}),
-        }),
-      );
-      continue;
-    }
     const def = store.schema().types[type] as TypeDef;
     const l = label("imported", def.sensitivity, [from(path).source], !!def.thirdParty);
+    if (path.endsWith(".md") && typeof content === "string") {
+      const parsed = parseNote(content);
+      if (parsed.error) throw new Error(`seed: ${path} does not parse: ${parsed.error}`);
+      const titleName = def.fields.find((f) => f.id === def.titleField)?.name ?? "";
+      const own =
+        parsed.values[titleName] ??
+        parsed.values[def.fields.find((f) => f.id === def.titleField)?.key ?? ""];
+      const head = typeof own === "string" && own ? null : leadingTitle(parsed.body);
+      const values = Object.fromEntries(
+        Object.entries(parsed.values).filter(([prop]) => !isRelation(def, prop)),
+      );
+      const id = createByName(
+        store,
+        type,
+        {
+          title: typeof own === "string" && own ? own : (head?.title ?? baseName(path)),
+          values,
+          body: head ? head.rest : parsed.body,
+        },
+        "seed",
+        { from: from(path), ...(o.run ? { run: o.run } : {}) },
+      );
+      if (o.vaultPaths)
+        store.update(
+          id,
+          {
+            [PATH_FIELD]: { value: path, label: l },
+            [HASH_FIELD]: { value: `seed-${path}`, label: l },
+          },
+          meta,
+        );
+      ids.set(path, id);
+      continue;
+    }
     const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
     const name = path.slice(path.lastIndexOf("/") + 1);
     const writes: Writes = {
@@ -250,19 +280,26 @@ export function seed(
         value: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
         label: l,
       },
-      [PATH_FIELD]: { value: path, label: l },
+      ...(o.vaultPaths ? { [PATH_FIELD]: { value: path, label: l } } : {}),
     };
     ids.set(path, store.create(type, writes, meta).entity.id);
   }
-  // The links, now that every entry exists.
+  // The links, now that every entry exists: `[[name]]` is the note of that file name (any folder).
+  const byFile = new Map<string, string>();
+  for (const [path, id] of ids) byFile.set(baseName(path).toLowerCase(), id);
+  const linked = (v: unknown) => {
+    const s = String(v ?? "").trim();
+    const m = /^\[\[([^\]|#]+)/.exec(s)?.[1]?.trim();
+    return m ? (byFile.get((m.split("/").pop() ?? m).toLowerCase()) ?? s) : s;
+  };
   for (const [path, content] of Object.entries(notes)) {
     if (!path.endsWith(".md") || typeof content !== "string") continue;
     const type = typeId(typeOf(path).key);
     const def = store.schema().types[type] as TypeDef;
     const links = Object.fromEntries(
-      Object.entries(parseNote(content).values).filter(([prop]) =>
-        def.fields.some((f) => f.type === "relation" && (f.name === prop || f.key === keyOf(prop))),
-      ),
+      Object.entries(parseNote(content).values)
+        .filter(([prop]) => isRelation(def, prop))
+        .map(([prop, v]) => [prop, Array.isArray(v) ? v.map(linked) : linked(v)]),
     );
     if (!Object.keys(links).length) continue;
     const l = (f: FieldDef | null) =>

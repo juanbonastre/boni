@@ -145,13 +145,17 @@ const nice = (s: string) => {
   const t = s.replaceAll("-", " ").trim();
   return (t[0]?.toUpperCase() ?? "") + t.slice(1);
 };
-/** "ana-ejemplo" -> "Ana Ejemplo" (Python's title_from_slug). */
-const titleFromSlug = (slug: string) =>
-  slug
-    .split("-")
-    .filter((w) => w)
-    .map((w) => (w[0]?.toUpperCase() ?? "") + w.slice(1))
-    .join(" ");
+/**
+ * A person as the chart names her: by her name (Boni gives a record's title); a key that is still a note's file
+ * name ("ana-ejemplo", the first Boni's) reads as its words (Python's title_from_slug).
+ */
+const personLabel = (k: string) =>
+  /^[a-z0-9]+(-[a-z0-9]+)*$/.test(k)
+    ? k
+        .split("-")
+        .map((w) => (w[0]?.toUpperCase() ?? "") + w.slice(1))
+        .join(" ")
+    : k;
 const ACCOUNTS: Record<string, string> = { efectivo: "Efectivo", revolut: "Revolut", ing: "ING" };
 const EMPTY_LABEL: Record<string, string> = {
   group: "(sin grupo)",
@@ -201,7 +205,7 @@ export const moneyProfile: Profile<MoneyRec> = {
       if (!k) return EMPTY_LABEL[field] ?? "(vacio)";
       if (field === "group") return nice(k);
       if (field === "account") return ACCOUNTS[k] ?? nice(k);
-      if (field === "people" || field === "invited") return titleFromSlug(k);
+      if (field === "people" || field === "invited") return personLabel(k);
       if (field === "status" || field === "source") return nice(k);
       return k;
     };

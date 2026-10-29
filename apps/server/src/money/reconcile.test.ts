@@ -1,15 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseNote, patchNote } from "@boni/calendar";
 import { describe, expect, it } from "vitest";
 import {
   type Book,
   closeMonth,
   importStatements,
-  linkName,
-  MOV,
   type MoneyNote,
   matchRule,
+  type NewMovement,
+  type PropValue,
   parseRules,
   prettyMerchant,
   type Rule,
@@ -19,7 +18,8 @@ import { parseDt, parseNum, readRows } from "./sheets.ts";
 
 /**
  * The reconciliation ported from finanzas.py, checked with the script's own tests (invented statements and
- * notes, never real ones: the repo is public). The book here is plain note texts by path.
+ * records, never real ones: the repo is public). The book here is plain records by id, as Boni keeps them: a
+ * relation (people, a debt's movement and person, what a movement settles) holds ids.
  */
 const TODAY = "2026-10-12";
 const CATS = [
@@ -33,28 +33,24 @@ const CATS = [
 const RULES = parseRules(
   "pattern,merchant,category,notes\nspotify,Spotify,suscripciones,\nmercadona,Mercadona,comida/supermercado,\n",
 );
-const APP_NOTE = `---
-type: movement
-date: 2026-09-05
-time: "21:40"
-amount: -60.00
-currency: EUR
-my_share: 20.00
-account: revolut
-category: comida/restaurante
-merchant:
-concept: "Cena cumple"
-people: ["[[ana]]", "[[luis]]"]
-invited: ["[[luis]]"]
-related: []
-status: pendiente
-source: manual
-bank_ref:
-created: 2026-09-05
----
-
-# Cena cumple 60,00 EUR
-`;
+/** What Juan noted in the app: a dinner with Ana and Luis, Luis invited. */
+const CENA: Record<string, unknown> = {
+  date: "2026-09-05",
+  time: "21:40",
+  amount: -60,
+  currency: "EUR",
+  my_share: 20,
+  account: "revolut",
+  category: "comida/restaurante",
+  merchant: null,
+  concept: "Cena cumple",
+  people: ["p_ana", "p_luis"],
+  invited: ["p_luis"],
+  status: "pendiente",
+  source: "manual",
+  bank_ref: null,
+  created: "2026-09-05",
+};
 const REVOLUT_EN = `Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance
 CARD_PAYMENT,Current,2026-09-02 10:11:12,2026-09-03 08:00:00,Spotify,-10.99,0.00,EUR,COMPLETED,100.00
 CARD_PAYMENT,Current,2026-09-05 21:43:09,2026-09-06 09:00:00,La Tasca Ejemplo,-60.00,0.00,EUR,COMPLETED,40.00
@@ -69,31 +65,48 @@ Pago con tarjeta;Actual;2026-09-10 09:30:00;2026-09-11 09:00:00;MERCADONA AV EJE
 `;
 const FIXTURES = join(import.meta.dirname, "testdata");
 
-/** Movement and debt notes by path, as the vault had them. */
-class NotesBook implements Book {
-  notes = new Map<string, string>([[`${MOV}/2026/09/2026-09-05-2140-cena-cumple.md`, APP_NOTE]]);
-  private of(prefix: string, type: string): MoneyNote[] {
-    return [...this.notes.entries()]
-      .filter(([p]) => p.startsWith(prefix))
-      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-      .map(([p, t]) => ({ id: p, path: p, fm: parseNote(t).values as Record<string, unknown> }))
-      .filter((n) => n.fm.type === type);
+interface Rec {
+  kind: "movement" | "debt";
+  title: string;
+  fm: Record<string, unknown>;
+  body: string;
+}
+/** Movements and debts by id, and the people they name. */
+class RecordsBook implements Book {
+  records = new Map<string, Rec>([
+    ["m_cena", { kind: "movement", title: "Cena cumple 60,00 EUR", fm: { ...CENA }, body: "" }],
+  ]);
+  people = new Map([
+    ["p_ana", "Ana"],
+    ["p_luis", "Luis"],
+  ]);
+  made: string[] = [];
+  private of(kind: Rec["kind"]): MoneyNote[] {
+    return [...this.records.entries()]
+      .filter(([, r]) => r.kind === kind)
+      .map(([id, r]) => ({ id, title: r.title, fm: { ...r.fm } }));
   }
-  movements = () => this.of(MOV, "movement");
-  debts = () => this.of("registros/finanzas/deudas", "debt");
-  taken = (p: string) => this.notes.has(p);
-  create(path: string, text: string) {
-    this.notes.set(path, text);
+  movements = () => this.of("movement");
+  debts = () => this.of("debt");
+  title = (id: string) => this.records.get(id)?.title ?? this.people.get(id) ?? "";
+  create(m: NewMovement) {
+    const id = `m_new${this.made.length + 1}`;
+    this.records.set(id, { kind: "movement", title: m.title, fm: { ...m.values }, body: m.body });
+    this.made.push(id);
+    return id;
   }
-  update(id: string, props: Record<string, string | number | boolean | null>) {
-    this.notes.set(id, patchNote(this.notes.get(id) as string, props));
+  update(id: string, props: Record<string, PropValue>) {
+    const r = this.records.get(id);
+    if (r) Object.assign(r.fm, props);
   }
-  fm = (p: string) => parseNote(this.notes.get(p) as string).values as Record<string, unknown>;
+  fm = (id: string) => this.records.get(id)?.fm as Record<string, unknown>;
+  /** The movement made from the bank line with that text. */
+  byBank = (text: string) =>
+    [...this.records.entries()].find(([, r]) => r.fm.bank_text === text)?.[0] as string;
 }
 const csv = (name: string, text: string) => ({ name, bytes: Buffer.from(text, "utf8") });
 const run = (book: Book, files: { name: string; bytes: Buffer }[], apply = true) =>
   importStatements(book, files, { rules: RULES, apply, today: TODAY });
-const base = (p: string) => p.split("/").pop();
 
 describe("helpers (finanzas.py's)", () => {
   it("reads numbers and dates as banks write them", () => {
@@ -119,11 +132,9 @@ describe("helpers (finanzas.py's)", () => {
     expect(matchRule(rules, "UCAM Universidad Católica de Murcia")?.[1]).toBe("Cafeteria UCAM");
   });
 
-  it("merchant names in ASCII, links by their note", () => {
+  it("merchant names in ASCII", () => {
     expect(prettyMerchant("Pastelería La Mallorquina")).toBe("Pasteleria La Mallorquina");
     expect(prettyMerchant("ZARA MURCIA*123")).toBe("Zara Murcia 123");
-    expect(linkName("[[registros/personas/ana|Ana]]")).toBe("ana");
-    expect(linkName("ana")).toBe("ana");
   });
 
   it("an old .xls with a large shared-string table (strings across records, UTF-16 and compressed)", () => {
@@ -142,11 +153,11 @@ describe("helpers (finanzas.py's)", () => {
 
 describe("importing statements", () => {
   it("Revolut: joins the app's note, applies the rules, leaves out reverted, savings and pending", () => {
-    const book = new NotesBook();
+    const book = new RecordsBook();
     const res = run(book, [csv("2026-09-revolut.csv", REVOLUT_EN)]);
-    expect(res.joined).toHaveLength(1);
+    expect(res.joined).toEqual(["Cena cumple 60,00 EUR"]);
     expect(res.created).toHaveLength(3);
-    const app = book.fm(`${MOV}/2026/09/2026-09-05-2140-cena-cumple.md`);
+    const app = book.fm("m_cena");
     expect(String(app.bank_ref)).toMatch(/^rev-/);
     expect(app).toMatchObject({
       bank_text: "La Tasca Ejemplo",
@@ -154,46 +165,47 @@ describe("importing statements", () => {
       status: "pendiente",
       concept: "Cena cumple",
     });
-    const spotify = book.fm(`${MOV}/2026/09/2026-09-02-1011-spotify.md`);
+    const spotify = book.fm(book.byBank("Spotify"));
     expect([spotify.category, spotify.merchant, spotify.amount, spotify.source]).toEqual([
       "suscripciones",
       "Spotify",
       -10.99,
       "revolut",
     ]);
-    expect(book.fm(`${MOV}/2026/09/2026-09-06-1200-kiosko-pepe.md`).category).toBe(UNKNOWN);
-    const atm = `${MOV}/2026/09/2026-09-09-1800-cash-at-cajero.md`;
+    expect(book.records.get(book.byBank("Spotify"))?.title).toBe("Spotify 10,99 EUR");
+    expect(book.fm(book.byBank("Kiosko Pepe")).category).toBe(UNKNOWN);
+    const atm = book.byBank("Cash at Cajero");
     expect(book.fm(atm).amount).toBe(-21.5); // the fee included
-    expect(book.notes.get(atm)).toContain("comision");
+    expect(book.records.get(atm)?.body).toContain("comision");
     expect(
       res.report.some((l) => l.includes("sin completar (entrara en el proximo extracto) 1")),
     ).toBe(true);
-    expect(res.created.some((p) => p.includes("vpn"))).toBe(false);
+    expect(res.created.some((t) => /vpn/i.test(t))).toBe(false);
   });
 
   it("is idempotent: the same lines in an overlapping statement change nothing", () => {
-    const book = new NotesBook();
+    const book = new RecordsBook();
     run(book, [csv("2026-09-revolut.csv", REVOLUT_EN)]);
-    const before = new Map(book.notes);
+    const before = JSON.stringify([...book.records]);
     const res = run(book, [
       csv("2026-09-revolut.csv", REVOLUT_EN),
       csv("2026-09b-revolut.csv", REVOLUT_EN),
     ]);
     expect([res.created, res.joined, res.unclear]).toEqual([[], [], []]);
-    expect(book.notes).toEqual(before);
+    expect(JSON.stringify([...book.records])).toBe(before);
   });
 
   it("a dry run writes nothing", () => {
-    const book = new NotesBook();
-    const before = new Map(book.notes);
+    const book = new RecordsBook();
+    const before = JSON.stringify([...book.records]);
     expect(run(book, [csv("2026-09-revolut.csv", REVOLUT_EN)], false).created).toHaveLength(3);
-    expect(book.notes).toEqual(before);
+    expect(JSON.stringify([...book.records])).toBe(before);
   });
 
   it("Spanish Revolut headers", () => {
-    const book = new NotesBook();
+    const book = new RecordsBook();
     expect(run(book, [csv("2026-09-revolut.csv", REVOLUT_ES)]).created).toHaveLength(1);
-    const n = book.fm(`${MOV}/2026/09/2026-09-10-0930-mercadona.md`);
+    const n = book.fm(book.byBank("MERCADONA AV EJEMPLO"));
     expect([n.amount, n.category, n.bank_text]).toEqual([
       -23.45,
       "comida/supermercado",
@@ -202,52 +214,56 @@ describe("importing statements", () => {
   });
 
   it("an unclear join is not imported; the closest note wins", () => {
-    const book = new NotesBook();
-    book.notes.set(
-      `${MOV}/2026/09/2026-09-05-2140-otra-cena.md`,
-      APP_NOTE.replace('concept: "Cena cumple"', 'concept: "Otra cena"'),
-    );
+    const book = new RecordsBook();
+    book.records.set("m_otra", {
+      kind: "movement",
+      title: "Otra cena 60,00 EUR",
+      fm: { ...CENA, concept: "Otra cena" },
+      body: "",
+    });
     const res = run(book, [csv("2026-09-revolut.csv", REVOLUT_EN)]);
     expect(res.unclear).toHaveLength(1);
     expect(res.joined).toHaveLength(0);
-    expect(res.created.some((p) => p.includes("tasca"))).toBe(false);
-    expect(res.report.some((l) => l.includes("DUDOSA"))).toBe(true);
-
-    const near = new NotesBook();
-    near.notes.set(
-      `${MOV}/2026/09/2026-09-07-2140-lejos.md`,
-      APP_NOTE.replace("date: 2026-09-05", "date: 2026-09-07").replace(
-        'concept: "Cena cumple"',
-        'concept: "Lejos"',
-      ),
+    expect(res.created.some((t) => /tasca/i.test(t))).toBe(false);
+    expect(res.report.some((l) => l.includes("DUDOSA") && l.includes("Otra cena 60,00 EUR"))).toBe(
+      true,
     );
+
+    const near = new RecordsBook();
+    near.records.set("m_lejos", {
+      kind: "movement",
+      title: "Lejos 60,00 EUR",
+      fm: { ...CENA, date: "2026-09-07", concept: "Lejos" },
+      body: "",
+    });
     const r2 = run(near, [csv("2026-09-revolut.csv", REVOLUT_EN)]);
-    expect(r2.joined.map(base)).toEqual(["2026-09-05-2140-cena-cumple.md"]);
+    expect(r2.joined).toEqual(["Cena cumple 60,00 EUR"]);
     expect(r2.unclear).toEqual([]);
   });
 
   it("ING: the old .xls and the .xlsx, same text and amount kept apart by the balance", () => {
     for (const f of ["ing.xls", "ing.xlsx"]) {
-      const book = new NotesBook();
+      const book = new RecordsBook();
       const res = run(book, [{ name: f, bytes: readFileSync(join(FIXTURES, f)) }]);
       expect(res.created, f).toHaveLength(4);
-      const merc = res.created.filter((p) => p.includes("mercadona")).map((p) => book.fm(p));
+      const made = book.made.map((id) => book.fm(id));
+      const merc = made.filter((m) => m.merchant === "Mercadona");
       expect(merc).toHaveLength(2);
       expect(new Set(merc.map((m) => m.bank_ref)).size).toBe(2);
       expect(merc.every((m) => m.account === "ing" && m.category === "comida/supermercado")).toBe(
         true,
       );
       expect(merc.map((m) => m.amount).sort()).toEqual([-30.55, -30.55]);
-      const nomina = res.created.find((p) => p.includes("nomina")) as string;
-      expect(book.fm(nomina)).toMatchObject({ date: "2026-09-30", amount: 1500 });
-      expect(book.notes.get(nomina)).toContain(
+      const nomina = book.made.find((id) => /nomina/i.test(book.records.get(id)?.title ?? ""));
+      expect(book.fm(nomina as string)).toMatchObject({ date: "2026-09-30", amount: 1500 });
+      expect(book.records.get(nomina as string)?.body).toContain(
         "Categoria segun ING: Nómina y otras prestaciones > Nómina.",
       );
     }
   });
 
   it("a file it does not understand is reported, never guessed", () => {
-    const book = new NotesBook();
+    const book = new RecordsBook();
     const res = run(book, [csv("otra-cosa.csv", "a,b,c\n1,2,3\n")]);
     expect(res.created).toEqual([]);
     expect(res.report.some((l) => l.startsWith("ERROR otra-cosa.csv"))).toBe(true);
@@ -256,50 +272,76 @@ describe("importing statements", () => {
 
 describe("closing a month", () => {
   const prepared = () => {
-    const book = new NotesBook();
+    const book = new RecordsBook();
     run(book, [csv("2026-09-revolut.csv", REVOLUT_EN)]);
     return book;
   };
   const close = (book: Book, apply = true) =>
     closeMonth(book, "2026-09", { cats: CATS, rules: RULES, apply });
 
-  it("marks the complete ones conciliado and says what the rest need", () => {
+  it("marks the complete ones conciliado and says what the rest need, naming people", () => {
     const book = prepared();
     const res = close(book);
-    expect(res.ready.map(base)).toEqual(["2026-09-02-1011-spotify.md"]);
-    const why = Object.fromEntries(res.blocked.map(([p, r]) => [base(p), r]));
-    expect(why["2026-09-05-2140-cena-cumple.md"]).toEqual(["faltan deudas de: ana"]);
-    expect(why["2026-09-06-1200-kiosko-pepe.md"]).toEqual(["sin categoria"]);
-    expect(book.fm(`${MOV}/2026/09/2026-09-02-1011-spotify.md`).status).toBe("conciliado");
+    expect(res.ready).toEqual(["Spotify 10,99 EUR"]);
+    const why = Object.fromEntries(res.blocked);
+    expect(why["Cena cumple 60,00 EUR"]).toEqual(["faltan deudas de: Ana"]);
+    expect(why["Kiosko Pepe 3,50 EUR"]).toEqual(["sin categoria"]);
+    expect(book.fm(book.byBank("Spotify")).status).toBe("conciliado");
   });
 
   it("a debt and a category unblock them; it says who owes and suggests rules", () => {
     const book = prepared();
-    book.notes.set(
-      "registros/finanzas/deudas/2026-09-05-ana-cena-cumple.md",
-      '---\ntype: debt\nperson: "[[ana]]"\nmovement: "[[2026-09-05-2140-cena-cumple]]"\namount: 20.00\ndirection: me-deben\nstatus: pendiente\nsettled_by: \ndate: 2026-09-05\n---\n\n# Ana cena\n',
-    );
-    book.update(`${MOV}/2026/09/2026-09-06-1200-kiosko-pepe.md`, {
+    book.records.set("d_ana", {
+      kind: "debt",
+      title: "Ana: cena 20,00 EUR",
+      fm: {
+        person: "p_ana",
+        movement: "m_cena",
+        amount: 20,
+        direction: "me-deben",
+        status: "pendiente",
+        date: "2026-09-05",
+      },
+      body: "",
+    });
+    book.update(book.byBank("Kiosko Pepe"), {
       category: "comida/restaurante",
       merchant: "Kiosko Pepe",
     });
     const res = close(book);
-    expect(res.ready.map(base)).toEqual(
-      expect.arrayContaining(["2026-09-05-2140-cena-cumple.md", "2026-09-06-1200-kiosko-pepe.md"]),
+    expect(res.ready).toEqual(
+      expect.arrayContaining(["Cena cumple 60,00 EUR", "Kiosko Pepe 3,50 EUR"]),
     );
-    expect(res.report.some((l) => l.startsWith("Te deben: ana 20,00 EUR"))).toBe(true);
+    expect(res.report.some((l) => l.startsWith("Te deben: Ana 20,00 EUR"))).toBe(true);
     expect(
       res.report.some((l) => l.includes("Kiosko Pepe  ->  Kiosko Pepe, comida/restaurante")),
     ).toBe(true);
   });
 
-  it("money in of a spending category needs what it settles", () => {
+  it("money in of a spending category needs what it settles, and that record must exist", () => {
     const book = prepared();
-    book.notes.set(
-      `${MOV}/2026/09/2026-09-08-bizum-ana.md`,
-      '---\ntype: movement\ndate: 2026-09-08\namount: 20.00\naccount: revolut\ncategory: comida/restaurante\npeople: ["[[ana]]"]\nstatus: pendiente\nsource: revolut\nbank_ref: rev-x\ncreated: 2026-10-12\n---\n',
-    );
-    const why = Object.fromEntries(close(book, false).blocked.map(([p, r]) => [base(p), r]));
-    expect(why["2026-09-08-bizum-ana.md"]?.[0]).toContain("sin settles");
+    const bizum = {
+      date: "2026-09-08",
+      amount: 20,
+      account: "revolut",
+      category: "comida/restaurante",
+      people: ["p_ana"],
+      status: "pendiente",
+      source: "revolut",
+      bank_ref: "rev-x",
+      created: "2026-10-12",
+    };
+    book.records.set("m_bizum", { kind: "movement", title: "Bizum Ana", fm: bizum, body: "" });
+    book.records.set("m_bizum2", {
+      kind: "movement",
+      title: "Bizum Ana otra vez",
+      fm: { ...bizum, bank_ref: "rev-y", settles: "d_no_esta" },
+      body: "",
+    });
+    const why = Object.fromEntries(close(book, false).blocked);
+    expect(why["Bizum Ana"]?.[0]).toContain("sin settles");
+    expect(why["Bizum Ana otra vez"]).toEqual([
+      "settles apunta a un registro que no existe: d_no_esta",
+    ]);
   });
 });

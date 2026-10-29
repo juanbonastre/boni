@@ -1,7 +1,7 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { Db } from "../db.ts";
 import { DEFAULT_CHARTS, normalizeSpec, PALETTE, type V1ChartSpec } from "./contract.ts";
-import { slug } from "./note.ts";
+import { slug } from "./movement.ts";
 
 /**
  * What the Boni API v1 keeps (the first Boni's store.py): charts and shortcuts shared by every device of
@@ -40,7 +40,8 @@ export interface Capture {
   request: Record<string, unknown>;
   status: string;
   result: Record<string, unknown> | null;
-  path: string | null;
+  /** The record it became (its id), once written. */
+  record: string | null;
   /** When it reached the server (ms). */
   created: number;
 }
@@ -303,6 +304,7 @@ export class V1Store {
           created: number;
         }
       | undefined;
+    // The column `path` holds the record a capture became (its name is from when that was a note's path).
     return r
       ? {
           client_id: r.client_id,
@@ -311,7 +313,7 @@ export class V1Store {
           request: JSON.parse(r.request),
           status: r.status,
           result: r.result ? JSON.parse(r.result) : null,
-          path: r.path,
+          record: r.path,
           created: r.created,
         }
       : null;
@@ -321,14 +323,15 @@ export class V1Store {
     clientId: string,
     status: string,
     result: Record<string, unknown>,
-    path: string | null,
+    /** The record it became (its id), when it was written. */
+    record: string | null,
     error: string | null,
   ): void {
     this.db
       .prepare(
         "UPDATE v1_captures SET status = ?, result = ?, path = COALESCE(?, path), error = ?, attempts = attempts + 1, updated = ? WHERE account_id = ? AND client_id = ?",
       )
-      .run(status, JSON.stringify(result), path, error, Date.now(), a, clientId);
+      .run(status, JSON.stringify(result), record, error, Date.now(), a, clientId);
   }
   /** Captures waiting to be written (they could not be written when sent), oldest first. */
   queuedCaptures(): { account: number; clientId: string }[] {

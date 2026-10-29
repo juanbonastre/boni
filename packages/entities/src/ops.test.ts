@@ -330,6 +330,25 @@ describe("collections as classes (docs/clases.md; D-10)", () => {
     expect(s.types.t_urgente?.fields.find((f) => f.id === "f_fecha")?.name).toBe("Día");
   });
 
+  it("a field added to a mother that a daughter had of her own becomes hers; undone, the daughter has hers back", () => {
+    const s = tree();
+    const own = { ...field("f_lugar", "Lugar"), archived: true };
+    const a = ok(s, { op: "add_field", type: "t_tarea", field: own }).schema;
+    const b = ok(a, { op: "add_field", type: "t_agenda", field: field("f_lugar", "Lugar") });
+    expect(ids(b.schema, "t_tarea")).toContain("f_lugar<t_agenda");
+    const back = ok(b.schema, b.inverse).schema;
+    expect(back.types.t_tarea?.fields.find((f) => f.id === "f_lugar")).toEqual(own);
+    expect(back.types.t_agenda?.fields.some((f) => f.id === "f_lugar")).toBe(false);
+    // And the daughter's own field is undone in its turn as it was made.
+    expect(
+      ok(back, {
+        op: "remove_field",
+        type: "t_tarea",
+        field: "f_lugar",
+      }).schema.types.t_tarea?.fields.map((f) => f.id),
+    ).toEqual(s.types.t_tarea?.fields.map((f) => f.id));
+  });
+
   it("an inherited field is changed only where it is defined; a name is used once in a branch", () => {
     const s = tree();
     const r = applySchemaOp(s, {
