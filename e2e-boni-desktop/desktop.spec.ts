@@ -73,7 +73,7 @@ test.beforeAll(async () => {
   execFileSync("node", ["apps/server/src/cli.ts", "add-user", "ejemplo"], { cwd: ROOT, env });
   mkdirSync(join(dir, "users"), { recursive: true });
   const store = openUserStore(join(dir, "users", "1.db"));
-  seed(
+  const ids = seed(
     store,
     [
       { key: "docencia", name: "Docencia", folder: "agenda/docencia/", calendar: DOCENCIA },
@@ -97,9 +97,8 @@ test.beforeAll(async () => {
     ],
     NOTES,
   );
-  const idAt = (path: string) => store.findByValue("f_vault_path", path)[0]?.id as string;
-  classId = idAt(`agenda/docencia/${iso(today)} Clase de ejemplo.md`);
-  tutorialId = idAt(`agenda/docencia/${iso(tomorrow)} Tutoría.md`);
+  classId = ids.get(`agenda/docencia/${iso(today)} Clase de ejemplo.md`) as string;
+  tutorialId = ids.get(`agenda/docencia/${iso(tomorrow)} Tutoría.md`) as string;
   store.close();
   server = spawn("node", ["apps/server/src/main.ts"], {
     cwd: ROOT,
