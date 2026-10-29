@@ -620,7 +620,12 @@ export function goBack(): boolean {
   else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
   else if (s.view.kind === "chart") showHome();
   else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
-  else if (s.tab !== "capture") showTab("capture");
+  else if (s.view.kind === "row") {
+    // A record opened from another app (Boni Calendar's «Abrir en Boni»): Back goes back to that app.
+    void flushRowBody();
+    showChat();
+    return false;
+  } else if (s.tab !== "capture") showTab("capture");
   else return false;
   return true;
 }
@@ -2210,7 +2215,8 @@ export async function deleteRow(type: string, id: string) {
 
 /** A record opened from another app (Boni Calendar's "Abrir en Boni", by its id), as its page. */
 export async function openNoteAt(id: string) {
-  set({ openedNote: id, row: null, rowDoc: null });
+  // On the phone the page shows in Boni's tab (not over the capture form).
+  set({ openedNote: id, row: null, rowDoc: null, tab: "boni" });
   // Not logged in yet (Boni Calendar's peek, the first time): it opens once the login is done.
   if (!configured(get().settings)) return;
   try {

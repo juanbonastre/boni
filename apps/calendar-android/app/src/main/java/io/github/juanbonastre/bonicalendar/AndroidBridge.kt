@@ -1,6 +1,7 @@
 package io.github.juanbonastre.bonicalendar
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.content.Intent
@@ -87,6 +88,19 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
             null
         }
         "takeOpenEvent" -> activity.takeOpenEvent()
+        // «Abrir en Boni»: the record (by its id) in Boni's own Android app, which takes boni://note links.
+        "openBoniNote" -> {
+            val id = a.getString(0)
+            if (!RECORD_ID.matches(id)) throw BridgeError("bad-id", "Bad record id")
+            val open = Intent(Intent.ACTION_VIEW, Uri.parse("boni://note?id=$id"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                activity.startActivity(open)
+            } catch (e: ActivityNotFoundException) {
+                throw BridgeError("no-boni", "Boni is not installed")
+            }
+            null
+        }
         else -> throw BridgeError("unknown", "Unknown call: $method")
     }
 
@@ -117,6 +131,8 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
 
     companion object {
         private const val MAX_DOWNLOAD = 20 * 1024 * 1024
+        /** A record's id as Boni gives it (the calendar's rows are known by it): a plain one, nothing else in a link. */
+        private val RECORD_ID = Regex("^[A-Za-z0-9_-]{1,100}$")
     }
 }
 

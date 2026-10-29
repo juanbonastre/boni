@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { audit } from "./audit.ts";
 import { EXAMPLES } from "./fixtures.ts";
 
 /**
@@ -58,6 +59,41 @@ async function openAndroid(
               ? "chart-spending-by-category-drill.json"
               : "chart-spending-by-category.json",
           );
+        // A record Boni Calendar opens in Boni («Abrir en Boni»), invented.
+        if (p === "api/data/types")
+          return [
+            200,
+            JSON.stringify({
+              types: [
+                {
+                  id: "t_tarea",
+                  name: "Tarea",
+                  icon: "",
+                  titleField: "f_titulo",
+                  count: 1,
+                  level: "visible",
+                  fields: [
+                    { id: "f_titulo", name: "Título", type: "text" },
+                    { id: "f_hecha", name: "Hecha", type: "checkbox" },
+                  ],
+                  rowUi: { open: false, hidden: [] },
+                },
+              ],
+            }),
+          ];
+        if (p === "api/data/rows/e_ejemplo1")
+          return [
+            200,
+            JSON.stringify({
+              row: {
+                id: "e_ejemplo1",
+                type: "t_tarea",
+                values: { f_titulo: "Recoger exámenes inventados", f_hecha: false },
+                updated: 1,
+                body: "Llevar la lista.",
+              },
+            }),
+          ];
         if (p.includes("/data")) return ok("chart-eating-out.json");
         return [404, examples["error.json"]!];
       };
@@ -379,4 +415,23 @@ test("a narrow widget cuts long axis labels instead of running them together", a
     expect(boxes[i]!.left).toBeGreaterThanOrEqual(boxes[i - 1]!.right + 2);
   }
   await expect(labels.nth(2)).toHaveText(/…$/);
+});
+
+test("Boni Calendar's «Abrir en Boni»: its link opens the record as a page; Back goes back to the calendar", async ({
+  page,
+}) => {
+  // boni://note?id=e_ejemplo1 started the app (Links.kt makes it this target).
+  await openAndroid(page, { launch: "note:e_ejemplo1" });
+  await expect(page.locator(".m-title")).toHaveText("Tarea");
+  await expect(page.locator(".m-row").locator(".row-title, .doc-title").first()).toHaveValue(
+    "Recoger exámenes inventados",
+  );
+  await page.screenshot({ path: "e2e-boni/screenshots/android-note.png" });
+  // A surface of its own on the phone: everything fits (docs/principios.md I-03).
+  expect(await audit(page, "android note")).toEqual([]);
+  // Nothing of Boni's own to close: Back leaves the app, back in Boni Calendar.
+  expect(
+    await page.evaluate(() => (window as unknown as { __boniBack: () => boolean }).__boniBack()),
+  ).toBe(false);
+  await expect(page.locator(".m-row")).toHaveCount(0);
 });

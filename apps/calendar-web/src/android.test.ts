@@ -35,22 +35,26 @@ afterEach(() => {
 });
 
 describe("the Android host", () => {
-  it("passes calls with their arguments and resolves with the app's answers; notes do not open there", async () => {
+  it("passes calls with their arguments and resolves with the app's answers; a record opens in Boni's app", async () => {
     const { native, calls } = fakeNative({
       fetchText: new Error("No network"),
       networkAllowed: false,
     });
     const host = androidHost(native);
-    expect(host.notes).toBeNull();
-    const [text, allowed] = await Promise.all([
+    // «Abrir en Boni» opens the record in Boni's Android app; a phone has no peek.
+    expect(host.notes).toMatchObject({ noteApp: "boni", peek: false });
+    const [text, allowed, opened] = await Promise.all([
       host.fetchText("https://example.com/a.ics"),
       host.network.allowed(),
+      host.notes?.openNote?.("e_ejemplo1"),
     ]);
     expect(text).toMatchObject({ ok: false, message: "No network" });
     expect(allowed).toBe(false);
+    expect(opened).toEqual({ ok: true, value: null });
     expect(calls).toEqual([
       { method: "fetchText", args: ["https://example.com/a.ics"] },
       { method: "networkAllowed", args: [] },
+      { method: "openBoniNote", args: ["e_ejemplo1"] },
     ]);
   });
 

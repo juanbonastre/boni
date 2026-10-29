@@ -13,7 +13,10 @@ export interface AndroidNative {
 
 type Answer = NotesResult<unknown>;
 
-/** The downloader, the network and the reminders over the Android app (notes do not open on the phone). */
+/**
+ * The downloader, the network, the reminders and «Abrir en Boni» over the Android app: a record opens in Boni's own
+ * Android app (a `boni://note?id=` link; no peek on a phone).
+ */
 export function androidHost(native: AndroidNative): {
   notes: NotesBridge | null;
   fetchText: NonNullable<Host["fetchText"]>;
@@ -42,7 +45,11 @@ export function androidHost(native: AndroidNative): {
     });
 
   return {
-    notes: null,
+    notes: {
+      noteApp: "boni",
+      peek: false,
+      openNote: (id) => call<null>("openBoniNote", id),
+    },
     fetchText: (url) => call<string>("fetchText", url),
     network: {
       allowed: async () => {

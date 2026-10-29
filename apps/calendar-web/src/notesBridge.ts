@@ -19,6 +19,8 @@ export interface NotesBridge {
   openProposal?(id: string): Promise<NotesResult<null>>;
   /** Where `openNote` opens a note; Obsidian when not said. */
   noteApp?: "boni" | "obsidian";
+  /** Whether a note can open in a peek (a double click; the desktop): not on a phone, where it opens in Boni. */
+  peek?: boolean;
 }
 
 export function notesBridge(): NotesBridge | null {

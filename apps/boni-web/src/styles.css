@@ -4744,6 +4744,16 @@ button.find-row:hover {
 .peek .toast {
   position: fixed;
 }
+/* A record opened on the phone (Boni Calendar's «Abrir en Boni»): the page across the screen, its title smaller. */
+.m-row .content.page-doc {
+  padding: 0 16px;
+}
+.m-row .doc {
+  padding-top: 16px;
+}
+.m-row .doc-title {
+  font-size: 28px;
+}
 
 /* ---------------------------------------------------------------- the inbox's cards (Juan, 2026-10-22) */
 .inbox-list {

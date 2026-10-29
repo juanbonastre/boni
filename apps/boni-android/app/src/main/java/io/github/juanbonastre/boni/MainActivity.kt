@@ -104,14 +104,16 @@ class MainActivity : ComponentActivity() {
         })
     }
 
-    /** What a home-screen shortcut opened when it started the app, until the page asks for it. */
+    /** What a home-screen shortcut or a link opened when it started the app, until the page asks for it. */
     @Volatile private var pendingLaunch: String? = null
 
     fun takeLaunch(): String? = pendingLaunch.also { pendingLaunch = null }
 
-    private fun Intent.launchTarget(): String? = getStringExtra(Launcher.EXTRA_TARGET)?.takeIf { Launcher.valid(it) }
+    /** A home-screen shortcut's target, or a link's (Boni Calendar's «Abrir en Boni»: `boni://note?id=`). */
+    private fun Intent.launchTarget(): String? =
+        getStringExtra(Launcher.EXTRA_TARGET)?.takeIf { Launcher.valid(it) } ?: Links.target(dataString)
 
-    /** A home-screen shortcut tapped while the app was running: the page opens it. */
+    /** A home-screen shortcut tapped, or a link followed, while the app was running: the page opens it. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         val target = intent.launchTarget() ?: return
