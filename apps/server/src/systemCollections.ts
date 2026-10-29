@@ -98,12 +98,6 @@ function runTitle(w: RunWhat): string {
       return w.subject ? `Guía medida: ${w.subject}` : "Guía medida";
     case "review":
       return "Revisión de la guía";
-    case "note":
-      return w.action === "create"
-        ? "Nota nueva"
-        : w.action === "delete"
-          ? "Nota quitada"
-          : "Nota cambiada";
     case "accepted":
       return "Propuesta aceptada";
     default:

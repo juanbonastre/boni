@@ -214,7 +214,7 @@ interface State {
       columns?: Record<string, SystemColumns>;
     }
   >;
-  /** The vault note opened from another app (its path), for the peek's "Abrir en Boni". */
+  /** The record opened from another app (its id), for the peek's "Abrir en Boni". */
   openedNote: string | null;
   /** How each collection is shown on its own page (this session). */
   collectionViews: Record<string, DatabaseView>;

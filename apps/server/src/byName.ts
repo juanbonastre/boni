@@ -74,13 +74,14 @@ export function createByName(
 export function relationTargets(
   store: UserStore,
   target: string,
+  keep: (type: string) => boolean = () => true,
 ): { ids: Set<string>; titled: Map<string, string> } {
   const schema = store.schema();
   const ids = new Set<string>();
   const titled = new Map<string, string>();
   for (const k of branch(schema, target)) {
     const t = schema.types[k];
-    if (!t) continue;
+    if (!t || !keep(k)) continue;
     for (const e of store.entities(k)) {
       ids.add(e.id);
       const v = e.values[t.titleField];

@@ -159,7 +159,7 @@ describe("what each run of the Registro was, and what came of it", () => {
     });
   });
 
-  it("a hand edit of a note: its path and what was done to it", () => {
+  it("a hand edit from the retired mirror: no vault path, only its origin (D-17)", () => {
     const store = env();
     store.journal.startRun({ id: "r6", turn: null, origin: "mirror", device: null, started: 1 });
     store.journal.addProposal({
@@ -175,10 +175,6 @@ describe("what each run of the Registro was, and what came of it", () => {
       sources: [],
       created: 2,
     });
-    expect(runInfo(store, runOf(store, "r6")).what).toEqual({
-      kind: "note",
-      path: "proyectos/ejemplo.md",
-      action: "delete",
-    });
+    expect(runInfo(store, runOf(store, "r6")).what).toEqual({ kind: "other" });
   });
 });

@@ -18,6 +18,7 @@ import {
   type Writes,
 } from "@boni/store";
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
+import { relationId, relationTargets } from "./byName.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
@@ -229,16 +230,9 @@ function writer(c: Ctx) {
     );
     return id;
   };
-  const byTitle = (target: string, title: string) => {
-    const t = def(target);
-    const want = title
-      .replace(/^\[\[|\]\]$/g, "")
-      .trim()
-      .toLowerCase();
-    return c.store
-      .entities(target)
-      .find((e) => String(e.values[t.titleField] ?? "").toLowerCase() === want)?.id;
-  };
+  // A relation names a note of its target's branch by id or title; never one of a collection kept from the models.
+  const levels = c.store.aiAccess();
+  const seen = (type: string) => !closedToAi(levels[type]) && levels[type] !== "opaque";
   /** Properties by their names into the type's fields (an unknown name is an error, never a new field). */
   const writes = (t: TypeDef, props: Args): Writes => {
     const out: Writes = {};
@@ -257,8 +251,9 @@ function writer(c: Ctx) {
             v = (Array.isArray(raw) ? raw : [raw]).map((x) => option(t.id, f, String(x)));
             break;
           case "relation": {
+            const targets = relationTargets(c.store, f.relation?.target ?? "", seen);
             const ids = (Array.isArray(raw) ? raw : [raw]).map((x) => {
-              const id = byTitle(f.relation?.target ?? "", String(x));
+              const id = relationId(targets, x);
               if (!id) throw new ToolFail(`${name}: no "${x}" to point to`);
               return id;
             });

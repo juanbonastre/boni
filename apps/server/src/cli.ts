@@ -20,6 +20,7 @@ import {
 } from "@boni/identity";
 import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
+import { embedCounts } from "./embeds.ts";
 import { planFromNote, reshape, undoReshape } from "./reshape.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -47,6 +48,7 @@ import { V1Store } from "./v1/store.ts";
  *       the account's tree reshaped as a plan says (src/reshape.ts): a dry run with counts by default; applied, one
  *       run in one transaction. The plan may live in a note of the account (its first ```json block).
  *   node src/cli.ts reshape <name> --undo <run>      that reshape taken back whole
+ *   node src/cli.ts embeds <name>                    the `![[…]]` the vault left in the texts, counted (src/embeds.ts)
  */
 const [cmd, ...args] = process.argv.slice(2);
 const paths = databasePaths();
@@ -239,9 +241,19 @@ try {
     } finally {
       store.close();
     }
+  } else if (cmd === "embeds") {
+    const user = listUsers(db).find((u) => u.name === args[0]);
+    if (!user) throw new Error("Usage: embeds <name>");
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    const store = openUserStore(join(dirname(paths.system), "users", `${user.id}.db`));
+    try {
+      for (const line of embedCounts(store)) console.log(line);
+    } finally {
+      store.close();
+    }
   } else {
     console.log(
-      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run>",
+      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run> | embeds <name>",
     );
   }
 } catch (e) {

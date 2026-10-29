@@ -1,15 +1,5 @@
 import { markdownToBlocks } from "@boni/views";
-import {
-  ChevronDown,
-  FileText,
-  HelpCircle,
-  Inbox,
-  Mail,
-  Maximize2,
-  Pencil,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { ChevronDown, HelpCircle, Inbox, Mail, Maximize2, Pencil, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ConfirmView, InboxCard, InboxRequest, Proposal } from "../core/agent.ts";
 import {
@@ -113,16 +103,10 @@ export function InboxButton() {
   );
 }
 
-const fileName = (path: string) => (path.split("/").pop() ?? path).replace(/\.md$/i, "");
-
 /** What the proposal does, in words made by code from its arguments. */
 function headline(t: ReturnType<typeof useStore.getState>["t"], p: Proposal, c: InboxCard | null) {
   if (c?.action === "create" && c.collection)
     return t(`inbox.add.${c.kind}`, { collection: c.collection });
-  if (c?.action === "update" && c.source?.kind === "note")
-    return t("inbox.noteEdited", { note: fileName(c.source.path) });
-  if (c?.action === "delete" && c.source?.kind === "note")
-    return t("inbox.noteRemoved", { note: fileName(c.source.path) });
   return p.view?.title ?? p.tool;
 }
 
@@ -233,9 +217,7 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
   const rest: ConfirmView | null = p.view
     ? {
         ...p.view,
-        rows: p.view.rows.filter(
-          (r) => r !== body && !(r.arg === "note" && c?.source?.kind === "note"),
-        ),
+        rows: p.view.rows.filter((r) => r !== body),
       }
     : null;
   // On the inbox's own page (more room), a detailed card from mail is two columns (Juan, 2026-10-23): the mail on
@@ -244,12 +226,6 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
   const source = (
     <>
       {c?.source?.kind === "mail" && <MailSource source={c.source} />}
-      {c?.source?.kind === "note" && (
-        <p className="inbox-source">
-          <FileText size={13} strokeWidth={1.8} aria-hidden="true" />
-          <span>{c.source.path}</span>
-        </p>
-      )}
       {(c?.title || when) && (
         <p className="inbox-what">
           {c?.title && <span className="inbox-title">{c.title}</span>}
@@ -671,9 +647,7 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
   const rows: ConfirmView | null = p.view
     ? {
         ...p.view,
-        rows: p.view.rows.filter(
-          (r) => r !== body && !(r.arg === "note" && c?.source?.kind === "note"),
-        ),
+        rows: p.view.rows.filter((r) => r !== body),
       }
     : null;
   const decide = async (how: "accept" | "done" | "reject") => {
@@ -725,18 +699,9 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
       {c?.source && (
         <section className="pp-section">
           <h3>{t("inbox.origin")}</h3>
-          {c.source.kind === "mail" ? (
-            <>
-              <MailSource source={c.source} />
-              {c.source.subject && <p className="inbox-subject">{c.source.subject}</p>}
-              {c.source.excerpt && <p className="inbox-quote long">«{c.source.excerpt}»</p>}
-            </>
-          ) : (
-            <p className="inbox-source">
-              <FileText size={13} strokeWidth={1.8} aria-hidden="true" />
-              <span>{c.source.path}</span>
-            </p>
-          )}
+          <MailSource source={c.source} />
+          {c.source.subject && <p className="inbox-subject">{c.source.subject}</p>}
+          {c.source.excerpt && <p className="inbox-quote long">«{c.source.excerpt}»</p>}
         </section>
       )}
       {c?.day && c.context.length > 0 && (
