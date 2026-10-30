@@ -1495,6 +1495,46 @@ export class AgentApi {
       ? `data:${b.mime};base64,${b.data}`
       : null;
   };
+  /**
+   * A file pasted or dropped into a page, kept in Boni: its row; or, with several collections of files and no choice
+   * kept yet, the collections to choose from (`into` then names one, and the account keeps it).
+   */
+  addFile = async (
+    name: string,
+    data: string,
+    into?: string,
+  ): Promise<{ id: string; name: string } | { choose: { type: string; name: string }[] }> => {
+    const r = await this.transport.request("POST", "api/data/files", {
+      name,
+      data,
+      ...(into ? { into, remember: true } : {}),
+    });
+    if (!r.ok) {
+      if (r.offline) throw new OfflineError(r.message);
+      throw new NotConfiguredError("not configured");
+    }
+    let b: unknown = null;
+    try {
+      b = r.body ? JSON.parse(r.body) : null;
+    } catch {
+      b = null;
+    }
+    if (r.status === 409 && isObj(b) && Array.isArray(b.options))
+      return {
+        choose: b.options.flatMap((o) =>
+          isObj(o) && typeof o.type === "string" && typeof o.name === "string"
+            ? [{ type: o.type, name: o.name.slice(0, 80) }]
+            : [],
+        ),
+      };
+    if (r.status < 200 || r.status >= 300) {
+      const code = isObj(b) && typeof b.error === "string" ? b.error : `http_${r.status}`;
+      throw new ApiError(r.status, code, code);
+    }
+    if (!isObj(b) || typeof b.id !== "string")
+      throw new ApiError(r.status, "bad-answer", "bad-answer");
+    return { id: b.id, name: typeof b.name === "string" ? b.name.slice(0, 200) : name };
+  };
   /** What points to a row, and the titles of what it points to. */
   dataRelated = async (id: string) =>
     parseRelated(

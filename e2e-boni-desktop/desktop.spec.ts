@@ -642,3 +642,59 @@ test("Boni Calendar's link with peek=1: a small window with the note; it stays w
   openLink("boni://peek?hide=1");
   expect(await visible()).toBe(true);
 });
+
+test("in the peek, Esc first leaves the text with its block selected, then lets go, then puts the peek away", async () => {
+  const a = app as ElectronApplication;
+  openLink(`boni://note?id=${classId}&peek=1`);
+  const peek = await (async () => {
+    for (let i = 0; i < 100; i++) {
+      const p = a.windows().find((x) => x.url().includes("peek=1"));
+      if (p) return p;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error("no peek window");
+  })();
+  const visible = () =>
+    a.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().some(
+        (x) => x.webContents.getURL().includes("peek=1") && x.isVisible(),
+      ),
+    );
+  await expect.poll(visible).toBe(true);
+  await peek.locator(".row-doc .blk-input").first().click();
+  await peek.keyboard.press("Escape");
+  await expect(peek.locator(".blk.selected")).toHaveCount(1);
+  expect(await visible()).toBe(true);
+  await peek.keyboard.press("Escape");
+  await expect(peek.locator(".blk.selected")).toHaveCount(0);
+  expect(await visible()).toBe(true);
+  await peek.keyboard.press("Escape");
+  await expect.poll(visible).toBe(false);
+});
+
+test("a picture pasted into a note is kept in Boni (in its only collection of files a model may see) and shown in place", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  openLink(`boni://note?id=${hornoId}`);
+  await expect(w.locator(".doc-file-image img")).toHaveCount(1);
+  await w.locator(".row-doc .blk-input").first().click();
+  await w.keyboard.press("End");
+  await w.evaluate(
+    (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const data = new DataTransfer();
+      data.items.add(new File([bytes], "pegada.png", { type: "image/png" }));
+      document.activeElement?.dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }),
+      );
+    },
+    readFileSync(join(ROOT, "e2e-boni", "__screens__", "registro.png")).toString("base64"),
+  );
+  await expect(w.locator(".doc-file-image img")).toHaveCount(2);
+  await expect(w.locator(".doc-file-image figcaption").first()).toHaveText("pegada.png");
+  expect(
+    await w
+      .locator(".doc-file-image img")
+      .first()
+      .evaluate((i) => (i as HTMLImageElement).naturalWidth),
+  ).toBeGreaterThan(100);
+});

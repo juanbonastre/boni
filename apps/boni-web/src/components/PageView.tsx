@@ -1,5 +1,11 @@
-import { CATALOGUE, kindOf as catalogueKind, newBlock } from "@boni/views";
-import { ChevronRight, FileText, GripVertical, Paperclip, Plus, Smile } from "lucide-react";
+import {
+  blocksToMarkdown,
+  CATALOGUE,
+  kindOf as catalogueKind,
+  markdownToBlocks,
+  newBlock,
+} from "@boni/views";
+import { ChevronRight, FileText, GripVertical, Paperclip, Plus, Smile, X } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -23,9 +29,20 @@ import {
   type Where,
 } from "../core/grid.ts";
 import { PALETTE } from "../core/palette.ts";
+import {
+  duplicated,
+  indented,
+  moved,
+  pastedInto,
+  rangeIds,
+  replacedBy,
+  withoutBlocks,
+} from "../core/selection.ts";
 import { catText } from "../i18n.ts";
 import {
+  addFilesToPage,
   blockId,
+  clearBlockSel,
   fileInline,
   fileOfRow,
   loadDataTypes,
@@ -39,6 +56,7 @@ import {
   openRowsPanel,
   openScreen,
   runShortcut,
+  selectBlocks,
   setPageBlocks,
   setPageFocus,
   setPageIcon,
@@ -407,6 +425,141 @@ export function Blocks({ page }: { page: Page }) {
   const visible = blocks.filter((b) => !hidden.has(b.id));
   const dataBlocks = useMemo(() => blocks.filter(isDataBlock), [blocks]);
   const { results, failure } = useBlockResults(dataBlocks);
+  // Whole blocks selected (Notion's, Juan 2026-10-30): drawn here, made by a drag across blocks, Shift+click, Esc,
+  // Shift+arrows at a block's edge or Ctrl+A twice; the keys then act on them (core/selection.ts).
+  const sel = useStore((s) => s.blockSel);
+  const selected = useMemo(
+    () => new Set(sel ? rangeIds(blocks, sel.anchor, sel.focus) : []),
+    [sel, blocks],
+  );
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => () => clearBlockSel(), [page.id]);
+  useEffect(() => {
+    if (!sel) return;
+    box.current?.focus({ preventScroll: true });
+    const away = (e: MouseEvent) => {
+      if (!box.current?.contains(e.target as Node)) clearBlockSel();
+    };
+    window.addEventListener("mousedown", away);
+    return () => window.removeEventListener("mousedown", away);
+  }, [sel]);
+  const order = visible.map((b) => b.id);
+  const step = (from: string, dir: -1 | 1) =>
+    order[Math.max(0, Math.min(order.length - 1, order.indexOf(from) + dir))] ?? from;
+  const removeSelected = (chosen: string[]) => {
+    const first = blocks.findIndex((b) => chosen.includes(b.id));
+    const out = withoutBlocks(blocks, chosen, blockId);
+    clearBlockSel();
+    setPageBlocks(out);
+    const before = out[Math.max(0, first - 1)];
+    if (before && isText(before)) setPageFocus({ block: before.id, at: "end" });
+  };
+  const onSelKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const s = useStore.getState().blockSel;
+    if (!s || e.target !== box.current || e.nativeEvent.isComposing) return;
+    const chosen = rangeIds(blocks, s.anchor, s.focus);
+    if (!chosen.length) return clearBlockSel();
+    const mod = e.ctrlKey || e.metaKey;
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    const first = chosen[0] as string;
+    const last = chosen[chosen.length - 1] as string;
+    if (k === "Escape") clearBlockSel();
+    else if (k === "Backspace" || k === "Delete") removeSelected(chosen);
+    else if (mod && (k === "c" || k === "x")) {
+      copyText(blocksToMarkdown(blocks.filter((b) => chosen.includes(b.id))));
+      if (k === "x") removeSelected(chosen);
+    } else if (mod && k === "d") {
+      const d = duplicated(blocks, chosen, blockId);
+      setPageBlocks(d.blocks);
+      if (d.ids.length) selectBlocks(d.ids[0] as string, d.ids[d.ids.length - 1] as string);
+    } else if (mod && k === "a") {
+      if (order.length) selectBlocks(order[0] as string, order[order.length - 1] as string);
+    } else if (k === "Tab") setPageBlocks(indented(blocks, chosen, e.shiftKey ? -1 : 1));
+    else if (mod && e.shiftKey && (k === "ArrowUp" || k === "ArrowDown")) {
+      const m = moved(blocks, chosen, k === "ArrowUp" ? -1 : 1);
+      if (m) setPageBlocks(m);
+    } else if (k === "ArrowUp" || k === "ArrowDown") {
+      const dir = k === "ArrowUp" ? -1 : 1;
+      if (e.shiftKey) selectBlocks(s.anchor, step(s.focus, dir));
+      else {
+        const to = step(dir < 0 ? first : last, dir);
+        selectBlocks(to, to);
+      }
+    } else if (k === "Enter") {
+      const edit = blocks.find((b) => chosen.includes(b.id) && isText(b));
+      clearBlockSel();
+      if (edit) setPageFocus({ block: edit.id, at: "end" });
+    } else if (k.length === 1 && !mod && !e.altKey) {
+      // Typing over selected blocks puts what is typed in their place.
+      const at = blocks.findIndex((b) => b.id === first);
+      const out = replacedBy(blocks, chosen, [{ ...emptyText(), text: e.key }], blockId);
+      clearBlockSel();
+      setPageBlocks(out);
+      const made = out[at];
+      if (made) setPageFocus({ block: made.id, at: "end" });
+    } else return;
+    e.preventDefault();
+  };
+  const onBoxMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const el = e.target as HTMLElement;
+    const id = el.closest<HTMLElement>(".blk[data-block]")?.dataset.block;
+    if (!id || el.closest(".blk-gutter, .blk-resize")) return;
+    const s = useStore.getState().blockSel;
+    const editingIn = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(
+      ".blk[data-block]",
+    )?.dataset.block;
+    if (e.shiftKey && (s?.anchor ?? editingIn)) {
+      e.preventDefault();
+      e.stopPropagation();
+      (document.activeElement as HTMLElement | null)?.blur();
+      selectBlocks((s?.anchor ?? editingIn) as string, id);
+      return;
+    }
+    if (s) clearBlockSel();
+    // Leaving the block while the button is down: whole blocks from it to the one under the pointer.
+    const move = (ev: MouseEvent) => {
+      const over = document
+        .elementFromPoint(ev.clientX, ev.clientY)
+        ?.closest<HTMLElement>(".blk[data-block]")?.dataset.block;
+      const now = useStore.getState().blockSel;
+      if (!over || !box.current?.querySelector(`[data-block="${over}"]`)) return;
+      if (!now && over === id) return;
+      if (!now) (document.activeElement as HTMLElement | null)?.blur();
+      window.getSelection()?.removeAllRanges();
+      if (now?.focus !== over) selectBlocks(id, over);
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+  const onBoxPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
+    const s = useStore.getState().blockSel;
+    if (!s || e.target !== box.current) return;
+    const chosen = rangeIds(blocks, s.anchor, s.focus);
+    const files = [...e.clipboardData.files];
+    e.preventDefault();
+    if (files.length) {
+      void addFilesToPage(files, chosen[chosen.length - 1] ?? null);
+      return;
+    }
+    const incoming = markdownToBlocks(e.clipboardData.getData("text/plain"));
+    if (!incoming.length) return;
+    clearBlockSel();
+    setPageBlocks(replacedBy(blocks, chosen, incoming, blockId));
+  };
+  const onBoxDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    // Files from outside (a picture from the desktop), never a block being moved.
+    if (drag || !e.dataTransfer.files.length) return;
+    e.preventDefault();
+    const over = document
+      .elementFromPoint(e.clientX, e.clientY)
+      ?.closest<HTMLElement>(".blk[data-block]")?.dataset.block;
+    void addFilesToPage([...e.dataTransfer.files], over ?? blocks[blocks.length - 1]?.id ?? null);
+  };
   const drop = () => {
     const from = blocks.findIndex((b) => b.id === drag?.id);
     if (!drag?.over || drag.over === drag.id || from < 0) return setDrag(null);
@@ -432,6 +585,7 @@ export function Blocks({ page }: { page: Page }) {
       key={b.id}
       block={b}
       page={page}
+      selected={selected.has(b.id)}
       drag={drag}
       onDragStart={() => setDrag({ id: b.id, over: null, where: "below" })}
       onDragOver={(where) =>
@@ -534,7 +688,90 @@ export function Blocks({ page }: { page: Page }) {
     );
   }
   flush();
-  return <div className="doc-blocks">{out}</div>;
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the page's blocks take the keys of a block selection
+    <div
+      ref={box}
+      className={`doc-blocks${sel ? " selecting" : ""}`}
+      tabIndex={-1}
+      onKeyDown={onSelKey}
+      onMouseDown={onBoxMouseDown}
+      onPaste={onBoxPaste}
+      onDragOver={(e) => {
+        if (!drag && e.dataTransfer.types.includes("Files")) e.preventDefault();
+      }}
+      onDrop={onBoxDrop}
+    >
+      {out}
+      <FileChoice />
+    </div>
+  );
+}
+
+/** Copies text as the user's own copy would (Ctrl+C), from code: the page's selected blocks as Markdown. */
+function copyText(text: string) {
+  const put = (e: ClipboardEvent) => {
+    e.clipboardData?.setData("text/plain", text);
+    e.preventDefault();
+  };
+  document.addEventListener("copy", put);
+  const done = document.execCommand("copy");
+  document.removeEventListener("copy", put);
+  if (!done) void navigator.clipboard?.writeText(text).catch(() => {});
+}
+
+/** Where pasted or dropped files go, asked once when the account has several collections of files. */
+function FileChoice() {
+  const t = useStore((s) => s.t);
+  const choice = useStore((s) => s.fileChoice);
+  useEffect(() => {
+    if (!choice) return;
+    const esc = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      choice.answer(null);
+    };
+    window.addEventListener("keydown", esc, true);
+    return () => window.removeEventListener("keydown", esc, true);
+  }, [choice]);
+  if (!choice) return null;
+  return (
+    <div
+      className="find-scrim"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) choice.answer(null);
+      }}
+    >
+      <div className="find-box unlock-box file-choice" role="dialog" aria-label={t("file.choose")}>
+        <div className="find-head">
+          <h2>{t("file.choose")}</h2>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => choice.answer(null)}
+            title={t("protect.cancel")}
+            aria-label={t("protect.cancel")}
+          >
+            <X size={16} strokeWidth={1.8} />
+          </button>
+        </div>
+        <p className="find-help">{t("file.chooseHelp")}</p>
+        <div className="file-choice-list">
+          {choice.options.map((o) => (
+            <button
+              key={o.type}
+              type="button"
+              className="btn"
+              onClick={() => choice.answer(o.type)}
+            >
+              {o.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** A link to a subpage: its icon and name; a click opens it. */
@@ -623,6 +860,7 @@ const ALLOWED_WIDTHS = [2, 3, 4, 6, 8, 9, 12];
 function BlockRow({
   block,
   page,
+  selected,
   drag,
   onDragStart,
   onDragOver,
@@ -632,6 +870,7 @@ function BlockRow({
 }: {
   block: Block;
   page: Page;
+  selected: boolean;
   drag: Drag;
   onDragStart: () => void;
   onDragOver: (where: Where) => void;
@@ -695,7 +934,7 @@ function BlockRow({
   return (
     <div
       ref={self}
-      className={`blk blk-${kind}${menu || adding || point ? " menu-open" : ""}${
+      className={`blk blk-${kind}${selected ? " selected" : ""}${menu || adding || point ? " menu-open" : ""}${
         drag?.id === block.id ? " dragging" : ""
       }${target ? ` drop-${target}` : ""}${isDataBlock(block) && block.bg ? " blk-bg" : ""}${
         clickRows ? " blk-clickable" : ""
@@ -957,6 +1196,42 @@ function ActionButton({ block }: { block: Extract<Block, { type: "action" }> }) 
 }
 
 /** A textarea that grows with its text (one line when empty). */
+/**
+ * How far down its textarea a place in the text is drawn (wrapped lines count): whether the caret is on the first
+ * or the last line shown, as the arrow keys of a document need.
+ */
+function lineTop(el: HTMLTextAreaElement, at: number): number {
+  const style = getComputedStyle(el);
+  const probe = document.createElement("div");
+  const width =
+    el.clientWidth - Number.parseFloat(style.paddingLeft) - Number.parseFloat(style.paddingRight);
+  Object.assign(probe.style, {
+    position: "absolute",
+    visibility: "hidden",
+    top: "0",
+    left: "-9999px",
+    width: `${width}px`,
+    font: style.font,
+    letterSpacing: style.letterSpacing,
+    wordSpacing: style.wordSpacing,
+    lineHeight: style.lineHeight,
+    tabSize: style.tabSize,
+    whiteSpace: "pre-wrap",
+    overflowWrap: "break-word",
+  });
+  probe.textContent = el.value.slice(0, at);
+  const mark = document.createElement("span");
+  mark.textContent = "\u200b";
+  probe.append(mark);
+  document.body.append(probe);
+  const top = mark.offsetTop;
+  probe.remove();
+  return top;
+}
+const onFirstLine = (el: HTMLTextAreaElement) => lineTop(el, el.selectionStart) === lineTop(el, 0);
+const onLastLine = (el: HTMLTextAreaElement) =>
+  lineTop(el, el.selectionEnd) === lineTop(el, el.value.length);
+
 function useAutosize(ref: React.RefObject<HTMLTextAreaElement | null>, value: string) {
   const grow = () => {
     const el = ref.current;
@@ -1126,13 +1401,76 @@ function TextField({
         e.preventDefault();
         setPageBlocks(blocks.filter((b) => b.id !== block.id));
       }
-    } else if (e.key === "ArrowUp" && start === 0 && prev && isText(prev)) {
+    } else if (e.key === "Escape") {
+      // Out of the text, the block selected (as Notion's): the next Esc lets go of it.
       e.preventDefault();
-      setPageFocus({ block: prev.id, at: "end" });
-    } else if (e.key === "ArrowDown" && end === block.text.length && next && isText(next)) {
+      el.blur();
+      selectBlocks(block.id, block.id);
+    } else if (mod && e.key.toLowerCase() === "a" && start === 0 && end === block.text.length) {
+      // Ctrl+A a second time (its text already all selected): every block of the page.
       e.preventDefault();
-      setPageFocus({ block: next.id, at: "start" });
+      el.blur();
+      const all = blocks.filter((b) => !hidden.has(b.id));
+      selectBlocks((all[0] as Block).id, (all[all.length - 1] as Block).id);
+    } else if (e.shiftKey && !mod && e.key === "ArrowUp" && start === 0) {
+      e.preventDefault();
+      el.blur();
+      selectBlocks(block.id, prev?.id ?? block.id);
+    } else if (e.shiftKey && !mod && e.key === "ArrowDown" && end === block.text.length) {
+      e.preventDefault();
+      el.blur();
+      selectBlocks(block.id, next?.id ?? block.id);
+    } else if (e.shiftKey || mod || e.altKey || start !== end) {
+      // Anything else with a modifier, or a text selection, is the textarea's own.
+    } else if ((e.key === "ArrowUp" && onFirstLine(el)) || (e.key === "ArrowLeft" && start === 0)) {
+      // Up from the first line shown (or left from the start) goes to the block above, as in a document;
+      // one that is not text (a picture, a chart) is selected.
+      if (!prev) return;
+      e.preventDefault();
+      if (isText(prev)) setPageFocus({ block: prev.id, at: "end" });
+      else {
+        el.blur();
+        selectBlocks(prev.id, prev.id);
+      }
+    } else if (
+      (e.key === "ArrowDown" && onLastLine(el)) ||
+      (e.key === "ArrowRight" && end === block.text.length)
+    ) {
+      if (!next) return;
+      e.preventDefault();
+      if (isText(next)) setPageFocus({ block: next.id, at: "start" });
+      else {
+        el.blur();
+        selectBlocks(next.id, next.id);
+      }
     }
+  };
+
+  // Pasting several lines (or Markdown) makes blocks of them; a picture or a file is kept in Boni and shown here.
+  const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = [...e.clipboardData.files];
+    if (files.length) {
+      e.preventDefault();
+      e.stopPropagation();
+      void addFilesToPage(files, block.id);
+      return;
+    }
+    if (block.type === "code") return;
+    const text = e.clipboardData.getData("text/plain");
+    if (!text.includes("\n")) return;
+    const incoming = markdownToBlocks(text);
+    const el = e.currentTarget;
+    const r = pastedInto(
+      blocks,
+      { id: block.id, start: el.selectionStart, end: el.selectionEnd },
+      incoming,
+      blockId,
+    );
+    if (!r) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setPageBlocks(r.blocks);
+    setPageFocus(r.focus);
   };
 
   return (
@@ -1196,6 +1534,7 @@ function TextField({
         aria-label={t(`block.kind.${kind}`)}
         onChange={(e) => change(e.target.value)}
         onKeyDown={onKey}
+        onPaste={onPaste}
       />
       {slash && (
         <SlashMenu

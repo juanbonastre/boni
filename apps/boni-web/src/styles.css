@@ -6462,3 +6462,25 @@ button.rows-panel-row:hover {
 .doc-file .muted {
   font-size: 12px;
 }
+
+/* Whole blocks selected (Notion's): tinted, the text not selectable while it lasts. */
+.doc-blocks:focus {
+  outline: none;
+}
+.doc-blocks.selecting {
+  user-select: none;
+}
+.blk.selected {
+  border-radius: 4px;
+  background: var(--accent-soft);
+}
+.blk.selected .blk-input {
+  caret-color: transparent;
+}
+/* Where pasted files go, asked once. */
+.file-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}

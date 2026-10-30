@@ -27,6 +27,7 @@ import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
 import { createByName } from "./byName.ts";
 import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import {
+  addFile,
   createCollection,
   createRow,
   DataError,
@@ -486,6 +487,13 @@ export function makeApp(opts: ServerOptions): App {
             route.startsWith("DELETE"),
           );
           return "error" in r ? send(res, r.status, { error: r.error }) : send(res, 200, r);
+        }
+        // A file pasted or dropped into a page: kept as a row of a collection that holds files.
+        if (route === "POST /api/data/files") {
+          const r = addFile(store, await bodyOf(req), s.device);
+          return "error" in r
+            ? send(res, r.status, { error: r.error, options: r.options })
+            : send(res, 200, r);
         }
         // An image a note shows in its text, as data any host's transport carries (text).
         if (route === "GET /api/data/files/:sha/inline") {
