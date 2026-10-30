@@ -2,8 +2,10 @@
  * Extensions (docs/extensiones.md, section 3): a manifest is data made only of catalogue pieces, which the
  * code interprets the way it interprets a plan. Nothing in it is code; anything the catalogue does not
  * offer is refused. The manifest is closed: an unknown key is an error, not something ignored, so a
- * manifest written for a newer Boni never half-works on an older one.
+ * manifest written for a newer Boni never half-works on an older one. Its functions (§11, `functions.ts`) are
+ * code, but they only ever run in the box and only give back what Boni checks and applies.
  */
+import { type FunctionSpec, functionNeeds, functionsErrors, type TestSpec } from "./functions.ts";
 
 /** A source: a connector of the catalogue bringing items into one of the extension's types. */
 export interface SourceSpec {
@@ -62,6 +64,9 @@ export interface ExtensionManifest {
   routes?: Record<string, RouteSpec>;
   /** Juan's decisions on its proposals feed the reviewer every `every` decisions. */
   learning?: { every: number };
+  /** Its functions (docs/extensiones.md §11), each tried by its tests before it may be activated. */
+  functions?: FunctionSpec[];
+  tests?: TestSpec[];
   needs: NeedsSpec;
 }
 
@@ -111,6 +116,8 @@ export function manifestErrors(m: unknown, cat: Catalogue): string[] {
     "flows",
     "routes",
     "learning",
+    "functions",
+    "tests",
     "needs",
   ]);
   if (extra.length) e.push(`manifest: unknown keys ${extra.join(", ")}`);
@@ -256,6 +263,8 @@ export function manifestErrors(m: unknown, cat: Catalogue): string[] {
       e.push("learning: { every: 5 to 500 }");
   }
 
+  e.push(...functionsErrors(m.functions, m.tests));
+
   const n = m.needs;
   if (!isObj(n)) e.push("needs: required");
   else {
@@ -267,6 +276,11 @@ export function manifestErrors(m: unknown, cat: Catalogue): string[] {
       const used = [
         ...list("sources", LIMITS.sources).map((s) => (isObj(s) ? s.into : null)),
         ...list("flows", LIMITS.flows).map((f) => (isObj(f) && isObj(f.on) ? f.on.created : null)),
+        ...(Array.isArray(m.functions) ? m.functions : []).flatMap((f) =>
+          isObj(f) && Array.isArray(f.reads)
+            ? f.reads.map((r) => (isObj(r) ? r.collection : null))
+            : [],
+        ),
       ].filter((k): k is string => typeof k === "string");
       for (const k of used) if (!n.reads.includes(k)) e.push(`needs.reads: misses ${k}`);
     }
@@ -308,7 +322,8 @@ export function parseManifest(
 
 /**
  * What a new version asks for that the old one did not: more types read, proposing, a stronger role, a
- * bigger budget, new sources. Shown to Juan before he accepts a change (docs/extensiones.md, 3).
+ * bigger budget, new sources, and of its functions new code, fields more to read or write, making or changing
+ * rows, asking. Shown to Juan before he accepts a change (docs/extensiones.md, 3 and §11).
  */
 export function moreNeeds(old: ExtensionManifest, next: ExtensionManifest): string[] {
   const out: string[] = [];
@@ -320,5 +335,6 @@ export function moreNeeds(old: ExtensionManifest, next: ExtensionManifest): stri
     out.push("budget");
   for (const r of ["reader", "reviewer"] as const)
     if ((next.needs.roles?.[r] ?? "") !== (old.needs.roles?.[r] ?? "")) out.push(`role:${r}`);
+  out.push(...functionNeeds(old.functions ?? [], next.functions ?? []));
   return out;
 }
