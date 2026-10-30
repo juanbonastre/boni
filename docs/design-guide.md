@@ -194,9 +194,13 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   palette checked for colour blindness on these surfaces) and draw in SVG: hairline grid, 4 px rounded data ends, the
   latest value as a label and the rest in a hover tooltip (`--surface-2` box, 8 px radius).
 - **Boni on a phone** (narrower than 640 px, and its Android app; Juan, 2026-10-18): not the desktop window made small.
-  It is for capturing: three tabs at the bottom, "Apuntar" (the capture buttons, then the user's shortcuts: a saved form
-  with its values, which a tap opens filled in or saves at once with Undo in the toast), "Gráficas" (a list with each
-  chart's total; one chart on the whole screen with period chips) and "Boni" (the conversation, below). Forms and editors are full-screen sheets with their
+  It is for capturing first: four tabs at the bottom, "Apuntar" (the capture buttons, then the user's shortcuts: a saved
+  form with its values, which a tap opens filled in or saves at once with Undo in the toast), "Páginas" (Juan,
+  2026-10-30: one's data on the phone; the search, which opens the finder of Ctrl+K, "Recientes" and the sidebar's one
+  tree with rows for a finger; a collection opens as a list of its records, one under another with its first date,
+  newest first; a record or a page as on the desktop; Back goes a step at a time: the record, the list, the tree),
+  "Gráficas" (a list with each chart's total; one chart on the whole screen with period chips) and "Boni" (the
+  conversation, below). Forms and editors are full-screen sheets with their
   buttons fixed at the bottom; optional fields fold under "Más detalles"; menus come from the bottom; a tap on a chart
   shows the value and a second tap opens the detail. Same tokens and card recipe; written deviation for the thumb:
   16 px text, 48 px touch targets, 20 to 24 px icons. Back closes the top thing.

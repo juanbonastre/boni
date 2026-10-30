@@ -285,7 +285,11 @@ test.describe("on a phone", () => {
       await page.locator(".m-sheet .form").waitFor();
       issues.push(...(await audit(page, "phone shortcut editor")));
       await page.keyboard.press("Escape");
+      // «Páginas»: the search, the recent ones and the tree.
       await page.locator(".m-tab").nth(1).tap();
+      await page.locator(".m-pages").waitFor();
+      issues.push(...(await audit(page, "phone pages")));
+      await page.locator(".m-tab").nth(2).tap();
       await expect(page.locator(".m-chart-row")).toHaveCount(3);
       issues.push(...(await audit(page, "phone charts")));
       await page.locator(".m-chart-row").nth(1).tap();

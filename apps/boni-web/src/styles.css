@@ -6484,3 +6484,73 @@ button.rows-panel-row:hover {
   gap: 8px;
   margin-top: 4px;
 }
+
+/* The phone's «Páginas» (Juan, 2026-10-30): the sidebar's tree with rows for a finger, and a collection as a list
+   of its records. */
+.m-pages {
+  padding: 8px 12px 24px;
+}
+.m-pages .chart-row,
+.m-pages .nav-row {
+  min-height: 46px;
+  font-size: 16px;
+}
+.m-pages .group-head {
+  margin-top: 14px;
+}
+.m-pages-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  margin: 4px 0 6px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--hover);
+  color: var(--muted);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+}
+.m-rows ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.m-rows-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+}
+.m-rows-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.m-rows-date {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+.m-rows-row svg {
+  flex: none;
+  color: var(--muted);
+}
+.m-empty {
+  padding: 24px 16px;
+  color: var(--muted);
+}

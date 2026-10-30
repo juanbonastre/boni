@@ -125,7 +125,7 @@ export type Panel =
   /** The rows a data block counts (a click on it: «Lo que cuenta»), or those of one of its bars or points. */
   | { kind: "rows"; id: string; drill?: string; label?: string };
 /** The phone's tabs: capturing (shortcuts), the charts and the conversation with Boni. */
-export type Tab = "capture" | "charts" | "boni";
+export type Tab = "capture" | "pages" | "charts" | "boni";
 
 /** One turn of the conversation: what Juan asked and what the agent answered (painted by the code). */
 export interface ChatEntry {
@@ -633,6 +633,12 @@ export function goBack(): boolean {
   else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
   else if (s.view.kind === "chart") showHome();
   else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
+  // The phone's «Páginas» goes back a step at a time: a record to its collection, a collection or a page to the tree.
+  else if (s.tab === "pages" && s.view.kind === "row") {
+    void flushRowBody();
+    openCollection(s.view.type);
+  } else if (s.tab === "pages" && (s.view.kind === "collection" || s.view.kind === "page"))
+    set({ view: { kind: "home" } });
   else if (s.view.kind === "row") {
     // A record opened from another app (Boni Calendar's «Abrir en Boni»): Back goes back to that app.
     void flushRowBody();
