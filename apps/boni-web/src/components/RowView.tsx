@@ -150,7 +150,9 @@ export function RowView() {
               )}
             </div>
           )}
-          {related && related.groups.length > 0 && <RelatedSection groups={related.groups} />}
+          {related && related.groups.length > 0 && (
+            <RelatedSection type={type.id} groups={related.groups} />
+          )}
           {doc && <DocEditor key={doc.id} doc={doc} />}
         </div>
       </div>

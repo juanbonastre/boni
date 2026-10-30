@@ -1,6 +1,6 @@
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
-import { DataError, fileInline } from "./data.ts";
+import { DataError, fileInline, rowUiOf, setRowUi } from "./data.ts";
 import { relatedTo } from "./related.ts";
 import { seed, type TypeSpec } from "./seed.test-util.ts";
 
@@ -84,6 +84,31 @@ describe("what points to a record («Relacionado»)", () => {
     const { store, id } = fresh();
     store.remove(id("personas/ana.md"), { actor: "user" });
     expect(() => relatedTo(store, id("personas/ana.md"))).toThrow(DataError);
+  });
+});
+
+describe("how a collection's rows show «Relacionado»", () => {
+  it("open or not, and its groups folded one by one, kept for the collection; anything else is refused", () => {
+    const { store } = fresh();
+    expect(rowUiOf(store, "t_proyecto")).toMatchObject({ related: false, folded: [] });
+    expect(
+      setRowUi(store, "t_proyecto", { related: true, folded: ["t_tarea:f_proyecto"] }),
+    ).toMatchObject({
+      related: true,
+      folded: ["t_tarea:f_proyecto"],
+    });
+    expect(rowUiOf(store, "t_proyecto")).toMatchObject({
+      related: true,
+      folded: ["t_tarea:f_proyecto"],
+    });
+    expect(setRowUi(store, "t_proyecto", { related: "sí" })).toEqual({
+      status: 400,
+      error: "bad-related",
+    });
+    expect(setRowUi(store, "t_proyecto", { folded: ["<script>"] })).toEqual({
+      status: 400,
+      error: "bad-folded",
+    });
   });
 });
 

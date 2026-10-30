@@ -562,8 +562,16 @@ test("a record says what points to it («Relacionado»), and a note's text shows
   await expect(w.locator(".row-related")).toHaveCount(0);
   await related.click();
   await expect(w.locator(".row-related")).toContainText("en «Regalo de»");
+  // Each group folds by its name (Juan, 2026-10-30).
+  const group = w.locator(".row-related-head", { hasText: "Pertenencia" });
+  await group.click();
+  await expect(w.locator(".row-related-row")).toHaveCount(0);
+  await group.click();
   await w.locator(".row-related-row", { hasText: "Cafetera" }).click();
   await expect(w.locator(".row-title, .doc-title").first()).toHaveValue("Cafetera");
+  // The collection keeps it open for all its rows: back on Ana, there it is.
+  openLink(`boni://note?id=${anaId}`);
+  await expect(w.locator(".row-related-row", { hasText: "Cafetera" })).toBeVisible();
   // The picture comes through the app's own channel to the server (no address of the server in the page).
   openLink(`boni://note?id=${hornoId}`);
   const img = w.locator(".doc-file-image img");

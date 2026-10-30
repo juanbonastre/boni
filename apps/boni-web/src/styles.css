@@ -6355,9 +6355,38 @@ button.rows-panel-row:hover {
   border-bottom: 1px solid var(--line);
 }
 .row-related-group h4 {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   font-size: 13px;
   font-weight: 600;
+}
+/* A group folds by its name (its chevron turns as the properties' line does). */
+.row-related-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.row-related-head:hover {
+  background: var(--hover);
+}
+.row-related-head svg {
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+.row-related-head.open svg {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-related-head svg {
+    transition: none;
+  }
 }
 .row-related-group ul {
   margin: 0;

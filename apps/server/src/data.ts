@@ -47,7 +47,11 @@ export interface DataType {
 export interface RowUi {
   open: boolean;
   hidden: string[];
+  /** Its «Relacionado» unfolded, and the groups in it folded (`<collection>:<field>`, Juan 2026-10-30). */
+  related: boolean;
+  folded: string[];
 }
+const GROUP = /^[A-Za-z0-9_-]{1,64}:[A-Za-z0-9_-]{1,64}$/;
 /** Where a collection's `RowUi` is kept (the store's settings: the account's, on every device). */
 export const ROW_UI = "ui/row/";
 export function rowUiOf(store: UserStore, typeId: string): RowUi {
@@ -56,12 +60,19 @@ export function rowUiOf(store: UserStore, typeId: string): RowUi {
     return {
       open: v.open === true,
       hidden: Array.isArray(v.hidden) ? v.hidden.filter((x) => typeof x === "string") : [],
+      related: v.related === true,
+      folded: Array.isArray(v.folded)
+        ? v.folded.filter((x) => typeof x === "string" && GROUP.test(x))
+        : [],
     };
   } catch {
-    return { open: false, hidden: [] };
+    return { open: false, hidden: [], related: false, folded: [] };
   }
 }
-/** Folds or unfolds a collection's properties, or hides or shows some of them (fields it has). */
+/**
+ * Folds or unfolds a collection's properties, or hides or shows some of them (fields it has); and its rows'
+ * «Relacionado», whole or group by group.
+ */
 export function setRowUi(
   store: UserStore,
   typeId: string,
@@ -82,6 +93,19 @@ export function setRowUi(
     )
       return { status: 400, error: "bad-hidden" };
     next.hidden = [...new Set(body.hidden as string[])];
+  }
+  if (body.related !== undefined) {
+    if (typeof body.related !== "boolean") return { status: 400, error: "bad-related" };
+    next.related = body.related;
+  }
+  if (body.folded !== undefined) {
+    if (
+      !Array.isArray(body.folded) ||
+      body.folded.length > 200 ||
+      body.folded.some((x) => typeof x !== "string" || !GROUP.test(x))
+    )
+      return { status: 400, error: "bad-folded" };
+    next.folded = [...new Set(body.folded as string[])];
   }
   store.setSetting(`${ROW_UI}${typeId}`, JSON.stringify(next));
   return next;
@@ -142,7 +166,7 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
       count: sys?.rows(t.id).length ?? 0,
       level: "private",
       rules: [],
-      rowUi: { open: false, hidden: [] },
+      rowUi: { open: false, hidden: [], related: false, folded: [] },
       system: true,
     }),
   );
