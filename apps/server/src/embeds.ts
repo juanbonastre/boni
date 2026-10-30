@@ -3,7 +3,7 @@
  * collection, with how many find their file or note in Boni: counts only, never what a text says (D-16), to decide
  * what each one becomes.
  */
-import type { UserStore } from "@boni/store";
+import { closedToAi, type UserStore } from "@boni/store";
 import { FILE_FIELD, FOLDER_FIELD } from "./paths.ts";
 
 const EMBED = /!\[\[([^\]\n]*)\]\]/g;
@@ -95,4 +95,59 @@ export function embedCounts(store: UserStore): string[] {
         .join(", ")}.`,
     );
   return lines;
+}
+
+/**
+ * The embeds of files still in the texts after the conversion, one line each, for Juan to choose by hand (Juan,
+ * 2026-10-30: «enséñame las que sigan dudosas»): the record (its collection and title), the file's name and the
+ * folders of the files called so, or that Boni has none. A collection kept from the models says only how many.
+ */
+export function embedDoubts(store: UserStore): string[] {
+  const types = Object.values(store.schema().types).filter((t) => !t.system && !t.archived);
+  const levels = store.aiAccess();
+  const folders = new Map<string, string[]>();
+  for (const t of types)
+    for (const e of store.entities(t.id)) {
+      const title = String(e.values[t.titleField] ?? "")
+        .trim()
+        .toLowerCase();
+      if (!title || e.values[FILE_FIELD] === undefined) continue;
+      const folder = String(e.values[FOLDER_FIELD] ?? "").replace(/\/+$/, "") || "(sin carpeta)";
+      folders.set(title, [...(folders.get(title) ?? []), folder]);
+    }
+  const lines: string[] = [];
+  const closed: string[] = [];
+  let total = 0;
+  let records = 0;
+  for (const t of types) {
+    let hidden = 0;
+    for (const e of store.entities(t.id)) {
+      const files = [...(e.body ?? "").matchAll(EMBED)]
+        .map((m) => targetOf(m[1] ?? ""))
+        .filter((x) => ["imagen", "pdf", "fichero"].includes(kindOf(x.toLowerCase())));
+      if (!files.length) continue;
+      total += files.length;
+      records++;
+      if (closedToAi(levels[t.id]) || levels[t.id] === "opaque") {
+        hidden += files.length;
+        continue;
+      }
+      const title = String(e.values[t.titleField] ?? "").trim() || "(sin título)";
+      for (const target of files) {
+        const name = target.split("/").pop() ?? target;
+        const where = folders.get(name.toLowerCase()) ?? [];
+        lines.push(
+          where.length
+            ? `«${t.name}» «${title}»: ${name} — ${where.length} ficheros se llaman así: ${where.join(" · ")}`
+            : `«${t.name}» «${title}»: ${name} — no está en Boni`,
+        );
+      }
+    }
+    if (hidden) closed.push(`«${t.name}»: ${hidden} (cerrada a la IA: no se listan)`);
+  }
+  return [
+    `Ficheros incrustados que quedan (![[…]]): ${total} en ${records} ${records === 1 ? "registro" : "registros"}.`,
+    ...lines,
+    ...closed,
+  ];
 }

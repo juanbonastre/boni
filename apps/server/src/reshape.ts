@@ -201,7 +201,8 @@ export function withoutViews(body: string): { text: string; views: number; headi
  */
 const FILE_EMBED_LINE =
   /^([ \t]*)(?:>[ \t]?)?!\[\[([^\]\n|#]+)(?:#[^\]\n|]*)?(?:\|([^\]\n]*))?\]\][ \t]*$/;
-const FILE_EMBEDS = /!\[\[([^\]\n|#]+)[^\]\n]*\]\]/g;
+/** An embed inside a sentence: [1] what it points to, [2] its alias (a width, or a name). */
+const FILE_EMBEDS_FULL = /!\[\[([^\]\n|#]+)(?:#[^\]\n|]*)?(?:\|([^\]\n]*))?\]\]/g;
 /** A file's name (an extension that is not a note's or a view's), not a note. */
 const isFileTarget = (target: string) => {
   const ext = /\.([a-z][a-z0-9]{0,4})$/i.exec(target.trim())?.[1]?.toLowerCase();
@@ -1083,15 +1084,17 @@ class Reshape {
     );
   }
 
-  /** Only Obsidian's views out of the texts, with the heading a view leaves empty («## Agenda» over `![[….base]]`). */
   /**
-   * Each embed of a file alone on its line (or on a quote's line, Obsidian's callouts: it comes out of the quote) made
-   * the page's file block when it finds its row: by its folder and name, or by a name only one file has. One whose
-   * name several files have, one with no file in Boni and one in the middle of a line stay as they were.
+   * Each embed of a file made the page's file block when it finds its row: by its folder and name, by a name only
+   * one file has, or, when several files have that name, by the one nearest the folder its note had in the vault
+   * (read once here, for this; Juan 2026-10-30). Alone on its line (or on a quote's line, Obsidian's callouts) the
+   * block takes the line; in the middle of a sentence it goes on its own line just below it. A name still shared by
+   * files as near, a file Boni does not have, and one inside a quote's sentence stay as they were.
    */
   private files(): void {
     const exact = new Map<string, string>();
     const named = new Map<string, string[]>();
+    const folderOf = new Map<string, string>();
     for (const t of this.userTypes()) {
       const file = t.fields.find((f) => f.type === "file" && !f.archived);
       if (!file) continue;
@@ -1101,48 +1104,115 @@ class Reshape {
         const folder = String(e.values[FOLDER_FIELD] ?? "").replace(/\/+$/, "");
         exact.set(`${folder}/${name}`.toLowerCase(), e.id);
         named.set(name.toLowerCase(), [...(named.get(name.toLowerCase()) ?? []), e.id]);
+        folderOf.set(e.id, folder.toLowerCase());
       }
     }
-    const n = { notes: 0, exact: 0, unique: 0, shared: 0, missing: 0, inline: 0 };
+    const n = {
+      notes: 0,
+      exact: 0,
+      unique: 0,
+      near: 0,
+      moved: 0,
+      shared: 0,
+      missing: 0,
+      quoted: 0,
+    };
+    /** How many folders, from the top, two paths share. */
+    const shared = (a: string, b: string) => {
+      const x = a.split("/").filter(Boolean);
+      const y = b.split("/").filter(Boolean);
+      let k = 0;
+      while (k < x.length && k < y.length && x[k] === y[k]) k++;
+      return k;
+    };
+    const find = (
+      target: string,
+      home: string,
+    ): { id: string; how: "exact" | "unique" | "near" } | "shared" | "missing" => {
+      const name = (target.split("/").pop() ?? target).trim().toLowerCase();
+      const byPath = exact.get(target.toLowerCase());
+      if (byPath) return { id: byPath, how: "exact" };
+      const same = named.get(name) ?? [];
+      if (same.length === 1) return { id: same[0] as string, how: "unique" };
+      if (!same.length) return "missing";
+      if (!home) return "shared";
+      const scored = same.map((id) => ({ id, k: shared(home, folderOf.get(id) ?? "") }));
+      const best = Math.max(...scored.map((x) => x.k));
+      const top = scored.filter((x) => x.k === best);
+      return best > 0 && top.length === 1
+        ? { id: (top[0] as { id: string }).id, how: "near" }
+        : "shared";
+    };
+    const block = (target: string, alias: string | undefined, id: string) => {
+      const name = (target.split("/").pop() ?? target).trim();
+      const width = /^(\d{2,4})(?:x\d+)?$/.exec((alias ?? "").trim())?.[1];
+      const w = width && Number(width) >= 16 && Number(width) <= 4000 ? `|${width}` : "";
+      return `![${name.replace(/[\]|]/g, " ")}${w}](boni:${id})`;
+    };
+    const count = (r: ReturnType<typeof find>) => {
+      if (r === "shared") n.shared++;
+      else if (r === "missing") n.missing++;
+      else n[r.how]++;
+    };
     for (const t of this.userTypes())
       for (const e of this.store.entities(t.id)) {
         const body = e.body ?? "";
         if (!body.includes("![[")) continue;
+        const path = e.values[PATH_FIELD];
+        const home =
+          typeof path === "string"
+            ? path.slice(0, Math.max(0, path.lastIndexOf("/"))).toLowerCase()
+            : "";
         let changed = false;
-        const lines = body.split("\n").map((line) => {
+        const lines = body.split("\n").flatMap((line) => {
           const m = FILE_EMBED_LINE.exec(line);
-          if (!m) {
-            for (const x of line.matchAll(FILE_EMBEDS))
-              if (isFileTarget(x[1] as string)) n.inline++;
-            return line;
+          if (m) {
+            const target = (m[2] as string).trim();
+            if (!isFileTarget(target)) return [line];
+            const r = find(target, home);
+            count(r);
+            if (typeof r === "string") return [line];
+            changed = true;
+            return [`${m[1]}${block(target, m[3], r.id)}`];
           }
-          const target = (m[2] as string).trim();
-          if (!isFileTarget(target)) return line;
-          const name = (target.split("/").pop() ?? target).trim();
-          const sameName = named.get(name.toLowerCase()) ?? [];
-          const id =
-            exact.get(target.toLowerCase()) ?? (sameName.length === 1 ? sameName[0] : undefined);
-          if (!id) {
-            if (sameName.length > 1) n.shared++;
-            else n.missing++;
-            return line;
+          const inside = [...line.matchAll(FILE_EMBEDS_FULL)].filter((x) =>
+            isFileTarget(x[1] as string),
+          );
+          if (!inside.length) return [line];
+          // In a quote's sentence (a callout's text) it stays: the quote would be split.
+          if (/^\s*>/.test(line)) {
+            n.quoted += inside.length;
+            return [line];
           }
-          if (exact.has(target.toLowerCase())) n.exact++;
-          else n.unique++;
+          const below: string[] = [];
+          let rest = line;
+          for (const x of inside) {
+            const target = (x[1] as string).trim();
+            const r = find(target, home);
+            if (typeof r === "string") {
+              count(r);
+              continue;
+            }
+            n.moved++;
+            below.push(block(target, x[2], r.id));
+            rest = rest.replace(x[0], "");
+          }
+          if (!below.length) return [line];
           changed = true;
-          const width = /^(\d{2,4})(?:x\d+)?$/.exec((m[3] ?? "").trim())?.[1];
-          const w = width && Number(width) >= 16 && Number(width) <= 4000 ? `|${width}` : "";
-          return `${m[1]}![${name.replace(/[\]|]/g, " ")}${w}](boni:${id})`;
+          const text = rest.replace(/[ \t]{2,}/g, " ").trimEnd();
+          return text.trim() ? [text, ...below] : below;
         });
         if (!changed) continue;
         this.store.update(e.id, { [BODY]: { value: lines.join("\n"), label: this.l } }, this.meta);
         n.notes++;
       }
+    const made = n.exact + n.unique + n.near + n.moved;
     this.lines.push(
-      `Ficheros incrustados (![[…]]): ${n.exact + n.unique} pasan a ser bloques de fichero en ${n.notes} registros (${n.exact} por carpeta y nombre, ${n.unique} por un nombre que solo tiene un fichero). Se quedan como estaban: ${n.shared} con un nombre que llevan varios ficheros, ${n.missing} sin fichero en Boni y ${n.inline} en mitad de una línea.`,
+      `Ficheros incrustados (![[…]]): ${made} pasan a ser bloques de fichero en ${n.notes} registros (${n.exact} por carpeta y nombre, ${n.unique} por un nombre que solo tiene un fichero, ${n.near} por la carpeta que tenía su nota, ${n.moved} sacados de una frase a su propia línea). Se quedan como estaban: ${n.shared} con un nombre que llevan varios ficheros igual de cerca, ${n.missing} sin fichero en Boni y ${n.quoted} dentro de una cita.`,
     );
   }
 
+  /** Only Obsidian's views out of the texts, with the heading a view leaves empty («## Agenda» over `![[….base]]`). */
   private views(): void {
     let notes = 0;
     let views = 0;

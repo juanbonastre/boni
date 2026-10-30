@@ -1,6 +1,6 @@
 import { openUserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
-import { embedCounts } from "./embeds.ts";
+import { embedCounts, embedDoubts } from "./embeds.ts";
 import { seed, type TypeSpec } from "./seed.test-util.ts";
 
 /** Invented notes with the embeds Obsidian leaves: images by their path or name, a PDF, notes and a view. */
@@ -34,6 +34,33 @@ describe("the vault's embeds, counted (D-16)", () => {
       "Por colección: «Tarea» 4, «Wiki» 3.",
     ]);
     expect(lines.join("\n")).not.toMatch(/image|Tema|doc\.pdf|Otra nota/);
+    store.close();
+  });
+});
+
+describe("the embedded files still to choose (Juan, 2026-10-30)", () => {
+  it("one line each, with the folders of the files called so; a collection kept from the models only counts", () => {
+    const store = openUserStore(":memory:");
+    seed(
+      store,
+      [
+        { key: "tarea", name: "Tarea", folder: "agenda/" },
+        { key: "diario", name: "Diario", folder: "diario/", ai: "private" },
+        { key: "archivos", name: "Archivos", folder: "", files: true },
+      ],
+      {
+        "agenda/disfraz.md": "# Disfraz\n\n![[image 2.png]]\n![[falta.png]]\n![[Una nota]]\n",
+        "diario/hoy.md": "# Hoy\n\n![[image 2.png]]\n",
+        "agenda/gestiones/attachments/image 2.png": "png",
+        "wiki/temas/attachments/image 2.png": "png",
+      },
+    );
+    expect(embedDoubts(store)).toEqual([
+      "Ficheros incrustados que quedan (![[…]]): 3 en 2 registros.",
+      "«Tarea» «Disfraz»: image 2.png — 2 ficheros se llaman así: agenda/gestiones/attachments · wiki/temas/attachments",
+      "«Tarea» «Disfraz»: falta.png — no está en Boni",
+      "«Diario»: 1 (cerrada a la IA: no se listan)",
+    ]);
     store.close();
   });
 });
