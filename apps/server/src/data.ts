@@ -6,8 +6,17 @@ import {
   type TypeDef,
   type Value,
 } from "@boni/entities";
-import { AI_LEVELS, type AiLevel, BODY, StoreError, type UserStore, type Zone } from "@boni/store";
+import {
+  AI_LEVELS,
+  type AiLevel,
+  BODY,
+  closedToAi,
+  StoreError,
+  type UserStore,
+  type Zone,
+} from "@boni/store";
 import { filterErrors } from "@boni/views";
+import { mimeOf } from "./paths.ts";
 import type { SystemCollections } from "./systemCollections.ts";
 
 /**
@@ -422,6 +431,59 @@ export function fileInline(store: UserStore, sha: string): { mime: string; data:
   if (!info || !INLINE.has(info.mime) || info.size > MAX_INLINE_BYTES) return null;
   const f = store.getFile(sha);
   return f ? { mime: f.mime, data: Buffer.from(f.data).toString("base64") } : null;
+}
+
+/** Where a file pasted or dropped into a page goes when the account has chosen (Juan, 2026-10-30). */
+export const FILES_INTO = "files/into";
+/** The biggest file a page takes pasted or dropped (it travels as base64 in one request). */
+export const MAX_PASTED_BYTES = 5 * 1024 * 1024;
+
+/**
+ * A file pasted or dropped into a page, kept as a row of a collection that holds files: the one the account chose,
+ * or the only one the models may see; with several and no choice yet, the app asks (`choose`, with the options) and
+ * may keep the answer (`remember`). Its title is its name; the page shows it by the row's id.
+ */
+export function addFile(
+  store: UserStore,
+  body: Record<string, unknown>,
+  device?: string,
+):
+  | { id: string; name: string; type: string }
+  | { status: number; error: string; options?: { type: string; name: string }[] } {
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name || name.length > 200 || /[/\\]/.test(name) || name.startsWith("."))
+    return { status: 400, error: "bad-name" };
+  const data = typeof body.data === "string" ? body.data : "";
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data)) return { status: 400, error: "bad-data" };
+  const bytes = Buffer.from(data, "base64");
+  if (!bytes.length || bytes.length > MAX_PASTED_BYTES) return { status: 413, error: "too-big" };
+  const holders = userTypes(store).filter((t) =>
+    t.fields.some((f) => f.type === "file" && !f.archived),
+  );
+  const levels = store.aiAccess();
+  const kept = store.setting(FILES_INTO);
+  let into = typeof body.into === "string" ? body.into : null;
+  if (into !== null && !holders.some((t) => t.id === into))
+    return { status: 400, error: "bad-into" };
+  if (into && body.remember === true) store.setSetting(FILES_INTO, into);
+  if (!into && kept && holders.some((t) => t.id === kept)) into = kept;
+  if (!into) {
+    const seen = holders.filter((t) => !closedToAi(levels[t.id]));
+    if (seen.length === 1) into = (seen[0] as TypeDef).id;
+  }
+  const def = holders.find((t) => t.id === into);
+  if (!def)
+    return {
+      status: 409,
+      error: "choose",
+      options: holders.map((t) => ({ type: t.id, name: t.name })),
+    };
+  const field = def.fields.find(
+    (f) => f.type === "file" && !f.archived,
+  ) as TypeDef["fields"][number];
+  const sha = store.putFile(bytes, mimeOf(name));
+  const row = createRow(store, def.id, { [def.titleField]: name, [field.id]: sha }, device);
+  return { id: row.id, name, type: def.id };
 }
 
 /** One row with its body (a row opened as a page). */

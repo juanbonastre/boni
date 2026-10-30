@@ -1,6 +1,6 @@
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
-import { DataError, fileInline, rowUiOf, setRowUi } from "./data.ts";
+import { addFile, DataError, FILES_INTO, fileInline, rowUiOf, setRowUi } from "./data.ts";
 import { relatedTo } from "./related.ts";
 import { seed, type TypeSpec } from "./seed.test-util.ts";
 
@@ -122,5 +122,56 @@ describe("an image in a note's text", () => {
     });
     expect(fileInline(store, sha("adjuntos/rubrica.pdf"))).toBeNull();
     expect(fileInline(store, "../../etc")).toBeNull();
+  });
+});
+
+describe("a file pasted or dropped into a page", () => {
+  const png = Buffer.from([137, 80, 78, 71, 9, 9, 9]).toString("base64");
+  it("goes to the only collection of files, as a row titled by its name", () => {
+    const { store } = fresh();
+    const r = addFile(store, { name: "captura.png", data: png }, "portatil");
+    expect(r).toMatchObject({ name: "captura.png", type: "t_archivos" });
+    const row = store.get((r as { id: string }).id)?.entity;
+    expect(fileInline(store, row?.values.f_boni_file as string)?.mime).toBe("image/png");
+    expect(addFile(store, { name: "../x.png", data: png })).toEqual({
+      status: 400,
+      error: "bad-name",
+    });
+    expect(addFile(store, { name: "x.png", data: "no es base64!" })).toEqual({
+      status: 400,
+      error: "bad-data",
+    });
+  });
+
+  it("with several, the app asks once and the account keeps the answer", () => {
+    const store = openUserStore(":memory:");
+    stores.push(store);
+    seed(
+      store,
+      [
+        { key: "adjuntos", name: "Adjuntos", folder: "adjuntos/", files: true },
+        { key: "fotos", name: "Fotos", folder: "fotos/", files: true },
+      ],
+      { "adjuntos/a.pdf": "%PDF inventado", "fotos/b.png": "png inventado" },
+    );
+    expect(addFile(store, { name: "c.png", data: png })).toEqual({
+      status: 409,
+      error: "choose",
+      options: [
+        { type: "t_adjuntos", name: "Adjuntos" },
+        { type: "t_fotos", name: "Fotos" },
+      ],
+    });
+    expect(addFile(store, { name: "c.png", data: png, into: "t_nada" })).toEqual({
+      status: 400,
+      error: "bad-into",
+    });
+    expect(
+      addFile(store, { name: "c.png", data: png, into: "t_fotos", remember: true }),
+    ).toMatchObject({
+      type: "t_fotos",
+    });
+    expect(store.setting(FILES_INTO)).toBe("t_fotos");
+    expect(addFile(store, { name: "d.png", data: png })).toMatchObject({ type: "t_fotos" });
   });
 });

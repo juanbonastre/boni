@@ -207,6 +207,13 @@ interface State {
   rowDoc: Page | null;
   /** What points to the open row (its «Relacionado») and the titles of what it points to. */
   related: Related | null;
+  /** Blocks selected as a whole in the page being edited (Notion's): the block where it started, the one where it ends. */
+  blockSel: { anchor: string; focus: string } | null;
+  /** A file pasted or dropped with several collections of files to keep it in: the app asks once. */
+  fileChoice: {
+    options: { type: string; name: string }[];
+    answer: (type: string | null) => void;
+  } | null;
   /** One of Boni's screens as a page («Modelos»), edited like any page; `modified` when it is not Boni's. */
   rows: Record<
     string,
@@ -335,6 +342,8 @@ export const useStore = create<State>(() => ({
   row: null,
   rowDoc: null,
   related: null,
+  blockSel: null,
+  fileChoice: null,
   inbox: [],
   requests: [],
   inboxLoading: false,
@@ -1780,6 +1789,69 @@ export function setPageFull(full: boolean) {
 }
 
 export const setPageFocus = (f: State["pageFocus"]) => set({ pageFocus: f });
+
+/** Whole blocks selected, from one to another (both in the page being edited). */
+export const selectBlocks = (anchor: string, focus: string) =>
+  set({ blockSel: { anchor, focus }, pageFocus: null });
+export const clearBlockSel = () => {
+  if (get().blockSel) set({ blockSel: null });
+};
+
+/** A file's bytes as base64: every host's channel to the server carries text. */
+const base64Of = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ""));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+/** The biggest file a page takes pasted or dropped (the server's `MAX_PASTED_BYTES`). */
+const MAX_PASTED = 5 * 1024 * 1024;
+
+/**
+ * Files pasted or dropped into the page being edited (Juan, 2026-10-30): each kept in Boni, where the account keeps
+ * them (asked once when there is more than one collection of files), and put as file blocks after `after`, or in
+ * place of the empty text block the caret was in.
+ */
+export async function addFilesToPage(files: File[], after: string | null): Promise<void> {
+  const t = get().t;
+  const made: Page["spec"]["blocks"] = [];
+  let into: string | undefined;
+  for (const file of files) {
+    const name = file.name || "fichero";
+    if (file.size > MAX_PASTED) {
+      toast(t("file.tooBig", { name }));
+      continue;
+    }
+    try {
+      const data = await base64Of(file);
+      let r = await agent.addFile(name, data, into);
+      if ("choose" in r) {
+        const options = r.choose;
+        const picked = await new Promise<string | null>((answer) =>
+          set({ fileChoice: { options, answer } }),
+        );
+        set({ fileChoice: null });
+        if (!picked) return;
+        into = picked;
+        r = await agent.addFile(name, data, into);
+        if ("choose" in r) return;
+      }
+      made.push({ id: blockId(), type: "file", file: r.id, name: r.name });
+    } catch {
+      toast(t("file.saveError", { name }));
+    }
+  }
+  const page = editing();
+  if (!page || !made.length) return;
+  const blocks = page.spec.blocks;
+  const i = after ? blocks.findIndex((b) => b.id === after) : blocks.length - 1;
+  const here = blocks[i];
+  const out = [...blocks];
+  if (here && here.type === "text" && !here.text) out.splice(i, 1, ...made);
+  else out.splice(i + 1, 0, ...made);
+  setPageBlocks(out);
+}
 
 export const openFind = (open = true) => set({ findOpen: open });
 

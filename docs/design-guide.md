@@ -301,6 +301,19 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   they stay so for that collection. Each property hides with the eye that shows on hover (as Notion's); hidden ones
   wait, dimmed, under "N ocultas" at the end, where the same eye shows them again. The account keeps both per
   collection (Boni, Boni Calendar's peek, every device). A note opens on its text, not on a list of properties.
+- **Editing as a document** (Juan, 2026-10-30; phase 1 of the Boni note «Boni: el editor de páginas»). A selection
+  that leaves a block takes whole blocks, as Notion's: a drag from one block into another, Shift+click from the block
+  being edited, Esc (the block the caret is in; a second Esc lets go, a third leaves, as the peek's), Shift+↑ or
+  Shift+↓ at a block's edge, Ctrl+A twice (its text, then every block). Selected blocks are tinted with the accent's
+  soft colour and their text cannot be selected meanwhile. On them: Ctrl+C copies them as Markdown (any app pastes
+  it; Boni gets the same blocks back), Ctrl+X cuts, Supr or Retroceso deletes, Ctrl+D duplicates (the copies stay
+  selected), Ctrl+Shift+↑/↓ moves them, Tab and Shift+Tab nest them, ↑ and ↓ move the selection (Shift: grow it),
+  Enter edits the first one, typing puts what is typed in their place; Ctrl+Z undoes any of it. Pasting several
+  lines makes a block of each paragraph, heading, list item or to-do (the text before the caret joins the first,
+  the text after it the last); a picture or a file pasted or dropped is kept in Boni (where the account keeps such
+  files: asked once when there are several collections of files) and shown where it fell. The arrows go from block
+  to block as in a document: ↑ from the first line shown, ↓ from the last, ← at the start, → at the end; a block
+  that is not text (a picture, a chart) is selected on the way.
 - **Relacionado** (Juan, 2026-10-30): under the properties' line, one more quiet line with what points to the row
   from other collections, by count ("Relacionado · Deuda 1 · Movimiento 3 · Proyecto 2"), folded; unfolded, one group
   per collection and field ("Movimiento · en «Con quién»"), its rows newest first with their first date on the
