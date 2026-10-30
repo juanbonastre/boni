@@ -3855,6 +3855,41 @@ button.find-row:hover {
   flex-wrap: wrap;
   gap: 6px 10px;
   min-width: 0;
+  /* As wide as its block (on a collection's page, its table), never wider: there the layouts keep only their
+     icons when the room is short. */
+  container: db-head / inline-size;
+}
+@container db-head (max-width: 760px) {
+  .is-collection .db-layout span {
+    display: none;
+  }
+}
+/* Rows chosen: how many and what can be done with them, in a bar over the page's bottom (the head keeps its
+   options and nothing moves); above a toast when there is one. */
+.db-selinfo {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px 5px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+body:has(.toast) .db-selinfo {
+  bottom: 84px;
+}
+.db-selinfo-count {
+  margin-right: 6px;
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .db-name {
   display: flex;
@@ -3902,7 +3937,6 @@ button.find-row:hover {
 .db-table-wrap {
   overflow-x: auto;
   min-width: 0;
-  border-top: 1px solid var(--line);
 }
 .db-table {
   border-collapse: collapse;
@@ -3911,6 +3945,7 @@ button.find-row:hover {
   font-size: 14px;
 }
 .db-table th {
+  position: relative;
   text-align: left;
   font-weight: 500;
   color: var(--muted);
@@ -3918,6 +3953,132 @@ button.find-row:hover {
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
   white-space: nowrap;
+}
+.db-table.fixed th:not(.sel-col) {
+  border-top: 1px solid var(--line);
+}
+/* Each column as wide as its kind of value or as the user left it, never stretched to fill the page (Juan,
+   2026-10-30): the table is as wide as its columns and scrolls sideways when they do not fit. */
+.db-table.fixed {
+  table-layout: fixed;
+  min-width: 0;
+}
+.db-table.fixed td,
+.db-table.fixed td.is-title {
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+}
+.th-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.col-resize::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+}
+.col-resize:hover::after,
+.col-resize:active::after {
+  background: var(--accent);
+}
+.db-table.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+/* The rows' boxes: a column with no lines of its own, before the first one. A click in it, or in the strip left of
+   it up to the side bar on a collection's page, chooses the row; the strip lights the row it would choose. */
+.db-table .sel-col {
+  position: relative;
+  padding: 0;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  text-align: center;
+  vertical-align: top;
+}
+.db-table tbody tr:not(.ghost-row) > td.sel-col {
+  cursor: pointer;
+}
+.db-table .sel-col .db-check {
+  margin: 9px 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.db-table thead .sel-col {
+  vertical-align: middle;
+}
+.db-table thead .sel-col .db-check {
+  margin: 0;
+  vertical-align: middle;
+}
+/* «Nuevo» under the first column, not under the boxes. */
+.db-table-wrap > .db-add-row {
+  width: calc(100% - 36px);
+  margin-left: 36px;
+}
+.db-table tbody tr:hover .sel-col .db-check,
+.db-table tbody tr.lit .sel-col .db-check,
+.db-table:hover thead .sel-col .db-check,
+.db-table.has-picked .sel-col .db-check,
+.db-table .sel-col .db-check:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .db-table .sel-col .db-check {
+    opacity: 1;
+  }
+}
+.db-table tbody tr.lit:not(.selected) > td,
+.db-table tbody tr:not(.selected):not(.ghost-row):has(> td.sel-col:hover) > td {
+  background: var(--hover);
+}
+.db-table tbody tr.selected > td {
+  background: var(--accent-soft);
+}
+.content.db-gutter-on {
+  cursor: pointer;
+}
+/* A collection's own page: the boxes in the page's margin, the first column under the title. With the table
+   layout, the page is as wide as the table, centred, up to the window's width (Juan, 2026-10-30): the head's
+   options end where the table ends, and a narrow table is widened to a sensible minimum. */
+.content.page-doc.is-collection {
+  padding: 0 48px;
+}
+.content.is-collection .db-table-wrap {
+  margin-left: -36px;
+}
+.content.is-collection.fit .doc {
+  width: fit-content;
+  min-width: min(560px, 100%);
+  max-width: 100%;
+}
+.content.is-collection.fit .db-table.fixed {
+  min-width: 100%;
+}
+/* A row's title opens it with a click; a double click renames it. */
+.db-title-open {
+  cursor: pointer;
+}
+.db-title-open:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
 }
 .db-table td {
   border-bottom: 1px solid var(--line);
@@ -4601,7 +4762,6 @@ button.find-row:hover {
     display: none;
   }
 }
-.db-table td.is-title:hover .db-open,
 .db-card-title:hover .db-open,
 .db-open:focus-visible {
   display: inline-flex;
@@ -6423,8 +6583,12 @@ button.rows-panel-row:hover {
   font-size: 12px;
 }
 
-/* A file in a note's text (PageView.tsx `FileBlock`): an image in place with its name, or a card that opens it. */
+/* A file in a note's text (PageView.tsx `FileBlock`): an image in place, its name over its corner only under the
+   pointer, or a card that opens it. */
 .doc-file-image {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
   margin: 4px 0;
 }
 .doc-file-image img {
@@ -6434,8 +6598,24 @@ button.rows-panel-row:hover {
   border: 1px solid var(--line);
 }
 .doc-file-image figcaption {
-  margin-top: 4px;
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  color: var(--text);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.doc-file-image:hover figcaption {
+  opacity: 1;
 }
 .doc-file {
   display: inline-flex;

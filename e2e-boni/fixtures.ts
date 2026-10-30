@@ -776,8 +776,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
 export async function openInTree(page: Page, name: string): Promise<void> {
   const list = page.locator(".sidebar").getByRole("list", { name: /^(Páginas|Pages)$/ });
   const item = list.getByRole("button", { name, exact: true });
-  if (!(await item.count()))
-    await list.getByRole("button", { name: /^(Mostrar subpáginas|Show subpages): Boni$/ }).click();
+  const unfold = list.getByRole("button", { name: /^(Mostrar subpáginas|Show subpages): Boni$/ });
+  // Boni's branch unfolds by itself when one of its pages is the one open; else it is unfolded here.
+  await item.or(unfold).first().waitFor();
+  if (!(await item.isVisible())) await unfold.click();
   await item.click();
 }
 

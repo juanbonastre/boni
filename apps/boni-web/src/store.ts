@@ -2126,6 +2126,49 @@ export function toggleFold(kind: "sections" | "branches", id: string, on?: boole
   void keep(FILES.sidebar, fold);
 }
 
+/** Which thing is open, whatever else its view says (where it was opened from, a title). */
+const openKey = (v: State["view"]) =>
+  v.kind === "row"
+    ? `row:${v.id}`
+    : v.kind === "page"
+      ? `page:${v.id}`
+      : v.kind === "collection"
+        ? `collection:${v.type}`
+        : v.kind;
+
+/**
+ * What is open shows lit in the sidebar's «Páginas» (Juan, 2026-10-30): the section unfolded, and the collections
+ * above it, and a record's own collection when its notes show there. A page's own tree unfolds by itself
+ * (`PageTree`). Only when something else is opened (or the tree arrives), so a branch folded by hand stays folded.
+ */
+function revealInTree() {
+  const { view, tree, pages, dataTypes, fold } = get();
+  const want: string[] = [];
+  if (view.kind === "row" || view.kind === "collection") {
+    const byId = new Map((tree?.collections ?? []).map((c) => [c.id, c]));
+    let c = byId.get(view.type);
+    if (!c && dataTypes?.some((x) => x.id === view.type && x.system)) want.push("boni");
+    if (view.kind === "row" && c?.notes && tree?.notes.some((n) => n.id === view.id))
+      want.push(c.id);
+    for (let i = 0; c?.parent && i < 20; i++) {
+      want.push(c.parent);
+      c = byId.get(c.parent);
+    }
+  } else if (view.kind === "page") {
+    if (pages?.some((p) => p.id === view.id && p.template)) want.push("boni");
+  } else return;
+  const branches = [...new Set([...fold.branches, ...want])];
+  const sections = fold.sections.filter((x) => x !== "pages");
+  if (branches.length === fold.branches.length && sections.length === fold.sections.length) return;
+  const next = { sections, branches };
+  set({ fold: next });
+  void keep(FILES.sidebar, next);
+}
+useStore.subscribe((s, prev) => {
+  if (openKey(s.view) !== openKey(prev.view) || (s.tree && !prev.tree) || (s.pages && !prev.pages))
+    revealInTree();
+});
+
 /** Something gone out of «Recientes». */
 function forgetRecent(id: string) {
   const recent = get().recent.filter((r) => r.id !== id);
@@ -2287,28 +2330,40 @@ export async function addRow(type: string, values: Record<string, DataValue> = {
   }
 }
 
-export async function deleteRow(type: string, id: string) {
-  if (readOnly(type)) return;
-  const cur = get().rows[type];
+/** Several rows to the trash at once (a table's selection), with one Undo for all of them. */
+export async function deleteRows(type: string, ids: string[]) {
+  if (readOnly(type) || !ids.length) return;
   const t = get().t;
-  try {
-    await agent.deleteRow(id);
-    if (cur)
-      set({
-        rows: { ...get().rows, [type]: { ...cur, rows: cur.rows.filter((r) => r.id !== id) } },
-      });
-    toast(t("db.deleted"), {
-      label: t("toast.undo"),
-      run: () =>
-        void agent
-          .restoreRow(id)
-          .then(() => Promise.all([loadRows(type), loadTree()]))
-          .catch(() => toast(t("db.saveError"))),
-    });
-  } catch {
-    toast(t("db.saveError"));
+  const gone: string[] = [];
+  for (const id of ids) {
+    try {
+      await agent.deleteRow(id);
+      gone.push(id);
+    } catch {
+      toast(t("db.saveError"));
+      break;
+    }
   }
+  if (!gone.length) return;
+  const now = get().rows[type];
+  if (now)
+    set({
+      rows: {
+        ...get().rows,
+        [type]: { ...now, rows: now.rows.filter((r) => !gone.includes(r.id)) },
+      },
+    });
+  void loadTree();
+  toast(gone.length === 1 ? t("db.deleted") : t("db.deletedN", { n: gone.length }), {
+    label: t("toast.undo"),
+    run: () =>
+      void Promise.all(gone.map((id) => agent.restoreRow(id)))
+        .then(() => Promise.all([loadRows(type), loadTree()]))
+        .catch(() => toast(t("db.saveError"))),
+  });
 }
+
+export const deleteRow = (type: string, id: string) => deleteRows(type, [id]);
 
 /** A record opened from another app (Boni Calendar's "Abrir en Boni", by its id), as its page. */
 export async function openNoteAt(id: string) {
@@ -2369,7 +2424,13 @@ export async function openRow(type: string, id: string) {
  */
 function changeRowUi(
   type: string,
-  patch: { open?: boolean; hidden?: string[]; related?: boolean; folded?: string[] },
+  patch: {
+    open?: boolean;
+    hidden?: string[];
+    related?: boolean;
+    folded?: string[];
+    widths?: Record<string, number>;
+  },
 ) {
   set({
     dataTypes:
@@ -2382,6 +2443,18 @@ function changeRowUi(
 export function toggleRowProps(type: string) {
   const ui = get().dataTypes?.find((x) => x.id === type)?.rowUi;
   changeRowUi(type, { open: !ui?.open });
+}
+/** A column of the collection's table as wide as the user left it (Juan, 2026-10-30), kept for the account. */
+export function setColumnWidth(type: string, column: string, width: number) {
+  const now = get().dataTypes?.find((x) => x.id === type)?.rowUi.widths ?? {};
+  changeRowUi(type, {
+    widths: { ...now, [column]: Math.round(Math.max(40, Math.min(1600, width))) },
+  });
+}
+/** A column back to the width its kind of value has by itself. */
+export function resetColumnWidth(type: string, column: string) {
+  const { [column]: _, ...rest } = get().dataTypes?.find((x) => x.id === type)?.rowUi.widths ?? {};
+  changeRowUi(type, { widths: rest });
 }
 /** Its rows' «Relacionado» unfolded or not, for the collection (the account's, as the properties). */
 export function toggleRelated(type: string) {

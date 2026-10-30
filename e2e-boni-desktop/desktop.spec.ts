@@ -176,10 +176,10 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   await form.locator("input").nth(3).fill("portatil-ejemplo");
   await w.getByRole("button", { name: "Entrar" }).click();
   await w.keyboard.press("Escape");
-  // A new account has only Boni's template pages (the server made them, in the tree's «Boni» branch: unfolded,
-  // it stays so on this device); a page of the user's from the sidebar.
+  // A new account has only Boni's template pages (the server made them, in the tree's «Boni» branch). The window
+  // opens on the first of them, so the branch is unfolded down to it (what is open is lit in the tree); a page of
+  // the user's from the sidebar.
   const tree = w.locator(".sidebar");
-  await inTree(w).getByRole("button", { name: "Mostrar subpáginas: Boni" }).click();
   await expect(inTree(w).getByRole("button", { name: "Uso de la IA", exact: true })).toBeVisible();
   await expect(inTree(w).getByRole("button", { name: "Actividad", exact: true })).toBeVisible();
   await tree.getByRole("button", { name: "Nueva página" }).first().click();

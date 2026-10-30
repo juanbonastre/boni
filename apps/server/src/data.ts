@@ -17,7 +17,7 @@ import {
 } from "@boni/store";
 import { filterErrors } from "@boni/views";
 import { mimeOf } from "./paths.ts";
-import type { SystemCollections } from "./systemCollections.ts";
+import { isSystemCollection, type SystemCollections } from "./systemCollections.ts";
 
 /**
  * The user's collections as Notion's databases (docs/nucleo.md plan PR 19): their types and fields, their
@@ -59,7 +59,18 @@ export interface RowUi {
   /** Its «Relacionado» unfolded, and the groups in it folded (`<collection>:<field>`, Juan 2026-10-30). */
   related: boolean;
   folded: string[];
+  /** Its table's columns' widths in px, by field (or a column of the table's own), as the user left them. */
+  widths: Record<string, number>;
 }
+const COLUMN = /^[A-Za-z0-9_.:-]{1,64}$/;
+const widthsOf = (v: unknown): Record<string, number> => {
+  const out: Record<string, number> = {};
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return out;
+  for (const [k, w] of Object.entries(v as Record<string, unknown>))
+    if (COLUMN.test(k) && typeof w === "number" && Number.isInteger(w) && w >= 40 && w <= 1600)
+      out[k] = w;
+  return out;
+};
 const GROUP = /^[A-Za-z0-9_-]{1,64}:[A-Za-z0-9_-]{1,64}$/;
 /** Where a collection's `RowUi` is kept (the store's settings: the account's, on every device). */
 export const ROW_UI = "ui/row/";
@@ -73,29 +84,34 @@ export function rowUiOf(store: UserStore, typeId: string): RowUi {
       folded: Array.isArray(v.folded)
         ? v.folded.filter((x) => typeof x === "string" && GROUP.test(x))
         : [],
+      widths: widthsOf(v.widths),
     };
   } catch {
-    return { open: false, hidden: [], related: false, folded: [] };
+    return { open: false, hidden: [], related: false, folded: [], widths: {} };
   }
 }
 /**
- * Folds or unfolds a collection's properties, or hides or shows some of them (fields it has); and its rows'
- * «Relacionado», whole or group by group.
+ * Folds or unfolds a collection's properties, or hides or shows some of them (fields it has); its rows'
+ * «Relacionado», whole or group by group; its table's columns' widths. Boni's own tables keep only their widths
+ * (their rows neither open nor fold).
  */
 export function setRowUi(
   store: UserStore,
   typeId: string,
   body: Record<string, unknown>,
 ): RowUi | { status: number; error: string } {
-  const t = userTypes(store).find((x) => x.id === typeId);
-  if (!t) return { status: 404, error: "not-found" };
+  const own = isSystemCollection(typeId);
+  const t = own ? undefined : userTypes(store).find((x) => x.id === typeId);
+  if (!own && !t) return { status: 404, error: "not-found" };
+  if (own && Object.keys(body).some((k) => k !== "widths"))
+    return { status: 400, error: "bad-body" };
   const next = rowUiOf(store, typeId);
   if (body.open !== undefined) {
     if (typeof body.open !== "boolean") return { status: 400, error: "bad-open" };
     next.open = body.open;
   }
   if (body.hidden !== undefined) {
-    const ids = new Set(t.fields.map((f) => f.id));
+    const ids = new Set(t?.fields.map((f) => f.id));
     if (
       !Array.isArray(body.hidden) ||
       body.hidden.some((x) => typeof x !== "string" || !ids.has(x))
@@ -115,6 +131,17 @@ export function setRowUi(
     )
       return { status: 400, error: "bad-folded" };
     next.folded = [...new Set(body.folded as string[])];
+  }
+  if (body.widths !== undefined) {
+    const w = widthsOf(body.widths);
+    if (
+      typeof body.widths !== "object" ||
+      body.widths === null ||
+      Object.keys(w).length !== Object.keys(body.widths).length ||
+      Object.keys(w).length > 200
+    )
+      return { status: 400, error: "bad-widths" };
+    next.widths = w;
   }
   store.setSetting(`${ROW_UI}${typeId}`, JSON.stringify(next));
   return next;
@@ -175,7 +202,7 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
       count: sys?.rows(t.id).length ?? 0,
       level: "private",
       rules: [],
-      rowUi: { open: false, hidden: [], related: false, folded: [] },
+      rowUi: rowUiOf(store, t.id),
       system: true,
     }),
   );

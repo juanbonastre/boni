@@ -13,6 +13,7 @@ import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { mcpAnswer } from "./mcp.ts";
+import { SYS_RUNS } from "./systemCollections.ts";
 
 const PASSWORD = "una contraseña larga de ejemplo";
 let dir: string;
@@ -171,12 +172,24 @@ describe("collections as databases (plan PR 19)", () => {
           rowUi: { open: boolean; hidden: string[] };
         }[]
       ).find((x) => x.id === "t_libro")?.rowUi;
-    expect(await ui()).toEqual({ open: false, hidden: [], related: false, folded: [] });
+    expect(await ui()).toEqual({
+      open: false,
+      hidden: [],
+      related: false,
+      folded: [],
+      widths: {},
+    });
     const r = await call(t, "PUT", "/api/data/types/t_libro/row-ui", {
       open: true,
       hidden: ["f_paginas"],
     });
-    expect(r.body).toEqual({ open: true, hidden: ["f_paginas"], related: false, folded: [] });
+    expect(r.body).toEqual({
+      open: true,
+      hidden: ["f_paginas"],
+      related: false,
+      folded: [],
+      widths: {},
+    });
     // Another device of the account sees the same.
     const other = await token("otro-equipo");
     const theirs = (await call(other, "GET", "/api/data/types")).body.types as {
@@ -188,6 +201,7 @@ describe("collections as databases (plan PR 19)", () => {
       hidden: ["f_paginas"],
       related: false,
       folded: [],
+      widths: {},
     });
     expect(
       (await call(t, "PUT", "/api/data/types/t_libro/row-ui", { hidden: ["f_nada"] })).status,
@@ -195,12 +209,39 @@ describe("collections as databases (plan PR 19)", () => {
     expect((await call(t, "PUT", "/api/data/types/t_nada/row-ui", { open: true })).status).toBe(
       404,
     );
-    await call(t, "PUT", "/api/data/types/t_libro/row-ui", { open: false });
+    // Its table's columns as wide as the user left them (Juan, 2026-10-30); a width out of reason is refused.
+    expect(
+      (
+        await call(t, "PUT", "/api/data/types/t_libro/row-ui", {
+          widths: { f_paginas: 96, "_sys.created": 180 },
+        })
+      ).body.widths,
+    ).toEqual({ f_paginas: 96, "_sys.created": 180 });
+    for (const widths of [{ f_paginas: 12 }, { f_paginas: 4000 }, { "<b>": 100 }, [100], "ancho"])
+      expect((await call(t, "PUT", "/api/data/types/t_libro/row-ui", { widths })).status).toBe(400);
+    // Boni's own tables keep their widths too, and nothing else (their rows neither open nor fold).
+    const own = await call(t, "PUT", `/api/data/types/${SYS_RUNS}/row-ui`, {
+      widths: { f_status: 120 },
+    });
+    expect(own.body.widths).toEqual({ f_status: 120 });
+    expect(
+      (await call(t, "PUT", `/api/data/types/${SYS_RUNS}/row-ui`, { open: true })).status,
+    ).toBe(400);
+    expect(
+      (
+        (await call(t, "GET", "/api/data/types")).body.types as {
+          id: string;
+          rowUi: { widths: Record<string, number> };
+        }[]
+      ).find((x) => x.id === SYS_RUNS)?.rowUi.widths,
+    ).toEqual({ f_status: 120 });
+    await call(t, "PUT", "/api/data/types/t_libro/row-ui", { open: false, widths: {} });
     expect(await ui()).toEqual({
       open: false,
       hidden: ["f_paginas"],
       related: false,
       folded: [],
+      widths: {},
     });
   });
 

@@ -121,6 +121,10 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
   const daughters = byName((tree?.collections ?? []).filter((x) => x.parent === c.id));
   const notes = c.notes ? (tree?.notes ?? []).filter((n) => n.type === c.id) : [];
   const adding = tools.adding === c.id;
+  // Lit when it is open, or one of its records whose note the tree does not show (its notes hidden).
+  const lit =
+    (view.kind === "collection" && view.type === c.id) ||
+    (view.kind === "row" && view.type === c.id && !notes.some((n) => n.id === view.id));
   const kids = daughters.length + notes.length > 0 || adding;
   const open = kids && (tools.opened.includes(c.id) || adding);
   const icon = c.icon ? (
@@ -131,7 +135,7 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
   return (
     <li>
       <div
-        className={`chart-row tree-row${view.kind === "collection" && view.type === c.id ? " active" : ""}`}
+        className={`chart-row tree-row${lit ? " active" : ""}`}
         style={{ paddingLeft: depth * 14 }}
       >
         {kids ? (
