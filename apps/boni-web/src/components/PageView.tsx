@@ -886,7 +886,7 @@ function BlockRow({
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
   const self = useRef<HTMLDivElement>(null);
   const blocks = page.spec.blocks;
-  // MOCKUP (mockup/historial-visual): with History open, the block in the colour of who wrote it last.
+  // With History open, the block in the colour of who wrote it last (Juan, 2026-10-30).
   const mark = useStore((s) => s.historyMarks?.blocks[block.id]);
   const focus = useStore((s) => s.historyMarks?.focus ?? null);
   const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));

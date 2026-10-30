@@ -301,9 +301,11 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   head or the table moves; the head keeps its options, and a click on one of them, Esc or a click outside the table
   lets go; Supr deletes them (one Undo for all). The right button on a row opens its menu (Abrir, Cambiar nombre,
   Copiar enlace, Borrar; with several chosen, «Borrar N»); a row not chosen is chosen alone first. On a collection's
-  own page the table layout makes the page as wide as the table and centres it (up to the window's width, then the
-  table scrolls sideways; a narrow one is widened to 560 px): the title over its first column, the head's options
-  ending where the table ends, the layouts keeping only their icons when the head is narrow (Juan, 2026-10-30).
+  own page, in every layout, the page is centred and as wide as what it shows (Juan, 2026-10-30): a table's columns, a
+  board's columns, a gallery's cards (220 px each), a list's rows, from 560 px up to the window's width (then a table
+  or a board scrolls sideways, a gallery wraps); what is narrower than 560 px is widened to it, and a calendar fills
+  the width. The title sits over the first column (a table's boxes in the margin), the head's options end where the
+  content ends, and the layouts keep only their icons when the head is narrow.
   Boni's own tables have no boxes, menu or delete column; their widths are kept too.
   Board: a column per option (and "Sin X" when used), cards dragged between columns change the select. Calendar: a
   month from Monday, today marked, "+" on a day adds a row on it; "Semana" shows seven tall days with every item
@@ -529,11 +531,15 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   row's page, with the crumbs «Todas las páginas / its mothers / collection / title» and the page's own editor («/»
   and «+», data blocks included; the blocks Markdown cannot say are kept in the note's text as fenced «boni»
   blocks); Esc comes back. Below the table, what the collections take (next item).
-- **Historial** (a row's page, the button beside its collection's name): a panel on the right with its system
-  columns (two columns, name muted), «Quién escribió qué» (the text in blocks by author, each with a 3 px left border
-  in that author's colour and the author's name above in small muted text), «Cambios» (newest first: who · what, then
-  when and which fields, Boni's hidden fields left out) and «Quién lo ha visto» («con la nota» amber, «sin la nota»
-  `--good`), and «Ver la auditoría de la colección».
+- **Historial** (a row's page, the button beside its collection's name): a panel on the right with «Quién hizo qué»,
+  «Cambios» (newest first, a dot in each one's colour: who · what, then when and which fields, Boni's hidden fields
+  left out), its system columns (two columns, name muted), «Quién lo ha visto» («con la nota» amber, «sin la nota»
+  `--good`) and «Ver la auditoría de la colección». While it is open the page itself shows who wrote what (Juan,
+  2026-10-30): each block of the text, the title and each property carry a 3 px bar in the margin and a 9 % tint in
+  the colour of who wrote it last (Juan on any device green, an MCP client violet, Boni's agents in their role's
+  colour, the import grey); under the pointer a small label says who and when (and who else wrote part of it).
+  «Quién hizo qué» lists each one with their colour and how much is theirs («4 líneas · 1 propiedad»); a click on one
+  lights only theirs and brings it into view, a second click all again. Closing the panel leaves the page as it was.
 - **System columns** (any table; Juan, 2026-10-24): Creado, Creado por, Modificado, Modificado por, Editores, Visto
   por, Último acceso de una IA, Origen, Versión, Tamaño. None shown by default; the view's «Opciones» has a «Columnas
   de sistema» group to show each. Their cells are muted 12.5 px text, ellipsized (full text on hover), never editable.

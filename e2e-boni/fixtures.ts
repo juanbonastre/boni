@@ -209,19 +209,22 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         rowUi: { open: false, hidden: [] as string[] },
       };
       const today = new Date().toISOString().slice(0, 10);
-      let rows: { id: string; values: Record<string, unknown>; updated: number }[] = [
-        {
-          id: "r1",
-          values: { f_titulo: "Rayuela", f_estado: "o_leyendo", f_paginas: 600 },
-          updated: 3,
-        },
-        {
-          id: "r2",
-          values: { f_titulo: "Ficciones", f_estado: "o_leido", f_fin: today },
-          updated: 2,
-        },
-        { id: "r3", values: { f_titulo: "Pedro Páramo", f_estado: "o_pendiente" }, updated: 1 },
-      ];
+      let rows: { id: string; values: Record<string, unknown>; updated: number; body?: string }[] =
+        [
+          {
+            id: "r1",
+            values: { f_titulo: "Rayuela", f_estado: "o_leyendo", f_paginas: 600 },
+            updated: 3,
+            // The lines its History (ROW_HISTORY) says who wrote.
+            body: "Boni es el núcleo: un servidor, una cuenta.\n\nPropuesta del correo: revisar el presupuesto.\n\n- 24 oct: «Modelos» desplegado.\n",
+          },
+          {
+            id: "r2",
+            values: { f_titulo: "Ficciones", f_estado: "o_leido", f_fin: today },
+            updated: 2,
+          },
+          { id: "r3", values: { f_titulo: "Pedro Páramo", f_estado: "o_pendiente" }, updated: 1 },
+        ];
       const gone: typeof rows = [];
       let rowSeq = 0;
       // The tree (apps/server/src/data.ts `treeOf`): each collection's mother and whether its notes show in the

@@ -81,6 +81,41 @@ test("columns as wide as their values, widened by their edge and kept; a title o
   await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
 });
 
+test("a collection's page in every layout: centred, as wide as what it shows, the head's options ending with it", async ({
+  page,
+}) => {
+  await libros(page);
+  const centred = async () => {
+    const doc = await box(page, ".doc");
+    const content = await box(page, ".content");
+    expect(
+      Math.abs(doc.x - content.x - (content.x + content.width - doc.x - doc.width)),
+    ).toBeLessThan(2);
+    return doc;
+  };
+  const endsWith = async (selector: string) => {
+    const add = await box(page, ".db-head .btn.primary");
+    const b = await box(page, selector);
+    expect(Math.abs(add.x + add.width - (b.x + b.width))).toBeLessThan(2);
+    return b;
+  };
+  // Three books: a gallery three cards wide, a board of its columns, a list as wide as the minimum.
+  await page.locator(".db-head").getByRole("radio", { name: "Galería" }).click();
+  await centred();
+  expect(Math.round((await endsWith(".db-gallery")).width)).toBe(3 * 232 - 12);
+  await page.locator(".db-head").getByRole("radio", { name: "Tablero" }).click();
+  await centred();
+  await endsWith(".db-board");
+  await page.screenshot({ path: `${SHOTS}/collection-board.png` });
+  await page.locator(".db-head").getByRole("radio", { name: "Lista" }).click();
+  expect(Math.round((await centred()).width)).toBe(560);
+  await endsWith(".db-list");
+  // The calendar fills the width.
+  await page.locator(".db-head").getByRole("radio", { name: "Calendario" }).click();
+  const doc = await centred();
+  expect(doc.width).toBeGreaterThan((await box(page, ".content")).width - 2 * 48 - 2);
+});
+
 test("rows chosen by their box, the margin, Ctrl and Shift; deleted together with one Undo; the right button's menu", async ({
   page,
 }) => {

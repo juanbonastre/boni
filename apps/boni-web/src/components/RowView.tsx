@@ -1,12 +1,7 @@
 import { ChevronRight, Eye, EyeOff, History } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  editRowValue,
-  type HistoryMark,
-  setPropHidden,
-  toggleRowProps,
-  useStore,
-} from "../store.ts";
+import type { HistoryMark } from "../core/blame.ts";
+import { editRowValue, setPropHidden, toggleRowProps, useStore } from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
 import { HistoryPanel, historyColor, whoLabel } from "./History.tsx";
 import { DocEditor } from "./PageView.tsx";
@@ -28,7 +23,7 @@ export function RowView() {
   const related = useStore((s) => s.related);
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const [history, setHistory] = useState(false);
-  // MOCKUP (mockup/historial-visual): with History open, each property in the colour of who changed it last.
+  // With History open, each property in the colour of who changed it last (Juan, 2026-10-30).
   const marks = useStore((s) => s.historyMarks);
   const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
   const markOf = (field: string) => {

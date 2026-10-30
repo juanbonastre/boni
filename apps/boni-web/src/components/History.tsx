@@ -1,25 +1,17 @@
-import { blocksToMarkdown, SYSTEM_COLUMNS } from "@boni/views";
+import { SYSTEM_COLUMNS } from "@boni/views";
 import { ListChecks, X } from "lucide-react";
 import { type CSSProperties, useEffect, useState } from "react";
-import type { Page } from "../core/agent.ts";
 import type { RowHistory } from "../core/audit.ts";
+import { alignBlame, fieldMarks, type HistoryMark } from "../core/blame.ts";
 import type { T } from "../i18n.ts";
-import {
-  agentApi,
-  focusHistory,
-  type HistoryMark,
-  setHistoryMarks,
-  showAudit,
-  useStore,
-} from "../store.ts";
+import { agentApi, focusHistory, setHistoryMarks, showAudit, useStore } from "../store.ts";
 import { whoColor, whoName } from "./Dash.tsx";
 import { systemText } from "./DatabaseBlock.tsx";
 
 /**
- * A row's history (Juan, 2026-10-24), beside its page: its system columns (nobody edits them), every change, and who
- * saw it and what of it. MOCKUP (mockup/historial-visual, Juan 2026-10-30): while it is open, the page itself shows
- * who wrote what, in each one's colour (each block of the text by who wrote it last, as `git blame` from the
- * versions the log keeps; each property by who changed it last), and the panel's legend lights one of them alone.
+ * A row's history (Juan, 2026-10-24), beside its page: who did what, every change, its system columns (nobody edits
+ * them), and who saw it and what of it. While it is open the page itself shows who wrote what, in each one's colour
+ * (Juan, 2026-10-30; `core/blame.ts`), and a click on one of them in the legend lights only theirs.
  */
 export function HistoryPanel({
   id,
@@ -211,47 +203,4 @@ export function whoLabel(t: T, m: HistoryMark, locale: string): string {
   );
   const also = m.others.length ? ` (+ ${m.others.map((o) => whoName(t, o)).join(", ")})` : "";
   return `${whoName(t, m.by)}${also} · ${at}`;
-}
-
-/** Each property by who changed it last (the changes come oldest first). */
-function fieldMarks(d: RowHistory): Record<string, HistoryMark> {
-  const out: Record<string, HistoryMark> = {};
-  for (const c of d.changes) for (const f of c.fields) out[f] = { by: c.by, at: c.at, others: [] };
-  return out;
-}
-
-type Block = Page["spec"]["blocks"][number];
-
-/** A line's text without what makes it a list, a to-do, a heading or a quote. */
-const MARKER = /^\s*(?:[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+|#{1,6}\s+|>\s?)/;
-const bare = (s: string) => s.replace(MARKER, "").trim();
-
-/**
- * Each block of the text with who wrote it last: its lines found in order among the blamed lines of the text (by
- * their words, whatever marks them), and the newest of them decides; the others who wrote some of it are kept.
- */
-export function alignBlame(
-  blocks: readonly Block[],
-  blame: RowHistory["blame"],
-): Record<string, HistoryMark> {
-  const out: Record<string, HistoryMark> = {};
-  let p = 0;
-  for (const b of blocks) {
-    const own = (b as { text?: unknown }).text;
-    const lines = (typeof own === "string" ? own : blocksToMarkdown([b])).split("\n");
-    const first = bare(lines[0] ?? "");
-    if (!first) continue;
-    let j = p;
-    while (j < blame.length && bare(blame[j]?.text ?? "") !== first) j++;
-    if (j >= blame.length) continue;
-    const mine = blame.slice(j, j + lines.length);
-    p = j + lines.length;
-    const last = mine.reduce((a, x) => (x.at > a.at ? x : a));
-    out[b.id] = {
-      by: last.by,
-      at: last.at,
-      others: [...new Set(mine.map((x) => x.by))].filter((x) => x !== last.by),
-    };
-  }
-  return out;
 }
