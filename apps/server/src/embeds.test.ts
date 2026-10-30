@@ -49,16 +49,19 @@ describe("the embedded files still to choose (Juan, 2026-10-30)", () => {
         { key: "archivos", name: "Archivos", folder: "", files: true },
       ],
       {
-        "agenda/disfraz.md": "# Disfraz\n\n![[image 2.png]]\n![[falta.png]]\n![[Una nota]]\n",
+        "agenda/disfraz.md":
+          "# Disfraz\n\n![[image 2.png]]\n![[falta.png]]\n![[Notion/fotos/Untitled 4.png]]\n![[Una nota]]\n",
+        "otra/Untitled 4.png": "otra imagen",
         "diario/hoy.md": "# Hoy\n\n![[image 2.png]]\n",
         "agenda/gestiones/attachments/image 2.png": "png",
         "wiki/temas/attachments/image 2.png": "png",
       },
     );
     expect(embedDoubts(store)).toEqual([
-      "Ficheros incrustados que quedan (![[…]]): 3 en 2 registros.",
+      "Ficheros incrustados que quedan (![[…]]): 4 en 2 registros.",
       "«Tarea» «Disfraz»: image 2.png — 2 ficheros se llaman así: agenda/gestiones/attachments · wiki/temas/attachments",
       "«Tarea» «Disfraz»: falta.png — no está en Boni",
+      "«Tarea» «Disfraz»: Untitled 4.png — no está en Boni (en el vault estaba en Notion/fotos)",
       "«Diario»: 1 (cerrada a la IA: no se listan)",
     ]);
     store.close();

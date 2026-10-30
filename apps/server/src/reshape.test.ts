@@ -630,4 +630,53 @@ describe("clearing away what the vault left (docs/clases.md §7, step 7)", () =>
       "![[foto.png]]",
     );
   });
+
+  it("an embed that names its folder takes that file or none; a past run's conversions to another folder go back", () => {
+    const store = openUserStore(":memory:");
+    stores.push(store);
+    const ids = seed(
+      store,
+      [
+        { key: "persona", name: "Persona", folder: "personas/" },
+        { key: "archivos", name: "Archivos", folder: "", files: true },
+      ],
+      {
+        "personas/antonio.md":
+          "# Antonio\n\nTexto.\n\n![[Notion/personas/attachments/Untitled 4.png]]\n![[fotos/antonio.png|200]]\n",
+        "agenda/docencia/attachments/Untitled 4.png": "otra imagen",
+        "fotos/antonio.png": "su foto",
+      },
+    );
+    const note = ids.get("personas/antonio.md") as string;
+    const other = ids.get("agenda/docencia/attachments/Untitled 4.png") as string;
+    const photo = ids.get("fotos/antonio.png") as string;
+    // Now: the named folder is not there, so it stays; its own photo, by folder and name, becomes a block.
+    const now = reshape(store, { embeds: "files" }, { apply: true });
+    expect(now.lines[0]).toContain("1 sin fichero en Boni");
+    let body = store.get(note)?.entity.body ?? "";
+    expect(body).toContain("![[Notion/personas/attachments/Untitled 4.png]]");
+    expect(body).toContain(`![antonio.png|200](boni:${photo})`);
+    undoReshape(store, now.run as string);
+    // A past run (the first pass's rule) had taken the only «Untitled 4.png», of another note: given back.
+    const past = `reshape-${"0".repeat(8)}-0000-4000-8000-${"0".repeat(12)}`;
+    const wrong = (store.get(note)?.entity.body ?? "")
+      .replace(
+        "![[Notion/personas/attachments/Untitled 4.png]]",
+        `![Untitled 4.png](boni:${other})`,
+      )
+      .replace("![[fotos/antonio.png|200]]", `![antonio.png|200](boni:${photo})`);
+    store.update(note, { [BODY]: { value: wrong, label: L } }, { actor: "user", run: past });
+    const plan: ReshapePlan = { repairFiles: past };
+    expect(planErrors(plan)).toEqual([]);
+    expect(planErrors({ repairFiles: "otra cosa" })).toEqual([
+      "«repairFiles» es el id de una reestructuración (reshape-…)",
+    ]);
+    const fixed = reshape(store, plan, { apply: true });
+    expect(fixed.lines).toEqual([
+      "Ficheros tomados de otra carpeta: 1 vuelven a su texto ![[…]] en 1 registros (el fichero de Boni con ese nombre era otro). 0 ya no estaban como quedaron y se dejan.",
+    ]);
+    body = store.get(note)?.entity.body ?? "";
+    expect(body).toContain("![[Notion/personas/attachments/Untitled 4.png]]");
+    expect(body).toContain(`![antonio.png|200](boni:${photo})`);
+  });
 });
