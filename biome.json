@@ -12,6 +12,7 @@
       "!**/node_modules",
       "!**/test-results",
       "!**/playwright-report",
+      "!apps/sandbox/test/cases",
       "!pnpm-lock.yaml"
     ]
   },

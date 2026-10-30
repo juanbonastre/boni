@@ -1,0 +1,23 @@
+{
+  "name": "@boni/sandbox-runner",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The box where an extension's functions run: QuickJS in WebAssembly, a fresh interpreter per call, no network, no disk, no clock; it answers Boni's server over a Unix socket (docs/extensiones.md §11, E1)",
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@boni/sandbox": "workspace:*",
+    "quickjs-emscripten": "0.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "vitest": "5.0.4"
+  }
+}

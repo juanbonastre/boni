@@ -23,6 +23,7 @@ Cómo se usa:
 | A-05 | Boni no cambia su propio código; la configuración peligrosa (proveedores, presupuestos, capacidades) solo con fricción, en Ajustes | 2026-10-21 | Sin prueba (revisión) |
 | A-06 | Lo privado se hereda: una colección es al menos tan cerrada a la IA como su madre, y una consulta de un modelo sobre la madre no devuelve ni cuenta lo de una hija cerrada para él (`docs/clases.md` §2.8) | 2026-10-27 | `packages/store/src/store.test.ts` («a daughter is at least as closed…»), `packages/agent/test/rules.test.ts` («privacy is inherited») |
 | A-07 | Sin modo vault: ni el servidor, ni los paquetes, ni las apps de Boni Calendar (web, escritorio, Android) leen o escriben una carpeta de notas; los datos de cada cuenta viven en su almacén y el calendario sale de un servidor (fuera el espejo, la importación del vault y el plugin de Obsidian) | 2026-10-27 | `apps/server/src/principles.test.ts` («A-07») |
+| A-08 | El código de una extensión solo corre en la caja: un intérprete nuevo por llamada (QuickJS en WebAssembly), sin red, ficheros, proceso, temporizadores, reloj ni azar, con límites de pasos, tiempo, memoria y salida, en un contenedor aparte que solo habla con el servidor por un socket; lo que toca algo lo hace el código de Boni (`docs/extensiones.md` §11) | 2026-10-30 | `apps/sandbox/test/box.test.ts` (los casos de `test/cases/`), `apps/sandbox/test/run.test.ts`, `apps/server/src/sandbox.test.ts` |
 
 ## D. Datos
 
