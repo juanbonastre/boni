@@ -27,17 +27,20 @@ import type { T } from "../i18n.ts";
 import {
   addRow,
   decideGhost,
-  deleteRow,
+  deleteRows,
   editCell,
   loadDataTypes,
   loadRows,
   openFile,
   openProposal,
   openRow,
+  resetColumnWidth,
+  setColumnWidth,
+  toast,
   useStore,
 } from "../store.ts";
 import { bytes, whoName } from "./Dash.tsx";
-import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
+import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 import { ProtectionMenu } from "./Protection.tsx";
 
 /**
@@ -645,6 +648,27 @@ export function systemText(
   }
 }
 
+/** How wide a kind of value is by itself, in px; a column the user widened keeps its own (Juan, 2026-10-30). */
+const WIDTH_OF: Partial<Record<string, number>> = {
+  checkbox: 72,
+  number: 110,
+  money: 120,
+  duration: 100,
+  date: 140,
+  datetime: 170,
+  time: 90,
+  select: 150,
+  multiselect: 190,
+  relation: 190,
+  file: 130,
+  email: 200,
+  url: 200,
+  phone: 140,
+};
+const widthOf = (f: DataField, title: boolean) => (title ? 280 : (WIDTH_OF[f.type] ?? 200));
+const SEL = 36;
+const TOOLS = 44;
+
 function TableView({
   type,
   rows,
@@ -667,6 +691,7 @@ function TableView({
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
   const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
+  const widths = useStore((s) => s.dataTypes?.find((x) => x.id === type.id)?.rowUi.widths);
   const sys = SYSTEM_COLUMNS.filter((c) => system.includes(c));
   // A mother's table has her daughters' rows: each one's collection is a column (docs/clases.md §2.3; D-11).
   const names = useStore((s) => s.dataTypes);
@@ -678,22 +703,188 @@ function TableView({
     ...fields.filter((f) => f.id === type.titleField),
     ...fields.filter((f) => f.id !== type.titleField),
   ];
+  // Each column as wide as its kind of value, or as the user left it: its edge dragged (moved here without React, kept
+  // when let go), a double click on it back to the usual width.
+  const table = useRef<HTMLTableElement>(null);
+  const cols: { key: string; base: number; name: string; title?: boolean }[] = [
+    ...ordered.map((f) => ({
+      key: f.id,
+      base: widthOf(f, f.id === type.titleField),
+      name: f.name,
+      title: f.id === type.titleField,
+    })),
+    ...(mixed ? [{ key: "_collection", base: 150, name: t("db.collection") }] : []),
+    ...sys.map((c) => ({ key: `_sys.${c}`, base: 160, name: t(`sys.${c}`) })),
+  ];
+  const width = (key: string, base: number) => widths?.[key] ?? base;
+  // Boni's own tables are read only: no boxes, no menu (their rows have nothing to be done with).
+  const pickable = !type.system;
+  const total = (pickable ? SEL : 0) + cols.reduce((n, c) => n + width(c.key, c.base), 0) + TOOLS;
+  const grab = (key: string, from: number) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = table.current;
+    const col = el?.querySelector<HTMLTableColElement>(`col[data-key="${CSS.escape(key)}"]`);
+    if (!el || !col) return;
+    const x0 = e.clientX;
+    let now = from;
+    el.classList.add("resizing");
+    const move = (ev: PointerEvent) => {
+      now = Math.max(48, Math.min(1600, Math.round(from + ev.clientX - x0)));
+      col.style.width = `${now}px`;
+      el.style.width = `${total - from + now}px`;
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      el.classList.remove("resizing");
+      if (now !== from) setColumnWidth(type.id, key, now);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  // Rows chosen (Juan, 2026-10-30): a row's box, or a click just left of it; Ctrl adds or takes out, Shift a run.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const anchor = useRef<string | null>(null);
+  const choose = (
+    id: string,
+    e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean },
+    box = false,
+  ) =>
+    setPicked((cur) => {
+      if (e.shiftKey && anchor.current) {
+        const a = rows.findIndex((r) => r.id === anchor.current);
+        const b = rows.findIndex((r) => r.id === id);
+        if (a >= 0 && b >= 0) {
+          const [from, to] = a <= b ? [a, b] : [b, a];
+          return new Set([...cur, ...rows.slice(from, to + 1).map((r) => r.id)]);
+        }
+      }
+      anchor.current = id;
+      if (e.ctrlKey || e.metaKey || box) {
+        const next = new Set(cur);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }
+      return new Set([id]);
+    });
+  // Rows gone (deleted, filtered out) leave the selection.
+  useEffect(() => {
+    setPicked((cur) => {
+      const here = new Set(rows.map((r) => r.id));
+      const next = new Set([...cur].filter((id) => here.has(id)));
+      return next.size === cur.size ? cur : next;
+    });
+  }, [rows]);
+  const remove = (ids: string[]) => {
+    void deleteRows(type.id, ids);
+    setPicked(new Set());
+  };
+  // Esc lets go of them (before it goes up a level, App's), Supr sends them to the trash: never while a cell is
+  // being written or a menu, a dialog or the search is open (Esc is theirs then).
+  useEffect(() => {
+    if (!picked.size) return;
+    const key = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el?.closest("input:not([type='checkbox']), textarea, select, [contenteditable='true']"))
+        return;
+      if (document.querySelector(".pop-box, .modal, .find-box")) return;
+      if (e.key === "Escape") setPicked(new Set());
+      else if (e.key === "Delete" || e.key === "Backspace") remove([...picked]);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  });
+  const all = rows.length > 0 && rows.every((r) => picked.has(r.id));
+  const some = picked.size > 0;
+  // The right button: the row's menu (a row not chosen is chosen alone first, as in a file manager).
+  const [menu, setMenu] = useState<{ x: number; y: number; row: DataRow } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const head = (key: string, base: number, name: string, title?: boolean) => (
+    <th key={key} className={title ? "is-title" : key.startsWith("_sys.") ? "sys-col" : undefined}>
+      <span className="th-name">{name}</span>
+      <span
+        className="col-resize"
+        title={t("db.resize")}
+        aria-hidden="true"
+        onPointerDown={grab(key, width(key, base))}
+        onDoubleClick={() => resetColumnWidth(type.id, key)}
+      />
+    </th>
+  );
   return (
     <div className="db-table-wrap">
-      <table className="db-table">
+      {some && (
+        <div className="db-selbar" role="toolbar" aria-label={t("db.selection")}>
+          <span className="db-selbar-count">
+            {picked.size === 1 ? t("db.selectedOne") : t("db.selected", { n: picked.size })}
+          </span>
+          {picked.size === 1 && (
+            <button
+              type="button"
+              className="btn ghost small"
+              onClick={() => {
+                const r = rows.find((x) => picked.has(x.id));
+                if (r) void openRow(r.type ?? type.id, r.id);
+              }}
+            >
+              {t("db.open")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn ghost small danger"
+            onClick={() => remove([...picked])}
+          >
+            <Trash2 size={13} strokeWidth={1.8} />
+            {picked.size === 1 ? t("db.delete") : t("db.deleteN", { n: picked.size })}
+          </button>
+          <button
+            type="button"
+            className="icon-btn tiny"
+            title={t("db.unselect")}
+            aria-label={t("db.unselect")}
+            onClick={() => setPicked(new Set())}
+          >
+            <X size={13} strokeWidth={2} />
+          </button>
+        </div>
+      )}
+      <table
+        ref={table}
+        className={`db-table fixed${some ? " has-picked" : ""}`}
+        style={{ width: total }}
+      >
+        <colgroup>
+          {pickable && <col style={{ width: SEL }} />}
+          {cols.map((c) => (
+            <col key={c.key} data-key={c.key} style={{ width: width(c.key, c.base) }} />
+          ))}
+          <col style={{ width: TOOLS }} />
+        </colgroup>
         <thead>
           <tr>
-            {ordered.map((f) => (
-              <th key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
-                {f.name}
+            {pickable && (
+              <th className="sel-col">
+                {rows.length > 0 && (
+                  <input
+                    type="checkbox"
+                    className="db-check"
+                    aria-label={t("db.selectAll")}
+                    checked={all}
+                    ref={(el) => {
+                      if (el) el.indeterminate = some && !all;
+                    }}
+                    onChange={() => setPicked(all ? new Set() : new Set(rows.map((r) => r.id)))}
+                  />
+                )}
               </th>
-            ))}
-            {mixed && <th>{t("db.collection")}</th>}
-            {sys.map((c) => (
-              <th key={c} className="sys-col">
-                {t(`sys.${c}`)}
-              </th>
-            ))}
+            )}
+            {cols.map((c) => head(c.key, c.base, c.name, c.title))}
             <th className="row-tools" aria-label={t("db.actions")} />
           </tr>
         </thead>
@@ -701,6 +892,7 @@ function TableView({
           {/* Pending proposals first, dashed: read only, accepted or rejected here (Juan, 2026-10-22). */}
           {ghosts.map((r) => (
             <tr key={r.id} className="ghost-row">
+              {pickable && <td className="sel-col" />}
               {ordered.map((f) => (
                 <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
                   <div className="ghost-cell">
@@ -749,50 +941,93 @@ function TableView({
               <td className="row-tools" />
             </tr>
           ))}
-          {rows.map((r) => (
-            <tr key={r.id}>
-              {ordered.map((f) => (
-                <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
-                  {type.system ? (
-                    <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
-                  ) : (
-                    <>
+          {rows.map((r) => {
+            const on = picked.has(r.id);
+            const name = titleOf(type, r) || t("page.untitled");
+            return (
+              <tr
+                key={r.id}
+                className={on ? "selected" : undefined}
+                onContextMenu={(e) => {
+                  if (!pickable) return;
+                  e.preventDefault();
+                  if (!picked.has(r.id)) {
+                    setPicked(new Set([r.id]));
+                    anchor.current = r.id;
+                  }
+                  setMenu({ x: e.clientX, y: e.clientY, row: r });
+                }}
+              >
+                {pickable && (
+                  <td
+                    className="sel-col"
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest("input")) return;
+                      choose(r.id, e);
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="db-check"
+                      checked={on}
+                      aria-label={`${t("db.select")}: ${name}`}
+                      onChange={() => {}}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        choose(r.id, e, true);
+                      }}
+                    />
+                  </td>
+                )}
+                {ordered.map((f) => (
+                  <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
+                    {type.system ? (
+                      <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
+                    ) : f.id === type.titleField ? (
+                      <TitleCell
+                        type={type}
+                        field={f}
+                        row={r}
+                        renaming={renaming === r.id}
+                        onRename={(yes) => setRenaming(yes ? r.id : null)}
+                        onChoose={(e) => choose(r.id, e)}
+                      />
+                    ) : (
                       <Cell type={type} field={f} row={r} titles={titles} />
-                      {f.id === type.titleField && <OpenButton type={type} row={r} />}
-                    </>
+                    )}
+                  </td>
+                ))}
+                {mixed && (
+                  <td>
+                    <span className="db-ro">{collectionOf(r)}</span>
+                  </td>
+                )}
+                {sys.map((c) => {
+                  const text = systemText(t, c, columns[r.id], locale, lang);
+                  return (
+                    <td key={c} className="sys-col">
+                      <span className="sys-cell" title={text}>
+                        {text}
+                      </span>
+                    </td>
+                  );
+                })}
+                <td className="row-tools">
+                  {!type.system && (
+                    <button
+                      type="button"
+                      className="icon-btn tiny"
+                      title={t("db.delete")}
+                      aria-label={`${t("db.delete")}: ${name}`}
+                      onClick={() => remove([r.id])}
+                    >
+                      <Trash2 size={13} strokeWidth={1.8} />
+                    </button>
                   )}
                 </td>
-              ))}
-              {mixed && (
-                <td>
-                  <span className="db-ro">{collectionOf(r)}</span>
-                </td>
-              )}
-              {sys.map((c) => {
-                const text = systemText(t, c, columns[r.id], locale, lang);
-                return (
-                  <td key={c} className="sys-col">
-                    <span className="sys-cell" title={text}>
-                      {text}
-                    </span>
-                  </td>
-                );
-              })}
-              <td className="row-tools">
-                {!type.system && (
-                  <button
-                    type="button"
-                    className="icon-btn tiny"
-                    title={t("db.delete")}
-                    aria-label={`${t("db.delete")}: ${titleOf(type, r)}`}
-                    onClick={() => void deleteRow(type.id, r.id)}
-                  >
-                    <Trash2 size={13} strokeWidth={1.8} />
-                  </button>
-                )}
-              </td>
-            </tr>
-          ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
       {!type.system && (
@@ -801,7 +1036,116 @@ function TableView({
           {t("db.new")}
         </button>
       )}
+      {menu && (
+        <PointMenu x={menu.x} y={menu.y} label={t("db.rowMenu")} onClose={() => setMenu(null)}>
+          {(close) => (
+            <div className="menu-list" role="menu">
+              {picked.size <= 1 && (
+                <MenuRow
+                  label={t("db.open")}
+                  onClick={() => {
+                    close();
+                    void openRow(menu.row.type ?? type.id, menu.row.id);
+                  }}
+                />
+              )}
+              {picked.size <= 1 && (
+                <MenuRow
+                  label={t("db.rename")}
+                  onClick={() => {
+                    close();
+                    setRenaming(menu.row.id);
+                  }}
+                />
+              )}
+              {picked.size <= 1 && (
+                <MenuRow
+                  label={t("db.copyLink")}
+                  onClick={() => {
+                    close();
+                    void navigator.clipboard
+                      ?.writeText(`boni://note?id=${menu.row.id}`)
+                      .then(() => toast(t("db.linkCopied")))
+                      .catch(() => {});
+                  }}
+                />
+              )}
+              <MenuSep />
+              <MenuRow
+                label={picked.size > 1 ? t("db.deleteN", { n: picked.size }) : t("db.delete")}
+                danger
+                onClick={() => {
+                  close();
+                  remove(picked.size > 1 ? [...picked] : [menu.row.id]);
+                }}
+              />
+            </div>
+          )}
+        </PointMenu>
+      )}
     </div>
+  );
+}
+
+/** A row's title in a table (Juan, 2026-10-30): a click opens the row, a double click renames it in place. */
+function TitleCell({
+  type,
+  field,
+  row,
+  renaming,
+  onRename,
+  onChoose,
+}: {
+  type: DataType;
+  field: DataField;
+  row: DataRow;
+  renaming: boolean;
+  onRename: (yes: boolean) => void;
+  onChoose: (e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean }) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const timer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
+  if (renaming)
+    return (
+      <TextCell
+        field={field}
+        value={row.values[field.id] ?? null}
+        startEditing
+        onDone={() => onRename(false)}
+        onSave={(v) => void editCell(type.id, row.id, field.id, v)}
+      />
+    );
+  const title = showValue(field, row.values[field.id] ?? null);
+  return (
+    <button
+      type="button"
+      className="db-cell db-title-open"
+      title={t("db.titleHint")}
+      onClick={(e) => {
+        // With Ctrl or Shift, a title chooses its row (as in a file manager) instead of opening it.
+        if (e.ctrlKey || e.metaKey || e.shiftKey) return onChoose(e);
+        if (timer.current) return;
+        timer.current = window.setTimeout(() => {
+          timer.current = null;
+          void openRow(row.type ?? type.id, row.id);
+        }, 240);
+      }}
+      onDoubleClick={() => {
+        if (timer.current) {
+          clearTimeout(timer.current);
+          timer.current = null;
+        }
+        onRename(true);
+      }}
+    >
+      {title || <span className="db-empty">{t("page.untitled")}</span>}
+    </button>
   );
 }
 
@@ -948,12 +1292,17 @@ function TextCell({
   field,
   value,
   onSave,
+  startEditing,
+  onDone,
 }: {
   field: DataField;
   value: DataValue;
   onSave: (v: DataValue) => void;
+  /** Written at once (a title renamed by a double click), and told when it is left. */
+  startEditing?: boolean;
+  onDone?: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing ?? false);
   const shown = showValue(field, value);
   const raw =
     value && typeof value === "object" && !Array.isArray(value)
@@ -968,7 +1317,8 @@ function TextCell({
   useEffect(() => {
     if (editing) {
       setText(raw);
-      requestAnimationFrame(() => ref.current?.focus());
+      // A rename starts with the whole name chosen, as a file's (typing replaces it).
+      requestAnimationFrame(() => (startEditing ? ref.current?.select() : ref.current?.focus()));
     }
   }, [editing]);
   if (!editing)
@@ -979,6 +1329,7 @@ function TextCell({
     );
   const commit = () => {
     setEditing(false);
+    onDone?.();
     if (text === raw) return;
     const v = text.trim();
     if (!v) return onSave(null);
@@ -1007,6 +1358,7 @@ function TextCell({
         else if (e.key === "Escape") {
           e.preventDefault();
           setEditing(false);
+          onDone?.();
         }
       }}
     />

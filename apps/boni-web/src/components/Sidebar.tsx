@@ -11,7 +11,7 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { PageInfo } from "../core/agent.ts";
 import {
   deletePage,
@@ -50,6 +50,21 @@ export function Sidebar() {
   const folded = useStore((s) => s.fold.sections);
   const fold = (x: string) => toggleFold("sections", x);
   const own = (pages ?? []).filter((p) => !p.template);
+  // What is open, lit in «Páginas», is scrolled to when it is opened (the store unfolds what is above it).
+  const list = useRef<HTMLUListElement>(null);
+  const opened =
+    view.kind === "row" || view.kind === "page"
+      ? view.id
+      : view.kind === "collection"
+        ? view.type
+        : null;
+  useEffect(() => {
+    if (!opened) return;
+    const frame = requestAnimationFrame(() =>
+      list.current?.querySelector(".chart-row.active")?.scrollIntoView({ block: "nearest" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [opened, tree !== null]);
 
   return (
     <nav className="sidebar" aria-label={t("sidebar.label")}>
@@ -108,7 +123,7 @@ export function Sidebar() {
               }
             />
             {!folded.includes("pages") && (
-              <ul className="nav-list" aria-label={t("nav.pages")}>
+              <ul className="nav-list" aria-label={t("nav.pages")} ref={list}>
                 <PageTree pages={own} parent={null} depth={0} drag={drag} setDrag={setDrag} />
                 {/* One tree (docs/clases.md §2.7): collections, their records with a note, Boni's own things. */}
                 <CollectionTree />
@@ -268,6 +283,19 @@ export function PageTree({
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const [closed, setClosed] = useState<string[]>([]);
+  // The page opened unfolds the pages above it here (Juan, 2026-10-30); folding one by hand afterwards stays.
+  const opened = view.kind === "page" ? view.id : null;
+  useEffect(() => {
+    if (!opened) return;
+    const above = new Set<string>();
+    let p = pages.find((x) => x.id === opened);
+    while (p?.parent && !above.has(p.parent)) {
+      const parent = p.parent;
+      above.add(parent);
+      p = pages.find((x) => x.id === parent);
+    }
+    setClosed((c) => (c.some((x) => above.has(x)) ? c.filter((x) => !above.has(x)) : c));
+  }, [opened]);
   // A page whose parent is gone shows at the top (never lost).
   const here = pages.filter((p) =>
     parent === null ? !p.parent || !pages.some((q) => q.id === p.parent) : p.parent === parent,

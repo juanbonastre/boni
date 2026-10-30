@@ -36,7 +36,7 @@ export function CollectionView() {
       </div>
     );
   return (
-    <div className="content page-doc full">
+    <div className="content page-doc full is-collection">
       <div className="doc">
         {/* Its mother, where it is in the tree (a collection at the root has none). */}
         <div className="row-kind">{mother?.name ?? ""}</div>

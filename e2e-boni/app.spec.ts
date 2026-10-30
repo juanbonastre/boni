@@ -398,8 +398,8 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await page.keyboard.press("Enter");
   const db = page.locator(".db");
   await expect(db.locator(".db-table tbody tr")).toHaveCount(3);
-  // A title edited where it is.
-  await db.getByRole("button", { name: "Pedro Páramo", exact: true }).click();
+  // A title renamed where it is, with a double click (a click opens its row).
+  await db.getByRole("button", { name: "Pedro Páramo", exact: true }).dblclick();
   await page.keyboard.press("End");
   await page.keyboard.type(" (relectura)", { delay: 15 });
   await page.keyboard.press("Enter");
@@ -437,9 +437,8 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await page.screenshot({ path: `${SHOTS}/db-board.png` });
   // A row opened as a page: its properties and its text, saved by itself.
   await db.getByRole("radio", { name: "Tabla" }).click();
-  const rayuela = db.locator("tr", { hasText: "Rayuela" }).locator("td.is-title");
-  await rayuela.hover();
-  await rayuela.getByRole("button", { name: /^Abrir/ }).click();
+  const rayuela = db.getByRole("button", { name: "Rayuela", exact: true });
+  await rayuela.click();
   await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
   // The properties start folded under one line; unfolded, the collection remembers it.
   await expect(page.locator(".row-prop")).toHaveCount(0);
@@ -478,8 +477,7 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await page.screenshot({ path: `${SHOTS}/db-row.png` });
   await page.locator(".topbar .crumb", { hasText: "Lecturas" }).click();
   await expect(page.locator(".doc-title")).toHaveValue("Lecturas");
-  await rayuela.hover();
-  await rayuela.getByRole("button", { name: /^Abrir/ }).click();
+  await rayuela.click();
   await expect(page.locator(".row-prop")).toHaveCount(4); // still unfolded for this collection
   await page.getByRole("button", { name: "Ocultar propiedades" }).click();
   await expect(page.locator(".row-prop")).toHaveCount(0);

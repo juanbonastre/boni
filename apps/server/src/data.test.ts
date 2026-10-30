@@ -171,12 +171,24 @@ describe("collections as databases (plan PR 19)", () => {
           rowUi: { open: boolean; hidden: string[] };
         }[]
       ).find((x) => x.id === "t_libro")?.rowUi;
-    expect(await ui()).toEqual({ open: false, hidden: [], related: false, folded: [] });
+    expect(await ui()).toEqual({
+      open: false,
+      hidden: [],
+      related: false,
+      folded: [],
+      widths: {},
+    });
     const r = await call(t, "PUT", "/api/data/types/t_libro/row-ui", {
       open: true,
       hidden: ["f_paginas"],
     });
-    expect(r.body).toEqual({ open: true, hidden: ["f_paginas"], related: false, folded: [] });
+    expect(r.body).toEqual({
+      open: true,
+      hidden: ["f_paginas"],
+      related: false,
+      folded: [],
+      widths: {},
+    });
     // Another device of the account sees the same.
     const other = await token("otro-equipo");
     const theirs = (await call(other, "GET", "/api/data/types")).body.types as {
@@ -188,6 +200,7 @@ describe("collections as databases (plan PR 19)", () => {
       hidden: ["f_paginas"],
       related: false,
       folded: [],
+      widths: {},
     });
     expect(
       (await call(t, "PUT", "/api/data/types/t_libro/row-ui", { hidden: ["f_nada"] })).status,
@@ -195,12 +208,23 @@ describe("collections as databases (plan PR 19)", () => {
     expect((await call(t, "PUT", "/api/data/types/t_nada/row-ui", { open: true })).status).toBe(
       404,
     );
-    await call(t, "PUT", "/api/data/types/t_libro/row-ui", { open: false });
+    // Its table's columns as wide as the user left them (Juan, 2026-10-30); a width out of reason is refused.
+    expect(
+      (
+        await call(t, "PUT", "/api/data/types/t_libro/row-ui", {
+          widths: { f_paginas: 96, "_sys.created": 180 },
+        })
+      ).body.widths,
+    ).toEqual({ f_paginas: 96, "_sys.created": 180 });
+    for (const widths of [{ f_paginas: 12 }, { f_paginas: 4000 }, { "<b>": 100 }, [100], "ancho"])
+      expect((await call(t, "PUT", "/api/data/types/t_libro/row-ui", { widths })).status).toBe(400);
+    await call(t, "PUT", "/api/data/types/t_libro/row-ui", { open: false, widths: {} });
     expect(await ui()).toEqual({
       open: false,
       hidden: ["f_paginas"],
       related: false,
       folded: [],
+      widths: {},
     });
   });
 

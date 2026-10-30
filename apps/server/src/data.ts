@@ -59,7 +59,18 @@ export interface RowUi {
   /** Its «Relacionado» unfolded, and the groups in it folded (`<collection>:<field>`, Juan 2026-10-30). */
   related: boolean;
   folded: string[];
+  /** Its table's columns' widths in px, by field (or a column of the table's own), as the user left them. */
+  widths: Record<string, number>;
 }
+const COLUMN = /^[A-Za-z0-9_.:-]{1,64}$/;
+const widthsOf = (v: unknown): Record<string, number> => {
+  const out: Record<string, number> = {};
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return out;
+  for (const [k, w] of Object.entries(v as Record<string, unknown>))
+    if (COLUMN.test(k) && typeof w === "number" && Number.isInteger(w) && w >= 40 && w <= 1600)
+      out[k] = w;
+  return out;
+};
 const GROUP = /^[A-Za-z0-9_-]{1,64}:[A-Za-z0-9_-]{1,64}$/;
 /** Where a collection's `RowUi` is kept (the store's settings: the account's, on every device). */
 export const ROW_UI = "ui/row/";
@@ -73,9 +84,10 @@ export function rowUiOf(store: UserStore, typeId: string): RowUi {
       folded: Array.isArray(v.folded)
         ? v.folded.filter((x) => typeof x === "string" && GROUP.test(x))
         : [],
+      widths: widthsOf(v.widths),
     };
   } catch {
-    return { open: false, hidden: [], related: false, folded: [] };
+    return { open: false, hidden: [], related: false, folded: [], widths: {} };
   }
 }
 /**
@@ -115,6 +127,17 @@ export function setRowUi(
     )
       return { status: 400, error: "bad-folded" };
     next.folded = [...new Set(body.folded as string[])];
+  }
+  if (body.widths !== undefined) {
+    const w = widthsOf(body.widths);
+    if (
+      typeof body.widths !== "object" ||
+      body.widths === null ||
+      Object.keys(w).length !== Object.keys(body.widths).length ||
+      Object.keys(w).length > 200
+    )
+      return { status: 400, error: "bad-widths" };
+    next.widths = w;
   }
   store.setSetting(`${ROW_UI}${typeId}`, JSON.stringify(next));
   return next;
@@ -175,7 +198,7 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
       count: sys?.rows(t.id).length ?? 0,
       level: "private",
       rules: [],
-      rowUi: { open: false, hidden: [], related: false, folded: [] },
+      rowUi: { open: false, hidden: [], related: false, folded: [], widths: {} },
       system: true,
     }),
   );

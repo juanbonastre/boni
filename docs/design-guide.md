@@ -217,8 +217,11 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   delete with Undo; "+" by the name of the section makes a page), then the collections, each inside its mother and
   folded by default, with its records that have a note under it when its eye says so (on hover: the eye, "…" with
   «Nueva nota», «Nueva colección dentro» typed in place, «Eliminar colección», only an empty one; "+" makes a note),
-  then «Boni», folded: Boni's template pages and its own collections, read only. The trash, settings and the user
-  at the bottom. **Nothing on screen is fixed by the app** (Juan, 2026-10-21): no home of charts, no "Apuntar
+  then «Boni», folded: Boni's template pages and its own collections, read only. What is open is lit there (Juan,
+  2026-10-30): opening a page, a collection or a note (from anywhere: Recientes, a table, a link, the search) unfolds
+  «Páginas» and the pages or collections above it and scrolls to it; a note whose collection does not show its notes
+  lights its collection. A branch folded by hand stays folded until something inside it is opened. The trash,
+  settings and the user at the bottom. **Nothing on screen is fixed by the app** (Juan, 2026-10-21): no home of charts, no "Apuntar
   gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
   pages, a welcome with "Nueva página" and "Hablar con Boni". Every account gets Boni's template pages once («Uso de
   la IA», «Actividad», «Registro»); an account that used the first Boni got, once, a page "Gastos" with what its home
@@ -284,6 +287,19 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   grouping select, a calendar's date, visible properties) and "Nuevo". Table: the title column first, 34 px rows,
   hairline grid, each cell edited where it is (text and numbers as a field, Enter or leaving saves, Esc does not;
   selects as Notion's coloured pills from a menu; checkboxes at once; relations read-only), delete on hover with Undo.
+  Each column is as wide as its kind of value (title 280 px, text 200, number 110, date 140, select 150, relation
+  190, checkbox 72…), never stretched to fill the page (Juan, 2026-10-30): dragging a column's edge widens or
+  narrows it (an accent line under the pointer), a double click on the edge brings the usual width back, and the
+  account keeps each width per collection on every device; a table wider than the page scrolls sideways. A row's
+  title opens it with a click and is renamed in place with a double click (the whole name chosen, as a file's). Rows
+  are chosen as in a file manager: a box before the first column (shown under the pointer, and on every row once one
+  is chosen), or a click just left of it; on a collection's own page the boxes sit in the page's margin, the first
+  column under the title, and the whole strip up to the sidebar chooses a row and lights it under the pointer. Ctrl
+  adds or takes out one, Shift takes the run from the last one chosen, Ctrl+click on a title chooses instead of
+  opening; the box in the head chooses all. Chosen rows are tinted with the accent's soft colour, and a bar over the
+  block's head says how many, with «Abrir» (one), «Borrar» / «Borrar N» and ✕; Esc lets go, Supr deletes them (one
+  Undo for all). The right button on a row opens its menu (Abrir, Cambiar nombre, Copiar enlace, Borrar; with
+  several chosen, «Borrar N»); a row not chosen is chosen alone first. Boni's own tables have no boxes and no menu.
   Board: a column per option (and "Sin X" when used), cards dragged between columns change the select. Calendar: a
   month from Monday, today marked, "+" on a day adds a row on it; "Semana" shows seven tall days with every item
   (its start time over its title); "También en el calendario" (Opciones) adds other collections, each with its colour
@@ -326,8 +342,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   relations alone, for any collection (a person's projects and debts, a project's tasks); it takes the place of
   Obsidian's views. Nothing points to the row: no line at all.
 - **Files in a note's text** (Juan, 2026-10-30): a file of the user's alone on its line (`![name|width](boni:<row id>)`
-  in the Markdown) is a block: an image shows in place, at its width (never wider than the text), rounded, with its
-  name muted under it; any other file (or an image too big to show) is a card with a clip, its name and "Abrir". It
+  in the Markdown) is a block: an image shows in place, at its width (never wider than the text), rounded; its name
+  (the title of its record in the files' collection, what finds it there and in the search) shows over its corner
+  only under the pointer (Juan, 2026-10-30); any other file (or an image too big to show) is a card with a clip, its name and "Abrir". It
   comes through the app's own channel to the server, so it shows the same on the desktop, the phone and the web.
   A file no longer there says so ("Este fichero ya no está").
 - **Peek** (2026-10-22): a note opened from another app (a double click on an event in Boni Calendar; Ctrl+click and

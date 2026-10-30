@@ -794,8 +794,9 @@ function PageLink({ id }: { id: string }) {
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
 
 /**
- * A file of the user's in the text (Juan, 2026-10-29): an image in place, at the width it had, with its name under it;
- * anything else a card with its name that opens it. Where the host cannot show bytes, an image is a card too.
+ * A file of the user's in the text (Juan, 2026-10-29): an image in place, at the width it had, its name (its record's
+ * title in the files' collection) only under the pointer (Juan, 2026-10-30); anything else a card with its name that
+ * opens it. Where the host cannot show bytes, an image is a card too.
  */
 function FileBlock({ block }: { block: Extract<Block, { type: "file" }> }) {
   const t = useStore((s) => s.t);
@@ -821,7 +822,7 @@ function FileBlock({ block }: { block: Extract<Block, { type: "file" }> }) {
     return (
       <figure className="doc-file-image">
         <img src={file.url} alt={name} style={block.width ? { width: block.width } : undefined} />
-        <figcaption className="muted">{name}</figcaption>
+        <figcaption>{name}</figcaption>
       </figure>
     );
   return (

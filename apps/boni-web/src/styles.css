@@ -3843,6 +3843,7 @@ button.find-row:hover {
   --opt-red: #d44c47;
 }
 .db {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3902,7 +3903,6 @@ button.find-row:hover {
 .db-table-wrap {
   overflow-x: auto;
   min-width: 0;
-  border-top: 1px solid var(--line);
 }
 .db-table {
   border-collapse: collapse;
@@ -3911,13 +3911,154 @@ button.find-row:hover {
   font-size: 14px;
 }
 .db-table th {
+  position: relative;
   text-align: left;
   font-weight: 500;
   color: var(--muted);
   padding: 6px 8px;
+  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
   white-space: nowrap;
+}
+/* Each column as wide as its kind of value or as the user left it, never stretched to fill the page (Juan,
+   2026-10-30): the table is as wide as its columns and scrolls sideways when they do not fit. */
+.db-table.fixed {
+  table-layout: fixed;
+  min-width: 0;
+}
+.db-table.fixed td,
+.db-table.fixed td.is-title {
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+}
+.th-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.col-resize {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.col-resize::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 3px;
+  width: 2px;
+  border-radius: 1px;
+}
+.col-resize:hover::after,
+.col-resize:active::after {
+  background: var(--accent);
+}
+.db-table.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+/* The rows' boxes: a column with no lines of its own, before the first one. A click in it, or in the strip left of
+   it up to the side bar on a collection's page, chooses the row; the strip lights the row it would choose. */
+.db-table.fixed .sel-col {
+  overflow: visible;
+}
+.db-table .sel-col {
+  position: relative;
+  padding: 0;
+  border-top: 0;
+  border-right: 0;
+  border-bottom: 0;
+  text-align: center;
+  vertical-align: top;
+}
+.db-table tbody tr:not(.ghost-row) > td.sel-col {
+  cursor: pointer;
+}
+.db-table tbody tr:not(.ghost-row) > td.sel-col::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 100%;
+  bottom: 0;
+  width: var(--db-gutter, 0px);
+}
+.db-table .sel-col .db-check {
+  margin: 9px 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.db-table thead .sel-col {
+  vertical-align: middle;
+}
+.db-table thead .sel-col .db-check {
+  margin: 0;
+  vertical-align: middle;
+}
+/* «Nuevo» under the first column, not under the boxes. */
+.db-table-wrap > .db-add-row {
+  width: calc(100% - 36px);
+  margin-left: 36px;
+}
+.db-table tbody tr:hover .sel-col .db-check,
+.db-table:hover thead .sel-col .db-check,
+.db-table.has-picked .sel-col .db-check,
+.db-table .sel-col .db-check:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .db-table .sel-col .db-check {
+    opacity: 1;
+  }
+}
+.db-table tbody tr:not(.selected):not(.ghost-row):has(> td.sel-col:hover) > td,
+.db-table tbody tr:not(.selected):not(.ghost-row):has(> td.sel-col:hover) > td.sel-col::before {
+  background: var(--hover);
+}
+.db-table tbody tr.selected > td,
+.db-table tbody tr.selected > td.sel-col::before {
+  background: var(--accent-soft);
+}
+/* On a collection's own page the boxes sit in the page's margin, the first column under the title. */
+.content.is-collection .db-table-wrap {
+  --db-gutter: 20px;
+  margin-left: -56px;
+  padding-left: var(--db-gutter);
+}
+/* Rows chosen: how many and what can be done with them, over the block's head as Notion's. */
+.db-selbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  background: var(--bg);
+}
+.db-selbar-count {
+  margin-right: 6px;
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+/* A row's title opens it with a click; a double click renames it. */
+.db-title-open {
+  cursor: pointer;
+}
+.db-title-open:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
 }
 .db-table td {
   border-bottom: 1px solid var(--line);
@@ -4601,7 +4742,6 @@ button.find-row:hover {
     display: none;
   }
 }
-.db-table td.is-title:hover .db-open,
 .db-card-title:hover .db-open,
 .db-open:focus-visible {
   display: inline-flex;
@@ -6423,8 +6563,12 @@ button.rows-panel-row:hover {
   font-size: 12px;
 }
 
-/* A file in a note's text (PageView.tsx `FileBlock`): an image in place with its name, or a card that opens it. */
+/* A file in a note's text (PageView.tsx `FileBlock`): an image in place, its name over its corner only under the
+   pointer, or a card that opens it. */
 .doc-file-image {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
   margin: 4px 0;
 }
 .doc-file-image img {
@@ -6434,8 +6578,24 @@ button.rows-panel-row:hover {
   border: 1px solid var(--line);
 }
 .doc-file-image figcaption {
-  margin-top: 4px;
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  color: var(--text);
   font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.doc-file-image:hover figcaption {
+  opacity: 1;
 }
 .doc-file {
   display: inline-flex;
