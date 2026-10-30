@@ -296,11 +296,21 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   collection's name, and only on its own page.
 - **Notes as pages** (2026-10-22): a row's text is edited with the page's block editor (headings, lists, to-dos,
   quotes, code, dividers; "/" offers text blocks only), saved as Markdown; what it does not paint yet (tables,
-  images, inline bold or links) shows as written. A note is titled by its first `# Heading`, never its file's slug.
+  an Obsidian embed that found no file, inline bold or links) shows as written. A note is titled by its first `# Heading`, never its file's slug.
   Its properties start folded under one quiet line ("12 propiedades", a chevron); unfolded ("Ocultar propiedades")
   they stay so for that collection. Each property hides with the eye that shows on hover (as Notion's); hidden ones
   wait, dimmed, under "N ocultas" at the end, where the same eye shows them again. The account keeps both per
   collection (Boni, Boni Calendar's peek, every device). A note opens on its text, not on a list of properties.
+- **Relacionado** (Juan, 2026-10-30): under the properties' line, one more quiet line with what points to the row
+  from other collections, by count ("Relacionado · Deuda 1 · Movimiento 3 · Proyecto 2"), folded; unfolded, one group
+  per collection and field ("Movimiento · en «Con quién»"), its rows newest first with their first date on the
+  right, a click opening one. Made from the relations alone, for any collection (a person's projects and debts, a
+  project's tasks); it takes the place of Obsidian's views. Nothing points to the row: no line at all.
+- **Files in a note's text** (Juan, 2026-10-30): a file of the user's alone on its line (`![name|width](boni:<row id>)`
+  in the Markdown) is a block: an image shows in place, at its width (never wider than the text), rounded, with its
+  name muted under it; any other file (or an image too big to show) is a card with a clip, its name and "Abrir". It
+  comes through the app's own channel to the server, so it shows the same on the desktop, the phone and the web.
+  A file no longer there says so ("Este fichero ya no está").
 - **Peek** (2026-10-22): a note opened from another app (a double click on an event in Boni Calendar; Ctrl+click and
   its "Abrir en Boni" open the note in Boni's main window instead). In Boni Calendar with Boni's address (Settings →
   Escritorio) it is the calendar's own window with Boni's note page, which asks once for the user and password (no

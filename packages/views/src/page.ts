@@ -62,6 +62,11 @@ export type PageBlock = (
   | { id: string; type: "divider" }
   /** A link to another of the user's pages (a subpage), shown with its icon and name. */
   | { id: string; type: "page"; page: string }
+  /**
+   * A file of the user's (a row that holds one, by its id) in the text: an image shown in place, anything else as a
+   * card that opens it. In Markdown, `![name|width](boni:<id>)`.
+   */
+  | { id: string; type: "file"; file: string; name: string; width?: number }
   | { id: string; type: "chart"; chart: string }
   /** A collection of the user's shown as a Notion database view (plan PR 19). */
   | { id: string; type: "database"; source: string; view: DatabaseView }
@@ -189,6 +194,7 @@ export const PAGE_BLOCKS = [
   ...TEXT_BLOCKS,
   "divider",
   "page",
+  "file",
   "chart",
   "database",
   "action",
@@ -312,6 +318,21 @@ export function pageErrors(spec: unknown): string[] {
         break;
       case "divider":
         if (!only(b, ["at", "id", "type"])) errors.push(`${w}: a divider has nothing else`);
+        break;
+      case "file":
+        if (
+          !only(b, ["at", "id", "type", "file", "name", "width"]) ||
+          typeof b.file !== "string" ||
+          !ID.test(b.file) ||
+          typeof b.name !== "string" ||
+          b.name.length > 200 ||
+          (b.width !== undefined &&
+            (typeof b.width !== "number" ||
+              !Number.isInteger(b.width) ||
+              b.width < 16 ||
+              b.width > 4000))
+        )
+          errors.push(`${w}: a file names its row and has a name`);
         break;
       case "page":
         if (

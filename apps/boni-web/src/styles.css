@@ -6331,3 +6331,105 @@ button.rows-panel-row:hover {
   font-size: 11px;
   white-space: nowrap;
 }
+
+/* A row's «Relacionado» (Related.tsx): one folded line with the counts, as the properties; open, a group per
+   collection and field. */
+.row-related-toggle {
+  margin-top: -4px;
+}
+.row-related-counts {
+  display: inline-flex;
+  gap: 10px;
+  margin-left: 6px;
+}
+.row-related-counts b {
+  color: var(--text);
+  font-weight: 600;
+}
+.row-related {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 2px 0 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.row-related-group h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.row-related-group ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.row-related-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 560px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.row-related-row:hover {
+  background: var(--hover);
+}
+.row-related-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-related-row .muted {
+  flex: none;
+  font-size: 12px;
+}
+
+/* A file in a note's text (PageView.tsx `FileBlock`): an image in place with its name, or a card that opens it. */
+.doc-file-image {
+  margin: 4px 0;
+}
+.doc-file-image img {
+  display: block;
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.doc-file-image figcaption {
+  margin-top: 4px;
+  font-size: 12px;
+}
+.doc-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.doc-file:hover {
+  background: var(--hover);
+}
+.doc-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-file .muted {
+  font-size: 12px;
+}

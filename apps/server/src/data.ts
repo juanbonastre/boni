@@ -111,7 +111,7 @@ export class DataError extends Error {
   }
 }
 
-const userTypes = (store: UserStore) =>
+export const userTypes = (store: UserStore) =>
   Object.values(store.schema().types).filter((t) => !t.system && !t.archived);
 
 const fieldsOf = (t: TypeDef): DataField[] =>
@@ -374,6 +374,30 @@ export function createRow(store: UserStore, type: string, values: unknown, devic
     if (err instanceof DataError) throw err;
     throw new DataError("bad-values");
   }
+}
+
+/** The images a page can paint in a note's text (an SVG in an image cannot run anything), and how big at most. */
+const INLINE = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/avif",
+  "image/svg+xml",
+]);
+export const MAX_INLINE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * An image of the user's as data for a note's text (base64, which every host's transport carries as text, Juan
+ * 2026-10-30); null when there is none, it is not an image a page paints, or it is too big (the note shows a card
+ * that opens it instead).
+ */
+export function fileInline(store: UserStore, sha: string): { mime: string; data: string } | null {
+  if (!/^[0-9a-f]{64}$/.test(sha)) return null;
+  const info = store.fileInfo(sha);
+  if (!info || !INLINE.has(info.mime) || info.size > MAX_INLINE_BYTES) return null;
+  const f = store.getFile(sha);
+  return f ? { mime: f.mime, data: Buffer.from(f.data).toString("base64") } : null;
 }
 
 /** One row with its body (a row opened as a page). */

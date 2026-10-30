@@ -31,6 +31,7 @@ import {
   createRow,
   DataError,
   deleteCollection,
+  fileInline,
   getRow,
   listRows,
   listTypes,
@@ -63,6 +64,7 @@ import {
   seedTemplates,
   updatePage,
 } from "./pages.ts";
+import { relatedTo } from "./related.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
 import { bodyOf, CORS, header, SAFE, send, sendFile, tokenOf } from "./reply.ts";
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
@@ -422,6 +424,8 @@ export function makeApp(opts: ServerOptions): App {
             route.endsWith("/rows") ? blockRowsOf(store, body, o) : computeBlocks(store, body, o),
           );
         }
+        if (route === "GET /api/data/rows/:id/related")
+          return send(res, 200, relatedTo(store, params.id ?? ""));
         if (route === "GET /api/data/rows/:id") {
           const row = getRow(store, params.id ?? "");
           recordUserRead(store, s.device, "data.row", row.type, [row.id], true, now());
@@ -482,6 +486,12 @@ export function makeApp(opts: ServerOptions): App {
             route.startsWith("DELETE"),
           );
           return "error" in r ? send(res, r.status, { error: r.error }) : send(res, 200, r);
+        }
+        // An image a note shows in its text, as data any host's transport carries (text).
+        if (route === "GET /api/data/files/:sha/inline") {
+          const f = fileInline(store, params.sha ?? "");
+          if (f) recordFileRead(store, s.device, params.sha ?? "", now());
+          return f ? send(res, 200, f) : send(res, 404, { error: "not-found" });
         }
         if (route === "GET /api/data/files/:sha") {
           const f = store.getFile(params.sha ?? "");

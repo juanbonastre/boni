@@ -24,6 +24,7 @@ import {
   type Page,
   type PageInfo,
   type Proposal,
+  type Related,
   type RunDetail,
   type RunSummary,
   type Tree,
@@ -204,6 +205,8 @@ interface State {
   row: DataRow | null;
   /** The open row's text as the page editor's blocks (saved back as Markdown). */
   rowDoc: Page | null;
+  /** What points to the open row (its «Relacionado») and the titles of what it points to. */
+  related: Related | null;
   /** One of Boni's screens as a page («Modelos»), edited like any page; `modified` when it is not Boni's. */
   rows: Record<
     string,
@@ -331,6 +334,7 @@ export const useStore = create<State>(() => ({
   openedNote: null,
   row: null,
   rowDoc: null,
+  related: null,
   inbox: [],
   requests: [],
   inboxLoading: false,
@@ -2171,6 +2175,21 @@ export async function editCell(type: string, id: string, field: string, value: D
   }
 }
 
+/** The file a row holds (a file block names the row): its bytes' hash and its name; null when it is gone. */
+export async function fileOfRow(id: string): Promise<{ sha: string; name: string } | null> {
+  const row = await agent.dataRow(id).catch(() => null);
+  if (!row?.type) return null;
+  if (!get().dataTypes) await loadDataTypes();
+  const def = get().dataTypes?.find((x) => x.id === row.type);
+  const field = def?.fields.find((f) => f.type === "file");
+  const sha = field ? row.values[field.id] : undefined;
+  if (typeof sha !== "string") return null;
+  const title = def ? row.values[def.titleField] : undefined;
+  return { sha, name: typeof title === "string" ? title : "" };
+}
+/** An image of the user's to paint in a note's text (a data: address); null when it cannot be shown in place. */
+export const fileInline = (sha: string) => agent.fileInline(sha).catch(() => null);
+
 /** An attachment of a row, opened where the host can (the desktop app: with the system's app). */
 export async function openFile(sha256: string, name: string) {
   const r = (await hostRef.openFile?.(sha256, name)) ?? "error";
@@ -2239,8 +2258,16 @@ export async function openRow(type: string, id: string) {
     view: { kind: "row", type, id, ...(from ? { from } : {}) },
     row: null,
     rowDoc: null,
+    related: null,
     panel: null,
   });
+  void agent
+    .dataRelated(id)
+    .then((related) => {
+      const v = get().view;
+      if (v.kind === "row" && v.id === id) set({ related });
+    })
+    .catch(() => {});
   if (!get().dataTypes) void loadDataTypes();
   try {
     const row = await agent.dataRow(id);

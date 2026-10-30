@@ -493,7 +493,7 @@ describe("clearing away what the vault left (docs/clases.md §7, step 7)", () =>
     expect(r.problems).toEqual(["«amount» de «Movimiento» es number: no guarda enlaces"]);
     expect(planErrors({ titles: "sí", embeds: true, vaultPaths: "borrar" })).toEqual([
       "«titles» es true",
-      '«embeds» es "remove" o "views"',
+      '«embeds» es "remove", "views" o "files"',
       '«vaultPaths» es "archive"',
     ]);
   });
@@ -546,5 +546,58 @@ describe("clearing away what the vault left (docs/clases.md §7, step 7)", () =>
     ).toBe(ids.get("personas/attachments/ana-ejemplo.png"));
     undoReshape(store, r.run as string);
     expect(body("proyectos/boni.md")).toContain("![[project.base]]");
+  });
+
+  it("each embedded file that finds its row becomes a file block; a shared name, a missing file and one inside a line stay", () => {
+    const store = openUserStore(":memory:");
+    stores.push(store);
+    const ids = seed(
+      store,
+      [
+        { key: "tarea", name: "Tarea", folder: "agenda/" },
+        { key: "archivos", name: "Archivos", folder: "", files: true },
+      ],
+      {
+        "agenda/tarea.md": [
+          "# Una tarea",
+          "",
+          "Texto.",
+          "",
+          "![[agenda/attachments/image 2.png|image 2.png]]",
+          "> [!note]+ Un aviso",
+          "> ![[unico.png|200]]",
+          "  ![[image 2.png]]",
+          "![[no-existe.png]]",
+          "Una línea con ![[unico.png]] en medio.",
+          "![[Otra nota]]",
+          "",
+        ].join("\n"),
+        "agenda/attachments/image 2.png": "png inventado",
+        "otra/carpeta/image 2.png": "otro png inventado",
+        "adjuntos/unico.png": "png inventado único",
+      },
+    );
+    const plan: ReshapePlan = { embeds: "files" };
+    expect(planErrors(plan)).toEqual([]);
+    const r = reshape(store, plan, { apply: true });
+    expect(r.lines).toEqual([
+      "Ficheros incrustados (![[…]]): 2 pasan a ser bloques de fichero en 1 registros (1 por carpeta y nombre, 1 por un nombre que solo tiene un fichero). Se quedan como estaban: 1 con un nombre que llevan varios ficheros, 1 sin fichero en Boni y 1 en mitad de una línea.",
+    ]);
+    const body = store.get(ids.get("agenda/tarea.md") as string)?.entity.body ?? "";
+    expect(body).toContain(`![image 2.png](boni:${ids.get("agenda/attachments/image 2.png")})`);
+    expect(body).toContain(
+      `> [!note]+ Un aviso\n![unico.png|200](boni:${ids.get("adjuntos/unico.png")})`,
+    );
+    for (const kept of [
+      "  ![[image 2.png]]",
+      "![[no-existe.png]]",
+      "con ![[unico.png]] en",
+      "![[Otra nota]]",
+    ])
+      expect(body).toContain(kept);
+    undoReshape(store, r.run as string);
+    expect(store.get(ids.get("agenda/tarea.md") as string)?.entity.body).toContain(
+      "![[agenda/attachments/image 2.png|image 2.png]]",
+    );
   });
 });
