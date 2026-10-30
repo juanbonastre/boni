@@ -135,11 +135,15 @@ export function embedDoubts(store: UserStore): string[] {
       const title = String(e.values[t.titleField] ?? "").trim() || "(sin título)";
       for (const target of files) {
         const name = target.split("/").pop() ?? target;
+        const folder = target.includes("/") ? target.slice(0, target.lastIndexOf("/")) : "";
         const where = folders.get(name.toLowerCase()) ?? [];
+        // An embed that names its folder is that file or none: the ones of the same name elsewhere are others.
         lines.push(
-          where.length
-            ? `«${t.name}» «${title}»: ${name} — ${where.length} ficheros se llaman así: ${where.join(" · ")}`
-            : `«${t.name}» «${title}»: ${name} — no está en Boni`,
+          folder
+            ? `«${t.name}» «${title}»: ${name} — no está en Boni (en el vault estaba en ${folder})`
+            : where.length
+              ? `«${t.name}» «${title}»: ${name} — ${where.length} ficheros se llaman así: ${where.join(" · ")}`
+              : `«${t.name}» «${title}»: ${name} — no está en Boni`,
         );
       }
     }

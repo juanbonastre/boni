@@ -102,6 +102,11 @@ export interface ReshapePlan {
    * page's file block (`![name|width](boni:<id>)`, an image shown in place).
    */
   embeds?: "remove" | "views" | "files";
+  /**
+   * A past `embeds: "files"` run (its id) whose conversions by a name only one file has are given back where the
+   * embed named a folder that file is not in: those lines go back to the embed's text (Juan, 2026-10-30).
+   */
+  repairFiles?: string;
   /** The hidden fields where the vault's import kept each note's path and hash, archived in every collection. */
   vaultPaths?: "archive";
 }
@@ -229,6 +234,7 @@ export function planErrors(plan: unknown): string[] {
       "fields",
       "records",
       "embeds",
+      "repairFiles",
       "vaultPaths",
     ],
     "plan",
@@ -334,6 +340,11 @@ export function planErrors(plan: unknown): string[] {
       errors.push(`${w}: «set» es un objeto de valores`);
     if (r.text !== undefined && r.text !== "") errors.push(`${w}: «text» solo puede ser ""`);
   }
+  if (
+    plan.repairFiles !== undefined &&
+    (typeof plan.repairFiles !== "string" || !/^reshape-[0-9a-f-]{36}$/.test(plan.repairFiles))
+  )
+    errors.push("«repairFiles» es el id de una reestructuración (reshape-…)");
   if (plan.embeds !== undefined && !["remove", "views", "files"].includes(plan.embeds as string))
     errors.push('«embeds» es "remove", "views" o "files"');
   if (plan.vaultPaths !== undefined && plan.vaultPaths !== "archive")
@@ -428,6 +439,12 @@ class Reshape {
       ["registros", () => this.moves(plan.moves ?? [])],
       ["campos", () => this.fields(plan.fields ?? [])],
       ["registros nombrados", () => this.records(plan.records ?? [])],
+      [
+        "ficheros que se tomaron de otra carpeta",
+        () => {
+          if (plan.repairFiles) this.repairFiles(plan.repairFiles);
+        },
+      ],
       [
         "incrustaciones",
         () => {
@@ -1085,9 +1102,76 @@ class Reshape {
   }
 
   /**
-   * Each embed of a file made the page's file block when it finds its row: by its folder and name, by a name only
-   * one file has, or, when several files have that name, by the one nearest the folder its note had in the vault
-   * (read once here, for this; Juan 2026-10-30). Alone on its line (or on a quote's line, Obsidian's callouts) the
+   * The lines a past run made file blocks by a name only one file has, where the embed named a folder that file is
+   * not in (a picture of another note), given back to the embed's text in the record as it is now. A line changed
+   * since stays as it is. Counts only (D-16).
+   */
+  private repairFiles(run: string): void {
+    const ops = this.store.log({ run }).filter((op) => op.kind === "update");
+    if (!ops.length) throw new Problem(`no hay cambios de la reestructuración ${run}`);
+    const folderOf = (id: string) => {
+      const v = this.store.get(id)?.entity.values[FOLDER_FIELD];
+      return String(v ?? "")
+        .replace(/\/+$/, "")
+        .toLowerCase();
+    };
+    let back = 0;
+    let gone = 0;
+    let notes = 0;
+    for (const op of ops) {
+      const before = (op.before as { body?: string | null } | null)?.body;
+      const after = (op.after as { body?: string | null } | null)?.body;
+      if (typeof before !== "string" || typeof after !== "string") continue;
+      const was = before.split("\n");
+      const made = after.split("\n");
+      if (was.length !== made.length) continue;
+      const wrong: [string, string][] = [];
+      for (let i = 0; i < was.length; i++) {
+        const m = FILE_EMBED_LINE.exec(was[i] as string);
+        const block = /\]\(boni:([a-z0-9][a-z0-9_-]{0,63})\)\s*$/i.exec(made[i] as string);
+        if (!m || !block || was[i] === made[i]) continue;
+        const target = (m[2] as string).trim();
+        if (!target.includes("/")) continue;
+        const folder = target.slice(0, target.lastIndexOf("/")).toLowerCase();
+        if (folderOf(block[1] as string) !== folder)
+          wrong.push([made[i] as string, was[i] as string]);
+      }
+      if (!wrong.length) continue;
+      const now = this.store.get(op.target)?.entity;
+      if (!now || now.deleted !== undefined) {
+        gone += wrong.length;
+        continue;
+      }
+      const lines = (now.body ?? "").split("\n");
+      let changed = false;
+      for (const [made, was] of wrong) {
+        const at = lines.indexOf(made);
+        if (at < 0) {
+          gone++;
+          continue;
+        }
+        lines[at] = was;
+        back++;
+        changed = true;
+      }
+      if (!changed) continue;
+      this.store.update(
+        op.target,
+        { [BODY]: { value: lines.join("\n"), label: this.l } },
+        this.meta,
+      );
+      notes++;
+    }
+    this.lines.push(
+      `Ficheros tomados de otra carpeta: ${back} vuelven a su texto ![[…]] en ${notes} registros (el fichero de Boni con ese nombre era otro). ${gone} ya no estaban como quedaron y se dejan.`,
+    );
+  }
+
+  /**
+   * Each embed of a file made the page's file block when it finds its row: by its folder and name; or, when it names
+   * no folder, by a name only one file has, or, when several files have that name, by the one nearest the folder its
+   * note had in the vault (read once here, for this; Juan 2026-10-30). One that names a folder where the file is not
+   * stays: the file of that name Boni has is another one. Alone on its line (or on a quote's line, Obsidian's callouts) the
    * block takes the line; in the middle of a sentence it goes on its own line just below it. A name still shared by
    * files as near, a file Boni does not have, and one inside a quote's sentence stay as they were.
    */
@@ -1132,6 +1216,8 @@ class Reshape {
       const name = (target.split("/").pop() ?? target).trim().toLowerCase();
       const byPath = exact.get(target.toLowerCase());
       if (byPath) return { id: byPath, how: "exact" };
+      // An embed that names its folder is that file or none (Obsidian shows it broken, never another one).
+      if (target.includes("/")) return "missing";
       const same = named.get(name) ?? [];
       if (same.length === 1) return { id: same[0] as string, how: "unique" };
       if (!same.length) return "missing";
