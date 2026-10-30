@@ -22,6 +22,7 @@ import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
 import { embedCounts, embedDoubts } from "./embeds.ts";
 import { planFromNote, reshape, undoReshape } from "./reshape.ts";
+import { codeHash, runInSandbox, sandboxSocket } from "./sandbox.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
 import { V1Store } from "./v1/store.ts";
@@ -50,6 +51,8 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts reshape <name> --undo <run>      that reshape taken back whole
  *   node src/cli.ts embeds <name> [--dudosas]        the `![[…]]` the vault left in the texts, counted; or the files
  *       still embedded, one per line with where files of that name are (src/embeds.ts)
+ *   node src/cli.ts sandbox-check                    whether the box of the extensions' functions answers (its socket,
+ *       BONI_SANDBOX_SOCKET), with how long a small call took and how many steps it used
  */
 const [cmd, ...args] = process.argv.slice(2);
 const paths = databasePaths();
@@ -253,9 +256,26 @@ try {
     } finally {
       store.close();
     }
+  } else if (cmd === "sandbox-check") {
+    const code =
+      "function prueba(i, ctx) { let s = 0; for (let k = 0; k < i.n; k++) s += k % 7; return { s, dia: ctx.day } }";
+    const started = Date.now();
+    const r = await runInSandbox({
+      id: "comprobacion",
+      code,
+      hash: codeHash(code),
+      fn: "prueba",
+      input: { n: 100_000 },
+      day: new Date().toISOString().slice(0, 10),
+      seed: 1,
+    });
+    if (!r.ok) throw new Error(`La caja (${sandboxSocket()}): ${r.error} · ${r.message}`);
+    console.log(
+      `La caja contesta (${sandboxSocket()}): ${Date.now() - started} ms en total, ${r.ms} ms la llamada, ${r.steps} pasos.`,
+    );
   } else {
     console.log(
-      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run> | embeds <name> [--dudosas]",
+      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run> | embeds <name> [--dudosas] | sandbox-check",
     );
   }
 } catch (e) {

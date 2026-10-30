@@ -23,6 +23,7 @@
     "@boni/identity": "workspace:*",
     "@boni/mail": "workspace:*",
     "@boni/net": "workspace:*",
+    "@boni/sandbox": "workspace:*",
     "@boni/store": "workspace:*",
     "@boni/views": "workspace:*"
   },

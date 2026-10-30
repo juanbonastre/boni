@@ -469,11 +469,11 @@ de Node (no es una frontera), `isolated-vm` (nativo), WASM con Rust (hay que com
 validado por su esquema; sin `Date.now` ni `Math.random` (el día y una semilla los pasa Boni), así una función da
 siempre lo mismo.
 
-### 11.5 Fases (sin empezar)
+### 11.5 Fases
 
 | # | Qué | Depende de |
 |---|---|---|
-| E1 | La caja | — |
+| E1 | La caja. **Programada (2026-10-30):** `packages/sandbox`, `apps/sandbox` (con su `Dockerfile`), el cliente del servidor y `cli.ts sandbox-check`; falta su contenedor en el NAS | — |
 | E2 | `functions` y `tests` en el manifiesto; etiquetas de la salida | E1 |
 | E3 | Proponer por MCP y activar en Boni; tokens con alcance; versiones | E2 |
 | E4 | La conciliación como primera extensión con funciones; «Subir extracto»; dudas como tarjetas | E3; tarjetas de petición del Lienzo (A4b) |
@@ -486,9 +486,11 @@ siempre lo mismo.
 - `packages/sandbox` (puro, sin E/S): el protocolo (petición: hash del código, función, entrada, límites, día y semilla;
   respuesta: salida o error `timeout` / `memory` / `output` / `exception`), el subconjunto de JSON Schema con el que se
   validan entradas y salidas, y los límites por defecto (500 ms, 64 MB, 1 MB de salida).
-- `apps/sandbox`: el ejecutor. Node con `quickjs-emscripten`; un hilo por llamada que se mata al pasar el límite; el
-  código se guarda por su hash mientras vive el proceso. Sin `fetch`, `require`, `process`, temporizadores, `Date.now` ni
-  `Math.random` (el día y una semilla vienen en la petición). Escucha solo en un socket Unix.
+- `apps/sandbox`: el ejecutor. Node con `quickjs-emscripten`; un hilo por llamada que se mata al pasar el límite, y en él
+  un intérprete nuevo cada vez (nada pasa de una llamada a otra). Sin `fetch`, `require`, `process`, temporizadores,
+  promesas, `Date.now` ni `Math.random` (el día y una semilla vienen en la petición). El límite principal es un
+  **presupuesto de pasos** del intérprete, el mismo en cualquier máquina; el de tiempo es la red de seguridad. Escucha
+  solo en un socket Unix.
 - Contenedor `boni-sandbox`: `network_mode: none`, raíz de solo lectura, `cap_drop: ALL`, `no-new-privileges`, usuario
   sin privilegios, 128 MB, límite de procesos; de volúmenes, solo la carpeta del socket, compartida con el servidor.
 - En el servidor, `src/sandbox.ts`: el cliente (tiempo de espera, reintento si el ejecutor se reinicia). Sin caja, las
@@ -541,6 +543,21 @@ siempre lo mismo.
 - `readStore` abre esa colección solo para la ejecución, la función o el lector que el permiso nombra; el planificador
   sigue con asas. El registro guarda cada llamada a un modelo con las colecciones privadas que llevaba.
 - Necesita «Modelos» (sección 9): elegir modelo y proveedor por papel, y saber si el proveedor guarda o entrena.
+
+### 11.7 Cómo lo hacen otros (revisado el 2026-10-30, a petición de Juan)
+
+| Quién | Cómo | Lo que tomamos |
+|---|---|---|
+| Figma (plugins) | Empezó con una caja de JavaScript dentro del propio proceso (*Realms*); se encontraron agujeros y en una semana pasó a QuickJS compilado a WebAssembly. No confía en revisar el código: confía en la caja | El motor, y que la seguridad no dependa de leer el código |
+| Shopify Functions | JavaScript compilado a WebAssembly con QuickJS (Javy); sin red ni reloj; la función recibe solo lo que pide una consulta de entrada y devuelve JSON con las operaciones que Shopify aplica; límite de instrucciones | El modelo entero: funciones puras, deterministas, entrada declarada **campo a campo**, salida como operaciones que aplica la casa, presupuesto de pasos |
+| n8n (nodo de código) | Ejecutar el código del usuario dentro del proceso principal resultó inseguro; ahora va en procesos aparte y, en producción, en un contenedor al lado, sin privilegios y con la raíz de solo lectura | El contenedor `boni-sandbox` y su endurecimiento |
+| Atlassian Forge | El manifiesto declara permisos y a qué dominios sale; si una versión pide más, el administrador vuelve a aceptar | La tarjeta de activación con `moreNeeds`; una versión nueva nunca se activa sola |
+| Zed (extensiones) | Módulos WebAssembly sin acceso directo a nada: lo que necesitan (descargar, instalar) lo hace el editor por ellos | La cáscara: todo lo que toca algo lo hace el código de Boni |
+
+Ajustes al plan que salen de aquí: la entrada se declara por colección **y campos** (como la consulta de Shopify), las
+funciones son síncronas (sin bucle de eventos, como Javy), cada llamada empieza en un intérprete nuevo, y el límite
+principal cuenta pasos del intérprete en vez de milisegundos, para que una función dé lo mismo en el portátil y en el
+NAS. `quickjs-emscripten` no está auditado: por eso la caja va además en su propio contenedor sin red.
 
 ## 12. Decisiones
 
