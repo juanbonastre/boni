@@ -506,7 +506,7 @@ describe("what a block counts, and Boni's own records as collections (design aud
     ).toBe(404);
     // Not in the store: the agent's view and the MCP never see them.
     expect(store.schema().types.t_sys_llamadas).toBeUndefined();
-    const mcp = mcpAnswer(
+    const mcp = (await mcpAnswer(
       store,
       "portatil-ejemplo",
       {
@@ -516,7 +516,7 @@ describe("what a block counts, and Boni's own records as collections (design aud
         params: { name: "collections", arguments: {} },
       },
       Date.now,
-    ) as { result: { content: { text: string }[] } };
+    )) as { result: { content: { text: string }[] } };
     expect(mcp.result.content[0]?.text).not.toContain("t_sys_");
     expect(mcp.result.content[0]?.text).not.toContain("Llamadas a modelos");
   });

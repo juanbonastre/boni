@@ -464,7 +464,20 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   It opens on Cuenta. **Extensiones** (docs/extensiones.md): a note on what they are, then per extension its name and
   what it does in one line with its switch, and under it a closed "Qué usa" group whose summary says whether it is
   as it came ("Viene con Boni (versión 1)") or changed; inside, in plain words (never ids): where it brings data from,
-  what it reads, what it looks for, whether it proposes, its daily budget. **Lo que ve la IA**: the three levels explained once at the top, then one row per collection with a select.
+  what it reads, what it looks for, whether it proposes, its daily budget. Above them, each version an assistant
+  proposed through the MCP waits as a card (docs/extensiones.md §11, E3; Juan, 2026-10-30), with an accent border and
+  a «Propuesta» pill:
+  - who proposed it and when, and whether it is new or which version is active;
+  - «Lo que pide que no pedía la versión N», in the account's names (new code, what it reads and writes field by
+    field, making or changing rows, asking);
+  - what it reads that is private: in large red when it does, a green «No lee nada privado ni restringido» when not;
+  - its tests with ✓ / ✗, and the dry run on his data, function by function;
+  - its code, folded, as plain text with its sha256;
+  - «Activar la versión N» (only when every test passes) and «Rechazar», and the note that only a device of his
+    activates it, never the MCP.
+
+  An extension with a version before the active one has «Volver a la versión N» under it: one click, both ways.
+  **Lo que ve la IA**: the three levels explained once at the top, then one row per collection with a select.
   **Correo**: not connected, server (`imap.gmail.com` by default), folder, user and app password, and "Conectar", which
   tries the connection before anything is kept (a wrong password is said under the form). Connected: who, the last
   check and how many mails, and "Comprobar ahora"; under it three closed groups, each with a summary on its right:

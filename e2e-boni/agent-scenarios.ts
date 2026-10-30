@@ -474,6 +474,50 @@ export const MAIL_SUGGESTED = {
 };
 
 /** The installed extensions (invented: the mail preset and one Juan changed). */
+/** A version of an extension proposed through the MCP, as the server shows its card (apps/server/src/proposals.ts). */
+export const EXTENSION_PROPOSALS = {
+  proposals: [
+    {
+      id: "banco",
+      name: "Banco ING",
+      description: "Lee los extractos de ING que subes y propone los movimientos nuevos.",
+      version: 2,
+      active: 1,
+      by: "mcp:claude-ejemplo",
+      at: Date.UTC(2026, 9, 30, 17, 20),
+      more: {
+        code: ["importar"],
+        reads: [{ collection: "Movimiento", fields: ["fecha", "importe"] }],
+        writes: [{ collection: "Movimiento", fields: ["concepto"] }],
+        creates: ["Movimiento"],
+        updates: [],
+        asks: true,
+        other: [],
+      },
+      privateReads: [],
+      report: {
+        tests: [{ function: "importar", name: "dos líneas dan dos movimientos", ok: true }],
+        dryRuns: [
+          {
+            function: "importar",
+            ok: true,
+            creates: { Movimiento: 18 },
+            updates: 0,
+            asks: ["¿Es la cena?"],
+          },
+        ],
+      },
+      functions: [
+        {
+          name: "importar",
+          hash: "3f9a".padEnd(61, "0") + "c21",
+          code: "function importar(input) {\n  return { changes: [] };\n}",
+        },
+      ],
+    },
+  ],
+};
+
 export const EXTENSIONS = {
   extensions: [
     {

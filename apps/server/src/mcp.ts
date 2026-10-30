@@ -8,6 +8,9 @@ import {
   type SelectOption,
   type TypeDef,
 } from "@boni/entities";
+import { FUNCTION_LIMITS, manifestErrors } from "@boni/extensions";
+import type { Scope } from "@boni/identity";
+import { DEFAULT_LIMITS as BOX_LIMITS, MAX_LIMITS as BOX_MAX } from "@boni/sandbox";
 import {
   BODY,
   closedToAi,
@@ -19,9 +22,13 @@ import {
 } from "@boni/store";
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
 import { relationId, relationTargets } from "./byName.ts";
+import { CATALOGUE, installed } from "./extensions.ts";
+import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
+import { proposals, propose } from "./proposals.ts";
+import { codeHash } from "./sandbox.ts";
 
 /**
  * Boni's MCP server (Juan, 2026-10-22: everything done through vault-mcp moves to Boni). The assistants that
@@ -52,6 +59,8 @@ interface Ctx {
   store: UserStore;
   device: string;
   now: () => number;
+  /** What this session may do (an assistant's token, `cli.ts token --scope`); null: everything. */
+  scope: readonly Scope[] | null;
   /** This call's run: its writes are undone together, and its audit action names it. */
   run: string;
   /** What of Juan's entities this call sends back to the model (the audit). */
@@ -290,8 +299,22 @@ interface Tool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  call(c: Ctx, a: Args): unknown;
+  call(c: Ctx, a: Args): unknown | Promise<unknown>;
 }
+/** The scope each tool needs (docs/extensiones.md §11, E3): reading, writing, or proposing extensions. */
+const READS = new Set([
+  "guide",
+  "collections",
+  "search",
+  "query",
+  "read",
+  "recent_changes",
+  "extensions_describe",
+]);
+const PROPOSES = new Set(["extensions_propose", "extensions_test"]);
+const scopeOf = (name: string): Scope =>
+  READS.has(name) ? "read" : PROPOSES.has(name) ? "extensions:propose" : "write";
+const mayUse = (c: Ctx, name: string) => !c.scope || c.scope.includes(scopeOf(name));
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",
   properties,
@@ -373,7 +396,10 @@ const TOOLS: Tool[] = [
             level: v.level(t.id),
           };
         }),
-        tools: TOOLS.map((t) => ({ name: t.name, does: firstSentence(t.description) })),
+        tools: TOOLS.filter((t) => mayUse(c, t.name)).map((t) => ({
+          name: t.name,
+          does: firstSentence(t.description),
+        })),
         writes:
           "Every write is labelled as a model's and is one run that `undo` takes back whole. Read a note before changing it.",
       };
@@ -862,6 +888,122 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "extensions_describe",
+    description:
+      "What Boni's extensions may be made of and what is installed: the catalogue (connectors, reading modules, plans, model roles), the limits of functions and of the box they run in, each installed extension (its version, whether it is on, its functions with their hashes and what they read and write) and the versions waiting for Juan.",
+    inputSchema: obj({}),
+    call(c) {
+      return {
+        catalogue: CATALOGUE,
+        functions: {
+          limits: FUNCTION_LIMITS,
+          box: { default: BOX_LIMITS, most: BOX_MAX },
+          how: "A function is JavaScript run in a box without network, files, clock or chance: `name(input, ctx)` gets `{ rows: { <collection key>: [{ id, version, values }] }, data }` (only the fields it declares in `reads`) and `ctx = { day, random() }`, and gives back `{ summary?, changes: [create | update | ask] }`, checked against its `writes`. Every function needs tests; Juan activates a version in Boni.",
+        },
+        installed: installed(c.store).map((i) => ({
+          id: i.manifest.id,
+          name: i.manifest.name,
+          version: i.manifest.version,
+          enabled: i.enabled,
+          functions: (i.manifest.functions ?? []).map((f) => ({
+            name: f.name,
+            hash: f.hash,
+            reads: f.reads,
+            writes: f.writes,
+          })),
+        })),
+        waiting: proposals(c.store).map((p) => ({ id: p.id, version: p.version, at: p.at })),
+      };
+    },
+  },
+  {
+    name: "extensions_propose",
+    description:
+      "Proposes an extension or a new version of one: its manifest with its functions (code and its sha256, what each reads field by field, what it may write) and their tests. It is checked, its tests run in Boni's box and each function is tried on Juan's data without saving anything (`data`: what each function would get from its flow, by name). Only if every test passes does it wait in Boni for Juan; nothing is activated here.",
+    inputSchema: obj(
+      {
+        manifest: { type: "object" },
+        data: {
+          type: "object",
+          description:
+            "For the dry run: what each function would get from its flow, by the function's name",
+        },
+      },
+      ["manifest"],
+    ),
+    async call(c, a) {
+      const data =
+        a.data && typeof a.data === "object" && !Array.isArray(a.data)
+          ? (a.data as Record<string, unknown>)
+          : undefined;
+      return propose(c.store, a.manifest, `mcp:${c.device}`, {
+        ...(data ? { data } : {}),
+        now: c.now,
+      });
+    },
+  },
+  {
+    name: "extensions_test",
+    description: "Runs a manifest's tests in Boni's box, proposing nothing.",
+    inputSchema: obj({ manifest: { type: "object" } }, ["manifest"]),
+    async call(_c, a) {
+      const errors = manifestErrors(a.manifest, CATALOGUE);
+      const m = a.manifest as { functions?: { name: string; code: string; hash: string }[] };
+      for (const f of m.functions ?? [])
+        if (codeHash(String(f.code)) !== f.hash)
+          errors.push(`functions.${f.name}.hash: not its code's sha256`);
+      if (errors.length) return { errors };
+      return { errors, tests: await runTests(a.manifest as Parameters<typeof runTests>[0]) };
+    },
+  },
+  {
+    name: "extensions_run",
+    description:
+      "Runs a function of an active extension on Juan's data: by default a dry run (what it would make, change or ask, nothing saved). With `apply`, it is applied only if Boni's policy allows it now, as one run Juan can undo; otherwise it says it waits for Juan. What `data` brings counts as from outside.",
+    inputSchema: obj(
+      {
+        extension: { type: "string" },
+        function: { type: "string" },
+        data: { description: "What the function gets from its flow" },
+        apply: { type: "boolean" },
+      },
+      ["extension", "function"],
+    ),
+    async call(c, a) {
+      const ext = installed(c.store).find((i) => i.manifest.id === a.extension && i.enabled);
+      if (!ext) throw new ToolFail("not an active extension (only Juan activates one, in Boni)");
+      const name = str(a.function, "function", 64);
+      // What an assistant passes may come from anywhere: it counts as external (P4 makes it wait for Juan).
+      const outside = label("external", "personal", [{ kind: "model", id: `mcp:${c.device}` }]);
+      const r = await callFunction(
+        c.store,
+        ext.manifest,
+        name,
+        a.data !== undefined ? { data: { value: a.data, label: outside } } : {},
+      );
+      if (!r.ok) throw new ToolFail(r.message);
+      const plan = dryRun(c.store, r.changeSet, r.read);
+      if (a.apply !== true) return { summary: r.changeSet.summary ?? "", dryRun: plan };
+      const d = decideApply(r.changeSet, r.label, {
+        kind: "turn",
+        trust: "personal",
+        device: c.device,
+      });
+      if (d.kind !== "allow") return { applied: false, waitsForJuan: d.rule, dryRun: plan };
+      const done = applyChangeSet(c.store, ext.manifest, name, r.changeSet, r.label, r.read, {
+        device: c.device,
+      });
+      if (!done.ok) throw new ToolFail(done.message);
+      return {
+        applied: true,
+        run: done.run,
+        created: done.created.length,
+        updated: done.updated.length,
+        asks: done.asks,
+      };
+    },
+  },
+  {
     name: "undo",
     description: "Takes back a whole write of this server (its run, as each write returned it).",
     inputSchema: obj({ run: { type: "string" } }, ["run"]),
@@ -885,7 +1027,7 @@ interface Rpc {
   params?: Args;
 }
 
-function answer(c: Ctx, m: Rpc): unknown | null {
+async function answer(c: Ctx, m: Rpc): Promise<unknown | null> {
   const reply = (result: unknown) => ({ jsonrpc: "2.0", id: m.id ?? null, result });
   const fail = (code: number, message: string) => ({
     jsonrpc: "2.0",
@@ -907,7 +1049,7 @@ function answer(c: Ctx, m: Rpc): unknown | null {
       return reply({});
     case "tools/list":
       return reply({
-        tools: TOOLS.map((t) => ({
+        tools: TOOLS.filter((t) => mayUse(c, t.name)).map((t) => ({
           name: t.name,
           description: t.description,
           inputSchema: t.inputSchema,
@@ -916,6 +1058,11 @@ function answer(c: Ctx, m: Rpc): unknown | null {
     case "tools/call": {
       const tool = TOOLS.find((t) => t.name === m.params?.name);
       if (!tool) return fail(-32602, `unknown tool ${String(m.params?.name)}`);
+      if (!mayUse(c, tool.name))
+        return reply({
+          content: [{ type: "text", text: `this session may not ${scopeOf(tool.name)}` }],
+          isError: true,
+        });
       const args = (m.params?.arguments as Args) ?? {};
       c.run = `mcp-${randomUUID()}`;
       c.seen = [];
@@ -933,7 +1080,7 @@ function answer(c: Ctx, m: Rpc): unknown | null {
           seen: c.seen,
         });
       try {
-        const out = tool.call(c, args);
+        const out = await tool.call(c, args);
         record(null);
         return reply({
           content: [{ type: "text", text: JSON.stringify(out, null, 1) }],
@@ -951,15 +1098,20 @@ function answer(c: Ctx, m: Rpc): unknown | null {
 }
 
 /** One HTTP request's JSON-RPC message (or batch): the answer to send, or null (202, nothing to say). */
-export function mcpAnswer(
+export async function mcpAnswer(
   store: UserStore,
   device: string,
   body: unknown,
   now: () => number = Date.now,
-): unknown | null {
-  const c: Ctx = { store, device, now, run: "", seen: [] };
+  scope: readonly Scope[] | null = null,
+): Promise<unknown | null> {
+  const c: Ctx = { store, device, now, run: "", seen: [], scope };
   if (Array.isArray(body)) {
-    const out = body.map((m) => answer(c, m as Rpc)).filter((x) => x !== null);
+    const out: unknown[] = [];
+    for (const m of body) {
+      const a = await answer(c, m as Rpc);
+      if (a !== null) out.push(a);
+    }
     return out.length ? out : null;
   }
   if (!body || typeof body !== "object")

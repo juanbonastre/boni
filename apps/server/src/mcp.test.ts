@@ -132,6 +132,10 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "create_collection",
       "finanzas_import",
       "finanzas_close",
+      "extensions_describe",
+      "extensions_propose",
+      "extensions_test",
+      "extensions_run",
       "undo",
     ]);
     expect((await rpc("tools/list", undefined, "nada")).status).toBe(401);

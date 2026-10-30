@@ -96,13 +96,13 @@ function env(movements = true): { store: UserStore; ids: Map<string, string> } {
   return { store, ids };
 }
 let n = 0;
-function call(e: { store: UserStore }, name: string, args: Record<string, unknown>) {
-  const out = mcpAnswer(
+async function call(e: { store: UserStore }, name: string, args: Record<string, unknown>) {
+  const out = (await mcpAnswer(
     e.store,
     "portatil",
     { jsonrpc: "2.0", id: ++n, method: "tools/call", params: { name, arguments: args } },
     () => Date.UTC(2026, 9, 12),
-  ) as { result: { content: { text: string }[]; isError: boolean } };
+  )) as { result: { content: { text: string }[]; isError: boolean } };
   const text = out.result.content[0]?.text ?? "";
   return { isError: out.result.isError, text, json: out.result.isError ? null : JSON.parse(text) };
 }
@@ -123,14 +123,14 @@ const movements = (s: UserStore) => {
 };
 
 describe("the reconciliation in Boni (MCP finanzas_import / finanzas_close)", () => {
-  it("dry run first, then the movements made in Boni, the app's joined; the month closed; all undone whole", () => {
+  it("dry run first, then the movements made in Boni, the app's joined; the month closed; all undone whole", async () => {
     const e = env();
-    const dry = call(e, "finanzas_import", {});
+    const dry = await call(e, "finanzas_import", {});
     expect(dry.json.output).toContain("2026-09-revolut.csv: revolut, 3 lineas");
     expect(dry.json.output).toContain("Unidas a notas de la app: 1; notas nuevas: 2");
     expect(movements(e.store)).toHaveLength(1);
 
-    const done = call(e, "finanzas_import", { dry_run: false });
+    const done = await call(e, "finanzas_import", { dry_run: false });
     expect(done.json).toMatchObject({ created: 2, joined: 1 });
     const ms = movements(e.store);
     expect(ms).toHaveLength(3);
@@ -143,12 +143,12 @@ describe("the reconciliation in Boni (MCP finanzas_import / finanzas_close)", ()
     });
     expect(String(ms.find((m) => m.title === "Cena cumple 60,00 EUR")?.ref)).toMatch(/^rev-/);
     // Again: nothing new (the same lines are known by their reference).
-    expect(call(e, "finanzas_import", { dry_run: false }).json).toMatchObject({
+    expect((await call(e, "finanzas_import", { dry_run: false })).json).toMatchObject({
       created: 0,
       joined: 0,
     });
 
-    const close = call(e, "finanzas_close", { month: "2026-09", dry_run: false });
+    const close = await call(e, "finanzas_close", { month: "2026-09", dry_run: false });
     expect(close.json.output).toContain("listos para conciliar: 2; siguen pendientes: 1");
     expect(close.json.output).toContain("sin categoria");
     expect(close.json.output).toContain("Te deben: Ana 30,00 EUR");
@@ -160,24 +160,24 @@ describe("the reconciliation in Boni (MCP finanzas_import / finanzas_close)", ()
         .sort(),
     ).toEqual(["Cena cumple 60,00 EUR", "Spotify 10,99 EUR"]);
     // Each applied call is one run: undone whole.
-    expect(call(e, "undo", { run: close.json.run }).json.undone).toBe(2);
+    expect((await call(e, "undo", { run: close.json.run })).json.undone).toBe(2);
     expect(movements(e.store).every((m) => m.status === "pendiente")).toBe(true);
-    call(e, "undo", { run: done.json.run });
+    await call(e, "undo", { run: done.json.run });
     expect(movements(e.store)).toHaveLength(1);
   });
 
-  it("reads a statement uploaded to Boni (upload_file), never over another file or as a note", () => {
+  it("reads a statement uploaded to Boni (upload_file), never over another file or as a note", async () => {
     const e = env();
     const csv = `Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance
 CARD_PAYMENT,Current,2026-10-02 10:11:12,2026-10-03 08:00:00,Spotify,-10.99,0.00,EUR,COMPLETED,90.00
 `;
     const path = "registros/finanzas/extractos/2026-10-revolut.csv";
-    const up = call(e, "upload_file", {
+    const up = await call(e, "upload_file", {
       path,
       content_base64: Buffer.from(csv).toString("base64"),
     });
     expect(up.json.bytes).toBe(csv.length);
-    expect(call(e, "finanzas_import", {}).json.output).toContain(
+    expect((await call(e, "finanzas_import", {})).json.output).toContain(
       "2026-10-revolut.csv: revolut, 1 lineas",
     );
     const b64 = Buffer.from("x").toString("base64");
@@ -189,14 +189,16 @@ CARD_PAYMENT,Current,2026-10-02 10:11:12,2026-10-03 08:00:00,Spotify,-10.99,0.00
       "/abs.csv",
       "sin-extension",
     ])
-      expect(call(e, "upload_file", { path: bad, content_base64: b64 }).isError).toBe(true);
-    expect(call(e, "upload_file", { path: "a/b.csv", content_base64: "" }).isError).toBe(true);
+      expect((await call(e, "upload_file", { path: bad, content_base64: b64 })).isError).toBe(true);
+    expect((await call(e, "upload_file", { path: "a/b.csv", content_base64: "" })).isError).toBe(
+      true,
+    );
     // One run, undone whole: the statement is gone again.
-    call(e, "undo", { run: up.json.run });
-    expect(call(e, "finanzas_import", {}).json.output).not.toContain("2026-10-revolut.csv");
+    await call(e, "undo", { run: up.json.run });
+    expect((await call(e, "finanzas_import", {})).json.output).not.toContain("2026-10-revolut.csv");
   });
 
-  it("reads the categories and rules from their collections; a category set by its name points to its row", () => {
+  it("reads the categories and rules from their collections; a category set by its name points to its row", async () => {
     const e = env();
     const category = () =>
       Object.fromEntries(
@@ -217,25 +219,28 @@ CARD_PAYMENT,Current,2026-10-02 10:11:12,2026-10-03 08:00:00,Spotify,-10.99,0.00
     expect(new StoreMoney(e.store).people().map((p) => p.label)).toEqual(["Ana"]);
 
     // The reconciliation reads them: Spotify by its rule, into the row of suscripciones.
-    const imported = call(e, "finanzas_import", { dry_run: false });
+    const imported = await call(e, "finanzas_import", { dry_run: false });
     expect(imported.json).toMatchObject({ created: 2, joined: 1 });
     expect(category()).toMatchObject({
       "Spotify 10,99 EUR": "suscripciones",
       "Kiosko Pepe 3,50 EUR": "otros/desconocido",
     });
     // A category set by its name through the MCP, as Claude does in the reconciliation.
-    call(e, "set_properties", { id: e.ids.get(CENA), properties: { category: "ingreso/nomina" } });
+    await call(e, "set_properties", {
+      id: e.ids.get(CENA),
+      properties: { category: "ingreso/nomina" },
+    });
     expect(category()["Cena cumple 60,00 EUR"]).toBe("ingreso/nomina");
   });
 
-  it("refuses without the movements in Boni, and without a month", () => {
+  it("refuses without the movements in Boni, and without a month", async () => {
     const e = env(false);
-    expect(call(e, "finanzas_import", {})).toMatchObject({ isError: true });
-    expect(call(e, "finanzas_import", {}).text).toContain("no tiene movimientos en Boni");
-    expect(call(env(), "finanzas_close", { month: "septiembre" }).isError).toBe(true);
+    expect(await call(e, "finanzas_import", {})).toMatchObject({ isError: true });
+    expect((await call(e, "finanzas_import", {})).text).toContain("no tiene movimientos en Boni");
+    expect((await call(env(), "finanzas_close", { month: "septiembre" })).isError).toBe(true);
     // Movimientos kept from the models: not read through here either.
     const shut = env();
     shut.store.setAiAccess("t_movimiento", "restricted", "portatil");
-    expect(call(shut, "finanzas_import", {}).text).toContain("kept from the models");
+    expect((await call(shut, "finanzas_import", {})).text).toContain("kept from the models");
   });
 });

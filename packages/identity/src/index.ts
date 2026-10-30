@@ -15,6 +15,8 @@ export {
   openSystemDb,
   revokeAll,
   revokeDevice,
+  SCOPES,
+  type Scope,
   SESSION_IDLE_MS,
   type SystemDb,
   sessionOf,

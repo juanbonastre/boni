@@ -24,6 +24,7 @@ import {
   type Page,
   type PageInfo,
   type Proposal,
+  type ProposalView,
   type Related,
   type RunDetail,
   type RunSummary,
@@ -1449,6 +1450,29 @@ export async function loadExtensions(): Promise<ExtensionView[] | null> {
     return await agent.extensions();
   } catch {
     return null;
+  }
+}
+
+/** The versions of extensions proposed through the MCP, waiting for Juan (E3); null when the server says no. */
+export async function loadProposals(): Promise<ProposalView[] | null> {
+  try {
+    return await agent.extensionProposals();
+  } catch {
+    return null;
+  }
+}
+
+/** Juan activates or rejects a proposed version, or goes back to the one before; false when it did not take. */
+export async function decideExtension(
+  id: string,
+  action: "activate" | "reject" | "revert",
+): Promise<boolean> {
+  try {
+    await agent.decideExtension(id, action);
+    return true;
+  } catch {
+    toast(useStore.getState().t("ext.error"));
+    return false;
   }
 }
 

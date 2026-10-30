@@ -6840,3 +6840,93 @@ button.rows-panel-row:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* An extension proposed through the MCP, as the card Juan activates it from (SettingsModal.tsx, E3). */
+.ext-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+.ext-proposal-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.ext-proposal-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.ext-proposal-pill {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ext-proposal-what {
+  margin: 2px 0 4px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.ext-proposal-h {
+  margin: 10px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ext-proposal-asks {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.ext-proposal-private {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--good);
+}
+.ext-proposal-private.is-warn {
+  color: var(--bad);
+  font-size: 15px;
+}
+.ext-proposal-tests {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ext-proposal-tests .ok {
+  color: var(--good);
+}
+.ext-proposal-tests .ko {
+  color: var(--bad);
+}
+.ext-proposal-code {
+  max-height: 260px;
+  margin: 0 0 8px;
+  padding: 10px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 12px;
+  white-space: pre;
+}
+.ext-proposal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ext-back {
+  margin: 4px 0 0;
+}
