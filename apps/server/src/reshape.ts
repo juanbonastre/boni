@@ -3,7 +3,7 @@
  * ids and every value, collections put inside others, Boni Calendar's calendars pointed at a branch split by a
  * field, and what is left empty or no longer needed archived or sent to the trash. It also clears away what the
  * vault left (step 7): links by a note's file name made relations, titles from a note's heading or file name, its
- * embeds out of the text, fields archived, and last the hidden path each note had. The plan is data, in the
+ * embeds (or only its views) out of the text, fields archived, and last the hidden path each note had. The plan is data, in the
  * account's own words (nothing of them in code, D-14); a dry run says what it would do, with counts only (never a
  * record's content), and the real one is one run in one transaction, undone whole (`undoReshape`).
  */
@@ -96,8 +96,11 @@ export interface ReshapePlan {
     set?: Record<string, string | number | boolean>;
     text?: "";
   }[];
-  /** Obsidian's embeds (`![[…]]`) out of every record's text. */
-  embeds?: "remove";
+  /**
+   * Obsidian's embeds (`![[…]]`) out of every record's text: all of them, or only its views (`![[….base]]`, live lists
+   * Boni does not run) with the heading each leaves with nothing under it.
+   */
+  embeds?: "remove" | "views";
   /** The hidden fields where the vault's import kept each note's path and hash, archived in every collection. */
   vaultPaths?: "archive";
 }
@@ -143,6 +146,53 @@ const readable = (name: string) => {
   const w = name.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim();
   return (w[0]?.toUpperCase() ?? "") + w.slice(1);
 };
+
+/** An Obsidian view embedded in a text (`![[person.base]]`, `![[x.base#Tabla|200]]`), alone on its line or not. */
+const VIEW = /!\[\[[^\]\n]*\.base(?:[#|][^\]\n]*)?\]\]/i;
+const VIEWS = new RegExp(VIEW.source, "gi");
+const VIEW_LINE = new RegExp(`^[ \\t]*${VIEW.source}[ \\t]*$`, "i");
+const HEADING = /^(#{1,6})[ \t]/;
+
+/**
+ * A text without its Obsidian views: a view alone on its line goes with its line, and so does the heading just above
+ * it when nothing is left under that heading (the next line with text is a heading as high, or the end).
+ */
+export function withoutViews(body: string): { text: string; views: number; headings: number } {
+  const lines = body.split("\n");
+  const out: string[] = [];
+  let views = 0;
+  let headings = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] as string;
+    if (!VIEW_LINE.test(line)) {
+      const inline = line.match(VIEWS)?.length ?? 0;
+      views += inline;
+      out.push(
+        inline
+          ? line
+              .replace(VIEWS, "")
+              .replace(/[ \t]{2,}/g, " ")
+              .trimEnd()
+          : line,
+      );
+      continue;
+    }
+    views++;
+    let k = out.length - 1;
+    while (k >= 0 && !(out[k] as string).trim()) k--;
+    const h = k >= 0 ? HEADING.exec(out[k] as string) : null;
+    if (!h) continue;
+    let j = i + 1;
+    while (j < lines.length && !(lines[j] as string).trim()) j++;
+    const next = j < lines.length ? HEADING.exec(lines[j] as string) : null;
+    if (j >= lines.length || (next && (next[1] as string).length <= (h[1] as string).length)) {
+      out.splice(k);
+      headings++;
+    }
+  }
+  const text = out.join("\n").replace(/\n{3,}/g, "\n\n");
+  return { text: text.replace(/^\n+/, "").trimEnd(), views, headings };
+}
 
 /** What is wrong with a plan's shape (closed: an unknown key is a mistake, not ignored). */
 export function planErrors(plan: unknown): string[] {
@@ -269,7 +319,8 @@ export function planErrors(plan: unknown): string[] {
       errors.push(`${w}: «set» es un objeto de valores`);
     if (r.text !== undefined && r.text !== "") errors.push(`${w}: «text» solo puede ser ""`);
   }
-  if (plan.embeds !== undefined && plan.embeds !== "remove") errors.push('«embeds» es "remove"');
+  if (plan.embeds !== undefined && plan.embeds !== "remove" && plan.embeds !== "views")
+    errors.push('«embeds» es "remove" o "views"');
   if (plan.vaultPaths !== undefined && plan.vaultPaths !== "archive")
     errors.push('«vaultPaths» es "archive"');
   const t = plan.trash;
@@ -365,7 +416,8 @@ class Reshape {
       [
         "incrustaciones",
         () => {
-          if (plan.embeds) this.embeds();
+          if (plan.embeds === "remove") this.embeds();
+          if (plan.embeds === "views") this.views();
         },
       ],
       ["calendarios", () => this.calendars(plan.calendars ?? [])],
@@ -1013,6 +1065,30 @@ class Reshape {
       }
     this.lines.push(
       `Incrustaciones de Obsidian (![[…]]): ${count} fuera del texto de ${notes} registros.`,
+    );
+  }
+
+  /** Only Obsidian's views out of the texts, with the heading a view leaves empty («## Agenda» over `![[….base]]`). */
+  private views(): void {
+    let notes = 0;
+    let views = 0;
+    let headings = 0;
+    for (const t of this.userTypes())
+      for (const e of this.store.entities(t.id)) {
+        const body = e.body ?? "";
+        if (!VIEW.test(body)) continue;
+        const r = withoutViews(body);
+        this.store.update(
+          e.id,
+          { [BODY]: { value: r.text ? `${r.text}\n` : null, label: this.l } },
+          this.meta,
+        );
+        notes++;
+        views += r.views;
+        headings += r.headings;
+      }
+    this.lines.push(
+      `Vistas de Obsidian (![[….base]]): ${views} fuera del texto de ${notes} registros, y ${headings} encabezados que se quedaban vacíos.`,
     );
   }
 
