@@ -7,7 +7,7 @@ import {
   MODELS_EVALUATING,
   MODELS_USED,
 } from "./agent-scenarios.ts";
-import { openApp, recorded, TEMPLATE } from "./fixtures.ts";
+import { openApp, openInTree, recorded, TEMPLATE } from "./fixtures.ts";
 
 /**
  * Boni's models (design audit, Juan 2026-10-25): what configures them is Ajustes → Modelos (each use with its model in
@@ -213,7 +213,7 @@ test("«Uso de la IA»: blocks over Boni's records; a click lists what a number 
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { pages: [TEMPLATE("uso-ia")] });
-  await page.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  await openInTree(page, "Uso de la IA");
   const calls = page.locator(".blk-number").nth(1);
   await expect(calls.locator(".kpi-value")).not.toHaveText("—");
   const n = Number((await calls.locator(".kpi-value").innerText()).replace(/\D/g, ""));
@@ -244,7 +244,7 @@ test("a template page is modified like any page, its changes listed, restored as
   page,
 }) => {
   await openApp(page, "/?still", { pages: [TEMPLATE("uso-ia")] });
-  await page.locator(".sidebar").getByRole("button", { name: "Uso de la IA", exact: true }).click();
+  await openInTree(page, "Uso de la IA");
   const pill = page.locator(".template-head .system-pill");
   await expect(pill).toHaveText("De Boni");
   const blocks = page.locator(".blk-number");

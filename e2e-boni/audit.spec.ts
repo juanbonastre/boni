@@ -7,7 +7,7 @@ import {
   RUN_2,
   RUNS_EXPLAINED,
 } from "./agent-scenarios.ts";
-import { openApp, openLog, recorded, TEMPLATE } from "./fixtures.ts";
+import { openApp, openInTree, openLog, recorded, TEMPLATE } from "./fixtures.ts";
 
 /** The run pages and the read-only audit, whose rows open what reached each actor and what it wrote. */
 const SHOTS = "e2e-boni/screenshots";
@@ -32,7 +32,7 @@ test("Registro is a real page; the conversation keeps the runs with Undo and the
     agent: AUDIT,
     pages: [TEMPLATE("actividad"), TEMPLATE("registro")],
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Actividad", exact: true }).click();
+  await openInTree(page, "Actividad");
   await page.getByRole("button", { name: "Cada ejecución de Boni" }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Registro");
   await expect(page.locator(".blk-number")).toHaveCount(3);
