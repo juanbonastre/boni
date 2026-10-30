@@ -581,23 +581,53 @@ describe("clearing away what the vault left (docs/clases.md §7, step 7)", () =>
     expect(planErrors(plan)).toEqual([]);
     const r = reshape(store, plan, { apply: true });
     expect(r.lines).toEqual([
-      "Ficheros incrustados (![[…]]): 2 pasan a ser bloques de fichero en 1 registros (1 por carpeta y nombre, 1 por un nombre que solo tiene un fichero). Se quedan como estaban: 1 con un nombre que llevan varios ficheros, 1 sin fichero en Boni y 1 en mitad de una línea.",
+      "Ficheros incrustados (![[…]]): 3 pasan a ser bloques de fichero en 1 registros (1 por carpeta y nombre, 1 por un nombre que solo tiene un fichero, 0 por la carpeta que tenía su nota, 1 sacados de una frase a su propia línea). Se quedan como estaban: 1 con un nombre que llevan varios ficheros igual de cerca, 1 sin fichero en Boni y 0 dentro de una cita.",
     ]);
     const body = store.get(ids.get("agenda/tarea.md") as string)?.entity.body ?? "";
     expect(body).toContain(`![image 2.png](boni:${ids.get("agenda/attachments/image 2.png")})`);
     expect(body).toContain(
       `> [!note]+ Un aviso\n![unico.png|200](boni:${ids.get("adjuntos/unico.png")})`,
     );
-    for (const kept of [
-      "  ![[image 2.png]]",
-      "![[no-existe.png]]",
-      "con ![[unico.png]] en",
-      "![[Otra nota]]",
-    ])
+    for (const kept of ["  ![[image 2.png]]", "![[no-existe.png]]", "![[Otra nota]]"])
       expect(body).toContain(kept);
+    // In the middle of a sentence: the sentence stays, the picture goes on its own line below it.
+    expect(body).toContain(
+      `Una línea con en medio.\n![unico.png](boni:${ids.get("adjuntos/unico.png")})`,
+    );
     undoReshape(store, r.run as string);
     expect(store.get(ids.get("agenda/tarea.md") as string)?.entity.body).toContain(
       "![[agenda/attachments/image 2.png|image 2.png]]",
+    );
+  });
+
+  it("a name several files have: the one nearest the folder its note had; files as near stay as they were", () => {
+    const store = openUserStore(":memory:");
+    stores.push(store);
+    const ids = seed(
+      store,
+      [
+        { key: "tarea", name: "Tarea", folder: "agenda/" },
+        { key: "nota", name: "Nota", folder: "wiki/" },
+        { key: "archivos", name: "Archivos", folder: "", files: true },
+      ],
+      {
+        "agenda/gestiones/disfraz.md": "# Disfraz\n\n![[image 2.png]]\n",
+        "wiki/temas/ver.md": "# Ver\n\n![[foto.png]]\n",
+        "agenda/gestiones/attachments/image 2.png": "png de gestiones",
+        "wiki/temas/attachments/image 2.png": "png de temas",
+        "wiki/a/foto.png": "png a",
+        "wiki/b/foto.png": "png b",
+      },
+      { vaultPaths: true },
+    );
+    const r = reshape(store, { embeds: "files" }, { apply: true });
+    expect(r.lines[0]).toContain("1 por la carpeta que tenía su nota");
+    expect(r.lines[0]).toContain("1 con un nombre que llevan varios ficheros igual de cerca");
+    expect(store.get(ids.get("agenda/gestiones/disfraz.md") as string)?.entity.body).toContain(
+      `![image 2.png](boni:${ids.get("agenda/gestiones/attachments/image 2.png")})`,
+    );
+    expect(store.get(ids.get("wiki/temas/ver.md") as string)?.entity.body).toContain(
+      "![[foto.png]]",
     );
   });
 });
