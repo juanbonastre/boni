@@ -4,6 +4,7 @@ import { editRowValue, setPropHidden, toggleRowProps, useStore } from "../store.
 import { Cell } from "./DatabaseBlock.tsx";
 import { HistoryPanel } from "./History.tsx";
 import { DocEditor } from "./PageView.tsx";
+import { RelatedSection } from "./Related.tsx";
 
 /**
  * A row of a collection opened as a page, as Notion's: its title big, its properties one per line (the
@@ -18,6 +19,7 @@ export function RowView() {
   const view = useStore((s) => s.view);
   const row = useStore((s) => s.row);
   const doc = useStore((s) => s.rowDoc);
+  const related = useStore((s) => s.related);
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const [history, setHistory] = useState(false);
   const type = useStore((s) =>
@@ -94,7 +96,7 @@ export function RowView() {
                       type={type}
                       field={f}
                       row={row}
-                      titles={{}}
+                      titles={related?.titles ?? {}}
                       onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
                     />
                   </div>
@@ -129,7 +131,7 @@ export function RowView() {
                             type={type}
                             field={f}
                             row={row}
-                            titles={{}}
+                            titles={related?.titles ?? {}}
                             onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
                           />
                         </div>
@@ -148,6 +150,7 @@ export function RowView() {
               )}
             </div>
           )}
+          {related && related.groups.length > 0 && <RelatedSection groups={related.groups} />}
           {doc && <DocEditor key={doc.id} doc={doc} />}
         </div>
       </div>

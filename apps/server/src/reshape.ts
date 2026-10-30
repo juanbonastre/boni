@@ -27,7 +27,7 @@ import {
 } from "./calendarStore.ts";
 import { keyFrom } from "./data.ts";
 import { listPages } from "./pages.ts";
-import { HASH_FIELD, PATH_FIELD } from "./paths.ts";
+import { FOLDER_FIELD, HASH_FIELD, PATH_FIELD } from "./paths.ts";
 
 /** A record named by its title in a collection (an area for a calendar, say). */
 export interface RecordRef {
@@ -97,10 +97,11 @@ export interface ReshapePlan {
     text?: "";
   }[];
   /**
-   * Obsidian's embeds (`![[…]]`) out of every record's text: all of them, or only its views (`![[….base]]`, live lists
-   * Boni does not run) with the heading each leaves with nothing under it.
+   * Obsidian's embeds (`![[…]]`) in every record's text: all of them out, or only its views (`![[….base]]`, live lists
+   * Boni does not run) with the heading each leaves with nothing under it, or each file that finds its row made the
+   * page's file block (`![name|width](boni:<id>)`, an image shown in place).
    */
-  embeds?: "remove" | "views";
+  embeds?: "remove" | "views" | "files";
   /** The hidden fields where the vault's import kept each note's path and hash, archived in every collection. */
   vaultPaths?: "archive";
 }
@@ -193,6 +194,19 @@ export function withoutViews(body: string): { text: string; views: number; headi
   const text = out.join("\n").replace(/\n{3,}/g, "\n\n");
   return { text: text.replace(/^\n+/, "").trimEnd(), views, headings };
 }
+
+/**
+ * An embed alone on its line, or on a quote's line (`> ![[…]]`, Obsidian's callouts), its indentation kept:
+ * [1] the indentation, [2] what it points to (without its section), [3] its alias (a width, or a name).
+ */
+const FILE_EMBED_LINE =
+  /^([ \t]*)(?:>[ \t]?)?!\[\[([^\]\n|#]+)(?:#[^\]\n|]*)?(?:\|([^\]\n]*))?\]\][ \t]*$/;
+const FILE_EMBEDS = /!\[\[([^\]\n|#]+)[^\]\n]*\]\]/g;
+/** A file's name (an extension that is not a note's or a view's), not a note. */
+const isFileTarget = (target: string) => {
+  const ext = /\.([a-z][a-z0-9]{0,4})$/i.exec(target.trim())?.[1]?.toLowerCase();
+  return !!ext && ext !== "md" && ext !== "base";
+};
 
 /** What is wrong with a plan's shape (closed: an unknown key is a mistake, not ignored). */
 export function planErrors(plan: unknown): string[] {
@@ -319,8 +333,8 @@ export function planErrors(plan: unknown): string[] {
       errors.push(`${w}: «set» es un objeto de valores`);
     if (r.text !== undefined && r.text !== "") errors.push(`${w}: «text» solo puede ser ""`);
   }
-  if (plan.embeds !== undefined && plan.embeds !== "remove" && plan.embeds !== "views")
-    errors.push('«embeds» es "remove" o "views"');
+  if (plan.embeds !== undefined && !["remove", "views", "files"].includes(plan.embeds as string))
+    errors.push('«embeds» es "remove", "views" o "files"');
   if (plan.vaultPaths !== undefined && plan.vaultPaths !== "archive")
     errors.push('«vaultPaths» es "archive"');
   const t = plan.trash;
@@ -418,6 +432,7 @@ class Reshape {
         () => {
           if (plan.embeds === "remove") this.embeds();
           if (plan.embeds === "views") this.views();
+          if (plan.embeds === "files") this.files();
         },
       ],
       ["calendarios", () => this.calendars(plan.calendars ?? [])],
@@ -1069,6 +1084,65 @@ class Reshape {
   }
 
   /** Only Obsidian's views out of the texts, with the heading a view leaves empty («## Agenda» over `![[….base]]`). */
+  /**
+   * Each embed of a file alone on its line (or on a quote's line, Obsidian's callouts: it comes out of the quote) made
+   * the page's file block when it finds its row: by its folder and name, or by a name only one file has. One whose
+   * name several files have, one with no file in Boni and one in the middle of a line stay as they were.
+   */
+  private files(): void {
+    const exact = new Map<string, string>();
+    const named = new Map<string, string[]>();
+    for (const t of this.userTypes()) {
+      const file = t.fields.find((f) => f.type === "file" && !f.archived);
+      if (!file) continue;
+      for (const e of this.store.entities(t.id)) {
+        const name = String(e.values[t.titleField] ?? "").trim();
+        if (e.values[file.id] === undefined || !name) continue;
+        const folder = String(e.values[FOLDER_FIELD] ?? "").replace(/\/+$/, "");
+        exact.set(`${folder}/${name}`.toLowerCase(), e.id);
+        named.set(name.toLowerCase(), [...(named.get(name.toLowerCase()) ?? []), e.id]);
+      }
+    }
+    const n = { notes: 0, exact: 0, unique: 0, shared: 0, missing: 0, inline: 0 };
+    for (const t of this.userTypes())
+      for (const e of this.store.entities(t.id)) {
+        const body = e.body ?? "";
+        if (!body.includes("![[")) continue;
+        let changed = false;
+        const lines = body.split("\n").map((line) => {
+          const m = FILE_EMBED_LINE.exec(line);
+          if (!m) {
+            for (const x of line.matchAll(FILE_EMBEDS))
+              if (isFileTarget(x[1] as string)) n.inline++;
+            return line;
+          }
+          const target = (m[2] as string).trim();
+          if (!isFileTarget(target)) return line;
+          const name = (target.split("/").pop() ?? target).trim();
+          const sameName = named.get(name.toLowerCase()) ?? [];
+          const id =
+            exact.get(target.toLowerCase()) ?? (sameName.length === 1 ? sameName[0] : undefined);
+          if (!id) {
+            if (sameName.length > 1) n.shared++;
+            else n.missing++;
+            return line;
+          }
+          if (exact.has(target.toLowerCase())) n.exact++;
+          else n.unique++;
+          changed = true;
+          const width = /^(\d{2,4})(?:x\d+)?$/.exec((m[3] ?? "").trim())?.[1];
+          const w = width && Number(width) >= 16 && Number(width) <= 4000 ? `|${width}` : "";
+          return `${m[1]}![${name.replace(/[\]|]/g, " ")}${w}](boni:${id})`;
+        });
+        if (!changed) continue;
+        this.store.update(e.id, { [BODY]: { value: lines.join("\n"), label: this.l } }, this.meta);
+        n.notes++;
+      }
+    this.lines.push(
+      `Ficheros incrustados (![[…]]): ${n.exact + n.unique} pasan a ser bloques de fichero en ${n.notes} registros (${n.exact} por carpeta y nombre, ${n.unique} por un nombre que solo tiene un fichero). Se quedan como estaban: ${n.shared} con un nombre que llevan varios ficheros, ${n.missing} sin fichero en Boni y ${n.inline} en mitad de una línea.`,
+    );
+  }
+
   private views(): void {
     let notes = 0;
     let views = 0;

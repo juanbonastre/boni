@@ -12,7 +12,7 @@ import {
 } from "@playwright/test";
 import { seed } from "../apps/server/src/seed.test-util.ts";
 import { readZip } from "../packages/export/src/zip.ts";
-import { openUserStore } from "../packages/store/src/index.ts";
+import { BODY, openUserStore } from "../packages/store/src/index.ts";
 import { applies, CATALOGUE } from "../packages/views/src/catalogue.ts";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -52,18 +52,23 @@ const NOTES: Record<string, string> = {
   "registros/personas/ana-ejemplo.md":
     "---\ntype: person\nsummary: Invented colleague.\n---\n# Ana\n",
   // Invented belongings: a number, a date and a list (its values become a select's options).
-  "registros/pertenencias/cafetera.md": `---\nprecio: 210\ncomprado: "${iso(today)}"\ntipo: [cocina]\n---\n# Cafetera\n`,
+  "registros/pertenencias/cafetera.md": `---\nprecio: 210\ncomprado: "${iso(today)}"\ntipo: [cocina]\nRegalo de: "[[ana-ejemplo]]"\n---\n# Cafetera\n`,
   "registros/pertenencias/cortacesped.md": `---\nprecio: 180\ncomprado: "${iso(today)}"\ntipo: [jardín]\n---\n# Cortacésped\n`,
   "registros/pertenencias/horno.md": `---\nprecio: 240\ncomprado: "${iso(new Date(Date.now() - 86_400_000))}"\ntipo: [cocina]\n---\n# Horno\n`,
   // The private zone (the AI never reads Juan's): a note and a PDF in a folder.
   "private/Documentos/seguro.md": '---\nvence: "2027-01-01"\n---\nPóliza inventada.\n',
   "private/Documentos/poliza.pdf": "%PDF-1.7 inventado",
+  // An invented picture (a capture of Boni's own settings) that a belonging's text shows in place.
+  "adjuntos/plano.png": readFileSync(join(ROOT, "e2e-boni", "__screens__", "ajustes.png")),
 };
 
 let dir = "";
 /** The records of the class and the tutorial (links into Boni name a record by its id). */
 let classId = "";
 let tutorialId = "";
+/** A person something points to («Relacionado») and a belonging whose text shows a picture. */
+let anaId = "";
+let hornoId = "";
 let server: ChildProcess | null = null;
 let app: ElectronApplication | null = null;
 
@@ -82,8 +87,14 @@ test.beforeAll(async () => {
         key: "pertenencia",
         name: "Pertenencia",
         folder: "registros/pertenencias/",
-        fields: { precio: "number", comprado: "date", tipo: { type: "multiselect" } },
+        fields: {
+          precio: "number",
+          comprado: "date",
+          tipo: { type: "multiselect" },
+          "Regalo de": { type: "relation", to: "persona" },
+        },
       },
+      { key: "adjuntos", name: "Adjuntos", folder: "adjuntos/", files: true },
       // A folder of the zone, as Juan imported it himself: every type kept from the AI.
       {
         key: "private_documentos",
@@ -99,6 +110,19 @@ test.beforeAll(async () => {
   );
   classId = ids.get(`agenda/docencia/${iso(today)} Clase de ejemplo.md`) as string;
   tutorialId = ids.get(`agenda/docencia/${iso(tomorrow)} Tutoría.md`) as string;
+  anaId = ids.get("registros/personas/ana-ejemplo.md") as string;
+  hornoId = ids.get("registros/pertenencias/horno.md") as string;
+  // The oven's text shows the picture by its row's id, as the conversion of the vault's embeds leaves it.
+  store.update(
+    hornoId,
+    {
+      [BODY]: {
+        value: `Instrucciones del horno.\n\n![plano.png|320](boni:${ids.get("adjuntos/plano.png")})\n`,
+        label: store.schema().types.t_pertenencia?.label as never,
+      },
+    },
+    { actor: "user", device: "seed" },
+  );
   store.close();
   server = spawn("node", ["apps/server/src/main.ts"], {
     cwd: ROOT,
@@ -528,6 +552,25 @@ test("a boni:// link opens a record by its id in the running app", async () => {
     /Preparar los ejercicios del tema 3/,
   );
   await expect(w.locator(".topbar")).toContainText("Clase de ejemplo");
+});
+
+test("a record says what points to it («Relacionado»), and a note's text shows a picture in place", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  openLink(`boni://note?id=${anaId}`);
+  const related = w.locator(".row-related-toggle");
+  await expect(related).toContainText("Pertenencia 1");
+  await expect(w.locator(".row-related")).toHaveCount(0);
+  await related.click();
+  await expect(w.locator(".row-related")).toContainText("en «Regalo de»");
+  await w.locator(".row-related-row", { hasText: "Cafetera" }).click();
+  await expect(w.locator(".row-title, .doc-title").first()).toHaveValue("Cafetera");
+  // The picture comes through the app's own channel to the server (no address of the server in the page).
+  openLink(`boni://note?id=${hornoId}`);
+  const img = w.locator(".doc-file-image img");
+  await expect(img).toBeVisible();
+  expect(await img.evaluate((i) => (i as HTMLImageElement).naturalWidth)).toBeGreaterThan(100);
+  await expect(w.locator(".doc-file-image figcaption")).toHaveText("plano.png");
+  await shot(w, "related-and-picture");
 });
 
 test("a boni:// link with the window closed: the window opens on the note at the first click", async () => {

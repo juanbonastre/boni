@@ -1,5 +1,5 @@
 import { CATALOGUE, kindOf as catalogueKind, newBlock } from "@boni/views";
-import { ChevronRight, FileText, GripVertical, Plus, Smile } from "lucide-react";
+import { ChevronRight, FileText, GripVertical, Paperclip, Plus, Smile } from "lucide-react";
 import {
   type KeyboardEvent,
   type ReactNode,
@@ -26,12 +26,15 @@ import { PALETTE } from "../core/palette.ts";
 import { catText } from "../i18n.ts";
 import {
   blockId,
+  fileInline,
+  fileOfRow,
   loadDataTypes,
   newChartForPage,
   newPage,
   newSubpageBlock,
   openBlockPanel,
   openEditor,
+  openFile,
   openPage,
   openRowsPanel,
   openScreen,
@@ -455,6 +458,8 @@ export function Blocks({ page }: { page: Page }) {
         <hr className="doc-divider" />
       ) : b.type === "page" ? (
         <PageLink id={b.page} />
+      ) : b.type === "file" ? (
+        <FileBlock block={b} />
       ) : b.type === "database" ? (
         <DatabaseBlock
           source={b.source}
@@ -545,6 +550,53 @@ function PageLink({ id }: { id: string }) {
       <span className={`doc-page-name${target.title ? "" : " untitled"}`}>
         {target.title || t("page.untitled")}
       </span>
+    </button>
+  );
+}
+
+const IMAGE = /\.(png|jpe?g|gif|webp|svg|avif)$/i;
+
+/**
+ * A file of the user's in the text (Juan, 2026-10-29): an image in place, at the width it had, with its name under it;
+ * anything else a card with its name that opens it. Where the host cannot show bytes, an image is a card too.
+ */
+function FileBlock({ block }: { block: Extract<Block, { type: "file" }> }) {
+  const t = useStore((s) => s.t);
+  const [file, setFile] = useState<
+    { sha: string; name: string; url: string | null } | "gone" | null
+  >(null);
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      const f = await fileOfRow(block.file);
+      if (!f) return live && setFile("gone");
+      const name = f.name || block.name;
+      const url = IMAGE.test(name) ? await fileInline(f.sha) : null;
+      if (live) setFile({ ...f, name, url });
+    })();
+    return () => {
+      live = false;
+    };
+  }, [block.file, block.name]);
+  if (file === "gone") return <p className="doc-gone">{t("file.missing")}</p>;
+  const name = file?.name || block.name;
+  if (file?.url)
+    return (
+      <figure className="doc-file-image">
+        <img src={file.url} alt={name} style={block.width ? { width: block.width } : undefined} />
+        <figcaption className="muted">{name}</figcaption>
+      </figure>
+    );
+  return (
+    <button
+      type="button"
+      className="doc-file"
+      disabled={!file}
+      onClick={() => file && void openFile(file.sha, name)}
+    >
+      <Paperclip size={15} strokeWidth={1.8} aria-hidden="true" />
+      <span className="doc-file-name">{name}</span>
+      <span className="muted">{t("file.open")}</span>
     </button>
   );
 }

@@ -122,3 +122,31 @@ describe("notes as pages: Markdown and the editor's blocks", () => {
     expect(leadingTitle("## Un segundo nivel\n")).toBeNull();
   });
 });
+
+describe("a file of the user's in a note's text", () => {
+  it("alone on its line is a file block, and comes back the same line; inside a sentence it stays text", () => {
+    const md =
+      "Antes.\n\n![plano de la casa.png|560](boni:e_01abc)\n\n![rubrica.pdf](boni:e_02def)\n\nDespués ![x.png](boni:e_03) en línea.\n";
+    const blocks = markdownToBlocks(md);
+    expect(blocks.map((b) => b.type)).toEqual(["text", "file", "file", "text"]);
+    expect(blocks[1]).toMatchObject({ file: "e_01abc", name: "plano de la casa.png", width: 560 });
+    expect(blocks[2]).toMatchObject({ file: "e_02def", name: "rubrica.pdf" });
+    expect(blocks[2]).not.toHaveProperty("width");
+    expect(blocksToMarkdown(blocks)).toBe(md);
+    expect(pageErrors({ version: 1, blocks })).toEqual([]);
+  });
+
+  it("a file block names its row by an id and has a name; anything else is refused", () => {
+    const ok = { id: "b1", type: "file", file: "e_01abc", name: "foto.png" };
+    expect(pageErrors({ version: 1, blocks: [ok] })).toEqual([]);
+    for (const bad of [
+      { ...ok, file: "../x" },
+      { ...ok, name: 3 },
+      { ...ok, width: 5 },
+      { ...ok, url: "https://example.com/x.png" },
+    ])
+      expect(pageErrors({ version: 1, blocks: [bad] })).toEqual([
+        "blocks[0]: a file names its row and has a name",
+      ]);
+  });
+});

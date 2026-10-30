@@ -155,6 +155,20 @@ export function markdownToBlocks(md: string): Block[] {
       out.push({ id: id(), type: "quote", text: q.join("\n") });
       continue;
     }
+    // A file of the user's alone on its line (`![name|width](boni:<id>)`): shown in place, as the page's own block.
+    const file =
+      /^\s*!\[([^\]|\n]*)(?:\|(\d{2,4}))?\]\(boni:([a-z0-9][a-z0-9_-]{0,63})\)\s*$/i.exec(line);
+    if (file) {
+      flush();
+      out.push({
+        id: id(),
+        type: "file",
+        file: file[3] as string,
+        name: (file[1] as string).trim(),
+        ...(file[2] ? { width: Number(file[2]) } : {}),
+      });
+      continue;
+    }
     // Anything else is a paragraph's line, kept as written (tables, images, links, deeper headings...).
     para.push(line);
   }
@@ -217,6 +231,9 @@ export function blocksToMarkdown(blocks: readonly Block[]): string {
       }
       case "divider":
         text = "---";
+        break;
+      case "file":
+        text = `![${b.name.replace(/[\]|\n]/g, " ")}${b.width ? `|${b.width}` : ""}](boni:${b.file})`;
         break;
       case "toggle":
       case "callout":

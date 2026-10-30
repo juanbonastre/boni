@@ -918,6 +918,56 @@ function parseDataType(v: unknown): DataType | null {
     ),
   };
 }
+/** What points to a row (its «Relacionado»): by collection and field, each with its rows (title, first date). */
+export interface RelatedGroup {
+  type: string;
+  collection: string;
+  icon?: string;
+  field: string;
+  fieldName: string;
+  count: number;
+  rows: { id: string; title: string; date?: string }[];
+}
+export interface Related {
+  groups: RelatedGroup[];
+  /** The titles of what the row itself points to (its relations' values). */
+  titles: Record<string, string>;
+}
+function parseRelated(v: unknown): Related {
+  const b = isObj(v) ? v : {};
+  const s = (x: unknown, max = 300) => (typeof x === "string" ? x.slice(0, max) : "");
+  const groups = (Array.isArray(b.groups) ? b.groups : []).flatMap((g): RelatedGroup[] => {
+    if (!isObj(g) || typeof g.type !== "string" || typeof g.field !== "string") return [];
+    const rows = (Array.isArray(g.rows) ? g.rows : []).flatMap((r) =>
+      isObj(r) && typeof r.id === "string"
+        ? [
+            {
+              id: r.id,
+              title: s(r.title),
+              ...(typeof r.date === "string" ? { date: s(r.date, 10) } : {}),
+            },
+          ]
+        : [],
+    );
+    return [
+      {
+        type: g.type,
+        collection: s(g.collection, 80),
+        ...(typeof g.icon === "string" ? { icon: s(g.icon, 8) } : {}),
+        field: g.field,
+        fieldName: s(g.fieldName, 80),
+        count: Number(g.count) || rows.length,
+        rows,
+      },
+    ];
+  });
+  const titles: Record<string, string> = {};
+  if (isObj(b.titles))
+    for (const [k, x] of Object.entries(b.titles))
+      if (typeof x === "string") titles[k] = x.slice(0, 300);
+  return { groups, titles };
+}
+
 function parseRow(v: unknown): DataRow | null {
   if (!isObj(v) || typeof v.id !== "string" || !isObj(v.values)) return null;
   return {
@@ -1423,6 +1473,27 @@ export class AgentApi {
           row?: unknown;
         }
       )?.row,
+    );
+  /** An image of the user's as a data: address a page can paint (its policy takes data:, never blob:); null if not. */
+  fileInline = async (sha: string): Promise<string | null> => {
+    const b = await this.call(
+      "GET",
+      `/${encodeURIComponent(sha)}/inline`,
+      undefined,
+      "api/data/files",
+    );
+    return isObj(b) &&
+      typeof b.mime === "string" &&
+      /^image\/[a-z0-9.+-]+$/.test(b.mime) &&
+      typeof b.data === "string" &&
+      /^[A-Za-z0-9+/]*={0,2}$/.test(b.data)
+      ? `data:${b.mime};base64,${b.data}`
+      : null;
+  };
+  /** What points to a row, and the titles of what it points to. */
+  dataRelated = async (id: string) =>
+    parseRelated(
+      await this.call("GET", `/${encodeURIComponent(id)}/related`, undefined, "api/data/rows"),
     );
   deleteRow = async (id: string) =>
     void (await this.call("DELETE", `/${encodeURIComponent(id)}`, undefined, "api/data/rows"));
