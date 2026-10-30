@@ -6,6 +6,7 @@ import {
   type ExtensionView,
   type MailGuide,
   type MailView,
+  type ProposalView,
   type Visibility,
 } from "../core/agent.ts";
 import { host, type Theme } from "../host.ts";
@@ -17,10 +18,12 @@ import {
   changeVisibility,
   checkMail,
   configured,
+  decideExtension,
   forgetMail,
   loadExtensions,
   loadMail,
   loadMailGuide,
+  loadProposals,
   loadVisibility,
   login,
   logout,
@@ -38,6 +41,7 @@ import {
   useVisibleCharts,
 } from "../store.ts";
 import { ACCENT } from "./Chart.tsx";
+import { whoName } from "./Dash.tsx";
 import { ModelsSettings } from "./ModelsSettings.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
 
@@ -1185,6 +1189,139 @@ function MailGuideSettings({
 }
 
 /**
+ * A version of an extension proposed through Boni's MCP, as the card Juan activates it from (docs/extensiones.md §11,
+ * E3): what it asks for beyond the active version (in the account's names), what it reads that is private, its
+ * tests, a dry run on his data, its code (folded) and Activar / Rechazar. Only a device of his gets here.
+ */
+function ProposalCard({
+  p,
+  onDecide,
+}: {
+  p: ProposalView;
+  onDecide: (action: "activate" | "reject") => void;
+}) {
+  const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language);
+  const when = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(p.at);
+  const list = (xs: string[]) => xs.join(", ");
+  const quoted = (xs: string[]) => xs.map((x) => `«${x}»`).join(", ");
+  const other = (code: string) => {
+    const [kind, rest = ""] = code.split(":");
+    const s = t(`extp.other.${kind}`, { what: rest });
+    return s === `extp.other.${kind}` ? code : s;
+  };
+  const asks = [
+    ...(p.more.code.length ? [t("extp.ask.code", { list: quoted(p.more.code) })] : []),
+    ...p.more.reads.map((g) => t("extp.ask.reads", { name: g.collection, list: list(g.fields) })),
+    ...p.more.writes.map((g) => t("extp.ask.writes", { name: g.collection, list: list(g.fields) })),
+    ...p.more.creates.map((c) => t("extp.ask.creates", { name: c })),
+    ...p.more.updates.map((c) => t("extp.ask.updates", { name: c })),
+    ...(p.more.asks ? [t("extp.ask.asks")] : []),
+    ...p.more.other.map(other),
+  ];
+  const passing = p.tests.filter((x) => x.ok).length;
+  const short = (h: string) => `${h.slice(0, 4)}…${h.slice(-3)}`;
+  return (
+    <section className="ext-proposal" aria-label={`${t("extp.label")}: ${p.name}`}>
+      <header className="ext-proposal-head">
+        <span className="ext-proposal-pill">{t("extp.pill")}</span>
+        <h3>{p.name}</h3>
+        <span className="muted small">
+          {p.active === null
+            ? t("extp.byNew", { who: whoName(t, p.by), when })
+            : t("extp.by", { who: whoName(t, p.by), when, v: p.version, active: p.active })}
+        </span>
+      </header>
+      {p.description && <p className="ext-proposal-what">{p.description}</p>}
+      <h4 className="ext-proposal-h">
+        {p.active === null ? t("extp.moreTitleNew") : t("extp.moreTitle", { v: p.active })}
+      </h4>
+      {asks.length ? (
+        <ul className="ext-proposal-asks">
+          {asks.map((a) => (
+            <li key={a}>{a}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="small">{t("extp.nothingMore")}</p>
+      )}
+      {p.privateReads.length ? (
+        <p className="ext-proposal-private is-warn">
+          {t("extp.privateReads", { list: list(p.privateReads) })}
+        </p>
+      ) : (
+        <p className="ext-proposal-private">
+          <span aria-hidden="true">✓</span> {t("extp.private")}
+        </p>
+      )}
+      <h4 className="ext-proposal-h">{t("extp.testsTitle", { ok: passing, n: p.tests.length })}</h4>
+      <ul className="ext-proposal-tests">
+        {p.tests.map((x) => (
+          <li key={`${x.function}:${x.name}`}>
+            <span className={x.ok ? "ok" : "ko"} aria-hidden="true">
+              {x.ok ? "✓" : "✗"}
+            </span>{" "}
+            {x.name}
+            {!x.ok && x.message ? <span className="muted"> · {x.message}</span> : null}
+          </li>
+        ))}
+      </ul>
+      <h4 className="ext-proposal-h">{t("extp.dryTitle")}</h4>
+      <ul className="ext-proposal-tests">
+        {p.dryRuns.map((d) => (
+          <li key={d.function}>
+            «{d.function}»:{" "}
+            {d.ok
+              ? [
+                  ...Object.entries(d.creates).map(([c, n]) =>
+                    t("extp.dry.creates", { n, name: c }),
+                  ),
+                  ...(d.updates ? [t("extp.dry.updates", { n: d.updates })] : []),
+                  ...(d.asks.length ? [t("extp.dry.asks", { n: d.asks.length })] : []),
+                ].join(", ") || t("extp.dry.nothing")
+              : t("extp.dry.failed", { why: d.message })}
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">{t("extp.dryNote")}</p>
+      <Disclosure
+        title={t("extp.codeTitle")}
+        summary={t(p.functions.length === 1 ? "extp.codeSummaryOne" : "extp.codeSummary", {
+          n: p.functions.length,
+          hash: p.functions.map((f) => short(f.hash)).join(" · "),
+        })}
+      >
+        {p.functions.map((f) => (
+          <div key={f.name}>
+            <p className="small muted">
+              «{f.name}» · sha256 {f.hash}
+            </p>
+            <pre className="ext-proposal-code">{f.code}</pre>
+          </div>
+        ))}
+      </Disclosure>
+      <div className="ext-proposal-actions">
+        <button
+          type="button"
+          className="btn primary"
+          disabled={passing !== p.tests.length}
+          onClick={() => onDecide("activate")}
+        >
+          {t("extp.activate", { v: p.version })}
+        </button>
+        <button type="button" className="btn ghost" onClick={() => onDecide("reject")}>
+          {t("extp.reject")}
+        </button>
+      </div>
+      <p className="muted small">{t("extp.personalOnly")}</p>
+    </section>
+  );
+}
+
+/**
  * "Extensiones" (docs/extensiones.md 3): what Boni has installed, each with what it does in one line, a
  * switch, and what it uses behind a disclosure (sources, what it reads, whether it proposes, its daily
  * budget). Juan's choice only: the agent has no tool for it.
@@ -1192,13 +1329,26 @@ function MailGuideSettings({
 function Extensions() {
   const t = useStore((s) => s.t);
   const [list, setList] = useState<ExtensionView[] | null | undefined>(undefined);
+  const [waiting, setWaiting] = useState<ProposalView[]>([]);
+  const reload = async () => {
+    const [ext, props] = await Promise.all([loadExtensions(), loadProposals()]);
+    setList(ext);
+    setWaiting(props ?? []);
+  };
   useEffect(() => {
     let live = true;
-    void loadExtensions().then((v) => live && setList(v));
+    void Promise.all([loadExtensions(), loadProposals()]).then(([ext, props]) => {
+      if (!live) return;
+      setList(ext);
+      setWaiting(props ?? []);
+    });
     return () => {
       live = false;
     };
   }, []);
+  const decide = async (id: string, action: "activate" | "reject" | "revert") => {
+    if (await decideExtension(id, action)) await reload();
+  };
   if (list === undefined) return null;
   if (list === null) return <p className="muted small setting-note">{t("ai.off")}</p>;
   // A catalogue piece by its name in the user's language; one an extension defined, by its id.
@@ -1214,6 +1364,9 @@ function Extensions() {
   return (
     <>
       <p className="muted small setting-note">{t("ext.help")}</p>
+      {waiting.map((p) => (
+        <ProposalCard key={p.id} p={p} onDecide={(action) => void decide(p.id, action)} />
+      ))}
       {list.map((x) => (
         <div key={x.id} className="extension">
           <div className="setting">
@@ -1257,6 +1410,15 @@ function Extensions() {
               {x.readersPerDay !== null && <li>{t("ext.budget", { n: x.readersPerDay })}</li>}
             </ul>
           </Disclosure>
+          {x.previous !== null && (
+            <button
+              type="button"
+              className="btn ghost small ext-back"
+              onClick={() => void decide(x.id, "revert")}
+            >
+              {t("extp.back", { v: x.previous })}
+            </button>
+          )}
         </div>
       ))}
     </>

@@ -985,15 +985,24 @@ export function makeCaps(c: CapsContext): Caps {
  * entity tools never touch a system type. */
 export function ensureSystemTypes(store: UserStore): void {
   const code = label("own", "personal", [{ kind: "code", id: "system-types" }]);
+  const long = new Set(["prompt", "manifest", "spec", "proposal", "previous"]);
+  const fieldOf = (k: string): FieldDef => ({
+    id: `f_${k}`,
+    key: k,
+    name: k,
+    type: long.has(k) ? "longtext" : "text",
+    label: code,
+  });
   const make = (id: "memory" | "job" | "extension" | "page", name: string, keys: string[]) => {
-    if (store.schema().types[id]) return;
-    const fields: FieldDef[] = keys.map((k) => ({
-      id: `f_${k}`,
-      key: k,
-      name: k,
-      type: k === "prompt" || k === "manifest" || k === "spec" ? "longtext" : "text",
-      label: code,
-    }));
+    const have = store.schema().types[id];
+    if (have) {
+      // A field a newer Boni gives the type (an extension's proposal and its previous version, E3).
+      for (const k of keys)
+        if (!have.fields.some((f) => f.id === `f_${k}`))
+          store.applySchema({ op: "add_field", type: id, field: fieldOf(k) }, { actor: "system" });
+      return;
+    }
+    const fields: FieldDef[] = keys.map(fieldOf);
     store.applySchema(
       {
         op: "create_type",
@@ -1015,8 +1024,17 @@ export function ensureSystemTypes(store: UserStore): void {
   make("memory", "Memoria", ["text"]);
   make("job", "Trabajos", ["name", "schedule", "prompt"]);
   // docs/extensiones.md 3: one entity per installed extension; `preset` is the preset version it still is
-  // (empty once it was changed), `state` "on" or "off".
-  make("extension", "Extensiones", ["key", "name", "manifest", "state", "preset"]);
+  // (empty once it was changed), `state` "on" or "off"; §11 (E3): `proposal` a version proposed and not yet
+  // activated (JSON: manifest, who, when, its tests and dry runs), `previous` the version before the active one.
+  make("extension", "Extensiones", [
+    "key",
+    "name",
+    "manifest",
+    "state",
+    "preset",
+    "proposal",
+    "previous",
+  ]);
   // docs/extensiones.md 6: the user's pages (the Lienzo's blocks in `spec`, `parent` for the tree).
   make("page", "Páginas", ["title", "icon", "parent", "position", "spec"]);
 }

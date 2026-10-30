@@ -16,6 +16,7 @@ import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, serveModels } from "./models.ts";
 import { acceptEdits } from "./proposalEdits.ts";
+import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
 
@@ -46,6 +47,10 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *   PUT  /api/agent/visibility/:type         { level: visible | opaque | hidden } (a personal device only)
  *   GET  /api/agent/extensions               -> { extensions: [{ id, name, description, version, preset, enabled, needs, … }] }
  *   PUT  /api/agent/extensions/:id           { enabled } (a personal device only; off, the extension does nothing)
+ *   GET  /api/agent/extensions/proposals     -> { proposals: [card] } versions proposed through the MCP (personal only)
+ *   POST /api/agent/extensions/:id/activate  the proposed version becomes the active one (Juan, a personal device)
+ *   POST /api/agent/extensions/:id/reject    the proposal goes away
+ *   POST /api/agent/extensions/:id/revert    back to the version before the active one (and forward again)
  */
 export interface Providers {
   planner: ModelProvider;
@@ -403,8 +408,28 @@ async function answerAgent(
           needs: { ...i.manifest.needs, reads: i.manifest.needs.reads.map(nameOf) },
           sources: (i.manifest.sources ?? []).map((s) => s.connector),
           modules: (i.manifest.readers ?? []).map((r) => r.module),
+          previous: previousVersion(store, i.manifest.id),
         })),
       });
+    }
+    case "GET /api/agent/extensions/proposals": {
+      // What an assistant proposed through the MCP, as the card Juan activates it from (E3): it shows code.
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      return send(res, 200, { proposals: proposals(host.store(who.account)) });
+    }
+    case "POST /api/agent/extensions/:id/activate":
+    case "POST /api/agent/extensions/:id/reject":
+    case "POST /api/agent/extensions/:id/revert": {
+      // Only Juan, from a device of his: nothing activates an extension by itself, nor through the MCP (P16).
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const store = host.store(who.account);
+      const id = params.id ?? "";
+      const done = route.endsWith("/activate")
+        ? activate(store, id, who.device)
+        : route.endsWith("/reject")
+          ? reject(store, id, who.device)
+          : revert(store, id, who.device);
+      return done ? send(res, 200, { ok: true }) : send(res, 404, { error: "not-found" });
     }
     case "PUT /api/agent/extensions/:id": {
       // Juan's choice, from a personal device.

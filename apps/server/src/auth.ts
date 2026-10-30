@@ -6,6 +6,7 @@ import {
   type Listener,
   listAccounts,
   revokeAll,
+  type Scope,
   SESSION_IDLE_MS,
   sessionOf,
   tokenHash,
@@ -60,13 +61,20 @@ export function userOf(db: Db, token: string | null | undefined): User | null {
 export function sessionUser(
   db: Db,
   token: string | null | undefined,
-): { user: User; device: string; trust: "personal" | "shared" | "ambient" } | null {
+): {
+  user: User;
+  device: string;
+  trust: "personal" | "shared" | "ambient";
+  /** What an assistant's token may do through the MCP; null: everything (an app's login). */
+  scope: Scope[] | null;
+} | null {
   const s = sessionOf(db, token);
   return s
     ? {
         user: { id: s.account.id, name: s.account.name },
         device: s.device.name,
         trust: s.device.trust,
+        scope: s.scope,
       }
     : null;
 }

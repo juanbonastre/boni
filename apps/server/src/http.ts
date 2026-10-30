@@ -348,7 +348,13 @@ export function makeApp(opts: ServerOptions): App {
           error: { code: -32700, message: "parse error" },
         });
       }
-      const out = mcpAnswer(opts.agent.store(s.user.id), s.device, body, opts.now ?? Date.now);
+      const out = await mcpAnswer(
+        opts.agent.store(s.user.id),
+        s.device,
+        body,
+        opts.now ?? Date.now,
+        s.scope,
+      );
       if (out === null) {
         res.writeHead(202, { ...CORS, ...SAFE });
         return void res.end();

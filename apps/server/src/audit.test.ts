@@ -156,13 +156,13 @@ describe("the audit, over HTTP", () => {
       { actor: "user", device: "portatil-ejemplo" },
     );
     // Claude through the MCP reads it and adds a line.
-    mcpAnswer(store, "claude-ejemplo", {
+    await mcpAnswer(store, "claude-ejemplo", {
       jsonrpc: "2.0",
       id: 1,
       method: "tools/call",
       params: { name: "append", arguments: { id: e.entity.id, text: "dos, del MCP" } },
     });
-    mcpAnswer(store, "claude-ejemplo", {
+    await mcpAnswer(store, "claude-ejemplo", {
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",

@@ -25,6 +25,13 @@ export interface Account {
   vault: string | null;
 }
 
+/**
+ * What an assistant's session may do through Boni's MCP (docs/extensiones.md §11, E3): read, write, propose
+ * extensions. A session without a scope (an app's login, or a token made before scopes) may do all of it.
+ */
+export const SCOPES = ["read", "write", "extensions:propose"] as const;
+export type Scope = (typeof SCOPES)[number];
+
 export interface Device {
   id: string;
   name: string;
@@ -78,6 +85,8 @@ const MIGRATIONS = [
      account_id INTEGER PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
      wrapped BLOB NOT NULL
    );`,
+  // What a session may do (an assistant's token, `cli.ts token --scope`); none is everything (an app's login).
+  `ALTER TABLE sessions ADD COLUMN scope TEXT;`,
 ];
 
 export function openSystemDb(path: string): SystemDb {
@@ -279,7 +288,7 @@ export function issueSession(
   db: SystemDb,
   name: string,
   deviceName: string,
-  opts: { kind?: DeviceKind; listener: Listener },
+  opts: { kind?: DeviceKind; listener: Listener; scope?: readonly Scope[] },
 ): { token: string; device: Device } | null {
   const a = accountByName(db, name);
   if (!a || a.disabled) return null;
@@ -294,8 +303,16 @@ export function issueSession(
   );
   const token = randomBytes(32).toString("base64url");
   db.prepare(
-    "INSERT INTO sessions (token_hash, account_id, device_id, listener, created, last_seen) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(tokenHash(token), a.id, device.id, opts.listener, now, now);
+    "INSERT INTO sessions (token_hash, account_id, device_id, listener, created, last_seen, scope) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    tokenHash(token),
+    a.id,
+    device.id,
+    opts.listener,
+    now,
+    now,
+    opts.scope ? [...new Set(opts.scope)].join(",") : null,
+  );
   return { token, device };
 }
 
@@ -304,12 +321,12 @@ export function sessionOf(
   db: SystemDb,
   token: string | null | undefined,
   now = Date.now(),
-): { account: Account; device: Device } | null {
+): { account: Account; device: Device; scope: Scope[] | null } | null {
   if (!token) return null;
   const h = tokenHash(token);
   const r = db
     .prepare(
-      `SELECT a.id, a.name, a.vault, a.disabled, s.last_seen, d.id AS did, d.name AS dname, d.kind, d.trust, d.created AS dcreated
+      `SELECT a.id, a.name, a.vault, a.disabled, s.last_seen, s.scope, d.id AS did, d.name AS dname, d.kind, d.trust, d.created AS dcreated
        FROM sessions s JOIN accounts a ON a.id = s.account_id JOIN devices d ON d.id = s.device_id WHERE s.token_hash = ?`,
     )
     .get(h) as
@@ -319,6 +336,7 @@ export function sessionOf(
         vault: string | null;
         disabled: number | null;
         last_seen: number;
+        scope: string | null;
         did: string;
         dname: string;
         kind: DeviceKind;
@@ -343,6 +361,10 @@ export function sessionOf(
       created: r.dcreated,
       lastSeen: now,
     },
+    scope:
+      r.scope === null
+        ? null
+        : r.scope.split(",").filter((x): x is Scope => (SCOPES as readonly string[]).includes(x)),
   };
 }
 

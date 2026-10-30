@@ -69,6 +69,8 @@ export function installed(store: UserStore): Installed[] {
   const out: Installed[] = [];
   for (const e of store.list("extension")) {
     const x = e.entity.values;
+    // Only proposed so far (E3): not installed until Juan activates it.
+    if (!x.f_manifest) continue;
     let raw: unknown = null;
     try {
       raw = JSON.parse(String(x.f_manifest ?? "null"));

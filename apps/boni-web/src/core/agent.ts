@@ -1010,6 +1010,121 @@ export interface ExtensionView {
   readersPerDay: number | null;
   sources: string[];
   modules: string[];
+  /** The version before the active one, to go back to with one click (E3), or null. */
+  previous: number | null;
+}
+
+/**
+ * A version of an extension proposed through Boni's MCP and waiting for Juan (docs/extensiones.md §11, E3): what it
+ * asks for beyond the active version, in the account's names; what it reads that is private; its tests, its dry
+ * runs on Juan's data, and its code. Everything in it is shown as plain text.
+ */
+export interface ProposalView {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  active: number | null;
+  by: string;
+  at: number;
+  more: {
+    code: string[];
+    reads: { collection: string; fields: string[] }[];
+    writes: { collection: string; fields: string[] }[];
+    creates: string[];
+    updates: string[];
+    asks: boolean;
+    other: string[];
+  };
+  privateReads: string[];
+  tests: { function: string; name: string; ok: boolean; message: string }[];
+  dryRuns: {
+    function: string;
+    ok: boolean;
+    message: string;
+    creates: Record<string, number>;
+    updates: number;
+    asks: string[];
+  }[];
+  functions: { name: string; hash: string; code: string }[];
+}
+
+const groups = (v: unknown) =>
+  (Array.isArray(v) ? v : []).flatMap((g) =>
+    isObj(g) && typeof g.collection === "string"
+      ? [{ collection: g.collection.slice(0, 80), fields: strs(g.fields) }]
+      : [],
+  );
+
+function parseProposal(v: unknown): ProposalView | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id, 40);
+  const name = str(v.name, 60);
+  if (!id || !name) return null;
+  const m = isObj(v.more) ? v.more : {};
+  const report = isObj(v.report) ? v.report : {};
+  const counts = (x: unknown): Record<string, number> =>
+    isObj(x)
+      ? Object.fromEntries(
+          Object.entries(x).filter((e): e is [string, number] => typeof e[1] === "number"),
+        )
+      : {};
+  return {
+    id,
+    name,
+    description: str(v.description, 300) ?? "",
+    version: typeof v.version === "number" ? v.version : 1,
+    active: typeof v.active === "number" ? v.active : null,
+    by: str(v.by, 80) ?? "",
+    at: typeof v.at === "number" ? v.at : 0,
+    more: {
+      code: strs(m.code),
+      reads: groups(m.reads),
+      writes: groups(m.writes),
+      creates: strs(m.creates),
+      updates: strs(m.updates),
+      asks: m.asks === true,
+      other: strs(m.other),
+    },
+    privateReads: strs(v.privateReads),
+    tests: (Array.isArray(report.tests) ? report.tests : []).flatMap((t) =>
+      isObj(t)
+        ? [
+            {
+              function: str(t.function, 64) ?? "",
+              name: str(t.name, 80) ?? "",
+              ok: t.ok === true,
+              message: str(t.message, 300) ?? "",
+            },
+          ]
+        : [],
+    ),
+    dryRuns: (Array.isArray(report.dryRuns) ? report.dryRuns : []).flatMap((d) =>
+      isObj(d)
+        ? [
+            {
+              function: str(d.function, 64) ?? "",
+              ok: d.ok === true,
+              message: str(d.message, 300) ?? "",
+              creates: counts(d.creates),
+              updates: typeof d.updates === "number" ? d.updates : 0,
+              asks: strs(d.asks),
+            },
+          ]
+        : [],
+    ),
+    functions: (Array.isArray(v.functions) ? v.functions : []).flatMap((f) =>
+      isObj(f) && typeof f.name === "string" && typeof f.code === "string"
+        ? [
+            {
+              name: f.name.slice(0, 64),
+              hash: str(f.hash, 64) ?? "",
+              code: f.code.slice(0, 200_000),
+            },
+          ]
+        : [],
+    ),
+  };
 }
 
 function parseExtension(v: unknown): ExtensionView | null {
@@ -1031,6 +1146,7 @@ function parseExtension(v: unknown): ExtensionView | null {
     readersPerDay: typeof budget === "number" ? budget : null,
     sources: strs(v.sources),
     modules: strs(v.modules),
+    previous: typeof v.previous === "number" ? v.previous : null,
   };
 }
 
@@ -1601,6 +1717,15 @@ export class AgentApi {
   };
   setExtension = async (id: string, enabled: boolean) =>
     void (await this.call("PUT", `extensions/${encodeURIComponent(id)}`, { enabled }));
+  extensionProposals = async (): Promise<ProposalView[]> => {
+    const b = await this.call("GET", "extensions/proposals");
+    return isObj(b) && Array.isArray(b.proposals)
+      ? b.proposals.map(parseProposal).filter((x): x is ProposalView => !!x)
+      : [];
+  };
+  /** Juan's decision on a proposed version, or going back to the one before (a personal device). */
+  decideExtension = async (id: string, action: "activate" | "reject" | "revert") =>
+    void (await this.call("POST", `extensions/${encodeURIComponent(id)}/${action}`, {}));
   setVisibility = async (id: string, level: AiLevel) =>
     void (await this.call("PUT", `visibility/${encodeURIComponent(id)}`, { level }));
   async runDetail(id: string): Promise<RunDetail | null> {

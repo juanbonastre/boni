@@ -7,6 +7,7 @@ import {
   CARD_DETAILED,
   confirmTurn,
   DONE,
+  EXTENSION_PROPOSALS,
   EXTENSIONS,
   GUIDE,
   MAIL,
@@ -722,6 +723,57 @@ test("extensions in Settings: what each does, on or off, and what it uses", asyn
     'PUT api/agent/extensions/correo {"enabled":false}',
   ]);
   await page.screenshot({ path: `${SHOTS}/agent-extensions.png` });
+});
+
+test("an extension proposed through the MCP: its card says what it asks for; Juan activates it, or goes back to the version before", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "GET api/agent/extensions": [
+        {
+          extensions: EXTENSIONS.extensions.map((x) =>
+            x.id === "plazos" ? { ...x, enabled: true, previous: 2 } : x,
+          ),
+        },
+      ],
+      "GET api/agent/extensions/proposals": [EXTENSION_PROPOSALS, { proposals: [] }],
+      "POST api/agent/extensions/:id/activate": [{ ok: true }],
+      "POST api/agent/extensions/:id/revert": [{ ok: true }],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByRole("tab", { name: "Extensiones" }).click();
+  const card = modal.getByRole("region", { name: "Extensión propuesta: Banco ING" });
+  await expect(card).toContainText("La propone MCP · claude-ejemplo");
+  await expect(card).toContainText("Lo que pide que no pedía la versión 1");
+  for (const line of [
+    "Código nuevo: «importar»",
+    "Leer de Movimiento: fecha, importe",
+    "Escribir en Movimiento: concepto",
+    "Crear filas en Movimiento",
+    "Preguntarte lo que no tenga claro",
+  ])
+    await expect(card.locator(".ext-proposal-asks")).toContainText(line);
+  await expect(card).toContainText("No lee nada privado ni restringido.");
+  await expect(card).toContainText("Sus pruebas: pasan 1 de 1");
+  await expect(card).toContainText("«importar»: crearía 18 en Movimiento, te preguntaría 1");
+  // Its code, folded, as plain text.
+  await card.getByRole("button", { name: /Su código/ }).click();
+  await expect(card.locator(".ext-proposal-code")).toContainText("function importar(input)");
+  await page.screenshot({ path: `${SHOTS}/extension-proposal.png` });
+  await card.getByRole("button", { name: "Activar la versión 2" }).click();
+  await expect(card).toHaveCount(0);
+  expect(await requests(page, "POST api/agent/extensions")).toEqual([
+    "POST api/agent/extensions/banco/activate {}",
+  ]);
+  // The version before is one click away.
+  await modal.getByRole("button", { name: "Volver a la versión 2" }).click();
+  await expect
+    .poll(() => requests(page, "POST api/agent/extensions/plazos"))
+    .toEqual(["POST api/agent/extensions/plazos/revert {}"]);
 });
 
 test("the panel: questions and proposals in one queue as they came, each saying what it is (option A)", async ({

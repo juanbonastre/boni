@@ -16,6 +16,8 @@ import {
   importAccounts,
   issueSession,
   revokeDevice,
+  SCOPES,
+  type Scope,
   wrappedKeysIn,
 } from "@boni/identity";
 import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
@@ -44,7 +46,8 @@ import { V1Store } from "./v1/store.ts";
  *       --trust-labels keeps the file's provenance labels (only for an export of one's own that never left).
  *   node src/cli.ts restore <name> <backups/user-<id>-<day>.db.sealed> <out.db>
  *       opens one of the account's encrypted copies into a plain file; never over a file.
- *   node src/cli.ts token <name> <device>          a session for an assistant's tools (Boni's MCP), shown once
+ *   node src/cli.ts token <name> <device> [--scope read,write,extensions:propose]
+ *       a session for an assistant's tools (Boni's MCP), shown once; with --scope, only those
  *   node src/cli.ts reshape <name> (--plan <file.json> | --plan-note <id>) [--apply]
  *       the account's tree reshaped as a plan says (src/reshape.ts): a dry run with counts by default; applied, one
  *       run in one transaction. The plan may live in a note of the account (its first ```json block).
@@ -183,10 +186,23 @@ try {
     // A session for an assistant's tools (Boni's MCP), made by the admin: shown once, kept only as a hash.
     const [name, device] = args;
     if (!name || !device)
-      throw new Error("Usage: token <name> <device> (e.g. token juan claude-code)");
-    const r = issueSession(db, name, device, { listener: "tailnet" });
+      throw new Error(
+        `Usage: token <name> <device> [--scope ${SCOPES.join(",")}] (e.g. token juan claude-code)`,
+      );
+    // What the token may do through the MCP (docs/extensiones.md §11, E3); without --scope, everything.
+    const at = args.indexOf("--scope");
+    const scope = at >= 0 ? (args[at + 1] ?? "").split(",").filter(Boolean) : null;
+    const unknown = scope?.filter((x) => !(SCOPES as readonly string[]).includes(x)) ?? [];
+    if (scope && (!scope.length || unknown.length))
+      throw new Error(`--scope: some of ${SCOPES.join(", ")} (not ${unknown.join(", ")})`);
+    const r = issueSession(db, name, device, {
+      listener: "tailnet",
+      ...(scope ? { scope: scope as Scope[] } : {}),
+    });
     if (!r) throw new Error(`No account ${name}`);
-    console.log(`A session for ${name} on the device "${r.device.name}" (${r.device.trust}).`);
+    console.log(
+      `A session for ${name} on the device "${r.device.name}" (${r.device.trust}), ${scope ? `scope ${scope.join(", ")}` : "every scope"}.`,
+    );
     console.log("Its token (shown only now; revoke it with: revoke <name> <device>):");
     console.log(r.token);
   } else if (cmd === "reshape") {
