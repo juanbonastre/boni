@@ -6734,3 +6734,96 @@ button.rows-panel-row:hover {
   padding: 24px 16px;
   color: var(--muted);
 }
+
+/* MOCKUP (mockup/historial-visual): with History open, what each one wrote in their colour (History.tsx). */
+.blk.by-who,
+.row-prop.by-who,
+.row-title-wrap.by-who {
+  position: relative;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--who) 9%, transparent);
+  /* The tint reaches the bar, in the margin: the text stays where it is. */
+  box-shadow: -10px 0 0 color-mix(in srgb, var(--who) 9%, transparent);
+}
+.blk.by-who::before,
+.row-prop.by-who::before,
+.row-title-wrap.by-who::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: -10px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--who);
+}
+.row-title-wrap {
+  border-radius: 4px;
+}
+.blk-who {
+  position: absolute;
+  right: 4px;
+  top: -20px;
+  z-index: 3;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--who) 55%, var(--line));
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.by-who:hover > .blk-who {
+  opacity: 1;
+}
+.who-dot {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin: 0 6px 0 2px;
+  border-radius: 50%;
+  background: var(--who, var(--muted));
+  vertical-align: 0;
+}
+.who-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.who-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.who-chip:hover {
+  background: var(--hover);
+}
+.who-chip.on {
+  border-color: var(--who);
+  background: color-mix(in srgb, var(--who) 14%, transparent);
+}
+.who-chip.off {
+  opacity: 0.55;
+}
+.who-chip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

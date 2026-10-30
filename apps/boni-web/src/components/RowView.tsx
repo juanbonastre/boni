@@ -1,8 +1,14 @@
 import { ChevronRight, Eye, EyeOff, History } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { editRowValue, setPropHidden, toggleRowProps, useStore } from "../store.ts";
+import {
+  editRowValue,
+  type HistoryMark,
+  setPropHidden,
+  toggleRowProps,
+  useStore,
+} from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
-import { HistoryPanel } from "./History.tsx";
+import { HistoryPanel, historyColor, whoLabel } from "./History.tsx";
 import { DocEditor } from "./PageView.tsx";
 import { RelatedSection } from "./Related.tsx";
 
@@ -22,6 +28,17 @@ export function RowView() {
   const related = useStore((s) => s.related);
   const [hiddenOpen, setHiddenOpen] = useState(false);
   const [history, setHistory] = useState(false);
+  // MOCKUP (mockup/historial-visual): with History open, each property in the colour of who changed it last.
+  const marks = useStore((s) => s.historyMarks);
+  const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
+  const markOf = (field: string) => {
+    const m = marks?.fields[field];
+    return m && (!marks?.focus || marks.focus === m.by) ? m : null;
+  };
+  const tint = (field: string) => {
+    const m = markOf(field);
+    return m ? ({ "--who": historyColor(m.by) } as React.CSSProperties) : undefined;
+  };
   const type = useStore((s) =>
     s.view.kind === "row"
       ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
@@ -64,12 +81,22 @@ export function RowView() {
             </button>
           </div>
           {titleField && (
-            <RowTitle
-              key={row.id}
-              value={title}
-              placeholder={t("page.untitled")}
-              onSave={(v) => void editRowValue(type.id, row.id, type.titleField, v || null)}
-            />
+            <div
+              className={`row-title-wrap${markOf(titleField.id) ? " by-who" : ""}`}
+              style={tint(titleField.id)}
+            >
+              {markOf(titleField.id) && (
+                <span className="blk-who">
+                  {whoLabel(t, markOf(titleField.id) as HistoryMark, locale)}
+                </span>
+              )}
+              <RowTitle
+                key={row.id}
+                value={title}
+                placeholder={t("page.untitled")}
+                onSave={(v) => void editRowValue(type.id, row.id, type.titleField, v || null)}
+              />
+            </div>
           )}
           {props.length > 0 && (
             <button
@@ -84,12 +111,26 @@ export function RowView() {
                 : visible.length
                   ? t("row.showProps", { n: visible.length })
                   : t("row.hiddenProps", { n: hidden.length })}
+              {/* Folded, a dot for each one who changed some of them. */}
+              {!shown &&
+                [...new Set(props.flatMap((f) => markOf(f.id)?.by ?? []))].map((by) => (
+                  <i key={by} className="who-dot" style={{ background: historyColor(by) }} />
+                ))}
             </button>
           )}
           {shown && (
             <div className="row-props">
               {visible.map((f) => (
-                <div key={f.id} className="row-prop">
+                <div
+                  key={f.id}
+                  className={`row-prop${markOf(f.id) ? " by-who" : ""}`}
+                  style={tint(f.id)}
+                >
+                  {markOf(f.id) && (
+                    <span className="blk-who">
+                      {whoLabel(t, markOf(f.id) as HistoryMark, locale)}
+                    </span>
+                  )}
                   <span className="row-prop-name">{f.name}</span>
                   <div className="row-prop-value">
                     <Cell

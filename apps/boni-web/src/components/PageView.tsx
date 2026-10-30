@@ -73,6 +73,7 @@ import { ACCENT } from "./Chart.tsx";
 import { ChartCard, ChartCardContent } from "./ChartCard.tsx";
 import { DataBlockView, useBlockResults } from "./DataBlockView.tsx";
 import { DatabaseBlock } from "./DatabaseBlock.tsx";
+import { historyColor, whoLabel } from "./History.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 import { TemplatePill } from "./TemplatePill.tsx";
 
@@ -885,6 +886,11 @@ function BlockRow({
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
   const self = useRef<HTMLDivElement>(null);
   const blocks = page.spec.blocks;
+  // MOCKUP (mockup/historial-visual): with History open, the block in the colour of who wrote it last.
+  const mark = useStore((s) => s.historyMarks?.blocks[block.id]);
+  const focus = useStore((s) => s.historyMarks?.focus ?? null);
+  const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
+  const lit = mark && (!focus || focus === mark.by) ? mark : null;
   const kind = isText(block) ? kindOf(block) : block.type;
   const name = isText(block)
     ? t(`block.kind.${kind}`)
@@ -939,9 +945,14 @@ function BlockRow({
         drag?.id === block.id ? " dragging" : ""
       }${target ? ` drop-${target}` : ""}${isDataBlock(block) && block.bg ? " blk-bg" : ""}${
         clickRows ? " blk-clickable" : ""
-      }`}
+      }${lit ? " by-who" : ""}`}
       data-block={block.id}
-      style={indentOf(block) ? { marginLeft: indentOf(block) * 26 } : undefined}
+      style={
+        {
+          ...(indentOf(block) ? { marginLeft: indentOf(block) * 26 } : {}),
+          ...(lit ? { "--who": historyColor(lit.by) } : {}),
+        } as React.CSSProperties
+      }
       onClick={(e) => {
         if (!clickRows) return;
         const el = e.target as HTMLElement;
@@ -968,6 +979,7 @@ function BlockRow({
         onDrop();
       }}
     >
+      {lit && <span className="blk-who">{whoLabel(t, lit, locale)}</span>}
       <div className="blk-gutter">
         <PopButton
           className="blk-btn"
