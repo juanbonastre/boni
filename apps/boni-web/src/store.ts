@@ -2289,7 +2289,10 @@ export async function openRow(type: string, id: string) {
  * How a collection's rows open (Juan, 2026-10-22): its properties folded (the default) or not, and some hidden one
  * by one. The account keeps it, so Boni, Boni Calendar's peek and every device show the same.
  */
-function changeRowUi(type: string, patch: { open?: boolean; hidden?: string[] }) {
+function changeRowUi(
+  type: string,
+  patch: { open?: boolean; hidden?: string[]; related?: boolean; folded?: string[] },
+) {
   set({
     dataTypes:
       get().dataTypes?.map((x) =>
@@ -2301,6 +2304,18 @@ function changeRowUi(type: string, patch: { open?: boolean; hidden?: string[] })
 export function toggleRowProps(type: string) {
   const ui = get().dataTypes?.find((x) => x.id === type)?.rowUi;
   changeRowUi(type, { open: !ui?.open });
+}
+/** Its rows' «Relacionado» unfolded or not, for the collection (the account's, as the properties). */
+export function toggleRelated(type: string) {
+  const ui = get().dataTypes?.find((x) => x.id === type)?.rowUi;
+  changeRowUi(type, { related: !ui?.related });
+}
+/** One group of it (`<collection>:<field>`) folded or not, for the collection. */
+export function toggleRelatedGroup(type: string, group: string) {
+  const now = get().dataTypes?.find((x) => x.id === type)?.rowUi.folded ?? [];
+  changeRowUi(type, {
+    folded: now.includes(group) ? now.filter((x) => x !== group) : [...now, group],
+  });
 }
 export function setPropHidden(type: string, field: string, hidden: boolean) {
   const now = get().dataTypes?.find((x) => x.id === type)?.rowUi.hidden ?? [];

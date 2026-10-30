@@ -834,7 +834,7 @@ export interface DataType {
   /** Parts of it with their own level: the rows that match every condition of a rule. */
   rules: ProtectionRule[];
   /** How its rows open as pages (the account's, every device): properties unfolded, and those hidden. */
-  rowUi: { open: boolean; hidden: string[] };
+  rowUi: { open: boolean; hidden: string[]; related: boolean; folded: string[] };
   /** Boni's own records (calls to models, its activity): read only, never seen by a model. */
   system?: true;
 }
@@ -885,6 +885,11 @@ function parseDataType(v: unknown): DataType | null {
       hidden:
         isObj(v.rowUi) && Array.isArray(v.rowUi.hidden)
           ? v.rowUi.hidden.filter((x): x is string => typeof x === "string")
+          : [],
+      related: isObj(v.rowUi) && v.rowUi.related === true,
+      folded:
+        isObj(v.rowUi) && Array.isArray(v.rowUi.folded)
+          ? v.rowUi.folded.filter((x): x is string => typeof x === "string")
           : [],
     },
     fields: v.fields.flatMap((f): DataField[] =>
@@ -1517,7 +1522,10 @@ export class AgentApi {
       "api/data/rules",
     ));
   /** How a collection's rows open: properties unfolded or not, and those hidden one by one. */
-  setRowUi = async (type: string, patch: { open?: boolean; hidden?: string[] }) =>
+  setRowUi = async (
+    type: string,
+    patch: { open?: boolean; hidden?: string[]; related?: boolean; folded?: string[] },
+  ) =>
     void (await this.call("PUT", `/${encodeURIComponent(type)}/row-ui`, patch, "api/data/types"));
   /** How much the models may see of a collection; `unlock` lowers a private one (its own page only). */
   setProtection = async (type: string, level: AiLevel, unlock = false) =>

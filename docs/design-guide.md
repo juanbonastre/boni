@@ -304,8 +304,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 - **Relacionado** (Juan, 2026-10-30): under the properties' line, one more quiet line with what points to the row
   from other collections, by count ("Relacionado · Deuda 1 · Movimiento 3 · Proyecto 2"), folded; unfolded, one group
   per collection and field ("Movimiento · en «Con quién»"), its rows newest first with their first date on the
-  right, a click opening one. Made from the relations alone, for any collection (a person's projects and debts, a
-  project's tasks); it takes the place of Obsidian's views. Nothing points to the row: no line at all.
+  right, a click opening one. Each group folds by its name, with the same chevron (Juan, 2026-10-30); the collection
+  keeps the line and its groups open or folded for all its rows, on every device, as the properties. Made from the
+  relations alone, for any collection (a person's projects and debts, a project's tasks); it takes the place of
+  Obsidian's views. Nothing points to the row: no line at all.
 - **Files in a note's text** (Juan, 2026-10-30): a file of the user's alone on its line (`![name|width](boni:<row id>)`
   in the Markdown) is a block: an image shows in place, at its width (never wider than the text), rounded, with its
   name muted under it; any other file (or an image too big to show) is a card with a clip, its name and "Abrir". It

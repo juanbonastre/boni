@@ -171,12 +171,12 @@ describe("collections as databases (plan PR 19)", () => {
           rowUi: { open: boolean; hidden: string[] };
         }[]
       ).find((x) => x.id === "t_libro")?.rowUi;
-    expect(await ui()).toEqual({ open: false, hidden: [] });
+    expect(await ui()).toEqual({ open: false, hidden: [], related: false, folded: [] });
     const r = await call(t, "PUT", "/api/data/types/t_libro/row-ui", {
       open: true,
       hidden: ["f_paginas"],
     });
-    expect(r.body).toEqual({ open: true, hidden: ["f_paginas"] });
+    expect(r.body).toEqual({ open: true, hidden: ["f_paginas"], related: false, folded: [] });
     // Another device of the account sees the same.
     const other = await token("otro-equipo");
     const theirs = (await call(other, "GET", "/api/data/types")).body.types as {
@@ -186,6 +186,8 @@ describe("collections as databases (plan PR 19)", () => {
     expect(theirs.find((x) => x.id === "t_libro")?.rowUi).toEqual({
       open: true,
       hidden: ["f_paginas"],
+      related: false,
+      folded: [],
     });
     expect(
       (await call(t, "PUT", "/api/data/types/t_libro/row-ui", { hidden: ["f_nada"] })).status,
@@ -194,7 +196,12 @@ describe("collections as databases (plan PR 19)", () => {
       404,
     );
     await call(t, "PUT", "/api/data/types/t_libro/row-ui", { open: false });
-    expect(await ui()).toEqual({ open: false, hidden: ["f_paginas"] });
+    expect(await ui()).toEqual({
+      open: false,
+      hidden: ["f_paginas"],
+      related: false,
+      folded: [],
+    });
   });
 
   it("gives a zone's attachments only as a download, and keeps the zone's AI level locked", async () => {
