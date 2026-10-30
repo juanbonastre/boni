@@ -1,4 +1,19 @@
 export {
+  CHANGE_SET_SCHEMA,
+  type Change,
+  type ChangeSet,
+  changeSetErrors,
+  FUNCTION_LIMITS,
+  type FunctionInput,
+  type FunctionSpec,
+  functionNeeds,
+  functionsErrors,
+  isJson,
+  type ReadSpec,
+  type TestSpec,
+  type WriteSpec,
+} from "./functions.ts";
+export {
   type Catalogue,
   type ExtensionManifest,
   type FlowSpec,

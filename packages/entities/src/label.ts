@@ -41,7 +41,9 @@ export interface SourceRef {
     | "model"
     | "code"
     | "export"
-    | "guide";
+    | "guide"
+    /** An extension's function (its id and the function's name), run in the box. */
+    | "extension";
   id: string;
 }
 
