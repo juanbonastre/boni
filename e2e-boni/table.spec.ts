@@ -34,10 +34,17 @@ test("columns as wide as their values, widened by their edge and kept; a title o
 }) => {
   await libros(page);
   const table = page.locator(".db-table");
-  // Not stretched to the page: the title 280 px, a number 110, the table only as wide as its columns.
-  expect((await box(page, ".db-table")).width).toBeLessThan(
-    (await box(page, ".db-table-wrap")).width - 200,
-  );
+  // Not stretched to the page: the title 280 px, a number 110, the table as wide as its columns and centred, the
+  // head's options ending where it ends.
+  const wide = await box(page, ".db-table");
+  expect(Math.round(wide.width)).toBe(832);
+  const doc = await box(page, ".doc");
+  const content = await box(page, ".content");
+  expect(
+    Math.abs(doc.x - content.x - (content.x + content.width - doc.x - doc.width)),
+  ).toBeLessThan(2);
+  const add = await box(page, ".db-head .btn.primary");
+  expect(Math.abs(add.x + add.width - (wide.x + wide.width))).toBeLessThan(2);
   const title = table.locator("th.is-title");
   expect(Math.round((await title.boundingBox())?.width ?? 0)).toBe(280);
   expect(
@@ -101,9 +108,24 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   await page.keyboard.up("Control");
   await expect(chosen).toHaveCount(2);
   await expect(bar).toContainText("2 seleccionadas");
+  // The head keeps its options; a click on one lets go of the rows.
+  await expect(page.locator(".db-head").getByRole("button", { name: "Nuevo" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/table-selection.png` });
-  // Esc lets go; a click in the margin chooses that row alone.
+  await page.locator(".db-head").getByRole("button", { name: "Opciones", exact: true }).click();
+  await expect(chosen).toHaveCount(0);
   await page.keyboard.press("Escape");
+  // Anywhere in the margin up to the sidebar lights the row beside the pointer and chooses it alone.
+  const margin = (await box(page, ".content")).x + 6;
+  await page.mouse.move(margin, second.y + second.height / 2);
+  await expect(table.locator("tbody tr.lit")).toHaveText(/Ficciones/);
+  await page.mouse.click(margin, second.y + second.height / 2);
+  await expect(chosen).toHaveText(/Ficciones/);
+  // Esc lets go; so does a click outside the table.
+  await page.keyboard.press("Escape");
+  await expect(chosen).toHaveCount(0);
+  await page.mouse.click(left - 12, second.y + second.height / 2);
+  await expect(chosen).toHaveCount(1);
+  await page.locator(".cols-title").click();
   await expect(chosen).toHaveCount(0);
   await page.mouse.click(left - 12, second.y + second.height / 2);
   await expect(chosen).toHaveText(/Ficciones/);

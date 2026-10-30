@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DataField, DataRow, DataType, DataValue } from "../core/agent.ts";
 import type { SystemColumns } from "../core/audit.ts";
 import type { T } from "../i18n.ts";
@@ -97,6 +98,8 @@ export function DatabaseBlock({
   const allRows = useStore((s) => s.rows);
   // As Notion: the first rows, more on demand (a collection can hold thousands).
   const [limit, setLimit] = useState(50);
+  // The table's chosen rows (Juan, 2026-10-30), here so the head can say what can be done with them.
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const also = view.layout === "calendar" ? (view.also ?? []) : [];
   useEffect(() => {
     if (!types) void loadDataTypes();
@@ -118,7 +121,13 @@ export function DatabaseBlock({
   };
   return (
     <section className="db" aria-label={type?.name ?? t("db.title")}>
-      <header className="db-head">
+      <header
+        className="db-head"
+        // Its options stay with rows chosen; a click on one of them lets go of them (Juan, 2026-10-30).
+        onPointerDownCapture={(e) => {
+          if (picked.size) setPicked(new Set());
+        }}
+      >
         {named ? (
           <h3 className="db-name">
             {type?.icon && <span className="db-icon">{type.icon}</span>}
@@ -166,6 +175,8 @@ export function DatabaseBlock({
           system={view.system ?? []}
           columns={data.columns ?? {}}
           onAdd={() => void add()}
+          picked={picked}
+          onPick={setPicked}
         />
       ) : view.layout === "board" ? (
         <BoardView type={type} rows={rows} view={view} titles={data.titles} onAdd={add} />
@@ -196,6 +207,14 @@ export function DatabaseBlock({
           {t("db.loadMore", { n: more })}
         </button>
       )}
+      {/* Over the page's bottom, so nothing above or in the table moves when rows are chosen. */}
+      {type &&
+        view.layout === "table" &&
+        picked.size > 0 &&
+        createPortal(
+          <SelectionInfo type={type} rows={rows} picked={picked} onPick={setPicked} />,
+          document.body,
+        )}
     </section>
   );
 }
@@ -678,6 +697,8 @@ function TableView({
   system,
   columns,
   onAdd,
+  picked,
+  onPick: setPicked,
 }: {
   type: DataType;
   rows: DataRow[];
@@ -687,6 +708,8 @@ function TableView({
   system: SystemColumn[];
   columns: Record<string, SystemColumns>;
   onAdd: () => void;
+  picked: Set<string>;
+  onPick: React.Dispatch<React.SetStateAction<Set<string>>>;
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
@@ -717,9 +740,9 @@ function TableView({
     ...sys.map((c) => ({ key: `_sys.${c}`, base: 160, name: t(`sys.${c}`) })),
   ];
   const width = (key: string, base: number) => widths?.[key] ?? base;
-  // Boni's own tables are read only: no boxes, no menu (their rows have nothing to be done with).
+  // Boni's own tables are read only: no boxes, no menu, no tools (their rows have nothing to be done with).
   const pickable = !type.system;
-  const total = (pickable ? SEL : 0) + cols.reduce((n, c) => n + width(c.key, c.base), 0) + TOOLS;
+  const total = (pickable ? SEL + TOOLS : 0) + cols.reduce((n, c) => n + width(c.key, c.base), 0);
   const grab = (key: string, from: number) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -744,8 +767,7 @@ function TableView({
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
   };
-  // Rows chosen (Juan, 2026-10-30): a row's box, or a click just left of it; Ctrl adds or takes out, Shift a run.
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  // Rows chosen (Juan, 2026-10-30): a row's box, or a click left of it; Ctrl adds or takes out, Shift a run.
   const anchor = useRef<string | null>(null);
   const choose = (
     id: string,
@@ -799,6 +821,56 @@ function TableView({
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
   });
+  // On a collection's own page the whole margin left of the table, up to the sidebar, lights the row beside the
+  // pointer and chooses it with a click (Juan, 2026-10-30). Anywhere else, a click outside the block lets go.
+  const [lit, setLit] = useState<string | null>(null);
+  useEffect(() => {
+    const el = table.current;
+    const block = el?.closest(".db");
+    if (!el || !block || !pickable) return;
+    const page = el.closest<HTMLElement>(".content.is-collection");
+    const rowAt = (x: number, y: number) => {
+      if (!page || x >= el.getBoundingClientRect().left || x < page.getBoundingClientRect().left)
+        return null;
+      for (const tr of el.querySelectorAll<HTMLElement>("tbody tr[data-row]")) {
+        const r = tr.getBoundingClientRect();
+        if (y >= r.top && y < r.bottom) return tr.dataset.row ?? null;
+      }
+      return null;
+    };
+    const move = (e: PointerEvent) => {
+      const id = rowAt(e.clientX, e.clientY);
+      setLit((cur) => (cur === id ? cur : id));
+    };
+    const leave = () => setLit(null);
+    const down = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const id = rowAt(e.clientX, e.clientY);
+      const target = e.target as Element;
+      if (id) {
+        e.preventDefault();
+        choose(id, e);
+      } else if (
+        picked.size &&
+        !block.contains(target) &&
+        !target.closest?.(".pop-box, .modal, .find-box, .toast, .db-selinfo")
+      )
+        setPicked(new Set());
+    };
+    page?.addEventListener("pointermove", move);
+    page?.addEventListener("pointerleave", leave);
+    document.addEventListener("pointerdown", down);
+    return () => {
+      page?.removeEventListener("pointermove", move);
+      page?.removeEventListener("pointerleave", leave);
+      document.removeEventListener("pointerdown", down);
+    };
+  });
+  useEffect(() => {
+    const page = table.current?.closest(".content");
+    page?.classList.toggle("db-gutter-on", lit !== null);
+    return () => page?.classList.remove("db-gutter-on");
+  }, [lit]);
   const all = rows.length > 0 && rows.every((r) => picked.has(r.id));
   const some = picked.size > 0;
   // The right button: the row's menu (a row not chosen is chosen alone first, as in a file manager).
@@ -818,42 +890,6 @@ function TableView({
   );
   return (
     <div className="db-table-wrap">
-      {some && (
-        <div className="db-selbar" role="toolbar" aria-label={t("db.selection")}>
-          <span className="db-selbar-count">
-            {picked.size === 1 ? t("db.selectedOne") : t("db.selected", { n: picked.size })}
-          </span>
-          {picked.size === 1 && (
-            <button
-              type="button"
-              className="btn ghost small"
-              onClick={() => {
-                const r = rows.find((x) => picked.has(x.id));
-                if (r) void openRow(r.type ?? type.id, r.id);
-              }}
-            >
-              {t("db.open")}
-            </button>
-          )}
-          <button
-            type="button"
-            className="btn ghost small danger"
-            onClick={() => remove([...picked])}
-          >
-            <Trash2 size={13} strokeWidth={1.8} />
-            {picked.size === 1 ? t("db.delete") : t("db.deleteN", { n: picked.size })}
-          </button>
-          <button
-            type="button"
-            className="icon-btn tiny"
-            title={t("db.unselect")}
-            aria-label={t("db.unselect")}
-            onClick={() => setPicked(new Set())}
-          >
-            <X size={13} strokeWidth={2} />
-          </button>
-        </div>
-      )}
       <table
         ref={table}
         className={`db-table fixed${some ? " has-picked" : ""}`}
@@ -864,7 +900,7 @@ function TableView({
           {cols.map((c) => (
             <col key={c.key} data-key={c.key} style={{ width: width(c.key, c.base) }} />
           ))}
-          <col style={{ width: TOOLS }} />
+          {pickable && <col style={{ width: TOOLS }} />}
         </colgroup>
         <thead>
           <tr>
@@ -885,7 +921,7 @@ function TableView({
               </th>
             )}
             {cols.map((c) => head(c.key, c.base, c.name, c.title))}
-            <th className="row-tools" aria-label={t("db.actions")} />
+            {pickable && <th className="row-tools" aria-label={t("db.actions")} />}
           </tr>
         </thead>
         <tbody>
@@ -938,7 +974,7 @@ function TableView({
               {sys.map((c) => (
                 <td key={c} className="sys-col" />
               ))}
-              <td className="row-tools" />
+              {pickable && <td className="row-tools" />}
             </tr>
           ))}
           {rows.map((r) => {
@@ -947,7 +983,10 @@ function TableView({
             return (
               <tr
                 key={r.id}
-                className={on ? "selected" : undefined}
+                data-row={r.id}
+                className={
+                  [on && "selected", lit === r.id && "lit"].filter(Boolean).join(" ") || undefined
+                }
                 onContextMenu={(e) => {
                   if (!pickable) return;
                   e.preventDefault();
@@ -1012,8 +1051,8 @@ function TableView({
                     </td>
                   );
                 })}
-                <td className="row-tools">
-                  {!type.system && (
+                {pickable && (
+                  <td className="row-tools">
                     <button
                       type="button"
                       className="icon-btn tiny"
@@ -1023,8 +1062,8 @@ function TableView({
                     >
                       <Trash2 size={13} strokeWidth={1.8} />
                     </button>
-                  )}
-                </td>
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -1083,6 +1122,59 @@ function TableView({
           )}
         </PointMenu>
       )}
+    </div>
+  );
+}
+
+/** The rows chosen in a table, in a bar over the page's bottom: how many, open one, delete them, let go (Juan,
+ * 2026-10-30). */
+function SelectionInfo({
+  type,
+  rows,
+  picked,
+  onPick,
+}: {
+  type: DataType;
+  rows: DataRow[];
+  picked: Set<string>;
+  onPick: (s: Set<string>) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const one = picked.size === 1 ? rows.find((r) => picked.has(r.id)) : undefined;
+  return (
+    <div className="db-selinfo" role="toolbar" aria-label={t("db.selection")}>
+      <span className="db-selinfo-count">
+        {picked.size === 1 ? t("db.selectedOne") : t("db.selected", { n: picked.size })}
+      </span>
+      {one && (
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={() => void openRow(one.type ?? type.id, one.id)}
+        >
+          {t("db.open")}
+        </button>
+      )}
+      <button
+        type="button"
+        className="btn ghost small danger"
+        onClick={() => {
+          void deleteRows(type.id, [...picked]);
+          onPick(new Set());
+        }}
+      >
+        <Trash2 size={13} strokeWidth={1.8} />
+        {picked.size === 1 ? t("db.delete") : t("db.deleteN", { n: picked.size })}
+      </button>
+      <button
+        type="button"
+        className="icon-btn tiny"
+        title={t("db.unselect")}
+        aria-label={t("db.unselect")}
+        onClick={() => onPick(new Set())}
+      >
+        <X size={13} strokeWidth={2} />
+      </button>
     </div>
   );
 }

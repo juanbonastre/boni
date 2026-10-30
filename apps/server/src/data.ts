@@ -17,7 +17,7 @@ import {
 } from "@boni/store";
 import { filterErrors } from "@boni/views";
 import { mimeOf } from "./paths.ts";
-import type { SystemCollections } from "./systemCollections.ts";
+import { isSystemCollection, type SystemCollections } from "./systemCollections.ts";
 
 /**
  * The user's collections as Notion's databases (docs/nucleo.md plan PR 19): their types and fields, their
@@ -91,23 +91,27 @@ export function rowUiOf(store: UserStore, typeId: string): RowUi {
   }
 }
 /**
- * Folds or unfolds a collection's properties, or hides or shows some of them (fields it has); and its rows'
- * «Relacionado», whole or group by group.
+ * Folds or unfolds a collection's properties, or hides or shows some of them (fields it has); its rows'
+ * «Relacionado», whole or group by group; its table's columns' widths. Boni's own tables keep only their widths
+ * (their rows neither open nor fold).
  */
 export function setRowUi(
   store: UserStore,
   typeId: string,
   body: Record<string, unknown>,
 ): RowUi | { status: number; error: string } {
-  const t = userTypes(store).find((x) => x.id === typeId);
-  if (!t) return { status: 404, error: "not-found" };
+  const own = isSystemCollection(typeId);
+  const t = own ? undefined : userTypes(store).find((x) => x.id === typeId);
+  if (!own && !t) return { status: 404, error: "not-found" };
+  if (own && Object.keys(body).some((k) => k !== "widths"))
+    return { status: 400, error: "bad-body" };
   const next = rowUiOf(store, typeId);
   if (body.open !== undefined) {
     if (typeof body.open !== "boolean") return { status: 400, error: "bad-open" };
     next.open = body.open;
   }
   if (body.hidden !== undefined) {
-    const ids = new Set(t.fields.map((f) => f.id));
+    const ids = new Set(t?.fields.map((f) => f.id));
     if (
       !Array.isArray(body.hidden) ||
       body.hidden.some((x) => typeof x !== "string" || !ids.has(x))
@@ -198,7 +202,7 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
       count: sys?.rows(t.id).length ?? 0,
       level: "private",
       rules: [],
-      rowUi: { open: false, hidden: [], related: false, folded: [], widths: {} },
+      rowUi: rowUiOf(store, t.id),
       system: true,
     }),
   );

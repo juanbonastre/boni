@@ -3843,7 +3843,6 @@ button.find-row:hover {
   --opt-red: #d44c47;
 }
 .db {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3856,6 +3855,41 @@ button.find-row:hover {
   flex-wrap: wrap;
   gap: 6px 10px;
   min-width: 0;
+  /* As wide as its block (on a collection's page, its table), never wider: there the layouts keep only their
+     icons when the room is short. */
+  container: db-head / inline-size;
+}
+@container db-head (max-width: 760px) {
+  .is-collection .db-layout span {
+    display: none;
+  }
+}
+/* Rows chosen: how many and what can be done with them, in a bar over the page's bottom (the head keeps its
+   options and nothing moves); above a toast when there is one. */
+.db-selinfo {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px 5px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+body:has(.toast) .db-selinfo {
+  bottom: 84px;
+}
+.db-selinfo-count {
+  margin-right: 6px;
+  color: var(--accent);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .db-name {
   display: flex;
@@ -3916,10 +3950,12 @@ button.find-row:hover {
   font-weight: 500;
   color: var(--muted);
   padding: 6px 8px;
-  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
   white-space: nowrap;
+}
+.db-table.fixed th:not(.sel-col) {
+  border-top: 1px solid var(--line);
 }
 /* Each column as wide as its kind of value or as the user left it, never stretched to fill the page (Juan,
    2026-10-30): the table is as wide as its columns and scrolls sideways when they do not fit. */
@@ -3967,9 +4003,6 @@ button.find-row:hover {
 }
 /* The rows' boxes: a column with no lines of its own, before the first one. A click in it, or in the strip left of
    it up to the side bar on a collection's page, chooses the row; the strip lights the row it would choose. */
-.db-table.fixed .sel-col {
-  overflow: visible;
-}
 .db-table .sel-col {
   position: relative;
   padding: 0;
@@ -3981,14 +4014,6 @@ button.find-row:hover {
 }
 .db-table tbody tr:not(.ghost-row) > td.sel-col {
   cursor: pointer;
-}
-.db-table tbody tr:not(.ghost-row) > td.sel-col::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: 100%;
-  bottom: 0;
-  width: var(--db-gutter, 0px);
 }
 .db-table .sel-col .db-check {
   margin: 9px 0;
@@ -4008,6 +4033,7 @@ button.find-row:hover {
   margin-left: 36px;
 }
 .db-table tbody tr:hover .sel-col .db-check,
+.db-table tbody tr.lit .sel-col .db-check,
 .db-table:hover thead .sel-col .db-check,
 .db-table.has-picked .sel-col .db-check,
 .db-table .sel-col .db-check:focus-visible {
@@ -4018,38 +4044,32 @@ button.find-row:hover {
     opacity: 1;
   }
 }
-.db-table tbody tr:not(.selected):not(.ghost-row):has(> td.sel-col:hover) > td,
-.db-table tbody tr:not(.selected):not(.ghost-row):has(> td.sel-col:hover) > td.sel-col::before {
+.db-table tbody tr.lit:not(.selected) > td,
+.db-table tbody tr:not(.selected):not(.ghost-row):has(> td.sel-col:hover) > td {
   background: var(--hover);
 }
-.db-table tbody tr.selected > td,
-.db-table tbody tr.selected > td.sel-col::before {
+.db-table tbody tr.selected > td {
   background: var(--accent-soft);
 }
-/* On a collection's own page the boxes sit in the page's margin, the first column under the title. */
+.content.db-gutter-on {
+  cursor: pointer;
+}
+/* A collection's own page: the boxes in the page's margin, the first column under the title. With the table
+   layout, the page is as wide as the table, centred, up to the window's width (Juan, 2026-10-30): the head's
+   options end where the table ends, and a narrow table is widened to a sensible minimum. */
+.content.page-doc.is-collection {
+  padding: 0 48px;
+}
 .content.is-collection .db-table-wrap {
-  --db-gutter: 20px;
-  margin-left: -56px;
-  padding-left: var(--db-gutter);
+  margin-left: -36px;
 }
-/* Rows chosen: how many and what can be done with them, over the block's head as Notion's. */
-.db-selbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  background: var(--bg);
+.content.is-collection.fit .doc {
+  width: fit-content;
+  min-width: min(560px, 100%);
+  max-width: 100%;
 }
-.db-selbar-count {
-  margin-right: 6px;
-  color: var(--accent);
-  font-size: 13.5px;
-  font-weight: 600;
+.content.is-collection.fit .db-table.fixed {
+  min-width: 100%;
 }
 /* A row's title opens it with a click; a double click renames it. */
 .db-title-open {

@@ -297,9 +297,14 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   column under the title, and the whole strip up to the sidebar chooses a row and lights it under the pointer. Ctrl
   adds or takes out one, Shift takes the run from the last one chosen, Ctrl+click on a title chooses instead of
   opening; the box in the head chooses all. Chosen rows are tinted with the accent's soft colour, and a bar over the
-  block's head says how many, with «Abrir» (one), «Borrar» / «Borrar N» and ✕; Esc lets go, Supr deletes them (one
-  Undo for all). The right button on a row opens its menu (Abrir, Cambiar nombre, Copiar enlace, Borrar; with
-  several chosen, «Borrar N»); a row not chosen is chosen alone first. Boni's own tables have no boxes and no menu.
+  page's bottom (above a toast) says how many, with «Abrir» (one), «Borrar» / «Borrar N» and ✕, so nothing in the
+  head or the table moves; the head keeps its options, and a click on one of them, Esc or a click outside the table
+  lets go; Supr deletes them (one Undo for all). The right button on a row opens its menu (Abrir, Cambiar nombre,
+  Copiar enlace, Borrar; with several chosen, «Borrar N»); a row not chosen is chosen alone first. On a collection's
+  own page the table layout makes the page as wide as the table and centres it (up to the window's width, then the
+  table scrolls sideways; a narrow one is widened to 560 px): the title over its first column, the head's options
+  ending where the table ends, the layouts keeping only their icons when the head is narrow (Juan, 2026-10-30).
+  Boni's own tables have no boxes, menu or delete column; their widths are kept too.
   Board: a column per option (and "Sin X" when used), cards dragged between columns change the select. Calendar: a
   month from Monday, today marked, "+" on a day adds a row on it; "Semana" shows seven tall days with every item
   (its start time over its title); "También en el calendario" (Opciones) adds other collections, each with its colour
