@@ -151,7 +151,7 @@ export function Sidebar() {
 }
 
 /** A section's heading: a click on its name folds it (as Notion's); `add` is its own button, if any. */
-function SectionHead({
+export function SectionHead({
   name,
   open,
   toggle,
@@ -174,7 +174,7 @@ function SectionHead({
 }
 
 /** «Recientes»: the last pages, collections and notes opened on this device (gone ones are left out). */
-function RecentSection({ open, toggle }: { open: boolean; toggle: () => void }) {
+export function RecentSection({ open, toggle }: { open: boolean; toggle: () => void }) {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const recent = useStore((s) => s.recent);
@@ -250,9 +250,9 @@ function RecentSection({ open, toggle }: { open: boolean; toggle: () => void }) 
 const MAX_DEPTH = 6;
 
 /** A page being dragged in the sidebar, and where it would land (before, after or inside a row). */
-type Drag = { id: string; over: string | null; where: "before" | "after" | "inside" } | null;
+export type Drag = { id: string; over: string | null; where: "before" | "after" | "inside" } | null;
 
-function PageTree({
+export function PageTree({
   pages,
   parent,
   depth,

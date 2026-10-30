@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Library,
   MessageSquare,
   MoreVertical,
   Pencil,
@@ -23,6 +24,8 @@ import { ChartCard, ChartCardContent, useChartData } from "./components/ChartCar
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { FormView } from "./components/FormView.tsx";
 import { ProposalPage } from "./components/InboxCards.tsx";
+import { MobilePages } from "./components/MobilePages.tsx";
+import { QuickFind } from "./components/QuickFind.tsx";
 import { RowsPanel } from "./components/RowsPanel.tsx";
 import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
@@ -84,10 +87,11 @@ export function MobileApp() {
   const discardAsk = useStore((s) => s.discardAsk);
   const toastState = useStore((s) => s.toast);
   const [menu, setMenu] = useState<Menu | null>(null);
+  const findOpen = useStore((s) => s.findOpen);
   const chartOpen = view.kind === "chart";
   // A record opened from Boni Calendar («Abrir en Boni»): its collection names the screen.
   const rowType = useStore((s) =>
-    s.view.kind === "row"
+    s.view.kind === "row" || s.view.kind === "collection"
       ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
       : undefined,
   );
@@ -101,21 +105,27 @@ export function MobileApp() {
             title={
               tab === "capture"
                 ? t("tab.capture")
-                : tab === "charts"
-                  ? t("tab.charts")
-                  : view.kind === "inbox" || view.kind === "proposal"
-                    ? t("inbox.title")
-                    : view.kind === "log"
-                      ? t("log.title")
-                      : view.kind === "audit"
-                        ? t("audit.title")
-                        : view.kind === "row"
-                          ? (rowType?.name ?? t("tab.boni"))
-                          : t("tab.boni")
+                : tab === "pages"
+                  ? view.kind === "row" || view.kind === "collection"
+                    ? (rowType?.name ?? t("tab.pages"))
+                    : t("tab.pages")
+                  : tab === "charts"
+                    ? t("tab.charts")
+                    : view.kind === "inbox" || view.kind === "proposal"
+                      ? t("inbox.title")
+                      : view.kind === "log"
+                        ? t("log.title")
+                        : view.kind === "audit"
+                          ? t("audit.title")
+                          : view.kind === "row"
+                            ? (rowType?.name ?? t("tab.boni"))
+                            : t("tab.boni")
             }
           />
           {tab === "capture" ? (
             <CaptureTab openMenu={setMenu} />
+          ) : tab === "pages" ? (
+            <MobilePages />
           ) : tab === "charts" ? (
             <ChartsTab />
           ) : view.kind === "inbox" ? (
@@ -144,6 +154,7 @@ export function MobileApp() {
       )}
       {panel && <Sheet />}
       {settingsOpen && <SettingsModal />}
+      {findOpen && <QuickFind />}
       {menu && <ActionSheet menu={menu} close={() => setMenu(null)} />}
       {discardAsk && (
         <ActionSheet
@@ -226,6 +237,11 @@ function TabBar() {
       id: "capture" as const,
       label: t("tab.capture"),
       icon: <PenLine size={22} strokeWidth={1.8} />,
+    },
+    {
+      id: "pages" as const,
+      label: t("tab.pages"),
+      icon: <Library size={22} strokeWidth={1.8} />,
     },
     {
       id: "charts" as const,

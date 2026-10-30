@@ -16,7 +16,7 @@ const sent = async (page: Page, prefix: string) =>
 const sheet = (page: Page) => page.locator(".m-sheet");
 const PERSON = JSON.parse(EXAMPLES["options-people.json"]!).options[0];
 
-test("the phone opens on capturing: the capture button, the shortcuts, three tabs", async ({
+test("the phone opens on capturing: the capture button, the shortcuts, four tabs", async ({
   page,
 }) => {
   await openApp(page, "/?still");
@@ -30,7 +30,7 @@ test("the phone opens on capturing: the capture button, the shortcuts, three tab
   await expect(shortcuts.first().locator(".m-shortcut-sub")).toHaveText(
     "1,60 € · Cafe · bebida/cafe",
   );
-  await expect(page.locator(".m-tab")).toHaveText(["Apuntar", "Gráficas", "Boni"]);
+  await expect(page.locator(".m-tab")).toHaveText(["Apuntar", "Páginas", "Gráficas", "Boni"]);
   // Thumb-sized: tabs, the capture button and each shortcut are at least 48 px high
   for (const el of [
     page.locator(".m-tab").first(),
@@ -40,6 +40,35 @@ test("the phone opens on capturing: the capture button, the shortcuts, three tab
     expect((await el.boundingBox())!.height).toBeGreaterThanOrEqual(48);
   }
   await page.screenshot({ path: `${SHOTS}/phone-capture.png` });
+});
+
+test("«Páginas» on the phone: the search, the recent ones and the tree; a collection as a list; Back a step at a time", async ({
+  page,
+}) => {
+  await openApp(page, "/?still");
+  await page.locator(".m-tabs").getByRole("button", { name: "Páginas" }).tap();
+  await expect(page.locator(".m-title")).toHaveText("Páginas");
+  await expect(page.locator(".m-pages-search")).toHaveText("Buscar en tus datos");
+  const tree = page.locator(".m-pages");
+  await expect(tree.getByRole("button", { name: "Libros", exact: true })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/phone-pages.png` });
+  // A collection: its records one under another, big enough for a finger.
+  await tree.getByRole("button", { name: "Libros", exact: true }).tap();
+  await expect(page.locator(".m-title")).toHaveText("Libros");
+  const rows = page.locator(".m-rows-row");
+  await expect(rows.first()).toBeVisible();
+  expect((await rows.first().boundingBox())!.height).toBeGreaterThanOrEqual(48);
+  await page.screenshot({ path: `${SHOTS}/phone-collection.png` });
+  // A record as on the desktop; Back to the list, Back to the tree.
+  await rows.first().tap();
+  await expect(page.locator(".row-doc")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".m-rows")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".m-pages")).toBeVisible();
+  // The search opens the same finder as Ctrl+K.
+  await page.locator(".m-pages-search").tap();
+  await expect(page.locator(".find-box")).toBeVisible();
 });
 
 test("a capture in a sheet: required fields first, the rest folded; sent once; its toast makes it a shortcut", async ({
