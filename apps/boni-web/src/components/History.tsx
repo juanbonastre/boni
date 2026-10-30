@@ -1,16 +1,17 @@
 import { SYSTEM_COLUMNS } from "@boni/views";
 import { ListChecks, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import type { RowHistory } from "../core/audit.ts";
+import { alignBlame, fieldMarks, type HistoryMark } from "../core/blame.ts";
 import type { T } from "../i18n.ts";
-import { agentApi, showAudit, useStore } from "../store.ts";
+import { agentApi, focusHistory, setHistoryMarks, showAudit, useStore } from "../store.ts";
 import { whoColor, whoName } from "./Dash.tsx";
 import { systemText } from "./DatabaseBlock.tsx";
 
 /**
- * A row's history (Juan, 2026-10-24), beside its page: its system columns (nobody edits them), who wrote each
- * paragraph of its text (as `git blame`, from the versions the log keeps), every change, and who saw it and what
- * of it. Lines by the same author in a row are one block with that author's colour.
+ * A row's history (Juan, 2026-10-24), beside its page: who did what, every change, its system columns (nobody edits
+ * them), and who saw it and what of it. While it is open the page itself shows who wrote what, in each one's colour
+ * (Juan, 2026-10-30; `core/blame.ts`), and a click on one of them in the legend lights only theirs.
  */
 export function HistoryPanel({
   id,
@@ -23,6 +24,8 @@ export function HistoryPanel({
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
+  const doc = useStore((s) => s.rowDoc);
+  const focus = useStore((s) => s.historyMarks?.focus ?? null);
   const locale = lang === "en" ? "en-GB" : "es-ES";
   const [h, setH] = useState<RowHistory | null | "loading" | "error">("loading");
   useEffect(() => {
@@ -42,9 +45,15 @@ export function HistoryPanel({
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+  const d = h && typeof h === "object" ? h : null;
+  // The page in the colours of who wrote it while the panel is open (its text as it was when it opened).
+  useEffect(() => {
+    if (!d) return;
+    setHistoryMarks({ blocks: alignBlame(doc?.spec.blocks ?? [], d.blame), fields: fieldMarks(d) });
+    return () => setHistoryMarks(null);
+  }, [d, doc?.id]);
   const when = (at: number) =>
     new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }).format(at);
-  const d = h && typeof h === "object" ? h : null;
   return (
     <aside className="side-panel history-panel" aria-label={t("history.title")}>
       <header className="panel-head">
@@ -64,6 +73,26 @@ export function HistoryPanel({
         {(h === "error" || h === null) && <p className="muted">{t("history.unavailable")}</p>}
         {d && (
           <>
+            <h3 className="models-sub">{t("history.whoDid")}</h3>
+            <Legend t={t} d={d} focus={focus} />
+            <h3 className="models-sub">{t("history.changes")}</h3>
+            <ul className="audit-seen">
+              {[...d.changes].reverse().map((c) => (
+                <li key={c.seq}>
+                  <span>
+                    <i className="who-dot" style={{ background: historyColor(c.by) }} />
+                    {whoName(t, c.by)} · {t(`activity.kind.${c.kind}`)}
+                  </span>
+                  <span className="muted small">
+                    {when(c.at)}
+                    {c.fields.length
+                      ? ` · ${c.fields.map((f) => d.names.fields[f] ?? f).join(", ")}`
+                      : ""}
+                    {c.body ? ` · ${t("history.text")}` : ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
             {d.columns && (
               <dl className="history-cols">
                 {SYSTEM_COLUMNS.map((c) => {
@@ -77,29 +106,6 @@ export function HistoryPanel({
                 })}
               </dl>
             )}
-            {d.blame.some((l) => l.text.trim()) && (
-              <>
-                <h3 className="models-sub">{t("history.whoWrote")}</h3>
-                <Blame t={t} lines={d.blame} />
-              </>
-            )}
-            <h3 className="models-sub">{t("history.changes")}</h3>
-            <ul className="audit-seen">
-              {[...d.changes].reverse().map((c) => (
-                <li key={c.seq}>
-                  <span>
-                    {whoName(t, c.by)} · {t(`activity.kind.${c.kind}`)}
-                  </span>
-                  <span className="muted small">
-                    {when(c.at)}
-                    {c.fields.length
-                      ? ` · ${c.fields.map((f) => d.names.fields[f] ?? f).join(", ")}`
-                      : ""}
-                    {c.body ? ` · ${t("history.text")}` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
             <h3 className="models-sub">{t("history.seenBy")}</h3>
             {d.seenBy.length === 0 ? (
               <p className="small">{t("history.nobody")}</p>
@@ -132,22 +138,69 @@ export function HistoryPanel({
   );
 }
 
-/** The text, block by block of the same author, each with its colour and name. */
-function Blame({ t, lines }: { t: T; lines: RowHistory["blame"] }) {
-  const blocks: { by: string; text: string[] }[] = [];
-  for (const l of lines) {
-    const last = blocks.at(-1);
-    if (last && last.by === l.by) last.text.push(l.text);
-    else blocks.push({ by: l.by, text: [l.text] });
-  }
+/** Each one who wrote here, in their colour, with how much is theirs; a click lights only theirs. */
+function Legend({ t, d, focus }: { t: T; d: RowHistory; focus: string | null }) {
+  const lines = new Map<string, number>();
+  for (const l of d.blame) if (l.text.trim()) lines.set(l.by, (lines.get(l.by) ?? 0) + 1);
+  const props = new Map<string, number>();
+  for (const m of Object.values(fieldMarks(d))) props.set(m.by, (props.get(m.by) ?? 0) + 1);
+  const who = [...new Set([...lines.keys(), ...props.keys()])].sort(
+    (a, b) =>
+      (lines.get(b) ?? 0) + (props.get(b) ?? 0) * 3 - (lines.get(a) ?? 0) - (props.get(a) ?? 0) * 3,
+  );
+  if (!who.length) return <p className="small">{t("history.nobody")}</p>;
   return (
-    <div className="blame">
-      {blocks.map((b, i) => (
-        <div key={i} className="blame-block" style={{ borderColor: whoColor(b.by) }}>
-          <span className="blame-who">{whoName(t, b.by)}</span>
-          <p className="blame-text">{b.text.join("\n").trim() || " "}</p>
-        </div>
-      ))}
+    <div className="who-legend">
+      {who.map((by) => {
+        const n = lines.get(by) ?? 0;
+        const p = props.get(by) ?? 0;
+        return (
+          <button
+            key={by}
+            type="button"
+            className={`who-chip${focus === by ? " on" : ""}${focus && focus !== by ? " off" : ""}`}
+            aria-pressed={focus === by}
+            style={{ "--who": historyColor(by) } as CSSProperties}
+            onClick={() => {
+              focusHistory(by);
+              // Their first part brought into view (the text can be long).
+              requestAnimationFrame(() =>
+                document
+                  .querySelector(".row-doc .by-who")
+                  ?.scrollIntoView({ block: "center", behavior: "smooth" }),
+              );
+            }}
+          >
+            <i className="who-dot" />
+            <span className="who-chip-name">{whoName(t, by)}</span>
+            <span className="muted small">
+              {[
+                n ? t(n === 1 ? "history.line" : "history.lines", { n }) : "",
+                p ? t(p === 1 ? "history.prop" : "history.props", { n: p }) : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </button>
+        );
+      })}
+      <p className="muted small">{focus ? t("history.focusOff") : t("history.focusHint")}</p>
     </div>
   );
+}
+
+/** A colour per one who writes: the user's own, every model and assistant as everywhere else in Boni. */
+export function historyColor(by: string): string {
+  if (by.startsWith("user:")) return "var(--c6)";
+  if (by === "import") return "var(--compare)";
+  return whoColor(by);
+}
+
+/** «Who · when», for the label a coloured block shows under the pointer. */
+export function whoLabel(t: T, m: HistoryMark, locale: string): string {
+  const at = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
+    m.at,
+  );
+  const also = m.others.length ? ` (+ ${m.others.map((o) => whoName(t, o)).join(", ")})` : "";
+  return `${whoName(t, m.by)}${also} · ${at}`;
 }

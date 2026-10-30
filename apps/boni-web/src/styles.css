@@ -4054,22 +4054,35 @@ body:has(.toast) .db-selinfo {
 .content.db-gutter-on {
   cursor: pointer;
 }
-/* A collection's own page: the boxes in the page's margin, the first column under the title. With the table
-   layout, the page is as wide as the table, centred, up to the window's width (Juan, 2026-10-30): the head's
-   options end where the table ends, and a narrow table is widened to a sensible minimum. */
+/* A collection's own page (Juan, 2026-10-30), in every layout: centred and as wide as what it shows (a table's
+   columns, a board's columns, a gallery's cards, a list's rows) from a sensible minimum up to the window's width, so
+   the head's options end where the content ends; what is narrower than the minimum is widened to it. A calendar
+   fills the width. The table's boxes sit in the page's margin, its first column under the title. */
 .content.page-doc.is-collection {
   padding: 0 48px;
 }
-.content.is-collection .db-table-wrap {
-  margin-left: -36px;
-}
-.content.is-collection.fit .doc {
+.content.is-collection .doc {
   width: fit-content;
   min-width: min(560px, 100%);
   max-width: 100%;
 }
-.content.is-collection.fit .db-table.fixed {
+.content.is-collection .db-table-wrap {
+  margin-left: -36px;
+}
+.content.is-collection .db-table.fixed {
   min-width: 100%;
+}
+.content.is-collection .db-column {
+  flex-grow: 1;
+}
+.content.is-collection .db-gallery {
+  width: calc(var(--cards, 1) * 232px - 12px);
+  min-width: 100%;
+  max-width: 100%;
+}
+.content.is-collection .db-calendar {
+  width: 100vw;
+  max-width: 100%;
 }
 /* A row's title opens it with a click; a double click renames it. */
 .db-title-open {
@@ -6733,4 +6746,97 @@ button.rows-panel-row:hover {
 .m-empty {
   padding: 24px 16px;
   color: var(--muted);
+}
+
+/* With a record's History open, what each one wrote in their colour (History.tsx, core/blame.ts). */
+.blk.by-who,
+.row-prop.by-who,
+.row-title-wrap.by-who {
+  position: relative;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--who) 9%, transparent);
+  /* The tint reaches the bar, in the margin: the text stays where it is. */
+  box-shadow: -10px 0 0 color-mix(in srgb, var(--who) 9%, transparent);
+}
+.blk.by-who::before,
+.row-prop.by-who::before,
+.row-title-wrap.by-who::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: -10px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--who);
+}
+.row-title-wrap {
+  border-radius: 4px;
+}
+.blk-who {
+  position: absolute;
+  right: 4px;
+  top: -20px;
+  z-index: 3;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--who) 55%, var(--line));
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.by-who:hover > .blk-who {
+  opacity: 1;
+}
+.who-dot {
+  display: inline-block;
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin: 0 6px 0 2px;
+  border-radius: 50%;
+  background: var(--who, var(--muted));
+  vertical-align: 0;
+}
+.who-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.who-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.who-chip:hover {
+  background: var(--hover);
+}
+.who-chip.on {
+  border-color: var(--who);
+  background: color-mix(in srgb, var(--who) 14%, transparent);
+}
+.who-chip.off {
+  opacity: 0.55;
+}
+.who-chip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

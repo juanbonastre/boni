@@ -124,7 +124,7 @@ export function DatabaseBlock({
       <header
         className="db-head"
         // Its options stay with rows chosen; a click on one of them lets go of them (Juan, 2026-10-30).
-        onPointerDownCapture={(e) => {
+        onPointerDownCapture={() => {
           if (picked.size) setPicked(new Set());
         }}
       >
@@ -1723,7 +1723,11 @@ function CardsView({
   const t = useStore((s) => s.t);
   if (!rows.length) return <p className="db-hint">{t("db.empty")}</p>;
   return (
-    <div className={gallery ? "db-gallery" : "db-list"}>
+    <div
+      className={gallery ? "db-gallery" : "db-list"}
+      // How many cards, for a collection's own page to be as wide as them (styles.css).
+      style={gallery ? ({ "--cards": rows.length } as React.CSSProperties) : undefined}
+    >
       {rows.map((r) => (
         <div key={r.id} className={gallery ? "db-card" : "db-list-row"}>
           <CardBody type={type} row={r} fields={fields} titles={titles} />

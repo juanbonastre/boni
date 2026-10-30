@@ -33,6 +33,7 @@ import {
 } from "./core/agent.ts";
 import { ApiError, BoniApi, NotConfiguredError, OfflineError } from "./core/api.ts";
 import type { SystemColumns } from "./core/audit.ts";
+import type { HistoryMark } from "./core/blame.ts";
 import { normalize } from "./core/chartBuilder.ts";
 import { ChartRepository, type ChartState } from "./core/charts.ts";
 import { newId, nowIso, today } from "./core/clock.ts";
@@ -207,6 +208,8 @@ interface State {
   rowDoc: Page | null;
   /** What points to the open row (its «Relacionado») and the titles of what it points to. */
   related: Related | null;
+  /** With a record's History open, who wrote each block and property of its page, and whose to light. */
+  historyMarks: HistoryMarks | null;
   /** Blocks selected as a whole in the page being edited (Notion's): the block where it started, the one where it ends. */
   blockSel: { anchor: string; focus: string } | null;
   /** A file pasted or dropped with several collections of files to keep it in: the app asks once. */
@@ -342,6 +345,7 @@ export const useStore = create<State>(() => ({
   row: null,
   rowDoc: null,
   related: null,
+  historyMarks: null,
   blockSel: null,
   fileChoice: null,
   inbox: [],
@@ -2439,6 +2443,20 @@ function changeRowUi(
       ) ?? null,
   });
   void agent.setRowUi(type, patch).catch(() => toast(get().t("db.saveError")));
+}
+export interface HistoryMarks {
+  blocks: Record<string, HistoryMark>;
+  fields: Record<string, HistoryMark>;
+  /** Only this one's parts lit (a click on it in the legend). */
+  focus: string | null;
+}
+/** The page in the colours of who wrote it, while its History is open (Juan, 2026-10-30). */
+export function setHistoryMarks(m: Omit<HistoryMarks, "focus"> | null) {
+  set({ historyMarks: m ? { ...m, focus: null } : null });
+}
+export function focusHistory(by: string | null) {
+  const m = get().historyMarks;
+  if (m) set({ historyMarks: { ...m, focus: m.focus === by ? null : by } });
 }
 export function toggleRowProps(type: string) {
   const ui = get().dataTypes?.find((x) => x.id === type)?.rowUi;

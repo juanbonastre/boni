@@ -188,9 +188,20 @@ test("«Todas las páginas»: everything to manage; a search or a level lists it
   const h = page.locator(".history-panel");
   await expect(h.locator(".history-cols")).toContainText("Creado porTú · portatil");
   await expect(h.locator(".history-cols")).toContainText("OrigenDe un modelo");
-  await expect(h.locator(".blame-block")).toHaveCount(3);
-  await expect(h.locator(".blame-block").nth(1)).toContainText("Lector · deepseek-v4.1-flash");
-  await expect(h.locator(".blame-block").nth(2)).toContainText("MCP · claude-ejemplo");
+  // Who did what, each one in their colour with how much is theirs; the page itself in those colours (Juan,
+  // 2026-10-30), and a click on one lights only theirs.
+  await expect(h.locator(".who-chip")).toHaveText([
+    /Tú · portatil.*2 líneas · 2 propiedades/,
+    /Lector · deepseek-v4\.1-flash.*1 línea/,
+    /MCP · claude-ejemplo.*1 línea/,
+  ]);
+  const lit = page.locator(".row-doc .blk.by-who");
+  await expect(lit).toHaveCount(3);
+  await h.locator(".who-chip", { hasText: "MCP" }).click();
+  await expect(lit).toHaveCount(1);
+  await expect(lit).toContainText("24 oct");
+  await h.locator(".who-chip", { hasText: "MCP" }).click();
+  await expect(lit).toHaveCount(3);
   await expect(h.locator(".audit-seen").last().locator("li").first()).toContainText("con la nota");
   await page.screenshot({ path: `${SHOTS}/history.png` });
   await page.keyboard.press("Escape");

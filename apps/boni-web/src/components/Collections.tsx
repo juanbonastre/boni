@@ -36,8 +36,7 @@ export function CollectionView() {
       </div>
     );
   return (
-    // A table centred, as wide as its columns up to the window's (Juan, 2026-10-30); the other layouts fill it.
-    <div className={`content page-doc full is-collection${view.layout === "table" ? " fit" : ""}`}>
+    <div className="content page-doc full is-collection">
       <div className="doc">
         {/* Its mother, where it is in the tree (a collection at the root has none). */}
         <div className="row-kind">{mother?.name ?? ""}</div>
