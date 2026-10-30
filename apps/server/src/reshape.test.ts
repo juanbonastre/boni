@@ -493,8 +493,58 @@ describe("clearing away what the vault left (docs/clases.md §7, step 7)", () =>
     expect(r.problems).toEqual(["«amount» de «Movimiento» es number: no guarda enlaces"]);
     expect(planErrors({ titles: "sí", embeds: true, vaultPaths: "borrar" })).toEqual([
       "«titles» es true",
-      '«embeds» es "remove"',
+      '«embeds» es "remove" o "views"',
       '«vaultPaths» es "archive"',
     ]);
+  });
+
+  it("only Obsidian's views go, with the heading each leaves empty; a person's photo becomes a link to its file", () => {
+    const store = openUserStore(":memory:");
+    stores.push(store);
+    const ids = seed(
+      store,
+      [
+        { key: "persona", name: "Persona", folder: "personas/", fields: { photo: "text" } },
+        { key: "proyecto", name: "Proyecto", folder: "proyectos/" },
+        { key: "archivos", name: "Archivos", folder: "", files: true },
+      ],
+      {
+        "personas/ana-ejemplo.md":
+          '---\nphoto: "[[personas/attachments/ana-ejemplo.png]]"\n---\n# Ana Ejemplo\n\n![[personas/attachments/ana-ejemplo.png|200]]\n\n## Proyectos y notas\n![[person.base]]\n',
+        "personas/attachments/ana-ejemplo.png": "png inventado",
+        "proyectos/boni.md": "# Boni\n\n## Agenda\n![[project.base]]\n- 2026-10-18 - Pruebas.\n",
+        "proyectos/otro.md":
+          "# Otro\n\nTexto ![[x.base#Tabla]] en línea.\n\n## Vista\n\n![[a.base]]\n\n![[b.base|200]]\n\n## Notas\n\nAlgo.\n",
+      },
+      { vaultPaths: true },
+    );
+    const plan: ReshapePlan = {
+      links: [{ collection: "Persona", field: "photo", to: "Archivos" }],
+      embeds: "views",
+    };
+    expect(planErrors(plan)).toEqual([]);
+    expect(reshape(store, plan, { apply: false }).lines).toEqual([
+      "«Persona»: «photo» pasa a ser una relación con «Archivos» (1 registros, 1 enlaces).",
+      "Vistas de Obsidian (![[….base]]): 5 fuera del texto de 3 registros, y 2 encabezados que se quedaban vacíos.",
+    ]);
+    const r = reshape(store, plan, { apply: true });
+    expect(r.problems).toEqual([]);
+    const body = (path: string) => store.get(ids.get(path) as string)?.entity.body ?? "";
+    expect(body("personas/ana-ejemplo.md")).toContain(
+      "![[personas/attachments/ana-ejemplo.png|200]]",
+    );
+    expect(body("personas/ana-ejemplo.md")).not.toMatch(/base|Proyectos y notas/);
+    expect(body("proyectos/boni.md")).toContain("## Agenda\n- 2026-10-18 - Pruebas.");
+    expect(body("proyectos/otro.md")).toContain("Texto en línea.\n\n## Notas\n\nAlgo.");
+    expect(body("proyectos/otro.md")).not.toMatch(/base|## Vista/);
+    const photo = store
+      .schema()
+      .types.t_persona?.fields.find((f) => f.name === "photo" && !f.archived);
+    expect(photo?.type).toBe("relation");
+    expect(
+      store.get(ids.get("personas/ana-ejemplo.md") as string)?.entity.values[photo?.id as string],
+    ).toBe(ids.get("personas/attachments/ana-ejemplo.png"));
+    undoReshape(store, r.run as string);
+    expect(body("proyectos/boni.md")).toContain("![[project.base]]");
   });
 });
