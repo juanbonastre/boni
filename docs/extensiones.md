@@ -487,7 +487,9 @@ siempre lo mismo.
   respuesta: salida o error `timeout` / `memory` / `output` / `exception`), el subconjunto de JSON Schema con el que se
   validan entradas y salidas, y los límites por defecto (500 ms, 64 MB, 1 MB de salida).
 - `apps/sandbox`: el ejecutor. Node con `quickjs-emscripten`; un hilo por llamada que se mata al pasar el límite, y en él
-  un intérprete nuevo cada vez (nada pasa de una llamada a otra). Sin `fetch`, `require`, `process`, temporizadores,
+  un intérprete nuevo cada vez (nada pasa de una llamada a otra). El intérprete se compila una vez, al arrancar la caja,
+  y cada llamada hace su propia instancia con su propia memoria; el tiempo de la función empieza cuando su intérprete
+  está listo (medido el 2026-10-31 en el NAS: compilarlo en cada llamada se comía ~600 ms de su segundo). Sin `fetch`, `require`, `process`, temporizadores,
   promesas, `Date.now` ni `Math.random` (el día y una semilla vienen en la petición). El límite principal es un
   **presupuesto de pasos** del intérprete, el mismo en cualquier máquina; el de tiempo es la red de seguridad. Escucha
   solo en un socket Unix.

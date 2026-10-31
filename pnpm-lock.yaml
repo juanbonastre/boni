@@ -276,6 +276,9 @@ importers:
       '@boni/sandbox':
         specifier: workspace:*
         version: link:../../packages/sandbox
+      '@jitl/quickjs-wasmfile-release-sync':
+        specifier: 0.32.0
+        version: 0.32.0
       quickjs-emscripten:
         specifier: 0.32.0
         version: 0.32.0
