@@ -3,5 +3,5 @@ import { parentPort, workerData } from "node:worker_threads";
 import type { RunRequest } from "@boni/sandbox";
 import { runCall } from "./run.ts";
 
-const request = (workerData as { request: RunRequest }).request;
-parentPort?.postMessage(await runCall(request));
+const { request, module } = workerData as { request: RunRequest; module?: WebAssembly.Module };
+parentPort?.postMessage(await runCall(request, module ? { module } : {}));

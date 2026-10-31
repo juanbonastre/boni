@@ -5,6 +5,8 @@
  * own (worker.ts), which the box ends if this does not stop by itself.
  */
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import {
   type Limits,
   limitsOf,
@@ -15,6 +17,20 @@ import {
   shortMessage,
 } from "@boni/sandbox";
 import { newQuickJSWASMModuleFromVariant, newVariant, RELEASE_SYNC } from "quickjs-emscripten";
+
+/**
+ * The interpreter compiled once, from its package's bytes (2026-10-31: compiling it on every call took ~600 ms of each
+ * call's second on the NAS). Each call still makes an instance of its own, with a memory of its own.
+ */
+let compiled: Promise<WebAssembly.Module> | null = null;
+export const compiledQuickJS = (): Promise<WebAssembly.Module> => {
+  compiled ??= WebAssembly.compile(
+    readFileSync(
+      createRequire(import.meta.url).resolve("@jitl/quickjs-wasmfile-release-sync/wasm"),
+    ),
+  );
+  return compiled;
+};
 
 const PAGE = 64 * 1024;
 /** What the interpreter's whole memory starts at (QuickJS's build needs 16 MB). */
@@ -98,19 +114,29 @@ const fail = (
   ...(ms !== undefined ? { ms } : {}),
 });
 
-/** One call, start to end: a new interpreter, the limits, the code, the function, the output checked. */
-export async function runCall(req: RunRequest): Promise<RunResponse> {
+/**
+ * One call, start to end: a new interpreter, the limits, the code, the function, the output checked. `module` is the
+ * interpreter already compiled (the box compiles it once); without it, it is compiled here.
+ */
+export async function runCall(
+  req: RunRequest,
+  opts: { module?: WebAssembly.Module } = {},
+): Promise<RunResponse> {
   const limits: Limits = limitsOf(req);
   if (createHash("sha256").update(req.code).digest("hex") !== req.hash)
     return fail(req.id, "invalid", "el código no es el de su huella");
-  const started = performance.now();
+  // The function's time starts once its interpreter is ready (starting one is the box's time, not the function's).
+  let started = performance.now();
   const elapsed = () => Math.round(performance.now() - started);
   let steps = 0;
   let stopped: "steps" | "timeout" | null = null;
-  const deadline = Date.now() + limits.ms;
-  // A module of its own, with a memory of its own that cannot grow past its limit: nothing of another call is here.
+  let deadline = Number.POSITIVE_INFINITY;
+  // An instance of its own, with a memory of its own that cannot grow past its limit: nothing of another call is here.
   const QuickJS = await newQuickJSWASMModuleFromVariant(
-    newVariant(RELEASE_SYNC, { wasmMemory: memoryFor(limits.memoryBytes) }),
+    newVariant(RELEASE_SYNC, {
+      wasmModule: opts.module ?? (await compiledQuickJS()),
+      wasmMemory: memoryFor(limits.memoryBytes),
+    }),
   );
   const runtime = QuickJS.newRuntime();
   runtime.setMemoryLimit(limits.memoryBytes);
@@ -122,6 +148,8 @@ export async function runCall(req: RunRequest): Promise<RunResponse> {
     return stopped !== null;
   });
   const vm = runtime.newContext();
+  started = performance.now();
+  deadline = Date.now() + limits.ms;
   const failed = (e: unknown): RunResponse => {
     if (stopped === "steps")
       return fail(req.id, "steps", `ha usado sus ${limits.steps} pasos`, steps, elapsed());
