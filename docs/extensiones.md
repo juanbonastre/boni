@@ -491,8 +491,12 @@ siempre lo mismo.
   promesas, `Date.now` ni `Math.random` (el día y una semilla vienen en la petición). El límite principal es un
   **presupuesto de pasos** del intérprete, el mismo en cualquier máquina; el de tiempo es la red de seguridad. Escucha
   solo en un socket Unix.
-- Contenedor `boni-sandbox`: `network_mode: none`, raíz de solo lectura, `cap_drop: ALL`, `no-new-privileges`, usuario
-  sin privilegios, 128 MB, límite de procesos; de volúmenes, solo la carpeta del socket, compartida con el servidor.
+- Contenedor `boni-sandbox`: `network_mode: none`, raíz de solo lectura, `cap_drop: ALL`, `no-new-privileges`, el
+  usuario del servidor, 256 MB, límite de procesos; de volúmenes, solo la carpeta del socket, compartida con el
+  servidor. La memoria entera de cada intérprete tiene un tope (su límite más 16 MB): probado el 2026-10-31 en un
+  contenedor de 256 MB, sin ese tope una función que pide memoria sin parar hacía crecer el proceso hasta que el
+  contenedor entero moría; con él, esa llamada acaba en «memory» en menos de medio segundo y la caja sigue (dos a la
+  vez, también). En reposo usa unos 25 MB.
 - En el servidor, `src/sandbox.ts`: el cliente (tiempo de espera, reintento si el ejecutor se reinicia). Sin caja, las
   funciones no están disponibles y lo dice; nada más se rompe.
 - Pruebas: un **corpus de fugas** en el CI (`apps/sandbox/test/escape/`: red, `require`, `process`, `eval` de algo de

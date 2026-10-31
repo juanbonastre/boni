@@ -14,7 +14,21 @@ import {
   schemaErrors,
   shortMessage,
 } from "@boni/sandbox";
-import { newQuickJSWASMModule } from "quickjs-emscripten";
+import { newQuickJSWASMModuleFromVariant, newVariant, RELEASE_SYNC } from "quickjs-emscripten";
+
+const PAGE = 64 * 1024;
+/** What the interpreter's whole memory starts at (QuickJS's build needs 16 MB). */
+const INITIAL_PAGES = 256;
+/**
+ * Its whole memory, never more than its limit and a margin (seen 2026-10-31 in a 256 MB container: without a cap, a
+ * function asking for memory without end grew the process past the container's limit before QuickJS's own limit
+ * stopped it, and the box was killed whole). With it, the memory cannot grow: the call fails, the box goes on.
+ */
+const memoryFor = (limitBytes: number) =>
+  new WebAssembly.Memory({
+    initial: INITIAL_PAGES,
+    maximum: Math.max(INITIAL_PAGES, Math.ceil((limitBytes + 16 * 1024 * 1024) / PAGE)),
+  });
 
 /**
  * Before the function's code: the clock and chance are taken away (the day and a seed come in its context), and its
@@ -94,8 +108,10 @@ export async function runCall(req: RunRequest): Promise<RunResponse> {
   let steps = 0;
   let stopped: "steps" | "timeout" | null = null;
   const deadline = Date.now() + limits.ms;
-  // A module of its own: nothing of another call's interpreter is here.
-  const QuickJS = await newQuickJSWASMModule();
+  // A module of its own, with a memory of its own that cannot grow past its limit: nothing of another call is here.
+  const QuickJS = await newQuickJSWASMModuleFromVariant(
+    newVariant(RELEASE_SYNC, { wasmMemory: memoryFor(limits.memoryBytes) }),
+  );
   const runtime = QuickJS.newRuntime();
   runtime.setMemoryLimit(limits.memoryBytes);
   runtime.setMaxStackSize(limits.stackBytes);
@@ -115,7 +131,7 @@ export async function runCall(req: RunRequest): Promise<RunResponse> {
     if (typeof err.boniOutput === "string")
       return fail(req.id, "output", err.boniOutput, steps, elapsed());
     const text = `${err.name ?? "Error"}: ${err.message ?? String(e)}`;
-    if (/out of memory/i.test(text))
+    if (/out of memory|\bOOM\b|memory access out of bounds|Cannot enlarge memory/i.test(text))
       return fail(req.id, "memory", "ha pedido más memoria de la que tiene", steps, elapsed());
     return fail(req.id, "exception", text, steps, elapsed());
   };

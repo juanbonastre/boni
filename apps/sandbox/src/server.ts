@@ -41,8 +41,8 @@ export async function startBox(socketPath: string, opts: BoxOptions = {}): Promi
     const limits = limitsOf(req);
     const worker = new Worker(WORKER, {
       workerData: { request: req },
-      // The interpreter's memory is its own (WebAssembly); this bounds what the worker's JavaScript may take.
-      resourceLimits: { maxOldGenerationSizeMb: 96, maxYoungGenerationSizeMb: 16, stackSizeMb: 4 },
+      // The interpreter's memory is its own, capped (run.ts); this bounds what the worker's JavaScript may take.
+      resourceLimits: { maxOldGenerationSizeMb: 32, maxYoungGenerationSizeMb: 8, stackSizeMb: 4 },
     });
     running.add(worker);
     let answered = false;
