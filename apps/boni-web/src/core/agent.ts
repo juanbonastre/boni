@@ -69,6 +69,38 @@ export interface TurnResult {
   notices: Notice[];
   error: string | null;
 }
+/** One of Juan's conversations with Boni, as the list shows it (docs/conversacion.md 3.1). */
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  /** The planner model chosen for it (a planner's id), or "" for the account's. */
+  model: string;
+  last: number;
+}
+/** A turn of a conversation as the server keeps it. */
+export interface TurnView extends TurnResult {
+  id: string;
+  request: string;
+  at: number;
+}
+/** What a turn does while it runs (docs/conversacion.md 3.5), as the server tells it. */
+export type LiveEvent =
+  | { type: "start"; run: string }
+  | { type: "planning" }
+  | { type: "planned"; steps: number }
+  | { type: "step"; id: string; op: string; what: string; state: "start" | "done" }
+  | { type: "reply"; reply: Reply }
+  | { type: "waiting" }
+  | { type: "end"; status: TurnResult["status"]; error: string | null };
+/** A model a conversation may plan with. */
+export interface Planner {
+  id: string;
+  model: string;
+  connection: string;
+  privacy: string;
+  current: boolean;
+}
+
 export interface Proposal {
   id: string;
   tool: string;
@@ -591,6 +623,56 @@ export function parseTurn(v: unknown): TurnResult {
     })),
     error: typeof v.error === "string" ? v.error.slice(0, 80) : null,
   };
+}
+
+function parseConversation(v: unknown): ConversationSummary | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id, 80);
+  if (!id) return null;
+  return {
+    id,
+    title: typeof v.title === "string" ? v.title.slice(0, 200) : "",
+    model: typeof v.model === "string" ? v.model.slice(0, 200) : "",
+    last: typeof v.last === "number" ? v.last : 0,
+  };
+}
+
+/** A live event as the server sends it: fixed codes and the code's words; a reply parsed as any reply. */
+function parseLive(v: unknown): LiveEvent | null {
+  if (!isObj(v)) return null;
+  switch (v.type) {
+    case "start":
+      return str(v.run, 80) ? { type: "start", run: v.run as string } : null;
+    case "planning":
+      return { type: "planning" };
+    case "planned":
+      return { type: "planned", steps: typeof v.steps === "number" ? v.steps : 0 };
+    case "step": {
+      const id = str(v.id, 80);
+      if (!id || (v.state !== "start" && v.state !== "done")) return null;
+      return {
+        type: "step",
+        id,
+        op: str(v.op, 20) ?? "",
+        what: str(v.what, 120) ?? "",
+        state: v.state,
+      };
+    }
+    case "reply": {
+      const r = parseTurn({ replies: [v.reply], status: "done" }).replies[0];
+      return r ? { type: "reply", reply: r } : null;
+    }
+    case "waiting":
+      return { type: "waiting" };
+    case "end":
+      return {
+        type: "end",
+        status: v.status === "done" || v.status === "waiting" ? v.status : "stopped",
+        error: typeof v.error === "string" ? v.error.slice(0, 80) : null,
+      };
+    default:
+      return null;
+  }
 }
 
 // ---------------------------------------------------------------- painting as text
@@ -1233,12 +1315,100 @@ export class AgentApi {
     return parsed;
   }
 
-  turn = async (text: string, conversation?: string) =>
-    parseTurn(await this.call("POST", "turn", { text, ...(conversation ? { conversation } : {}) }));
-  answer = async (run: string, ask: string, a: { choice: number } | { text: string }) =>
-    parseTurn(await this.call("POST", "answer", { run, ask, ...a }));
-  confirm = async (run: string, confirmation: string) =>
-    parseTurn(await this.call("POST", "confirm", { run, confirmation }));
+  /** `live`: an id the device makes to watch the turn while it runs (`live()`). */
+  turn = async (text: string, conversation?: string, live?: string) =>
+    parseTurn(
+      await this.call("POST", "turn", {
+        text,
+        ...(conversation ? { conversation } : {}),
+        ...(live ? { live } : {}),
+      }),
+    );
+  answer = async (
+    run: string,
+    ask: string,
+    a: { choice: number } | { text: string },
+    live?: string,
+  ) => parseTurn(await this.call("POST", "answer", { run, ask, ...a, ...(live ? { live } : {}) }));
+  confirm = async (run: string, confirmation: string, live?: string) =>
+    parseTurn(await this.call("POST", "confirm", { run, confirmation, ...(live ? { live } : {}) }));
+  async conversations(): Promise<ConversationSummary[]> {
+    const b = await this.call("GET", "conversations");
+    return (isObj(b) && Array.isArray(b.conversations) ? b.conversations : [])
+      .slice(0, 500)
+      .flatMap((c) => {
+        const s = parseConversation(c);
+        return s ? [s] : [];
+      });
+  }
+  async newConversation(): Promise<ConversationSummary> {
+    const b = await this.call("POST", "conversations", {});
+    const c = isObj(b) ? parseConversation(b.conversation) : null;
+    if (!c) throw new ApiError(0, "bad-answer", "bad answer");
+    return c;
+  }
+  async conversation(
+    id: string,
+  ): Promise<{ conversation: ConversationSummary; turns: TurnView[] }> {
+    const b = await this.call("GET", `conversations/${encodeURIComponent(id)}`);
+    const c = isObj(b) ? parseConversation(b.conversation) : null;
+    if (!c || !isObj(b)) throw new ApiError(0, "bad-answer", "bad answer");
+    const turns: TurnView[] = [];
+    for (const t of Array.isArray(b.turns) ? b.turns.slice(-200) : []) {
+      if (!isObj(t)) continue;
+      const id = str(t.id, 80);
+      if (!id) continue;
+      turns.push({
+        ...parseTurn(t),
+        id,
+        request: typeof t.request === "string" ? t.request.slice(0, 8000) : "",
+        at: typeof t.at === "number" ? t.at : 0,
+      });
+    }
+    return { conversation: c, turns };
+  }
+  async updateConversation(id: string, o: { title?: string; model?: string }) {
+    const b = await this.call("PUT", `conversations/${encodeURIComponent(id)}`, o);
+    return isObj(b) ? parseConversation(b.conversation) : null;
+  }
+  deleteConversation = async (id: string) =>
+    void (await this.call("DELETE", `conversations/${encodeURIComponent(id)}`));
+  async planners(): Promise<Planner[]> {
+    const b = await this.call("GET", "planners");
+    return (isObj(b) && Array.isArray(b.planners) ? b.planners : []).filter(isObj).flatMap((p) => {
+      const id = str(p.id, 200);
+      const model = str(p.model, 200);
+      if (!id || !model) return [];
+      return [
+        {
+          id,
+          model,
+          connection: str(p.connection, 40) ?? "",
+          privacy: str(p.privacy, 40) ?? "",
+          current: p.current === true,
+        },
+      ];
+    });
+  }
+  /** What the turn `id` did since event `after`; null while the server does not know it yet. */
+  async live(id: string, after: number): Promise<{ events: LiveEvent[]; done: boolean } | null> {
+    try {
+      const b = await this.call("GET", `live/${encodeURIComponent(id)}?after=${after}`);
+      if (!isObj(b)) return null;
+      return {
+        events: (Array.isArray(b.events) ? b.events : []).slice(0, 500).flatMap((e) => {
+          const x = parseLive(e);
+          return x ? [x] : [];
+        }),
+        done: b.done === true,
+      };
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+  }
+  stop = async (live: string) =>
+    void (await this.call("POST", `live/${encodeURIComponent(live)}/stop`));
   decline = async (run: string, confirmation: string) =>
     parseTurn(await this.call("POST", "decline", { run, confirmation }));
   async proposals(): Promise<Proposal[]> {

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { join, type Label, label, modelMaySee } from "@boni/entities";
 import type { ProposalEdits, RequestRow, Seen, UserStore } from "@boni/store";
 import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
+import { history, recordTurn } from "./conversations.ts";
 import { checkAnswers, type DecisionQuestion } from "./decider.ts";
 import { exposure } from "./exposure.ts";
 import {
@@ -51,6 +52,8 @@ import {
   leaf,
   list,
   modelLabel,
+  type Painted,
+  paint,
   parseRef,
   plain,
   rec,
@@ -144,27 +147,7 @@ export const RUN_LIMITS: RunLimits = {
   ...DEFAULT_LIMITS,
 };
 
-/** A value as the interface paints it: the data and how far to trust it (model or external text is
- * painted as plain text, never Markdown or HTML). */
-export type Painted =
-  | { t: "v"; value: Json; integrity: string; sensitivity: string }
-  | { t: "list"; items: Painted[]; integrity: string }
-  | { t: "rec"; fields: Record<string, Painted>; integrity: string };
-export function paint(v: Val): Painted {
-  if (v.t === "v")
-    return {
-      t: "v",
-      value: v.value,
-      integrity: v.label.integrity,
-      sensitivity: v.label.sensitivity,
-    };
-  if (v.t === "list") return { t: "list", items: v.items.map(paint), integrity: v.label.integrity };
-  return {
-    t: "rec",
-    fields: Object.fromEntries(Object.entries(v.fields).map(([k, f]) => [k, paint(f)])),
-    integrity: v.label.integrity,
-  };
-}
+export { type Painted, paint } from "./values.ts";
 
 export interface Reply {
   component: string;
@@ -190,6 +173,20 @@ export interface TurnResult {
   /** A plan made by code only: the values of the steps it asked to keep (Agent.background). */
   kept?: Record<string, Json>;
 }
+
+/**
+ * What a turn does while it runs, for the devices to show as it happens (docs/conversacion.md 3.5): the run it is,
+ * the planner thinking, each step as it starts and ends (what it is, in the tool's own title), each reply, the
+ * question it waits on, and how it ended. Fixed codes and the code's own words: never a model's text but replies.
+ */
+export type LiveEvent =
+  | { type: "start"; run: string }
+  | { type: "planning" }
+  | { type: "planned"; steps: number }
+  | { type: "step"; id: string; op: Step["op"]; what: string; state: "start" | "done" }
+  | { type: "reply"; reply: Reply }
+  | { type: "waiting"; pending: Pending }
+  | { type: "end"; status: TurnResult["status"]; error: string | null };
 
 export interface RunDetail {
   id: string;
@@ -283,6 +280,14 @@ interface RunState {
   /** Arguments fixed by the code (an accepted proposal), instead of the plan's expressions. */
   preset: Map<string, Record<string, Val>>;
   conversation: string | null;
+  /** The turn's record in the conversation (conversations.ts), once it has one. */
+  turnRecord?: string | null;
+  /** Who is watching it live (the turn's device), and the planner chosen for its conversation. */
+  live?: ((e: LiveEvent) => void) | undefined;
+  planner?: ModelProvider | undefined;
+  /** Juan pressed «Parar»: the run stops before its next step, and a model call in flight is cut. */
+  stopRequested?: boolean;
+  abort?: AbortController | undefined;
   expiresAt: number;
 }
 
@@ -319,7 +324,8 @@ const DAY_MS = 24 * 60 * 60_000;
 
 /** A waiting run as JSON for the journal (its maps as entries), and back. */
 function saveState(st: RunState): unknown {
-  return { ...st, env: [...st.env], answers: [...st.answers], preset: [...st.preset] };
+  const { live: _l, planner: _p, abort: _a, ...rest } = st;
+  return { ...rest, env: [...st.env], answers: [...st.answers], preset: [...st.preset] };
 }
 function loadState(x: unknown): RunState | null {
   if (!isObj(x) || typeof x.id !== "string" || !Array.isArray(x.env)) return null;
@@ -339,10 +345,8 @@ export class Agent {
   private o: AgentOptions;
   private limits: RunLimits;
   private runs = new Map<string, RunState>();
-  private conversations = new Map<
-    string,
-    { request: string; replies: { component: string; data: Record<string, Val> }[] }[]
-  >();
+  /** Runs going on right now (planning or between steps), so «Parar» finds them. */
+  private active = new Map<string, RunState>();
   private now: () => number;
 
   constructor(o: AgentOptions) {
@@ -389,7 +393,15 @@ export class Agent {
 
   // ------------------------------------------------------------ a turn
 
-  async turn(req: { text: string; origin: Origin; conversation?: string }): Promise<TurnResult> {
+  async turn(req: {
+    text: string;
+    origin: Origin;
+    /** The conversation it belongs to (conversations.ts): its history, and where the turn is kept. */
+    conversation?: string;
+    live?: (e: LiveEvent) => void;
+    /** The planner chosen for this conversation (docs/conversacion.md 3.5); the account's without it. */
+    planner?: ModelProvider;
+  }): Promise<TurnResult> {
     const run = randomUUID();
     const turn = { id: randomUUID(), text: req.text.slice(0, 8000) };
     this.o.store.journal.startRun({
@@ -406,13 +418,67 @@ export class Agent {
       { version: 1, steps: [] },
       req.conversation ?? null,
     );
+    st.live = req.live;
+    st.planner = req.planner;
+    this.emit(st, { type: "start", run });
+    this.active.set(run, st);
+    // The turn is kept before it is planned: a device that reloads sees it, running.
+    this.record(st, "waiting", null);
     try {
+      this.emit(st, { type: "planning" });
       st.plan = await this.planFor(st);
       this.o.store.journal.setPlan(run, st.plan);
+      this.emit(st, { type: "planned", steps: st.plan.steps.length });
     } catch (e) {
       return this.finish(st, "stopped", e instanceof Stop ? e.code : "planner-failed");
     }
     return this.advance(st);
+  }
+
+  /**
+   * Juan pressed «Parar»: a run going on stops before its next step (a model call in flight is cut); one waiting on
+   * a question or a confirmation ends there. What it already did stays, with its Undo.
+   */
+  stop(run: string): TurnResult | "stopping" | null {
+    const going = this.active.get(run);
+    if (going) {
+      going.stopRequested = true;
+      going.abort?.abort();
+      return "stopping";
+    }
+    const waiting = this.runs.get(run);
+    if (waiting && waiting.origin.kind !== "background")
+      return this.finish(waiting, "stopped", "stopped-by-juan");
+    return null;
+  }
+
+  private emit(st: RunState, e: LiveEvent): void {
+    try {
+      st.live?.(e);
+    } catch {
+      // whoever watches cannot stop the run
+    }
+  }
+
+  /** The turn as it stands, kept in its conversation (conversations.ts). */
+  private record(st: RunState, status: TurnResult["status"], error: string | null): void {
+    if (!st.conversation || st.origin.kind === "background") return;
+    try {
+      st.turnRecord = recordTurn(this.o.store, {
+        id: st.turnRecord ?? null,
+        conversation: st.conversation,
+        request: st.turn.text,
+        run: st.id,
+        status,
+        replies: st.replyVals,
+        pending: status === "waiting" ? (st.pending?.view ?? null) : null,
+        error,
+        at: this.now(),
+        ...(st.origin.device ? { device: st.origin.device } : {}),
+      });
+    } catch {
+      // A conversation that cannot be written (gone) never stops the run.
+    }
   }
 
   /** A job's plan, with no turn of Juan (P7: it reads and proposes). */
@@ -513,7 +579,9 @@ export class Agent {
         ]),
       ),
     }));
-    const history = (st.conversation ? (this.conversations.get(st.conversation) ?? []) : [])
+    const past = (st.conversation ? history(this.o.store, st.conversation, 11) : [])
+      // This turn is already kept (running): the history is the turns before it.
+      .filter((_h, i, all) => !(st.turnRecord && i === all.length - 1))
       .slice(-10)
       .map((h, i) => ({
         request: h.request,
@@ -532,7 +600,7 @@ export class Agent {
       today: this.today(),
       tools,
       schema: schemaView(readStore(this.o.store).schema()),
-      history,
+      history: past,
       memories: this.memories(),
     };
   }
@@ -556,7 +624,8 @@ export class Agent {
 
   /** What of Juan's entities the planner gets (the audit): the history as it sees it, and the memories. */
   private plannerSees(st: RunState): Seen[] {
-    const vals = (st.conversation ? (this.conversations.get(st.conversation) ?? []) : [])
+    const vals = (st.conversation ? history(this.o.store, st.conversation, 11) : [])
+      .filter((_h, i, all) => !(st.turnRecord && i === all.length - 1))
       .slice(-10)
       .flatMap((h) => h.replies.flatMap((r) => Object.values(r.data)));
     const seen = exposure(vals, "planner", (e) => this.o.store.get(e)?.entity.type);
@@ -601,9 +670,12 @@ export class Agent {
       throw new Stop("P13-month-budget");
     }
     let res: Awaited<ReturnType<ModelProvider["complete"]>>;
+    if (st.stopRequested) throw new Stop("stopped-by-juan");
     try {
-      res = await provider.complete(req);
+      st.abort ??= new AbortController();
+      res = await provider.complete(req, { signal: st.abort.signal });
     } catch (e) {
+      if (st.stopRequested) throw new Stop("stopped-by-juan");
       // A fixed code: what the provider said never goes on (into a plan or a reply).
       const code = (e as { code?: unknown }).code;
       const stop = `model-${typeof code === "string" && /^[a-z0-9-]{1,30}$/.test(code) ? code : "failed"}`;
@@ -618,6 +690,21 @@ export class Agent {
       throw new Stop(stop);
     }
     st.counters.tokens += res.usage.input + res.usage.output;
+    if (st.stopRequested) {
+      // It answered as Juan pressed «Parar»: it is paid for and kept in the journal below, and goes no further.
+      this.o.store.journal.modelCall({
+        run: st.id,
+        role: req.role,
+        provider: provider.id,
+        model: res.model,
+        promptHash,
+        request: req,
+        response: res.json,
+        usage: res.usage,
+        at: this.now(),
+      });
+      throw new Stop("stopped-by-juan");
+    }
     const call = this.o.store.journal.modelCall({
       run: st.id,
       role: req.role,
@@ -647,7 +734,7 @@ export class Agent {
     const ask = (extra: Record<string, unknown>) =>
       this.model(
         st,
-        this.o.planner,
+        st.planner ?? this.o.planner,
         {
           role: "planner",
           system: PLANNER_PROMPT,
@@ -731,8 +818,10 @@ export class Agent {
   }
 
   private async advance(st: RunState): Promise<TurnResult> {
+    if (st.origin.kind !== "background") this.active.set(st.id, st);
     try {
       while (st.pc < st.plan.steps.length) {
+        if (st.stopRequested) throw new Stop("stopped-by-juan");
         const step = st.plan.steps[st.pc] as Step;
         if (!st.controlDone) {
           st.control = null;
@@ -749,6 +838,15 @@ export class Agent {
           st.controlDone = true;
         }
         let result: Val | typeof BLOCKED;
+        const shown = step.op !== "reply" && st.iter === 0 && !st.partial.length;
+        if (shown)
+          this.emit(st, {
+            type: "step",
+            id: step.id,
+            op: step.op,
+            what: this.what(step),
+            state: "start",
+          });
         if (step.each) {
           const items = this.evalAtom(st, step.each);
           if (items.t !== "list") throw new Stop("each-not-a-list");
@@ -777,6 +875,14 @@ export class Agent {
           if (result === BLOCKED) return this.waiting(st);
         }
         st.env.set(step.id, result);
+        if (step.op !== "reply")
+          this.emit(st, {
+            type: "step",
+            id: step.id,
+            op: step.op,
+            what: this.what(step),
+            state: "done",
+          });
         st.pc++;
         st.iter = 0;
         st.partial = [];
@@ -811,10 +917,12 @@ export class Agent {
         const data: Record<string, Val> = {};
         for (const [k, e] of Object.entries(step.data)) data[k] = this.evalExpr(st, e);
         st.replyVals.push({ component: step.component, data });
-        st.replies.push({
+        const reply: Reply = {
           component: step.component,
           data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, paint(v)])),
-        });
+        };
+        st.replies.push(reply);
+        this.emit(st, { type: "reply", reply });
         return leaf(null, codeLabel("reply"));
       }
     }
@@ -1328,6 +1436,9 @@ export class Agent {
   }
 
   private waiting(st: RunState): TurnResult {
+    this.active.delete(st.id);
+    if (st.pending?.view) this.emit(st, { type: "waiting", pending: st.pending.view });
+    this.record(st, "waiting", null);
     if (st.origin.kind === "background" && st.pending?.kind === "ask") {
       // A question with no turn of Juan's: it waits in the journal (days, a restart), not in memory.
       const j = this.o.store.journal;
@@ -1389,12 +1500,18 @@ export class Agent {
       st.plan,
       this.now(),
     );
-    if (st.conversation) {
-      const h = this.conversations.get(st.conversation) ?? [];
-      h.push({ request: st.turn.text, replies: st.replyVals });
-      this.conversations.set(st.conversation, h.slice(-20));
-    }
+    this.active.delete(st.id);
+    this.runs.delete(st.id);
+    this.record(st, status, error);
+    this.emit(st, { type: "end", status, error });
     return this.result(st, status, error);
+  }
+
+  /** A step as Juan reads it while it runs: its tool's own title, or what kind of step it is. */
+  private what(step: Step): string {
+    if (step.op === "call") return this.o.registry.get(step.tool)?.title ?? step.tool;
+    if (step.op === "read") return `read:${step.reader}`;
+    return step.op;
   }
 
   // ------------------------------------------------------------ Juan answers
@@ -1458,6 +1575,7 @@ export class Agent {
     a: { choice: number } | { text: string },
     /** The device that answers a question of background work: what is typed there is Juan's only if personal. */
     by?: { trust: Origin["trust"] },
+    live?: (e: LiveEvent) => void,
   ): Promise<TurnResult> {
     let st: RunState;
     try {
@@ -1500,11 +1618,17 @@ export class Agent {
     st.answers.set(step.id, v);
     st.pending = null;
     if (background) this.o.store.journal.setRequest(ask, "answered", this.now(), a);
+    if (live) st.live = live;
     return this.advance(st);
   }
 
   /** Juan confirms on a personal device: valid once, for those exact values, before it expires. */
-  async confirm(run: string, confirmation: string, trust: Origin["trust"]): Promise<TurnResult> {
+  async confirm(
+    run: string,
+    confirmation: string,
+    trust: Origin["trust"],
+    live?: (e: LiveEvent) => void,
+  ): Promise<TurnResult> {
     let st: RunState;
     try {
       st = this.waitingRun(run, "confirm", confirmation);
@@ -1527,6 +1651,7 @@ export class Agent {
     }
     st.granted = hash;
     st.pending = null;
+    if (live) st.live = live;
     return this.advance(st);
   }
 

@@ -45,7 +45,10 @@ test("Registro is a real page; the conversation keeps the runs with Undo and the
   await expect(page.locator(".topbar h1")).toHaveText("Registro");
   await page.locator(".log-head").first().click();
   await expect(page.locator(".log-steps").first()).toBeVisible();
-  await page.locator(".sidebar").getByRole("button", { name: "Conversación" }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: /^Conversación/ })
+    .click();
   await page.locator(".chat-tools").getByRole("button", { name: "Auditoría" }).click();
   await expect(page.locator(".topbar")).toContainText("Registro/Auditoría");
   await expect(page.getByRole("combobox", { name: "Colección" })).toBeVisible();
@@ -56,7 +59,10 @@ test("Auditoría: who did what on what; a row opens what reached it and what it 
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AUDIT });
-  await page.locator(".sidebar").getByRole("button", { name: "Conversación" }).click();
+  await page
+    .locator(".sidebar")
+    .getByRole("button", { name: /^Conversación/ })
+    .click();
   await page.locator(".chat-tools").getByRole("button", { name: "Auditoría" }).click();
   const rows = page.locator(".audit-tr:not(.audit-th)");
   await expect(rows).toHaveCount(7);

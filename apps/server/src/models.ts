@@ -382,6 +382,54 @@ export class AccountModels {
     await Promise.all([...this.jobs]);
   }
 
+  /**
+   * The planners a conversation may use (docs/conversacion.md 3.5): the role's own, and every other model evaluated
+   * for it lately whose key is there. The same gate as the role: a model plans only after its evaluation.
+   */
+  plannerChoices(account: number): PlannerChoice[] {
+    const out: PlannerChoice[] = [];
+    const role = this.roles(account).find((r) => r.role === "planner");
+    if (role)
+      out.push({
+        id: choiceId(role),
+        connection: role.connection,
+        model: role.model,
+        zdr: role.zdr,
+        privacy: role.privacy,
+        current: true,
+      });
+    for (const e of this.evaluations(account)) {
+      if (e.role !== "planner" || !this.evaluated(account, e)) continue;
+      if (!this.keyFor(account, e.connection)) continue;
+      const id = choiceId(e);
+      if (out.some((x) => x.id === id)) continue;
+      out.push({
+        id,
+        connection: e.connection,
+        model: e.model,
+        zdr: e.zdr,
+        privacy: privacyOf(e),
+        current: false,
+      });
+    }
+    return out;
+  }
+
+  /** A planner for a conversation, by its choice's id; null when it is not one of `plannerChoices`. */
+  plannerProvider(account: number, id: string): ModelProvider | null {
+    const c = this.plannerChoices(account).find((x) => x.id === id && !x.current);
+    const key = c ? this.keyFor(account, c.connection) : null;
+    if (!c || !key) return null;
+    try {
+      return (this.o.makeProvider ?? provider)(
+        { role: "planner", connection: c.connection, model: c.model, zdr: c.zdr },
+        key,
+      );
+    } catch {
+      return null;
+    }
+  }
+
   /** What the page reads. */
   view(account: number) {
     const c = this.config(account);
@@ -403,6 +451,20 @@ export class AccountModels {
     };
   }
 }
+
+/** A model a conversation may plan with. */
+export interface PlannerChoice {
+  /** `connection:model` (with `:zdr` when it asks for providers that keep nothing). */
+  id: string;
+  connection: Connection;
+  model: string;
+  zdr: boolean;
+  privacy: Privacy;
+  /** The planner role's own model (the account's). */
+  current: boolean;
+}
+const choiceId = (c: { connection: Connection; model: string; zdr: boolean }) =>
+  `${c.connection}:${c.model}${c.zdr ? ":zdr" : ""}`;
 
 /** One role's provider from its choice and key. */
 function provider(

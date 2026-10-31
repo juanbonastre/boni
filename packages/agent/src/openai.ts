@@ -1,5 +1,5 @@
 import { apiSchema, jsonIn, ProviderError } from "./anthropic.ts";
-import type { ModelProvider, ModelRequest, ModelResponse } from "./providers.ts";
+import type { CallOptions, ModelProvider, ModelRequest, ModelResponse } from "./providers.ts";
 
 /**
  * A provider over the OpenAI-compatible chat API (docs/nucleo.md, 7.10): OpenRouter, OpenAI, and the
@@ -49,7 +49,7 @@ export class OpenAIProvider implements ModelProvider {
     this.privacy = o.privacy ?? (local ? "local" : "external-api");
   }
 
-  async complete(req: ModelRequest): Promise<ModelResponse> {
+  async complete(req: ModelRequest, call: CallOptions = {}): Promise<ModelResponse> {
     const format = req.structured === false ? "none" : (this.o.readerFormat ?? "json_schema");
     const system =
       format === "json_object"
@@ -93,10 +93,13 @@ export class OpenAIProvider implements ModelProvider {
             ...(this.o.apiKey ? { authorization: `Bearer ${this.o.apiKey}` } : {}),
           },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(this.o.timeoutMs ?? 300_000),
+          signal: call.signal
+            ? AbortSignal.any([AbortSignal.timeout(this.o.timeoutMs ?? 300_000), call.signal])
+            : AbortSignal.timeout(this.o.timeoutMs ?? 300_000),
         },
       );
     } catch (e) {
+      if (call.signal?.aborted) throw new ProviderError("aborted");
       const name = (e as { name?: string }).name;
       throw new ProviderError(name === "TimeoutError" ? "timeout" : "network");
     }

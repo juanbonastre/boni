@@ -241,7 +241,7 @@ for (const width of [1440, 900]) {
     await expect(page.locator(".modal")).toContainText("· 1 correo");
     await page.screenshot({ path: `e2e-boni/screenshots/worst-settings-${width}.png` });
     await page.keyboard.press("Escape");
-    await page.getByRole("button", { name: "Conversación" }).click();
+    await page.getByRole("button", { name: /^Conversación/ }).click();
     await page
       .locator(".chat-tools")
       .getByRole("button", { name: /^Bandeja/ })

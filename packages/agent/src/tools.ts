@@ -985,7 +985,15 @@ export function makeCaps(c: CapsContext): Caps {
  * entity tools never touch a system type. */
 export function ensureSystemTypes(store: UserStore): void {
   const code = label("own", "personal", [{ kind: "code", id: "system-types" }]);
-  const long = new Set(["prompt", "manifest", "spec", "proposal", "previous"]);
+  const long = new Set([
+    "prompt",
+    "manifest",
+    "spec",
+    "proposal",
+    "previous",
+    "replies",
+    "pending",
+  ]);
   const fieldOf = (k: string): FieldDef => ({
     id: `f_${k}`,
     key: k,
@@ -993,7 +1001,11 @@ export function ensureSystemTypes(store: UserStore): void {
     type: long.has(k) ? "longtext" : "text",
     label: code,
   });
-  const make = (id: "memory" | "job" | "extension" | "page", name: string, keys: string[]) => {
+  const make = (
+    id: "memory" | "job" | "extension" | "page" | "conversation" | "turn",
+    name: string,
+    keys: string[],
+  ) => {
     const have = store.schema().types[id];
     if (have) {
       // A field a newer Boni gives the type (an extension's proposal and its previous version, E3).
@@ -1037,4 +1049,16 @@ export function ensureSystemTypes(store: UserStore): void {
   ]);
   // docs/extensiones.md 6: the user's pages (the Lienzo's blocks in `spec`, `parent` for the tree).
   make("page", "Páginas", ["title", "icon", "parent", "position", "spec"]);
+  // docs/conversacion.md 3.1: Juan's conversations with Boni and their turns (conversations.ts).
+  make("conversation", "Conversaciones", ["title", "key", "model", "last"]);
+  make("turn", "Turnos", [
+    "request",
+    "conversation",
+    "run",
+    "status",
+    "replies",
+    "pending",
+    "error",
+    "at",
+  ]);
 }

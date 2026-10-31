@@ -1,5 +1,18 @@
-import { CornerDownLeft, Inbox, ListChecks, ShieldCheck, Undo2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  Inbox,
+  ListChecks,
+  MessageSquarePlus,
+  PanelLeft,
+  Pencil,
+  ShieldCheck,
+  Square,
+  Trash2,
+  Undo2,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type ConfirmView,
   fillTemplate,
@@ -13,77 +26,250 @@ import {
   reveal,
   textOf,
 } from "../core/agent.ts";
+import { today } from "../core/clock.ts";
 import type { T } from "../i18n.ts";
 import {
   acceptProposal,
   agentErrorText,
   answerAsk,
   type ChatEntry,
+  chooseModel,
   confirmPending,
   declinePending,
+  type LiveStep,
+  loadConversations,
   loadInbox,
+  loadPlanners,
   loadRunDetail,
+  newConversation,
+  openConversation,
+  openSettings,
   rejectProposal,
+  removeConversation,
+  renameConversation,
   sendTurn,
   showAudit,
   showInbox,
   showLog,
+  stopTurn,
   undoRun,
   useStore,
 } from "../store.ts";
 import { ProposalCard, RequestCard, useInboxQueue } from "./InboxCards.tsx";
 
 /**
- * The conversation with Boni's agent (docs/nucleo.md, 7.14). Everything here is painted by this code from
- * labelled values: text is always text (React escapes it; nothing is HTML, Markdown or a link), what came from
- * outside carries a mark, and a confirmation shows the real values of the call with their origin and the
- * warnings against visual tricks, never a model's summary. Its button changes side every time.
+ * The conversation with Boni's agent (docs/nucleo.md, 7.14; docs/conversacion.md). Everything here is painted by
+ * this code from labelled values: text is always text (React escapes it; nothing is HTML, Markdown or a link), what
+ * came from outside carries a mark, and a confirmation shows the real values of the call with their origin and the
+ * warnings against visual tricks, never a model's summary. Its button changes side every time. On the left, Juan's
+ * conversations as other AIs list them; a turn shows its steps as they happen, and «Parar» stops it.
  */
 export function ChatView({ compact = false }: { compact?: boolean }) {
   const t = useStore((s) => s.t);
   const chat = useStore((s) => s.chat);
-  const busy = useStore((s) => s.chatBusy);
+  const live = useStore((s) => s.live);
   const waiting = useStore((s) => s.inbox.length + s.requests.length);
+  const [list, setList] = useState(false);
   const end = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     void loadInbox();
+    void loadConversations();
+    void loadPlanners();
   }, []);
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
-  }, [chat]);
+  }, [chat, live]);
   return (
-    <div className={`chat${compact ? " compact" : ""}`}>
-      <div className="chat-tools">
-        <button type="button" className="pill" onClick={showInbox}>
-          <Inbox size={14} strokeWidth={1.8} />
-          <span>{waiting ? t("inbox.titleN", { n: waiting }) : t("inbox.title")}</span>
-        </button>
-        <button type="button" className="pill" onClick={showLog}>
-          <ListChecks size={14} strokeWidth={1.8} />
-          <span>{t("log.title")}</span>
-        </button>
-        <button type="button" className="pill" onClick={() => showAudit({})}>
-          <ShieldCheck size={14} strokeWidth={1.8} />
-          <span>{t("audit.title")}</span>
-        </button>
+    <div className={`chat-layout${compact ? " compact" : ""}`}>
+      {!compact && <ConversationList />}
+      {compact && list && <ConversationList onPick={() => setList(false)} />}
+      <div className={`chat${compact ? " compact" : ""}`}>
+        <div className="chat-tools">
+          {compact && (
+            <button
+              type="button"
+              className="pill"
+              onClick={() => setList(!list)}
+              aria-expanded={list}
+            >
+              <PanelLeft size={14} strokeWidth={1.8} />
+              <span>{t("chats.title")}</span>
+            </button>
+          )}
+          <button type="button" className="pill" onClick={showInbox}>
+            <Inbox size={14} strokeWidth={1.8} />
+            <span>{waiting ? t("inbox.titleN", { n: waiting }) : t("inbox.title")}</span>
+          </button>
+          <button type="button" className="pill" onClick={showLog}>
+            <ListChecks size={14} strokeWidth={1.8} />
+            <span>{t("log.title")}</span>
+          </button>
+          <button type="button" className="pill" onClick={() => showAudit({})}>
+            <ShieldCheck size={14} strokeWidth={1.8} />
+            <span>{t("audit.title")}</span>
+          </button>
+        </div>
+        <div className="chat-thread" aria-live="polite">
+          {chat.length === 0 && <p className="muted center-note">{t("chat.empty")}</p>}
+          {chat.map((e) => (
+            <Turn key={e.id} entry={e} />
+          ))}
+          <div ref={end} />
+        </div>
+        <Composer />
       </div>
-      <div className="chat-thread" aria-live="polite">
-        {chat.length === 0 && <p className="muted center-note">{t("chat.empty")}</p>}
-        {chat.map((e) => (
-          <Turn key={e.id} entry={e} />
-        ))}
-        {busy && <p className="muted chat-busy">{t("chat.thinking")}</p>}
-        <div ref={end} />
-      </div>
-      <Composer />
     </div>
   );
 }
 
+/** How long ago a conversation was last used, as the list groups them: today, yesterday, this week, before. */
+function groupOf(last: number, now: string): "today" | "yesterday" | "week" | "month" | "older" {
+  const day = (iso: string) => {
+    const [y, m, d] = iso.split("-").map(Number) as [number, number, number];
+    return Date.UTC(y, m - 1, d) / 86_400_000;
+  };
+  const ago = day(now) - day(today(new Date(last)));
+  return ago <= 0
+    ? "today"
+    : ago === 1
+      ? "yesterday"
+      : ago < 7
+        ? "week"
+        : ago < 31
+          ? "month"
+          : "older";
+}
+
+/** Juan's conversations, the latest first, by when they were used (docs/conversacion.md 3.1). */
+function ConversationList({ onPick }: { onPick?: () => void }) {
+  const t = useStore((s) => s.t);
+  const all = useStore((s) => s.conversations);
+  const open = useStore((s) => s.conversationId);
+  const busy = useStore((s) => s.chatBusy);
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const groups = useMemo(() => {
+    const now = today();
+    const q = query.trim().toLowerCase();
+    const out = new Map<string, typeof shown>();
+    const shown = (all ?? []).filter((c) => !q || (c.title || "").toLowerCase().includes(q));
+    for (const c of shown) {
+      const g = groupOf(c.last, now);
+      out.set(g, [...(out.get(g) ?? []), c]);
+    }
+    return [...out.entries()];
+  }, [all, query]);
+  return (
+    <nav className="chat-list" aria-label={t("chats.title")}>
+      <button
+        type="button"
+        className="btn chat-new"
+        disabled={busy}
+        onClick={() => {
+          newConversation();
+          onPick?.();
+        }}
+      >
+        <MessageSquarePlus size={15} strokeWidth={1.8} />
+        {t("chats.new")}
+      </button>
+      <input
+        className="input chat-search"
+        type="search"
+        value={query}
+        placeholder={t("chats.search")}
+        aria-label={t("chats.search")}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <div className="chat-groups">
+        {all === null && <p className="muted small">{t("chats.loading")}</p>}
+        {all?.length === 0 && <p className="muted small">{t("chats.none")}</p>}
+        {groups.map(([g, items]) => (
+          <section key={g} className="chat-group">
+            <h3>{t(`chats.when.${g}`)}</h3>
+            {items.map((c) =>
+              editing === c.id ? (
+                <form
+                  key={c.id}
+                  className="chat-rename"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void renameConversation(c.id, name);
+                    setEditing(null);
+                  }}
+                >
+                  <input
+                    className="input"
+                    value={name}
+                    maxLength={120}
+                    aria-label={t("chats.rename")}
+                    ref={(el) => el?.focus()}
+                    onChange={(e) => setName(e.target.value)}
+                    onBlur={() => setEditing(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") setEditing(null);
+                    }}
+                  />
+                </form>
+              ) : (
+                <div key={c.id} className={`chat-item${c.id === open ? " on" : ""}`}>
+                  <button
+                    type="button"
+                    className="chat-item-open"
+                    disabled={busy}
+                    aria-current={c.id === open ? "page" : undefined}
+                    onClick={() => {
+                      void openConversation(c.id);
+                      onPick?.();
+                    }}
+                  >
+                    {c.title || t("chats.untitled")}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title={t("chats.rename")}
+                    aria-label={t("chats.rename")}
+                    onClick={() => {
+                      setName(c.title);
+                      setEditing(c.id);
+                    }}
+                  >
+                    <Pencil size={13} strokeWidth={1.8} />
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title={t("chats.delete")}
+                    aria-label={t("chats.delete")}
+                    onClick={() => void removeConversation(c.id)}
+                  >
+                    <Trash2 size={13} strokeWidth={1.8} />
+                  </button>
+                </div>
+              ),
+            )}
+          </section>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+/** The bar to write in: it grows with the text; its button sends, or stops the turn that runs (3.6). */
 function Composer() {
   const t = useStore((s) => s.t);
   const busy = useStore((s) => s.chatBusy);
   const [text, setText] = useState("");
+  const area = useRef<HTMLTextAreaElement | null>(null);
+  // As tall as its text, up to a few lines; then it scrolls.
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [text]);
   const send = () => {
     if (!text.trim() || busy) return;
     void sendTurn(text);
@@ -98,8 +284,9 @@ function Composer() {
       }}
     >
       <textarea
+        ref={area}
         value={text}
-        rows={2}
+        rows={1}
         maxLength={8000}
         placeholder={t("chat.placeholder")}
         aria-label={t("chat.placeholder")}
@@ -111,35 +298,194 @@ function Composer() {
           }
         }}
       />
-      <button
-        type="submit"
-        className="btn primary"
-        disabled={busy || !text.trim()}
-        title={t("chat.send")}
-      >
-        <CornerDownLeft size={15} strokeWidth={2} />
-        {t("chat.send")}
-      </button>
+      <div className="chat-composer-row">
+        <ModelChip />
+        <span className="spacer" />
+        {busy ? (
+          <button
+            type="button"
+            className="chat-send stop"
+            onClick={stopTurn}
+            title={t("chat.stop")}
+            aria-label={t("chat.stop")}
+          >
+            <Square size={13} strokeWidth={2.4} fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            className="chat-send"
+            disabled={!text.trim()}
+            title={t("chat.send")}
+            aria-label={t("chat.send")}
+          >
+            <ArrowUp size={16} strokeWidth={2.2} />
+          </button>
+        )}
+      </div>
     </form>
+  );
+}
+
+/** The model this conversation plans with (3.5): the account's, or one Juan evaluated for it in «Modelos». */
+function ModelChip() {
+  const t = useStore((s) => s.t);
+  const planners = useStore((s) => s.planners);
+  const chosen = useStore(
+    (s) => s.conversations?.find((c) => c.id === s.conversationId)?.model ?? "",
+  );
+  const busy = useStore((s) => s.chatBusy);
+  const [open, setOpen] = useState(false);
+  const current = planners.find((p) => (chosen ? p.id === chosen : p.current));
+  if (!planners.length) return null;
+  const short = (m: string) => m.replace(/^[a-z-]+\//, "");
+  return (
+    <div className="chat-model">
+      <button
+        type="button"
+        className="chat-model-btn"
+        disabled={busy}
+        aria-expanded={open}
+        title={t("chat.model")}
+        onClick={() => setOpen(!open)}
+      >
+        {current ? short(current.model) : t("chat.model")}
+        <ChevronDown size={12} strokeWidth={1.8} />
+      </button>
+      {open && (
+        <div className="chat-model-menu" role="menu">
+          {planners.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={p === current}
+              onClick={() => {
+                void chooseModel(p.current ? "" : p.id);
+                setOpen(false);
+              }}
+            >
+              <span>{short(p.model)}</span>
+              {p.current && <span className="muted small">{t("chat.modelAccount")}</span>}
+              {p === current && <Check size={13} strokeWidth={2} />}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="chat-model-more"
+            onClick={() => {
+              setOpen(false);
+              openSettings(true, "models");
+            }}
+          >
+            {t("chat.modelMore")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** What a step is, in Juan's words: its tool's own title, or the kind of step. */
+function stepText(t: T, s: LiveStep): string {
+  if (s.op === "read") {
+    const kind = s.what.replace(/^read:/, "");
+    return t(`chat.step.read.${kind}`) === `chat.step.read.${kind}`
+      ? t("chat.step.read")
+      : t(`chat.step.read.${kind}`);
+  }
+  if (s.op === "ask") return t("chat.step.ask");
+  return s.what;
+}
+
+/** A turn's steps: as they happen (the one going on with its animation), then folded once it answered. */
+function Steps({
+  steps,
+  thinking,
+  going,
+}: {
+  steps: LiveStep[];
+  thinking: boolean;
+  going: boolean;
+}) {
+  const t = useStore((s) => s.t);
+  const [open, setOpen] = useState(false);
+  if (!going && !steps.length) return null;
+  if (!going)
+    return (
+      <div className="turn-steps folded">
+        <button
+          type="button"
+          className="link-btn"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
+          {t("chat.steps", { n: steps.length })}
+          <ChevronDown size={12} strokeWidth={1.8} />
+        </button>
+        {open && (
+          <ol>
+            {steps.map((s) => (
+              <li key={s.id} className="done">
+                <Check size={12} strokeWidth={2.2} />
+                {stepText(t, s)}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    );
+  return (
+    <div className="turn-steps" aria-live="polite">
+      <ol>
+        {thinking && (
+          <li className="going">
+            <span className="step-dot" aria-hidden="true" />
+            {t("chat.planning")}
+          </li>
+        )}
+        {steps.map((s) => (
+          <li key={s.id} className={s.done ? "done" : "going"}>
+            {s.done ? (
+              <Check size={12} strokeWidth={2.2} />
+            ) : (
+              <span className="step-dot" aria-hidden="true" />
+            )}
+            {stepText(t, s)}
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
 function Turn({ entry }: { entry: ChatEntry }) {
   const t = useStore((s) => s.t);
+  const live = useStore((s) => (s.live?.entry === entry.id ? s.live : null));
   const r = entry.result;
   return (
     <div className="turn">
       <div className="turn-request">{entry.request}</div>
       <div className="turn-answer">
+        <Steps
+          steps={live ? live.steps : (entry.steps ?? [])}
+          thinking={!!live?.thinking}
+          going={!!live}
+        />
+        {live && !r && live.replies.map((reply, i) => <ReplyView key={i} reply={reply} />)}
         {r?.replies.map((reply, i) => (
           <ReplyView key={i} reply={reply} />
         ))}
         {r?.pending?.kind === "ask" && <AskBox entryId={entry.id} pending={r.pending} />}
         {r?.pending?.kind === "confirm" && <ConfirmCard entryId={entry.id} view={r.pending.view} />}
         {r && <Notices t={t} result={r} />}
-        {r?.status === "stopped" && r.error && (
-          <p className="turn-error">{agentErrorText(t, r.error)}</p>
-        )}
+        {r?.status === "stopped" &&
+          r.error &&
+          (r.error === "stopped-by-juan" ? (
+            <p className="turn-stopped">{t("chat.stopped")}</p>
+          ) : (
+            <p className="turn-error">{agentErrorText(t, r.error)}</p>
+          ))}
         {entry.error && <p className="turn-error">{entry.error}</p>}
         {r?.status === "done" && r.run && (
           <button type="button" className="link-btn turn-undo" onClick={() => void undoRun(r.run)}>

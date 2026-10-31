@@ -300,3 +300,133 @@ describe("the conversation API", () => {
     expect(unlock.status).toBe(200);
   });
 });
+
+describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
+  const get = async (token: string, path: string) =>
+    fetch(`${base}${path}`, { headers: { authorization: `Bearer ${token}` } });
+  const ask = {
+    version: 1,
+    steps: [{ id: "q", op: "ask", control: "text", prompt: lit("¿Qué día?") }],
+  };
+  const count = {
+    version: 1,
+    steps: [
+      {
+        id: "n",
+        op: "call",
+        tool: "entities.aggregate",
+        args: { type: lit("tarea"), op: lit("count") },
+      },
+      {
+        id: "r",
+        op: "reply",
+        component: "number",
+        data: { value: { ref: "$n" }, caption: lit("tareas") },
+      },
+    ],
+  };
+
+  it("are listed, kept turn by turn with a title, watched live, renamed and sent to the trash", async () => {
+    const token = await login(base, "juan");
+    const made = (await (await post(base, token, "/api/agent/conversations")).json()) as {
+      conversation: { id: string };
+    };
+    const id = made.conversation.id;
+    plans.push(count);
+    const live = "vivo-ejemplo-0001";
+    const turn = (await (
+      await post(base, token, "/api/agent/turn", {
+        text: "¿cuántas tareas tengo?",
+        conversation: id,
+        live,
+      })
+    ).json()) as { status: string };
+    expect(turn.status).toBe("done");
+    const watched = (await (await get(token, `/api/agent/live/${live}?after=0`)).json()) as {
+      events: { type: string }[];
+      done: boolean;
+    };
+    expect(watched.done).toBe(true);
+    expect(watched.events.map((e) => e.type)).toEqual([
+      "start",
+      "planning",
+      "planned",
+      "step",
+      "step",
+      "reply",
+      "end",
+    ]);
+    const after = (await (await get(token, `/api/agent/live/${live}?after=5`)).json()) as {
+      events: unknown[];
+    };
+    expect(after.events).toHaveLength(2);
+
+    const shown = (await (await get(token, `/api/agent/conversations/${id}`)).json()) as {
+      conversation: { title: string };
+      turns: { request: string; status: string; replies: unknown[] }[];
+    };
+    expect(shown.conversation.title).toBe("¿cuántas tareas tengo?");
+    expect(shown.turns).toMatchObject([{ request: "¿cuántas tareas tengo?", status: "done" }]);
+    expect(shown.turns[0]?.replies).toHaveLength(1);
+
+    const put = await fetch(`${base}/api/agent/conversations/${id}`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ title: "Tareas" }),
+    });
+    expect(((await put.json()) as { conversation: { title: string } }).conversation.title).toBe(
+      "Tareas",
+    );
+    const list = (await (await get(token, "/api/agent/conversations")).json()) as {
+      conversations: { id: string; title: string }[];
+    };
+    expect(list.conversations[0]).toMatchObject({ id, title: "Tareas" });
+    // A model that is not one of the planners Juan evaluated is refused.
+    const bad = await fetch(`${base}/api/agent/conversations/${id}`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ model: "anthropic:otro" }),
+    });
+    expect(bad.status).toBe(400);
+
+    // Another account sees none of it.
+    const other = await login(base, "otra");
+    expect((await get(other, `/api/agent/conversations/${id}`)).status).toBe(404);
+    expect((await get(other, `/api/agent/live/${live}?after=0`)).status).toBe(404);
+
+    const gone = await fetch(`${base}/api/agent/conversations/${id}`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(gone.status).toBe(200);
+    expect((await get(token, `/api/agent/conversations/${id}`)).status).toBe(404);
+  });
+
+  it("a device without the list keeps a conversation of its own; «Parar» ends a turn that waits", async () => {
+    const token = await login(base, "juan");
+    plans.push(ask);
+    const live = "vivo-ejemplo-0002";
+    const waiting = (await (
+      await post(base, token, "/api/agent/turn", { text: "apunta algo", live })
+    ).json()) as { status: string };
+    expect(waiting.status).toBe("waiting");
+    // The device's own conversation (the one its turns went to before the list), the latest now.
+    const list = (await (await get(token, "/api/agent/conversations")).json()) as {
+      conversations: { id: string; title: string }[];
+    };
+    expect(list.conversations[0]?.title).toBe("apunta llamar al dentista");
+    const stop = (await (await post(base, token, `/api/agent/live/${live}/stop`)).json()) as {
+      stopping: boolean;
+    };
+    expect(stop.stopping).toBe(true);
+    const shown = (await (
+      await get(token, `/api/agent/conversations/${list.conversations[0]?.id}`)
+    ).json()) as { turns: { status: string; error: string | null }[] };
+    expect(shown.turns.at(-1)).toMatchObject({
+      request: "apunta algo",
+      status: "stopped",
+      error: "stopped-by-juan",
+    });
+    expect((await post(base, token, "/api/agent/live/no-existe-0000/stop")).status).toBe(404);
+  });
+});

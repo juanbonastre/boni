@@ -175,3 +175,25 @@ export function asKey(s: string): string {
     .replace(/^_+|_+$/g, "")
     .slice(0, 41);
 }
+
+/** A value as the interface paints it: the data and how far to trust it (model or external text is
+ * painted as plain text, never Markdown or HTML). */
+export type Painted =
+  | { t: "v"; value: Json; integrity: string; sensitivity: string }
+  | { t: "list"; items: Painted[]; integrity: string }
+  | { t: "rec"; fields: Record<string, Painted>; integrity: string };
+export function paint(v: Val): Painted {
+  if (v.t === "v")
+    return {
+      t: "v",
+      value: v.value,
+      integrity: v.label.integrity,
+      sensitivity: v.label.sensitivity,
+    };
+  if (v.t === "list") return { t: "list", items: v.items.map(paint), integrity: v.label.integrity };
+  return {
+    t: "rec",
+    fields: Object.fromEntries(Object.entries(v.fields).map(([k, f]) => [k, paint(f)])),
+    integrity: v.label.integrity,
+  };
+}
