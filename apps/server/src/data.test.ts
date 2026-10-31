@@ -13,6 +13,7 @@ import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { mcpAnswer } from "./mcp.ts";
+import { seed } from "./seed.test-util.ts";
 import { SYS_RUNS } from "./systemCollections.ts";
 
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -24,6 +25,20 @@ let http: HttpServer;
 let base = "";
 
 const L = label("user", "personal", [{ kind: "user-edit", id: "test" }]);
+/** A calendar of tasks as Boni Calendar defines one (invented): a title, a day, its box «Hecha». */
+const AGENDA = {
+  id: "agenda",
+  name: "Agenda",
+  folder: "agenda/",
+  account: "Agenda",
+  color: "#60a5fa",
+  columns: [
+    { id: "title", name: "Título", type: "text" },
+    { id: "date", name: "Fecha", type: "date" },
+    { id: "completed", name: "Hecha", type: "checkbox" },
+  ],
+  mapping: { title: "title", when: { kind: "split", date: "date" }, task: { column: "completed" } },
+};
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-data-"));
@@ -625,5 +640,36 @@ describe("the tree (docs/clases.md §2.7; D-13)", () => {
     expect((await call(t, "DELETE", `/api/data/types/${empty}`)).status).toBe(200);
     const types = (await call(t, "GET", "/api/data/types")).body.types as { id: string }[];
     expect(types.some((x) => x.id === empty)).toBe(false);
+  });
+
+  it("Inicio's «Hoy» on the phone: today in the calendars, by the device's timezone; a task's box by its calendar", async () => {
+    const t = await token();
+    // Invented notes: one thing today (a task, not done) and one tomorrow, in a calendar of tasks.
+    const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    seed(host.store(1), [{ key: "agenda", name: "Agenda", folder: "agenda/", calendar: AGENDA }], {
+      "agenda/a.md": `---\ntitle: "Llamar al fontanero"\ndate: "${day(0)}"\ncompleted: false\n---\n`,
+      "agenda/b.md": `---\ntitle: "Tutoría"\ndate: "${day(1)}"\ncompleted: false\n---\n`,
+    });
+    const types = (await call(t, "GET", "/api/data/types")).body.types as {
+      id: string;
+      done?: string;
+      fields: { id: string; name: string }[];
+    }[];
+    const agenda = types.find((x) => x.id === "t_agenda");
+    // The box the calendar marks tasks done with; a collection that keeps no tasks has none.
+    expect(agenda?.fields.find((f) => f.id === agenda.done)?.name).toBe("Hecha");
+    expect(types.find((x) => x.id === "t_libro")?.done).toBeUndefined();
+    const r = await call(t, "GET", "/api/data/today?tz=UTC");
+    expect(r.body.day).toBe(day(0));
+    expect(r.body.items).toMatchObject([
+      {
+        title: "Llamar al fontanero",
+        type: "t_agenda",
+        task: true,
+        done: false,
+        doneField: agenda?.done,
+      },
+    ]);
+    expect((await call(t, "GET", "/api/data/today?tz=Marte%2FOlimpo")).status).toBe(400);
   });
 });

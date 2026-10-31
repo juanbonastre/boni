@@ -5,11 +5,13 @@ import {
   ASK_TURN,
   CARD_COMPACT,
   CARD_DETAILED,
+  CHART_REPLY,
   confirmTurn,
   DONE,
   EXTENSION_PROPOSALS,
   EXTENSIONS,
   GUIDE,
+  LIVE_STEPS,
   MAIL,
   MAIL_SUGGESTED,
   PROPOSALS,
@@ -76,6 +78,42 @@ test("a reply is painted by the code, and what came from outside is only text", 
     text: "resume el último correo",
   });
   await page.screenshot({ path: `${SHOTS}/agent-reply.png` });
+});
+
+test("a turn in Juan's words: each step says what it does, on what and what it found; numbers to compare are a chart", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    turnMs: 1500,
+    agent: {
+      "POST api/agent/turn": [CHART_REPLY],
+      "GET api/agent/live/:id": [
+        { events: LIVE_STEPS, done: false },
+        { events: [], done: false },
+      ],
+    },
+  });
+  await ask(page, "¿cuántas tareas tengo por prioridad?");
+  // While it runs: each step by the names Juan gave things, and what it found once done.
+  const going = page.locator(".turn-steps:not(.folded)");
+  await expect(going).toContainText("Mirando tus colecciones");
+  await expect(going.locator("li").nth(1)).toHaveText("Contando en Tareas · Prioridad: Alta · 3");
+  await expect(going.locator("li").nth(2)).toHaveText(
+    "Buscando «azulejos» en Tareas · 1 resultado",
+  );
+  // Its answer: a sentence first, then a bar for each number, with its label and its value.
+  const answer = page.locator(".turn-answer").first();
+  await expect(answer.locator(".reply-text")).toHaveText(
+    "Tienes 6 tareas sin hacer; la mayoría, de prioridad alta.",
+  );
+  await expect(answer.locator(".reply-caption")).toHaveText("Tareas por prioridad");
+  await expect(answer.locator(".reply-bars li")).toHaveText(["Alta3", "Media2", "Baja1"]);
+  // The steps fold once it answered, and keep what each found.
+  await answer.getByRole("button", { name: "Pasos (3)" }).click();
+  await expect(answer.locator(".turn-steps li").nth(1)).toHaveText(
+    "Contando en Tareas · Prioridad: Alta · 3",
+  );
+  await page.screenshot({ path: `${SHOTS}/agent-words-chart.png` });
 });
 
 test("a confirmation shows the real values with their origin and warnings; its button changes side", async ({

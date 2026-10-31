@@ -38,6 +38,10 @@ export interface Options {
   ghosts?: { id: string; proposal: string; values: Record<string, unknown>; updated: number }[];
   /** How long accepting a proposal takes (ms; default as any request, 20). */
   acceptMs?: number;
+  /** How long a turn takes to answer (ms; default 20): its live steps are asked for meanwhile. */
+  turnMs?: number;
+  /** Inicio's «Hoy» (`/api/data/today`): today's items of the calendars; null: a server without it. */
+  today?: unknown[] | null;
 }
 
 export interface FakePage {
@@ -324,6 +328,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           if (want.parent) parents[id] = want.parent;
           return [200, JSON.stringify({ id })];
         }
+        if (p === "api/data/today")
+          return opts.today === null
+            ? [404, '{"error":"not-found"}']
+            : [200, JSON.stringify({ day: today, items: opts.today ?? [] })];
         if (p === "api/data/types")
           return [
             200,
@@ -564,7 +572,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/models\/roles\/[^/]+$/, "/models/roles/:role")
             .replace(/\/audit\/actions\/[^/]+$/, "/audit/actions/:seq")
             .replace(/\/audit\/rows\/[^/]+$/, "/audit/rows/:id")
-            .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")}`;
+            .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")
+            .replace(/\/live\/[^/]+$/, "/live/:id")}`;
           const list = opts.agent?.[key];
           if (!list?.length) return [503, '{"error":"agent-off"}'];
           const n = agentCalls[key] ?? 0;
@@ -695,7 +704,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               r,
               opts.acceptMs && /^api\/agent\/proposals\/[^/]+\/accept/.test(path)
                 ? opts.acceptMs
-                : 20,
+                : opts.turnMs && path === "api/agent/turn"
+                  ? opts.turnMs
+                  : 20,
             ),
           );
           if (!a) return { ok: false, offline: true, message: "refused" };

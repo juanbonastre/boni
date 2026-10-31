@@ -1,5 +1,8 @@
 /** Device clock helpers (local civil date, ISO date-time with offset, new ids). Injectable in tests. */
 
+/** The device's timezone (IANA: "Europe/Madrid"), for what the server words by the device's day. */
+export const deviceZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
 /** Local date, ISO (2026-10-12). */
 export function today(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {

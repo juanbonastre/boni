@@ -25,7 +25,12 @@ import {
 import { listUsers, login, logout, sessionUser, tokenHash, type User, userOf } from "./auth.ts";
 import { BlocksError, blockRowsOf, computeBlocks } from "./blocks.ts";
 import { createByName } from "./byName.ts";
-import { type CalendarSource, calendarDefs, StoreCalendar } from "./calendarStore.ts";
+import {
+  type CalendarSource,
+  calendarDefs,
+  StoreCalendar,
+  taskDoneField,
+} from "./calendarStore.ts";
 import {
   addFile,
   createCollection,
@@ -71,6 +76,7 @@ import { bodyOf, CORS, header, SAFE, send, sendFile, tokenOf } from "./reply.ts"
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
 import type { SecretKey } from "./secret.ts";
 import { isSystemCollection, systemCollections } from "./systemCollections.ts";
+import { todayOf } from "./today.ts";
 import { serveV1 } from "./v1/http.ts";
 import { V1Service } from "./v1/service.ts";
 import { V1Store } from "./v1/store.ts";
@@ -383,6 +389,23 @@ export function makeApp(opts: ServerOptions): App {
           usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
         });
       try {
+        if (route === "GET /api/data/today") {
+          // Inicio's «Hoy» on the phone (today.ts): the device's timezone says which day it is.
+          const tz = url.searchParams.get("tz") ?? "UTC";
+          try {
+            new Intl.DateTimeFormat("en", { timeZone: tz });
+          } catch {
+            return send(res, 400, { error: "tz" });
+          }
+          const calendar = calendarOf(s.user);
+          return send(
+            res,
+            200,
+            calendar
+              ? await todayOf(store, calendar, { tz, now: now(), device: s.device })
+              : { day: null, items: [] },
+          );
+        }
         if (route === "GET /api/data/tree") {
           const type = url.searchParams.get("type");
           return send(res, 200, type ? { notes: treeNotes(store, type) } : treeOf(store));
@@ -408,7 +431,13 @@ export function makeApp(opts: ServerOptions): App {
           return send(res, 200, {});
         }
         if (route === "GET /api/data/types")
-          return send(res, 200, { types: listTypes(store, sys()) });
+          return send(res, 200, {
+            // A collection that keeps tasks says which box marks one done (its calendar's): the phone ticks it.
+            types: listTypes(store, sys()).map((t) => {
+              const done = t.system ? null : taskDoneField(store, t.id);
+              return done ? { ...t, done: done.id } : t;
+            }),
+          });
         if (route === "GET /api/data/types/:type/rows") {
           const type = params.type ?? "";
           if (isSystemCollection(type))

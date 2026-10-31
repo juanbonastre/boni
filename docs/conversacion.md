@@ -342,6 +342,18 @@ pruebas; lo que cambia la interfaz de forma nueva sigue empezando por una maquet
   - el selector de modelo;
   - y «Parado.» cuando Juan para un turno.
 
+**Hecho después (2026-11-01), lo que Juan echó en falta al ver la maqueta del móvil** («en los pasos pone "Calculo"…
+me imagino que en el servidor dará una respuesta buena, con más texto, gráficas… y los pasos serán explicativos»):
+- **Los pasos dicen qué hacen y con qué.** El agente manda con cada paso sus argumentos por su papel, con los nombres que
+  Juan les dio: la colección, el registro, el campo, el valor o las palabras buscadas (`stepWords` en
+  `packages/agent/src/tools.ts`). Al acabar manda lo que encontró: cuántos o el número. La app lo dice en su idioma
+  («Buscando «pan» en Tareas · 2 resultados»). Lo escribe el código, no el modelo, así que no puede decir otra cosa que
+  lo que hace.
+- **Las respuestas pueden traer una gráfica:** el componente `chart` del plan, con etiquetas y los números que dieron las
+  herramientas (barras o una línea). Se pide al planificador que conteste como una persona: primero una frase, luego lo
+  que ayude a verlo.
+- **Pendiente:** evaluar el planificador con el prompt nuevo, a mano y con presupuesto.
+
 La maqueta 3 junta lo que se ve de C3 a C5: la ventana flotante con la conciliación dentro, la barra con su etiqueta
 de modo, las tarjetas con su salida libre, lo agrupado y el bloque «Chat» en Gastos.
 

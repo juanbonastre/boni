@@ -9,7 +9,7 @@ import {
   type ProposalView,
   type Visibility,
 } from "../core/agent.ts";
-import { host, type Theme } from "../host.ts";
+import { host, phoneLayout, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
 import {
   addWidget,
@@ -418,7 +418,8 @@ export function Account() {
     setBusy(false);
     if (r.ok) {
       setForm((f) => ({ ...f, password: "" }));
-      toast(t("account.welcome", { user: r.settings.user }));
+      // On the phone Inicio greets with the day and the account's initial (Juan, 2026-10-31: «fuera el saludo»).
+      if (!phoneLayout()) toast(t("account.welcome", { user: r.settings.user }));
     } else setError(t(`account.error.${r.code}`));
   };
   return (

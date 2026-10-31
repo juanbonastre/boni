@@ -239,21 +239,38 @@ const P = {
     more: /^Más detalles/,
     menu: "Opciones de Café",
     edit: "Editar",
-    charts: "Gráficas",
     chartMenu: "Opciones de la gráfica",
     settings: "Ajustes",
     discard: "Descartar",
+    props: "Propiedades",
+    moreMenu: "Más",
+    chats: "Conversaciones",
   },
   en: {
     more: /^More details/,
     menu: "Options of Café",
     edit: "Edit",
-    charts: "Charts",
     chartMenu: "Chart options",
     settings: "Settings",
     discard: "Discard",
+    props: "Properties",
+    moreMenu: "More",
+    chats: "Conversations",
   },
 };
+/** Today in the calendars with titles as long as a person writes them, to see they wrap and never spill. */
+const LONG_TODAY = [
+  {
+    id: "r1",
+    type: "t_libro",
+    collection: "Libros",
+    title: "Llamar al fontanero para que mire la caldera y el radiador del cuarto de invitados",
+    start: "10:00",
+    task: true,
+    done: false,
+    doneField: "f_fav",
+  },
+];
 test.describe("on a phone", () => {
   test.use({ viewport: { width: 360, height: 740 }, hasTouch: true, isMobile: true });
   for (const language of ["es", "en"] as const) {
@@ -262,15 +279,22 @@ test.describe("on a phone", () => {
       const issues: string[] = [];
       await openApp(page, "/?still", {
         language,
+        today: LONG_TODAY,
         agent: {
           "GET api/agent/visibility": [VISIBILITY],
           "GET api/mail": [MAIL_SUGGESTED],
           "GET api/mail/guide": [GUIDE],
           "GET api/agent/extensions": [EXTENSIONS],
+          "GET api/agent/proposals": [PROPOSALS],
         },
       });
+      // Inicio: the day, what waits, today and the charts.
+      await expect(page.locator(".m-chart-row")).toHaveCount(3);
+      issues.push(...(await audit(page, "phone home")));
+      // «Crear»: capturing and the shortcuts, then something new.
+      await page.locator(".m-fab").tap();
       await expect(page.locator(".m-shortcut")).toHaveCount(2);
-      issues.push(...(await audit(page, "phone log")));
+      issues.push(...(await audit(page, "phone create")));
       await page.locator(".m-capture").tap();
       await page.getByRole("button", { name: l.more }).tap();
       issues.push(...(await audit(page, "phone form")));
@@ -279,19 +303,44 @@ test.describe("on a phone", () => {
       await page.locator(".m-action-sheet").waitFor();
       issues.push(...(await audit(page, "phone discard question")));
       await page.getByRole("menuitem", { name: l.discard }).tap();
+      await page.locator(".m-fab").tap();
       await page.getByRole("button", { name: l.menu }).tap();
       issues.push(...(await audit(page, "phone shortcut menu")));
       await page.getByRole("menuitem", { name: l.edit }).tap();
       await page.locator(".m-sheet .form").waitFor();
       issues.push(...(await audit(page, "phone shortcut editor")));
       await page.keyboard.press("Escape");
-      // «Páginas»: the search, the recent ones and the tree.
+      // «Páginas»: the search, the pages and the collections; a collection; a note with its chips and its sheet.
       await page.locator(".m-tab").nth(1).tap();
-      await page.locator(".m-pages").waitFor();
+      await page.locator(".m-searchbar").waitFor();
       issues.push(...(await audit(page, "phone pages")));
+      await page.locator(".m-item-main", { hasText: "Libros" }).tap();
+      await expect(page.locator(".m-swipe-row")).toHaveCount(3);
+      issues.push(...(await audit(page, "phone collection")));
+      await page.locator(".m-swipe-row").first().locator(".m-item-main").tap();
+      await page.locator(".m-row-chips").waitFor();
+      issues.push(...(await audit(page, "phone note")));
+      await page.getByRole("button", { name: l.props }).tap();
+      await page.locator(".m-bottom-sheet .row-prop").first().waitFor();
+      issues.push(...(await audit(page, "phone note properties")));
+      await page.keyboard.press("Escape");
+      await page.locator(".m-top").getByRole("button", { name: l.moreMenu }).tap();
+      await page.locator(".m-action-sheet").waitFor();
+      issues.push(...(await audit(page, "phone note menu")));
+      await page.keyboard.press("Escape");
+      // Boni: its greeting, and its conversations in a drawer; the Bandeja.
       await page.locator(".m-tab").nth(2).tap();
-      await expect(page.locator(".m-chart-row")).toHaveCount(3);
-      issues.push(...(await audit(page, "phone charts")));
+      await page.locator(".chat-hello").waitFor();
+      issues.push(...(await audit(page, "phone boni")));
+      await page.locator(".m-top").getByRole("button", { name: l.chats }).tap();
+      await page.locator(".chat-drawer").waitFor();
+      issues.push(...(await audit(page, "phone conversations")));
+      await page.keyboard.press("Escape");
+      await page.locator(".m-tab").nth(3).tap();
+      await page.locator(".m-large h1").waitFor();
+      issues.push(...(await audit(page, "phone inbox")));
+      // A chart from Inicio, and its editor.
+      await page.locator(".m-tab").nth(0).tap();
       await page.locator(".m-chart-row").nth(1).tap();
       await page.locator(".m-chart-body .chart svg").waitFor();
       issues.push(...(await audit(page, "phone chart")));
@@ -332,6 +381,7 @@ const C = {
     inbox: /^Bandeja/,
     log: "Registro",
     tab: "Boni",
+    chats: "Conversaciones",
   },
   en: {
     chat: "Conversation",
@@ -339,6 +389,7 @@ const C = {
     inbox: /^Inbox/,
     log: "Activity log",
     tab: "Boni",
+    chats: "Conversations",
   },
 };
 async function converse(page: Page, l: (typeof C)["es"], issues: string[], where: string) {
@@ -351,10 +402,21 @@ async function converse(page: Page, l: (typeof C)["es"], issues: string[], where
   }
   await page.locator(".confirm-card").waitFor();
   issues.push(...(await audit(page, `${where} conversation`)));
-  await page.locator(".chat-tools").getByRole("button", { name: l.inbox }).click();
-  await page.locator(".proposal").first().waitFor();
-  issues.push(...(await audit(page, `${where} inbox`)));
-  await page.keyboard.press("Escape");
+  if (where === "phone") {
+    // On the phone the Bandeja is a place of its own, and «Registro» is at the foot of the conversations; the
+    // keyboard goes down first (it stays up after sending, and the tab bar steps aside while it is).
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.locator(".m-tabs").getByRole("button", { name: l.inbox }).click();
+    await page.locator(".proposal").first().waitFor();
+    issues.push(...(await audit(page, `${where} inbox`)));
+    await page.locator(".m-tabs").getByRole("button", { name: l.tab, exact: true }).click();
+    await page.locator(".m-top").getByRole("button", { name: l.chats }).click();
+  } else {
+    await page.locator(".chat-tools").getByRole("button", { name: l.inbox }).click();
+    await page.locator(".proposal").first().waitFor();
+    issues.push(...(await audit(page, `${where} inbox`)));
+    await page.keyboard.press("Escape");
+  }
   await page.getByRole("button", { name: l.log, exact: true }).last().click();
   await page.locator(".log-list li").first().waitFor();
   await page.locator(".log-list li").nth(1).locator(".log-head").click();

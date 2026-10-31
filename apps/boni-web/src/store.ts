@@ -32,6 +32,8 @@ import {
   type Reply,
   type RunDetail,
   type RunSummary,
+  type StepWords,
+  type TodayItem,
   type Tree,
   type TurnResult,
   type Visibility,
@@ -41,7 +43,7 @@ import type { SystemColumns } from "./core/audit.ts";
 import type { HistoryMark } from "./core/blame.ts";
 import { normalize } from "./core/chartBuilder.ts";
 import { ChartRepository, type ChartState } from "./core/charts.ts";
-import { newId, nowIso, today } from "./core/clock.ts";
+import { deviceZone, newId, nowIso, today } from "./core/clock.ts";
 import {
   type ChartCatalog,
   type ChartSpec,
@@ -130,8 +132,11 @@ export type Panel =
   | { kind: "block"; id: string }
   /** The rows a data block counts (a click on it: «Lo que cuenta»), or those of one of its bars or points. */
   | { kind: "rows"; id: string; drill?: string; label?: string };
-/** The phone's tabs: capturing (shortcuts), the charts and the conversation with Boni. */
-export type Tab = "capture" | "pages" | "charts" | "boni";
+/**
+ * The phone's places (Juan, 2026-10-31): Inicio (today), Páginas (his data), Boni (the conversation) and the Bandeja.
+ * Capturing is the + button's, not a tab; charts are on Inicio and in the pages.
+ */
+export type Tab = "home" | "pages" | "boni" | "inbox";
 
 /** One turn of the conversation: what Juan asked and what the agent answered (painted by the code). */
 export interface ChatEntry {
@@ -142,12 +147,18 @@ export interface ChatEntry {
   /** The steps it took, as they were seen live (docs/conversacion.md 3.5); kept for the session. */
   steps?: LiveStep[];
 }
-/** A step of a turn as it runs: what it is (the tool's title, or the kind of step) and whether it ended. */
+/**
+ * A step of a turn as it runs: what it is (the tool's title, or the kind of step), in Juan's words when the server
+ * says them, whether it ended, and what it found.
+ */
 export interface LiveStep {
   id: string;
   op: string;
   what: string;
   done: boolean;
+  words?: StepWords;
+  n?: number;
+  value?: number;
 }
 /** The turn that runs now: its entry, the live id the device gave it, what it did and said so far. */
 export interface LiveTurn {
@@ -216,6 +227,12 @@ interface State {
   live: LiveTurn | null;
   /** The models a conversation may plan with (3.5). */
   planners: Planner[];
+  /** The phone's list of conversations, a drawer opened from its top bar. */
+  chatList: boolean;
+  /** Inicio's «Hoy» on the phone: today in Juan's calendars; null until loaded, or from a server without it. */
+  today: TodayItem[] | null;
+  /** A record's History, opened from its page (the desktop's button) or the phone's «…». */
+  rowHistory: boolean;
   /** The user's pages (docs/extensiones.md 6): null while unknown (no server, agent store off). */
   pages: PageInfo[] | null;
   /** The open page with its blocks. */
@@ -338,7 +355,7 @@ export const useStore = create<State>(() => ({
   panel: null,
   panelEdited: false,
   discardAsk: false,
-  tab: "capture",
+  tab: "home",
   sidebarOpen: true,
   settingsOpen: false,
   settingsSection: null,
@@ -363,6 +380,9 @@ export const useStore = create<State>(() => ({
   conversationId: null,
   live: null,
   planners: [],
+  chatList: false,
+  today: null,
+  rowHistory: false,
   pages: null,
   page: null,
   pageFocus: null,
@@ -528,12 +548,12 @@ export function navigate(screen: string) {
   else if (screen === "capture") openScreen(CAPTURE_SCREEN);
   else if (screen.startsWith("shortcut:")) {
     const sc = get().shortcuts.find((x) => x.id === screen.slice(9));
-    set({ panel: null, tab: "capture" });
+    set({ panel: null });
     if (sc) void runShortcut(sc);
     else toast(get().t("shortcut.gone"));
   } else if (screen.startsWith("chart:")) {
     const id = screen.slice(6);
-    set({ panel: null, tab: "charts" });
+    set({ panel: null, tab: "home" });
     if (get().chartSpecs.some((c) => c.id === id)) showChart(id);
     else toast(get().t("shortcut.chartGone"));
   } else if (screen.startsWith("edit:")) {
@@ -660,7 +680,8 @@ export const openSettings = (open = true, section: string | null = null) =>
 
 /**
  * The phone's Back (Esc): closes the top thing, one at a time: settings, the panel (asking first when something was
- * typed in it), a chart's detail, a chart on its own, then the charts tab. False when there was nothing to close.
+ * typed in it), the conversations' drawer, a record's History, a chart's detail, a chart on its own, then a step
+ * back in the place, then Inicio. False when there was nothing to close.
  * Menus and lists that components open close on Esc before this runs; Android's button is Esc too (`androidBack`).
  */
 export function goBack(): boolean {
@@ -668,6 +689,9 @@ export function goBack(): boolean {
   if (s.settingsOpen) openSettings(false);
   else if (s.discardAsk) keepEditing();
   else if (s.panel) dismissPanel();
+  else if (s.chatList) toggleChatList(false);
+  else if (s.rowHistory) setRowHistory(false);
+  else if (s.tab === "inbox" && s.view.kind === "proposal") set({ view: { kind: "home" } });
   else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
   else if (s.view.kind === "chart") showHome();
   else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
@@ -682,7 +706,7 @@ export function goBack(): boolean {
     void flushRowBody();
     showChat();
     return false;
-  } else if (s.tab !== "capture") showTab("capture");
+  } else if (s.tab !== "home") showTab("home");
   else return false;
   return true;
 }
@@ -1216,9 +1240,30 @@ function applyLive(l: LiveTurn, e: LiveEvent): LiveTurn {
         ? {
             ...l,
             thinking: false,
-            steps: [...l.steps, { id: e.id, op: e.op, what: e.what, done: false }],
+            steps: [
+              ...l.steps,
+              {
+                id: e.id,
+                op: e.op,
+                what: e.what,
+                done: false,
+                ...(e.words ? { words: e.words } : {}),
+              },
+            ],
           }
-        : { ...l, steps: l.steps.map((x) => (x.id === e.id ? { ...x, done: true } : x)) };
+        : {
+            ...l,
+            steps: l.steps.map((x) =>
+              x.id === e.id
+                ? {
+                    ...x,
+                    done: true,
+                    ...(e.n !== undefined ? { n: e.n } : {}),
+                    ...(e.value !== undefined ? { value: e.value } : {}),
+                  }
+                : x,
+            ),
+          };
     case "reply":
       return { ...l, replies: [...l.replies, e.reply] };
     default:
@@ -2624,6 +2669,7 @@ export async function openRow(type: string, id: string) {
     rowDoc: null,
     related: null,
     panel: null,
+    rowHistory: false,
   });
   void agent
     .dataRelated(id)
@@ -2778,3 +2824,91 @@ export async function flushRowBody() {
     toast(get().t("db.saveError"));
   }
 }
+
+/** The phone's list of conversations, opened and closed from its top bar (Back closes it too). */
+export const toggleChatList = (open = !get().chatList) => set({ chatList: open });
+
+/** Inicio's «Hoy»: what the calendars hold today in this device's timezone; offline it keeps what it had. */
+export async function loadToday() {
+  if (!configured(get().settings)) return;
+  try {
+    set({ today: await agent.today(deviceZone()) });
+  } catch {
+    // Offline or a server that failed: the last list stays.
+  }
+}
+
+/** A task of «Hoy» ticked or unticked: at once on Inicio, then on the server (Undo in the toast). */
+export async function tickToday(item: TodayItem, undo = false) {
+  if (!item.doneField) return;
+  const t = get().t;
+  const flip = (done: boolean) =>
+    set((s) => ({
+      today: s.today?.map((x) => (x.id === item.id ? { ...x, done } : x)) ?? null,
+    }));
+  flip(!item.done);
+  try {
+    const saved = await agent.updateRow(item.id, { [item.doneField]: !item.done });
+    if (saved && get().rows[item.type]) putRow(item.type, saved);
+    if (!undo)
+      toast(t(item.done ? "today.undone" : "today.done", { title: item.title }), {
+        label: t("toast.undo"),
+        run: () => void tickToday({ ...item, done: !item.done }, true),
+      });
+  } catch {
+    flip(item.done);
+    toast(t("db.saveError"));
+  }
+}
+
+/** A record by its id alone (a file just kept, something of «Hoy»): its page in «Páginas». */
+export async function openRowById(id: string, type?: string) {
+  try {
+    const kind = type ?? (await agent.dataRow(id))?.type;
+    if (!kind) return void toast(get().t("note.notFound"));
+    if (!get().dataTypes) await loadDataTypes();
+    set({ tab: "pages", view: { kind: "home" } });
+    await openRow(kind, id);
+  } catch (e) {
+    toast(get().t(e instanceof ApiError && e.status === 404 ? "note.notFound" : "note.offline"));
+  }
+}
+
+/**
+ * Files chosen on the phone (the + button's «Subir un archivo»): each kept in Boni where the account keeps files
+ * (asked once when there is more than one collection of them), as a page drop does; one file opens as its record.
+ */
+export async function uploadFiles(files: File[]) {
+  const t = get().t;
+  const kept: string[] = [];
+  let into: string | undefined;
+  for (const file of files) {
+    const name = file.name || "fichero";
+    if (file.size > MAX_PASTED) {
+      toast(t("file.tooBig", { name }));
+      continue;
+    }
+    try {
+      const data = await base64Of(file);
+      let r = await agent.addFile(name, data, into);
+      if ("choose" in r) {
+        const options = r.choose;
+        const picked = await new Promise<string | null>((answer) =>
+          set({ fileChoice: { options, answer } }),
+        );
+        set({ fileChoice: null });
+        if (!picked) return;
+        into = picked;
+        r = await agent.addFile(name, data, into);
+        if ("choose" in r) return;
+      }
+      kept.push(r.id);
+    } catch {
+      toast(t("file.saveError", { name }));
+    }
+  }
+  if (kept.length === 1) await openRowById(kept[0] as string, into);
+  else if (kept.length) toast(t("file.kept", { n: kept.length }));
+}
+
+export const setRowHistory = (open: boolean) => set({ rowHistory: open });

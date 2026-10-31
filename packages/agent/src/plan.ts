@@ -20,7 +20,7 @@ export const READERS = [
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
-export const REPLY_COMPONENTS = ["text", "number", "list", "table"] as const;
+export const REPLY_COMPONENTS = ["text", "number", "list", "table", "chart"] as const;
 
 /**
  * A call's `why` is what its proposal shows as its reason (a reader's quote), never an argument of the tool.
@@ -79,6 +79,8 @@ const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> 
   number: ["value", "unit", "caption"],
   list: ["items", "fields", "caption"],
   table: ["rows", "fields", "caption"],
+  // Bars (or a line) of numbers the tools gave, one per label: `kind` "bar" or "line".
+  chart: ["labels", "values", "kind", "unit", "caption"],
 };
 
 /** What the validator needs to know of the tools the planner may use. */

@@ -38,6 +38,7 @@ import {
   replacedBy,
   withoutBlocks,
 } from "../core/selection.ts";
+import { phoneLayout } from "../host.ts";
 import { catText } from "../i18n.ts";
 import {
   addFilesToPage,
@@ -379,7 +380,12 @@ export function DocTail({ page }: { page: Page }) {
   };
   return (
     <button type="button" className="doc-tail" onClick={write} aria-label={t("block.writeHere")}>
-      {blocks.length === 0 && <span className="doc-hint">{t("block.placeholderFirst")}</span>}
+      {blocks.length === 0 && (
+        // On the phone a finger taps, and there is no «/» to press on its keyboard's first view.
+        <span className="doc-hint">
+          {t(phoneLayout() ? "block.placeholderFirstPhone" : "block.placeholderFirst")}
+        </span>
+      )}
     </button>
   );
 }

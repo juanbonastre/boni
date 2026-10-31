@@ -13,7 +13,7 @@ import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
-import { host } from "./host.ts";
+import { host, PHONE_QUERY } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
   closeProposal,
@@ -45,8 +45,8 @@ import { useTheme } from "./theme.ts";
  */
 export function App() {
   useTheme();
-  // Narrower than 640 px (a phone, the Android app): its own layout, made for capturing (MobileApp).
-  const mobile = useMedia(`(max-width: ${MOBILE_WIDTH - 1}px)`);
+  // Narrower than 640 px (a phone, the Android app): its own layout, made for the phone (MobileApp).
+  const mobile = useMedia(PHONE_QUERY);
   useShortcuts(mobile);
   const settingsOpen = useStore((s) => s.settingsOpen);
   const sidebarOpen = useStore((s) => s.sidebarOpen);
@@ -89,9 +89,6 @@ export function App() {
     </div>
   );
 }
-
-/** Below this width (CSS px) the app uses its phone layout, as Boni Calendar. */
-const MOBILE_WIDTH = 640;
 
 function useMedia(query: string): boolean {
   const [on, setOn] = useState(() => window.matchMedia?.(query).matches ?? false);

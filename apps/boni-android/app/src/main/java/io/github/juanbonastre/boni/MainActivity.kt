@@ -2,12 +2,14 @@ package io.github.juanbonastre.boni
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.webkit.ConsoleMessage
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -15,6 +17,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -32,6 +35,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var shell: Shell
     private val main = Handler(Looper.getMainLooper())
     private var minute = 0
+
+    /** The page waiting for files («Subir un archivo»): the phone's own picker answers it, with none if cancelled. */
+    private var choosing: ValueCallback<Array<Uri>>? = null
+    private val pickFiles = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        choosing?.onReceiveValue(if (uris.isEmpty()) null else uris.toTypedArray())
+        choosing = null
+    }
 
     /** The coordinator's minute (the desktop shell's tick): the page sends its offline queue, and reloads every
      *  15 minutes while there is no live connection. */
@@ -71,6 +81,24 @@ class MainActivity : ComponentActivity() {
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                 Log.i(TAG, message.message())
                 return true
+            }
+
+            // A file input in the page (the + button's «Subir un archivo»): the system's picker, its files to the page.
+            override fun onShowFileChooser(
+                view: WebView,
+                callback: ValueCallback<Array<Uri>>,
+                params: FileChooserParams,
+            ): Boolean {
+                choosing?.onReceiveValue(null)
+                choosing = callback
+                val types = params.acceptTypes.filter { it.isNotBlank() }.ifEmpty { listOf("*/*") }
+                return try {
+                    pickFiles.launch(types.toTypedArray())
+                    true
+                } catch (e: Exception) {
+                    choosing = null
+                    false
+                }
             }
         }
         web.addJavascriptInterface(AndroidBridge(this, web, shell, this), "boniAndroid")

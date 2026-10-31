@@ -5,7 +5,6 @@ import {
   Inbox,
   ListChecks,
   MessageSquarePlus,
-  PanelLeft,
   Pencil,
   ShieldCheck,
   Square,
@@ -24,12 +23,12 @@ import {
   type RunDetail,
   type RunSummary,
   reveal,
+  type StepWords,
   textOf,
 } from "../core/agent.ts";
 import { today } from "../core/clock.ts";
 import type { T } from "../i18n.ts";
 import {
-  acceptProposal,
   agentErrorText,
   answerAsk,
   type ChatEntry,
@@ -44,7 +43,6 @@ import {
   newConversation,
   openConversation,
   openSettings,
-  rejectProposal,
   removeConversation,
   renameConversation,
   sendTurn,
@@ -52,6 +50,7 @@ import {
   showInbox,
   showLog,
   stopTurn,
+  toggleChatList,
   undoRun,
   useStore,
 } from "../store.ts";
@@ -69,7 +68,10 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
   const chat = useStore((s) => s.chat);
   const live = useStore((s) => s.live);
   const waiting = useStore((s) => s.inbox.length + s.requests.length);
-  const [list, setList] = useState(false);
+  // On the phone the list is a drawer the top bar opens.
+  const list = useStore((s) => s.chatList);
+  const setList = (open: boolean) => toggleChatList(open);
+  const first = useStore((s) => s.dataTypes?.find((d) => !d.system)?.name);
   const end = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     void loadInbox();
@@ -82,35 +84,84 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`chat-layout${compact ? " compact" : ""}`}>
       {!compact && <ConversationList />}
-      {compact && list && <ConversationList onPick={() => setList(false)} />}
+      {compact && list && (
+        <>
+          {/* The phone's conversations: a drawer from the left over a scrim (Claude's, ChatGPT's); a tap outside or
+              Back closes it, and what was the chat's buttons on the desktop is at its foot. */}
+          <div className="chat-drawer-scrim" onPointerDown={() => setList(false)} />
+          <div className="chat-drawer" role="dialog" aria-label={t("chats.title")}>
+            <ConversationList onPick={() => setList(false)} />
+            <div className="chat-drawer-foot">
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  setList(false);
+                  showLog();
+                }}
+              >
+                <ListChecks size={16} strokeWidth={1.8} />
+                {t("log.title")}
+              </button>
+              <button
+                type="button"
+                className="link-btn"
+                onClick={() => {
+                  setList(false);
+                  showAudit({});
+                }}
+              >
+                <ShieldCheck size={16} strokeWidth={1.8} />
+                {t("audit.title")}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
       <div className={`chat${compact ? " compact" : ""}`}>
-        <div className="chat-tools">
-          {compact && (
-            <button
-              type="button"
-              className="pill"
-              onClick={() => setList(!list)}
-              aria-expanded={list}
-            >
-              <PanelLeft size={14} strokeWidth={1.8} />
-              <span>{t("chats.title")}</span>
+        {!compact && (
+          <div className="chat-tools">
+            <button type="button" className="pill" onClick={showInbox}>
+              <Inbox size={14} strokeWidth={1.8} />
+              <span>{waiting ? t("inbox.titleN", { n: waiting }) : t("inbox.title")}</span>
             </button>
-          )}
-          <button type="button" className="pill" onClick={showInbox}>
-            <Inbox size={14} strokeWidth={1.8} />
-            <span>{waiting ? t("inbox.titleN", { n: waiting }) : t("inbox.title")}</span>
-          </button>
-          <button type="button" className="pill" onClick={showLog}>
-            <ListChecks size={14} strokeWidth={1.8} />
-            <span>{t("log.title")}</span>
-          </button>
-          <button type="button" className="pill" onClick={() => showAudit({})}>
-            <ShieldCheck size={14} strokeWidth={1.8} />
-            <span>{t("audit.title")}</span>
-          </button>
-        </div>
+            <button type="button" className="pill" onClick={showLog}>
+              <ListChecks size={14} strokeWidth={1.8} />
+              <span>{t("log.title")}</span>
+            </button>
+            <button type="button" className="pill" onClick={() => showAudit({})}>
+              <ShieldCheck size={14} strokeWidth={1.8} />
+              <span>{t("audit.title")}</span>
+            </button>
+          </div>
+        )}
         <div className="chat-thread" aria-live="polite">
-          {chat.length === 0 && <p className="muted center-note">{t("chat.empty")}</p>}
+          {chat.length === 0 &&
+            (compact ? (
+              // On the phone an empty chat greets, with things to try (Claude's, ChatGPT's): what any account
+              // can ask, and one of its own collections.
+              <div className="chat-hello">
+                <p className="chat-hello-title">{t("chat.hello")}</p>
+                <div className="chat-hello-chips">
+                  {[
+                    t("chat.try.today"),
+                    t("chat.try.tomorrow"),
+                    ...(first ? [t("chat.try.count", { name: first })] : []),
+                  ].map((x) => (
+                    <button
+                      key={x}
+                      type="button"
+                      className="m-chip"
+                      onClick={() => void sendTurn(x)}
+                    >
+                      {x}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="muted center-note">{t("chat.empty")}</p>
+            ))}
           {chat.map((e) => (
             <Turn key={e.id} entry={e} />
           ))}
@@ -258,6 +309,12 @@ function ConversationList({ onPick }: { onPick?: () => void }) {
 }
 
 /** The bar to write in: it grows with the text; its button sends, or stops the turn that runs (3.6). */
+/**
+ * The bar's buttons keep the focus where Juan writes: on a phone the keyboard stays up for the next message (as in
+ * other chats), and nothing moves under the finger while it taps.
+ */
+const keepFocus = (e: React.PointerEvent) => e.preventDefault();
+
 function Composer() {
   const t = useStore((s) => s.t);
   const busy = useStore((s) => s.chatBusy);
@@ -305,6 +362,7 @@ function Composer() {
           <button
             type="button"
             className="chat-send stop"
+            onPointerDown={keepFocus}
             onClick={stopTurn}
             title={t("chat.stop")}
             aria-label={t("chat.stop")}
@@ -315,6 +373,7 @@ function Composer() {
           <button
             type="submit"
             className="chat-send"
+            onPointerDown={keepFocus}
             disabled={!text.trim()}
             title={t("chat.send")}
             aria-label={t("chat.send")}
@@ -395,7 +454,81 @@ function stepText(t: T, s: LiveStep): string {
       : t(`chat.step.read.${kind}`);
   }
   if (s.op === "ask") return t("chat.step.ask");
-  return s.what;
+  return (s.words && wordsText(t, s.words)) || s.what;
+}
+
+/**
+ * A call in Juan's words (docs/conversacion.md §3.5): what it does and on what, by the names he gave things
+ * («Buscando «pan» en Tareas»). A tool the app does not word (an extension's) keeps its own title.
+ */
+function wordsText(t: T, w: StepWords): string | null {
+  const a = w.args;
+  const where =
+    a.field && a.contains
+      ? t("chat.w.contains", { field: a.field, value: a.contains })
+      : a.field && a.equals
+        ? t("chat.w.where", { field: a.field, value: a.equals })
+        : "";
+  switch (w.tool) {
+    case "entities.query":
+      return a.type ? t("chat.w.query", { type: a.type }) + where : null;
+    case "entities.search":
+      return a.text
+        ? a.type
+          ? t("chat.w.searchIn", { text: a.text, type: a.type })
+          : t("chat.w.search", { text: a.text })
+        : null;
+    case "entities.get":
+      return a.id ? t("chat.w.get", { title: a.id }) : null;
+    case "entities.aggregate":
+      if (!a.type) return null;
+      return (
+        (a.op === "sum" && a.of
+          ? t("chat.w.sum", { field: a.of, type: a.type })
+          : t("chat.w.count", { type: a.type })) + where
+      );
+    case "entities.create":
+      return a.type
+        ? a.title
+          ? t("chat.w.createTitled", { title: a.title, type: a.type })
+          : t("chat.w.create", { type: a.type })
+        : null;
+    case "entities.update":
+      return a.id ? t("chat.w.update", { title: a.id }) : null;
+    case "entities.delete":
+      return a.id ? t("chat.w.delete", { title: a.id }) : null;
+    case "schema.describe":
+      return t("chat.w.schema");
+    case "schema.create_type":
+      return a.name ? t("chat.w.createType", { name: a.name }) : null;
+    case "schema.add_field":
+      return a.name && a.type ? t("chat.w.addField", { name: a.name, type: a.type }) : null;
+    case "memory.save":
+      return t("chat.w.remember");
+    case "jobs.create":
+      return a.name ? t("chat.w.job", { name: a.name }) : null;
+    case "notify":
+      return t("chat.w.notify");
+    default:
+      return null;
+  }
+}
+
+/** What a step found, after it: how many, or its number in Juan's locale. */
+function StepFound({ s }: { s: LiveStep }) {
+  const t = useStore((x) => x.t);
+  const lang = useStore((x) => x.settings.language);
+  if (s.n !== undefined) return <span className="step-found"> · {t("chat.w.n", { n: s.n })}</span>;
+  if (s.value !== undefined)
+    return (
+      <span className="step-found">
+        {" · "}
+        {new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", {
+          maximumFractionDigits: 2,
+        }).format(s.value)}
+      </span>
+    );
+  return null;
 }
 
 /** A turn's steps: as they happen (the one going on with its animation), then folded once it answered. */
@@ -428,7 +561,10 @@ function Steps({
             {steps.map((s) => (
               <li key={s.id} className="done">
                 <Check size={12} strokeWidth={2.2} />
-                {stepText(t, s)}
+                <span>
+                  {stepText(t, s)}
+                  <StepFound s={s} />
+                </span>
               </li>
             ))}
           </ol>
@@ -451,7 +587,10 @@ function Steps({
             ) : (
               <span className="step-dot" aria-hidden="true" />
             )}
-            {stepText(t, s)}
+            <span>
+              {stepText(t, s)}
+              {s.done && <StepFound s={s} />}
+            </span>
           </li>
         ))}
       </ol>
@@ -606,6 +745,13 @@ function ReplyView({ reply }: { reply: Reply }) {
         </div>
       );
     }
+    case "chart":
+      return (
+        <div className="reply-chart">
+          {caption}
+          <ReplyChart d={d} />
+        </div>
+      );
     case "table": {
       const rows = d.rows?.t === "list" ? d.rows.items : [];
       const first = rows.find((r) => r.t === "rec");
@@ -1018,5 +1164,77 @@ function RunSteps({ t, detail }: { t: T; detail: RunDetail | null | "loading" })
         ))}
       </ol>
     </div>
+  );
+}
+
+const numberIn = (p: Painted | undefined): number | null =>
+  p?.t === "v" && typeof p.value === "number" && Number.isFinite(p.value) ? p.value : null;
+
+/**
+ * A chart in an answer: numbers the tools gave, one per label (never the model's own), as bars across (they fit a
+ * phone and their labels never turn), or as a line when it asks for one. Labels and values are painted as text.
+ */
+function ReplyChart({ d }: { d: Record<string, Painted> }) {
+  const labels = d.labels?.t === "list" ? d.labels.items : [];
+  const values = d.values?.t === "list" ? d.values.items : [];
+  const unit = d.unit ? textOf(d.unit) : "";
+  const points = labels.slice(0, 40).flatMap((label, i) => {
+    const p = values[i];
+    const v = numberIn(p);
+    return v === null || !p ? [] : [{ label, p, v }];
+  });
+  if (!points.length) return null;
+  const max = Math.max(...points.map((x) => Math.abs(x.v)), 0) || 1;
+  if (d.kind && textOf(d.kind) === "line" && points.length > 1) {
+    const lo = Math.min(...points.map((x) => x.v), 0);
+    const hi = Math.max(...points.map((x) => x.v), 0);
+    const span = hi - lo || 1;
+    const xy = points.map((x, i) => [
+      (i / (points.length - 1)) * 100,
+      36 - ((x.v - lo) / span) * 32,
+    ]);
+    const first = points[0];
+    const last = points[points.length - 1];
+    return (
+      <div className="reply-line">
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points={xy.map(([x, y]) => `${x},${y}`).join(" ")} />
+        </svg>
+        <div className="reply-line-ends">
+          {first && (
+            <span>
+              <ValueText p={first.label} /> · <NumberText p={first.p} />
+            </span>
+          )}
+          {last && (
+            <span>
+              <ValueText p={last.label} /> · <NumberText p={last.p} />
+              {unit && ` ${unit}`}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <ul className="reply-bars">
+      {points.map((x, i) => (
+        <li key={i}>
+          <span className="reply-bar-label">
+            <ValueText p={x.label} />
+          </span>
+          <span className="reply-bar-track">
+            <span
+              className={`reply-bar${x.v < 0 ? " neg" : ""}`}
+              style={{ width: `${Math.max(2, (Math.abs(x.v) / max) * 100)}%` }}
+            />
+          </span>
+          <span className="reply-bar-value">
+            <NumberText p={x.p} />
+            {unit && ` ${unit}`}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

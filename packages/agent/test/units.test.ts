@@ -31,6 +31,32 @@ describe("the plan validator", () => {
       steps: [{ id: "a", op: "call", tool: "entities.query", args: { type: { lit: "tarea" } } }],
     };
     expect(validatePlan(ok, cat, "").ok).toBe(true);
+    // A chart of numbers the tools gave, one per label; anything else in it is refused.
+    const chart = (data: Record<string, unknown>) =>
+      validatePlan(
+        {
+          version: 1,
+          steps: [
+            {
+              id: "n",
+              op: "call",
+              tool: "entities.aggregate",
+              args: { type: { lit: "tarea" }, op: { lit: "count" } },
+            },
+            { id: "c", op: "reply", component: "chart", data },
+          ],
+        },
+        cat,
+        "",
+      );
+    expect(
+      chart({
+        labels: { fn: "list", args: [{ lit: "Alta" }, { lit: "Baja" }] },
+        values: { fn: "list", args: [{ ref: "$n" }, { ref: "$n" }] },
+        kind: { lit: "bar" },
+      }).ok,
+    ).toBe(true);
+    expect(chart({ labels: { lit: "Alta" }, colour: { lit: "red" } }).ok).toBe(false);
     expect(validatePlan({ version: 2, steps: [] }, cat, "")).toEqual({
       ok: false,
       errors: ["plan: not-a-plan"],

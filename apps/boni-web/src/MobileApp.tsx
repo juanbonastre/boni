@@ -1,82 +1,88 @@
 import {
-  BarChart3,
   BookmarkPlus,
   ChevronLeft,
-  ChevronRight,
   Copy,
+  Database,
+  History,
+  House,
+  Inbox,
   Library,
   MessageSquare,
+  MessageSquarePlus,
+  MoreHorizontal,
   MoreVertical,
+  PanelLeft,
   Pencil,
-  PenLine,
-  Plus,
-  Settings,
+  Pin,
+  PinOff,
   Smartphone,
   Trash2,
   WifiOff,
   X,
-  Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AuditView } from "./components/Audit.tsx";
 import { BlockPanel } from "./components/BlockPanel.tsx";
-import { ChartCard, ChartCardContent, useChartData } from "./components/ChartCard.tsx";
+import { ChartCard, ChartCardContent } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { FormView } from "./components/FormView.tsx";
 import { ProposalPage } from "./components/InboxCards.tsx";
+import { KeyboardBar } from "./components/KeyboardBar.tsx";
+import { Fab } from "./components/MobileCreate.tsx";
+import { MobileHome } from "./components/MobileHome.tsx";
 import { MobilePages } from "./components/MobilePages.tsx";
+import { BottomSheet, LargeTitle, type Menu } from "./components/MobileParts.tsx";
 import { QuickFind } from "./components/QuickFind.tsx";
 import { RowsPanel } from "./components/RowsPanel.tsx";
 import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { EditorPanel } from "./components/SidePanel.tsx";
 import * as B from "./core/chartBuilder.ts";
-import * as M from "./core/chartMath.ts";
 import { emptyState } from "./core/charts.ts";
 import type { ChartSpec, FormComponent, Screen, Shortcut } from "./core/contract.ts";
 import type { Values } from "./core/formLogic.ts";
 import { PALETTE, QUICK_PERIODS } from "./core/palette.ts";
-import { formOf, shortcutValues, suggestedLabel, summary } from "./core/shortcuts.ts";
+import { formOf, shortcutValues, suggestedLabel } from "./core/shortcuts.ts";
 import { host } from "./host.ts";
 import {
-  CAPTURE_SCREEN,
   changeChart,
   closePanel,
   configured,
   deleteChart,
+  deletePage,
+  deleteRow,
   deleteShortcut,
   dismissPanel,
-  dismissRejected,
   dismissToast,
   duplicateChart,
+  duplicatePage,
   errorText,
+  goBack,
   keepEditing,
   loadScreen,
   markPanelEdited,
+  newConversation,
   openEditor,
-  openScreen,
-  openSettings,
   openShortcutEditor,
   optionList,
   pinToHome,
-  runShortcut,
   saveShortcut,
-  showChart,
+  setRowHistory,
   showHome,
   showTab,
   submit,
   toast,
   todayIso,
+  toggleChatList,
   useStore,
-  useVisibleCharts,
-  useVisibleShortcuts,
 } from "./store.ts";
 
 /**
- * The phone (narrower than 640 px; the Android app): made for capturing, not for watching charts. It opens on the
- * "Log" tab (the server's capture buttons and the shortcuts); the charts are the second tab, one chart at a time
- * on the whole screen. Forms and editors are sheets over everything; Back (Esc) closes the top one. Same tokens
- * as Boni Calendar, with bigger type and 48 px touch targets (docs/design-guide.md, "Mobile").
+ * The phone (narrower than 640 px; the Android app), made for the phone (Juan, 2026-10-31: «parecen adaptaciones muy
+ * obvias de la versión desktop»): four places in the bar below (Inicio, Páginas, Boni, Bandeja), a + button for
+ * capturing and creating, large titles, lists for a thumb, menus and forms as sheets from below, one chart at a time
+ * on the whole screen. Back (Esc, Android's button) closes the top thing. Same tokens as Boni Calendar, with bigger
+ * type and 48 px touch targets (docs/design-guide.md, «El móvil»).
  */
 export function MobileApp() {
   const t = useStore((s) => s.t);
@@ -86,52 +92,31 @@ export function MobileApp() {
   const settingsOpen = useStore((s) => s.settingsOpen);
   const discardAsk = useStore((s) => s.discardAsk);
   const toastState = useStore((s) => s.toast);
+  const fileChoice = useStore((s) => s.fileChoice);
   const [menu, setMenu] = useState<Menu | null>(null);
   const findOpen = useStore((s) => s.findOpen);
   const chartOpen = view.kind === "chart";
-  // A record opened from Boni Calendar («Abrir en Boni»): its collection names the screen.
-  const rowType = useStore((s) =>
-    s.view.kind === "row" || s.view.kind === "collection"
-      ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
-      : undefined,
-  );
   return (
     <div className="m-app">
       {chartOpen ? (
         <ChartScreen id={view.id} openMenu={setMenu} />
       ) : (
         <>
-          <MobileTop
-            title={
-              tab === "capture"
-                ? t("tab.capture")
-                : tab === "pages"
-                  ? view.kind === "row" || view.kind === "collection"
-                    ? (rowType?.name ?? t("tab.pages"))
-                    : t("tab.pages")
-                  : tab === "charts"
-                    ? t("tab.charts")
-                    : view.kind === "inbox" || view.kind === "proposal"
-                      ? t("inbox.title")
-                      : view.kind === "log"
-                        ? t("log.title")
-                        : view.kind === "audit"
-                          ? t("audit.title")
-                          : view.kind === "row"
-                            ? (rowType?.name ?? t("tab.boni"))
-                            : t("tab.boni")
-            }
-          />
-          {tab === "capture" ? (
-            <CaptureTab openMenu={setMenu} />
+          <MobileTop openMenu={setMenu} />
+          {tab === "home" ? (
+            <MobileHome />
           ) : tab === "pages" ? (
             <MobilePages />
-          ) : tab === "charts" ? (
-            <ChartsTab />
+          ) : tab === "inbox" ? (
+            view.kind === "proposal" ? (
+              <div className="m-scroll">
+                <ProposalPage id={view.id} />
+              </div>
+            ) : (
+              <MobileInbox />
+            )
           ) : view.kind === "inbox" ? (
-            <div className="m-scroll">
-              <InboxView />
-            </div>
+            <MobileInbox />
           ) : view.kind === "log" ? (
             <div className="m-scroll">
               <LogView />
@@ -143,18 +128,23 @@ export function MobileApp() {
               <ProposalPage id={view.id} />
             </div>
           ) : view.kind === "row" ? (
+            // A record opened from another app (Boni Calendar's «Abrir en Boni»).
             <div className="m-scroll m-row">
-              <RowView />
+              <RowView mobile />
             </div>
           ) : (
             <ChatView compact />
           )}
+          <Fab openMenu={setMenu} />
+          <KeyboardBar />
           <TabBar />
         </>
       )}
       {panel && <Sheet />}
       {settingsOpen && <SettingsModal />}
       {findOpen && <QuickFind />}
+      {/* A page asks it itself (a file dropped in it); anywhere else, «Subir un archivo». */}
+      {fileChoice && view.kind !== "page" && <FileChoiceSheet />}
       {menu && <ActionSheet menu={menu} close={() => setMenu(null)} />}
       {discardAsk && (
         <ActionSheet
@@ -193,22 +183,30 @@ export function MobileApp() {
   );
 }
 
-interface Menu {
-  title: string;
-  items: { label: string; icon: ReactNode; danger?: boolean; run: () => void }[];
-  /** The last row's label (it closes the menu): "Cancelar" unless a question needs another. */
-  cancel?: string;
-}
-
-function MobileTop({ title }: { title: string }) {
+/**
+ * The top bar: slim, and only there when it has something to do. A place shows its large title in its content; deeper
+ * (a collection, a record, a page, a proposal) the bar has Back and, on a record or a page, «…»; Boni's has its
+ * conversations (a drawer from the left) and a new one. The settings are the account's initial on Inicio.
+ */
+function MobileTop({ openMenu }: { openMenu: (m: Menu) => void }) {
   const t = useStore((s) => s.t);
+  const tab = useStore((s) => s.tab);
+  const view = useStore((s) => s.view);
   const pending = useStore((s) => s.pending);
   const settings = useStore((s) => s.settings);
+  // A record says which collection it is in (Boni Calendar's «Abrir en Boni» opens one alone).
+  const rowType = useStore((s) =>
+    s.view.kind === "row"
+      ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)?.name
+      : undefined,
+  );
   const offline = configured(settings) && host.live && !settings.live && !settings.liveUnsupported;
-  return (
-    <header className="m-top">
-      <h1 className="m-title">{title}</h1>
-      <span className="spacer" />
+  const deep =
+    (tab === "pages" && view.kind !== "home") ||
+    (tab === "inbox" && view.kind === "proposal") ||
+    (tab === "boni" && view.kind !== "home" && view.kind !== "chat");
+  const status = (
+    <>
       {pending > 0 && <span className="m-status">{t("top.pending", { n: pending })}</span>}
       {offline && (
         <span className="m-status" title={t("top.offlineHelp")}>
@@ -216,43 +214,169 @@ function MobileTop({ title }: { title: string }) {
           {t("top.offline")}
         </span>
       )}
+    </>
+  );
+  if (tab === "boni" && !deep)
+    return (
+      <header className="m-top slim">
+        <button
+          type="button"
+          className="m-icon"
+          onClick={() => toggleChatList()}
+          title={t("chats.title")}
+          aria-label={t("chats.title")}
+        >
+          <PanelLeft size={22} strokeWidth={1.8} />
+        </button>
+        <h1 className="m-title small center">{t("tab.boni")}</h1>
+        {status}
+        <button
+          type="button"
+          className="m-icon"
+          onClick={newConversation}
+          title={t("chats.new")}
+          aria-label={t("chats.new")}
+        >
+          <MessageSquarePlus size={22} strokeWidth={1.8} />
+        </button>
+      </header>
+    );
+  if (!deep)
+    return pending > 0 || offline ? <header className="m-top slim">{status}</header> : null;
+  return (
+    <header className="m-top slim">
       <button
         type="button"
         className="m-icon"
-        onClick={() => openSettings()}
-        title={t("top.settings")}
-        aria-label={t("top.settings")}
+        onClick={() => goBack()}
+        title={t("mobile.back")}
+        aria-label={t("mobile.back")}
       >
-        <Settings size={22} strokeWidth={1.8} />
+        <ChevronLeft size={26} strokeWidth={1.8} />
       </button>
+      {rowType ? <h1 className="m-title small center">{rowType}</h1> : <span className="spacer" />}
+      {status}
+      {(view.kind === "row" || view.kind === "page") && <MoreButton openMenu={openMenu} />}
     </header>
   );
 }
 
+/** A record's or a page's «…»: what the desktop has around it (a record's History, a page's copy) and the trash. */
+function MoreButton({ openMenu }: { openMenu: (m: Menu) => void }) {
+  const t = useStore((s) => s.t);
+  const view = useStore((s) => s.view);
+  const page = useStore((s) => s.page);
+  const row = useStore((s) => s.row);
+  const def = useStore((s) =>
+    s.view.kind === "row"
+      ? s.dataTypes?.find((x) => x.id === (s.view as { type: string }).type)
+      : undefined,
+  );
+  if (view.kind !== "row" && view.kind !== "page") return null;
+  const title =
+    view.kind === "row"
+      ? String((def && row?.values[def.titleField]) || "") || t("page.untitled")
+      : page?.title || t("page.untitled");
+  const menu: Menu =
+    view.kind === "row"
+      ? {
+          title,
+          items: [
+            {
+              label: t("history.title"),
+              icon: <History size={20} strokeWidth={1.8} />,
+              run: () => setRowHistory(true),
+            },
+            {
+              label: t("more.delete"),
+              icon: <Trash2 size={20} strokeWidth={1.8} />,
+              danger: true,
+              run: () => {
+                goBack();
+                void deleteRow(view.type, view.id);
+              },
+            },
+          ],
+        }
+      : {
+          title,
+          items: [
+            {
+              label: t("more.duplicate"),
+              icon: <Copy size={20} strokeWidth={1.8} />,
+              run: () => void duplicatePage(view.id),
+            },
+            {
+              label: t("more.delete"),
+              icon: <Trash2 size={20} strokeWidth={1.8} />,
+              danger: true,
+              run: () => {
+                goBack();
+                void deletePage(view.id);
+              },
+            },
+          ],
+        };
+  return (
+    <button
+      type="button"
+      className="m-icon"
+      onClick={() => openMenu(menu)}
+      title={t("more.title")}
+      aria-label={t("more.title")}
+    >
+      <MoreHorizontal size={22} strokeWidth={1.8} />
+    </button>
+  );
+}
+
+/** The Bandeja as a place of its own: its large title over the proposals and the questions that wait. */
+function MobileInbox() {
+  const t = useStore((s) => s.t);
+  return (
+    <main className="m-scroll m-screen">
+      <LargeTitle title={t("inbox.title")} />
+      <InboxView />
+    </main>
+  );
+}
+
+/** Where a file goes when the account has several collections of files: asked once, the account keeps the answer. */
+function FileChoiceSheet() {
+  const t = useStore((s) => s.t);
+  const choice = useStore((s) => s.fileChoice);
+  if (!choice) return null;
+  return (
+    <BottomSheet title={t("file.choose")} close={() => choice.answer(null)}>
+      <p className="m-hint">{t("file.chooseHelp")}</p>
+      <ul className="m-group m-sheet-list">
+        {choice.options.map((o) => (
+          <li key={o.type} className="m-item">
+            <button type="button" className="m-item-main row" onClick={() => choice.answer(o.type)}>
+              <Database size={20} strokeWidth={1.8} />
+              <span className="m-item-title">{o.name}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </BottomSheet>
+  );
+}
+
+/** The four places, always in view (NN/g): the Bandeja with how many things wait in it. */
 function TabBar() {
   const t = useStore((s) => s.t);
   const tab = useStore((s) => s.tab);
+  const waiting = useStore((s) => s.inbox.length + s.requests.length);
   const tabs = [
-    {
-      id: "capture" as const,
-      label: t("tab.capture"),
-      icon: <PenLine size={22} strokeWidth={1.8} />,
-    },
-    {
-      id: "pages" as const,
-      label: t("tab.pages"),
-      icon: <Library size={22} strokeWidth={1.8} />,
-    },
-    {
-      id: "charts" as const,
-      label: t("tab.charts"),
-      icon: <BarChart3 size={22} strokeWidth={1.8} />,
-    },
+    { id: "home" as const, label: t("tab.home"), icon: <House size={22} strokeWidth={1.8} /> },
+    { id: "pages" as const, label: t("tab.pages"), icon: <Library size={22} strokeWidth={1.8} /> },
     {
       id: "boni" as const,
       label: t("tab.boni"),
       icon: <MessageSquare size={22} strokeWidth={1.8} />,
     },
+    { id: "inbox" as const, label: t("inbox.title"), icon: <Inbox size={22} strokeWidth={1.8} /> },
   ];
   return (
     <nav className="m-tabs" aria-label={t("tab.label")}>
@@ -262,217 +386,23 @@ function TabBar() {
           type="button"
           className={`m-tab${tab === x.id ? " on" : ""}`}
           aria-current={tab === x.id ? "page" : undefined}
+          aria-label={
+            x.id === "inbox" && waiting > 0 ? t("inbox.titleN", { n: waiting }) : undefined
+          }
           onClick={() => showTab(x.id)}
         >
-          <span className="m-tab-icon">{x.icon}</span>
+          <span className="m-tab-icon">
+            {x.icon}
+            {x.id === "inbox" && waiting > 0 && (
+              <span className="m-badge" aria-hidden="true">
+                {waiting}
+              </span>
+            )}
+          </span>
           <span className="m-tab-label">{x.label}</span>
         </button>
       ))}
     </nav>
-  );
-}
-
-// ---------- Log: the server's capture buttons and the shortcuts ----------
-function CaptureTab({ openMenu }: { openMenu: (m: Menu) => void }) {
-  const t = useStore((s) => s.t);
-  const settings = useStore((s) => s.settings);
-  const home = useStore((s) => s.home);
-  const screens = useStore((s) => s.screens);
-  const options = useStore((s) => s.options);
-  const rejected = useStore((s) => s.rejected);
-  const shortcuts = useVisibleShortcuts();
-  const buttons = (home?.components ?? []).filter((c) => c.type === "button");
-  const actions = buttons.length
-    ? buttons.map((b) => ({ label: b.label, screen: b.screen }))
-    : [{ label: t("capture.title"), screen: CAPTURE_SCREEN }];
-
-  if (!configured(settings)) {
-    return (
-      <main className="m-scroll center">
-        <div className="empty-state">
-          <img src="./favicon.png" alt="" width={56} height={56} />
-          <p>{t("home.setup")}</p>
-          <button type="button" className="btn primary" onClick={() => openSettings()}>
-            {t("home.setupButton")}
-          </button>
-        </div>
-      </main>
-    );
-  }
-  const newShortcut = () =>
-    openShortcutEditor(
-      { id: "", label: "", screen: actions[0]!.screen, values: {}, mode: "open", color: null },
-      true,
-    );
-  return (
-    <main className="m-scroll">
-      {rejected.length > 0 && (
-        <div className="m-card rejected">
-          <h3>{t("queue.rejected")}</h3>
-          {rejected.map((item) => (
-            <div key={item.request.client_id} className="m-row-line">
-              <span className="m-row-text">
-                {String(item.request.values.concept ?? "")}{" "}
-                {String(item.request.values.amount ?? "")}: {item.error}
-              </span>
-              <button
-                type="button"
-                className="btn ghost"
-                onClick={() => void dismissRejected(item.request.client_id)}
-              >
-                {t("queue.dismiss")}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      {actions.map((a) => (
-        <button
-          key={a.screen}
-          type="button"
-          className="m-capture"
-          onClick={() => openScreen(a.screen)}
-        >
-          <span className="m-capture-icon">
-            <Plus size={24} strokeWidth={2} />
-          </span>
-          <span className="m-capture-label">{a.label}</span>
-        </button>
-      ))}
-      <h2 className="m-section">{t("shortcut.title")}</h2>
-      {shortcuts.length > 0 ? (
-        <div className="m-list">
-          {shortcuts.map((sc) => {
-            const form = formOf(screens[sc.screen]);
-            // What it fills in, without repeating its name (a concept is often the name too).
-            const parts = form
-              ? summary(form, sc.values, options).filter((x) => x !== sc.label)
-              : [];
-            const menu: Menu = {
-              title: sc.label,
-              items: [
-                {
-                  label: t("shortcut.edit"),
-                  icon: <Pencil size={20} strokeWidth={1.8} />,
-                  run: () => openShortcutEditor(sc),
-                },
-                ...(host.phone
-                  ? [
-                      {
-                        label: t("shortcut.pin"),
-                        icon: <Smartphone size={20} strokeWidth={1.8} />,
-                        run: () =>
-                          void pinToHome({
-                            target: `shortcut:${sc.id}`,
-                            label: sc.label,
-                            color: sc.color,
-                          }),
-                      },
-                    ]
-                  : []),
-                {
-                  label: t("shortcut.delete"),
-                  icon: <Trash2 size={20} strokeWidth={1.8} />,
-                  danger: true,
-                  run: () => deleteShortcut(sc.id),
-                },
-              ],
-            };
-            return (
-              <div
-                key={sc.id}
-                className="m-shortcut"
-                style={{ "--sc": sc.color ?? "var(--accent)" } as React.CSSProperties}
-              >
-                <button
-                  type="button"
-                  className="m-shortcut-main"
-                  onClick={() => void runShortcut(sc)}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    openMenu(menu);
-                  }}
-                >
-                  <span className="m-shortcut-name">
-                    {sc.label}
-                    {sc.mode === "save" && (
-                      <Zap
-                        size={15}
-                        strokeWidth={2}
-                        className="m-shortcut-zap"
-                        aria-label={t("shortcut.savesOnTap")}
-                      />
-                    )}
-                  </span>
-                  <span className="m-shortcut-sub">
-                    {parts.slice(0, 3).join(" · ") || t("shortcut.emptyValues")}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="m-icon"
-                  aria-label={t("shortcut.menu", { label: sc.label })}
-                  title={t("shortcut.menu", { label: sc.label })}
-                  onClick={() => openMenu(menu)}
-                >
-                  <MoreVertical size={20} strokeWidth={1.8} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="m-hint">{t("shortcut.empty")}</p>
-      )}
-      <button type="button" className="m-add" onClick={newShortcut}>
-        <Plus size={20} strokeWidth={1.8} />
-        {t("shortcut.new")}
-      </button>
-    </main>
-  );
-}
-
-// ---------- Charts: a list; one chart at a time on the whole screen ----------
-function ChartsTab() {
-  const t = useStore((s) => s.t);
-  const specs = useVisibleCharts();
-  return (
-    <main className="m-scroll">
-      {specs.length > 0 ? (
-        <div className="m-list">
-          {specs.map((spec) => (
-            <ChartRow key={spec.id} spec={spec} />
-          ))}
-        </div>
-      ) : (
-        <p className="m-hint">{t("mobile.noCharts")}</p>
-      )}
-      <button
-        type="button"
-        className="m-add"
-        onClick={() => openEditor(B.newSpec(t("charts.newTitle")), true)}
-      >
-        <Plus size={20} strokeWidth={1.8} />
-        {t("charts.new")}
-      </button>
-    </main>
-  );
-}
-
-function ChartRow({ spec }: { spec: ChartSpec }) {
-  const t = useStore((s) => s.t);
-  const { data } = useChartData(spec.id);
-  const value = data?.total != null ? M.formatAuto(data.total, data.unit ?? "EUR") : "";
-  return (
-    <button type="button" className="m-chart-row" onClick={() => showChart(spec.id)}>
-      <span className="card-dot" style={{ background: spec.color ?? "var(--accent)" }} />
-      <span className="m-chart-row-text">
-        <span className="m-chart-row-name">{spec.title}</span>
-        <span className="m-chart-row-sub">{B.periodLabel(t, spec.period)}</span>
-      </span>
-      {value && <span className="m-chart-row-value">{value}</span>}
-      <ChevronRight size={20} strokeWidth={1.8} className="m-chevron" />
-    </button>
   );
 }
 
@@ -512,6 +442,20 @@ function ChartScreen({ id, openMenu }: { id: string; openMenu: (m: Menu) => void
             },
           ]
         : []),
+      // On Inicio or only in the pages that show it (Juan, 2026-10-31: «puede fijar alguna en Inicio»).
+      {
+        label: spec.home ? t("charts.unpinHome") : t("charts.pinHome"),
+        icon: spec.home ? (
+          <PinOff size={20} strokeWidth={1.8} />
+        ) : (
+          <Pin size={20} strokeWidth={1.8} />
+        ),
+        run: () =>
+          void changeChart(
+            { ...spec, home: !spec.home },
+            spec.home ? t("charts.unpinnedHome") : t("charts.pinnedHome"),
+          ),
+      },
       {
         label: t("mobile.duplicateChart"),
         icon: <Copy size={20} strokeWidth={1.8} />,

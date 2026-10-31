@@ -41,6 +41,73 @@ export const TEXT_REPLY = {
   error: null,
 };
 
+/**
+ * A turn told live in Juan's words (docs/conversacion.md 3.5): the steps as the server sends them while it runs, and
+ * its answer, a sentence and a chart of what the tools counted.
+ */
+export const LIVE_STEPS = [
+  { type: "start", run: "r-chart" },
+  { type: "planning" },
+  { type: "planned", steps: 3 },
+  {
+    type: "step",
+    id: "s",
+    op: "call",
+    what: "Ver tipos",
+    state: "start",
+    words: { tool: "schema.describe", args: {} },
+  },
+  { type: "step", id: "s", op: "call", what: "Ver tipos", state: "done" },
+  {
+    type: "step",
+    id: "n",
+    op: "call",
+    what: "Calcular",
+    state: "start",
+    words: {
+      tool: "entities.aggregate",
+      args: { type: "Tareas", op: "count", field: "Prioridad", equals: "Alta" },
+    },
+  },
+  { type: "step", id: "n", op: "call", what: "Calcular", state: "done", value: 3 },
+  {
+    type: "step",
+    id: "q",
+    op: "call",
+    what: "Buscar",
+    state: "start",
+    words: { tool: "entities.search", args: { text: "azulejos", type: "Tareas" } },
+  },
+  { type: "step", id: "q", op: "call", what: "Buscar", state: "done", n: 1 },
+];
+const list = (items: unknown[]) => ({ t: "list", items, integrity: "user" });
+export const CHART_REPLY = {
+  run: "r-chart",
+  status: "done",
+  replies: [
+    {
+      component: "text",
+      data: {
+        template: v("Tienes {a} tareas sin hacer; la mayoría, de prioridad alta.", "model"),
+        a: v(6, "imported"),
+      },
+    },
+    {
+      component: "chart",
+      data: {
+        labels: list([v("Alta", "model"), v("Media", "model"), v("Baja", "model")]),
+        values: list([v(3, "imported"), v(2, "imported"), v(1, "imported")]),
+        kind: v("bar", "model"),
+        caption: v("Tareas por prioridad", "model"),
+      },
+    },
+  ],
+  pending: null,
+  proposals: [],
+  notices: [],
+  error: null,
+};
+
 export const confirmTurn = (id: string) => ({
   run: `run-${id}`,
   status: "waiting",

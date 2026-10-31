@@ -197,7 +197,9 @@ test("in the Android app the page talks only to the app: requests, files, settin
   page,
 }) => {
   await openAndroid(page);
+  await page.locator(".m-fab").tap();
   await expect(page.locator(".m-shortcut")).toHaveCount(2);
+  await page.keyboard.press("Escape");
   const list = await calls(page);
   expect(list.some((c) => c.startsWith('request ["GET","api/v1/home"'))).toBe(true);
   expect(list.some((c) => c.startsWith('storeWrite ["shortcuts.json"'))).toBe(true);
@@ -227,12 +229,19 @@ test("Back asks the page: it closes one thing at a time, then lets the app go to
   await openAndroid(page);
   const back = () =>
     page.evaluate(() => (window as unknown as { __boniBack: () => boolean }).__boniBack());
+  // «Crear» from the + button: Back closes it.
+  await page.locator(".m-fab").tap();
+  await expect(page.locator(".m-bottom-sheet")).toBeVisible();
+  expect(await back()).toBe(true);
+  await expect(page.locator(".m-bottom-sheet")).toHaveCount(0);
+  await page.locator(".m-fab").tap();
   await page.locator(".m-capture").tap();
   await expect(page.locator(".m-sheet")).toBeVisible();
   expect(await back()).toBe(true);
   await expect(page.locator(".m-sheet")).toHaveCount(0);
 
   // Something typed: Back asks first; Back again keeps editing; the close button asks too; "Descartar" closes
+  await page.locator(".m-fab").tap();
   await page.locator(".m-capture").tap();
   const amount = page.locator(".m-sheet .form input").first();
   await amount.pressSequentially("12", { delay: 80 });
@@ -248,9 +257,8 @@ test("Back asks the page: it closes one thing at a time, then lets the app go to
   await page.locator(".m-sheet .m-top .m-icon").tap();
   await question.getByRole("menuitem", { name: "Descartar" }).tap();
   await expect(page.locator(".m-sheet")).toHaveCount(0);
-  await page.getByRole("button", { name: "Gráficas" }).tap();
 
-  // A chart's detail with its menu open: the menu, the detail, the chart, then the charts tab
+  // A chart's detail with its menu open: the menu, the detail, the chart, then Inicio
   await page.locator(".m-chart-row", { hasText: "Gasto del mes" }).tap();
   await page.locator(".m-chart-body .chart svg").waitFor();
   await page.waitForTimeout(300);
@@ -267,10 +275,16 @@ test("Back asks the page: it closes one thing at a time, then lets the app go to
   await expect(detailBack).toHaveCount(0);
   await expect(page.locator(".m-title")).toHaveText("Gasto del mes");
   expect(await back()).toBe(true);
-  await expect(page.locator(".m-title")).toHaveText("Gráficas");
+  await expect(page.locator(".m-large h1")).toHaveText("Inicio");
 
+  // Another place: what it opened first (the conversations' drawer), then Inicio; there the app goes to the background.
+  await page.locator(".m-tabs").getByRole("button", { name: "Boni" }).tap();
+  await page.locator(".m-top").getByRole("button", { name: "Conversaciones" }).tap();
+  await expect(page.locator(".chat-drawer")).toBeVisible();
   expect(await back()).toBe(true);
-  await expect(page.locator(".m-title")).toHaveText("Apuntar");
+  await expect(page.locator(".chat-drawer")).toHaveCount(0);
+  expect(await back()).toBe(true);
+  await expect(page.locator(".m-large h1")).toHaveText("Inicio");
   expect(await back()).toBe(false);
 });
 
@@ -293,7 +307,6 @@ test("home-screen shortcuts: pinned from a shortcut's or a chart's menu; the lau
   page,
 }) => {
   await openAndroid(page);
-  await expect(page.locator(".m-shortcut")).toHaveCount(2);
   await expect
     .poll(() =>
       page.evaluate(
@@ -309,12 +322,13 @@ test("home-screen shortcuts: pinned from a shortcut's or a chart's menu; the lau
         expect.objectContaining({ target: "chart:eating-out" }),
       ]),
     });
+  await page.locator(".m-fab").tap();
+  await expect(page.locator(".m-shortcut")).toHaveCount(2);
   await page.getByRole("button", { name: "Opciones de Café" }).tap();
   await page.getByRole("menuitem", { name: "Añadir a la pantalla de inicio" }).tap();
   const pins = (await calls(page)).filter((c) => c.startsWith("pin "));
   expect(pins).toHaveLength(1);
   expect(pins[0]).toContain("shortcut:cafe");
-  await page.getByRole("button", { name: "Gráficas" }).tap();
   await page.locator(".m-chart-row", { hasText: "Comida fuera" }).tap();
   await page.getByRole("button", { name: "Opciones de la gráfica" }).tap();
   await page.getByRole("menuitem", { name: "Añadir a la pantalla de inicio" }).tap();
@@ -338,7 +352,7 @@ test("a home-screen shortcut opens what it points to: at start, and while the ap
   const back = () =>
     page.evaluate(() => (window as unknown as { __boniBack: () => boolean }).__boniBack());
   expect(await back()).toBe(true);
-  await expect(page.locator(".m-title")).toHaveText("Gráficas");
+  await expect(page.locator(".m-large h1")).toHaveText("Inicio");
   await page.evaluate(() =>
     (window as unknown as { __boniEvent: (j: string) => void }).__boniEvent(
       JSON.stringify({ type: "navigate", screen: "shortcut:nope" }),
@@ -371,6 +385,7 @@ test("a server older than a feature says so instead of showing its raw answer", 
   page,
 }) => {
   await openAndroid(page, { missing: ["/shortcuts"] });
+  await page.locator(".m-fab").tap();
   await page.locator(".m-capture").tap();
   await page.locator(".m-sheet .form input").first().pressSequentially("1", { delay: 80 });
   await page.getByRole("button", { name: "Guardar como atajo" }).tap();
