@@ -2445,11 +2445,15 @@ html.widget-page body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.turn-answer {
+.turn-answer,
+.turn-live {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+.turn-answer:empty {
+  display: none;
 }
 .turn-error {
   color: var(--bad);

@@ -467,12 +467,7 @@ function Turn({ entry }: { entry: ChatEntry }) {
     <div className="turn">
       <div className="turn-request">{entry.request}</div>
       <div className="turn-answer">
-        <Steps
-          steps={live ? live.steps : (entry.steps ?? [])}
-          thinking={!!live?.thinking}
-          going={!!live}
-        />
-        {live && !r && live.replies.map((reply, i) => <ReplyView key={i} reply={reply} />)}
+        {!live && <Steps steps={entry.steps ?? []} thinking={false} going={false} />}
         {r?.replies.map((reply, i) => (
           <ReplyView key={i} reply={reply} />
         ))}
@@ -494,6 +489,15 @@ function Turn({ entry }: { entry: ChatEntry }) {
           </button>
         )}
       </div>
+      {/* The part still going (3.5): its steps and what it said so far; the answer above fills when it ends. */}
+      {live && (
+        <div className="turn-live">
+          <Steps steps={live.steps} thinking={live.thinking} going />
+          {live.replies.map((reply, i) => (
+            <ReplyView key={i} reply={reply} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
