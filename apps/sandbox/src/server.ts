@@ -14,6 +14,7 @@ import {
   type RunResponse,
   requestErrors,
 } from "@boni/sandbox";
+import { compiledQuickJS } from "./run.ts";
 
 export interface BoxOptions {
   /** Calls at once. */
@@ -34,13 +35,15 @@ export async function startBox(socketPath: string, opts: BoxOptions = {}): Promi
   const workers = opts.workers ?? 2;
   const queueMax = opts.queue ?? 16;
   const grace = opts.grace ?? 3_000;
+  // The interpreter compiled once, for every call's worker to make its own instance of (fast).
+  const module = await compiledQuickJS();
   const running = new Set<Worker>();
   const waiting: { req: RunRequest; done: (r: RunResponse) => void }[] = [];
 
   const start = (req: RunRequest, done: (r: RunResponse) => void) => {
     const limits = limitsOf(req);
     const worker = new Worker(WORKER, {
-      workerData: { request: req },
+      workerData: { request: req, module },
       // The interpreter's memory is its own, capped (run.ts); this bounds what the worker's JavaScript may take.
       resourceLimits: { maxOldGenerationSizeMb: 32, maxYoungGenerationSizeMb: 8, stackSizeMb: 4 },
     });
