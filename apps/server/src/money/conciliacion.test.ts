@@ -13,6 +13,7 @@ import { runInSandbox } from "../sandbox.ts";
 import { seed, type TypeSpec } from "../seed.test-util.ts";
 import { storeNotes } from "./book.ts";
 import { buildConciliacion, GENERATED } from "./build.ts";
+import { checkConciliacion } from "./check.ts";
 import { CONCILIACION } from "./conciliacion.ts";
 import { cerrar_mes, importar, reportOf } from "./preset.ts";
 import type { StatementFile } from "./reconcile.ts";
@@ -129,9 +130,9 @@ const TYPES: TypeSpec[] = [
 const dir = mkdtempSync(join(tmpdir(), "boni-conciliacion-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 let n = 0;
-const account = (): UserStore => {
+const account = (types = TYPES, notes = NOTES): UserStore => {
   const store = openUserStore(join(dir, `u${++n}.db`));
-  seed(store, TYPES, NOTES);
+  seed(store, types, notes);
   return store;
 };
 const statements = (more: string[] = []): StatementFile[] => [
@@ -143,6 +144,12 @@ const statements = (more: string[] = []): StatementFile[] => [
     bytes: readFileSync(join(FIXTURES, f)),
   })),
 ];
+/** The statements as the account's files give them (storeFiles.ts). */
+const filesOf = (files: StatementFile[]) => ({
+  files: () => files.map((f) => f.name),
+  readBytes: (rel: string) =>
+    files.find((f) => rel.endsWith(`/${f.name}`))?.bytes ?? new Uint8Array(),
+});
 const asData = (files: StatementFile[]) => ({
   value: {
     files: files.map((f) => ({ name: f.name, base64: Buffer.from(f.bytes).toString("base64") })),
@@ -180,12 +187,7 @@ describe("the reconciliation as an extension's functions", () => {
   it("imports exactly what finanzas_import imports, and asks what it leaves out", async () => {
     const store = account();
     const files = statements();
-    const files$ = {
-      files: () => files.map((f) => f.name),
-      readBytes: (rel: string) =>
-        files.find((f) => rel.endsWith(`/${f.name}`))?.bytes ?? new Uint8Array(),
-    };
-    const today = reconcileImport(store, files$, { apply: true, today: DAY, run: "hoy" });
+    const today = reconcileImport(store, filesOf(files), { apply: true, today: DAY, run: "hoy" });
     expect(today.created.length).toBeGreaterThan(4);
     expect(today.joined).toEqual(["Cena cumple 60,00 EUR", "Prensa 3,50 EUR"]);
     expect(today.unclear).toHaveLength(1);
@@ -224,12 +226,7 @@ describe("the reconciliation as an extension's functions", () => {
   it("closes a month exactly as finanzas_close closes it", async () => {
     const store = account();
     const files = statements();
-    const files$ = {
-      files: () => files.map((f) => f.name),
-      readBytes: (rel: string) =>
-        files.find((f) => rel.endsWith(`/${f.name}`))?.bytes ?? new Uint8Array(),
-    };
-    reconcileImport(store, files$, { apply: true, today: DAY });
+    reconcileImport(store, filesOf(files), { apply: true, today: DAY });
     const today = reconcileClose(store, { month: "2026-09", apply: true, run: "cierre" });
     expect(today.ready.length).toBeGreaterThan(3);
     expect(today.blocked.length).toBeGreaterThan(2);
@@ -253,6 +250,49 @@ describe("the reconciliation as an extension's functions", () => {
     const done = applyChangeSet(store, CONCILIACION, "cerrar_mes", r.changeSet, r.label, r.read);
     if (!done.ok) throw new Error(done.message);
     expect(movements(store)).toEqual(want);
+  });
+});
+
+describe("the equality check on a copy of an account (cli.ts conciliacion-check)", () => {
+  it("says, in counts and field names, that both ways give the same", async () => {
+    const r = await checkConciliacion(account(), filesOf(statements()), {
+      today: DAY,
+      month: "2026-09",
+      box: false,
+    });
+    expect(r).toEqual({
+      same: true,
+      lines: [
+        "Extractos: 4 · movimientos: 8",
+        "importar (en Node): igual — 6 nuevos, 2 unidos, 1 dudoso; el informe, igual",
+        "cerrar_mes 2026-09 (en Node): igual — 7 para conciliar, 6 siguen pendientes; el informe, igual",
+      ],
+    });
+  });
+
+  it("says what stops the functions: a field the account does not have", async () => {
+    // An account whose movements never had anyone invited: no such field.
+    const cena = `${MOV}/cena.md`;
+    const notes = { ...NOTES, [cena]: (NOTES[cena] ?? "").replace('invited: ["[[luis]]"]\n', "") };
+    const without = TYPES.map((t) =>
+      t.key === "movimiento"
+        ? {
+            ...t,
+            fields: Object.fromEntries(
+              Object.entries(t.fields ?? {}).filter(([k]) => k !== "invited"),
+            ),
+          }
+        : t,
+    );
+    const r = await checkConciliacion(account(without, notes), filesOf(statements()), {
+      today: DAY,
+      month: null,
+      box: false,
+    });
+    expect(r.same).toBe(false);
+    expect(r.lines[1]).toBe(
+      "importar: no se ha podido ejecutar — «Movimiento» no tiene el campo «invited»",
+    );
   });
 });
 

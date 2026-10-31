@@ -556,8 +556,11 @@ siempre lo mismo.
   el código de hoy y las funciones (aplicadas por Boni) dejan los movimientos igual, y la caja da lo mismo que Node:
   140 KB de extractos en 176 pasos y 136 ms en el portátil. Las claves que lee (`bank-ref`, `my-share`, `nombre`,
   `tipo`, `texto`…) son las que Boni hace de cada nombre: la prueba con la copia de Juan lo confirmará.
+- La prueba con los datos de Juan es un comando: `cli.ts conciliacion-check <cuenta> [--month AAAA-MM] [--detalle]`
+  trabaja sobre una copia de la cuenta (nunca sobre ella; la borra al acabar), hace la importación y el cierre de las
+  dos maneras y dice solo cuentas y nombres de campos (con `--detalle`, los títulos de lo que difiere, para Juan).
 - Falta (E4b, con maqueta): «Subir extracto», la tarjeta del ensayo, «Cerrar mes» en Gastos y las preguntas de las
-  dudosas; la prueba de igualdad con la copia de Juan; después, borrar `money/` y `finanzas_*`.
+  dudosas; pasar `conciliacion-check` en el NAS; después, borrar `money/` y `finanzas_*`.
 
 **E5. Lo privado por extensión.**
 - Permisos guardados en el almacén (como `aiRules`): colección → extensión → función, o papel + modelo + proveedor.
