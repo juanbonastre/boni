@@ -23,6 +23,8 @@ import {
 import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
 import { embedCounts, embedDoubts } from "./embeds.ts";
+import { checkConciliacion } from "./money/check.ts";
+import { storeFiles } from "./money/storeFiles.ts";
 import { planFromNote, reshape, undoReshape } from "./reshape.ts";
 import { codeHash, runInSandbox, sandboxSocket } from "./sandbox.ts";
 import { loadKey } from "./secret.ts";
@@ -56,6 +58,9 @@ import { V1Store } from "./v1/store.ts";
  *       still embedded, one per line with where files of that name are (src/embeds.ts)
  *   node src/cli.ts sandbox-check                    whether the box of the extensions' functions answers (its socket,
  *       BONI_SANDBOX_SOCKET), with how long a small call took and how many steps it used
+ *   node src/cli.ts conciliacion-check <name> [--month YYYY-MM] [--detalle]
+ *       on a copy of the account (never on it), the reconciliation's functions against `finanzas_import` and
+ *       `finanzas_close` (src/money/check.ts): counts and field names only, the titles of what differs with --detalle
  */
 const [cmd, ...args] = process.argv.slice(2);
 const paths = databasePaths();
@@ -289,9 +294,46 @@ try {
     console.log(
       `La caja contesta (${sandboxSocket()}): ${Date.now() - started} ms en total, ${r.ms} ms la llamada, ${r.steps} pasos.`,
     );
+  } else if (cmd === "conciliacion-check") {
+    const usage = "Usage: conciliacion-check <name> [--month YYYY-MM] [--detalle]";
+    const [name] = args.filter((a, i) => !a.startsWith("--") && args[i - 1] !== "--month");
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!name || !user) throw new Error(usage);
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    const at = args.indexOf("--month");
+    const month = at >= 0 ? (args[at + 1] ?? "") : null;
+    if (month !== null && !/^\d{4}-\d{2}$/.test(month)) throw new Error(usage);
+    // On a copy: both ways write (and undo), and the apps go on writing to the account meanwhile.
+    const base = join(dirname(paths.system), "users", `${user.id}`);
+    const copy = `${base}.conciliacion.db`;
+    rmSync(copy, { force: true });
+    const live = openUserStore(`${base}.db`);
+    try {
+      live.copyTo(copy);
+    } finally {
+      live.close();
+    }
+    const store = openUserStore(copy);
+    try {
+      const r = await checkConciliacion(store, storeFiles(store), {
+        today: new Date().toISOString().slice(0, 10),
+        month,
+        detail: args.includes("--detalle"),
+      });
+      for (const line of r.lines) console.log(line);
+      console.log(
+        r.same
+          ? "Todo igual: las funciones dan lo mismo que finanzas_import y finanzas_close."
+          : "Hay diferencias: todavía no sustituyen a finanzas_*.",
+      );
+      if (!r.same) process.exitCode = 1;
+    } finally {
+      store.close();
+      for (const f of [copy, `${copy}-wal`, `${copy}-shm`]) rmSync(f, { force: true });
+    }
   } else {
     console.log(
-      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run> | embeds <name> [--dudosas] | sandbox-check",
+      "Commands: add-user <name> | users | devices <name> | revoke <name> [device] | token <name> <device> | import-boni <boni.sqlite3> <name> [--apply] | export <name> <file.zip> | import-export <file.zip> <name> | restore <name> <file.db.sealed> <out.db> | reshape <name> (--plan <file> | --plan-note <id>) [--apply] | reshape <name> --undo <run> | embeds <name> [--dudosas] | sandbox-check | conciliacion-check <name> [--month YYYY-MM] [--detalle]",
     );
   }
 } catch (e) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runCall } from "../src/run.ts";
+import { compiledQuickJS, runCall } from "../src/run.ts";
 import { call } from "./call.ts";
 
 describe("one call of an extension's function", () => {
@@ -85,5 +85,20 @@ describe("one call of an extension's function", () => {
       ),
     );
     expect(r).toMatchObject({ ok: false, error: "steps" });
+  });
+
+  it("its time starts once its interpreter is ready (starting one is not the function's time)", async () => {
+    const r = await runCall(
+      call(
+        "function f() { let s = 0; for (let k = 0; k < 20000; k++) s += k; return s }",
+        "f",
+        {},
+        {
+          limits: { ms: 80 },
+        },
+      ),
+      { module: await compiledQuickJS() },
+    );
+    expect(r).toMatchObject({ ok: true, output: 199990000 });
   });
 });

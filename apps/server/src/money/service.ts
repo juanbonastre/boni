@@ -13,7 +13,7 @@ import { type CloseResult, closeMonth, type ImportResult, importStatements } fro
 export const STATEMENTS = "registros/finanzas/extractos";
 export interface MoneyFiles {
   files(dir: string, exts: string[]): string[];
-  readBytes(rel: string): Buffer;
+  readBytes(rel: string): Uint8Array;
 }
 
 function ensureMovements(store: UserStore) {
