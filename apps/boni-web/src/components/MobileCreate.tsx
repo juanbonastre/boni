@@ -18,6 +18,7 @@ import { host } from "../host.ts";
 import {
   addRow,
   CAPTURE_SCREEN,
+  configured,
   deleteShortcut,
   newPage,
   openCollection,
@@ -41,12 +42,15 @@ export function Fab({ openMenu }: { openMenu: (m: Menu) => void }) {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const tab = useStore((s) => s.tab);
+  const ready = useStore((s) => configured(s.settings));
   const [open, setOpen] = useState(false);
-  // On a place's own screen, not over a record, a page or a proposal being read, nor in Boni's conversation.
+  // On a place's own screen, not over a record, a page or a proposal being read, nor in Boni's conversation;
+  // before the server is set up there is nothing to create.
   const shown =
-    tab === "home" ||
-    (tab === "pages" && (view.kind === "home" || view.kind === "collection")) ||
-    (tab === "inbox" && view.kind !== "proposal");
+    ready &&
+    (tab === "home" ||
+      (tab === "pages" && (view.kind === "home" || view.kind === "collection")) ||
+      (tab === "inbox" && view.kind !== "proposal"));
   if (!shown) return null;
   const inCollection = tab === "pages" && view.kind === "collection" ? view.type : null;
   return (
