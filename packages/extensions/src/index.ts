@@ -10,6 +10,7 @@ export {
   functionsErrors,
   isJson,
   type ReadSpec,
+  ROW_FIELDS,
   type TestSpec,
   type WriteSpec,
 } from "./functions.ts";

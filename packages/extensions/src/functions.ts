@@ -43,7 +43,11 @@ export interface TestSpec {
   expect: unknown;
 }
 
-/** What a function gets: the rows it reads (each with only its declared fields) and what the flow gives it. */
+/**
+ * What a function gets: the rows it reads (each with only its declared fields, by key) and what the flow gives it. An
+ * option is given by its name (its id is the account's own), a relation by the ids it points to; `$title` and `$text`
+ * are a row's title and its text, whatever their fields are called. What it writes is said the same way.
+ */
 export interface FunctionInput {
   rows: Record<string, { id: string; version: number; values: Record<string, unknown> }[]>;
   data?: unknown;
@@ -61,6 +65,8 @@ export interface ChangeSet {
   changes: Change[];
   /** One line for Juan on what it is (plain text). */
   summary?: string;
+  /** What else it wants Juan to read about it, line by line (plain text): what it left out, and why. */
+  report?: string[];
 }
 
 export const FUNCTION_LIMITS = {
@@ -73,12 +79,17 @@ export const FUNCTION_LIMITS = {
   testBytes: 200_000,
   changes: 2_000,
   text: 300,
+  report: 200,
   options: 6,
 } as const;
 
 const FN = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
 const KEY = /^[a-z][a-z0-9_-]{0,39}$/;
 const HASH = /^[0-9a-f]{64}$/;
+/** A row's title and its text (its page), in what a function reads and writes, whatever their fields are called. */
+export const ROW_FIELDS = ["$title", "$text"] as const;
+const isFieldKey = (f: unknown) =>
+  typeof f === "string" && (KEY.test(f) || (ROW_FIELDS as readonly string[]).includes(f));
 const LINK_OR_HTML = /(https?:\/\/|www\.|<\s*\/?\s*[a-z!]|\]\(|javascript:|data:)/i;
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -102,7 +113,7 @@ function fieldsErrors(w: string, fields: unknown, out: string[]) {
     !Array.isArray(fields) ||
     !fields.length ||
     fields.length > FUNCTION_LIMITS.fields ||
-    !fields.every((f) => typeof f === "string" && KEY.test(f)) ||
+    !fields.every(isFieldKey) ||
     new Set(fields).size !== fields.length
   )
     out.push(`${w}.fields: a list of field keys, each once`);
@@ -214,6 +225,11 @@ export const CHANGE_SET_SCHEMA: Schema = {
   additionalProperties: false,
   properties: {
     summary: { type: "string", maxLength: FUNCTION_LIMITS.text },
+    report: {
+      type: "array",
+      maxItems: FUNCTION_LIMITS.report,
+      items: { type: "string", maxLength: FUNCTION_LIMITS.text },
+    },
     changes: {
       type: "array",
       maxItems: FUNCTION_LIMITS.changes,
@@ -273,9 +289,16 @@ export function changeSetErrors(
 ): string[] {
   if (!isObj(cs) || !Array.isArray(cs.changes)) return ["not a change set"];
   const out: string[] = [];
-  if (only(cs, ["changes", "summary"]).length) out.push("unknown keys");
+  if (only(cs, ["changes", "summary", "report"]).length) out.push("unknown keys");
   if (cs.summary !== undefined && !isText(cs.summary, FUNCTION_LIMITS.text))
     out.push("summary: plain text");
+  if (
+    cs.report !== undefined &&
+    (!Array.isArray(cs.report) ||
+      cs.report.length > FUNCTION_LIMITS.report ||
+      !cs.report.every((l) => isText(l, FUNCTION_LIMITS.text)))
+  )
+    out.push(`report: up to ${FUNCTION_LIMITS.report} lines of plain text`);
   if (cs.changes.length > FUNCTION_LIMITS.changes) out.push("too many changes");
   const writable = new Map(fn.writes.map((w) => [w.collection, w]));
   const touched = new Set<string>();

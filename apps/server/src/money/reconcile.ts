@@ -39,7 +39,7 @@ export interface Book {
 /** A statement file: its name and bytes. */
 export interface StatementFile {
   name: string;
-  bytes: Buffer;
+  bytes: Uint8Array;
 }
 
 export const UNKNOWN = "otros/desconocido";
@@ -260,12 +260,24 @@ export interface ImportResult {
   report: string[];
 }
 
-/** New bank lines into movements, joined with the app's notes; the script's `import`. */
-export function importStatements(
+/**
+ * What an import would do, nothing written: the app's notes each bank line joins (by id, with what it adds), the new
+ * movements, the doubtful lines with the notes each could be, and the report so far. The box's `importar` (preset.ts)
+ * gives it back as a change set; `importStatements` writes it.
+ */
+export interface ImportPlan {
+  edits: { id: string; props: Record<string, PropValue>; file: string }[];
+  creates: { movement: NewMovement; file: string }[];
+  unclear: { line: BankLine; candidates: string[] }[];
+  result: ImportResult;
+}
+
+/** New bank lines as movements, joined with the app's notes, nothing written. */
+export function planImport(
   book: Book,
   files: StatementFile[],
-  o: { rules: Rule[]; apply: boolean; today: string },
-): ImportResult {
+  o: { rules: Rule[]; today: string },
+): ImportPlan {
   const out = logger();
   const all = book.movements();
   const known = new Set(
@@ -279,7 +291,12 @@ export function importStatements(
   );
   if (!files.length) {
     out("No hay extractos");
-    return { created: [], joined: [], unclear: [], report: out.lines };
+    return {
+      edits: [],
+      creates: [],
+      unclear: [],
+      result: { created: [], joined: [], unclear: [], report: out.lines },
+    };
   }
   const lines: (BankLine & { file: string })[] = [];
   for (const f of files) {
@@ -368,31 +385,51 @@ export function importStatements(
     out(
       "  (las dudosas no se importan: en la nota correcta pon bank_ref y vuelve a importar, o pon 'separadas')",
     );
-  const result = (report: string[]): ImportResult => ({
-    created: creates.map((c) => c.movement.title),
-    joined: [...edits.keys()].map(named),
-    unclear: [...unclear.keys()].sort((a, b) => a - b).map((i) => (fresh[i] as BankLine).ref),
-    report,
-  });
+  const doubtful = [...unclear.entries()].sort((a, b) => a[0] - b[0]);
+  return {
+    edits: [...edits.entries()].map(([id, e]) => ({ id, props: e.props, file: e.file })),
+    creates,
+    unclear: doubtful.map(([i, candidates]) => ({ line: fresh[i] as BankLine, candidates })),
+    result: {
+      created: creates.map((c) => c.movement.title),
+      joined: [...edits.keys()].map(named),
+      unclear: doubtful.map(([i]) => (fresh[i] as BankLine).ref),
+      report: out.lines,
+    },
+  };
+}
+
+/** New bank lines into movements, joined with the app's notes; the script's `import`. */
+export function importStatements(
+  book: Book,
+  files: StatementFile[],
+  o: { rules: Rule[]; apply: boolean; today: string },
+): ImportResult {
+  const plan = planImport(book, files, o);
+  const report = plan.result.report;
+  if (!files.length) return plan.result;
   if (!o.apply) {
-    for (const c of creates.slice(0, 2)) {
+    for (const c of plan.creates.slice(0, 2)) {
       const props = Object.entries(c.movement.values)
         .filter(([, v]) => v !== null && v !== "")
         .map(([k, v]) => `${k}: ${String(v)}`);
-      out(`\n=== ${c.movement.title}\n${props.join("\n")}`);
+      report.push(`\n=== ${c.movement.title}\n${props.join("\n")}`);
     }
-    out("\n(simulacion: no se ha escrito nada)");
-    return result(out.lines);
+    report.push("\n(simulacion: no se ha escrito nada)");
+    return plan.result;
   }
-  for (const e of edits.values()) book.update(e.note.id, e.props, e.file);
-  for (const c of creates) book.create(c.movement, c.file);
-  out(`Escrito: ${edits.size} notas unidas, ${creates.length} notas nuevas en Movimiento`);
-  return result(out.lines);
+  for (const e of plan.edits) book.update(e.id, e.props, e.file);
+  for (const c of plan.creates) book.create(c.movement, c.file);
+  report.push(
+    `Escrito: ${plan.edits.length} notas unidas, ${plan.creates.length} notas nuevas en Movimiento`,
+  );
+  return plan.result;
 }
 
 // ------------------------------------------------------------------ close
 
-const byName = (category: string): CategoryKind =>
+/** A category's kind by its name (the first Boni's rule, @boni/views' `kindByName`). */
+export const byName = (category: string): CategoryKind =>
   category.startsWith("ingreso/")
     ? "ingreso"
     : NOT_EXPENSE.some((p) => category.startsWith(p))
@@ -448,17 +485,18 @@ export interface CloseResult {
   report: string[];
 }
 
-/** A month's pending movements checked, the complete ones marked `conciliado`; the script's `close`. */
-export function closeMonth(
+/** What closing a month would do, nothing written: the ids of the movements ready to be `conciliado`, and the report. */
+export interface ClosePlan {
+  ready: string[];
+  result: CloseResult;
+}
+
+/** A month's pending movements checked, nothing written. */
+export function planClose(
   book: Book,
   month: string | null,
-  o: {
-    cats: string[];
-    rules: Rule[];
-    apply: boolean;
-    kindOf?: (category: string) => CategoryKind;
-  },
-): CloseResult {
+  o: { cats: string[]; rules: Rule[]; kindOf?: (category: string) => CategoryKind },
+): ClosePlan {
   const out = logger();
   const notes = book.movements();
   const debts = book.debts();
@@ -510,16 +548,33 @@ export function closeMonth(
       .join(", ");
   if (owed.size) out(`Te deben: ${sum(owed)}`);
   if (owe.size) out(`Debes: ${sum(owe)}`);
-  const result = (): CloseResult => ({
-    ready: ready.map((n) => n.title),
-    blocked: blocked.map(([n, p]) => [n.title, p]),
-    report: out.lines,
-  });
+  return {
+    ready: ready.map((n) => n.id),
+    result: {
+      ready: ready.map((n) => n.title),
+      blocked: blocked.map(([n, p]) => [n.title, p]),
+      report: out.lines,
+    },
+  };
+}
+
+/** A month's pending movements checked, the complete ones marked `conciliado`; the script's `close`. */
+export function closeMonth(
+  book: Book,
+  month: string | null,
+  o: {
+    cats: string[];
+    rules: Rule[];
+    apply: boolean;
+    kindOf?: (category: string) => CategoryKind;
+  },
+): CloseResult {
+  const plan = planClose(book, month, o);
   if (!o.apply) {
-    out("(simulacion: no se ha escrito nada)");
-    return result();
+    plan.result.report.push("(simulacion: no se ha escrito nada)");
+    return plan.result;
   }
-  for (const n of ready) book.update(n.id, { status: "conciliado" });
-  out(`Marcados como conciliado: ${ready.length}`);
-  return result();
+  for (const id of plan.ready) book.update(id, { status: "conciliado" });
+  plan.result.report.push(`Marcados como conciliado: ${plan.ready.length}`);
+  return plan.result;
 }

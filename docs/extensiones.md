@@ -519,6 +519,11 @@ siempre lo mismo.
   derivada (no puede ser un destino).
 - Pruebas: de propiedad (como `adversarial.ts`): con funciones y salidas al azar, lo derivado de lo privado nunca llega
   al planificador ni a un destino, y un conjunto de cambios no toca nada fuera de lo que declaró.
+- Cómo ve una función los valores (2026-10-31, con E4): cada campo por su clave; una opción por su **nombre** (su id es
+  de cada cuenta: `o_pendiente` en una, `o_pendiente_1a2b3c4d` en otra) y, al escribir, un nombre que el campo no
+  tiene para todo el conjunto, sin escribir nada; una relación por los ids a los que apunta; el título y el texto de
+  una fila, se llamen como se llamen sus campos, como `$title` y `$text`. Además del resumen, un conjunto de cambios
+  puede traer un **informe** (`report`, hasta 200 líneas de texto plano) que Juan lee en su tarjeta.
 
 **E3. Proponer y activar.**
 - Sesiones con **alcance** en `@boni/identity` (`read`, `write`, `extensions:propose`); `cli.ts token <name> <device>
@@ -542,6 +547,20 @@ siempre lo mismo.
 - Prueba de igualdad: con una copia de los datos de Juan (la copia diaria), el preset da exactamente lo mismo que el
   código de hoy, como se hizo el 2026-10-23 con Categorías. Luego se borran `apps/server/src/money/` y las herramientas
   `finanzas_*` (las sustituye `extensions_run`); el skill `/gastos` y el procedimiento se actualizan.
+- Hecho (2026-10-31, E4a): el código ya no usa nada de Node (`money/bytes.ts`: DEFLATE, SHA-1, base64 y las
+  codificaciones, probados contra los de Node), y la importación y el cierre se separan en lo que harían (`planImport`,
+  `planClose`) y su escritura. `money/preset.ts` son las dos funciones, `importar` (los extractos llegan en
+  `data.files`, en base64; cada línea dudosa, una pregunta) y `cerrar_mes` (`data.month`), sobre las filas que Boni
+  les da; `make conciliacion` las compila en `conciliacion.gen.js` (52 KB; una prueba comprueba que el archivo es lo
+  que sale del código) y `money/conciliacion.ts` es su manifiesto, **aún fuera de PRESETS**. En una cuenta inventada,
+  el código de hoy y las funciones (aplicadas por Boni) dejan los movimientos igual, y la caja da lo mismo que Node:
+  140 KB de extractos en 176 pasos y 136 ms en el portátil. Las claves que lee (`bank-ref`, `my-share`, `nombre`,
+  `tipo`, `texto`…) son las que Boni hace de cada nombre: la prueba con la copia de Juan lo confirmará.
+- La prueba con los datos de Juan es un comando: `cli.ts conciliacion-check <cuenta> [--month AAAA-MM] [--detalle]`
+  trabaja sobre una copia de la cuenta (nunca sobre ella; la borra al acabar), hace la importación y el cierre de las
+  dos maneras y dice solo cuentas y nombres de campos (con `--detalle`, los títulos de lo que difiere, para Juan).
+- Falta (E4b, con maqueta): «Subir extracto», la tarjeta del ensayo, «Cerrar mes» en Gastos y las preguntas de las
+  dudosas; pasar `conciliacion-check` en el NAS; después, borrar `money/` y `finanzas_*`.
 
 **E5. Lo privado por extensión.**
 - Permisos guardados en el almacén (como `aiRules`): colección → extensión → función, o papel + modelo + proveedor.

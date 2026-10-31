@@ -8,6 +8,7 @@ import {
   label,
   SENSITIVITY_ORDER,
   sensitivityRank,
+  type TypeDef,
 } from "@boni/entities";
 import type { ExtensionManifest, FunctionInput, FunctionSpec } from "@boni/extensions";
 import { openUserStore, type UserStore } from "@boni/store";
@@ -45,7 +46,13 @@ beforeEach(() => {
         key: "movimiento",
         name: "Movimiento",
         folder: "finanzas/",
-        fields: { fecha: "date", importe: "number", concepto: "text", cuenta: "text" },
+        fields: {
+          fecha: "date",
+          importe: "number",
+          concepto: "text",
+          cuenta: "text",
+          estado: { type: "select", options: ["pendiente", "conciliado"] },
+        },
       },
       {
         key: "deuda",
@@ -58,7 +65,7 @@ beforeEach(() => {
     ],
     {
       "finanzas/cafe.md":
-        '---\nfecha: "2026-10-01"\nimporte: -1.5\nconcepto: "café"\ncuenta: "ING"\n---\n# Café\n',
+        '---\nfecha: "2026-10-01"\nimporte: -1.5\nconcepto: "café"\ncuenta: "ING"\nestado: pendiente\n---\n# Café\n\nCon leche.\n',
       "deudas/ana.md": "---\nsaldada: false\nimporte: 20\n---\n# Cena con Ana\n",
       "salud/cita.md": '---\nfecha: "2026-11-02"\n---\n# Dentista\n',
       "diario/hoy.md": '---\nanimo: "bien"\n---\n# Hoy\n',
@@ -138,6 +145,17 @@ describe("what a function gets", () => {
     ]);
     expect(got.input.rows.deuda?.[0]?.values).toEqual({ saldada: false, importe: 20 });
     expect(got.label.integrity).toBe("imported");
+  });
+
+  it("an option by its name, and a row's title and text whatever their fields are called", () => {
+    const got = inputFor(
+      store,
+      fnSpec({ reads: [{ collection: "movimiento", fields: ["$title", "$text", "estado"] }] }),
+    );
+    if (!got.ok) throw new Error(got.message);
+    const values = got.input.rows.movimiento?.[0]?.values;
+    expect(values).toMatchObject({ $title: "Café", estado: "pendiente" });
+    expect(String(values?.$text)).toContain("Con leche.");
   });
 
   it("nothing private or restricted (until Juan opens it for it, E5); opaque only for code", () => {
@@ -242,6 +260,63 @@ describe("applying it", () => {
     store.undoRun(done.run, { actor: "user", device: "portatil" });
     expect(store.get(done.created[0] as string)?.entity.deleted).toBeTruthy();
     expect(store.get(ids.get("deudas/ana.md") as string)?.entity.values.f_saldada).toBe(false);
+  });
+
+  it("writes an option by its name, a title and a text; an option the field does not have stops it all", async () => {
+    const spec = fnSpec({
+      reads: [{ collection: "movimiento", fields: ["estado"] }],
+      writes: [
+        {
+          collection: "movimiento",
+          fields: ["$title", "$text", "estado", "importe"],
+          create: true,
+          update: true,
+        },
+      ],
+    });
+    const cafe = ids.get("finanzas/cafe.md") as string;
+    const writes = (estado: string) =>
+      box({
+        importar: (input) => ({
+          changes: [
+            {
+              op: "create",
+              collection: "movimiento",
+              values: {
+                $title: "Taxi",
+                $text: "Del aeropuerto.",
+                estado: "conciliado",
+                importe: -20,
+              },
+            },
+            {
+              op: "update",
+              id: input.rows.movimiento?.[0]?.id,
+              version: input.rows.movimiento?.[0]?.version,
+              values: { estado },
+            },
+          ],
+        }),
+      });
+    const lost = await callFunction(store, ext(spec), "importar", { run: writes("perdido") });
+    if (!lost.ok) throw new Error(lost.message);
+    expect(
+      applyChangeSet(store, ext(spec), "importar", lost.changeSet, lost.label, lost.read),
+    ).toMatchObject({ ok: false, error: "scope" });
+    expect(store.list("t_movimiento")).toHaveLength(1);
+    const r = await callFunction(store, ext(spec), "importar", { run: writes("conciliado") });
+    if (!r.ok) throw new Error(r.message);
+    const done = applyChangeSet(store, ext(spec), "importar", r.changeSet, r.label, r.read);
+    if (!done.ok) throw new Error(done.message);
+    const t = store.schema().types.t_movimiento as TypeDef;
+    const taxi = store.get(done.created[0] as string)?.entity;
+    const conciliado = t.fields
+      .find((f) => f.key === "estado")
+      ?.options?.find((o) => o.name === "conciliado")?.id;
+    expect(taxi?.values[t.titleField]).toBe("Taxi");
+    expect(taxi?.body).toBe("Del aeropuerto.");
+    expect(taxi?.values.f_estado).toBe(conciliado);
+    expect(store.get(cafe)?.entity.values.f_estado).toBe(conciliado);
   });
 
   it("is made again when a row it read changed since, and never leaves what no model may read more open", async () => {

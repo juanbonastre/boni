@@ -898,7 +898,7 @@ const TOOLS: Tool[] = [
         functions: {
           limits: FUNCTION_LIMITS,
           box: { default: BOX_LIMITS, most: BOX_MAX },
-          how: "A function is JavaScript run in a box without network, files, clock or chance: `name(input, ctx)` gets `{ rows: { <collection key>: [{ id, version, values }] }, data }` (only the fields it declares in `reads`) and `ctx = { day, random() }`, and gives back `{ summary?, changes: [create | update | ask] }`, checked against its `writes`. Every function needs tests; Juan activates a version in Boni.",
+          how: "A function is JavaScript run in a box without network, files, clock or chance: `name(input, ctx)` gets `{ rows: { <collection key>: [{ id, version, values }] }, data }` (only the fields it declares in `reads`, by key: an option by its name, a relation by the ids it points to, `$title` and `$text` for a row's title and text) and `ctx = { day, random() }`, and gives back `{ summary?, report?: [lines], changes: [create | update | ask] }`, checked against its `writes` (said the same way; an option the field does not have is refused). Every function needs tests; Juan activates a version in Boni.",
         },
         installed: installed(c.store).map((i) => ({
           id: i.manifest.id,

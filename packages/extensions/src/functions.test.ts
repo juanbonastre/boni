@@ -166,6 +166,42 @@ describe("what a function gives back", () => {
     ]);
   });
 
+  it("a row's title and text are written as `$title` and `$text`; its report is plain text, line by line", () => {
+    const titled = {
+      ...importar,
+      writes: [{ collection: "movimiento", fields: ["$title", "$text", "importe"], create: true }],
+    };
+    expect(manifestErrors({ ...manifest, functions: [titled] }, CAT)).toEqual([]);
+    expect(
+      manifestErrors(
+        {
+          ...manifest,
+          functions: [{ ...titled, reads: [{ collection: "movimiento", fields: ["$id"] }] }],
+        },
+        CAT,
+      ),
+    ).toEqual(["functions[0].reads[0].fields: a list of field keys, each once"]);
+    const made = (report: unknown) =>
+      changeSetErrors(
+        {
+          summary: "2 nuevos",
+          report: report,
+          changes: [
+            {
+              op: "create",
+              collection: "movimiento",
+              values: { $title: "Taxi", $text: "Del aeropuerto." },
+            },
+          ],
+        },
+        titled,
+        read,
+      );
+    expect(made(["ing.xls: 2 líneas", "  NUEVA 2026-10-30 -20.00 Taxi"])).toEqual([]);
+    expect(made(["mira www.ejemplo.invalid"])).toEqual(["report: up to 200 lines of plain text"]);
+    expect(made("una línea")).toEqual(["report: up to 200 lines of plain text"]);
+  });
+
   it("never touches anything outside what it declared, whatever it gives back (random sets)", () => {
     // A small fixed generator: the same sets every run.
     let s = 7;
