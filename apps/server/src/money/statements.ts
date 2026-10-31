@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha1Hex } from "./bytes.ts";
 import { type Cell, parseDt, parseNum, type Row } from "./sheets.ts";
 
 /**
@@ -55,7 +55,7 @@ function makeRef(prefix: string, parts: string[], seen: Map<string, number>): st
   const n = (seen.get(key) ?? 0) + 1;
   seen.set(key, n);
   if (n > 1) key += `#${n}`;
-  return prefix + createHash("sha1").update(key, "utf8").digest("hex").slice(0, 12);
+  return prefix + sha1Hex(key).slice(0, 12);
 }
 
 const REVOLUT: Record<string, string[]> = {

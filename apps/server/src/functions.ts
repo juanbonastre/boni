@@ -27,7 +27,7 @@ import {
   type FunctionSpec,
 } from "@boni/extensions";
 import type { RunRequest, RunResponse } from "@boni/sandbox";
-import { levelRank, type UserStore, type Writes } from "@boni/store";
+import { BODY, levelRank, type UserStore, type Writes } from "@boni/store";
 import { codeHash, runInSandbox } from "./sandbox.ts";
 
 /** Calls the box: the server's client, or a stand-in in a test. */
@@ -42,6 +42,31 @@ const typeByKey = (store: UserStore, key: string): TypeDef | undefined =>
   Object.values(store.schema().types).find((t) => t.key === key && !t.archived && !t.system);
 const fieldByKey = (t: TypeDef, key: string): FieldDef | undefined =>
   t.fields.find((f) => f.key === key && !f.archived && !f.hidden);
+/** Where a declared field is kept: a field by its key, or the row's title or its text (`$title`, `$text`). */
+type Slot = { id: string; field: FieldDef | null };
+const slotByKey = (t: TypeDef, key: string): Slot | undefined => {
+  if (key === "$text") return { id: BODY, field: null };
+  const f = key === "$title" ? t.fields.find((x) => x.id === t.titleField) : fieldByKey(t, key);
+  return f ? { id: f.id, field: f } : undefined;
+};
+const choices = (f: FieldDef | null) => f?.type === "select" || f?.type === "multiselect";
+/** A value as a function gets it: an option by its name (its id is the account's own). */
+function shown(f: FieldDef | null, v: unknown): unknown {
+  if (v === undefined || v === null) return null;
+  if (!f || !choices(f)) return v;
+  const name = (x: unknown) => f.options?.find((o) => o.id === x)?.name ?? x;
+  return f.type === "select" ? name(v) : (Array.isArray(v) ? v : [v]).map(name);
+}
+/** A value a function gave, as Boni keeps it: an option by its name to its id; one the field does not have is refused. */
+function kept(f: FieldDef | null, v: unknown): { ok: true; value: unknown } | { ok: false } {
+  if (!f || !choices(f) || v === null) return { ok: true, value: v };
+  const id = (x: unknown) =>
+    f.options?.find((o) => o.name === x)?.id ?? f.options?.find((o) => o.id === x)?.id;
+  const list = f.type === "select" ? [v] : Array.isArray(v) ? v : [v];
+  const out = list.map(id);
+  if (out.some((x) => x === undefined)) return { ok: false };
+  return { ok: true, value: f.type === "select" ? out[0] : out };
+}
 /** Nothing comes in when a function reads nothing: Boni's own code is its source. */
 const NOTHING = label("own", "public", [{ kind: "code", id: "extensions" }]);
 
@@ -66,9 +91,9 @@ export function inputFor(
     // Restricted and private collections are not given to a function (only with Juan's permission, E5).
     if (!visible[t.id])
       return { ok: false, error: "closed", message: `«${t.name}» está cerrada a las extensiones` };
-    const fields: [string, FieldDef][] = [];
+    const fields: [string, Slot][] = [];
     for (const k of r.fields) {
-      const f = fieldByKey(t, k);
+      const f = slotByKey(t, k);
       if (!f)
         return { ok: false, error: "missing", message: `«${t.name}» no tiene el campo «${k}»` };
       fields.push([k, f]);
@@ -77,7 +102,7 @@ export function inputFor(
       read.set(s.entity.id, { collection: r.collection, version: s.entity.version });
       const values: Record<string, unknown> = {};
       for (const [k, f] of fields) {
-        values[k] = s.entity.values[f.id] ?? null;
+        values[k] = f.id === BODY ? (s.entity.body ?? null) : shown(f.field, s.entity.values[f.id]);
         const l = s.labels[f.id];
         if (l) labels.push(l);
       }
@@ -221,11 +246,14 @@ export function applyChangeSet(
       message: "algo de lo que leyó ha cambiado: hay que volver a ejecutarla",
     };
   const levels = store.aiAccess();
-  const typeFor = (key: string) => typeByKey(store, key);
+  const run = `ext-${ext.id}-${randomUUID()}`;
+  const op = { actor: "agent" as const, by: `extension:${ext.id}/${fn.name}`, run, ...meta };
+  // Every write made and checked before anything is written: an option the field does not have stops it all.
+  const plan: { t: TypeDef; id: string | null; version: number; writes: Writes }[] = [];
   for (const c of cs.changes) {
     if (c.op === "ask") continue;
     const key = c.op === "create" ? c.collection : (read.get(c.id)?.collection ?? "");
-    const t = typeFor(key);
+    const t = typeByKey(store, key);
     if (!t) return { ok: false, error: "missing", message: `no hay ninguna colección «${key}»` };
     // What no model may read (an opaque collection's) never lands where a model could read it.
     if (made.noModel && levelRank(levels[t.id]) < levelRank("opaque"))
@@ -234,29 +262,34 @@ export function applyChangeSet(
         error: "more-open",
         message: `«${t.name}» está más abierta a la IA que lo que leyó`,
       };
-  }
-  const run = `ext-${ext.id}-${randomUUID()}`;
-  const op = { actor: "agent" as const, by: `extension:${ext.id}/${fn.name}`, run, ...meta };
-  const writesOf = (t: TypeDef, values: Record<string, unknown>): Writes => {
-    const out: Writes = {};
-    for (const [k, v] of Object.entries(values)) {
-      const f = fieldByKey(t, k);
-      if (f) out[f.id] = { value: v, label: made };
+    const writes: Writes = {};
+    for (const [k, v] of Object.entries(c.values)) {
+      const slot = slotByKey(t, k);
+      if (!slot) continue;
+      const value = kept(slot.field, v);
+      if (!value.ok)
+        return {
+          ok: false,
+          error: "scope",
+          message: `«${slot.field?.name ?? k}» de «${t.name}» no tiene la opción «${String(v)}»`,
+        };
+      writes[slot.id] = { value: value.value, label: made };
     }
-    return out;
-  };
+    plan.push(
+      c.op === "create"
+        ? { t, id: null, version: 0, writes }
+        : { t, id: c.id, version: c.version, writes },
+    );
+  }
   const created: string[] = [];
   const updated: string[] = [];
   try {
     store.batch(() => {
-      for (const c of cs.changes) {
-        if (c.op === "create") {
-          const t = typeFor(c.collection) as TypeDef;
-          created.push(store.create(t.id, writesOf(t, c.values), op).entity.id);
-        } else if (c.op === "update") {
-          const t = typeFor(read.get(c.id)?.collection ?? "") as TypeDef;
-          store.update(c.id, writesOf(t, c.values), op, c.version);
-          updated.push(c.id);
+      for (const p of plan) {
+        if (p.id === null) created.push(store.create(p.t.id, p.writes, op).entity.id);
+        else {
+          store.update(p.id, p.writes, op, p.version);
+          updated.push(p.id);
         }
       }
     });
