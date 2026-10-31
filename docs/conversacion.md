@@ -1,7 +1,11 @@
 # La conversación con Boni
 
-Propuesta (2026-10-31), a raíz de la maqueta de la conciliación (E4b, `docs/extensiones.md` §11.6). Pendiente de que
-Juan la apruebe. Amplía `docs/nucleo.md` §7 (el agente), y en `docs/extensiones.md` el Lienzo (§6), el asistente que
+Propuesta (2026-10-31), a raíz de la maqueta de la conciliación (E4b, `docs/extensiones.md` §11.6). Juan la aprobó el
+mismo día con tres aclaraciones, ya incluidas: el historial se ve como en otras IA (§3.1), agrupar las preguntas o
+hacerlas de una en una depende de lo segura que esté Boni (§3.4), y los asistentes no son un concepto aparte: son el
+modo de conversación de una extensión (§3.3).
+
+Amplía `docs/nucleo.md` §7 (el agente), y en `docs/extensiones.md` el Lienzo (§6), el asistente que
 ve la pantalla (§8) y los papeles de modelo (§9). Ninguna regla de `docs/principios.md` cambia: el modelo sigue
 planeando y el código sigue decidiendo (A-01).
 
@@ -15,10 +19,10 @@ cuando ha acabado. La propuesta la hace la pieza central de Boni:
 - **Siempre hay una barra para escribir,** aunque Boni esté enseñando tarjetas con opciones.
 - **Una misma conversación se ve en varias superficies:** una ventana flotante, el panel de la derecha, la pantalla
   Conversación, un bloque en una página, el móvil y, más adelante, la voz.
-- **Los asistentes** son conversaciones con instrucciones, bienvenida y botones de inicio. Los define Juan o los trae
-  una extensión.
+- **Una extensión puede traer su modo de conversación:** instrucciones, bienvenida, botones de inicio y sus
+  herramientas. No hay un concepto aparte de «asistente» (§3.3).
 
-La conciliación (E4b) pasa a ser el primer asistente.
+La conciliación (E4b) pasa a ser la primera extensión con modo de conversación.
 
 ## 1. Lo que enseñó la maqueta
 
@@ -51,7 +55,7 @@ La segunda maqueta preguntaba de una en una con tarjetas, y Juan encontró sus l
 | Quién | Cómo | Lo que tomamos |
 |---|---|---|
 | ChatGPT, Claude, Gemini | Lista de chats con búsqueda; el turno llega a trozos, con el razonamiento resumido y plegable («pensó durante 8 s»); botón de parar dentro de la barra; selector de modelo; editar un mensaje y volver a generar desde ahí | La forma del chat: lista, turno en vivo, parar, modelo, corregir |
-| GPTs (ChatGPT), Gems (Gemini), Custom Agents (Notion) | Un asistente es un chat preconfigurado: instrucciones, conocimiento, herramientas y frases para empezar. En Notion, un botón puede mandar un mensaje a un agente, y un agente puede ir incrustado en una página como caja de chat que, al escribir, abre su ventana ([Notion Agent](https://www.notion.com/help/notion-agent)) | Los asistentes (§3.3) y el bloque «Chat» de una página |
+| GPTs (ChatGPT), Gems (Gemini), Custom Agents (Notion) | Un asistente es un chat preconfigurado: instrucciones, conocimiento, herramientas y frases para empezar. En Notion, un botón puede mandar un mensaje a un agente, y un agente puede ir incrustado en una página como caja de chat que, al escribir, abre su ventana ([Notion Agent](https://www.notion.com/help/notion-agent)) | El modo de conversación de una extensión (§3.3) y el bloque «Chat» de una página |
 | Notion AI | Una cara abajo a la derecha en todas las páginas abre el chat. Se elige verlo flotante o a la derecha, y desde la barra lateral pasa a pantalla completa. Usa la página abierta como contexto | Las superficies (§3.2) y el contexto de la pantalla (`extensiones.md` §8) |
 | MCP Apps (estándar abierto desde enero de 2026; Claude y ChatGPT) | Una herramienta devuelve una interfaz que se pinta dentro de la conversación. Lo que se pulsa vuelve como llamada a una herramienta o como mensaje ([MCP Apps](https://blog.modelcontextprotocol.io/posts/2026-01-26-mcp-apps/), [WorkOS](https://workos.com/blog/2026-01-27-mcp-apps)) | La idea, sin su forma: ellos pintan HTML ajeno en un iframe; Boni pinta solo componentes de su catálogo, como el Lienzo (§3.4) |
 | ChatKit (OpenAI) | Widgets declarados en JSON (tarjeta, lista, botón, formulario, selector, fecha); sus acciones llegan al servidor sin que el usuario escriba. Avisan del riesgo de las acciones viejas: pulsar «Confirmar» en una tarjeta de hace cuatro mensajes ([ChatKit widgets](https://developers.openai.com/api/docs/guides/chatkit-widgets)) | Tarjetas declarativas, y que el código vuelva a comprobar una tarjeta vieja antes de actuar |
@@ -70,16 +74,27 @@ Lo que no tomamos:
 
 ### 3.1 Las conversaciones son datos
 
-- **Dónde se guardan.** Dos tipos de sistema en el almacén del usuario (D-02):
-  - `conversation`: título, asistente, modelo elegido, creada, última vez, archivada.
+- **Lo que ve Juan.** La pantalla Conversación es como la de ChatGPT, Claude o Gemini:
+  - a la izquierda, el historial de conversaciones, con «Nueva conversación», un buscador y la lista por fechas (hoy,
+    ayer, los últimos 7 días, antes);
+  - a la derecha, la conversación abierta.
+
+  Cada conversación tiene su título, que Boni pone a partir del primer mensaje y que Juan puede cambiar.
+- **Dónde se guardan.** «Almacén» es la base de datos de la cuenta de Juan en Boni, donde ya están todas sus
+  colecciones. No es el navegador ni el dispositivo. Dos tipos de sistema en el almacén del usuario (D-02):
+  - `conversation`: título, la extensión en cuyo modo está (si lo está), modelo elegido, creada, última vez,
+    archivada.
   - `turn`: la conversación, lo que dijo Juan, la ejecución (`run`), las respuestas pintadas como componentes con sus
     etiquetas (como ya las guarda el agente en memoria, §7.3) y la tarjeta que quedó esperando.
 
   Se exportan y se auditan como todo lo demás. Por eso el historial no se pierde al reiniciar, y Juan lo ve en el
-  portátil y en el móvil.
+  portátil y en el móvil. No salen entre las colecciones: se ven en su pantalla.
 - **Lo que recibe el planificador del historial.** Los últimos turnos de esa conversación, pasados por
   `toPlannerView`, igual que hoy. Lo de fuera sigue llegando como asas (§7.3).
-- **Corregir.**
+- **Corregir, sin versiones paralelas.**
+  - Si Juan cambia un mensaje antiguo, Boni no crea una conversación paralela, como hace ChatGPT con sus flechas «1/2».
+    Lo trata como una corrección: deshace lo que hizo aquel mensaje y lo rehace con lo nuevo, y las dos cosas quedan en
+    el historial.
   - Cada turno tiene su ejecución, así que «Deshacer este turno» sigue siendo un clic.
   - Además, un mensaje de Juan se puede **editar**. Eso crea un turno de corrección que lleva el turno original y lo
     nuevo. El planificador lo convierte en deshacer lo afectado (`runs.undo`, por la política) y rehacer con el dato
@@ -87,7 +102,7 @@ Lo que no tomamos:
   - «Antes te he dicho X, pero es Y», escrito tal cual, hace lo mismo: el turno anterior está en el historial, con su
     ejecución.
 - **Varios chats.** «Conversaciones» en la barra lateral: buscar, fijar, cambiar el nombre, archivar (a la papelera).
-  Un chat nuevo empieza vacío; el de un asistente empieza con su bienvenida.
+  Una conversación nueva empieza vacía; la de un modo de extensión empieza con su bienvenida.
 
 ### 3.2 Un motor, muchas superficies
 
@@ -98,34 +113,49 @@ Una conversación es la misma esté donde esté; la superficie solo cambia cómo
 | **Ventana flotante** | Desde un botón, un bloque o el círculo de Boni | Sale del botón que la abrió: crece y aparece en unos 200 ms; sin animación si el sistema pide movimiento reducido. Se mueve, admite archivos arrastrados y se puede minimizar al círculo |
 | **A la derecha** | «Llevar a la derecha» en la ventana | Ocupa la columna de la derecha. **No sustituye a la Bandeja:** son dos cosas, cada una con su botón, y se puede pasar de una a otra |
 | **Pantalla Conversación** | «Ampliar» en la ventana | La conversación entera, con la lista de chats al lado |
-| **Bloque «Chat» en una página** | El bloque de un asistente (§3.3) | Su bienvenida, sus botones y la barra. Al escribir o pulsar, se abre la ventana con esa conversación, como los agentes incrustados de Notion |
+| **Bloque «Chat» en una página** | Una conversación centrada en una extensión (§3.3) | Su bienvenida, sus botones y la barra. Al escribir o pulsar, se abre la ventana con esa conversación, como los agentes incrustados de Notion |
 | **Móvil** | Las mismas entradas | Pantalla completa, con la barra abajo |
 | **Círculo de Boni** (más adelante) | En todas las pantallas y como widget del escritorio, con su atajo | Abre la última conversación o una nueva. Es el «botón abajo a la derecha» de `extensiones.md` §8, con el contexto de la pantalla |
 | **Voz** (más adelante) | Desde el círculo | §3.7 |
 
-### 3.3 Asistentes: chats ya preparados
+### 3.3 Sin «asistentes» aparte: el modo de conversación de una extensión
 
-Un **asistente** es una conversación con forma: el equivalente a un GPT, un Gem o un agente de Notion.
+Juan (2026-10-31): el sistema tiene que ser claro, con un modelo mental sencillo, y Juan tiene que tener el control de
+lo que pasa. Una colección de asistentes se solaparía con las extensiones. Por eso hay solo tres conceptos:
 
-- **Qué es.** Una colección de sistema, «Asistentes». Cada fila tiene:
-  - nombre e icono;
-  - **instrucciones**: el meta-prompt, que es texto de Juan o de la extensión;
-  - una **bienvenida**: el mensaje con el que empieza;
-  - **botones de inicio**: «Subir extracto», «Cerrar septiembre». Cada uno es una acción del catálogo (subir un archivo
-    a una carpeta, o mandar un mensaje), no texto libre;
-  - las **herramientas** que puede usar (un subconjunto del catálogo y de las funciones de su extensión);
-  - los archivos que acepta y el modelo que prefiere.
-- **Quién los hace.**
-  - Juan, desde Boni.
-  - Una extensión, en su manifiesto (`assistants`). Se activan con ella, pasando por la tarjeta de activación (E3), y
-    Juan ve sus instrucciones antes de activarla.
-  - Las instrucciones de una extensión son entrada para el modelo, no código, y nunca dan más permisos que sus
-    herramientas.
-- **Dónde aparecen.**
-  - En el bloque «Chat» de una página: en el catálogo de bloques, con los ajustes asistente, bienvenida y botones.
-  - En un botón de página que «manda un mensaje a un asistente».
-  - En la lista de chats.
-  - Más adelante, cuando Juan pida algo por voz que le toca a un asistente («quiero añadir los extractos del mes»).
+| Concepto | Qué es | Dónde se ve |
+|---|---|---|
+| **Boni** | Un solo asistente, siempre el mismo | El círculo, la pantalla Conversación |
+| **Extensiones** | Lo que Boni sabe hacer además de lo básico: el Correo, la Conciliación… | Su sección propia |
+| **Conversaciones** | Lo que Juan habla con Boni, a veces centrado en una extensión | El historial (§3.1) |
+
+- **El modo de conversación de una extensión.** Una extensión puede traerlo en su manifiesto:
+  - sus **instrucciones** para el modelo (texto que se lee en su página);
+  - su **bienvenida**;
+  - sus **botones de inicio**, como «Subir extracto» o «Cerrar el mes». Cada botón es una acción del catálogo (subir un
+    archivo a una carpeta, o mandar un mensaje), no texto libre;
+  - las **herramientas** que puede usar: sus funciones y las del catálogo que declara;
+  - los **archivos** que acepta.
+- **Juan ve siempre en qué modo está Boni.** Una conversación centrada en una extensión lo dice en la barra de escribir,
+  con una etiqueta («Conciliación») que se quita con un clic. Sin ella, Boni es el de siempre.
+- **Una extensión de Juan puede ser solo eso:** instrucciones, bienvenida y botones, sin código. Es el equivalente a un
+  GPT o un Gem, pero sin un concepto nuevo.
+- **Su sección propia.** «Extensiones» pasa de Ajustes a un sitio propio en la barra lateral. Cada extensión tiene una
+  página:
+  - qué hace;
+  - qué lee y qué escribe;
+  - su modo de conversación, con las instrucciones a la vista;
+  - sus funciones y sus pruebas;
+  - sus versiones;
+  - y encenderla o apagarla.
+
+  Se activa como hoy (E3): nada se activa solo, y una versión que pide más lo dice.
+- **Dónde aparece el modo.**
+  - En el bloque «Chat» de una página, que es una conversación centrada en una extensión, con su bienvenida y sus
+    botones.
+  - En un botón de página que manda un mensaje a Boni en ese modo.
+  - Cuando Juan pide algo que le toca a una extensión («quiero añadir los extractos del mes»): Boni lo propone y Juan
+    lo acepta con un clic.
 
 ### 3.4 Tarjetas dentro de la conversación
 
@@ -156,9 +186,15 @@ Las reglas:
 3. **Una tarjeta vieja se vuelve a comprobar.** Al pulsarla, el código mira si lo que leyó ha cambiado (como `stale` en
    los conjuntos de cambios). Si ha cambiado, lo dice y la vuelve a hacer. Una pregunta ya contestada se queda como
    texto, con su respuesta debajo.
-4. **Sin modelo también funciona.** Las preguntas de una función (la conciliación) llegan con su control, así que, sin
+4. **Agrupar o preguntar de una en una depende de lo segura que esté Boni** (Juan, 2026-10-31).
+   - Lo que tiene bastante claro lo junta en una sola tarjeta para revisar («estas 5 las pongo así»), con casillas
+     para quitar alguna o corregirla.
+   - Lo dudoso lo pregunta de una en una.
+   - El umbral no se fija ahora. Boni aprende de lo que Juan corrige, como la revisora del correo, y agrupa más a medida
+     que acierta.
+5. **Sin modelo también funciona.** Las preguntas de una función (la conciliación) llegan con su control, así que, sin
    modelo configurado, Boni pregunta con tarjetas como en la maqueta. Con modelo, además entiende lo que Juan escriba.
-   Elegir entre opciones cerradas lo puede hacer un `decider` barato, como Jev (§9).
+   Elegir entre opciones cerradas lo puede hacer un `decider` barato, como Jev (`extensiones.md` §9).
 
 ### 3.5 El turno en vivo
 
@@ -188,10 +224,10 @@ Las reglas:
 - **Debajo, dentro de la barra:**
   - adjuntar (y arrastrar a toda la ventana);
   - el modelo;
-  - el asistente, si lo hay;
+  - la etiqueta del modo, si lo hay;
   - más adelante, el micrófono.
 - **Atajos.** Intro envía y Mayúsculas+Intro hace un salto de línea, como hoy. «/» abre las acciones de los
-  asistentes, como `/conciliar`.
+  modos de las extensiones, como `/conciliar`.
 
 ### 3.7 La voz, más adelante
 
@@ -210,7 +246,7 @@ poder parar.
 
 ## 4. La conciliación dentro de esta estructura
 
-El asistente «Conciliación» lo trae la extensión `conciliacion`.
+El modo «Conciliación» lo trae la extensión `conciliacion`.
 
 - **Cómo empieza.**
   - Desde Gastos, su bloque «Chat» o un botón abre la ventana con la bienvenida: «Sube el extracto del banco y lo
@@ -238,7 +274,7 @@ El asistente «Conciliación» lo trae la extensión `conciliacion`.
   - Lo que queda para luego se guarda en la conversación con sus respuestas. La próxima vez, Boni empieza por ahí:
     «te quedaban 2 cosas de septiembre».
   - Si Juan cierra la ventana a medias, es lo mismo: la conversación sigue en la lista.
-- **Sin modelo,** la misma conversación con tarjetas, como la maqueta 2 (§3.4, regla 4).
+- **Sin modelo,** la misma conversación con tarjetas, como la maqueta 2 (§3.4, regla 5).
 
 ## 5. Seguridad: lo que no cambia
 
@@ -269,29 +305,34 @@ El asistente «Conciliación» lo trae la extensión `conciliacion`.
 | Modelo por papel, fijo | Selector por conversación entre los permitidos |
 | Las preguntas de las funciones, solo en la maqueta | `ask` con `ref`, control y la línea de la que trata; respuestas en `data.answers` |
 
-## 7. Fases (cada una con su PR, sus pruebas y, si cambia la interfaz, maqueta antes, I-09)
+## 7. Fases
 
-| Fase | Qué | Depende de |
+Juan (2026-10-31): varias fases juntas, sin esperar un PR por cada una. Un PR puede llevar varias, cada una con sus
+pruebas; lo que cambia la interfaz de forma nueva sigue empezando por una maqueta (I-09).
+
+| Fase | Qué | Va con |
 |---|---|---|
-| C1 | **Conversaciones guardadas:** los tipos `conversation` y `turn`, la lista de chats, el historial al volver, Deshacer y editar con un turno de corrección | — |
-| C2 | **El turno en vivo:** eventos por SSE (pasos, pensamiento resumido, texto), parar, la barra nueva y el selector de modelo | C1 |
-| C3 | **Tarjetas en la conversación:** la tarjeta de pregunta con sus controles y su salida libre, el ensayo y el hecho, y la comprobación de una tarjeta vieja | C2 |
+| C1 | **Conversaciones guardadas:** los tipos `conversation` y `turn`, el historial a la izquierda de la pantalla Conversación, Deshacer y corregir | C2, en un PR |
+| C2 | **El turno en vivo:** los pasos según ocurren, parar, la barra nueva y el selector de modelo | C1 |
+| C3 | **Tarjetas en la conversación:** la tarjeta de pregunta con sus controles y su salida libre, agrupar lo seguro, el ensayo y el hecho, y la comprobación de una tarjeta vieja | C4 y C5, tras la maqueta 3 |
 | C4 | **Superficies:** la ventana flotante con su animación y los archivos arrastrados, llevarla a la derecha (aparte de la Bandeja), ampliarla y el móvil | C3 |
-| C5 | **Asistentes:** la colección, el bloque «Chat» de página, el botón que manda un mensaje y `assistants` en el manifiesto | C4, E3 |
-| C6 | **La conciliación como asistente** (es E4b): las preguntas de las funciones, las respuestas en `data.answers`, crear una categoría, las reglas (cambiar, esporádica, más general con su prueba) y lo que nota solo | C5, E4a |
+| C5 | **Modos de conversación de las extensiones:** en el manifiesto, la sección Extensiones, el bloque «Chat» y el botón que manda un mensaje | C3 |
+| C6 | **La conciliación en modo conversación** (es E4b): las preguntas de las funciones, las respuestas en `data.answers`, crear una categoría, las reglas (cambiar, esporádica, más general con su prueba) y lo que nota solo | C5, E4a |
 | C7 | **El círculo de Boni y la voz:** el círculo en todas las pantallas y en el escritorio, pulsar para hablar y después tiempo real | C4 |
 
-Una maqueta junta lo que se ve de C2 a C5: la ventana flotante con la conversación de la conciliación, la barra
-nueva, los pasos en vivo, las tarjetas con su salida libre y el bloque «Chat» en Gastos. Es el paso siguiente si Juan
-aprueba la estructura.
+La maqueta 3 junta lo que se ve de C3 a C5: la ventana flotante con la conciliación dentro, la barra con su etiqueta
+de modo, las tarjetas con su salida libre, lo agrupado y el bloque «Chat» en Gastos.
 
-## 8. Lo que decide Juan
+## 8. Decidido (Juan, 2026-10-31)
 
-1. **Guardar las conversaciones** en su almacén, como datos suyos (§3.1).
-2. **Corregir sin ramas.** Una corrección es un turno nuevo que deshace y rehace, no una rama de la conversación como
-   en ChatGPT (§2).
-3. **La ventana flotante como superficie por defecto,** que se lleva a la derecha o se amplía, y siempre aparte de la
+1. **Las conversaciones se guardan** en la cuenta de Juan, y su historial se ve en la pantalla Conversación como en
+   otras IA (§3.1).
+2. **Corregir sin versiones paralelas,** con un turno nuevo que deshace y rehace (§3.1). Agrupar las preguntas o hacerlas
+   una a una depende de lo segura que esté Boni, y lo aprende con el uso (§3.4).
+3. **La ventana flotante como superficie por defecto,** que se lleva a la derecha o se amplía, siempre aparte de la
    Bandeja (§3.2).
-4. **Los asistentes como colección,** que hacen Juan o las extensiones, y el bloque «Chat» de página (§3.3).
-5. **Con modelo, Boni entiende lo que se escribe; sin modelo, pregunta con tarjetas** (§3.4, regla 4).
-6. **El orden:** C1 a C5 antes de la conciliación (C6, que es E4b), y la voz al final (C7).
+4. **No hay asistentes aparte:** una extensión puede traer su modo de conversación, y las extensiones tienen su sección
+   propia (§3.3).
+5. **Con modelo, Boni entiende lo que se escribe; sin modelo, pregunta con tarjetas** (§3.4).
+6. **El orden de C1 a C7, en lotes:** C1 y C2 juntas; C3 a C5 tras la maqueta 3; luego la conciliación (C6) y la voz
+   (C7).

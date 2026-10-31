@@ -562,9 +562,9 @@ siempre lo mismo.
 - Falta pasar `conciliacion-check` en el NAS; después, borrar `money/` y `finanzas_*`.
 - **E4b se rehace como conversación (Juan, 2026-10-31).** Probó dos maquetas, primero una tarjeta en la Bandeja y luego
   preguntas de una en una, y pidió un chat de verdad: siempre una barra para escribir, el historial guardado, una
-  ventana propia aparte de la Bandeja y un asistente preparado. La estructura está en `docs/conversacion.md`, y la
-  conciliación es allí la fase C6, después de las conversaciones guardadas, el turno en vivo, las tarjetas, las
-  superficies y los asistentes (C1-C5).
+  ventana propia aparte de la Bandeja y un chat ya preparado en la página. La estructura está en
+  `docs/conversacion.md`, y la conciliación es allí la fase C6, después de las conversaciones guardadas, el turno en
+  vivo, las tarjetas, las superficies y los modos de conversación de las extensiones (C1-C5).
 
 **E5. Lo privado por extensión.**
 - Permisos guardados en el almacén (como `aiRules`): colección → extensión → función, o papel + modelo + proveedor.
