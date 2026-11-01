@@ -8,5 +8,11 @@ export interface EvalResult {
   /** What it cost, in dollars, when the provider said so. */
   cost: number;
   tokens: number;
-  cases: { name: string; ok: boolean; note: string }[];
+  cases: {
+    name: string;
+    ok: boolean;
+    note: string;
+    /** For a case not as expected: how its run ended and its plan, step by step (printed by eval.ts). */
+    detail?: string;
+  }[];
 }
