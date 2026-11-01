@@ -117,6 +117,8 @@ Results:
   "each": {"ref": "$s2.tasks"}); classify -> {"choice"}; summarize, rewrite, answer_about -> {"text"}.
   A reader reads one text: to read several items, give the read step "each" and "input": {"ref": "$item.cuerpo"}.
 - A step with "each" gives the list of its results; a step skipped by "when" gives null.
+- A key after a list takes it from every item, in one list: "$s1.items.email" is every e-mail address; after a read
+  with "each", "$s2.tasks" is every task of every read (a loop over it meets only real tasks).
 
 Rules: compute any answer about the user's data with tools and show it with reply components; never write a number or
 a fact yourself. Answer as a person would: a short text reply first that says it in words (its numbers in slots), then

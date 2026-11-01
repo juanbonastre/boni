@@ -6,7 +6,7 @@ import { isWholeSpan, validatePlan } from "../src/plan.ts";
 import { decide, type Origin } from "../src/policy.ts";
 import { checkReaderOutput } from "../src/readers.ts";
 import { coreTools, neutralize, ToolRegistry } from "../src/tools.ts";
-import { leaf, list, rec, type Val } from "../src/values.ts";
+import { at, atOrNull, leaf, list, rec, type Val } from "../src/values.ts";
 import { toPlannerView } from "../src/view.ts";
 import { testRegistry } from "./fixture.ts";
 
@@ -424,6 +424,28 @@ describe("readers and functions", () => {
     expect(
       callFn("add_days", [leaf("2026-10-30", user), leaf(3, model)], "2026-10-20"),
     ).toMatchObject({ value: "2026-11-02" });
+  });
+  it("a key through a list takes it from every item, one level flat, with the labels that decided its length", () => {
+    // Two reads with "each": the first found one task, the second (a mail from outside) none.
+    const title = leaf("Enviar el informe", ext);
+    const task = rec({ title }, ext);
+    const reads = list(
+      [rec({ tasks: list([task], ext) }, ext), rec({ tasks: list([], own) }, own)],
+      model,
+    );
+    const all = at(reads, ["tasks"]);
+    expect(all).toMatchObject({ t: "list", derived: true, label: { integrity: "external" } });
+    expect(all?.t === "list" && all.items).toEqual([task]);
+    expect(at(reads, ["tasks", 0, "title"])).toBe(title);
+    expect(at(reads, ["tasks", "title"])).toMatchObject({
+      t: "list",
+      items: [{ value: "Enviar el informe" }],
+    });
+    // A key no item has is wrong (nothing, as for a record); an empty list stays an empty list.
+    expect(at(reads, ["tareas"])).toBeNull();
+    expect(at(list([], own), ["tasks"])).toMatchObject({ t: "list", items: [] });
+    expect(atOrNull(reads, ["tareas"])).toMatchObject({ t: "v", value: null });
+    expect(atOrNull(reads, ["tasks"])).toMatchObject({ t: "list", items: [task] });
   });
   it("neutralizes remote resources (P17)", () => {
     expect(neutralize("![x](https://evil.example/a.png?q=1) <img src=x> <iframe>")).toBe(

@@ -99,9 +99,34 @@ export function at(v: Val, path: (string | number)[]): Val | null {
     if (!cur) return null;
     if (typeof p === "number") cur = cur.t === "list" ? (cur.items[p] ?? null) : null;
     else if (p === "items" && cur.t === "list") continue;
+    else if (cur.t === "list") cur = through(cur, p);
     else cur = cur.t === "rec" ? (cur.fields[p] ?? null) : null;
   }
   return cur;
+}
+
+/**
+ * A key through a list: the key of each item, joined in one list, one level flat. After a read with "each",
+ * "$s2.tasks" is every task of every read (2026-11-01: a plan over two mails could only reach the tasks of each mail
+ * one by one, and stopped on the mail that had none). The items stay as they are; the new list carries the labels of
+ * all that decided its length (the list, each item, each inner list), as `field` does. Items without the key are left
+ * out; when none has it the key is wrong, and there is nothing (null), as for a record.
+ */
+function through(l: Extract<Val, { t: "list" }>, key: string): Val | null {
+  const out: Val[] = [];
+  const labels: Label[] = [];
+  let found = false;
+  for (const i of l.items) {
+    labels.push(i.label);
+    const f = i.t === "rec" ? i.fields[key] : undefined;
+    if (!f) continue;
+    found = true;
+    if (f.t === "list") {
+      labels.push(f.label);
+      out.push(...f.items);
+    } else out.push(f);
+  }
+  return found || !l.items.length ? list(out, join(l.label, ...labels), true) : null;
 }
 
 /** "$s2.items[0].f_titulo" -> ["s2", "items", 0, "f_titulo"], or null when it is not a reference. */
@@ -150,9 +175,11 @@ export function atOrNull(v: Val, path: (string | number)[]): Val {
         ? cur.t === "list"
           ? cur.items[p]
           : undefined
-        : cur.t === "rec"
-          ? cur.fields[p]
-          : undefined;
+        : cur.t === "list"
+          ? (through(cur, p) ?? undefined)
+          : cur.t === "rec"
+            ? cur.fields[p]
+            : undefined;
     if (!next) return leaf(null, deepLabel(cur), true);
     cur = next;
   }

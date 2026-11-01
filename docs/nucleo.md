@@ -390,12 +390,16 @@ type Expr =
   | { lit: string | number | boolean | null }  // literal del planificador → integridad "model"
   | { quote: string }                          // cita literal de la petición: el intérprete comprueba que aparece
                                                // tal cual en el turno de Juan → integridad "user"
-  | { ref: string }                            // "$s2", "$s2.items[0].f_titulo", "$item"
+  | { ref: string }                            // "$s2", "$s2.items[0].f_titulo", "$item", "$s2.tasks"
   | { fn: PureFn; args: Expr[] };              // count, sum, min, max, filter, map, pick, concat, date math…
 ```
 
 - **Sin código libre**, sin bucles sin límite, sin recursión. Una herramienta que no está en el registro hace el plan
   inválido. Las funciones puras son una lista cerrada y propagan etiquetas.
+- **Una clave tras una lista la toma de cada elemento** y lo junta en una lista, un nivel plano: tras leer cada correo
+  con `each`, `$s2.tasks` son todas las tareas de todos los correos (2026-11-01: el planificador solo podía llegar a
+  las de cada correo una a una, y paraba en el correo que no pedía nada). Los elementos no cambian; la lista nueva
+  lleva las etiquetas de lo que decidió su largo, como la función `field`.
 - **Las respuestas sobre datos las calcula el código.** "¿Cuánto gasté en comida este mes?" se planifica como
   `call entities.aggregate` y luego `reply number`: la cifra no pasa por el modelo, así que no puede inventarla.
 - **Por qué `quote`:** un planificador con puerta trasera puede inventarse un destinatario. Un literal suyo nunca vale
