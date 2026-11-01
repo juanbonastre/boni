@@ -56,9 +56,9 @@ Y lo planeado o propuesto:
   de lo que Juan dice en el chat (`docs/correo.md`).
 
 **Lo que recibe el planificador en cada turno**, y nada más: `request` (la petición), `today` (el día), `tools` (las
-herramientas que puede usar), `schema` (las colecciones con sus campos), `history` (los últimos 10 turnos) y `memories`
-(Memoria, sin lo que escribió un modelo y Juan no confirmó). Una fuente nueva rompe una prueba hasta que se apunta aquí
-(A-12).
+herramientas que puede usar), `schema` (las colecciones con sus campos y, desde el 2026-11-01, la descripción de las que
+escribió Juan), `history` (los últimos 10 turnos) y `memories` (Memoria, sin lo que escribió un modelo y Juan no
+confirmó). Una fuente nueva rompe una prueba hasta que se apunta aquí (A-12).
 
 ## 2. Dónde se solapan
 
@@ -132,7 +132,10 @@ la leerán también el planificador y el decisor) y **Privacidad** (lo que puede
   la tarjeta espera también la contesta: «sí, pero solo los de la uni». Lo que se guarda son sus palabras (integridad
   `user`), no las del modelo.
 - **Memoria ordenada** en «Sobre ti» y «Hechos», cada cosa con de dónde viene.
-- **Las descripciones de colección** llegan también al planificador y al decisor.
+- **Las descripciones de colección** llegan al planificador (hecho el 2026-11-01): solo las que escribió Juan; la que
+  escribió un modelo (un asistente por el MCP, por ejemplo) espera, como un recuerdo (A-11). Al decisor, más adelante y
+  con su propia decisión: hoy, a un lector de contenido de fuera solo le llegan la guía y las opciones (`docs/nucleo.md`
+  §7.4b), aunque su respuesta sea solo una de esas opciones y no pueda contar lo que lee.
 - **El aprendizaje inferido es la fuente de las sugerencias, no un sitio más:** las señales de la auditoría y el
   aprendiz de cada extensión (`learning` en su manifiesto) producen sugerencias; la revisora del correo es el primero.
   Como mucho, una sugerencia al día que no nazca del chat, para no agobiar (del plan de 1e).
