@@ -101,8 +101,8 @@ export interface TypeDef {
   schemaVersion: number;
   /**
    * What goes in it, in a few words (docs/clases.md §2.9): it replaces a folder's README. The user reads it on the
-   * collection's page and Boni's MCP gives it to assistants; the planner does not see it (its text may come from a
-   * model).
+   * collection's page and Boni's MCP gives it to assistants. The planner reads it only when Juan wrote it (its label
+   * says so): one a model wrote waits for him, like a memory (A-11, docs/preferencias.md).
    */
   description?: { text: string; label: Label };
   /**

@@ -36,13 +36,27 @@ export function toPlannerView(v: Val, path: string): Json {
   );
 }
 
-/** The user's types as the planner sees them: names it may not see are left out (their ids stay). */
+/**
+ * What a collection is for, as the planner may read it (docs/preferencias.md, clase de datos): only what Juan wrote
+ * (or Boni, or an import); a description a model wrote waits for him, like a memory (A-11).
+ */
+const JUAN_S = new Set(["user", "own", "imported"]);
+const descriptionFor = (t: Schema["types"][string]) =>
+  t.description && JUAN_S.has(t.description.label.integrity) && plannerMaySee(t.description.label)
+    ? t.description.text
+    : null;
+
+/**
+ * The user's types as the planner sees them: names it may not see are left out (their ids stay), and each says what
+ * goes in it when Juan wrote that.
+ */
 export function schemaView(schema: Schema): Json {
   return Object.values(schema.types)
     .filter((t) => !t.system && !t.archived)
     .map((t) => ({
       key: plannerMaySee(t.label) ? t.key : `type_${t.id}`,
       ...(plannerMaySee(t.label) ? { name: t.name } : {}),
+      ...(descriptionFor(t) ? { description: descriptionFor(t) } : {}),
       fields: t.fields
         .filter((f) => !f.hidden && !f.archived)
         .map((f) => ({
