@@ -4,6 +4,7 @@ import { checkAnswers, JevProvider } from "../src/decider.ts";
 import {
   checkFill,
   type FillField,
+  fillDecisions,
   fillQuestions,
   fromAnswers,
   readFields,
@@ -54,6 +55,38 @@ describe("filling a proposal's fields (filling.ts)", () => {
       checkFill({ values: { f0: "Baja", f1: null }, note: "Mira https://example.com" }, FIELDS)
         ?.note,
     ).toBeNull();
+  });
+
+  it("each field is a decision with its confidence: taken, or left empty (docs/fiabilidad.md)", () => {
+    const choice = (c: string, confidence: number) => ({
+      type: "choice" as const,
+      choice: c,
+      confidence,
+    });
+    expect(
+      fillDecisions(
+        {
+          f0: choice("Alta", 0.9),
+          f0r: choice("Alta", 0.8),
+          f1: { type: "noul", noul: 0.3 },
+          note: { type: "noul", noul: 0.7 },
+        },
+        FIELDS,
+      ),
+    ).toEqual([
+      { field: "prioridad", p: 0.8, outcome: "do" },
+      { field: "hecho", p: 0.3, outcome: "nothing" },
+    ]);
+    // The orders disagree: no confidence at all.
+    expect(
+      fillDecisions(
+        { f0: choice("Alta", 0.9), f0r: choice("Baja", 0.9), f1: { type: "noul", noul: 0.9 } },
+        FIELDS,
+      ),
+    ).toEqual([
+      { field: "prioridad", p: 0, outcome: "nothing" },
+      { field: "hecho", p: 0.9, outcome: "do" },
+    ]);
   });
 
   it("the decider's answers: kept only when both orders agree with enough confidence", () => {

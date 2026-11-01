@@ -175,6 +175,26 @@ describe("classify asks Juan only when the decider is unsure", () => {
     expect(titled(env, sure.proposals[0] as string)).toBe("Gestiones");
   });
 
+  it("each choice is a decision with its confidence, judged by what Juan does with the proposal (docs/fiabilidad.md)", async () => {
+    env = makeEnv();
+    const reader = new ScriptedProvider("fake", () => ({ choice: "Docencia" }));
+    const a = env.agent(fakePlanner([]), reader, {
+      decider: jev(["Gestiones", 0.9], ["Gestiones", 0.7]),
+    });
+    const sure = await a.background(classify);
+    const [d] = env.store.journal.decisionsOf(sure.run);
+    expect(d).toMatchObject({ area: "choice", cost: "A", p: 0.7, outcome: "do", result: null });
+    expect(d?.detail).toEqual({ options: 2, choice: "Gestiones" });
+    // Juan moves the proposal to another collection: the choice was wrong.
+    await a.acceptProposal(sure.proposals[0] as string, "personal", { type: "contacto" });
+    expect(env.store.journal.decisionsOf(sure.run)[0]?.result).toBe("wrong");
+    // Unsure: asked, and never judged (Juan chose).
+    const unsure = await env
+      .agent(fakePlanner([]), reader, { decider: jev(["Docencia", 0.9], ["Gestiones", 0.8]) })
+      .background(classify);
+    expect(env.store.journal.decisionsOf(unsure.run)[0]).toMatchObject({ p: 0, outcome: "ask" });
+  });
+
   it("with the decider down, or a plan that does not ask, the reader chooses as before", async () => {
     env = makeEnv();
     const reader = new ScriptedProvider("fake", () => ({ choice: "Gestiones" }));

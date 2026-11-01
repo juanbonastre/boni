@@ -33,12 +33,25 @@ export {
   type DecisionQuestion,
   JevProvider,
 } from "./decider.ts";
+export {
+  AUTONOMY,
+  BACK_OFF,
+  backOff,
+  type CostClass,
+  DEFAULT_THRESHOLDS,
+  earned,
+  historyConfidence,
+  type Outcome,
+  resolve,
+  type Thresholds,
+} from "./decisions.ts";
 export { exposure } from "./exposure.ts";
 export {
   checkFill,
   FILL_LIMITS,
   FILL_THRESHOLDS,
   type FillField,
+  fillDecisions,
   fillQuestions,
   fromAnswers,
   readFields,

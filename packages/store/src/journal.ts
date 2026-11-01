@@ -54,6 +54,23 @@ export interface ProposalEdits {
   type?: { from: string; to: string };
   values?: Record<string, { from: unknown; to: unknown }>;
 }
+/**
+ * A decision Boni took for Juan (docs/fiabilidad.md): in which area («choice», «fill», «mail.accept»…), what being
+ * wrong costs, how sure it was (`p`), the way out it took, and, once Juan decided, whether it was right.
+ */
+export interface DecisionRow {
+  id: string;
+  run: string;
+  area: string;
+  cost: "A" | "B" | "C";
+  p: number;
+  outcome: "do" | "ask" | "nothing";
+  /** What it was about (a field's key, a proposal's id), for linking the result. */
+  detail: unknown;
+  at: number;
+  result: "right" | "wrong" | null;
+  resultAt: number | null;
+}
 /** A question to Juan from a run with no turn of his (the panel of requests). */
 export interface RequestRow {
   id: string;
@@ -136,6 +153,13 @@ export interface Journal {
   request(id: string): RequestRow | null;
   requests(status?: RequestRow["status"]): RequestRow[];
   setRequest(id: string, status: RequestRow["status"], at: number, answer?: unknown): void;
+  addDecision(d: Omit<DecisionRow, "result" | "resultAt">): void;
+  /** What came of a decision, once Juan decided (the first result stays). */
+  setDecisionResult(id: string, result: "right" | "wrong", at: number): void;
+  /** A run's decisions, oldest first (to link what Juan decided of its proposal). */
+  decisionsOf(run: string): DecisionRow[];
+  /** An area's last decisions, newest last (the Registro's counts; an area's thresholds and «Solo»). */
+  decisions(area: string, limit?: number): DecisionRow[];
   /** Model calls from `from` to `to` (ms), grouped by role, provider and model. */
   spending(from: number, to: number): SpendRow[];
   /** Each model call in a period (oldest first): what Boni shows as its read-only collection «Llamadas a modelos». */
@@ -194,7 +218,44 @@ export function openJournal(db: DatabaseSync): Journal {
     decided: (r.decided as number | null) ?? null,
     answer: p(r.answer),
   });
+  const decisionOf = (r: Record<string, unknown>): DecisionRow => ({
+    id: r.id as string,
+    run: r.run as string,
+    area: r.area as string,
+    cost: r.cost as DecisionRow["cost"],
+    p: r.p as number,
+    outcome: r.outcome as DecisionRow["outcome"],
+    detail: p(r.detail),
+    at: r.at as number,
+    result: (r.result as DecisionRow["result"]) ?? null,
+    resultAt: (r.result_at as number | null) ?? null,
+  });
   return {
+    addDecision: (d) =>
+      void db
+        .prepare(
+          "INSERT INTO decisions (id, run, area, cost, p, outcome, detail, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(d.id, d.run, d.area, d.cost, d.p, d.outcome, j(d.detail), d.at),
+    setDecisionResult: (id, result, at) =>
+      void db
+        .prepare("UPDATE decisions SET result = ?, result_at = ? WHERE id = ? AND result IS NULL")
+        .run(result, at, id),
+    decisionsOf: (run) =>
+      (
+        db.prepare("SELECT * FROM decisions WHERE run = ? ORDER BY at, rowid").all(run) as Record<
+          string,
+          unknown
+        >[]
+      ).map(decisionOf),
+    decisions: (area, limit = 200) =>
+      (
+        db
+          .prepare(
+            "SELECT * FROM (SELECT *, rowid AS seq FROM decisions WHERE area = ? ORDER BY at DESC, rowid DESC LIMIT ?) ORDER BY at, seq",
+          )
+          .all(area, limit) as Record<string, unknown>[]
+      ).map(decisionOf),
     startRun: (r) =>
       void db
         .prepare(

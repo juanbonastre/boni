@@ -243,6 +243,23 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
      );`);
     chainExisting(db);
   },
+  // 11: the decisions Boni takes for Juan (docs/fiabilidad.md): each with its area, its cost class, its confidence,
+  // the way out it took, and, once Juan decided, whether it was right. What the Registro counts per area, and what
+  // moves an area's thresholds and its «Solo».
+  `CREATE TABLE decisions (
+     id TEXT PRIMARY KEY,
+     run TEXT NOT NULL,
+     area TEXT NOT NULL,
+     cost TEXT NOT NULL CHECK (cost IN ('A', 'B', 'C')),
+     p REAL NOT NULL,
+     outcome TEXT NOT NULL CHECK (outcome IN ('do', 'ask', 'nothing')),
+     detail TEXT,
+     at INTEGER NOT NULL,
+     result TEXT CHECK (result IN ('right', 'wrong')),
+     result_at INTEGER
+   );
+   CREATE INDEX decisions_run ON decisions(run);
+   CREATE INDEX decisions_area ON decisions(area, at);`,
 ];
 
 export function migrate(db: DatabaseSync): void {

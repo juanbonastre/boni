@@ -1,6 +1,6 @@
 # Decisiones con fiabilidad: hacer, preguntar o nada
 
-Propuesta (2026-11-01). Juan, al elegir si lo que Boni aprende se guarda solo o con su «sí»: «¿podría ser que,
+Propuesta del 2026-11-01, aprobada por Juan el mismo día (§6). Juan, al elegir si lo que Boni aprende se guarda solo o con su «sí»: «¿podría ser que,
 dependiendo de la fiabilidad de la predicción, pida comprobación o lo haga de forma automática? A lo mejor se podría usar
 Jev, y a lo mejor esta manera de trabajar usando la fiabilidad se podría extrapolar a otros procesos y que sea un
 procedimiento core de Boni».
@@ -138,21 +138,29 @@ Nunca la confianza que el planificador declare de sus propios planes.
   datos, nunca por decir un modelo que acierta.
 - Nada de fuera mueve un umbral ni enciende un interruptor (P9).
 
-## 6. Para decidir (Juan)
+## 6. Decidido (Juan, 2026-11-01)
 
-1. **Las tres clases de coste y que la C nunca se haga sola** (propuesto). Ejemplo: cambiar una gráfica es A; aceptar
-   sola una propuesta de correo es B; enviar un correo es C, siempre con confirmación.
-2. **La autonomía se gana y la enciendes tú**, ámbito a ámbito, cuando Boni te enseña 20 decisiones con un 95 % de
-   acierto (propuesto, como decidiste para la pseudoaceptación); o que Boni la encienda sola al llegar ahí, avisando.
-   Ejemplo: «En dónde van las tareas del correo llevo 24 decisiones y 23 aciertos: ¿lo hago solo a partir de ahora?».
-3. **El nivel 6 como tercera salida** para la clase B: «lo haré el viernes si no dices nada», con la tarjeta esperando
-   (propuesto: no por ahora; preguntar y esperar, como hoy, es más simple).
+1. **Las tres clases de coste, y la C nunca se hace sola.** Cambiar una gráfica es A; aceptar sola una propuesta de
+   correo es B; enviar un correo es C, siempre con confirmación.
+2. **La autonomía se gana y la enciende Juan**, ámbito a ámbito, cuando Boni le enseña 20 decisiones con un 95 % de
+   acierto, como decidió para la pseudoaceptación. «En dónde van las tareas del correo llevo 24 decisiones y 23
+   aciertos: ¿lo hago solo a partir de ahora?».
+3. **Sin nivel 6 por ahora:** se pregunta y se espera, como hoy.
+
+La regla A-13 de `docs/principios.md` lo recoge; su prueba entra con la fase F1.
 
 ## 7. Fases
 
 | Fase | Qué | Va con |
 |---|---|---|
 | F1 | El procedimiento en el núcleo (`packages/agent`): la decisión, las clases, los umbrales por ámbito, el diario con `p` y resultado, la `p` del historial con cautela; `decideChoice`, el relleno y la pseudoaceptación sobre él | Sin interfaz |
+
+**Hecho, F1 (2026-11-01):** `packages/agent/src/decisions.ts` (las clases, los umbrales por defecto, `resolve`, la
+`p` del historial con el límite de Wilson, cuándo se gana «Solo» y cuándo se vuelve a preguntar) y la tabla `decisions`
+del diario (ámbito, clase, `p`, salida, resultado). La elección de colección de Jev y cada campo del relleno quedan
+apuntados como decisiones, y se juzgan cuando Juan acepta la propuesta: la colección fue acierto salvo que la cambiara,
+un campo salvo que lo corrigiera; lo preguntado o dejado vacío no se juzga. Sin cambio de comportamiento: los umbrales
+son los de hoy. La pseudoaceptación entra en F3, con su interruptor.
 | F2 | El Registro con el acierto por ámbito y por nivel de `p`; la calibración de Jev medida en cada evaluación | «Modelos» y el Registro |
 | F3 | Ajustes: el acierto y el interruptor «Solo» por ámbito; la propuesta de encenderlo; el aviso con Deshacer | Con maqueta (I-09) |
 | F4 | Los aprendices de la tarea 13 y las sugerencias de `docs/preferencias.md` sobre el procedimiento | P3 de `docs/preferencias.md` |

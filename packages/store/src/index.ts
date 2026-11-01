@@ -13,6 +13,7 @@ export {
 export { type BlameLine, blame } from "./blame.ts";
 export type {
   ConfirmationRow,
+  DecisionRow,
   Journal,
   ModelCallRow,
   ModelCallUse,
