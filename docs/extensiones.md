@@ -476,7 +476,7 @@ siempre lo mismo.
 | E1 | La caja. **Programada (2026-10-30):** `packages/sandbox`, `apps/sandbox` (con su `Dockerfile`), el cliente del servidor y `cli.ts sandbox-check`; falta su contenedor en el NAS | — |
 | E2 | `functions` y `tests` en el manifiesto; etiquetas de la salida. **Programada (2026-10-30):** `packages/extensions/src/functions.ts` (lo que lee campo a campo, lo que escribe, sus pruebas, el conjunto de cambios y lo que pide de más) y `apps/server/src/functions.ts` (la entrada como la ve la IA, la llamada a la caja, el ensayo, la política y una ejecución con Deshacer) | E1 |
 | E3 | Proponer por MCP y activar en Boni; tokens con alcance; versiones. **Programada (2026-10-30):** `cli.ts token --scope`, `extensions_describe` / `_propose` / `_test` / `_run` en el MCP, `apps/server/src/proposals.ts`, la tarjeta en Ajustes → Extensiones y «Volver a la versión N» | E2 |
-| E4 | La conciliación como primera extensión con funciones; «Subir extracto»; dudas como tarjetas | E3; tarjetas de petición del Lienzo (A4b) |
+| E4 | La conciliación como primera extensión con funciones; «Subir extracto»; dudas como tarjetas | E3; la conversación, C1-C5 (`docs/conversacion.md`) |
 | E5 | Lo privado por extensión: para funciones y para un modelo elegido (11.3) | E3; «Modelos» (papeles con perfiles, PR 20) |
 | E6 | Compartir extensiones (firma, revisión) | Boni para más gente |
 
@@ -559,8 +559,12 @@ siempre lo mismo.
 - La prueba con los datos de Juan es un comando: `cli.ts conciliacion-check <cuenta> [--month AAAA-MM] [--detalle]`
   trabaja sobre una copia de la cuenta (nunca sobre ella; la borra al acabar), hace la importación y el cierre de las
   dos maneras y dice solo cuentas y nombres de campos (con `--detalle`, los títulos de lo que difiere, para Juan).
-- Falta (E4b, con maqueta): «Subir extracto», la tarjeta del ensayo, «Cerrar mes» en Gastos y las preguntas de las
-  dudosas; pasar `conciliacion-check` en el NAS; después, borrar `money/` y `finanzas_*`.
+- Falta pasar `conciliacion-check` en el NAS; después, borrar `money/` y `finanzas_*`.
+- **E4b se rehace como conversación (Juan, 2026-10-31).** Probó dos maquetas, primero una tarjeta en la Bandeja y luego
+  preguntas de una en una, y pidió un chat de verdad: siempre una barra para escribir, el historial guardado, una
+  ventana propia aparte de la Bandeja y un chat ya preparado en la página. La estructura está en
+  `docs/conversacion.md`, y la conciliación es allí la fase C6, después de las conversaciones guardadas, el turno en
+  vivo, las tarjetas, las superficies y los modos de conversación de las extensiones (C1-C5).
 
 **E5. Lo privado por extensión.**
 - Permisos guardados en el almacén (como `aiRules`): colección → extensión → función, o papel + modelo + proveedor.
