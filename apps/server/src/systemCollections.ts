@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { civilFromDays, pad2, toLocal } from "@boni/calendar";
 import type { Entity, FieldDef, FieldType, SelectOption, TypeDef } from "@boni/entities";
 import { label } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
@@ -69,7 +70,11 @@ const typeDef = (
   schemaVersion: 1,
   label: L,
 });
-const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+/** An instant's day where the account lives: a call at 00:30 in Madrid on the 1st is the 1st's (UTC says the 31st). */
+const dayIn = (tz: string) => (ms: number) => {
+  const { y, m, d } = civilFromDays(toLocal(ms, tz).day);
+  return `${y}-${pad2(m)}-${pad2(d)}`;
+};
 const shortModel = (id: string) => id.split("/").pop() || id;
 
 /** Who did something, in words, as the app's audit says it (apps/boni-web Dash.tsx `whoName`). */
@@ -134,10 +139,10 @@ const recent = new WeakMap<UserStore, { at: number; key: string; sys: SystemColl
 
 export function systemCollections(
   store: UserStore,
-  o: { now: number; usdToEur: number },
+  o: { now: number; usdToEur: number; tz: string },
 ): SystemCollections {
-  // Anything recorded since (a change, a read, a model call, a run) or another rate makes them again.
-  const key = `${store.version()}|${store.audit.lastAction()}|${store.journal.lastModelCall()}|${store.journal.lastRun()}|${o.usdToEur}`;
+  // Anything recorded since (a change, a read, a model call, a run), another rate or another zone makes them again.
+  const key = `${store.version()}|${store.audit.lastAction()}|${store.journal.lastModelCall()}|${store.journal.lastRun()}|${o.usdToEur}|${o.tz}`;
   const was = recent.get(store);
   if (was && was.key === key && o.now >= was.at && o.now - was.at < FRESH_MS) return was.sys;
   const sys = makeSystemCollections(store, o);
@@ -147,11 +152,13 @@ export function systemCollections(
 
 function makeSystemCollections(
   store: UserStore,
-  o: { now: number; usdToEur: number },
+  o: { now: number; usdToEur: number; tz: string },
 ): SystemCollections {
   const from = o.now - SYSTEM_DAYS * DAY;
+  // Each record dated by the account's day, as the blocks take «today» (http.ts): «this month» counts them right.
+  const day = dayIn(o.tz);
   const calls = store.journal.modelCallsIn(from, o.now + 1);
-  const activity = store.audit.activityByType(from, o.now + 1);
+  const activity = store.audit.activityByType(from, o.now + 1, day);
   const runs = store.journal.runsIn(from, o.now + 1);
   const proposals = runs.length ? proposalsByRun(store) : new Map<string, ProposalRow[]>();
   const schema = store.schema().types;

@@ -387,6 +387,8 @@ export function makeApp(opts: ServerOptions): App {
         systemCollections(store, {
           now: now(),
           usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
+          // The zone the blocks take «today» in (below), so a record and «this month» agree.
+          tz: opts.tz ?? "Europe/Madrid",
         });
       try {
         if (route === "GET /api/data/today") {

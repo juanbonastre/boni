@@ -236,6 +236,12 @@ describe("the audit", () => {
       ]),
     );
     expect(s.audit.activityByType(to, to + 1)).toEqual([]);
+    // Each action on its day where the account lives (the caller says which), not always the UTC one.
+    expect(s.audit.activityByType(from, to, () => "2026-10-25")).toEqual(
+      expect.arrayContaining([
+        { day: "2026-10-25", by: "mcp:claude-ejemplo", type: "t_nota", reads: 1, writes: 1 },
+      ]),
+    );
     // Calls to models in a period, oldest first, cost in dollars or null when unknown.
     s.journal.modelCall({
       run: "r1",
