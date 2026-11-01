@@ -1,5 +1,5 @@
 // Inicio on the phone (docs/design-guide.md, «El móvil»): what waits, what Juan was in, today, and his charts.
-import { ChevronRight, Database, FileText, Inbox, Plus } from "lucide-react";
+import { ChevronRight, Database, FileText, Inbox, LogIn, Plus } from "lucide-react";
 import { useEffect } from "react";
 import * as B from "../core/chartBuilder.ts";
 import * as M from "../core/chartMath.ts";
@@ -86,6 +86,14 @@ export function MobileHome() {
           </button>
         }
       />
+      {/* The server no longer takes this device's session: what shows is the device's copy until it signs in again. */}
+      {(settings.sessionEnded || settings.legacyToken) && (
+        <button type="button" className="m-banner warn" onClick={() => openSettings()}>
+          <LogIn size={20} strokeWidth={1.8} />
+          <span>{settings.sessionEnded ? t("account.ended") : t("account.legacy")}</span>
+          <ChevronRight size={18} strokeWidth={1.8} />
+        </button>
+      )}
       {rejected.length > 0 && (
         <div className="m-card rejected">
           <h3>{t("queue.rejected")}</h3>

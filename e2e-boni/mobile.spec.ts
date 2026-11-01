@@ -116,6 +116,16 @@ test("a server older than «Hoy»: Inicio without it", async ({ page }) => {
   await expect(page.locator("section", { hasText: "Hoy" })).toHaveCount(0);
 });
 
+test("a session the server no longer takes says so on Inicio, and a tap goes to sign in", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", { legacy: true });
+  const banner = page.locator(".m-banner.warn");
+  await expect(banner).toHaveText("Entra con tu usuario");
+  await banner.tap();
+  await expect(page.locator(".modal")).toBeVisible();
+});
+
 test("«Páginas» on the phone: the search, the pages and the collections; a collection as a list; Back a step at a time", async ({
   page,
 }) => {

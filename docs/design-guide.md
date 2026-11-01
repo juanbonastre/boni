@@ -226,9 +226,10 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   - **Boni's conversation is the whole screen** (as Claude's and ChatGPT's): its bar docked at the bottom, its
     conversations in a drawer from the left (84 % wide over a scrim) with «Registro» and «Auditoría» at its foot; an
     empty one greets with things to try. Sending keeps the keyboard up.
-  - **Small things:** a notice sits above the + button; no greeting toast (Inicio says the day); dates in the account's
-    language; one chart on the whole screen with period chips; a tap on a chart shows the value and a second tap opens
-    the detail. Same tokens and card recipe; written deviation for the thumb: 16 px text, 48 px touch targets, 20 to
+  - **Small things:** a notice sits above the + button; no greeting toast (Inicio says the day); a session the
+    server no longer takes is a banner on Inicio (in `--now`, as the desktop's pill) that goes to sign in; dates in
+    the account's language; one chart on the whole screen with period chips; a tap on a chart shows the value and a
+    second tap opens the detail. Same tokens and card recipe; written deviation for the thumb: 16 px text, 48 px touch targets, 20 to
     24 px icons. Back (and Android's button) closes the top thing, then goes a step back in the place, then to Inicio.
 - **Desktop widgets** (Boni): a chart card alone in a small transparent window that sits on the desktop, below every
   window (on X11 a "dock" window kept below by the window manager; it survives "show desktop"). It keeps the card look
