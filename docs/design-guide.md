@@ -186,6 +186,11 @@ Spanish first, English second, all through `src/i18n.ts` (no hard-coded text). T
 (the "no accents" rule belongs to generated vault notes and chat, not to the product). Labels are short and imperative;
 dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 
+**Names in one or two words, as a person says them** (Juan, 2026-11-01: «no me gustan las frases largas que usas a
+veces en la app como "Lo que ve la IA", suenan raras, y parece generado por IA»). A place, a tab, a section, a column or
+a mode is named with a word or two («Privacidad», «Calendario», «Dinero», «Conciliación»), never with a phrase that
+explains it; what needs explaining goes in a help line under it, in plain words.
+
 ## 6. Adapting it to other platforms
 - **Boni desktop (and later its Android app):** since 2026-10-17 the same architecture as this app (a React web UI in
   Electron, a WebView on Android), so it uses the same tokens, controls (buttons, pills, segmented options, menus, the
