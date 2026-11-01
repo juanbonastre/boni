@@ -287,6 +287,8 @@ function chipText(
   locale: string,
 ): string {
   if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) return "";
+  // Free text (a time zone, an address, a long line) reads badly as a chip: it stays in «Propiedades».
+  if (f.type === "text" || f.type === "url" || f.type === "email" || f.type === "phone") return "";
   if (f.type === "checkbox") return v === true ? f.name : "";
   if (f.type === "date" && typeof v === "string")
     return new Intl.DateTimeFormat(locale, {

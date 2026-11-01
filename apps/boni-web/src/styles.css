@@ -7187,6 +7187,11 @@ button.rows-panel-row:hover {
   gap: 18px;
   padding: 4px 16px 112px;
 }
+/* A place's parts keep their height and the place scrolls: a long list (Agenda's thousands) is never squeezed into the
+ * screen and cut (seen on Juan's phone, 2026-11-01). */
+.m-screen > * {
+  flex-shrink: 0;
+}
 .m-large {
   display: flex;
   align-items: center;
@@ -7243,6 +7248,9 @@ button.rows-panel-row:hover {
   padding: 0 0 4px;
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
+}
+.m-carousel::-webkit-scrollbar {
+  display: none;
 }
 .m-tile {
   flex: none;

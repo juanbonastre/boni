@@ -213,15 +213,16 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   - **Lists for a thumb:** grouped lists (16 px radius, `--surface`, a hairline between rows); each row two lines
     (its title on one line, cut with «…»; its date and its first choice below in `--muted`), at least 56 px high. A
     collection that keeps tasks (its calendar says which box) shows the box in the row and chips to see what is to do,
-    done or all. Dragged left a row shows its actions (done in `--good`, delete in `--bad`, with Undo); held for half
-    a second it opens its menu from below.
+    done or all; ticking one says so in a notice with Undo, as on Inicio. Dragged left a row shows its actions (done
+    in `--good`, delete in `--bad`, with Undo); held for half a second it opens its menu from below.
   - **Sheets from below** for menus and choices: a grabber, a 22 px title and a close button; a tap outside or Back
     closes them. Forms and editors stay full-screen sheets with their buttons fixed at the bottom; optional fields fold
     under «Más detalles».
   - **A record or a page reads first:** its properties as chips under its title (a day, an option's name, a related
     title), and «Propiedades» opens them all in a sheet to edit; «…» has its History and the trash (a page: duplicate
     and the trash). While writing, the tab bar and the + button step aside and a bar sits on the keyboard: a block, a
-    heading, a list, a to-do, undo and «Listo».
+    heading, a list, a to-do (each turns the block being written into it, and back to text if it already is one,
+    keeping the cursor where it was), undo and «Listo».
   - **Boni's conversation is the whole screen** (as Claude's and ChatGPT's): its bar docked at the bottom, its
     conversations in a drawer from the left (84 % wide over a scrim) with «Registro» and «Auditoría» at its foot; an
     empty one greets with things to try. Sending keeps the keyboard up.
@@ -441,8 +442,8 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   are its title. On the phone the list is a drawer from the left. **A turn as it happens**
   (3.5): «Pensando…», then each step in Juan's words, worded by the app from what the server says it works on (Juan,
   2026-10-31: «los pasos serán explicativos»): «Buscando «pan» en Tareas», «Contando en Tareas · Prioridad: Alta»,
-  «Leyendo «Rayuela»», and once done what it found in `--muted` («· 2 resultados», «· 9»); a tool the app does not
-  word (an extension's) keeps its own title. The one going on has a pulsing
+  «Leyendo «Rayuela»», and once done what it found in `--muted` («· 2 resultados», «· 9»); a box's value in words
+  («Hecha: no»), never as the code writes it; a tool the app does not word (an extension's) keeps its own title. The one going on has a pulsing
   `--accent` dot on its left (still with reduced motion) and the done ones with a tick; once it answered, its steps fold
   into a quiet «Pasos (n)» above the answer. **The bar** (3.6): one rounded box (16 px) whose text grows with what is
   written, up to about eight lines, with no resize grip; inside, below the text, the model the conversation plans with
@@ -451,7 +452,9 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   muted text, never as an error). Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
   (text with slots, a big number in tabular figures, a list, a table, and a chart: bars across, label, bar and value on
   one line, or a line with its first and last values, of numbers the tools gave, never the model's). The planner is
-  asked to answer as a person would: a sentence first, then what helps see it. **Text is only text**: no HTML, no Markdown, no
+  asked to answer as a person would: a sentence first, then what helps see it. «Deshacer lo que hizo» follows an
+  answer only while its turn changed something not undone yet: a question that only read has nothing to undo, and once
+  undone the link goes. **Text is only text**: no HTML, no Markdown, no
   links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover.
   A question shows its options as pills (one line, cut with an ellipsis) and never asks for a password. A
   **confirmation** is a card with an `--accent` border holding only the code's components: the action as a question,

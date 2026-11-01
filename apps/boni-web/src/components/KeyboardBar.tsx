@@ -2,6 +2,7 @@
 import { CheckSquare, Heading1, List, Plus, Undo2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { undoPage, useStore } from "../store.ts";
+import { type TextKind, turnBlock } from "./PageView.tsx";
 
 /** Whatever takes typing on the phone: then the keyboard is up and the tab bar steps aside. */
 const typing = (el: Element | null) =>
@@ -18,9 +19,8 @@ const blockOf = (el: Element | null): HTMLTextAreaElement | null =>
 
 /**
  * While Juan writes, the tab bar and the + button step aside (the keyboard is up); in a page or a note's block a bar
- * sits on the keyboard (Notion's): a block from the menu, a heading, a list, a to-do, undo, and «Listo». Each one
- * types at the start of the block what the editor already turns into that kind («# », «- », «[] »), so it works as
- * typing does.
+ * sits on the keyboard (Notion's): a block from the menu, a heading, a list, a to-do (each turns the block the caret is
+ * in into that kind, or back to text), undo, and «Listo».
  */
 export function KeyboardBar() {
   const t = useStore((s) => s.t);
@@ -50,13 +50,13 @@ export function KeyboardBar() {
   if (!block) return null;
   // The bar's buttons keep the keyboard: pressing one never takes the focus from the block.
   const keep = (e: React.PointerEvent) => e.preventDefault();
-  const turn = (prefix: string) => {
+  // The block the caret is in turns into a heading, a list or a to-do (and back), whatever its kind or the caret's place.
+  const turn = (kind: TextKind) => {
     const el = blockOf(document.activeElement);
-    if (!el) return;
+    const id = el?.closest<HTMLElement>(".blk[data-block]")?.dataset.block;
+    if (!el || !id) return;
     const at = el.selectionStart;
-    el.setSelectionRange(0, 0);
-    document.execCommand("insertText", false, prefix);
-    // The editor took the prefix away when it turned the block: the caret goes back where it was.
+    turnBlock(id, kind);
     requestAnimationFrame(() => blockOf(document.activeElement)?.setSelectionRange(at, at));
   };
   const add = () => {
@@ -81,7 +81,7 @@ export function KeyboardBar() {
       <button
         type="button"
         onPointerDown={keep}
-        onClick={() => turn("# ")}
+        onClick={() => turn("h1")}
         aria-label={t("kb.heading")}
       >
         <Heading1 size={20} strokeWidth={1.8} />
@@ -89,7 +89,7 @@ export function KeyboardBar() {
       <button
         type="button"
         onPointerDown={keep}
-        onClick={() => turn("- ")}
+        onClick={() => turn("bullet")}
         aria-label={t("kb.list")}
       >
         <List size={20} strokeWidth={1.8} />
@@ -97,7 +97,7 @@ export function KeyboardBar() {
       <button
         type="button"
         onPointerDown={keep}
-        onClick={() => turn("[] ")}
+        onClick={() => turn("todo")}
         aria-label={t("kb.todo")}
       >
         <CheckSquare size={20} strokeWidth={1.8} />

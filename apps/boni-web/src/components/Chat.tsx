@@ -463,11 +463,13 @@ function stepText(t: T, s: LiveStep): string {
  */
 function wordsText(t: T, w: StepWords): string | null {
   const a = w.args;
+  // A checkbox's value in words («Hecha: no»), not as the code writes it.
+  const said = (x: string) => (x === "true" ? t("chat.w.yes") : x === "false" ? t("chat.w.no") : x);
   const where =
     a.field && a.contains
       ? t("chat.w.contains", { field: a.field, value: a.contains })
       : a.field && a.equals
-        ? t("chat.w.where", { field: a.field, value: a.equals })
+        ? t("chat.w.where", { field: a.field, value: said(a.equals) })
         : "";
   switch (w.tool) {
     case "entities.query":
@@ -621,7 +623,7 @@ function Turn({ entry }: { entry: ChatEntry }) {
             <p className="turn-error">{agentErrorText(t, r.error)}</p>
           ))}
         {entry.error && <p className="turn-error">{entry.error}</p>}
-        {r?.status === "done" && r.run && (
+        {r?.status === "done" && r.run && r.changed !== false && (
           <button type="button" className="link-btn turn-undo" onClick={() => void undoRun(r.run)}>
             <Undo2 size={13} strokeWidth={1.8} />
             {t("chat.undo")}

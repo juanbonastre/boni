@@ -443,6 +443,10 @@ export function Account() {
             className="input"
             value={form.serverUrl}
             placeholder="https://boni.example.ts.net"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             autoComplete="url"
             onChange={set("serverUrl")}
           />
@@ -454,6 +458,12 @@ export function Account() {
           <input
             className="input"
             value={form.user}
+            // A phone's keyboard would capitalise it and space it after a dot («Juan. Ejemplo»): an e-mail's
+            // keyboard does neither.
+            inputMode="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             autoComplete="username"
             onChange={set("user")}
           />

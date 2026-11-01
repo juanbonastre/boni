@@ -1284,13 +1284,21 @@ async function agentCall(id: string, call: (live: string) => Promise<TurnResult>
   });
   let after = 0;
   /** What the turn did since the last look; true once it ended or waits on Juan. */
-  const pull = async () => {
+  const look = async () => {
     const r = await agent.live(liveId, after).catch(() => null);
     if (!r) return false;
     after += r.events.length;
     const l = get().live;
     if (l?.id === liveId && r.events.length) set({ live: r.events.reduce(applyLive, l) });
     return r.done;
+  };
+  // One look at a time, each from where the last ended: the last look, made once it answers, could otherwise ask
+  // from the same place as the one still on its way, and every step would show twice (seen on a phone).
+  let looking: Promise<unknown> = Promise.resolve();
+  const pull = () => {
+    const next = looking.then(look);
+    looking = next.catch(() => undefined);
+    return next;
   };
   let running = true;
   void (async () => {
@@ -1685,6 +1693,12 @@ export async function undoRun(id: string) {
   try {
     const n = await agent.undo(id);
     toast(t("log.undone", { n }));
+    // Its turn in the conversation has nothing left to undo.
+    set((s) => ({
+      chat: s.chat.map((e) =>
+        e.result?.run === id ? { ...e, result: { ...e.result, changed: false } } : e,
+      ),
+    }));
   } catch (e) {
     toast(e instanceof ApiError && e.status === 409 ? t("log.cannotUndo") : errorText(t, e));
   }

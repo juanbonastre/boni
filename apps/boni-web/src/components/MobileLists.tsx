@@ -11,6 +11,7 @@ import {
   openFind,
   openPage,
   openRow,
+  toast,
   useStore,
 } from "../store.ts";
 import { BottomSheet, LargeTitle, SwipeRow, shape, Tick, titleOf, useDay } from "./MobileParts.tsx";
@@ -135,7 +136,19 @@ export function MobileList({ type }: { type: string }) {
     ]
       .filter(Boolean)
       .join(" · ");
-  const toggle = (r: DataRow) => done && void editCell(type, r.id, done.id, !isDone(r));
+  // Done or not, at once, with Undo in the notice (a swipe is easy to make by mistake).
+  const toggle = (r: DataRow) => {
+    if (!done) return;
+    const was = isDone(r);
+    void editCell(type, r.id, done.id, !was);
+    toast(
+      t(was ? "today.undone" : "today.done", { title: titleOf(def, r) || t("page.untitled") }),
+      {
+        label: t("toast.undo"),
+        run: () => void editCell(type, r.id, done.id, was),
+      },
+    );
+  };
   return (
     <main className="m-scroll m-screen">
       <LargeTitle title={def.name} />

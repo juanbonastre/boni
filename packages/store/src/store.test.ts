@@ -407,9 +407,12 @@ describe("the store", () => {
       { kind: "update", target: keep.entity.id, undone: false },
       { kind: "delete", target: keep.entity.id, undone: false },
     ]);
+    expect(store.runUndoable("r9")).toBe(true);
     store.undoRun("r9", me);
     expect(store.runOps("r9").every((o) => o.undone)).toBe(true);
+    expect(store.runUndoable("r9")).toBe(false);
     expect(store.runOps("nada")).toEqual([]);
+    expect(store.runUndoable("nada")).toBe(false);
     expect(store.get(keep.entity.id)?.entity.deleted).toBeUndefined();
     expect(store.get(keep.entity.id)?.entity.values.f_nota).toBeUndefined();
     expect(store.get(made.entity.id)?.entity.deleted).toBeDefined(); // what it made goes to the trash

@@ -101,6 +101,8 @@ test("a turn in Juan's words: each step says what it does, on what and what it f
   await expect(going.locator("li").nth(2)).toHaveText(
     "Buscando «azulejos» en Tareas · 1 resultado",
   );
+  // A checkbox's value in words, not as the code writes it.
+  await expect(going.locator("li").nth(3)).toHaveText("Contando en Tareas · Hecha: no · 6");
   // Its answer: a sentence first, then a bar for each number, with its label and its value.
   const answer = page.locator(".turn-answer").first();
   await expect(answer.locator(".reply-text")).toHaveText(
@@ -108,12 +110,27 @@ test("a turn in Juan's words: each step says what it does, on what and what it f
   );
   await expect(answer.locator(".reply-caption")).toHaveText("Tareas por prioridad");
   await expect(answer.locator(".reply-bars li")).toHaveText(["Alta3", "Media2", "Baja1"]);
+  // It only counted: no «Deshacer lo que hizo».
+  await expect(answer.getByRole("button", { name: "Deshacer lo que hizo" })).toHaveCount(0);
   // The steps fold once it answered, and keep what each found.
-  await answer.getByRole("button", { name: "Pasos (3)" }).click();
+  await answer.getByRole("button", { name: "Pasos (4)" }).click();
   await expect(answer.locator(".turn-steps li").nth(1)).toHaveText(
     "Contando en Tareas · Prioridad: Alta · 3",
   );
   await page.screenshot({ path: `${SHOTS}/agent-words-chart.png` });
+});
+
+test("a slow look at a turn still going never shows its steps twice", async ({ page }) => {
+  // The turn answers while a look is on its way: the last look starts after it, from where it ended.
+  await openApp(page, "/?still", {
+    turnMs: 500,
+    live: { events: LIVE_STEPS, ms: 300 },
+    agent: { "POST api/agent/turn": [CHART_REPLY] },
+  });
+  await ask(page, "¿cuántas tareas tengo por prioridad?");
+  const answer = page.locator(".turn-answer").first();
+  await answer.getByRole("button", { name: "Pasos (4)" }).click();
+  await expect(answer.locator(".turn-steps li")).toHaveCount(4);
 });
 
 test("a confirmation shows the real values with their origin and warnings; its button changes side", async ({

@@ -175,6 +175,8 @@ export interface TurnResult {
   notices: Notice[];
   /** A fixed code (never data): why it stopped. */
   error: string | null;
+  /** Whether it changed something still not undone (its «Deshacer» has something to undo). */
+  changed?: boolean;
   /** A plan made by code only: the values of the steps it asked to keep (Agent.background). */
   kept?: Record<string, Json>;
 }
@@ -1494,6 +1496,7 @@ export class Agent {
         ? [...st.notices, { code: "proposals", n: st.proposals.length }]
         : st.notices,
       error,
+      changed: this.o.store.runUndoable(st.id),
     };
   }
 

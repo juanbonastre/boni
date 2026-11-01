@@ -68,6 +68,8 @@ export interface TurnResult {
   proposals: string[];
   notices: Notice[];
   error: string | null;
+  /** Whether it changed something still not undone; absent from older servers (then «Deshacer» shows). */
+  changed?: boolean;
 }
 /** One of Juan's conversations with Boni, as the list shows it (docs/conversacion.md 3.1). */
 export interface ConversationSummary {
@@ -633,6 +635,7 @@ export function parseTurn(v: unknown): TurnResult {
       ...(typeof n.n === "number" ? { n: n.n } : {}),
     })),
     error: typeof v.error === "string" ? v.error.slice(0, 80) : null,
+    ...(typeof v.changed === "boolean" ? { changed: v.changed } : {}),
   };
 }
 
@@ -648,7 +651,6 @@ function parseConversation(v: unknown): ConversationSummary | null {
   };
 }
 
-/** A live event as the server sends it: fixed codes and the code's words; a reply parsed as any reply. */
 /** Something of today in Juan's calendars (Inicio's «Hoy» on the phone). */
 export interface TodayItem {
   id: string;
@@ -678,6 +680,7 @@ function parseWords(v: Record<string, unknown>): StepWords | null {
   return { tool, args };
 }
 
+/** A live event as the server sends it: fixed codes and the code's words; a reply parsed as any reply. */
 function parseLive(v: unknown): LiveEvent | null {
   if (!isObj(v)) return null;
   switch (v.type) {

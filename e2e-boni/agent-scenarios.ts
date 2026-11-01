@@ -48,7 +48,7 @@ export const TEXT_REPLY = {
 export const LIVE_STEPS = [
   { type: "start", run: "r-chart" },
   { type: "planning" },
-  { type: "planned", steps: 3 },
+  { type: "planned", steps: 4 },
   {
     type: "step",
     id: "s",
@@ -79,6 +79,18 @@ export const LIVE_STEPS = [
     words: { tool: "entities.search", args: { text: "azulejos", type: "Tareas" } },
   },
   { type: "step", id: "q", op: "call", what: "Buscar", state: "done", n: 1 },
+  {
+    type: "step",
+    id: "h",
+    op: "call",
+    what: "Calcular",
+    state: "start",
+    words: {
+      tool: "entities.aggregate",
+      args: { type: "Tareas", op: "count", field: "Hecha", equals: "false" },
+    },
+  },
+  { type: "step", id: "h", op: "call", what: "Calcular", state: "done", value: 6 },
 ];
 const list = (items: unknown[]) => ({ t: "list", items, integrity: "user" });
 export const CHART_REPLY = {
@@ -106,6 +118,8 @@ export const CHART_REPLY = {
   proposals: [],
   notices: [],
   error: null,
+  // It only counted: nothing to undo.
+  changed: false,
 };
 
 export const confirmTurn = (id: string) => ({

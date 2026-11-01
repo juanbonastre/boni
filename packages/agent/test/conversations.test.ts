@@ -58,6 +58,7 @@ describe("a conversation with Boni", () => {
       .agent(fakePlanner([COUNT]))
       .turn({ text: "¿cuántas tareas tengo?", origin: PERSONAL, conversation: c });
     expect(first.status).toBe("done");
+    expect(first.changed).toBe(false); // it only read: nothing to undo
     expect(listConversations(env.store)).toMatchObject([
       { id: c, title: "¿cuántas tareas tengo?" },
     ]);
@@ -76,6 +77,21 @@ describe("a conversation with Boni", () => {
       ["¿y ahora?", "done"],
     ]);
     expect(turns[0]?.replies[0]?.data.value).toMatchObject({ t: "v", value: 1 });
+    expect(turns.map((t) => t.changed)).toEqual([false, false]);
+  });
+
+  it("offers «Deshacer» only while its run has a change left to undo", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(fakePlanner([ASK]));
+    const asked = await a.turn({ text: "apunta algo", origin: PERSONAL, conversation: c });
+    expect(asked.changed).toBe(false);
+    if (asked.pending?.kind !== "ask") throw new Error("expected a question");
+    const done = await a.answer(asked.run, asked.pending.id, { text: "Llamar a la gestoría" });
+    expect(done).toMatchObject({ status: "done", changed: true });
+    expect(turnViews(env.store, c).at(-1)?.changed).toBe(true);
+    a.undoRun(done.run);
+    expect(turnViews(env.store, c).at(-1)?.changed).toBe(false);
   });
 
   it("shows itself live: its run, the planner thinking, each step, each reply and how it ended", async () => {
