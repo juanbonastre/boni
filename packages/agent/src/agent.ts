@@ -246,6 +246,11 @@ export interface AgentOptions {
   onRequest?: (id: string) => void;
   net?: Net;
   limits?: Partial<RunLimits>;
+  /**
+   * Another planner prompt, only for evaluations by hand that compare prompts (`eval/eval.ts --prompt`); the server
+   * never sets it: the planner's prompt is the one in this file, versioned with the code.
+   */
+  plannerPrompt?: string;
 }
 
 class Stop extends Error {
@@ -757,14 +762,16 @@ export class Agent {
         st.planner ?? this.o.planner,
         {
           role: "planner",
-          system: PLANNER_PROMPT,
+          system: this.o.plannerPrompt ?? PLANNER_PROMPT,
           input: { ...input, ...extra },
           schema: planSchema(this.catalogFor(st.origin).flatMap((t) => Object.keys(t.args))),
           structured: false,
           // Opus thinks before it answers, and thinking counts towards this.
           maxTokens: 16000,
         },
-        PLANNER_PROMPT_HASH,
+        this.o.plannerPrompt
+          ? createHash("sha256").update(this.o.plannerPrompt).digest("hex")
+          : PLANNER_PROMPT_HASH,
         seen,
       );
     // Deferred tools (7.11) wait until the catalogue is long enough to need them: today the planner

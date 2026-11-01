@@ -26,6 +26,8 @@ Cómo se usa:
 | A-08 | El código de una extensión solo corre en la caja: un intérprete nuevo por llamada (QuickJS en WebAssembly), sin red, ficheros, proceso, temporizadores, reloj ni azar, con límites de pasos, tiempo, memoria y salida, en un contenedor aparte que solo habla con el servidor por un socket; lo que toca algo lo hace el código de Boni (`docs/extensiones.md` §11) | 2026-10-30 | `apps/sandbox/test/box.test.ts` (los casos de `test/cases/`), `apps/sandbox/test/run.test.ts`, `apps/server/src/sandbox.test.ts` |
 | A-09 | Una función de una extensión nunca escribe: recibe solo los campos que declaró de colecciones que la IA puede ver (lo privado y lo restringido, solo con permiso de Juan) y devuelve cambios que Boni comprueba contra lo declarado y aplica con la política, en una ejecución que se deshace entera y que se repite si algo de lo que leyó cambió; lo que escribe lleva la etiqueta de lo que leyó con su integridad como mucho `model` (nunca es un destino) y nada queda más abierto a la IA | 2026-10-30 | `packages/extensions/src/functions.test.ts` (también con conjuntos al azar), `apps/server/src/functions.test.ts` |
 | A-10 | Ninguna extensión se activa ni cambia sola: lo que propone un asistente por el MCP queda como propuesta inerte (validada, con sus pruebas pasadas en la caja y ensayada sin guardar) y solo Juan la activa en Boni, desde un dispositivo suyo, viendo lo que pide de más; la versión anterior queda a un clic. Un token de asistente hace solo lo que dice su alcance (leer, escribir, proponer extensiones) | 2026-10-30 | `apps/server/src/proposals.test.ts` (también con la caja real), `e2e-boni/agent.spec.ts` («an extension proposed through the MCP») |
+| A-11 | Lo que Boni aprende de Juan no se usa sin su «sí» o sus palabras: lo que escribe un modelo es una sugerencia hasta que Juan la acepta o la reescribe, y nada de fuera escribe en lo que Boni sabe de él (`docs/preferencias.md`) | 2026-11-01 | `packages/agent/test/agent.test.ts` («keeps it out of the planner until he confirms») |
+| A-12 | Cada cosa que Boni sabe de Juan tiene un solo sitio (`docs/preferencias.md` §4), y lo que recibe el planificador está apuntado allí: una fuente nueva rompe la prueba hasta que se apunta | 2026-11-01 | `packages/agent/test/context.test.ts` |
 
 ## D. Datos
 
@@ -76,6 +78,7 @@ Cómo se usa:
 | T-02 | Lo que se puede calcular no se escribe a mano: el mapa del código sale de `make map` (la descripción de cada paquete y la primera frase de cada fichero) y la estructura de los datos, del `guide` del MCP | 2026-10-27 | `scripts/map.test.mjs` («every package and file says what it is»), `apps/server/src/mcp.test.ts` («the guide is computed») |
 | T-03 | Cada principio apunta a pruebas que existen | 2026-10-27 | `scripts/map.test.mjs` («principles name files that exist») |
 | T-04 | El estado y la Cola del desarrollo son registros de Boni, no notas largas ni ficheros del repo | 2026-10-27 | Sin prueba (forma de trabajar) |
+| T-05 | Antes de diseñar algo nuevo se mira lo que ya hay que haga algo parecido, y se amplía; una propuesta empieza por «Lo que hay hoy» y dice qué amplía (Juan, 2026-11-01: «se estaba liando») | 2026-11-01 | Sin prueba (revisión de cada propuesta) |
 
 ## Sustituidas
 

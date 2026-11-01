@@ -7,8 +7,9 @@ Android). This monorepo holds all of it. **The repo is public:** everything in i
 Before a big step read `docs/principios.md`: the rules that must not break, each with the test that guards it.
 Design, in Spanish (Juan's docs): `docs/nucleo.md` (the core: data, store, agent, security), `docs/clases.md`
 (collections as classes), `docs/contexto.md` (what is written and what is computed for agents), `docs/extensiones.md`
-(extensions), `docs/conversacion.md` (the conversation: chats, cards, surfaces, assistants, voice),
-`docs/design-guide.md` (every UI). Code, comments, commits and AI-facing text are in English.
+(extensions), `docs/conversacion.md` (the conversation: chats, cards, surfaces, assistants, voice), `docs/correo.md`
+(mail: how it is read, tested and improved), `docs/preferencias.md` (what Boni knows and learns of the user, and where
+each thing lives), `docs/design-guide.md` (every UI). Code, comments, commits and AI-facing text are in English.
 
 ## Where things are
 
@@ -39,7 +40,9 @@ Design, in Spanish (Juan's docs): `docs/nucleo.md` (the core: data, store, agent
 4. A visual or behavioural change updates `docs/design-guide.md` in the same PR. A new screen starts as a mockup with the
    real app (I-09). The main screens have reference captures, made by the «screens» workflow (I-07).
 5. A decision of Juan's that code can check enters `docs/principios.md` with its test, in the same PR.
-6. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
+6. Before designing something new, find what already does something like it (`docs/preferencias.md`, `docs/contexto.md`,
+   `make map`, a search) and extend it: a proposal starts with what exists and says what it extends (T-05).
+7. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
    the built web app, phone-sized viewports, typing at a person's pace where timing matters. On his screen, capture only
    the app window and delete the captures afterwards. Say what you verified and what you could not.
 

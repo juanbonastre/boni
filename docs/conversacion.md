@@ -138,6 +138,9 @@ lo que pasa. Una colección de asistentes se solaparía con las extensiones. Por
   - los **archivos** que acepta.
 - **Juan ve siempre en qué modo está Boni.** Una conversación centrada en una extensión lo dice en la barra de escribir,
   con una etiqueta («Conciliación») que se quita con un clic. Sin ella, Boni es el de siempre.
+- **Lo que Juan ajusta de un modo son los ajustes de su extensión** (`docs/preferencias.md`, clase 3): los mismos en su
+  chat y en lo que la extensión hace en segundo plano, no unos aparte. Las instrucciones del manifiesto son del código
+  (clase 1).
 - **Una extensión de Juan puede ser solo eso:** instrucciones, bienvenida y botones, sin código. Es el equivalente a un
   GPT o un Gem, pero sin un concepto nuevo.
 - **Su sección propia.** «Extensiones» pasa de Ajustes a un sitio propio en la barra lateral. Cada extensión tiene una
