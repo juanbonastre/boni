@@ -137,6 +137,28 @@ Con eso, el orden: la interfaz en el núcleo (papeles, herencia, API y MCP, con 
 pruebas); la reestructuración de sus datos; Boni Calendar y el móvil sobre ellas; «Separar por» en Boni Calendar, con
 maqueta antes (I-09).
 
+**Hecho, paso 1 (2026-11-01): los papeles en el núcleo.**
+- **Cada colección tiene `roles`:** qué campo hace de día (`date`) o de inicio (`start`), hora (`time`), hora y día de
+  fin (`endTime`, `endDate`), fin (`end`), hecha (`done`), importe (`amount`) y categoría (`category`).
+  - Cada papel acepta sus tipos de campo: el día, una fecha; hecha, una casilla; el importe, un número o dinero.
+  - Las hijas los heredan: sus campos son copias con los mismos ids.
+  - Las interfaces salen de ellos: Calendario con un día o un inicio, Tareas con hecha, Dinero con importe y día
+    (`packages/entities/src/roles.ts`).
+- **Cómo se cambian:** con la operación `set_roles`, que se deshace como cualquier otra. Rechaza lo que no encaja en
+  toda la rama: un campo que no tiene, un tipo que el papel no acepta, un día y un inicio a la vez, o un campo en dos
+  papeles. Un papel cuyo campo se archiva deja de valer.
+- **Quién los usa ya:**
+  - la casilla de las tareas (`taskDoneField`: Inicio, las listas del móvil y «Ya lo hice») mira primero el papel
+    `done`;
+  - `GET /api/data/types` da los papeles de cada colección;
+  - la herramienta `collections` del MCP dice qué sabe hacer cada colección («Calendario», «Tareas», «Dinero») y qué
+    papel tiene cada propiedad que el modelo puede ver.
+- **El paso 2, la reestructuración, preparado:** `cli.ts roles <cuenta>` deduce los papeles de la definición de cada
+  calendario y de los movimientos del dinero. Sin `--apply` solo los lista. Con `--apply` los pone en una sola
+  ejecución, y `--undo <run>` la deshace entera.
+- **Pendiente:** que Boni Calendar, las gráficas del dinero y la conciliación lean los papeles en vez de su definición y
+  su código (paso 3), y «Separar por» y la página de una colección con sus papeles, con maqueta antes (paso 4).
+
 ## 7. Orden
 
 Cada paso es un PR con sus pruebas, y se despliega al cerrarse:

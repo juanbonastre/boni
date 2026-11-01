@@ -26,6 +26,7 @@ import { embedCounts, embedDoubts } from "./embeds.ts";
 import { checkConciliacion } from "./money/check.ts";
 import { storeFiles } from "./money/storeFiles.ts";
 import { planFromNote, reshape, undoReshape } from "./reshape.ts";
+import { applyRoles, rolesLines, rolesToSet, undoRoles } from "./roles.ts";
 import { codeHash, runInSandbox, sandboxSocket } from "./sandbox.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -54,6 +55,9 @@ import { V1Store } from "./v1/store.ts";
  *       the account's tree reshaped as a plan says (src/reshape.ts): a dry run with counts by default; applied, one
  *       run in one transaction. The plan may live in a note of the account (its first ```json block).
  *   node src/cli.ts reshape <name> --undo <run>      that reshape taken back whole
+ *   node src/cli.ts roles <name> [--apply]           what each collection can do, worked out from its calendar's
+ *       definition and the money's movements (src/roles.ts): a dry run lists the roles; applied, one run
+ *   node src/cli.ts roles <name> --undo <run>        those roles taken back whole
  *   node src/cli.ts embeds <name> [--dudosas]        the `![[…]]` the vault left in the texts, counted; or the files
  *       still embedded, one per line with where files of that name are (src/embeds.ts)
  *   node src/cli.ts sandbox-check                    whether the box of the extensions' functions answers (its socket,
@@ -262,6 +266,33 @@ try {
             `Hecho, en una sola ejecución (${r.run}). Para deshacerlo todo: reshape ${name} --undo ${r.run}`,
           );
         else console.log("Ensayo: no se ha cambiado nada (añade --apply).");
+      }
+    } finally {
+      store.close();
+    }
+  } else if (cmd === "roles") {
+    const usage = "Usage: roles <name> [--apply] | roles <name> --undo <run>";
+    const [name] = args.filter((a) => !a.startsWith("--"));
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!name || !user) throw new Error(usage);
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    const store = openUserStore(join(dirname(paths.system), "users", `${user.id}.db`));
+    try {
+      const i = args.indexOf("--undo");
+      const undo = i >= 0 ? args[i + 1] : undefined;
+      if (undo) console.log(`Deshecho: ${undoRoles(store, undo, "cli")} cambios de ${undo}.`);
+      else {
+        const { found, problems } = rolesToSet(store);
+        for (const line of rolesLines(store, found)) console.log(line);
+        for (const p of problems) console.log(`PROBLEMA: ${p}`);
+        if (!found.length)
+          console.log("Nada que apuntar: cada colección ya dice lo que sabe hacer.");
+        else if (args.includes("--apply")) {
+          const run = applyRoles(store, found, "cli");
+          console.log(
+            `Hecho, en una sola ejecución (${run}). Para deshacerlo: roles ${name} --undo ${run}`,
+          );
+        } else console.log("Ensayo: no se ha cambiado nada (añade --apply).");
       }
     } finally {
       store.close();

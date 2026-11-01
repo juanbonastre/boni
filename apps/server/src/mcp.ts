@@ -3,8 +3,12 @@ import { readStore } from "@boni/agent";
 import {
   type FieldDef,
   type FieldType,
+  type Interface,
+  interfacesOf,
   label,
   MAX_DESCRIPTION,
+  type Roles,
+  rolesOf,
   type SelectOption,
   type TypeDef,
 } from "@boni/entities";
@@ -365,6 +369,19 @@ const NEW_FIELD_TYPES: readonly FieldType[] = [
   "phone",
 ];
 
+/** What a collection can do, as the apps name it (docs/clases.md §6: Calendario, Tareas, Dinero). */
+const CAN: Record<Interface, string> = { dated: "Calendario", doable: "Tareas", money: "Dinero" };
+/** The roles of a collection played by fields the model may see (a hidden field says nothing, not even its role). */
+const seenRoles = (c: Ctx, type: string, visible: readonly string[]): Roles =>
+  Object.fromEntries(
+    Object.entries(rolesOf(c.store.schema(), type)).filter(([, f]) => visible.includes(f)),
+  );
+const can = (c: Ctx, type: string, visible: readonly string[]) =>
+  interfacesOf(seenRoles(c, type, visible)).map((i) => CAN[i]);
+/** The role a field plays in its collection, if any (`date`, `done`, `amount`…). */
+const roleOf = (c: Ctx, type: string, field: string) =>
+  Object.entries(rolesOf(c.store.schema(), type)).find(([, f]) => f === field)?.[0];
+
 const TOOLS: Tool[] = [
   {
     name: "guide",
@@ -408,18 +425,30 @@ const TOOLS: Tool[] = [
   {
     name: "collections",
     description:
-      "Juan's collections a model may see: name, the collection it is inside (its mother: a mother's queries include it), what goes in it, how many notes, its properties and level.",
+      "Juan's collections a model may see: name, the collection it is inside (its mother: a mother's queries include it), what goes in it, how many notes, its level, what it can do (Calendario, Tareas, Dinero) and its properties, each with the role it plays.",
     inputSchema: obj({}),
     call(c) {
       const v = view(c);
-      return v.types().map((t) => ({
-        name: t.name,
-        ...(v.mother(t) ? { inside: v.mother(t) } : {}),
-        ...(v.description(t) ? { description: v.description(t) } : {}),
-        notes: c.store.count(t.id),
-        level: v.level(t.id),
-        properties: v.fields(t).map((f) => ({ name: f.name, type: f.type })),
-      }));
+      return v.types().map((t) => {
+        const fields = v.fields(t);
+        const does = can(
+          c,
+          t.id,
+          fields.map((f) => f.id),
+        );
+        return {
+          name: t.name,
+          ...(v.mother(t) ? { inside: v.mother(t) } : {}),
+          ...(v.description(t) ? { description: v.description(t) } : {}),
+          notes: c.store.count(t.id),
+          level: v.level(t.id),
+          ...(does.length ? { can: does } : {}),
+          properties: fields.map((f) => {
+            const role = roleOf(c, t.id, f.id);
+            return { name: f.name, type: f.type, ...(role ? { role } : {}) };
+          }),
+        };
+      });
     },
   },
   {

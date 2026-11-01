@@ -24,6 +24,7 @@ import {
   type FieldDef,
   type FieldType,
   label,
+  rolesOf,
   type Schema,
   type TypeDef,
 } from "@boni/entities";
@@ -153,11 +154,14 @@ function inCalendar(
 }
 
 /**
- * The checkbox that marks an entry of `type` done: its calendar's task column (`mapping.task`), the field with
- * that column's name. Null when the type is no calendar or its calendar has no tasks ("Ya lo hice" needs one).
+ * The checkbox that marks an entry of `type` done: the field playing its `done` role (docs/clases.md §6) or, for a
+ * collection whose roles are not set yet, its calendar's task column (`mapping.task`), the field with that column's
+ * name. Null when it keeps no tasks ("Ya lo hice" needs one).
  */
 export function taskDoneField(store: UserStore, type: string): FieldDef | null {
   const schema = store.schema();
+  const byRole = rolesOf(schema, type).done;
+  if (byRole) return schema.types[type]?.fields.find((f) => f.id === byRole) ?? null;
   const p = calendarDefs(store).find(
     (x) => x.type === type || (x.where && branch(schema, x.type).includes(type)),
   );

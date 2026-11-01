@@ -7,6 +7,7 @@ import {
   type RowChange,
   toLocal,
 } from "@boni/calendar";
+import { rolesOf } from "@boni/entities";
 import { exportChunks, releaseSent } from "@boni/export";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
@@ -434,10 +435,16 @@ export function makeApp(opts: ServerOptions): App {
         }
         if (route === "GET /api/data/types")
           return send(res, 200, {
-            // A collection that keeps tasks says which box marks one done (its calendar's): the phone ticks it.
+            // What each collection can do (its roles, its mother's too: docs/clases.md §6), and which box marks one
+            // of its records done: the phone ticks it.
             types: listTypes(store, sys()).map((t) => {
-              const done = t.system ? null : taskDoneField(store, t.id);
-              return done ? { ...t, done: done.id } : t;
+              if (t.system) return t;
+              const done = taskDoneField(store, t.id);
+              return {
+                ...t,
+                roles: rolesOf(store.schema(), t.id),
+                ...(done ? { done: done.id } : {}),
+              };
             }),
           });
         if (route === "GET /api/data/types/:type/rows") {
