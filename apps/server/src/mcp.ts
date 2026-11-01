@@ -286,7 +286,7 @@ function moneyOpen(c: Ctx): void {
   const levels = c.store.aiAccess();
   for (const t of ["t_movimiento", "t_deuda"])
     if (closedToAi(levels[t]) || levels[t] === "opaque")
-      throw new ToolFail("Movimientos or Deudas are kept from the models (Lo que ve la IA)");
+      throw new ToolFail("Movimientos or Deudas are kept from the models (Privacidad)");
 }
 
 /** The reconciliation's statements, read-only here. */

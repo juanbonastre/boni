@@ -234,7 +234,7 @@ for (const width of [1440, 900]) {
     await page.locator(".modal").waitFor();
     issues.push(...(await settingsAudit(page)));
     // Counts of 1 read as 1, never "1 elementos" or "1 correos".
-    await page.locator(".modal [role=tab]", { hasText: "Lo que ve la IA" }).click();
+    await page.locator(".modal [role=tab]", { hasText: "Privacidad" }).click();
     await expect(page.locator(".modal")).toContainText("1 elemento");
     expect(await page.locator(".modal").textContent()).not.toMatch(/(^|[^0-9.])1 elementos/);
     await page.locator(".modal [role=tab]", { hasText: "Correo" }).click();

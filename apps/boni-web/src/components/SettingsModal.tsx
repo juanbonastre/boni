@@ -628,7 +628,7 @@ function BackupSettings() {
 }
 
 /**
- * "Lo que ve la IA": per collection, what the models may see (docs/nucleo.md 7.3). Juan's choice only:
+ * «Privacidad» (what the AI sees): per collection, what the models may see (docs/nucleo.md 7.3). Juan's choice only:
  * the agent has no tool for it, and the server takes it from a personal device only.
  */
 function AiVisibility() {

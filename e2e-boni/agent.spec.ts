@@ -570,8 +570,8 @@ test("what the AI sees: Juan chooses per collection in Settings", async ({ page 
   const modal = page.locator(".modal");
   // Settings open on the account; each section is one tab.
   await expect(modal.getByRole("tab", { name: "Cuenta" })).toHaveAttribute("aria-selected", "true");
-  await modal.getByRole("tab", { name: "Lo que ve la IA" }).click();
-  await expect(modal.getByRole("heading", { name: "Lo que ve la IA" })).toBeVisible();
+  await modal.getByRole("tab", { name: "Privacidad" }).click();
+  await expect(modal.getByRole("heading", { name: "Privacidad" })).toBeVisible();
   const row = (name: string) => modal.getByRole("combobox", { name });
   await expect(row("Diario")).toHaveValue("restricted");
   await expect(row("Movimientos")).toHaveValue("opaque");
@@ -586,7 +586,7 @@ test("what the AI sees: Juan chooses per collection in Settings", async ({ page 
   const off = await page.context().newPage();
   await openApp(off, "/?still");
   await off.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
-  await off.locator(".modal").getByRole("tab", { name: "Lo que ve la IA" }).click();
+  await off.locator(".modal").getByRole("tab", { name: "Privacidad" }).click();
   await expect(off.locator(".modal")).toContainText("El agente está apagado en el servidor.");
   await expect(off.locator(".modal").getByRole("combobox")).toHaveCount(0);
   await off.close();

@@ -409,7 +409,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   with "Restaurar"; "Duplicar" is in a page's "…" (sidebar and top bar). A new page shows at once (made on the
   server behind it, keeping what was typed). **AI** is a placeholder for now: "/Pedir a Boni" says it is coming.
 - This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
-  Settings has "Lo que ve la IA" after the account (one row per collection with its count and a three-way segmented
+  Settings has «Privacidad» (what the AI sees) after the account (one row per collection with its count and a three-way segmented
   control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip
   (where the host can save a file; a toast says how it went). In the desktop app, "Tus datos" is the **daily copy on
   this computer** (Juan, 2026-10-23): the switch "Copia diaria en este equipo" with what it does and how many are kept,
@@ -505,7 +505,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   border on rows: Juan, 2026-10-23, dashed only in calendars); in the calendar layout, a dashed item; a click on its title (table) or on it (calendar) opens the proposal's page. **In Boni Calendar** (plan b2) the same proposal is an event with a dashed outline in its calendar's colour over a faint fill, no resize handles, read only (no drag, edit, duplicate or delete; it never reminds); one click opens its page in the peek (Boni's address set: the calendar's own peek; otherwise Boni's, `boni://proposal?id=`), where Aceptar or Rechazar puts the peek away. Where there is no peek (a browser, Android) its detail opens read only, titled "Propuesta", saying it is decided in Boni's inbox. They are proposals, not entities: nothing counts them; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it, and a collection by its name alone ("Docencia"; names and titles that came from outside are not used: the key and the id instead); the **log** (Registro) lists every run with what it was, on one line (the request in quotes; "Correo «asunto»"; "Cambio en Obsidian" for a run of the retired mirror, never its path; "Propuesta aceptada"; the review of the mail guide) and under it, muted, when and what came of it (the sender and mailbox, its proposals by how they were decided, what it made or changed by title and collection, "(deshecho)", or "Nada que hacer"; Juan, 2026-10-22: "Segundo plano · Hecho" said nothing); readings in a row that did nothing are one line ("3 lecturas sin nada que hacer") that opens; Undo only where something is left to undo (a stopped run too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
-  window): Cuenta, Lo que ve la IA, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only those that apply).
+  window): Cuenta, Privacidad, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only those that apply).
   It opens on Cuenta. **Extensiones** (docs/extensiones.md): a note on what they are, then per extension its name and
   what it does in one line with its switch, and under it a closed "Qué usa" group whose summary says whether it is
   as it came ("Viene con Boni (versión 1)") or changed; inside, in plain words (never ids): where it brings data from,
@@ -522,7 +522,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
     activates it, never the MCP.
 
   An extension with a version before the active one has «Volver a la versión N» under it: one click, both ways.
-  **Lo que ve la IA**: the three levels explained once at the top, then one row per collection with a select.
+  **Privacidad** (what the AI sees): the levels explained once at the top, then one row per collection with a select.
   **Correo**: not connected, server (`imap.gmail.com` by default), folder, user and app password, and "Conectar", which
   tries the connection before anything is kept (a wrong password is said under the form). Connected: who, the last
   check and how many mails, and "Comprobar ahora"; under it three closed groups, each with a summary on its right:
@@ -577,7 +577,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   shape), «Lo que escribió» (a model's own answer as plain text, or the records it changed), «Argumentos», whether it
   was allowed, and «Ver toda la ejecución».
 - **«Todas las páginas»** (Boni, the sidebar's top; Juan, 2026-10-28: everything, with every way to manage it): the
-  sidebar's «Páginas» as a table (Nombre, Elementos, Lo que ve la IA, En la barra, Origen, "…"), each line indented
+  sidebar's «Páginas» as a table (Nombre, Elementos, IA, En la barra, Origen, "…"), each line indented
   18 px under its mother: the user's pages, the collections (a chevron opens one: its daughters, then all its notes,
   whatever its eye says; «Ninguno de sus registros tiene nota» when there are none) and «Boni», folded. A search
   (names and the notes' titles) or a level's chip lists what matches flat, each line with where it is, muted, after
