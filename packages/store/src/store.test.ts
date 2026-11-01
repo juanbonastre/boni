@@ -763,6 +763,26 @@ describe("the agent's journal", () => {
     expect(j.spent("2026-10-20", "reader")).toBe(3);
     expect(j.spent("2026-10-21", "reader")).toBe(0);
   });
+
+  it("keeps the decisions Boni took, with what Juan made of them (docs/fiabilidad.md)", () => {
+    const { store } = fresh();
+    const j = store.journal;
+    const d = { run: "r1", area: "choice", cost: "A" as const, p: 0.8, outcome: "do" as const };
+    j.addDecision({ ...d, id: "d1", detail: { options: 2 }, at: 1 });
+    j.addDecision({ ...d, id: "d2", area: "fill", detail: { field: "prioridad" }, at: 2 });
+    j.addDecision({ ...d, id: "d3", run: "r2", p: 0.4, outcome: "nothing", detail: null, at: 3 });
+    expect(j.decisionsOf("r1").map((x) => [x.id, x.area, x.result])).toEqual([
+      ["d1", "choice", null],
+      ["d2", "fill", null],
+    ]);
+    j.setDecisionResult("d1", "right", 9);
+    j.setDecisionResult("d1", "wrong", 10); // the first result stays
+    expect(j.decisions("choice").map((x) => [x.id, x.result, x.resultAt])).toEqual([
+      ["d1", "right", 9],
+      ["d3", null, null],
+    ]);
+    expect(j.decisions("choice", 1).map((x) => x.id)).toEqual(["d3"]);
+  });
 });
 
 describe("two processes on one store", () => {

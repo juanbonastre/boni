@@ -202,6 +202,30 @@ export function fillQuestions(fields: readonly FillField[]): Record<string, Deci
   return q;
 }
 
+/**
+ * Each field as a decision of docs/fiabilidad.md: how sure the decider was (both orders agreeing for a choice, the
+ * probability for a box) and whether the value was taken ("do") or left empty ("nothing").
+ */
+export function fillDecisions(
+  answers: DecisionAnswers,
+  fields: readonly FillField[],
+): { field: string; p: number; outcome: "do" | "nothing" }[] {
+  const { values } = fromAnswers(answers, fields);
+  return fields.map((f, i) => {
+    const a = answers[`f${i}`];
+    const b = answers[`f${i}r`];
+    const p =
+      f.kind === "check"
+        ? a?.type === "noul"
+          ? a.noul
+          : 0
+        : a?.type === "choice" && b?.type === "choice" && a.choice === b.choice && a.choice !== NONE
+          ? Math.min(a.confidence, b.confidence)
+          : 0;
+    return { field: f.key, p, outcome: values[f.key] === null ? "nothing" : "do" };
+  });
+}
+
 /** The decider's answers as values, by the code's thresholds; and whether a note is worth writing. */
 export function fromAnswers(
   answers: DecisionAnswers,
