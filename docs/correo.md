@@ -132,8 +132,8 @@ evaluación. El planificador las recibe **solo cuando la petición toca «Correo
 Por las vías que ya existen, ordenadas en `docs/preferencias.md` §5:
 - **De sus decisiones:** la revisora propone reglas y ejemplos para los ajustes de Correo, y Juan dice sí o no.
 - **De lo que dice en el chat:** el planificador ya puede guardar recuerdos (`memory.save`). Ahora lo propone con una
-  tarjeta, «¿Lo recuerdo?», y lo guarda donde toca. «Los boletines de la universidad no me interesan» va a los ajustes de
-  Correo. Nunca se guarda solo.
+  tarjeta, «¿Lo recuerdo?», que Juan acepta, rechaza o reescribe con sus palabras, y lo guarda donde toca. «Los boletines
+  de la universidad no me interesan» va a los ajustes de Correo. Nunca se guarda solo.
 
 ### 4.4 Respuestas con forma
 
@@ -176,7 +176,7 @@ línea por correo) y la conversación puede usarlo, con los ajustes de Correo.
 
 ## 6. Para decidir (Juan)
 
-Dónde vive lo que se aprende y si hace falta tu «sí» se decide en `docs/preferencias.md` §7. Aquí, solo lo del correo:
+Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/preferencias.md` §7. Aquí, solo lo del correo:
 
 1. **El resumen de correos agrupado por lo que piden** (propuesto, el ejemplo de §4.4), o una línea por correo por orden
    de llegada.

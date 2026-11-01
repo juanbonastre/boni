@@ -40,7 +40,9 @@ each thing lives), `docs/design-guide.md` (every UI). Code, comments, commits an
 4. A visual or behavioural change updates `docs/design-guide.md` in the same PR. A new screen starts as a mockup with the
    real app (I-09). The main screens have reference captures, made by the «screens» workflow (I-07).
 5. A decision of Juan's that code can check enters `docs/principios.md` with its test, in the same PR.
-6. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
+6. Before designing something new, find what already does something like it (`docs/preferencias.md`, `docs/contexto.md`,
+   `make map`, a search) and extend it: a proposal starts with what exists and says what it extends (T-05).
+7. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
    the built web app, phone-sized viewports, typing at a person's pace where timing matters. On his screen, capture only
    the app window and delete the captures afterwards. Say what you verified and what you could not.
 

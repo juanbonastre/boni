@@ -1,6 +1,6 @@
 # Lo que Boni sabe de Juan y cómo lo aprende
 
-Propuesta (2026-11-01). Juan, al leer `docs/correo.md`: «nuestro sistema actual ya tenía alguna lógica para ir
+Propuesta del 2026-11-01, aprobada por Juan el mismo día (§7). Juan, al leer `docs/correo.md`: «nuestro sistema actual ya tenía alguna lógica para ir
 aprendiendo de las preferencias del usuario; ¿cómo encaja con lo que proponemos? Quiero que esté bien estructurado y
 que no se solapen».
 
@@ -45,6 +45,11 @@ Juan lo acepta (A11).
 
 Y lo propuesto: los ajustes del chat (maqueta 3b: instrucciones, bienvenida, archivos), la guía también en la
 conversación y aprender de lo que Juan dice en el chat (`docs/correo.md`).
+
+**Lo que recibe el planificador en cada turno**, y nada más: `request` (la petición), `today` (el día), `tools` (las
+herramientas que puede usar), `schema` (las colecciones con sus campos), `history` (los últimos 10 turnos) y `memories`
+(Memoria, sin lo que escribió un modelo y Juan no confirmó). Una fuente nueva rompe una prueba hasta que se apunta aquí
+(A-12).
 
 ## 2. Dónde se solapan
 
@@ -102,11 +107,15 @@ la leerán también el planificador y el decisor) y **Privacidad** (lo que puede
 - **Un sitio por extensión.** La guía del correo pasa a ser los ajustes de la extensión Correo (el mismo contenido y el
   mismo cifrado), y vale también cuando la conversación lee correos. Los ajustes del chat de la maqueta 3b son los de
   la extensión Conciliación. No hay unos ajustes del chat aparte.
-- **`memory.save` propone en vez de guardar en silencio.** Una tarjeta en el turno: «¿Lo recuerdo?» [Sí] [No]. Al
-  decir sí va a «Sobre ti», a los ajustes de una extensión o a «Hechos», según de qué hable. Es el «aprender del chat»
-  de `docs/correo.md` §4.3: no hay otro mecanismo.
-- **Todas las sugerencias iguales:** qué propone, por qué (las decisiones que lo muestran) y [Sí] [No]. Un «no» no se
-  vuelve a proponer, y lo aceptado se deshace como cualquier cambio.
+- **`memory.save` propone en vez de guardar en silencio.** Una tarjeta en el turno: «¿Lo recuerdo?» [Sí] [No]
+  [Cambiarlo…]. Al decir sí va a «Sobre ti», a los ajustes de una extensión o a «Hechos», según de qué hable. Es el
+  «aprender del chat» de `docs/correo.md` §4.3: no hay otro mecanismo.
+- **Todas las sugerencias iguales:** qué propone, por qué (las decisiones que lo muestran) y [Sí] [No] [Cambiarlo…].
+  Un «no» no se vuelve a proponer, y lo aceptado se deshace como cualquier cambio.
+- **Siempre se puede contestar con sus palabras** (Juan, 2026-11-01: «como lo que hacemos en la conciliación de
+  gastos»). «Cambiarlo…» abre un texto con la sugerencia, para escribirla como él quiera, y escribir en la barra mientras
+  la tarjeta espera también la contesta: «sí, pero solo los de la uni». Lo que se guarda son sus palabras (integridad
+  `user`), no las del modelo.
 - **Memoria ordenada** en «Sobre ti» y «Hechos», cada cosa con de dónde viene.
 - **Las descripciones de colección** llegan también al planificador y al decisor.
 - **Un interruptor «Aprender»** para pausar las sugerencias; más adelante, conversaciones que no dejan recuerdos.
@@ -121,13 +130,13 @@ la leerán también el planificador y el decisor) y **Privacidad** (lo que puede
 - Lo de una extensión solo se lee en su ámbito.
 - Todo queda en el registro con su origen, y se deshace.
 
-## 7. Para decidir (Juan)
+## 7. Decidido (Juan, 2026-11-01)
 
-1. **Las cinco clases, un sitio cada una** (propuesto). Ejemplo: tu «no me interesan los boletines» va a los ajustes de
-   Correo y vale en segundo plano y en el chat. Tu «contéstame corto» va a «Sobre ti» y vale en todo.
-2. **Aprender siempre con tu «sí»** (propuesto, como hoy), o guardar solo y avisar, como ChatGPT. Ejemplo: dices «Ana es
-   mi hermana» y aparece «¿Lo recuerdo?», o se guarda y sale «Recordado» con Deshacer.
-3. **«Sobre ti» también para los asistentes de fuera** por el MCP (propuesto: lo general sí; lo de cada extensión, no).
+1. **Las cinco clases, un sitio cada una.** Tu «no me interesan los boletines» va a los ajustes de Correo y vale en
+   segundo plano y en el chat; tu «contéstame corto» va a «Sobre ti» y vale en todo.
+2. **Aprender siempre con su «sí», y también con sus palabras.** Nada aprendido se guarda sin que Juan lo acepte, y en
+   cada tarjeta puede escribir cómo quiere que quede, como en las tarjetas de la conciliación (§5).
+3. **«Sobre ti» también para los asistentes de fuera** por el MCP: lo general sí; lo de cada extensión, no.
 
 ## 8. Fases
 
