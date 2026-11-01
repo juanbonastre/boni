@@ -159,14 +159,12 @@ la leerán también el planificador y el decisor) y **Privacidad** (lo que puede
    cada tarjeta puede escribir cómo quiere que quede, como en las tarjetas de la conciliación (§5).
 3. **«Sobre ti» también para los asistentes de fuera** por el MCP: lo general sí; lo de cada extensión, no.
 
-**Pendiente de Juan:** el plan del aprendizaje inferido (2026-10-24) dejaba que un aprendiz se quedara solo con un
-cambio que tenía claro y acotado (un parámetro de la interfaz, un ejemplo), avisando con Deshacer, como hace ChatGPT con
-su memoria. La decisión 2 pide siempre su «sí».
-- **Propuesto: siempre su «sí»**, como en la decisión 2. Una sola forma de aprender, y la memoria nunca cambia sin él
-  (OWASP, ASI06). Al ser una sugerencia al día como mucho, no agobia. Ejemplo: «Has cambiado la gráfica a barras 3
-  veces: ¿la pongo así por defecto?» [Sí] [No].
-- **O lo acotado, solo y con aviso:** solo los parámetros de la interfaz, medidos antes y con Deshacer. Ejemplo:
-  «Ahora tus gráficas salen en barras · Deshacer».
+**El choque con la tarea 13, resuelto por fiabilidad** (Juan, 2026-11-01: «dependiendo de la fiabilidad de la
+predicción, que pida comprobación o lo haga de forma automática»). El plan del aprendizaje inferido (2026-10-24)
+dejaba que un aprendiz se quedara solo con un cambio claro y acotado, avisando con Deshacer; la decisión 2 pedía
+siempre su «sí». `docs/fiabilidad.md` lo une: lo aprendido se guarda con su «sí», salvo lo que se deshace sin más (clase
+A) en un ámbito donde Boni ha demostrado que acierta y Juan ha encendido «Solo»; entonces se hace y se avisa, con
+Deshacer. Pendiente de las decisiones de ese documento (§6).
 
 ## 8. Fases
 

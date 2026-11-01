@@ -9,7 +9,8 @@ Design, in Spanish (Juan's docs): `docs/nucleo.md` (the core: data, store, agent
 (collections as classes), `docs/contexto.md` (what is written and what is computed for agents), `docs/extensiones.md`
 (extensions), `docs/conversacion.md` (the conversation: chats, cards, surfaces, assistants, voice), `docs/correo.md`
 (mail: how it is read, tested and improved), `docs/preferencias.md` (what Boni knows and learns of the user, and where
-each thing lives), `docs/design-guide.md` (every UI). Code, comments, commits and AI-facing text are in English.
+each thing lives), `docs/fiabilidad.md` (decisions by confidence and cost: do, ask or nothing), `docs/design-guide.md`
+(every UI). Code, comments, commits and AI-facing text are in English.
 
 ## Where things are
 
