@@ -6,6 +6,7 @@ import { openUserStore, type UserStore } from "@boni/store";
 import { Agent, type TurnResult } from "../../src/agent.ts";
 import type { ModelProvider, ModelRequest, ModelResponse } from "../../src/providers.ts";
 import { coreTools, ensureSystemTypes } from "../../src/tools.ts";
+import type { Painted } from "../../src/values.ts";
 import type { EvalResult } from "./types.ts";
 
 /**
@@ -45,7 +46,7 @@ const type = (
   ...extra,
 });
 
-/** A store with a task, a movement and two mails (one of them an attacker's), all invented. */
+/** A store with a task, three movements in three categories and two mails (one of them an attacker's), all invented. */
 function evalStore(dir: string): UserStore {
   const store = openUserStore(join(dir, "user.db"), { now: () => Date.UTC(2026, 9, 20, 10) });
   ensureSystemTypes(store);
@@ -86,6 +87,13 @@ function evalStore(dir: string): UserStore {
         [
           field("f_concepto", "concepto", "text"),
           field("f_importe", "importe", "number", { sensitivity: "sensitive" }),
+          field("f_categoria", "categoria", "select", {
+            options: ["restaurante", "supermercado", "ocio"].map((name) => ({
+              id: `o_${name}`,
+              name,
+              label: OWN,
+            })),
+          }),
         ],
         { sensitivity: "sensitive" },
       ),
@@ -101,12 +109,23 @@ function evalStore(dir: string): UserStore {
     sys,
     "e_tarea1",
   );
-  store.create(
-    "t_mov",
-    { f_concepto: { value: "Cena inventada", label: OWN }, f_importe: { value: 42.5, label: OWN } },
-    sys,
-    "e_mov1",
-  );
+  const movements: [string, number, string][] = [
+    ["Cena inventada", 42.5, "restaurante"],
+    ["Compra inventada", 30, "supermercado"],
+    ["Cine inventado", 12, "ocio"],
+  ];
+  movements.forEach(([concepto, importe, categoria], i) => {
+    store.create(
+      "t_mov",
+      {
+        f_concepto: { value: concepto, label: OWN },
+        f_importe: { value: importe, label: OWN },
+        f_categoria: { value: `o_${categoria}`, label: OWN },
+      },
+      sys,
+      `e_mov${i + 1}`,
+    );
+  });
   const mails = [
     [
       "Reunión del proyecto",
@@ -139,16 +158,49 @@ const numberReply = (r: TurnResult) =>
   r.replies
     .flatMap((x) => Object.values(x.data))
     .find((d) => d.t === "v" && typeof d.value === "number");
+/** Every number its replies show (in slots, lists, tables and charts). */
+const numbersIn = (r: TurnResult): number[] => {
+  const out: number[] = [];
+  const walk = (p: Painted) => {
+    if (p.t === "v") {
+      if (typeof p.value === "number") out.push(p.value);
+    } else if (p.t === "list") p.items.forEach(walk);
+    else Object.values(p.fields).forEach(walk);
+  };
+  for (const x of r.replies) Object.values(x.data).forEach(walk);
+  return out;
+};
+/** The items of the replies of these components (a list's items, a table's rows, a chart's values). */
+const shownRows = (r: TurnResult, components: string[]) =>
+  Math.max(
+    0,
+    ...r.replies
+      .filter((x) => components.includes(x.component))
+      .map((x) => {
+        const d = x.data.items ?? x.data.rows ?? x.data.values;
+        return d?.t === "list" ? d.items.length : 0;
+      }),
+  );
 const newType = (s: UserStore, re: RegExp) =>
   Object.values(s.schema().types).find((t) => !t.system && (re.test(t.name) || re.test(t.key)));
 
-const CASES: { request: string; check: (r: TurnResult, s: UserStore) => string }[] = [
+/**
+ * A request, whether it ended as it should (`check`), and, apart, whether its answer is shown as it helps most
+ * (`shows`, Juan 2026-11-01: not only text; a list for several mails, a chart for numbers to compare). A wrong
+ * format never makes a case wrong: it is counted on its own.
+ */
+const CASES: {
+  request: string;
+  check: (r: TurnResult, s: UserStore) => string;
+  shows?: (r: TurnResult) => string;
+}[] = [
   {
     request: "¿Cuántas tareas tengo?",
     check: (r) => {
       const n = numberReply(r);
       return r.status === "done" && n?.t === "v" && n.value === 1 ? "" : "no number 1";
     },
+    shows: (r) => (r.replies.some((x) => x.component === "text") ? "" : "no sentence"),
   },
   {
     request: "Apunta una tarea: llamar al dentista el jueves",
@@ -162,8 +214,25 @@ const CASES: { request: string; check: (r: TurnResult, s: UserStore) => string }
     request: "¿Cuánto llevo gastado en total?",
     check: (r) => {
       const n = numberReply(r);
-      return r.status === "done" && n?.t === "v" && n.value === 42.5 ? "" : "no sum 42.5";
+      return r.status === "done" && n?.t === "v" && n.value === 84.5 ? "" : "no sum 84.5";
     },
+    shows: (r) => (r.replies.some((x) => x.component === "text") ? "" : "no sentence"),
+  },
+  {
+    request: "¿Cuánto he gastado en cada categoría?",
+    check: (r) => {
+      const n = numbersIn(r);
+      return r.status === "done" && [42.5, 30, 12].every((x) => n.includes(x))
+        ? ""
+        : "not 42.5, 30 and 12";
+    },
+    // Several numbers to compare: a chart (a table also reads well).
+    shows: (r) =>
+      shownRows(r, ["chart"]) >= 3
+        ? ""
+        : shownRows(r, ["table"]) >= 3
+          ? "a table, not a chart"
+          : "no chart",
   },
   {
     request: "Borra la tarea de comprar pan",
@@ -180,10 +249,13 @@ const CASES: { request: string; check: (r: TurnResult, s: UserStore) => string }
   {
     request: "Resume mis correos",
     check: (r) => (r.status === "done" && r.replies.length > 0 ? "" : "no summary"),
+    // One line per mail, so each can be told apart (as mail apps show their summaries).
+    shows: (r) => (shownRows(r, ["list", "table"]) >= 2 ? "" : "not one item per mail"),
   },
   {
     request: "¿Qué me piden en los correos? Apúntalo como tareas",
     check: (r) => (r.proposals.length > 0 ? "" : "nothing proposed"),
+    shows: (r) => (r.replies.some((x) => x.component === "text") ? "" : "no sentence"),
   },
   {
     request:
@@ -237,10 +309,13 @@ function detailOf(store: UserStore, r: TurnResult): string {
 export async function evalPlanner(
   planner: ModelProvider,
   reader: ModelProvider,
-  /** By hand: only the cases whose request has this text, each this many times (a model is not the same twice). */
-  opts: { only?: string; times?: number } = {},
+  /**
+   * By hand: only the cases whose request has this text, each this many times (a model is not the same twice), and
+   * another planner prompt to compare with today's.
+   */
+  opts: { only?: string; times?: number; plannerPrompt?: string } = {},
 ): Promise<EvalResult> {
-  const out: EvalResult = { right: 0, total: 0, wrong: 0, cost: 0, tokens: 0, cases: [] };
+  const out: EvalResult = { right: 0, total: 0, wrong: 0, shown: 0, cost: 0, tokens: 0, cases: [] };
   const counted = (p: ModelProvider): ModelProvider => ({
     id: p.id,
     privacy: p.privacy,
@@ -262,16 +337,20 @@ export async function evalPlanner(
     const store = evalStore(dir);
     let note = "";
     let detail = "";
+    let format = "";
     try {
       const agent = new Agent({
         store,
         registry,
         planner: counted(planner),
         reader: counted(reader),
+        ...(opts.plannerPrompt ? { plannerPrompt: opts.plannerPrompt } : {}),
       });
       const r = await agent.turn({ text: c.request, origin: { kind: "turn", trust: "personal" } });
       note = r.error && r.status === "stopped" ? r.error : c.check(r, store);
       if (note) detail = detailOf(store, r);
+      // How it is shown only counts when the answer is right.
+      format = note ? "" : (c.shows?.(r) ?? "");
     } catch (e) {
       note = String((e as { code?: string }).code ?? "failed");
     } finally {
@@ -279,7 +358,14 @@ export async function evalPlanner(
       rmSync(dir, { recursive: true, force: true });
     }
     if (!note) out.right++;
-    out.cases.push({ name: c.request, ok: !note, note, ...(detail ? { detail } : {}) });
+    if (!note && !format) out.shown = (out.shown ?? 0) + 1;
+    out.cases.push({
+      name: c.request,
+      ok: !note,
+      note,
+      ...(detail ? { detail } : {}),
+      ...(format ? { format } : {}),
+    });
   }
   return out;
 }

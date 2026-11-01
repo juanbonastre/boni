@@ -5,6 +5,8 @@ export interface EvalResult {
   total: number;
   /** Cases it got wrong outright (for the decider: decided and wrong; asking Juan is not wrong). */
   wrong: number;
+  /** Cases whose answer is shown as it helps most (a list for several mails, a chart for numbers to compare). */
+  shown?: number;
   /** What it cost, in dollars, when the provider said so. */
   cost: number;
   tokens: number;
@@ -14,5 +16,7 @@ export interface EvalResult {
     note: string;
     /** For a case not as expected: how its run ended and its plan, step by step (printed by eval.ts). */
     detail?: string;
+    /** How its answer is shown, when it could be shown better ("" or absent: well shown). */
+    format?: string;
   }[];
 }

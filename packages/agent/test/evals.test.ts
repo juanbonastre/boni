@@ -33,8 +33,60 @@ describe("the evaluations a model passes before it takes a role", () => {
 
   it("the planner: a planner that answers nothing useful fails, and each case runs in a store of its own", async () => {
     const r = await evalPlanner(fakePlanner([{ version: 1, steps: [] }]), fakePlanner([]));
-    expect(r.total).toBe(8);
+    expect(r.total).toBe(9);
     expect(r.right).toBe(0);
+  });
+
+  it("the planner's answers are also scored by how they are shown: numbers to compare in a chart", async () => {
+    const lit = (x: string | number) => ({ lit: x });
+    const sum = (id: string, categoria: string) => ({
+      id,
+      op: "call",
+      tool: "entities.aggregate",
+      args: {
+        type: lit("movimiento"),
+        op: lit("sum"),
+        of: lit("importe"),
+        field: lit("categoria"),
+        equals: lit(categoria),
+      },
+    });
+    const plan = (component: "chart" | "table") => ({
+      version: 1,
+      steps: [
+        sum("a", "restaurante"),
+        sum("b", "supermercado"),
+        sum("c", "ocio"),
+        component === "chart"
+          ? {
+              id: "r",
+              op: "reply",
+              component: "chart",
+              data: {
+                labels: {
+                  fn: "list",
+                  args: [lit("restaurante"), lit("supermercado"), lit("ocio")],
+                },
+                values: { fn: "list", args: [{ ref: "$a" }, { ref: "$b" }, { ref: "$c" }] },
+                kind: lit("bar"),
+              },
+            }
+          : {
+              id: "r",
+              op: "reply",
+              component: "table",
+              data: {
+                rows: { fn: "list", args: [{ ref: "$a" }, { ref: "$b" }, { ref: "$c" }] },
+              },
+            },
+      ],
+    });
+    const only = "cada categoría";
+    const chart = await evalPlanner(fakePlanner([plan("chart")]), fakePlanner([]), { only });
+    expect(chart).toMatchObject({ total: 1, right: 1, shown: 1 });
+    const table = await evalPlanner(fakePlanner([plan("table")]), fakePlanner([]), { only });
+    expect(table).toMatchObject({ total: 1, right: 1, shown: 0 });
+    expect(table.cases[0]?.format).toBe("a table, not a chart");
   });
 
   it("the planner by hand: one case several times, and a failure says how it ended and its plan", async () => {

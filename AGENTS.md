@@ -7,8 +7,9 @@ Android). This monorepo holds all of it. **The repo is public:** everything in i
 Before a big step read `docs/principios.md`: the rules that must not break, each with the test that guards it.
 Design, in Spanish (Juan's docs): `docs/nucleo.md` (the core: data, store, agent, security), `docs/clases.md`
 (collections as classes), `docs/contexto.md` (what is written and what is computed for agents), `docs/extensiones.md`
-(extensions), `docs/conversacion.md` (the conversation: chats, cards, surfaces, assistants, voice),
-`docs/design-guide.md` (every UI). Code, comments, commits and AI-facing text are in English.
+(extensions), `docs/conversacion.md` (the conversation: chats, cards, surfaces, assistants, voice), `docs/correo.md`
+(mail: how it is read, tested and improved), `docs/design-guide.md` (every UI). Code, comments, commits and AI-facing
+text are in English.
 
 ## Where things are
 
