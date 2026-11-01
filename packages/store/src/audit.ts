@@ -120,12 +120,16 @@ export interface Audit {
   meta(ids: string[]): Map<string, EntityMeta>;
   /** Counts per UTC day and actor: what was read and what was changed (the «Actividad» charts). */
   activity(from: number, to: number): { day: string; by: By; reads: number; writes: number }[];
-  /** Per UTC day, actor and type: how many entities were read and how many changed (Boni's «Actividad de Boni»). */
   /** The last action's number (0 with none): it changes whenever one is recorded. */
   lastAction(): number;
+  /**
+   * Per day, actor and type: how many entities were read and how many changed (Boni's «Actividad de Boni»). `dayOf`
+   * says which day an instant is in (the account's zone); a UTC day without it.
+   */
   activityByType(
     from: number,
     to: number,
+    dayOf?: (ms: number) => string,
   ): { day: string; by: By; type: string; reads: number; writes: number }[];
   /** Per type and actor: how many entities were read and how many changed. */
   byType(from: number, to: number): { type: string; by: By; reads: number; writes: number }[];
@@ -136,6 +140,9 @@ export interface Audit {
 }
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+/** A quarter of an hour, in ms: the step of every time zone's offset. */
+const QUARTER = 15 * 60_000;
+const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const j = (v: unknown) => (v === undefined || v === null ? null : JSON.stringify(v));
 const p = (s: unknown) => (typeof s === "string" ? JSON.parse(s) : null);
 
@@ -410,8 +417,10 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     },
     lastAction: () =>
       (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM actions").get() as { n: number }).n,
-    activityByType: (from, to) => {
-      const day = (col: string) => `strftime('%Y-%m-%d', ${col} / 1000, 'unixepoch')`;
+    activityByType: (from, to, dayOf = utcDay) => {
+      // Counted per quarter of an hour (every zone's offset is a whole number of them), then each quarter to its day
+      // in the account's zone: an action at 00:30 in Madrid on the 1st is the 1st's, not the 31st's (UTC).
+      const quarter = (col: string) => `(${col} / ${QUARTER})`;
       const rows = new Map<
         string,
         { day: string; by: By; type: string; reads: number; writes: number }
@@ -424,20 +433,20 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
       };
       for (const r of db
         .prepare(
-          `SELECT ${day("x.at")} AS day, x.by, a.type, count(*) AS n FROM access a JOIN actions x ON x.seq = a.action
-           WHERE x.at >= ? AND x.at < ? AND x.decision = 'allow' GROUP BY day, x.by, a.type`,
+          `SELECT ${quarter("x.at")} AS q, x.by, a.type, count(*) AS n FROM access a JOIN actions x ON x.seq = a.action
+           WHERE x.at >= ? AND x.at < ? AND x.decision = 'allow' GROUP BY q, x.by, a.type`,
         )
         .all(from, to))
-        add(r.day as string, r.by as string, r.type as string, "reads", Number(r.n));
+        add(dayOf(Number(r.q) * QUARTER), r.by as string, r.type as string, "reads", Number(r.n));
       for (const r of db
         .prepare(
-          `SELECT ${day("o.at")} AS day, e.type,
+          `SELECT ${quarter("o.at")} AS q, e.type,
              coalesce(o.by, CASE o.actor WHEN 'user' THEN 'user:' || coalesce(o.device, '?') ELSE o.actor END) AS who,
              count(*) AS n FROM ops o JOIN entities e ON e.id = o.target
-           WHERE o.at >= ? AND o.at < ? AND o.kind != 'schema' GROUP BY day, e.type, who`,
+           WHERE o.at >= ? AND o.at < ? AND o.kind != 'schema' GROUP BY q, e.type, who`,
         )
         .all(from, to))
-        add(r.day as string, r.who as string, r.type as string, "writes", Number(r.n));
+        add(dayOf(Number(r.q) * QUARTER), r.who as string, r.type as string, "writes", Number(r.n));
       return [...rows.values()].sort(
         (a, b) =>
           a.day.localeCompare(b.day) || a.by.localeCompare(b.by) || a.type.localeCompare(b.type),
