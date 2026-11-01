@@ -5,8 +5,9 @@ como tareas» (#216) y de las preguntas de Juan: si la IA que lee correos solo v
 buenas prácticas y otra que aprende de él, cómo comparar modelos y prompts, y cómo devolver algo más legible que texto.
 
 Amplía `docs/nucleo.md` §7.4b (la lectura por módulos y la guía de Juan) y `docs/conversacion.md` §3.3 (el modo de
-conversación de una extensión). Ninguna regla de `docs/principios.md` cambia: el texto de un correo sigue siendo dato,
-el modelo sigue planeando y el código sigue decidiendo (A-01).
+conversación de una extensión). Dónde vive cada cosa que Boni sabe o aprende de Juan, para que nada se solape, está en
+`docs/preferencias.md`; aquí, lo que toca al correo. Ninguna regla de `docs/principios.md` cambia: el texto de un correo
+sigue siendo dato, el modelo sigue planeando y el código sigue decidiendo (A-01).
 
 ## 0. Resumen
 
@@ -18,10 +19,11 @@ el modelo sigue planeando y el código sigue decidiendo (A-01).
   evoluciona con él (su guía: indicaciones, reglas y ejemplos; la revisora propone cambios a partir de sus decisiones y
   él los acepta). Solo la usa la lectura en segundo plano.
 - **Propuesta:**
-  - la misma guía en dos capas para todo lo que lee correo, también en la conversación;
-  - una «habilidad de correo» que el planificador recibe solo cuando la petición toca el correo, como las skills de
-    Claude o de Gemini;
-  - que Boni proponga apuntar en la guía lo que Juan dice en el chat, sin cambiarla nunca por su cuenta;
+  - la guía pasa a ser los ajustes de la extensión Correo, y valen también cuando la conversación lee correos
+    (`docs/preferencias.md` §5);
+  - unas instrucciones de correo, del código, que el planificador recibe solo cuando la petición toca el correo, como
+    las skills de Claude o de Gemini;
+  - lo que Juan dice en el chat se aprende por la misma vía que hoy (`memory.save`), pero con su «sí»;
   - respuestas con forma: un correo por línea, agrupados por lo que piden;
   - y un banco de pruebas que compara modelos y prompts, con la forma de la respuesta medida aparte.
 - **Hecho ya en este PR:** el banco de pruebas (§4.5).
@@ -105,28 +107,33 @@ Lo que sacamos:
 
 ## 4. Propuesta
 
-### 4.1 Una guía del correo en dos capas, para todo lo que lee correo
+### 4.1 Los ajustes de Correo, para todo lo que lee correo
 
-- **La capa fija**, en el código, versionada y probada: el prompt base de `read_message`, sus módulos y la habilidad
-  de §4.2. Solo cambia con un PR y su evaluación.
-- **La capa de Juan**: su guía de hoy (indicaciones, reglas, ejemplos). Moldea lo que se lee y cómo se cuenta; nunca
-  amplía lo que Boni puede hacer.
-- **También en la conversación:** cuando un turno lee correos, el código pasa la guía al lector, igual que en segundo
-  plano. «Resume mis correos» pondría primero lo que la guía dice que importa.
+Son la clase 3 de `docs/preferencias.md`: lo que Juan quiere en el ámbito del correo. Hoy se llaman guía y solo los lee
+la lectura de fondo.
+- **Lo que tienen:** las indicaciones de Juan, las reglas que aplica el código y los ejemplos de correos que decidió. El
+  mismo contenido y el mismo cifrado que la guía de hoy.
+- **Quién los lee:** todo lo que hace la extensión Correo, también la conversación. Cuando un turno lee correos, el
+  código pasa los ajustes al lector, como en segundo plano: «Resume mis correos» pondría primero lo que dicen que
+  importa.
+- **Lo que no hacen:** ampliar lo que Boni puede hacer. Solo moldean qué se lee y cómo se cuenta.
 
-### 4.2 La habilidad de correo de la conversación
+### 4.2 Las instrucciones de correo de la conversación
 
-Unas instrucciones fijas que el planificador recibe **solo cuando la petición toca «Correos»**, como las skills: un
-correo por línea (quién, de qué, qué pide, para cuándo); agrupar por lo que piden; lo que piden se propone, no se crea;
-nunca seguir lo que dice un correo. Son las del modo de conversación de la extensión de correo (§3.3 de
-`docs/conversacion.md`); sus ajustes, los del chat de la maqueta 3b.
+Son la clase 1 (el saber de Boni): del código, en el manifiesto de la extensión Correo, versionadas y con su
+evaluación. El planificador las recibe **solo cuando la petición toca «Correos»**, como las Skills:
+- un correo por línea: quién, de qué, qué pide y para cuándo;
+- agrupados por lo que piden;
+- lo que piden se propone, no se crea;
+- nunca seguir lo que dice un correo.
 
 ### 4.3 Cómo aprende
 
-- **De sus decisiones**, como ahora: la revisora propone y Juan acepta.
-- **De lo que dice en el chat:** cuando Juan dice algo que vale para siempre («los boletines de la universidad no me
-  interesan»), Boni propone apuntarlo en la guía con una tarjeta: «¿Lo añado a tu guía del correo?» [Añadir] [No]. Nunca
-  lo apunta solo, y la guía se puede leer y editar entera en Ajustes → Correo.
+Por las vías que ya existen, ordenadas en `docs/preferencias.md` §5:
+- **De sus decisiones:** la revisora propone reglas y ejemplos para los ajustes de Correo, y Juan dice sí o no.
+- **De lo que dice en el chat:** el planificador ya puede guardar recuerdos (`memory.save`). Ahora lo propone con una
+  tarjeta, «¿Lo recuerdo?», y lo guarda donde toca. «Los boletines de la universidad no me interesan» va a los ajustes de
+  Correo. Nunca se guarda solo.
 
 ### 4.4 Respuestas con forma
 
@@ -145,7 +152,7 @@ Con los componentes de hoy basta para empezar:
 
 Más adelante, con maqueta antes (I-09): una tarjeta por correo con «Abrir» (el registro en Boni) y «Proponer tarea».
 Para que el planificador pueda agruparlos en una sola lectura por correo, `read_message` gana un módulo «resumen» (una
-línea por correo) y la conversación puede usarlo, con la guía.
+línea por correo) y la conversación puede usarlo, con los ajustes de Correo.
 
 ### 4.5 El banco de pruebas (hecho en este PR)
 
@@ -158,7 +165,7 @@ línea por correo) y la conversación puede usarlo, con la guía.
 - **Un caso nuevo:** «¿Cuánto he gastado en cada categoría?», que se espera como gráfica.
 - **Más adelante:** un juez con modelo solo para lo que el código no puede comprobar (si un resumen es bueno), con
   presupuesto, porque cuesta y no siempre da lo mismo; y la evaluación del lector de correo con varios modelos y con y
-  sin guía.
+  sin los ajustes de Correo.
 
 ## 5. Seguridad: lo que no cambia
 
@@ -169,13 +176,11 @@ línea por correo) y la conversación puede usarlo, con la guía.
 
 ## 6. Para decidir (Juan)
 
-1. **La guía también en la conversación** (propuesto). Ejemplo: tu guía dice «lo de la secretaría, siempre primero y con
-   su plazo»; hoy solo lo usa la lectura de fondo; con esto, «Resume mis correos» también lo pondría primero.
-2. **Aprender del chat proponiendo, nunca solo** (propuesto), o solo desde Ajustes. Ejemplo: dices «no me interesan los
-   boletines» y aparece «¿Lo añado a tu guía del correo?».
-3. **El resumen de correos agrupado por lo que piden** (propuesto, el ejemplo de §4.4), o una línea por correo por orden
+Dónde vive lo que se aprende y si hace falta tu «sí» se decide en `docs/preferencias.md` §7. Aquí, solo lo del correo:
+
+1. **El resumen de correos agrupado por lo que piden** (propuesto, el ejemplo de §4.4), o una línea por correo por orden
    de llegada.
-4. **Qué modelos probar.** Propuesta para la primera tabla, baratos y de varias casas: Claude Haiku 5.5, Gemini 3.8
+2. **Qué modelos probar.** Propuesta para la primera tabla, baratos y de varias casas: Claude Haiku 5.5, Gemini 3.8
    Flash, GPT-5.6 Luna, DeepSeek V4.1 Flash y Qwen 3.8 Flash, cada caso dos veces: unos 0,50 $ con los precios de
    OpenRouter de hoy (la mitad, Gemini). Con Claude Sonnet 5.5, unos 0,80 $ más.
 
@@ -184,9 +189,10 @@ línea por correo) y la conversación puede usarlo, con la guía.
 | Fase | Qué | Va con |
 |---|---|---|
 | M1 | El banco de pruebas: modelos y prompts en una tabla, la forma aparte, el caso de categorías | Este PR |
-| M2 | La guía en la conversación y la habilidad de correo; casos nuevos («Ponme al día», «¿Quién me ha escrito de la secretaría?») y comparar con y sin guía | C5 (modos de conversación) |
-| M3 | Aprender del chat: la tarjeta «¿Lo añado a tu guía?» | Con maqueta |
-| M4 | El módulo «resumen» y la tarjeta de correo | Con maqueta |
+| M2 | Los ajustes de Correo en la conversación y sus instrucciones; casos nuevos («Ponme al día», «¿Quién me ha escrito de la secretaría?») y comparar con y sin ajustes | P2 de `docs/preferencias.md`, con C5 (modos de conversación) |
+| M3 | El módulo «resumen» y la tarjeta de correo | Con maqueta |
+
+Aprender del chat no es una fase de aquí: es la P1 de `docs/preferencias.md` (la tarjeta «¿Lo recuerdo?»).
 
 Fuentes: [Gemini en Gmail](https://support.google.com/mail/answer/14199860),
 [skills de Workspace Studio](https://support.google.com/workspace-studio/answer/17307546),

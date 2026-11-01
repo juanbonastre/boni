@@ -8,8 +8,8 @@ Before a big step read `docs/principios.md`: the rules that must not break, each
 Design, in Spanish (Juan's docs): `docs/nucleo.md` (the core: data, store, agent, security), `docs/clases.md`
 (collections as classes), `docs/contexto.md` (what is written and what is computed for agents), `docs/extensiones.md`
 (extensions), `docs/conversacion.md` (the conversation: chats, cards, surfaces, assistants, voice), `docs/correo.md`
-(mail: how it is read, tested and improved), `docs/design-guide.md` (every UI). Code, comments, commits and AI-facing
-text are in English.
+(mail: how it is read, tested and improved), `docs/preferencias.md` (what Boni knows and learns of the user, and where
+each thing lives), `docs/design-guide.md` (every UI). Code, comments, commits and AI-facing text are in English.
 
 ## Where things are
 
