@@ -164,6 +164,8 @@ const models = new AccountModels({
 agent.models = models;
 agent.providersFor = (account) => models.providers(account);
 agent.overBudget = (account) => models.overBudget(account);
+agent.plannerChoices = (account) => models.plannerChoices(account);
+agent.plannerFor = (account, id) => models.plannerProvider(account, id);
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
 const mails = new Mails({ db, key, host: agent });
 agent.mailAccountOf = (account) => mails.settings(account)?.user || null;

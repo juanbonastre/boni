@@ -1,6 +1,7 @@
 export {
   Agent,
   type AgentOptions,
+  type LiveEvent,
   type Notice,
   type Painted,
   type Pending,
@@ -15,6 +16,17 @@ export {
 } from "./agent.ts";
 export { AnthropicProvider, apiSchema, ProviderError } from "./anthropic.ts";
 export { type ConfirmView, confirmHash, confirmView, marksOf } from "./confirm.ts";
+export {
+  type ConversationInfo,
+  conversation,
+  conversationByKey,
+  createConversation,
+  deleteConversation,
+  listConversations,
+  type TurnView,
+  turnViews,
+  updateConversation,
+} from "./conversations.ts";
 export {
   checkAnswers,
   type DecisionAnswers,

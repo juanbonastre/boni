@@ -320,6 +320,28 @@ pruebas; lo que cambia la interfaz de forma nueva sigue empezando por una maquet
 | C6 | **La conciliación en modo conversación** (es E4b): las preguntas de las funciones, las respuestas en `data.answers`, crear una categoría, las reglas (cambiar, esporádica, más general con su prueba) y lo que nota solo | C5, E4a |
 | C7 | **El círculo de Boni y la voz:** el círculo en todas las pantallas y en el escritorio, pulsar para hablar y después tiempo real | C4 |
 
+**Hecho, C1 y C2 (2026-10-31):**
+- **Las conversaciones se guardan.** Los tipos de sistema `conversation` y `turn` están en el almacén
+  (`packages/agent/src/conversations.ts`). El agente lee de ahí el historial, y ya no de su memoria. Cada turno se
+  guarda al empezar, al quedarse esperando y al acabar.
+- **La API.** `/api/agent/conversations` sirve la lista y el historial, y permite crear, renombrar, elegir modelo y
+  borrar.
+  - Un dispositivo que aún no la usa sigue con una conversación propia, como antes.
+  - Se exportan con lo demás (D-19).
+- **El turno en vivo funciona en cualquier dispositivo.** Como el escritorio y el móvil hablan con el servidor por
+  peticiones, el dispositivo da un id de turno (`live`) y pregunta qué ha hecho cada 350 ms (`/api/agent/live/:id`)
+  mientras espera la respuesta.
+- **«Parar»** corta la llamada al modelo (`AbortSignal`) o para antes del paso siguiente. Si el turno esperaba una
+  pregunta, lo termina.
+- **El modelo de cada conversación** se elige entre el de la cuenta y los que Juan ha evaluado para planear en
+  «Modelos». Es la misma puerta que para dar un papel a un modelo.
+- **En la web:**
+  - el historial a la izquierda, como en otras IA;
+  - los pasos con su punto que late;
+  - la barra con el botón dentro y sin asa;
+  - el selector de modelo;
+  - y «Parado.» cuando Juan para un turno.
+
 La maqueta 3 junta lo que se ve de C3 a C5: la ventana flotante con la conciliación dentro, la barra con su etiqueta
 de modo, las tarjetas con su salida libre, lo agrupado y el bloque «Chat» en Gastos.
 

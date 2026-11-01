@@ -2445,11 +2445,15 @@ html.widget-page body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.turn-answer {
+.turn-answer,
+.turn-live {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+.turn-answer:empty {
+  display: none;
 }
 .turn-error {
   color: var(--bad);
@@ -2647,24 +2651,262 @@ html.widget-page body {
   flex-wrap: wrap;
   gap: 8px;
 }
+/* The bar to write in (docs/conversacion.md 3.6): one box with the text, and below it, inside, the model and the
+ * button that sends (or stops the turn that runs). No resize grip: it grows with the text. */
 .chat-composer {
   display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 8px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+}
+.chat-composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line-strong));
 }
 .chat-composer textarea {
-  flex: 1 1 16rem;
+  width: 100%;
   min-width: 0;
-  resize: vertical;
-  min-height: 44px;
-  max-height: 40vh;
-  background: var(--surface);
+  resize: none;
+  min-height: 24px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: transparent;
   color: var(--text);
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
-  padding: 8px 10px;
+  border: 0;
+  padding: 2px 0;
   font: inherit;
+  line-height: 1.45;
+  outline: none;
+}
+.chat-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-send {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink, #fff);
+  cursor: pointer;
+}
+.chat-send:disabled {
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: default;
+}
+.chat-send.stop {
+  background: var(--text);
+  color: var(--surface);
+}
+.chat-model {
+  position: relative;
+}
+.chat-model-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.chat-model-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.chat-model-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.chat-model-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.chat-model-menu button:hover {
+  background: var(--surface-2);
+}
+.chat-model-menu button > span:first-child {
+  flex: 1;
+}
+.chat-model-menu .chat-model-more {
+  color: var(--muted);
+  font-size: 12.5px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
+}
+.turn-stopped {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+/* A turn's steps (docs/conversacion.md 3.5): the one going on with a pulsing dot to its left, the rest ticked. */
+.turn-steps ol {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+.turn-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.turn-steps li.done {
+  color: var(--muted);
+}
+.turn-steps li.going {
+  color: var(--text);
+}
+.step-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: step-pulse 1.1s ease-in-out infinite;
+}
+@keyframes step-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .step-dot {
+    animation: none;
+  }
+}
+.turn-steps.folded .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.turn-steps.folded ol {
+  margin-top: 6px;
+}
+/* The conversations on the left of the chat, as other AIs list them (docs/conversacion.md 3.1). */
+.chat-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 18px;
+  width: 100%;
+}
+.chat-list {
+  flex: 0 0 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding-right: 12px;
+  border-right: 1px solid var(--line);
+}
+.chat-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.chat-groups {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chat-group h3 {
+  margin: 0 0 4px 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.chat-item {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.chat-item:hover,
+.chat-item.on {
+  background: var(--surface-2);
+}
+.chat-item-open {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.chat-item .icon-btn {
+  visibility: hidden;
+}
+.chat-item:hover .icon-btn,
+.chat-item.on .icon-btn,
+.chat-item .icon-btn:focus-visible {
+  visibility: visible;
+}
+.chat-rename .input {
+  width: 100%;
+}
+.chat-layout.compact {
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-layout.compact .chat-list {
+  flex: none;
+  max-height: 50vh;
+  padding: 8px 12px;
+  border-right: 0;
+  border-bottom: 1px solid var(--line);
 }
 .agent-page {
   display: flex;

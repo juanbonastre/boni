@@ -24,6 +24,9 @@ import {
 } from "./agent-scenarios.ts";
 import { emit, openApp, recorded } from "./fixtures.ts";
 
+/** A request as sent, without the live id the device made for it (a new one every time). */
+const withoutLive = (r: string) => r.replace(/,"live":"[0-9a-f-]+"/, "");
+
 /**
  * The conversation with the agent (docs/nucleo.md, 7.14): painted by the code, text from outside only as text,
  * confirmations with the real values and their warnings, the inbox one proposal at a time, the log with Undo.
@@ -35,7 +38,7 @@ const requests = async (page: Page, prefix: string) =>
   (await recorded(page)).requests.filter((r) => r.startsWith(prefix));
 
 async function ask(page: Page, text: string) {
-  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: /^Conversación/ }).click();
   const box = page.getByRole("textbox", { name: "Escribe a Boni…" });
   await box.fill(text);
   await box.press("Enter");
@@ -104,7 +107,8 @@ test("a confirmation shows the real values with their origin and warnings; its b
   const firstOrder = await card.locator(".confirm-actions button").allTextContents();
   await accept.click();
   await expect(page.locator(".turn-answer").first()).toContainText("Hecho.");
-  expect(await requests(page, "POST api/agent/confirm ")).toEqual([
+  // Its live id is the device's own (docs/conversacion.md 3.5): any, once.
+  expect((await requests(page, "POST api/agent/confirm ")).map(withoutLive)).toEqual([
     'POST api/agent/confirm {"run":"run-c1","confirmation":"c1"}',
   ]);
   // The next confirmation puts its accept button on the other side.
@@ -127,7 +131,7 @@ test("a question: the options are buttons, the answer goes back once", async ({ 
   await expect(page.locator(".ask input[type=password]")).toHaveCount(0);
   await page.locator(".ask-options .pill").nth(1).click();
   await expect(page.locator(".turn-answer")).toContainText("Hecho.");
-  expect(await requests(page, "POST api/agent/answer ")).toEqual([
+  expect((await requests(page, "POST api/agent/answer ")).map(withoutLive)).toEqual([
     'POST api/agent/answer {"run":"r-ask","ask":"a1","choice":1}',
   ]);
 });
@@ -156,7 +160,7 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
       "POST api/agent/proposals/:id/reject": [{}],
     },
   });
-  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: /^Conversación/ }).click();
   await page
     .locator(".chat-tools")
     .getByRole("button", { name: /^Bandeja/ })
@@ -232,7 +236,7 @@ test("the inbox panel: cards say what, from where and the day around it; it open
   await expect(panel.locator(".inbox-card")).toHaveCount(1);
   // The inbox's own page has more room: a detailed card from mail in two columns, the mail and the three days.
   await page.locator(".inbox-panel .panel-head").getByRole("button").click();
-  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: /^Conversación/ }).click();
   await page
     .locator(".chat-tools")
     .getByRole("button", { name: /^Bandeja/ })
@@ -374,7 +378,7 @@ test("«Ya lo hice» saves a task already done; a card Boni would have accepted 
     r.startsWith("POST api/agent/proposals/c1/accept"),
   );
   expect(sent).toContain(JSON.stringify({ edits: { done: true } }));
-  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: /^Conversación/ }).click();
   await page.getByRole("button", { name: "Registro", exact: true }).last().click();
   await expect(page.locator(".log-measure")).toHaveText(
     "De tus últimas 60 decisiones sobre correos, Boni habría aceptado sola 14 y habría acertado en 13.",
@@ -438,7 +442,7 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
       "POST api/agent/runs/:id/undo": [{ undone: 2 }],
     },
   });
-  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: /^Conversación/ }).click();
   await page.getByRole("button", { name: "Registro", exact: true }).last().click();
   await expect(page.locator(".log-list li")).toHaveCount(2);
   await expect(page.locator(".log-list li").nth(1)).toContainText("Parado");
@@ -469,7 +473,7 @@ test("the Registro says what each run was and what came of it; quiet readings ar
   page,
 }) => {
   await openApp(page, "/?still", { agent: { "GET api/agent/runs": [RUNS_EXPLAINED] } });
-  await page.getByRole("button", { name: "Conversación" }).click();
+  await page.getByRole("button", { name: /^Conversación/ }).click();
   await page.getByRole("button", { name: "Registro", exact: true }).last().click();
   const entries = page.locator(".agent-page > .log-list > li");
   await expect(entries).toHaveCount(5);

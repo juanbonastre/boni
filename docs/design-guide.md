@@ -409,7 +409,18 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   waits for that Undo.
 - **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a
   "Conversación" row at the top of the sidebar (with the number of proposals waiting), the third tab on the phone.
-  Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
+  **Its history as other AIs show it** (docs/conversacion.md 3.1; Juan, 2026-10-31): on the left of the conversation, a
+  240 px column with «Nueva conversación», a search and the conversations by when they were used («Hoy», «Ayer», «Los
+  últimos 7 días», «Este mes», «Antes»); the open one is shaded, and a row shows its pencil (rename in place) and its
+  bin (to the trash) on hover. A new conversation starts empty and is made with its first message, whose first words
+  are its title. On the phone the list is the «Conversaciones» pill on top of the thread. **A turn as it happens**
+  (3.5): «Pensando…», then each step in Juan's words (the tool's own title), the one going on with a pulsing
+  `--accent` dot on its left (still with reduced motion) and the done ones with a tick; once it answered, its steps fold
+  into a quiet «Pasos (n)» above the answer. **The bar** (3.6): one rounded box (16 px) whose text grows with what is
+  written, up to about eight lines, with no resize grip; inside, below the text, the model the conversation plans with
+  (a quiet chip; its menu lists the account's own and the ones evaluated in «Modelos», and links there) and a round
+  button on the right: an arrow that sends, or a square that stops the turn («Parar»; the turn then says «Parado.» in
+  muted text, never as an error). Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
   (text with slots, a big number in tabular figures, a list, a table). **Text is only text**: no HTML, no Markdown, no
   links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover.
   A question shows its options as pills (one line, cut with an ellipsis) and never asks for a password. A

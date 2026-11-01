@@ -234,6 +234,8 @@ describe("the export", () => {
       "csv/movimiento.csv",
       "csv/persona.csv",
       "csv/proyecto.csv",
+      // Juan's conversations with Boni are his data too (docs/conversacion.md 3.1).
+      "json/conversation.ndjson",
       "json/extension.ndjson",
       "json/job.ndjson",
       "json/memory.ndjson",
@@ -241,6 +243,7 @@ describe("the export", () => {
       "json/page.ndjson",
       "json/persona.ndjson",
       "json/proyecto.ndjson",
+      "json/turn.ndjson",
       "log.ndjson",
       "schema.json",
       "views.json",

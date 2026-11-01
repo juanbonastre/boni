@@ -26,10 +26,14 @@ export interface ModelResponse {
   usage: Usage;
   model: string;
 }
+/** How a call may be cut short: Juan pressed «Parar» (docs/conversacion.md 3.5). */
+export interface CallOptions {
+  signal?: AbortSignal;
+}
 export interface ModelProvider {
   id: string;
   privacy: "external-api" | "verifiable" | "local";
-  complete(req: ModelRequest): Promise<ModelResponse>;
+  complete(req: ModelRequest, o?: CallOptions): Promise<ModelResponse>;
 }
 
 /** Answers with `answer(request)`, and keeps every request it got (the corpus searches them). */
@@ -42,7 +46,8 @@ export class ScriptedProvider implements ModelProvider {
     this.id = id;
     this.answer = answer;
   }
-  async complete(req: ModelRequest): Promise<ModelResponse> {
+  async complete(req: ModelRequest, call: CallOptions = {}): Promise<ModelResponse> {
+    if (call.signal?.aborted) throw Object.assign(new Error("aborted"), { code: "aborted" });
     this.requests.push(structuredClone(req));
     const json = this.answer(req, this.requests.length - 1);
     const size = JSON.stringify(req.input).length;

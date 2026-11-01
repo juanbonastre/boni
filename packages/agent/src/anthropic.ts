@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicCost } from "./models.ts";
-import type { ModelProvider, ModelRequest, ModelResponse } from "./providers.ts";
+import type { CallOptions, ModelProvider, ModelRequest, ModelResponse } from "./providers.ts";
 
 /**
  * The Anthropic provider (docs/nucleo.md, 7.10), on the official SDK, never with tools: the planner
@@ -107,7 +107,7 @@ export class AnthropicProvider implements ModelProvider {
     });
   }
 
-  async complete(req: ModelRequest): Promise<ModelResponse> {
+  async complete(req: ModelRequest, call: CallOptions = {}): Promise<ModelResponse> {
     const structured = req.structured !== false;
     const outputConfig = {
       ...(this.o.effort ? { effort: this.o.effort } : {}),
@@ -134,14 +134,19 @@ export class AnthropicProvider implements ModelProvider {
       model: string;
     };
     try {
+      const options = call.signal ? { signal: call.signal } : undefined;
       res = (this.o.fallbacks
-        ? await this.client.beta.messages.create({
-            ...params,
-            betas: ["server-side-fallback-2026-07-01"],
-            fallbacks: "default",
-          } as never)
-        : await this.client.messages.create(params as never)) as unknown as typeof res;
+        ? await this.client.beta.messages.create(
+            {
+              ...params,
+              betas: ["server-side-fallback-2026-07-01"],
+              fallbacks: "default",
+            } as never,
+            options,
+          )
+        : await this.client.messages.create(params as never, options)) as unknown as typeof res;
     } catch (e) {
+      if (call.signal?.aborted) throw new ProviderError("aborted");
       if (e instanceof Anthropic.APIConnectionTimeoutError) throw new ProviderError("timeout");
       if (e instanceof Anthropic.APIConnectionError) throw new ProviderError("network");
       if (e instanceof Anthropic.APIError)

@@ -3,10 +3,18 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import {
   Agent,
+  conversation,
+  conversationByKey,
   coreTools,
+  createConversation,
+  deleteConversation,
   ensureSystemTypes,
+  type LiveEvent,
+  listConversations,
   type ModelProvider,
   type ToolRegistry,
+  turnViews,
+  updateConversation,
 } from "@boni/agent";
 import { openUserStore, type UserStore } from "@boni/store";
 import { measure } from "./autoAccept.ts";
@@ -14,7 +22,7 @@ import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
 import { mailOfRun } from "./mailReview.ts";
-import { type AccountModels, serveModels } from "./models.ts";
+import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
@@ -26,9 +34,11 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  * (identity) is the turn's origin: a confirmation only counts from a personal device. Without a
  * model provider configured the agent is off and every route answers 503 { error: "agent-off" }.
  *
- *   POST /api/agent/turn     { text, conversation? } -> TurnResult (replies, pending, proposals, notices)
- *   POST /api/agent/answer   { run, ask, choice | text }
- *   POST /api/agent/confirm  { run, confirmation }
+ *   POST /api/agent/turn     { text, conversation?, live? } -> TurnResult (replies, pending, proposals, notices)
+ *                            `conversation`: one of the list's (else the device's own, as before the list);
+ *                            `live`: an id the device made, to watch the turn as it runs (GET .../live/:id)
+ *   POST /api/agent/answer   { run, ask, choice | text, live? }
+ *   POST /api/agent/confirm  { run, confirmation, live? }
  *   POST /api/agent/decline  { run, confirmation }
  *   GET  /api/agent/proposals                -> { proposals } pending, with the view painted by the code
  *   GET  /api/agent/requests                 -> { requests } questions from background work waiting for Juan
@@ -42,6 +52,14 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *                                               Boni would have accepted alone, and been right (autoAccept.ts)
  *   GET  /api/agent/runs/:id                 -> RunDetail: the request and each step (a personal device only)
  *   POST /api/agent/runs/:id/undo            -> { undone } every operation of that run
+ *   GET  /api/agent/conversations            -> { conversations } Juan's conversations, the latest first
+ *   POST /api/agent/conversations            { title? } -> { conversation } a new one
+ *   GET  /api/agent/conversations/:id        -> { conversation, turns } its turns as the devices show them
+ *   PUT  /api/agent/conversations/:id        { title?, model? } -> { conversation } (model: one of /planners)
+ *   DELETE /api/agent/conversations/:id      to the trash, with its turns
+ *   GET  /api/agent/planners                 -> { planners } the models a conversation may plan with
+ *   GET  /api/agent/live/:id?after=n         -> { events, done } what a turn did since event n, while it runs
+ *   POST /api/agent/live/:id/stop            -> { stopping } «Parar»: before its next step, or where it waits
  *   GET  /api/agent/events                   -> Server-Sent Events: "notify" ({ text }) and "proposals"
  *   GET  /api/agent/visibility               -> { types: [{ id, name, level, count }] } what the models may see
  *   PUT  /api/agent/visibility/:type         { level: visible | opaque | hidden } (a personal device only)
@@ -85,6 +103,11 @@ export class AgentHost {
   overBudget: ((account: number) => boolean) | null = null;
   /** «Modelos» (models.ts): its routes are served here, under /api/agent/models. */
   models: AccountModels | null = null;
+  /** The planners a conversation may use, and one of them by its id (models.ts); none: only the account's. */
+  plannerChoices: ((account: number) => PlannerChoice[]) | null = null;
+  plannerFor: ((account: number, id: string) => ModelProvider | null) | null = null;
+  /** Turns going on, as their devices watch them, by the id the device gave (a quarter of an hour at most). */
+  private lives = new Map<string, Live>();
 
   constructor(o: AgentHostOptions) {
     this.o = o;
@@ -160,6 +183,38 @@ export class AgentHost {
     for (const l of this.listeners.get(account) ?? []) l(event, data);
   }
 
+  /** A turn about to run, watched from the device that gave `id`: what it does goes here as it happens. */
+  liveStart(account: number, id: string): (e: LiveEvent) => void {
+    this.liveSweep();
+    const live: Live = { account, events: [], run: null, done: false, at: Date.now() };
+    this.lives.set(id, live);
+    return (e) => {
+      if (e.type === "start") live.run = e.run;
+      if (e.type === "end" || e.type === "waiting") live.done = true;
+      if (live.events.length < LIVE_EVENTS) live.events.push(e);
+    };
+  }
+  /** What the turn `id` of this account did since event `after`; null when there is none. */
+  liveRead(
+    account: number,
+    id: string,
+    after: number,
+  ): { events: LiveEvent[]; done: boolean } | null {
+    this.liveSweep();
+    const live = this.lives.get(id);
+    if (!live || live.account !== account) return null;
+    return { events: live.events.slice(Math.max(0, after)), done: live.done };
+  }
+  /** The run of the turn `id` of this account, once it started. */
+  liveRun(account: number, id: string): string | null {
+    const live = this.lives.get(id);
+    return live && live.account === account ? live.run : null;
+  }
+  private liveSweep(): void {
+    const old = Date.now() - LIVE_MS;
+    for (const [id, l] of this.lives) if (l.at < old) this.lives.delete(id);
+  }
+
   close(): void {
     for (const s of this.stores.values()) s.close();
     this.stores.clear();
@@ -169,6 +224,18 @@ export class AgentHost {
 
 const str = (v: unknown, max: number) =>
   typeof v === "string" && v.length > 0 && v.length <= max ? v : null;
+
+interface Live {
+  account: number;
+  events: LiveEvent[];
+  run: string | null;
+  done: boolean;
+  at: number;
+}
+const LIVE_MS = 15 * 60_000;
+const LIVE_EVENTS = 500;
+/** A live id a device made: letters, digits and dashes. */
+const liveId = (v: unknown) => (typeof v === "string" && /^[A-Za-z0-9-]{8,80}$/.test(v) ? v : null);
 
 /** One agent request of an authenticated account (`route` from routes.ts, already allowed here). */
 export async function serveAgent(
@@ -184,8 +251,78 @@ export async function serveAgent(
     if (!host.models) return send(res, 503, { error: "no-store" });
     return serveModels(host.models, req, res, route, params, who);
   }
+  if (route.includes(" /api/agent/conversations") || route.includes(" /api/agent/live/")) {
+    if (!host.hasData) return send(res, 503, { error: "no-store" });
+    return serveConversations(host, req, res, route, params, who);
+  }
   if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
   await answerAgent(host, req, res, route, params, who);
+}
+
+/** Juan's conversations (docs/conversacion.md 3.1) and the turns he watches live (3.5). */
+async function serveConversations(
+  host: AgentHost,
+  req: IncomingMessage,
+  res: ServerResponse,
+  route: string,
+  params: Record<string, string>,
+  who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
+): Promise<void> {
+  const store = host.store(who.account);
+  const id = params.id ?? "";
+  switch (route) {
+    case "GET /api/agent/conversations":
+      return send(res, 200, { conversations: listConversations(store) });
+    case "POST /api/agent/conversations": {
+      const b = ((await bodyOf(req)) ?? {}) as { title?: unknown };
+      const title = b.title === undefined ? "" : str(b.title, 120);
+      if (title === null) return send(res, 400, { error: "bad-request" });
+      const made = createConversation(store, { title, device: who.device, now: Date.now() });
+      return send(res, 200, { conversation: conversation(store, made) });
+    }
+    case "GET /api/agent/conversations/:id": {
+      const c = conversation(store, id);
+      if (!c) return send(res, 404, { error: "not-found" });
+      return send(res, 200, { conversation: c, turns: turnViews(store, id) });
+    }
+    case "PUT /api/agent/conversations/:id": {
+      const b = ((await bodyOf(req)) ?? {}) as { title?: unknown; model?: unknown };
+      const title = b.title === undefined ? undefined : str(b.title, 120);
+      const model =
+        b.model === undefined || b.model === ""
+          ? (b.model as string | undefined)
+          : (host.plannerChoices?.(who.account) ?? []).some((p) => p.id === b.model)
+            ? (b.model as string)
+            : null;
+      if (title === null || model === null) return send(res, 400, { error: "bad-request" });
+      if (
+        !updateConversation(store, id, {
+          ...(title !== undefined ? { title } : {}),
+          ...(model !== undefined ? { model } : {}),
+          device: who.device,
+        })
+      )
+        return send(res, 404, { error: "not-found" });
+      return send(res, 200, { conversation: conversation(store, id) });
+    }
+    case "DELETE /api/agent/conversations/:id":
+      if (!deleteConversation(store, id, who.device)) return send(res, 404, { error: "not-found" });
+      return send(res, 200, {});
+    case "GET /api/agent/live/:id": {
+      const after = Number(new URL(req.url ?? "", "http://x").searchParams.get("after") ?? 0) || 0;
+      const r = liveId(id) ? host.liveRead(who.account, id, after) : null;
+      if (!r) return send(res, 404, { error: "not-found" });
+      return send(res, 200, r);
+    }
+    case "POST /api/agent/live/:id/stop": {
+      const run = liveId(id) ? host.liveRun(who.account, id) : null;
+      if (!run || !host.onFor(who.account)) return send(res, 404, { error: "not-found" });
+      const r = host.agent(who.account).stop(run);
+      return send(res, 200, { stopping: r !== null });
+    }
+    default:
+      return send(res, 404, { error: "not-found" });
+  }
 }
 
 async function answerAgent(
@@ -207,12 +344,28 @@ async function answerAgent(
       const b = await bodyOf(req);
       const text = str(b.text, 8000);
       if (!text) return bad();
-      const conversation = b.conversation === undefined ? `${who.device}` : str(b.conversation, 80);
-      if (!conversation) return bad();
+      const asked = b.conversation === undefined ? "" : str(b.conversation, 80);
+      if (asked === null) return bad();
+      const store = host.store(who.account);
+      // One of the list's; a device that predates the list keeps one of its own, as before.
+      const c =
+        (asked && conversation(store, asked)) ||
+        conversation(
+          store,
+          conversationByKey(store, `${who.device}:${asked}`, {
+            device: who.device,
+            now: Date.now(),
+          }),
+        );
+      if (!c) return bad();
+      const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;
+      const live = liveId(b.live);
       const r = await agent.turn({
         text,
         origin: { kind: "turn", trust: who.trust, device: who.device },
-        conversation: `${who.account}:${conversation}`,
+        conversation: c.id,
+        ...(live ? { live: host.liveStart(who.account, live) } : {}),
+        ...(planner ? { planner } : {}),
       });
       return send(res, 200, after(r));
     }
@@ -228,7 +381,20 @@ async function answerAgent(
             ? { text: b.text as string }
             : null;
       if (!answer) return bad();
-      return send(res, 200, after(await agent.answer(run, ask, answer)));
+      const live = liveId(b.live);
+      return send(
+        res,
+        200,
+        after(
+          await agent.answer(
+            run,
+            ask,
+            answer,
+            undefined,
+            live ? host.liveStart(who.account, live) : undefined,
+          ),
+        ),
+      );
     }
     case "POST /api/agent/confirm":
     case "POST /api/agent/decline": {
@@ -240,10 +406,27 @@ async function answerAgent(
         res,
         200,
         route.endsWith("confirm")
-          ? after(await agent.confirm(run, c, who.trust))
+          ? after(
+              await agent.confirm(
+                run,
+                c,
+                who.trust,
+                liveId(b.live) ? host.liveStart(who.account, liveId(b.live) as string) : undefined,
+              ),
+            )
           : agent.decline(run, c),
       );
     }
+    case "GET /api/agent/planners":
+      return send(res, 200, {
+        planners: (host.plannerChoices?.(who.account) ?? []).map((p) => ({
+          id: p.id,
+          model: p.model,
+          connection: p.connection,
+          privacy: p.privacy,
+          current: p.current,
+        })),
+      });
     case "GET /api/agent/proposals": {
       const store = host.store(who.account);
       const ctx = inboxContext(store);

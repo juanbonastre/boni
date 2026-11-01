@@ -1,6 +1,6 @@
 {
   "name": "boni",
-  "version": "0.4.44",
+  "version": "0.4.45",
   "private": true,
   "description": "Boni: páginas, bases de datos, gráficas, conversación y capturas",
   "main": "main.cjs",

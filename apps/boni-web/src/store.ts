@@ -13,19 +13,23 @@ import {
   AgentApi,
   type AiLevel,
   type AutoAccept,
+  type ConversationSummary,
   type DataRow,
   type DataType,
   type DataValue,
   type ExtensionView,
   type InboxRequest,
+  type LiveEvent,
   type MailGuide,
   type MailInput,
   type MailView,
   type Page,
   type PageInfo,
+  type Planner,
   type Proposal,
   type ProposalView,
   type Related,
+  type Reply,
   type RunDetail,
   type RunSummary,
   type Tree,
@@ -135,6 +139,23 @@ export interface ChatEntry {
   request: string;
   result: TurnResult | null;
   error: string | null;
+  /** The steps it took, as they were seen live (docs/conversacion.md 3.5); kept for the session. */
+  steps?: LiveStep[];
+}
+/** A step of a turn as it runs: what it is (the tool's title, or the kind of step) and whether it ended. */
+export interface LiveStep {
+  id: string;
+  op: string;
+  what: string;
+  done: boolean;
+}
+/** The turn that runs now: its entry, the live id the device gave it, what it did and said so far. */
+export interface LiveTurn {
+  entry: string;
+  id: string;
+  thinking: boolean;
+  steps: LiveStep[];
+  replies: Reply[];
 }
 
 export type SubmitOutcome =
@@ -184,9 +205,17 @@ interface State {
   rejected: QueuedAction[];
   loadError: string | null;
   toast: Toast | null;
-  /** The conversation with the agent (this device's, kept for the session). */
+  /** The open conversation's turns (docs/conversacion.md 3.1). */
   chat: ChatEntry[];
   chatBusy: boolean;
+  /** Juan's conversations, the latest first; null until they come. */
+  conversations: ConversationSummary[] | null;
+  /** The conversation open in the chat; null: a new one, made with its first message. */
+  conversationId: string | null;
+  /** The turn running now, as it goes (3.5). */
+  live: LiveTurn | null;
+  /** The models a conversation may plan with (3.5). */
+  planners: Planner[];
   /** The user's pages (docs/extensiones.md 6): null while unknown (no server, agent store off). */
   pages: PageInfo[] | null;
   /** The open page with its blocks. */
@@ -330,6 +359,10 @@ export const useStore = create<State>(() => ({
   toast: null,
   chat: [],
   chatBusy: false,
+  conversations: null,
+  conversationId: null,
+  live: null,
+  planners: [],
   pages: null,
   page: null,
   pageFocus: null,
@@ -1171,12 +1204,71 @@ function mergeResult(prev: TurnResult | null, next: TurnResult): TurnResult {
     notices: [...prev.notices, ...next.notices],
   };
 }
-async function agentCall(id: string, call: () => Promise<TurnResult>) {
-  set({ chatBusy: true });
+/** What a live event changes in the turn as it runs. */
+function applyLive(l: LiveTurn, e: LiveEvent): LiveTurn {
+  switch (e.type) {
+    case "planning":
+      return { ...l, thinking: true };
+    case "planned":
+      return { ...l, thinking: false };
+    case "step":
+      return e.state === "start"
+        ? {
+            ...l,
+            thinking: false,
+            steps: [...l.steps, { id: e.id, op: e.op, what: e.what, done: false }],
+          }
+        : { ...l, steps: l.steps.map((x) => (x.id === e.id ? { ...x, done: true } : x)) };
+    case "reply":
+      return { ...l, replies: [...l.replies, e.reply] };
+    default:
+      return l;
+  }
+}
+
+/**
+ * A call that runs a turn (or goes on with one), watched live while the request waits (docs/conversacion.md 3.5):
+ * the device makes an id for it, and asks the server what it did every moment until it answers. Any device can,
+ * the phone and the desktop app too, since it is only requests.
+ */
+async function agentCall(id: string, call: (live: string) => Promise<TurnResult>) {
+  const liveId = newId();
+  set({
+    chatBusy: true,
+    live: { entry: id, id: liveId, thinking: true, steps: [], replies: [] },
+  });
+  let after = 0;
+  /** What the turn did since the last look; true once it ended or waits on Juan. */
+  const pull = async () => {
+    const r = await agent.live(liveId, after).catch(() => null);
+    if (!r) return false;
+    after += r.events.length;
+    const l = get().live;
+    if (l?.id === liveId && r.events.length) set({ live: r.events.reduce(applyLive, l) });
+    return r.done;
+  };
+  let running = true;
+  void (async () => {
+    while (running) {
+      await new Promise((r) => setTimeout(r, LIVE_POLL_MS));
+      if (!running || (await pull())) break;
+    }
+  })();
   try {
-    const r = await call();
+    const r = await call(liveId);
+    running = false;
+    // What it did after the last look (a quick turn answers between two); the watch ends on its next tick,
+    // never waited on (a page whose clock is stopped would wait forever).
+    await pull();
     const entry = get().chat.find((e) => e.id === id);
-    patchEntry(id, { result: mergeResult(entry?.result ?? null, r), error: null });
+    const steps = get().live?.id === liveId ? (get().live?.steps ?? []) : [];
+    patchEntry(id, {
+      result: mergeResult(entry?.result ?? null, r),
+      error: null,
+      ...(steps.length
+        ? { steps: [...(entry?.steps ?? []), ...steps.map((x) => ({ ...x, done: true }))] }
+        : {}),
+    });
     if (r.pending?.kind === "confirm") set((s) => ({ confirmFlip: !s.confirmFlip }));
     if (r.proposals.length) void loadInbox();
   } catch (e) {
@@ -1185,30 +1277,141 @@ async function agentCall(id: string, call: () => Promise<TurnResult>) {
       error: code === "agent-off" ? agentErrorText(get().t, code) : errorText(get().t, e),
     });
   } finally {
+    running = false;
+    if (get().live?.id === liveId) set({ live: null });
     set({ chatBusy: false });
+    void loadConversations();
   }
 }
+const LIVE_POLL_MS = 350;
 
 export async function sendTurn(text: string) {
   const request = text.trim();
   if (!request || get().chatBusy) return;
   const id = newId();
   set((s) => ({ chat: [...s.chat, { id, request, result: null, error: null }] }));
-  await agentCall(id, () => agent.turn(request, CONVERSATION));
+  // A new conversation is made with its first message (its title comes from it).
+  let conversation = get().conversationId;
+  if (!conversation)
+    try {
+      const made = await agent.newConversation();
+      conversation = made.id;
+      // Its title, as the server will give it from this first message (its first words).
+      const title = request.length <= 60 ? request : `${request.slice(0, 57).trimEnd()}…`;
+      set((s) => ({
+        conversationId: made.id,
+        conversations: [{ ...made, title }, ...(s.conversations ?? [])],
+      }));
+    } catch {
+      // A server without the list: the device keeps a conversation of its own there, as before.
+    }
+  await agentCall(id, (live) => agent.turn(request, conversation ?? CONVERSATION, live));
+}
+/** «Parar» (docs/conversacion.md 3.5): the turn stops before its next step, or where it waits. */
+export function stopTurn() {
+  const l = get().live;
+  if (l) void agent.stop(l.id).catch(() => undefined);
 }
 export async function answerAsk(entryId: string, a: { choice: number } | { text: string }) {
   const e = get().chat.find((x) => x.id === entryId);
   const p = e?.result?.pending;
   if (!e?.result || p?.kind !== "ask") return;
   const run = e.result.run;
-  await agentCall(entryId, () => agent.answer(run, p.id, a));
+  await agentCall(entryId, (live) => agent.answer(run, p.id, a, live));
 }
 export async function confirmPending(entryId: string) {
   const e = get().chat.find((x) => x.id === entryId);
   const p = e?.result?.pending;
   if (!e?.result || p?.kind !== "confirm") return;
   const run = e.result.run;
-  await agentCall(entryId, () => agent.confirm(run, p.id));
+  await agentCall(entryId, (live) => agent.confirm(run, p.id, live));
+}
+
+// ------------------------------------------------------------ conversations (docs/conversacion.md 3.1)
+
+export async function loadConversations() {
+  try {
+    set({ conversations: await agent.conversations() });
+  } catch {
+    if (get().conversations === null) set({ conversations: [] });
+  }
+}
+export async function loadPlanners() {
+  try {
+    set({ planners: await agent.planners() });
+  } catch {
+    set({ planners: [] });
+  }
+}
+/** A conversation of the list, its turns as the server keeps them. */
+export async function openConversation(id: string) {
+  if (get().chatBusy) return;
+  set({ conversationId: id, chat: [], view: { kind: "chat" } });
+  try {
+    const r = await agent.conversation(id);
+    if (get().conversationId !== id) return;
+    set({
+      chat: r.turns.map((x) => ({
+        id: x.id,
+        request: x.request,
+        result: {
+          run: x.run,
+          status: x.status,
+          replies: x.replies,
+          pending: x.pending,
+          proposals: x.proposals,
+          notices: x.notices,
+          error: x.error,
+        },
+        error: null,
+      })),
+    });
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
+}
+/** A new conversation: the chat starts empty; the conversation is made with its first message. */
+export function newConversation() {
+  if (get().chatBusy) return;
+  set({ conversationId: null, chat: [], view: { kind: "chat" } });
+}
+export async function renameConversation(id: string, title: string) {
+  const t = title.trim().slice(0, 120);
+  if (!t) return;
+  try {
+    const c = await agent.updateConversation(id, { title: t });
+    if (c)
+      set((s) => ({ conversations: (s.conversations ?? []).map((x) => (x.id === id ? c : x)) }));
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
+}
+/** To the trash, with its turns. */
+export async function removeConversation(id: string) {
+  try {
+    await agent.deleteConversation(id);
+    set((s) => ({ conversations: (s.conversations ?? []).filter((x) => x.id !== id) }));
+    if (get().conversationId === id) newConversation();
+    toast(get().t("chats.deleted"));
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
+}
+/** The model the open conversation plans with ("" for the account's); a new one is made to keep it. */
+export async function chooseModel(model: string) {
+  let id = get().conversationId;
+  try {
+    if (!id) {
+      const made = await agent.newConversation();
+      id = made.id;
+      set((s) => ({ conversationId: made.id, conversations: [made, ...(s.conversations ?? [])] }));
+    }
+    const c = await agent.updateConversation(id, { model });
+    if (c)
+      set((s) => ({ conversations: (s.conversations ?? []).map((x) => (x.id === c.id ? c : x)) }));
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
 }
 export async function declinePending(entryId: string) {
   const e = get().chat.find((x) => x.id === entryId);

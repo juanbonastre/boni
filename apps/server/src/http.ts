@@ -319,7 +319,13 @@ export function makeApp(opts: ServerOptions): App {
         listener,
       );
     if (url.pathname.startsWith("/api/agent/")) {
-      if (req.method !== "GET" && req.method !== "POST" && req.method !== "PUT")
+      if (
+        req.method !== "GET" &&
+        req.method !== "POST" &&
+        req.method !== "PUT" &&
+        // Only a conversation is deleted here (to the trash).
+        !(req.method === "DELETE" && route === "DELETE /api/agent/conversations/:id")
+      )
         return send(res, 404, { error: "not-found" });
       const s = sessionUser(db, tokenOf(req));
       if (!s) return send(res, 401, { error: "unauthorized" });
