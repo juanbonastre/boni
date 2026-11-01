@@ -32,7 +32,7 @@ export type Painted =
   | { t: "rec"; fields: Record<string, Painted>; integrity: string };
 
 export interface Reply {
-  component: "text" | "number" | "list" | "table";
+  component: "text" | "number" | "list" | "table" | "chart";
   data: Record<string, Painted>;
 }
 export interface ConfirmRow {
@@ -68,6 +68,8 @@ export interface TurnResult {
   proposals: string[];
   notices: Notice[];
   error: string | null;
+  /** Whether it changed something still not undone; absent from older servers (then «Deshacer» shows). */
+  changed?: boolean;
 }
 /** One of Juan's conversations with Boni, as the list shows it (docs/conversacion.md 3.1). */
 export interface ConversationSummary {
@@ -88,7 +90,18 @@ export type LiveEvent =
   | { type: "start"; run: string }
   | { type: "planning" }
   | { type: "planned"; steps: number }
-  | { type: "step"; id: string; op: string; what: string; state: "start" | "done" }
+  | {
+      type: "step";
+      id: string;
+      op: string;
+      what: string;
+      state: "start" | "done";
+      /** A call in Juan's words: the tool, and its arguments by the names Juan gave things. */
+      words?: StepWords;
+      /** At its end: how many it found, or the number it gave. */
+      n?: number;
+      value?: number;
+    }
   | { type: "reply"; reply: Reply }
   | { type: "waiting" }
   | { type: "end"; status: TurnResult["status"]; error: string | null };
@@ -587,7 +600,7 @@ export function parseConfirmView(v: unknown): ConfirmView | null {
   return { tool, title, rows };
 }
 
-const COMPONENTS = new Set(["text", "number", "list", "table"]);
+const COMPONENTS = new Set(["text", "number", "list", "table", "chart"]);
 
 export function parseTurn(v: unknown): TurnResult {
   if (!isObj(v)) throw new ApiError(0, "bad-answer", "bad answer");
@@ -622,6 +635,7 @@ export function parseTurn(v: unknown): TurnResult {
       ...(typeof n.n === "number" ? { n: n.n } : {}),
     })),
     error: typeof v.error === "string" ? v.error.slice(0, 80) : null,
+    ...(typeof v.changed === "boolean" ? { changed: v.changed } : {}),
   };
 }
 
@@ -637,6 +651,35 @@ function parseConversation(v: unknown): ConversationSummary | null {
   };
 }
 
+/** Something of today in Juan's calendars (Inicio's «Hoy» on the phone). */
+export interface TodayItem {
+  id: string;
+  type: string;
+  collection: string;
+  title: string;
+  /** "HH:MM" when it starts today at a time; null for all day. */
+  start: string | null;
+  task: boolean;
+  done: boolean;
+  doneField: string | null;
+}
+
+/** A step's words: the tool's name and up to 8 arguments, each a short text. */
+export interface StepWords {
+  tool: string;
+  args: Record<string, string>;
+}
+function parseWords(v: Record<string, unknown>): StepWords | null {
+  const tool = str(v.tool, 80);
+  if (!tool || !isObj(v.args)) return null;
+  const args: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v.args).slice(0, 8)) {
+    const s = str(x, 80);
+    if (s && /^[a-z_]{1,20}$/.test(k)) args[k] = s;
+  }
+  return { tool, args };
+}
+
 /** A live event as the server sends it: fixed codes and the code's words; a reply parsed as any reply. */
 function parseLive(v: unknown): LiveEvent | null {
   if (!isObj(v)) return null;
@@ -650,12 +693,16 @@ function parseLive(v: unknown): LiveEvent | null {
     case "step": {
       const id = str(v.id, 80);
       if (!id || (v.state !== "start" && v.state !== "done")) return null;
+      const words = isObj(v.words) ? parseWords(v.words) : null;
       return {
         type: "step",
         id,
         op: str(v.op, 20) ?? "",
         what: str(v.what, 120) ?? "",
         state: v.state,
+        ...(words ? { words } : {}),
+        ...(Number.isInteger(v.n) && (v.n as number) >= 0 ? { n: v.n as number } : {}),
+        ...(typeof v.value === "number" && Number.isFinite(v.value) ? { value: v.value } : {}),
       };
     }
     case "reply": {
@@ -926,6 +973,11 @@ export interface DataType {
   };
   /** Boni's own records (calls to models, its activity): read only, never seen by a model. */
   system?: true;
+  /**
+   * The box that marks a record done (its calendar's task column, Boni Calendar's «Hecha»), by its field's id: what
+   * the phone's lists tick and filter by. None when the collection keeps no tasks.
+   */
+  done?: string;
 }
 export interface ProtectionRule {
   id: string;
@@ -961,6 +1013,7 @@ function parseDataType(v: unknown): DataType | null {
     count: typeof v.count === "number" ? v.count : 0,
     level: levelOf(v.level),
     ...(v.system === true ? { system: true as const } : {}),
+    ...(typeof v.done === "string" ? { done: v.done } : {}),
     rules: Array.isArray(v.rules)
       ? v.rules.flatMap((r): ProtectionRule[] =>
           isObj(r) && typeof r.id === "string" && filterErrors(r.filter).length === 0
@@ -1725,6 +1778,38 @@ export class AgentApi {
     return isObj(b) && Array.isArray(b.types)
       ? b.types.map(parseDataType).filter((x): x is DataType => !!x)
       : [];
+  };
+  /**
+   * Inicio's «Hoy» on the phone: what the calendars hold today in this device's timezone (the server's today.ts);
+   * empty with no calendar. Null from a server older than it.
+   */
+  today = async (tz: string): Promise<TodayItem[] | null> => {
+    let b: unknown;
+    try {
+      b = await this.call("GET", `?tz=${encodeURIComponent(tz)}`, undefined, "api/data/today");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+    if (!isObj(b) || !Array.isArray(b.items)) return [];
+    return b.items.slice(0, 50).flatMap((x): TodayItem[] => {
+      if (!isObj(x)) return [];
+      const id = str(x.id, 80);
+      const type = str(x.type, 80);
+      if (!id || !type) return [];
+      return [
+        {
+          id,
+          type,
+          collection: str(x.collection, 80) ?? "",
+          title: str(x.title, 300) ?? "",
+          start: typeof x.start === "string" && /^\d\d:\d\d$/.test(x.start) ? x.start : null,
+          task: x.task === true,
+          done: x.done === true,
+          doneField: str(x.doneField, 80),
+        },
+      ];
+    });
   };
   dataRows = async (type: string) => {
     const b = await this.call(

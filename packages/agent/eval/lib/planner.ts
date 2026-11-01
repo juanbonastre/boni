@@ -200,9 +200,45 @@ const CASES: { request: string; check: (r: TurnResult, s: UserStore) => string }
   },
 ];
 
+/**
+ * How a run ended and what its plan did, for a case not as expected: its status (and why it stopped or what it waits
+ * on), its proposals, and each step of its last plan with what the policy decided when it was not plainly allowed.
+ */
+function detailOf(store: UserStore, r: TurnResult): string {
+  const plan = store.journal.run(r.run)?.plan as
+    | {
+        steps?: {
+          id?: string;
+          op?: string;
+          tool?: string;
+          reader?: string;
+          component?: string;
+          each?: unknown;
+        }[];
+      }
+    | undefined;
+  const outline = (plan?.steps ?? [])
+    .map(
+      (x) =>
+        `${x.id}:${x.op === "call" ? x.tool : x.op === "read" ? `read ${x.reader}` : x.op === "reply" ? `reply ${x.component}` : x.op}${x.each ? " (each)" : ""}`,
+    )
+    .join(" → ");
+  const decided = store.journal
+    .steps(r.run)
+    .filter((x) => x.decision !== "allow")
+    .map((x) => `${x.step} ${x.decision}${x.rule ? ` (${x.rule})` : ""}`);
+  return [
+    `${r.status}${r.error ? ` (${r.error})` : ""}${r.pending ? `, waits on ${r.pending.kind}` : ""}, ${r.proposals.length} proposals, ${r.replies.length} replies`,
+    `plan: ${outline || "none"}`,
+    ...(decided.length ? [`decided: ${decided.join(", ")}`] : []),
+  ].join("\n     ");
+}
+
 export async function evalPlanner(
   planner: ModelProvider,
   reader: ModelProvider,
+  /** By hand: only the cases whose request has this text, each this many times (a model is not the same twice). */
+  opts: { only?: string; times?: number } = {},
 ): Promise<EvalResult> {
   const out: EvalResult = { right: 0, total: 0, wrong: 0, cost: 0, tokens: 0, cases: [] };
   const counted = (p: ModelProvider): ModelProvider => ({
@@ -216,12 +252,16 @@ export async function evalPlanner(
     },
   });
   const registry = coreTools().freeze();
-  for (const c of CASES) {
+  const cases = CASES.filter((c) => !opts.only || c.request.includes(opts.only)).flatMap((c) =>
+    Array.from({ length: Math.max(1, opts.times ?? 1) }, () => c),
+  );
+  for (const c of cases) {
     out.total++;
     // Each request in a store of its own: one case's collection does not help the next.
     const dir = mkdtempSync(join(tmpdir(), "boni-eval-"));
     const store = evalStore(dir);
     let note = "";
+    let detail = "";
     try {
       const agent = new Agent({
         store,
@@ -231,6 +271,7 @@ export async function evalPlanner(
       });
       const r = await agent.turn({ text: c.request, origin: { kind: "turn", trust: "personal" } });
       note = r.error && r.status === "stopped" ? r.error : c.check(r, store);
+      if (note) detail = detailOf(store, r);
     } catch (e) {
       note = String((e as { code?: string }).code ?? "failed");
     } finally {
@@ -238,7 +279,7 @@ export async function evalPlanner(
       rmSync(dir, { recursive: true, force: true });
     }
     if (!note) out.right++;
-    out.cases.push({ name: c.request, ok: !note, note });
+    out.cases.push({ name: c.request, ok: !note, note, ...(detail ? { detail } : {}) });
   }
   return out;
 }

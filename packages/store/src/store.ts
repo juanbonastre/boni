@@ -189,6 +189,8 @@ export interface UserStore {
   };
   undo(seq: number, meta: OpMeta): number;
   undoRun(run: string, meta: OpMeta): number[];
+  /** Whether `undoRun` has something left to undo: a change of the run (its schema's too) not undone since. */
+  runUndoable(run: string): boolean;
   /** What a run changed, oldest first (schema changes left out), and whether each was undone since (the Registro). */
   runOps(run: string): { kind: Exclude<OpKind, "schema">; target: EntityId; undone: boolean }[];
   /** Every version of an entity's text with who wrote it, oldest first (for `blame`). */
@@ -928,6 +930,13 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
         if (!seqs.length) throw new StoreError("undo", `nothing to undo in run "${run}"`);
         return seqs.map((s) => undoOne(s, meta)); // newest first; any conflict rolls all of it back
       }),
+    runUndoable: (run) =>
+      db
+        .prepare(
+          `SELECT 1 FROM ops o WHERE o.run = ? AND o.undoes IS NULL
+             AND NOT EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) LIMIT 1`,
+        )
+        .get(run) !== undefined,
     runOps: (run) =>
       (
         db

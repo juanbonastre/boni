@@ -66,6 +66,7 @@ Cómo se usa:
 | I-09 | Maqueta con la app real antes de programar una pantalla nueva | 2026-10-24 | Sin prueba (forma de trabajar) |
 | I-10 | Un bloque de enlace solo abre una página real; si su destino ya no existe, lo dice en vez de abrir una vista fija | 2026-10-27 | `packages/views/src/catalogue.test.ts`, `packages/views/src/templates.test.ts`, `apps/server/src/pages.test.ts`, `e2e-boni/audit.spec.ts` |
 | I-11 | La barra lateral: Buscar, Conversación y «Todas las páginas» (todo, para gestionarlo) arriba; debajo «Recientes» y «Páginas» (abrir, añadir y eliminar, con el ojo), que se pliegan por su nombre | 2026-10-28 | `e2e-boni/tree.spec.ts` («the sidebar…», ««Todas las páginas»: everything to manage…») |
+| I-12 | En el móvil la barra de abajo son lugares, nunca acciones: Inicio (lo de hoy), Páginas, Boni y Bandeja; apuntar y crear van en el botón +, y las gráficas en Inicio y en las páginas | 2026-10-31 | `e2e-boni/mobile.spec.ts` («the phone opens on Inicio…», «the + button: «Crear»…») |
 
 ## T. Forma de trabajar
 

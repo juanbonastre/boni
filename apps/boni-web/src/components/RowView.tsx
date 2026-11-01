@@ -1,9 +1,10 @@
 import { ChevronRight, Eye, EyeOff, History } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { HistoryMark } from "../core/blame.ts";
-import { editRowValue, setPropHidden, toggleRowProps, useStore } from "../store.ts";
+import { editRowValue, setPropHidden, setRowHistory, toggleRowProps, useStore } from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
 import { HistoryPanel, historyColor, whoLabel } from "./History.tsx";
+import { BottomSheet } from "./MobileParts.tsx";
 import { DocEditor } from "./PageView.tsx";
 import { RelatedSection } from "./Related.tsx";
 
@@ -15,14 +16,16 @@ import { RelatedSection } from "./Related.tsx";
  * start folded under one line (Juan, 2026-10-22: a note opens on its text); each one can be hidden (the eye
  * on hover, as Notion's), and the hidden ones wait under "N ocultas". The collection keeps both for the account.
  */
-export function RowView() {
+export function RowView({ mobile = false }: { mobile?: boolean }) {
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const row = useStore((s) => s.row);
   const doc = useStore((s) => s.rowDoc);
   const related = useStore((s) => s.related);
   const [hiddenOpen, setHiddenOpen] = useState(false);
-  const [history, setHistory] = useState(false);
+  const history = useStore((s) => s.rowHistory);
+  // On the phone the properties are chips under the title; a tap opens them all in a sheet (Juan, 2026-10-31).
+  const [propsSheet, setPropsSheet] = useState(false);
   // With History open, each property in the colour of who changed it last (Juan, 2026-10-30).
   const marks = useStore((s) => s.historyMarks);
   const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
@@ -58,6 +61,73 @@ export function RowView() {
   const shown = type.rowUi.open;
   const title =
     typeof row.values[type.titleField] === "string" ? (row.values[type.titleField] as string) : "";
+  const propsList = (
+    <div className="row-props">
+      {visible.map((f) => (
+        <div key={f.id} className={`row-prop${markOf(f.id) ? " by-who" : ""}`} style={tint(f.id)}>
+          {markOf(f.id) && (
+            <span className="blk-who">{whoLabel(t, markOf(f.id) as HistoryMark, locale)}</span>
+          )}
+          <span className="row-prop-name">{f.name}</span>
+          <div className="row-prop-value">
+            <Cell
+              type={type}
+              field={f}
+              row={row}
+              titles={related?.titles ?? {}}
+              onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
+            />
+          </div>
+          <button
+            type="button"
+            className="icon-btn row-prop-eye"
+            title={t("row.hideProp", { name: f.name })}
+            aria-label={t("row.hideProp", { name: f.name })}
+            onClick={() => setPropHidden(type.id, f.id, true)}
+          >
+            <EyeOff size={14} strokeWidth={1.8} />
+          </button>
+        </div>
+      ))}
+      {hidden.length > 0 && (
+        <>
+          <button
+            type="button"
+            className={`row-props-toggle row-hidden-toggle${hiddenOpen ? " open" : ""}`}
+            aria-expanded={hiddenOpen}
+            onClick={() => setHiddenOpen(!hiddenOpen)}
+          >
+            <ChevronRight size={14} strokeWidth={2} />
+            {t("row.hiddenProps", { n: hidden.length })}
+          </button>
+          {hiddenOpen &&
+            hidden.map((f) => (
+              <div key={f.id} className="row-prop row-prop-hidden">
+                <span className="row-prop-name">{f.name}</span>
+                <div className="row-prop-value">
+                  <Cell
+                    type={type}
+                    field={f}
+                    row={row}
+                    titles={related?.titles ?? {}}
+                    onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn row-prop-eye"
+                  title={t("row.showProp", { name: f.name })}
+                  aria-label={t("row.showProp", { name: f.name })}
+                  onClick={() => setPropHidden(type.id, f.id, false)}
+                >
+                  <Eye size={14} strokeWidth={1.8} />
+                </button>
+              </div>
+            ))}
+        </>
+      )}
+    </div>
+  );
   return (
     <div className="models-view">
       <div className="content page-doc">
@@ -69,7 +139,7 @@ export function RowView() {
               type="button"
               className={`btn ghost small row-history${history ? " on" : ""}`}
               aria-pressed={history}
-              onClick={() => setHistory(!history)}
+              onClick={() => setRowHistory(!history)}
             >
               <History size={13} strokeWidth={1.8} aria-hidden="true" />
               {t("history.title")}
@@ -93,7 +163,37 @@ export function RowView() {
               />
             </div>
           )}
-          {props.length > 0 && (
+          {mobile && (
+            <div className="m-row-chips">
+              {visible.flatMap((f) => {
+                const text = chipText(f, row.values[f.id], related?.titles ?? {}, locale);
+                return text
+                  ? [
+                      <button
+                        key={f.id}
+                        type="button"
+                        className="m-chip"
+                        title={f.name}
+                        onClick={() => setPropsSheet(true)}
+                      >
+                        {text}
+                      </button>,
+                    ]
+                  : [];
+              })}
+              {props.length > 0 && (
+                <button
+                  type="button"
+                  className="m-chip ghost"
+                  aria-haspopup="dialog"
+                  onClick={() => setPropsSheet(true)}
+                >
+                  {t("row.props")}
+                </button>
+              )}
+            </div>
+          )}
+          {props.length > 0 && !mobile && (
             <button
               type="button"
               className={`row-props-toggle${shown ? " open" : ""}`}
@@ -113,86 +213,19 @@ export function RowView() {
                 ))}
             </button>
           )}
-          {shown && (
-            <div className="row-props">
-              {visible.map((f) => (
-                <div
-                  key={f.id}
-                  className={`row-prop${markOf(f.id) ? " by-who" : ""}`}
-                  style={tint(f.id)}
-                >
-                  {markOf(f.id) && (
-                    <span className="blk-who">
-                      {whoLabel(t, markOf(f.id) as HistoryMark, locale)}
-                    </span>
-                  )}
-                  <span className="row-prop-name">{f.name}</span>
-                  <div className="row-prop-value">
-                    <Cell
-                      type={type}
-                      field={f}
-                      row={row}
-                      titles={related?.titles ?? {}}
-                      onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="icon-btn row-prop-eye"
-                    title={t("row.hideProp", { name: f.name })}
-                    aria-label={t("row.hideProp", { name: f.name })}
-                    onClick={() => setPropHidden(type.id, f.id, true)}
-                  >
-                    <EyeOff size={14} strokeWidth={1.8} />
-                  </button>
-                </div>
-              ))}
-              {hidden.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    className={`row-props-toggle row-hidden-toggle${hiddenOpen ? " open" : ""}`}
-                    aria-expanded={hiddenOpen}
-                    onClick={() => setHiddenOpen(!hiddenOpen)}
-                  >
-                    <ChevronRight size={14} strokeWidth={2} />
-                    {t("row.hiddenProps", { n: hidden.length })}
-                  </button>
-                  {hiddenOpen &&
-                    hidden.map((f) => (
-                      <div key={f.id} className="row-prop row-prop-hidden">
-                        <span className="row-prop-name">{f.name}</span>
-                        <div className="row-prop-value">
-                          <Cell
-                            type={type}
-                            field={f}
-                            row={row}
-                            titles={related?.titles ?? {}}
-                            onSave={(v) => void editRowValue(type.id, row.id, f.id, v)}
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          className="icon-btn row-prop-eye"
-                          title={t("row.showProp", { name: f.name })}
-                          aria-label={t("row.showProp", { name: f.name })}
-                          onClick={() => setPropHidden(type.id, f.id, false)}
-                        >
-                          <Eye size={14} strokeWidth={1.8} />
-                        </button>
-                      </div>
-                    ))}
-                </>
-              )}
-            </div>
-          )}
+          {shown && !mobile && propsList}
           {related && related.groups.length > 0 && (
             <RelatedSection type={type.id} groups={related.groups} />
           )}
           {doc && <DocEditor key={doc.id} doc={doc} />}
         </div>
       </div>
-      {history && <HistoryPanel id={row.id} type={type.id} onClose={() => setHistory(false)} />}
+      {history && <HistoryPanel id={row.id} type={type.id} onClose={() => setRowHistory(false)} />}
+      {mobile && propsSheet && (
+        <BottomSheet title={t("row.props")} close={() => setPropsSheet(false)}>
+          {propsList}
+        </BottomSheet>
+      )}
     </div>
   );
 }
@@ -244,4 +277,29 @@ function useGrow(ref: React.RefObject<HTMLTextAreaElement | null>, value: string
     o.observe(el);
     return () => o.disconnect();
   }, []);
+}
+
+/** A property's value as a chip says it: a day, an option's name, a related title, «Hecha»; nothing when empty. */
+function chipText(
+  f: { type: string; name: string; options?: { id: string; name: string }[] },
+  v: unknown,
+  titles: Record<string, string>,
+  locale: string,
+): string {
+  if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) return "";
+  // Free text (a time zone, an address, a long line) reads badly as a chip: it stays in «Propiedades».
+  if (f.type === "text" || f.type === "url" || f.type === "email" || f.type === "phone") return "";
+  if (f.type === "checkbox") return v === true ? f.name : "";
+  if (f.type === "date" && typeof v === "string")
+    return new Intl.DateTimeFormat(locale, {
+      day: "numeric",
+      month: "short",
+      timeZone: "UTC",
+    }).format(new Date(`${v.slice(0, 10)}T12:00:00Z`));
+  const one = (x: unknown) =>
+    f.options?.find((o) => o.id === x)?.name ??
+    titles[String(x)] ??
+    (typeof x === "string" ? x : "");
+  const text = (Array.isArray(v) ? v.map(one) : [one(v)]).filter(Boolean).join(", ");
+  return typeof v === "number" ? String(v) : text.length > 40 ? `${text.slice(0, 39)}…` : text;
 }

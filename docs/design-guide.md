@@ -193,17 +193,44 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   of section 2 (the repos are separate): change them here first, then there. Charts add their own colours (a categorical
   palette checked for colour blindness on these surfaces) and draw in SVG: hairline grid, 4 px rounded data ends, the
   latest value as a label and the rest in a hover tooltip (`--surface-2` box, 8 px radius).
-- **Boni on a phone** (narrower than 640 px, and its Android app; Juan, 2026-10-18): not the desktop window made small.
-  It is for capturing first: four tabs at the bottom, "Apuntar" (the capture buttons, then the user's shortcuts: a saved
-  form with its values, which a tap opens filled in or saves at once with Undo in the toast), "Páginas" (Juan,
-  2026-10-30: one's data on the phone; the search, which opens the finder of Ctrl+K, "Recientes" and the sidebar's one
-  tree with rows for a finger; a collection opens as a list of its records, one under another with its first date,
-  newest first; a record or a page as on the desktop; Back goes a step at a time: the record, the list, the tree),
-  "Gráficas" (a list with each chart's total; one chart on the whole screen with period chips) and "Boni" (the
-  conversation, below). Forms and editors are full-screen sheets with their
-  buttons fixed at the bottom; optional fields fold under "Más detalles"; menus come from the bottom; a tap on a chart
-  shows the value and a second tap opens the detail. Same tokens and card recipe; written deviation for the thumb:
-  16 px text, 48 px touch targets, 20 to 24 px icons. Back closes the top thing.
+- **Boni on a phone («El móvil»)** (narrower than 640 px, and its Android app; Juan, 2026-10-31: «parecen
+  adaptaciones muy obvias de la versión desktop»): made for the phone, from Material 3 (navigation bar, FAB, bottom
+  sheets), Apple's HIG (a tab bar holds places, not actions; large titles) and NN/g (visible navigation, less text).
+  - **Four places at the bottom, always in view:** Inicio, Páginas, Boni and Bandeja (its count on a badge). Capturing
+    is not a tab: it is the **+ button** (56 px, `--accent`, 18 px radius, bottom right above the bar) on every place's
+    own screen but Boni's, where the action is to write. Inside a collection it makes a record there and opens it;
+    anywhere else it opens **«Crear»**: «Apuntar» first (the server's capture buttons, then the shortcuts, each with
+    its menu by ⋮ or a long press: edit, on the launcher, delete with Undo) and «Nuevo» (a page, a record in a
+    collection, a file kept in Boni).
+  - **Large titles:** a place's screen starts with its title (32 px, 700) in its content; the top bar is slim (48 px)
+    and only there when it has something to do: Back and «…» deeper in a place, the collection's name over a record,
+    the conversations and a new one in Boni. The settings are the account's initial (a 40 px `--accent-soft` circle)
+    on Inicio, not a gear on every screen.
+  - **Inicio is the day:** the date over its title, what waits in the Bandeja (an `--accent-soft` banner), «Seguir con»
+    (a row of 136 px tiles of what was open last), «Hoy» (what the calendars hold today, as Boni Calendar reads them:
+    all day first, then by the hour, done last; a task with its box) and the charts kept on Inicio (each with its
+    total; its menu takes it off or puts it back).
+  - **Lists for a thumb:** grouped lists (16 px radius, `--surface`, a hairline between rows); each row two lines
+    (its title on one line, cut with «…»; its date and its first choice below in `--muted`), at least 56 px high. A
+    collection that keeps tasks (its calendar says which box) shows the box in the row and chips to see what is to do,
+    done or all; ticking one says so in a notice with Undo, as on Inicio. Dragged left a row shows its actions (done
+    in `--good`, delete in `--bad`, with Undo); held for half a second it opens its menu from below.
+  - **Sheets from below** for menus and choices: a grabber, a 22 px title and a close button; a tap outside or Back
+    closes them. Forms and editors stay full-screen sheets with their buttons fixed at the bottom; optional fields fold
+    under «Más detalles».
+  - **A record or a page reads first:** its properties as chips under its title (a day, an option's name, a related
+    title), and «Propiedades» opens them all in a sheet to edit; «…» has its History and the trash (a page: duplicate
+    and the trash). While writing, the tab bar and the + button step aside and a bar sits on the keyboard: a block, a
+    heading, a list, a to-do (each turns the block being written into it, and back to text if it already is one,
+    keeping the cursor where it was), undo and «Listo».
+  - **Boni's conversation is the whole screen** (as Claude's and ChatGPT's): its bar docked at the bottom, its
+    conversations in a drawer from the left (84 % wide over a scrim) with «Registro» and «Auditoría» at its foot; an
+    empty one greets with things to try. Sending keeps the keyboard up.
+  - **Small things:** a notice sits above the + button; no greeting toast (Inicio says the day); a session the
+    server no longer takes is a banner on Inicio (in `--now`, as the desktop's pill) that goes to sign in; dates in
+    the account's language; one chart on the whole screen with period chips; a tap on a chart shows the value and a
+    second tap opens the detail. Same tokens and card recipe; written deviation for the thumb: 16 px text, 48 px touch targets, 20 to
+    24 px icons. Back (and Android's button) closes the top thing, then goes a step back in the place, then to Inicio.
 - **Desktop widgets** (Boni): a chart card alone in a small transparent window that sits on the desktop, below every
   window (on X11 a "dock" window kept below by the window manager; it survives "show desktop"). It keeps the card look
   (`--surface`, 10 px radius, `--line-strong` border) and is fully interactive: hover for values, click for a detail;
@@ -382,7 +409,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   with "Restaurar"; "Duplicar" is in a page's "…" (sidebar and top bar). A new page shows at once (made on the
   server behind it, keeping what was typed). **AI** is a placeholder for now: "/Pedir a Boni" says it is coming.
 - This computer's **desktop widgets** are listed in Settings → Escritorio (eye = shown here, X removes, "Añadir widget").
-  Settings has "Lo que ve la IA" after the account (one row per collection with its count and a three-way segmented
+  Settings has «Privacidad» (what the AI sees) after the account (one row per collection with its count and a three-way segmented
   control: "La ve", "Solo sabe que existe", "No la ve"; each option's tooltip says what it means) and "Tus datos": one button that downloads everything as a .zip
   (where the host can save a file; a toast says how it went). In the desktop app, "Tus datos" is the **daily copy on
   this computer** (Juan, 2026-10-23): the switch "Copia diaria en este equipo" with what it does and how many are kept,
@@ -413,15 +440,22 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   240 px column with «Nueva conversación», a search and the conversations by when they were used («Hoy», «Ayer», «Los
   últimos 7 días», «Este mes», «Antes»); the open one is shaded, and a row shows its pencil (rename in place) and its
   bin (to the trash) on hover. A new conversation starts empty and is made with its first message, whose first words
-  are its title. On the phone the list is the «Conversaciones» pill on top of the thread. **A turn as it happens**
-  (3.5): «Pensando…», then each step in Juan's words (the tool's own title), the one going on with a pulsing
+  are its title. On the phone the list is a drawer from the left. **A turn as it happens**
+  (3.5): «Pensando…», then each step in Juan's words, worded by the app from what the server says it works on (Juan,
+  2026-10-31: «los pasos serán explicativos»): «Buscando «pan» en Tareas», «Contando en Tareas · Prioridad: Alta»,
+  «Leyendo «Rayuela»», and once done what it found in `--muted` («· 2 resultados», «· 9»); a box's value in words
+  («Hecha: no»), never as the code writes it; a tool the app does not word (an extension's) keeps its own title. The one going on has a pulsing
   `--accent` dot on its left (still with reduced motion) and the done ones with a tick; once it answered, its steps fold
   into a quiet «Pasos (n)» above the answer. **The bar** (3.6): one rounded box (16 px) whose text grows with what is
   written, up to about eight lines, with no resize grip; inside, below the text, the model the conversation plans with
   (a quiet chip; its menu lists the account's own and the ones evaluated in «Modelos», and links there) and a round
   button on the right: an arrow that sends, or a square that stops the turn («Parar»; the turn then says «Parado.» in
   muted text, never as an error). Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
-  (text with slots, a big number in tabular figures, a list, a table). **Text is only text**: no HTML, no Markdown, no
+  (text with slots, a big number in tabular figures, a list, a table, and a chart: bars across, label, bar and value on
+  one line, or a line with its first and last values, of numbers the tools gave, never the model's). The planner is
+  asked to answer as a person would: a sentence first, then what helps see it. «Deshacer lo que hizo» follows an
+  answer only while its turn changed something not undone yet: a question that only read has nothing to undo, and once
+  undone the link goes. **Text is only text**: no HTML, no Markdown, no
   links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover.
   A question shows its options as pills (one line, cut with an ellipsis) and never asks for a password. A
   **confirmation** is a card with an `--accent` border holding only the code's components: the action as a question,
@@ -471,7 +505,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   border on rows: Juan, 2026-10-23, dashed only in calendars); in the calendar layout, a dashed item; a click on its title (table) or on it (calendar) opens the proposal's page. **In Boni Calendar** (plan b2) the same proposal is an event with a dashed outline in its calendar's colour over a faint fill, no resize handles, read only (no drag, edit, duplicate or delete; it never reminds); one click opens its page in the peek (Boni's address set: the calendar's own peek; otherwise Boni's, `boni://proposal?id=`), where Aceptar or Rechazar puts the peek away. Where there is no peek (a browser, Android) its detail opens read only, titled "Propuesta", saying it is decided in Boni's inbox. They are proposals, not entities: nothing counts them; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it, and a collection by its name alone ("Docencia"; names and titles that came from outside are not used: the key and the id instead); the **log** (Registro) lists every run with what it was, on one line (the request in quotes; "Correo «asunto»"; "Cambio en Obsidian" for a run of the retired mirror, never its path; "Propuesta aceptada"; the review of the mail guide) and under it, muted, when and what came of it (the sender and mailbox, its proposals by how they were decided, what it made or changed by title and collection, "(deshecho)", or "Nada que hacer"; Juan, 2026-10-22: "Segundo plano · Hecho" said nothing); readings in a row that did nothing are one line ("3 lecturas sin nada que hacer") that opens; Undo only where something is left to undo (a stopped run too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
-  window): Cuenta, Lo que ve la IA, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only those that apply).
+  window): Cuenta, Privacidad, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only those that apply).
   It opens on Cuenta. **Extensiones** (docs/extensiones.md): a note on what they are, then per extension its name and
   what it does in one line with its switch, and under it a closed "Qué usa" group whose summary says whether it is
   as it came ("Viene con Boni (versión 1)") or changed; inside, in plain words (never ids): where it brings data from,
@@ -488,7 +522,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
     activates it, never the MCP.
 
   An extension with a version before the active one has «Volver a la versión N» under it: one click, both ways.
-  **Lo que ve la IA**: the three levels explained once at the top, then one row per collection with a select.
+  **Privacidad** (what the AI sees): the levels explained once at the top, then one row per collection with a select.
   **Correo**: not connected, server (`imap.gmail.com` by default), folder, user and app password, and "Conectar", which
   tries the connection before anything is kept (a wrong password is said under the form). Connected: who, the last
   check and how many mails, and "Comprobar ahora"; under it three closed groups, each with a summary on its right:
@@ -543,7 +577,7 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
   shape), «Lo que escribió» (a model's own answer as plain text, or the records it changed), «Argumentos», whether it
   was allowed, and «Ver toda la ejecución».
 - **«Todas las páginas»** (Boni, the sidebar's top; Juan, 2026-10-28: everything, with every way to manage it): the
-  sidebar's «Páginas» as a table (Nombre, Elementos, Lo que ve la IA, En la barra, Origen, "…"), each line indented
+  sidebar's «Páginas» as a table (Nombre, Elementos, IA, En la barra, Origen, "…"), each line indented
   18 px under its mother: the user's pages, the collections (a chevron opens one: its daughters, then all its notes,
   whatever its eye says; «Ninguno de sus registros tiene nota» when there are none) and «Boni», folded. A search
   (names and the notes' titles) or a level's chip lists what matches flat, each line with where it is, muted, after

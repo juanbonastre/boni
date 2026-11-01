@@ -9,7 +9,7 @@ import {
   type ProposalView,
   type Visibility,
 } from "../core/agent.ts";
-import { host, type Theme } from "../host.ts";
+import { host, phoneLayout, type Theme } from "../host.ts";
 import type { Lang } from "../i18n.ts";
 import {
   addWidget,
@@ -418,7 +418,8 @@ export function Account() {
     setBusy(false);
     if (r.ok) {
       setForm((f) => ({ ...f, password: "" }));
-      toast(t("account.welcome", { user: r.settings.user }));
+      // On the phone Inicio greets with the day and the account's initial (Juan, 2026-10-31: «fuera el saludo»).
+      if (!phoneLayout()) toast(t("account.welcome", { user: r.settings.user }));
     } else setError(t(`account.error.${r.code}`));
   };
   return (
@@ -442,6 +443,10 @@ export function Account() {
             className="input"
             value={form.serverUrl}
             placeholder="https://boni.example.ts.net"
+            inputMode="url"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             autoComplete="url"
             onChange={set("serverUrl")}
           />
@@ -453,6 +458,12 @@ export function Account() {
           <input
             className="input"
             value={form.user}
+            // A phone's keyboard would capitalise it and space it after a dot («Juan. Ejemplo»): an e-mail's
+            // keyboard does neither.
+            inputMode="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             autoComplete="username"
             onChange={set("user")}
           />
@@ -617,7 +628,7 @@ function BackupSettings() {
 }
 
 /**
- * "Lo que ve la IA": per collection, what the models may see (docs/nucleo.md 7.3). Juan's choice only:
+ * «Privacidad» (what the AI sees): per collection, what the models may see (docs/nucleo.md 7.3). Juan's choice only:
  * the agent has no tool for it, and the server takes it from a personal device only.
  */
 function AiVisibility() {

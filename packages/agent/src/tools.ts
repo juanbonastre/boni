@@ -266,6 +266,65 @@ const typeByKey = (store: ReadStore, key: string): TypeDef => {
   if (!def) throw new ToolError("unknown-type");
   return def;
 };
+/**
+ * A call in Juan's words while it runs (docs/conversacion.md §3.5): each argument by its role, as Juan named what it
+ * points at (a collection's name, a record's title, a field's name) or as the text it is. Data that each app words in
+ * its language; what cannot be read yet (a reference to a step still to run, an unknown key) is left out.
+ */
+export interface StepWords {
+  tool: string;
+  args: Record<string, string>;
+}
+const WORD_MAX = 60;
+const cut = (s: string) => (s.length > WORD_MAX ? `${s.slice(0, WORD_MAX - 1)}…` : s);
+const titleIn = (def: TypeDef, values: Record<string, unknown>): string | null => {
+  for (const [k, v] of Object.entries(values)) {
+    const f = fieldByName(def, k) ?? def.fields.find((x) => x.id === k);
+    if (f?.id === def.titleField && typeof v === "string" && v) return v;
+  }
+  return null;
+};
+
+export function stepWords(
+  store: ReadStore,
+  tool: ToolDef,
+  args: Readonly<Record<string, Val>>,
+): StepWords {
+  const out: Record<string, string> = {};
+  let def: TypeDef | undefined;
+  for (const [k, spec] of Object.entries(tool.args)) {
+    const v = args[k];
+    if (spec.role !== "type" || !v) continue;
+    try {
+      def = typeByKey(store, str(v));
+      out[k] = cut(def.name);
+    } catch {
+      // A collection the planner named wrong: the step says so when it runs.
+    }
+  }
+  for (const [k, spec] of Object.entries(tool.args)) {
+    const v = args[k];
+    if (!v || spec.role === "type" || spec.role === "limit") continue;
+    const x = plain(v);
+    if (spec.role === "entity") {
+      const s = typeof x === "string" ? store.get(x) : null;
+      const d = s ? store.schema().types[s.entity.type] : undefined;
+      const title = s && d ? s.entity.values[d.titleField] : undefined;
+      if (typeof title === "string" && title) out[k] = cut(title);
+      def ??= d;
+    } else if (spec.role === "field") {
+      const f = def && typeof x === "string" ? fieldByName(def, x) : undefined;
+      if (f) out[k] = cut(f.name);
+    } else if (x && typeof x === "object" && !Array.isArray(x)) {
+      // The values a record is written with: its title among them.
+      const title = def ? titleIn(def, x) : null;
+      if (title) out.title = cut(title);
+    } else if (typeof x === "string" || typeof x === "number" || typeof x === "boolean")
+      out[k] = cut(String(x));
+  }
+  return { tool: tool.name, args: out };
+}
+
 const str = (v: Val | undefined, code = "bad-argument"): string => {
   const x = v ? plain(v) : null;
   if (typeof x !== "string" || !x) throw new ToolError(code);

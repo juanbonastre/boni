@@ -36,4 +36,19 @@ describe("the evaluations a model passes before it takes a role", () => {
     expect(r.total).toBe(8);
     expect(r.right).toBe(0);
   });
+
+  it("the planner by hand: one case several times, and a failure says how it ended and its plan", async () => {
+    const plan = {
+      version: 1,
+      steps: [{ id: "r", op: "reply", component: "text", data: { template: { lit: "Nada" } } }],
+    };
+    const r = await evalPlanner(fakePlanner([plan, plan]), fakePlanner([]), {
+      only: "correos? Apúntalo",
+      times: 2,
+    });
+    expect(r.total).toBe(2);
+    expect(r.cases.map((c) => c.note)).toEqual(["nothing proposed", "nothing proposed"]);
+    expect(r.cases[0]?.detail).toContain("done, 0 proposals, 1 replies");
+    expect(r.cases[0]?.detail).toContain("plan: r:reply text");
+  });
 });

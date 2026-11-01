@@ -38,6 +38,7 @@ import {
   replacedBy,
   withoutBlocks,
 } from "../core/selection.ts";
+import { phoneLayout } from "../host.ts";
 import { catText } from "../i18n.ts";
 import {
   addFilesToPage,
@@ -79,7 +80,7 @@ import { TemplatePill } from "./TemplatePill.tsx";
 
 type Block = Page["spec"]["blocks"][number];
 type TextBlock = Extract<Block, { text: string }>;
-type TextKind =
+export type TextKind =
   | "text"
   | "h1"
   | "h2"
@@ -124,6 +125,22 @@ function asKind(b: TextBlock, kind: TextKind, text = b.text): TextBlock {
       ...ind,
     };
   return { id: b.id, type: kind, text, ...ind } as TextBlock;
+}
+
+/**
+ * A block of the document being edited turned into another kind, its text kept (Notion's «Turn into»), or back to
+ * text when it already is that kind: the phone's bar over the keyboard (KeyboardBar.tsx), wherever the caret is.
+ */
+export function turnBlock(id: string, kind: TextKind) {
+  const s = useStore.getState();
+  const doc = s.view.kind === "row" ? s.rowDoc : s.page;
+  const b = doc?.spec.blocks.find((x) => x.id === id);
+  if (!doc || !b || !isText(b)) return;
+  const to = kindOf(b) === kind ? "text" : kind;
+  setPageBlocks(
+    doc.spec.blocks.map((x) => (x.id === id ? asKind(b, to) : x)),
+    id,
+  );
 }
 const emptyText = (indent = 0): TextBlock => ({
   id: blockId(),
@@ -379,7 +396,12 @@ export function DocTail({ page }: { page: Page }) {
   };
   return (
     <button type="button" className="doc-tail" onClick={write} aria-label={t("block.writeHere")}>
-      {blocks.length === 0 && <span className="doc-hint">{t("block.placeholderFirst")}</span>}
+      {blocks.length === 0 && (
+        // On the phone a finger taps, and there is no «/» to press on its keyboard's first view.
+        <span className="doc-hint">
+          {t(phoneLayout() ? "block.placeholderFirstPhone" : "block.placeholderFirst")}
+        </span>
+      )}
     </button>
   );
 }

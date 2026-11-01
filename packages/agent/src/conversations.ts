@@ -38,6 +38,8 @@ export interface TurnView {
   replies: Reply[];
   pending: Pending | null;
   error: string | null;
+  /** Whether its run changed something still not undone. */
+  changed: boolean;
   at: number;
 }
 
@@ -168,6 +170,7 @@ export function turnViews(store: UserStore, id: string): TurnView[] {
       })),
       pending: json<Pending | null>(s.entity.values.f_pending, null),
       error: text(s, "error") || null,
+      changed: text(s, "run") !== "" && store.runUndoable(text(s, "run")),
       at: Number(text(s, "at")) || 0,
     };
   });

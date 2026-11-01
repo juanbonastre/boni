@@ -17,6 +17,11 @@ import type { Lang } from "./i18n.ts";
  * anything else answers in seconds. Cut sooner, a slow answer looked like "no connection" (Juan, 2026-10-23).
  * The same in apps/boni-desktop/paths.cjs and apps/boni-android's Net.kt.
  */
+/** Below this width (CSS px) the app uses its phone layout (MobileApp), as Boni Calendar. */
+export const PHONE_QUERY = "(max-width: 639px)";
+/** Whether the phone's layout is the one in use now. */
+export const phoneLayout = () => window.matchMedia?.(PHONE_QUERY).matches ?? false;
+
 export const requestTimeout = (path: string) =>
   /^api\/agent\/(turn|answer|confirm|decline)$/.test(path) ? 180_000 : 30_000;
 
@@ -341,6 +346,9 @@ export function browserHost(): Host {
             body: body === undefined ? undefined : JSON.stringify(body),
             signal: AbortSignal.timeout(requestTimeout(path)),
           });
+          // The server no longer takes the token (revoked, or a server made anew): said once, as the desktop
+          // and Android hosts do, until a new sign-in.
+          if (r.status === 401 && !s.sessionEnded) write({ sessionEnded: true });
           return { ok: true, status: r.status, body: await r.text() };
         } catch (e) {
           return { ok: false, offline: true, message: String((e as Error).message ?? e) };

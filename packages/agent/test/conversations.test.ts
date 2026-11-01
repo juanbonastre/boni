@@ -58,6 +58,7 @@ describe("a conversation with Boni", () => {
       .agent(fakePlanner([COUNT]))
       .turn({ text: "¿cuántas tareas tengo?", origin: PERSONAL, conversation: c });
     expect(first.status).toBe("done");
+    expect(first.changed).toBe(false); // it only read: nothing to undo
     expect(listConversations(env.store)).toMatchObject([
       { id: c, title: "¿cuántas tareas tengo?" },
     ]);
@@ -76,6 +77,21 @@ describe("a conversation with Boni", () => {
       ["¿y ahora?", "done"],
     ]);
     expect(turns[0]?.replies[0]?.data.value).toMatchObject({ t: "v", value: 1 });
+    expect(turns.map((t) => t.changed)).toEqual([false, false]);
+  });
+
+  it("offers «Deshacer» only while its run has a change left to undo", async () => {
+    env = makeEnv();
+    const c = createConversation(env.store, { now: now() });
+    const a = env.agent(fakePlanner([ASK]));
+    const asked = await a.turn({ text: "apunta algo", origin: PERSONAL, conversation: c });
+    expect(asked.changed).toBe(false);
+    if (asked.pending?.kind !== "ask") throw new Error("expected a question");
+    const done = await a.answer(asked.run, asked.pending.id, { text: "Llamar a la gestoría" });
+    expect(done).toMatchObject({ status: "done", changed: true });
+    expect(turnViews(env.store, c).at(-1)?.changed).toBe(true);
+    a.undoRun(done.run);
+    expect(turnViews(env.store, c).at(-1)?.changed).toBe(false);
   });
 
   it("shows itself live: its run, the planner thinking, each step, each reply and how it ended", async () => {
@@ -98,7 +114,64 @@ describe("a conversation with Boni", () => {
       "end",
     ]);
     expect(seen[0]).toEqual({ type: "start", run: r.run });
-    expect(seen[3]).toMatchObject({ op: "call", what: expect.any(String) });
+    expect(seen[3]).toMatchObject({
+      op: "call",
+      what: expect.any(String),
+      words: { tool: "entities.aggregate", args: { type: "tarea", op: "count" } },
+    });
+    expect(seen[4]).toMatchObject({ state: "done", value: 1 });
+  });
+
+  it("says each step in Juan's words: the collection, the record and the field by their names, and what it found", async () => {
+    env = makeEnv();
+    const seen: LiveEvent[] = [];
+    await env
+      .agent(
+        fakePlanner([
+          {
+            version: 1,
+            steps: [
+              {
+                id: "q",
+                op: "call",
+                tool: "entities.query",
+                args: { type: lit("tarea"), field: lit("titulo"), contains: lit("pan") },
+              },
+              { id: "g", op: "call", tool: "entities.get", args: { id: ref("$q.items[0].id") } },
+              {
+                id: "e",
+                each: ref("$q"),
+                op: "call",
+                tool: "entities.get",
+                args: { id: ref("$item.id") },
+              },
+              {
+                id: "c",
+                op: "call",
+                tool: "entities.create",
+                args: {
+                  type: lit("tarea"),
+                  values: { fn: "obj", args: [lit("titulo"), lit("Llamar al fontanero")] },
+                },
+              },
+            ],
+          },
+        ]),
+      )
+      .turn({ text: "busca el pan", origin: PERSONAL, live: (e) => seen.push(e) });
+    const steps = seen.flatMap((e) => (e.type === "step" ? [e] : []));
+    const at = (id: string, state: "start" | "done") =>
+      steps.find((s) => s.id === id && s.state === state);
+    expect(at("q", "start")?.words).toEqual({
+      tool: "entities.query",
+      args: { type: "tarea", field: "titulo", contains: "pan" },
+    });
+    expect(at("q", "done")?.n).toBe(1);
+    expect(at("g", "start")?.words?.args).toEqual({ id: "Comprar pan" });
+    // An item still to come is left out: the app says the tool's name instead.
+    expect(at("e", "start")?.words?.args).toEqual({});
+    expect(at("e", "done")?.n).toBe(1);
+    expect(at("c", "start")?.words?.args).toEqual({ type: "tarea", title: "Llamar al fontanero" });
   });
 
   it("stops when Juan says: while it plans (the call is cut), between steps, or while it waits", async () => {
