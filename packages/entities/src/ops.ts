@@ -1,7 +1,9 @@
 import type { Label } from "./label.ts";
+import { ROLE_TYPES, ROLES, type Role, type Roles, rolesOf, rolesProblem } from "./roles.ts";
 import {
   branch,
   type FieldDef,
+  type FieldId,
   type FieldType,
   ownFields,
   type Schema,
@@ -55,7 +57,12 @@ export type SchemaOp =
    * Moves a collection (and its branch) under another mother (`null`: the root). `own` (its own fields after the
    * move) is given only by the inverse, to put back exactly what was there.
    */
-  | { op: "set_parent"; type: TypeId; parent: TypeId | null; own?: FieldDef[] };
+  | { op: "set_parent"; type: TypeId; parent: TypeId | null; own?: FieldDef[] }
+  /**
+   * The fields that play roles in the collection (roles.ts; `null` takes a role away). Its whole branch must still make
+   * sense with them: a daughter plays her mother's roles.
+   */
+  | { op: "set_roles"; type: TypeId; roles: Partial<Record<Role, FieldId | null>> };
 
 export type OpResult =
   | { ok: true; schema: Schema; inverse: SchemaOp }
@@ -190,6 +197,39 @@ export function applySchemaOp(schema: Schema, op: SchemaOp, ctx: OpContext = {})
         },
         { op: "describe_type", type: def.id, description: def.description ?? null },
       );
+    case "set_roles": {
+      const own: Roles = { ...(def.roles ?? {}) };
+      const back: Partial<Record<Role, FieldId | null>> = {};
+      for (const [r, f] of Object.entries(op.roles) as [Role, FieldId | null][]) {
+        if (!ROLES.includes(r)) return fail(`unknown role "${r}"`);
+        back[r] = def.roles?.[r] ?? null;
+        if (f === null) {
+          delete own[r];
+          continue;
+        }
+        const field = def.fields.find((x) => x.id === f && !x.archived);
+        if (!field) return fail(`role "${r}": no field "${f}"`);
+        if (!ROLE_TYPES[r].includes(field.type))
+          return fail(`role "${r}" takes ${ROLE_TYPES[r].join(" or ")}, not ${field.type}`);
+        own[r] = f;
+      }
+      const next = update(
+        schema,
+        def,
+        (d) => {
+          const { roles: _r, ...rest } = d;
+          return Object.keys(own).length ? { ...rest, roles: own } : rest;
+        },
+        { op: "set_roles", type: def.id, roles: back },
+      );
+      if (!next.ok) return next;
+      // Every collection of the branch, with what it plays now, still makes sense.
+      for (const t of branch(next.schema, def.id)) {
+        const problem = rolesProblem(rolesOf(next.schema, t));
+        if (problem) return fail(t === def.id ? problem : `${t}: ${problem}`);
+      }
+      return next;
+    }
     case "set_parent": {
       const parent = op.parent ?? undefined;
       if (parent && !schema.types[parent]) return fail(`unknown mother "${parent}"`);

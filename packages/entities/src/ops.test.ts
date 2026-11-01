@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { label } from "./label.ts";
 import { applySchemaOp, type SchemaOp } from "./ops.ts";
 import { rng } from "./random.test-util.ts";
+import { interfacesOf, rolesOf } from "./roles.ts";
 import type { FieldDef, FieldType, Schema, TypeDef } from "./schema.ts";
 import { typeErrors } from "./schema.ts";
 
@@ -302,6 +303,46 @@ describe("collections as classes (docs/clases.md; D-10)", () => {
   };
   const ids = (s: Schema, t: string) =>
     s.types[t]?.fields.map((f) => `${f.id}${f.from ? `<${f.from}` : ""}`);
+
+  it("roles say what a collection can do: its branch plays them, they are undone like any change, and what does not fit is refused (docs/clases.md §6)", () => {
+    const set = ok(tree(), { op: "set_roles", type: "t_agenda", roles: { date: "f_fecha" } });
+    const s = ok(set.schema, {
+      op: "set_roles",
+      type: "t_tarea",
+      roles: { done: "f_hecha" },
+    }).schema;
+    // A daughter plays her mother's roles, and her own.
+    expect(rolesOf(s, "t_agenda")).toEqual({ date: "f_fecha" });
+    expect(rolesOf(s, "t_urgente")).toEqual({ date: "f_fecha", done: "f_hecha" });
+    expect(interfacesOf(rolesOf(s, "t_urgente"))).toEqual(["dated", "doable"]);
+    expect(interfacesOf(rolesOf(s, "t_proyectos"))).toEqual([]);
+    // Undone like any other change.
+    const back = applySchemaOp(set.schema, set.inverse);
+    expect(back.ok && rolesOf(back.schema, "t_agenda")).toEqual({});
+    // What does not fit is refused: a field the collection does not have, a field of a type the role does not take,
+    // a field in two roles (Tarea's own end day on the day she plays from her mother).
+    const no = (op: SchemaOp) => {
+      const r = applySchemaOp(s, op);
+      return r.ok ? "" : r.error;
+    };
+    expect(no({ op: "set_roles", type: "t_agenda", roles: { done: "f_hecha" } })).toContain(
+      "no field",
+    );
+    expect(no({ op: "set_roles", type: "t_agenda", roles: { amount: "f_fecha" } })).toContain(
+      "takes",
+    );
+    expect(no({ op: "set_roles", type: "t_tarea", roles: { endDate: "f_fecha" } })).toContain(
+      "one role",
+    );
+    // A role whose field is archived plays nothing.
+    const archived = ok(s, {
+      op: "archive_field",
+      type: "t_tarea",
+      field: "f_hecha",
+      archived: true,
+    }).schema;
+    expect(rolesOf(archived, "t_tarea")).toEqual({ date: "f_fecha" });
+  });
 
   it("a daughter has her mother's fields, with the same ids, then her own; a change to the mother reaches the branch", () => {
     let s = tree();

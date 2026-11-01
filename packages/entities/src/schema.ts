@@ -1,4 +1,5 @@
 import type { Label, Sensitivity } from "./label.ts";
+import type { Roles } from "./roles.ts";
 
 /**
  * Types, fields and entities (docs/nucleo.md, 4.1). Plain serialisable data: the store keeps it,
@@ -104,6 +105,11 @@ export interface TypeDef {
    * model).
    */
   description?: { text: string; label: Label };
+  /**
+   * The fields that play roles for the apps, by role (roles.ts, docs/clases.md §6): what it can do (a calendar, tasks,
+   * money). Its own; it plays its mother's too (`rolesOf`). Only the schema operation `set_roles` writes it.
+   */
+  roles?: Roles;
   /** Boni's own types (memory, proposal, job, miniapp, view): the agent cannot change them. */
   system?: boolean;
   archived?: boolean;

@@ -21,6 +21,16 @@ export {
 } from "./label.ts";
 export { applySchemaOp, type OpContext, type OpResult, type SchemaOp } from "./ops.ts";
 export {
+  type Interface,
+  interfacesOf,
+  ROLE_TYPES,
+  ROLES,
+  type Role,
+  type Roles,
+  rolesOf,
+  rolesProblem,
+} from "./roles.ts";
+export {
   ancestors,
   branch,
   type Entity,
