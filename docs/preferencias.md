@@ -11,7 +11,8 @@ Juan lo acepta (A11).
 
 ## 0. Resumen
 
-- **Hoy hay diez sitios** donde Boni guarda o aprende algo de Juan (§1), y cuatro se solapan (§2). Por ejemplo, la
+- **Hoy hay diez sitios** donde Boni guarda o aprende algo de Juan (§1), más el aprendizaje inferido planeado (la
+  tarea 13), y se solapan en cinco puntos (§2). Por ejemplo, la
   guía del correo y los ajustes de chat de la maqueta 3b serían dos sitios para lo mismo, y «aprender del chat» y la
   herramienta `memory.save` son lo mismo con dos nombres.
 - **Lo que hacen ChatGPT, Claude, Gemini y Notion** (§3): separan cómo quieres que te hablen, lo que saben de ti y cómo
@@ -43,8 +44,16 @@ Juan lo acepta (A11).
 | **Historial** | Los últimos 10 turnos | — | El planificador | La conversación |
 | **Privacidad** | Lo que puede ver cada modelo | Juan | El código | Ajustes → Privacidad |
 
-Y lo propuesto: los ajustes del chat (maqueta 3b: instrucciones, bienvenida, archivos), la guía también en la
-conversación y aprender de lo que Juan dice en el chat (`docs/correo.md`).
+Y lo planeado o propuesto:
+- **El aprendizaje inferido** (tarea 13 de la Cola, «1e», planeado el 2026-10-24 y sin hacer). El código calcula, desde
+  la auditoría, las señales de que algo no estaba bien: deshacer, cambiarlo al poco o repetir el mismo cambio. Un
+  «aprendiz» por área (cada extensión declara el suyo en su manifiesto, `learning`) ajusta solo cosas acotadas:
+  parámetros, filas de una colección como Reglas, ejemplos y preferencias; nunca código ni permisos. Comprueba antes de
+  quedarse con un cambio, como la revisora. Si lo tenía claro avisaba y si dudaba preguntaba, como mucho una vez al día.
+  Primero el del correo (la revisora pasaría a este mecanismo) y el de interfaces. Las preferencias de interfaz, en
+  Memoria, a la vista y editables.
+- Los ajustes del chat (maqueta 3b: instrucciones, bienvenida, archivos), la guía también en la conversación y aprender
+  de lo que Juan dice en el chat (`docs/correo.md`).
 
 **Lo que recibe el planificador en cada turno**, y nada más: `request` (la petición), `today` (el día), `tools` (las
 herramientas que puede usar), `schema` (las colecciones con sus campos), `history` (los últimos 10 turnos) y `memories`
@@ -60,6 +69,12 @@ herramientas que puede usar), `schema` (las colecciones con sus campos), `histor
    Juan que Boni lea su correo y hable de él. Y «aprender del chat» repetiría `memory.save`.
 4. **Sugerencias en tres sitios y con tres formas:** la revisora en Ajustes → Correo, la pseudoaceptación en la
    Bandeja y el Registro, y la tarjeta del chat propuesta.
+
+5. **El aprendizaje inferido no estaba en la primera versión de este documento**, aunque era la tarea 13 de la Cola
+   (Juan lo vio el 2026-11-01: «se estaba liando»; de ahí T-05). Encaja así: las señales y los aprendices producen
+   sugerencias (clase 5), y lo aceptado va a los ajustes de su extensión (clase 3) o, si es de la interfaz, a «Sobre
+   ti» (clase 2). **Un punto choca** con la decisión 2 de §7: en el plan de 1e, lo que un aprendiz tenía claro se
+   quedaba solo con un aviso; con la decisión 2, siempre hace falta el «sí» de Juan (§7, pendiente).
 
 Y un hueco: las descripciones de colección dicen qué va en cada una, pero el decisor elige la colección de una tarea
 solo por los nombres.
@@ -118,6 +133,9 @@ la leerán también el planificador y el decisor) y **Privacidad** (lo que puede
   `user`), no las del modelo.
 - **Memoria ordenada** en «Sobre ti» y «Hechos», cada cosa con de dónde viene.
 - **Las descripciones de colección** llegan también al planificador y al decisor.
+- **El aprendizaje inferido es la fuente de las sugerencias, no un sitio más:** las señales de la auditoría y el
+  aprendiz de cada extensión (`learning` en su manifiesto) producen sugerencias; la revisora del correo es el primero.
+  Como mucho, una sugerencia al día que no nazca del chat, para no agobiar (del plan de 1e).
 - **Un interruptor «Aprender»** para pausar las sugerencias; más adelante, conversaciones que no dejan recuerdos.
 - **Las instrucciones para asistentes** siguen siendo para los asistentes de fuera. Lo general de «Sobre ti» (el
   idioma, cómo contestar) puede ir también en el `guide` del MCP, para no escribirlo dos veces.
@@ -137,6 +155,15 @@ la leerán también el planificador y el decisor) y **Privacidad** (lo que puede
 2. **Aprender siempre con su «sí», y también con sus palabras.** Nada aprendido se guarda sin que Juan lo acepte, y en
    cada tarjeta puede escribir cómo quiere que quede, como en las tarjetas de la conciliación (§5).
 3. **«Sobre ti» también para los asistentes de fuera** por el MCP: lo general sí; lo de cada extensión, no.
+
+**Pendiente de Juan:** el plan del aprendizaje inferido (2026-10-24) dejaba que un aprendiz se quedara solo con un
+cambio que tenía claro y acotado (un parámetro de la interfaz, un ejemplo), avisando con Deshacer, como hace ChatGPT con
+su memoria. La decisión 2 pide siempre su «sí».
+- **Propuesto: siempre su «sí»**, como en la decisión 2. Una sola forma de aprender, y la memoria nunca cambia sin él
+  (OWASP, ASI06). Al ser una sugerencia al día como mucho, no agobia. Ejemplo: «Has cambiado la gráfica a barras 3
+  veces: ¿la pongo así por defecto?» [Sí] [No].
+- **O lo acotado, solo y con aviso:** solo los parámetros de la interfaz, medidos antes y con Deshacer. Ejemplo:
+  «Ahora tus gráficas salen en barras · Deshacer».
 
 ## 8. Fases
 
