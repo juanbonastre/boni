@@ -84,14 +84,54 @@ Registro            raíz: título, nota, creado, editado, quién (ocultos)
 La tabla de Agenda tiene tareas y eventos (la columna «Colección» dice cuál es cada uno); el calendario puede enseñar
 Agenda entera, separada por el campo que elija el usuario; una cita es privada aunque Agenda no lo sea.
 
-## 6. Interfaces (después)
+## 6. Interfaces (propuesta, 2026-11-01; tareas 4 y 5)
 
 La herencia dice lo que algo **es** (una madre); una interfaz dice lo que **sabe hacer** (puede tener varias): un
-nombre y unos papeles que la colección cumple con sus campos. *Fechable* (fecha, inicio, fin) sale en el calendario;
-*Completable* (hecha) sale en las listas de tareas; *Importe* (importe, fecha, categoría) entra en las gráficas de dinero.
-Boni ya tiene el embrión: el mapeo de papeles de un calendario (`packages/calendar/src/mappingRoles.ts`) y los perfiles
-de las gráficas (`moneyProfile`, `entityProfile`). Con interfaces, las apps trabajan sobre lo que una colección sabe
-hacer, no sobre su nombre.
+nombre y unos papeles que la colección cumple con sus campos. Boni ya tiene el embrión: el mapeo de papeles de un
+calendario (`packages/calendar/src/mappingRoles.ts`, en la definición de cada calendario) y los perfiles de las
+gráficas (`moneyProfile`, que nombra las colecciones del dinero en el código, y `entityProfile`).
+
+**El resultado.** Cada colección dice qué sabe hacer y las apps la usan por eso, nunca por su nombre:
+- Agenda (y con ella Tarea y Evento) «sale en el calendario» y «se marca hecha»; Movimiento «cuenta como dinero».
+- Boni Calendar enseña cada colección fechable como calendarios, **separados por el campo que Juan elija** (tarea 5):
+  Agenda por «área» da los calendarios de hoy (Docencia, Gestiones, Planes…); por «proyecto» daría uno por proyecto.
+- La casilla de las listas del móvil, «Hoy» en Inicio y lo que la conversación marca hecho salen de *Completable*;
+  hoy salen de la columna de tareas de un calendario (`taskDoneField`).
+- Las gráficas y la conciliación trabajan sobre *Importe*: otra colección con importe, fecha y categoría (los gastos de
+  un viaje, por ejemplo) entra en ellas sin código nuevo.
+
+**Las tres interfaces y sus papeles** (un campo por papel; la colección los guarda y sus hijas los heredan, como los
+campos):
+
+| Interfaz | Papeles | Se usa en |
+|---|---|---|
+| *Fechable* | `fecha` (o `inicio`), y si los tiene `hora`, `fin`, `zona` | el calendario, «Hoy», los avisos |
+| *Completable* | `hecha` (una casilla) | las listas, «Hoy», las tareas del calendario |
+| *Importe* | `importe`, `fecha` y `categoría` | las gráficas de dinero, la conciliación |
+
+**Lo que cambiaría:**
+- Los papeles pasan de la definición de cada calendario y del código del dinero a la colección. La definición del
+  calendario se queda con lo suyo: el color, los avisos y por qué campo se separa.
+- Una reestructuración pasa a las colecciones de Juan los papeles de sus calendarios y del dinero, con ensayo antes y
+  aplicada por él, como las anteriores (D-16).
+- En la app, la página de una colección dice qué sabe hacer, con un control por papel (como hoy «Fecha» y «Hecha» en los
+  ajustes de un calendario); en Boni Calendar, «Separar por» y «Colorear por» en los ajustes de un calendario.
+
+**Ejemplos:**
+- Una colección nueva «Viajes» con un campo de fecha: con su papel `fecha`, sale en Boni Calendar sin tocar nada más.
+- Separar Agenda por «área»: un calendario por cada área (los que hay hoy); un valor nuevo de «área» trae su
+  calendario; lo que no tiene área va a «Sin área».
+- «Libros» con una casilla «Leído» como `hecha`: el móvil la tacha al deslizar, como una tarea.
+
+**Para decidir (Juan):**
+1. Los papeles en la colección (propuesto), heredados por sus hijas, o en cada calendario como hoy.
+2. Separar por un campo crea un calendario por valor también para los valores nuevos, y uno «Sin …» para los vacíos
+   (propuesto), o solo los valores que Juan marque.
+3. Cómo se dice en la app: «Sale en el calendario», «Se marca hecha», «Cuenta como dinero» (propuesto).
+
+Con esas tres respuestas, el orden: la interfaz en el núcleo (papeles, herencia, API y MCP, con sus principios y
+pruebas); la reestructuración de sus datos; Boni Calendar y el móvil sobre ellas; «Separar por» en Boni Calendar, con
+maqueta antes (I-09).
 
 ## 7. Orden
 
