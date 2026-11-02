@@ -610,17 +610,31 @@ select,
   color: var(--muted);
   font-size: 12px;
 }
-.schema-remove {
+.schema-remove,
+.schema-group-link {
   display: flex;
   justify-content: flex-end;
   margin: 4px 0 8px;
 }
 /* A split definition in the sidebar: a folded row with its name and the field, its calendars indented inside. */
+.cal-group-row {
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+  padding-right: 2px;
+}
+.cal-group-row:hover {
+  background: var(--hover);
+}
+.cal-group-row:hover .row-btn {
+  opacity: 1;
+}
 .cal-group-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: 4px 6px;
   border: 0;
   background: none;
@@ -628,9 +642,7 @@ select,
   font: inherit;
   border-radius: 7px;
   cursor: pointer;
-}
-.cal-group-head:hover {
-  background: var(--hover);
+  text-align: left;
 }
 .cal-group-name {
   overflow: hidden;
@@ -2105,8 +2117,15 @@ textarea.field-input {
 }
 /* Fingers: nothing is hover-only, and edges to resize are big enough to hold. */
 @media (pointer: coarse) {
+  /* Under a finger the row buttons are always there and big enough to hit (the phone's drawer too). */
   .row-btn {
     opacity: 1;
+    width: 36px;
+    height: 36px;
+  }
+  .cal-row,
+  .cal-group-row {
+    min-height: 40px;
   }
   .ev-resize {
     height: 14px;

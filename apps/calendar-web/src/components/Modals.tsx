@@ -302,12 +302,43 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
     void useApp.getState().removeCalendar(cal?.group?.id ?? calendarId);
   };
   if (!cal) return null;
-  // A calendar made by a split: its properties are its definition's («Separar por», the colours by value).
   const groupId = cal.group?.id ?? cal.id;
   const members = cal.group ? calendars.filter((c) => c.group?.id === cal.group?.id) : [];
   const split = cal.split;
   const setColor = (id: string, color: string) =>
     void useApp.getState().setCalendarColor(id, color);
+  // A calendar a split made, opened by its own gear: its colour, and the way to its definition's properties
+  // (opened by the group's gear, or after «Separar por» changed: `schemaCalendarId` is the definition's id).
+  if (cal.group && calendarId !== cal.group.id) {
+    const group = cal.group;
+    return (
+      <Modal title={t("schema.title", { name: cal.name })} onClose={close}>
+        <Field label={t("schema.color")}>
+          <div className="swatches">
+            {COLOR_CHOICES.map((c) => (
+              <button
+                type="button"
+                key={c}
+                className={`swatch pick ${c === cal.color ? "on" : ""}`}
+                style={{ "--c": c } as React.CSSProperties}
+                onClick={() => setColor(cal.id, c)}
+                aria-label={c}
+              />
+            ))}
+          </div>
+        </Field>
+        <div className="schema-group-link">
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => useApp.getState().set({ schemaCalendarId: group.id })}
+          >
+            {t("schema.groupSettings", { name: group.name })}
+          </button>
+        </div>
+      </Modal>
+    );
+  }
   const schema = cal.schema;
   const patch = (id: string, p: Partial<PropertyDef>) =>
     setSchema(

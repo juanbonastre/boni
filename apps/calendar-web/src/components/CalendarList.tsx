@@ -121,7 +121,9 @@ function AddCalendar() {
 
 /**
  * The rows of a group: a calendar on its own, or a split definition as a folded row (its name and the field) with the
- * calendars it makes inside (D-24; Juan, 2026-11-02: «grupo plegable»).
+ * calendars it makes inside (D-24; Juan, 2026-11-02: «grupo plegable»). The folded row is the definition's: its gear
+ * opens the definition's properties and its eye shows or hides every calendar inside; a calendar's own gear opens
+ * its own (Juan, 2026-11-02: a member's gear opened the whole group's, «no tiene sentido»).
  */
 function Rows({
   cals,
@@ -132,6 +134,7 @@ function Rows({
   collapsed: Set<string>;
   setCollapsed: (f: (prev: Set<string>) => Set<string>) => void;
 }) {
+  const toggle = useApp((s) => s.toggleCalendar);
   const seen = new Set<string>();
   const out: React.ReactNode[] = [];
   for (const c of cals) {
@@ -144,23 +147,48 @@ function Rows({
     const gid = `group:${c.group.id}`;
     const closed = collapsed.has(gid);
     const members = cals.filter((x) => x.group?.id === c.group?.id);
+    const anyVisible = members.some((m) => m.visible);
+    const group = c.group;
     out.push(
-      <div key={gid} className="cal-group" data-group={c.group.id}>
-        <button
-          type="button"
-          className="cal-group-head"
-          onClick={() =>
-            setCollapsed((prev) => {
-              const next = new Set(prev);
-              if (!next.delete(gid)) next.add(gid);
-              return next;
-            })
-          }
-        >
-          <ChevronDown size={12} className={closed ? "chev closed" : "chev"} />
-          <span className="cal-group-name">{c.group.name}</span>
-          <span className="cal-group-by">{t("sidebar.groupBy", { field: c.group.fieldName })}</span>
-        </button>
+      <div key={gid} className="cal-group" data-group={group.id}>
+        <div className="cal-group-row">
+          <button
+            type="button"
+            className="cal-group-head"
+            onClick={() =>
+              setCollapsed((prev) => {
+                const next = new Set(prev);
+                if (!next.delete(gid)) next.add(gid);
+                return next;
+              })
+            }
+          >
+            <ChevronDown size={12} className={closed ? "chev closed" : "chev"} />
+            <span className="cal-group-name">{group.name}</span>
+            <span className="cal-group-by">{t("sidebar.groupBy", { field: group.fieldName })}</span>
+          </button>
+          <button
+            type="button"
+            className="icon-btn row-btn gear"
+            title={t("sidebar.groupProperties", { name: group.name })}
+            aria-label={t("sidebar.groupProperties", { name: group.name })}
+            onClick={() => useApp.getState().set({ schemaCalendarId: group.id })}
+          >
+            <SlidersHorizontal size={13} />
+          </button>
+          <button
+            type="button"
+            className={`icon-btn row-btn eye ${anyVisible ? "" : "keep"}`}
+            title={anyVisible ? t("sidebar.hideAll") : t("sidebar.showAll")}
+            aria-label={anyVisible ? t("sidebar.hideAll") : t("sidebar.showAll")}
+            onClick={() => {
+              // All of them at once: hidden while any shows, shown otherwise.
+              for (const m of members) if (m.visible === anyVisible) toggle(m.id);
+            }}
+          >
+            {anyVisible ? <Eye size={14} /> : <EyeOff size={14} />}
+          </button>
+        </div>
         {!closed && members.map((m) => <CalRow key={m.id} c={m} member />)}
       </div>,
     );
