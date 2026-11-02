@@ -167,22 +167,27 @@ describe("a definition split by a field (D-24)", () => {
     expect(setSplit(store, "nope", area)).toBe("no-such-calendar");
     expect(await cal.setSplit("agenda", area)).toBe("ok");
     const byArea = calendarDefs(store);
-    expect(byArea.map((p) => p.def.name)).toEqual(["Docencia", "Gestiones", "Sin area"]);
+    // The areas come in the store's order (not fixed between runs): by name, never by position.
+    const byName = (name: string) => byArea.find((p) => p.def.name === name);
+    expect(byArea.map((p) => p.def.name).sort()).toEqual(["Docencia", "Gestiones", "Sin area"]);
+    expect(byArea.at(-1)?.def.name).toBe("Sin area");
     expect(byArea.map((p) => p.group?.id)).toEqual(["agenda", "agenda", "agenda"]);
     expect(byArea.map((p) => p.where?.orEmpty ?? false)).toEqual([false, false, true]);
     expect(new Set(byArea.map((p) => p.def.color)).size).toBe(3);
     // Each calendar carries the node above it and its own split (none yet; the field above is no choice).
-    expect(byArea[0]?.group).toMatchObject({ id: "agenda", field: area });
-    expect(byArea[0]?.path?.map((n) => n.name)).toEqual(["Agenda"]);
-    expect(byArea[0]?.def.split).toMatchObject({ field: null });
-    expect(byArea[0]?.def.split?.choices.map((c) => c.name)).toEqual(["tipo"]);
+    expect(byName("Docencia")?.group).toMatchObject({ id: "agenda", field: area });
+    expect(byName("Docencia")?.path?.map((n) => n.name)).toEqual(["Agenda"]);
+    expect(byName("Docencia")?.def.split).toMatchObject({ field: null });
+    expect(byName("Docencia")?.def.split?.choices.map((c) => c.name)).toEqual(["tipo"]);
     // The kept definition is one; what the apps read is three.
     expect(storedCalendarDefs(store)).toHaveLength(1);
     // Each calendar shows its own entries; the one without an area goes to «Sin area».
     const snap = await cal.snapshot();
     const rowsOf = (id: string) =>
       snap.rows.filter((r) => r.collectionId === id).map((r) => r.values.title);
-    const [docencia, gestiones, sin] = byArea.map((p) => p.def.id);
+    const [docencia, gestiones, sin] = ["Docencia", "Gestiones", "Sin area"].map(
+      (n) => byName(n)?.def.id,
+    );
     expect(rowsOf(docencia as string)).toEqual(["Clase"]);
     expect(rowsOf(gestiones as string)).toEqual(["Reunión"]);
     expect(rowsOf(sin as string)).toEqual(["Suelto"]);
@@ -194,7 +199,7 @@ describe("a definition split by a field (D-24)", () => {
     // A colour kept for a value, by the member's id.
     expect(await cal.setColor(docencia as string, "#123456")).toBe(true);
     expect(calendarDefs(store).find((p) => p.def.id === docencia)?.def.color).toBe("#123456");
-    const docenciaValue = byArea[0]?.where?.value ?? "";
+    const docenciaValue = byName("Docencia")?.where?.value ?? "";
     expect(storedCalendarDefs(store)[0]?.raw.colors).toEqual({ [docenciaValue]: "#123456" });
     // By a list instead: its options, in order, and the record without one under «Sin tipo».
     expect(await cal.setSplit("agenda", tipo)).toBe("ok");
@@ -218,8 +223,8 @@ describe("a definition split by a field (D-24)", () => {
     expect(await cal.setSplit(docenciaId, tipo)).toBe("ok");
     const read = calendarDefs(store);
     // Under Docencia, the kinds found among its records (Clase: clase); Gestiones and «Sin area» stay whole.
-    expect(read.map((p) => p.def.name)).toEqual(["clase", "Gestiones", "Sin area"]);
-    const clase = read[0];
+    expect(read.map((p) => p.def.name).sort()).toEqual(["Gestiones", "Sin area", "clase"]);
+    const clase = read.find((p) => p.def.name === "clase");
     expect(clase?.def.id).toBe(`${docenciaId}--o-clase`);
     expect(clase?.path?.map((n) => n.name)).toEqual(["Agenda", "Docencia"]);
     expect(clase?.group).toMatchObject({ id: docenciaId, field: tipo });
@@ -248,7 +253,10 @@ describe("a definition split by a field (D-24)", () => {
 
   it("«split»: calendars picked by hand over one field become one definition split by it, colours kept; undone whole", () => {
     const { store, area, type } = agendaEnv();
-    const areas = store.list("t_area").map((e) => e.entity.id);
+    // The areas by their title: the store's order is not fixed between runs.
+    const areaTitle = store.schema().types.t_area?.titleField ?? "";
+    const areaOf = (title: string) =>
+      store.list("t_area").find((e) => e.entity.values[areaTitle] === title)?.entity.id as string;
     const member = (id: string, name: string, value: string, color: string) => ({
       type,
       raw: {
@@ -262,10 +270,14 @@ describe("a definition split by a field (D-24)", () => {
       where: { field: area, value },
     });
     saveCalendarDefs(store, [
-      member("docencia", "Docencia", areas[0] as string, "#60a5fa"),
-      member("gestiones", "Gestiones", areas[1] as string, "#4ade80"),
+      member("docencia", "Docencia", areaOf("Docencia"), "#60a5fa"),
+      member("gestiones", "Gestiones", areaOf("Gestiones"), "#4ade80"),
     ]);
-    expect(calendarDefs(store).map((p) => p.def.name)).toEqual(["Docencia", "Gestiones"]);
+    expect(
+      calendarDefs(store)
+        .map((p) => p.def.name)
+        .sort(),
+    ).toEqual(["Docencia", "Gestiones"]);
     expect(calendarCandidates(store)).toEqual([]);
     const plan = splitPlan(store);
     expect(plan).toMatchObject([
@@ -288,14 +300,18 @@ describe("a definition split by a field (D-24)", () => {
     expect(keptRaw.newNote).toEqual({ name: "{title}" });
     // The same calendars as before, with their colours, plus «Sin area» for the entry that had none.
     const after = calendarDefs(store);
-    expect(after.map((p) => [p.def.name, p.def.color])).toEqual([
-      ["Docencia", "#60a5fa"],
-      ["Gestiones", "#4ade80"],
-      ["Sin area", expect.any(String)],
-    ]);
+    expect(Object.fromEntries(after.map((p) => [p.def.name, p.def.color]))).toEqual({
+      Docencia: "#60a5fa",
+      Gestiones: "#4ade80",
+      "Sin area": expect.any(String),
+    });
     expect(splitPlan(store)).toEqual([]);
     expect(undoSplit(store)).toBe(2);
-    expect(calendarDefs(store).map((p) => p.def.id)).toEqual(["docencia", "gestiones"]);
+    expect(
+      calendarDefs(store)
+        .map((p) => p.def.id)
+        .sort(),
+    ).toEqual(["docencia", "gestiones"]);
     expect(undoSplit(store)).toBeNull();
   });
 });
