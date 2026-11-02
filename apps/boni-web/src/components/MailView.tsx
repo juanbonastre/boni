@@ -5,7 +5,7 @@ import { useStore } from "../store.ts";
 /**
  * The row of a mail's collection opened as a mail, not as a page: its header (from, to, cc, when), the subject, the
  * attachments by name and the text as it came, all painted as text (it is outside text: never markup). Nothing
- * here edits: the collection is read only (D-22).
+ * here edits: the collection is read only (D-22), and nothing says so (Juan, 2026-11-02: no explanations in the app).
  */
 export function MailView({ type, row }: { type: DataType; row: DataRow }) {
   const t = useStore((s) => s.t);
@@ -57,7 +57,6 @@ export function MailView({ type, row }: { type: DataType; row: DataRow }) {
           </div>
         )}
       </dl>
-      <p className="muted small mail-ro">{t("mail.readOnly")}</p>
       <pre className="mail-body">{row.body ?? ""}</pre>
     </article>
   );

@@ -189,7 +189,14 @@ dates use the locale (`Mie 17 sep '25`); durations as `1h 15min`.
 **Names in one or two words, as a person says them** (Juan, 2026-11-01: «no me gustan las frases largas que usas a
 veces en la app como "Lo que ve la IA", suenan raras, y parece generado por IA»). A place, a tab, a section, a column or
 a mode is named with a word or two («Privacidad», «Calendario», «Dinero», «Conciliación»), never with a phrase that
-explains it; what needs explaining goes in a help line under it, in plain words.
+explains it.
+
+**No explanations in the app** (Juan, 2026-11-02, said several times: «no me gustan esas explicaciones dentro de la
+aplicación, son redundantes y molestan, además que apestan a IA»; the one that triggered it: «Solo lectura: es lo que
+llegó.» on a mail). A screen shows the thing and its state, never a sentence saying what the thing is, what Boni does
+with it or what Boni learns from it. A state is a word or a number («Apagado por Boni el 3 nov», «12 de 20»); a
+setting may have one short line under it saying its effect, nothing more; a tooltip on a button is fine. What needs
+explaining goes in the docs, not on the screen.
 
 ## 6. Adapting it to other platforms
 - **Boni desktop (and later its Android app):** since 2026-10-17 the same architecture as this app (a React web UI in
@@ -500,9 +507,9 @@ explains it; what needs explaining goes in a help line under it, in plain words.
   the same cell the table edits it with (an option from its menu, a relation from its picker, a box); accepting
   sends only what he changed, by the field's key. **«Ver correo»** opens the mail as a mail client shows it
   (`MailView.tsx`; D-22): the subject as its title, a header of labelled lines (De: name <address>; Para; Cc;
-  Fecha in full; Adjuntos as pills, names only), «Solo lectura: es lo que llegó.» muted, and the text as it came,
-  paragraphs kept, never as markup; nothing on it edits, and the mail's collection is read only in every table
-  and page (its cells plain text). Its ⤢ button opens the **proposal's page** (Juan, 2026-10-23), read only, like a row's page:
+  Fecha in full; Adjuntos as pills, names only) and the text as it came, paragraphs kept, never as markup; nothing
+  on it edits, and nothing says so (no explanations in the app, §5); the mail's collection is read only in every
+  table and page (its cells plain text). Its ⤢ button opens the **proposal's page** (Juan, 2026-10-23), read only, like a row's page:
   the "Propuesta" tag and what it does, the title large, then sections (small upper-case labels): Propiedades (every
   value, the title and day too), Nota, Por qué, Origen (source line with "Ver correo", subject, the mail's words),
   Esos días (three days); Aceptar / Rechazar at the end go back to where it was opened from, as Esc and the crumb
@@ -548,10 +555,9 @@ explains it; what needs explaining goes in a help line under it, in plain words.
   decision. **Decisiones** (Settings, docs/fiabilidad.md §3.4): one row per area, as the Registro's card (its name,
   «acierto 20 de 20 (100 %)») and under it, muted, where it stands: «Dentro de una propuesta que decides tú.» for
   the areas decided inside a proposal (no switch); for «Aceptar propuestas», «Solo» with a switch at the right,
-  disabled until earned («"Solo" se gana con 20 decisiones y el 95 % de acierto; lleva 12.», the numbers from the
-  server), then «Acierta lo bastante: puedes encender "Solo".», and on, «Encendido: Boni hace sola lo de fiabilidad
-  alta y lo apunta en el Registro, con Deshacer.»; when Boni turned it off itself, «Boni lo apagó el 3 nov 2026:
-  falló demasiado.». Only a personal device turns it. **Modelos**: under an evaluation's result, muted, the decider's
+  disabled until earned, with how far it is as a count («12 de 20», the numbers from the server); when Boni
+  turned it off itself, «Apagado por Boni el 3 nov 2026». Nothing explains the rule on the screen (§5). Only a
+  personal device turns it. **Modelos**: under an evaluation's result, muted, the decider's
   calibration by level («Calibración: 0,9–1: 10 de 10 · 0,8–0,9: 5 de 6») when the evaluation measured it.
 
   An extension with a version before the active one has «Volver a la versión N» under it: one click, both ways.
