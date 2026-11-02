@@ -22,6 +22,7 @@ import { wrappedKeysIn } from "@boni/identity";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
 import { BODY, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
 import type { AgentHost } from "./agent.ts";
+import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import { decisions, review, type Suggestion } from "./mailReview.ts";
@@ -1205,6 +1206,10 @@ export class Mails {
         n += r.proposals.length;
         if (r.status === "stopped" && r.error)
           console.warn(`mail ${account}: plan stopped (${r.error})`);
+        // «Solo» on for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are
+        // accepted here, each a decision he judges by leaving it or undoing it.
+        if (r.proposals.length && autoOn(store, AUTO_AREA))
+          await acceptAlone(store, agent, r.proposals, this.now());
       } catch (err) {
         console.error(`mail ${account}: ${(err as Error).message}`);
       }

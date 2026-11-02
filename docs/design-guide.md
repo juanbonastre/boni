@@ -504,13 +504,16 @@ explains it; what needs explaining goes in a help line under it, in plain words.
   calendar has a task column: it is saved already done (struck through in the calendar), with the same spinner;
   the toast says "Apuntada como hecha". **"Boni la habría aceptado"**: a quiet muted mark with a small sparkle,
   beside the actions (and on the proposal's page next to its headline), when the code's rule says Boni would have
-  accepted it alone; nothing is accepted alone yet (measured first): the Registro says on top, in one muted line,
-  how often it would have been right. **Ghost rows**: a pending proposal to create an entry also shows in its collection: in
+  accepted it alone; the Registro says on top, in one muted line, how often it would have been right. With «Solo»
+  on for «Aceptar propuestas» (Settings › Decisiones, docs/fiabilidad.md §3.4) those proposals are accepted alone:
+  they leave the inbox, and the Registro lists each as «Propuesta aceptada sola» with its Undo; undoing it, or
+  deleting what it made, is Juan's «no», and leaving it a week his «sí». **Ghost rows**: a pending proposal to create an entry also shows in its collection: in
   the table, first, read only, in muted text with a solid "Propuesta" tag and ✓ / ✕ beside its title (no dashed
   border on rows: Juan, 2026-10-23, dashed only in calendars); in the calendar layout, a dashed item; a click on its title (table) or on it (calendar) opens the proposal's page. **In Boni Calendar** (plan b2) the same proposal is an event with a dashed outline in its calendar's colour over a faint fill, no resize handles, read only (no drag, edit, duplicate or delete; it never reminds); one click opens its page in the peek (Boni's address set: the calendar's own peek; otherwise Boni's, `boni://proposal?id=`), where Aceptar or Rechazar puts the peek away. Where there is no peek (a browser, Android) its detail opens read only, titled "Propuesta", saying it is decided in Boni's inbox. They are proposals, not entities: nothing counts them; an entity's values are one row per field, labelled with the field's name, and an entity is shown by its title with its id beside it, and a collection by its name alone ("Docencia"; names and titles that came from outside are not used: the key and the id instead); the **log** (Registro) lists every run with what it was, on one line (the request in quotes; "Correo «asunto»"; "Cambio en Obsidian" for a run of the retired mirror, never its path; "Propuesta aceptada"; the review of the mail guide) and under it, muted, when and what came of it (the sender and mailbox, its proposals by how they were decided, what it made or changed by title and collection, "(deshecho)", or "Nada que hacer"; Juan, 2026-10-22: "Segundo plano · Hecho" said nothing); readings in a row that did nothing are one line ("3 lecturas sin nada que hacer") that opens; Undo only where something is left to undo (a stopped run too); a click on one opens, under it, the request as Juan wrote it and each step of its plan (the tool, what the policy decided or where it stopped, and the arguments as the plan wrote them), all as text. The only exception to "no confirmation
   dialogs" (section 1): these confirmations are the policy engine's, not the interface's.
 - **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
-  window): Cuenta, Privacidad, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only those that apply).
+  window): Cuenta, Modelos, Privacidad, Decisiones, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only
+  those that apply).
   It opens on Cuenta. **Extensiones** (docs/extensiones.md): a note on what they are, then per extension its name and
   what it does in one line with its switch, and under it a closed "Qué usa" group whose summary says whether it is
   as it came ("Viene con Boni (versión 1)") or changed; inside, in plain words (never ids): where it brings data from,
@@ -527,7 +530,15 @@ explains it; what needs explaining goes in a help line under it, in plain words.
     activates it, never the MCP. **«Acierto»** (docs/fiabilidad.md §3.3): under that line, a card with one row per area of decisions
   Boni takes alone («Colecciones», «Campos»): its last decisions counted (alone, asked, left) and, of the ones alone,
   how many Juan kept as they were, as «acierto 19 de 20 (95 %)»; «Por nivel» opens the same count by level of
-  confidence («0,9–1: 10 de 10»). Nothing shows until there is a decision. It is what earns an area its «Solo» (F3).
+  confidence («0,9–1: 10 de 10»); an area with «Solo» on says so after its numbers. Nothing shows until there is a
+  decision. **Decisiones** (Settings, docs/fiabilidad.md §3.4): one row per area, as the Registro's card (its name,
+  «acierto 20 de 20 (100 %)») and under it, muted, where it stands: «Dentro de una propuesta que decides tú.» for
+  the areas decided inside a proposal (no switch); for «Aceptar propuestas», «Solo» with a switch at the right,
+  disabled until earned («"Solo" se gana con 20 decisiones y el 95 % de acierto; lleva 12.», the numbers from the
+  server), then «Acierta lo bastante: puedes encender "Solo".», and on, «Encendido: Boni hace sola lo de fiabilidad
+  alta y lo apunta en el Registro, con Deshacer.»; when Boni turned it off itself, «Boni lo apagó el 3 nov 2026:
+  falló demasiado.». Only a personal device turns it. **Modelos**: under an evaluation's result, muted, the decider's
+  calibration by level («Calibración: 0,9–1: 10 de 10 · 0,8–0,9: 5 de 6») when the evaluation measured it.
 
   An extension with a version before the active one has «Volver a la versión N» under it: one click, both ways.
   **Privacidad** (what the AI sees): the levels explained once at the top, then one row per collection with a select.

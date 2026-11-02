@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import {
   AI_LEVELS,
   type AiLevel,
+  type AreaAccuracy,
   type ExtensionView,
   type MailGuide,
   type MailView,
@@ -20,6 +21,7 @@ import {
   configured,
   decideExtension,
   forgetMail,
+  loadDecisions,
   loadExtensions,
   loadMail,
   loadMailGuide,
@@ -34,6 +36,7 @@ import {
   saveMail,
   saveMailGuide,
   saveSettings,
+  setDecisionAuto,
   setWidgetHidden,
   suggestedDevice,
   toast,
@@ -55,6 +58,7 @@ export function SettingsModal() {
     | "account"
     | "models"
     | "ai"
+    | "decisions"
     | "extensions"
     | "mail"
     | "data"
@@ -63,7 +67,7 @@ export function SettingsModal() {
   const sections: Section[] = [
     "account",
     // What was the page «Modelos» (design audit, 2026-10-25): what configures Boni lives here.
-    ...(linked ? (["models", "ai", "extensions", "mail"] as const) : []),
+    ...(linked ? (["models", "ai", "decisions", "extensions", "mail"] as const) : []),
     ...(linked && (host.saveExport || settings.backup) ? (["data"] as const) : []),
     "appearance",
     ...(host.desktop ? (["desktop"] as const) : []),
@@ -125,6 +129,7 @@ export function SettingsModal() {
             {section === "account" && <Account />}
             {section === "models" && <ModelsSettings />}
             {section === "ai" && <AiVisibility />}
+            {section === "decisions" && <Decisions />}
             {section === "extensions" && <Extensions />}
             {section === "mail" && <MailSettings />}
             {section === "data" && (
@@ -1429,6 +1434,76 @@ function Extensions() {
             >
               {t("extp.back", { v: x.previous })}
             </button>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * «Decisiones» (docs/fiabilidad.md §3.4): each area Boni decides in, how right it has been and, where it has one,
+ * its «Solo» switch: on only once earned (the server says with what), off whenever Juan wants; Boni turns it off
+ * itself when it fails too often, and the row says so.
+ */
+function Decisions() {
+  const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language);
+  const areas = useStore((s) => s.accuracy);
+  useEffect(() => {
+    void loadDecisions();
+  }, []);
+  const name = (area: string) => {
+    const key = `accuracy.area.${area}`;
+    const s = t(key);
+    return s === key ? area : s;
+  };
+  const day = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", { dateStyle: "medium" });
+  const state = (a: AreaAccuracy) => {
+    if (!a.switchable) return t("decisions.inside");
+    if (a.auto) return t("decisions.on");
+    if (a.autoBy === "boni" && a.autoAt)
+      return t("decisions.backedOff", { when: day.format(new Date(a.autoAt)) });
+    if (a.earned) return t("decisions.earned");
+    return a.earnsWith
+      ? t("decisions.notEarned", {
+          n: a.earnsWith.decisions,
+          pct: Math.round(100 * a.earnsWith.accuracy),
+          judged: a.judged,
+        })
+      : t("decisions.notEarnedYet");
+  };
+  return (
+    <>
+      <p className="muted small">{t("decisions.help")}</p>
+      {areas.length === 0 && <p className="muted small">{t("decisions.none")}</p>}
+      {areas.map((a) => (
+        <div className="setting" key={a.area}>
+          <div className="setting-label">
+            <span>{name(a.area)}</span>
+            <span className="muted small">
+              {a.judged
+                ? t("accuracy.judged", {
+                    right: a.right,
+                    judged: a.judged,
+                    pct: Math.round((100 * a.right) / a.judged),
+                  })
+                : t("accuracy.judged.none")}
+            </span>
+            <span className="muted small">{state(a)}</span>
+          </div>
+          {a.switchable && (
+            <div className="setting-control with-gap">
+              <span className="small">{t("decisions.solo")}</span>
+              <input
+                type="checkbox"
+                className="switch"
+                aria-label={`${t("decisions.solo")} · ${name(a.area)}`}
+                checked={a.auto}
+                disabled={!a.auto && !a.earned}
+                onChange={(e) => void setDecisionAuto(a.area, e.target.checked)}
+              />
+            </div>
           )}
         </div>
       ))}

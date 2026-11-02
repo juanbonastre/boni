@@ -1868,6 +1868,39 @@ export async function changeVisibility(id: string, level: AiLevel): Promise<bool
   }
 }
 
+/** The areas Boni decides in, for Settings «Decisiones» (a server without them: none). */
+export async function loadDecisions() {
+  try {
+    set({ accuracy: await agent.decisions() });
+  } catch {
+    // as it was
+  }
+}
+
+/**
+ * Juan turns an area's «Solo» (docs/fiabilidad.md §3.4): on only once earned, and only from a personal device. The
+ * switch flips at once and goes back if the server says no.
+ */
+export async function setDecisionAuto(area: string, auto: boolean): Promise<boolean> {
+  const { t, accuracy } = useStore.getState();
+  set({ accuracy: accuracy.map((a) => (a.area === area ? { ...a, auto } : a)) });
+  try {
+    set({ accuracy: await agent.setDecisionAuto(area, auto) });
+    return true;
+  } catch (e) {
+    set({ accuracy });
+    const status = e instanceof ApiError ? e.status : 0;
+    toast(
+      status === 403
+        ? t("ai.personal")
+        : status === 409
+          ? t("decisions.notYet")
+          : t("decisions.failed"),
+    );
+    return false;
+  }
+}
+
 // ------------------------------------------------------------------ pages (docs/extensiones.md 6)
 
 type Block = Page["spec"]["blocks"][number];

@@ -576,6 +576,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/runs\/[^/]+\//, "/runs/:id/")
             .replace(/\/runs\/[^/]+$/, "/runs/:id")
             .replace(/\/visibility\/[^/]+$/, "/visibility/:type")
+            .replace(/\/decisions\/[^/]+$/, "/decisions/:area")
             .replace(/\/extensions\/[^/]+\/(activate|reject|revert)$/, "/extensions/:id/$1")
             .replace(/\/extensions\/(?!proposals$)[^/]+$/, "/extensions/:id")
             .replace(/\/models\/roles\/[^/]+$/, "/models/roles/:role")
