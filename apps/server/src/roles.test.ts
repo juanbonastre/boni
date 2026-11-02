@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { interfacesOf, rolesOf } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
-import { taskDoneField } from "./calendarStore.ts";
+import { saveCalendarDefs, taskDoneField } from "./calendarStore.ts";
 import { applyRoles, rolesLines, rolesToSet, undoRoles } from "./roles.ts";
 import { seed } from "./seed.test-util.ts";
 
@@ -86,5 +86,42 @@ describe("the roles each collection already has, said where they belong (docs/cl
     expect(taskDoneField(store, "t_agenda")?.name).toBe("Hecha");
     expect(undoRoles(store, run as string)).toBe(2);
     expect(rolesOf(store.schema(), "t_agenda")).toEqual({});
+  });
+
+  it("the task box goes on the collection a calendar over a branch makes its tasks in", () => {
+    const store = openUserStore(":memory:");
+    cleanups.push(() => store.close());
+    const { title, when } = AGENDA.mapping;
+    seed(
+      store,
+      [
+        {
+          key: "agenda",
+          name: "Agenda",
+          folder: "agenda/",
+          calendar: {
+            ...AGENDA,
+            columns: AGENDA.columns.filter((c) => c.id !== "completed"),
+            mapping: { title, when },
+          },
+        },
+        {
+          key: "tarea",
+          name: "Tarea",
+          folder: "agenda/tareas/",
+          parent: "agenda",
+          fields: { Hecha: "checkbox" },
+        },
+        { key: "evento", name: "Evento", folder: "agenda/eventos/", parent: "agenda" },
+      ],
+      {},
+    );
+    saveCalendarDefs(store, [
+      { type: "t_agenda", raw: AGENDA, make: { event: "t_evento", task: "t_tarea" } },
+    ]);
+    expect(rolesToSet(store).found.map((f) => [f.type, f.roles])).toEqual([
+      ["t_agenda", { date: "f_date", time: "f_starttime" }],
+      ["t_tarea", { done: "f_hecha" }],
+    ]);
   });
 });

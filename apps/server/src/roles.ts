@@ -63,13 +63,15 @@ export function rolesToSet(store: UserStore): { found: RolesFound[]; problems: s
 
   // Each calendar: its mapping's columns are fields of its collection, by name (or by the column's id as key).
   for (const p of calendarDefs(store)) {
-    const def = schema.types[p.type];
-    if (!def) continue;
-    const fieldOf = (col: string | undefined) => {
+    if (!schema.types[p.type]) continue;
+    const fieldIn = (type: string, col: string | undefined) => {
       if (!col) return undefined;
       const name = p.def.columns.find((c) => c.id === col)?.name ?? col;
-      return def.fields.find((f) => (f.name === name || f.key === col) && !f.archived);
+      return schema.types[type]?.fields.find(
+        (f) => (f.name === name || f.key === col) && !f.archived,
+      );
     };
+    const fieldOf = (col: string | undefined) => fieldIn(p.type, col);
     const m = p.def.mapping;
     const from = `de su calendario «${p.def.name}»`;
     if (m.when.kind === "split") {
@@ -81,8 +83,10 @@ export function rolesToSet(store: UserStore): { found: RolesFound[]; problems: s
       add(p.type, "start", fieldOf(m.when.start), from);
       add(p.type, "end", fieldOf(m.when.end), from);
     }
-    // A status column (a select) marks tasks too, but the role takes a box: it stays in the calendar for now.
-    add(p.type, "done", fieldOf(m.task?.column), from);
+    // The task box goes on the collection its tasks are made in (a calendar over a branch makes them in a
+    // daughter). A status column (a select) marks tasks too, but the role takes a box: it stays in the calendar.
+    const taskType = p.make?.task ?? p.type;
+    add(taskType, "done", fieldIn(taskType, m.task?.column), from);
   }
 
   // The money's movements.

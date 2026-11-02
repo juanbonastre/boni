@@ -132,6 +132,7 @@ export function calendarDefs(store: UserStore): Placed[] {
       const m = x.make as Partial<Make> | undefined;
       if (m && inBranch(m.event))
         placed.make = { event: m.event, ...(inBranch(m.task) ? { task: m.task } : {}) };
+      placed.def = withRoles(schema, x.type, r.def, placed.make?.task ?? x.type);
       return [placed];
     });
   } catch {
@@ -140,6 +141,65 @@ export function calendarDefs(store: UserStore): Placed[] {
 }
 
 /** Whether a record belongs to a calendar: its type in the calendar's branch, its field as `where` says. */
+/** A calendar column of the type a role's field has (the calendar roles take dates, times, instants and boxes). */
+const columnTypeOf = (t: FieldType): "date" | "time" | "datetime" | "checkbox" | "text" =>
+  t === "date" || t === "time" || t === "datetime" || t === "checkbox" ? t : "text";
+
+/**
+ * The calendar's day, times, end and task box as the collection's roles say (docs/clases.md §6, D-20; Juan,
+ * 2026-11-01: the roles go from each calendar's definition to the collection). The definition keeps the rest: the
+ * title, the place, the colour, the reminders, how the branch is split. A collection whose roles are not set yet
+ * keeps its definition's mapping, as before, role by role; the task box is the role of the collection its tasks are
+ * made in (`make.task`). A role's field is read by the column named like it or, without one, by the field's own
+ * name, which is how the rows carry it (`fieldsOf`).
+ */
+export function withRoles(
+  schema: Schema,
+  type: string,
+  def: CollectionDef,
+  taskType = type,
+): CollectionDef {
+  const roles = rolesOf(schema, type);
+  const done = rolesOf(schema, taskType).done;
+  if (!roles.date && !roles.start && !done) return def;
+  const columns = [...def.columns];
+  const col = (t: string, id: string | undefined): string | undefined => {
+    const f = id ? schema.types[t]?.fields.find((x) => x.id === id) : undefined;
+    if (!f) return undefined;
+    const c = columns.find((x) => x.name === f.name);
+    if (c) return c.id;
+    columns.push({ id: f.name, name: f.name, type: columnTypeOf(f.type) });
+    return f.name;
+  };
+  const was = def.mapping.when;
+  const timezone = was.timezone ? { timezone: was.timezone } : {};
+  let when = was;
+  if (roles.date) {
+    const startTime = col(type, roles.time);
+    const endTime = col(type, roles.endTime);
+    const endDate = col(type, roles.endDate);
+    when = {
+      kind: "split",
+      date: col(type, roles.date) as string,
+      ...(startTime ? { startTime } : {}),
+      ...(endTime ? { endTime } : {}),
+      ...(endDate ? { endDate } : {}),
+      ...(was.kind === "split" && was.allDay ? { allDay: was.allDay } : {}),
+      ...timezone,
+    };
+  } else if (roles.start) {
+    const end = col(type, roles.end);
+    when = {
+      kind: "range",
+      start: col(type, roles.start) as string,
+      ...(end ? { end } : {}),
+      ...timezone,
+    };
+  }
+  const task = done ? { column: col(taskType, done) as string } : def.mapping.task;
+  return { ...def, columns, mapping: { ...def.mapping, when, ...(task ? { task } : {}) } };
+}
+
 function inCalendar(
   schema: Schema,
   p: Placed,
