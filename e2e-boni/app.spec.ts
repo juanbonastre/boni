@@ -400,6 +400,9 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await expect(db.locator(".db-table tbody tr")).toHaveCount(3);
   // A title renamed where it is, with a double click (a click opens its row).
   await db.getByRole("button", { name: "Pedro Páramo", exact: true }).dblclick();
+  // The cell's input takes the focus a frame later: on a slow machine, keys pressed before went elsewhere and the
+  // selected title was replaced (the picker below then found no «pedro»).
+  await expect(db.locator("tr", { hasText: "Pedro Páramo" }).locator("input")).toBeFocused();
   await page.keyboard.press("End");
   await page.keyboard.type(" (relectura)", { delay: 15 });
   await page.keyboard.press("Enter");
