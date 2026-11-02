@@ -13,7 +13,11 @@ tests guard most of them.
   collections or fields. Which collections show is the user's choice (D-23): the server offers every collection with
   a day and no calendar yet (`GET /api/collections/candidates`), «+ Añadir calendario» adds one
   (`POST /api/collections/add`) and «Quitar calendario» takes the view away (`POST /api/collections/remove`), never
-  the records; the server's stream then brings a new snapshot.
+  the records; the server's stream then brings a new snapshot. A definition **split by a field** (D-24) is one kept
+  definition the server reads as a view per value: each view carries `group` (the definition and the field) and
+  `split` (the field and the choices); `POST /api/collections/split` sets it, `POST /api/collections/color` keeps a
+  colour. The sidebar folds a group's views under its name (`CalendarList.tsx`); their properties are the
+  definition's (`Modals.tsx`).
 - **Repetitions** come in two kinds, and a calendar maps one or the other:
   - A master that expands (`recurrence`, `exdates`). It is never rendered directly: `expandAll` turns it into
     occurrences (`id = "<master>~<day>"`, `seriesId`, `occurrenceDay`) for the window the views publish (`store.win`,

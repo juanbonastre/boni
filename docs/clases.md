@@ -192,7 +192,23 @@ cuenta de los demás; sus papeles ponen las horas, el fin y la casilla al leerla
 (`POST /api/collections/remove`: solo la vista; los registros se quedan). En Boni Calendar, la barra lateral agrupa
 los calendarios de Boni en una sección «Calendarios» (antes, la cuenta de cada definición: «Agenda») con el botón
 «+ Añadir calendario», que abre el menú de candidatas (nombre y número de registros), y las propiedades de un
-calendario tienen «Quitar calendario». «Separar por» (tarea 5) queda para su maqueta.
+calendario tienen «Quitar calendario».
+
+**Hecho, paso 5 (2026-11-02): «Separar por» (D-24).** Con maqueta en la conversación y aprobado por Juan tal cual:
+una sola definición por colección con el campo que la separa (`split: { field }` en `calendar/defs`), que el
+servidor expande al leerla (`calendarDefs`; las guardadas, `storedCalendarDefs`) en un calendario por valor (cada
+opción de la lista, o cada registro al que apunta la relación: un valor nuevo trae su calendario), más «Sin …»
+mientras haya registros sin valor; cada uno con el color guardado para su valor (`colors` en la definición) o el
+de la paleta por su orden, y el id `<definición>--<valor>`. Un registro nuevo en uno de ellos nace con ese valor
+(el servidor lo escribe, como en los calendarios elegidos por campo). En Boni Calendar, «Separar por» en las
+propiedades de un calendario (Ninguno, o las listas y relaciones simples de la colección); la barra lateral enseña
+la definición separada como grupo plegable («Agenda · por área») con sus calendarios dentro, y las propiedades de
+cualquiera de ellos son las de la definición: nombre, «Separar por» y los calendarios por valor con su color, que
+ahora el servidor guarda también para un calendario entero (`POST /api/collections/split`, `/color`). «Quitar
+calendario» en uno se lleva la definición entera. Los calendarios de Juan elegidos a mano (Docencia, Gestiones,
+Planes: una definición cada uno con `where`) se juntan con `cli.ts split-check juan` (ensayo) y `split juan
+--apply` (`--undo` los devuelve), conservando colores; los ojos de la barra se guardan por id de calendario, así
+que tras juntarlos salen todos visibles. «Colorear por» queda para después.
 
 ## 7. Orden
 

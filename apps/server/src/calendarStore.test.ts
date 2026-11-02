@@ -10,10 +10,13 @@ import {
   removeCalendar,
   StoreCalendar,
   saveCalendarDefs,
+  setSplit,
+  storedCalendarDefs,
   taskDoneField,
 } from "./calendarStore.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { seed, type TypeSpec } from "./seed.test-util.ts";
+import { applySplit, splitPlan, undoSplit } from "./split.ts";
 
 /** Invented notes (never real ones): one calendar and its definition, as `_system/colecciones/` had it. */
 const RAW = {
@@ -109,6 +112,152 @@ const rowOf = async (cal: StoreCalendar, id: string) =>
 /** The record an invented note became (rows are known by the record's id). */
 const seeded = new WeakMap<UserStore, Map<string, string>>();
 const idAt = (store: UserStore, path: string) => seeded.get(store)?.get(path) as string;
+
+/** An agenda split by its area (a relation) or its kind (a list), as Juan's is: invented areas and entries. */
+function agendaEnv(): {
+  store: UserStore;
+  cal: StoreCalendar;
+  area: string;
+  tipo: string;
+  type: string;
+} {
+  const store = openUserStore(":memory:");
+  const types: TypeSpec[] = [
+    { key: "area", name: "Área", folder: "areas/" },
+    {
+      key: "agenda",
+      name: "Agenda",
+      folder: "agenda/",
+      fields: {
+        area: { type: "relation", to: "area" },
+        tipo: { type: "select", options: ["clase", "reunión"] },
+      },
+      calendar: { ...RAW, id: "agenda", name: "Agenda", folder: "agenda" },
+    },
+  ];
+  seed(store, types, {
+    "areas/docencia.md": "---\ntype: area\n---\n# Docencia\n",
+    "areas/gestiones.md": "---\ntype: area\n---\n# Gestiones\n",
+    "agenda/2026-10-22 Clase.md":
+      '---\ntitle: "Clase"\ndate: "2026-10-22"\narea: "[[docencia]]"\ntipo: clase\n---\n',
+    "agenda/2026-10-23 Reunión.md":
+      '---\ntitle: "Reunión"\ndate: "2026-10-23"\narea: "[[gestiones]]"\ntipo: reunión\n---\n',
+    "agenda/2026-10-24 Suelto.md": '---\ntitle: "Suelto"\ndate: "2026-10-24"\n---\n',
+  });
+  const type = Object.values(store.schema().types).find((t) => t.key === "agenda")?.id as string;
+  const fields = store.schema().types[type]?.fields ?? [];
+  const area = fields.find((f) => f.name === "area")?.id as string;
+  const tipo = fields.find((f) => f.name === "tipo")?.id as string;
+  const cal = new StoreCalendar(store, { write: true, pollMs: 60_000 });
+  cleanups.push(() => {
+    cal.close();
+    store.close();
+  });
+  return { store, cal, area, tipo, type };
+}
+
+describe("a definition split by a field (D-24)", () => {
+  it("one calendar per value, «Sin …» while some record holds nothing, colours kept by value; whole again", async () => {
+    const { store, cal, area, tipo } = agendaEnv();
+    const whole = calendarDefs(store);
+    expect(whole.map((p) => p.def.id)).toEqual(["agenda"]);
+    expect(whole[0]?.def.split).toMatchObject({ field: null });
+    expect(whole[0]?.def.split?.choices.map((c) => c.name).sort()).toEqual(["area", "tipo"]);
+    expect(setSplit(store, "agenda", "f_nope")).toBe("bad-field");
+    expect(setSplit(store, "nope", area)).toBe("no-such-calendar");
+    expect(await cal.setSplit("agenda", area)).toBe("ok");
+    const byArea = calendarDefs(store);
+    expect(byArea.map((p) => p.def.name)).toEqual(["Docencia", "Gestiones", "Sin area"]);
+    expect(byArea.map((p) => p.group?.id)).toEqual(["agenda", "agenda", "agenda"]);
+    expect(byArea.map((p) => p.where?.orEmpty ?? false)).toEqual([false, false, true]);
+    expect(new Set(byArea.map((p) => p.def.color)).size).toBe(3);
+    expect(byArea[0]?.def.split).toMatchObject({ field: area });
+    // The kept definition is one; what the apps read is three.
+    expect(storedCalendarDefs(store)).toHaveLength(1);
+    // Each calendar shows its own entries; the one without an area goes to «Sin area».
+    const snap = await cal.snapshot();
+    const rowsOf = (id: string) =>
+      snap.rows.filter((r) => r.collectionId === id).map((r) => r.values.title);
+    const [docencia, gestiones, sin] = byArea.map((p) => p.def.id);
+    expect(rowsOf(docencia as string)).toEqual(["Clase"]);
+    expect(rowsOf(gestiones as string)).toEqual(["Reunión"]);
+    expect(rowsOf(sin as string)).toEqual(["Suelto"]);
+    expect(snap.views.find((v) => v.id === docencia)?.group).toMatchObject({
+      id: "agenda",
+      name: "Agenda",
+      fieldName: "area",
+    });
+    // A colour kept for a value, by the member's id.
+    expect(await cal.setColor(docencia as string, "#123456")).toBe(true);
+    expect(calendarDefs(store).find((p) => p.def.id === docencia)?.def.color).toBe("#123456");
+    const docenciaValue = byArea[0]?.where?.value ?? "";
+    expect(storedCalendarDefs(store)[0]?.raw.colors).toEqual({ [docenciaValue]: "#123456" });
+    // By a list instead: its options, in order, and the record without one under «Sin tipo».
+    expect(await cal.setSplit("agenda", tipo)).toBe("ok");
+    expect(calendarDefs(store).map((p) => p.def.name)).toEqual(["clase", "reunión", "Sin tipo"]);
+    // Whole again: one calendar, every entry in it; the colours kept wait in the definition.
+    expect(await cal.setSplit("agenda", null)).toBe("ok");
+    expect(calendarDefs(store).map((p) => p.def.id)).toEqual(["agenda"]);
+    expect((await cal.snapshot()).rows.filter((r) => r.collectionId === "agenda")).toHaveLength(3);
+    // Taking the split definition away takes every calendar it made.
+    expect(await cal.setSplit("agenda", area)).toBe("ok");
+    expect(await cal.removeCalendar("agenda")).toBe(true);
+    expect(calendarDefs(store)).toEqual([]);
+  });
+
+  it("«split»: calendars picked by hand over one field become one definition split by it, colours kept; undone whole", () => {
+    const { store, area, type } = agendaEnv();
+    const areas = store.list("t_area").map((e) => e.entity.id);
+    const member = (id: string, name: string, value: string, color: string) => ({
+      type,
+      raw: {
+        ...RAW,
+        id,
+        name,
+        folder: `agenda/${id}`,
+        color,
+        newNote: { name: "{title}", properties: { area: `[[${id}]]` } },
+      },
+      where: { field: area, value },
+    });
+    saveCalendarDefs(store, [
+      member("docencia", "Docencia", areas[0] as string, "#60a5fa"),
+      member("gestiones", "Gestiones", areas[1] as string, "#4ade80"),
+    ]);
+    expect(calendarDefs(store).map((p) => p.def.name)).toEqual(["Docencia", "Gestiones"]);
+    expect(calendarCandidates(store)).toEqual([]);
+    const plan = splitPlan(store);
+    expect(plan).toMatchObject([
+      {
+        name: "Agenda",
+        id: "agenda",
+        fieldName: "area",
+        members: [{ name: "Docencia" }, { name: "Gestiones" }],
+      },
+    ]);
+    expect(applySplit(store, plan)).toBe(1);
+    const kept = storedCalendarDefs(store);
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).toMatchObject({
+      type,
+      split: { field: area },
+      raw: { id: "agenda", name: "Agenda" },
+    });
+    const keptRaw = (kept[0]?.raw ?? {}) as { newNote?: unknown };
+    expect(keptRaw.newNote).toEqual({ name: "{title}" });
+    // The same calendars as before, with their colours, plus «Sin area» for the entry that had none.
+    const after = calendarDefs(store);
+    expect(after.map((p) => [p.def.name, p.def.color])).toEqual([
+      ["Docencia", "#60a5fa"],
+      ["Gestiones", "#4ade80"],
+      ["Sin area", expect.any(String)],
+    ]);
+    expect(splitPlan(store)).toEqual([]);
+    expect(undoSplit(store)).toBe(2);
+    expect(calendarDefs(store).map((p) => p.def.id)).toEqual(["docencia", "gestiones"]);
+    expect(undoSplit(store)).toBeNull();
+  });
+});
 
 describe("the calendars Boni Calendar may add (D-23)", () => {
   it("a dated collection without a calendar is a candidate; added, it shows its rows; taken away, they stay", async () => {

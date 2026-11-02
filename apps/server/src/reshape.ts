@@ -22,7 +22,9 @@ import {
   CALENDAR_DEFS,
   calendarDefs,
   type Make,
+  type Stored,
   saveCalendarDefs,
+  storedCalendarDefs,
   type Where,
 } from "./calendarStore.ts";
 import { keyFrom } from "./data.ts";
@@ -777,13 +779,7 @@ class Reshape {
 
   private calendars(list: NonNullable<ReshapePlan["calendars"]>): void {
     this.calendarsBefore = this.store.setting(CALENDAR_DEFS);
-    const next: { type: string; raw: Record<string, unknown>; where?: Where; make?: Make }[] =
-      calendarDefs(this.store).map((p) => ({
-        type: p.type,
-        raw: p.raw,
-        where: p.where,
-        make: p.make,
-      }));
+    const next: Stored[] = storedCalendarDefs(this.store).map((p) => ({ ...p }));
     for (const c of list) {
       const i = next.findIndex((x) => x.raw.id === c.calendar || x.raw.name === c.calendar);
       if (i < 0) throw new Problem(`no hay ningún calendario «${c.calendar}»`);

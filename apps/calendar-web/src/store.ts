@@ -341,6 +341,9 @@ export interface AppState {
   calendarCandidates: () => Promise<CalendarCandidate[]>;
   addCalendar: (type: string) => Promise<void>;
   removeCalendar: (calendarId: string) => Promise<void>;
+  /** «Separar por»: the definition split by a field or whole again; and a colour kept in the definition (D-24). */
+  setSplit: (calendarId: string, field: string | null) => Promise<void>;
+  setCalendarColor: (calendarId: string, color: string) => Promise<void>;
   /** An event's own reminders (`null`: its calendar's). Adds the column for them to the definition if needed. */
   setEventReminders: (id: string, list: Reminder[] | null) => Promise<void>;
   deleteEvent: (id: string) => void;
@@ -1241,6 +1244,25 @@ export const useApp = create<AppState>((set, get) => {
       if (get().source !== "server" || !server.remote) return;
       try {
         await server.remote.removeCalendar(calendarId);
+      } catch (e) {
+        writeFailed(e);
+      }
+    },
+
+    setSplit: async (calendarId, field) => {
+      if (get().source !== "server" || !server.remote) return;
+      try {
+        await server.remote.setSplit(calendarId, field);
+      } catch (e) {
+        writeFailed(e);
+      }
+    },
+
+    setCalendarColor: async (calendarId, color) => {
+      get().updateCalendar(calendarId, { color });
+      if (get().source !== "server" || !server.remote) return;
+      try {
+        await server.remote.setColor(calendarId, color);
       } catch (e) {
         writeFailed(e);
       }

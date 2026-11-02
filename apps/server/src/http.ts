@@ -100,6 +100,8 @@ import { StoreMoney } from "./v1/storeMoney.ts";
  *   GET  /api/collections/candidates -> { candidates: [{ type, name, icon, count }] } (collections with a day and no calendar)
  *   POST /api/collections/add { type } -> { id } (with BONI_WRITE): the collection as a calendar
  *   POST /api/collections/remove { id } -> {} (with BONI_WRITE): the calendar's definition gone, its records kept
+ *   POST /api/collections/split { id, field | null } -> {} (with BONI_WRITE): one calendar per value of the field
+ *   POST /api/collections/color { id, color } -> {} (with BONI_WRITE): a calendar's colour, kept in its definition
  *   PUT  /api/collections/reminders { collectionId, reminders?, eventColumn? } -> {} (with BONI_WRITE):
  *        a calendar's reminders, kept in its definition
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
@@ -842,6 +844,25 @@ export function makeApp(opts: ServerOptions): App {
         const b = await bodyOf(req);
         if (typeof b.id !== "string") return send(res, 400, { error: "bad-request" });
         return (await calendar.removeCalendar(b.id))
+          ? send(res, 200, {})
+          : send(res, 404, { error: "no-such-calendar" });
+      }
+      case "POST /api/collections/split": {
+        if (!calendar.writable) return send(res, 403, { error: "read-only" });
+        const b = await bodyOf(req);
+        if (typeof b.id !== "string" || (b.field !== null && typeof b.field !== "string"))
+          return send(res, 400, { error: "bad-request" });
+        const r = await calendar.setSplit(b.id, b.field as string | null);
+        return r === "ok"
+          ? send(res, 200, {})
+          : send(res, r === "bad-field" ? 400 : 404, { error: r });
+      }
+      case "POST /api/collections/color": {
+        if (!calendar.writable) return send(res, 403, { error: "read-only" });
+        const b = await bodyOf(req);
+        if (typeof b.id !== "string" || typeof b.color !== "string")
+          return send(res, 400, { error: "bad-request" });
+        return (await calendar.setColor(b.id, b.color))
           ? send(res, 200, {})
           : send(res, 404, { error: "no-such-calendar" });
       }

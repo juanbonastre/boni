@@ -25,6 +25,8 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "GET /api/collections/candidates": "public",
   "POST /api/collections/add": "public",
   "POST /api/collections/remove": "public",
+  "POST /api/collections/split": "public",
+  "POST /api/collections/color": "public",
   "GET /api/reminders": "public",
   "PUT /api/push": "public",
   "DELETE /api/push": "public",

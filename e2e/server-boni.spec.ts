@@ -16,8 +16,8 @@ const NOW = "2025-09-17T14:29";
 const PASSWORD = "una contraseña larga de ejemplo";
 test.describe.configure({ mode: "serial" });
 
-const note = (title: string, date: string, start: string) =>
-  `---\ntitle: "${title}"\ndate: "${date}"\nstartTime: "${start}"\nendTime: "${start.replace(/^(\d\d)/, (h) => String(Number(h) + 1).padStart(2, "0"))}"\ntimezone: "Europe/Madrid"\ncompleted:\n---\n`;
+const note = (title: string, date: string, start: string, extra = "") =>
+  `---\ntitle: "${title}"\ndate: "${date}"\nstartTime: "${start}"\nendTime: "${start.replace(/^(\d\d)/, (h) => String(Number(h) + 1).padStart(2, "0"))}"\ntimezone: "Europe/Madrid"\ncompleted:\n${extra}---\n`;
 const CLASS = "agenda/docencia/2025-09-17 Clase del servidor.md";
 
 let dir: string;
@@ -42,6 +42,8 @@ test.beforeAll(async () => {
         key: "docencia",
         name: "Docencia",
         folder: "agenda/docencia/",
+        // A list to split the calendar by («Separar por», D-24).
+        fields: { area: { type: "select", options: ["Docencia", "Gestiones"] } },
         calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
       },
       { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
@@ -60,8 +62,13 @@ test.beforeAll(async () => {
       { key: "nota", name: "Nota", folder: "" },
     ],
     {
-      [CLASS]: note("Clase del servidor", "2025-09-17", "09:00"),
-      "agenda/docencia/2025-09-18 Tutoría.md": note("Tutoría", "2025-09-18", "12:00"),
+      [CLASS]: note("Clase del servidor", "2025-09-17", "09:00", "area: Docencia\n"),
+      "agenda/docencia/2025-09-18 Tutoría.md": note(
+        "Tutoría",
+        "2025-09-18",
+        "12:00",
+        "area: Gestiones\n",
+      ),
       // Money: a movement, a person, the categories (rows of Categorías).
       "registros/finanzas/categorias/comida-restaurante.md":
         "---\nnombre: comida/restaurante\n---\n\n# comida/restaurante\n",
@@ -364,4 +371,43 @@ test("«Calendarios»: a dated collection is offered under «Añadir calendario�
   await expect(list.locator(".cal-name", { hasText: "Movimiento" })).toHaveCount(0);
   const h = { authorization: `Bearer ${await token()}` };
   expect((await rowsOf("t_movimiento", h)).rows.length).toBeGreaterThan(0);
+});
+
+test("«Separar por»: a calendar split by a field is a folded group with one calendar per value, their colours kept; whole again", async ({
+  page,
+}) => {
+  await connect(page);
+  const list = page.locator(".cal-list");
+  await list.locator(".cal-row", { hasText: "Docencia" }).locator(".gear").click();
+  const modal = page.locator(".modal");
+  await modal.getByLabel("Separar por").selectOption({ label: "area" });
+  // The sidebar: the definition as a group («Docencia · por area») with a calendar per option inside.
+  await expect(list.locator(".cal-group-head")).toContainText("Docencia");
+  await expect(list.locator(".cal-group-by")).toHaveText("por area");
+  const members = list.locator(".cal-row.member .cal-name");
+  await expect(members.filter({ hasText: /^Docencia$/ })).toHaveCount(1);
+  await expect(members.filter({ hasText: /^Gestiones$/ })).toHaveCount(1);
+  // The properties stayed on the definition: the calendars by value, each with its colour; one chosen is kept.
+  await expect(modal.locator(".schema-member")).toHaveCount(await members.count());
+  await modal
+    .locator(".schema-member", { hasText: "Gestiones" })
+    .getByRole("button", { name: "Gestiones: #fb923c" })
+    .click();
+  const h = { authorization: `Bearer ${await token()}` };
+  await expect
+    .poll(async () => {
+      const snap = (await (await fetch(`${url}/api/snapshot`, { headers: h })).json()) as {
+        views: { id: string; color: string; group?: { id: string } }[];
+      };
+      return snap.views.find((v) => v.id.endsWith("--o-gestiones"))?.color ?? "";
+    })
+    .toBe("#fb923c");
+  await expect(
+    list.locator(".cal-row.member", { hasText: "Gestiones" }).locator(".swatch"),
+  ).toHaveCSS("--c", "#fb923c");
+  // Whole again: one calendar, no group.
+  await modal.getByLabel("Separar por").selectOption("");
+  await expect(list.locator(".cal-group-head")).toHaveCount(0);
+  await expect(list.locator(".cal-row", { hasText: "Docencia" })).toHaveCount(1);
+  await page.keyboard.press("Escape");
 });

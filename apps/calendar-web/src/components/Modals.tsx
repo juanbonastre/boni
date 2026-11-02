@@ -284,17 +284,30 @@ const TYPES: PropertyType[] = [
 const COLOR_CHOICES = Object.values(PALETTE);
 
 export function SchemaEditor({ calendarId }: { calendarId: string }) {
-  const cal = useApp((s) => s.data.calendars.find((c) => c.id === calendarId));
+  // The definition itself, or any calendar it makes when split (its properties are the definition's).
+  const cal = useApp(
+    (s) =>
+      s.data.calendars.find((c) => c.id === calendarId) ??
+      s.data.calendars.find((c) => c.group?.id === calendarId),
+  );
+  const calendars = useApp((s) => s.data.calendars);
   const update = useApp((s) => s.updateCalendar);
   const setSchema = useApp((s) => s.setSchema);
   const source = useApp((s) => s.source);
   const close = () => useApp.getState().set({ schemaCalendarId: null });
-  // A calendar of the server can be taken away (its records stay in Boni; «+ Añadir calendario» brings it back).
+  // A calendar of the server can be taken away (its records stay in Boni; «+ Añadir calendario» brings it back);
+  // a split one goes whole, with every calendar it makes.
   const remove = () => {
     close();
-    void useApp.getState().removeCalendar(calendarId);
+    void useApp.getState().removeCalendar(cal?.group?.id ?? calendarId);
   };
   if (!cal) return null;
+  // A calendar made by a split: its properties are its definition's («Separar por», the colours by value).
+  const groupId = cal.group?.id ?? cal.id;
+  const members = cal.group ? calendars.filter((c) => c.group?.id === cal.group?.id) : [];
+  const split = cal.split;
+  const setColor = (id: string, color: string) =>
+    void useApp.getState().setCalendarColor(id, color);
   const schema = cal.schema;
   const patch = (id: string, p: Partial<PropertyDef>) =>
     setSchema(
@@ -303,28 +316,75 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
     );
   const nextId = () => `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   return (
-    <Modal title={t("schema.title", { name: cal.name })} onClose={close} wide>
+    <Modal title={t("schema.title", { name: cal.group?.name ?? cal.name })} onClose={close} wide>
       <p className="muted">{t("schema.subtitle")}</p>
       <Field label={t("schema.calendarName")}>
         <DraftInput
-          value={cal.name}
+          value={cal.group?.name ?? cal.name}
           onCommit={(v) => v.trim() && update(cal.id, { name: v.trim() })}
         />
       </Field>
-      <Field label={t("schema.color")}>
-        <div className="swatches">
-          {COLOR_CHOICES.map((c) => (
-            <button
-              type="button"
-              key={c}
-              className={`swatch pick ${c === cal.color ? "on" : ""}`}
-              style={{ "--c": c } as React.CSSProperties}
-              onClick={() => update(cal.id, { color: c })}
-              aria-label={c}
-            />
-          ))}
-        </div>
-      </Field>
+      {!cal.group && (
+        <Field label={t("schema.color")}>
+          <div className="swatches">
+            {COLOR_CHOICES.map((c) => (
+              <button
+                type="button"
+                key={c}
+                className={`swatch pick ${c === cal.color ? "on" : ""}`}
+                style={{ "--c": c } as React.CSSProperties}
+                onClick={() => setColor(cal.id, c)}
+                aria-label={c}
+              />
+            ))}
+          </div>
+        </Field>
+      )}
+      {split && source === "server" && (
+        <Field label={t("schema.splitBy")}>
+          <select
+            className="select"
+            aria-label={t("schema.splitBy")}
+            value={split.field ?? ""}
+            onChange={(e) => {
+              // The properties follow the definition (its id) whichever calendars it makes next.
+              useApp.getState().set({ schemaCalendarId: groupId });
+              void useApp.getState().setSplit(groupId, e.target.value || null);
+            }}
+          >
+            <option value="">{t("schema.splitNone")}</option>
+            {split.choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {cal.group && (
+        <>
+          <h3 className="schema-head">{t("schema.members", { field: cal.group.fieldName })}</h3>
+          <div className="schema-members">
+            {members.map((m) => (
+              <div key={m.id} className="schema-member">
+                <span className="schema-member-name">{m.name}</span>
+                <div className="swatches">
+                  {COLOR_CHOICES.map((c) => (
+                    <button
+                      type="button"
+                      key={c}
+                      className={`swatch pick ${c === m.color ? "on" : ""}`}
+                      style={{ "--c": c } as React.CSSProperties}
+                      onClick={() => setColor(m.id, c)}
+                      aria-label={`${m.name}: ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       <ViewMapping calendarId={cal.id} />
       {source === "server" && (
         <div className="schema-remove">

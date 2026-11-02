@@ -615,6 +615,55 @@ select,
   justify-content: flex-end;
   margin: 4px 0 8px;
 }
+/* A split definition in the sidebar: a folded row with its name and the field, its calendars indented inside. */
+.cal-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.cal-group-head:hover {
+  background: var(--hover);
+}
+.cal-group-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cal-group-by {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.cal-row.member {
+  padding-left: 14px;
+}
+/* The calendars a split makes, each with its colour, in the definition's properties. */
+.schema-members {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.schema-member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.schema-member-name {
+  flex: 0 0 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .add-account:disabled {
   opacity: 0.7;
 }

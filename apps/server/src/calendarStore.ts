@@ -100,10 +100,24 @@ export interface Placed {
   def: CollectionDef;
   where?: Where;
   make?: Make;
+  /** For a calendar a split made: the definition it came from (`storedCalendarDefs`) and its field. */
+  group?: { id: string; name: string; field: string; fieldName: string };
 }
 
-/** The calendars kept in a store (none: the account has no calendar). */
-export function calendarDefs(store: UserStore): Placed[] {
+/**
+ * A calendar's definition as kept (`calendar/defs`): its type, the definition as written, and how its records are
+ * picked (`where`), made (`make`) or split (`split`, D-24: one calendar per value of a field, expanded when read).
+ */
+export interface Stored {
+  type: string;
+  raw: Record<string, unknown>;
+  where?: Where;
+  make?: Make;
+  split?: { field: string };
+}
+
+/** The definitions as kept, checked against the schema (a type gone, gone with it); never expanded. */
+export function storedCalendarDefs(store: UserStore): Stored[] {
   const text = store.setting(CALENDAR_DEFS);
   if (!text) return [];
   try {
@@ -112,18 +126,17 @@ export function calendarDefs(store: UserStore): Placed[] {
       raw?: unknown;
       where?: unknown;
       make?: unknown;
+      split?: unknown;
     }[];
     const schema = store.schema();
     const types = schema.types;
     return list.flatMap((x) => {
       if (typeof x.type !== "string" || !types[x.type] || !x.raw || typeof x.raw !== "object")
         return [];
-      const r = parseCollectionDef(x.raw);
-      if (!r.ok) return [];
-      const placed: Placed = { type: x.type, raw: x.raw as Record<string, unknown>, def: r.def };
+      const s: Stored = { type: x.type, raw: x.raw as Record<string, unknown> };
       const w = x.where as Partial<Where> | undefined;
       if (w && typeof w.field === "string" && typeof w.value === "string")
-        placed.where = { field: w.field, value: w.value, ...(w.orEmpty ? { orEmpty: true } : {}) };
+        s.where = { field: w.field, value: w.value, ...(w.orEmpty ? { orEmpty: true } : {}) };
       // Only daughters of the calendar's own branch, never archived.
       const inBranch = (t: unknown): t is string =>
         typeof t === "string" &&
@@ -132,13 +145,121 @@ export function calendarDefs(store: UserStore): Placed[] {
         branch(schema, x.type as string).includes(t);
       const m = x.make as Partial<Make> | undefined;
       if (m && inBranch(m.event))
-        placed.make = { event: m.event, ...(inBranch(m.task) ? { task: m.task } : {}) };
-      placed.def = withRoles(schema, x.type, r.def, placed.make?.task ?? x.type);
-      return [placed];
+        s.make = { event: m.event, ...(inBranch(m.task) ? { task: m.task } : {}) };
+      const sp = x.split as { field?: unknown } | undefined;
+      if (sp && typeof sp.field === "string") s.split = { field: sp.field };
+      return [s];
     });
   } catch {
     return [];
   }
+}
+
+/** The fields a collection could be split by: its options and its single relations, by id and name. */
+export function splitChoices(schema: Schema, type: string): { id: string; name: string }[] {
+  return (schema.types[type]?.fields ?? [])
+    .filter(
+      (f) =>
+        !f.archived &&
+        !f.hidden &&
+        (f.type === "select" || (f.type === "relation" && !f.relation?.many)),
+    )
+    .map((f) => ({ id: f.id, name: f.name }));
+}
+
+const isEmptyValue = (v: unknown) =>
+  v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length);
+const isObj = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/**
+ * A split definition read as one calendar per value of its field (D-24; Juan, 2026-11-02): every option of a
+ * list, or every record the relation may point to, so a new value shows up by itself; and «Sin …» for the records
+ * that hold nothing, only while there are some. Each gets its own id (`<definition>--<value>`), the colour kept
+ * for it in the definition (`colors`) or the palette's by its place, and the definition's reminders and tasks.
+ */
+function expandSplit(
+  store: UserStore,
+  schema: Schema,
+  s: Stored,
+  def: CollectionDef,
+  field: FieldDef,
+  choices: { id: string; name: string }[],
+): Placed[] {
+  const titleOf = (e: Entity) => String(e.values[schema.types[e.type]?.titleField ?? ""] ?? e.id);
+  const values: { key: string; name: string }[] =
+    field.type === "select"
+      ? (field.options ?? []).map((o) => ({ key: o.id, name: o.name }))
+      : store
+          .list(field.relation?.target as string)
+          .map((e) => ({ key: e.entity.id, name: titleOf(e.entity) }));
+  const empty = store
+    .list(s.type, { deep: true })
+    .some((e) => isEmptyValue(e.entity.values[field.id]));
+  const colors = isObj(s.raw.colors) ? (s.raw.colors as Record<string, string>) : {};
+  const palette = Object.values(PALETTE);
+  const taskType = s.make?.task ?? s.type;
+  const group = { id: def.id, name: def.name, field: field.id, fieldName: field.name };
+  const member = (v: { key: string; name: string }, i: number, orEmpty: boolean): Placed[] => {
+    const { colors: _c, ...rest } = s.raw;
+    const raw: Record<string, unknown> = {
+      ...rest,
+      id: `${def.id}--${orEmpty ? "sin" : keyOf(v.key)}`,
+      name: v.name,
+      color: colors[v.key] ?? palette[i % palette.length] ?? def.color,
+    };
+    const r = parseCollectionDef(raw);
+    if (!r.ok) return [];
+    const p: Placed = {
+      type: s.type,
+      raw,
+      def: r.def,
+      where: { field: field.id, value: v.key, ...(orEmpty ? { orEmpty: true } : {}) },
+      ...(s.make ? { make: s.make } : {}),
+      group,
+    };
+    p.def = {
+      ...withRoles(schema, s.type, r.def, taskType),
+      group,
+      split: { field: field.id, choices },
+    };
+    return [p];
+  };
+  return [
+    ...values.flatMap((v, i) => member(v, i, false)),
+    ...(empty
+      ? member({ key: "", name: `Sin ${field.name.toLowerCase()}` }, values.length, true)
+      : []),
+  ];
+}
+
+/** The calendars of a store as the apps read them: each definition, a split one expanded (none: no calendar). */
+export function calendarDefs(store: UserStore): Placed[] {
+  const schema = store.schema();
+  return storedCalendarDefs(store).flatMap((s) => {
+    const r = parseCollectionDef(s.raw);
+    if (!r.ok) return [];
+    const choices = splitChoices(schema, s.type);
+    const field = s.split
+      ? schema.types[s.type]?.fields.find(
+          (f) => f.id === s.split?.field && choices.some((c) => c.id === f.id),
+        )
+      : undefined;
+    if (field) return expandSplit(store, schema, s, r.def, field, choices);
+    const placed: Placed = {
+      type: s.type,
+      raw: s.raw,
+      def: r.def,
+      ...(s.where ? { where: s.where } : {}),
+      ...(s.make ? { make: s.make } : {}),
+    };
+    placed.def = {
+      ...withRoles(schema, s.type, r.def, s.make?.task ?? s.type),
+      // A calendar picked by a field (the first restructurings) is not split again.
+      ...(s.where ? {} : { split: { field: null, choices } }),
+    };
+    return [placed];
+  });
 }
 
 /** Whether a record belongs to a calendar: its type in the calendar's branch, its field as `where` says. */
@@ -251,7 +372,9 @@ export interface CalendarCandidate {
 export function calendarCandidates(store: UserStore): CalendarCandidate[] {
   const schema = store.schema();
   const taken = new Set(
-    calendarDefs(store).flatMap((p) => (p.where ? branch(schema, p.type) : [p.type])),
+    storedCalendarDefs(store).flatMap((s) =>
+      s.where || s.split ? branch(schema, s.type) : [s.type],
+    ),
   );
   return Object.values(schema.types)
     .filter((t) => !t.system && !t.archived && !taken.has(t.id))
@@ -277,20 +400,20 @@ export function addCalendar(store: UserStore, type: string): { id: string } | nu
   const title = field(t.titleField);
   const day = field(roles.date ?? roles.start);
   if (!title || !day) return null;
-  const defs = calendarDefs(store);
-  const used = new Set(defs.map((p) => p.def.id));
+  const defs = storedCalendarDefs(store);
+  const used = new Set(defs.map((p) => String(p.raw.id ?? "")));
   const base = keyOf(t.name);
   let id = base;
   for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
   const colours = Object.values(PALETTE);
-  const inUse = new Set(defs.map((p) => p.def.color));
+  const inUse = new Set(calendarDefs(store).map((p) => p.def.color));
   const color =
     colours.find((c) => !inUse.has(c)) ?? colours[defs.length % colours.length] ?? "#60a5fa";
   const raw: Record<string, unknown> = {
     id,
     name: t.name,
     folder: t.key,
-    account: defs[0]?.def.account ?? "Boni",
+    account: typeof defs[0]?.raw.account === "string" ? defs[0].raw.account : "Boni",
     color,
     columns: [
       { id: title.name, name: title.name, type: "text" },
@@ -308,20 +431,65 @@ export function addCalendar(store: UserStore, type: string): { id: string } | nu
   return { id };
 }
 
-/** Takes a calendar away (its definition only: the collection and its records stay). False when there is none. */
+/**
+ * Takes a calendar away (its definition only: the collection and its records stay; a split one goes whole, with
+ * every calendar it made). False when there is none.
+ */
 export function removeCalendar(store: UserStore, calendarId: string): boolean {
-  const defs = calendarDefs(store);
-  const rest = defs.filter((p) => p.def.id !== calendarId || p.where);
+  const defs = storedCalendarDefs(store);
+  const rest = defs.filter((s) => s.raw.id !== calendarId || s.where);
   if (rest.length === defs.length) return false;
   saveCalendarDefs(store, rest);
   return true;
 }
 
-/** Keeps the calendars' definitions (as written: `parseCollectionDef` reads them back). */
-export function saveCalendarDefs(
+/**
+ * Splits a definition by a field, or makes it whole again (`field` null): the kept definition changes, and the
+ * calendars it makes come from `calendarDefs`. "bad-field": not one the collection can be split by.
+ */
+export function setSplit(
   store: UserStore,
-  list: readonly { type: string; raw: Record<string, unknown>; where?: Where; make?: Make }[],
-): void {
+  calendarId: string,
+  field: string | null,
+): "ok" | "no-such-calendar" | "bad-field" {
+  const defs = storedCalendarDefs(store);
+  const i = defs.findIndex((s) => s.raw.id === calendarId && !s.where);
+  const at = defs[i];
+  if (!at) return "no-such-calendar";
+  if (field !== null && !splitChoices(store.schema(), at.type).some((c) => c.id === field))
+    return "bad-field";
+  const { split: _old, ...rest } = at;
+  const next: Stored = field ? { ...rest, split: { field } } : rest;
+  saveCalendarDefs(
+    store,
+    defs.map((s, k) => (k === i ? next : s)),
+  );
+  return "ok";
+}
+
+/** A calendar's colour, kept in its definition: a split member's by its value (`colors`), a whole one's as its own. */
+export function setCalendarColor(store: UserStore, calendarId: string, color: string): boolean {
+  if (!/^#[0-9a-fA-F]{6}$/.test(color)) return false;
+  const placed = calendarDefs(store).find((p) => p.def.id === calendarId);
+  if (!placed) return false;
+  const groupId = placed.group?.id ?? placed.def.id;
+  const defs = storedCalendarDefs(store);
+  const i = defs.findIndex((s) => s.raw.id === groupId);
+  const at = defs[i];
+  if (!at) return false;
+  const raw = { ...at.raw };
+  if (placed.group)
+    raw.colors = { ...(isObj(raw.colors) ? raw.colors : {}), [placed.where?.value ?? ""]: color };
+  else raw.color = color;
+  saveCalendarDefs(
+    store,
+    defs.map((s, k) => (k === i ? { ...at, raw } : s)),
+  );
+  return true;
+}
+
+/** Keeps the calendars' definitions (as written: `parseCollectionDef` reads them back). */
+export function saveCalendarDefs(store: UserStore, list: readonly Stored[]): void {
   store.setSetting(
     CALENDAR_DEFS,
     JSON.stringify(
@@ -330,6 +498,7 @@ export function saveCalendarDefs(
         raw: p.raw,
         ...(p.where ? { where: p.where } : {}),
         ...(p.make ? { make: p.make } : {}),
+        ...(p.split ? { split: p.split } : {}),
       })),
     ),
   );
@@ -356,6 +525,12 @@ export interface CalendarSource {
   candidates(): Promise<CalendarCandidate[]>;
   addCalendar(type: string): Promise<{ id: string } | null>;
   removeCalendar(calendarId: string): Promise<boolean>;
+  /** A definition split by a field or made whole (D-24), and a calendar's colour kept in its definition. */
+  setSplit(
+    calendarId: string,
+    field: string | null,
+  ): Promise<"ok" | "no-such-calendar" | "bad-field">;
+  setColor(calendarId: string, color: string): Promise<boolean>;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -803,7 +978,8 @@ export class StoreCalendar implements CalendarSource {
 
   /** The field value that puts a record in calendar `p` (its `where`), when it does not hold it yet. */
   private whereWrite(p: Placed, type: string, eid: string | null, writes: Writes, device: string) {
-    if (!p.where) return;
+    // A «Sin …» calendar (an empty value) writes nothing: the record just has no value there.
+    if (!p.where || !p.where.value) return;
     const cur = eid ? this.store.get(eid)?.entity : undefined;
     if (cur && inCalendar(this.store.schema(), p, cur)) return;
     const f = this.store.schema().types[type]?.fields.find((x) => x.id === p.where?.field);
@@ -900,8 +1076,9 @@ export class StoreCalendar implements CalendarSource {
     edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
   ): Promise<"ok" | "conflict"> {
     if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
-    const placed = calendarDefs(this.store);
-    const p = placed.find((x) => x.def.id === collectionId);
+    const read = calendarDefs(this.store).find((x) => x.def.id === collectionId);
+    const kept = storedCalendarDefs(this.store);
+    const p = kept.find((x) => x.raw.id === (read?.group?.id ?? read?.def.id));
     if (!p) return "conflict";
     const raw: Record<string, unknown> = { ...p.raw };
     if (edit.reminders === null) delete raw.reminders;
@@ -917,7 +1094,7 @@ export class StoreCalendar implements CalendarSource {
     if (!parseCollectionDef(raw).ok) return "conflict";
     saveCalendarDefs(
       this.store,
-      placed.map((x) => (x === p ? { ...x, raw } : x)),
+      kept.map((x) => (x === p ? { ...x, raw } : x)),
     );
     this.poll();
     return "ok";
@@ -937,6 +1114,23 @@ export class StoreCalendar implements CalendarSource {
   async removeCalendar(calendarId: string): Promise<boolean> {
     if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
     const r = removeCalendar(this.store, calendarId);
+    if (r) this.poll();
+    return r;
+  }
+
+  async setSplit(
+    calendarId: string,
+    field: string | null,
+  ): Promise<"ok" | "no-such-calendar" | "bad-field"> {
+    if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
+    const r = setSplit(this.store, calendarId, field);
+    if (r === "ok") this.poll();
+    return r;
+  }
+
+  async setColor(calendarId: string, color: string): Promise<boolean> {
+    if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
+    const r = setCalendarColor(this.store, calendarId, color);
     if (r) this.poll();
     return r;
   }
