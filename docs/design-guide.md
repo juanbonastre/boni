@@ -96,6 +96,9 @@ slate `#94a3b8`.
 - **Dragging:** drag on empty space to create (default 15-minute snap, setting), drag a card to move, drag its top or
   bottom edge to resize. Edges follow the pointer in both axes, so dragging into the next or previous day's column
   makes an event cross midnight. All-day events move and resize by whole days, in the all-day row and in the month.
+  Dragging between the two zones changes the kind (Juan, 2026-11-02): an event dropped on the all-day row becomes
+  all day on the day under the pointer (as many days as it spanned); a bar dropped among the hours gets the time
+  under the pointer with the default duration, on that day. The preview follows the pointer into the other zone.
   Dragging near the top or bottom edge auto-scrolls.
 - **Reminders** (like Notion Calendar): every calendar has default reminders, one list for timed events ("When it starts",
   5/10/15/30 min, 1/2 h, 1 day before) and one for all-day events ("On the day at 09:00", "The day before at 09:00 / 18:00",

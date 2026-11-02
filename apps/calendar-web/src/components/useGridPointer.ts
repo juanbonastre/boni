@@ -140,6 +140,10 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     tz,
   });
 
+  /** Whether the pointer is over the all-day row (the strip above the hours). */
+  const overAllDay = (clientX: number, clientY: number) =>
+    elementsAt(clientX, clientY).some((el) => !!el.closest(".allday-row"));
+
   const applyMove = (clientX: number, clientY: number) => {
     const g = gesture.current;
     const pos = toGrid(clientX, clientY);
@@ -152,10 +156,16 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
       const dayDelta = pos.day - g.grabDay;
       const group: Record<string, When> = {};
       for (const o of g.group) group[o.id] = shiftWhenByDays(o.when, dayDelta);
+      // Dragged down into the hours (Juan, 2026-11-02): it gets the time under the pointer, with the default
+      // duration, on that day; the others selected with it still move by days.
+      const intoHours = !overAllDay(clientX, clientY) && pos.minute >= 0 && pos.minute < 1440;
+      const start = clampMin(floorSnap(pos.minute));
       app.setDrag({
         kind: "move",
         id: g.id,
-        when: shiftWhenByDays(g.orig, dayDelta),
+        when: intoHours
+          ? timedWhen(pos.day, start, Math.min(1440, start + app.settings.defaultDuration), tz)
+          : shiftWhenByDays(g.orig, dayDelta),
         group: g.group.length ? group : undefined,
       });
     } else if (g.type === "bar-resize") {
@@ -185,6 +195,20 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
           end: fromLocal(ed, e - ed * 1440, tz),
           tz,
         },
+      });
+    } else if (g.type === "move" && overAllDay(clientX, clientY)) {
+      // Dragged up onto the all-day row (Juan, 2026-11-02): all day, on the day under the pointer, for as many
+      // days as it spanned; the others selected with it move by days.
+      const dayDelta = pos.day - g.pressDay;
+      const startDay = g.origDay + dayDelta;
+      const lastDay = toLocal(g.origStart + Math.max(0, g.durMs - 1), g.tz).day;
+      const group: Record<string, When> = {};
+      for (const o of g.group) group[o.id] = shiftWhenByDays(o.when, dayDelta);
+      app.setDrag({
+        kind: "move",
+        id: g.id,
+        when: { kind: "allday", startDay, endDay: startDay + Math.max(0, lastDay - g.origDay) },
+        group: g.group.length ? group : undefined,
       });
     } else if (g.type === "move") {
       // Follow the pointer in wall-clock minutes, so events spanning midnight move as a whole.

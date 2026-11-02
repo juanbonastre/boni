@@ -151,6 +151,36 @@ test("drag moves an event and resize handle changes its end", async ({ page }) =
   );
 });
 
+test("an event dragged onto the all-day row becomes all day, and a bar dragged into the hours gets a time", async ({
+  page,
+}) => {
+  await open(page);
+  const ev = page.locator(".ev", { hasText: "Dentista" }).first();
+  const box = (await ev.boundingBox())!;
+  const strip = (await page.locator(".allday-viewport").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 12);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, strip.y + strip.height / 2, { steps: 10 });
+  await page.mouse.up();
+  const bar = page.locator(".bar", { hasText: "Dentista" });
+  await expect(bar).toHaveCount(1);
+  await expect(page.locator(".ev", { hasText: "Dentista" })).toHaveCount(0);
+  // Back into the hours: it gets the time under the pointer, with the default duration.
+  const b = (await bar.boundingBox())!;
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + 12, { steps: 10 });
+  await page.mouse.up();
+  await expect(page.locator(".ev", { hasText: "Dentista" }).first()).toBeVisible();
+  await expect(page.locator(".bar", { hasText: "Dentista" })).toHaveCount(0);
+  // Undo twice brings it back to where it was.
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".ev", { hasText: "Dentista" }).first().locator(".ev-time")).toHaveText(
+    "13:00–14:15",
+  );
+});
+
 test("eye icon hides a calendar and month view renders", async ({ page }) => {
   await open(page);
   const before = await page.locator(".ev").count();
