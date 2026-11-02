@@ -77,6 +77,14 @@ export async function login(
   return r.token;
 }
 
+/** A collection of the server that could be a calendar (docs/clases.md §6, step 4). */
+export interface CalendarCandidate {
+  type: string;
+  name: string;
+  icon: string;
+  count: number;
+}
+
 export class Remote {
   readonly url: string;
   constructor(
@@ -134,6 +142,27 @@ export class Remote {
     edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
   ): Promise<unknown> {
     return this.put("/api/collections/reminders", { collectionId, ...edit });
+  }
+
+  /** The collections with a day and no calendar yet, and adding one as a calendar or taking a calendar away. */
+  candidates(): Promise<{ candidates: CalendarCandidate[] }> {
+    return request(`${this.url}/api/collections/candidates`, { headers: this.auth() });
+  }
+
+  addCalendar(type: string): Promise<{ id: string }> {
+    return this.post("/api/collections/add", { type });
+  }
+
+  removeCalendar(id: string): Promise<unknown> {
+    return this.post("/api/collections/remove", { id });
+  }
+
+  private post<T>(path: string, body: unknown): Promise<T> {
+    return request(`${this.url}${path}`, {
+      method: "POST",
+      headers: { ...this.auth(), "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
   }
 
   private put<T>(path: string, body: unknown): Promise<T> {

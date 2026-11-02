@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { calendarDef } from "../apps/server/src/seed.test-util.ts";
-import { proposeEntries, seedAccount } from "./server-data.ts";
+import { proposeEntries, seedAccount, setRoles } from "./server-data.ts";
 
 /**
  * Boni Calendar against Boni (Juan, 2026-10-22: one truth): an account whose calendar and money are its own
@@ -74,6 +74,8 @@ test.beforeAll(async () => {
     },
   );
   // Two proposals waiting in the inbox (as a mail read in the background leaves them: values by field key).
+  // Movimiento gets its day's role (as `roles --apply` does): a calendar candidate, not a calendar yet.
+  setRoles(dir, 1, "movimiento", { date: "date" });
   proposeEntries(dir, 1, "docencia", [
     { title: "Revisión propuesta", date: "2025-09-19", starttime: "10:00", endtime: "11:00" },
     { title: "Entrega hecha", date: "2025-09-19", starttime: "12:00", endtime: "13:00" },
@@ -339,4 +341,27 @@ test("the money's collections: the categories are rows of Categorías, and a cap
   const cafeCat = cats.rows.find((x) => x.values.f_nombre === "bebida/cafe")?.id;
   expect(cafeCat).toBeTruthy();
   expect(Object.values(cafe?.values ?? {})).toContain(cafeCat);
+});
+
+test("«Calendarios»: a dated collection is offered under «Añadir calendario», added it is a calendar, and «Quitar calendario» takes it away with its entries kept", async ({
+  page,
+}) => {
+  await connect(page);
+  const list = page.locator(".cal-list");
+  await expect(list.locator(".account-name").first()).toHaveText("Calendarios");
+  await list.getByRole("button", { name: "Añadir calendario", exact: true }).click();
+  const item = list.getByRole("menuitem", { name: /Movimiento/ });
+  await expect(item).toBeVisible();
+  await item.click();
+  await expect(list.locator(".cal-name", { hasText: "Movimiento" })).toBeVisible();
+  // Nothing else with a day is left to offer.
+  await list.getByRole("button", { name: "Añadir calendario", exact: true }).click();
+  await expect(list.locator(".menu")).toContainText("Ninguna colección con fecha");
+  await page.keyboard.press("Escape");
+  // Its properties take the calendar away; the movements stay in Boni.
+  await list.locator(".cal-row", { hasText: "Movimiento" }).locator(".gear").click();
+  await page.locator(".modal").getByRole("button", { name: "Quitar calendario" }).click();
+  await expect(list.locator(".cal-name", { hasText: "Movimiento" })).toHaveCount(0);
+  const h = { authorization: `Bearer ${await token()}` };
+  expect((await rowsOf("t_movimiento", h)).rows.length).toBeGreaterThan(0);
 });

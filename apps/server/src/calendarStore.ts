@@ -7,6 +7,7 @@ import {
   extendSeries,
   isProposalId,
   makeModel,
+  PALETTE,
   type PropValue,
   parseCollectionDef,
   type Row,
@@ -234,6 +235,88 @@ export function taskDoneField(store: UserStore, type: string): FieldDef | null {
   return f?.type === "checkbox" ? f : null;
 }
 
+/** A collection Boni Calendar may add as a calendar. */
+export interface CalendarCandidate {
+  type: string;
+  name: string;
+  icon: string;
+  count: number;
+}
+
+/**
+ * The collections that could be calendars (Juan, 2026-11-02, D-23: everything dated is a candidate, and he picks
+ * which show from Boni Calendar): the user's, not archived, with a day or an instant (its `date` or `start` role),
+ * and not a calendar yet (nor in the branch a calendar over a mother shows).
+ */
+export function calendarCandidates(store: UserStore): CalendarCandidate[] {
+  const schema = store.schema();
+  const taken = new Set(
+    calendarDefs(store).flatMap((p) => (p.where ? branch(schema, p.type) : [p.type])),
+  );
+  return Object.values(schema.types)
+    .filter((t) => !t.system && !t.archived && !taken.has(t.id))
+    .filter((t) => {
+      const r = rolesOf(schema, t.id);
+      return !!(r.date || r.start);
+    })
+    .map((t) => ({ type: t.id, name: t.name, icon: t.icon ?? "", count: store.count(t.id) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Adds a candidate as a calendar («+ Añadir calendario»): a definition with its title and its day (its roles fill the
+ * times, the end and the task box: `withRoles`), the first colour of the palette no calendar has, under the account
+ * the others have. Null when the collection is no candidate.
+ */
+export function addCalendar(store: UserStore, type: string): { id: string } | null {
+  const schema = store.schema();
+  const t = schema.types[type];
+  if (!t || !calendarCandidates(store).some((c) => c.type === type)) return null;
+  const roles = rolesOf(schema, type);
+  const field = (id: string | undefined) => (id ? t.fields.find((f) => f.id === id) : undefined);
+  const title = field(t.titleField);
+  const day = field(roles.date ?? roles.start);
+  if (!title || !day) return null;
+  const defs = calendarDefs(store);
+  const used = new Set(defs.map((p) => p.def.id));
+  const base = keyOf(t.name);
+  let id = base;
+  for (let n = 2; used.has(id); n++) id = `${base}-${n}`;
+  const colours = Object.values(PALETTE);
+  const inUse = new Set(defs.map((p) => p.def.color));
+  const color =
+    colours.find((c) => !inUse.has(c)) ?? colours[defs.length % colours.length] ?? "#60a5fa";
+  const raw: Record<string, unknown> = {
+    id,
+    name: t.name,
+    folder: t.key,
+    account: defs[0]?.def.account ?? "Boni",
+    color,
+    columns: [
+      { id: title.name, name: title.name, type: "text" },
+      ...(day.id === title.id
+        ? []
+        : [{ id: day.name, name: day.name, type: columnTypeOf(day.type) }]),
+    ],
+    mapping: {
+      title: title.name,
+      when: roles.date ? { kind: "split", date: day.name } : { kind: "range", start: day.name },
+    },
+  };
+  if (!parseCollectionDef(raw).ok) return null;
+  saveCalendarDefs(store, [...defs, { type, raw }]);
+  return { id };
+}
+
+/** Takes a calendar away (its definition only: the collection and its records stay). False when there is none. */
+export function removeCalendar(store: UserStore, calendarId: string): boolean {
+  const defs = calendarDefs(store);
+  const rest = defs.filter((p) => p.def.id !== calendarId || p.where);
+  if (rest.length === defs.length) return false;
+  saveCalendarDefs(store, rest);
+  return true;
+}
+
 /** Keeps the calendars' definitions (as written: `parseCollectionDef` reads them back). */
 export function saveCalendarDefs(
   store: UserStore,
@@ -269,6 +352,10 @@ export interface CalendarSource {
     edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
   ): Promise<"ok" | "conflict">;
   topUpSeries(): Promise<number>;
+  /** The collections that could be calendars, and adding or taking away one (docs/clases.md §6, step 4). */
+  candidates(): Promise<CalendarCandidate[]>;
+  addCalendar(type: string): Promise<{ id: string } | null>;
+  removeCalendar(calendarId: string): Promise<boolean>;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -834,6 +921,24 @@ export class StoreCalendar implements CalendarSource {
     );
     this.poll();
     return "ok";
+  }
+
+  async candidates(): Promise<CalendarCandidate[]> {
+    return calendarCandidates(this.store);
+  }
+
+  async addCalendar(type: string): Promise<{ id: string } | null> {
+    if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
+    const r = addCalendar(this.store, type);
+    if (r) this.poll();
+    return r;
+  }
+
+  async removeCalendar(calendarId: string): Promise<boolean> {
+    if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
+    const r = removeCalendar(this.store, calendarId);
+    if (r) this.poll();
+    return r;
   }
 
   /** Open-ended series get the events they are missing up to the apps' horizon (never refilling gaps). */

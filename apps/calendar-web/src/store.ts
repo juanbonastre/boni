@@ -78,6 +78,7 @@ import { setLocale } from "./i18n.ts";
 import { notesBridge } from "./notesBridge.ts";
 import {
   applyChanges,
+  type CalendarCandidate,
   forgetSnapshot,
   login,
   Remote,
@@ -332,6 +333,14 @@ export interface AppState {
   remindersOf: (calendarId: string) => ReminderDefaults;
   /** Sets a calendar's default reminders: in its definition (vault or server), or in the account for an external one. */
   setCalendarReminders: (calendarId: string, d: ReminderDefaults) => Promise<void>;
+  /**
+   * The server's collections that could be calendars, adding one as a calendar and taking a calendar away (Juan,
+   * 2026-11-02: everything dated is a candidate; he picks which show, from «+ Añadir calendario»). The server
+   * answers with a new snapshot on its stream.
+   */
+  calendarCandidates: () => Promise<CalendarCandidate[]>;
+  addCalendar: (type: string) => Promise<void>;
+  removeCalendar: (calendarId: string) => Promise<void>;
   /** An event's own reminders (`null`: its calendar's). Adds the column for them to the definition if needed. */
   setEventReminders: (id: string, list: Reminder[] | null) => Promise<void>;
   deleteEvent: (id: string) => void;
@@ -1207,6 +1216,34 @@ export const useApp = create<AppState>((set, get) => {
         return parseReminderDefaults(c?.reminders);
       }
       return get().views.find((v) => v.id === calendarId)?.reminders ?? NO_REMINDERS;
+    },
+
+    calendarCandidates: async () => {
+      if (get().source !== "server" || !server.remote) return [];
+      try {
+        return (await server.remote.candidates()).candidates;
+      } catch (e) {
+        writeFailed(e);
+        return [];
+      }
+    },
+
+    addCalendar: async (type) => {
+      if (get().source !== "server" || !server.remote) return;
+      try {
+        await server.remote.addCalendar(type);
+      } catch (e) {
+        writeFailed(e);
+      }
+    },
+
+    removeCalendar: async (calendarId) => {
+      if (get().source !== "server" || !server.remote) return;
+      try {
+        await server.remote.removeCalendar(calendarId);
+      } catch (e) {
+        writeFailed(e);
+      }
     },
 
     setCalendarReminders: async (calendarId, d) => {

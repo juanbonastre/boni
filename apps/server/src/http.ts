@@ -97,6 +97,9 @@ import { StoreMoney } from "./v1/storeMoney.ts";
  *   PUT  /api/account/prefs     { prefs }      -> { updated }
  *   PUT  /api/account/externals { externals }  -> { updated } (stored encrypted)
  *   GET  /api/external?id=X[&fresh=1] -> { text, at }: that external calendar, downloaded by the server
+ *   GET  /api/collections/candidates -> { candidates: [{ type, name, icon, count }] } (collections with a day and no calendar)
+ *   POST /api/collections/add { type } -> { id } (with BONI_WRITE): the collection as a calendar
+ *   POST /api/collections/remove { id } -> {} (with BONI_WRITE): the calendar's definition gone, its records kept
  *   PUT  /api/collections/reminders { collectionId, reminders?, eventColumn? } -> {} (with BONI_WRITE):
  *        a calendar's reminders, kept in its definition
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
@@ -824,6 +827,23 @@ export function makeApp(opts: ServerOptions): App {
           ...(b.eventColumn === true ? { eventColumn: true } : {}),
         });
         return r === "ok" ? send(res, 200, {}) : send(res, 409, { error: "conflict" });
+      }
+      case "GET /api/collections/candidates":
+        return send(res, 200, { candidates: await calendar.candidates() });
+      case "POST /api/collections/add": {
+        if (!calendar.writable) return send(res, 403, { error: "read-only" });
+        const b = await bodyOf(req);
+        if (typeof b.type !== "string") return send(res, 400, { error: "bad-request" });
+        const r = await calendar.addCalendar(b.type);
+        return r ? send(res, 200, r) : send(res, 409, { error: "not-a-candidate" });
+      }
+      case "POST /api/collections/remove": {
+        if (!calendar.writable) return send(res, 403, { error: "read-only" });
+        const b = await bodyOf(req);
+        if (typeof b.id !== "string") return send(res, 400, { error: "bad-request" });
+        return (await calendar.removeCalendar(b.id))
+          ? send(res, 200, {})
+          : send(res, 404, { error: "no-such-calendar" });
       }
       case "GET /api/reminders": {
         const q = url.searchParams;

@@ -287,7 +287,13 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
   const cal = useApp((s) => s.data.calendars.find((c) => c.id === calendarId));
   const update = useApp((s) => s.updateCalendar);
   const setSchema = useApp((s) => s.setSchema);
+  const source = useApp((s) => s.source);
   const close = () => useApp.getState().set({ schemaCalendarId: null });
+  // A calendar of the server can be taken away (its records stay in Boni; «+ Añadir calendario» brings it back).
+  const remove = () => {
+    close();
+    void useApp.getState().removeCalendar(calendarId);
+  };
   if (!cal) return null;
   const schema = cal.schema;
   const patch = (id: string, p: Partial<PropertyDef>) =>
@@ -320,6 +326,13 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
         </div>
       </Field>
       <ViewMapping calendarId={cal.id} />
+      {source === "server" && (
+        <div className="schema-remove">
+          <button type="button" className="btn ghost" onClick={remove}>
+            {t("schema.removeCalendar")}
+          </button>
+        </div>
+      )}
       <h3 className="schema-head">{t("schema.props")}</h3>
       <div className="schema-list">
         {schema.map((d) => (

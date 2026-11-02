@@ -3,7 +3,15 @@ import type { Row } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
-import { calendarDefs, StoreCalendar, saveCalendarDefs, taskDoneField } from "./calendarStore.ts";
+import {
+  addCalendar,
+  calendarCandidates,
+  calendarDefs,
+  removeCalendar,
+  StoreCalendar,
+  saveCalendarDefs,
+  taskDoneField,
+} from "./calendarStore.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 import { seed, type TypeSpec } from "./seed.test-util.ts";
 
@@ -101,6 +109,49 @@ const rowOf = async (cal: StoreCalendar, id: string) =>
 /** The record an invented note became (rows are known by the record's id). */
 const seeded = new WeakMap<UserStore, Map<string, string>>();
 const idAt = (store: UserStore, path: string) => seeded.get(store)?.get(path) as string;
+
+describe("the calendars Boni Calendar may add (D-23)", () => {
+  it("a dated collection without a calendar is a candidate; added, it shows its rows; taken away, they stay", async () => {
+    const { store, cal } = env();
+    // «Viajes»: a date field playing `date`; «Proyecto» has no day; «Docencia» is a calendar already.
+    seed(store, [{ key: "viaje", name: "Viajes", folder: "viajes/", fields: { salida: "date" } }], {
+      "viajes/roma.md": '---\nsalida: "2026-11-20"\n---\n# Roma\n',
+    });
+    const viajes = Object.values(store.schema().types).find((t) => t.key === "viaje");
+    const salida = viajes?.fields.find((f) => f.name === "salida");
+    expect(calendarCandidates(store)).toEqual([]);
+    store.applySchema(
+      { op: "set_roles", type: viajes?.id as string, roles: { date: salida?.id as string } },
+      { actor: "import" },
+    );
+    expect(calendarCandidates(store)).toMatchObject([
+      { type: viajes?.id, name: "Viajes", count: 1 },
+    ]);
+    expect(addCalendar(store, "t_proyecto")).toBeNull();
+    const added = await cal.addCalendar(viajes?.id as string);
+    expect(added).toEqual({ id: "viajes" });
+    expect(calendarCandidates(store)).toEqual([]);
+    const def = calendarDefs(store).find((p) => p.def.id === "viajes")?.def;
+    expect(def).toMatchObject({
+      name: "Viajes",
+      account: "Agenda",
+      mapping: { title: expect.any(String), when: { kind: "split", date: "salida" } },
+    });
+    expect(def?.color).not.toBe(RAW.color);
+    const snap = await cal.snapshot();
+    expect(snap.views.some((v) => v.id === "viajes")).toBe(true);
+    expect(
+      snap.rows.filter((r) => r.collectionId === "viajes").map((r) => r.values.salida),
+    ).toEqual(["2026-11-20"]);
+    // A second one of the same name gets its own id; nothing is added twice.
+    expect(addCalendar(store, viajes?.id as string)).toBeNull();
+    expect(await cal.removeCalendar("viajes")).toBe(true);
+    expect(await cal.removeCalendar("viajes")).toBe(false);
+    expect(calendarCandidates(store)).toMatchObject([{ name: "Viajes" }]);
+    expect(store.count(viajes?.id as string)).toBe(1);
+    expect((await cal.snapshot()).views.some((v) => v.id === "viajes")).toBe(false);
+  });
+});
 
 describe("the calendar over Boni's collections", () => {
   it("serves the rows as the apps know them: the record's id, values by property", async () => {
