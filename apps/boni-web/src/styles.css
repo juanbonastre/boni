@@ -2540,13 +2540,13 @@ html.widget-page body {
 }
 /* What came from outside: plain text with a mark, never a link or HTML (docs/nucleo.md, 7.14). A list or a table
    of outside values carries the mark once, on the block (Juan, 2026-11-02). */
+/* The block keeps the class (what it is) and the hover text; nothing marks it visually (Juan, 2026-11-02). */
 .reply-ext {
-  border-left: 2px solid var(--c4);
-  padding-left: 8px;
+  padding-left: 0;
 }
 /* A list's sections (its `group` field): a small upper-case label with the count, then its lines. */
 .reply-section + .reply-section {
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .reply-group {
   font-size: 11px;
@@ -2558,14 +2558,31 @@ html.widget-page body {
 .reply-sep {
   color: var(--muted);
 }
-/* A line that points to a record opens it: text that reads as text, underlined under the pointer. */
+/* A line that points to a record ends with a small ↗ button that opens it (the text stays text). */
+.reply-list li {
+  line-height: 1.5;
+  padding: 2px 0;
+}
 .reply-open {
-  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  vertical-align: -5px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
   cursor: pointer;
+  padding: 0;
 }
 .reply-open:hover,
 .reply-open:focus-visible {
-  text-decoration: underline;
+  color: var(--accent);
+  background: var(--hover);
+  border-color: var(--line);
 }
 /* A record in the side panel (a mail from the conversation), with «Agrandar» for its page. */
 .row-panel {
@@ -2581,9 +2598,9 @@ html.widget-page body {
   margin-right: 4px;
   vertical-align: -2px;
 }
+/* What came from outside looks like any text: painted as text (never markup), said on hover; no mark (Juan,
+   2026-11-02: an amber line everywhere looked odd). */
 .val-ext {
-  border-left: 2px solid var(--c4);
-  padding-left: 4px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -2614,8 +2631,34 @@ html.widget-page body {
   flex-wrap: wrap;
   gap: 6px;
 }
+/* The options are buttons: rounded, with a surface and a shadow, the first tinted with the accent (it is the one the
+   plan puts first); they lift under the pointer and shrink a touch when pressed. */
 .ask-options .pill {
   max-width: 100%;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  font-weight: 500;
+  transition:
+    transform 120ms var(--ease-out),
+    background 150ms var(--ease-out),
+    border-color 150ms var(--ease-out),
+    box-shadow 150ms var(--ease-out);
+}
+.ask-options .pill:first-child {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.ask-options .pill:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+}
+.ask-options .pill:active:not(:disabled) {
+  transform: scale(0.97);
+  box-shadow: none;
 }
 .ask-text {
   display: flex;
@@ -7954,4 +7997,70 @@ button.rows-panel-row:hover {
   gap: 12px;
   color: var(--muted);
   font-size: 12px;
+}
+
+/* ---------- motion of the conversation (docs/design-guide.md, 4b "Motion"; Juan, 2026-11-02) ----------
+   What enters rises 6 px into place with its opacity, in 240 ms and ease-out: a request, each block of an answer, a
+   question card, the side panel (from the right) and a toast. A list's sections follow each other 50 ms apart (four
+   at most). Only transform and opacity; nothing that happens many times a second; "reduce motion" collapses it all. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.turn-request,
+.turn-answer > *,
+.turn-live > *,
+.reply-section {
+  animation: rise-in 240ms var(--ease-out) both;
+}
+.reply-section:nth-child(2) {
+  animation-delay: 50ms;
+}
+.reply-section:nth-child(3) {
+  animation-delay: 100ms;
+}
+.reply-section:nth-child(n + 4) {
+  animation-delay: 150ms;
+}
+/* The page's side panel only (SidePanel.tsx adds `panel-enter`): the models' settings reuse `.side-panel` for a
+   box that must not move. */
+.side-panel.panel-enter {
+  animation: slide-in-right 220ms var(--ease-out) both;
+}
+.toast {
+  animation: rise-in 200ms var(--ease-out) both;
+}
+.pill:active:not(:disabled),
+.reply-open:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-request,
+  .turn-answer > *,
+  .turn-live > *,
+  .reply-section,
+  .side-panel.panel-enter,
+  .toast {
+    animation: none;
+  }
+  .ask-options .pill,
+  .reply-open {
+    transition: none;
+  }
 }

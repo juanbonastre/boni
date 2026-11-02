@@ -73,7 +73,7 @@ export function SidePanel() {
             ? (rowType?.name ?? "")
             : (screen?.title ?? t("chart.loading"));
   return (
-    <aside className="side-panel" aria-label={title}>
+    <aside className="side-panel panel-enter" aria-label={title}>
       <div className="panel-head">
         <h2>{title}</h2>
         <button
