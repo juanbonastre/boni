@@ -37,6 +37,8 @@ export interface DataField {
 }
 export interface DataType {
   id: string;
+  /** Its key, how the planner names it in plans and replies ("correo"); the id is its table's (`t_01…`). */
+  key: string;
   /** Its mother collection (docs/clases.md): the tree of collections. */
   parent?: string;
   name: string;
@@ -202,6 +204,7 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
   const own = Object.values(sys?.types ?? {}).map(
     (t): DataType => ({
       id: t.id,
+      key: t.key,
       name: t.name,
       icon: t.icon ?? "",
       titleField: t.titleField,
@@ -217,6 +220,7 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
   const mine = userTypes(store)
     .map((t) => ({
       id: t.id,
+      key: t.key,
       ...(t.parent ? { parent: t.parent } : {}),
       name: t.name,
       icon: t.icon ?? "",

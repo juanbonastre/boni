@@ -47,7 +47,7 @@ export interface Options {
   live?: { events: unknown[]; ms: number };
   /** Inicio's «Hoy» (`/api/data/today`): today's items of the calendars; null: a server without it. */
   today?: unknown[] | null;
-  /** The mail's collection as the server keeps it (`t_correo`, read only, opened as a mail), with one mail (`m1`). */
+  /** The mail's collection as the server keeps it (`t_01m6correo`, read only, opened as a mail), with one mail (`m1`). */
   mail?: boolean;
 }
 
@@ -230,7 +230,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       };
       // The mail's collection (apps/server/src/mail.ts), read only and opened as a mail (D-22), with one mail.
       const correos = {
-        id: "t_correo",
+        // As the server makes it: a generated id, and the key the planner names it by.
+        id: "t_01m6correo",
+        key: "correo",
         name: "Correos",
         icon: "",
         titleField: "f_asunto",
@@ -572,7 +574,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           t.level = String(want.level);
           return [200, JSON.stringify({ id: t.id, level: t.level })];
         }
-        if (opts.mail && p === "api/data/types/t_correo/rows" && method === "GET")
+        if (opts.mail && p === "api/data/types/t_01m6correo/rows" && method === "GET")
           return [
             200,
             JSON.stringify({
@@ -584,7 +586,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             }),
           ];
         if (opts.mail && p === "api/data/rows/m1" && method === "GET")
-          return [200, JSON.stringify({ row: { ...mailRow, type: "t_correo" } })];
+          return [200, JSON.stringify({ row: { ...mailRow, type: "t_01m6correo" } })];
         const fileRow = opts.mail && /^api\/data\/rows\/(a\d)$/.exec(p);
         if (fileRow && method === "GET") {
           const row = fileRows.find((r) => r.id === fileRow[1]);

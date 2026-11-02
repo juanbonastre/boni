@@ -42,7 +42,7 @@ export const TEXT_REPLY = {
                 line: v("Lucía pregunta si quedamos el jueves", "external", "personal"),
                 kind: v("Te piden algo", "external", "personal"),
                 id: v("m1", "own"),
-                // The type as the planner names it: its key, whose table is t_correo.
+                // The type as the planner names it: its key, whose table is t_01m6correo.
                 type: v("correo", "own"),
               },
             },
@@ -427,7 +427,7 @@ export const CARD_MAIL = {
   created: 6,
   card: {
     ...CARD_DETAILED.card,
-    source: { ...CARD_DETAILED.card.source, open: { type: "t_correo", id: "m1" } },
+    source: { ...CARD_DETAILED.card.source, open: { type: "t_01m6correo", id: "m1" } },
   },
 };
 export const CARD_COMPACT = {
@@ -659,7 +659,7 @@ export const MAIL = {
     on: true,
     configured: true,
     state: {
-      type: "t_correo",
+      type: "t_01m6correo",
       lastCheck: Date.UTC(2026, 9, 20, 10, 5),
       lastError: null,
       count: 12,
@@ -814,7 +814,7 @@ const ask = (
   created,
   expires: Date.now() + 7 * 24 * 60 * 60_000 - 60_000,
   about,
-  open: about ? { type: "t_correo", id: "e_correo1" } : null,
+  open: about ? { type: "t_01m6correo", id: "e_correo1" } : null,
 });
 export const REQUESTS = {
   requests: [
@@ -1066,7 +1066,7 @@ export const AUDIT_SUMMARY = {
     })),
   ),
   byType: [
-    { type: "t_correo", name: "Correos", by: ACTORS[0], reads: 412, writes: 0 },
+    { type: "t_01m6correo", name: "Correos", by: ACTORS[0], reads: 412, writes: 0 },
     { type: "t_docencia", name: "Docencia", by: ACTORS[0], reads: 310, writes: 0 },
     { type: "t_docencia", name: "Docencia", by: ACTORS[3], reads: 20, writes: 38 },
     { type: "t_gestiones", name: "Gestiones", by: ACTORS[2], reads: 180, writes: 27 },
@@ -1109,7 +1109,7 @@ export const AUDIT_ACTIONS = {
       call: 3,
       result: { input: 1200, output: 80 },
       seen: [
-        seenOf("e_c1", "t_correo", ["f_asunto", "f_de"], "text"),
+        seenOf("e_c1", "t_01m6correo", ["f_asunto", "f_de"], "text"),
         seenOf("e_g1", "t_gestiones", ["f_titulo"]),
         seenOf("e_g2", "t_gestiones", ["f_titulo"]),
       ],
@@ -1205,7 +1205,7 @@ export const AUDIT_ACTIONS = {
   ],
   names: {
     types: {
-      t_correo: "Correos",
+      t_01m6correo: "Correos",
       t_gestiones: "Gestiones",
       t_salud: "Salud",
       t_diario: "Diario",

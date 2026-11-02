@@ -1056,6 +1056,8 @@ export interface Tree {
 
 export interface DataType {
   id: string;
+  /** Its key, how the planner names it in plans and replies ("correo"); servers before 0.8.73 send none. */
+  key?: string;
   /** Its mother collection (docs/clases.md): its table is part of hers. */
   parent?: string;
   name: string;
@@ -1123,6 +1125,7 @@ function parseDataType(v: unknown): DataType | null {
     name: str(v.name, 200) ?? v.id,
     icon: str(v.icon, 16) ?? "",
     titleField: str(v.titleField, 80) ?? "",
+    ...(typeof v.key === "string" && v.key ? { key: v.key.slice(0, 60) } : {}),
     count: typeof v.count === "number" ? v.count : 0,
     level: levelOf(v.level),
     ...(v.system === true ? { system: true as const } : {}),

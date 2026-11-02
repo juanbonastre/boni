@@ -193,7 +193,7 @@ const REQUESTS_WORST = {
         from: "Vicerrectorado de Ordenación Académica y Profesorado de Ejemplo",
         account: LONG_ADDRESS,
       },
-      open: { type: "t_correo", id: "e_correo1" },
+      open: { type: "t_01m6correo", id: "e_correo1" },
     },
     {
       id: "wq2",
