@@ -690,9 +690,10 @@ export const openBlockPanel = (id: string) => set({ panel: { kind: "block", id }
  */
 export async function openRecord(typeName: string, id: string) {
   if (!get().dataTypes) await loadDataTypes();
-  // The planner names a type by its key ("correo"), whose table is `t_correo`; a name or an id work too.
+  // The planner names a type by its key ("correo"); its table's id is another thing (`t_01…`, Juan, 2026-11-02:
+  // the mail's lines opened nothing). A name or an id work too.
   const type = get().dataTypes?.find(
-    (x) => x.id === `t_${typeName}` || x.id === typeName || x.name === typeName,
+    (x) => x.key === typeName || x.id === typeName || x.name === typeName,
   );
   if (!type) return;
   if (type.view === "mail") set({ panel: { kind: "row", type: type.id, id }, ...FRESH_PANEL });
