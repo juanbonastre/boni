@@ -286,6 +286,9 @@ explains it; what needs explaining goes in a help line under it, in plain words.
   a row of its own. On a window narrower than 640 px the columns go one under another. Numbers («Cifra»), bar lists
   and charts («Gráfica») of any collection: what they count (rows, a sum or an average of a number field), grouped
   by time (por día / semana / mes, the axis with dates) or a select field, in a period, only the rows of one option.
+  A collection's roles come first (D-20): a new block over one with an amount sums it, a bar list goes by its
+  category, and its day places the rows unless «Fecha que cuenta» names another; the panel's lists put those fields
+  first.
   A click uses a block (design audit, Juan 2026-10-25): a number, a bar list or a chart opens «Lo que cuenta» in the
   side panel (the rows it counts, with its filter and period, picked by the same engine, so they add up to it; a bar
   or a chart's point lists only its own; a row of the user's opens as its page); buttons and text are used with the

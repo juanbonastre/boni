@@ -1,5 +1,6 @@
+import { type FieldDef, label, type TypeDef } from "@boni/entities";
 import { describe, expect, it } from "vitest";
-import { blockRows, catalogueData, computeBlock } from "./blockData.ts";
+import { blockDateField, blockRows, catalogueData, computeBlock } from "./blockData.ts";
 import {
   applies,
   CATALOGUE,
@@ -10,6 +11,7 @@ import {
   newBlock,
   optionsOf,
   PLACE_SETTINGS,
+  type Setting,
 } from "./catalogue.ts";
 import { REST } from "./chart.ts";
 import { type DataBlock, pageErrors } from "./page.ts";
@@ -154,6 +156,93 @@ describe("the block catalogue (one list for the panel, the checks and the AI)", 
       const b = newBlock(k.type, "n", DATA);
       expect(catalogueErrors(b, DATA), k.type).toEqual([]);
     }
+  });
+
+  it("a collection's roles come first (D-20): its day places the rows, a new block sums its amount, the bars go by its category", () => {
+    const fields = [
+      { id: "f_pago", name: "Pagado el", type: "date" as const },
+      { id: "f_dia", name: "Día", type: "date" as const },
+      { id: "f_unidades", name: "Unidades", type: "number" as const },
+      { id: "f_importe", name: "Importe", type: "money" as const },
+      { id: "f_tipo", name: "Tipo", type: "select" as const, options: [{ id: "o_a", name: "A" }] },
+      {
+        id: "f_cat",
+        name: "Categoría",
+        type: "select" as const,
+        options: [{ id: "o_b", name: "B" }],
+      },
+    ];
+    const plain: CatalogueData = {
+      collections: [{ id: "t_gasto", name: "Gastos del viaje", fields }],
+    };
+    const roles = { date: "f_dia", amount: "f_importe", category: "f_cat" };
+    const withRoles: CatalogueData = {
+      collections: [{ id: "t_gasto", name: "Gastos del viaje", fields, roles }],
+    };
+    const setting = (type: string, key: string) =>
+      CATALOGUE.find((k) => k.type === type)?.settings.find((s) => s.key === key) as Setting;
+    const values = (data: CatalogueData, type: string, key: string) =>
+      optionsOf(setting(type, key), { type, collection: "t_gasto" }, data).map((o) => o.value);
+    // The panel's lists: the role's field first, the rest as they come.
+    expect(values(plain, "number", "field")).toEqual(["f_unidades", "f_importe"]);
+    expect(values(withRoles, "number", "field")).toEqual(["f_importe", "f_unidades"]);
+    expect(values(plain, "number", "date")).toEqual(["f_pago", "f_dia"]);
+    expect(values(withRoles, "number", "date")).toEqual(["f_dia", "f_pago"]);
+    expect(values(plain, "bars", "groupBy")).toEqual(["f_tipo", "f_cat"]);
+    expect(values(withRoles, "bars", "groupBy")).toEqual(["f_cat", "f_tipo"]);
+    expect(values(withRoles, "graph", "groupBy").slice(-2)).toEqual(["f_cat", "f_tipo"]);
+    expect(String(values(withRoles, "graph", "groupBy")[0]).startsWith("@")).toBe(true);
+    // A new block: without roles it counts rows; with them it sums the amount, and a bar list goes by the category.
+    expect(newBlock("number", "n", plain)).toMatchObject({ measure: "count" });
+    expect(newBlock("number", "n", plain)?.field).toBeUndefined();
+    expect(newBlock("number", "n", withRoles)).toMatchObject({
+      measure: "sum",
+      field: "f_importe",
+    });
+    expect(newBlock("bars", "n", withRoles)).toMatchObject({ groupBy: "f_cat", measure: "sum" });
+    expect(newBlock("graph", "n", withRoles)).toMatchObject({
+      groupBy: "@month",
+      field: "f_importe",
+    });
+    for (const k of ["number", "bars", "graph"])
+      expect(catalogueErrors(newBlock(k, "n", withRoles), withRoles), k).toEqual([]);
+    // The day that places the rows: the block's own, else the role's (her mother's when inherited), else the first.
+    const l = label("user", "personal", []);
+    const def: TypeDef = {
+      id: "t_gasto",
+      key: "gasto",
+      name: "Gastos del viaje",
+      fields: fields.map(
+        (f): FieldDef => ({
+          id: f.id,
+          key: f.id.slice(2),
+          name: f.name,
+          type: f.type,
+          label: l,
+          ...(f.options ? { options: f.options.map((o) => ({ ...o, label: l })) } : {}),
+        }),
+      ),
+      titleField: "f_pago",
+      sensitivity: "personal",
+      schemaVersion: 1,
+      label: l,
+    };
+    const block = { id: "b", type: "number", collection: "t_gasto" } as DataBlock;
+    expect(blockDateField(block, def)).toBe("f_pago");
+    expect(blockDateField(block, { ...def, roles: { date: "f_dia" } })).toBe("f_dia");
+    expect(blockDateField({ ...block, date: "f_pago" }, { ...def, roles: { date: "f_dia" } })).toBe(
+      "f_pago",
+    );
+    const mother: TypeDef = { ...def, id: "t_dinero", key: "dinero", name: "Dinero", roles };
+    const daughter: TypeDef = { ...def, parent: "t_dinero" };
+    const types = { t_dinero: mother, t_gasto: daughter };
+    expect(blockDateField(block, daughter, types)).toBe("f_dia");
+    // What the catalogue is told of the store's collections carries the roles, inherited too.
+    expect(catalogueData([mother, daughter]).collections.map((c) => c.roles)).toEqual([
+      roles,
+      roles,
+    ]);
+    expect(catalogueData([def]).collections[0]?.roles).toBeUndefined();
   });
 });
 

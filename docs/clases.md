@@ -156,8 +156,8 @@ maqueta antes (I-09).
 - **El paso 2, la reestructuración, preparado:** `cli.ts roles <cuenta>` deduce los papeles de la definición de cada
   calendario y de los movimientos del dinero. Sin `--apply` solo los lista. Con `--apply` los pone en una sola
   ejecución, y `--undo <run>` la deshace entera.
-- **Pendiente:** que las gráficas del dinero y la conciliación lean los papeles en vez de su código (paso 3, lo que
-  queda), y «Separar por» y la página de una colección con sus papeles (paso 4).
+- **Pendiente:** que las gráficas v1 del dinero y la conciliación lean los papeles en vez de su código (paso 3c), y
+  «Separar por» y la página de una colección con sus papeles (paso 4).
 
 **Hecho, paso 2 (2026-11-02):** Juan pasó `roles juan --apply` en su cuenta: Agenda tiene día, hora, hora de fin y
 día de fin de su calendario; Movimiento, importe, día y categoría del código del dinero.
@@ -172,6 +172,16 @@ las tareas (`make.task` en un calendario sobre una rama), y `cli.ts roles` la po
 colección con definición: una colección fechable sin definición no sale sola todavía (lo decide el paso 4, con la
 página de la colección), porque Movimiento también es fechable y no es para el calendario. La app de Boni Calendar no
 escribe el mapeo en el servidor (solo lo lee), así que no hay escritura que redirigir.
+
+**Hecho, paso 3b (2026-11-02): los bloques de una página leen los papeles.** En el catálogo de bloques
+(`packages/views/src/catalogue.ts`, `blockData.ts`), los papeles de la colección van primero (D-20): el día que
+coloca las filas es su papel `día` (o `inicio`), heredado de su madre si lo tiene ella, salvo que el bloque nombre
+otra fecha en «Fecha que cuenta»; un bloque nuevo sobre una colección con `importe` suma ese campo en vez de contar
+filas, y una lista de barras va por su `categoría`; las listas del panel («De», «Agrupar», «Fecha que cuenta») ponen
+esos campos primero. Así una colección con importe, fecha y categoría (los gastos de un viaje) entra en las gráficas
+de una página sin código nuevo. Las gráficas v1 del dinero (`moneyProfile`, con su idea de gasto por el tipo de
+categoría, deudas y personas) y la conciliación siguen nombrando los movimientos y sus campos por nombre: la
+transición de `AGENTS.md`, que pasará a los papeles cuando haga falta una segunda colección de dinero en ellas (3c).
 
 ## 7. Orden
 

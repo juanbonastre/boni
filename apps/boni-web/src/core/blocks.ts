@@ -48,15 +48,37 @@ export function catalogueOf(
           type: string;
           options?: { id: string; name: string }[];
         }[];
+        roles?: Readonly<Record<string, string>>;
       }[]
     | null,
   pages: readonly { id: string; title: string }[] | null = [],
 ): CatalogueData {
+  // The roles the catalogue uses (D-20), when their fields are among the shown.
+  const rolesOf = (t: {
+    fields: readonly { id: string }[];
+    roles?: Readonly<Record<string, string>>;
+  }) => {
+    const has = (id: string | undefined) =>
+      id && t.fields.some((f) => f.id === id) ? id : undefined;
+    const day = has(t.roles?.date) ?? has(t.roles?.start);
+    const amount = has(t.roles?.amount);
+    const category = has(t.roles?.category);
+    return day || amount || category
+      ? {
+          roles: {
+            ...(day ? { date: day } : {}),
+            ...(amount ? { amount } : {}),
+            ...(category ? { category } : {}),
+          },
+        }
+      : {};
+  };
   return {
     pages: (pages ?? []).map((p) => ({ value: p.id, label: p.title })),
     collections: (types ?? []).map((t) => ({
       id: t.id,
       name: t.name,
+      ...rolesOf(t),
       fields: t.fields.map((f) => ({
         id: f.id,
         name: f.name,
