@@ -402,7 +402,7 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await db.getByRole("button", { name: "Pedro Páramo", exact: true }).dblclick();
   // The cell's input takes the focus a frame later: on a slow machine, keys pressed before went elsewhere and the
   // selected title was replaced (the picker below then found no «pedro»).
-  await expect(db.locator("tr", { hasText: "Pedro Páramo" }).locator("input")).toBeFocused();
+  await expect(db.getByRole("textbox", { name: "Título" })).toBeFocused();
   await page.keyboard.press("End");
   await page.keyboard.type(" (relectura)", { delay: 15 });
   await page.keyboard.press("Enter");
