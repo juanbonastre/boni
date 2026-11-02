@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
+  ACCURACY,
   ANSWER_GONE,
   ASK_TURN,
   CARD_COMPACT,
@@ -527,7 +528,9 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
 test("the Registro says what each run was and what came of it; quiet readings are one line", async ({
   page,
 }) => {
-  await openApp(page, "/?still", { agent: { "GET api/agent/runs": [RUNS_EXPLAINED] } });
+  await openApp(page, "/?still", {
+    agent: { "GET api/agent/runs": [RUNS_EXPLAINED], "GET api/agent/decisions": [ACCURACY] },
+  });
   await page.getByRole("button", { name: /^Conversación/ }).click();
   await page.getByRole("button", { name: "Registro", exact: true }).last().click();
   const entries = page.locator(".agent-page > .log-list > li");
@@ -556,6 +559,20 @@ test("the Registro says what each run was and what came of it; quiet readings ar
   const undo = page.getByRole("button", { name: "Deshacer lo que hizo" });
   await expect(undo).toHaveCount(1);
   await expect(entries.nth(0).getByRole("button", { name: "Deshacer lo que hizo" })).toBeVisible();
+  // «Acierto» (docs/fiabilidad.md): each area's decisions, and by level on a click.
+  const acc = page.locator(".log-accuracy");
+  await expect(acc.locator(".log-area").nth(0)).toContainText(
+    "Colecciones24 decisiones · 20 solas · 4 preguntadas · 0 sin decidir · acierto 19 de 20 (95 %)",
+  );
+  await expect(acc.locator(".log-area").nth(1)).toContainText("Campos");
+  await expect(acc.locator(".log-area").nth(1)).toContainText("sin juzgar aún");
+  await acc.getByRole("button", { name: "Por nivel" }).click();
+  await expect(acc.locator(".log-levels li")).toHaveText([
+    "0,6–0,7: 1 de 2",
+    "0,7–0,8: 3 de 3",
+    "0,8–0,9: 5 de 5",
+    "0,9–1: 10 de 10",
+  ]);
   await page.screenshot({ path: "e2e-boni/screenshots/registro.png" });
 });
 

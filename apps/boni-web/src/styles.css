@@ -5652,6 +5652,45 @@ button.ghost-open:hover {
 .log-measure {
   margin: 0 0 10px;
 }
+/* «Acierto» in the Registro: one line per area, its levels under it on a click. */
+.log-accuracy {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.log-accuracy h3 {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.log-accuracy > p {
+  margin: 0 0 8px;
+}
+.log-accuracy ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.log-area {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.log-area-name {
+  font-weight: 600;
+}
+.log-levels {
+  flex-basis: 100%;
+  padding-left: 12px;
+}
+.log-levels li {
+  padding: 2px 0;
+}
 
 /* The daily copy's state: in --bad when the last try failed. */
 .backup-status.bad {

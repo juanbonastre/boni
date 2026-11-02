@@ -160,6 +160,8 @@ export interface Journal {
   decisionsOf(run: string): DecisionRow[];
   /** An area's last decisions, newest last (the Registro's counts; an area's thresholds and «Solo»). */
   decisions(area: string, limit?: number): DecisionRow[];
+  /** The areas with any decision, by name. */
+  decisionAreas(): string[];
   /** Model calls from `from` to `to` (ms), grouped by role, provider and model. */
   spending(from: number, to: number): SpendRow[];
   /** Each model call in a period (oldest first): what Boni shows as its read-only collection «Llamadas a modelos». */
@@ -248,6 +250,10 @@ export function openJournal(db: DatabaseSync): Journal {
           unknown
         >[]
       ).map(decisionOf),
+    decisionAreas: () =>
+      (
+        db.prepare("SELECT DISTINCT area FROM decisions ORDER BY area").all() as { area: string }[]
+      ).map((r) => r.area),
     decisions: (area, limit = 200) =>
       (
         db

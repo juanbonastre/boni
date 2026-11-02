@@ -408,6 +408,30 @@ const quietMail = (id: string, m: number, subject: string) => ({
   changes: [],
   changed: 0,
 });
+/** Boni's decisions counted per area (docs/fiabilidad.md): the Registro's «Acierto». */
+export const ACCURACY = {
+  areas: [
+    {
+      area: "choice",
+      total: 24,
+      done: 20,
+      asked: 4,
+      nothing: 0,
+      judged: 20,
+      right: 19,
+      levels: [
+        { from: 0, to: 0.5, judged: 0, right: 0 },
+        { from: 0.5, to: 0.6, judged: 0, right: 0 },
+        { from: 0.6, to: 0.7, judged: 2, right: 1 },
+        { from: 0.7, to: 0.8, judged: 3, right: 3 },
+        { from: 0.8, to: 0.9, judged: 5, right: 5 },
+        { from: 0.9, to: 1, judged: 10, right: 10 },
+      ],
+    },
+    { area: "fill", total: 6, done: 2, asked: 0, nothing: 4, judged: 0, right: 0, levels: [] },
+  ],
+};
+
 export const RUNS_EXPLAINED = {
   runs: [
     {

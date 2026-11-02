@@ -524,7 +524,10 @@ explains it; what needs explaining goes in a help line under it, in plain words.
   - its tests with ✓ / ✗, and the dry run on his data, function by function;
   - its code, folded, as plain text with its sha256;
   - «Activar la versión N» (only when every test passes) and «Rechazar», and the note that only a device of his
-    activates it, never the MCP.
+    activates it, never the MCP. **«Acierto»** (docs/fiabilidad.md §3.3): under that line, a card with one row per area of decisions
+  Boni takes alone («Colecciones», «Campos»): its last decisions counted (alone, asked, left) and, of the ones alone,
+  how many Juan kept as they were, as «acierto 19 de 20 (95 %)»; «Por nivel» opens the same count by level of
+  confidence («0,9–1: 10 de 10»). Nothing shows until there is a decision. It is what earns an area its «Solo» (F3).
 
   An extension with a version before the active one has «Volver a la versión N» under it: one click, both ways.
   **Privacidad** (what the AI sees): the levels explained once at the top, then one row per collection with a select.

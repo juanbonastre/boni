@@ -17,6 +17,7 @@ import {
   updateConversation,
 } from "@boni/agent";
 import { openUserStore, type UserStore } from "@boni/store";
+import { accuracy } from "./accuracy.ts";
 import { measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
@@ -47,6 +48,7 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *   POST /api/agent/requests/:id/dismiss     put away unanswered: its run ends having done nothing more
  *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection? } } Juan's corrections, kept
  *   POST /api/agent/proposals/:id/reject
+ *   GET  /api/agent/decisions                -> { areas } how right Boni's decisions are, per area and level of confidence
  *   GET  /api/agent/runs                     -> { runs } the latest, for the log, each with what it was and
  *                                               what came of it (runInfo.ts), and `autoAccept`: how often
  *                                               Boni would have accepted alone, and been right (autoAccept.ts)
@@ -507,6 +509,8 @@ async function answerAgent(
     case "POST /api/agent/proposals/:id/reject":
       agent.rejectProposal(params.id ?? "");
       return send(res, 200, {});
+    case "GET /api/agent/decisions":
+      return send(res, 200, { areas: accuracy(host.store(who.account)) });
     case "GET /api/agent/runs": {
       const store = host.store(who.account);
       const proposals = proposalsByRun(store);

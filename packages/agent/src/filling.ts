@@ -209,7 +209,7 @@ export function fillQuestions(fields: readonly FillField[]): Record<string, Deci
 export function fillDecisions(
   answers: DecisionAnswers,
   fields: readonly FillField[],
-): { field: string; p: number; outcome: "do" | "nothing" }[] {
+): { field: string; kind: FillField["kind"]; p: number; outcome: "do" | "nothing" }[] {
   const { values } = fromAnswers(answers, fields);
   return fields.map((f, i) => {
     const a = answers[`f${i}`];
@@ -222,7 +222,7 @@ export function fillDecisions(
         : a?.type === "choice" && b?.type === "choice" && a.choice === b.choice && a.choice !== NONE
           ? Math.min(a.confidence, b.confidence)
           : 0;
-    return { field: f.key, p, outcome: values[f.key] === null ? "nothing" : "do" };
+    return { field: f.key, kind: f.kind, p, outcome: values[f.key] === null ? "nothing" : "do" };
   });
 }
 

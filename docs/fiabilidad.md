@@ -162,6 +162,14 @@ apuntados como decisiones, y se juzgan cuando Juan acepta la propuesta: la colec
 un campo salvo que lo corrigiera; lo preguntado o dejado vacío no se juzga. Sin cambio de comportamiento: los umbrales
 son los de hoy. La pseudoaceptación entra en F3, con su interruptor.
 | F2 | El Registro con el acierto por ámbito y por nivel de `p`; la calibración de Jev medida en cada evaluación | «Modelos» y el Registro |
+
+**Hecho, F2 (2026-11-02):** el Registro enseña «Acierto»: por ámbito («Colecciones», «Campos»), las últimas decisiones
+contadas (solas, preguntadas, sin decidir) y, de las solas, cuántas dejó Juan como estaban; «Por nivel» las cuenta por
+nivel de `p` (`GET /api/agent/decisions`, `apps/server/src/accuracy.ts`). **La calibración ya actúa:** antes de decidir,
+el código cambia la `p` del modelo por el acierto real de su nivel cuando ese nivel lleva 10 o más decisiones juzgadas
+(`calibrate` en `packages/agent/src/decisions.ts`), tanto en la elección de colección como en el relleno; la `p` del
+modelo queda apuntada tal cual, y la calibrada, al lado. La evaluación del decisor mide su calibración por nivel y la
+guarda con el resultado (`calibration` en `EvalResult`); enseñarla en «Modelos» queda para F3.
 | F3 | Ajustes: el acierto y el interruptor «Solo» por ámbito; la propuesta de encenderlo; el aviso con Deshacer | Con maqueta (I-09) |
 | F4 | Los aprendices de la tarea 13 y las sugerencias de `docs/preferencias.md` sobre el procedimiento | P3 de `docs/preferencias.md` |
 

@@ -7,6 +7,11 @@ export interface EvalResult {
   wrong: number;
   /** Cases whose answer is shown as it helps most (a list for several mails, a chart for numbers to compare). */
   shown?: number;
+  /**
+   * For a decider: at each level of the confidence it declared, how many it decided alone and how many of those
+   * were right (docs/fiabilidad.md §3.3: a model that says 0.8 and is right 6 in 10 shows here).
+   */
+  calibration?: { from: number; to: number; judged: number; right: number }[];
   /** What it cost, in dollars, when the provider said so. */
   cost: number;
   tokens: number;
