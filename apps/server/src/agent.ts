@@ -48,6 +48,8 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *   POST /api/agent/requests/:id/dismiss     put away unanswered: its run ends having done nothing more
  *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection?, values?, done? } } Juan's corrections, kept
  *   POST /api/agent/proposals/:id/reject
+ *   POST /api/agent/proposals/:id/restore    { run? } a decision taken back («Deshacer»): the proposal waits again;
+ *                                               an accepted one once its run is undone (a personal device)
  *   GET  /api/agent/decisions                -> { areas } how right Boni's decisions are, per area and level of confidence,
  *                                               and whether each area acts alone («Solo») and has earned it
  *   PUT  /api/agent/decisions/:area          { auto } «Solo» on or off for an area (a personal device; on only when earned)
@@ -513,6 +515,16 @@ async function answerAgent(
     case "POST /api/agent/proposals/:id/reject":
       agent.rejectProposal(params.id ?? "");
       return send(res, 200, {});
+    case "POST /api/agent/proposals/:id/restore": {
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const b = ((await bodyOf(req)) ?? {}) as { run?: unknown };
+      const r = agent.restoreProposal(
+        params.id ?? "",
+        typeof b.run === "string" ? b.run : undefined,
+      );
+      if (r === "ok") return send(res, 200, {});
+      return send(res, r === "no-such-proposal" ? 404 : 409, { error: r });
+    }
     case "GET /api/agent/decisions":
       return send(res, 200, { areas: areasView(host.store(who.account), Date.now()) });
     case "PUT /api/agent/decisions/:area": {

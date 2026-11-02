@@ -1597,6 +1597,13 @@ export class AgentApi {
     );
   reject = async (id: string) =>
     void (await this.call("POST", `proposals/${encodeURIComponent(id)}/reject`));
+  /** A decision taken back («Deshacer»): the proposal waits again; `run`, the acceptance's, is undone. */
+  restore = async (id: string, run?: string) =>
+    void (await this.call(
+      "POST",
+      `proposals/${encodeURIComponent(id)}/restore`,
+      run ? { run } : {},
+    ));
   async requests(): Promise<InboxRequest[]> {
     const b = await this.call("GET", "requests");
     const list = isObj(b) && Array.isArray(b.requests) ? b.requests : [];

@@ -686,8 +686,22 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         const answered = /^api\/agent\/requests\/([^/]+)\//.exec(p);
         if (answered && asked) asked = asked.filter((x) => x.id !== answered[1]);
-        const decided = /^api\/agent\/proposals\/([^/]+)\//.exec(p);
+        const decided = /^api\/agent\/proposals\/([^/]+)\/(accept|reject)$/.exec(p);
         if (decided && inbox) inbox = inbox.filter((x) => x.id !== decided[1]);
+        // A decision taken back («Deshacer»): the proposal waits again, where it was.
+        const restored = /^api\/agent\/proposals\/([^/]+)\/restore$/.exec(p);
+        if (restored && inbox) {
+          const all = (
+            opts.agent?.["GET api/agent/proposals"]?.[0] as
+              | { proposals: { id: string }[] }
+              | undefined
+          )?.proposals;
+          const back = all?.find((x) => x.id === restored[1]);
+          if (back && !inbox.some((x) => x.id === back.id))
+            inbox = (all ?? []).filter(
+              (x) => x.id === back.id || inbox?.some((y) => y.id === x.id),
+            );
+        }
         if (decided) ghosts = ghosts.filter((g) => g.proposal !== decided[1]);
         if (
           audited ||

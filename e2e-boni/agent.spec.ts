@@ -217,6 +217,7 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
       "GET api/agent/proposals": [PROPOSALS],
       "POST api/agent/proposals/:id/accept": [DONE],
       "POST api/agent/proposals/:id/reject": [{}],
+      "POST api/agent/proposals/:id/restore": [{}],
     },
   });
   await page.getByRole("button", { name: /^Conversación/ }).click();
@@ -231,11 +232,20 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
   await expect(page.locator(".proposal").first()).toContainText("Viene de fuera · un correo");
   await page.screenshot({ path: `${SHOTS}/agent-inbox.png` });
   await page.locator(".proposal").first().getByRole("button", { name: "Aceptar" }).click();
-  // The card leaving is the sign (no toast for each one: Juan decides many in a row).
+  await expect(page.locator(".proposal")).toHaveCount(1);
+  // A while to take it back (Juan, 2026-11-02): the toast's «Deshacer» undoes the acceptance's run and the card
+  // comes back, pending again.
+  await expect(page.locator(".toast")).toContainText("Aceptada");
+  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
+  await expect(page.locator(".proposal")).toHaveCount(2);
+  await page.locator(".proposal").first().getByRole("button", { name: "Aceptar" }).click();
   await expect(page.locator(".proposal")).toHaveCount(1);
   await page.locator(".proposal").first().getByRole("button", { name: "Rechazar" }).click();
   await expect(page.locator(".proposal")).toHaveCount(0);
+  await expect(page.locator(".toast")).toContainText("Rechazada");
   expect(await requests(page, "POST api/agent/proposals/")).toEqual([
+    "POST api/agent/proposals/p1/accept",
+    'POST api/agent/proposals/p1/restore {"run":"run-c1"}',
     "POST api/agent/proposals/p1/accept",
     "POST api/agent/proposals/p2/reject",
   ]);
@@ -261,7 +271,9 @@ test("the inbox panel: cards say what, from where and the day around it; it open
   const panel = page.locator(".inbox-panel");
   await expect(panel).toBeVisible();
   const card = panel.locator(".inbox-card").first();
-  await expect(card.locator("h3")).toHaveText("Añadir evento a Docencia");
+  // The card's title is the proposal's; under it, where it goes and when (no «Añadir evento a Docencia»).
+  await expect(card.locator("h3")).toHaveText("Revisar actas");
+  await expect(card.locator(".inbox-what")).toHaveText("Docencia · jue, 29 oct, 12:00–13:00");
   await expect(card.locator(".inbox-source-text")).toHaveText(
     "ejemplo@example.edu · Coordinación de ejemplo",
   );
@@ -331,7 +343,7 @@ test("a proposal opens on a page of its own: its values, why, where from, and th
   await card.getByRole("button", { name: "Abrir propuesta" }).click();
   const pp = page.locator(".proposal-page");
   await expect(pp.locator(".pp-title")).toHaveText("Revisar actas");
-  await expect(pp.locator(".pp-kind")).toContainText("Añadir evento a Docencia");
+  await expect(pp.locator(".pp-kind")).toContainText("Docencia");
   // Every value, the title and the day too; why; where from with the mail; the days around it.
   await expect(pp.locator(".inbox-fields")).toContainText("Revisar actas");
   await expect(pp.locator(".inbox-fields")).toContainText("Fecha");
@@ -392,7 +404,7 @@ test("a card can be corrected before accepting: its title and its collection go 
   await expect(form).not.toContainText("aprende");
   await page.screenshot({ path: `${SHOTS}/inbox-correct.png` });
   await card.getByRole("button", { name: "Aceptar" }).click();
-  await expect(page.locator(".toast")).toContainText("Boni aprenderá");
+  await expect(page.locator(".toast")).toContainText("Aceptada con tus cambios");
   const sent = (await recorded(page)).requests.find((r) =>
     r.startsWith("POST api/agent/proposals/c1/accept"),
   );

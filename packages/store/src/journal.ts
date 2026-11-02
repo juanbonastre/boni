@@ -145,6 +145,10 @@ export interface Journal {
     at: number,
     edits?: ProposalEdits | null,
   ): void;
+  /** A decided proposal (accepted or rejected) waits again, as if Juan had not decided («Deshacer»). */
+  reopenProposal(id: string): void;
+  /** A run's decisions judged no more (its proposal was taken back): Juan's next decision judges them. */
+  unjudge(run: string): void;
   addConfirmation(c: Omit<ConfirmationRow, "used">): void;
   confirmation(id: string): ConfirmationRow | null;
   /** Marks it used; false when it was used already, expired or is not that hash. */
@@ -387,6 +391,16 @@ export function openJournal(db: DatabaseSync): Journal {
       void db
         .prepare("UPDATE proposals SET status = ?, decided = ?, edits = ? WHERE id = ?")
         .run(status, at, edits ? j(edits) : null, id),
+    reopenProposal: (id) =>
+      void db
+        .prepare(
+          "UPDATE proposals SET status = 'pending', decided = NULL, edits = NULL WHERE id = ? AND status IN ('accepted', 'rejected')",
+        )
+        .run(id),
+    unjudge: (run) =>
+      void db
+        .prepare("UPDATE decisions SET result = NULL, result_at = NULL WHERE run = ?")
+        .run(run),
     addConfirmation: (c) =>
       void db
         .prepare(

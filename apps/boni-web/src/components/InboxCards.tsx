@@ -115,9 +115,14 @@ export function InboxButton() {
 }
 
 /** What the proposal does, in words made by code from its arguments. */
+/**
+ * The card's title is the proposal's own («Revisar actas»); this is the line under it: where it goes, its
+ * collection (Juan, 2026-11-02: «Añadir tarea a Tarea» said nothing). Without a title, «Añadir a Tarea». For a
+ * change or a deletion, what the view says.
+ */
 function headline(t: ReturnType<typeof useStore.getState>["t"], p: Proposal, c: InboxCard | null) {
   if (c?.action === "create" && c.collection)
-    return t(`inbox.add.${c.kind}`, { collection: c.collection });
+    return c.title ? c.collection : t("inbox.add.item", { collection: c.collection });
   return p.view?.title ?? p.tool;
 }
 
@@ -311,15 +316,16 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
   // On the inbox's own page (more room), a detailed card from mail is two columns (Juan, 2026-10-23): the mail on
   // the left, the three days with the proposal on the right.
   const two = wide && more && c?.source?.kind === "mail" && !!c.day && c.context.length > 0;
+  const where = headline(t, p, c);
   const source = (
     <>
-      {c?.source?.kind === "mail" && <MailSource source={c.source} />}
-      {(c?.title || when) && (
+      {(where || when) && (
         <p className="inbox-what">
-          {c?.title && <span className="inbox-title">{c.title}</span>}
+          {where && <span className="inbox-title">{where}</span>}
           {when && <span className="muted"> · {when}</span>}
         </p>
       )}
+      {c?.source?.kind === "mail" && <MailSource source={c.source} />}
     </>
   );
   const mail = more && c?.source?.kind === "mail" && (c.source.subject || c.source.excerpt) && (
@@ -360,7 +366,7 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
         {t("inbox.kind.proposal")}
       </p>
       <header className="inbox-card-head">
-        <h3>{headline(t, p, c)}</h3>
+        <h3>{c?.title || where}</h3>
         {fix.button}
         <button
           type="button"
@@ -389,6 +395,16 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
           {fields}
         </>
       )}
+      {/* «Más detalles» before what he can change (Juan, 2026-11-02): the mail above it, the correction below. */}
+      <button
+        type="button"
+        className={`btn ghost small inbox-more${more ? " open" : ""}`}
+        aria-expanded={more}
+        onClick={() => setMore(!more)}
+      >
+        {more ? t("inbox.less") : t("inbox.more")}
+        <ChevronDown size={13} strokeWidth={1.8} />
+      </button>
       {fix.form}
       <div className="inbox-actions">
         <DecideButtons
@@ -401,15 +417,6 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
         />
         <span className="spacer" />
         {c?.wouldAccept && <WouldAccept />}
-        <button
-          type="button"
-          className={`btn ghost small inbox-more${more ? " open" : ""}`}
-          aria-expanded={more}
-          onClick={() => setMore(!more)}
-        >
-          {more ? t("inbox.less") : t("inbox.more")}
-          <ChevronDown size={13} strokeWidth={1.8} />
-        </button>
       </div>
     </section>
   );

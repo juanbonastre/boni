@@ -490,8 +490,10 @@ explaining goes in the docs, not on the screen.
   says so on the card with "Quitar". The counts (top bar, sidebar, conversation) are proposals and questions together,
   and a new question opens the panel as a new proposal does. The **inbox** (Juan, 2026-10-22) is a panel on the right
   (the top bar's "Bandeja (N)"; it comes out by itself when a new proposal arrives, checked every minute; in a narrow
-  window the sidebar gives it room) and the same cards in Conversación → Bandeja. A card says what the proposal does
-  in words made by code ("Añadir tarea a Docencia", "Añadir evento a …"), where it came
+  window the sidebar gives it room) and the same cards in Conversación → Bandeja. A card is titled by the proposal
+  («Revisar actas») and under it says where it goes and when («Docencia · jue, 29 oct, 12:00–13:00»; Juan,
+  2026-11-02: «Añadir tarea a Tarea» said nothing; «Añadir a Tarea» only without a title; a change or a deletion
+  as the view names it), where it came
   from once (the mailbox and the sender, or the note's path; never "Viene de fuera" on every row), its day and times,
   and a mini calendar: the day (detailed) or the day before, the day and the day after (compact), each a short list in
   time order with the proposal drawn with a dashed `--accent` border among what is there. Compact when the source said
@@ -520,7 +522,9 @@ explaining goes in the docs, not on the screen.
   y aprende de él." and "Deshacer cambios"; Aceptar then sends the changes and the toast says Boni will learn from
   them. **Deciding** (Juan, 2026-10-23): the clicked Aceptar / Rechazar keeps its size and turns into a spinner
   (both off meanwhile) while the server answers; decisions queue in order, so the next card can be decided at
-  once; a decided card simply leaves (no toast for each); a failed one says why under its buttons in `--bad`
+  once; a decided card leaves and the toast says «Aceptada» / «Rechazada» with «Deshacer» for a while (Juan,
+  2026-11-02): taking it back undoes the acceptance's run and the card returns, pending again (the next decision's
+  toast replaces it); a failed one says why under its buttons in `--bad`
   ("Ya no vale…" for a stale one, "Ya estaba decidida.") with "Quitar", and stays until taken out. **"Ya lo hice"**
   (Juan, 2026-10-23), between Aceptar and Rechazar, only on a proposal to create something in a collection whose
   calendar has a task column: it is saved already done (struck through in the calendar), with the same spinner;
