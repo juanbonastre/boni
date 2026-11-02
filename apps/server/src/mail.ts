@@ -26,6 +26,8 @@ import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import { decisions, review, type Suggestion } from "./mailReview.ts";
+import { readRows } from "./money/sheets.ts";
+import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { decrypt, type SecretKey } from "./secret.ts";
 
 /**
@@ -359,6 +361,9 @@ export function mailPlan(
   line("Fecha", ["fecha", "", ""]);
   line("Asunto", ["asunto", "", ""]);
   if (has.has("body")) parts.push({ lit: "\n" }, { ref: "$m.body" });
+  // What the code could read of the attachments (a sheet, a text file), after the mail's own text.
+  if (has.has("adjuntos_texto"))
+    parts.push({ lit: "\n\nAdjuntos:\n" }, { ref: "$m.adjuntos_texto" });
   const text = { fn: "concat", args: parts };
   const known = o.known ?? [];
   const steps: unknown[] = [
@@ -501,6 +506,67 @@ const FIELDS: [key: string, name: string, type: FieldDef["type"]][] = [
   ["adjuntos", "Adjuntos", "text"],
   ["id_mensaje", "Id del mensaje", "text"],
 ];
+
+/** Bytes fetched of one message (its attachments included), and kept of one attachment (Juan, 2026-11-02). */
+export const FETCH_MAX = 16 * 1024 * 1024;
+export const ATTACHMENT_MAX = 8 * 1024 * 1024;
+/** Text read out of a mail's attachments (a sheet's rows, a text file) for the reader, at most. */
+const ATTACHMENTS_TEXT_MAX = 50_000;
+
+/** The account's collection of files (the one with the file field), when it has one. */
+export function filesType(store: UserStore): TypeDef | undefined {
+  return Object.values(store.schema().types).find(
+    (t) => !t.archived && !t.system && t.fields.some((f) => f.id === FILE_FIELD && !f.archived),
+  );
+}
+
+/**
+ * The fields a mail's collection has beyond the headers: its attachments as files of the account (a relation to
+ * the collection of files, when the account keeps one) and what the code could read of them, for the reader
+ * (hidden: the page shows the files themselves).
+ */
+function extraFields(files: TypeDef | undefined): FieldDef[] {
+  return [
+    ...(files
+      ? [
+          {
+            id: "f_archivos",
+            key: "archivos",
+            name: "Archivos",
+            type: "relation" as const,
+            relation: { target: files.id, many: true },
+            label: CODE,
+          },
+        ]
+      : []),
+    {
+      id: "f_adjuntos_texto",
+      key: "adjuntos_texto",
+      name: "Texto de los adjuntos",
+      type: "longtext" as const,
+      hidden: true,
+      label: CODE,
+    },
+  ];
+}
+
+/** What the code reads of an attachment for the reader: a sheet's rows (csv, xlsx, xls) or a text file; else nothing. */
+export function attachmentText(a: { name: string; type: string; content?: Uint8Array }): string {
+  if (!a.content) return "";
+  const name = a.name.toLowerCase();
+  try {
+    if (/\.(csv|xlsx|xls)$/.test(name) || a.type === "text/csv")
+      return readRows(a.content, name.endsWith(".csv") || a.type === "text/csv" ? "x.csv" : name)
+        .slice(0, 2000)
+        .map((r) => r.map((c) => (c === null || c === undefined ? "" : String(c))).join("\t"))
+        .join("\n");
+    if (/\.(txt|md)$/.test(name) || a.type === "text/plain")
+      return new TextDecoder("utf-8").decode(a.content);
+  } catch {
+    // an attachment the reader cannot parse: its name is still in the mail
+  }
+  return "";
+}
 
 const fieldOf = ([k, name, type]: (typeof FIELDS)[number]): FieldDef => ({
   id: `f_${k}`,
@@ -760,7 +826,7 @@ export class Mails {
     if (!s || !e) return null;
     const v = e.entity.values;
     if (ruleFor(g, String(v.f_de ?? ""))?.action === "skip") return null;
-    const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto"].filter(
+    const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto", "adjuntos_texto"].filter(
       (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
     );
     const withGuide = !!(g.instructions || g.examples.length);
@@ -868,8 +934,10 @@ export class Mails {
   private collection(store: UserStore, st: MailState): TypeDef {
     const had = st.type ? store.schema().types[st.type] : undefined;
     if (had && !had.archived) {
-      // A field this code added later (Cc) joins a collection made before it.
-      const missing = FIELDS.map(fieldOf).filter((f) => !had.fields.some((x) => x.id === f.id));
+      // A field this code added later (Cc, the attachments) joins a collection made before it.
+      const missing = [...FIELDS.map(fieldOf), ...extraFields(filesType(store))].filter(
+        (f) => !had.fields.some((x) => x.id === f.id),
+      );
       for (const field of missing)
         store.applySchema({ op: "add_field", type: had.id, field }, { actor: "connector" });
       return missing.length ? (store.schema().types[had.id] as TypeDef) : had;
@@ -877,7 +945,7 @@ export class Mails {
     const taken = new Set(Object.values(store.schema().types).map((t) => t.key));
     let key = "correo";
     for (let i = 2; taken.has(key); i++) key = `correo${i}`;
-    const fields: FieldDef[] = FIELDS.map(fieldOf);
+    const fields: FieldDef[] = [...FIELDS.map(fieldOf), ...extraFields(filesType(store))];
     const def: TypeDef = {
       id: newId("t", this.now()),
       key,
@@ -924,12 +992,54 @@ export class Mails {
           .join(", ")
           .slice(0, 2000),
       );
+    const files = def.fields.some((f) => f.id === "f_archivos") ? filesType(store) : undefined;
+    const left = m.attachments.filter((a) => !a.content && a.size > 0);
     const notes = [
       m.hidden ? `[Boni: ${m.hidden} partes ocultas del HTML no se muestran]` : "",
       m.truncated ? "[Boni: el correo es más largo; solo se guarda el principio]" : "",
+      ...(files
+        ? left.map(
+            (a) =>
+              `[Boni: el adjunto «${a.name}» (${Math.round(a.size / 1024)} KB) no se guarda: pasa de ${ATTACHMENT_MAX / 1024 / 1024} MB]`,
+          )
+        : []),
     ].filter(Boolean);
     const text = [m.text, ...notes].filter(Boolean).join("\n\n");
     if (text) values[BODY] = w(text);
+    // The attachments that fit: each a file of the account (a row of its files, in a folder by month), named by
+    // the mail, and what the code could read of them for the reader (Juan, 2026-11-02).
+    const kept = m.attachments.filter((a) => a.content);
+    if (files && kept.length) {
+      const folder = `correo/${(when ?? "").slice(0, 7) || "sin-fecha"}`;
+      const taken = new Set(
+        store
+          .entities(files.id)
+          .filter((e) => e.values[FOLDER_FIELD] === folder)
+          .map((e) => String(e.values[files.titleField] ?? "")),
+      );
+      const ids: string[] = [];
+      for (const a of kept) {
+        const sha = store.putFile(a.content as Uint8Array, a.type || mimeOf(a.name));
+        const dot = a.name.lastIndexOf(".");
+        const [base, ext] = dot > 0 ? [a.name.slice(0, dot), a.name.slice(dot)] : [a.name, ""];
+        let name = a.name;
+        for (let n = 2; taken.has(name); n++) name = `${base} (${n})${ext}`;
+        taken.add(name);
+        const made = store.create(
+          files.id,
+          { [files.titleField]: w(name), [FILE_FIELD]: w(sha), [FOLDER_FIELD]: w(folder) },
+          { actor: "connector" },
+        );
+        ids.push(made.entity.id);
+      }
+      values.f_archivos = w(ids);
+    }
+    const texts = kept
+      .map((a) => ({ a, text: attachmentText(a).trim() }))
+      .filter((x) => x.text)
+      .map((x) => `[${x.a.name}]\n${x.text}`);
+    if (texts.length && def.fields.some((f) => f.id === "f_adjuntos_texto"))
+      values.f_adjuntos_texto = w(texts.join("\n\n").slice(0, ATTACHMENTS_TEXT_MAX));
     return store.create(def.id, values, { actor: "connector" }).entity.id;
   }
 
@@ -1034,10 +1144,10 @@ export class Mails {
         st.lastUid = 0;
       }
       for (const uid of uids.slice(0, this.o.perCheck ?? 50)) {
-        const f = await r.fetch(uid);
+        const f = await r.fetch(uid, FETCH_MAX);
         st.lastUid = Math.max(st.lastUid, uid);
         if (!f) continue;
-        const m = parseMessage(f.raw, f.raw.length < f.size);
+        const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
         if (m.messageId && known.has(m.messageId)) continue;
         made.push(this.keep(store, def, m, f.internalDate));
         st.count++;
@@ -1183,7 +1293,7 @@ export class Mails {
       const only =
         rule?.action === "collection" ? targets.filter((t) => t.id === rule.collection) : [];
       try {
-        const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto"].filter(
+        const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto", "adjuntos_texto"].filter(
           (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
         );
         const chosen = only.length ? only : targets;

@@ -33,6 +33,33 @@ Content-Type: text/html; charset="iso-8859-1"
 </body></html>
 `);
 
+const WITH_IMAGE = CRLF(`From: ana@example.com
+Subject: Foto
+Content-Type: multipart/mixed; boundary="m"
+
+--m
+Content-Type: multipart/related; boundary="rel"
+
+--rel
+Content-Type: text/html; charset=utf-8
+
+<p>Mira la foto <img src="cid:foto1@example"></p>
+--rel
+Content-Type: image/png
+Content-ID: <foto1@example>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--rel--
+--m
+Content-Type: text/csv; name="datos.csv"
+Content-Disposition: attachment; filename="datos.csv"
+
+a,b
+1,2
+3,4
+--m--
+`);
 const MULTI = CRLF(`From: ana@example.com
 Subject: Acta
 Content-Type: multipart/mixed; boundary="xyz"
@@ -84,7 +111,25 @@ describe("a mail as text", () => {
   it("prefers the plain alternative and lists attachments without keeping them", () => {
     const m = parseMessage(Buffer.from(MULTI, "latin1"));
     expect(m.text).toBe("Te paso el acta.");
-    expect(m.attachments).toEqual([{ name: "acta reunión.pdf", type: "application/pdf", size: 9 }]);
+    expect(m.attachments).toEqual([
+      { name: "acta reunión.pdf", type: "application/pdf", size: 9, inline: false, cid: null },
+    ]);
+  });
+
+  it("keeps an attachment's bytes when asked and it fits; an image the HTML shows by its cid is inline, named by its kind", () => {
+    const kept = parseMessage(Buffer.from(MULTI, "latin1"), false, { keep: 100 });
+    expect(Buffer.from(kept.attachments[0]?.content ?? []).toString("base64")).toBe("JVBERi0xLjQK");
+    expect(
+      parseMessage(Buffer.from(MULTI, "latin1"), false, { keep: 4 }).attachments[0]?.content,
+    ).toBeUndefined();
+    const m = parseMessage(Buffer.from(WITH_IMAGE, "latin1"), false, { keep: 1000 });
+    expect(m.text).toContain("Mira la foto");
+    expect(m.attachments.map((a) => [a.name, a.type, a.inline, a.cid])).toEqual([
+      ["imagen-1.png", "image/png", true, "foto1@example"],
+      ["datos.csv", "text/csv", false, null],
+    ]);
+    expect(Buffer.from(m.attachments[0]?.content ?? []).toString("base64")).toBe("iVBORw0KGgo=");
+    expect(Buffer.from(m.attachments[1]?.content ?? []).toString()).toBe("a,b\r\n1,2\r\n3,4");
   });
 
   it("never fails on broken input", () => {

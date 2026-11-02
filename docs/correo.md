@@ -172,6 +172,14 @@ línea por correo) y la conversación puede usarlo, con los ajustes de Correo.
 - **Hoy** un correo es un registro de «Correos» con sus campos (asunto, de, nombre, para, cc, fecha, adjuntos por
   su nombre, id de mensaje) y su cuerpo como texto plano: el HTML se reduce a texto y lo que no cabe se corta y se
   dice. Todo `external`. El original (el `.eml`) no se guarda.
+- **Los adjuntos se guardan** (Juan, 2026-11-02: «quiero que incluyan imágenes y archivos, así la IA puede leer un
+  Excel adjunto»): cada adjunto que cabe (8 MB; el correo se trae hasta 16 MB) es un archivo de la cuenta, una fila
+  de su colección de archivos en la carpeta `correo/<año-mes>`, con el nombre que traía (repetido, «nombre (2)»), y
+  el correo apunta a ellas (campo «Archivos»); las imágenes que el HTML enseña van igual («imagen-N.png»). Lo que el
+  código sabe leer de ellos (una hoja csv, xlsx o xls como filas; un texto) queda en un campo oculto del correo que
+  el lector de fondo recibe después del cuerpo, hasta 50 KB: una tarea que esté en la hoja se propone como las del
+  texto. Un adjunto que pasa del tope no se guarda y el cuerpo lo dice. Un enlace a una hoja de Google en el texto
+  no se sigue: traer algo de fuera es otra cosa (descargas por `@boni/net`, con su política), pendiente.
 - **Desde hoy** «Ver correo» lo abre como lo enseña un cliente de correo (Spark, Apple Mail, Outlook): cabecera (de,
   para, cc, fecha), asunto, adjuntos aparte y el texto tal cual, en solo lectura; la colección entera es de solo
   lectura en las apps (D-22). En la tarjeta de la Bandeja, «Corregir» deja cambiar también las demás propiedades de
