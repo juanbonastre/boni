@@ -38,8 +38,8 @@ import { ghostRows } from "./data.ts";
  * definition (columns, mapping, colour, reminders) lives in the store's settings (`calendar/defs`).
  *
  * A row is an entity seen as the apps know it: its id the entity's own (docs/clases.md §4 and D-17: no paths); its
- * values by property name (the name of the column, or the field's own name), options by their names, relations as
- * `[[title]]`. A write changes only the properties that differ from what the store has, with Juan's label from
+ * values by property name (the name of the column, or the field's own name), options by their names, relations by
+ * the titles they point to. A write changes only the properties that differ from what the store has, with Juan's label from
  * that device.
  */
 
@@ -361,9 +361,11 @@ export class StoreCalendar implements CalendarSource {
           (x) => f.options?.find((o) => o.id === x)?.name ?? String(x),
         );
       case "relation": {
+        // By the title it points to, as Boni shows it (Juan, 2026-11-02: the same datum looked different in the
+        // two apps); the apps write a title back, with or without the vault's brackets (`linked`).
         const ids = Array.isArray(v) ? v : [v];
-        const links = ids.map((id) => `[[${this.titleOf(String(id)) || id}]]`);
-        return f.relation?.many ? links : (links[0] ?? null);
+        const titles = ids.map((id) => this.titleOf(String(id)) || String(id));
+        return f.relation?.many ? titles : (titles[0] ?? null);
       }
       case "money":
         return typeof v === "object" && v && "amount" in v

@@ -27,6 +27,7 @@ import type { SystemColumns } from "../core/audit.ts";
 import type { T } from "../i18n.ts";
 import {
   addRow,
+  agentApi,
   decideGhost,
   deleteRows,
   editCell,
@@ -1337,9 +1338,14 @@ export function Cell({
     case "relation": {
       const ids = Array.isArray(value) ? value : typeof value === "string" ? [value] : [];
       return (
-        <span className="db-ro">
-          {ids.map((id) => titles[id] || t("page.untitled")).join(", ")}
-        </span>
+        <RelationPicker
+          field={field}
+          picked={ids}
+          titles={titles}
+          onPick={(next) =>
+            save(field.relation?.many ? (next.length ? next : null) : (next[0] ?? null))
+          }
+        />
       );
     }
     case "file": {
@@ -1504,6 +1510,120 @@ function showValue(field: DataField, value: DataValue): string {
 }
 
 /** Options as Notion's coloured pills; a click opens the list to pick (one, or several). */
+/**
+ * A relation's cell: what it points to, by title, and a picker to change it (Juan, 2026-11-02: every property but
+ * the system's is editable): the target collection's rows by title, filtered as he types; one («Ninguno» takes it
+ * out) or several (a click adds or takes out each). The rows are read when the picker opens, as the table shows them.
+ */
+function RelationPicker({
+  field,
+  picked,
+  titles,
+  onPick,
+}: {
+  field: DataField;
+  picked: string[];
+  titles: Record<string, string>;
+  onPick: (ids: string[]) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const target = field.relation?.target ?? "";
+  const many = !!field.relation?.many;
+  const titleField = useStore((s) => s.dataTypes?.find((x) => x.id === target)?.titleField ?? "");
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<{ id: string; title: string }[] | null>(null);
+  const [known, setKnown] = useState<Record<string, string>>({});
+  const titleOf = (id: string) => titles[id] || known[id] || t("page.untitled");
+  const load = async () => {
+    if (!target) return setRows([]);
+    try {
+      const r = await agentApi.dataRows(target);
+      const list = r.rows.map((x) => {
+        const v = x.values[titleField];
+        return { id: x.id, title: typeof v === "string" ? v : "" };
+      });
+      setRows(list);
+      setKnown((k) => ({
+        ...k,
+        ...Object.fromEntries(list.filter((x) => x.title).map((x) => [x.id, x.title])),
+      }));
+    } catch {
+      setRows([]);
+    }
+  };
+  const needle = q.trim().toLowerCase();
+  const shown = (rows ?? [])
+    .filter((r) => !needle || r.title.toLowerCase().includes(needle))
+    .slice(0, 50);
+  return (
+    <PopButton
+      className="db-cell"
+      title={field.name}
+      align="start"
+      width={260}
+      onOpenChange={(open) => {
+        if (open) {
+          setQ("");
+          void load();
+        }
+      }}
+      label={
+        picked.length ? (
+          <span className="db-rel">{picked.map(titleOf).join(", ")}</span>
+        ) : (
+          <span className="db-empty"> </span>
+        )
+      }
+    >
+      {(close) => (
+        <div className="menu-list scroll" role="menu">
+          <input
+            className="input small db-find"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={t("db.findRow")}
+            aria-label={t("db.findRow")}
+            // biome-ignore lint/a11y/noAutofocus: the picker opens to type a title
+            autoFocus
+          />
+          {!many && picked.length > 0 && (
+            <MenuRow
+              label={t("db.none")}
+              onClick={() => {
+                close();
+                onPick([]);
+              }}
+            />
+          )}
+          {rows === null ? (
+            <div className="muted small db-note">{t("db.loading")}</div>
+          ) : shown.length === 0 ? (
+            <div className="muted small db-note">{t("db.noRows")}</div>
+          ) : (
+            shown.map((r) => (
+              <MenuRow
+                key={r.id}
+                label={r.title || t("page.untitled")}
+                on={picked.includes(r.id)}
+                onClick={() => {
+                  if (!many) close();
+                  onPick(
+                    many
+                      ? picked.includes(r.id)
+                        ? picked.filter((x) => x !== r.id)
+                        : [...picked, r.id]
+                      : [r.id],
+                  );
+                }}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </PopButton>
+  );
+}
+
 function OptionPicker({
   field,
   picked,

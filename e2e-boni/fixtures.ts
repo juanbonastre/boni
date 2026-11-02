@@ -202,8 +202,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           { id: "f_paginas", name: "Páginas", type: "number" },
           { id: "f_fin", name: "Terminado", type: "date" },
           { id: "f_fav", name: "Favorito", type: "checkbox" },
+          // A relation to the same collection (books that go together), edited with the picker.
+          {
+            id: "f_relacionado",
+            name: "Relacionado",
+            type: "relation",
+            relation: { target: "t_libro", many: true },
+          },
         ],
-        rowUi: { open: false, hidden: [] as string[] },
+        rowUi: { open: true, hidden: [] as string[] },
       };
       // A collection from the vault's private/ (Colecciones lists it, locked).
       const documentos = {
@@ -222,7 +229,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         [
           {
             id: "r1",
-            values: { f_titulo: "Rayuela", f_estado: "o_leyendo", f_paginas: 600 },
+            values: {
+              f_titulo: "Rayuela",
+              f_estado: "o_leyendo",
+              f_paginas: 600,
+              f_relacionado: ["r2"],
+            },
             updated: 3,
             // The lines its History (ROW_HISTORY) says who wrote.
             body: "Boni es el núcleo: un servidor, una cuenta.\n\nPropuesta del correo: revisar el presupuesto.\n\n- 24 oct: «Modelos» desplegado.\n",
@@ -235,6 +247,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           { id: "r3", values: { f_titulo: "Pedro Páramo", f_estado: "o_pendiente" }, updated: 1 },
         ];
       const gone: typeof rows = [];
+      /** The books' titles by id, for what points to them. */
+      const titlesOf = () =>
+        Object.fromEntries(rows.map((r) => [r.id, String(r.values.f_titulo ?? "")]));
       let rowSeq = 0;
       // The tree (apps/server/src/data.ts `treeOf`): each collection's mother and whether its notes show in the
       // sidebar (a folder of notes by default), and the records with a note. Collections made here are empty.
@@ -479,12 +494,15 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           t.level = String(want.level);
           return [200, JSON.stringify({ id: t.id, level: t.level })];
         }
+        // What a row points to, and its titles (apps/server/src/related.ts): here only the titles.
+        if (/^api\/data\/rows\/[^/]+\/related$/.test(p) && method === "GET")
+          return [200, JSON.stringify({ groups: [], titles: titlesOf() })];
         if (p === "api/data/types/t_libro/rows" && method === "GET")
           return [
             200,
             JSON.stringify({
               rows,
-              titles: {},
+              titles: titlesOf(),
               truncated: false,
               ghosts,
               // Each row's system columns (apps/server/src/audit.ts `systemColumns`).

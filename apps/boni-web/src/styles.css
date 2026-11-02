@@ -4402,6 +4402,19 @@ body:has(.toast) .db-selinfo {
   height: 16px;
   accent-color: var(--accent);
 }
+/* A relation's cell: the titles it points to, and its picker's search box and notes. */
+.db-rel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-find {
+  width: calc(100% - 12px);
+  margin: 4px 6px 6px;
+}
+.db-note {
+  padding: 6px 10px;
+}
 .db-pills {
   display: inline-flex;
   flex-wrap: wrap;

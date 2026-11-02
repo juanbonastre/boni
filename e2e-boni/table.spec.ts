@@ -34,10 +34,10 @@ test("columns as wide as their values, widened by their edge and kept; a title o
 }) => {
   await libros(page);
   const table = page.locator(".db-table");
-  // Not stretched to the page: the title 280 px, a number 110, the table as wide as its columns and centred, the
-  // head's options ending where it ends.
+  // Not stretched to the page: the title 280 px, a number 110, a relation 190, the table as wide as its columns and
+  // centred, the head's options ending where it ends.
   const wide = await box(page, ".db-table");
-  expect(Math.round(wide.width)).toBe(832);
+  expect(Math.round(wide.width)).toBe(1022);
   const doc = await box(page, ".doc");
   const content = await box(page, ".content");
   expect(

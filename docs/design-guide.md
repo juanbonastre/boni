@@ -321,7 +321,10 @@ explains it; what needs explaining goes in a help line under it, in plain words.
   page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Opciones" (sort, a board's
   grouping select, a calendar's date, visible properties) and "Nuevo". Table: the title column first, 34 px rows,
   hairline grid, each cell edited where it is (text and numbers as a field, Enter or leaving saves, Esc does not;
-  selects as Notion's coloured pills from a menu; checkboxes at once; relations read-only), delete on hover with Undo.
+  selects as Notion's coloured pills from a menu; checkboxes at once; relations from a picker: the target's rows by
+  title, filtered as one types, one with «Ninguno» or several with a click each; Juan, 2026-11-02: every property
+  but the system's is editable, D-21; Boni Calendar shows the same relation by the same title, without the vault's
+  brackets), delete on hover with Undo.
   Each column is as wide as its kind of value (title 280 px, text 200, number 110, date 140, select 150, relation
   190, checkbox 72…), never stretched to fill the page (Juan, 2026-10-30): dragging a column's edge widens or
   narrows it (an accent line under the pointer), a double click on the edge brings the usual width back, and the
@@ -359,10 +362,11 @@ explains it; what needs explaining goes in a help line under it, in plain words.
 - **Notes as pages** (2026-10-22): a row's text is edited with the page's block editor (headings, lists, to-dos,
   quotes, code, dividers; "/" offers text blocks only), saved as Markdown; what it does not paint yet (tables,
   an Obsidian embed that found no file, inline bold or links) shows as written. A note is titled by its first `# Heading`, never its file's slug.
-  Its properties start folded under one quiet line ("12 propiedades", a chevron); unfolded ("Ocultar propiedades")
-  they stay so for that collection. Each property hides with the eye that shows on hover (as Notion's); hidden ones
+  Its properties start unfolded (Juan, 2026-11-02: they are what the page is about); folded ("Ocultar propiedades",
+  a chevron; "12 propiedades" to unfold) they stay so for that collection. Each property hides with the eye that shows on hover (as Notion's); hidden ones
   wait, dimmed, under "N ocultas" at the end, where the same eye shows them again. The account keeps both per
-  collection (Boni, Boni Calendar's peek, every device). A note opens on its text, not on a list of properties.
+  collection (Boni, Boni Calendar's peek, every device). A note opens with its properties over its text (Juan,
+  2026-11-02: they are what he comes to change from the calendar), folded only where he folded them.
 - **Editing as a document** (Juan, 2026-10-30; phase 1 of the Boni note «Boni: el editor de páginas»). A selection
   that leaves a block takes whole blocks, as Notion's: a drag from one block into another, Shift+click from the block
   being edited, Esc (the block the caret is in; a second Esc lets go, a third leaves, as the peek's), Shift+↑ or

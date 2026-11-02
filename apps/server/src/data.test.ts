@@ -188,7 +188,7 @@ describe("collections as databases (plan PR 19)", () => {
         }[]
       ).find((x) => x.id === "t_libro")?.rowUi;
     expect(await ui()).toEqual({
-      open: false,
+      open: true,
       hidden: [],
       related: false,
       folded: [],
