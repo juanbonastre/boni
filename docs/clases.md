@@ -183,6 +183,17 @@ de una página sin código nuevo. Las gráficas v1 del dinero (`moneyProfile`, c
 categoría, deudas y personas) y la conciliación siguen nombrando los movimientos y sus campos por nombre: la
 transición de `AGENTS.md`, que pasará a los papeles cuando haga falta una segunda colección de dinero en ellas (3c).
 
+**Hecho, paso 4 (2026-11-02): «Calendarios» y «+ Añadir calendario» (D-23).** Juan decidió que todo lo fechable es
+candidato a calendario y que cuáles se ven lo elige él desde Boni Calendar. El servidor ofrece las colecciones con
+día que aún no son calendario (`GET /api/collections/candidates`: no archivadas, con papel `fecha` o `inicio`, fuera
+las que ya enseña un calendario o la rama de uno separado por campo) y añade una como calendario
+(`POST /api/collections/add`: una definición con su título y su día, el primer color libre de la paleta, bajo la
+cuenta de los demás; sus papeles ponen las horas, el fin y la casilla al leerla, `withRoles`), o quita un calendario
+(`POST /api/collections/remove`: solo la vista; los registros se quedan). En Boni Calendar, la barra lateral agrupa
+los calendarios de Boni en una sección «Calendarios» (antes, la cuenta de cada definición: «Agenda») con el botón
+«+ Añadir calendario», que abre el menú de candidatas (nombre y número de registros), y las propiedades de un
+calendario tienen «Quitar calendario». «Separar por» (tarea 5) queda para su maqueta.
+
 ## 7. Orden
 
 Cada paso es un PR con sus pruebas, y se despliega al cerrarse:

@@ -10,7 +10,7 @@ import {
   leaf,
   rec,
 } from "../packages/agent/src/index.ts";
-import { label } from "../packages/entities/src/index.ts";
+import { type FieldId, label, type Role } from "../packages/entities/src/index.ts";
 import { openUserStore } from "../packages/store/src/index.ts";
 
 /**
@@ -134,4 +134,30 @@ export function mcpOf(dir: string, url: () => string, name: string) {
       return r.error ? null : JSON.parse(r.text);
     },
   };
+}
+
+/**
+ * The roles of a collection (by its key; each role's field by name), as Juan's `roles --apply` sets them: a
+ * collection with a `date` role is a calendar candidate (docs/clases.md §6). Before the server starts.
+ */
+export function setRoles(
+  dir: string,
+  account: number,
+  type: string,
+  roles: Partial<Record<Role, string>>,
+): void {
+  const store = openUserStore(join(dir, "users", `${account}.db`));
+  try {
+    const t = Object.values(store.schema().types).find((x) => x.key === type);
+    if (!t) throw new Error(`no collection ${type}`);
+    const byRole: Partial<Record<Role, FieldId>> = {};
+    for (const [role, name] of Object.entries(roles) as [Role, string][]) {
+      const f = t.fields.find((x) => x.name === name || x.key === name);
+      if (!f) throw new Error(`no field ${name} in ${type}`);
+      byRole[role] = f.id;
+    }
+    store.applySchema({ op: "set_roles", type: t.id, roles: byRole }, { actor: "import" });
+  } finally {
+    store.close();
+  }
 }

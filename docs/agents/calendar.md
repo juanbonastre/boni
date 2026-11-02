@@ -10,7 +10,10 @@ tests guard most of them.
   Never write them: edit through the store actions, which turn event changes into row changes (`reconcileRows`) and
   hand them to the `CollectionProvider`. `isTask` and `done` come from the calendar's task column (`supportsTasks`).
 - **A calendar is a view of a collection with a date** (`docs/clases.md`): nothing in the code names a user's
-  collections or fields.
+  collections or fields. Which collections show is the user's choice (D-23): the server offers every collection with
+  a day and no calendar yet (`GET /api/collections/candidates`), «+ Añadir calendario» adds one
+  (`POST /api/collections/add`) and «Quitar calendario» takes the view away (`POST /api/collections/remove`), never
+  the records; the server's stream then brings a new snapshot.
 - **Repetitions** come in two kinds, and a calendar maps one or the other:
   - A master that expands (`recurrence`, `exdates`). It is never rendered directly: `expandAll` turns it into
     occurrences (`id = "<master>~<day>"`, `seriesId`, `occurrenceDay`) for the window the views publish (`store.win`,

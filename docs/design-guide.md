@@ -133,6 +133,13 @@ slate `#94a3b8`.
   checked = done) or a status column with chosen done states. Calendars without one show no Event / Task controls.
 - **Read-only calendars** can be selected but not edited or dragged: their detail shows every field disabled, and
   `Delete` on them only says "Read-only calendar" (no scope question).
+- **Calendars** (the sidebar's first group, «Calendarios», whatever account the definitions carry; Juan, 2026-11-02,
+  D-23): every collection of Boni with a day is a candidate (its `date` or `start` role, docs/clases.md §6). «+ Añadir
+  calendario» under the group opens a menu of the candidates (name and count; «Ninguna colección con fecha» when none
+  is left) and one click makes the collection a calendar with its title, its day and the first free colour of the
+  palette (its roles give the times, the end and the task box). «Quitar calendario» in a calendar's properties takes
+  the calendar away, never its records; adding it again brings it back. Only with a server (the sample has no
+  collections to offer).
 - **External calendars** (Settings → External calendars, or "Add external calendar" under the sidebar's calendars):
   other services' calendars (Google Calendar...) by their iCal address, read-only, in their own sidebar group with
   colour and eye like any other. Each row in Settings shows how many events came and when, or why the download
