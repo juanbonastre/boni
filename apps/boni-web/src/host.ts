@@ -48,6 +48,8 @@ export interface ClientSettings {
   /** Widgets hidden on this computer (they stay on the server for the others). */
   hiddenWidgets: string[];
   autostart: boolean;
+  /** The desktop's zoom of its windows (1 = the page's own size); the browser and the phone have their own. */
+  zoom?: number;
   /** Desktop only: whether widgets can be kept below the windows (X11 with wmctrl). */
   layerAvailable: boolean;
   /**
@@ -78,6 +80,7 @@ export interface SettingsPatch {
   backupOn?: boolean;
   backupDir?: string;
   backupNow?: boolean;
+  zoom?: number;
 }
 
 export interface LoginForm {

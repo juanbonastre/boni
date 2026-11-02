@@ -147,10 +147,11 @@ export function SettingsModal() {
   );
 }
 
-/** "Apariencia": theme and language. */
+/** "Apariencia": theme, language and, in the desktop app, the size of everything (its windows' zoom). */
 function Appearance() {
   const t = useStore((s) => s.t);
   const settings = useStore((s) => s.settings);
+  const zoom = settings.zoom;
   return (
     <>
       <div className="setting">
@@ -192,6 +193,38 @@ function Appearance() {
           </div>
         </div>
       </div>
+      {typeof zoom === "number" && (
+        <div className="setting">
+          <div className="setting-label">{t("settings.zoom")}</div>
+          <div className="setting-control">
+            <div className="segmented">
+              <button
+                type="button"
+                onClick={() => void saveSettings({ zoom: zoom - 0.1 })}
+                aria-label={t("settings.zoom.smaller")}
+                title={t("settings.zoom.smaller")}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveSettings({ zoom: 1 })}
+                title={t("settings.zoom.reset")}
+              >
+                {Math.round(zoom * 100)} %
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveSettings({ zoom: zoom + 0.1 })}
+                aria-label={t("settings.zoom.bigger")}
+                title={t("settings.zoom.bigger")}
+              >
+                +
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

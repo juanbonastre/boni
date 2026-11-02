@@ -152,10 +152,17 @@ Con los componentes de hoy basta para empezar:
 
 Hecho el 2026-11-02, a petición de Juan (los resúmenes salían largos y en tablas, con la marca ámbar en cada celda, y
 agruparlos por tipo se quedaba sin llamadas, P12): el planificador lee todos los correos en **una llamada** con
-`summarize_each` (una línea por correo) o `label_each` (una opción por correo y los recuentos, contados por el
-código), contesta con una **lista** de una línea por correo (quién, el asunto, qué pide; el más reciente primero) y
-una tabla solo si se la piden, y agrupa por tipo con `label_each` y una gráfica de sus recuentos. Una lista o una
-tabla cuyos valores vienen todos de fuera lleva la marca ámbar una vez, en el bloque (`docs/design-guide.md`).
+`summarize_each` (le pasa los registros, para que el lector vea quién escribe, el asunto y la fecha; devuelve una
+línea por correo —quién y qué— y, con `options`, el tipo de cada uno: los correos vuelven ordenados por tipo en el
+orden de las opciones y con sus recuentos, contados por el código) o `label_each` (solo el tipo y los recuentos).
+Contesta como el ejemplo de arriba: una frase con lo que importa, **una lista** con una sección por tipo («Te piden
+algo», «Para saber», «Avisos y publicidad») y una línea por correo, sin fechas, ids ni campos crudos al lado (tabla
+solo si se la piden), y al final una pregunta corta ofreciendo lo que Boni puede hacer con ellos. Cada línea lleva el
+id y el tipo de su correo (los pone el código, nunca el modelo), y al pulsarla el correo se abre en el panel lateral
+como lo enseña el cliente de correo, con «Agrandar» para su página. Para contar por tipo, `label_each` y una gráfica
+de sus recuentos. Una lista, tabla o gráfica cuyos valores vienen todos de fuera lleva la marca ámbar una vez, en el
+bloque (`docs/design-guide.md`). Lo que Juan pidió después (2026-11-02, tarde) y queda: el correo en una ventana
+aparte desde la conversación (hoy, el panel y su página).
 
 Más adelante, con maqueta antes (I-09): una tarjeta por correo con «Abrir» (el registro en Boni) y «Proponer tarea».
 

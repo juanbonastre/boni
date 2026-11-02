@@ -27,7 +27,7 @@ import {
   type StepWords,
   textOf,
 } from "../core/agent.ts";
-import { today } from "../core/clock.ts";
+import { deviceZone, today } from "../core/clock.ts";
 import type { T } from "../i18n.ts";
 import {
   agentErrorText,
@@ -43,6 +43,7 @@ import {
   loadRunDetail,
   newConversation,
   openConversation,
+  openRecord,
   openSettings,
   removeConversation,
   renameConversation,
@@ -664,35 +665,61 @@ function Notices({ t, result }: { t: T; result: NonNullable<ChatEntry["result"]>
   );
 }
 
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
+const CIVIL_DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** An instant or a day as a value reads as a date in Juan's language and zone, never in ISO form (Juan, 2026-11-02). */
+function readable(v: unknown, lang: string): string | null {
+  if (typeof v !== "string") return null;
+  const locale = lang === "en" ? "en-GB" : "es-ES";
+  if (INSTANT.test(v)) {
+    const ms = Date.parse(v);
+    return Number.isNaN(ms)
+      ? null
+      : new Intl.DateTimeFormat(locale, {
+          dateStyle: "medium",
+          timeStyle: "short",
+          timeZone: deviceZone(),
+        }).format(ms);
+  }
+  if (CIVIL_DAY.test(v)) {
+    const [y, m, d] = v.split("-").map(Number);
+    return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(
+      Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1),
+    );
+  }
+  return null;
+}
+
 /**
  * A value as text, with a mark when it came from outside (an e-mail, a page) or from a model; `plain` when the block
- * around it already carries the mark (a list or a table of outside values: once, not on every cell).
+ * around it already carries the mark (a list, a table or a chart of outside values: once, not on every cell).
  */
 export function ValueText({ p, plain = false }: { p: Painted; plain?: boolean }) {
   const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language);
   if (isProposal(p)) return <span className="val-proposal">{t("chat.inInbox")}</span>;
   const integrity = lowest(p);
   const cls =
     integrity === "external" && !plain ? "val-ext" : integrity === "model" ? "val-model" : "val";
   return (
     <span className={cls} title={integrity === "external" ? t("chat.fromOutside") : undefined}>
-      {textOf(p)}
+      {(p.t === "v" ? readable(p.value, lang) : null) ?? textOf(p)}
     </span>
   );
 }
 
-/** A number in Juan's locale ("42,5"); anything else as text. */
-function NumberText({ p }: { p: Painted }) {
+/** A number in Juan's locale ("42,5"); anything else as text. `plain`: the block carries the outside mark. */
+function NumberText({ p, plain = false }: { p: Painted; plain?: boolean }) {
   const lang = useStore((s) => s.settings.language);
   if (p.t === "v" && typeof p.value === "number")
     return (
-      <span className={lowest(p) === "external" ? "val-ext" : "val"}>
+      <span className={lowest(p) === "external" && !plain ? "val-ext" : "val"}>
         {new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", {
           maximumFractionDigits: 2,
         }).format(p.value)}
       </span>
     );
-  return <ValueText p={p} />;
+  return <ValueText p={p} plain={plain} />;
 }
 
 const fieldsOf = (spec: Painted | undefined): string[] | null => {
@@ -706,14 +733,78 @@ const fieldsOf = (spec: Painted | undefined): string[] | null => {
     : null;
 };
 
-/** The painted leaves of a value: an item's own, or a record's fields. */
-const leavesOf = (p: Painted): Painted[] =>
-  p.t === "rec" ? Object.values(p.fields) : p.t === "list" ? p.items.flatMap(leavesOf) : [p];
-/** Whether every value of a block came from outside: then the block carries the mark once (Juan, 2026-11-02). */
-const allOutside = (items: Painted[]) => {
-  const leaves = items.flatMap(leavesOf);
+const HIDDEN_FIELDS = new Set(["id", "type"]);
+/** The fields of a record a block shows: the given ones, or all but its id and type. */
+const shownFields = (fields: string[] | null, rec: Record<string, Painted>) =>
+  fields ?? Object.keys(rec).filter((k) => !HIDDEN_FIELDS.has(k));
+/** The painted leaves a block shows of its items: the shown fields of a record, or the value itself. */
+const shownLeaves = (items: Painted[], fields: string[] | null): Painted[] =>
+  items.flatMap((p) =>
+    p.t === "rec"
+      ? shownFields(fields, p.fields).flatMap((f) => (p.fields[f] ? [p.fields[f] as Painted] : []))
+      : p.t === "list"
+        ? shownLeaves(p.items, fields)
+        : [p],
+  );
+/** Whether every shown value of a block came from outside: then the block carries the mark once (Juan, 2026-11-02). */
+const allOutside = (items: Painted[], fields: string[] | null = null) => {
+  const leaves = shownLeaves(items, fields);
   return leaves.length > 0 && leaves.every((l) => lowest(l) === "external");
 };
+
+const TRUSTED = new Set(["own", "imported", "user"]);
+/** The record an item points to: its id and type as the code wrote them (a model's or outside text never opens anything). */
+function recordOf(item: Painted): { type: string; id: string } | null {
+  if (item.t !== "rec") return null;
+  const id = item.fields.id;
+  const type = item.fields.type;
+  if (id?.t !== "v" || type?.t !== "v") return null;
+  if (typeof id.value !== "string" || typeof type.value !== "string") return null;
+  if (!TRUSTED.has(id.integrity) || !TRUSTED.has(type.integrity)) return null;
+  return { type: type.value, id: id.value };
+}
+
+/** A list item: its shown fields as text, « · » between them (not the group's); one that points to a record opens it. */
+function ListItem({
+  item,
+  fields,
+  group,
+  plain,
+}: {
+  item: Painted;
+  fields: string[] | null;
+  group: string;
+  plain: boolean;
+}) {
+  const t = useStore((s) => s.t);
+  const at = recordOf(item);
+  const body =
+    item.t === "rec" ? (
+      shownFields(fields, item.fields)
+        .filter((f) => f !== group && item.fields[f])
+        .map((f, i) => (
+          <span key={f}>
+            {i > 0 && <span className="reply-sep"> · </span>}
+            <ValueText p={item.fields[f] as Painted} plain={plain} />
+          </span>
+        ))
+    ) : (
+      <ValueText p={item} plain={plain} />
+    );
+  if (!at) return <li>{body}</li>;
+  return (
+    <li>
+      <button
+        type="button"
+        className="reply-open"
+        title={t("chat.openRecord")}
+        onClick={() => void openRecord(at.type, at.id)}
+      >
+        {body}
+      </button>
+    </li>
+  );
+}
 
 function ReplyView({ reply }: { reply: Reply }) {
   const t = useStore((s) => s.t);
@@ -742,39 +833,53 @@ function ReplyView({ reply }: { reply: Reply }) {
       );
     case "list": {
       const items = d.items?.t === "list" ? d.items.items : d.items ? [d.items] : [];
+      const group = d.group ? textOf(d.group) : "";
       const fields = fieldsOf(d.fields);
-      const outside = allOutside(items);
+      const outside = allOutside(items, fields);
+      // One section per value of the group field, in the items' order (what came first matters most).
+      const sections: { key: string; items: Painted[] }[] = [];
+      for (const item of items) {
+        const g = group && item.t === "rec" ? item.fields[group] : undefined;
+        const key = g ? textOf(g) : "";
+        const s = sections.find((x) => x.key === key);
+        if (s) s.items.push(item);
+        else sections.push({ key, items: [item] });
+      }
       return (
         <div
           className={`reply-list${outside ? " reply-ext" : ""}`}
           title={outside ? t("chat.fromOutside") : undefined}
         >
           {caption}
-          <ul>
-            {items.map((item, i) => (
-              <li key={i}>
-                {item.t === "rec" && fields ? (
-                  fields.map((f) =>
-                    item.fields[f] ? (
-                      <ValueText key={f} p={item.fields[f] as Painted} plain={outside} />
-                    ) : null,
-                  )
-                ) : (
-                  <ValueText p={item} plain={outside} />
-                )}
-              </li>
-            ))}
-          </ul>
+          {sections.map((s, si) => (
+            <div key={si} className="reply-section">
+              {s.key && (
+                <div className="reply-group">
+                  {s.key} · {s.items.length}
+                </div>
+              )}
+              <ul>
+                {s.items.map((item, i) => (
+                  <ListItem key={i} item={item} fields={fields} group={group} plain={outside} />
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
       );
     }
-    case "chart":
+    case "chart": {
+      const outside = allOutside([d.labels, d.values].filter((x): x is Painted => Boolean(x)));
       return (
-        <div className="reply-chart">
+        <div
+          className={`reply-chart${outside ? " reply-ext" : ""}`}
+          title={outside ? t("chat.fromOutside") : undefined}
+        >
           {caption}
-          <ReplyChart d={d} />
+          <ReplyChart d={d} plain={outside} />
         </div>
       );
+    }
     case "table": {
       const rows = d.rows?.t === "list" ? d.rows.items : [];
       const first = rows.find((r) => r.t === "rec");
@@ -1276,7 +1381,7 @@ const numberIn = (p: Painted | undefined): number | null =>
  * A chart in an answer: numbers the tools gave, one per label (never the model's own), as bars across (they fit a
  * phone and their labels never turn), or as a line when it asks for one. Labels and values are painted as text.
  */
-function ReplyChart({ d }: { d: Record<string, Painted> }) {
+function ReplyChart({ d, plain = false }: { d: Record<string, Painted>; plain?: boolean }) {
   const labels = d.labels?.t === "list" ? d.labels.items : [];
   const values = d.values?.t === "list" ? d.values.items : [];
   const unit = d.unit ? textOf(d.unit) : "";
@@ -1305,12 +1410,12 @@ function ReplyChart({ d }: { d: Record<string, Painted> }) {
         <div className="reply-line-ends">
           {first && (
             <span>
-              <ValueText p={first.label} /> · <NumberText p={first.p} />
+              <ValueText p={first.label} plain={plain} /> · <NumberText p={first.p} plain={plain} />
             </span>
           )}
           {last && (
             <span>
-              <ValueText p={last.label} /> · <NumberText p={last.p} />
+              <ValueText p={last.label} plain={plain} /> · <NumberText p={last.p} plain={plain} />
               {unit && ` ${unit}`}
             </span>
           )}
@@ -1323,7 +1428,7 @@ function ReplyChart({ d }: { d: Record<string, Painted> }) {
       {points.map((x, i) => (
         <li key={i}>
           <span className="reply-bar-label">
-            <ValueText p={x.label} />
+            <ValueText p={x.label} plain={plain} />
           </span>
           <span className="reply-bar-track">
             <span
@@ -1332,7 +1437,7 @@ function ReplyChart({ d }: { d: Record<string, Painted> }) {
             />
           </span>
           <span className="reply-bar-value">
-            <NumberText p={x.p} />
+            <NumberText p={x.p} plain={plain} />
             {unit && ` ${unit}`}
           </span>
         </li>

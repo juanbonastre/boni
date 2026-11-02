@@ -1,4 +1,4 @@
-import { htmlToText } from "./html.ts";
+import { decodeEntities, htmlToText } from "./html.ts";
 
 /**
  * A mail (RFC 5322 + MIME) as what Boni keeps of it: who, when, the subject, the body as plain text and the
@@ -256,7 +256,8 @@ export function parseMessage(raw: Uint8Array, partial = false, o: { keep?: numbe
     to: parseAddresses(h("to")),
     cc: parseAddresses(h("cc")),
     date: Number.isFinite(parsedDate) ? new Date(parsedDate).toISOString() : null,
-    subject: decodeWords(h("subject") ?? "").slice(0, 500),
+    // Some senders put HTML entities in the subject ("&#8220;Tu investigación&#8221;"): read as the characters.
+    subject: decodeEntities(decodeWords(h("subject") ?? "")).slice(0, 500),
     text: cut ? text.slice(0, MAX_TEXT) : text,
     format,
     hidden,

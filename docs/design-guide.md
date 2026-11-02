@@ -479,9 +479,14 @@ explaining goes in the docs, not on the screen.
   answer only while its turn changed something not undone yet: a question that only read has nothing to undo, and once
   undone the link goes. **Text is only text**: no HTML, no Markdown, no
   links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover;
-  a list or a table whose values all came from outside carries the mark once, on the block, not on every value
-  (2026-11-02). When a request hits one of its limits (too many model calls, steps or text, P12), the error says
-  which, not «una regla de seguridad».
+  a list, a table or a chart whose shown values all came from outside carries the mark once, on the block, never on
+  every value (Juan, 2026-11-02: «una línea naranja en todas partes»). An instant or a day in a reply reads as a date
+  in Juan's language and zone («19 oct 2026, 9:28»), never in ISO form. A **list** may have sections (its `group`
+  field: a small upper-case label with the count, in the items' order) and its items show their fields with « · »
+  between them, never their id or type; an item that carries the id and type of a record as the code wrote them opens
+  it: a mail in the side panel as the mail client shows it (the type's name as the panel's title, «Agrandar» takes it
+  to its page), anything else as its page. When a request hits one of its limits (too many model calls, steps or
+  text, P12), the error says which, not «una regla de seguridad».
   A question shows its options as pills (one line, cut with an ellipsis) and never asks for a password. A
   **confirmation** is a card with an `--accent` border holding only the code's components: the action as a question,
   each argument with its real value in full (scrolling, never cut), where it came from ("Viene de fuera · un correo")
@@ -511,7 +516,7 @@ explaining goes in the docs, not on the screen.
   fields on the left, the three days on the right (titles on two lines); one column when the card is narrow. A
   changed note's text shows as reading text (headings, lists, to-dos), never raw Markdown. Accept and Reject on each
   card (never "accept all"). A card from mail has "Ver correo" on its source line (the mail's own row in Boni: IMAP
-  gives no webmail link) and, detailed, "Por qué: «…»" (the reader's quote; in « » only when the code found those
+  gives no webmail link; the line carries no amber mark: it says itself it is a mail, Juan, 2026-11-02) and, detailed, "Por qué: «…»" (the reader's quote; in « » only when the code found those
   words in the mail). **Corregir** (the pencil): the title and the collection on two lines and, folded under
   «Propiedades» (Juan, 2026-11-02: there, but not all at once), the chosen collection's other properties, each with
   the same cell the table edits it with (an option from its menu, a relation from its picker, a box); accepting
@@ -548,7 +553,9 @@ explaining goes in the docs, not on the screen.
 - **Settings** (Boni): one section at a time, chosen in a column on the left (tabs along the top on a phone or a narrow
   window): Cuenta, Modelos, Privacidad, Decisiones, Extensiones, Correo, Tus datos, Apariencia, Escritorio (only
   those that apply).
-  It opens on Cuenta. **Extensiones** (docs/extensiones.md): a note on what they are, then per extension its name and
+  It opens on Cuenta. **Apariencia**: the theme, the language and, in the desktop app only, «Tamaño» (−, the
+  percentage, +: the windows' zoom in tenths from 70 % to 200 %, kept per computer; Ctrl+= / Ctrl+- / Ctrl+0 do the
+  same from anywhere in the app; the browser and the phone have their own). **Extensiones** (docs/extensiones.md): a note on what they are, then per extension its name and
   what it does in one line with its switch, and under it a closed "Qué usa" group whose summary says whether it is
   as it came ("Viene con Boni (versión 1)") or changed; inside, in plain words (never ids): where it brings data from,
   what it reads, what it looks for, whether it proposes, its daily budget. Above them, each version an assistant

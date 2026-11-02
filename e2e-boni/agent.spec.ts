@@ -60,6 +60,7 @@ test("a reply is painted by the code, and what came from outside is only text", 
   });
   await openApp(page, "/?still", {
     agent: { "POST api/agent/turn": [TEXT_REPLY], "GET api/agent/proposals": [PROPOSALS] },
+    mail: true,
   });
   await ask(page, "resume el último correo");
   const answer = page.locator(".turn-answer").first();
@@ -67,9 +68,14 @@ test("a reply is painted by the code, and what came from outside is only text", 
   // The e-mail's HTML is shown as the text it is: no script ran, no image, no link, nothing loaded.
   await expect(answer.locator(".val-ext")).toContainText("<script>window.__pwned = 1</script>");
   await expect(answer.locator(".val-ext")).toContainText("![x](https://evil.example/p.png?q=1)");
-  // A list of outside values carries the mark once, on the block (Juan, 2026-11-02).
-  await expect(answer.locator(".reply-list.reply-ext")).toContainText("Una tienda anuncia rebajas");
-  await expect(answer.locator(".reply-list .val-ext")).toHaveCount(0);
+  // A list of outside values carries the mark once, on the block, in sections by kind (Juan, 2026-11-02).
+  const list = answer.locator(".reply-list.reply-ext");
+  await expect(list).toContainText("Una tienda anuncia rebajas");
+  await expect(list.locator(".val-ext")).toHaveCount(0);
+  await expect(list.locator(".reply-group")).toHaveText([
+    "Te piden algo · 1",
+    "Avisos y publicidad · 1",
+  ]);
   expect(
     await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned),
   ).toBeUndefined();
@@ -86,6 +92,16 @@ test("a reply is painted by the code, and what came from outside is only text", 
     text: "resume el último correo",
   });
   await page.screenshot({ path: `${SHOTS}/agent-reply.png` });
+  // Last, since it leaves the conversation: a line with its mail's id and type (the code's) opens the mail in the
+  // side panel; one whose id came from outside is only text; «Agrandar» takes the mail to its page.
+  await expect(list.locator(".reply-open")).toHaveCount(1);
+  await expect(list.locator(".reply-open")).toHaveAttribute("title", "Abrir");
+  await list.locator(".reply-open").click();
+  const panel = page.locator(".side-panel");
+  await expect(panel.locator(".mail-subject")).toBeVisible();
+  await panel.getByRole("button", { name: "Agrandar" }).click();
+  await expect(page.locator(".side-panel")).toHaveCount(0);
+  await expect(page.locator(".mail-subject")).toBeVisible();
 });
 
 test("a turn in Juan's words: each step says what it does, on what and what it found; numbers to compare are a chart", async ({
@@ -940,8 +956,8 @@ test("the panel: questions and proposals in one queue as they came, each saying 
   ]);
   const q1 = panel.locator(".request-card").first();
   await expect(q1.locator(".request-prompt")).toHaveText("¿A qué colección va «Entrega de actas»?");
-  // Where it came from is outside text, marked, with "Ver correo".
-  await expect(q1.locator(".inbox-source-text")).toHaveClass(/val-ext/);
+  // Where it came from, as text (no mark: the line itself says it is a mail; Juan, 2026-11-02), with "Ver correo".
+  await expect(q1.locator(".inbox-source-text")).not.toHaveClass(/val-ext/);
   await expect(q1.locator(".inbox-source-text")).toContainText("Secretaría de ejemplo");
   await expect(q1.getByRole("button", { name: "Ver correo" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/agent-requests.png` });

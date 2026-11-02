@@ -478,7 +478,7 @@ export function RequestCard({ r }: { r: InboxRequest }) {
       {about?.kind === "mail" && (
         <p className="inbox-source">
           <Mail size={13} strokeWidth={1.8} aria-hidden="true" />
-          <span className="inbox-source-text val-ext" title={t("chat.fromOutside")}>
+          <span className="inbox-source-text" title={t("chat.fromOutside")}>
             {about.account ?? t("inbox.mail")}
             {about.from ? ` · ${about.from}` : ""}
             {about.subject ? ` · ${about.subject}` : ""}

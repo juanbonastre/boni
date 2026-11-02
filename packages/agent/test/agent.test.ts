@@ -490,7 +490,13 @@ describe("the agent, with a planner that behaves", () => {
       version: 1,
       steps: [
         { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
-        { id: "s", op: "read", reader: "summarize_each", input: ref("$m.items.cuerpo") },
+        {
+          id: "s",
+          op: "read",
+          reader: "summarize_each",
+          input: ref("$m.items"),
+          params: { options: { fn: "list", args: [lit("piden algo"), lit("publicidad")] } },
+        },
         {
           id: "k",
           op: "read",
@@ -501,7 +507,12 @@ describe("the agent, with a planner that behaves", () => {
             question: lit("¿De qué tipo es?"),
           },
         },
-        { id: "r1", op: "reply", component: "list", data: { items: ref("$s.lines") } },
+        {
+          id: "r1",
+          op: "reply",
+          component: "list",
+          data: { items: ref("$s.items"), fields: lit("line"), group: lit("kind") },
+        },
         {
           id: "r2",
           op: "reply",
@@ -511,25 +522,38 @@ describe("the agent, with a planner that behaves", () => {
       ],
     };
     const reader = fakePlanner([
-      { lines: ["Lucía pregunta si quedamos el jueves", "Una tienda anuncia rebajas"] },
+      {
+        items: [
+          { line: "Una tienda anuncia rebajas", kind: "publicidad" },
+          { line: "Lucía pregunta si quedamos el jueves", kind: "piden algo" },
+        ],
+      },
       { choices: ["personal", "publicidad"] },
     ]);
     const res = await env
       .agent(fakePlanner([plan]), reader)
       .turn({ text: "Resume mis correos", origin: PERSONAL });
     expect(res.status).toBe("done");
-    // Two mails, two readers, two calls: each reader saw both mails, each under its number.
+    // Two mails, two readers, two calls: each reader saw both mails, each under its number, as its fields.
     expect(reader.requests).toHaveLength(2);
     const seen = reader.requests[0]?.input as { content?: string; count?: number };
     expect(seen.count).toBe(2);
-    expect(seen.content).toContain("[2]\nRebajas de otoño");
-    expect(res.replies[0]?.data.items).toMatchObject({
-      t: "list",
-      items: [
-        { value: "Lucía pregunta si quedamos el jueves", integrity: "external" },
-        { value: "Una tienda anuncia rebajas", integrity: "external" },
-      ],
-    });
+    expect(seen.content).toContain("[2]\n");
+    expect(seen.content).toContain("cuerpo: Rebajas de otoño");
+    expect(seen.content).not.toMatch(/\nid: /);
+    // The items come sorted by kind in the options' order, each with the id and type of its mail (the code's, not
+    // the model's) so the list can open it.
+    type Item = { fields: Record<string, { value: unknown; integrity: string } | undefined> };
+    const items = (res.replies[0]?.data.items as { items: Item[] } | undefined)?.items ?? [];
+    expect(items.map((i) => [i.fields.line?.value, i.fields.kind?.value])).toEqual([
+      ["Lucía pregunta si quedamos el jueves", "piden algo"],
+      ["Una tienda anuncia rebajas", "publicidad"],
+    ]);
+    expect(items[0]?.fields.line).toMatchObject({ integrity: "external" });
+    expect(items[0]?.fields.type).toMatchObject({ value: "correo", integrity: "own" });
+    const mails = env.store.list("t_correo").map((e) => e.entity.id);
+    for (const i of items) expect(mails).toContain(i.fields.id?.value);
+    expect(items[0]?.fields.id?.value).not.toBe(items[1]?.fields.id?.value);
     expect(res.replies[1]?.data.labels).toMatchObject({
       items: [{ value: "personal" }, { value: "publicidad" }],
     });

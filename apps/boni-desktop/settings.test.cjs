@@ -71,7 +71,7 @@ test("the first run shows every widget again, where its desklet was", () => {
   assert.deepEqual(again.hiddenWidgets, ["w-c"]);
 });
 
-test("the page never gets the token, and its patches are checked", () => {
+test("the page never gets the token, and its patches are checked", (t) => {
   const s = { ...S.loadSettings("/nonexistent"), serverUrl: "https://a.example", token: "secreto" };
   const view = S.clientView(s, { autostart: false, layerAvailable: true });
   assert.equal(view.hasToken, true);
@@ -93,6 +93,18 @@ test("the page never gets the token, and its patches are checked", () => {
     "https://a.example",
   );
   assert.equal(S.applyPatch(s, { token: "" }).token, "secreto");
+  // The zoom: in tenths, between 70 % and 200 %; anything else leaves it.
+  assert.equal(S.applyPatch(s, { zoom: 1.1 }).zoom, 1.1);
+  assert.equal(S.applyPatch(s, { zoom: 0.21 }).zoom, 0.7);
+  assert.equal(S.applyPatch(s, { zoom: 9 }).zoom, 2);
+  assert.equal(S.applyPatch(s, { zoom: "2" }).zoom, 1);
+  assert.equal(S.applyPatch(s, { zoom: Number.NaN }).zoom, 1);
+  assert.equal(S.clientView(s, {}).zoom, 1);
+  const kept = path.join(tmp(t), "settings.json");
+  S.saveSettings(kept, { ...s, zoom: 1.3 });
+  assert.equal(S.loadSettings(kept).zoom, 1.3);
+  S.saveSettings(kept, { ...s, zoom: 7 });
+  assert.equal(S.loadSettings(kept).zoom, 1);
   const hid = S.applyPatch(s, { widgetHidden: { id: "w-a", hidden: true } });
   assert.deepEqual(hid.hiddenWidgets, ["w-a"]);
   assert.deepEqual(

@@ -27,17 +27,38 @@ export const TEXT_REPLY = {
       },
     },
     {
-      // A list of outside values: the mark once, on the block, not on every line.
+      // A list of outside values (summarize_each's items): the mark once, on the block, not on every line; one
+      // section per kind; a line with the id and type of its mail (the code's) opens it.
       component: "list",
       data: {
         items: {
           t: "list",
           integrity: "external",
           items: [
-            v("Lucía pregunta si quedamos el jueves", "external", "personal"),
-            v("Una tienda anuncia rebajas", "external", "personal"),
+            {
+              t: "rec",
+              integrity: "external",
+              fields: {
+                line: v("Lucía pregunta si quedamos el jueves", "external", "personal"),
+                kind: v("Te piden algo", "external", "personal"),
+                id: v("m1", "own"),
+                type: v("Correos", "own"),
+              },
+            },
+            {
+              t: "rec",
+              integrity: "external",
+              fields: {
+                line: v("Una tienda anuncia rebajas", "external", "personal"),
+                kind: v("Avisos y publicidad", "external", "personal"),
+                id: v("evil", "external", "personal"),
+                type: v("Correos", "external", "personal"),
+              },
+            },
           ],
         },
+        fields: v("line", "model"),
+        group: v("kind", "model"),
       },
     },
     {

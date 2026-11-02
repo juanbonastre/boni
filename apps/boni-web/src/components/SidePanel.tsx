@@ -24,6 +24,7 @@ import {
 import { BlockPanel, kindName } from "./BlockPanel.tsx";
 import { EditorForm } from "./editorFields.tsx";
 import { FormView } from "./FormView.tsx";
+import { RowPanel } from "./RowPanel.tsx";
 import { RowsPanel } from "./RowsPanel.tsx";
 
 /**
@@ -34,6 +35,11 @@ export function SidePanel() {
   const t = useStore((s) => s.t);
   const panel = useStore((s) => s.panel);
   const screens = useStore((s) => s.screens);
+  const rowType = useStore((s) =>
+    s.panel?.kind === "row"
+      ? s.dataTypes?.find((x) => x.id === (s.panel as { type: string }).type)
+      : undefined,
+  );
   const page = useEditing();
 
   useEffect(() => {
@@ -63,7 +69,9 @@ export function SidePanel() {
         ? blockTitle
         : panel.kind === "rows"
           ? t("rows.title")
-          : (screen?.title ?? t("chart.loading"));
+          : panel.kind === "row"
+            ? (rowType?.name ?? "")
+            : (screen?.title ?? t("chart.loading"));
   return (
     <aside className="side-panel" aria-label={title}>
       <div className="panel-head">
@@ -82,6 +90,8 @@ export function SidePanel() {
         <EditorPanel key={panel.spec.id || "new"} initial={panel.spec} isNew={panel.isNew} />
       ) : panel.kind === "block" ? (
         <BlockPanel key={panel.id} id={panel.id} />
+      ) : panel.kind === "row" ? (
+        <RowPanel key={panel.id} type={panel.type} id={panel.id} />
       ) : panel.kind === "rows" ? (
         <RowsPanel
           key={`${panel.id}:${panel.drill ?? ""}`}

@@ -698,3 +698,18 @@ test("a picture pasted into a note is kept in Boni (in its only collection of fi
       .evaluate((i) => (i as HTMLImageElement).naturalWidth),
   ).toBeGreaterThan(100);
 });
+
+test("Apariencia › Tamaño and Ctrl+0: the windows' zoom, kept in this computer's settings", async () => {
+  const w = await (app as ElectronApplication).firstWindow();
+  const width = await w.evaluate(() => window.innerWidth);
+  await w.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  await w.getByRole("tab", { name: "Apariencia" }).click();
+  await w.getByRole("button", { name: "Más grande (Ctrl++)" }).click();
+  // Bigger: the same window holds fewer CSS pixels.
+  await expect.poll(() => w.evaluate(() => window.innerWidth)).toBeLessThan(width);
+  await expect(w.getByTitle("Tamaño normal (Ctrl+0)")).toHaveText("110 %");
+  await w.keyboard.press("Control+0");
+  await expect.poll(() => w.evaluate(() => window.innerWidth)).toBe(width);
+  await expect(w.getByTitle("Tamaño normal (Ctrl+0)")).toHaveText("100 %");
+  await w.keyboard.press("Escape");
+});
