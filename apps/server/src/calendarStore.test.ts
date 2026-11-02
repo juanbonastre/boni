@@ -540,3 +540,81 @@ describe("the calendar over Boni's collections", () => {
     ).toHaveLength(1);
   });
 });
+
+describe("a calendar reads its collection's roles (docs/clases.md §6, D-20)", () => {
+  it("a calendar's day, times and task box come from its collection's roles; its definition until they are set", async () => {
+    const store = openUserStore(":memory:");
+    cleanups.push(() => store.close());
+    seed(
+      store,
+      [
+        { key: "proyecto", name: "Proyecto", folder: "proyectos/" },
+        {
+          key: "docencia",
+          name: "Docencia",
+          folder: "agenda/docencia/",
+          fields: { ...PROJECT, dia: "date", lista: "checkbox" },
+          calendar: RAW,
+        },
+      ],
+      NOTES,
+    );
+    const open = () => new StoreCalendar(store, { write: true, pollMs: 60_000 });
+    // No roles yet: the definition's mapping, as before.
+    let cal = open();
+    let snap = await cal.snapshot();
+    expect(snap.views[0]?.mapping.when).toEqual({
+      kind: "split",
+      date: "date",
+      startTime: "startTime",
+      endTime: "endTime",
+    });
+    expect(snap.views[0]?.mapping.task).toEqual({ column: "completed" });
+    cal.close();
+    // The roles name other fields, two with no column in the definition: the calendar follows the roles, those
+    // fields travel by their name, and the end time (no role) is no longer the calendar's.
+    store.applySchema(
+      {
+        op: "set_roles",
+        type: "t_docencia",
+        roles: { date: "f_dia", time: "f_starttime", done: "f_lista" },
+      },
+      { actor: "user" },
+    );
+    cal = open();
+    cleanups.push(() => cal.close());
+    snap = await cal.snapshot();
+    expect(snap.views[0]?.mapping.when).toEqual({
+      kind: "split",
+      date: "dia",
+      startTime: "startTime",
+    });
+    expect(snap.views[0]?.mapping.task).toEqual({ column: "lista" });
+    expect(snap.collections[0]?.columns.filter((c) => c.id === "dia" || c.id === "lista")).toEqual([
+      { id: "dia", name: "dia", type: "date" },
+      { id: "lista", name: "lista", type: "checkbox" },
+    ]);
+    expect(taskDoneField(store, "t_docencia")?.id).toBe("f_lista");
+    // A row written with them lands in those fields, and comes back by their names.
+    const fresh: Row = {
+      id: "ev-nuevo",
+      collectionId: "docencia",
+      values: { title: "Clase inventada", dia: "2026-11-06", startTime: "09:00", lista: true },
+      created: 0,
+      updated: 0,
+    };
+    const made = await cal.apply(
+      snap.version,
+      [{ op: "upsert", row: fresh }],
+      "token-a",
+      "portatil",
+    );
+    const id = made.ok ? (made.aliases["ev-nuevo"] as string) : "";
+    expect(store.get(id)?.entity.values).toMatchObject({
+      f_dia: "2026-11-06",
+      f_starttime: "09:00",
+      f_lista: true,
+    });
+    expect((await rowOf(cal, id)).values).toMatchObject({ dia: "2026-11-06", lista: true });
+  });
+});

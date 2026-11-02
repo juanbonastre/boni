@@ -156,8 +156,22 @@ maqueta antes (I-09).
 - **El paso 2, la reestructuración, preparado:** `cli.ts roles <cuenta>` deduce los papeles de la definición de cada
   calendario y de los movimientos del dinero. Sin `--apply` solo los lista. Con `--apply` los pone en una sola
   ejecución, y `--undo <run>` la deshace entera.
-- **Pendiente:** que Boni Calendar, las gráficas del dinero y la conciliación lean los papeles en vez de su definición y
-  su código (paso 3), y «Separar por» y la página de una colección con sus papeles, con maqueta antes (paso 4).
+- **Pendiente:** que las gráficas del dinero y la conciliación lean los papeles en vez de su código (paso 3, lo que
+  queda), y «Separar por» y la página de una colección con sus papeles (paso 4).
+
+**Hecho, paso 2 (2026-11-02):** Juan pasó `roles juan --apply` en su cuenta: Agenda tiene día, hora, hora de fin y
+día de fin de su calendario; Movimiento, importe, día y categoría del código del dinero.
+
+**Hecho, paso 3a (2026-11-02): Boni Calendar lee los papeles.** El día, las horas, el fin y la casilla de cada
+calendario salen de los papeles de su colección (`withRoles` en `apps/server/src/calendarStore.ts`): la definición
+del calendario (`calendar/defs`) se queda con lo suyo, el título, el lugar, el color, los avisos y por qué campo se
+separa la rama. Una colección sin papeles sigue leyéndose por su definición, papel a papel, mientras no los tenga. El
+campo de un papel se lee por la columna que se llama como él o, si la definición no la tiene, por el nombre del campo
+(así llevan las filas lo que no está en la definición). La casilla es el papel `hecha` de la colección donde se hacen
+las tareas (`make.task` en un calendario sobre una rama), y `cli.ts roles` la pone ahí. Un calendario sigue siendo una
+colección con definición: una colección fechable sin definición no sale sola todavía (lo decide el paso 4, con la
+página de la colección), porque Movimiento también es fechable y no es para el calendario. La app de Boni Calendar no
+escribe el mapeo en el servidor (solo lo lee), así que no hay escritura que redirigir.
 
 ## 7. Orden
 
