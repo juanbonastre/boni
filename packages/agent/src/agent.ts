@@ -1787,6 +1787,8 @@ export class Agent {
      * what changed, as a prediction the reviewer learns from.
      */
     edits?: { type?: string; values?: Record<string, Json | null> },
+    /** `judge: false` when Boni accepts alone (docs/fiabilidad.md §3.4): its own acceptance vouches for nothing. */
+    o: { judge?: boolean } = {},
   ): Promise<TurnResult> {
     const p = this.o.store.journal.proposal(id);
     const empty = (error: string): TurnResult => ({
@@ -1848,7 +1850,7 @@ export class Agent {
     );
     st.preset.set("accept", args);
     this.o.store.journal.setProposal(id, "accepted", this.now(), changed);
-    this.judge(p.run, changed);
+    if (o.judge !== false) this.judge(p.run, changed);
     return this.advance(st);
   }
 

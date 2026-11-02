@@ -1022,7 +1022,7 @@ function runTitle(t: T, r: RunSummary): string {
     case "review":
       return t("log.what.review");
     case "accepted":
-      return t("log.what.accepted");
+      return r.alone ? t("log.what.alone") : t("log.what.accepted");
     default:
       return t(`log.origin.${r.origin}`);
   }
@@ -1098,6 +1098,7 @@ function Accuracy({ t, areas, lang }: { t: T; areas: AreaAccuracy[]; lang: strin
                     pct: Math.round((100 * a.right) / a.judged),
                   })
                 : t("accuracy.judged.none")}
+              {a.switchable && a.auto ? ` · ${t("accuracy.solo")}` : ""}
             </span>
             {a.judged > 0 && (
               <button

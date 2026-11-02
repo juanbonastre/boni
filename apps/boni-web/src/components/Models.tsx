@@ -202,6 +202,33 @@ export function Spending({
 const lastEval = (view: View, role: ModelRole, c: ModelChoice): ModelEvaluation | undefined =>
   view.evaluations.find((e) => e.role === role && same(e, c));
 
+/** The decider's calibration by level, as the evaluation measured it: what was right at each level it claimed. */
+function Calibration({ ev }: { ev: ModelEvaluation }) {
+  const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language);
+  const num = new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", {
+    maximumFractionDigits: 1,
+  });
+  const levels = (ev.calibration ?? []).filter((l) => l.judged > 0);
+  if (!levels.length) return null;
+  return (
+    <p className="models-line muted">
+      {t("models.calibration", {
+        text: levels
+          .map((l) =>
+            t("accuracy.level", {
+              from: num.format(l.from),
+              to: num.format(l.to),
+              right: l.right,
+              judged: l.judged,
+            }),
+          )
+          .join(" · "),
+      })}
+    </p>
+  );
+}
+
 function Cases({ ev }: { ev: ModelEvaluation }) {
   return (
     <ul className="models-cases">
@@ -491,6 +518,7 @@ export function RolePanel({
                 </button>
               )}
             </p>
+            {now && <Calibration ev={now} />}
             {now && cases && <Cases ev={now} />}
             {!picking && (
               <span className="models-actions">

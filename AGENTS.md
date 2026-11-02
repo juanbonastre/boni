@@ -38,8 +38,9 @@ each thing lives), `docs/fiabilidad.md` (decisions by confidence and cost: do, a
    (with Android changes, also wait for the APK build). While CI runs, go on with the next thing.
 3. Every change to `apps/boni-web` ships in a new desktop version: bump `apps/boni-desktop/package.json`, then
    `make package-boni` and `make e2e-boni-desktop` (CI refuses the change otherwise, I-05).
-4. A visual or behavioural change updates `docs/design-guide.md` in the same PR. A new screen starts as a mockup with the
-   real app (I-09). The main screens have reference captures, made by the «screens» workflow (I-07).
+4. A visual or behavioural change updates `docs/design-guide.md` in the same PR. Build it directly and let Juan try it
+   in his app; a mockup with the real app only when the shape of a screen or a flow is in doubt (I-13). The main
+   screens have reference captures, made by the «screens» workflow (I-07).
 5. A decision of Juan's that code can check enters `docs/principios.md` with its test, in the same PR.
 6. Before designing something new, find what already does something like it (`docs/preferencias.md`, `docs/contexto.md`,
    `make map`, a search) and extend it: a proposal starts with what exists and says what it extends (T-05).

@@ -17,8 +17,8 @@ import {
   updateConversation,
 } from "@boni/agent";
 import { openUserStore, type UserStore } from "@boni/store";
-import { accuracy } from "./accuracy.ts";
-import { measure } from "./autoAccept.ts";
+import { areasView, setAuto } from "./accuracy.ts";
+import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
@@ -48,7 +48,9 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *   POST /api/agent/requests/:id/dismiss     put away unanswered: its run ends having done nothing more
  *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection? } } Juan's corrections, kept
  *   POST /api/agent/proposals/:id/reject
- *   GET  /api/agent/decisions                -> { areas } how right Boni's decisions are, per area and level of confidence
+ *   GET  /api/agent/decisions                -> { areas } how right Boni's decisions are, per area and level of confidence,
+ *                                               and whether each area acts alone («Solo») and has earned it
+ *   PUT  /api/agent/decisions/:area          { auto } «Solo» on or off for an area (a personal device; on only when earned)
  *   GET  /api/agent/runs                     -> { runs } the latest, for the log, each with what it was and
  *                                               what came of it (runInfo.ts), and `autoAccept`: how often
  *                                               Boni would have accepted alone, and been right (autoAccept.ts)
@@ -510,14 +512,27 @@ async function answerAgent(
       agent.rejectProposal(params.id ?? "");
       return send(res, 200, {});
     case "GET /api/agent/decisions":
-      return send(res, 200, { areas: accuracy(host.store(who.account)) });
+      return send(res, 200, { areas: areasView(host.store(who.account), Date.now()) });
+    case "PUT /api/agent/decisions/:area": {
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const store = host.store(who.account);
+      const b = await bodyOf(req);
+      const area = params.area ?? "";
+      if (typeof b.auto !== "boolean" || !areasView(store, Date.now()).some((a) => a.area === area))
+        return send(res, 400, { error: "bad-request" });
+      const r = setAuto(store, area, b.auto, Date.now());
+      if (r === "ok") return send(res, 200, { areas: areasView(store, Date.now()) });
+      return send(res, r === "not-earned" ? 409 : 400, { error: r });
+    }
     case "GET /api/agent/runs": {
       const store = host.store(who.account);
       const proposals = proposalsByRun(store);
       const mailAccount = host.mailAccountOf?.(who.account) ?? null;
       let autoAccept: ReturnType<typeof measure> | null = null;
+      let alone: Set<string> | undefined;
       try {
         autoAccept = measure(store);
+        alone = aloneRuns(store);
       } catch {
         // the Registro shows without it
       }
@@ -526,7 +541,7 @@ async function answerAgent(
         runs: store.journal.runs(50).map((r) => {
           let info: RunInfo | null = null;
           try {
-            info = runInfo(store, r, { proposals, mailAccount });
+            info = runInfo(store, r, { proposals, mailAccount, alone });
           } catch {
             // a run the code cannot describe still shows with its origin and status
           }

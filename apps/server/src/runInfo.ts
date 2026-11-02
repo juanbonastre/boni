@@ -35,6 +35,8 @@ export interface RunInfo {
   /** What it changed (the first few) and how many changes in all. */
   changes: RunChange[];
   changed: number;
+  /** A proposal Boni accepted alone («Solo», docs/fiabilidad.md): Juan judges it by leaving it or undoing it. */
+  alone?: boolean;
 }
 
 /** At most this many changes are named; the rest are counted. */
@@ -87,7 +89,12 @@ function whatOf(store: UserStore, r: RunRow, mailAccount: string | null): RunWha
 export function runInfo(
   store: UserStore,
   r: RunRow,
-  o: { proposals?: Map<string, ProposalRow[]>; mailAccount?: string | null } = {},
+  o: {
+    proposals?: Map<string, ProposalRow[]>;
+    mailAccount?: string | null;
+    /** The runs in which Boni accepted a proposal alone (autoAccept.ts). */
+    alone?: Set<string>;
+  } = {},
 ): RunInfo {
   const mine = (o.proposals ?? proposalsByRun(store)).get(r.id) ?? [];
   const proposals = { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 };
@@ -110,5 +117,6 @@ export function runInfo(
     proposals,
     changes,
     changed: ops.length,
+    ...(r.origin === "accepted" && o.alone?.has(r.id) ? { alone: true } : {}),
   };
 }

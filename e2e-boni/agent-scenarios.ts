@@ -408,10 +408,21 @@ const quietMail = (id: string, m: number, subject: string) => ({
   changes: [],
   changed: 0,
 });
-/** Boni's decisions counted per area (docs/fiabilidad.md): the Registro's «Acierto». */
+/** Boni's decisions counted per area (docs/fiabilidad.md): the Registro's «Acierto» and Settings «Decisiones». */
+const EARNS_WITH = { decisions: 20, accuracy: 0.95 };
+const NO_SWITCH = {
+  cost: "A",
+  switchable: false,
+  auto: false,
+  autoBy: null,
+  autoAt: null,
+  earned: false,
+  earnsWith: EARNS_WITH,
+};
 export const ACCURACY = {
   areas: [
     {
+      ...NO_SWITCH,
       area: "choice",
       total: 24,
       done: 20,
@@ -428,8 +439,42 @@ export const ACCURACY = {
         { from: 0.9, to: 1, judged: 10, right: 10 },
       ],
     },
-    { area: "fill", total: 6, done: 2, asked: 0, nothing: 4, judged: 0, right: 0, levels: [] },
+    {
+      ...NO_SWITCH,
+      area: "fill",
+      total: 6,
+      done: 2,
+      asked: 0,
+      nothing: 4,
+      judged: 0,
+      right: 0,
+      levels: [],
+    },
+    // Accepting a mail's proposals alone: judged by the rule replayed over Juan's decisions; earned, still off.
+    {
+      area: "mail.accept",
+      cost: "B",
+      total: 24,
+      done: 0,
+      asked: 24,
+      nothing: 0,
+      judged: 20,
+      right: 20,
+      levels: [],
+      switchable: true,
+      auto: false,
+      autoBy: null,
+      autoAt: null,
+      earned: true,
+      earnsWith: EARNS_WITH,
+    },
   ],
+};
+/** The same once Juan turned «Solo» on for the mail's proposals. */
+export const ACCURACY_ON = {
+  areas: ACCURACY.areas.map((a) =>
+    a.area === "mail.accept" ? { ...a, auto: true, autoBy: "juan", autoAt: 1_762_000_000_000 } : a,
+  ),
 };
 
 export const RUNS_EXPLAINED = {

@@ -268,6 +268,8 @@ export interface RunSummary {
   /** The first few things it changed, and how many in all. */
   changes?: RunChange[];
   changed?: number;
+  /** Boni accepted the proposal alone («Solo», docs/fiabilidad.md §3.4). */
+  alone?: boolean;
 }
 export type RunWhat =
   | { kind: "request"; text: string }
@@ -282,9 +284,13 @@ export interface AutoAccept {
   would: number;
   right: number;
 }
-/** How right Boni's decisions are in one area (docs/fiabilidad.md §3.3): what the Registro's «Acierto» shows. */
+/**
+ * How right Boni's decisions are in one area (docs/fiabilidad.md §3.3, §3.4): what the Registro's «Acierto» and
+ * Settings «Decisiones» show, with the area's «Solo» switch where it has one.
+ */
 export interface AreaAccuracy {
   area: string;
+  cost: "A" | "B" | "C";
   total: number;
   done: number;
   asked: number;
@@ -292,6 +298,15 @@ export interface AreaAccuracy {
   judged: number;
   right: number;
   levels: { from: number; to: number; judged: number; right: number }[];
+  /** Whether it has a «Solo» switch; an area decided inside a proposal Juan decides has none. */
+  switchable: boolean;
+  auto: boolean;
+  /** Who turned the switch last, and when: Juan, or Boni backing off. */
+  autoBy: "juan" | "boni" | null;
+  autoAt: number | null;
+  earned: boolean;
+  /** What earns «Solo»: this many judged decisions, this share right (an older server does not say). */
+  earnsWith: { decisions: number; accuracy: number } | null;
 }
 export interface RunChange {
   action: "create" | "update" | "delete" | "restore";
@@ -381,6 +396,8 @@ export interface ModelEvaluation extends ModelChoice {
   wrong: number;
   cost: number;
   cases: { name: string; ok: boolean; note: string }[];
+  /** The decider's calibration by level of confidence, when the evaluation measured it (docs/fiabilidad.md §3.3). */
+  calibration?: { from: number; to: number; judged: number; right: number }[];
 }
 export interface ModelSpendRow {
   role: string;
@@ -498,11 +515,58 @@ export function parseModels(b: unknown): ModelsView | null {
                 ok: x.ok === true,
                 note: s200(x.note, 200),
               })),
+            ...(Array.isArray(e.calibration)
+              ? {
+                  calibration: e.calibration
+                    .filter(isObj)
+                    .slice(0, 10)
+                    .map((l) => ({
+                      from: Number(l.from) || 0,
+                      to: Number(l.to) || 0,
+                      judged: count(l.judged),
+                      right: count(l.right),
+                    })),
+                }
+              : {}),
           },
         ];
       }),
     evaluating: evalRole && evalChoice ? { ...evalChoice, role: evalRole } : null,
   };
+}
+/** The areas of `GET /api/agent/decisions` (and of the PUT that turns a switch). */
+function parseAreas(b: unknown): AreaAccuracy[] {
+  const areas = isObj(b) && Array.isArray(b.areas) ? b.areas : [];
+  return areas.filter(isObj).flatMap((a) => {
+    const area = str(a.area, 40);
+    if (!area) return [];
+    const levels = (Array.isArray(a.levels) ? a.levels : []).filter(isObj).map((l) => ({
+      from: Number(l.from) || 0,
+      to: Number(l.to) || 0,
+      judged: count(l.judged),
+      right: count(l.right),
+    }));
+    const e = isObj(a.earnsWith) ? a.earnsWith : null;
+    return [
+      {
+        area,
+        cost: a.cost === "A" || a.cost === "B" ? a.cost : "C",
+        total: count(a.total),
+        done: count(a.done),
+        asked: count(a.asked),
+        nothing: count(a.nothing),
+        judged: count(a.judged),
+        right: count(a.right),
+        levels,
+        switchable: a.switchable === true,
+        auto: a.auto === true,
+        autoBy: a.autoBy === "juan" || a.autoBy === "boni" ? a.autoBy : null,
+        autoAt: typeof a.autoAt === "number" ? a.autoAt : null,
+        earned: a.earned === true,
+        earnsWith: e ? { decisions: count(e.decisions), accuracy: Number(e.accuracy) || 0 } : null,
+      },
+    ];
+  });
 }
 function parseCatalogue(b: unknown): CatalogueModel[] {
   const list = isObj(b) && Array.isArray(b.models) ? b.models : [];
@@ -1547,32 +1611,13 @@ export class AgentApi {
     parseModels(await this.call("PUT", "models/budget", b));
   dismissRequest = async (id: string) =>
     void (await this.call("POST", `requests/${encodeURIComponent(id)}/dismiss`));
-  /** Boni's decisions counted per area (an older server: none). */
+  /** Boni's decisions counted per area, with each area's «Solo» (an older server: none). */
   async decisions(): Promise<AreaAccuracy[]> {
-    const b = await this.call("GET", "decisions");
-    const areas = isObj(b) && Array.isArray(b.areas) ? b.areas : [];
-    return areas.filter(isObj).flatMap((a) => {
-      const area = str(a.area, 40);
-      if (!area) return [];
-      const levels = (Array.isArray(a.levels) ? a.levels : []).filter(isObj).map((l) => ({
-        from: Number(l.from) || 0,
-        to: Number(l.to) || 0,
-        judged: count(l.judged),
-        right: count(l.right),
-      }));
-      return [
-        {
-          area,
-          total: count(a.total),
-          done: count(a.done),
-          asked: count(a.asked),
-          nothing: count(a.nothing),
-          judged: count(a.judged),
-          right: count(a.right),
-          levels,
-        },
-      ];
-    });
+    return parseAreas(await this.call("GET", "decisions"));
+  }
+  /** Juan turns an area's «Solo» (docs/fiabilidad.md §3.4): the areas as they are after it. */
+  async setDecisionAuto(area: string, auto: boolean): Promise<AreaAccuracy[]> {
+    return parseAreas(await this.call("PUT", `decisions/${encodeURIComponent(area)}`, { auto }));
   }
   async runs(): Promise<{ runs: RunSummary[]; autoAccept: AutoAccept | null }> {
     const b = await this.call("GET", "runs");
@@ -1608,6 +1653,7 @@ export class AgentApi {
             : {}),
           ...(Array.isArray(r.changes) ? { changes: runChanges(r.changes) } : {}),
           ...(r.changed !== undefined ? { changed: count(r.changed) } : {}),
+          ...(r.alone === true ? { alone: true } : {}),
         },
       ];
     });

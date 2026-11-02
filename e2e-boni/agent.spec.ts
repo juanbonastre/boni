@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
   ACCURACY,
+  ACCURACY_ON,
   ANSWER_GONE,
   ASK_TURN,
   CARD_COMPACT,
@@ -566,7 +567,10 @@ test("the Registro says what each run was and what came of it; quiet readings ar
   );
   await expect(acc.locator(".log-area").nth(1)).toContainText("Campos");
   await expect(acc.locator(".log-area").nth(1)).toContainText("sin juzgar aún");
-  await acc.getByRole("button", { name: "Por nivel" }).click();
+  await expect(acc.locator(".log-area").nth(2)).toContainText(
+    "Aceptar propuestas24 decisiones · 0 solas · 24 preguntadas · 0 sin decidir · acierto 20 de 20 (100 %)",
+  );
+  await acc.getByRole("button", { name: "Por nivel" }).first().click();
   await expect(acc.locator(".log-levels li")).toHaveText([
     "0,6–0,7: 1 de 2",
     "0,7–0,8: 3 de 3",
@@ -574,6 +578,49 @@ test("the Registro says what each run was and what came of it; quiet readings ar
     "0,9–1: 10 de 10",
   ]);
   await page.screenshot({ path: "e2e-boni/screenshots/registro.png" });
+});
+
+test("«Decisiones» in Settings: each area's accuracy, and «Solo» only once earned", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/decisions": [ACCURACY],
+      "PUT api/agent/decisions/:area": [{ __status: 500, error: "boom" }, ACCURACY_ON],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByRole("tab", { name: "Decisiones" }).click();
+  await expect(modal.getByRole("heading", { name: "Decisiones" })).toBeVisible();
+  const rows = modal.locator(".settings-pane .setting");
+  await expect(rows).toHaveCount(3);
+  // An area decided inside a proposal Juan decides: its accuracy, no switch.
+  await expect(rows.nth(0)).toContainText("Colecciones");
+  await expect(rows.nth(0)).toContainText("acierto 19 de 20 (95 %)");
+  await expect(rows.nth(0)).toContainText("Dentro de una propuesta que decides tú.");
+  await expect(rows.nth(0).getByRole("checkbox")).toHaveCount(0);
+  await expect(rows.nth(1)).toContainText("sin juzgar aún");
+  // The area with a switch, earned: Boni says so, and the switch can be turned on.
+  await expect(rows.nth(2)).toContainText("Aceptar propuestas");
+  await expect(rows.nth(2)).toContainText("acierto 20 de 20 (100 %)");
+  await expect(rows.nth(2)).toContainText("puedes encender «Solo»");
+  const solo = modal.getByRole("checkbox", { name: "Solo · Aceptar propuestas" });
+  await expect(solo).toBeEnabled();
+  await expect(solo).not.toBeChecked();
+  // The switch flips at once; the server's «no» puts it back and says so.
+  await solo.check();
+  await expect(page.locator(".toast")).toContainText("No se pudo cambiar");
+  await expect(solo).not.toBeChecked();
+  await expect(rows.nth(2)).toContainText("puedes encender «Solo»");
+  await solo.check();
+  await expect(solo).toBeChecked();
+  await expect(rows.nth(2)).toContainText("Encendido: Boni hace sola lo de fiabilidad alta");
+  expect(await requests(page, "PUT api/agent/decisions")).toEqual([
+    'PUT api/agent/decisions/mail.accept {"auto":true}',
+    'PUT api/agent/decisions/mail.accept {"auto":true}',
+  ]);
+  await page.screenshot({ path: `${SHOTS}/decisions.png` });
 });
 
 test("what the AI sees: Juan chooses per collection in Settings", async ({ page }) => {

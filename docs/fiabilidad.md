@@ -169,8 +169,23 @@ nivel de `p` (`GET /api/agent/decisions`, `apps/server/src/accuracy.ts`). **La c
 el código cambia la `p` del modelo por el acierto real de su nivel cuando ese nivel lleva 10 o más decisiones juzgadas
 (`calibrate` en `packages/agent/src/decisions.ts`), tanto en la elección de colección como en el relleno; la `p` del
 modelo queda apuntada tal cual, y la calibrada, al lado. La evaluación del decisor mide su calibración por nivel y la
-guarda con el resultado (`calibration` en `EvalResult`); enseñarla en «Modelos» queda para F3.
-| F3 | Ajustes: el acierto y el interruptor «Solo» por ámbito; la propuesta de encenderlo; el aviso con Deshacer | Con maqueta (I-09) |
+guarda con el resultado (`calibration` en `EvalResult`); «Modelos» la enseña desde F3.
+| F3 | Ajustes: el acierto y el interruptor «Solo» por ámbito; la propuesta de encenderlo; el aviso con Deshacer | Código directo (I-13) |
+
+**Hecho, F3 (2026-11-02):** Ajustes tiene «Decisiones»: cada ámbito con su acierto y, el que lo tiene, su interruptor
+«Solo» (`GET/PUT /api/agent/decisions`, `apps/server/src/accuracy.ts`). La pseudoaceptación es ya el ámbito
+«Aceptar propuestas» (`mail.accept`, clase B, `apps/server/src/autoAccept.ts`): su regla de hoy son sus umbrales
+(`p` = cuántas de las últimas 5 iguales dejó Juan tal cual; sola con 1, es decir, todas), juzgado por la repetición de
+la regla sobre lo que Juan decidió (lo que habría aceptado sola y acertado), que es lo que gana el interruptor (20 con
+el 95 %). Encendido, al leer un correo acepta sola las propuestas seguras: cada una queda apuntada como decisión, la
+aceptación sale en el Registro como «Propuesta aceptada sola» con Deshacer, y Juan la juzga sin hacer nada: deshacerla
+o borrar lo que creó es fallo al momento; dejarla una semana, acierto (y entonces la elección de colección y los campos
+de esa lectura cuentan acierto también; la aceptación de Boni no los juzga por sí misma, A-13). Tres fallos seguidos o
+una quinta parte de los últimos veinte apagan el interruptor solo, y Ajustes dice cuándo lo apagó Boni. Las
+propuestas que Boni acepta sola no cuentan en el historial de la regla hasta que Juan las juzga. «Modelos» enseña la
+calibración del decisor por nivel cuando la evaluación la midió. Lo que queda: el aviso en la conversación cuando Boni
+acepta sola (hoy solo el Registro), y la corrección de lo creado (cambiar el título) como fallo: hoy solo deshacer o
+borrar.
 | F4 | Los aprendices de la tarea 13 y las sugerencias de `docs/preferencias.md` sobre el procedimiento | P3 de `docs/preferencias.md` |
 
 Fuentes: [Horvitz, «Principles of Mixed-Initiative User Interfaces» (CHI 1999)](https://erichorvitz.com/chi99horvitz.pdf),

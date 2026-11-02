@@ -67,10 +67,11 @@ Cómo se usa:
 | I-06 | La app de escritorio real funciona como la usa Juan: entrar, páginas, colecciones, Ajustes → Modelos, las plantillas, copia diaria, enlaces `boni://` | 2026-10-22 | CI, trabajo `e2e-boni-desktop` (`e2e-boni-desktop/desktop.spec.ts`, con pantalla virtual) |
 | I-07 | Las pantallas principales no cambian de aspecto sin querer | 2026-10-25 | `e2e-boni/screens.spec.ts` (capturas de referencia) |
 | I-08 | Nada interno a la vista: ni ids, ni rutas del vault, ni nombres de campos de Boni | 2026-10-24 | Sin prueba (revisión de capturas) |
-| I-09 | Maqueta con la app real antes de programar una pantalla nueva | 2026-10-24 | Sin prueba (forma de trabajar) |
+| I-09 | Maqueta con la app real antes de programar una pantalla nueva. **Sustituida por I-13 (2026-11-02)** | 2026-10-24 | Sin prueba (forma de trabajar) |
 | I-10 | Un bloque de enlace solo abre una página real; si su destino ya no existe, lo dice en vez de abrir una vista fija | 2026-10-27 | `packages/views/src/catalogue.test.ts`, `packages/views/src/templates.test.ts`, `apps/server/src/pages.test.ts`, `e2e-boni/audit.spec.ts` |
 | I-11 | La barra lateral: Buscar, Conversación y «Todas las páginas» (todo, para gestionarlo) arriba; debajo «Recientes» y «Páginas» (abrir, añadir y eliminar, con el ojo), que se pliegan por su nombre | 2026-10-28 | `e2e-boni/tree.spec.ts` («the sidebar…», ««Todas las páginas»: everything to manage…») |
 | I-12 | En el móvil la barra de abajo son lugares, nunca acciones: Inicio (lo de hoy), Páginas, Boni y Bandeja; apuntar y crear van en el botón +, y las gráficas en Inicio y en las páginas | 2026-10-31 | `e2e-boni/mobile.spec.ts` («the phone opens on Inicio…», «the + button: «Crear»…») |
+| I-13 | Lo nuevo se programa directamente y Juan lo prueba en su app; git deshace lo que no convenza (Juan, 2026-11-02: «implementes directamente el código y lo pruebe yo»). Una maqueta con la app real solo cuando la forma de una pantalla o de un flujo está en duda (como la conversación de la conciliación) | 2026-11-02 | Sin prueba (forma de trabajar) |
 
 ## T. Forma de trabajar
 
