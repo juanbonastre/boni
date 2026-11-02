@@ -39,13 +39,15 @@ const DOCENCIA = {
 };
 
 let dir = "";
+let noteId = "";
 let server: ChildProcess | null = null;
 let app: ElectronApplication | null = null;
 let main: Page;
 
 test.beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "boni-calendar-peek-"));
-  seedAccount(
+  // Rows are known by their record's id, not a path (#192): the id the invented note became.
+  const ids = seedAccount(
     dir,
     "ejemplo",
     PASSWORD,
@@ -55,6 +57,7 @@ test.beforeAll(async () => {
         '---\ntitle: "Clase de ejemplo"\ndate: "2026-10-27"\nstartTime: "10:00"\n---\nPreparar el tema 3.\n',
     },
   );
+  noteId = ids.get(NOTE) as string;
   // A proposal waiting in Boni's inbox (as a mail read in the background leaves it).
   proposeEntries(dir, 1, "docencia", [
     { title: "Revisión inventada", date: "2026-10-28", starttime: "12:00" },
@@ -123,8 +126,8 @@ type Bridges = {
 };
 const doubleClick = () =>
   main.evaluate(
-    (path) => (window as unknown as Bridges).boniNotes.openNote(path, { peek: true }),
-    NOTE,
+    (id) => (window as unknown as Bridges).boniNotes.openNote(id, { peek: true }),
+    noteId,
   );
 
 test("Boni's address in Settings → Desktop; a bad one is refused", async () => {
