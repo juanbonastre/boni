@@ -690,7 +690,10 @@ export const openBlockPanel = (id: string) => set({ panel: { kind: "block", id }
  */
 export async function openRecord(typeName: string, id: string) {
   if (!get().dataTypes) await loadDataTypes();
-  const type = get().dataTypes?.find((x) => x.name === typeName || x.id === typeName);
+  // The planner names a type by its key ("correo"), whose table is `t_correo`; a name or an id work too.
+  const type = get().dataTypes?.find(
+    (x) => x.id === `t_${typeName}` || x.id === typeName || x.name === typeName,
+  );
   if (!type) return;
   if (type.view === "mail") set({ panel: { kind: "row", type: type.id, id }, ...FRESH_PANEL });
   else await openRow(type.id, id);
@@ -1260,13 +1263,18 @@ function patchEntry(id: string, patch: Partial<ChatEntry>) {
   set((s) => ({ chat: s.chat.map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
 }
 /** A later answer of the same run: its replies follow the earlier ones; its question or confirmation replaces the last. */
+/**
+ * A run reports everything it has made so far each time it answers (after a question, a confirmation): the later
+ * report replaces the earlier one, and one that brings nothing (a refusal) keeps what was shown (Juan, 2026-11-02:
+ * «No, gracias» showed the whole answer again).
+ */
 function mergeResult(prev: TurnResult | null, next: TurnResult): TurnResult {
   if (!prev) return next;
   return {
     ...next,
-    replies: [...prev.replies, ...next.replies],
-    proposals: [...prev.proposals, ...next.proposals],
-    notices: [...prev.notices, ...next.notices],
+    replies: next.replies.length ? next.replies : prev.replies,
+    proposals: next.proposals.length ? next.proposals : prev.proposals,
+    notices: next.notices.length ? next.notices : prev.notices,
   };
 }
 /** What a live event changes in the turn as it runs. */

@@ -95,8 +95,10 @@ test("a reply is painted by the code, and what came from outside is only text", 
   // Last, since it leaves the conversation: a line with its mail's id and type (the code's) opens the mail in the
   // side panel; one whose id came from outside is only text; «Agrandar» takes the mail to its page.
   await expect(list.locator(".reply-open")).toHaveCount(1);
-  await expect(list.locator(".reply-open")).toHaveAttribute("title", "Abrir");
-  await list.locator(".reply-open").click();
+  await expect(list.getByRole("button", { name: "Abrir" })).toHaveCount(1);
+  // The text itself is not a button: only the small ↗ after it.
+  await expect(list.locator("li").first().locator("button")).toHaveCount(1);
+  await list.getByRole("button", { name: "Abrir" }).click();
   const panel = page.locator(".side-panel");
   await expect(panel.locator(".mail-subject")).toBeVisible();
   await panel.getByRole("button", { name: "Agrandar" }).click();
@@ -206,8 +208,10 @@ test("a question: the options are buttons, the answer goes back once", async ({ 
   });
   await ask(page, "escribe a Ana");
   await expect(page.locator(".ask-prompt")).toHaveText("¿A cuál de los dos?");
-  await expect(page.locator(".ask")).toContainText("Boni nunca te pedirá una contraseña");
+  // Never a password field, and nothing saying so (no explanations in the app).
   await expect(page.locator(".ask input[type=password]")).toHaveCount(0);
+  await expect(page.locator(".ask")).not.toContainText("contraseña");
+  await page.screenshot({ path: `${SHOTS}/agent-ask.png` });
   await page.locator(".ask-options .pill").nth(1).click();
   await expect(page.locator(".turn-answer")).toContainText("Hecho.");
   expect((await requests(page, "POST api/agent/answer ")).map(withoutLive)).toEqual([

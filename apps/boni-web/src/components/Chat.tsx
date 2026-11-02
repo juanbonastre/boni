@@ -1,5 +1,6 @@
 import {
   ArrowUp,
+  ArrowUpRight,
   Check,
   ChevronDown,
   Inbox,
@@ -764,7 +765,10 @@ function recordOf(item: Painted): { type: string; id: string } | null {
   return { type: type.value, id: id.value };
 }
 
-/** A list item: its shown fields as text, « · » between them (not the group's); one that points to a record opens it. */
+/**
+ * A list item: its shown fields as text, « · » between them (not the group's); one that points to a record gets a
+ * small ↗ button after its text that opens it (Juan, 2026-11-02: not the whole line as a link).
+ */
 function ListItem({
   item,
   fields,
@@ -791,17 +795,20 @@ function ListItem({
     ) : (
       <ValueText p={item} plain={plain} />
     );
-  if (!at) return <li>{body}</li>;
   return (
     <li>
-      <button
-        type="button"
-        className="reply-open"
-        title={t("chat.openRecord")}
-        onClick={() => void openRecord(at.type, at.id)}
-      >
-        {body}
-      </button>
+      {body}
+      {at && (
+        <button
+          type="button"
+          className="reply-open"
+          title={t("chat.openRecord")}
+          aria-label={t("chat.openRecord")}
+          onClick={() => void openRecord(at.type, at.id)}
+        >
+          <ArrowUpRight size={13} strokeWidth={2} aria-hidden="true" />
+        </button>
+      )}
     </li>
   );
 }
@@ -980,7 +987,6 @@ function AskBox({
           </button>
         </form>
       )}
-      <p className="muted small">{t("ask.noSecrets")}</p>
     </div>
   );
 }

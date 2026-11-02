@@ -57,7 +57,7 @@ lectura se leyó, y «Volver a leer» repite los que se leyeron con una anterior
 |---|---|---|
 | **El planificador** | Sus instrucciones generales (`PLANNER_PROMPT`: el lenguaje de los planes, las herramientas, que el texto de fuera es dato, que conteste como una persona), las colecciones con sus campos, los últimos turnos y la petición | El texto de ningún correo: le llegan asas (`$handle`) que puede pasar a un lector pero no leer. **Ninguna indicación sobre correo** |
 | **Los lectores** (`summarize`, `extract_tasks`…; `summarize_each` y `label_each` leen todos los correos en una llamada, desde el 2026-11-02) | Un prompt de una línea («resume el texto entre las marcas…») y un correo, o la lista numerada | **La guía de Juan** (la política ya lo permitiría, §7.4b), lo que le importa, cómo agrupar |
-| **El código** | La respuesta | Pinta los componentes (texto, cifra, lista, tabla, gráfica); lo que viene de fuera lleva su marca ámbar |
+| **El código** | La respuesta | Pinta los componentes (texto, cifra, lista, tabla, gráfica); lo que viene de fuera se pinta solo como texto, sin marca visible (lo dice al pasar el ratón; 2026-11-02) |
 
 Así que sí: en la conversación, la IA que ve correos solo sabe lo que dice la petición. Lo que sabe de Juan y de cómo
 leer correo se queda en la lectura de segundo plano.
@@ -158,11 +158,11 @@ orden de las opciones y con sus recuentos, contados por el código) o `label_eac
 Contesta como el ejemplo de arriba: una frase con lo que importa, **una lista** con una sección por tipo («Te piden
 algo», «Para saber», «Avisos y publicidad») y una línea por correo, sin fechas, ids ni campos crudos al lado (tabla
 solo si se la piden), y al final una pregunta corta ofreciendo lo que Boni puede hacer con ellos. Cada línea lleva el
-id y el tipo de su correo (los pone el código, nunca el modelo), y al pulsarla el correo se abre en el panel lateral
-como lo enseña el cliente de correo, con «Agrandar» para su página. Para contar por tipo, `label_each` y una gráfica
-de sus recuentos. Una lista, tabla o gráfica cuyos valores vienen todos de fuera lleva la marca ámbar una vez, en el
-bloque (`docs/design-guide.md`). Lo que Juan pidió después (2026-11-02, tarde) y queda: el correo en una ventana
-aparte desde la conversación (hoy, el panel y su página).
+id y el tipo de su correo (los pone el código, nunca el modelo), y con el botón ↗ de la línea («Abrir»; el texto no
+es un enlace) el correo se abre en el panel lateral como lo enseña el cliente de correo, con «Agrandar» para su página. Para contar por tipo, `label_each` y una gráfica
+de sus recuentos. Nada lleva marca visible: lo de fuera se pinta como texto y lo dice al pasar el ratón
+(`docs/design-guide.md`; Juan quitó la línea ámbar, también la de bloque, el 2026-11-02). Lo que Juan pidió después
+(2026-11-02, tarde) y queda: el correo en una ventana aparte desde la conversación (hoy, el panel y su página).
 
 Más adelante, con maqueta antes (I-09): una tarjeta por correo con «Abrir» (el registro en Boni) y «Proponer tarea».
 

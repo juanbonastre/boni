@@ -170,7 +170,14 @@ any interface is the vault note `wiki/temas/diseno-de-interfaces.md`. Here, what
     ease-in. 100-160 ms for a press, 150-250 ms for a menu, at most 300 ms for a panel; exits faster than entries.
   - Never from `scale(0)` (from 0.95 with opacity); menus grow from their trigger; transitions, not keyframes, for
     anything that can be interrupted; only `transform` and `opacity`; never `transition: all`.
-  - Buttons (`.btn`) answer a pointer press with `scale(0.97)` in 120 ms.
+  - Buttons (`.btn`, `.pill`, the ↗ of a list line) answer a pointer press with `scale(0.97)` in 120 ms.
+  - **What enters, rises** (Juan, 2026-11-02: «animaciones agradables, como Apple»): a request, each block of an
+    answer, a question card, the side panel (12 px from the right) and a toast come into place from 6 px below with
+    their opacity, in 200-240 ms with `var(--ease-out)`; a list's sections follow each other 50 ms apart, four at
+    most. Nothing animates on every keystroke or on hover beyond colour and a 1 px lift. References read for it:
+    Apple's HIG «Motion» (purposeful, it communicates, optional with Reduce Motion, never on frequent interactions,
+    nothing at the edge of the field of view) and Material 3's scale (about 200 ms for a control, 250-400 ms for
+    something entering, decelerate curves for entries).
   - **"Reduce motion"** (`prefers-reduced-motion`) is respected in both apps: transitions and animations collapse, and the
     calendar's viewport lands jumps and zooms at once (its smoothing time drops to 1 ms).
 - **Surfaces nobody draws:** text selection in the accent's soft tint (`::selection`), a visible focus ring, styled
@@ -199,7 +206,8 @@ aplicación, son redundantes y molestan, además que apestan a IA»; the one tha
 llegó.» on a mail). A screen shows the thing and its state, never a sentence saying what the thing is, what Boni does
 with it or what Boni learns from it. A state is a word or a number («Apagado por Boni el 3 nov», «12 de 20»); a
 setting may have one short line under it saying its effect, nothing more; a tooltip on a button is fine. What needs
-explaining goes in the docs, not on the screen.
+explaining goes in the docs, not on the screen. The last ones removed (2026-11-02): «Solo lectura: es lo que llegó» under a mail and «Boni nunca te pedirá una
+contraseña ni un código aquí» under a question.
 
 ## 6. Adapting it to other platforms
 - **Boni desktop (and later its Android app):** since 2026-10-17 the same architecture as this app (a React web UI in
@@ -478,16 +486,22 @@ explaining goes in the docs, not on the screen.
   asked to answer as a person would: a sentence first, then what helps see it. «Deshacer lo que hizo» follows an
   answer only while its turn changed something not undone yet: a question that only read has nothing to undo, and once
   undone the link goes. **Text is only text**: no HTML, no Markdown, no
-  links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover;
-  a list, a table or a chart whose shown values all came from outside carries the mark once, on the block, never on
-  every value (Juan, 2026-11-02: «una línea naranja en todas partes»). An instant or a day in a reply reads as a date
+  links, no images; what came from outside (an e-mail, a page) looks like any other text and says where it came from
+  on hover: nothing marks it visually (Juan, 2026-11-02, twice: an amber line, per value or per block, looked odd
+  everywhere; the protection is in how it is painted, not in a mark). An instant or a day in a reply reads as a date
   in Juan's language and zone («19 oct 2026, 9:28»), never in ISO form. A **list** may have sections (its `group`
-  field: a small upper-case label with the count, in the items' order) and its items show their fields with « · »
-  between them, never their id or type; an item that carries the id and type of a record as the code wrote them opens
-  it: a mail in the side panel as the mail client shows it (the type's name as the panel's title, «Agrandar» takes it
-  to its page), anything else as its page. When a request hits one of its limits (too many model calls, steps or
-  text, P12), the error says which, not «una regla de seguridad».
-  A question shows its options as pills (one line, cut with an ellipsis) and never asks for a password. A
+  field: a small upper-case label with the count, in the items' order, 10 px apart) and its items (line height 1.5,
+  2 px of air between them: short lines in a dense block read best around 1.4-1.5) show their fields with « · »
+  between them, never their id or type; an item that carries the id and type of a record as the code wrote them ends
+  with a small ↗ button («Abrir»; the text itself is never a link) that opens it: a mail in the side panel as the mail
+  client shows it (the type's name as the panel's title, «Agrandar» takes it to its page), anything else as its page.
+  When a request hits one of its limits (too many model calls, steps or text, P12), the error says which, not «una
+  regla de seguridad».
+  A question shows its options as rounded buttons with a surface and a shadow (one line, cut with an ellipsis; the
+  first, the one the plan puts first, tinted with the accent; they lift under the pointer and shrink a touch when
+  pressed) and never asks for a password: there is no password field, and nothing says so (§5; the line «Boni nunca
+  te pedirá una contraseña» is gone, 2026-11-02). Answering it leaves the answer as it was and adds what the run did
+  next, never the same blocks twice. A
   **confirmation** is a card with an `--accent` border holding only the code's components: the action as a question,
   each argument with its real value in full (scrolling, never cut), where it came from ("Viene de fuera · un correo")
   and its warnings in `--bad` (invisible or direction-changing characters, shown as `⟦U+202E⟧`, mixed alphabets, an

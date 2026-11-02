@@ -42,7 +42,8 @@ export const TEXT_REPLY = {
                 line: v("Lucía pregunta si quedamos el jueves", "external", "personal"),
                 kind: v("Te piden algo", "external", "personal"),
                 id: v("m1", "own"),
-                type: v("Correos", "own"),
+                // The type as the planner names it: its key, whose table is t_correo.
+                type: v("correo", "own"),
               },
             },
             {
