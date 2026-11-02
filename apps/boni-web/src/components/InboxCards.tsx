@@ -1,7 +1,17 @@
 import { markdownToBlocks } from "@boni/views";
-import { ChevronDown, HelpCircle, Inbox, Mail, Maximize2, Pencil, Sparkles, X } from "lucide-react";
-import { useEffect, useState } from "react";
-import type { ConfirmView, InboxCard, InboxRequest, Proposal } from "../core/agent.ts";
+import {
+  ChevronDown,
+  ChevronRight,
+  HelpCircle,
+  Inbox,
+  Mail,
+  Maximize2,
+  Pencil,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { ConfirmView, DataValue, InboxCard, InboxRequest, Proposal } from "../core/agent.ts";
 import {
   acceptProposal,
   answerRequest,
@@ -17,6 +27,7 @@ import {
   useStore,
 } from "../store.ts";
 import { CallRows, ValueText } from "./Chat.tsx";
+import { Cell } from "./DatabaseBlock.tsx";
 
 /**
  * The inbox (Juan, 2026-10-22): a panel on the right that comes out when something new arrives, and the same cards
@@ -137,25 +148,68 @@ function useCorrection(p: Proposal) {
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
   const c = p.card;
-  const [edit, setEdit] = useState<{ title: string; collection: string } | null>(null);
+  const [edit, setEdit] = useState<{
+    title: string;
+    collection: string;
+    /** The proposal's other values by field key, as Juan leaves them. */
+    values: Record<string, DataValue>;
+    open: boolean;
+  } | null>(null);
   const can = c?.action === "create" && !!c.collectionId;
+  // The proposal's values by field key, and the titles of what its relations point to (for the cells).
+  const proposed = useMemo(() => {
+    const values: Record<string, DataValue> = {};
+    const titles: Record<string, string> = {};
+    for (const r of p.view?.rows ?? []) {
+      if (!r.arg.startsWith("values.")) continue;
+      const key = r.arg.slice("values.".length);
+      const v: unknown = r.value;
+      const d: unknown = r.detail;
+      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean" || v === null)
+        values[key] = v;
+      else if (Array.isArray(v) && v.every((x): x is string => typeof x === "string"))
+        values[key] = v;
+      if (typeof v === "string" && typeof d === "string") titles[v] = d;
+      if (Array.isArray(v) && Array.isArray(d))
+        v.forEach((id, i) => {
+          const title = d[i];
+          if (typeof id === "string" && typeof title === "string") titles[id] = title;
+        });
+    }
+    return { values, titles };
+  }, [p]);
   const start = () => {
     if (!types) void loadDataTypes();
-    setEdit({ title: c?.title ?? "", collection: c?.collectionId ?? "" });
+    setEdit({
+      title: c?.title ?? "",
+      collection: c?.collectionId ?? "",
+      values: { ...proposed.values },
+      open: false,
+    });
   };
   const edits = () => {
     if (!edit || !c) return undefined;
-    const out: { title?: string; collection?: string } = {};
+    const out: { title?: string; collection?: string; values?: Record<string, DataValue> } = {};
     const title = edit.title.replace(/\s+/g, " ").trim();
     if (title && title !== c.title) out.title = title;
     if (edit.collection && edit.collection !== c.collectionId) out.collection = edit.collection;
-    return out.title || out.collection ? out : undefined;
+    const values: Record<string, DataValue> = {};
+    for (const [k, v] of Object.entries(edit.values))
+      if (JSON.stringify(v ?? null) !== JSON.stringify(proposed.values[k] ?? null))
+        values[k] = v ?? null;
+    if (Object.keys(values).length) out.values = values;
+    return out.title || out.collection || out.values ? out : undefined;
   };
   const options = [
-    ...(types ?? []).filter((x) => x.zone === undefined && x.level !== "private"),
+    ...(types ?? []).filter((x) => x.zone === undefined && x.level !== "private" && !x.readOnly),
   ].sort((a, b) => a.name.localeCompare(b.name));
   if (c?.collectionId && !options.some((x) => x.id === c.collectionId))
     options.unshift({ id: c.collectionId, name: c.collection ?? "" } as (typeof options)[number]);
+  // The chosen collection's other properties (its title is the line above), each with its own cell to change it.
+  const chosen = edit ? (types ?? []).find((x) => x.id === edit.collection) : undefined;
+  const props = chosen
+    ? chosen.fields.filter((f) => f.id !== chosen.titleField && !!f.key && f.type !== "file")
+    : [];
   const form = edit && (
     <div className="inbox-correct">
       <label className="inbox-correct-row">
@@ -181,6 +235,41 @@ function useCorrection(p: Proposal) {
           ))}
         </select>
       </label>
+      {props.length > 0 && (
+        <button
+          type="button"
+          className={`row-props-toggle inbox-props-toggle${edit.open ? " open" : ""}`}
+          aria-expanded={edit.open}
+          onClick={() => setEdit({ ...edit, open: !edit.open })}
+        >
+          <ChevronRight size={14} strokeWidth={2} />
+          {t("inbox.properties")}
+        </button>
+      )}
+      {edit.open && chosen && (
+        <div className="inbox-props">
+          {props.map((f) => (
+            <div key={f.id} className="inbox-prop">
+              <span className="inbox-prop-name">{f.name}</span>
+              <div className="inbox-prop-value">
+                <Cell
+                  type={chosen}
+                  field={f}
+                  row={{
+                    id: `proposal:${p.id}`,
+                    values: { [f.id]: edit.values[f.key as string] ?? null },
+                    updated: 0,
+                  }}
+                  titles={proposed.titles}
+                  onSave={(v) =>
+                    setEdit({ ...edit, values: { ...edit.values, [f.key as string]: v } })
+                  }
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="inbox-correct-foot">
         <p className="muted small">{t("inbox.correctHelp")}</p>
         <button type="button" className="btn ghost small" onClick={() => setEdit(null)}>

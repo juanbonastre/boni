@@ -47,6 +47,8 @@ export interface Options {
   live?: { events: unknown[]; ms: number };
   /** Inicio's «Hoy» (`/api/data/today`): today's items of the calendars; null: a server without it. */
   today?: unknown[] | null;
+  /** The mail's collection as the server keeps it (`t_correo`, read only, opened as a mail), with one mail (`m1`). */
+  mail?: boolean;
 }
 
 export interface FakePage {
@@ -188,9 +190,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         count: 3,
         level: "visible",
         fields: [
-          { id: "f_titulo", name: "Título", type: "text" },
+          { id: "f_titulo", key: "titulo", name: "Título", type: "text" },
           {
             id: "f_estado",
+            key: "estado",
             name: "Estado",
             type: "select",
             options: [
@@ -199,12 +202,13 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               { id: "o_leido", name: "Leído" },
             ],
           },
-          { id: "f_paginas", name: "Páginas", type: "number" },
-          { id: "f_fin", name: "Terminado", type: "date" },
-          { id: "f_fav", name: "Favorito", type: "checkbox" },
+          { id: "f_paginas", key: "paginas", name: "Páginas", type: "number" },
+          { id: "f_fin", key: "fin", name: "Terminado", type: "date" },
+          { id: "f_fav", key: "fav", name: "Favorito", type: "checkbox" },
           // A relation to the same collection (books that go together), edited with the picker.
           {
             id: "f_relacionado",
+            key: "relacionado",
             name: "Relacionado",
             type: "relation",
             relation: { target: "t_libro", many: true },
@@ -221,8 +225,42 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         count: 2,
         level: "private",
         zone: "private",
-        fields: [{ id: "f_title", name: "Título", type: "text" }],
+        fields: [{ id: "f_title", key: "title", name: "Título", type: "text" }],
         rowUi: { open: false, hidden: [] as string[] },
+      };
+      // The mail's collection (apps/server/src/mail.ts), read only and opened as a mail (D-22), with one mail.
+      const correos = {
+        id: "t_correo",
+        name: "Correos",
+        icon: "",
+        titleField: "f_asunto",
+        count: 1,
+        level: "visible",
+        fields: [
+          { id: "f_asunto", key: "asunto", name: "Asunto", type: "text" },
+          { id: "f_de", key: "de", name: "De", type: "email" },
+          { id: "f_de_nombre", key: "de_nombre", name: "Nombre", type: "text" },
+          { id: "f_para", key: "para", name: "Para", type: "text" },
+          { id: "f_cc", key: "cc", name: "Cc", type: "text" },
+          { id: "f_fecha", key: "fecha", name: "Fecha", type: "datetime" },
+          { id: "f_adjuntos", key: "adjuntos", name: "Adjuntos", type: "text" },
+        ],
+        rowUi: { open: true, hidden: [] as string[] },
+        readOnly: true,
+        view: "mail",
+      };
+      const mailRow = {
+        id: "m1",
+        values: {
+          f_asunto: "Actas pendientes",
+          f_de: "coordinacion@example.edu",
+          f_de_nombre: "Coordinación de ejemplo",
+          f_para: "ejemplo@example.edu",
+          f_fecha: "2026-10-27T09:15:00Z",
+          f_adjuntos: "actas.pdf, orden-del-dia.docx",
+        },
+        updated: 7,
+        body: "Hola, antes del jueves revisad las actas, por favor.\n\nGracias.\n\n<b>no es html</b>",
       };
       const today = new Date().toISOString().slice(0, 10);
       let rows: { id: string; values: Record<string, unknown>; updated: number; body?: string }[] =
@@ -359,6 +397,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               types: [
                 libros,
                 documentos,
+                ...(opts.mail ? [correos] : []),
                 ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
                 ...boni,
               ],
@@ -494,6 +533,19 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           t.level = String(want.level);
           return [200, JSON.stringify({ id: t.id, level: t.level })];
         }
+        if (opts.mail && p === "api/data/types/t_correo/rows" && method === "GET")
+          return [
+            200,
+            JSON.stringify({
+              rows: [mailRow],
+              titles: {},
+              truncated: false,
+              ghosts: [],
+              columns: {},
+            }),
+          ];
+        if (opts.mail && p === "api/data/rows/m1" && method === "GET")
+          return [200, JSON.stringify({ row: { ...mailRow, type: "t_correo" } })];
         // What a row points to, and its titles (apps/server/src/related.ts): here only the titles.
         if (/^api\/data\/rows\/[^/]+\/related$/.test(p) && method === "GET")
           return [200, JSON.stringify({ groups: [], titles: titlesOf() })];

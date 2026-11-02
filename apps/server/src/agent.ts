@@ -46,7 +46,7 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *                                               (the panel of requests; expired ones end first)
  *   POST /api/agent/requests/:id/answer      { choice | text } -> TurnResult (the run goes on, as background work)
  *   POST /api/agent/requests/:id/dismiss     put away unanswered: its run ends having done nothing more
- *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection? } } Juan's corrections, kept
+ *   POST /api/agent/proposals/:id/accept     { edits?: { title?, collection?, values?, done? } } Juan's corrections, kept
  *   POST /api/agent/proposals/:id/reject
  *   GET  /api/agent/decisions                -> { areas } how right Boni's decisions are, per area and level of confidence,
  *                                               and whether each area acts alone («Solo») and has earned it
@@ -101,6 +101,8 @@ export class AgentHost {
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
   /** The account's mailbox as the inbox names it (its address), when it has one (mail.ts). */
   mailAccountOf: ((account: number) => string | null) | null = null;
+  /** The collection an account's mail is kept in (mail.ts), when it has one: read only in the apps (D-22). */
+  mailTypeOf: ((account: number) => string | null) | null = null;
   /** The account's own models (models.ts, «Modelos»); null or a null answer: the server's. */
   providersFor: ((account: number) => Providers | null) | null = null;
   /** The account spent its month's budget (models.ts): background work calls no model. */
@@ -501,7 +503,7 @@ async function answerAgent(
     case "POST /api/agent/proposals/:id/accept": {
       // Juan's corrections first (a new title, another collection), as the agent's edits.
       const b = ((await bodyOf(req)) ?? {}) as {
-        edits?: { title?: unknown; collection?: unknown; done?: unknown };
+        edits?: { title?: unknown; collection?: unknown; done?: unknown; values?: unknown };
       };
       const p = host.store(who.account).journal.proposal(params.id ?? "");
       const edits = b.edits && p ? acceptEdits(host.store(who.account), p, b.edits) : {};

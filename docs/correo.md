@@ -167,6 +167,21 @@ línea por correo) y la conversación puede usarlo, con los ajustes de Correo.
   presupuesto, porque cuesta y no siempre da lo mismo; y la evaluación del lector de correo con varios modelos y con y
   sin los ajustes de Correo.
 
+### 4.6 Cómo se ve un correo, y qué se guarda de él (2026-11-02)
+
+- **Hoy** un correo es un registro de «Correos» con sus campos (asunto, de, nombre, para, cc, fecha, adjuntos por
+  su nombre, id de mensaje) y su cuerpo como texto plano: el HTML se reduce a texto y lo que no cabe se corta y se
+  dice. Todo `external`. El original (el `.eml`) no se guarda.
+- **Desde hoy** «Ver correo» lo abre como lo enseña un cliente de correo (Spark, Apple Mail, Outlook): cabecera (de,
+  para, cc, fecha), asunto, adjuntos aparte y el texto tal cual, en solo lectura; la colección entera es de solo
+  lectura en las apps (D-22). En la tarjeta de la Bandeja, «Corregir» deja cambiar también las demás propiedades de
+  la propuesta, plegadas bajo «Propiedades».
+- **Cómo guardan el correo los clientes:** un almacén de mensajes tal cual (un fichero por mensaje: Maildir, EML,
+  EMLX; o mbox) y aparte un índice que se reconstruye (Thunderbird, Apple Mail, notmuch). Para Boni, lo mismo sería
+  guardar el `.eml` original como archivo del registro (en «Archivos», como un adjunto) y seguir con los campos de
+  ahora para buscar y filtrar sin IA. Pendiente de decidir (§6): cuesta espacio (el contenedor tiene 384 MB) y
+  vale para reabrir un correo entero, con su HTML y sus adjuntos, cuando haga falta.
+
 ## 5. Seguridad: lo que no cambia
 
 - El texto de un correo es dato: nada de lo que dice es una instrucción, para ningún modelo.
@@ -183,6 +198,9 @@ Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/prefer
 2. **Qué modelos probar.** Propuesta para la primera tabla, baratos y de varias casas: Claude Haiku 5.5, Gemini 3.8
    Flash, GPT-5.6 Luna, DeepSeek V4.1 Flash y Qwen 3.8 Flash, cada caso dos veces: unos 0,50 $ con los precios de
    OpenRouter de hoy (la mitad, Gemini). Con Claude Sonnet 5.5, unos 0,80 $ más.
+3. **Guardar el `.eml` original de cada correo** como archivo del registro (§4.6), además de los campos de hoy: vale
+   para reabrirlo entero (HTML, adjuntos) y cuesta espacio en el NAS. Propuesta: sí, con un tope por correo (por
+   ejemplo 2 MB; los adjuntos grandes se quedan fuera y se dice).
 
 ## 7. Fases
 

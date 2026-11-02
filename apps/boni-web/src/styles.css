@@ -4402,6 +4402,81 @@ body:has(.toast) .db-selinfo {
   height: 16px;
   accent-color: var(--accent);
 }
+/* A mail opened as a mail (MailView.tsx): the subject, a header of labelled lines, the text as it came. */
+.mail-view {
+  max-width: 760px;
+}
+.mail-subject {
+  margin: 0 0 12px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.mail-head {
+  margin: 0 0 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+.mail-line {
+  display: flex;
+  gap: 12px;
+  padding: 3px 0;
+  font-size: 14px;
+}
+.mail-line dt {
+  flex: 0 0 5.5rem;
+  color: var(--muted);
+}
+.mail-line dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mail-attachment {
+  display: inline-block;
+  margin: 0 6px 4px 0;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.mail-ro {
+  margin: 0 0 12px;
+}
+.mail-body {
+  margin: 0;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* A proposal's properties in its correction form (InboxCards.tsx), folded under «Propiedades». */
+.inbox-props-toggle {
+  margin-top: 4px;
+}
+.inbox-props {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.inbox-prop {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+.inbox-prop-name {
+  flex: 0 0 9rem;
+  color: var(--muted);
+  font-size: 13px;
+}
+.inbox-prop-value {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 /* A relation's cell: the titles it points to, and its picker's search box and notes. */
 .db-rel {
   overflow: hidden;

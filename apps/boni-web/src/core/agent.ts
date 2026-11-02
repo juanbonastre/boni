@@ -995,6 +995,8 @@ function rowList(b: unknown) {
 /** A collection of the user's as a database (plan PR 19): its fields, and its rows. */
 export interface DataField {
   id: string;
+  /** Its key: what a proposal's values are named by (an older server does not say). */
+  key?: string;
   name: string;
   type: string;
   options?: { id: string; name: string; color?: string }[];
@@ -1039,6 +1041,10 @@ export interface DataType {
   rules: ProtectionRule[];
   /** The fields that play a role for the apps (docs/clases.md §6): day, amount, category… by role. */
   roles?: Record<string, string>;
+  /** A collection a connector fills (the mail's): shown, never edited (D-22). */
+  readOnly?: boolean;
+  /** Its rows open as a mail (who, to whom, when, the text) instead of as a page. */
+  view?: "mail";
   /** How its rows open as pages (the account's, every device): properties unfolded, and those hidden. */
   rowUi: {
     open: boolean;
@@ -1091,6 +1097,8 @@ function parseDataType(v: unknown): DataType | null {
     level: levelOf(v.level),
     ...(v.system === true ? { system: true as const } : {}),
     ...(typeof v.done === "string" ? { done: v.done } : {}),
+    ...(v.readOnly === true ? { readOnly: true } : {}),
+    ...(v.view === "mail" ? { view: "mail" as const } : {}),
     ...(isObj(v.roles)
       ? {
           roles: Object.fromEntries(
@@ -1130,6 +1138,7 @@ function parseDataType(v: unknown): DataType | null {
         ? [
             {
               id: f.id,
+              ...(typeof f.key === "string" ? { key: f.key.slice(0, 80) } : {}),
               name: str(f.name, 200) ?? f.id,
               type: f.type,
               ...(Array.isArray(f.options)
@@ -1570,7 +1579,15 @@ export class AgentApi {
     });
   }
   /** `edits`: Juan's corrections (a new title, another collection by id), kept for the reviewer. */
-  accept = async (id: string, edits?: { title?: string; collection?: string; done?: true }) =>
+  accept = async (
+    id: string,
+    edits?: {
+      title?: string;
+      collection?: string;
+      values?: Record<string, DataValue>;
+      done?: true;
+    },
+  ) =>
     parseTurn(
       await this.call(
         "POST",

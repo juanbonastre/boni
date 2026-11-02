@@ -495,7 +495,14 @@ explains it; what needs explaining goes in a help line under it, in plain words.
   changed note's text shows as reading text (headings, lists, to-dos), never raw Markdown. Accept and Reject on each
   card (never "accept all"). A card from mail has "Ver correo" on its source line (the mail's own row in Boni: IMAP
   gives no webmail link) and, detailed, "Por qué: «…»" (the reader's quote; in « » only when the code found those
-  words in the mail). Its ⤢ button opens the **proposal's page** (Juan, 2026-10-23), read only, like a row's page:
+  words in the mail). **Corregir** (the pencil): the title and the collection on two lines and, folded under
+  «Propiedades» (Juan, 2026-11-02: there, but not all at once), the chosen collection's other properties, each with
+  the same cell the table edits it with (an option from its menu, a relation from its picker, a box); accepting
+  sends only what he changed, by the field's key. **«Ver correo»** opens the mail as a mail client shows it
+  (`MailView.tsx`; D-22): the subject as its title, a header of labelled lines (De: name <address>; Para; Cc;
+  Fecha in full; Adjuntos as pills, names only), «Solo lectura: es lo que llegó.» muted, and the text as it came,
+  paragraphs kept, never as markup; nothing on it edits, and the mail's collection is read only in every table
+  and page (its cells plain text). Its ⤢ button opens the **proposal's page** (Juan, 2026-10-23), read only, like a row's page:
   the "Propuesta" tag and what it does, the title large, then sections (small upper-case labels): Propiedades (every
   value, the title and day too), Nota, Por qué, Origen (source line with "Ver correo", subject, the mail's words),
   Esos días (three days); Aceptar / Rechazar at the end go back to where it was opened from, as Esc and the crumb

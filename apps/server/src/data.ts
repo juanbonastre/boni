@@ -28,6 +28,8 @@ import { isSystemCollection, type SystemCollections } from "./systemCollections.
 
 export interface DataField {
   id: string;
+  /** Its key (what a proposal's values are named by). */
+  key: string;
   name: string;
   type: FieldDef["type"];
   options?: { id: string; name: string; color?: string }[];
@@ -48,6 +50,10 @@ export interface DataType {
   zone?: Zone;
   /** Parts of it with their own level (Notion's filters). */
   rules: { id: string; filter: unknown[]; level: AiLevel }[];
+  /** A collection a connector fills (the mail's): the apps show it, never edit it (D-22). */
+  readOnly?: boolean;
+  /** How its rows open: as a mail (who, to whom, when, the text), instead of as a page. */
+  view?: "mail";
   /** How its rows open as pages: properties unfolded or not, and the ones hidden one by one (Juan, 2026-10-22). */
   rowUi: RowUi;
   /** Boni's own records (systemCollections.ts): read only, never seen by a model. */
@@ -179,6 +185,7 @@ const fieldsOf = (t: TypeDef): DataField[] =>
     .filter((f) => !f.hidden && !f.archived)
     .map((f) => ({
       id: f.id,
+      key: f.key,
       name: f.name,
       type: f.type,
       ...(f.options

@@ -444,6 +444,10 @@ export function makeApp(opts: ServerOptions): App {
                 ...t,
                 roles: rolesOf(store.schema(), t.id),
                 ...(done ? { done: done.id } : {}),
+                // The mail's collection: what arrived, read only, opened as a mail (Juan, 2026-11-02; D-22).
+                ...(t.id === opts.agent?.mailTypeOf?.(s.user.id)
+                  ? { readOnly: true, view: "mail" }
+                  : {}),
               };
             }),
           });

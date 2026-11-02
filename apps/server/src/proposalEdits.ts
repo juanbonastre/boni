@@ -1,4 +1,5 @@
 import { type Json, plain, readStore, type Val } from "@boni/agent";
+import type { FieldDef } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { taskDoneField } from "./calendarStore.ts";
 import { dueField } from "./mail.ts";
@@ -9,14 +10,22 @@ import { dueField } from "./mail.ts";
  * mailReview.ts). Turned into the agent's edits by code: the title replaced; in another collection the title,
  * the note and the day move (the day to that collection's date field), and what was chosen among the first
  * collection's options does not. Null fields: nothing to change. `done` ("Ya lo hice", Juan 2026-10-23): the task
- * is made already marked done (its calendar's task column), and the reading counts as right.
+ * is made already marked done (its calendar's task column), and the reading counts as right. `values` (Juan,
+ * 2026-11-02): any other property of the collection it goes to, by its field's key, checked against the field (an
+ * option by its id, a relation by the id of a record of its target; null clears it).
  */
 export function acceptEdits(
   store: UserStore,
   p: ProposalRow,
-  req: { title?: unknown; collection?: unknown; done?: unknown },
+  req: { title?: unknown; collection?: unknown; done?: unknown; values?: unknown },
 ): { type?: string; values?: Record<string, Json | null> } | { error: string } {
-  if (req.title === undefined && req.collection === undefined && req.done !== true) return {};
+  if (
+    req.title === undefined &&
+    req.collection === undefined &&
+    req.done !== true &&
+    req.values === undefined
+  )
+    return {};
   if (p.tool !== "entities.create") return { error: "edit-not-allowed" };
   const stored = (p.args as { values?: { type?: Val; values?: Val } }).values ?? {};
   const ro = readStore(store);
@@ -54,6 +63,19 @@ export function acceptEdits(
     );
     if (dayKey && date) out.values[date.key] = vals[dayKey] ?? null;
   }
+  if (req.values !== undefined) {
+    if (!req.values || typeof req.values !== "object" || Array.isArray(req.values))
+      return { error: "bad-values" };
+    const t = types.find((x) => x.key === (out.type ?? oldKey));
+    if (!t) return { error: "bad-collection" };
+    for (const [k, v] of Object.entries(req.values as Record<string, unknown>)) {
+      const f = t.fields.find((x) => x.key === k && !x.archived && !x.hidden);
+      if (!f || f.id === t.titleField) return { error: "bad-values" };
+      const value = valueFor(f, v, (type, id) => ro.list(type).some((e) => e.entity.id === id));
+      if (value === undefined) return { error: "bad-values" };
+      out.values[k] = value;
+    }
+  }
   if (req.done === true) {
     const key = out.type ?? oldKey;
     const t = types.find((x) => x.key === key);
@@ -62,4 +84,75 @@ export function acceptEdits(
     out.values[done.key] = true;
   }
   return out;
+}
+
+const TEXT = 2000;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it refuses
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+const text = (v: unknown, max = TEXT) =>
+  typeof v === "string" && [...v].length <= max && !CONTROL.test(v) ? v : undefined;
+
+/**
+ * A value Juan typed for a field, as the field keeps it, or undefined when it does not fit: text within bounds,
+ * a finite number, a day or a time in their forms, an option by its id, a record of the relation's target by its
+ * id (one, or a list when it takes many). Null clears the field. A file never comes this way.
+ */
+export function valueFor(
+  f: FieldDef,
+  v: unknown,
+  exists: (type: string, id: string) => boolean,
+): Json | null | undefined {
+  if (v === null) return null;
+  switch (f.type) {
+    case "text":
+    case "longtext":
+    case "url":
+    case "email":
+    case "phone":
+      return text(v);
+    case "number":
+    case "duration":
+      return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+    case "checkbox":
+      return typeof v === "boolean" ? v : undefined;
+    case "date":
+      return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined;
+    case "time":
+      return typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v) ? v : undefined;
+    case "datetime":
+      return typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v))
+        ? v
+        : undefined;
+    case "select":
+      return typeof v === "string" && f.options?.some((o) => o.id === v) ? v : undefined;
+    case "multiselect":
+      return Array.isArray(v) &&
+        v.length <= 100 &&
+        v.every((x) => typeof x === "string" && f.options?.some((o) => o.id === x))
+        ? (v as string[])
+        : undefined;
+    case "money":
+      return v &&
+        typeof v === "object" &&
+        typeof (v as { amount?: unknown }).amount === "number" &&
+        Number.isFinite((v as { amount: number }).amount) &&
+        typeof (v as { currency?: unknown }).currency === "string" &&
+        (v as { currency: string }).currency.length <= 3
+        ? {
+            amount: (v as { amount: number }).amount,
+            currency: (v as { currency: string }).currency,
+          }
+        : undefined;
+    case "relation": {
+      const target = f.relation?.target;
+      if (!target) return undefined;
+      const ids = Array.isArray(v) ? v : [v];
+      if (ids.length > 100 || !ids.every((x) => typeof x === "string" && exists(target, x)))
+        return undefined;
+      if (f.relation?.many) return ids as string[];
+      return ids.length === 1 ? (ids[0] as string) : undefined;
+    }
+    default:
+      return undefined;
+  }
 }

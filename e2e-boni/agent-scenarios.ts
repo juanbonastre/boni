@@ -332,6 +332,49 @@ export const CARD_DETAILED = {
     context: DAYS("2026-10-29", ["2026-10-28", "2026-10-30"]),
   },
 };
+/** The same proposal, going to the books (a collection the fake server has, with its fields): its properties can be corrected. */
+export const CARD_BOOK = {
+  ...CARD_DETAILED,
+  id: "c9",
+  created: 5,
+  view: {
+    ...CARD_DETAILED.view,
+    rows: [
+      { ...CARD_DETAILED.view.rows[0], value: "libro", detail: "Libros" },
+      { ...CARD_DETAILED.view.rows[1], arg: "values.titulo" },
+      {
+        arg: "values.estado",
+        name: "Estado",
+        role: "content",
+        value: "o_pendiente",
+        detail: "Pendiente",
+        integrity: "model",
+        sources: ["model"],
+        marks: [],
+      },
+    ],
+  },
+  card: {
+    ...CARD_DETAILED.card,
+    collection: "Libros",
+    collectionId: "t_libro",
+    kind: "item",
+    day: null,
+    start: null,
+    end: null,
+    context: [],
+  },
+};
+/** The same proposal from a mail the fake server keeps (with `mail: true`): «Ver correo» opens it as a mail. */
+export const CARD_MAIL = {
+  ...CARD_DETAILED,
+  id: "c8",
+  created: 6,
+  card: {
+    ...CARD_DETAILED.card,
+    source: { ...CARD_DETAILED.card.source, open: { type: "t_correo", id: "m1" } },
+  },
+};
 export const CARD_COMPACT = {
   ...CARD_DETAILED,
   id: "c2",
