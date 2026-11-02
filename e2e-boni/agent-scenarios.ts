@@ -27,6 +27,20 @@ export const TEXT_REPLY = {
       },
     },
     {
+      // A list of outside values: the mark once, on the block, not on every line.
+      component: "list",
+      data: {
+        items: {
+          t: "list",
+          integrity: "external",
+          items: [
+            v("Lucía pregunta si quedamos el jueves", "external", "personal"),
+            v("Una tienda anuncia rebajas", "external", "personal"),
+          ],
+        },
+      },
+    },
+    {
       component: "number",
       data: {
         value: v(42.5, "imported", "sensitive"),

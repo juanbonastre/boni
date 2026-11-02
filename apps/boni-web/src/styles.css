@@ -2538,7 +2538,12 @@ html.widget-page body {
   color: var(--muted);
   font-weight: 500;
 }
-/* What came from outside: plain text with a mark, never a link or HTML (docs/nucleo.md, 7.14). */
+/* What came from outside: plain text with a mark, never a link or HTML (docs/nucleo.md, 7.14). A list or a table
+   of outside values carries the mark once, on the block (Juan, 2026-11-02). */
+.reply-ext {
+  border-left: 2px solid var(--c4);
+  padding-left: 8px;
+}
 .val-ext {
   border-left: 2px solid var(--c4);
   padding-left: 4px;

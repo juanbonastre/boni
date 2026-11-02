@@ -1214,6 +1214,8 @@ export function agentErrorText(t: T, code: string): string {
   if (code === "declined") return t("agent.error.declined");
   if (code === "plan-invalid") return t("agent.error.planInvalid");
   if (code.startsWith("model-")) return t("agent.error.model");
+  // The limits of one request (P12) are not a security rule: say which one was hit.
+  if (code.startsWith("P12-")) return t(`agent.error.limit.${code.slice(4)}`);
   const rule = /^(P\d{1,2}|R\d)/.exec(code)?.[1];
   if (rule) return t("agent.error.rule", { rule });
   return t("agent.error.generic", { code });

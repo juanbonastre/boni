@@ -475,7 +475,10 @@ explaining goes in the docs, not on the screen.
   asked to answer as a person would: a sentence first, then what helps see it. «Deshacer lo que hizo» follows an
   answer only while its turn changed something not undone yet: a question that only read has nothing to undo, and once
   undone the link goes. **Text is only text**: no HTML, no Markdown, no
-  links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover.
+  links, no images; what came from outside (an e-mail, a page) keeps a 2 px amber mark on its left and says so on hover;
+  a list or a table whose values all came from outside carries the mark once, on the block, not on every value
+  (2026-11-02). When a request hits one of its limits (too many model calls, steps or text, P12), the error says
+  which, not «una regla de seguridad».
   A question shows its options as pills (one line, cut with an ellipsis) and never asks for a password. A
   **confirmation** is a card with an `--accent` border holding only the code's components: the action as a question,
   each argument with its real value in full (scrolling, never cut), where it came from ("Viene de fuera · un correo")

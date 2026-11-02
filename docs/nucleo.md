@@ -455,7 +455,11 @@ type Expr =
   - `classify(texto, opciones) → enumerado`;
   - `summarize(texto) → texto`;
   - `rewrite(texto, instrucción del plan) → texto`;
-  - `answer_about(texto, pregunta) → texto`.
+  - `answer_about(texto, pregunta) → texto`;
+  - sobre una lista, en **una sola llamada** (2026-11-02: un lector por correo agotaba las llamadas de una petición,
+    P12): `summarize_each([textos]) → [línea]` y `label_each([textos], opciones, pregunta?) → {elecciones,
+    recuentos}`; cada texto va bajo su número, la respuesta trae exactamente uno por texto y en el mismo orden (el
+    código lo comprueba), y los recuentos por opción los cuenta el código, nunca el modelo.
 - **La etiqueta de la salida es la de la entrada.** Lo que sale de un correo es `external`; leer una nota propia da
   `model`, que el planificador sí puede ver pero que nunca vale como destino.
 - **A un lector no se le pasan datos propios junto al contenido externo.** Por ejemplo, para clasificar un correo en un

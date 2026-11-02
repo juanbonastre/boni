@@ -664,12 +664,16 @@ function Notices({ t, result }: { t: T; result: NonNullable<ChatEntry["result"]>
   );
 }
 
-/** A value as text, with a mark when it came from outside (an e-mail, a page) or from a model. */
-export function ValueText({ p }: { p: Painted }) {
+/**
+ * A value as text, with a mark when it came from outside (an e-mail, a page) or from a model; `plain` when the block
+ * around it already carries the mark (a list or a table of outside values: once, not on every cell).
+ */
+export function ValueText({ p, plain = false }: { p: Painted; plain?: boolean }) {
   const t = useStore((s) => s.t);
   if (isProposal(p)) return <span className="val-proposal">{t("chat.inInbox")}</span>;
   const integrity = lowest(p);
-  const cls = integrity === "external" ? "val-ext" : integrity === "model" ? "val-model" : "val";
+  const cls =
+    integrity === "external" && !plain ? "val-ext" : integrity === "model" ? "val-model" : "val";
   return (
     <span className={cls} title={integrity === "external" ? t("chat.fromOutside") : undefined}>
       {textOf(p)}
@@ -702,7 +706,17 @@ const fieldsOf = (spec: Painted | undefined): string[] | null => {
     : null;
 };
 
+/** The painted leaves of a value: an item's own, or a record's fields. */
+const leavesOf = (p: Painted): Painted[] =>
+  p.t === "rec" ? Object.values(p.fields) : p.t === "list" ? p.items.flatMap(leavesOf) : [p];
+/** Whether every value of a block came from outside: then the block carries the mark once (Juan, 2026-11-02). */
+const allOutside = (items: Painted[]) => {
+  const leaves = items.flatMap(leavesOf);
+  return leaves.length > 0 && leaves.every((l) => lowest(l) === "external");
+};
+
 function ReplyView({ reply }: { reply: Reply }) {
+  const t = useStore((s) => s.t);
   const d = reply.data;
   const caption = d.caption ? <div className="reply-caption">{textOf(d.caption)}</div> : null;
   switch (reply.component) {
@@ -729,18 +743,24 @@ function ReplyView({ reply }: { reply: Reply }) {
     case "list": {
       const items = d.items?.t === "list" ? d.items.items : d.items ? [d.items] : [];
       const fields = fieldsOf(d.fields);
+      const outside = allOutside(items);
       return (
-        <div className="reply-list">
+        <div
+          className={`reply-list${outside ? " reply-ext" : ""}`}
+          title={outside ? t("chat.fromOutside") : undefined}
+        >
           {caption}
           <ul>
             {items.map((item, i) => (
               <li key={i}>
                 {item.t === "rec" && fields ? (
                   fields.map((f) =>
-                    item.fields[f] ? <ValueText key={f} p={item.fields[f] as Painted} /> : null,
+                    item.fields[f] ? (
+                      <ValueText key={f} p={item.fields[f] as Painted} plain={outside} />
+                    ) : null,
                   )
                 ) : (
-                  <ValueText p={item} />
+                  <ValueText p={item} plain={outside} />
                 )}
               </li>
             ))}
@@ -763,8 +783,12 @@ function ReplyView({ reply }: { reply: Reply }) {
         (first?.t === "rec"
           ? Object.keys(first.fields).filter((k) => k !== "id" && k !== "type")
           : []);
+      const outside = allOutside(rows);
       return (
-        <div className="reply-table">
+        <div
+          className={`reply-table${outside ? " reply-ext" : ""}`}
+          title={outside ? t("chat.fromOutside") : undefined}
+        >
           {caption}
           <div className="table-scroll">
             <table>
@@ -781,12 +805,14 @@ function ReplyView({ reply }: { reply: Reply }) {
                     {r.t === "rec" ? (
                       fields.map((f) => (
                         <td key={f}>
-                          {r.fields[f] ? <ValueText p={r.fields[f] as Painted} /> : null}
+                          {r.fields[f] ? (
+                            <ValueText p={r.fields[f] as Painted} plain={outside} />
+                          ) : null}
                         </td>
                       ))
                     ) : (
                       <td colSpan={Math.max(1, fields.length)}>
-                        <ValueText p={r} />
+                        <ValueText p={r} plain={outside} />
                       </td>
                     )}
                   </tr>

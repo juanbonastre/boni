@@ -481,6 +481,61 @@ describe("the agent, with a planner that behaves", () => {
     expect(env.store.journal.run(res.run)?.status).toBe("done");
   });
 
+  it("reads several mails in one call: a line per mail, and the counts by kind are the code's", async () => {
+    env = makeEnv([
+      { asunto: "Reunión", de: "lucia@example.com", cuerpo: "¿Nos vemos el jueves?" },
+      { asunto: "Oferta", de: "tienda@example.com", cuerpo: "Rebajas de otoño" },
+    ]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        { id: "s", op: "read", reader: "summarize_each", input: ref("$m.items.cuerpo") },
+        {
+          id: "k",
+          op: "read",
+          reader: "label_each",
+          input: ref("$m.items.cuerpo"),
+          params: {
+            options: { fn: "list", args: [lit("personal"), lit("publicidad")] },
+            question: lit("¿De qué tipo es?"),
+          },
+        },
+        { id: "r1", op: "reply", component: "list", data: { items: ref("$s.lines") } },
+        {
+          id: "r2",
+          op: "reply",
+          component: "chart",
+          data: { labels: ref("$k.counts.option"), values: ref("$k.counts.n") },
+        },
+      ],
+    };
+    const reader = fakePlanner([
+      { lines: ["Lucía pregunta si quedamos el jueves", "Una tienda anuncia rebajas"] },
+      { choices: ["personal", "publicidad"] },
+    ]);
+    const res = await env
+      .agent(fakePlanner([plan]), reader)
+      .turn({ text: "Resume mis correos", origin: PERSONAL });
+    expect(res.status).toBe("done");
+    // Two mails, two readers, two calls: each reader saw both mails, each under its number.
+    expect(reader.requests).toHaveLength(2);
+    const seen = reader.requests[0]?.input as { content?: string; count?: number };
+    expect(seen.count).toBe(2);
+    expect(seen.content).toContain("[2]\nRebajas de otoño");
+    expect(res.replies[0]?.data.items).toMatchObject({
+      t: "list",
+      items: [
+        { value: "Lucía pregunta si quedamos el jueves", integrity: "external" },
+        { value: "Una tienda anuncia rebajas", integrity: "external" },
+      ],
+    });
+    expect(res.replies[1]?.data.labels).toMatchObject({
+      items: [{ value: "personal" }, { value: "publicidad" }],
+    });
+    expect(res.replies[1]?.data.values).toMatchObject({ items: [{ value: 1 }, { value: 1 }] });
+  });
+
   it("background work has a daily budget of readers per sender (P13)", async () => {
     env = makeEnv([{ asunto: "Hola", de: "alguien@example.com", cuerpo: "texto inventado" }]);
     const plan = {

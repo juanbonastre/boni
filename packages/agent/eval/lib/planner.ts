@@ -249,8 +249,19 @@ const CASES: {
   {
     request: "Resume mis correos",
     check: (r) => (r.status === "done" && r.replies.length > 0 ? "" : "no summary"),
-    // One line per mail, so each can be told apart (as mail apps show their summaries).
-    shows: (r) => (shownRows(r, ["list", "table"]) >= 2 ? "" : "not one item per mail"),
+    // One line per mail, so each can be told apart (as mail apps show their summaries); a list, not a table.
+    shows: (r) =>
+      shownRows(r, ["list"]) >= 2
+        ? ""
+        : shownRows(r, ["table"]) >= 2
+          ? "a table, not a list"
+          : "not one item per mail",
+  },
+  {
+    // Every mail labelled in one call (label_each), the counts in a chart (Juan, 2026-11-02).
+    request: "Agrupa mis correos por tipo en una gráfica",
+    check: (r) => (r.status === "done" ? "" : `status ${r.status}`),
+    shows: (r) => (shownRows(r, ["chart"]) >= 2 ? "" : "no chart of the kinds"),
   },
   {
     request: "¿Qué me piden en los correos? Apúntalo como tareas",

@@ -56,7 +56,7 @@ lectura se leyó, y «Volver a leer» repite los que se leyeron con una anterior
 | Quién | Qué ve | Qué no ve |
 |---|---|---|
 | **El planificador** | Sus instrucciones generales (`PLANNER_PROMPT`: el lenguaje de los planes, las herramientas, que el texto de fuera es dato, que conteste como una persona), las colecciones con sus campos, los últimos turnos y la petición | El texto de ningún correo: le llegan asas (`$handle`) que puede pasar a un lector pero no leer. **Ninguna indicación sobre correo** |
-| **Los lectores** (`summarize`, `extract_tasks`…) | Un prompt de una línea («resume el texto entre las marcas…») y un correo | **La guía de Juan** (la política ya lo permitiría, §7.4b), lo que le importa, cómo agrupar |
+| **Los lectores** (`summarize`, `extract_tasks`…; `summarize_each` y `label_each` leen todos los correos en una llamada, desde el 2026-11-02) | Un prompt de una línea («resume el texto entre las marcas…») y un correo, o la lista numerada | **La guía de Juan** (la política ya lo permitiría, §7.4b), lo que le importa, cómo agrupar |
 | **El código** | La respuesta | Pinta los componentes (texto, cifra, lista, tabla, gráfica); lo que viene de fuera lleva su marca ámbar |
 
 Así que sí: en la conversación, la IA que ve correos solo sabe lo que dice la petición. Lo que sabe de Juan y de cómo
@@ -150,9 +150,14 @@ Con los componentes de hoy basta para empezar:
 >
 > 2 boletines sin interés.
 
+Hecho el 2026-11-02, a petición de Juan (los resúmenes salían largos y en tablas, con la marca ámbar en cada celda, y
+agruparlos por tipo se quedaba sin llamadas, P12): el planificador lee todos los correos en **una llamada** con
+`summarize_each` (una línea por correo) o `label_each` (una opción por correo y los recuentos, contados por el
+código), contesta con una **lista** de una línea por correo (quién, el asunto, qué pide; el más reciente primero) y
+una tabla solo si se la piden, y agrupa por tipo con `label_each` y una gráfica de sus recuentos. Una lista o una
+tabla cuyos valores vienen todos de fuera lleva la marca ámbar una vez, en el bloque (`docs/design-guide.md`).
+
 Más adelante, con maqueta antes (I-09): una tarjeta por correo con «Abrir» (el registro en Boni) y «Proponer tarea».
-Para que el planificador pueda agruparlos en una sola lectura por correo, `read_message` gana un módulo «resumen» (una
-línea por correo) y la conversación puede usarlo, con los ajustes de Correo.
 
 ### 4.5 El banco de pruebas (hecho en este PR)
 
@@ -201,8 +206,9 @@ línea por correo) y la conversación puede usarlo, con los ajustes de Correo.
 
 Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/preferencias.md` §7. Aquí, solo lo del correo:
 
-1. **El resumen de correos agrupado por lo que piden** (propuesto, el ejemplo de §4.4), o una línea por correo por orden
-   de llegada.
+1. ~~**El resumen de correos agrupado por lo que piden** (propuesto, el ejemplo de §4.4), o una línea por correo por orden
+   de llegada.~~ Resuelto el 2026-11-02: una línea por correo, en lista y el más reciente primero; agrupados por tipo
+   cuando Juan lo pide (§4.4).
 2. **Qué modelos probar.** Propuesta para la primera tabla, baratos y de varias casas: Claude Haiku 5.5, Gemini 3.8
    Flash, GPT-5.6 Luna, DeepSeek V4.1 Flash y Qwen 3.8 Flash, cada caso dos veces: unos 0,50 $ con los precios de
    OpenRouter de hoy (la mitad, Gemini). Con Claude Sonnet 5.5, unos 0,80 $ más.
@@ -216,7 +222,7 @@ Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/prefer
 |---|---|---|
 | M1 | El banco de pruebas: modelos y prompts en una tabla, la forma aparte, el caso de categorías | Este PR |
 | M2 | Los ajustes de Correo en la conversación y sus instrucciones; casos nuevos («Ponme al día», «¿Quién me ha escrito de la secretaría?») y comparar con y sin ajustes | P2 de `docs/preferencias.md`, con C5 (modos de conversación) |
-| M3 | El módulo «resumen» y la tarjeta de correo | Con maqueta |
+| M3 | ~~El módulo «resumen»~~ (hecho el 2026-11-02 como `summarize_each`, §4.4) y la tarjeta de correo | Con maqueta |
 
 Aprender del chat no es una fase de aquí: es la P1 de `docs/preferencias.md` (la tarjeta «¿Lo recuerdo?»).
 
