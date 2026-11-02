@@ -405,6 +405,24 @@ test("«Separar por»: a calendar split by a field is a folded group with one ca
   await expect(
     list.locator(".cal-row.member", { hasText: "Gestiones" }).locator(".swatch"),
   ).toHaveCSS("--c", "#fb923c");
+  await page.keyboard.press("Escape");
+  // The group row is the definition's: its gear opens its properties, its eye hides every calendar inside.
+  const groupRow = list.locator(".cal-group-row");
+  await groupRow.getByRole("button", { name: "Propiedades de Docencia" }).click();
+  await expect(modal).toContainText("Propiedades de Docencia");
+  await expect(modal.getByLabel("Separar por")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await groupRow.getByRole("button", { name: "Ocultar todos" }).click();
+  await expect(list.locator(".cal-row.member.off")).toHaveCount(await members.count());
+  await groupRow.getByRole("button", { name: "Mostrar todos" }).click();
+  await expect(list.locator(".cal-row.member.off")).toHaveCount(0);
+  // A calendar inside has its own properties: its colour, and the way to the definition's.
+  await list.locator(".cal-row.member", { hasText: "Gestiones" }).locator(".gear").click();
+  await expect(modal).toContainText("Propiedades de Gestiones");
+  await expect(modal.getByLabel("Separar por")).toHaveCount(0);
+  await expect(modal.locator(".swatch.pick.on")).toHaveCSS("--c", "#fb923c");
+  await modal.getByRole("button", { name: "Ajustes de Docencia" }).click();
+  await expect(modal).toContainText("Propiedades de Docencia");
   // Whole again: one calendar, no group.
   await modal.getByLabel("Separar por").selectOption("");
   await expect(list.locator(".cal-group-head")).toHaveCount(0);
