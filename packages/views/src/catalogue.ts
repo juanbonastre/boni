@@ -18,10 +18,18 @@ export interface CatalogueField {
   type: FieldType;
   options?: { id: string; name: string }[];
 }
+/** The roles the catalogue uses (docs/clases.md §6, D-20): the field that is its day, its amount, its category. */
+export interface CatalogueRoles {
+  date?: string;
+  amount?: string;
+  category?: string;
+}
 export interface CatalogueCollection {
   id: string;
   name: string;
   fields: CatalogueField[];
+  /** Its roles, when it has them: the first choice of a new block and of the panel's lists. */
+  roles?: CatalogueRoles;
 }
 export interface CatalogueData {
   collections: CatalogueCollection[];
@@ -225,7 +233,7 @@ const dataSettings = (group: DataOptions | null): Setting[] => [
     options: "dateFields",
     optional: true,
     section: "filter",
-    ai: "a date field of the collection; the first one when left out",
+    ai: "a date field of the collection; when left out, the one that is its day (its date role), else the first",
   },
   {
     key: "filterField",
@@ -423,8 +431,16 @@ export function applies(s: Setting, block: Block): boolean {
   });
 }
 
-const fieldsOf = (data: CatalogueData, block: Block) =>
-  data.collections.find((c) => c.id === block.collection)?.fields ?? [];
+const collectionOf = (data: CatalogueData, block: Block) =>
+  data.collections.find((c) => c.id === block.collection);
+const fieldsOf = (data: CatalogueData, block: Block) => collectionOf(data, block)?.fields ?? [];
+const rolesOf = (data: CatalogueData, block: Block): CatalogueRoles =>
+  collectionOf(data, block)?.roles ?? {};
+/** The options with the one of `id` first (a role's field comes first; D-20), when it is among them. */
+const first = (opts: readonly Option[], id: string | undefined): readonly Option[] => {
+  const mine = id ? opts.find((o) => o.value === id) : undefined;
+  return mine ? [mine, ...opts.filter((o) => o !== mine)] : opts;
+};
 const DATES: readonly FieldType[] = ["date", "datetime"];
 const hasDate = (fs: CatalogueField[]) => fs.some((f) => DATES.includes(f.type));
 const GROUPABLE: readonly FieldType[] = ["select", "multiselect", "relation", "checkbox"];
@@ -437,15 +453,19 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
   if (!s.options) return [];
   if (typeof s.options !== "string") return s.options;
   const fs = fieldsOf(data, block);
+  const roles = rolesOf(data, block);
   switch (s.options) {
     case "collections":
       return data.collections.map((c) => ({ value: c.id, label: c.name }));
     case "numberFields":
-      return byField(fs, ["number", "money", "duration"]);
+      return first(byField(fs, ["number", "money", "duration"]), roles.amount);
     case "groupFields":
-      return byField(fs, GROUPABLE);
+      return first(byField(fs, GROUPABLE), roles.category);
     case "timeOrGroupFields":
-      return [...(hasDate(fs) ? TIME_GROUPS : []), ...byField(fs, GROUPABLE)];
+      return [
+        ...(hasDate(fs) ? TIME_GROUPS : []),
+        ...first(byField(fs, GROUPABLE), roles.category),
+      ];
     case "pages":
       return data.pages ?? [];
     case "screens":
@@ -455,7 +475,7 @@ export function optionsOf(s: Setting, block: Block, data: CatalogueData): readon
     case "filterFields":
       return byField(fs, ["select", "multiselect"]);
     case "dateFields":
-      return byField(fs, DATES);
+      return first(byField(fs, DATES), roles.date);
     case "filterValues": {
       const f = fs.find((x) => x.id === block.filterField);
       return (f?.options ?? []).map((o) => ({ value: o.id, label: o.name }));
@@ -574,7 +594,10 @@ export function fitAfter(
   return b;
 }
 
-/** A catalogue block as it is added: the kind's defaults, the first collection's fields where it needs them. */
+/**
+ * A catalogue block as it is added: the kind's defaults, the first collection's fields where it needs them, and
+ * that collection's roles first (D-20): with an amount, the block sums it; a bar list goes by its category.
+ */
 export function newBlock(
   type: string,
   id: string,
@@ -591,6 +614,10 @@ export function newBlock(
       if (group && typeof group.options === "string") {
         const opts = optionsOf(group, b, data);
         if (!opts.some((o) => o.value === b.groupBy)) b.groupBy = opts[0]?.value;
+      }
+      if (c.roles?.amount && kind.settings.some((s) => s.key === "measure")) {
+        b.measure = "sum";
+        b.field = c.roles.amount;
       }
     }
   }

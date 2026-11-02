@@ -1,5 +1,10 @@
-import type { Entity, TypeDef } from "@boni/entities";
-import { type BlockProblem, type CatalogueData, catalogueErrors } from "./catalogue.ts";
+import { type Entity, rolesOf, type TypeDef } from "@boni/entities";
+import {
+  type BlockProblem,
+  type CatalogueData,
+  type CatalogueRoles,
+  catalogueErrors,
+} from "./catalogue.ts";
 import {
   type ChartData,
   type ChartSpec,
@@ -52,31 +57,54 @@ export function blockChartSpec(b: DataBlock): ChartSpec {
   };
 }
 
-/** The date field a block places rows by: the one it names, or the collection's first ("" when it has none). */
-export function blockDateField(b: DataBlock, def: TypeDef): string {
+/**
+ * The date field a block places rows by: the one it names, else the collection's day (its `date` or `start` role,
+ * her mother's when inherited: D-20), else its first date field ("" when it has none).
+ */
+export function blockDateField(
+  b: DataBlock,
+  def: TypeDef,
+  types: Readonly<Record<string, TypeDef>> = { [def.id]: def },
+): string {
   if (b.date) return b.date;
+  const roles = rolesOf({ types }, def.id);
+  const day = roles.date ?? roles.start;
+  if (day) return day;
   return (
     def.fields.find((f) => (f.type === "date" || f.type === "datetime") && !f.archived)?.id ?? ""
   );
 }
 
-/** What the catalogue knows of the user's collections, from the store's schema (the user's own types). */
+/**
+ * What the catalogue knows of the user's collections, from the store's schema (the user's own types), each with
+ * the roles the catalogue uses (its day, its amount, its category; D-20), when their fields are among the shown.
+ */
 export function catalogueData(types: readonly TypeDef[]): CatalogueData {
+  const schema = { types: Object.fromEntries(types.map((t) => [t.id, t])) };
   return {
     collections: types
       .filter((t) => !t.system && !t.archived)
-      .map((t) => ({
-        id: t.id,
-        name: t.name,
-        fields: t.fields
-          .filter((f) => !f.hidden && !f.archived)
-          .map((f) => ({
+      .map((t) => {
+        const fields = t.fields.filter((f) => !f.hidden && !f.archived);
+        const shown = new Set(fields.map((f) => f.id));
+        const r = rolesOf(schema, t.id);
+        const roles: CatalogueRoles = {};
+        const day = r.date ?? r.start;
+        if (day && shown.has(day)) roles.date = day;
+        if (r.amount && shown.has(r.amount)) roles.amount = r.amount;
+        if (r.category && shown.has(r.category)) roles.category = r.category;
+        return {
+          id: t.id,
+          name: t.name,
+          fields: fields.map((f) => ({
             id: f.id,
             name: f.name,
             type: f.type,
             ...(f.options ? { options: f.options.map((o) => ({ id: o.id, name: o.name })) } : {}),
           })),
-      })),
+          ...(Object.keys(roles).length ? { roles } : {}),
+        };
+      }),
   };
 }
 
@@ -95,7 +123,7 @@ export function computeBlock(
   const problems = catalogueErrors(b, catalogueData(Object.values(types)));
   if (problems.length) return { problems };
   const def = types[b.collection] as TypeDef;
-  const dateField = blockDateField(b, def);
+  const dateField = blockDateField(b, def, types);
   const rows = entities(def.id);
   try {
     const data = computeChart(
@@ -126,7 +154,7 @@ export function blockRows(
   const problems = catalogueErrors(b, catalogueData(Object.values(types)));
   if (problems.length) return { problems };
   const def = types[b.collection] as TypeDef;
-  const dateField = blockDateField(b, def);
+  const dateField = blockDateField(b, def, types);
   const all = entities(def.id);
   try {
     const rows = chartRecords(

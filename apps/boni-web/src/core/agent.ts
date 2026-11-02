@@ -1037,6 +1037,8 @@ export interface DataType {
   zone?: Zone;
   /** Parts of it with their own level: the rows that match every condition of a rule. */
   rules: ProtectionRule[];
+  /** The fields that play a role for the apps (docs/clases.md §6): day, amount, category… by role. */
+  roles?: Record<string, string>;
   /** How its rows open as pages (the account's, every device): properties unfolded, and those hidden. */
   rowUi: {
     open: boolean;
@@ -1089,6 +1091,15 @@ function parseDataType(v: unknown): DataType | null {
     level: levelOf(v.level),
     ...(v.system === true ? { system: true as const } : {}),
     ...(typeof v.done === "string" ? { done: v.done } : {}),
+    ...(isObj(v.roles)
+      ? {
+          roles: Object.fromEntries(
+            Object.entries(v.roles)
+              .filter((e): e is [string, string] => typeof e[1] === "string")
+              .slice(0, 12),
+          ),
+        }
+      : {}),
     rules: Array.isArray(v.rules)
       ? v.rules.flatMap((r): ProtectionRule[] =>
           isObj(r) && typeof r.id === "string" && filterErrors(r.filter).length === 0

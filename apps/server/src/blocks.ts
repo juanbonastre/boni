@@ -57,8 +57,12 @@ function sources(store: UserStore, blocks: readonly unknown[], getSys: Sys | und
   return { types, rowsOf, titleOf };
 }
 
-const fieldsUsed = (block: DataBlock, def: Parameters<typeof blockDateField>[1]) =>
-  [blockDateField(block, def), block.groupBy, block.field, block.filterField].filter(
+const fieldsUsed = (
+  block: DataBlock,
+  def: Parameters<typeof blockDateField>[1],
+  types: Parameters<typeof blockDateField>[2],
+) =>
+  [blockDateField(block, def, types), block.groupBy, block.field, block.filterField].filter(
     (f): f is string => !!f && !f.startsWith("@"),
   );
 
@@ -85,7 +89,7 @@ export function computeBlocks(
     const def = block.collection ? types[block.collection] : undefined;
     if ("data" in out && def && !isSystemCollection(def.id)) {
       const fields = used.get(def.id) ?? new Set<string>();
-      for (const f of fieldsUsed(block, def)) fields.add(f);
+      for (const f of fieldsUsed(block, def, types)) fields.add(f);
       used.set(def.id, fields);
     }
   }
@@ -139,7 +143,7 @@ export function blockRowsOf(
       rows.map((r) => r.id),
       false,
       o.now,
-      fieldsUsed(block, def),
+      fieldsUsed(block, def, types),
     );
   return {
     type: def.id,
