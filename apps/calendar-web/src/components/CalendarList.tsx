@@ -1,3 +1,4 @@
+import type { CalendarDef } from "@boni/calendar";
 import { ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from "lucide-react";
 import { useState } from "react";
 import { EXTERNAL_ACCOUNT, isExternalCalendar } from "../external.ts";
@@ -18,7 +19,6 @@ const BONI = "boni";
 export function CalendarList() {
   const calendars = useApp((s) => s.data.calendars);
   const source = useApp((s) => s.source);
-  const toggle = useApp((s) => s.toggleCalendar);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const groups = [
     {
@@ -54,36 +54,7 @@ export function CalendarList() {
               <span className="account-name">{g.name}</span>
               <ChevronDown size={13} className={closed ? "chev closed" : "chev"} />
             </button>
-            {!closed &&
-              g.cals.map((c) => (
-                <div key={c.id} data-cal={c.id} className={`cal-row ${c.visible ? "" : "off"}`}>
-                  <button
-                    type="button"
-                    className="cal-main"
-                    onClick={() => toggle(c.id)}
-                    title={c.visible ? t("sidebar.hide") : t("sidebar.show")}
-                  >
-                    <span className="swatch" style={{ "--c": c.color } as React.CSSProperties} />
-                    <span className="cal-name">{c.name}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn row-btn gear"
-                    title={t("sidebar.properties")}
-                    onClick={() => useApp.getState().set(propertiesOf(c.id))}
-                  >
-                    <SlidersHorizontal size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    className={`icon-btn row-btn eye ${c.visible ? "" : "keep"}`}
-                    title={c.visible ? t("sidebar.hide") : t("sidebar.show")}
-                    onClick={() => toggle(c.id)}
-                  >
-                    {c.visible ? <Eye size={14} /> : <EyeOff size={14} />}
-                  </button>
-                </div>
-              ))}
+            {!closed && <Rows cals={g.cals} collapsed={collapsed} setCollapsed={setCollapsed} />}
           </section>
         );
       })}
@@ -144,6 +115,88 @@ function AddCalendar() {
           ))
         )}
       </Menu>
+    </div>
+  );
+}
+
+/**
+ * The rows of a group: a calendar on its own, or a split definition as a folded row (its name and the field) with the
+ * calendars it makes inside (D-24; Juan, 2026-11-02: «grupo plegable»).
+ */
+function Rows({
+  cals,
+  collapsed,
+  setCollapsed,
+}: {
+  cals: CalendarDef[];
+  collapsed: Set<string>;
+  setCollapsed: (f: (prev: Set<string>) => Set<string>) => void;
+}) {
+  const seen = new Set<string>();
+  const out: React.ReactNode[] = [];
+  for (const c of cals) {
+    if (!c.group) {
+      out.push(<CalRow key={c.id} c={c} />);
+      continue;
+    }
+    if (seen.has(c.group.id)) continue;
+    seen.add(c.group.id);
+    const gid = `group:${c.group.id}`;
+    const closed = collapsed.has(gid);
+    const members = cals.filter((x) => x.group?.id === c.group?.id);
+    out.push(
+      <div key={gid} className="cal-group" data-group={c.group.id}>
+        <button
+          type="button"
+          className="cal-group-head"
+          onClick={() =>
+            setCollapsed((prev) => {
+              const next = new Set(prev);
+              if (!next.delete(gid)) next.add(gid);
+              return next;
+            })
+          }
+        >
+          <ChevronDown size={12} className={closed ? "chev closed" : "chev"} />
+          <span className="cal-group-name">{c.group.name}</span>
+          <span className="cal-group-by">{t("sidebar.groupBy", { field: c.group.fieldName })}</span>
+        </button>
+        {!closed && members.map((m) => <CalRow key={m.id} c={m} member />)}
+      </div>,
+    );
+  }
+  return <>{out}</>;
+}
+
+function CalRow({ c, member = false }: { c: CalendarDef; member?: boolean }) {
+  const toggle = useApp((s) => s.toggleCalendar);
+  return (
+    <div data-cal={c.id} className={`cal-row ${c.visible ? "" : "off"}${member ? " member" : ""}`}>
+      <button
+        type="button"
+        className="cal-main"
+        onClick={() => toggle(c.id)}
+        title={c.visible ? t("sidebar.hide") : t("sidebar.show")}
+      >
+        <span className="swatch" style={{ "--c": c.color } as React.CSSProperties} />
+        <span className="cal-name">{c.name}</span>
+      </button>
+      <button
+        type="button"
+        className="icon-btn row-btn gear"
+        title={t("sidebar.properties")}
+        onClick={() => useApp.getState().set(propertiesOf(c.id))}
+      >
+        <SlidersHorizontal size={13} />
+      </button>
+      <button
+        type="button"
+        className={`icon-btn row-btn eye ${c.visible ? "" : "keep"}`}
+        title={c.visible ? t("sidebar.hide") : t("sidebar.show")}
+        onClick={() => toggle(c.id)}
+      >
+        {c.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+      </button>
     </div>
   );
 }

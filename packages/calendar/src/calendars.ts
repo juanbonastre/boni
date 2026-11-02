@@ -55,6 +55,8 @@ export function calendarDefs(
       visible: v.visible,
       ...(v.readOnly ? { readOnly: true } : {}),
       schema: coll.columns.filter((c) => !mapped.has(c.id)).map(columnToProperty),
+      ...(v.group ? { group: v.group } : {}),
+      ...(v.split ? { split: v.split } : {}),
     });
   }
   return out;

@@ -29,6 +29,7 @@ import { planFromNote, reshape, undoReshape } from "./reshape.ts";
 import { applyRoles, rolesLines, rolesToSet, undoRoles } from "./roles.ts";
 import { codeHash, runInSandbox, sandboxSocket } from "./sandbox.ts";
 import { loadKey } from "./secret.ts";
+import { applySplit, splitLines, splitPlan, undoSplit } from "./split.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
 import { V1Store } from "./v1/store.ts";
 
@@ -58,6 +59,9 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts roles <name> [--apply]           what each collection can do, worked out from its calendar's
  *       definition and the money's movements (src/roles.ts): a dry run lists the roles; applied, one run
  *   node src/cli.ts roles <name> --undo <run>        those roles taken back whole
+ *   node src/cli.ts split-check <name>               the calendars picked by hand over one field (one definition
+ *       each, from the first restructurings) that would become one definition split by it (src/split.ts, D-24)
+ *   node src/cli.ts split <name> --apply | --undo    that change made, the colours kept; or taken back whole
  *   node src/cli.ts embeds <name> [--dudosas]        the `![[…]]` the vault left in the texts, counted; or the files
  *       still embedded, one per line with where files of that name are (src/embeds.ts)
  *   node src/cli.ts sandbox-check                    whether the box of the extensions' functions answers (its socket,
@@ -293,6 +297,35 @@ try {
             `Hecho, en una sola ejecución (${run}). Para deshacerlo: roles ${name} --undo ${run}`,
           );
         } else console.log("Ensayo: no se ha cambiado nada (añade --apply).");
+      }
+    } finally {
+      store.close();
+    }
+  } else if (cmd === "split-check" || cmd === "split") {
+    const usage = "Usage: split-check <name> | split <name> --apply | split <name> --undo";
+    const [name] = args.filter((a) => !a.startsWith("--"));
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!name || !user) throw new Error(usage);
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    const store = openUserStore(join(dirname(paths.system), "users", `${user.id}.db`));
+    try {
+      if (cmd === "split" && args.includes("--undo")) {
+        const n = undoSplit(store);
+        console.log(
+          n === null ? "Nada que deshacer." : `Deshecho: ${n} definiciones como estaban.`,
+        );
+      } else {
+        const plan = splitPlan(store);
+        for (const line of splitLines(plan)) console.log(line);
+        if (!plan.length)
+          console.log(
+            "Nada que juntar: ningún conjunto de calendarios elegidos a mano por un campo.",
+          );
+        else if (cmd === "split" && args.includes("--apply"))
+          console.log(
+            `Hecho: ${applySplit(store, plan)} definiciones separadas por su campo. Para deshacerlo: split ${name} --undo`,
+          );
+        else console.log("Ensayo: no se ha cambiado nada (split <name> --apply).");
       }
     } finally {
       store.close();

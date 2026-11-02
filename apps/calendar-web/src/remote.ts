@@ -157,6 +157,15 @@ export class Remote {
     return this.post("/api/collections/remove", { id });
   }
 
+  /** A definition split by a field (null: whole again), and a calendar's colour kept in its definition (D-24). */
+  setSplit(id: string, field: string | null): Promise<unknown> {
+    return this.post("/api/collections/split", { id, field });
+  }
+
+  setColor(id: string, color: string): Promise<unknown> {
+    return this.post("/api/collections/color", { id, color });
+  }
+
   private post<T>(path: string, body: unknown): Promise<T> {
     return request(`${this.url}${path}`, {
       method: "POST",

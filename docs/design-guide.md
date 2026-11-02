@@ -139,7 +139,12 @@ slate `#94a3b8`.
   is left) and one click makes the collection a calendar with its title, its day and the first free colour of the
   palette (its roles give the times, the end and the task box). «Quitar calendario» in a calendar's properties takes
   the calendar away, never its records; adding it again brings it back. Only with a server (the sample has no
-  collections to offer).
+  collections to offer). A definition can be **split by a field** (D-24; «Separar por» in its properties: the
+  collection's lists and single relations, or «Ninguno»): the sidebar shows it as a folded row with its name and the
+  field («Agenda · por área») and one calendar per value inside, indented, each with its colour and eye, plus «Sin
+  área» while some record has no value; the properties of any of them are the definition's (its name, «Separar
+  por», «Calendarios por área» with a row of swatches per calendar), and a colour chosen there is kept by the
+  server, for a whole calendar too. «Quitar calendario» on one of them takes the whole definition.
 - **External calendars** (Settings → External calendars, or "Add external calendar" under the sidebar's calendars):
   other services' calendars (Google Calendar...) by their iCal address, read-only, in their own sidebar group with
   colour and eye like any other. Each row in Settings shows how many events came and when, or why the download
