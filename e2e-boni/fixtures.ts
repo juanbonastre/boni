@@ -244,11 +244,49 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           { id: "f_cc", key: "cc", name: "Cc", type: "text" },
           { id: "f_fecha", key: "fecha", name: "Fecha", type: "datetime" },
           { id: "f_adjuntos", key: "adjuntos", name: "Adjuntos", type: "text" },
+          {
+            id: "f_archivos",
+            key: "archivos",
+            name: "Archivos",
+            type: "relation",
+            relation: { target: "t_archivo", many: true },
+          },
         ],
         rowUi: { open: true, hidden: [] as string[] },
         readOnly: true,
         view: "mail",
       };
+      // The account's files, where a mail's attachments are kept (apps/server/src/mail.ts).
+      const archivos = {
+        id: "t_archivo",
+        name: "Archivos",
+        icon: "",
+        titleField: "f_title",
+        count: 2,
+        level: "visible",
+        fields: [
+          { id: "f_title", key: "title", name: "Título", type: "text" },
+          { id: "f_boni_file", key: "boni_file", name: "Archivo", type: "file" },
+          { id: "f_folder", key: "folder", name: "Carpeta", type: "text" },
+        ],
+        rowUi: { open: true, hidden: [] as string[] },
+      };
+      const fileRows = [
+        {
+          id: "a1",
+          values: { f_title: "actas.pdf", f_boni_file: "sha-actas", f_folder: "correo/2026-10" },
+          updated: 7,
+        },
+        {
+          id: "a2",
+          values: {
+            f_title: "orden-del-dia.docx",
+            f_boni_file: "sha-orden",
+            f_folder: "correo/2026-10",
+          },
+          updated: 7,
+        },
+      ];
       const mailRow = {
         id: "m1",
         values: {
@@ -258,6 +296,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           f_para: "ejemplo@example.edu",
           f_fecha: "2026-10-27T09:15:00Z",
           f_adjuntos: "actas.pdf, orden-del-dia.docx",
+          f_archivos: ["a1", "a2"],
         },
         updated: 7,
         body: "Hola, antes del jueves revisad las actas, por favor.\n\nGracias.\n\n<b>no es html</b>",
@@ -397,7 +436,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               types: [
                 libros,
                 documentos,
-                ...(opts.mail ? [correos] : []),
+                ...(opts.mail ? [correos, archivos] : []),
                 ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
                 ...boni,
               ],
@@ -546,9 +585,25 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (opts.mail && p === "api/data/rows/m1" && method === "GET")
           return [200, JSON.stringify({ row: { ...mailRow, type: "t_correo" } })];
+        const fileRow = opts.mail && /^api\/data\/rows\/(a\d)$/.exec(p);
+        if (fileRow && method === "GET") {
+          const row = fileRows.find((r) => r.id === fileRow[1]);
+          return row ? [200, JSON.stringify({ row: { ...row, type: "t_archivo" } })] : [404, "{}"];
+        }
         // What a row points to, and its titles (apps/server/src/related.ts): here only the titles.
         if (/^api\/data\/rows\/[^/]+\/related$/.test(p) && method === "GET")
-          return [200, JSON.stringify({ groups: [], titles: titlesOf() })];
+          return [
+            200,
+            JSON.stringify({
+              groups: [],
+              titles: {
+                ...titlesOf(),
+                ...(opts.mail
+                  ? Object.fromEntries(fileRows.map((r) => [r.id, r.values.f_title]))
+                  : {}),
+              },
+            }),
+          ];
         if (p === "api/data/types/t_libro/rows" && method === "GET")
           return [
             200,

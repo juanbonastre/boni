@@ -17,6 +17,7 @@ import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { dueField, Mails, mailPlan, optionsValue, userIn } from "./mail.ts";
 import { decisions } from "./mailReview.ts";
+import { FILE_FIELD, FOLDER_FIELD } from "./paths.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 
 /** The mailbox connector against a fake IMAP server (invented mail only). */
@@ -34,6 +35,38 @@ const mail = (n: number, subject: string, body: string, from = "lucia.ejemplo@ex
     "Content-Type: text/plain; charset=utf-8",
     "",
     body,
+    "",
+  ].join("\r\n");
+
+/** A mail with attachments: a CSV and an image the HTML shows (invented, never real). */
+const mailWithFiles = (n: number, subject: string) =>
+  [
+    "From: Lucía Ejemplo <lucia.ejemplo@example.com>",
+    "To: juan@example.com",
+    `Subject: ${subject}`,
+    "Date: Mon, 19 Oct 2026 09:30:00 +0200",
+    `Message-ID: <m${n}@example.com>`,
+    'Content-Type: multipart/mixed; boundary="mix"',
+    "",
+    "--mix",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "Te paso las notas del grupo en la hoja.",
+    "--mix",
+    'Content-Type: text/csv; name="notas.csv"',
+    'Content-Disposition: attachment; filename="notas.csv"',
+    "",
+    "alumno,nota",
+    "Ana Ejemplo,7",
+    "Luis Ejemplo,9",
+    "--mix",
+    "Content-Type: image/png",
+    "Content-ID: <foto@example>",
+    "Content-Disposition: inline",
+    "Content-Transfer-Encoding: base64",
+    "",
+    "iVBORw0KGgo=",
+    "--mix--",
     "",
   ].join("\r\n");
 
@@ -246,6 +279,68 @@ describe("the mailbox", () => {
     expect((await call(t, "POST", "/api/mail/forget")).status).toBe(200);
     expect(mails.view(1)).toBeNull();
     expect(host.store(1).list(st.type as string)).toHaveLength(4);
+  });
+
+  it("keeps a mail's attachments as files of the account, and what it can read of them for the reader", async () => {
+    const store = host.store(1);
+    // The account's files (as the import or the MCP make them): the mail's collection gets a relation to them.
+    const u = label("user", "personal", []);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_archivo",
+          key: "archivo",
+          name: "Archivos",
+          fields: [
+            { id: "f_title", key: "title", name: "Título", type: "text", label: u },
+            { id: FILE_FIELD, key: "boni_file", name: "Archivo", type: "file", label: u },
+            { id: FOLDER_FIELD, key: "folder", name: "Carpeta", type: "text", label: u },
+          ],
+          titleField: "f_title",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: u,
+        },
+      },
+      { actor: "user" },
+    );
+    // The mailbox again (the test before forgot it), with two mails that bring the same files.
+    const t = await token();
+    const settings = { host: "imap.example.com", user: "juan@example.com", folder: "INBOX" };
+    expect(
+      (await call(t, "PUT", "/api/mail", { ...settings, password: APP_PASSWORD })).status,
+    ).toBe(200);
+    box.mails.set(5, mailWithFiles(16, "Notas"));
+    box.mails.set(6, mailWithFiles(17, "Notas otra vez"));
+    const st = await mails.check(1);
+    expect(st.lastError).toBeNull();
+    const def = store.schema().types[st.type as string] as TypeDef;
+    expect(def.fields.find((f) => f.id === "f_archivos")?.relation).toEqual({
+      target: "t_archivo",
+      many: true,
+    });
+    const notas = store.list(def.id).find((e) => e.entity.values.f_asunto === "Notas");
+    const ids = notas?.entity.values.f_archivos as string[];
+    expect(ids).toHaveLength(2);
+    const files = ids.map((id) => store.get(id)?.entity.values);
+    expect(files.map((v) => [v?.f_title, v?.[FOLDER_FIELD]])).toEqual([
+      ["notas.csv", "correo/2026-10"],
+      ["imagen-2.png", "correo/2026-10"],
+    ]);
+    expect(store.getFile(String(files[0]?.[FILE_FIELD]))?.mime).toBe("text/csv");
+    // The sheet's rows reach the reader as text; the image does not. A second file of the same name is told apart.
+    expect(notas?.entity.values.f_adjuntos_texto).toBe(
+      "[notas.csv]\nalumno\tnota\nAna Ejemplo\t7\nLuis Ejemplo\t9",
+    );
+    expect(notas?.labels.f_adjuntos_texto?.integrity).toBe("external");
+    const again = store.list(def.id).find((e) => e.entity.values.f_asunto === "Notas otra vez");
+    const againIds = (again?.entity.values.f_archivos ?? []) as string[];
+    expect(againIds.map((id) => store.get(id)?.entity.values.f_title)).toEqual([
+      "notas (2).csv",
+      "imagen-2 (2).png",
+    ]);
+    expect(def.fields.find((f) => f.id === "f_adjuntos_texto")?.hidden).toBe(true);
   });
 });
 

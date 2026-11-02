@@ -4435,11 +4435,23 @@ body:has(.toast) .db-selinfo {
   overflow-wrap: anywhere;
 }
 .mail-attachment {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin: 0 6px 4px 0;
   padding: 1px 8px;
   border: 1px solid var(--line);
   border-radius: 999px;
+}
+/* An attachment kept as a file: a click opens it. */
+.mail-file {
+  cursor: pointer;
+  background: none;
+  color: inherit;
+  font: inherit;
+}
+.mail-file:hover {
+  background: var(--surface-2);
 }
 .mail-ro {
   margin: 0 0 12px;

@@ -972,7 +972,10 @@ test("«Ver correo» opens the mail as a mail client shows it, read only (D-22)"
     "Coordinación de ejemplo <coordinacion@example.edu>",
   );
   await expect(mail.locator(".mail-line").nth(1)).toContainText("ejemplo@example.edu");
+  // Its attachments are files of the account: named by the mail, opened with a click.
   await expect(mail.locator(".mail-attachment")).toHaveText(["actas.pdf", "orden-del-dia.docx"]);
+  await mail.getByRole("button", { name: "actas.pdf" }).click();
+  await expect.poll(() => requests(page, "GET api/data/rows/a1")).toEqual(["GET api/data/rows/a1"]);
   await expect(mail.locator(".mail-body")).toContainText("antes del jueves revisad las actas");
   // Outside text stays text: a tag in the body is shown as written, never painted.
   await expect(mail.locator(".mail-body")).toContainText("<b>no es html</b>");
