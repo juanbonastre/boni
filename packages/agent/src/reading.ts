@@ -92,6 +92,7 @@ Work in two steps. First go through every action, appointment or announcement th
 3. "kind": one of the kinds below.
 4. "title": in Spanish, from the user's side, short (as the user would write it in their own list), following its kind's rule. The user is the one who does it: when the e-mail asks the user for something, the title is that thing done by the user ("¿puede ponerme la nota?" becomes "Poner la nota a <sender's name>"), never the request itself ("Solicitar…", "Pedir al profesor…") and never words from the sender's side ("me fui", "le entrego").
 5. "due": its day as YYYY-MM-DD, or null. Count relative days from "today" and "weekday": "mañana" is the day after today; "el jueves" is the next Thursday after today (today itself if today is Thursday); a day of the month without a month is the next one to come. A day the e-mail does not give is null; never guess one.
+6. "start" and "end": the time of day the e-mail gives for it, as HH:MM (24 h), or null: an event's start, and its end when said; a task's only when the e-mail names a time for it ("a las 10:30", "antes de las 12"); never a time the e-mail does not give.
 
 Kinds:
 - "notice": anything announced to many that the user may join or not: a talk, a fair, a congress, a course, an offer, a newsletter item, a general reminder. An invitation to take part is a notice unless it asks the user by name for an answer.
@@ -120,8 +121,20 @@ export function readMessageSchema(mods: readonly ReadingModule[]): object {
             kind: { type: "string", enum: [NOTICE, ...mods.map((m) => m.kind)] },
             title: { type: "string", maxLength: 200 },
             due: { anyOf: [{ type: "string", format: "date" }, { type: "null" }] },
+            start: {
+              anyOf: [
+                { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+                { type: "null" },
+              ],
+            },
+            end: {
+              anyOf: [
+                { type: "string", pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+                { type: "null" },
+              ],
+            },
           },
-          required: ["quote", "actor", "kind", "title", "due"],
+          required: ["quote", "actor", "kind", "title", "due", "start", "end"],
           additionalProperties: false,
         },
       },
@@ -135,13 +148,20 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 const LINK_OR_HTML = /(https?:\/\/|www\.|<\s*\/?\s*[a-z!]|\]\(|javascript:|data:)/i;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const okText = (v: unknown, max: number) =>
   typeof v === "string" && [...v].length <= max && !LINK_OR_HTML.test(v);
 
 /** What the plan gets: per module, the items the user has to do or attend; `all` is every one of them. */
-export type Reading = Record<string, { title: string; due: string | null; quote: string }[]> & {
-  all: { module: string; title: string; due: string | null; quote: string }[];
-};
+export interface ReadItem {
+  title: string;
+  due: string | null;
+  /** The time of day the mail gives (HH:MM), or null: an event's start and end; a task's when it names one. */
+  start: string | null;
+  end: string | null;
+  quote: string;
+}
+export type Reading = Record<string, ReadItem[]> & { all: ({ module: string } & ReadItem)[] };
 
 /**
  * The reader's answer checked again by the code and decided: null when anything is off (the step fails);
@@ -157,7 +177,15 @@ export function checkReadMessage(out: unknown, mods: readonly ReadingModule[]): 
   for (const m of mods) reading[m.id] = [];
   const seen = new Set<string>();
   for (const i of out.items) {
-    if (!isObj(i) || Object.keys(i).sort().join() !== "actor,due,kind,quote,title") return null;
+    if (!isObj(i)) return null;
+    // The times came later (Juan, 2026-11-02): an answer without them is still whole.
+    const keys = Object.keys(i).filter((k) => k !== "start" && k !== "end");
+    if (keys.sort().join() !== "actor,due,kind,quote,title") return null;
+    const time = (v: unknown) =>
+      v === undefined || v === null ? null : typeof v === "string" && TIME.test(v) ? v : undefined;
+    const start = time(i.start);
+    const end = time(i.end);
+    if (start === undefined || end === undefined) return null;
     if (typeof i.quote !== "string" || [...i.quote].length > 200) return null;
     if (!ACTORS.includes(i.actor as (typeof ACTORS)[number])) return null;
     if (i.kind !== NOTICE && !kinds.has(i.kind as string)) return null;
@@ -175,7 +203,13 @@ export function checkReadMessage(out: unknown, mods: readonly ReadingModule[]): 
     const key = `${module}\u0000${title.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const item = { title, due: i.due as string | null, quote: (i.quote as string).trim() };
+    const item = {
+      title,
+      due: i.due as string | null,
+      start,
+      end,
+      quote: (i.quote as string).trim(),
+    };
     reading[module]?.push(item);
     reading.all.push({ module, ...item });
   }

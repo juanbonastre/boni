@@ -493,7 +493,9 @@ explaining goes in the docs, not on the screen.
   window the sidebar gives it room) and the same cards in Conversación → Bandeja. A card is titled by the proposal
   («Revisar actas») and under it says where it goes and when («Docencia · jue, 29 oct, 12:00–13:00»; Juan,
   2026-11-02: «Añadir tarea a Tarea» said nothing; «Añadir a Tarea» only without a title; a change or a deletion
-  as the view names it), where it came
+  as the view names it; a task the mail gave no time for has, after the day, a small «¿A las 16:00?» with the
+  first free hour of its day: one tap puts the time on the line and sends it with the acceptance; once Boni has
+  earned it the line says the time already), where it came
   from once (the mailbox and the sender, or the note's path; never "Viene de fuera" on every row), its day and times,
   and a mini calendar: the day (detailed) or the day before, the day and the day after (compact), each a short list in
   time order with the proposal drawn with a dashed `--accent` border among what is there. Compact when the source said

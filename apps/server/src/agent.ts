@@ -21,7 +21,7 @@ import { areasView, setAuto } from "./accuracy.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
-import { type InboxCard, inboxCard, inboxContext } from "./inboxCard.ts";
+import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
 import { acceptEdits } from "./proposalEdits.ts";
@@ -507,10 +507,15 @@ async function answerAgent(
       const b = ((await bodyOf(req)) ?? {}) as {
         edits?: { title?: unknown; collection?: unknown; done?: unknown; values?: unknown };
       };
-      const p = host.store(who.account).journal.proposal(params.id ?? "");
-      const edits = b.edits && p ? acceptEdits(host.store(who.account), p, b.edits) : {};
+      const store = host.store(who.account);
+      const p = store.journal.proposal(params.id ?? "");
+      const edits = b.edits && p ? acceptEdits(store, p, b.edits) : {};
       if ("error" in edits) return send(res, 400, { error: edits.error });
-      return send(res, 200, after(await agent.acceptProposal(params.id ?? "", who.trust, edits)));
+      // A task's time the procedure set alone goes with it; what Juan made of a suggested time judges it.
+      const timed = p ? timeOnAccept(store, p, edits) : edits;
+      const r = await agent.acceptProposal(params.id ?? "", who.trust, timed);
+      if (p && !r.error) judgeTime(store, p, timed.values ?? {}, Date.now());
+      return send(res, 200, after(r));
     }
     case "POST /api/agent/proposals/:id/reject":
       agent.rejectProposal(params.id ?? "");

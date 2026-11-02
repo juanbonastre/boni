@@ -1,4 +1,6 @@
-import type { TypeDef } from "@boni/entities";
+import { randomUUID } from "node:crypto";
+import { calibrate, historyConfidence, type Json, levelsOf, resolve } from "@boni/agent";
+import { rolesOf, type Schema, type TypeDef } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { decisionHistory, wouldAccept } from "./autoAccept.ts";
 import { calendarDefs, taskDoneField } from "./calendarStore.ts";
@@ -49,6 +51,148 @@ export interface InboxCard {
   mode: "compact" | "detailed";
   /** The day before, the day and the day after, with what is in the calendar on each. */
   context: { day: string; items: { title: string; start: string | null; end: string | null }[] }[];
+  /**
+   * A time for a task the mail gave none for (Juan, 2026-11-02): the first free hour of its day in the calendar,
+   * as a decision of the procedure (docs/fiabilidad.md, area «Horas», class A): asked on the card, or set alone
+   * once his answers earn it («do»: the card's `start` and `end` already say it).
+   */
+  suggestedTime: SuggestedTime | null;
+}
+export interface SuggestedTime {
+  start: string;
+  end: string;
+  /** The keys of the collection's fields playing `time` and `endTime`, where the time goes when taken. */
+  startKey: string;
+  endKey: string | null;
+  outcome: "ask" | "do";
+}
+
+export const TIME_AREA = "time";
+/** Asked from the first; set alone from 0.9 of his answers (calibrated), as a decision inside the proposal. */
+export const TIME_THRESHOLDS = { ask: 0, do: 0.9 } as const;
+const WORK = { from: 9 * 60, to: 20 * 60 };
+const SLOT = 60;
+const minutesOf = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const hhmm = (m: number) =>
+  `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+/**
+ * The first free hour of a day, from 9:00 to 20:00, among what the calendar holds that day (an item without an end
+ * takes an hour; one without a start, the whole day, takes none); at a half hour when that is the first gap.
+ */
+export function freeSlot(
+  items: readonly { start: string | null; end: string | null }[],
+): { start: string; end: string } | null {
+  const busy = items
+    .filter((i) => i.start && TIME.test(i.start))
+    .map((i) => {
+      const s = minutesOf(i.start as string);
+      const e = i.end && TIME.test(i.end) ? minutesOf(i.end) : s + SLOT;
+      return [s, Math.max(e, s + 1)] as const;
+    });
+  for (let s = WORK.from; s + SLOT <= WORK.to; s += 30) {
+    const e = s + SLOT;
+    if (!busy.some(([bs, be]) => bs < e && be > s)) return { start: hhmm(s), end: hhmm(e) };
+  }
+  return null;
+}
+
+/** The keys of a collection's fields that play `time` and `endTime` (its mother's roles count). */
+function timeKeysOf(
+  schema: Schema,
+  def: TypeDef,
+): { startKey: string | null; endKey: string | null } {
+  const roles = rolesOf(schema, def.id);
+  const key = (id: string | undefined) =>
+    id ? (def.fields.find((f) => f.id === id)?.key ?? null) : null;
+  return { startKey: key(roles.time), endKey: key(roles.endTime) };
+}
+
+interface TimeDetail {
+  proposal: string;
+  start: string;
+  end: string;
+  startKey: string;
+  endKey: string | null;
+}
+const timeDecisionOf = (store: UserStore, p: ProposalRow) =>
+  store.journal
+    .decisionsOf(p.run)
+    .find((d) => d.area === TIME_AREA && (d.detail as TimeDetail | null)?.proposal === p.id) ??
+  null;
+
+/**
+ * The decision for a task's time, recorded once per proposal: `p` from how often Juan took the times suggested
+ * before (cautious, calibrated by level); below 0.9 the card asks, from it the time is set alone (A-13: class A,
+ * inside a proposal he still decides).
+ */
+function timeDecision(
+  store: UserStore,
+  p: ProposalRow,
+  slot: { start: string; end: string },
+  keys: { startKey: string; endKey: string | null },
+  now: number,
+): "ask" | "do" {
+  const had = timeDecisionOf(store, p);
+  if (had) return had.outcome === "do" ? "do" : "ask";
+  const rows = store.journal.decisions(TIME_AREA, 200);
+  const judged = rows.filter((d) => d.result);
+  const conf = calibrate(
+    historyConfidence(judged.filter((d) => d.result === "right").length, judged.length),
+    levelsOf(rows),
+  );
+  const outcome = resolve(conf, "A", true, TIME_THRESHOLDS) === "do" ? "do" : "ask";
+  const detail: TimeDetail = { proposal: p.id, ...slot, ...keys };
+  store.journal.addDecision({
+    id: randomUUID(),
+    run: p.run,
+    area: TIME_AREA,
+    cost: "A",
+    p: conf,
+    outcome,
+    detail,
+    at: now,
+  });
+  return outcome;
+}
+
+/**
+ * At acceptance: the time set alone when the decision said so and Juan gave none (his own value, or null, wins);
+ * the proposal's values as they will be made.
+ */
+export function timeOnAccept<E extends { values?: Record<string, Json | null> }>(
+  store: UserStore,
+  p: ProposalRow,
+  edits: E,
+): E {
+  const d = timeDecisionOf(store, p);
+  const det = d?.detail as TimeDetail | null;
+  if (!d || d.outcome !== "do" || !det || edits.values?.[det.startKey] !== undefined) return edits;
+  return {
+    ...edits,
+    values: {
+      ...(edits.values ?? {}),
+      [det.startKey]: det.start,
+      ...(det.endKey ? { [det.endKey]: det.end } : {}),
+    },
+  };
+}
+
+/** What Juan made of the suggested time, once he accepted the proposal: kept or taken is right; else wrong. */
+export function judgeTime(
+  store: UserStore,
+  p: ProposalRow,
+  values: Record<string, unknown>,
+  now: number,
+): void {
+  const d = timeDecisionOf(store, p);
+  const det = d?.detail as TimeDetail | null;
+  if (!d || d.result || !det) return;
+  store.journal.setDecisionResult(
+    d.id,
+    values[det.startKey] === det.start ? "right" : "wrong",
+    now,
+  );
 }
 
 type Row = { arg: string; value?: unknown; detail?: unknown; role?: string };
@@ -208,6 +352,23 @@ export function inboxCard(
         row(`values.${def?.fields.find((f) => f.id === def.titleField)?.key ?? ""}`)?.value,
     ) || null;
   const kind: InboxCard["kind"] = times.length ? "event" : day ? "task" : "item";
+  // A task with a day and no time, in a collection that keeps times: the first free hour, as a decision.
+  let suggestedTime: SuggestedTime | null = null;
+  const keys = def && action === "create" ? timeKeysOf(store.schema(), def) : null;
+  if (kind === "task" && day && keys?.startKey && p.status === "pending") {
+    const slot = freeSlot(ctx.calendar().get(day) ?? []);
+    if (slot) {
+      const outcome = timeDecision(
+        store,
+        p,
+        slot,
+        { startKey: keys.startKey, endKey: keys.endKey },
+        Date.now(),
+      );
+      suggestedTime = { ...slot, startKey: keys.startKey, endKey: keys.endKey, outcome };
+    }
+  }
+  const alone = suggestedTime?.outcome === "do" ? suggestedTime : null;
 
   let source: InboxCard["source"] = null;
   const mail = p.run ? mailOfRun(store, p.run) : null;
@@ -240,8 +401,8 @@ export function inboxCard(
     kind,
     title,
     day,
-    start: times[0] ?? null,
-    end: times[1] ?? null,
+    start: times[0] ?? alone?.start ?? null,
+    end: times[1] ?? alone?.end ?? null,
     source,
     why,
     familiar,
@@ -259,5 +420,6 @@ export function inboxCard(
           items: ctx.calendar().get(d) ?? [],
         }))
       : [],
+    suggestedTime,
   };
 }

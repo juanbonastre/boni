@@ -152,6 +152,17 @@ export interface InboxCard {
   wouldAccept: boolean;
   mode: "compact" | "detailed";
   context: { day: string; items: { title: string; start: string | null; end: string | null }[] }[];
+  /**
+   * A time for a task the mail gave none for (the first free hour of its day): asked on the card («¿A las 16:00?»,
+   * one tap takes it), or already set when Boni earned it (`do`: the card's start and end say it).
+   */
+  suggestedTime: {
+    start: string;
+    end: string;
+    startKey: string;
+    endKey: string | null;
+    outcome: "ask" | "do";
+  } | null;
 }
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -195,6 +206,25 @@ function parseCard(v: unknown): InboxCard | null {
     canMarkDone: v.canMarkDone === true,
     wouldAccept: v.wouldAccept === true,
     mode: v.mode === "compact" ? "compact" : "detailed",
+    suggestedTime:
+      isObj(v.suggestedTime) &&
+      typeof v.suggestedTime.start === "string" &&
+      TIME_RE.test(v.suggestedTime.start) &&
+      typeof v.suggestedTime.startKey === "string"
+        ? {
+            start: v.suggestedTime.start,
+            end:
+              typeof v.suggestedTime.end === "string" && TIME_RE.test(v.suggestedTime.end)
+                ? v.suggestedTime.end
+                : "",
+            startKey: v.suggestedTime.startKey.slice(0, 80),
+            endKey:
+              typeof v.suggestedTime.endKey === "string"
+                ? v.suggestedTime.endKey.slice(0, 80)
+                : null,
+            outcome: v.suggestedTime.outcome === "do" ? "do" : "ask",
+          }
+        : null,
     context: Array.isArray(v.context)
       ? v.context.filter(isObj).flatMap((d) => {
           const day = optMatch(d.day, DAY_RE);

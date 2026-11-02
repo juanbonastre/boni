@@ -9,6 +9,7 @@ import {
   CARD_COMPACT,
   CARD_DETAILED,
   CARD_MAIL,
+  CARD_TIME,
   CHART_REPLY,
   confirmTurn,
   DONE,
@@ -1037,5 +1038,32 @@ test("Corregir: the proposal's other properties, folded under «Propiedades», s
     .poll(() => requests(page, "POST api/agent/proposals/c9/accept"))
     .toEqual([
       'POST api/agent/proposals/c9/accept {"edits":{"values":{"estado":"o_leido","fav":true}}}',
+    ]);
+});
+
+test("a task without a time: the card offers the first free hour, one tap takes it and it goes with the acceptance", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_TIME] }],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await expect(card.locator(".inbox-what")).toContainText("Docencia · jue, 29 oct");
+  await expect(card.locator(".inbox-what .muted")).not.toContainText("16:00");
+  await card.getByRole("button", { name: "¿A las 16:00?" }).click();
+  await expect(card.locator(".inbox-what")).toContainText("jue, 29 oct, 16:00–17:00");
+  await expect(card.getByRole("button", { name: "¿A las 16:00?" })).toHaveCount(0);
+  await card.getByRole("button", { name: "Aceptar" }).click();
+  await expect
+    .poll(() => requests(page, "POST api/agent/proposals/c6/accept"))
+    .toEqual([
+      'POST api/agent/proposals/c6/accept {"edits":{"values":{"hora":"16:00","hora_fin":"17:00"}}}',
     ]);
 });
