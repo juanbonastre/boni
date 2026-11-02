@@ -169,6 +169,7 @@ agent.plannerFor = (account, id) => models.plannerProvider(account, id);
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
 const mails = new Mails({ db, key, host: agent });
 agent.mailAccountOf = (account) => mails.settings(account)?.user || null;
+agent.mailTypeOf = (account) => mails.state(account).type;
 mails.start(() => listUsers(db));
 const app = makeApp({
   db,

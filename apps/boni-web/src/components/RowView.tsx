@@ -4,6 +4,7 @@ import type { HistoryMark } from "../core/blame.ts";
 import { editRowValue, setPropHidden, setRowHistory, toggleRowProps, useStore } from "../store.ts";
 import { Cell } from "./DatabaseBlock.tsx";
 import { HistoryPanel, historyColor, whoLabel } from "./History.tsx";
+import { MailView } from "./MailView.tsx";
 import { BottomSheet } from "./MobileParts.tsx";
 import { DocEditor } from "./PageView.tsx";
 import { RelatedSection } from "./Related.tsx";
@@ -145,79 +146,85 @@ export function RowView({ mobile = false }: { mobile?: boolean }) {
               {t("history.title")}
             </button>
           </div>
-          {titleField && (
-            <div
-              className={`row-title-wrap${markOf(titleField.id) ? " by-who" : ""}`}
-              style={tint(titleField.id)}
-            >
-              {markOf(titleField.id) && (
-                <span className="blk-who">
-                  {whoLabel(t, markOf(titleField.id) as HistoryMark, locale)}
-                </span>
+          {type.view === "mail" ? (
+            <MailView type={type} row={row} />
+          ) : (
+            <>
+              {titleField && (
+                <div
+                  className={`row-title-wrap${markOf(titleField.id) ? " by-who" : ""}`}
+                  style={tint(titleField.id)}
+                >
+                  {markOf(titleField.id) && (
+                    <span className="blk-who">
+                      {whoLabel(t, markOf(titleField.id) as HistoryMark, locale)}
+                    </span>
+                  )}
+                  <RowTitle
+                    key={row.id}
+                    value={title}
+                    placeholder={t("page.untitled")}
+                    onSave={(v) => void editRowValue(type.id, row.id, type.titleField, v || null)}
+                  />
+                </div>
               )}
-              <RowTitle
-                key={row.id}
-                value={title}
-                placeholder={t("page.untitled")}
-                onSave={(v) => void editRowValue(type.id, row.id, type.titleField, v || null)}
-              />
-            </div>
-          )}
-          {mobile && (
-            <div className="m-row-chips">
-              {visible.flatMap((f) => {
-                const text = chipText(f, row.values[f.id], related?.titles ?? {}, locale);
-                return text
-                  ? [
-                      <button
-                        key={f.id}
-                        type="button"
-                        className="m-chip"
-                        title={f.name}
-                        onClick={() => setPropsSheet(true)}
-                      >
-                        {text}
-                      </button>,
-                    ]
-                  : [];
-              })}
-              {props.length > 0 && (
+              {mobile && (
+                <div className="m-row-chips">
+                  {visible.flatMap((f) => {
+                    const text = chipText(f, row.values[f.id], related?.titles ?? {}, locale);
+                    return text
+                      ? [
+                          <button
+                            key={f.id}
+                            type="button"
+                            className="m-chip"
+                            title={f.name}
+                            onClick={() => setPropsSheet(true)}
+                          >
+                            {text}
+                          </button>,
+                        ]
+                      : [];
+                  })}
+                  {props.length > 0 && (
+                    <button
+                      type="button"
+                      className="m-chip ghost"
+                      aria-haspopup="dialog"
+                      onClick={() => setPropsSheet(true)}
+                    >
+                      {t("row.props")}
+                    </button>
+                  )}
+                </div>
+              )}
+              {props.length > 0 && !mobile && (
                 <button
                   type="button"
-                  className="m-chip ghost"
-                  aria-haspopup="dialog"
-                  onClick={() => setPropsSheet(true)}
+                  className={`row-props-toggle${shown ? " open" : ""}`}
+                  aria-expanded={shown}
+                  onClick={() => toggleRowProps(type.id)}
                 >
-                  {t("row.props")}
+                  <ChevronRight size={14} strokeWidth={2} />
+                  {shown
+                    ? t("row.hideProps")
+                    : visible.length
+                      ? t("row.showProps", { n: visible.length })
+                      : t("row.hiddenProps", { n: hidden.length })}
+                  {/* Folded, a dot for each one who changed some of them. */}
+                  {!shown &&
+                    [...new Set(props.flatMap((f) => markOf(f.id)?.by ?? []))].map((by) => (
+                      <i key={by} className="who-dot" style={{ background: historyColor(by) }} />
+                    ))}
                 </button>
               )}
-            </div>
+              {shown && !mobile && propsList}
+              {related && related.groups.length > 0 && (
+                <RelatedSection type={type.id} groups={related.groups} />
+              )}
+              {doc && <DocEditor key={doc.id} doc={doc} />}
+            </>
           )}
-          {props.length > 0 && !mobile && (
-            <button
-              type="button"
-              className={`row-props-toggle${shown ? " open" : ""}`}
-              aria-expanded={shown}
-              onClick={() => toggleRowProps(type.id)}
-            >
-              <ChevronRight size={14} strokeWidth={2} />
-              {shown
-                ? t("row.hideProps")
-                : visible.length
-                  ? t("row.showProps", { n: visible.length })
-                  : t("row.hiddenProps", { n: hidden.length })}
-              {/* Folded, a dot for each one who changed some of them. */}
-              {!shown &&
-                [...new Set(props.flatMap((f) => markOf(f.id)?.by ?? []))].map((by) => (
-                  <i key={by} className="who-dot" style={{ background: historyColor(by) }} />
-                ))}
-            </button>
-          )}
-          {shown && !mobile && propsList}
-          {related && related.groups.length > 0 && (
-            <RelatedSection type={type.id} groups={related.groups} />
-          )}
-          {doc && <DocEditor key={doc.id} doc={doc} />}
         </div>
       </div>
       {history && <HistoryPanel id={row.id} type={type.id} onClose={() => setRowHistory(false)} />}

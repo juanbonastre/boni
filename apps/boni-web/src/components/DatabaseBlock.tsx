@@ -1305,8 +1305,11 @@ export function Cell({
   onSave?: (v: DataValue) => void;
 }) {
   const t = useStore((s) => s.t);
+  const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
   const value = row.values[field.id] ?? null;
   const save = onSave ?? ((v: DataValue) => void editCell(type.id, row.id, field.id, v));
+  // A collection a connector fills (the mail's) is shown, never edited (D-22).
+  if (type.readOnly) return <span className="db-ro">{ghostText(field, value, locale)}</span>;
   switch (field.type) {
     case "checkbox":
       return (

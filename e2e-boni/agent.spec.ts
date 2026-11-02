@@ -5,8 +5,10 @@ import {
   ACCURACY_ON,
   ANSWER_GONE,
   ASK_TURN,
+  CARD_BOOK,
   CARD_COMPACT,
   CARD_DETAILED,
+  CARD_MAIL,
   CHART_REPLY,
   confirmTurn,
   DONE,
@@ -952,4 +954,77 @@ test("the panel: questions and proposals in one queue as they came, each saying 
     "POST api/agent/requests/q3/dismiss",
     'POST api/agent/requests/q4/answer {"choice":0}',
   ]);
+});
+
+test("«Ver correo» opens the mail as a mail client shows it, read only (D-22)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    mail: true,
+    agent: { "GET api/agent/proposals": [{ proposals: [CARD_MAIL] }] },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await card.getByRole("button", { name: "Ver correo" }).click();
+  const mail = page.locator(".mail-view");
+  await expect(mail.locator(".mail-subject")).toHaveText("Actas pendientes");
+  await expect(mail.locator(".mail-line").nth(0)).toContainText(
+    "Coordinación de ejemplo <coordinacion@example.edu>",
+  );
+  await expect(mail.locator(".mail-line").nth(1)).toContainText("ejemplo@example.edu");
+  await expect(mail.locator(".mail-attachment")).toHaveText(["actas.pdf", "orden-del-dia.docx"]);
+  await expect(mail.locator(".mail-body")).toContainText("antes del jueves revisad las actas");
+  // Outside text stays text: a tag in the body is shown as written, never painted.
+  await expect(mail.locator(".mail-body")).toContainText("<b>no es html</b>");
+  await expect(mail.locator(".mail-body b")).toHaveCount(0);
+  await expect(mail).toContainText("Solo lectura: es lo que llegó.");
+  // Nothing on it edits: no title box, no properties, no text editor.
+  await expect(page.locator(".row-doc .doc-title")).toHaveCount(0);
+  await expect(page.locator(".row-prop")).toHaveCount(0);
+  await expect(page.locator(".row-doc .blk-input")).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/mail-view.png` });
+});
+
+test("Corregir: the proposal's other properties, folded under «Propiedades», sent by their key", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_BOOK] }],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await card.getByRole("button", { name: "Corregir" }).click();
+  const toggle = card.getByRole("button", { name: "Propiedades" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  const props = card.locator(".inbox-prop");
+  await expect(props.locator(".inbox-prop-name")).toHaveText([
+    "Estado",
+    "Páginas",
+    "Terminado",
+    "Favorito",
+    "Relacionado",
+  ]);
+  // The proposal's own value shows; another option from its menu, a box ticked.
+  await expect(props.nth(0)).toContainText("Pendiente");
+  await props.nth(0).getByRole("button", { name: "Estado" }).click();
+  await page.getByRole("menuitemradio", { name: "Leído" }).click();
+  await expect(props.nth(0)).toContainText("Leído");
+  await props.nth(3).getByRole("checkbox", { name: "Favorito" }).check();
+  await page.screenshot({ path: `${SHOTS}/inbox-correct-props.png` });
+  await card.getByRole("button", { name: "Aceptar" }).click();
+  await expect
+    .poll(() => requests(page, "POST api/agent/proposals/c9/accept"))
+    .toEqual([
+      'POST api/agent/proposals/c9/accept {"edits":{"values":{"estado":"o_leido","fav":true}}}',
+    ]);
 });
