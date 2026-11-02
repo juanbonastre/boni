@@ -116,8 +116,10 @@ export interface CalendarView {
   mapping: CalendarMapping;
   /** Reminders of its events unless an event has its own (none when missing). */
   reminders?: ReminderDefaults;
-  /** For a calendar made by a split: the definition it came from and the field (docs/clases.md §6, D-24). */
+  /** For a calendar made by a split: the node right above it (docs/clases.md §6, D-24). */
   group?: { id: string; name: string; field: string; fieldName: string };
+  /** Every node above it, the definition first (a value split again is a node of its own). */
+  path?: { id: string; name: string; field: string; fieldName: string }[];
   /** The field the definition is split by (null when whole) and the fields that could split it. */
   split?: { field: string | null; choices: { id: string; name: string }[] };
 }

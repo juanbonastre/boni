@@ -204,8 +204,13 @@ de la paleta por su orden, y el id `<definición>--<valor>`. Un registro nuevo e
 propiedades de un calendario (Ninguno, o las listas y relaciones simples de la colección); la barra lateral enseña
 la definición separada como grupo plegable («Agenda · por área») con sus calendarios dentro: la fila del grupo
 hace de carpeta, con su propio engranaje (las propiedades de la definición) y su ojo (todos a la vez), y cada
-calendario de dentro tiene las suyas (su color y el paso a «Ajustes de Agenda»; Juan, 2026-11-02, tras probarlo:
-el engranaje de uno abría las de todos). Las de la definición: nombre, «Separar por» y los calendarios por valor con su color, que
+calendario de dentro tiene las suyas (su color, su propio «Separar por» y el paso a «Ajustes de Agenda»; Juan,
+2026-11-02, tras probarlo: el engranaje de uno abría las de todos, y quiso separar también los de dentro, «tantos
+subcalendarios como quiera»). Un valor separado otra vez (`by` en la definición, por la clave del valor) es un
+nodo más: debajo, un calendario por cada valor del segundo campo que haya entre sus registros (no todos los
+valores: un proyecto de otra área no es un calendario aquí), «Sin …» si alguno no lo tiene, el id
+`<definición>--<valor>--<valor>` y el color por la ruta de valores; cada calendario lleva `path` (los nodos de
+encima, la definición primero) y un campo ya usado arriba no se ofrece abajo. Las de la definición: nombre, «Separar por» y los calendarios por valor con su color, que
 ahora el servidor guarda también para un calendario entero (`POST /api/collections/split`, `/color`). «Quitar
 calendario» en uno se lleva la definición entera. Los calendarios de Juan elegidos a mano (Docencia, Gestiones,
 Planes: una definición cada uno con `where`) se juntan con `cli.ts split-check juan` (ensayo) y `split juan

@@ -43,7 +43,10 @@ test.beforeAll(async () => {
         name: "Docencia",
         folder: "agenda/docencia/",
         // A list to split the calendar by («Separar por», D-24).
-        fields: { area: { type: "select", options: ["Docencia", "Gestiones"] } },
+        fields: {
+          area: { type: "select", options: ["Docencia", "Gestiones"] },
+          tipo: { type: "select", options: ["Clase", "Tutoría"] },
+        },
         calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
       },
       { key: "persona", name: "Persona", folder: "registros/personas/", thirdParty: true },
@@ -62,12 +65,12 @@ test.beforeAll(async () => {
       { key: "nota", name: "Nota", folder: "" },
     ],
     {
-      [CLASS]: note("Clase del servidor", "2025-09-17", "09:00", "area: Docencia\n"),
+      [CLASS]: note("Clase del servidor", "2025-09-17", "09:00", "area: Docencia\ntipo: Clase\n"),
       "agenda/docencia/2025-09-18 Tutoría.md": note(
         "Tutoría",
         "2025-09-18",
         "12:00",
-        "area: Gestiones\n",
+        "area: Gestiones\ntipo: Tutoría\n",
       ),
       // Money: a movement, a person, the categories (rows of Categorías).
       "registros/finanzas/categorias/comida-restaurante.md":
@@ -419,10 +422,27 @@ test("«Separar por»: a calendar split by a field is a folded group with one ca
   // A calendar inside has its own properties: its colour, and the way to the definition's.
   await list.locator(".cal-row.member", { hasText: "Gestiones" }).locator(".gear").click();
   await expect(modal).toContainText("Propiedades de Gestiones");
-  await expect(modal.getByLabel("Separar por")).toHaveCount(0);
   await expect(modal.locator(".swatch.pick.on")).toHaveCSS("--c", "#fb923c");
   await modal.getByRole("button", { name: "Ajustes de Docencia" }).click();
   await expect(modal).toContainText("Propiedades de Docencia");
+  await page.keyboard.press("Escape");
+  // A calendar inside split again, from its own properties: a node under the node, with the kinds found in it.
+  await list
+    .locator(".cal-row.member", { hasText: /^Docencia$/ })
+    .locator(".gear")
+    .click();
+  await expect(modal).toContainText("Propiedades de Docencia");
+  await modal.getByLabel("Separar por").selectOption({ label: "tipo" });
+  const inner = list.locator(".cal-group .cal-group");
+  await expect(inner.locator(".cal-group-head")).toContainText("Docencia");
+  await expect(inner.locator(".cal-group-by")).toHaveText("por tipo");
+  await expect(inner.locator(".cal-row .cal-name")).toHaveText(["Clase"]);
+  await expect(list.locator(".cal-row.member", { hasText: /^Gestiones$/ })).toHaveCount(1);
+  // Its properties stayed on the node; whole again from there, then the definition whole.
+  await expect(modal).toContainText("Propiedades de Docencia");
+  await modal.getByLabel("Separar por").selectOption("");
+  await expect(list.locator(".cal-group .cal-group")).toHaveCount(0);
+  await modal.getByRole("button", { name: "Ajustes de Docencia" }).click();
   // Whole again: one calendar, no group.
   await modal.getByLabel("Separar por").selectOption("");
   await expect(list.locator(".cal-group-head")).toHaveCount(0);

@@ -54,7 +54,15 @@ export function CalendarList() {
               <span className="account-name">{g.name}</span>
               <ChevronDown size={13} className={closed ? "chev closed" : "chev"} />
             </button>
-            {!closed && <Rows cals={g.cals} collapsed={collapsed} setCollapsed={setCollapsed} />}
+            {!closed && (
+              <Level
+                cals={g.cals}
+                parentId={null}
+                depth={0}
+                collapsed={collapsed}
+                setCollapsed={setCollapsed}
+              />
+            )}
           </section>
         );
       })}
@@ -120,17 +128,21 @@ function AddCalendar() {
 }
 
 /**
- * The rows of a group: a calendar on its own, or a split definition as a folded row (its name and the field) with the
- * calendars it makes inside (D-24; Juan, 2026-11-02: «grupo plegable»). The folded row is the definition's: its gear
- * opens the definition's properties and its eye shows or hides every calendar inside; a calendar's own gear opens
- * its own (Juan, 2026-11-02: a member's gear opened the whole group's, «no tiene sentido»).
+ * The rows of a group as a tree (D-24; Juan, 2026-11-02: «grupo plegable», and any calendar of it split again):
+ * a calendar on its own, or a node (a split definition, or a value split again) as a folded row with its name and
+ * the field, with what it makes inside. The folded row is the node's: its gear opens the node's properties and
+ * its eye shows or hides everything inside; a calendar's own gear opens its own.
  */
-function Rows({
+function Level({
   cals,
+  parentId,
+  depth,
   collapsed,
   setCollapsed,
 }: {
   cals: CalendarDef[];
+  parentId: string | null;
+  depth: number;
   collapsed: Set<string>;
   setCollapsed: (f: (prev: Set<string>) => Set<string>) => void;
 }) {
@@ -138,20 +150,22 @@ function Rows({
   const seen = new Set<string>();
   const out: React.ReactNode[] = [];
   for (const c of cals) {
-    if (!c.group) {
-      out.push(<CalRow key={c.id} c={c} />);
+    const path = c.path ?? [];
+    if (depth > 0 && path[depth - 1]?.id !== parentId) continue;
+    if (path.length === depth) {
+      out.push(<CalRow key={c.id} c={c} depth={depth} />);
       continue;
     }
-    if (seen.has(c.group.id)) continue;
-    seen.add(c.group.id);
-    const gid = `group:${c.group.id}`;
+    const node = path[depth];
+    if (!node || seen.has(node.id)) continue;
+    seen.add(node.id);
+    const gid = `group:${node.id}`;
     const closed = collapsed.has(gid);
-    const members = cals.filter((x) => x.group?.id === c.group?.id);
-    const anyVisible = members.some((m) => m.visible);
-    const group = c.group;
+    const inside = cals.filter((x) => x.path?.[depth]?.id === node.id);
+    const anyVisible = inside.some((m) => m.visible);
     out.push(
-      <div key={gid} className="cal-group" data-group={group.id}>
-        <div className="cal-group-row">
+      <div key={gid} className="cal-group" data-group={node.id}>
+        <div className="cal-group-row" style={{ "--depth": depth } as React.CSSProperties}>
           <button
             type="button"
             className="cal-group-head"
@@ -164,15 +178,15 @@ function Rows({
             }
           >
             <ChevronDown size={12} className={closed ? "chev closed" : "chev"} />
-            <span className="cal-group-name">{group.name}</span>
-            <span className="cal-group-by">{t("sidebar.groupBy", { field: group.fieldName })}</span>
+            <span className="cal-group-name">{node.name}</span>
+            <span className="cal-group-by">{t("sidebar.groupBy", { field: node.fieldName })}</span>
           </button>
           <button
             type="button"
             className="icon-btn row-btn gear"
-            title={t("sidebar.groupProperties", { name: group.name })}
-            aria-label={t("sidebar.groupProperties", { name: group.name })}
-            onClick={() => useApp.getState().set({ schemaCalendarId: group.id })}
+            title={t("sidebar.groupProperties", { name: node.name })}
+            aria-label={t("sidebar.groupProperties", { name: node.name })}
+            onClick={() => useApp.getState().set({ schemaCalendarId: node.id })}
           >
             <SlidersHorizontal size={13} />
           </button>
@@ -182,24 +196,36 @@ function Rows({
             title={anyVisible ? t("sidebar.hideAll") : t("sidebar.showAll")}
             aria-label={anyVisible ? t("sidebar.hideAll") : t("sidebar.showAll")}
             onClick={() => {
-              // All of them at once: hidden while any shows, shown otherwise.
-              for (const m of members) if (m.visible === anyVisible) toggle(m.id);
+              // Everything inside at once: hidden while any shows, shown otherwise.
+              for (const m of inside) if (m.visible === anyVisible) toggle(m.id);
             }}
           >
             {anyVisible ? <Eye size={14} /> : <EyeOff size={14} />}
           </button>
         </div>
-        {!closed && members.map((m) => <CalRow key={m.id} c={m} member />)}
+        {!closed && (
+          <Level
+            cals={inside}
+            parentId={node.id}
+            depth={depth + 1}
+            collapsed={collapsed}
+            setCollapsed={setCollapsed}
+          />
+        )}
       </div>,
     );
   }
   return <>{out}</>;
 }
 
-function CalRow({ c, member = false }: { c: CalendarDef; member?: boolean }) {
+function CalRow({ c, depth = 0 }: { c: CalendarDef; depth?: number }) {
   const toggle = useApp((s) => s.toggleCalendar);
   return (
-    <div data-cal={c.id} className={`cal-row ${c.visible ? "" : "off"}${member ? " member" : ""}`}>
+    <div
+      data-cal={c.id}
+      className={`cal-row ${c.visible ? "" : "off"}${depth ? " member" : ""}`}
+      style={{ "--depth": depth } as React.CSSProperties}
+    >
       <button
         type="button"
         className="cal-main"
