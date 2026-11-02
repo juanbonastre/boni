@@ -388,7 +388,8 @@ test("a card can be corrected before accepting: its title and its collection go 
   await expect(form.getByLabel("Colección")).toHaveValue("t_docencia");
   await form.getByLabel("Título").fill("Revisar las actas de FUP 1");
   await form.getByLabel("Colección").selectOption({ label: "Libros" });
-  await expect(form).toContainText("aprende");
+  // Nothing explains the correction on the screen (design guide §5): the form has its two lines and «Propiedades».
+  await expect(form).not.toContainText("aprende");
   await page.screenshot({ path: `${SHOTS}/inbox-correct.png` });
   await card.getByRole("button", { name: "Aceptar" }).click();
   await expect(page.locator(".toast")).toContainText("Boni aprenderá");
