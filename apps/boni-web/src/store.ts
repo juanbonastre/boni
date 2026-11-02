@@ -12,6 +12,7 @@ import { create } from "zustand";
 import {
   AgentApi,
   type AiLevel,
+  type AreaAccuracy,
   type AutoAccept,
   type ConversationSummary,
   type DataRow,
@@ -295,6 +296,8 @@ interface State {
   /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
   inboxOpen: boolean;
   runs: RunSummary[];
+  /** The Registro's «Acierto»: Boni's decisions per area (docs/fiabilidad.md). */
+  accuracy: AreaAccuracy[];
   /** How often Boni would have accepted alone, and been right (shown on top of the Registro). */
   autoAccept: AutoAccept | null;
   /** Flips with every confirmation, so its button is never where the last one was. */
@@ -409,6 +412,7 @@ export const useStore = create<State>(() => ({
   decideErrors: {},
   inboxOpen: false,
   runs: [],
+  accuracy: [],
   autoAccept: null,
   confirmFlip: false,
 }));
@@ -1674,7 +1678,12 @@ export function rejectProposal(id: string) {
 
 export async function loadRuns() {
   try {
-    set(await agent.runs());
+    const [runs, accuracy] = await Promise.all([
+      agent.runs(),
+      // A server without it: no «Acierto».
+      agent.decisions().catch(() => [] as AreaAccuracy[]),
+    ]);
+    set({ ...runs, accuracy });
   } catch {
     // the log stays as it was
   }

@@ -282,6 +282,17 @@ export interface AutoAccept {
   would: number;
   right: number;
 }
+/** How right Boni's decisions are in one area (docs/fiabilidad.md §3.3): what the Registro's «Acierto» shows. */
+export interface AreaAccuracy {
+  area: string;
+  total: number;
+  done: number;
+  asked: number;
+  nothing: number;
+  judged: number;
+  right: number;
+  levels: { from: number; to: number; judged: number; right: number }[];
+}
 export interface RunChange {
   action: "create" | "update" | "delete" | "restore";
   title: string;
@@ -1536,6 +1547,33 @@ export class AgentApi {
     parseModels(await this.call("PUT", "models/budget", b));
   dismissRequest = async (id: string) =>
     void (await this.call("POST", `requests/${encodeURIComponent(id)}/dismiss`));
+  /** Boni's decisions counted per area (an older server: none). */
+  async decisions(): Promise<AreaAccuracy[]> {
+    const b = await this.call("GET", "decisions");
+    const areas = isObj(b) && Array.isArray(b.areas) ? b.areas : [];
+    return areas.filter(isObj).flatMap((a) => {
+      const area = str(a.area, 40);
+      if (!area) return [];
+      const levels = (Array.isArray(a.levels) ? a.levels : []).filter(isObj).map((l) => ({
+        from: Number(l.from) || 0,
+        to: Number(l.to) || 0,
+        judged: count(l.judged),
+        right: count(l.right),
+      }));
+      return [
+        {
+          area,
+          total: count(a.total),
+          done: count(a.done),
+          asked: count(a.asked),
+          nothing: count(a.nothing),
+          judged: count(a.judged),
+          right: count(a.right),
+          levels,
+        },
+      ];
+    });
+  }
   async runs(): Promise<{ runs: RunSummary[]; autoAccept: AutoAccept | null }> {
     const b = await this.call("GET", "runs");
     const list = isObj(b) && Array.isArray(b.runs) ? b.runs : [];

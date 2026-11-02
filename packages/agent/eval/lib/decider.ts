@@ -1,4 +1,5 @@
 import { checkAnswers, type DecisionQuestion } from "../../src/decider.ts";
+import { levelsOf, type Outcome } from "../../src/decisions.ts";
 import type { ModelProvider } from "../../src/providers.ts";
 import { COLLECTIONS, DECIDER_CASES, NAMES } from "./deciderCases.ts";
 import type { EvalResult } from "./types.ts";
@@ -23,6 +24,8 @@ export async function evalDecider(
     r: { type: "choice", instructions: QUESTION, criteria: criteria([...NAMES].reverse()) },
   };
   const out: EvalResult = { right: 0, total: 0, wrong: 0, cost: 0, tokens: 0, cases: [] };
+  // Each decision as the agent would record it: its confidence, whether it was taken, and whether it was right.
+  const decided: { p: number; outcome: Outcome; result: "right" | "wrong" | null }[] = [];
   for (let i = 0; i < runs; i++)
     for (const c of DECIDER_CASES) {
       if (!c.goes) continue;
@@ -43,12 +46,19 @@ export async function evalDecider(
         const x = a?.c;
         const y = a?.r;
         if (x?.type !== "choice" || y?.type !== "choice") note = "invalid answer";
-        else if (x.choice !== y.choice || Math.min(x.confidence, y.confidence) < 0.6)
-          note = "would ask Juan";
-        else if (x.choice === c.goes) ok = true;
         else {
-          out.wrong++;
-          note = `chose ${x.choice}`;
+          const p = x.choice === y.choice ? Math.min(x.confidence, y.confidence) : 0;
+          if (p < 0.6) {
+            note = "would ask Juan";
+            decided.push({ p, outcome: "ask", result: null });
+          } else {
+            ok = x.choice === c.goes;
+            decided.push({ p, outcome: "do", result: ok ? "right" : "wrong" });
+            if (!ok) {
+              out.wrong++;
+              note = `chose ${x.choice}`;
+            }
+          }
         }
       } catch (e) {
         note = String((e as { code?: string }).code ?? "failed");
@@ -56,5 +66,6 @@ export async function evalDecider(
       if (ok) out.right++;
       out.cases.push({ name: c.mail.split("\n")[2]?.replace("Asunto: ", "") ?? "", ok, note });
     }
+  out.calibration = levelsOf(decided).filter((l) => l.judged > 0);
   return out;
 }

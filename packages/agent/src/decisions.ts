@@ -65,3 +65,43 @@ export function backOff(results: readonly boolean[]): boolean {
   const wrong = last.filter((r) => !r).length;
   return last.length >= BACK_OFF.inARow && wrong / last.length >= BACK_OFF.share;
 }
+
+/** The levels of confidence the Registro counts by, and calibration uses: the edges of each band. */
+export const LEVELS = [0, 0.5, 0.6, 0.7, 0.8, 0.9, 1.000001] as const;
+export interface Level {
+  from: number;
+  to: number;
+  /** Decisions taken alone at this level and judged by Juan since, and how many were right. */
+  judged: number;
+  right: number;
+}
+/** From this many judged decisions a level's own accuracy replaces what the model said (docs/fiabilidad.md §3.3). */
+export const CALIBRATION_MIN = 10;
+
+/** What was right at each level, out of the decisions taken alone and judged. */
+export function levelsOf(
+  rows: readonly { p: number; outcome: Outcome; result: "right" | "wrong" | null }[],
+): Level[] {
+  const out: Level[] = [];
+  for (let i = 0; i + 1 < LEVELS.length; i++) {
+    const from = LEVELS[i] as number;
+    const to = LEVELS[i + 1] as number;
+    const mine = rows.filter((r) => r.outcome === "do" && r.result && r.p >= from && r.p < to);
+    out.push({
+      from,
+      to: Math.min(to, 1),
+      judged: mine.length,
+      right: mine.filter((r) => r.result === "right").length,
+    });
+  }
+  return out;
+}
+
+/**
+ * The confidence as Juan's decisions say it is: at a level judged often enough, the share that was right replaces
+ * what the model said (a model that says 0.8 and is right 6 times in 10 counts as 0.6); elsewhere, what it said.
+ */
+export function calibrate(p: number, levels: readonly Level[]): number {
+  const l = levels.find((x) => p >= x.from && p < (x.to >= 1 ? 1.000001 : x.to));
+  return l && l.judged >= CALIBRATION_MIN ? l.right / l.judged : p;
+}

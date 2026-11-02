@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  type AreaAccuracy,
   type ConfirmView,
   fillTemplate,
   isProposal,
@@ -1060,10 +1061,82 @@ const undoable = (r: RunSummary) =>
     (r.changes ?? []).some((c) => !c.undone) ||
     (r.changed ?? 0) > (r.changes ?? []).length);
 
+/**
+ * «Acierto» (docs/fiabilidad.md §3.3): per area, Boni's last decisions (alone, asked, left) and, of the ones alone,
+ * how many Juan kept as they were; by level of confidence on a click. What earns an area its «Solo».
+ */
+function Accuracy({ t, areas, lang }: { t: T; areas: AreaAccuracy[]; lang: string }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const num = new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", {
+    maximumFractionDigits: 1,
+  });
+  const name = (area: string) => {
+    const key = `accuracy.area.${area}`;
+    const s = t(key);
+    return s === key ? area : s;
+  };
+  return (
+    <section className="log-accuracy" aria-label={t("accuracy.title")}>
+      <h3>{t("accuracy.title")}</h3>
+      <p className="muted small">{t("accuracy.help")}</p>
+      <ul>
+        {areas.map((a) => (
+          <li key={a.area} className="log-area">
+            <span className="log-area-name">{name(a.area)}</span>
+            <span className="log-area-line muted small">
+              {t("accuracy.line", {
+                total: a.total,
+                done: a.done,
+                asked: a.asked,
+                nothing: a.nothing,
+              })}{" "}
+              ·{" "}
+              {a.judged
+                ? t("accuracy.judged", {
+                    right: a.right,
+                    judged: a.judged,
+                    pct: Math.round((100 * a.right) / a.judged),
+                  })
+                : t("accuracy.judged.none")}
+            </span>
+            {a.judged > 0 && (
+              <button
+                type="button"
+                className="link-btn small"
+                aria-expanded={open === a.area}
+                onClick={() => setOpen(open === a.area ? null : a.area)}
+              >
+                {t("accuracy.levels")}
+              </button>
+            )}
+            {open === a.area && (
+              <ul className="log-levels muted small">
+                {a.levels
+                  .filter((l) => l.judged > 0)
+                  .map((l) => (
+                    <li key={l.from}>
+                      {t("accuracy.level", {
+                        from: num.format(l.from),
+                        to: num.format(l.to),
+                        right: l.right,
+                        judged: l.judged,
+                      })}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function LogView() {
   const t = useStore((s) => s.t);
   const runs = useStore((s) => s.runs);
   const auto = useStore((s) => s.autoAccept);
+  const accuracy = useStore((s) => s.accuracy);
   const lang = useStore((s) => s.settings.language);
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null | "loading">(null);
@@ -1111,6 +1184,7 @@ export function LogView() {
           {t(auto.would > 0 ? "log.autoAccept" : "log.autoAccept.none", { ...auto })}
         </p>
       )}
+      {accuracy.length > 0 && <Accuracy t={t} areas={accuracy} lang={lang} />}
       <ul className="log-list">
         {logEntries(runs).map((e) => {
           if ("run" in e) return line(e.run);

@@ -74,8 +74,8 @@ describe("filling a proposal's fields (filling.ts)", () => {
         FIELDS,
       ),
     ).toEqual([
-      { field: "prioridad", p: 0.8, outcome: "do" },
-      { field: "hecho", p: 0.3, outcome: "nothing" },
+      { field: "prioridad", kind: "choice", p: 0.8, outcome: "do" },
+      { field: "hecho", kind: "check", p: 0.3, outcome: "nothing" },
     ]);
     // The orders disagree: no confidence at all.
     expect(
@@ -84,8 +84,8 @@ describe("filling a proposal's fields (filling.ts)", () => {
         FIELDS,
       ),
     ).toEqual([
-      { field: "prioridad", p: 0, outcome: "nothing" },
-      { field: "hecho", p: 0.9, outcome: "do" },
+      { field: "prioridad", kind: "choice", p: 0, outcome: "nothing" },
+      { field: "hecho", kind: "check", p: 0.9, outcome: "do" },
     ]);
   });
 

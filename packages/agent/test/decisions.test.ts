@@ -1,6 +1,13 @@
 // A-13: a decision by confidence and cost — do, ask or nothing — never alone for what is irreversible or leaves.
 import { describe, expect, it } from "vitest";
-import { backOff, earned, historyConfidence, resolve } from "../src/decisions.ts";
+import {
+  backOff,
+  calibrate,
+  earned,
+  historyConfidence,
+  levelsOf,
+  resolve,
+} from "../src/decisions.ts";
 
 describe("decisions by confidence and cost (docs/fiabilidad.md, A-13)", () => {
   it("does alone only below class C, with «Solo» on and enough confidence; asks in the middle; nothing below", () => {
@@ -36,5 +43,32 @@ describe("decisions by confidence and cost (docs/fiabilidad.md, A-13)", () => {
     expect(backOff([...right(16), false, true, false, true, false, true])).toBe(false);
     expect(backOff([...right(12), false, true, false, true, false, true, false, true])).toBe(true);
     expect(backOff([false, false])).toBe(false);
+  });
+
+  it("counts what was right at each level, and calibrates a confidence with enough judged decisions", () => {
+    const rows = [
+      ...Array.from({ length: 10 }, (_, i) => ({
+        p: 0.85,
+        outcome: "do" as const,
+        result: i < 6 ? ("right" as const) : ("wrong" as const),
+      })),
+      { p: 0.95, outcome: "do" as const, result: "right" as const },
+      { p: 0.95, outcome: "do" as const, result: null },
+      { p: 0.3, outcome: "ask" as const, result: null },
+    ];
+    const levels = levelsOf(rows);
+    expect(levels.map((l) => [l.from, l.judged, l.right])).toEqual([
+      [0, 0, 0],
+      [0.5, 0, 0],
+      [0.6, 0, 0],
+      [0.7, 0, 0],
+      [0.8, 10, 6],
+      [0.9, 1, 1],
+    ]);
+    // A model that says 0.85 and is right 6 times in 10 counts as 0.6; a level with few judged keeps its word.
+    expect(calibrate(0.85, levels)).toBe(0.6);
+    expect(calibrate(0.95, levels)).toBe(0.95);
+    expect(calibrate(0.65, levels)).toBe(0.65);
+    expect(calibrate(1, levels)).toBe(1);
   });
 });

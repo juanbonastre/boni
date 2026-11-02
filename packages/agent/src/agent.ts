@@ -4,11 +4,12 @@ import type { ProposalEdits, RequestRow, Seen, UserStore } from "@boni/store";
 import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
 import { history, recordTurn } from "./conversations.ts";
 import { checkAnswers, type DecisionQuestion } from "./decider.ts";
-import { resolve, type Thresholds } from "./decisions.ts";
+import { calibrate, levelsOf, resolve, type Thresholds } from "./decisions.ts";
 import { exposure } from "./exposure.ts";
 import {
   checkFill,
   cleanNote,
+  FILL_THRESHOLDS,
   type FillField,
   fieldsForReader,
   fillDecisions,
@@ -1404,7 +1405,8 @@ export class Agent {
     // A decision of docs/fiabilidad.md: sure only when both orders agree, with the lesser confidence; taken into
     // the proposal (Juan reviews it there) from 0.6, else "unsure" and Juan is asked when the plan says so.
     const p = c.choice === r.choice ? Math.min(c.confidence, r.confidence) : 0;
-    const outcome = resolve(p, "A", true, CHOICE_THRESHOLDS);
+    const sure = this.calibrated("choice", p);
+    const outcome = resolve(sure, "A", true, CHOICE_THRESHOLDS);
     this.o.store.journal.addDecision({
       id: randomUUID(),
       run: st.id,
@@ -1412,7 +1414,11 @@ export class Agent {
       cost: "A",
       p,
       outcome,
-      detail: { options: options.length, choice: outcome === "do" ? c.choice : null },
+      detail: {
+        options: options.length,
+        choice: outcome === "do" ? c.choice : null,
+        ...(sure !== p ? { calibrated: sure } : {}),
+      },
       at: this.now(),
     });
     return outcome === "do" ? c.choice : "unsure";
@@ -1434,18 +1440,24 @@ export class Agent {
       : null;
     if (answers) {
       const { values, wantsNote } = fromAnswers(answers, fields);
-      // Each field filled or left empty is a decision of docs/fiabilidad.md, judged when Juan accepts.
-      for (const d of fillDecisions(answers, fields))
+      // Each field filled or left empty is a decision of docs/fiabilidad.md, judged when Juan accepts; what his
+      // decisions say of that level of confidence may leave a field empty the model would have filled.
+      for (const d of fillDecisions(answers, fields)) {
+        const sure = this.calibrated("fill", d.p);
+        const threshold = d.kind === "check" ? FILL_THRESHOLDS.check : FILL_THRESHOLDS.choice;
+        const outcome = d.outcome === "do" && sure < threshold ? "nothing" : d.outcome;
+        if (outcome !== d.outcome) values[d.field] = null;
         this.o.store.journal.addDecision({
           id: randomUUID(),
           run: st.id,
           area: "fill",
           cost: "A",
           p: d.p,
-          outcome: d.outcome,
-          detail: { field: d.field },
+          outcome,
+          detail: { field: d.field, ...(sure !== d.p ? { calibrated: sure } : {}) },
           at: this.now(),
         });
+      }
       let note: string | null = null;
       if (wantsNote) {
         const out = await read(NOTE_PROMPT, NOTE_SCHEMA);
@@ -1838,6 +1850,14 @@ export class Agent {
     this.o.store.journal.setProposal(id, "accepted", this.now(), changed);
     this.judge(p.run, changed);
     return this.advance(st);
+  }
+
+  /**
+   * A confidence as Juan's past decisions in that area say it is (docs/fiabilidad.md §3.3): at a level judged often
+   * enough, its real share of right ones; the model's word is kept as `p`, this decides.
+   */
+  private calibrated(area: string, p: number): number {
+    return calibrate(p, levelsOf(this.o.store.journal.decisions(area, 200)));
   }
 
   /**
