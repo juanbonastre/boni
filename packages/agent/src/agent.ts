@@ -1927,6 +1927,27 @@ export class Agent {
   }
 
   /**
+   * Juan takes a decision back right after it («Deshacer» on the inbox's toast, Juan 2026-11-02): a rejected
+   * proposal waits again; an accepted one too, once what its acceptance made is undone (`run`: that acceptance's
+   * run, which the device that accepted got back) and what the reading decided is unjudged, as if he had not
+   * decided yet.
+   */
+  restoreProposal(id: string, run?: string): "ok" | "no-such-proposal" | "cannot-undo" {
+    const journal = this.o.store.journal;
+    const p = journal.proposal(id);
+    if (!p || (p.status !== "accepted" && p.status !== "rejected")) return "no-such-proposal";
+    if (p.status === "accepted") {
+      const r = run ? journal.run(run) : null;
+      if (!r || r.origin !== "accepted") return "cannot-undo";
+      if (this.o.store.runUndoable(run as string))
+        this.o.store.undoRun(run as string, { actor: "user" });
+      journal.unjudge(p.run);
+    }
+    journal.reopenProposal(id);
+    return "ok";
+  }
+
+  /**
    * What a run did, for Juan's Registro: his request, and each step of the plan with what the policy
    * decided and where it stopped. Arguments as the plan wrote them (literals, quotes of his request,
    * references), never the values read from his data or from outside.

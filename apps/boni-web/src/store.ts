@@ -1608,8 +1608,13 @@ export function acceptProposal(
       } else if (r.error) decideFailed(id, r.error);
       else {
         dropProposal(id);
-        if (opts.done) toast(t("inbox.acceptedDone"));
-        else if (edits) toast(t("inbox.acceptedCorrected"));
+        // A while to take it back (Juan, 2026-11-02): the toast's «Deshacer» undoes what it made and the card returns.
+        toast(
+          t(
+            opts.done ? "inbox.acceptedDone" : edits ? "inbox.acceptedCorrected" : "inbox.accepted",
+          ),
+          { label: t("toast.undo"), run: () => void restoreProposal(id, r.run) },
+        );
       }
     } catch (e) {
       decideFailed(id, { text: errorText(t, e) });
@@ -1670,10 +1675,25 @@ export function rejectProposal(id: string) {
     try {
       await agent.reject(id);
       dropProposal(id);
+      toast(get().t("inbox.rejected"), {
+        label: get().t("toast.undo"),
+        run: () => void restoreProposal(id),
+      });
     } catch (e) {
       decideFailed(id, { text: errorText(get().t, e) });
     }
   });
+}
+
+/** A decision taken back from the toast: the proposal waits again (its acceptance undone), and the inbox reloads. */
+export async function restoreProposal(id: string, run?: string) {
+  dismissToast();
+  try {
+    await agent.restore(id, run);
+    await loadInbox();
+  } catch (e) {
+    toast(errorText(get().t, e));
+  }
 }
 
 export async function loadRuns() {

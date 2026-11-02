@@ -77,6 +77,7 @@ export const ROUTES: Readonly<Record<string, "public" | "tailnet">> = {
   "POST /api/agent/requests/:id/dismiss": "tailnet",
   "POST /api/agent/proposals/:id/accept": "tailnet",
   "POST /api/agent/proposals/:id/reject": "tailnet",
+  "POST /api/agent/proposals/:id/restore": "tailnet",
   "GET /api/agent/runs": "tailnet",
   "GET /api/agent/decisions": "tailnet",
   "PUT /api/agent/decisions/:area": "tailnet",

@@ -629,6 +629,52 @@ describe("the agent, with a planner that behaves", () => {
     expect(env.store.journal.proposal(r.proposals[0] as string)?.status).toBe("stale");
   });
 
+  it("a decision taken back («Deshacer»): the proposal waits again, what its acceptance made is undone", async () => {
+    env = makeEnv([{ asunto: "Apunta", de: "alguien@example.com", cuerpo: "x" }]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        {
+          id: "c",
+          op: "call",
+          tool: "entities.create",
+          args: {
+            type: lit("tarea"),
+            values: { fn: "obj", args: [lit("titulo"), ref("$m.items[0].asunto")] },
+          },
+        },
+      ],
+    };
+    const agent = env.agent(fakePlanner([plan, plan]));
+    const journal = env.store.journal;
+    const first = (await agent.turn({ text: "mira el correo", origin: PERSONAL }))
+      .proposals[0] as string;
+    const accepted = await agent.acceptProposal(first, "personal");
+    const made = env.store.runOps(accepted.run).find((o) => o.kind === "create")?.target as string;
+    expect(env.store.get(made)?.entity.deleted).toBeUndefined();
+    // Without the acceptance's run there is nothing to undo; with it, the entry goes and the proposal waits again.
+    expect(agent.restoreProposal(first)).toBe("cannot-undo");
+    expect(agent.restoreProposal(first, accepted.run)).toBe("ok");
+    expect(env.store.get(made)?.entity.deleted).toBeDefined();
+    expect(journal.proposal(first)).toMatchObject({
+      status: "pending",
+      decided: null,
+      edits: null,
+    });
+    expect(
+      journal.decisionsOf(journal.proposal(first)?.run as string).every((d) => d.result === null),
+    ).toBe(true);
+    // A rejection taken back the same way; a pending proposal has nothing to take back.
+    const second = (await agent.turn({ text: "mira el correo", origin: PERSONAL }))
+      .proposals[0] as string;
+    agent.rejectProposal(second);
+    expect(journal.proposal(second)?.status).toBe("rejected");
+    expect(agent.restoreProposal(second)).toBe("ok");
+    expect(journal.proposal(second)?.status).toBe("pending");
+    expect(agent.restoreProposal(second)).toBe("no-such-proposal");
+  });
+
   it("finds a contact by part of its name, any case and accents", async () => {
     env = makeEnv();
     const planner = fakePlanner([
