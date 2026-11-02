@@ -400,6 +400,9 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await expect(db.locator(".db-table tbody tr")).toHaveCount(3);
   // A title renamed where it is, with a double click (a click opens its row).
   await db.getByRole("button", { name: "Pedro Páramo", exact: true }).dblclick();
+  // The cell's input takes the focus a frame later: on a slow machine, keys pressed before went elsewhere and the
+  // selected title was replaced (the picker below then found no «pedro»).
+  await expect(db.getByRole("textbox", { name: "Título" })).toBeFocused();
   await page.keyboard.press("End");
   await page.keyboard.type(" (relectura)", { delay: 15 });
   await page.keyboard.press("Enter");
@@ -424,8 +427,9 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   // The board groups by the select; a card dragged to another column changes it.
   await db.getByRole("radio", { name: "Tablero" }).click();
   await expect(db.locator(".db-column")).toHaveCount(3);
+  // By its title: Rayuela's card names Ficciones too, as what it relates to.
   await db
-    .locator(".db-card", { hasText: "Ficciones" })
+    .locator(".db-card", { has: page.locator(".db-card-title", { hasText: "Ficciones" }) })
     .dragTo(db.locator(".db-column", { hasText: "Pendiente" }));
   await expect
     .poll(async () =>
@@ -440,26 +444,42 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   const rayuela = db.getByRole("button", { name: "Rayuela", exact: true });
   await rayuela.click();
   await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
-  // The properties start folded under one line; unfolded, the collection remembers it.
-  await expect(page.locator(".row-prop")).toHaveCount(0);
-  const fold = page.getByRole("button", { name: "4 propiedades" });
-  await expect(fold).toHaveAttribute("aria-expanded", "false");
-  await fold.click();
-  await expect(page.locator(".row-prop")).toHaveCount(4);
+  // The properties start unfolded; folded, the collection remembers it.
+  await expect(page.locator(".row-prop")).toHaveCount(5);
   await expect(page.getByRole("button", { name: "Ocultar propiedades" })).toHaveAttribute(
     "aria-expanded",
     "true",
   );
+  await page.getByRole("button", { name: "Ocultar propiedades" }).click();
+  await expect(page.locator(".row-prop")).toHaveCount(0);
+  const fold = page.getByRole("button", { name: "5 propiedades" });
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await fold.click();
+  await expect(page.locator(".row-prop")).toHaveCount(5);
+  // A relation is edited with its picker: the collection's rows by title, filtered as one types.
+  const related = page.locator(".row-prop", { hasText: "Relacionado" });
+  await expect(related).toContainText("Ficciones");
+  await related.getByRole("button", { name: "Relacionado", exact: true }).click();
+  await page.getByRole("textbox", { name: "Buscar por título" }).fill("pedro");
+  await expect(page.getByRole("menuitemradio")).toHaveCount(1);
+  await page.getByRole("menuitemradio", { name: "Pedro Páramo" }).click();
+  await page.keyboard.press("Escape");
+  await expect(related).toContainText("Ficciones, Pedro Páramo");
+  expect(
+    (await recorded(page)).requests.some((r) =>
+      r.startsWith('PUT api/data/rows/r1 {"values":{"f_relacionado":["r2","r3"]}}'),
+    ),
+  ).toBe(true);
   // One property hidden with its eye (on hover); it waits under "1 oculta" and comes back the same way.
   await page.locator(".row-prop", { hasText: "Páginas" }).hover();
   await page.getByRole("button", { name: "Ocultar «Páginas»" }).click();
-  await expect(page.locator(".row-prop:not(.row-prop-hidden)")).toHaveCount(3);
+  await expect(page.locator(".row-prop:not(.row-prop-hidden)")).toHaveCount(4);
   await page.getByRole("button", { name: "1 oculta" }).click();
   await expect(page.locator(".row-prop-hidden")).toContainText("Páginas");
   await page.screenshot({ path: `${SHOTS}/db-row-hidden.png` });
   await page.locator(".row-prop-hidden").hover();
   await page.getByRole("button", { name: "Mostrar «Páginas»" }).click();
-  await expect(page.locator(".row-prop:not(.row-prop-hidden)")).toHaveCount(4);
+  await expect(page.locator(".row-prop:not(.row-prop-hidden)")).toHaveCount(5);
   expect(
     (await recorded(page)).requests.some((r) => r.startsWith("PUT api/data/types/t_libro/row-ui")),
   ).toBe(true);
@@ -478,7 +498,7 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await page.locator(".topbar .crumb", { hasText: "Lecturas" }).click();
   await expect(page.locator(".doc-title")).toHaveValue("Lecturas");
   await rayuela.click();
-  await expect(page.locator(".row-prop")).toHaveCount(4); // still unfolded for this collection
+  await expect(page.locator(".row-prop")).toHaveCount(5); // still unfolded for this collection
   await page.getByRole("button", { name: "Ocultar propiedades" }).click();
   await expect(page.locator(".row-prop")).toHaveCount(0);
   await page.locator(".topbar .crumb", { hasText: "Lecturas" }).click();

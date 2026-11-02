@@ -78,7 +78,7 @@ export function rowUiOf(store: UserStore, typeId: string): RowUi {
   try {
     const v = JSON.parse(store.setting(`${ROW_UI}${typeId}`) ?? "{}") as Partial<RowUi>;
     return {
-      open: v.open === true,
+      open: v.open !== false,
       hidden: Array.isArray(v.hidden) ? v.hidden.filter((x) => typeof x === "string") : [],
       related: v.related === true,
       folded: Array.isArray(v.folded)
@@ -87,7 +87,7 @@ export function rowUiOf(store: UserStore, typeId: string): RowUi {
       widths: widthsOf(v.widths),
     };
   } catch {
-    return { open: false, hidden: [], related: false, folded: [], widths: {} };
+    return { open: true, hidden: [], related: false, folded: [], widths: {} };
   }
 }
 /**

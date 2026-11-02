@@ -194,13 +194,14 @@ test("a note on the phone: its properties as chips, all in a sheet; «…»; a b
   await expect(page.locator(".row-doc")).toBeVisible();
   // What it holds, as chips under its title; «Propiedades» opens them all, the empty ones too.
   const chips = page.locator(".m-row-chips .m-chip");
-  await expect(chips).toHaveText(["Leyendo", "600", "Propiedades"]);
+  await expect(chips).toHaveText(["Leyendo", "600", "Ficciones", "Propiedades"]);
   await chips.last().tap();
   await expect(below(page).locator(".row-prop-name")).toHaveText([
     "Estado",
     "Páginas",
     "Terminado",
     "Favorito",
+    "Relacionado",
   ]);
   await page.screenshot({ path: `${SHOTS}/phone-note-props.png` });
   await page.keyboard.press("Escape");

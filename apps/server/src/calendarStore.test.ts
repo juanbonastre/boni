@@ -118,7 +118,7 @@ describe("the calendar over Boni's collections", () => {
         startTime: "10:00",
         endTime: "11:30",
         completed: false,
-        project: "[[curso-ejemplo]]",
+        project: "curso-ejemplo",
       },
       body: "Preparar el tema 3.\n",
     });

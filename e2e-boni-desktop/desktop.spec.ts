@@ -609,9 +609,9 @@ test("Boni Calendar's link with peek=1: a small window with the note; it stays w
   const peek = await peekPage();
   await expect(peek.locator(".peek-head")).toContainText("Docencia");
   await expect(peek.locator(".row-title, .doc-title").first()).toHaveValue("Tutoría");
-  // The note opens on its text: the properties are folded.
-  await expect(peek.locator(".row-props-toggle")).toHaveAttribute("aria-expanded", "false");
-  await expect(peek.locator(".row-prop")).toHaveCount(0);
+  // The note opens with its properties unfolded (Juan, 2026-11-02; D-21), its text under them.
+  await expect(peek.locator(".row-props-toggle")).toHaveAttribute("aria-expanded", "true");
+  await expect(peek.locator(".row-prop").first()).toBeVisible();
   await peek.screenshot({ path: join(SHOTS, "desktop-peek.png") });
   const visible = () =>
     a.evaluate(({ BrowserWindow }) =>
