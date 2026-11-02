@@ -147,7 +147,7 @@ export function RowView({ mobile = false }: { mobile?: boolean }) {
             </button>
           </div>
           {type.view === "mail" ? (
-            <MailView type={type} row={row} />
+            <MailView type={type} row={row} titles={related?.titles ?? {}} />
           ) : (
             <>
               {titleField && (

@@ -2,9 +2,10 @@ import { htmlToText } from "./html.ts";
 
 /**
  * A mail (RFC 5322 + MIME) as what Boni keeps of it: who, when, the subject, the body as plain text and the
- * attachments' names. Never HTML, never the attachments themselves. Text parts are preferred to HTML ones
- * (an HTML-only body becomes text, its hidden elements dropped and counted). Any charset Node's TextDecoder
- * knows; anything malformed degrades to text instead of failing.
+ * attachments (their names always; their bytes when the caller keeps them, `keep`, and they fit: Juan,
+ * 2026-11-02, so an attached sheet can be read). Never HTML. Text parts are preferred to HTML ones (an HTML-only
+ * body becomes text, its hidden elements dropped and counted). Any charset Node's TextDecoder knows; anything
+ * malformed degrades to text instead of failing.
  */
 export interface Address {
   name: string;
@@ -14,6 +15,11 @@ export interface Attachment {
   name: string;
   type: string;
   size: number;
+  /** Shown inside the text (an image the HTML refers to by its `cid`), not sent as a file of its own. */
+  inline: boolean;
+  cid: string | null;
+  /** Its bytes, when the caller keeps attachments (`keep`) and it fits; absent otherwise. */
+  content?: Uint8Array;
 }
 export interface Message {
   messageId: string;
@@ -162,7 +168,17 @@ export function parseAddresses(v: string | undefined): Address[] {
 interface Walk {
   texts: { type: string; text: string }[];
   attachments: Attachment[];
+  /** Bytes of an attachment kept at most (0: names only). */
+  keep: number;
 }
+
+const EXT: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "application/pdf": "pdf",
+};
 
 function walk(part: Part, w: Walk, depth: number): void {
   const ct = params(part.headers.get("content-type") ?? "text/plain");
@@ -193,18 +209,29 @@ function walk(part: Part, w: Walk, depth: number): void {
     });
     return;
   }
+  const bytes = decodeBody(part);
+  const type = ct.value || "application/octet-stream";
+  const cid = (part.headers.get("content-id") ?? "").trim().replace(/^<|>$/g, "") || null;
+  // An image the HTML shows by its cid comes with no file name: named by its order and kind.
+  const unnamed = `${cid ? "imagen" : "adjunto"}-${w.attachments.length + 1}.${EXT[type] ?? "bin"}`;
   w.attachments.push({
-    name: decodeWords(filename ?? "").slice(0, 200) || "(sin nombre)",
-    type: ct.value || "application/octet-stream",
-    size: decodeBody(part).length,
+    name: decodeWords(filename ?? "").slice(0, 200) || unnamed,
+    type,
+    size: bytes.length,
+    inline: disp.value === "inline" || (!!cid && !filename),
+    cid,
+    ...(w.keep > 0 && bytes.length > 0 && bytes.length <= w.keep ? { content: bytes } : {}),
   });
 }
 
-/** `raw`: the message's bytes; `partial`: it was fetched only up to a limit. */
-export function parseMessage(raw: Uint8Array, partial = false): Message {
+/**
+ * `raw`: the message's bytes; `partial`: it was fetched only up to a limit; `keep`: how many bytes of an attachment
+ * to keep (its `content`), none by default.
+ */
+export function parseMessage(raw: Uint8Array, partial = false, o: { keep?: number } = {}): Message {
   const top = splitHead(latin1.decode(raw));
   const h = (k: string) => top.headers.get(k);
-  const w: Walk = { texts: [], attachments: [] };
+  const w: Walk = { texts: [], attachments: [], keep: o.keep ?? 0 };
   walk(top, w, 0);
   const plain = w.texts.filter((t) => t.type === "text/plain");
   const html = w.texts.filter((t) => t.type === "text/html");
