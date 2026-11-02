@@ -145,9 +145,10 @@ slate `#94a3b8`.
   área» while some record has no value. The folded row is the definition's, like a folder: its own gear opens the
   definition's properties (its name, «Separar por», «Calendarios por área» with a row of swatches per calendar,
   the mapping, «Quitar calendario», which takes the whole definition) and its eye shows or hides every calendar
-  inside at once. A calendar inside has its own gear and properties: its colour, and «Ajustes de Agenda» to the
-  definition's (Juan, 2026-11-02: a member's gear opened the whole group's). A colour chosen anywhere is kept by the
-  server, for a whole calendar too. Under a finger (the phone's drawer), the row buttons are always visible and
+  inside at once. A calendar inside has its own gear and properties: its colour, its own «Separar por» (any field
+  no node above uses: a value split again is a node of its own, with the values found among its records, nested as
+  deep as wanted; Juan, 2026-11-02: «tantos subcalendarios como quiera»), and «Ajustes de Agenda» to the
+  definition's. A colour chosen anywhere is kept by the server, for a whole calendar too. Under a finger (the phone's drawer), the row buttons are always visible and
   36 px wide, the rows 40 px tall.
 - **External calendars** (Settings → External calendars, or "Add external calendar" under the sidebar's calendars):
   other services' calendars (Google Calendar...) by their iCal address, read-only, in their own sidebar group with

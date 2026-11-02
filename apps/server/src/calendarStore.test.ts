@@ -171,7 +171,11 @@ describe("a definition split by a field (D-24)", () => {
     expect(byArea.map((p) => p.group?.id)).toEqual(["agenda", "agenda", "agenda"]);
     expect(byArea.map((p) => p.where?.orEmpty ?? false)).toEqual([false, false, true]);
     expect(new Set(byArea.map((p) => p.def.color)).size).toBe(3);
-    expect(byArea[0]?.def.split).toMatchObject({ field: area });
+    // Each calendar carries the node above it and its own split (none yet; the field above is no choice).
+    expect(byArea[0]?.group).toMatchObject({ id: "agenda", field: area });
+    expect(byArea[0]?.path?.map((n) => n.name)).toEqual(["Agenda"]);
+    expect(byArea[0]?.def.split).toMatchObject({ field: null });
+    expect(byArea[0]?.def.split?.choices.map((c) => c.name)).toEqual(["tipo"]);
     // The kept definition is one; what the apps read is three.
     expect(storedCalendarDefs(store)).toHaveLength(1);
     // Each calendar shows its own entries; the one without an area goes to «Sin area».
@@ -203,6 +207,43 @@ describe("a definition split by a field (D-24)", () => {
     expect(await cal.setSplit("agenda", area)).toBe("ok");
     expect(await cal.removeCalendar("agenda")).toBe(true);
     expect(calendarDefs(store)).toEqual([]);
+  });
+
+  it("a value split again: its own values below it, colours by the path, whole again from any node", async () => {
+    const { store, cal, area, tipo } = agendaEnv();
+    expect(await cal.setSplit("agenda", area)).toBe("ok");
+    const docencia = calendarDefs(store).find((p) => p.def.name === "Docencia");
+    const docenciaId = docencia?.def.id as string;
+    expect(setSplit(store, docenciaId, area)).toBe("bad-field");
+    expect(await cal.setSplit(docenciaId, tipo)).toBe("ok");
+    const read = calendarDefs(store);
+    // Under Docencia, the kinds found among its records (Clase: clase); Gestiones and «Sin area» stay whole.
+    expect(read.map((p) => p.def.name)).toEqual(["clase", "Gestiones", "Sin area"]);
+    const clase = read[0];
+    expect(clase?.def.id).toBe(`${docenciaId}--o-clase`);
+    expect(clase?.path?.map((n) => n.name)).toEqual(["Agenda", "Docencia"]);
+    expect(clase?.group).toMatchObject({ id: docenciaId, field: tipo });
+    expect(clase?.where).toMatchObject({ field: area, also: [{ field: tipo }] });
+    expect(clase?.def.split?.choices).toEqual([]);
+    const snap = await cal.snapshot();
+    expect(
+      snap.rows.filter((r) => r.collectionId === clase?.def.id).map((r) => r.values.title),
+    ).toEqual(["Clase"]);
+    expect(snap.views.find((v) => v.id === clase?.def.id)?.path?.length).toBe(2);
+    // Its colour is kept by the values' path.
+    expect(await cal.setColor(clase?.def.id as string, "#abcdef")).toBe(true);
+    const colors = storedCalendarDefs(store)[0]?.raw.colors as Record<string, string>;
+    expect(Object.keys(colors)[0]).toMatch(/\/o_clase$/);
+    expect(calendarDefs(store)[0]?.def.color).toBe("#abcdef");
+    // The node whole again by the group row's id (Docencia's), then the definition whole.
+    expect(await cal.setSplit(docenciaId, null)).toBe("ok");
+    expect(calendarDefs(store).map((p) => p.def.name)).toEqual([
+      "Docencia",
+      "Gestiones",
+      "Sin area",
+    ]);
+    expect(await cal.setSplit("agenda", null)).toBe("ok");
+    expect(calendarDefs(store).map((p) => p.def.id)).toEqual(["agenda"]);
   });
 
   it("«split»: calendars picked by hand over one field become one definition split by it, colours kept; undone whole", () => {

@@ -82,6 +82,20 @@ export interface Where {
   field: string;
   value: string;
   orEmpty?: boolean;
+  /** More conditions a value split again adds below it (every one must hold). */
+  also?: Where[];
+}
+/** A node above a calendar a split made: the definition, or a value split again; with the field it splits by. */
+export interface PathNode {
+  id: string;
+  name: string;
+  field: string;
+  fieldName: string;
+}
+/** How a definition is split (D-24): by a field; and any of its values, by its key, split again (`by`). */
+export interface SplitNode {
+  field: string;
+  by?: Record<string, SplitNode>;
 }
 /** Where a calendar over a branch makes its records: tasks (a value in its task column) and events. */
 export interface Make {
@@ -100,8 +114,9 @@ export interface Placed {
   def: CollectionDef;
   where?: Where;
   make?: Make;
-  /** For a calendar a split made: the definition it came from (`storedCalendarDefs`) and its field. */
-  group?: { id: string; name: string; field: string; fieldName: string };
+  /** For a calendar a split made: the node right above it, and every node above it (the definition first). */
+  group?: PathNode;
+  path?: PathNode[];
 }
 
 /**
@@ -113,7 +128,21 @@ export interface Stored {
   raw: Record<string, unknown>;
   where?: Where;
   make?: Make;
-  split?: { field: string };
+  split?: SplitNode;
+}
+
+/** A split as kept, checked (a field name per node; values split again under `by`; at most six levels). */
+function parseSplit(v: unknown, depth = 0): SplitNode | undefined {
+  if (!isObj(v) || typeof v.field !== "string" || depth > 6) return undefined;
+  const by = isObj(v.by)
+    ? Object.fromEntries(
+        Object.entries(v.by).flatMap(([k, n]) => {
+          const c = parseSplit(n, depth + 1);
+          return c ? [[k, c]] : [];
+        }),
+      )
+    : {};
+  return { field: v.field, ...(Object.keys(by).length ? { by } : {}) };
 }
 
 /** The definitions as kept, checked against the schema (a type gone, gone with it); never expanded. */
@@ -146,8 +175,8 @@ export function storedCalendarDefs(store: UserStore): Stored[] {
       const m = x.make as Partial<Make> | undefined;
       if (m && inBranch(m.event))
         s.make = { event: m.event, ...(inBranch(m.task) ? { task: m.task } : {}) };
-      const sp = x.split as { field?: unknown } | undefined;
-      if (sp && typeof sp.field === "string") s.split = { field: sp.field };
+      const sp = parseSplit(x.split);
+      if (sp) s.split = sp;
       return [s];
     });
   } catch {
@@ -173,55 +202,87 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
 /**
- * A split definition read as one calendar per value of its field (D-24; Juan, 2026-11-02): every option of a
- * list, or every record the relation may point to, so a new value shows up by itself; and «Sin …» for the records
- * that hold nothing, only while there are some. Each gets its own id (`<definition>--<value>`), the colour kept
- * for it in the definition (`colors`) or the palette's by its place, and the definition's reminders and tasks.
+ * A split definition read as calendars (D-24; Juan, 2026-11-02): at the top, one per value of the field (every
+ * option of a list, or every record the relation may point to, so a new value shows up by itself); a value split
+ * again (`by`) gives, under it, one per value found among its records; and «Sin …» for the records that hold
+ * nothing, only while there are some. Each calendar gets its id (`<definition>--<value>--…`), the colour kept for
+ * its values in the definition (`colors`, the values joined with "/") or the palette's by its place, and the
+ * definition's reminders and tasks; `path` says the nodes above it, the definition first.
  */
-function expandSplit(
+function expandNode(
   store: UserStore,
   schema: Schema,
   s: Stored,
   def: CollectionDef,
-  field: FieldDef,
-  choices: { id: string; name: string }[],
+  node: SplitNode,
+  at: { id: string; name: string },
+  conds: Where[],
+  path: PathNode[],
+  depth: number,
 ): Placed[] {
+  const t = schema.types[s.type];
+  const choices = splitChoices(schema, s.type);
+  const usable = (id: string) =>
+    choices.some((c) => c.id === id) && !conds.some((w) => w.field === id);
+  const field = t?.fields.find((f) => f.id === node.field && usable(f.id));
+  if (!field) return [];
   const titleOf = (e: Entity) => String(e.values[schema.types[e.type]?.titleField ?? ""] ?? e.id);
-  const values: { key: string; name: string }[] =
+  const records = store
+    .list(s.type, { deep: true })
+    .filter((e) => conds.every((w) => matches(e.entity, w)));
+  const all: { key: string; name: string }[] =
     field.type === "select"
       ? (field.options ?? []).map((o) => ({ key: o.id, name: o.name }))
       : store
           .list(field.relation?.target as string)
           .map((e) => ({ key: e.entity.id, name: titleOf(e.entity) }));
-  const empty = store
-    .list(s.type, { deep: true })
-    .some((e) => isEmptyValue(e.entity.values[field.id]));
+  // At the top every value; a value split again shows the values found among its own records.
+  const present = new Set(
+    records.flatMap((e) => {
+      const v = e.entity.values[field.id];
+      return Array.isArray(v) ? v.map(String) : isEmptyValue(v) ? [] : [String(v)];
+    }),
+  );
+  const values = depth === 0 ? all : all.filter((v) => present.has(v.key));
+  const empty = records.some((e) => isEmptyValue(e.entity.values[field.id]));
   const colors = isObj(s.raw.colors) ? (s.raw.colors as Record<string, string>) : {};
   const palette = Object.values(PALETTE);
   const taskType = s.make?.task ?? s.type;
-  const group = { id: def.id, name: def.name, field: field.id, fieldName: field.name };
+  const here: PathNode = { id: at.id, name: at.name, field: field.id, fieldName: field.name };
+  const below = [...path, here];
   const member = (v: { key: string; name: string }, i: number, orEmpty: boolean): Placed[] => {
+    const id = `${at.id}--${orEmpty ? "sin" : keyOf(v.key)}`;
+    const w: Where = { field: field.id, value: v.key, ...(orEmpty ? { orEmpty: true } : {}) };
+    const next = [...conds, w];
+    const child = orEmpty ? undefined : node.by?.[v.key];
+    if (child && t?.fields.some((f) => f.id === child.field && usable(f.id) && f.id !== field.id))
+      return expandNode(store, schema, s, def, child, { id, name: v.name }, next, below, depth + 1);
+    const key = next.map((c) => c.value).join("/");
     const { colors: _c, ...rest } = s.raw;
     const raw: Record<string, unknown> = {
       ...rest,
-      id: `${def.id}--${orEmpty ? "sin" : keyOf(v.key)}`,
+      id,
       name: v.name,
-      color: colors[v.key] ?? palette[i % palette.length] ?? def.color,
+      color: colors[key] ?? palette[i % palette.length] ?? def.color,
     };
     const r = parseCollectionDef(raw);
     if (!r.ok) return [];
+    const [first, ...also] = next;
+    const where: Where = { ...(first as Where), ...(also.length ? { also } : {}) };
     const p: Placed = {
       type: s.type,
       raw,
       def: r.def,
-      where: { field: field.id, value: v.key, ...(orEmpty ? { orEmpty: true } : {}) },
+      where,
       ...(s.make ? { make: s.make } : {}),
-      group,
+      group: here,
+      path: below,
     };
     p.def = {
       ...withRoles(schema, s.type, r.def, taskType),
-      group,
-      split: { field: field.id, choices },
+      group: here,
+      path: below,
+      split: { field: null, choices: choices.filter((c) => !next.some((x) => x.field === c.id)) },
     };
     return [p];
   };
@@ -240,12 +301,18 @@ export function calendarDefs(store: UserStore): Placed[] {
     const r = parseCollectionDef(s.raw);
     if (!r.ok) return [];
     const choices = splitChoices(schema, s.type);
-    const field = s.split
-      ? schema.types[s.type]?.fields.find(
-          (f) => f.id === s.split?.field && choices.some((c) => c.id === f.id),
-        )
-      : undefined;
-    if (field) return expandSplit(store, schema, s, r.def, field, choices);
+    if (s.split && choices.some((c) => c.id === s.split?.field))
+      return expandNode(
+        store,
+        schema,
+        s,
+        r.def,
+        s.split,
+        { id: r.def.id, name: r.def.name },
+        [],
+        [],
+        0,
+      );
     const placed: Placed = {
       type: s.type,
       raw: s.raw,
@@ -322,6 +389,13 @@ export function withRoles(
   return { ...def, columns, mapping: { ...def.mapping, when, ...(task ? { task } : {}) } };
 }
 
+/** Whether a record's field holds what a condition asks: the value (a relation may hold several), or nothing. */
+function matches(e: { values: Record<string, unknown> }, w: Where): boolean {
+  const v = e.values[w.field];
+  if (isEmptyValue(v)) return !!w.orEmpty;
+  return Array.isArray(v) ? v.includes(w.value) : v === w.value;
+}
+
 function inCalendar(
   schema: Schema,
   p: Placed,
@@ -329,10 +403,7 @@ function inCalendar(
 ) {
   if (e.type !== p.type && !(p.where && branch(schema, p.type).includes(e.type))) return false;
   if (!p.where) return true;
-  const v = e.values[p.where.field];
-  const empty = v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length);
-  if (empty) return !!p.where.orEmpty;
-  return Array.isArray(v) ? v.includes(p.where.value) : v === p.where.value;
+  return matches(e, p.where) && (p.where.also ?? []).every((w) => matches(e, w));
 }
 
 /**
@@ -444,22 +515,63 @@ export function removeCalendar(store: UserStore, calendarId: string): boolean {
 }
 
 /**
- * Splits a definition by a field, or makes it whole again (`field` null): the kept definition changes, and the
- * calendars it makes come from `calendarDefs`. "bad-field": not one the collection can be split by.
+ * Splits a node by a field, or makes it whole again (`field` null): the definition itself (its id), or any of the
+ * calendars it makes (a value, by the calendar's or the group row's id: split again below it, D-24). The kept
+ * definition changes; what the apps read comes from `calendarDefs`. "bad-field": not one the collection can be
+ * split by, or one a node above already uses.
  */
 export function setSplit(
   store: UserStore,
-  calendarId: string,
+  id: string,
   field: string | null,
 ): "ok" | "no-such-calendar" | "bad-field" {
   const defs = storedCalendarDefs(store);
-  const i = defs.findIndex((s) => s.raw.id === calendarId && !s.where);
-  const at = defs[i];
-  if (!at) return "no-such-calendar";
-  if (field !== null && !splitChoices(store.schema(), at.type).some((c) => c.id === field))
+  const schema = store.schema();
+  let i = defs.findIndex((s) => s.raw.id === id && !s.where);
+  let keys: string[] = [];
+  if (i < 0) {
+    const read = calendarDefs(store);
+    const leaf = read.find((p) => p.def.id === id);
+    const under = leaf ?? read.find((p) => p.path?.some((n) => n.id === id));
+    if (!under?.where || !under.path) return "no-such-calendar";
+    const conds = [under.where, ...(under.where.also ?? [])];
+    // path[j] is the node above conds[j]: the definition first, then one node per value.
+    const j = leaf ? conds.length : under.path.findIndex((n) => n.id === id);
+    keys = conds.slice(0, j).map((c) => c.value);
+    i = defs.findIndex((s) => s.raw.id === under.path?.[0]?.id && s.split);
+    if (i < 0 || !keys.length) return "no-such-calendar";
+  }
+  const at = defs[i] as Stored;
+  if (field !== null && !splitChoices(schema, at.type).some((c) => c.id === field))
     return "bad-field";
+  let split: SplitNode | undefined;
+  if (!keys.length) {
+    split = field
+      ? { field, ...(at.split?.field === field && at.split.by ? { by: at.split.by } : {}) }
+      : undefined;
+  } else {
+    if (!at.split) return "no-such-calendar";
+    const root: SplitNode = structuredClone(at.split);
+    let node = root;
+    const above = [root.field];
+    for (const k of keys.slice(0, -1)) {
+      const n = node.by?.[k];
+      if (!n) return "no-such-calendar";
+      node = n;
+      above.push(n.field);
+    }
+    if (field !== null && above.includes(field)) return "bad-field";
+    const last = keys[keys.length - 1] as string;
+    const below = { ...(node.by ?? {}) };
+    const was = below[last];
+    if (field) below[last] = { field, ...(was?.field === field && was.by ? { by: was.by } : {}) };
+    else delete below[last];
+    if (Object.keys(below).length) node.by = below;
+    else delete node.by;
+    split = root;
+  }
   const { split: _old, ...rest } = at;
-  const next: Stored = field ? { ...rest, split: { field } } : rest;
+  const next: Stored = split ? { ...rest, split } : rest;
   saveCalendarDefs(
     store,
     defs.map((s, k) => (k === i ? next : s)),
@@ -467,20 +579,24 @@ export function setSplit(
   return "ok";
 }
 
-/** A calendar's colour, kept in its definition: a split member's by its value (`colors`), a whole one's as its own. */
+/**
+ * A calendar's colour, kept in its definition: one a split made, by its values (`colors`, joined with "/"); a whole
+ * one, as its own.
+ */
 export function setCalendarColor(store: UserStore, calendarId: string, color: string): boolean {
   if (!/^#[0-9a-fA-F]{6}$/.test(color)) return false;
   const placed = calendarDefs(store).find((p) => p.def.id === calendarId);
   if (!placed) return false;
-  const groupId = placed.group?.id ?? placed.def.id;
+  const groupId = placed.path?.[0]?.id ?? placed.def.id;
   const defs = storedCalendarDefs(store);
   const i = defs.findIndex((s) => s.raw.id === groupId);
   const at = defs[i];
   if (!at) return false;
   const raw = { ...at.raw };
-  if (placed.group)
-    raw.colors = { ...(isObj(raw.colors) ? raw.colors : {}), [placed.where?.value ?? ""]: color };
-  else raw.color = color;
+  if (placed.path?.length && placed.where) {
+    const key = [placed.where, ...(placed.where.also ?? [])].map((w) => w.value).join("/");
+    raw.colors = { ...(isObj(raw.colors) ? raw.colors : {}), [key]: color };
+  } else raw.color = color;
   saveCalendarDefs(
     store,
     defs.map((s, k) => (k === i ? { ...at, raw } : s)),
@@ -978,14 +1094,16 @@ export class StoreCalendar implements CalendarSource {
 
   /** The field value that puts a record in calendar `p` (its `where`), when it does not hold it yet. */
   private whereWrite(p: Placed, type: string, eid: string | null, writes: Writes, device: string) {
-    // A «Sin …» calendar (an empty value) writes nothing: the record just has no value there.
-    if (!p.where || !p.where.value) return;
+    if (!p.where) return;
     const cur = eid ? this.store.get(eid)?.entity : undefined;
-    if (cur && inCalendar(this.store.schema(), p, cur)) return;
-    const f = this.store.schema().types[type]?.fields.find((x) => x.id === p.where?.field);
-    if (!f) return;
-    const value = f.type === "relation" && f.relation?.many ? [p.where.value] : p.where.value;
-    writes[f.id] = { value, label: this.labelFor(type, f, device) };
+    for (const w of [p.where, ...(p.where.also ?? [])]) {
+      // A «Sin …» calendar (an empty value) writes nothing: the record just has no value there.
+      if (!w.value || (cur && matches(cur, w))) continue;
+      const f = this.store.schema().types[type]?.fields.find((x) => x.id === w.field);
+      if (!f) continue;
+      const value = f.type === "relation" && f.relation?.many ? [w.value] : w.value;
+      writes[f.id] = { value, label: this.labelFor(type, f, device) };
+    }
   }
 
   async apply(

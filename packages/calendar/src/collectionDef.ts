@@ -38,8 +38,10 @@ export interface CollectionDef {
   newNote?: { name: string; body: string; properties?: Record<string, PropValue> };
   /** Default reminders of its events: `reminders: { timed: "10m", allDay: "0d@09:00" }` (none when missing). */
   reminders?: ReminderDefaults;
-  /** A calendar made by splitting a collection by a field (D-24): the definition it came from and the field. */
+  /** A calendar made by splitting a collection by a field (D-24): the node right above it (the definition, or a value split again). */
   group?: CalendarGroup;
+  /** Every node above it, the definition first: each with the field its values are split by. */
+  path?: CalendarGroup[];
   /** How the collection is split, and the fields it could be split by (set by the server, never written by hand). */
   split?: CalendarSplit;
 }
@@ -271,6 +273,7 @@ const viewOf = (def: CollectionDef, readOnly: boolean): CalendarView => ({
   mapping: def.mapping,
   ...(def.reminders ? { reminders: def.reminders } : {}),
   ...(def.group ? { group: def.group } : {}),
+  ...(def.path ? { path: def.path } : {}),
   ...(def.split ? { split: def.split } : {}),
 });
 

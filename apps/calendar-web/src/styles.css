@@ -655,8 +655,9 @@ select,
   font-size: 11px;
   white-space: nowrap;
 }
-.cal-row.member {
-  padding-left: 14px;
+.cal-row,
+.cal-group-row {
+  padding-left: calc(var(--depth, 0) * 14px);
 }
 /* The calendars a split makes, each with its colour, in the definition's properties. */
 .schema-members {
