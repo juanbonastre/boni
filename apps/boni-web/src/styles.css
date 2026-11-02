@@ -2544,6 +2544,43 @@ html.widget-page body {
   border-left: 2px solid var(--c4);
   padding-left: 8px;
 }
+/* A list's sections (its `group` field): a small upper-case label with the count, then its lines. */
+.reply-section + .reply-section {
+  margin-top: 8px;
+}
+.reply-group {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.reply-sep {
+  color: var(--muted);
+}
+/* A line that points to a record opens it: text that reads as text, underlined under the pointer. */
+.reply-open {
+  all: unset;
+  cursor: pointer;
+}
+.reply-open:hover,
+.reply-open:focus-visible {
+  text-decoration: underline;
+}
+/* A record in the side panel (a mail from the conversation), with «Agrandar» for its page. */
+.row-panel {
+  padding: 0 14px 14px;
+  overflow: auto;
+}
+.row-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.row-panel-actions .btn svg {
+  margin-right: 4px;
+  vertical-align: -2px;
+}
 .val-ext {
   border-left: 2px solid var(--c4);
   padding-left: 4px;

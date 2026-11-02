@@ -411,11 +411,30 @@ describe("readers and functions", () => {
     expect(checkReaderOutput("extract_tasks", { tasks: [task] })).not.toBeNull();
     expect(checkReaderOutput("extract_tasks", { tasks: [{ ...task, due: "mañana" }] })).toBeNull();
     // Readers over a list: one line or one choice per text, in order; the counts are the code's.
-    expect(checkReaderOutput("summarize_each", { lines: ["a", "b"] }, [], 2)).not.toBeNull();
-    expect(checkReaderOutput("summarize_each", { lines: ["a"] }, [], 2)).toBeNull();
+    const lines = (ls: string[]) => ({ items: ls.map((line) => ({ line })) });
+    expect(checkReaderOutput("summarize_each", lines(["a", "b"]), [], 2)).toEqual(
+      lines(["a", "b"]),
+    );
+    expect(checkReaderOutput("summarize_each", lines(["a"]), [], 2)).toBeNull();
     expect(
-      checkReaderOutput("summarize_each", { lines: ["a", "https://x.example"] }, [], 2),
+      checkReaderOutput("summarize_each", lines(["a", "https://x.example"]), [], 2),
     ).toBeNull();
+    // With options, each item has its kind (one of them), and the counts are the code's.
+    const kinds = {
+      items: [
+        { line: "a", kind: "y" },
+        { line: "b", kind: "x" },
+      ],
+    };
+    expect(checkReaderOutput("summarize_each", kinds, ["x", "y"], 2)).toEqual({
+      ...kinds,
+      counts: [
+        { option: "x", n: 1 },
+        { option: "y", n: 1 },
+      ],
+    });
+    expect(checkReaderOutput("summarize_each", lines(["a", "b"]), ["x", "y"], 2)).toBeNull();
+    expect(checkReaderOutput("summarize_each", kinds, [], 2)).toBeNull();
     expect(checkReaderOutput("label_each", { choices: ["b", "a", "b"] }, ["a", "b"], 3)).toEqual({
       choices: ["b", "a", "b"],
       counts: [

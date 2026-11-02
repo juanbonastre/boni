@@ -92,6 +92,12 @@ describe("a mail as text", () => {
     expect(m.to.map((a) => a.address)).toEqual(["ana@example.com", "luis@example.com"]);
     expect(m.to[0]?.name).toBe("Ruiz, Ana");
     expect(m.subject).toBe("¿Puedes enviarme el informe?");
+    // A subject with HTML entities (some senders' bug) reads as its characters.
+    expect(
+      parseMessage(
+        Buffer.from("Subject: V Concurso &#8220;Tu tesis&#8221; &#8211; ejemplo\r\n\r\nhola"),
+      ).subject,
+    ).toBe("V Concurso “Tu tesis” – ejemplo");
     expect(m.date).toBe("2026-10-19T07:30:00.000Z");
     expect(m.messageId).toBe("abc.123@example.com");
     expect(m.text).toBe("Hola, ¿me envías el informe antes del viernes? Gracias.");

@@ -76,13 +76,14 @@ const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   read_message: ["modules", "user_in", "known", "guide"],
   review_reading: ["options"],
   fill: ["fields"],
-  summarize_each: [],
+  summarize_each: ["options", "question"],
   label_each: ["options", "question"],
 };
 const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> = {
   text: ["template", "a", "b", "c", "d"],
   number: ["value", "unit", "caption"],
-  list: ["items", "fields", "caption"],
+  // `group`: a field of the items; the list shows one section per value, in the items' order (Juan, 2026-11-02).
+  list: ["items", "fields", "caption", "group"],
   table: ["rows", "fields", "caption"],
   // Bars (or a line) of numbers the tools gave, one per label: `kind` "bar" or "line".
   chart: ["labels", "values", "kind", "unit", "caption"],

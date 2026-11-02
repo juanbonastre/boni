@@ -33,6 +33,7 @@ import { MobileHome } from "./components/MobileHome.tsx";
 import { MobilePages } from "./components/MobilePages.tsx";
 import { BottomSheet, LargeTitle, type Menu } from "./components/MobileParts.tsx";
 import { QuickFind } from "./components/QuickFind.tsx";
+import { RowPanel } from "./components/RowPanel.tsx";
 import { RowsPanel } from "./components/RowsPanel.tsx";
 import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
@@ -522,6 +523,11 @@ function Sheet() {
   const t = useStore((s) => s.t);
   const panel = useStore((s) => s.panel);
   const screens = useStore((s) => s.screens);
+  const rowTypeName = useStore((s) =>
+    s.panel?.kind === "row"
+      ? (s.dataTypes?.find((x) => x.id === (s.panel as { type: string }).type)?.name ?? "")
+      : "",
+  );
   const shortcuts = useStore((s) => s.shortcuts);
   if (!panel) return null;
   let title = "";
@@ -550,6 +556,9 @@ function Sheet() {
   } else if (panel.kind === "rows") {
     title = t("rows.title");
     body = <RowsPanel key={panel.id} id={panel.id} drill={panel.drill} label={panel.label} />;
+  } else if (panel.kind === "row") {
+    title = rowTypeName;
+    body = <RowPanel key={panel.id} type={panel.type} id={panel.id} />;
   } else {
     title = panel.isNew ? t("charts.newTitle") : t("charts.editTitle");
     body = <ChartEditorSheet key={panel.spec.id || "new"} spec={panel.spec} isNew={panel.isNew} />;

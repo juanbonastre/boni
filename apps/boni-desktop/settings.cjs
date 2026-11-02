@@ -50,7 +50,11 @@ const DEFAULTS = {
   backupBytes: 0,
   backupError: "",
   backupFailedAt: 0,
+  // The windows' zoom (Ctrl+= / Ctrl+- / Ctrl+0, or Ajustes › Apariencia): 1 is the page's own size.
+  zoom: 1,
 };
+const ZOOM_MIN = 0.7;
+const ZOOM_MAX = 2;
 
 function cleanPlacement(p) {
   if (!p || typeof p !== "object") return null;
@@ -103,6 +107,10 @@ function loadSettings(file) {
     backupBytes: Number.isFinite(s.backupBytes) ? s.backupBytes : 0,
     backupError: typeof s.backupError === "string" ? s.backupError.slice(0, 40) : "",
     backupFailedAt: Number.isFinite(s.backupFailedAt) ? s.backupFailedAt : 0,
+    zoom:
+      typeof s.zoom === "number" && s.zoom >= ZOOM_MIN && s.zoom <= ZOOM_MAX
+        ? Math.round(s.zoom * 10) / 10
+        : 1,
     // Kept as they were (the first client's widget mode); unused here.
     ...(typeof raw.widgetMode === "string" ? { widgetMode: raw.widgetMode } : {}),
   };
@@ -146,6 +154,7 @@ function clientView(settings, extra) {
     language: settings.language,
     showWidgets: settings.showWidgets,
     hiddenWidgets: settings.hiddenWidgets,
+    zoom: settings.zoom,
     backup: {
       on: settings.backupOn,
       dir: settings.backupDir,
@@ -176,6 +185,8 @@ function applyPatch(settings, patch) {
     const others = settings.hiddenWidgets.filter((id) => id !== h.id);
     next.hiddenWidgets = h.hidden ? [...others, h.id] : others;
   }
+  if (typeof patch.zoom === "number" && Number.isFinite(patch.zoom))
+    next.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(patch.zoom * 10) / 10));
   if (typeof patch.backupOn === "boolean") next.backupOn = patch.backupOn;
   if (typeof patch.backupDir === "string") {
     const d = B.cleanDir(patch.backupDir);

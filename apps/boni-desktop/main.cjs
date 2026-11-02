@@ -179,6 +179,7 @@ function openMain(screenId) {
     if (state.maximized) mainWindow.maximize();
     mainWindow.loadFile(UI);
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    mainWindow.webContents.on("did-finish-load", applyZoom);
     const win = mainWindow;
     win.on("close", () => saveWindowState(win));
     mainWindow.once("ready-to-show", () => mainWindow?.show());
@@ -245,6 +246,7 @@ function makePeek() {
     },
   });
   peekWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  peekWindow.webContents.on("did-finish-load", applyZoom);
   peekWindow.on("closed", () => {
     peekWindow = null;
     peekReady = null;
@@ -516,11 +518,24 @@ async function runBackup(now = false) {
   }
 }
 
+/**
+ * The kept zoom on the main and peek windows (the widgets keep their size: they are made to fit). The page changes
+ * it (Ajustes › Apariencia, Ctrl+= / Ctrl+- / Ctrl+0) through the settings.
+ */
+function applyZoom() {
+  for (const w of [mainWindow, peekWindow])
+    if (w && !w.isDestroyed()) w.webContents.setZoomFactor(settings.zoom || 1);
+}
+
 function setSettings(patch) {
   const before = settings;
   settings = S.applyPatch(settings, patch);
   if (settings.serverUrl !== before.serverUrl) settings = { ...settings, token: "", user: "" };
   save();
+  if (settings.zoom !== before.zoom) {
+    applyZoom();
+    broadcast({ type: "settings", settings: clientSettings() });
+  }
   if (settings.serverUrl !== before.serverUrl) live.restart();
   if (typeof patch?.autostart === "boolean" && packaged()) {
     try {

@@ -132,7 +132,9 @@ export type Panel =
   /** A block of the open page: a control for each of its settings in the block catalogue. */
   | { kind: "block"; id: string }
   /** The rows a data block counts (a click on it: «Lo que cuenta»), or those of one of its bars or points. */
-  | { kind: "rows"; id: string; drill?: string; label?: string };
+  | { kind: "rows"; id: string; drill?: string; label?: string }
+  /** A record opened from the conversation without leaving it (a mail, as a mail client shows it). */
+  | { kind: "row"; type: string; id: string };
 /**
  * The phone's places (Juan, 2026-10-31): Inicio (today), Páginas (his data), Boni (the conversation) and the Bandeja.
  * Capturing is the + button's, not a tab; charts are on Inicio and in the pages.
@@ -461,6 +463,7 @@ export async function init(kind: "main" | "widget" | "peek", h: Host = defaultHo
   const role = kind === "peek" ? "widget" : kind;
   hostRef = h;
   applySettings(await h.getSettings());
+  if (kind !== "widget") window.addEventListener("keydown", zoomKeys);
   const [widgets, specs, catalog, home, screens, shortcuts, pages, last] = await Promise.all([
     readJson<{ widgets: Widget[] }>(h.store, FILES.widgets),
     readJson<{ charts: unknown[] }>(h.store, FILES.charts),
@@ -658,8 +661,40 @@ export const showTab = (tab: Tab) => set({ tab, view: { kind: "home" } });
 export const openEditor = (spec: ChartSpec, isNew = false) =>
   set({ panel: { kind: "edit", spec: normalize(spec), isNew }, ...FRESH_PANEL });
 export const closePanel = () => set({ panel: null, chartForPage: null, ...FRESH_PANEL });
+/**
+ * Ctrl+= or Ctrl++ (bigger), Ctrl+- (smaller) and Ctrl+0 (the page's own size): the size of everything, where the
+ * host keeps a zoom (the desktop app; Juan, 2026-11-02). Elsewhere the browser's own zoom does it.
+ */
+function zoomKeys(e: KeyboardEvent) {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const zoom = get().settings.zoom;
+  if (typeof zoom !== "number") return;
+  const next =
+    e.key === "+" || e.key === "="
+      ? zoom + 0.1
+      : e.key === "-"
+        ? zoom - 0.1
+        : e.key === "0"
+          ? 1
+          : null;
+  if (next === null) return;
+  e.preventDefault();
+  void saveSettings({ zoom: next });
+}
+
 /** A block's settings in the side panel («Modificar…»). */
 export const openBlockPanel = (id: string) => set({ panel: { kind: "block", id }, ...FRESH_PANEL });
+/**
+ * A record a reply points to (its type by name or key, its id; Juan, 2026-11-02): a mail opens in the side panel as
+ * a mail client shows it, with «Agrandar» for its page; anything else opens as its page.
+ */
+export async function openRecord(typeName: string, id: string) {
+  if (!get().dataTypes) await loadDataTypes();
+  const type = get().dataTypes?.find((x) => x.name === typeName || x.id === typeName);
+  if (!type) return;
+  if (type.view === "mail") set({ panel: { kind: "row", type: type.id, id }, ...FRESH_PANEL });
+  else await openRow(type.id, id);
+}
 /** What a data block counts, in the side panel (a click on it; `drill` a bar's or a point's key). */
 export const openRowsPanel = (id: string, drill?: string, label?: string) =>
   set({
