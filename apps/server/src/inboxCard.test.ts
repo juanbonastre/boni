@@ -1,8 +1,8 @@
 import { label } from "@boni/entities";
-import { openUserStore, type UserStore } from "@boni/store";
+import { openUserStore, type ProposalRow, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
 import { ghostRows, listRows } from "./data.ts";
-import { inboxCard } from "./inboxCard.ts";
+import { freeSlot, inboxCard, judgeTime, TIME_AREA, timeOnAccept } from "./inboxCard.ts";
 import { seed } from "./seed.test-util.ts";
 
 /** An invented calendar (never real notes) and mail, as the inbox meets them. */
@@ -35,6 +35,31 @@ function env(): UserStore {
   });
   cleanups.push(() => store.close());
   return store;
+}
+
+/** Another proposal from the same mail (its collection already made), in a run of its own. */
+function anotherProposal(store: UserStore, id: string, run: string, sender: string) {
+  const l = label("user", "personal", []);
+  const mail = store.list("t_correo")[0]?.entity.id as string;
+  store.journal.startRun({ id: run, turn: null, origin: "background", device: null, started: 1 });
+  store.journal.setPlan(run, { steps: [{ tool: "entities.get", args: { id: { lit: mail } } }] });
+  store.journal.addProposal({
+    id,
+    run,
+    tool: "entities.create",
+    args: { values: {}, origins: [], why: { t: "v", value: "x", label: l, derived: false } },
+    view: {
+      tool: "entities.create",
+      title: "Crear",
+      rows: [
+        { arg: "type", role: "type", value: "docencia", detail: "Docencia" },
+        { arg: "values.title", value: `Otra tarea ${id}` },
+        { arg: "values.date", value: "2026-10-29" },
+      ],
+    },
+    sources: [`mail:${sender}`],
+    created: 3,
+  });
 }
 
 /** A mail and the proposal its background run made, as mail.ts leaves them. */
@@ -210,5 +235,82 @@ describe("the inbox's card for a proposal", () => {
     expect(store.list("t_docencia")).toHaveLength(2); // the two classes, not the proposal
     store.journal.setProposal("p1", "rejected", 5);
     expect(ghostRows(store, "t_docencia")).toEqual([]);
+  });
+
+  it("a task with a day and no time gets the first free hour of its day, as a decision: asked, then alone when earned", () => {
+    const store = env();
+    store.applySchema(
+      {
+        op: "set_roles",
+        type: "t_docencia",
+        roles: { date: "f_date", time: "f_starttime" },
+      },
+      { actor: "user" },
+    );
+    proposalFromMail(store, "p1", "r1", "coordinacion@example.edu");
+    // The 29th has «Tutoría» at 9:00 (an hour, no end given): the first free hour is 10:00.
+    const card = () => inboxCard(store, store.journal.proposal("p1") as ProposalRow);
+    expect(card().suggestedTime).toEqual({
+      start: "10:00",
+      end: "11:00",
+      startKey: "starttime",
+      endKey: null,
+      outcome: "ask",
+    });
+    expect(card().start).toBeNull();
+    // One decision per proposal, however often the card is drawn; nothing is set alone yet.
+    const mine = () => store.journal.decisionsOf("r1").filter((d) => d.area === TIME_AREA);
+    expect(mine()).toHaveLength(1);
+    expect(mine()[0]).toMatchObject({ cost: "A", p: 0, outcome: "ask", result: null });
+    const p1 = store.journal.proposal("p1") as ProposalRow;
+    expect(timeOnAccept(store, p1, { values: { title: "x" } })).toEqual({ values: { title: "x" } });
+    // Taken, it is right; a second one accepted without it, wrong.
+    judgeTime(store, p1, { starttime: "10:00" }, 5);
+    expect(mine()[0]?.result).toBe("right");
+    anotherProposal(store, "p2", "r2", "coordinacion@example.edu");
+    inboxCard(store, store.journal.proposal("p2") as ProposalRow);
+    judgeTime(store, store.journal.proposal("p2") as ProposalRow, {}, 6);
+    expect(store.journal.decisionsOf("r2").find((d) => d.area === TIME_AREA)?.result).toBe("wrong");
+    // Once his answers earn it (0.9, cautious), the time is set alone: the card says it and it goes with the acceptance.
+    for (let i = 0; i < 60; i++)
+      store.journal.addDecision({
+        id: `t${i}`,
+        run: "r0",
+        area: TIME_AREA,
+        cost: "A",
+        p: 0.5,
+        outcome: "ask",
+        detail: null,
+        at: 10 + i,
+      });
+    for (let i = 0; i < 60; i++) store.journal.setDecisionResult(`t${i}`, "right", 100);
+    anotherProposal(store, "p3", "r3", "coordinacion@example.edu");
+    const alone = inboxCard(store, store.journal.proposal("p3") as ProposalRow);
+    expect(alone.suggestedTime?.outcome).toBe("do");
+    expect([alone.start, alone.end]).toEqual(["10:00", "11:00"]);
+    const p3 = store.journal.proposal("p3") as ProposalRow;
+    expect(timeOnAccept(store, p3, {})).toEqual({ values: { starttime: "10:00" } });
+    // His own time, or none, wins over the one set alone.
+    expect(timeOnAccept(store, p3, { values: { starttime: null } })).toEqual({
+      values: { starttime: null },
+    });
+    judgeTime(store, p3, { starttime: "10:00" }, 200);
+    expect(store.journal.decisionsOf("r3").find((d) => d.area === TIME_AREA)?.result).toBe("right");
+  });
+
+  it("the first free hour: around what the day holds, at a half hour when that is the gap, none when the day is full", () => {
+    expect(freeSlot([])).toEqual({ start: "09:00", end: "10:00" });
+    expect(freeSlot([{ start: "09:00", end: "09:30" }])).toEqual({ start: "09:30", end: "10:30" });
+    expect(
+      freeSlot([
+        { start: "09:00", end: null },
+        { start: "10:00", end: "12:00" },
+      ]),
+    ).toEqual({
+      start: "12:00",
+      end: "13:00",
+    });
+    expect(freeSlot([{ start: null, end: null }])).toEqual({ start: "09:00", end: "10:00" });
+    expect(freeSlot([{ start: "09:00", end: "20:00" }])).toBeNull();
   });
 });

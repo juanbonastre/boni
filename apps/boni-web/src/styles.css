@@ -4464,6 +4464,10 @@ body:has(.toast) .db-selinfo {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* The time Boni suggests for a task, on the card's line: one tap takes it. */
+.inbox-time-ask {
+  margin-left: 6px;
+}
 /* A proposal's properties in its correction form (InboxCards.tsx), folded under «Propiedades». */
 .inbox-props-toggle {
   margin-top: 4px;

@@ -303,9 +303,27 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
   const fmt = useDayFormat();
   const [more, setMore] = useState(c?.mode !== "compact");
   const fix = useCorrection(p);
+  // A time Boni suggests for a task (the first free hour): one tap takes it, and it goes with the acceptance.
+  const ask = c?.suggestedTime?.outcome === "ask" ? c.suggestedTime : null;
+  const [takeTime, setTakeTime] = useState(false);
+  const taken = takeTime && ask ? ask : null;
+  const start = c?.start ?? taken?.start ?? null;
+  const end = c?.end ?? taken?.end ?? null;
   const when = c?.day
-    ? `${fmt.long(c.day)}${c.start ? `, ${c.start}${c.end ? `–${c.end}` : ""}` : ""}`
+    ? `${fmt.long(c.day)}${start ? `, ${start}${end ? `–${end}` : ""}` : ""}`
     : null;
+  const edits = () => {
+    const e = fix.edits();
+    if (!taken) return e;
+    return {
+      ...(e ?? {}),
+      values: {
+        ...(e?.values ?? {}),
+        [taken.startKey]: taken.start,
+        ...(taken.endKey && taken.end ? { [taken.endKey]: taken.end } : {}),
+      },
+    };
+  };
   const body = p.view?.rows.find((r) => r.arg === "values.body" || r.arg.endsWith(".body"));
   const rest: ConfirmView | null = p.view
     ? {
@@ -323,6 +341,15 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
         <p className="inbox-what">
           {where && <span className="inbox-title">{where}</span>}
           {when && <span className="muted"> · {when}</span>}
+          {ask && !takeTime && (
+            <button
+              type="button"
+              className="btn ghost small inbox-time-ask"
+              onClick={() => setTakeTime(true)}
+            >
+              {t("inbox.timeAsk", { start: ask.start })}
+            </button>
+          )}
         </p>
       )}
       {c?.source?.kind === "mail" && <MailSource source={c.source} />}
@@ -409,9 +436,9 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
       <div className="inbox-actions">
         <DecideButtons
           id={p.id}
-          accept={() => void acceptProposal(p.id, fix.edits())}
+          accept={() => void acceptProposal(p.id, edits())}
           {...(c?.canMarkDone
-            ? { done: () => void acceptProposal(p.id, fix.edits(), { done: true }) }
+            ? { done: () => void acceptProposal(p.id, edits(), { done: true }) }
             : {})}
           reject={() => void rejectProposal(p.id)}
         />

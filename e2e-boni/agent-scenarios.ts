@@ -365,6 +365,25 @@ export const CARD_BOOK = {
     context: [],
   },
 };
+/** A task without a time: Boni suggests the first free hour of its day («¿A las 16:00?»), one tap takes it. */
+export const CARD_TIME = {
+  ...CARD_DETAILED,
+  id: "c6",
+  created: 7,
+  card: {
+    ...CARD_DETAILED.card,
+    kind: "task",
+    start: null,
+    end: null,
+    suggestedTime: {
+      start: "16:00",
+      end: "17:00",
+      startKey: "hora",
+      endKey: "hora_fin",
+      outcome: "ask",
+    },
+  },
+};
 /** The same proposal from a mail the fake server keeps (with `mail: true`): «Ver correo» opens it as a mail. */
 export const CARD_MAIL = {
   ...CARD_DETAILED,

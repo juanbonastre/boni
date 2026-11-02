@@ -16,7 +16,7 @@ import {
   type UserIn,
   type Val,
 } from "@boni/agent";
-import { type FieldDef, label, newId, type TypeDef } from "@boni/entities";
+import { type FieldDef, label, newId, rolesOf, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
 import { wrappedKeysIn } from "@boni/identity";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
@@ -145,6 +145,9 @@ export interface Target {
   option: string;
   /** The date field a task's due day goes to (`dueField`; none: the day is left out). */
   date: string | null;
+  /** The fields playing `time` and `endTime` (docs/clases.md §6), where the mail's times go; none: left out. */
+  time?: string | null;
+  endTime?: string | null;
   /** Its fields with a closed set of values, filled per item by the reader `fill` (docs/extensiones.md 9). */
   fill?: FillField[];
   /** The name the code binds `fill` to in the plan (`$fields_<n>`). */
@@ -421,6 +424,8 @@ export function mailPlan(
             { lit: "title" },
             { ref: "$item.title" },
             ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
+            ...(t.time ? [{ lit: t.time }, { ref: "$item.start" }] : []),
+            ...(t.endTime ? [{ lit: t.endTime }, { ref: "$item.end" }] : []),
             ...(filled
               ? [
                   { lit: "body" },
@@ -1224,6 +1229,9 @@ export class Mails {
       const option = titles.length ? `${t.name} (p. ej.: ${titles.join("; ")})` : t.name;
       const fillRefs: From[] = [];
       const fill = levels[id] === "opaque" ? null : fillFields(ro, t, date?.key ?? null, fillRefs);
+      const roles = rolesOf(ro.schema(), id);
+      const keyOf = (fid: string | undefined) =>
+        fid ? (t.fields.find((f) => f.id === fid)?.key ?? null) : null;
       return [
         {
           id: t.id,
@@ -1231,6 +1239,8 @@ export class Mails {
           name: t.name,
           option: option.slice(0, 200),
           date: date?.key ?? null,
+          time: keyOf(roles.time),
+          endTime: keyOf(roles.endTime),
           optionRefs: examples.map((e) => ({
             e: e.entity.id,
             v: e.entity.version,

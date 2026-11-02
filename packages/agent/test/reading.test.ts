@@ -39,9 +39,39 @@ describe("reading a message by modules (docs/nucleo.md 7.4b)", () => {
     );
     // The quote stays with each item: the proposal shows it as its reason (`why`).
     expect(r?.tasks).toEqual([
-      { title: "Enviar el informe a Lucía", due: "2026-10-23", quote: "…" },
+      { title: "Enviar el informe a Lucía", due: "2026-10-23", start: null, end: null, quote: "…" },
     ]);
-    expect(r?.events).toEqual([{ title: "Reunión con Lucía", due: "2026-10-27", quote: "…" }]);
+    expect(r?.events).toEqual([
+      { title: "Reunión con Lucía", due: "2026-10-27", start: null, end: null, quote: "…" },
+    ]);
+    // The times the mail gives (Juan, 2026-11-02), checked by the code: HH:MM or null; anything else is no answer.
+    const timed = checkReadMessage(
+      {
+        items: [
+          {
+            ...item("recipient", "event", "Reunión con Lucía", "2026-10-27"),
+            start: "10:30",
+            end: "11:00",
+          },
+          {
+            ...item("recipient", "task", "Enviar el informe", "2026-10-23"),
+            start: null,
+            end: null,
+          },
+        ],
+      },
+      MODULES,
+    );
+    expect(timed?.events?.[0]).toMatchObject({ start: "10:30", end: "11:00" });
+    expect(timed?.tasks?.[0]).toMatchObject({ start: null, end: null });
+    expect(
+      checkReadMessage(
+        {
+          items: [{ ...item("recipient", "event", "Reunión", "2026-10-27"), start: "a las diez" }],
+        },
+        MODULES,
+      ),
+    ).toBeNull();
     expect(r?.all.map((i) => i.module)).toEqual(["tasks", "events"]);
   });
 

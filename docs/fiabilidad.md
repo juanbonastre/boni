@@ -172,6 +172,14 @@ modelo queda apuntada tal cual, y la calibrada, al lado. La evaluación del deci
 guarda con el resultado (`calibration` en `EvalResult`); «Modelos» la enseña desde F3.
 | F3 | Ajustes: el acierto y el interruptor «Solo» por ámbito; la propuesta de encenderlo; el aviso con Deshacer | Código directo (I-13) |
 
+**Hecho, la hora de una tarea (2026-11-02, tarea 18):** un ámbito más del procedimiento, «Horas» (`time`, clase A,
+dentro de la propuesta): a una tarea del correo con día y sin hora, el código le busca la primera hora libre de ese
+día en el calendario (de 9:00 a 20:00, una hora) y la tarjeta la pregunta («¿A las 16:00?», un toque la toma); la
+`p` sale de cuántas de las horas propuestas tomó Juan (Wilson, calibrada por nivel) y desde 0,9 la hora se pone sola
+(la tarjeta ya la enseña; al aceptar va con la propuesta salvo que Juan ponga otra o ninguna). Se juzga al aceptar:
+tomada o dejada, acierto; quitada o ignorada, fallo. Las horas que el correo dice (eventos casi siempre) las saca el
+lector y van a los campos con papel `hora` y `hora de fin` sin decisión (`apps/server/src/inboxCard.ts`).
+
 **Hecho, F3 (2026-11-02):** Ajustes tiene «Decisiones»: cada ámbito con su acierto y, el que lo tiene, su interruptor
 «Solo» (`GET/PUT /api/agent/decisions`, `apps/server/src/accuracy.ts`). La pseudoaceptación es ya el ámbito
 «Aceptar propuestas» (`mail.accept`, clase B, `apps/server/src/autoAccept.ts`): su regla de hoy son sus umbrales

@@ -42,7 +42,7 @@ cualquier cosa que nazca de él se propone, nunca se escribe sola (P4, P7).
 |---|---|---|
 | **El código** | El correo | Hace el plan (no hay planificador): leer, elegir colección y proponer. Calcula dónde está Juan entre los destinatarios (`user_in`) y lo que sigue pendiente del mismo remitente (`known`) |
 | **El lector `read_message`** | Un prompt base largo y fijo (`packages/agent/src/reading.ts`), los módulos (tareas y eventos; una extensión puede añadir los suyos), la **guía de Juan** y el correo entre marcas | Lista cada cosa que menciona el correo, en orden: la cita, quién tiene que actuar, la clase, el título desde el lado de Juan y el día |
-| **El código, otra vez** | La lista | Solo pasa lo que tiene que hacer Juan y es de un módulo activo. Aplica las reglas de la guía (no leer a un remitente, llevar sus cosas a una colección): el modelo no puede saltárselas |
+| **El código, otra vez** | La lista (con la hora de cada cosa cuando el correo la dice: a los campos con papel `hora` y `hora de fin`; a una tarea sin hora, la primera libre del día como pregunta en la tarjeta, `docs/fiabilidad.md`) | Solo pasa lo que tiene que hacer Juan y es de un módulo activo. Aplica las reglas de la guía (no leer a un remitente, llevar sus cosas a una colección): el modelo no puede saltárselas |
 | **El decisor (Jev)** | Las colecciones posibles | Elige dónde va cada cosa; si duda, se lo pregunta a Juan en el panel de peticiones |
 | **Juan** | La propuesta en la Bandeja | Acepta, corrige o rechaza |
 | **La revisora** | Las decisiones de Juan | Propone reglas (este remitente, siempre no) y ejemplos para la guía. Juan los acepta o no en Ajustes → Correo; nada cambia solo |
