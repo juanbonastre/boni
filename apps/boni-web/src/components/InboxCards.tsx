@@ -271,7 +271,6 @@ function useCorrection(p: Proposal) {
         </div>
       )}
       <div className="inbox-correct-foot">
-        <p className="muted small">{t("inbox.correctHelp")}</p>
         <button type="button" className="btn ghost small" onClick={() => setEdit(null)}>
           {t("inbox.cancelCorrect")}
         </button>

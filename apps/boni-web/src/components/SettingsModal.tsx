@@ -1459,23 +1459,18 @@ function Decisions() {
     return s === key ? area : s;
   };
   const day = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", { dateStyle: "medium" });
+  // Its state in a word or a number (Juan, 2026-11-02: no explanations in the app): what Boni turned off and when,
+  // or how far from earning «Solo»; on, or earned, the switch says it.
   const state = (a: AreaAccuracy) => {
-    if (!a.switchable) return t("decisions.inside");
-    if (a.auto) return t("decisions.on");
+    if (!a.switchable || a.auto || a.earned) return "";
     if (a.autoBy === "boni" && a.autoAt)
       return t("decisions.backedOff", { when: day.format(new Date(a.autoAt)) });
-    if (a.earned) return t("decisions.earned");
     return a.earnsWith
-      ? t("decisions.notEarned", {
-          n: a.earnsWith.decisions,
-          pct: Math.round(100 * a.earnsWith.accuracy),
-          judged: a.judged,
-        })
-      : t("decisions.notEarnedYet");
+      ? t("decisions.notEarned", { n: a.earnsWith.decisions, judged: a.judged })
+      : "";
   };
   return (
     <>
-      <p className="muted small">{t("decisions.help")}</p>
       {areas.length === 0 && <p className="muted small">{t("decisions.none")}</p>}
       {areas.map((a) => (
         <div className="setting" key={a.area}>
@@ -1490,7 +1485,7 @@ function Decisions() {
                   })
                 : t("accuracy.judged.none")}
             </span>
-            <span className="muted small">{state(a)}</span>
+            {state(a) && <span className="muted small">{state(a)}</span>}
           </div>
           {a.switchable && (
             <div className="setting-control with-gap">

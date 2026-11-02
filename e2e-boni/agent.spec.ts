@@ -600,13 +600,11 @@ test("«Decisiones» in Settings: each area's accuracy, and «Solo» only once e
   // An area decided inside a proposal Juan decides: its accuracy, no switch.
   await expect(rows.nth(0)).toContainText("Colecciones");
   await expect(rows.nth(0)).toContainText("acierto 19 de 20 (95 %)");
-  await expect(rows.nth(0)).toContainText("Dentro de una propuesta que decides tú.");
   await expect(rows.nth(0).getByRole("checkbox")).toHaveCount(0);
   await expect(rows.nth(1)).toContainText("sin juzgar aún");
   // The area with a switch, earned: Boni says so, and the switch can be turned on.
   await expect(rows.nth(2)).toContainText("Aceptar propuestas");
   await expect(rows.nth(2)).toContainText("acierto 20 de 20 (100 %)");
-  await expect(rows.nth(2)).toContainText("puedes encender «Solo»");
   const solo = modal.getByRole("checkbox", { name: "Solo · Aceptar propuestas" });
   await expect(solo).toBeEnabled();
   await expect(solo).not.toBeChecked();
@@ -614,10 +612,8 @@ test("«Decisiones» in Settings: each area's accuracy, and «Solo» only once e
   await solo.check();
   await expect(page.locator(".toast")).toContainText("No se pudo cambiar");
   await expect(solo).not.toBeChecked();
-  await expect(rows.nth(2)).toContainText("puedes encender «Solo»");
   await solo.check();
   await expect(solo).toBeChecked();
-  await expect(rows.nth(2)).toContainText("Encendido: Boni hace sola lo de fiabilidad alta");
   expect(await requests(page, "PUT api/agent/decisions")).toEqual([
     'PUT api/agent/decisions/mail.accept {"auto":true}',
     'PUT api/agent/decisions/mail.accept {"auto":true}',
@@ -980,7 +976,6 @@ test("«Ver correo» opens the mail as a mail client shows it, read only (D-22)"
   // Outside text stays text: a tag in the body is shown as written, never painted.
   await expect(mail.locator(".mail-body")).toContainText("<b>no es html</b>");
   await expect(mail.locator(".mail-body b")).toHaveCount(0);
-  await expect(mail).toContainText("Solo lectura: es lo que llegó.");
   // Nothing on it edits: no title box, no properties, no text editor.
   await expect(page.locator(".row-doc .doc-title")).toHaveCount(0);
   await expect(page.locator(".row-prop")).toHaveCount(0);

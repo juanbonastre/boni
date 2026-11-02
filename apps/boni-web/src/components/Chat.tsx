@@ -1078,7 +1078,6 @@ function Accuracy({ t, areas, lang }: { t: T; areas: AreaAccuracy[]; lang: strin
   return (
     <section className="log-accuracy" aria-label={t("accuracy.title")}>
       <h3>{t("accuracy.title")}</h3>
-      <p className="muted small">{t("accuracy.help")}</p>
       <ul>
         {areas.map((a) => (
           <li key={a.area} className="log-area">
