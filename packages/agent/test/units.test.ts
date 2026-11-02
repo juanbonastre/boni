@@ -410,6 +410,21 @@ describe("readers and functions", () => {
     const task = { title: "Pagar", due: "2026-10-21", sender: null, message_id: null };
     expect(checkReaderOutput("extract_tasks", { tasks: [task] })).not.toBeNull();
     expect(checkReaderOutput("extract_tasks", { tasks: [{ ...task, due: "mañana" }] })).toBeNull();
+    // Readers over a list: one line or one choice per text, in order; the counts are the code's.
+    expect(checkReaderOutput("summarize_each", { lines: ["a", "b"] }, [], 2)).not.toBeNull();
+    expect(checkReaderOutput("summarize_each", { lines: ["a"] }, [], 2)).toBeNull();
+    expect(
+      checkReaderOutput("summarize_each", { lines: ["a", "https://x.example"] }, [], 2),
+    ).toBeNull();
+    expect(checkReaderOutput("label_each", { choices: ["b", "a", "b"] }, ["a", "b"], 3)).toEqual({
+      choices: ["b", "a", "b"],
+      counts: [
+        { option: "a", n: 1 },
+        { option: "b", n: 2 },
+      ],
+    });
+    expect(checkReaderOutput("label_each", { choices: ["c"] }, ["a", "b"], 1)).toBeNull();
+    expect(checkReaderOutput("label_each", { choices: ["a"] }, ["a", "b"], 2)).toBeNull();
   });
   it("functions keep the lowest label and mark what they make as derived", () => {
     const r = callFn("concat", [leaf("ana", user), leaf("@x.example", ext)], "2026-10-20");

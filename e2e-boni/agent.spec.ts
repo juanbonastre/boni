@@ -67,6 +67,9 @@ test("a reply is painted by the code, and what came from outside is only text", 
   // The e-mail's HTML is shown as the text it is: no script ran, no image, no link, nothing loaded.
   await expect(answer.locator(".val-ext")).toContainText("<script>window.__pwned = 1</script>");
   await expect(answer.locator(".val-ext")).toContainText("![x](https://evil.example/p.png?q=1)");
+  // A list of outside values carries the mark once, on the block (Juan, 2026-11-02).
+  await expect(answer.locator(".reply-list.reply-ext")).toContainText("Una tienda anuncia rebajas");
+  await expect(answer.locator(".reply-list .val-ext")).toHaveCount(0);
   expect(
     await page.evaluate(() => (window as unknown as { __pwned?: number }).__pwned),
   ).toBeUndefined();

@@ -17,6 +17,9 @@ export const READERS = [
   "read_message",
   "review_reading",
   "fill",
+  // Over a list of texts in ONE call (Juan, 2026-11-02: a reader per mail ran out of calls, P12).
+  "summarize_each",
+  "label_each",
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
@@ -73,6 +76,8 @@ const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   read_message: ["modules", "user_in", "known", "guide"],
   review_reading: ["options"],
   fill: ["fields"],
+  summarize_each: [],
+  label_each: ["options", "question"],
 };
 const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> = {
   text: ["template", "a", "b", "c", "d"],
