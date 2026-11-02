@@ -335,11 +335,11 @@ describe("the mailbox", () => {
     );
     expect(notas?.labels.f_adjuntos_texto?.integrity).toBe("external");
     const again = store.list(def.id).find((e) => e.entity.values.f_asunto === "Notas otra vez");
-    expect(
-      (again?.entity.values.f_archivos as string[]).map(
-        (id) => store.get(id)?.entity.values.f_title,
-      ),
-    ).toEqual(["notas (2).csv", "imagen-2 (2).png"]);
+    const againIds = (again?.entity.values.f_archivos ?? []) as string[];
+    expect(againIds.map((id) => store.get(id)?.entity.values.f_title)).toEqual([
+      "notas (2).csv",
+      "imagen-2 (2).png",
+    ]);
     expect(def.fields.find((f) => f.id === "f_adjuntos_texto")?.hidden).toBe(true);
   });
 });
