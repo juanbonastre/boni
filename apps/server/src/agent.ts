@@ -696,7 +696,15 @@ async function answerAgent(
   }
 }
 
-/** What Settings «Decisiones» shows: every area with its accuracy and «Solo», and whether Boni learns at all. */
+/**
+ * What Settings «Decisiones» shows: every area with its accuracy and «Solo», and whether Boni learns at all. It
+ * judges and replays Juan's decisions each time (accuracy.ts); slow on his data, it says so in the log (2 ms with
+ * 400 decisions here; Juan saw the pane wait, 2026-11-03).
+ */
 function decisionsView(store: UserStore) {
-  return { areas: areasView(store, Date.now()), learning: learningOn(store) };
+  const t0 = performance.now();
+  const view = { areas: areasView(store, Date.now()), learning: learningOn(store) };
+  const ms = Math.round(performance.now() - t0);
+  if (ms > 500) console.warn(`decisions view took ${ms} ms`);
+  return view;
 }
