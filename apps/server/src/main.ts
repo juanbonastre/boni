@@ -62,8 +62,8 @@ const push = hosts.length
 const tz = process.env.BONI_TZ ?? "Europe/Madrid";
 const apiKey = process.env.ANTHROPIC_API_KEY ?? "";
 const routerKey = process.env.OPENROUTER_API_KEY ?? "";
-const router = (model: string) =>
-  new OpenAIProvider({ apiKey: routerKey, model, baseURL: "https://openrouter.ai/api/v1" });
+const router = (model: string, o: { reasoning?: "off" } = {}) =>
+  new OpenAIProvider({ apiKey: routerKey, model, baseURL: "https://openrouter.ai/api/v1", ...o });
 const deciderModel = process.env.BONI_DECIDER_MODEL;
 const typesafeKey = process.env.TYPESAFE_API_KEY ?? "";
 const decider =
@@ -93,7 +93,9 @@ const agent = new AgentHost({
     : routerKey
       ? {
           planner: router(process.env.BONI_PLANNER_MODEL ?? "anthropic/claude-haiku-5.5"),
-          reader: router(process.env.BONI_READER_MODEL ?? "deepseek/deepseek-v4.1-flash"),
+          reader: router(process.env.BONI_READER_MODEL ?? "deepseek/deepseek-v4.1-flash", {
+            reasoning: "off",
+          }),
           ...(decider ? { decider } : {}),
         }
       : null,

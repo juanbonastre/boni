@@ -113,6 +113,55 @@ describe("the OpenAI-compatible provider", () => {
     expect(() => new OpenAIProvider({ model: "m", baseURL: OR })).toThrow(ProviderError);
   });
 
+  it("a reader asked not to reason (task 29); without it for a model no provider takes it; run out, it says how far", async () => {
+    let answers: (() => Response)[] = [
+      () => ok('{"a":"x"}'),
+      () =>
+        new Response('{"error":{"message":"No endpoints found that support all parameters"}}', {
+          status: 404,
+        }),
+      () => ok('{"a":"y"}'),
+      () => ok('{"a":"z"}'),
+    ];
+    const s = stub(() => (answers.shift() as () => Response)());
+    const off = new OpenAIProvider({
+      apiKey: KEY,
+      model: "m",
+      baseURL: OR,
+      reasoning: "off",
+      fetch: s.f,
+    });
+    await off.complete(reader);
+    expect(s.calls[0]?.body.reasoning).toEqual({ enabled: false });
+    expect(s.calls[0]?.body.provider).toEqual({ require_parameters: true });
+    // A model none of whose providers take it: asked again without it, and from then on.
+    expect((await off.complete(reader)).json).toEqual({ a: "y" });
+    expect(s.calls[1]?.body.reasoning).toEqual({ enabled: false });
+    expect(s.calls[2]?.body.reasoning).toBeUndefined();
+    await off.complete(reader);
+    expect(s.calls[3]?.body.reasoning).toBeUndefined();
+    // Not asked: nothing sent (the planner may reason).
+    answers = [() => ok('{"a":"x"}')];
+    await new OpenAIProvider({ apiKey: KEY, model: "m", baseURL: OR, fetch: s.f }).complete(reader);
+    expect(s.calls[4]?.body.reasoning).toBeUndefined();
+    // Out of room: how many tokens it wrote and how many were reasoning, numbers only.
+    answers = [
+      () =>
+        ok("", {
+          choices: [{ message: { content: "" }, finish_reason: "length" }],
+          usage: {
+            prompt_tokens: 10,
+            completion_tokens: 4000,
+            completion_tokens_details: { reasoning_tokens: 3900 },
+          },
+        }),
+    ];
+    const e = await off.complete(reader).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(ProviderError);
+    expect((e as ProviderError).code).toBe("max-tokens");
+    expect((e as ProviderError).tokens).toEqual({ output: 4000, reasoning: 3900 });
+  });
+
   it("errors are fixed codes; the API's message only in detail", async () => {
     const fails = async (answer: () => Response | Error) => {
       const p = new OpenAIProvider({ apiKey: KEY, model: "m", baseURL: OR, fetch: stub(answer).f });

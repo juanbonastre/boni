@@ -486,7 +486,14 @@ function provider(
       ...(v.role === "planner" ? { effort: "medium" as const, fallbacks: true } : {}),
     });
   if (v.connection === "openrouter")
-    return new OpenAIProvider({ apiKey: key, model: v.model, baseURL: OPENROUTER, zdr: v.zdr });
+    return new OpenAIProvider({
+      apiKey: key,
+      model: v.model,
+      baseURL: OPENROUTER,
+      zdr: v.zdr,
+      // A reader reads and fills a schema: no reasoning first (task 29: it spent the whole answer on it).
+      ...(v.role === "reader" ? { reasoning: "off" as const } : {}),
+    });
   throw new Error(`${v.connection} has no ${v.role}`);
 }
 
