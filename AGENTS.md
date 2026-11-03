@@ -42,10 +42,11 @@ with the same click fixed twice, was «todo un poco liado»):
 2. A branch from `main`; nothing is pushed to `main` directly. One PR per task, with its tests, docs and principle.
 3. `make check && git commit && git push` (a failure stops the chain), then a PR. Merge it yourself when CI is green
    (with Android changes, also wait for the APK build). While CI runs, go on with the next thing.
-4. Every change to `apps/boni-web` ships in a new desktop version: bump `apps/boni-desktop/package.json`, then
-   `make package-boni` and `make e2e-boni-desktop` (CI refuses the change otherwise, I-05). A change to
-   `apps/calendar-web` ships in a new Boni Calendar desktop version (`apps/calendar-desktop/package.json`,
-   `make package`). **Bump once per batch**, in the last PR of the batch, not in every PR.
+4. Every change to `apps/boni-web` ships in a new desktop version: `apps/boni-desktop/package.json` must be newer
+   than the last release's version in `CHANGELOG.md` (CI refuses the change otherwise, I-05); the same for
+   `apps/calendar-web` and `apps/calendar-desktop/package.json`. **Bump once per batch**: the first PR of the batch
+   that touches a web app bumps it, the rest leave it. `make package-boni` / `make package` and
+   `make e2e-boni-desktop` at the release.
 5. **A release per batch**: versions, packages and the deploy go out together, at the end of a day or when Juan asks;
    `CHANGELOG.md` gets one entry per release saying what he can try and what each app needs (server, desktop, APK).
 6. A visual or behavioural change updates `docs/design-guide.md` in the same PR. Build it directly and let Juan try it

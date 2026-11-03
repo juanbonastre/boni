@@ -518,6 +518,7 @@ const NO_SWITCH = {
   earnsWith: EARNS_WITH,
 };
 export const ACCURACY = {
+  learning: true,
   areas: [
     {
       ...NO_SWITCH,
@@ -570,6 +571,7 @@ export const ACCURACY = {
 };
 /** The same once Juan turned «Solo» on for the mail's proposals. */
 export const ACCURACY_ON = {
+  learning: true,
   areas: ACCURACY.areas.map((a) =>
     a.area === "mail.accept" ? { ...a, auto: true, autoBy: "juan", autoAt: 1_762_000_000_000 } : a,
   ),

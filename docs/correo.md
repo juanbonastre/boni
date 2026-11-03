@@ -45,7 +45,7 @@ cualquier cosa que nazca de él se propone, nunca se escribe sola (P4, P7).
 | **El código, otra vez** | La lista (con la hora de cada cosa cuando el correo la dice: a los campos con papel `hora` y `hora de fin`; a una tarea sin hora, la primera libre del día como pregunta en la tarjeta, `docs/fiabilidad.md`) | Solo pasa lo que tiene que hacer Juan y es de un módulo activo. Aplica las reglas de la guía (no leer a un remitente, llevar sus cosas a una colección): el modelo no puede saltárselas |
 | **El decisor (Jev)** | Las colecciones posibles | Elige dónde va cada cosa; si duda, se lo pregunta a Juan en el panel de peticiones |
 | **Juan** | La propuesta en la Bandeja | Acepta, corrige o rechaza |
-| **La revisora** | Las decisiones de Juan | Propone reglas (este remitente, siempre no) y ejemplos para la guía. Juan los acepta o no en Ajustes → Correo; nada cambia solo |
+| **La revisora** | Las decisiones de Juan | Propone reglas (este remitente, siempre no) y ejemplos para la guía. Las reglas que sus correcciones repetidas muestran las saca el código sin modelo (`docs/fiabilidad.md` F4); como mucho una sugerencia al día que él no pida, ninguna con «Aprender» apagado. Juan dice sí, no o la escribe con sus palabras («Cambiarlo…») en Ajustes → Correo; nada cambia solo |
 
 **La guía de Juan** (Ajustes → Correo, cifrada con el buzón): sus indicaciones en lenguaje natural, reglas de un
 catálogo cerrado que aplica el código, y ejemplos de correos que él ya decidió. Cada correo guarda con qué versión de la

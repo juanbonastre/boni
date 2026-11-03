@@ -20,7 +20,10 @@ export interface AreaAccuracy {
   done: number;
   asked: number;
   nothing: number;
-  /** Taken alone and judged by Juan since, and right among them. */
+  /**
+   * Judged by Juan since, and right among them: what he kept of those taken alone, and what he answered to
+   * those asked that are a question of their own (a suggestion of the reviewer, learning.ts).
+   */
   judged: number;
   right: number;
   levels: Level[];
@@ -44,7 +47,7 @@ export function accuracy(store: UserStore): AreaAccuracy[] {
   return store.journal.decisionAreas().map((area) => {
     const rows = store.journal.decisions(area, 200);
     const alone = rows.filter((r) => r.outcome === "do");
-    const judged = alone.filter((r) => r.result);
+    const judged = rows.filter((r) => r.result);
     return {
       area,
       cost: rows[rows.length - 1]?.cost ?? "C",

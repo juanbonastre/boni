@@ -663,7 +663,12 @@ export function makeApp(opts: ServerOptions): App {
       if (route === "POST /api/mail/suggestion") {
         const b = await bodyOf(req);
         try {
-          const guide = mails.answerSuggestion(id, String(b.id ?? ""), b.accept === true);
+          const guide = mails.answerSuggestion(
+            id,
+            String(b.id ?? ""),
+            b.accept === true,
+            b.changed === true,
+          );
           return send(res, 200, { guide, mail: mails.view(id) });
         } catch (e) {
           if (e instanceof MailError) return send(res, 409, { error: e.code });
