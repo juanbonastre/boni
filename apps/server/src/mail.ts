@@ -80,6 +80,8 @@ export interface MailState {
   refused?: string[];
   /** Rules found by code that measured no better, by sender, with when: not tried again for a week (learning.ts). */
   tried?: Record<string, number>;
+  /** The one-off rescans done (`RESCAN`). */
+  rescans?: string[];
 }
 /**
  * Juan's reading guide (docs/nucleo.md 7.4b, point 2), kept with the mailbox's settings and encrypted the
@@ -523,12 +525,24 @@ export const ATTACHMENT_MAX = 8 * 1024 * 1024;
 /** Text read out of a mail's attachments (a sheet's rows, a text file) for the reader, at most. */
 const ATTACHMENTS_TEXT_MAX = 50_000;
 
-/** The account's collection of files (the one with the file field), when it has one. */
+/**
+ * The account's collection of files: the one with a file and the folder it is in (the import's «Archivos»), when
+ * it has one. Another collection may hold files too (photos of a diary): never that one (2026-11-03, task 34: the
+ * first collection with a file field was taken, a restricted one without folders, and every mail with attachments
+ * failed to be kept from 0.8.70 on).
+ */
 export function filesType(store: UserStore): TypeDef | undefined {
+  const has = (t: TypeDef, id: string) => t.fields.some((f) => f.id === id && !f.archived);
   return Object.values(store.schema().types).find(
-    (t) => !t.archived && !t.system && t.fields.some((f) => f.id === FILE_FIELD && !f.archived),
+    (t) => !t.archived && !t.system && has(t, FILE_FIELD) && has(t, FOLDER_FIELD),
   );
 }
+
+/**
+ * Mail lost while its attachments went to that collection (0.8.70 to 0.8.79): the messages since then that are not
+ * in yet, by their Message-ID, are brought in once (a mailbox's state made after it is marked done).
+ */
+const RESCAN = { id: "2026-11-03-attachments", since: "2026-11-01" } as const;
 
 /**
  * The fields a mail's collection has beyond the headers: its attachments as files of the account (a relation to
@@ -688,7 +702,10 @@ export class Mails {
 
   state(account: number): MailState {
     const v = this.get(account, "mail-state");
-    return v ? { ...EMPTY, ...(JSON.parse(v) as Partial<MailState>) } : { ...EMPTY };
+    // A mailbox set up from now on lost nothing: nothing to bring in again.
+    return v
+      ? { ...EMPTY, ...(JSON.parse(v) as Partial<MailState>) }
+      : { ...EMPTY, rescans: [RESCAN.id] };
   }
 
   private saveState(account: number, s: MailState) {
@@ -1025,15 +1042,32 @@ export class Mails {
 
   /** The account's "Correos" collection: the one this code made, or a new one if it is gone. */
   private collection(store: UserStore, st: MailState): TypeDef {
-    const had = st.type ? store.schema().types[st.type] : undefined;
+    let had = st.type ? store.schema().types[st.type] : undefined;
     if (had && !had.archived) {
+      const files = filesType(store);
+      // The attachments' relation made toward another collection than the files' (task 34): made again toward the
+      // files', while no mail holds anything in it (none could: every one with attachments failed).
+      const wrong = had.fields.find(
+        (f) => f.id === "f_archivos" && f.relation?.target !== files?.id,
+      );
+      const held = (v: unknown) =>
+        Array.isArray(v) ? v.length > 0 : v !== null && v !== undefined;
+      if (wrong && !store.list(had.id).some((e) => held(e.entity.values.f_archivos))) {
+        store.applySchema(
+          { op: "remove_field", type: had.id, field: "f_archivos" },
+          { actor: "connector" },
+        );
+        had = store.schema().types[had.id] as TypeDef;
+        console.warn("mail: the attachments now go to the collection of files");
+      }
+      const mine = had;
       // A field this code added later (Cc, the attachments) joins a collection made before it.
-      const missing = [...FIELDS.map(fieldOf), ...extraFields(filesType(store))].filter(
-        (f) => !had.fields.some((x) => x.id === f.id),
+      const missing = [...FIELDS.map(fieldOf), ...extraFields(files)].filter(
+        (f) => !mine.fields.some((x) => x.id === f.id),
       );
       for (const field of missing)
-        store.applySchema({ op: "add_field", type: had.id, field }, { actor: "connector" });
-      return missing.length ? (store.schema().types[had.id] as TypeDef) : had;
+        store.applySchema({ op: "add_field", type: mine.id, field }, { actor: "connector" });
+      return missing.length ? (store.schema().types[mine.id] as TypeDef) : mine;
     }
     const taken = new Set(Object.values(store.schema().types).map((t) => t.key));
     let key = "correo";
@@ -1051,6 +1085,35 @@ export class Mails {
     };
     store.applySchema({ op: "create_type", type: def }, { actor: "connector" });
     return def;
+  }
+
+  /**
+   * One message kept; if its attachments cannot be, the mail without them, saying so in its text; if not even that,
+   * nothing, said in the log. Either way the check goes on with the next one.
+   */
+  private keepOne(
+    account: number,
+    store: UserStore,
+    def: TypeDef,
+    m: Message,
+    arrived: string | null,
+  ): string | null {
+    try {
+      return this.keep(store, def, m, arrived);
+    } catch (e) {
+      console.error(
+        `mail ${account}: a mail's attachments could not be kept (${(e as Error).message})`,
+      );
+    }
+    try {
+      const text = [m.text, "[Boni: sus adjuntos no se pudieron guardar]"]
+        .filter(Boolean)
+        .join("\n\n");
+      return this.keep(store, def, { ...m, attachments: [], text }, arrived);
+    } catch (e) {
+      console.error(`mail ${account}: a mail could not be kept (${(e as Error).message})`);
+      return null;
+    }
   }
 
   /** One message as an entity: every value the sender's (external), the body as its text. */
@@ -1224,25 +1287,47 @@ export class Mails {
       const uids = restart
         ? await r.search({ since: day })
         : await r.search({ afterUid: st.lastUid });
-      const known = restart
-        ? new Set(
-            store
-              .list(def.id)
-              .map((e) => e.entity.values.f_id_mensaje)
-              .filter((x): x is string => typeof x === "string" && x !== ""),
-          )
-        : new Set<string>();
+      const rescan =
+        !restart && st.lastUid > 0 && !(st.rescans ?? []).includes(RESCAN.id)
+          ? (await r.search({ since: RESCAN.since })).filter((u) => u <= st.lastUid)
+          : [];
+      const known =
+        restart || rescan.length
+          ? new Set(
+              store
+                .list(def.id)
+                .map((e) => e.entity.values.f_id_mensaje)
+                .filter((x): x is string => typeof x === "string" && x !== ""),
+            )
+          : new Set<string>();
       if (restart) {
         st.uidValidity = box.uidValidity;
         st.lastUid = 0;
       }
+      for (const uid of rescan) {
+        const f = await r.fetch(uid, FETCH_MAX);
+        if (!f) continue;
+        const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
+        // Without a Message-ID a mail cannot be told from one already in: left out.
+        if (!m.messageId || known.has(m.messageId)) continue;
+        const id = this.keepOne(account, store, def, m, f.internalDate);
+        if (!id) continue;
+        known.add(m.messageId);
+        made.push(id);
+        st.count++;
+      }
+      if (rescan.length) console.log(`mail ${account}: ${made.length} mails brought in again`);
+      if (!restart) st.rescans = [...new Set([...(st.rescans ?? []), RESCAN.id])];
       for (const uid of uids.slice(0, this.o.perCheck ?? 50)) {
         const f = await r.fetch(uid, FETCH_MAX);
         st.lastUid = Math.max(st.lastUid, uid);
         if (!f) continue;
         const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
         if (m.messageId && known.has(m.messageId)) continue;
-        made.push(this.keep(store, def, m, f.internalDate));
+        // One mail that cannot be kept never stops the others (task 34: it stopped the check, and was lost).
+        const id = this.keepOne(account, store, def, m, f.internalDate);
+        if (!id) continue;
+        made.push(id);
         st.count++;
       }
       st.lastError = null;

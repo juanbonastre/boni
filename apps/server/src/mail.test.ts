@@ -1176,3 +1176,122 @@ describe("where the user is among a mail's recipients", () => {
     expect(userIn("juan", "juan@example.com", null)).toBe("group"); // a login, not an address
   });
 });
+
+describe("attachments go to the collection of files, and no mail is lost (task 34)", () => {
+  it("never into another collection with files; a wrong field is remade; the mail lost is brought in once; one failure stops nothing", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-files-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const h = new AgentHost({ dataDir: d, providers: null });
+    const store = h.store(1);
+    const u = label("user", "personal", []);
+    const files = (id: string, name: string, withFolder: boolean): TypeDef => ({
+      id,
+      key: id.slice(2),
+      name,
+      fields: [
+        { id: "f_title", key: "title", name: "Título", type: "text", label: u },
+        { id: FILE_FIELD, key: "boni_file", name: "Archivo", type: "file", label: u },
+        ...(withFolder
+          ? [{ id: FOLDER_FIELD, key: "folder", name: "Carpeta", type: "text" as const, label: u }]
+          : []),
+      ],
+      titleField: "f_title",
+      sensitivity: "personal",
+      schemaVersion: 1,
+      label: u,
+    });
+    // A diary with photos comes first (as Juan's restricted one), then the import's «Archivos».
+    store.applySchema(
+      { op: "create_type", type: files("t_diario", "Diario", false) },
+      { actor: "user" },
+    );
+    store.applySchema(
+      { op: "create_type", type: files("t_archivo", "Archivos", true) },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 21;
+    box.mails = new Map([
+      [1, mail(61, "Uno", "Hola.")],
+      [3, mail(63, "Tres", "Adiós.")],
+    ]);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: [],
+    });
+    const first = await m.check(1);
+    expect(first.lastError).toBeNull();
+    const type = first.type as string;
+    // As 0.8.70 to 0.8.79 left Juan's: the attachments' field toward the diary, the state from before the rescan.
+    store.applySchema({ op: "remove_field", type, field: "f_archivos" }, { actor: "connector" });
+    store.applySchema(
+      {
+        op: "add_field",
+        type,
+        field: {
+          id: "f_archivos",
+          key: "archivos",
+          name: "Archivos",
+          type: "relation",
+          relation: { target: "t_diario", many: true },
+          label: u,
+        },
+      },
+      { actor: "connector" },
+    );
+    const old = m.state(1);
+    delete old.rescans;
+    (m as unknown as { saveState(a: number, s: unknown): void }).saveState(1, old);
+    // The mail lost then (uid 2, below the last one seen) and a new one, both with files.
+    box.mails.set(2, mailWithFiles(62, "Perdido"));
+    box.mails.set(4, mailWithFiles(64, "Nuevo"));
+    const second = await m.check(1);
+    expect(second.lastError).toBeNull();
+    expect(second.rescans).toContain("2026-11-03-attachments");
+    const def = store.schema().types[type] as TypeDef;
+    expect(def.fields.find((f) => f.id === "f_archivos")?.relation?.target).toBe("t_archivo");
+    const subjects = () =>
+      store
+        .list(type)
+        .map((e) => String(e.entity.values.f_asunto))
+        .sort();
+    expect(subjects()).toEqual(["Nuevo", "Perdido", "Tres", "Uno"]);
+    const lost = store.list(type).find((e) => e.entity.values.f_asunto === "Perdido");
+    const kept = (lost?.entity.values.f_archivos ?? []) as string[];
+    expect(kept.map((id) => store.get(id)?.entity.type)).toEqual(["t_archivo", "t_archivo"]);
+    expect(store.list("t_diario")).toHaveLength(0);
+    // Once: the next check brings nothing twice.
+    await m.check(1);
+    expect(subjects()).toEqual(["Nuevo", "Perdido", "Tres", "Uno"]);
+    // A mail whose files cannot be kept comes in without them, saying so, and the next one still comes in.
+    const create = store.create.bind(store);
+    store.create = ((
+      t: string,
+      ...rest: Parameters<typeof store.create> extends [unknown, ...infer R] ? R : never
+    ) => {
+      if (t === "t_archivo") throw new Error("files refused");
+      return create(t, ...rest);
+    }) as typeof store.create;
+    box.mails.set(5, mailWithFiles(65, "Sin sitio"));
+    box.mails.set(6, mail(66, "Después", "Sigue."));
+    const third = await m.check(1);
+    expect(third.lastError).toBeNull();
+    store.create = create;
+    const noFiles = store.list(type).find((e) => e.entity.values.f_asunto === "Sin sitio");
+    expect(noFiles?.entity.body).toContain("[Boni: sus adjuntos no se pudieron guardar]");
+    expect(noFiles?.entity.values.f_archivos ?? []).toEqual([]);
+    expect(subjects()).toContain("Después");
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});

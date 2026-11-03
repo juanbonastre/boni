@@ -5,6 +5,17 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (fourth) — server 0.8.80
+
+Needs: the server only (0.8.80). Deployed at once, out of the batch: mail was being lost.
+
+- **Mail with attachments is kept again, and what was lost comes back.** Since 0.8.70 the attachments went to the
+  first collection holding files, a restricted one without folders, and every mail with attachments failed to be
+  kept and was lost (the log said `no field "f_folder"`). Now they go to «Archivos» (the collection with files and
+  folders); the mail's «Archivos» field is remade toward it; the mail since 2026-11-01 that is not in yet is
+  brought in once, by its Message-ID; and a mail that cannot be kept with its files comes in without them, saying
+  so, never stopping the others. (#259, task 34)
+
 ## 2026-11-03 (third) — server 0.8.79 · Boni desktop 0.4.62 · Boni Calendar desktop 0.8.17
 
 Needs: the server (0.8.79, to deploy: it carries the fixes of the slowness) and Boni Calendar desktop 0.8.17
