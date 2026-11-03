@@ -123,6 +123,7 @@ export function SettingsModal() {
           <div
             className="modal-body settings-pane"
             id="settings-pane"
+            key={section}
             role="tabpanel"
             aria-labelledby={`settings-tab-${section}`}
           >

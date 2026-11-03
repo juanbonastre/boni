@@ -6,6 +6,7 @@ import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { CollectionView } from "./components/Collections.tsx";
 import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
+import { useEnterFlip } from "./components/motion.ts";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
@@ -58,11 +59,15 @@ export function App() {
   // In a narrow window the side panel takes the sidebar's room while it is open (the charts keep theirs).
   const narrow = useMedia("(max-width: 1100px)");
   const showSidebar = sidebarOpen && !(narrow && (panelOpen || inboxOpen));
+  // What the main area shows rises into place, again when another page takes its place (4b «Motion», I-14).
+  const enter = useEnterFlip(
+    useStore((s) => `${s.view.kind}:${(s.view as { id?: string }).id ?? ""}`),
+  );
   if (mobile) return <MobileApp />;
   return (
     <div className={`app${showSidebar ? "" : " no-sidebar"}`}>
       {showSidebar && <Sidebar />}
-      <div className="main">
+      <div className="main" data-enter={enter}>
         <TopBar />
         <Content />
       </div>
