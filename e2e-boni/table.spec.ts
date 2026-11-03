@@ -253,6 +253,63 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
   await expect(page.locator(".topbar .crumbs")).toHaveText(/Libros\s*\/\s*Rayuela/);
 });
 
+test("«Opciones» as Notion's «⋯» of a view (task 41): a short list saying what each is now, each with its panel", async ({
+  page,
+}) => {
+  await libros(page);
+  const head = page.locator(".db-head");
+  const options = head.getByRole("button", { name: "Opciones", exact: true });
+  const box = page.getByRole("dialog", { name: "Opciones" });
+  const list = box.getByRole("menuitem");
+  await options.click();
+  await expect(list).toHaveText([
+    /^Propiedades\s*5 visibles/,
+    /^Filtrar$/,
+    /^Ordenar$/,
+    /^Columnas de sistema$/,
+  ]);
+  await page.screenshot({ path: `${SHOTS}/view-options.png` });
+  // «Ordenar»: by a column, up and then down; back on the list, it says so.
+  await list.filter({ hasText: "Ordenar" }).click();
+  const titles = page.locator(".db-table tbody td.is-title");
+  await box.getByRole("menuitemradio", { name: "Título" }).click();
+  await expect(titles).toHaveText([/^Ficciones/, /^Pedro Páramo/, /^Rayuela/]);
+  await box.getByRole("menuitemradio", { name: /^Título/ }).click();
+  await expect(titles).toHaveText([/^Rayuela/, /^Pedro Páramo/, /^Ficciones/]);
+  await page.screenshot({ path: `${SHOTS}/view-options-sort.png` });
+  await box.getByRole("button", { name: "Volver: Ordenar" }).click();
+  await expect(list.filter({ hasText: "Ordenar" })).toHaveText(/Título ↓/);
+  // «Propiedades»: one hidden from the view.
+  await list.filter({ hasText: "Propiedades" }).click();
+  await box.getByRole("menuitemradio", { name: "Páginas" }).click();
+  await expect(page.locator(".db-table thead")).not.toContainText("Páginas");
+  await box.getByRole("button", { name: "Volver: Propiedades" }).click();
+  await expect(list.filter({ hasText: "Propiedades" })).toHaveText(/4 visibles/);
+  // «Filtrar»: the view's rules, as the head's «Filtro».
+  await list.filter({ hasText: "Filtrar" }).click();
+  await expect(box.getByRole("button", { name: "Añadir filtro" })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/view-options-filter.png` });
+  // Closed and opened again, it is the list again; the collection's notes in the sidebar, from here too.
+  await page.keyboard.press("Escape");
+  await options.click();
+  await expect(list.first()).toHaveText(/^Propiedades/);
+  await box.getByRole("menuitemradio", { name: "Mostrar sus notas en la barra" }).click();
+  await expect.poll(() => sent(page, "PUT api/data/types/t_libro/tree ", "true")).toBe(true);
+  await expect(
+    box.getByRole("menuitemradio", { name: "Ocultar sus notas de la barra" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  // The board groups by a list; the calendar shows by a date, and other collections with dates.
+  await head.getByRole("radio", { name: "Tablero" }).click();
+  await options.click();
+  await expect(list).toHaveText([/^Propiedades/, /^Filtrar/, /^Ordenar/, /^Agrupar\s*Estado/]);
+  await page.keyboard.press("Escape");
+  await head.getByRole("radio", { name: "Calendario" }).click();
+  await options.click();
+  await expect(list.filter({ hasText: "Fecha" })).toHaveText(/^Fecha\s*Terminado/);
+  await expect(list.filter({ hasText: "Columnas de sistema" })).toHaveCount(0);
+});
+
 test("what is open shows lit in «Páginas», unfolded down to it: a record, its collection, a page inside another", async ({
   page,
 }) => {

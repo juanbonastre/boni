@@ -1,3 +1,4 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
@@ -213,3 +214,45 @@ export function MenuRow({
 }
 
 export const MenuSep = () => <div className="menu-sep" />;
+
+/** A row of a menu that opens one of its panels (Notion's): its name, what it is now, a chevron. */
+export function NextRow({
+  label,
+  value,
+  onClick,
+}: {
+  label: string;
+  value?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" role="menuitem" className="menu-item menu-next" onClick={onClick}>
+      <span className="menu-text">{label}</span>
+      {value && <span className="menu-value">{value}</span>}
+      <ChevronRight size={14} strokeWidth={2} className="menu-chev" aria-hidden="true" />
+    </button>
+  );
+}
+
+/** A panel's head: its name, and back to the menu's list with a click. */
+export function BackRow({
+  label,
+  back,
+  onClick,
+}: {
+  label: string;
+  back: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="menu-item menu-back"
+      aria-label={`${back}: ${label}`}
+      onClick={onClick}
+    >
+      <ChevronLeft size={14} strokeWidth={2} aria-hidden="true" />
+      <span className="menu-text">{label}</span>
+    </button>
+  );
+}

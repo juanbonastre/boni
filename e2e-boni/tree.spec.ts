@@ -365,6 +365,7 @@ test("system columns in a table: none by default, chosen from the view's options
   const table = page.locator(".db-table");
   await expect(table.locator("th.sys-col")).toHaveCount(0);
   await page.getByRole("button", { name: "Opciones", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Columnas de sistema" }).click();
   await page.getByRole("menuitemradio", { name: "Creado por" }).click();
   await page.getByRole("menuitemradio", { name: "Visto por" }).click();
   await page.keyboard.press("Escape");
