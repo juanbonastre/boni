@@ -407,6 +407,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           }),
         ];
       };
+      const goneCols: { id: string; name: string; type: string }[] = [];
       const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
         const b = (body ?? {}) as { values?: Record<string, unknown> };
         if (p === "api/data/types" && method === "POST") {
@@ -446,6 +447,68 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               ],
             }),
           ];
+        // The books' columns (task 40), as the server's data.ts changes them: added, renamed, of another kind,
+        // a list's values, out and back.
+        const colOp = /^api\/data\/types\/t_libro\/fields(?:\/([^/]+))?(\/restore)?$/.exec(p);
+        if (colOp) {
+          type Col = {
+            id: string;
+            key?: string;
+            name: string;
+            type: string;
+            options?: { id: string; name: string }[];
+          };
+          const cols = libros.fields as Col[];
+          const want = (body ?? {}) as {
+            name?: string;
+            type?: string;
+            options?: { id?: string; name: string }[];
+          };
+          const taken = (name: string, but?: string) =>
+            cols.some((c) => c.id !== but && c.name.toLowerCase() === name.toLowerCase());
+          if (!colOp[1] && method === "POST") {
+            const name = String(want.name ?? "").trim();
+            if (!name || !want.type) return [400, '{"error":"bad-body"}'];
+            if (taken(name)) return [409, '{"error":"taken"}'];
+            const id = `f_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+            cols.push({
+              id,
+              name,
+              type: want.type,
+              ...(want.type.endsWith("select") ? { options: [] } : {}),
+            });
+            return [200, JSON.stringify({ id })];
+          }
+          const i = cols.findIndex((c) => c.id === colOp[1]);
+          if (colOp[2]) {
+            const back = goneCols.find((c) => c.id === colOp[1]);
+            if (!back) return [404, '{"error":"not-found"}'];
+            cols.push(back);
+            return [200, "{}"];
+          }
+          if (i < 0) return [404, '{"error":"not-found"}'];
+          const col = cols[i] as Col;
+          if (method === "DELETE") {
+            goneCols.push(col);
+            cols.splice(i, 1);
+            return [200, "{}"];
+          }
+          if (want.name !== undefined) {
+            if (taken(want.name, col.id)) return [409, '{"error":"taken"}'];
+            col.name = want.name;
+          }
+          if (want.type !== undefined) {
+            if (rows.some((r) => r.values[col.id] !== undefined && r.values[col.id] !== null))
+              return [409, '{"error":"in-use"}'];
+            col.type = want.type;
+          }
+          if (want.options)
+            col.options = want.options.map((o) => ({
+              id: o.id ?? `o_${o.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`,
+              name: o.name,
+            }));
+          return [200, "{}"];
+        }
         const typeOp = /^api\/data\/types\/([^/]+)(?:\/(tree|parent))?$/.exec(p);
         if (typeOp && (method === "PUT" || method === "DELETE")) {
           const id = typeOp[1]!;

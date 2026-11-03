@@ -3191,6 +3191,49 @@ span.page-icon {
   max-height: min(26rem, 60cqh);
   overflow: auto;
 }
+/* A field written inside a menu (a column's name, a list's value): the menu's own width (task 40). */
+.menu-input {
+  display: block;
+  width: 100%;
+  margin: 2px 0 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+.menu-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.menu-option .menu-input {
+  margin: 1px 0;
+}
+/* A table's column name opens its menu (task 40): it reads as the header it is. */
+.th-button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-button:hover {
+  color: var(--text);
+}
+th.row-tools .add-col {
+  opacity: 0.7;
+}
+th.row-tools .add-col:hover {
+  opacity: 1;
+}
 .menu-head {
   padding: 6px 8px 2px;
   color: var(--muted);
@@ -8043,6 +8086,9 @@ button.rows-panel-row:hover {
   font-size: 12px;
 }
 
+/* Every entry animation fills backwards, never forwards or both: a transform kept after the animation makes the
+   element the containing block of the fixed menus and popovers inside it, which then open far from the pointer
+   (2026-11-03: 252 px to the right in a table; task 39). */
 /* ---------- motion of the conversation (docs/design-guide.md, 4b "Motion"; Juan, 2026-11-02) ----------
    What enters rises 6 px into place with its opacity, in 240 ms and ease-out: a request, each block of an answer, a
    question card, the side panel (from the right) and a toast. A list's sections follow each other 50 ms apart (four
@@ -8071,7 +8117,7 @@ button.rows-panel-row:hover {
 .turn-answer > *,
 .turn-live > *,
 .reply-section {
-  animation: rise-in 240ms var(--ease-out) both;
+  animation: rise-in 240ms var(--ease-out) backwards;
 }
 .reply-section:nth-child(2) {
   animation-delay: 50ms;
@@ -8085,10 +8131,10 @@ button.rows-panel-row:hover {
 /* The page's side panel only (SidePanel.tsx adds `panel-enter`): the models' settings reuse `.side-panel` for a
    box that must not move. */
 .side-panel.panel-enter {
-  animation: slide-in-right 220ms var(--ease-out) both;
+  animation: slide-in-right 220ms var(--ease-out) backwards;
 }
 .toast {
-  animation: rise-in 200ms var(--ease-out) both;
+  animation: rise-in 200ms var(--ease-out) backwards;
 }
 .pill:active:not(:disabled),
 .reply-open:active {
@@ -8125,11 +8171,11 @@ button.rows-panel-row:hover {
 .modal,
 .settings-pane,
 .inbox-card {
-  animation: rise-in 240ms var(--ease-out) both;
+  animation: rise-in 240ms var(--ease-out) backwards;
 }
 .main[data-enter="b"] > .content,
 .main[data-enter="b"] > .models-view {
-  animation: rise-in-b 240ms var(--ease-out) both;
+  animation: rise-in-b 240ms var(--ease-out) backwards;
 }
 .inbox-card:nth-child(2) {
   animation-delay: 50ms;
@@ -8142,7 +8188,7 @@ button.rows-panel-row:hover {
 }
 .menu,
 .pop-box {
-  animation: grow-in 160ms var(--ease-out) both;
+  animation: grow-in 160ms var(--ease-out) backwards;
   transform-origin: top center;
 }
 @media (prefers-reduced-motion: reduce) {

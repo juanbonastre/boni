@@ -175,10 +175,14 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
   await expect(rows).toHaveCount(3);
   // The right button on a row not chosen chooses it alone and opens its menu; «Cambiar nombre» writes in place.
-  await rows
-    .filter({ hasText: "Pedro Páramo" })
-    .click({ button: "right", position: { x: 120, y: 10 } });
+  const pedro = rows.filter({ hasText: "Pedro Páramo" });
+  await pedro.click({ button: "right", position: { x: 120, y: 10 } });
   const menu = page.getByRole("dialog", { name: "Opciones de la fila" });
+  // It opens where the pointer is (Juan, 2026-11-03: the menus opened elsewhere; task 39).
+  const at = (await pedro.boundingBox()) as { x: number; y: number };
+  const opened = (await menu.boundingBox()) as { x: number; y: number };
+  expect(Math.abs(opened.x - (at.x + 120))).toBeLessThan(6);
+  expect(Math.abs(opened.y - (at.y + 10))).toBeLessThan(6);
   await expect(menu.getByRole("menuitemradio")).toHaveText([
     "Abrir",
     "Cambiar nombre",
@@ -240,4 +244,69 @@ test("what is open shows lit in «Páginas», unfolded down to it: a record, its
   await expect(book).toHaveValue("Rayuela");
   await expect(tree.locator(".tree-row.active")).toHaveText("Rayuela");
   await page.screenshot({ path: `${SHOTS}/tree-reveal.png` });
+});
+
+test("a column's menu, as Notion's: renamed in place, its kind, a list's values, hidden, deleted with Undo; «+» adds one (task 40)", async ({
+  page,
+}) => {
+  await libros(page);
+  const table = page.locator(".db-table");
+  const header = table.locator("thead");
+  // A click on a column's name opens its menu under it; the name is written in place.
+  await header.getByRole("button", { name: "Páginas", exact: true }).click();
+  const menu = page.getByRole("dialog", { name: "Columna «Páginas»" });
+  await expect(menu.getByRole("textbox", { name: "Nombre" })).toBeFocused();
+  await expect(menu.getByRole("menuitemradio")).toHaveText([
+    "Tipo: Número",
+    "Ocultar",
+    "Borrar columna",
+  ]);
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type("Hojas", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await expect(header.getByRole("button", { name: "Hojas", exact: true })).toBeVisible();
+  expect(await sent(page, "PUT api/data/types/t_libro/fields/f_paginas", '"name":"Hojas"')).toBe(
+    true,
+  );
+  // A list's values: one added, its name and id kept for the rest.
+  await header.getByRole("button", { name: "Estado", exact: true }).click({ button: "right" });
+  const estado = page.getByRole("dialog", { name: "Columna «Estado»" });
+  await estado.getByRole("menuitemradio", { name: "Valores" }).click();
+  await estado.getByRole("textbox", { name: "Añadir un valor" }).fill("Abandonado");
+  await page.keyboard.press("Enter");
+  await expect(estado.getByRole("textbox", { name: "Valor «Abandonado»" })).toBeVisible();
+  expect(
+    await sent(
+      page,
+      "PUT api/data/types/t_libro/fields/f_estado",
+      '{"id":"o_leido","name":"Leído"}',
+    ),
+  ).toBe(true);
+  await page.keyboard.press("Escape");
+  // Its kind cannot change while it holds values: said, and nothing changes.
+  await header.getByRole("button", { name: "Hojas", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Tipo: Número" }).click();
+  await page.getByRole("menuitemradio", { name: "Texto", exact: true }).click();
+  await expect(page.locator(".toast")).toContainText("No se puede: está en uso");
+  // «+»: a new column, named, of a kind.
+  await header.getByRole("button", { name: "Nueva columna" }).click();
+  const add = page.getByRole("dialog", { name: "Nueva columna" });
+  await add.getByRole("textbox", { name: "Nombre" }).fill("Editorial");
+  await add.getByRole("menuitemradio", { name: "Texto", exact: true }).click();
+  await expect(header.getByRole("button", { name: "Editorial", exact: true })).toBeVisible();
+  // Out with Undo, its values kept.
+  await header.getByRole("button", { name: "Editorial", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Borrar columna" }).click();
+  await expect(header.getByRole("button", { name: "Editorial", exact: true })).toHaveCount(0);
+  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
+  await expect(header.getByRole("button", { name: "Editorial", exact: true })).toBeVisible();
+  // «Ocultar»: this view stops showing it.
+  await header.getByRole("button", { name: "Editorial", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: "Ocultar" }).click();
+  await expect(header.getByRole("button", { name: "Editorial", exact: true })).toHaveCount(0);
+  // The title column only changes its name.
+  await header.getByRole("button", { name: "Título", exact: true }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Columna «Título»" }).getByRole("menuitemradio"),
+  ).toHaveCount(0);
 });

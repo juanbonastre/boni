@@ -2,7 +2,11 @@ import {
   branch,
   type Entity,
   type FieldDef,
+  type FieldType,
+  type Label,
   label,
+  type SchemaOp,
+  type SelectOption,
   type TypeDef,
   type Value,
 } from "@boni/entities";
@@ -34,6 +38,8 @@ export interface DataField {
   type: FieldDef["type"];
   options?: { id: string; name: string; color?: string }[];
   relation?: { target: string; many: boolean };
+  /** A mother's field her daughter has (D-10): changed at the mother, never here. */
+  inherited?: boolean;
 }
 export interface DataType {
   id: string;
@@ -194,6 +200,7 @@ const fieldsOf = (t: TypeDef): DataField[] =>
         ? { options: f.options.map((o) => ({ id: o.id, name: o.name, color: o.color })) }
         : {}),
       ...(f.relation ? { relation: { target: f.relation.target, many: f.relation.many } } : {}),
+      ...(f.from ? { inherited: true } : {}),
     }));
 
 /** The user's collections, and Boni's own records after them when given (read only, `private`: no model sees them). */
@@ -696,6 +703,194 @@ export function createCollection(store: UserStore, body: unknown, device?: strin
     throw new DataError("bad-body");
   }
   return { id: def.id };
+}
+
+// ------------------------------------------------------------------ columns (task 40: as Notion's properties)
+
+/** The kinds of column a person makes from a table (Notion's basic ones). */
+export const COLUMN_TYPES: readonly FieldType[] = [
+  "text",
+  "longtext",
+  "number",
+  "select",
+  "multiselect",
+  "date",
+  "datetime",
+  "checkbox",
+  "url",
+  "email",
+  "phone",
+];
+/** Kinds whose values are the same text: one changes into another keeping them. */
+const TEXTS: ReadonlySet<FieldType> = new Set(["text", "longtext", "url", "email", "phone"]);
+
+const columnOwner = (store: UserStore, type: string): TypeDef => {
+  const def = userTypes(store).find((t) => t.id === type);
+  if (!def) throw new DataError("not-found");
+  return def;
+};
+const columnOf = (def: TypeDef, field: string) => {
+  const f = def.fields.find((x) => x.id === field && !x.archived && !x.hidden);
+  if (!f) throw new DataError("not-found");
+  return f;
+};
+const nameOf = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, 80) : "");
+const taken = (def: TypeDef, name: string, but?: string) =>
+  def.fields.some(
+    (f) => !f.archived && f.id !== but && f.name.toLowerCase() === name.toLowerCase(),
+  );
+/** A list's options as the user wrote them: names (and colours), each with its id; the same id when kept. */
+function optionsFrom(raw: unknown, was: readonly SelectOption[], l: Label): SelectOption[] {
+  if (!Array.isArray(raw) || raw.length > 200) throw new DataError("bad-body");
+  const out: SelectOption[] = [];
+  for (const o of raw as { id?: unknown; name?: unknown; color?: unknown }[]) {
+    const name = nameOf(o?.name);
+    if (!name || out.some((x) => x.name.toLowerCase() === name.toLowerCase()))
+      throw new DataError("bad-body");
+    const old = typeof o.id === "string" ? was.find((x) => x.id === o.id) : undefined;
+    let id = old?.id ?? `o_${keyFrom(name) || "x"}`;
+    for (let n = 2; !old && (was.some((x) => x.id === id) || out.some((x) => x.id === id)); n++)
+      id = `o_${keyFrom(name) || "x"}_${n}`;
+    out.push({
+      id,
+      name,
+      ...(typeof o.color === "string" && /^#[0-9a-fA-F]{6}$/.test(o.color)
+        ? { color: o.color }
+        : {}),
+      label: old && old.name === name ? old.label : l,
+    });
+  }
+  return out;
+}
+const used = (store: UserStore, type: string, field: string) =>
+  store.entities(type, { deep: true }).filter((e) => {
+    const v = e.values[field];
+    return v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && !v.length);
+  });
+
+/** A new column of a collection (Notion's «+»): its name, its kind and, for a list, its options. */
+export function addColumn(
+  store: UserStore,
+  type: string,
+  body: unknown,
+  device?: string,
+): { id: string } {
+  const def = columnOwner(store, type);
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const name = nameOf(b.name);
+  const kind = b.type as FieldType;
+  if (!name || !COLUMN_TYPES.includes(kind)) throw new DataError("bad-body");
+  if (taken(def, name)) throw new DataError("taken");
+  const l = label("user", def.sensitivity, [{ kind: "user-edit", id: device ?? "?" }]);
+  // A field's id is unique in its branch and its mothers (a daughter has her mother's fields).
+  const schema = store.schema();
+  const all = new Set(
+    branch(schema, type).flatMap((t) => schema.types[t]?.fields.map((f) => f.id) ?? []),
+  );
+  for (let m = def.parent; m; m = schema.types[m]?.parent)
+    for (const f of schema.types[m]?.fields ?? []) all.add(f.id);
+  let id = `f_${keyFrom(name) || "col"}`;
+  for (let n = 2; all.has(id); n++) id = `f_${keyFrom(name) || "col"}_${n}`;
+  const field: FieldDef = {
+    id,
+    key: id.slice(2),
+    name,
+    type: kind,
+    label: l,
+    ...(kind === "select" || kind === "multiselect"
+      ? { options: b.options === undefined ? [] : optionsFrom(b.options, [], l) }
+      : {}),
+  };
+  try {
+    store.applySchema({ op: "add_field", type, field }, meta(device));
+  } catch {
+    throw new DataError("bad-body");
+  }
+  return { id };
+}
+
+/**
+ * A column changed (Notion's column menu): its name, its kind or a list's options. Its kind changes freely while it
+ * holds nothing; with values, only among kinds of text (they keep them); an option still in use is not taken out.
+ * Undone like any change.
+ */
+export function changeColumn(
+  store: UserStore,
+  type: string,
+  field: string,
+  body: unknown,
+  device?: string,
+): void {
+  const def = columnOwner(store, type);
+  const f = columnOf(def, field);
+  // A mother's field is changed at the mother (her daughters follow).
+  if (f.from) throw new DataError("bad-body");
+  const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const l = label("user", def.sensitivity, [{ kind: "user-edit", id: device ?? "?" }]);
+  const ops: SchemaOp[] = [];
+  if (b.name !== undefined) {
+    const name = nameOf(b.name);
+    if (!name) throw new DataError("bad-body");
+    if (taken(def, name, f.id)) throw new DataError("taken");
+    if (name !== f.name)
+      ops.push({ op: "rename_field", type, field: f.id, key: f.key, name, label: l });
+  }
+  const to = b.type as FieldType | undefined;
+  if (to !== undefined && to !== f.type) {
+    if (!COLUMN_TYPES.includes(to) || f.id === def.titleField || f.from)
+      throw new DataError("bad-body");
+    // Only texts keep their values in another kind of text; anything else changes while the column is empty.
+    const keeps = TEXTS.has(f.type) && TEXTS.has(to);
+    if (!keeps && used(store, type, f.id).length) throw new DataError("in-use");
+    ops.push({
+      op: "change_field_type",
+      type,
+      field: f.id,
+      to,
+      ...(to === "select" || to === "multiselect" ? { options: f.options ?? [] } : {}),
+    });
+  }
+  if (b.options !== undefined) {
+    const kind = to ?? f.type;
+    if (kind !== "select" && kind !== "multiselect") throw new DataError("bad-body");
+    const next = optionsFrom(b.options, f.options ?? [], l);
+    const gone = (f.options ?? []).filter((o) => !next.some((x) => x.id === o.id)).map((o) => o.id);
+    if (
+      gone.length &&
+      used(store, type, f.id).some((e) => {
+        const v = e.values[f.id];
+        return (Array.isArray(v) ? v : [v]).some((x) => gone.includes(String(x)));
+      })
+    )
+      throw new DataError("in-use");
+    ops.push({ op: "set_options", type, field: f.id, options: next });
+  }
+  try {
+    for (const op of ops) store.applySchema(op, meta(device));
+  } catch {
+    throw new DataError("bad-body");
+  }
+}
+
+/** A column out (Notion's «Eliminar»): archived, its values kept, back with `restoreColumn` (Undo). */
+export function removeColumn(store: UserStore, type: string, field: string, device?: string): void {
+  const def = columnOwner(store, type);
+  const f = columnOf(def, field);
+  if (f.id === def.titleField || f.from) throw new DataError("bad-body");
+  store.applySchema({ op: "archive_field", type, field: f.id, archived: true }, meta(device));
+}
+
+/** A column taken out, back with its values. */
+export function restoreColumn(
+  store: UserStore,
+  type: string,
+  field: string,
+  device?: string,
+): void {
+  const def = columnOwner(store, type);
+  const f = def.fields.find((x) => x.id === field && x.archived);
+  if (!f) throw new DataError("not-found");
+  store.applySchema({ op: "archive_field", type, field: f.id, archived: false }, meta(device));
 }
 
 /** A collection out of the tree (archived, undone like any change): only when nothing is left in its branch. */

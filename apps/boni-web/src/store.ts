@@ -2467,6 +2467,66 @@ export async function deleteCollection(type: string) {
   }
 }
 
+// ---------- a collection's columns (task 40: as Notion's properties) ----------
+const columnError = (e: unknown) =>
+  get().t(
+    e instanceof ApiError && e.code === "taken"
+      ? "db.col.taken"
+      : e instanceof ApiError && e.code === "in-use"
+        ? "db.col.inUse"
+        : "db.col.failed",
+  );
+
+/** A new column with its name and kind; false when the server said no (said in a toast). */
+export async function addColumn(type: string, name: string, kind: string): Promise<boolean> {
+  try {
+    await agent.addColumn(type, { name, type: kind });
+    await loadDataTypes();
+    return true;
+  } catch (e) {
+    toast(columnError(e));
+    return false;
+  }
+}
+
+/** A column's name, kind or options changed; false when the server said no (said in a toast). */
+export async function changeColumn(
+  type: string,
+  field: string,
+  change: {
+    name?: string;
+    type?: string;
+    options?: { id?: string; name: string; color?: string }[];
+  },
+): Promise<boolean> {
+  try {
+    await agent.changeColumn(type, field, change);
+    await loadDataTypes();
+    return true;
+  } catch (e) {
+    toast(columnError(e));
+    return false;
+  }
+}
+
+/** A column out, its values kept: the toast's «Deshacer» brings it back. */
+export async function removeColumn(type: string, field: string, name: string) {
+  try {
+    await agent.removeColumn(type, field);
+    await loadDataTypes();
+    toast(get().t("db.col.deleted", { name }), {
+      label: get().t("toast.undo"),
+      run: () =>
+        void agent
+          .restoreColumn(type, field)
+          .then(() => loadDataTypes())
+          .catch((e) => toast(columnError(e))),
+    });
+  } catch (e) {
+    toast(columnError(e));
+  }
+}
+
 /** A collection moved under another (`null`: the root), or a record to another collection. */
 export async function moveInTree(
   what: { collection: string } | { row: string },

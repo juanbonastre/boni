@@ -41,6 +41,7 @@ import {
   toast,
   useStore,
 } from "../store.ts";
+import { AddColumn, ColumnMenu, columnsEditable } from "./ColumnMenu.tsx";
 import { bytes, whoName } from "./Dash.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 import { ProtectionMenu } from "./Protection.tsx";
@@ -178,6 +179,7 @@ export function DatabaseBlock({
           onAdd={() => void add()}
           picked={picked}
           onPick={setPicked}
+          onHide={(f) => onView({ ...view, hide: [...(view.hide ?? []), f] })}
         />
       ) : view.layout === "board" ? (
         <BoardView type={type} rows={rows} view={view} titles={data.titles} onAdd={add} />
@@ -700,6 +702,7 @@ function TableView({
   onAdd,
   picked,
   onPick: setPicked,
+  onHide,
 }: {
   type: DataType;
   rows: DataRow[];
@@ -711,6 +714,8 @@ function TableView({
   onAdd: () => void;
   picked: Set<string>;
   onPick: React.Dispatch<React.SetStateAction<Set<string>>>;
+  /** «Ocultar» in a column's menu: this view stops showing it. */
+  onHide: (field: string) => void;
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
@@ -877,9 +882,35 @@ function TableView({
   // The right button: the row's menu (a row not chosen is chosen alone first, as in a file manager).
   const [menu, setMenu] = useState<{ x: number; y: number; row: DataRow } | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  // A column's menu (task 40): a click on its name opens it under the name, the right button where the pointer is.
+  const [colMenu, setColMenu] = useState<{ x: number; y: number; field: DataField } | null>(null);
+  const fieldOf = (key: string) => (pickable ? ordered.find((f) => f.id === key) : undefined);
   const head = (key: string, base: number, name: string, title?: boolean) => (
-    <th key={key} className={title ? "is-title" : key.startsWith("_sys.") ? "sys-col" : undefined}>
-      <span className="th-name">{name}</span>
+    <th
+      key={key}
+      className={title ? "is-title" : key.startsWith("_sys.") ? "sys-col" : undefined}
+      onContextMenu={(e) => {
+        const field = fieldOf(key);
+        if (!field) return;
+        e.preventDefault();
+        setColMenu({ x: e.clientX, y: e.clientY, field });
+      }}
+    >
+      {fieldOf(key) ? (
+        <button
+          type="button"
+          className="th-name th-button"
+          onClick={(e) => {
+            const field = fieldOf(key);
+            const r = e.currentTarget.getBoundingClientRect();
+            if (field) setColMenu({ x: r.left, y: r.bottom + 4, field });
+          }}
+        >
+          {name}
+        </button>
+      ) : (
+        <span className="th-name">{name}</span>
+      )}
       <span
         className="col-resize"
         title={t("db.resize")}
@@ -922,7 +953,11 @@ function TableView({
               </th>
             )}
             {cols.map((c) => head(c.key, c.base, c.name, c.title))}
-            {pickable && <th className="row-tools" aria-label={t("db.actions")} />}
+            {pickable && (
+              <th className="row-tools" aria-label={t("db.actions")}>
+                {columnsEditable(type) && <AddColumn type={type} />}
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -1075,6 +1110,16 @@ function TableView({
           <Plus size={14} strokeWidth={1.8} />
           {t("db.new")}
         </button>
+      )}
+      {colMenu && (
+        <ColumnMenu
+          type={type}
+          field={colMenu.field}
+          x={colMenu.x}
+          y={colMenu.y}
+          onHide={() => onHide(colMenu.field.id)}
+          onClose={() => setColMenu(null)}
+        />
       )}
       {menu && (
         <PointMenu x={menu.x} y={menu.y} label={t("db.rowMenu")} onClose={() => setMenu(null)}>
