@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { issueSession } from "@boni/identity";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { createByName } from "./byName.ts";
@@ -457,6 +457,28 @@ describe("collections as classes through the MCP (docs/clases.md)", () => {
           ).json as { id: string }[]
         ).map((n) => n.id),
       ).toEqual([at("proyectos/otro.md")]);
+    // Every note names the same one: it is read once in the call, not once per note (task 43: a query of 2,805
+    // tasks read their project 2,805 times, 1.9 s with the NAS held).
+    const plan = at("proyectos/boni-plan.md");
+    const titleField = store.schema().types.t_proyecto?.titleField as string;
+    for (const n of ["Uno", "Dos", "Tres"])
+      store.create("t_proyecto", { [titleField]: { value: `Proyecto ${n}`, label: l } }, me);
+    const others = store
+      .list("t_proyecto")
+      .map((x) => x.entity.id)
+      .filter((id) => id !== plan);
+    expect(others.length).toBeGreaterThan(1);
+    for (const id of others) store.update(id, { f_madre: { value: plan, label: l } }, me);
+    const get = vi.spyOn(store, "get");
+    const found = (
+      await tool("query", {
+        collection: "Proyecto",
+        filter: [{ property: "Madre", op: "is", value: titled }],
+      })
+    ).json as unknown[];
+    expect(found).toHaveLength(others.length);
+    expect(get.mock.calls.filter(([id]) => id === plan)).toHaveLength(1);
+    get.mockRestore();
     store.applySchema({ op: "remove_field", type: "t_proyecto", field: "f_madre" }, me);
   });
 

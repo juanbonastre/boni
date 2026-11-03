@@ -168,12 +168,27 @@ export function ancestors(schema: Schema, id: TypeId): TypeId[] {
   return out;
 }
 
+/**
+ * Each schema's branches as worked out (task 43: the calendar asked a record's branch for every record, 2,805 times
+ * a read with Juan's Agenda). A schema is never changed in place (a change makes a new one), so they hold.
+ */
+const branches = new WeakMap<Schema, Map<TypeId, readonly TypeId[]>>();
+
 /** A type and every collection under it, the type first (breadth first). */
-export function branch(schema: Schema, id: TypeId): TypeId[] {
+export function branch(schema: Schema, id: TypeId): readonly TypeId[] {
+  let known = branches.get(schema);
+  if (!known) {
+    known = new Map();
+    branches.set(schema, known);
+  }
+  const was = known.get(id);
+  if (was) return was;
   const out = [id];
   for (let i = 0; i < out.length; i++)
     for (const t of Object.values(schema.types))
       if (t.parent === out[i] && !out.includes(t.id)) out.push(t.id);
+  Object.freeze(out);
+  known.set(id, out);
   return out;
 }
 
