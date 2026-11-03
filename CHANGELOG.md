@@ -5,6 +5,20 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (tenth) — server 0.8.86 · Boni desktop 0.4.65
+
+Needs: the server (0.8.86, to deploy) and Boni desktop 0.4.65 (`release/boni_0.4.65_amd64.deb`, to install). Boni
+Calendar desktop stays 0.8.18. Task 30 (mail M3), and task 43 going on.
+
+- **A mail opens in a window of its own.** In the conversation, the ↗ («Abrir») of a mail of a summary opens it in
+  its own window, the one Boni Calendar's notes use, which stays while you work elsewhere; in the browser and on the
+  phone, in the side panel as before. (#276, task 30)
+- **«Proponer tarea» on each mail.** Next to the ↗, a mail's line proposes its tasks: the mail is read now as a new
+  one is, and what it asks goes to the Bandeja; a toast says how many, or that there was nothing to propose. (#276,
+  task 30)
+- **The log says who asked for what held the server.** Its line names the function in each of Boni's files on the
+  way out («store.ts readType ← calendarStore.ts expandNode»), not three of the store's own. (#275, task 43)
+
 ## 2026-11-03 (ninth) — server 0.8.85
 
 Needs: the server only (0.8.85, to deploy). Task 43 again, from the log of 0.8.83's last hour.
