@@ -26,6 +26,7 @@ async function boot() {
     boniNet?: Pick<Host, "fetchText">;
     boniNotify?: Host["notify"];
     boniDesktop?: Host["desktop"];
+    boniLinks?: { open: (url: string) => Promise<unknown> };
     boniAndroid?: AndroidNative;
   };
   await mountApp(
@@ -43,6 +44,8 @@ async function boot() {
           ...(w.boniNotify ? { notify: w.boniNotify } : {}),
           // ...and can keep running in the tray and start with the session.
           ...(w.boniDesktop ? { desktop: w.boniDesktop } : {}),
+          // ...and opens an event's video call in the system's browser (task 49).
+          ...(w.boniLinks ? { openUrl: (url: string) => w.boniLinks?.open(url) } : {}),
         },
   );
   const { useApp } = await import("./store.ts");

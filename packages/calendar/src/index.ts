@@ -20,3 +20,4 @@ export * from "./series.ts";
 export * from "./shift.ts";
 export * from "./time.ts";
 export * from "./validate.ts";
+export * from "./video.ts";

@@ -10,7 +10,9 @@ import {
   formatMinute,
   fromLocal,
   gmtLabel,
+  hostOf,
   isProposalId,
+  linksOf,
   monthNames,
   occurrenceId,
   type PropertyDef,
@@ -18,6 +20,7 @@ import {
   type Recurrence,
   resolveOccurrence,
   toLocal,
+  videoLink,
   type When,
   weekdayNames,
   whenStartDay,
@@ -43,6 +46,7 @@ import {
   Tag,
   Trash2,
   Type,
+  Video,
   X,
 } from "lucide-react";
 import {
@@ -54,7 +58,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { appRect, appRoot, findInApp } from "../host.ts";
+import { appRect, appRoot, findInApp, openUrl } from "../host.ts";
 import { t } from "../i18n.ts";
 import { notesBridge } from "../notesBridge.ts";
 import { presetOf, type RecPreset, recurrenceLabel, ruleOf } from "../recurrence.ts";
@@ -195,6 +199,9 @@ function DetailBody({ ev }: { ev: CalEvent }) {
   const setProp = (id: string, v: PropValue) => update({ props: { ...ev.props, [id]: v } });
   const h24 = app.settings.h24;
   const fmt = useCallback((m: number) => formatMinute(m, h24), [h24]);
+  // Its links (task 49): the video call as the button above, every http(s) address as a pill by its host.
+  const video = videoLink(ev);
+  const links = linksOf(ev);
 
   return (
     <div
@@ -262,6 +269,14 @@ function DetailBody({ ev }: { ev: CalEvent }) {
       </div>
 
       {proposal && <p className="detail-note">{t("event.proposalHelp")}</p>}
+      {/* The event's video call (task 49): one button, outside the fields a read-only calendar locks. */}
+      {video && (
+        <div className="detail-join">
+          <button type="button" className="btn primary" onClick={() => openUrl(video)}>
+            <Video size={15} strokeWidth={1.8} /> {t("event.join")}
+          </button>
+        </div>
+      )}
       {/* A read-only calendar (a subscription): everything shows, nothing can be changed. */}
       <fieldset className="detail-fields" disabled={locked}>
         <div className="detail-title">
@@ -404,6 +419,27 @@ function DetailBody({ ev }: { ev: CalEvent }) {
       </fieldset>
 
       <div className="detail-section meta">
+        {links.length > 0 && (
+          <div className="prop-row top">
+            <span className="prop-icon">
+              <LinkIcon size={15} strokeWidth={1.8} />
+            </span>
+            <span className="prop-name">{t("event.links")}</span>
+            <div className="prop-value detail-links">
+              {links.map((u) => (
+                <button
+                  key={u}
+                  type="button"
+                  className="link-pill"
+                  title={u}
+                  onClick={() => openUrl(u)}
+                >
+                  {hostOf(u)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <MetaRow
           icon={<Hash size={15} strokeWidth={1.8} />}
           name={t("event.id")}

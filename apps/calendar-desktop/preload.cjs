@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld("boniDesktop", {
   setLabels: (labels) => ipcRenderer.send("desktop:labels", labels),
 });
 
+// An event's outside links (a video call): opened by the system's browser, by the main process (only http(s)).
+contextBridge.exposeInMainWorld("boniLinks", {
+  open: (url) => ipcRenderer.invoke("links:open", url),
+});
+
 // Where an event's note opens: Boni's desktop app (or its peek). Every call resolves to { ok: true, value } or
 // { ok: false, code, message }.
 contextBridge.exposeInMainWorld("boniNotes", {

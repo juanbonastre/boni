@@ -53,6 +53,8 @@ export interface Host {
    * dialog can ask for): whether the app has it, and the settings page where it is turned on.
    */
   network?: { allowed(): Promise<boolean>; openSettings(): void };
+  /** Opens an outside http(s) address where the host can (the system's browser); none: a new browser tab. */
+  openUrl?: (url: string) => void | Promise<unknown>;
   /**
    * Shows reminders as the system's notifications (phase 5): the host keeps the list and shows each at
    * its time, even with the calendar in the background; a new list replaces the previous one. `onOpen`
@@ -112,6 +114,16 @@ export function setHost(next: Host): void {
 }
 
 export const getHost = (): Host => host;
+
+/**
+ * An event's outside link (its video call), opened where the host says (task 49): the desktop's system browser,
+ * Android's intent; a plain browser tab opens a new tab. Only http(s); the app itself never navigates away.
+ */
+export function openUrl(url: string): void {
+  if (!/^https?:\/\/\S{1,2000}$/.test(url)) return;
+  if (host.openUrl) void host.openUrl(url);
+  else window.open(url, "_blank", "noopener,noreferrer");
+}
 
 /** The element the app is mounted in (it carries the theme and scopes the CSS). */
 export function setAppRoot(el: HTMLElement | null): void {

@@ -22,6 +22,7 @@ export function androidHost(native: AndroidNative): {
   fetchText: NonNullable<Host["fetchText"]>;
   network: NonNullable<Host["network"]>;
   notify: NonNullable<Host["notify"]>;
+  openUrl: NonNullable<Host["openUrl"]>;
 } {
   let seq = 0;
   const pending = new Map<string, (a: Answer) => void>();
@@ -51,6 +52,8 @@ export function androidHost(native: AndroidNative): {
       openNote: (id) => call<null>("openBoniNote", id),
     },
     fetchText: (url) => call<string>("fetchText", url),
+    // An event's video call, in the phone's browser (task 49).
+    openUrl: (url) => call<null>("openUrl", url),
     network: {
       allowed: async () => {
         const r = await call<boolean>("networkAllowed");

@@ -1155,6 +1155,23 @@ select,
   border: 1.5px solid currentColor;
   cursor: pointer;
 }
+/* The camera pill of an event whose video call can be joined now (task 49): a click opens it. */
+.ev-join {
+  pointer-events: auto;
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin-left: auto;
+  border-radius: 999px;
+  background: currentColor;
+  color: var(--c);
+  cursor: pointer;
+}
+.ev-join svg {
+  color: #fff;
+}
 .ev.done {
   opacity: 0.6;
 }
@@ -1414,6 +1431,38 @@ select,
 .prop-row.top {
   align-items: flex-start;
   padding-top: 5px;
+}
+/* The event's video call, one button under the head (task 49); its other links as pills by their host. */
+.detail-join {
+  padding: 0 16px 8px;
+}
+.detail-join .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.detail-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.link-pill {
+  max-width: 100%;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.link-pill:hover {
+  background: var(--hover);
 }
 .prop-icon {
   width: 18px;

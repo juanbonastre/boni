@@ -88,6 +88,18 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
             null
         }
         "takeOpenEvent" -> activity.takeOpenEvent()
+        // An event's video call or another of its links (task 49): the system's browser opens it; only http(s).
+        "openUrl" -> {
+            val url = a.getString(0)
+            if (!LINK.matches(url)) throw BridgeError("bad-link", "Bad link")
+            val open = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                activity.startActivity(open)
+            } catch (e: ActivityNotFoundException) {
+                throw BridgeError("no-browser", "Nothing opens links")
+            }
+            null
+        }
         // «Abrir en Boni»: the record (by its id) in Boni's own Android app, which takes boni://note links.
         "openBoniNote" -> {
             val id = a.getString(0)
@@ -133,6 +145,7 @@ class AndroidBridge(private val activity: MainActivity, private val web: WebView
         private const val MAX_DOWNLOAD = 20 * 1024 * 1024
         /** A record's id as Boni gives it (the calendar's rows are known by it): a plain one, nothing else in a link. */
         private val RECORD_ID = Regex("^[A-Za-z0-9_-]{1,100}$")
+        private val LINK = Regex("^https?://\\S{1,2000}$")
     }
 }
 
