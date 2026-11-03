@@ -48,6 +48,7 @@ import {
   moveRow,
   removeColumn,
   removeRow,
+  renameCollection,
   restoreColumn,
   restoreRow,
   setNotesInTree,
@@ -431,6 +432,10 @@ export function makeApp(opts: ServerOptions): App {
         }
         if (route === "PUT /api/data/types/:type/parent") {
           moveCollection(store, params.type ?? "", await bodyOf(req), s.device);
+          return send(res, 200, {});
+        }
+        if (route === "PUT /api/data/types/:type/name") {
+          renameCollection(store, params.type ?? "", await bodyOf(req), s.device);
           return send(res, 200, {});
         }
         // A collection's columns, as Notion's properties (task 40).

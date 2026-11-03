@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { AUDIT_SUMMARY, ROW_HISTORY, STORAGE } from "./agent-scenarios.ts";
-import { openApp, PAGE_FROM_HOME, TEMPLATE } from "./fixtures.ts";
+import { openApp, PAGE_FROM_HOME, recorded, TEMPLATE } from "./fixtures.ts";
 
 /**
  * One tree (docs/clases.md §2.7; Juan, 2026-10-28): the sidebar has «Todas las páginas» beside Buscar and
@@ -113,6 +113,95 @@ test("the tree: a folder shows its notes, the eye another's; a collection made i
   await pages.locator(".tree-row", { hasText: "Documentos" }).first().hover();
   await pages.getByRole("button", { name: "Nueva nota: Documentos" }).click();
   await expect(page.locator(".topbar .crumbs")).toHaveText(/Documentos\s*\/\s*Sin título/);
+});
+
+test("the right button in the sidebar (task 42): a page's, a collection's and a note's «Más opciones» where the pointer is; each renamed in place", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", { pages: [PAGE_FROM_HOME, TEMPLATE("uso-ia")] });
+  const pages = page.locator(".sidebar").getByRole("list", { name: "Páginas" });
+  const sent = async (start: string, part: string) =>
+    (await recorded(page)).requests.some((r) => r.startsWith(start) && r.includes(part));
+  const items = (name: string) =>
+    page.getByRole("dialog", { name: `Más opciones: ${name}` }).getByRole("menuitemradio");
+  // «Cambiar nombre» writes in place, its name chosen to be written over.
+  const rename = async (name: string, to: string) => {
+    await items(name).filter({ hasText: "Cambiar nombre" }).click();
+    await expect(pages.getByRole("textbox", { name: `Cambiar nombre: ${name}` })).toBeFocused();
+    await page.keyboard.type(to, { delay: 15 });
+  };
+  // A page: the same menu as its «Más opciones», opened where the pointer is (task 39), its row lit meanwhile.
+  const gastos = pages.locator(".page-row", { hasText: "Gastos" });
+  await gastos.click({ button: "right", position: { x: 60, y: 12 } });
+  const at = (await gastos.boundingBox()) as { x: number; y: number };
+  const menu = (await page.getByRole("dialog", { name: "Más opciones: Gastos" }).boundingBox()) as {
+    x: number;
+    y: number;
+  };
+  expect(Math.abs(menu.x - (at.x + 60))).toBeLessThan(6);
+  expect(Math.abs(menu.y - (at.y + 12))).toBeLessThan(6);
+  await expect(gastos).toHaveClass(/menu-open/);
+  await page.screenshot({ path: `${SHOTS}/sidebar-menu.png` });
+  const pageItems = ["Cambiar nombre", "Añadir subpágina", "Duplicar", "Borrar página"];
+  await expect(items("Gastos")).toHaveText(pageItems);
+  await page.keyboard.press("Escape");
+  await expect(items("Gastos")).toHaveCount(0);
+  await gastos.hover();
+  await pages.getByRole("button", { name: "Más opciones: Gastos" }).click();
+  await expect(items("Gastos")).toHaveText(pageItems);
+  await page.keyboard.press("Escape");
+  // Escape leaves the name as it was, Enter keeps the new one.
+  await gastos.click({ button: "right" });
+  await rename("Gastos", "Otra cosa");
+  await page.keyboard.press("Escape");
+  await expect(pages.getByRole("textbox")).toHaveCount(0);
+  await expect(pages.getByRole("button", { name: "Gastos", exact: true })).toBeVisible();
+  await gastos.click({ button: "right" });
+  await rename("Gastos", "Gastos de casa");
+  await page.keyboard.press("Enter");
+  await expect(pages.getByRole("button", { name: "Gastos de casa", exact: true })).toBeVisible();
+  await expect.poll(() => sent("PUT api/pages/gastos ", "Gastos de casa")).toBe(true);
+  expect(await sent("PUT api/pages/gastos ", "Otra cosa")).toBe(false);
+  // A collection: its own menu; a name taken by another is said and the old one stays.
+  const libros = pages.locator(".tree-row", { hasText: "Libros" });
+  await libros.click({ button: "right" });
+  await expect(items("Libros")).toHaveText([
+    "Nueva nota",
+    "Nueva colección dentro",
+    "Cambiar nombre",
+    "Eliminar colección",
+  ]);
+  await rename("Libros", "Lecturas");
+  await page.screenshot({ path: `${SHOTS}/sidebar-rename.png` });
+  await page.keyboard.press("Enter");
+  await expect(pages.getByRole("button", { name: "Lecturas", exact: true })).toBeVisible();
+  await expect.poll(() => sent("PUT api/data/types/t_libro/name ", '"name":"Lecturas"')).toBe(true);
+  await pages.locator(".tree-row", { hasText: "Documentos" }).click({ button: "right" });
+  await rename("Documentos", "lecturas");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".toast")).toContainText("Ya hay una colección con ese nombre");
+  await expect(pages.getByRole("button", { name: "Documentos", exact: true })).toBeVisible();
+  // A note: renamed (its record's title), its link, to the trash.
+  await pages.getByRole("button", { name: "Mostrar subpáginas: Documentos" }).click();
+  await pages.getByRole("button", { name: "Contrato de ejemplo", exact: true }).click({
+    button: "right",
+  });
+  await expect(items("Contrato de ejemplo")).toHaveText([
+    "Cambiar nombre",
+    "Copiar enlace",
+    "Mover a la papelera",
+  ]);
+  await rename("Contrato de ejemplo", "Contrato firmado");
+  await page.keyboard.press("Enter");
+  await expect(pages.getByRole("button", { name: "Contrato firmado", exact: true })).toBeVisible();
+  expect(await sent("PUT api/data/rows/d1 ", "Contrato firmado")).toBe(true);
+  // Boni's own things have nothing to be done with: no menu.
+  await pages.getByRole("button", { name: "Mostrar subpáginas: Boni" }).click();
+  await pages
+    .getByRole("button", { name: "Llamadas a modelos", exact: true })
+    .click({ button: "right" });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("«Todas las páginas»: everything to manage; a search or a level lists it flat; «Mover a…»; a note's history", async ({

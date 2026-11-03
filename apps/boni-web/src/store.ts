@@ -2162,6 +2162,14 @@ export function setPageTitle(title: string) {
   savePage(page.id, { title: clean.trim() });
 }
 
+/** A page's new name from the sidebar's menu (task 42); the open page's is its title, as when it is typed. */
+export function renamePage(id: string, title: string) {
+  if (get().page?.id === id) return setPageTitle(title);
+  const clean = title.replace(/\s+/g, " ").trim().slice(0, 120);
+  set({ pages: get().pages?.map((p) => (p.id === id ? { ...p, title: clean } : p)) ?? null });
+  savePage(id, { title: clean });
+}
+
 /** The page's icon (an emoji; "" removes it). */
 export function setPageIcon(icon: string) {
   const page = get().page;
@@ -2454,6 +2462,24 @@ export async function newCollection(name: string, parent?: string, stay = false)
   }
 }
 
+/** A collection's new name from the sidebar's menu (task 42): at once in the tree; a taken name says so. */
+export async function renameCollection(type: string, name: string) {
+  const tree = get().tree;
+  if (tree)
+    set({
+      tree: {
+        ...tree,
+        collections: tree.collections.map((c) => (c.id === type ? { ...c, name } : c)),
+      },
+    });
+  try {
+    await agent.renameCollection(type, name);
+  } catch (e) {
+    toast(get().t(e instanceof ApiError && e.code === "taken" ? "tree.taken" : "tree.failed"));
+  }
+  await Promise.all([loadDataTypes(), loadTree()]);
+}
+
 /** A collection out of the tree: only an empty one (otherwise it says why). */
 export async function deleteCollection(type: string) {
   try {
@@ -2539,6 +2565,14 @@ export async function moveInTree(
   } catch {
     toast(get().t("tree.failed"));
   }
+}
+
+/** A note's new title from the sidebar's menu (task 42): its record's title, then the tree again. */
+export async function renameNote(type: string, id: string, title: string) {
+  const def = get().dataTypes?.find((x) => x.id === type);
+  if (!def || def.system || def.readOnly) return;
+  await editRowValue(type, id, def.titleField, title);
+  await loadTree();
 }
 
 /** A note of the tree to the trash (its toast's Undo brings it back). */

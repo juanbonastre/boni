@@ -202,6 +202,55 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   await expect(menu.getByRole("menuitemradio")).toHaveText(["Borrar 2"]);
 });
 
+test("the right button on a card (task 42): the board's, the gallery's and the list's open the row's menu where the pointer is", async ({
+  page,
+}) => {
+  await libros(page);
+  const menu = page.getByRole("dialog", { name: "Opciones de la fila" });
+  const head = page.locator(".db-head");
+  const opens = async (card: ReturnType<Page["locator"]>) => {
+    await card.click({ button: "right", position: { x: 40, y: 10 } });
+    const at = (await card.boundingBox()) as { x: number; y: number };
+    const opened = (await menu.boundingBox()) as { x: number; y: number };
+    expect(Math.abs(opened.x - (at.x + 40))).toBeLessThan(6);
+    expect(Math.abs(opened.y - (at.y + 10))).toBeLessThan(6);
+    await expect(menu.getByRole("menuitemradio")).toHaveText([
+      "Abrir",
+      "Cambiar nombre",
+      "Copiar enlace",
+      "Borrar",
+    ]);
+    await expect(card).toHaveClass(/menu-open/);
+  };
+  // The board: «Cambiar nombre» writes the card's title in place.
+  await head.getByRole("radio", { name: "Tablero" }).click();
+  await opens(page.locator(".db-board .db-card", { hasText: "Pedro Páramo" }));
+  await page.screenshot({ path: `${SHOTS}/board-menu.png` });
+  await menu.getByRole("menuitemradio", { name: "Cambiar nombre" }).click();
+  await expect(page.locator(".db-board").getByRole("textbox", { name: "Título" })).toBeFocused();
+  await page.keyboard.type("Los de abajo", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".db-board .db-card", { hasText: "Los de abajo" })).toHaveCount(1);
+  await expect.poll(() => sent(page, "PUT api/data/rows/r3 ", "Los de abajo")).toBe(true);
+  // The gallery: «Borrar» sends the card to the trash, its toast's Undo brings it back.
+  await head.getByRole("radio", { name: "Galería" }).click();
+  const cards = page.locator(".db-gallery .db-card");
+  await opens(cards.filter({ hasText: /^Ficciones/ }));
+  await menu.getByRole("menuitemradio", { name: "Borrar" }).click();
+  await expect(cards).toHaveCount(2);
+  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
+  await expect(cards).toHaveCount(3);
+  // The list: «Abrir» opens the row as a page; Escape closes the menu without doing anything.
+  await head.getByRole("radio", { name: "Lista" }).click();
+  const rayuela = page.locator(".db-list .db-list-row", { hasText: "Rayuela" });
+  await opens(rayuela);
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await opens(rayuela);
+  await menu.getByRole("menuitemradio", { name: "Abrir" }).click();
+  await expect(page.locator(".topbar .crumbs")).toHaveText(/Libros\s*\/\s*Rayuela/);
+});
+
 test("what is open shows lit in «Páginas», unfolded down to it: a record, its collection, a page inside another", async ({
   page,
 }) => {

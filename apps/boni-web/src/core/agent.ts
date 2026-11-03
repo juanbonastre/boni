@@ -1968,6 +1968,9 @@ export class AgentApi {
   /** A collection out of the tree (only when nothing is left in it). */
   deleteCollection = async (type: string) =>
     void (await this.call("DELETE", `/${encodeURIComponent(type)}`, undefined, "api/data/types"));
+  /** A collection's new name (its key stays); a name taken by another is refused ("taken"). */
+  renameCollection = async (type: string, name: string) =>
+    void (await this.call("PUT", `/${encodeURIComponent(type)}/name`, { name }, "api/data/types"));
   /** A collection moved under another (`null`: the root). */
   moveCollection = async (type: string, parent: string | null) =>
     void (await this.call(

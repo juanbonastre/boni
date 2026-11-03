@@ -313,11 +313,15 @@ contraseña ni un código aquí» under a question.
   (Juan, 2026-10-28; docs/clases.md §2.7): Buscar, the conversation and «Todas las páginas» at the top; then two
   sections, each folded and unfolded by a click on its name (a chevron beside it on hover; kept on this device):
   «Recientes» (the last five pages, collections and notes opened here, newest first, hidden while there are none) and
-  «Páginas», only to open, add and delete: the user's pages as a tree (each row's "…": add a subpage, duplicate,
-  delete with Undo; "+" by the name of the section makes a page), then the collections, each inside its mother and
-  folded by default, with its records that have a note under it when its eye says so (on hover: the eye, "…" with
-  «Nueva nota», «Nueva colección dentro» typed in place, «Eliminar colección», only an empty one; "+" makes a note),
-  then «Boni», folded: Boni's template pages and its own collections, read only. What is open is lit there (Juan,
+  «Páginas», only to open, add and delete: the user's pages as a tree (each row's "…": «Cambiar nombre», add a
+  subpage, duplicate, delete with Undo; "+" by the name of the section makes a page), then the collections, each
+  inside its mother and folded by default, with its records that have a note under it when its eye says so (on hover:
+  the eye, "…" with «Nueva nota», «Nueva colección dentro» typed in place, «Cambiar nombre», «Eliminar colección»,
+  only an empty one; "+" makes a note; a note's "…": «Cambiar nombre», «Copiar enlace», «Mover a la papelera»), then
+  «Boni», folded: Boni's template pages and its own collections, read only. **The right button** on a row (task 42,
+  as Notion's) opens the same menu as its "…", where the pointer is, the row lit while it is open; «Cambiar nombre»
+  writes the name in place, all of it chosen (Enter or leaving it keeps it, Esc does not; a collection's name is used
+  once, its key stays). Boni's own things have no menu. What is open is lit there (Juan,
   2026-10-30): opening a page, a collection or a note (from anywhere: Recientes, a table, a link, the search) unfolds
   «Páginas» and the pages or collections above it and scrolls to it; a note whose collection does not show its notes
   lights its collection. A branch folded by hand stays folded until something inside it is opened. The trash,
@@ -406,7 +410,9 @@ contraseña ni un código aquí» under a question.
   page's bottom (above a toast) says how many, with «Abrir» (one), «Borrar» / «Borrar N» and ✕, so nothing in the
   head or the table moves; the head keeps its options, and a click on one of them, Esc or a click outside the table
   lets go; Supr deletes them (one Undo for all). The right button on a row opens its menu (Abrir, Cambiar nombre,
-  Copiar enlace, Borrar; with several chosen, «Borrar N»); a row not chosen is chosen alone first. **A column's menu**
+  Copiar enlace, Borrar; with several chosen, «Borrar N»); a row not chosen is chosen alone first. A card of the
+  board, the gallery or the list opens the same menu where the pointer is (task 42), lit while it is open; its
+  «Cambiar nombre» writes the card's title in place. **A column's menu**
   (task 40; Notion's property menu): a click on its name opens it under the name, the right button where the pointer
   is: its name written in place (focused; Enter keeps it), «Tipo: …» with the kinds (Texto, Texto largo, Número,
   Lista, Lista múltiple, Fecha, Fecha y hora, Casilla, Enlace, Correo, Teléfono), «Valores» for a list (each renamed

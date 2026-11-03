@@ -1122,54 +1122,114 @@ function TableView({
         />
       )}
       {menu && (
-        <PointMenu x={menu.x} y={menu.y} label={t("db.rowMenu")} onClose={() => setMenu(null)}>
-          {(close) => (
-            <div className="menu-list" role="menu">
-              {picked.size <= 1 && (
-                <MenuRow
-                  label={t("db.open")}
-                  onClick={() => {
-                    close();
-                    void openRow(menu.row.type ?? type.id, menu.row.id);
-                  }}
-                />
-              )}
-              {picked.size <= 1 && (
-                <MenuRow
-                  label={t("db.rename")}
-                  onClick={() => {
-                    close();
-                    setRenaming(menu.row.id);
-                  }}
-                />
-              )}
-              {picked.size <= 1 && (
-                <MenuRow
-                  label={t("db.copyLink")}
-                  onClick={() => {
-                    close();
-                    void navigator.clipboard
-                      ?.writeText(`boni://note?id=${menu.row.id}`)
-                      .then(() => toast(t("db.linkCopied")))
-                      .catch(() => {});
-                  }}
-                />
-              )}
-              <MenuSep />
-              <MenuRow
-                label={picked.size > 1 ? t("db.deleteN", { n: picked.size }) : t("db.delete")}
-                danger
-                onClick={() => {
-                  close();
-                  remove(picked.size > 1 ? [...picked] : [menu.row.id]);
-                }}
-              />
-            </div>
-          )}
-        </PointMenu>
+        <RowMenu
+          at={menu}
+          type={type}
+          row={menu.row}
+          many={picked.size}
+          onRename={() => setRenaming(menu.row.id)}
+          onDelete={() => remove(picked.size > 1 ? [...picked] : [menu.row.id])}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   );
+}
+
+/**
+ * A row's menu where the pointer is: a right click on a table's row or on a card (task 42). With more than one
+ * row chosen it is theirs: only deleting them.
+ */
+function RowMenu({
+  at,
+  type,
+  row,
+  many = 0,
+  onRename,
+  onDelete,
+  onClose,
+}: {
+  at: { x: number; y: number };
+  type: DataType;
+  row: DataRow;
+  many?: number;
+  onRename: () => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const t = useStore((s) => s.t);
+  return (
+    <PointMenu x={at.x} y={at.y} label={t("db.rowMenu")} onClose={onClose}>
+      {(close) => (
+        <div className="menu-list" role="menu">
+          {many <= 1 && (
+            <>
+              <MenuRow
+                label={t("db.open")}
+                onClick={() => {
+                  close();
+                  void openRow(row.type ?? type.id, row.id);
+                }}
+              />
+              <MenuRow
+                label={t("db.rename")}
+                onClick={() => {
+                  close();
+                  onRename();
+                }}
+              />
+              <MenuRow
+                label={t("db.copyLink")}
+                onClick={() => {
+                  close();
+                  void navigator.clipboard
+                    ?.writeText(`boni://note?id=${row.id}`)
+                    .then(() => toast(t("db.linkCopied")))
+                    .catch(() => {});
+                }}
+              />
+              <MenuSep />
+            </>
+          )}
+          <MenuRow
+            label={many > 1 ? t("db.deleteN", { n: many }) : t("db.delete")}
+            danger
+            onClick={() => {
+              close();
+              onDelete();
+            }}
+          />
+        </div>
+      )}
+    </PointMenu>
+  );
+}
+
+/**
+ * A card's right button (the board, the list and the gallery; task 42): the row's menu where the pointer is, and
+ * the card whose title is being renamed. Boni's own collections and those a connector fills have none.
+ */
+function useCardMenu(type: DataType) {
+  const [menu, setMenu] = useState<{ x: number; y: number; row: DataRow } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const onMenu = (row: DataRow) => (e: React.MouseEvent) => {
+    if (type.system || type.readOnly) return;
+    // A value being written keeps the system's own menu.
+    if ((e.target as HTMLElement).closest("input, textarea, [contenteditable='true']")) return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, row });
+  };
+  const node = menu && (
+    <RowMenu
+      at={menu}
+      type={type}
+      row={menu.row}
+      onRename={() => setRenaming(menu.row.id)}
+      onDelete={() => void deleteRows(type.id, [menu.row.id])}
+      onClose={() => setMenu(null)}
+    />
+  );
+  return { onMenu, node, renaming, done: () => setRenaming(null), open: menu?.row.id };
 }
 
 /** The rows chosen in a table, in a bar over the page's bottom: how many, open one, delete them, let go (Juan,
@@ -1765,6 +1825,7 @@ function BoardView({
     type.fields.find((f) => f.type === "select");
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  const cards = useCardMenu(type);
   if (!group) return <p className="db-hint">{t("db.boardNeedsSelect")}</p>;
   const columns = [
     { id: "", name: t("db.noValue", { field: group.name }) },
@@ -1808,8 +1869,9 @@ function BoardView({
             {inCol.map((r) => (
               <div
                 key={r.id}
-                className={`db-card${dragging === r.id ? " dragging" : ""}`}
-                draggable
+                className={`db-card${dragging === r.id ? " dragging" : ""}${cards.open === r.id ? " menu-open" : ""}`}
+                draggable={cards.renaming !== r.id}
+                onContextMenu={cards.onMenu(r)}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";
                   e.dataTransfer.setData("text/plain", r.id);
@@ -1820,7 +1882,14 @@ function BoardView({
                   setOver(null);
                 }}
               >
-                <CardBody type={type} row={r} fields={props} titles={titles} />
+                <CardBody
+                  type={type}
+                  row={r}
+                  fields={props}
+                  titles={titles}
+                  renaming={cards.renaming === r.id}
+                  onRenamed={cards.done}
+                />
               </div>
             ))}
             <button
@@ -1834,28 +1903,43 @@ function BoardView({
           </div>
         );
       })}
+      {cards.node}
     </div>
   );
 }
 
-/** A card's content: its title (edited in place) and the properties that have a value. */
+/** A card's content: its title (edited in place; renamed from its menu) and the properties that have a value. */
 function CardBody({
   type,
   row,
   fields,
   titles,
+  renaming,
+  onRenamed,
 }: {
   type: DataType;
   row: DataRow;
   fields: DataField[];
   titles: Record<string, string>;
+  renaming?: boolean;
+  onRenamed?: () => void;
 }) {
   const title = type.fields.find((f) => f.id === type.titleField);
   return (
     <>
       {title && (
         <div className="db-card-title">
-          <Cell type={type} field={title} row={row} titles={titles} />
+          {renaming ? (
+            <TextCell
+              field={title}
+              value={row.values[title.id] ?? null}
+              startEditing
+              onDone={() => onRenamed?.()}
+              onSave={(v) => void editCell(type.id, row.id, title.id, v)}
+            />
+          ) : (
+            <Cell type={type} field={title} row={row} titles={titles} />
+          )}
           <OpenButton type={type} row={row} />
         </div>
       )}
@@ -1889,6 +1973,7 @@ function CardsView({
   gallery: boolean;
 }) {
   const t = useStore((s) => s.t);
+  const cards = useCardMenu(type);
   if (!rows.length) return <p className="db-hint">{t("db.empty")}</p>;
   return (
     <div
@@ -1897,10 +1982,22 @@ function CardsView({
       style={gallery ? ({ "--cards": rows.length } as React.CSSProperties) : undefined}
     >
       {rows.map((r) => (
-        <div key={r.id} className={gallery ? "db-card" : "db-list-row"}>
-          <CardBody type={type} row={r} fields={fields} titles={titles} />
+        <div
+          key={r.id}
+          className={`${gallery ? "db-card" : "db-list-row"}${cards.open === r.id ? " menu-open" : ""}`}
+          onContextMenu={cards.onMenu(r)}
+        >
+          <CardBody
+            type={type}
+            row={r}
+            fields={fields}
+            titles={titles}
+            renaming={cards.renaming === r.id}
+            onRenamed={cards.done}
+          />
         </div>
       ))}
+      {cards.node}
     </div>
   );
 }
