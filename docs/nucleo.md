@@ -574,7 +574,7 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P10 | `schema` | allow con aviso y Deshacer en un turno de Juan; propose si viene de contenido externo o de la jardinería; borrar datos de un campo, confirm |
 | P11 | Secuencias sospechosas (muchas lecturas sensibles y luego `egress`; más de N escrituras en una ejecución) | la ejecución se para y pide confirm |
 | P12 | Límites por ejecución: pasos, llamadas a modelos, bytes de salida, coste | deny al superarlos |
-| P13 | Límites por día en segundo plano: llamadas a lectores por día y por remitente, coste diario | lo que pase del límite espera al día siguiente o a que Juan lo pida; avisa una vez |
+| P13 | Límites por día en segundo plano: llamadas a lectores por día y por remitente, coste diario; el trabajo que decide y limita el propio código (la revisora volviendo a leer correo ya decidido para medir una guía, como mucho una vez al día) cuenta en el día y en su propio cupo (45 lecturas), nunca en el de cada remitente ni en el del correo nuevo (tarea 37) | lo que pase del límite espera al día siguiente o a que Juan lo pida; avisa una vez |
 | P14 | Un destino (`destination`, `url`, `path`, `recipient`) que es un valor derivado (4.2) | deny |
 | P15 | Un paso cuya condición o iteración depende de datos externos (etiqueta de control, 4.2) | se trata como si sus argumentos fueran externos: propose, o la regla que toque |
 | P16 | Crear o cambiar mini-apps, atajos o trabajos con algo externo en su especificación | deny (Juan puede crearlos a mano o pedirlos en un turno) |

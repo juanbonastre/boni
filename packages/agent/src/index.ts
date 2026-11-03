@@ -1,6 +1,7 @@
 export {
   Agent,
   type AgentOptions,
+  type Budget,
   type LiveEvent,
   type Notice,
   type Painted,

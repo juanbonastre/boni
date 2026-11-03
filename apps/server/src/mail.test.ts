@@ -710,7 +710,17 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
       ],
       examples: ["d1"],
     };
+    // Measuring reads mail again in its own allowance, never in the mail's own budget (task 37).
+    const day = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Madrid",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(Date.now());
+    const mailSpent = store.journal.spent(day, "reader:ext:correo");
     const s = await m.reviewNow(1);
+    expect(store.journal.spent(day, "reader:ext:correo")).toBe(mailSpent);
+    expect(store.journal.spent(day, "reader:ext:correo:measure")).toBeGreaterThan(0);
     expect(s?.rules.map((r) => [r.from, r.action])).toEqual([["@lista.example.com", "skip"]]);
     expect(s?.examples).toHaveLength(1);
     expect(s?.examples[0]?.want).toEqual([]); // he rejected everything from that mail
