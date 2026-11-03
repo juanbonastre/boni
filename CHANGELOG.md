@@ -15,6 +15,9 @@ Calendar desktop stays 0.8.17. The batch Juan chose («36, 37 y 23»).
 - **The conversation reads mail with Juan's guide.** «Resume mis correos», «Ponme al día» or «¿Quién me ha escrito
   de la secretaría?»: the AI that reads the mail gets his guide (Ajustes › Correo: his instructions and the examples
   from his decisions), as the background reading does, and tells first what it says matters. (#264, task 23)
+- **Measuring a guide never leaves new mail unread.** The reviewer's readings of mail already decided count in an
+  allowance of their own (45 a day) and in the day's total, never in the mail's 150 nor in a sender's 20. (#263,
+  task 37; P13 in `docs/nucleo.md`)
 
 ## 2026-11-03 (fifth) — server 0.8.81
 
