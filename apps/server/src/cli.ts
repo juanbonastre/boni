@@ -22,6 +22,7 @@ import {
 } from "@boni/identity";
 import { openUserStore, restoreBackup, wrappedKeyProvider } from "@boni/store";
 import { addUser, listUsers, revokeSessions } from "./auth.ts";
+import { diagnose } from "./diagnose.ts";
 import { embedCounts, embedDoubts } from "./embeds.ts";
 import { checkConciliacion } from "./money/check.ts";
 import { storeFiles } from "./money/storeFiles.ts";
@@ -59,6 +60,8 @@ import { V1Store } from "./v1/store.ts";
  *   node src/cli.ts roles <name> [--apply]           what each collection can do, worked out from its calendar's
  *       definition and the money's movements (src/roles.ts): a dry run lists the roles; applied, one run
  *   node src/cli.ts roles <name> --undo <run>        those roles taken back whole
+ *   node src/cli.ts diagnose <name>                  where the account's time goes: how much there is of each thing and
+ *                                                    how long the server's heavy reads take with it (read only)
  *   node src/cli.ts split-check <name>               the calendars picked by hand over one field (one definition
  *       each, from the first restructurings) that would become one definition split by it (src/split.ts, D-24)
  *   node src/cli.ts split <name> --apply | --undo    that change made, the colours kept; or taken back whole
@@ -298,6 +301,22 @@ try {
           );
         } else console.log("Ensayo: no se ha cambiado nada (añade --apply).");
       }
+    } finally {
+      store.close();
+    }
+  } else if (cmd === "diagnose") {
+    const [name] = args;
+    const user = listUsers(db).find((u) => u.name === name);
+    if (!name || !user) throw new Error("Usage: diagnose <name>");
+    if (paths.system === ":memory:") throw new Error("No data folder (BONI_DB)");
+    const store = openUserStore(join(dirname(paths.system), "users", `${user.id}.db`));
+    try {
+      const lines = await diagnose(store, {
+        now: Date.now(),
+        tz: process.env.BONI_TZ ?? "Europe/Madrid",
+        usdToEur: 0.92,
+      });
+      for (const line of lines) console.log(line);
     } finally {
       store.close();
     }

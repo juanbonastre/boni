@@ -71,6 +71,7 @@ import {
   seedTemplates,
   updatePage,
 } from "./pages.ts";
+import { noteRequest } from "./perf.ts";
 import { relatedTo } from "./related.ts";
 import { noticesOfAccount, type Push } from "./reminders.ts";
 import { bodyOf, CORS, header, SAFE, send, sendFile, tokenOf } from "./reply.ts";
@@ -1001,6 +1002,13 @@ export function makeApp(opts: ServerOptions): App {
     },
     handler: (listener) => (req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
+      // How long each API request took, counted by its route when slow (perf.ts: the minute's line in the log).
+      if (url.pathname.startsWith("/api/")) {
+        const t0 = performance.now();
+        res.on("finish", () =>
+          noteRequest(routeOf(req.method, url.pathname, routes).route, performance.now() - t0),
+        );
+      }
       const handle =
         url.pathname.startsWith("/api/") || url.pathname === "/healthz"
           ? api(req, res, url, listener)

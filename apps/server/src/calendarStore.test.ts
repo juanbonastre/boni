@@ -2,7 +2,7 @@ import { leaf, rec } from "@boni/agent";
 import type { Row } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   addCalendar,
   calendarCandidates,
@@ -155,6 +155,34 @@ function agendaEnv(): {
   });
   return { store, cal, area, tipo, type };
 }
+
+describe("the calendar asks often and reads little (A-15, task 35)", () => {
+  it("reads a split definition's records once per change of the store, not on every poll or request", async () => {
+    const { store, cal, area } = agendaEnv();
+    expect(await cal.setSplit("agenda", area)).toBe("ok");
+    const list = vi.spyOn(store, "list");
+    const poll = () => (cal as unknown as { poll(): void }).poll();
+    calendarDefs(store);
+    const before = list.mock.calls.length;
+    // Every second and on every request of the apps: from memory.
+    for (let i = 0; i < 5; i++) {
+      poll();
+      calendarDefs(store);
+      await cal.snapshot();
+      cal.changes(0);
+    }
+    expect(list.mock.calls.length).toBe(before);
+    // A change (a colour kept in the definition): read again, once.
+    const docencia = calendarDefs(store).find((p) => p.def.name === "Docencia")?.def.id as string;
+    expect(await cal.setColor(docencia, "#123456")).toBe(true);
+    const after = list.mock.calls.length;
+    expect(after).toBeGreaterThan(before);
+    for (let i = 0; i < 5; i++) poll();
+    expect(list.mock.calls.length).toBe(after);
+    expect(calendarDefs(store).find((p) => p.def.id === docencia)?.def.color).toBe("#123456");
+    list.mockRestore();
+  });
+});
 
 describe("a definition split by a field (D-24)", () => {
   it("one calendar per value, «Sin …» while some record holds nothing, colours kept by value; whole again", async () => {

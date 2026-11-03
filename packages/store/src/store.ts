@@ -801,6 +801,8 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
     }
   }
 
+  let runOpsStatement: ReturnType<typeof db.prepare> | null = null;
+
   function version(): number {
     return Number(
       (db.prepare("SELECT coalesce(max(seq), 0) AS s FROM ops").get() as { s: number }).s,
@@ -937,15 +939,21 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
              AND NOT EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) LIMIT 1`,
         )
         .get(run) !== undefined,
-    runOps: (run) =>
-      (
-        db
-          .prepare(
-            `SELECT o.kind, o.target, EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) AS undone
-             FROM ops o WHERE o.run = ? AND o.undoes IS NULL AND o.kind <> 'schema' ORDER BY o.seq`,
-          )
-          .all(run) as { kind: Exclude<OpKind, "schema">; target: string; undone: number }[]
-      ).map((r) => ({ kind: r.kind, target: r.target, undone: r.undone === 1 })),
+    // Prepared once: Boni's «Ejecuciones» asks it for every run of the year (thousands; task 35).
+    runOps: (run) => {
+      if (!runOpsStatement)
+        runOpsStatement = db.prepare(
+          `SELECT o.kind, o.target, EXISTS (SELECT 1 FROM ops u WHERE u.undoes = o.seq) AS undone
+           FROM ops o WHERE o.run = ? AND o.undoes IS NULL AND o.kind <> 'schema' ORDER BY o.seq`,
+        );
+      return (
+        runOpsStatement.all(run) as {
+          kind: Exclude<OpKind, "schema">;
+          target: string;
+          undone: number;
+        }[]
+      ).map((r) => ({ kind: r.kind, target: r.target, undone: r.undone === 1 }));
+    },
     aiAccess() {
       const own: Record<TypeId, AiLevel> = {};
       for (const r of db.prepare("SELECT type, level FROM ai_access").all())

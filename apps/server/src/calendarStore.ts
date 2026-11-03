@@ -31,6 +31,7 @@ import {
 } from "@boni/entities";
 import { BODY, type UserStore, type Writes } from "@boni/store";
 import { ghostRows } from "./data.ts";
+import { timed } from "./perf.ts";
 
 /**
  * Boni Calendar over Boni's own collections (Juan, 2026-10-22: no vault, one truth): the API the apps use (a
@@ -294,8 +295,29 @@ function expandNode(
   ];
 }
 
+/**
+ * The calendars as last read, per store: the same answer while neither the store (its records and its schema: its
+ * version) nor the kept definitions changed. Reading them lists every record of a split collection (the values
+ * present, «Sin …»), and the calendar asks every second and on every request (2026-11-03: about 70 ms a time with
+ * Juan's Agenda split by area, a quarter of the NAS's thread; task 35). Callers never change what they get.
+ */
+const readDefs = new WeakMap<
+  UserStore,
+  { version: number; kept: string | null; placed: Placed[] }
+>();
+
 /** The calendars of a store as the apps read them: each definition, a split one expanded (none: no calendar). */
 export function calendarDefs(store: UserStore): Placed[] {
+  const version = store.version();
+  const kept = store.setting(CALENDAR_DEFS);
+  const was = readDefs.get(store);
+  if (was && was.version === version && was.kept === kept) return was.placed;
+  const placed = readCalendarDefs(store);
+  readDefs.set(store, { version, kept, placed });
+  return placed;
+}
+
+function readCalendarDefs(store: UserStore): Placed[] {
   const schema = store.schema();
   return storedCalendarDefs(store).flatMap((s) => {
     const r = parseCollectionDef(s.raw);
@@ -800,10 +822,16 @@ export class StoreCalendar implements CalendarSource {
 
   /** Reads what changed in the store since the last look; a new version when anything did. */
   private poll(): void {
-    this.titles.clear();
+    timed("calendar poll", 250, () => this.pollNow());
+  }
+
+  private pollNow(): void {
     const storeVersion = this.store.version();
     const placed = calendarDefs(this.store);
-    const defsKey = JSON.stringify(placed);
+    // The same definitions as last time (calendarDefs answers from memory): nothing to compare.
+    const defsKey =
+      placed === this.placed && this.seenStore >= 0 ? this.defsKey : JSON.stringify(placed);
+    this.titles.clear();
     const first = this.seenStore < 0;
     const full = !first && defsKey !== this.defsKey;
     const ghostKey = this.store.journal.pendingKey();

@@ -1,5 +1,5 @@
 import type { ProposalRow, RunRow, UserStore } from "@boni/store";
-import { mailOfRun } from "./mailReview.ts";
+import { mailOfPlan } from "./mailReview.ts";
 
 /**
  * What a run of the agent was and what came of it, for the Registro (Juan, 2026-10-22: "Segundo plano · Hecho"
@@ -57,7 +57,18 @@ export function proposalsByRun(store: UserStore): Map<string, ProposalRow[]> {
   return out;
 }
 
-function whatOf(store: UserStore, r: RunRow, mailAccount: string | null): RunWhat {
+/** What a run says of the mail it read. */
+export interface MailSeen {
+  subject: string;
+  from: string;
+}
+
+function whatOf(
+  store: UserStore,
+  r: RunRow,
+  mailAccount: string | null,
+  mails?: Map<string, MailSeen | null>,
+): RunWhat {
   if (r.origin === "accepted") return { kind: "accepted" };
   if (r.origin === "turn" || r.turn) {
     const planner = store.journal.modelCalls(r.id).find((m) => m.role === "planner");
@@ -68,19 +79,19 @@ function whatOf(store: UserStore, r: RunRow, mailAccount: string | null): RunWha
     const plan = r.plan as { steps?: { reader?: string; tool?: string; op?: string }[] } | null;
     const steps = plan?.steps ?? [];
     if (steps[0]?.reader === "review_reading") return { kind: "review" };
-    const mail = mailOfRun(store, r.id);
-    const m = mail ? store.get(mail) : null;
-    if (m) {
-      const v = m.entity.values;
-      const subject = text(v.f_asunto);
+    // The run's own plan says which mail it read (no second read of the journal).
+    const mail = mailOfPlan(plan);
+    let seen = mail ? mails?.get(mail) : null;
+    if (mail && seen === undefined) {
+      const v = store.get(mail)?.entity.values;
+      seen = v ? { subject: text(v.f_asunto), from: text(v.f_de_nombre) || text(v.f_de) } : null;
+      mails?.set(mail, seen);
+    }
+    if (seen) {
       // A reading that may create nothing (no collection to put it in) is the reviewer measuring a guide.
-      if (!JSON.stringify(steps).includes("entities.create")) return { kind: "measure", subject };
-      return {
-        kind: "mail",
-        subject,
-        from: text(v.f_de_nombre) || text(v.f_de),
-        account: mailAccount,
-      };
+      if (!JSON.stringify(steps).includes("entities.create"))
+        return { kind: "measure", subject: seen.subject };
+      return { kind: "mail", subject: seen.subject, from: seen.from, account: mailAccount };
     }
   }
   return { kind: "other" };
@@ -94,6 +105,10 @@ export function runInfo(
     mailAccount?: string | null;
     /** The runs in which Boni accepted a proposal alone (autoAccept.ts). */
     alone?: Set<string>;
+    /** Only what it was and how many changes, not their names (Boni's «Ejecuciones»: thousands of runs). */
+    countOnly?: boolean;
+    /** The mails already looked up, by id: many runs read the same mail (the reviewer's measures). */
+    mails?: Map<string, MailSeen | null>;
   } = {},
 ): RunInfo {
   const mine = (o.proposals ?? proposalsByRun(store)).get(r.id) ?? [];
@@ -102,7 +117,7 @@ export function runInfo(
   const ops = store.runOps(r.id);
   const schema = store.schema().types;
   const changes: RunChange[] = [];
-  for (const op of ops.slice(0, NAMED)) {
+  for (const op of o.countOnly ? [] : ops.slice(0, NAMED)) {
     const e = store.get(op.target)?.entity;
     const def = e ? schema[e.type] : undefined;
     changes.push({
@@ -113,7 +128,7 @@ export function runInfo(
     });
   }
   return {
-    what: whatOf(store, r, o.mailAccount ?? null),
+    what: whatOf(store, r, o.mailAccount ?? null, o.mails),
     proposals,
     changes,
     changed: ops.length,
