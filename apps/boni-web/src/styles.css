@@ -8050,13 +8050,72 @@ button.rows-panel-row:hover {
 .reply-open:active {
   transform: scale(0.97);
 }
+/* The rest of the app rises the same way (task 28, 2026-11-03; I-14): what the main area shows (a page, a record, a
+   table: the same node starts again when another page takes its place, App.tsx flips `data-enter`), each card of the
+   inbox (50 ms apart, four at most), a dialog, the pane of Settings when its tab changes, a screen of the phone.
+   Menus and popovers grow from their trigger (from 0.95 with opacity, 160 ms). The phone's sheets keep sliding up
+   from the bottom, as the platform's do. */
+@keyframes rise-in-b {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes grow-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.main[data-enter="a"] > .content,
+.main[data-enter="a"] > .models-view,
+.m-scroll,
+.modal,
+.settings-pane,
+.inbox-card {
+  animation: rise-in 240ms var(--ease-out) both;
+}
+.main[data-enter="b"] > .content,
+.main[data-enter="b"] > .models-view {
+  animation: rise-in-b 240ms var(--ease-out) both;
+}
+.inbox-card:nth-child(2) {
+  animation-delay: 50ms;
+}
+.inbox-card:nth-child(3) {
+  animation-delay: 100ms;
+}
+.inbox-card:nth-child(n + 4) {
+  animation-delay: 150ms;
+}
+.menu,
+.pop-box {
+  animation: grow-in 160ms var(--ease-out) both;
+  transform-origin: top center;
+}
 @media (prefers-reduced-motion: reduce) {
   .turn-request,
   .turn-answer > *,
   .turn-live > *,
   .reply-section,
   .side-panel.panel-enter,
-  .toast {
+  .toast,
+  .main[data-enter] > .content,
+  .main[data-enter] > .models-view,
+  .m-scroll,
+  .modal,
+  .settings-pane,
+  .inbox-card,
+  .menu,
+  .pop-box {
     animation: none;
   }
   .ask-options .pill,

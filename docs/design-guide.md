@@ -194,7 +194,11 @@ any interface is the vault note `wiki/temas/diseno-de-interfaces.md`. Here, what
   - **What enters, rises** (Juan, 2026-11-02: «animaciones agradables, como Apple»): a request, each block of an
     answer, a question card, the side panel (12 px from the right) and a toast come into place from 6 px below with
     their opacity, in 200-240 ms with `var(--ease-out)`; a list's sections follow each other 50 ms apart, four at
-    most. Nothing animates on every keystroke or on hover beyond colour and a 1 px lift. References read for it:
+    most. The same rule, everywhere else (task 28, 2026-11-03; I-14): what the main area shows (a page, a record,
+    a table; the same node rises again when another page takes its place), each card of the inbox (50 ms apart,
+    four at most), a dialog, the pane of Settings when its tab changes, and a screen of the phone. Menus and
+    popovers grow from their trigger (from 0.95 with opacity, 160 ms). The phone's sheets keep sliding up from the
+    bottom, as the platform's do. Nothing animates on every keystroke or on hover beyond colour and a 1 px lift. References read for it:
     Apple's HIG «Motion» (purposeful, it communicates, optional with Reduce Motion, never on frequent interactions,
     nothing at the edge of the field of view) and Material 3's scale (about 200 ms for a control, 250-400 ms for
     something entering, decelerate curves for entries).
