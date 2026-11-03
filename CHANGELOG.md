@@ -5,6 +5,15 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (fourteenth) — server 0.8.90
+
+Needs: the server only (0.8.90, to deploy). Task 26, as Juan decided («Sí»).
+
+- **Each mail keeps its original.** A new mail keeps the `.eml` it came as, a file beside its attachments named by
+  its subject («Actas de FUP 1.eml»), up to 2 MB; in «Ver correo» it is the last of the attachments and opens whole
+  in the computer's mail app. A bigger one is not kept, and the mail says so. Mail already in stays as it was.
+  (#283, task 26)
+
 ## 2026-11-03 (thirteenth) — server 0.8.89 · Boni Calendar desktop 0.8.19
 
 Needs: the server (0.8.89, to deploy) and Boni Calendar desktop 0.8.19
