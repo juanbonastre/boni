@@ -390,8 +390,12 @@ contraseña ni un código aquí» under a question.
   «De Boni · solo lectura» instead of a level of what the AI sees (no AI sees them): no «Nuevo», no editing, no opening
   a row. They are counted like any collection.
 - **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`): "/" + a collection's name puts it on a
-  page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Opciones" (sort, a board's
-  grouping select, a calendar's date, visible properties) and "Nuevo". Table: the title column first, 34 px rows,
+  page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Filtro", "Opciones" and
+  "Nuevo". **«Opciones»** is Notion's «⋯» of a view (Juan, 2026-11-03, task 41): a short list, each row saying what it
+  is now on the right («5 visibles», «Título ↓») with a chevron, and opening its panel in the same box (its head, «‹»
+  and its name, goes back): Propiedades (each shown or not), Filtrar (the view's rules, as "Filtro"), Ordenar (none, or
+  a column up and, again, down), Agrupar (a board's list), Fecha and «También en el calendario» (a calendar), Columnas
+  de sistema (a table); under a line, the collection's notes in the sidebar (its eye). It opens on the list again. Table: the title column first, 34 px rows,
   hairline grid, each cell edited where it is (text and numbers as a field, Enter or leaving saves, Esc does not;
   selects as Notion's coloured pills from a menu; checkboxes at once; relations from a picker: the target's rows by
   title, filtered as one types, one with «Ninguno» or several with a click each; Juan, 2026-11-02: every property
@@ -739,7 +743,7 @@ contraseña ni un código aquí» under a question.
   lights only theirs and brings it into view, a second click all again. Closing the panel leaves the page as it was.
 - **System columns** (any table; Juan, 2026-10-24): Creado, Creado por, Modificado, Modificado por, Editores, Visto
   por, Último acceso de una IA, Origen, Versión, Tamaño. None shown by default; the view's «Opciones» has a «Columnas
-  de sistema» group to show each. Their cells are muted 12.5 px text, ellipsized (full text on hover), never editable.
+  de sistema» panel to show each. Their cells are muted 12.5 px text, ellipsized (full text on hover), never editable.
 - **«Todas las páginas»** ends with the tiles Registros, Almacenamiento, Historial and Textos de los modelos,
   Boni's storage advice when something grows (an amber-tinted line with a bulb; nothing is deleted by itself), and two
   bar lists: «Tamaño por colección» (data and history; a click opens the collection) and «Uso en 30 días» (read and
