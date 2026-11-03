@@ -99,17 +99,22 @@ describe("the minute's line about slowness", () => {
     const watcher = holdWatcher((why) => failures.push(why));
     expect(watcher).not.toBeNull();
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    function holdTheLoop() {
-      const end = performance.now() + 600;
+    function holdTheLoop(ms = 600) {
+      const end = performance.now() + ms;
       while (performance.now() < end);
     }
+    // Busy at once, as the server is when it starts: the watchdog still starts (it used to end before it watched).
+    holdTheLoop(300);
     // A busy machine (the CI's) starts the thread slowly: what is waited for is waited for, not a fixed time.
     const ready = await Promise.race([
       watcher?.ready.then(() => "watching"),
       wait(15_000).then(() => "not started"),
     ]);
     expect({ ready, failures }).toEqual({ ready: "watching", failures: [] });
-    await wait(50);
+    // What it saw of the start is let go; then nothing until the loop is held again.
+    await wait(100);
+    watcher?.take();
+    await wait(100);
     expect(watcher?.take()).toBeNull();
     holdTheLoop();
     // The watchdog sees the loop beat again, stops the profile and sends it.
@@ -121,6 +126,7 @@ describe("the minute's line about slowness", () => {
     await watcher?.stop();
     expect(failures).toEqual([]);
     expect(hold?.ms).toBeGreaterThan(200);
-    expect(hold?.what).toMatch(/holdTheLoop/);
+    // This file's own code held it (V8 may fold holdTheLoop into its caller once it is hot).
+    expect(hold?.what).toMatch(/^perf\.test\.ts /);
   }, 40_000);
 });

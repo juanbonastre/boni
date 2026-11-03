@@ -514,33 +514,45 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
       }
       return { ok: true, ops, actions, broken: null };
     },
+    // Sizes in bytes by `octet_length`, which SQLite answers from each row's header: `length` counts characters, so
+    // it read every text whole (the models' prompts, the history's values), and on the NAS this took 9.6 s with the
+    // server held (task 43). The history is summed in one pass, not once per collection.
     storage: () => {
+      const history = new Map(
+        (
+          db
+            .prepare(
+              `SELECT x.type AS type,
+                 coalesce(sum(coalesce(octet_length(o.before), 0) + coalesce(octet_length(o.after), 0)), 0) AS b
+               FROM ops o JOIN entities x ON x.id = o.target GROUP BY x.type`,
+            )
+            .all() as { type: string; b: number }[]
+        ).map((r) => [r.type, Number(r.b)]),
+      );
       const types = db
         .prepare(
-          `SELECT e.type, count(*) AS rows, sum(length(e.vals) + coalesce(length(e.body), 0)) AS bytes,
-             (SELECT coalesce(sum(coalesce(length(o.before), 0) + coalesce(length(o.after), 0)), 0)
-                FROM ops o JOIN entities x ON x.id = o.target WHERE x.type = e.type) AS history
-           FROM entities e WHERE e.deleted IS NULL GROUP BY e.type`,
+          `SELECT type, count(*) AS rows, sum(octet_length(vals) + coalesce(octet_length(body), 0)) AS bytes
+           FROM entities WHERE deleted IS NULL GROUP BY type`,
         )
         .all()
         .map((r) => ({
           type: r.type as string,
           rows: Number(r.rows),
           bytes: Number(r.bytes),
-          history: Number(r.history),
+          history: history.get(r.type as string) ?? 0,
           files: 0,
           filesBytes: 0,
         }));
       const mc = db
         .prepare(
-          "SELECT count(*) AS n, coalesce(sum(coalesce(length(request), 0) + coalesce(length(response), 0)), 0) AS b FROM model_calls",
+          "SELECT count(*) AS n, coalesce(sum(coalesce(octet_length(request), 0) + coalesce(octet_length(response), 0)), 0) AS b FROM model_calls",
         )
         .get() as { n: number; b: number };
       const au = db
         .prepare(
           `SELECT (SELECT count(*) FROM actions) AS a, (SELECT count(*) FROM access) AS x,
-             (SELECT coalesce(sum(length(by) + length(tool) + coalesce(length(target), 0) + 64), 0) FROM actions)
-             + (SELECT coalesce(sum(length(entity) + length(fields) + length(shapes) + 48), 0) FROM access) AS b`,
+             (SELECT coalesce(sum(octet_length(by) + octet_length(tool) + coalesce(octet_length(target), 0) + 64), 0) FROM actions)
+             + (SELECT coalesce(sum(octet_length(entity) + octet_length(fields) + octet_length(shapes) + 48), 0) FROM access) AS b`,
         )
         .get() as { a: number; x: number; b: number };
       const files = Number(
