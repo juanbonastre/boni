@@ -353,6 +353,50 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
       </select>
     </Field>
   );
+  // «Colorear por» (D-25): the definition's, shown on its properties; each value with its colour.
+  const colorBy = cal.split && source === "server" && isRoot && (
+    <>
+      <Field label={t("schema.colorBy")}>
+        <select
+          className="select"
+          aria-label={t("schema.colorBy")}
+          value={cal.colorBy?.field ?? ""}
+          onChange={(e) => void useApp.getState().setColorBy(nodeId, e.target.value || null)}
+        >
+          <option value="">{t("schema.colorNone")}</option>
+          {choices.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {cal.colorBy && cal.colorBy.values.length > 0 && (
+        <>
+          <h3 className="schema-head">{t("schema.valueColors", { field: cal.colorBy.name })}</h3>
+          <div className="schema-members">
+            {cal.colorBy.values.map((v) => (
+              <div key={v.key} className="schema-member schema-value">
+                <span className="schema-member-name">{v.name}</span>
+                <div className="swatches">
+                  {COLOR_CHOICES.map((c) => (
+                    <button
+                      type="button"
+                      key={c}
+                      className={`swatch pick ${c === v.color ? "on" : ""}`}
+                      style={{ "--c": c } as React.CSSProperties}
+                      onClick={() => void useApp.getState().setValueColor(nodeId, v.key, c)}
+                      aria-label={`${v.name}: ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
   const members = node && children.length > 0 && (
     <>
       <h3 className="schema-head">{t("schema.members", { field: node.fieldName })}</h3>
@@ -408,6 +452,7 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
       )}
       {!node && <Field label={t("schema.color")}>{swatches(cal.id, cal.color)}</Field>}
       {splitBy}
+      {colorBy}
       {members}
       <ViewMapping calendarId={cal.id} />
       {source === "server" && (

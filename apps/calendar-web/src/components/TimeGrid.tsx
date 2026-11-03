@@ -373,7 +373,7 @@ export function TimeGrid() {
                   className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.id === newId && !ev.title ? "draft" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
                   style={
                     {
-                      "--c": cal?.color ?? "#888",
+                      "--c": ev.color ?? cal?.color ?? "#888",
                       left: `calc(${s.startDay - renderStart} * var(--colw) + 2px)`,
                       width: `calc(${s.endDay - s.startDay + 1} * var(--colw) - 4px)`,
                       top: `${4 + s.lane * 22}px`,
@@ -574,7 +574,7 @@ const DayColumn = memo(function DayColumn(p: DayColumnProps) {
             col={l.col}
             cols={l.cols}
             span={l.span}
-            color={p.calMap.get(ev.calendarId)?.color ?? "#888"}
+            color={ev.color ?? p.calMap.get(ev.calendarId)?.color ?? "#888"}
             selected={p.selectedIds.includes(ev.id)}
             dragging={p.dragId === ev.id}
             draft={p.newId === ev.id && !ev.title}

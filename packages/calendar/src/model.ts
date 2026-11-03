@@ -51,6 +51,13 @@ export interface CalendarDef {
   path?: { id: string; name: string; field: string; fieldName: string }[];
   /** The field the definition is split by (null when whole) and the fields that could split it. */
   split?: { field: string | null; choices: { id: string; name: string }[] };
+  /** «Colorear por» (D-25): the field whose value colours each event, with a colour per value. */
+  colorBy?: {
+    field: string;
+    name: string;
+    prop: string;
+    values: { key: string; name: string; color: string }[];
+  };
 }
 
 export interface Project {
@@ -104,6 +111,8 @@ export interface CalEvent {
   series?: { id: string; rule: Recurrence | null };
   /** This event's own reminders (`[]`: none); missing or null: its calendar's (reminders.ts). */
   reminders?: Reminder[] | null;
+  /** The colour of its value when its calendar colours by a field (D-25); missing: its calendar's. */
+  color?: string;
 }
 
 export interface CalendarData {

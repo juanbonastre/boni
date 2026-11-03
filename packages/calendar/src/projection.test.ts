@@ -128,6 +128,31 @@ const classRow = row("agenda", "a1", {
   note: "unknown to the schema",
 });
 
+describe("«Colorear por» (D-25)", () => {
+  it("an event takes the colour of its value; a value without one, or no field, leaves the calendar's", () => {
+    const view: CalendarView = {
+      ...agendaView,
+      colorBy: {
+        field: "f_tipo",
+        name: "tipo",
+        prop: "tipo",
+        values: [{ key: "o1", name: "clase", color: "#111111" }],
+      },
+    };
+    const m = makeModel([agenda, projects, jobs], [view, jobsView], { defaultTz: TZ });
+    const withTipo = (tipo: unknown) =>
+      rowToEvent(m, {
+        ...classRow,
+        values: { ...classRow.values, tipo: tipo as Row["values"][string] },
+      });
+    expect(withTipo("clase")?.color).toBe("#111111");
+    expect(withTipo(["clase"])?.color).toBe("#111111");
+    expect(withTipo("otra")?.color).toBeUndefined();
+    expect(withTipo(null)?.color).toBeUndefined();
+    expect(rowToEvent(model, classRow)?.color).toBeUndefined();
+  });
+});
+
 describe("rows of an agenda-like collection", () => {
   it("become timed events with the properties left over as props", () => {
     const ev = rowToEvent(model, classRow);
