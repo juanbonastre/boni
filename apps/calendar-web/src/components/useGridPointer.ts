@@ -10,11 +10,12 @@ import {
   resizeAllDay,
   shiftWhenByDays,
   toLocal,
+  videoLink,
   type When,
 } from "@boni/calendar";
 import { type RefObject, type PointerEvent as RPE, useEffect, useRef } from "react";
 import type { DayIndex } from "../engine/dayIndex.ts";
-import { elementsAt, onKeys } from "../host.ts";
+import { elementsAt, onKeys, openUrl } from "../host.ts";
 import { useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
 
@@ -273,6 +274,15 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
       const id = (target.closest("[data-check]") as HTMLElement).dataset.check;
       const ev = app.getEvent(id ?? "");
       if (ev) app.editEvents([ev.id], { done: !ev.done });
+      e.stopPropagation();
+      return;
+    }
+    // The camera pill of an event whose video call can be joined now (task 49): opens it where the host says.
+    if (target.closest("[data-join]")) {
+      const id = (target.closest("[data-join]") as HTMLElement).dataset.join;
+      const ev = app.getEvent(id ?? "");
+      const link = ev ? videoLink(ev) : null;
+      if (link) openUrl(link);
       e.stopPropagation();
       return;
     }

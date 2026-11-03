@@ -13,14 +13,16 @@ import {
   gmtLabel,
   isoWeek,
   isProposalId,
+  joinWindow,
   layoutColumns,
   layoutSpans,
   startOfWeek,
   toLocal,
   tzOffsetMs,
+  videoLink,
   weekdayNames,
 } from "@boni/calendar";
-import { Check, Plus, Repeat } from "lucide-react";
+import { Check, Plus, Repeat, Video } from "lucide-react";
 import {
   type CSSProperties,
   memo,
@@ -437,6 +439,7 @@ export function TimeGrid() {
                 calMap={calMap}
                 isToday={d === today}
                 nowMinute={nowLocal.minute}
+                joinMinute={Math.floor(now / 60_000)}
                 selectedIds={selectedIds}
                 dragId={dragId}
                 newId={newId}
@@ -542,6 +545,8 @@ interface DayColumnProps {
   calMap: Map<string, CalendarDef>;
   isToday: boolean;
   nowMinute: number;
+  /** The minute of now since the epoch: whether a video call can be joined changes with it (task 49). */
+  joinMinute: number;
   selectedIds: string[];
   dragId: string | null;
   /** The event just created: without a title it shows only as a highlighted range. */
@@ -585,6 +590,7 @@ const DayColumn = memo(function DayColumn(p: DayColumnProps) {
             dragging={p.dragId === ev.id}
             draft={p.newId === ev.id && !ev.title}
             h24={p.h24}
+            join={joinWindow(ev, p.joinMinute * 60_000) && videoLink(ev) !== null}
           />
         );
       })}
@@ -611,6 +617,8 @@ const EventBlock = memo(function EventBlock(p: {
   dragging: boolean;
   draft: boolean;
   h24: boolean;
+  /** Its video call can be joined now: a camera pill opens it (task 49). */
+  join: boolean;
 }) {
   const { ev, seg } = p;
   const minutes = Math.max(seg.end - seg.start, 20);
@@ -636,6 +644,11 @@ const EventBlock = memo(function EventBlock(p: {
         <span className="ev-head">
           <span className="ev-title">{ev.title || t("event.untitled")}</span>
           {ev.recurrence && <Repeat size={10} className="rep" />}
+          {p.join && (
+            <span className="ev-join" data-join={ev.id} title={t("event.join")}>
+              <Video size={10} strokeWidth={2.4} />
+            </span>
+          )}
         </span>
         <span className="ev-time">{evTime(ev, seg, p.h24)}</span>
       </div>

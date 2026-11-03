@@ -48,7 +48,9 @@ where it runs comes through `src/host.ts` (`mountApp` in `mount.tsx`): storage f
 owns the window, notifications and downloads (`host.fetchText`). In UI code: no `localStorage` (use the host), no
 `document.querySelector` or `elementFromPoint` (`findInApp`, `elementsAt`), `eventTarget(e)` instead of `e.target` in
 window listeners (shadow roots retarget it), keyboard listeners only through `onKeys`, overlays positioned inside
-`appRect()`, and `cqh`/`cqw` instead of `vh`/`vw`. `styles.css` is scoped at build time (`scopeCss.ts`): `:root` there
+`appRect()`, and `cqh`/`cqw` instead of `vh`/`vw`. An outside address (an event's video call) opens through
+`openUrl` in `host.ts` (the desktop's `shell.openExternal`, Android's intent, a browser's new tab; http(s) only):
+the app never navigates away, and its windows deny `window.open` (task 49). `styles.css` is scoped at build time (`scopeCss.ts`): `:root` there
 means the app's root. `e2e/embed.spec.ts` mounts the app inside a stand-in host page.
 
 ## The grid at 60 fps

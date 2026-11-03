@@ -280,6 +280,19 @@ handle("notes:open-note", (rowId, peek) => {
   return null;
 });
 
+handle("links:open", (url) => {
+  // An event's video call or another of its links (task 49): the page asks, the system's browser opens it. Only
+  // http(s) addresses, checked here; the window itself never navigates away nor opens windows.
+  let ok = false;
+  try {
+    const u = new URL(String(url));
+    ok = (u.protocol === "https:" || u.protocol === "http:") && String(url).length <= 2000;
+  } catch {}
+  if (!ok) throw new NoteError("bad-link", "Bad link");
+  void shell.openExternal(String(url));
+  return null;
+});
+
 handle("notes:open-proposal", (id) => {
   // A proposal waiting in Boni's inbox, drawn dashed in the calendar (plan b2): a click shows its page in the peek,
   // where it is accepted or rejected. Its id is checked here; the link is built here.

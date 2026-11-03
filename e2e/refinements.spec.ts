@@ -210,3 +210,51 @@ test("dragging to create can run into the next or the previous day's column", as
   expect(b.end - b.start).toBeLessThan(DAY + 3 * 3_600_000);
   await page.screenshot({ path: "e2e/screenshots/create-across-days.png" });
 });
+
+test("a video call: «Unirse» in the detail and a camera pill on the block while it can be joined (task 49)", async ({
+  page,
+}) => {
+  // Where the host opens an outside address: here, the browser's new tab, recorded instead of opened.
+  await page.addInitScript(() => {
+    (window as unknown as { __opened: string[] }).__opened = [];
+    window.open = ((u: string | URL | undefined) => {
+      (window as unknown as { __opened: string[] }).__opened.push(String(u));
+      return null;
+    }) as typeof window.open;
+  });
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await page.locator(".ev", { hasText: "Dentista" }).first().waitFor();
+  // The dentist's visit becomes a call that starts in six minutes, with its link in the place.
+  await page.evaluate((now) => {
+    // biome-ignore lint/suspicious/noExplicitAny: test hook exposed by main.tsx
+    const s = (window as any).__app.getState();
+    // biome-ignore lint/suspicious/noExplicitAny: test hook
+    const ev = s.data.events.find((x: any) => x.title === "Dentista");
+    const start = Date.parse(`${now}:00+02:00`) + 6 * 60_000;
+    s.editEvents([ev.id], {
+      location: "Clínica Centro · https://example.zoom.us/j/9876543210?pwd=x",
+      description: "Orden: https://docs.example.edu/orden",
+      when: { kind: "timed", start, end: start + 45 * 60_000, tz: "Europe/Madrid" },
+    });
+  }, NOW);
+  const block = page.locator(".ev", { hasText: "Dentista" }).first();
+  await expect(block.locator(".ev-join")).toHaveCount(1);
+  await block.locator(".ev-join").click();
+  const opened = () => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened);
+  await expect.poll(opened).toEqual(["https://example.zoom.us/j/9876543210?pwd=x"]);
+  // The detail: one «Unirse» button under the head, and every link as a pill by its host.
+  await block.click();
+  const pop = page.locator(".popover");
+  await pop.getByRole("button", { name: "Unirse" }).click();
+  await expect.poll(opened).toHaveLength(2);
+  await expect(pop.locator(".link-pill")).toHaveText(["example.zoom.us", "docs.example.edu"]);
+  await pop.locator(".link-pill").nth(1).click();
+  await expect
+    .poll(opened)
+    .toEqual([
+      "https://example.zoom.us/j/9876543210?pwd=x",
+      "https://example.zoom.us/j/9876543210?pwd=x",
+      "https://docs.example.edu/orden",
+    ]);
+  await page.screenshot({ path: "e2e/screenshots/detail-join.png" });
+});

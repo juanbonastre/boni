@@ -63,7 +63,12 @@ slate `#94a3b8`.
   swatch, eye (and a properties gear on hover), search and new-event buttons on top, settings at the bottom.
 - Event detail header: (open note in Obsidian, only for events that have a note), more, expand, close. The detail is a popover anchored to the event; the expand button turns it into a right side panel. Fields in order:
   title, date and times, repeat, calendar, type (Event / Task) and done (only when the calendar maps a task column),
-  calendar properties, location, description, read-only id and timestamps.
+  calendar properties, location, description, read-only id and timestamps. When the location or the description
+  carries a video call's link (Zoom, Meet, Teams, Webex, Jitsi, Whereby), one «Unirse» button sits under the head,
+  outside the fields a read-only calendar locks, and every http(s) link of the event is a pill by its host in a
+  «Enlaces» row before the id; both open through the host (the system's browser), never painted as HTML. In the
+  day's grid the event's block carries a camera pill from ten minutes before its start until its end, as Notion
+  Calendar does (task 49).
 - Context menus (right click or long press) on events, empty time slots, month cells and calendars; the same actions as
   the detail where they exist. Several selected events: actions apply to all and show "(n)".
 - Calendar properties dialog (sidebar gear, context menu): name, colour, **Calendar view** (which column of each row plays
