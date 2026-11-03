@@ -45,7 +45,10 @@ jobs:
           shared='^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig[^/]*\.json|biome\.json|\.github/)'
           has() { printf '%s\n' "$files" | grep -Eq "$1|$shared" && echo true || echo false; }
           echo "calendar=$(has '^(apps/calendar-web/|apps/calendar-desktop/|packages/calendar/|e2e/|playwright\.config\.ts)')" >> "$GITHUB_OUTPUT"
-          echo "boni=$(has '^(apps/boni-web/|e2e-boni/|playwright\.boni\.config\.ts)')" >> "$GITHUB_OUTPUT"
+          # The Boni e2e suite fakes the server in the page, and its fixtures import server code (boni-records.ts:
+          # systemCollections over the store's audit, the views' engine): a change there runs it too (2026-11-04:
+          # audit.activitySince, added for the server alone, broke every Boni e2e test unseen for a day).
+          echo "boni=$(has '^(apps/boni-web/|e2e-boni/|playwright\.boni\.config\.ts|apps/server/src/systemCollections\.ts|packages/store/src/audit\.ts|packages/views/)')" >> "$GITHUB_OUTPUT"
           echo "desktop=$(has '^(apps/boni-web/|apps/boni-desktop/|apps/server/|packages/|e2e-boni-desktop/|playwright\.boni-desktop\.config\.ts)')" >> "$GITHUB_OUTPUT"
           # The calendar's peek is Boni's page from Boni's server: the calendar, the server and Boni's web all count.
           echo "calendar_desktop=$(has '^(apps/calendar-web/|apps/calendar-desktop/|apps/boni-web/|apps/server/|packages/|e2e-calendar-desktop/|e2e/server-data\.ts|playwright\.calendar-desktop\.config\.ts)')" >> "$GITHUB_OUTPUT"
