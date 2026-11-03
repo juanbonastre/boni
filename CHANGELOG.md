@@ -5,6 +5,23 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (fifteenth) — server 0.8.91
+
+Needs: the server only (0.8.91, to deploy). Tasks 45 and 29.
+
+- **A calendar invitation becomes its event, with its exact hours.** A mail that carries a calendar invitation
+  (Google, Outlook) gives its event from the invitation itself, by code: the day, the start and the end in your
+  timezone, with the place and the video-call link in the note; the card no longer asks «¿A las 09:00?» for it. An
+  invitation already in one of your external calendars (the UCAM one) is not proposed again; what the mail asks of
+  you besides still is. The server's log says what each reading proposed («mail 1: read <sender>: «title»
+  (collection, day hours)»). Found on the way: a mail with a readable attachment (csv, xlsx, txt) stopped its
+  reading since the attachments' text exists; fixed. (#287, task 45)
+- **The readers answer without reasoning first, and hold to their options.** The models that read mail are asked not
+  to reason before answering (DeepSeek V4.1 Flash spent the whole answer on it), the options they choose among (the
+  kinds of a summary, a classification) go in their schema, and a refused answer says which rule it broke. The
+  planner's evaluation with real models passes 24 of 24. The planner no longer ends a summary with a question card,
+  and never sends your own tasks to a reader. (#285, #286, task 29)
+
 ## 2026-11-03 (fourteenth) — server 0.8.90
 
 Needs: the server only (0.8.90, to deploy). Task 26, as Juan decided («Sí»).
