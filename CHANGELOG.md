@@ -5,6 +5,19 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (eleventh) — server 0.8.87
+
+Needs: the server only (0.8.87, to deploy). Task 43: the three holds the log of 0.8.85 and 0.8.86 named.
+
+- **Editing the Agenda no longer reads it all again.** Each edit of an event or a task made the calendars read the
+  Agenda's 2,805 records again to split them by area (about half a second on the NAS). Now an edit that keeps the
+  values the calendars split by among the others' (a title, a time, a place) reads nothing (0.2 ms instead of 30 to
+  56 on the laptop); a new area, the last event of one gone, or an area renamed still read them. And a record's
+  collection branch is worked out once per schema, not once per record (the first read: 160 → 112 ms). (#278)
+- **An assistant's query no longer stops the server.** A query through the MCP read, for each of its notes, the note
+  it points to (each task its project): 2,805 reads for one query, 1.9 s on the NAS. Now each is read once in the
+  call (with 2,800 tasks: 260-300 ms → 40-66 ms on the laptop). (#278)
+
 ## 2026-11-03 (tenth) — server 0.8.86 · Boni desktop 0.4.65
 
 Needs: the server (0.8.86, to deploy) and Boni desktop 0.4.65 (`release/boni_0.4.65_amd64.deb`, to install). Boni

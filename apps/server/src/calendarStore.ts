@@ -314,10 +314,66 @@ function expandNode(
  * present, «Sin …»), and the calendar asks every second and on every request (2026-11-03: about 70 ms a time with
  * Juan's Agenda split by area, a quarter of the NAS's thread; task 35). Callers never change what they get.
  */
-const readDefs = new WeakMap<
-  UserStore,
-  { version: number; kept: string | null; placed: Placed[]; watch: Set<string> }
->();
+const readDefs = new WeakMap<UserStore, DefsMemo>();
+interface DefsMemo {
+  version: number;
+  kept: string | null;
+  placed: Placed[];
+  watch: Set<string>;
+  split: SplitWatch;
+}
+/**
+ * What the split definitions read of their records (task 43): per type of a split branch, the definitions it counts
+ * in (their root and the fields they split by); each record's signature (those fields' values) and how many records
+ * share each one. A change that keeps every signature found among the records leaves the definitions as they were.
+ */
+interface SplitWatch {
+  of: Map<string, { root: string; fields: string[] }[]>;
+  sig: Map<string, string>;
+  count: Map<string, number>;
+}
+const splitFields = (node: SplitNode): string[] => [
+  node.field,
+  ...Object.values(node.by ?? {}).flatMap(splitFields),
+];
+const signature = (
+  defs: { root: string; fields: string[] }[],
+  e: { values: Record<string, unknown> },
+) => JSON.stringify(defs.map((d) => [d.root, d.fields.map((f) => e.values[f] ?? null)]));
+
+/**
+ * Whether what changed leaves the definitions as they were: records of no calendar's concern, or a split branch's
+ * records whose split values are still among the others' (a title, a time or a place changed: the usual edit; task
+ * 43: every edit of the Agenda read its 2,805 records again, half a second on the NAS). A value new to the branch,
+ * the last record of one gone, or a change in a collection a split names (an area renamed) read them again. The
+ * signatures are kept up to date as it goes.
+ */
+function splitUnchanged(
+  was: DefsMemo,
+  changed: {
+    entity: { id: string; type: string; values: Record<string, unknown>; deleted?: number };
+  }[],
+): boolean {
+  const { of, sig, count } = was.split;
+  for (const { entity: e } of changed) {
+    const known = sig.get(e.id);
+    const watched = was.watch.has(e.type);
+    if (!watched && known === undefined) continue;
+    const defs = of.get(e.type);
+    if (watched && !defs) return false;
+    const next = e.deleted === undefined && defs ? signature(defs, e) : undefined;
+    if (next === known) continue;
+    if (known !== undefined && (count.get(known) ?? 0) <= 1) return false;
+    if (next !== undefined && !count.get(next)) return false;
+    if (known !== undefined) count.set(known, (count.get(known) ?? 0) - 1);
+    if (next === undefined) sig.delete(e.id);
+    else {
+      count.set(next, (count.get(next) ?? 0) + 1);
+      sig.set(e.id, next);
+    }
+  }
+  return true;
+}
 
 /** The calendars of a store as the apps read them: each definition, a split one expanded (none: no calendar). */
 export function calendarDefs(store: UserStore): Placed[] {
@@ -330,31 +386,45 @@ export function calendarDefs(store: UserStore): Placed[] {
     // them again: the rest of Boni's writes (mail, pages, money) leave them as they were (2026-11-03: every write
     // cost the NAS half a second; task 35).
     const ch = store.changesSince(was.version);
-    if (!ch.schemaChanged && !ch.entities.some((e) => was.watch.has(e.entity.type))) {
+    if (!ch.schemaChanged && splitUnchanged(was, ch.entities)) {
       was.version = version;
       return was.placed;
     }
   }
   const watch = new Set<string>();
-  const placed = readCalendarDefs(store, watch);
-  readDefs.set(store, { version, kept, placed, watch });
+  const split: SplitWatch = { of: new Map(), sig: new Map(), count: new Map() };
+  const placed = readCalendarDefs(store, watch, split);
+  readDefs.set(store, { version, kept, placed, watch, split });
   return placed;
 }
 
 /** The records of a store as `list` gives them. */
 type Listed = ReturnType<UserStore["list"]>;
 
-/** Reads the definitions; `watch` gets the types whose records the reading depended on. */
-function readCalendarDefs(store: UserStore, watch: Set<string>): Placed[] {
+/**
+ * Reads the definitions; `watch` gets the types whose records the reading depended on, and `split` what the split
+ * ones read of their records (their signatures).
+ */
+function readCalendarDefs(
+  store: UserStore,
+  watch: Set<string>,
+  split: SplitWatch = { of: new Map(), sig: new Map(), count: new Map() },
+): Placed[] {
   const schema = store.schema();
-  return storedCalendarDefs(store).flatMap((s) => {
+  const pools: Listed[] = [];
+  const placed = storedCalendarDefs(store).flatMap((s) => {
     const r = parseCollectionDef(s.raw);
     if (!r.ok) return [];
     const choices = splitChoices(schema, s.type);
     if (s.split && choices.some((c) => c.id === s.split?.field)) {
       // The branch's records, listed once for every node of the split.
-      for (const t of branch(schema, s.type)) watch.add(t);
+      const fields = splitFields(s.split);
+      for (const t of branch(schema, s.type)) {
+        watch.add(t);
+        split.of.set(t, [...(split.of.get(t) ?? []), { root: s.type, fields }]);
+      }
       const pool = store.list(s.type, { deep: true });
+      pools.push(pool);
       return expandNode(
         store,
         schema,
@@ -369,20 +439,32 @@ function readCalendarDefs(store: UserStore, watch: Set<string>): Placed[] {
         watch,
       );
     }
-    const placed: Placed = {
+    const one: Placed = {
       type: s.type,
       raw: s.raw,
       def: r.def,
       ...(s.where ? { where: s.where } : {}),
       ...(s.make ? { make: s.make } : {}),
     };
-    placed.def = {
+    one.def = {
       ...withRoles(schema, s.type, r.def, s.make?.task ?? s.type),
       // A calendar picked by a field (the first restructurings) is not split again.
       ...(s.where ? {} : { split: { field: null, choices } }),
     };
-    return [placed];
+    return [one];
   });
+  // Each split record's signature, once all the definitions it counts in are known.
+  const seen = new Set<string>();
+  for (const pool of pools)
+    for (const { entity: e } of pool) {
+      const defs = split.of.get(e.type);
+      if (!defs || seen.has(e.id)) continue;
+      seen.add(e.id);
+      const sig = signature(defs, e);
+      split.sig.set(e.id, sig);
+      split.count.set(sig, (split.count.get(sig) ?? 0) + 1);
+    }
+  return placed;
 }
 
 /** Whether a record belongs to a calendar: its type in the calendar's branch, its field as `where` says. */

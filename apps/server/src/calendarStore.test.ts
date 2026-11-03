@@ -204,15 +204,38 @@ describe("the calendar asks often and reads little (A-15, task 35)", () => {
     poll();
     calendarDefs(store);
     expect(list.mock.calls.length).toBe(schemaRead);
-    const agenda = store.list(type)[0]?.entity as { id: string };
+    // An edit of the Agenda that keeps every record's split value among the others' (a title, a time) leaves them
+    // too (task 43: each one read the 2,805 records again, half a second on the NAS); a value new to the branch, or
+    // the last record of one gone, reads them again, and so does a change in the areas (a name).
+    const byTitle = (t: string) =>
+      store.list(type).find((x) => x.entity.values[titleField] === t)?.entity.id as string;
     const titleField = store.schema().types[type]?.titleField as string;
+    const clase = byTitle("Clase");
+    const suelto = byTitle("Suelto");
+    const docenciaId = store.list(
+      store.schema().types[type]?.fields.find((f) => f.id === area)?.relation?.target as string,
+    )[0]?.entity.id as string;
+    const reads = () => list.mock.calls.length;
+    const at = reads();
+    store.update(clase, { [titleField]: { value: "Clase cambiada", label: u } }, { actor: "user" });
+    poll();
+    calendarDefs(store);
+    expect(reads()).toBe(at);
+    expect(calendarDefs(store).map((p) => p.def.name)).toContain("Sin area");
+    store.update(suelto, { [area]: { value: docenciaId, label: u } }, { actor: "user" });
+    expect(calendarDefs(store).map((p) => p.def.name)).not.toContain("Sin area");
+    expect(reads()).toBeGreaterThan(at);
+    const again = reads();
     store.update(
-      agenda.id,
-      { [titleField]: { value: "Clase cambiada", label: u } },
+      docenciaId,
+      {
+        [store.schema().types[store.get(docenciaId)?.entity.type as string]?.titleField as string]:
+          { value: "Docencia y más", label: u },
+      },
       { actor: "user" },
     );
-    calendarDefs(store);
-    expect(list.mock.calls.length).toBeGreaterThan(schemaRead);
+    expect(calendarDefs(store).map((p) => p.def.name)).toContain("Docencia y más");
+    expect(reads()).toBeGreaterThan(again);
     list.mockRestore();
   });
 });

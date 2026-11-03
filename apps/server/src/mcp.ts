@@ -95,6 +95,13 @@ const optStr = (v: unknown, name: string, max = MAX_TEXT): string | undefined =>
 
 function view(c: Ctx) {
   const ro = readStore(c.store, c.now);
+  // The entries a call names again and again (a query's every note points to one of a few projects): each read once
+  // in the call (task 43: a query of 2,805 tasks read their project 2,805 times, 1.9 s with the NAS held).
+  const got = new Map<string, StoredEntity | null>();
+  const roGet = (id: string) => {
+    if (!got.has(id)) got.set(id, ro.get(id));
+    return got.get(id) ?? null;
+  };
   const types = () =>
     Object.values(ro.schema().types).filter((t) => !t.system && !t.archived) as TypeDef[];
   const level = (t: string) => c.store.aiAccess()[t] ?? "visible";
@@ -106,7 +113,7 @@ function view(c: Ctx) {
   };
   const fields = (t: TypeDef) => t.fields.filter((f) => !f.hidden && !f.archived);
   const titleOf = (id: string) => {
-    const e = ro.get(id);
+    const e = roGet(id);
     const t = e ? c.store.schema().types[e.entity.type] : undefined;
     return e && t ? String(e.entity.values[t.titleField] ?? "") : "";
   };
@@ -157,7 +164,7 @@ function view(c: Ctx) {
       for (const f of fields(t))
         if (f.type === "relation" && props[f.name] !== undefined)
           for (const id of [s.entity.values[f.id]].flat()) {
-            const r = ro.get(String(id));
+            const r = roGet(String(id));
             const rt = r ? c.store.schema().types[r.entity.type] : undefined;
             if (r && rt)
               c.seen.push({
