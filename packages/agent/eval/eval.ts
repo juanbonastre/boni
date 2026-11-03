@@ -9,7 +9,8 @@
  *
  * Several planner models, separated by commas, are compared side by side:
  * `anthropic/claude-haiku-5.5,anthropic/claude-sonnet-5.5,google/gemini-3-flash`. `--prompt=<file>[,<file>]` adds
- * other planner prompts to compare with today's («base»): each model runs with each prompt. `--only=<text>` runs only
+ * other planner prompts to compare with today's («base»): each model runs with each prompt. `--guia=con,sin` runs each
+ * also without the user's reading guide for mail, to compare (docs/correo.md M2). `--only=<text>` runs only
  * the requests with that text and `--times=<n>` runs each n times (a failure seen once may be the model's mood). A
  * case not as expected prints how it ended and its plan.
  *
@@ -48,6 +49,8 @@ const provider = (model: string, planner: boolean): ModelProvider =>
     : new OpenAIProvider({ apiKey: routerKey, model, baseURL: "https://openrouter.ai/api/v1" });
 
 const only = flag("only");
+// `--guia=con,sin`: each column with the user's reading guide for mail and without it (docs/correo.md M2).
+const guides = (flag("guia") ?? "con").split(",").filter((g) => g === "con" || g === "sin");
 const times = Number(flag("times")) || 1;
 const prompts: { name: string; text?: string }[] = [
   { name: "base" },
@@ -60,17 +63,23 @@ const prompts: { name: string; text?: string }[] = [
 // Each column a model with a prompt, run one after another (the same cases for all).
 const columns: { name: string; r: EvalResult; seconds: number }[] = [];
 for (const model of models)
-  for (const prompt of prompts) {
-    const name = prompts.length > 1 ? `${model} · ${prompt.name}` : model;
-    console.error(`… ${name}`);
-    const t0 = Date.now();
-    const r = await evalPlanner(provider(model, true), provider(readerModel, false), {
-      ...(only ? { only } : {}),
-      times,
-      ...(prompt.text ? { plannerPrompt: prompt.text } : {}),
-    });
-    columns.push({ name, r, seconds: Math.round((Date.now() - t0) / 1000) });
-  }
+  for (const prompt of prompts)
+    for (const guide of guides.length ? guides : ["con"]) {
+      const name = [
+        model,
+        ...(prompts.length > 1 ? [prompt.name] : []),
+        ...(guides.length > 1 ? [`${guide} guía`] : []),
+      ].join(" · ");
+      console.error(`… ${name}`);
+      const t0 = Date.now();
+      const r = await evalPlanner(provider(model, true), provider(readerModel, false), {
+        ...(only ? { only } : {}),
+        times,
+        ...(prompt.text ? { plannerPrompt: prompt.text } : {}),
+        ...(guide === "sin" ? { noGuide: true } : {}),
+      });
+      columns.push({ name, r, seconds: Math.round((Date.now() - t0) / 1000) });
+    }
 
 const mark = (c: EvalResult["cases"][number] | undefined) =>
   !c ? "" : !c.ok ? `FAIL (${c.note})` : c.format ? `ok, ${c.format}` : "ok";

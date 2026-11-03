@@ -5,7 +5,7 @@ import { listUsers } from "./auth.ts";
 import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
-import { Mails } from "./mail.ts";
+import { guideOf, Mails } from "./mail.ts";
 import { AccountModels } from "./models.ts";
 import { watchSlowness } from "./perf.ts";
 import { Push } from "./reminders.ts";
@@ -171,6 +171,11 @@ agent.plannerFor = (account, id) => models.plannerProvider(account, id);
 const mails = new Mails({ db, key, host: agent });
 agent.mailAccountOf = (account) => mails.settings(account)?.user || null;
 agent.mailTypeOf = (account) => mails.state(account).type;
+// Juan's reading guide reaches the readers of mail in the conversation too (docs/correo.md §4.1, task 23).
+agent.readingGuideOf = (account) => {
+  const g = mails.guide(account);
+  return g.instructions || g.examples.length ? guideOf(g) : null;
+};
 mails.start(() => listUsers(db));
 // What is slow, once a minute in the log (perf.ts; task 35): `boni-status` shows it.
 watchSlowness();
