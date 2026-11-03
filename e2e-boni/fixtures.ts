@@ -332,6 +332,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           },
           updated: 7,
         },
+        // An image the mail showed in place (task 48): kept as a file, painted after the text.
+        {
+          id: "a3",
+          values: { f_title: "foto.png", f_boni_file: "sha-foto", f_folder: "correo/2026-10" },
+          updated: 7,
+        },
       ];
       const mailRow = {
         id: "m1",
@@ -341,11 +347,12 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           f_de_nombre: "Coordinación de ejemplo",
           f_para: "ejemplo@example.edu",
           f_fecha: "2026-10-27T09:15:00Z",
-          f_adjuntos: "actas.pdf, orden-del-dia.docx",
-          f_archivos: ["a1", "a2"],
+          f_adjuntos: "actas.pdf, orden-del-dia.docx, foto.png",
+          f_archivos: ["a1", "a2", "a3"],
         },
         updated: 7,
-        body: "Hola, antes del jueves revisad las actas, por favor.\n\nGracias.\n\n<b>no es html</b>",
+        // As Gmail's text part writes it: a placeholder where the image was, and the earlier message quoted.
+        body: "Hola, antes del jueves revisad las actas, por favor.\n\n[image: foto.png]\n\nGracias.\n\n<b>no es html</b>\n\nEl lun, 26 oct 2026, 18:02, Lucía Ejemplo <lucia.ejemplo@example.com> escribió:\n> Os paso las actas del tribunal.\n> Un saludo",
       };
       const today = new Date().toISOString().slice(0, 10);
       let rows: { id: string; values: Record<string, unknown>; updated: number; body?: string }[] =
@@ -718,6 +725,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (opts.mail && p === "api/data/rows/m1" && method === "GET")
           return [200, JSON.stringify({ row: { ...mailRow, type: "t_01m6correo" } })];
+        // An image of the mail, as the server gives it to paint in place (a data: address).
+        if (opts.mail && /^api\/data\/files\/[^/]+\/inline$/.test(p) && method === "GET")
+          return [200, JSON.stringify({ mime: "image/png", data: "iVBORw0KGgo=" })];
         const fileRow = opts.mail && /^api\/data\/rows\/(a\d)$/.exec(p);
         if (fileRow && method === "GET") {
           const row = fileRows.find((r) => r.id === fileRow[1]);

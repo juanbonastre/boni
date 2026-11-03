@@ -613,7 +613,9 @@ contraseña ni un código aquí» under a question.
   (`MailView.tsx`; D-22): the subject as its title, a header of labelled lines (De: name <address>; Para; Cc;
   Fecha in full; Adjuntos as pills that open the file, the mail's own names, the last its original «Asunto.eml»,
   which a mail app opens whole: task 26) and the text as it came, paragraphs
-  kept, never as markup; nothing
+  kept, never as markup; after it the mail's own images (its files as `data:` addresses, never anything from the
+  net) and a reply's quoted part folded behind a «···» pill (`--muted`, `--line` border) that opens it in place, as
+  Gmail and Apple Mail do (task 48); nothing
   on it edits, and nothing says so (no explanations in the app, §5); the mail's collection is read only in every
   table and page (its cells plain text). Its ⤢ button opens the **proposal's page** (Juan, 2026-10-23), read only, like a row's page:
   the "Propuesta" tag and what it does, the title large, then sections (small upper-case labels): Propiedades (every

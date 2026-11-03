@@ -213,7 +213,12 @@ una tarjeta aparte.
   el `.ics` que viene como adjunto sigue siendo un archivo del correo. Una cancelación o la respuesta de otro invitado
   describen un evento, pero no piden nada: no se guardan como invitación.
 - **Desde hoy** «Ver correo» lo abre como lo enseña un cliente de correo (Spark, Apple Mail, Outlook): cabecera (de,
-  para, cc, fecha), asunto, adjuntos aparte y el texto tal cual, en solo lectura; la colección entera es de solo
+  para, cc, fecha), asunto, adjuntos aparte y el texto tal cual, en solo lectura; desde el 2026-11-04 (tarea 48) las
+  imágenes que el correo trae (sus archivos, como direcciones `data:`; nunca las remotas) se pintan después del
+  texto, los «[image: …]» que Gmail escribe en su lugar desaparecen cuando se enseñan, y la parte citada de una
+  respuesta («El … escribió:», «De:/Enviado:», líneas con «>») queda plegada tras «···», como en Gmail y Apple Mail.
+  El texto sigue saliendo de la parte de texto plano cuando la hay y del HTML solo cuando no: es lo que lee el
+  lector y donde se cuentan las partes ocultas; si Juan ve correos que así se lean mal, se decide por correo; la colección entera es de solo
   lectura en las apps (D-22). En la tarjeta de la Bandeja, «Corregir» deja cambiar también las demás propiedades de
   la propuesta, plegadas bajo «Propiedades».
 - **Cómo guardan el correo los clientes:** un almacén de mensajes tal cual (un fichero por mensaje: Maildir, EML,
