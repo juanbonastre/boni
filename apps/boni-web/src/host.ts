@@ -121,6 +121,8 @@ export interface DesktopHost {
   setLabels(labels: Record<string, string>): void;
   /** The peek window (a note opened from another app) goes away. */
   peekHide?(): void;
+  /** A note in the peek window, a window of its own (task 30: a mail from the conversation): "note:<id>". */
+  openPeek?(screen: string): void;
   /** The page (the main window's or the peek's) listens now: the shell may send it a note to open. */
   pageReady?(): void;
   /** Widget windows: moved or resized by the user (the shell follows the real pointer), hidden from the menu. */
@@ -220,6 +222,7 @@ declare global {
       widgetDragEnd(): void;
       widgetHide(): void;
       peekHide?(): void;
+      openPeek?(screen: string): void;
       pageReady?(): void;
       openFile?(sha256: string, name: string): Promise<"opened" | "shown" | "offline" | "error">;
     };
@@ -246,6 +249,8 @@ function desktopHost(b: NonNullable<Window["boniDesktop"]>): Host {
       openMain: (screen) => b.openMain(screen),
       setLabels: (labels) => b.setLabels(labels),
       peekHide: () => b.peekHide?.(),
+      // A shell from before 0.4.65 has none: the mail opens in the side panel then.
+      ...(b.openPeek ? { openPeek: (screen: string) => b.openPeek?.(screen) } : {}),
       pageReady: () => b.pageReady?.(),
       widget: {
         dragStart: (kind) => b.widgetDragStart(kind),

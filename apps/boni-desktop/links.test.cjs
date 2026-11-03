@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { linkIn, screenOfUrl } = require("./links.cjs");
+const { linkIn, peekScreen, screenOfUrl } = require("./links.cjs");
 
 test("a boni:// link opens a record by its id, nothing else (notes have no paths)", () => {
   const id = "e_01m5m5fkq7w3mhh4ywc6aa22zz";
@@ -46,4 +46,19 @@ test("boni://proposal opens a proposal of the inbox by its id, nothing else", ()
 test("finds the link among the arguments of a start", () => {
   assert.equal(linkIn(["/opt/Boni/boni", "--background"]), undefined);
   assert.equal(linkIn(["/opt/Boni/boni", "boni://note?id=e_1"]), "boni://note?id=e_1");
+});
+
+test("the page opens in the peek only a note or a proposal by a plain id (task 30)", () => {
+  assert.equal(peekScreen("note:t_ejemplo_1"), "note:t_ejemplo_1");
+  assert.equal(peekScreen("proposal:p-1"), "proposal:p-1");
+  for (const bad of [
+    "note:../secreto",
+    "settings",
+    "note:",
+    "chart:x",
+    7,
+    null,
+    `note:${"a".repeat(101)}`,
+  ])
+    assert.equal(peekScreen(bad), null);
 });

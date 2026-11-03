@@ -688,19 +688,43 @@ function zoomKeys(e: KeyboardEvent) {
 /** A block's settings in the side panel («Modificar…»). */
 export const openBlockPanel = (id: string) => set({ panel: { kind: "block", id }, ...FRESH_PANEL });
 /**
- * A record a reply points to (its type by name or key, its id; Juan, 2026-11-02): a mail opens in the side panel as
- * a mail client shows it, with «Agrandar» for its page; anything else opens as its page.
+ * The collection a reply names. The planner names a type by its key ("correo"); its table's id is another thing
+ * (`t_01…`, Juan, 2026-11-02: the mail's lines opened nothing). A name or an id work too.
+ */
+export const replyType = (typeName: string) =>
+  get().dataTypes?.find((x) => x.key === typeName || x.id === typeName || x.name === typeName);
+
+/**
+ * A record a reply points to (its type by name or key, its id; Juan, 2026-11-02): a mail opens as a mail client
+ * shows it, in a window of its own in the desktop app (task 30) and elsewhere in the side panel, with «Agrandar» for
+ * its page; anything else opens as its page.
  */
 export async function openRecord(typeName: string, id: string) {
   if (!get().dataTypes) await loadDataTypes();
-  // The planner names a type by its key ("correo"); its table's id is another thing (`t_01…`, Juan, 2026-11-02:
-  // the mail's lines opened nothing). A name or an id work too.
-  const type = get().dataTypes?.find(
-    (x) => x.key === typeName || x.id === typeName || x.name === typeName,
-  );
+  const type = replyType(typeName);
   if (!type) return;
-  if (type.view === "mail") set({ panel: { kind: "row", type: type.id, id }, ...FRESH_PANEL });
+  const peek = hostRef.desktop?.openPeek;
+  if (type.view === "mail" && peek) peek(`note:${id}`);
+  else if (type.view === "mail") set({ panel: { kind: "row", type: type.id, id }, ...FRESH_PANEL });
   else await openRow(type.id, id);
+}
+
+/** A mail's tasks proposed now, from the conversation (task 30): they go to the inbox, which says so. */
+export async function proposeFromMail(id: string) {
+  const t = get().t;
+  try {
+    const n = await agent.proposeFromMail(id);
+    toast(n === 1 ? t("mail.proposedOne") : n ? t("mail.proposed", { n }) : t("mail.proposedNone"));
+    if (n) void loadInbox();
+  } catch (e) {
+    toast(
+      t(
+        e instanceof ApiError && e.code === "no-collections"
+          ? "mail.proposeNoCollections"
+          : "mail.proposeFailed",
+      ),
+    );
+  }
 }
 /** What a data block counts, in the side panel (a click on it; `drill` a bar's or a point's key). */
 export const openRowsPanel = (id: string, drill?: string, label?: string) =>
