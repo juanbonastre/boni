@@ -143,7 +143,7 @@ const STUCK_MS = 150;
  * loop is free: restarting a profile every minute would itself hold the NAS a quarter of a second. Null where it
  * cannot run (the line then says only how long).
  */
-export function holdWatcher(): {
+export function holdWatcher(failed: (why: string) => void = () => {}): {
   take: () => Hold | null;
   /** Ends the watchdog's thread (its session to this one with it: an exit then waits for no debugger). */
   stop: () => Promise<void>;
@@ -158,7 +158,7 @@ export function holdWatcher(): {
       eval: true,
       workerData: { beat, after: STUCK_MS },
       // A small thread: it only keeps the profile of one hold at a time (the container has 384 MB).
-      resourceLimits: { maxOldGenerationSizeMb: 16, maxYoungGenerationSizeMb: 4 },
+      resourceLimits: { maxOldGenerationSizeMb: 32 },
     });
     worker.unref();
     let longest: Hold | null = null;
@@ -166,13 +166,17 @@ export function holdWatcher(): {
     const ready = new Promise<void>((ok) => {
       watching = ok;
     });
-    worker.on("message", (m: CpuProfile | "watching") => {
+    worker.on("message", (m: CpuProfile | "watching" | { failed: string }) => {
       if (m === "watching") return watching();
+      if ("failed" in m) return failed(m.failed);
       const h = longestHold(m);
       if (h && (!longest || h.ms > longest.ms)) longest = h;
     });
-    // What cannot be watched is only not said.
-    worker.on("error", () => clearInterval(heart));
+    // What cannot be watched is only not said (and why, once, in the log).
+    worker.on("error", (e) => {
+      clearInterval(heart);
+      failed(String(e));
+    });
     return {
       take: () => {
         const h = longest;
@@ -185,7 +189,8 @@ export function holdWatcher(): {
       },
       ready,
     };
-  } catch {
+  } catch (e) {
+    failed(String(e));
     return null;
   }
 }
@@ -219,10 +224,13 @@ const watch = () => {
 };
 post("Profiler.enable")
   .then(() => post("Profiler.setSamplingInterval", { interval: 10000 }))
-  .then(() => {
-    setInterval(watch, 20);
-    parentPort.postMessage("watching");
-  }, () => {});
+  .then(
+    () => {
+      setInterval(watch, 20);
+      parentPort.postMessage("watching");
+    },
+    (e) => parentPort.postMessage({ failed: String(e && e.message ? e.message : e) }),
+  );
 `;
 
 /**
@@ -235,7 +243,9 @@ export function watchSlowness(
 ): () => Promise<void> {
   const h = monitorEventLoopDelay({ resolution: 20 });
   h.enable();
-  const holds = o.sample ? holdWatcher() : null;
+  const holds = o.sample
+    ? holdWatcher((why) => log(`slowness: what holds the loop cannot be said (${why})`))
+    : null;
   const timer = setInterval(() => {
     const line = minuteLine(h.max / 1e6, h.percentile(99) / 1e6, holds?.take());
     h.reset();

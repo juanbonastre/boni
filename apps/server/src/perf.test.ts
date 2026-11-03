@@ -95,25 +95,32 @@ describe("the minute's line about slowness", () => {
   });
 
   it("profiles the thread only while it is held, and names the function that held it", async () => {
-    const watcher = holdWatcher();
+    const failures: string[] = [];
+    const watcher = holdWatcher((why) => failures.push(why));
     expect(watcher).not.toBeNull();
     const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
     function holdTheLoop() {
       const end = performance.now() + 600;
       while (performance.now() < end);
     }
-    await watcher?.ready;
+    // A busy machine (the CI's) starts the thread slowly: what is waited for is waited for, not a fixed time.
+    const ready = await Promise.race([
+      watcher?.ready.then(() => "watching"),
+      wait(15_000).then(() => "not started"),
+    ]);
+    expect({ ready, failures }).toEqual({ ready: "watching", failures: [] });
     await wait(50);
     expect(watcher?.take()).toBeNull();
     holdTheLoop();
     // The watchdog sees the loop beat again, stops the profile and sends it.
     let hold = null;
-    for (let i = 0; i < 40 && !hold; i++) {
+    for (let i = 0; i < 300 && !hold; i++) {
       await wait(50);
       hold = watcher?.take() ?? null;
     }
     await watcher?.stop();
+    expect(failures).toEqual([]);
     expect(hold?.ms).toBeGreaterThan(200);
     expect(hold?.what).toMatch(/holdTheLoop/);
-  });
+  }, 40_000);
 });
