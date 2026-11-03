@@ -178,7 +178,7 @@ agent.readingGuideOf = (account) => {
 };
 mails.start(() => listUsers(db));
 // What is slow, once a minute in the log (perf.ts; task 35): `boni-status` shows it.
-watchSlowness();
+const stopSlowness = watchSlowness(console.warn, { sample: true });
 const app = makeApp({
   db,
   write: process.env.BONI_WRITE === "1",
@@ -229,7 +229,10 @@ const stop = () => {
   server.close();
   publicServer?.close();
   db.close();
-  process.exit(0);
+  // The watchdog's thread first (perf.ts), at most half a second: the exit then waits for no debugger.
+  void Promise.race([stopSlowness(), new Promise((r) => setTimeout(r, 500))]).finally(() =>
+    process.exit(0),
+  );
 };
 process.on("SIGTERM", stop);
 process.on("SIGINT", stop);
