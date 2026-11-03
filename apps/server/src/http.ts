@@ -33,7 +33,9 @@ import {
   taskDoneField,
 } from "./calendarStore.ts";
 import {
+  addColumn,
   addFile,
+  changeColumn,
   createCollection,
   createRow,
   DataError,
@@ -44,7 +46,9 @@ import {
   listTypes,
   moveCollection,
   moveRow,
+  removeColumn,
   removeRow,
+  restoreColumn,
   restoreRow,
   setNotesInTree,
   setProtection,
@@ -203,7 +207,7 @@ export function serve(app: App, listener: Listener): Server {
  * streams of the other.
  */
 /** Data errors that say the request clashes with what is there (409), not that it is malformed. */
-const CONFLICTS = new Set(["taken", "not-empty"]);
+const CONFLICTS = new Set(["taken", "not-empty", "in-use"]);
 
 export function makeApp(opts: ServerOptions): App {
   const { db, key, feeds, push } = opts;
@@ -427,6 +431,21 @@ export function makeApp(opts: ServerOptions): App {
         }
         if (route === "PUT /api/data/types/:type/parent") {
           moveCollection(store, params.type ?? "", await bodyOf(req), s.device);
+          return send(res, 200, {});
+        }
+        // A collection's columns, as Notion's properties (task 40).
+        if (route === "POST /api/data/types/:type/fields")
+          return send(res, 200, addColumn(store, params.type ?? "", await bodyOf(req), s.device));
+        if (route === "PUT /api/data/types/:type/fields/:field") {
+          changeColumn(store, params.type ?? "", params.field ?? "", await bodyOf(req), s.device);
+          return send(res, 200, {});
+        }
+        if (route === "DELETE /api/data/types/:type/fields/:field") {
+          removeColumn(store, params.type ?? "", params.field ?? "", s.device);
+          return send(res, 200, {});
+        }
+        if (route === "POST /api/data/types/:type/fields/:field/restore") {
+          restoreColumn(store, params.type ?? "", params.field ?? "", s.device);
           return send(res, 200, {});
         }
         if (route === "PUT /api/data/rows/:id/type") {

@@ -673,3 +673,114 @@ describe("the tree (docs/clases.md §2.7; D-13)", () => {
     expect((await call(t, "GET", "/api/data/today?tz=Marte%2FOlimpo")).status).toBe(400);
   });
 });
+
+describe("a collection's columns, as Notion's properties (task 40)", () => {
+  it("adds, renames, changes the kind and the options of, hides and brings back a column; Boni's own are not touched", async () => {
+    const r = await fetch(`${base}/api/login`, {
+      method: "POST",
+      body: JSON.stringify({ user: "ana", password: PASSWORD, device: "portatil-ejemplo" }),
+    });
+    const h = { authorization: `Bearer ${((await r.json()) as { token: string }).token}` };
+    const call = (method: string, path: string, body?: unknown) =>
+      fetch(`${base}${path}`, {
+        method,
+        headers: h,
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    const store = host.store(1);
+    const fields = () =>
+      (store.schema().types.t_libro?.fields ?? [])
+        .filter((f) => !f.archived)
+        .map((f) => [f.name, f.type]);
+    // Add: a name and a kind; a list with its options.
+    const add = await call("POST", "/api/data/types/t_libro/fields", {
+      name: "Autor",
+      type: "text",
+    });
+    expect(add.status).toBe(200);
+    const autor = ((await add.json()) as { id: string }).id;
+    expect(autor).toBe("f_autor");
+    expect(
+      (await call("POST", "/api/data/types/t_libro/fields", { name: "autor", type: "text" }))
+        .status,
+    ).toBe(409); // the same name
+    expect(
+      (await call("POST", "/api/data/types/t_libro/fields", { name: "Precio", type: "money" }))
+        .status,
+    ).toBe(400); // not a kind made from a table
+    const genero = (
+      (await (
+        await call("POST", "/api/data/types/t_libro/fields", {
+          name: "Género",
+          type: "select",
+          options: [{ name: "Novela" }, { name: "Ensayo", color: "#60a5fa" }],
+        })
+      ).json()) as { id: string }
+    ).id;
+    expect(
+      store.schema().types.t_libro?.fields.find((f) => f.id === genero)?.options,
+    ).toMatchObject([
+      { id: "o_novela", name: "Novela" },
+      { id: "o_ensayo", name: "Ensayo", color: "#60a5fa" },
+    ]);
+    // Rename; change the kind while empty; among texts with values; not to a number with values.
+    expect(
+      (await call("PUT", `/api/data/types/t_libro/fields/${autor}`, { name: "Autora" })).status,
+    ).toBe(200);
+    const row = store.create(
+      "t_libro",
+      {
+        f_titulo: { value: "Rayuela", label: L },
+        [autor]: { value: "Cortázar", label: L },
+        [genero]: { value: "o_novela", label: L },
+      },
+      { actor: "user" },
+    );
+    expect(
+      (await call("PUT", `/api/data/types/t_libro/fields/${autor}`, { type: "longtext" })).status,
+    ).toBe(200);
+    expect(
+      (await call("PUT", `/api/data/types/t_libro/fields/${autor}`, { type: "number" })).status,
+    ).toBe(409);
+    expect(store.get(row.entity.id)?.entity.values[autor]).toBe("Cortázar");
+    // A list's options: renamed and added keep their ids; one in use is not taken out.
+    expect(
+      (
+        await call("PUT", `/api/data/types/t_libro/fields/${genero}`, {
+          options: [{ id: "o_novela", name: "Novela larga" }, { name: "Poesía" }],
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      store
+        .schema()
+        .types.t_libro?.fields.find((f) => f.id === genero)
+        ?.options?.map((o) => [o.id, o.name]),
+    ).toEqual([
+      ["o_novela", "Novela larga"],
+      ["o_poesia", "Poesía"],
+    ]);
+    expect(
+      (
+        await call("PUT", `/api/data/types/t_libro/fields/${genero}`, {
+          options: [{ name: "Poesía" }],
+        })
+      ).status,
+    ).toBe(409);
+    // Out, with its values kept; back again (Undo). The title never goes.
+    expect((await call("DELETE", `/api/data/types/t_libro/fields/${autor}`)).status).toBe(200);
+    expect(fields().map(([n]) => n)).not.toContain("Autora");
+    expect((await call("POST", `/api/data/types/t_libro/fields/${autor}/restore`)).status).toBe(
+      200,
+    );
+    expect(fields()).toContainEqual(["Autora", "longtext"]);
+    expect(store.get(row.entity.id)?.entity.values[autor]).toBe("Cortázar");
+    expect((await call("DELETE", "/api/data/types/t_libro/fields/f_titulo")).status).toBe(400);
+    // Boni's own collections are not the user's to change.
+    expect(
+      (await call("POST", `/api/data/types/${SYS_RUNS}/fields`, { name: "Nota", type: "text" }))
+        .status,
+    ).toBe(404);
+    store.remove(row.entity.id, { actor: "user" });
+  });
+});

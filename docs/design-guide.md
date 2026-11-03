@@ -406,7 +406,15 @@ contraseña ni un código aquí» under a question.
   page's bottom (above a toast) says how many, with «Abrir» (one), «Borrar» / «Borrar N» and ✕, so nothing in the
   head or the table moves; the head keeps its options, and a click on one of them, Esc or a click outside the table
   lets go; Supr deletes them (one Undo for all). The right button on a row opens its menu (Abrir, Cambiar nombre,
-  Copiar enlace, Borrar; with several chosen, «Borrar N»); a row not chosen is chosen alone first. On a collection's
+  Copiar enlace, Borrar; with several chosen, «Borrar N»); a row not chosen is chosen alone first. **A column's menu**
+  (task 40; Notion's property menu): a click on its name opens it under the name, the right button where the pointer
+  is: its name written in place (focused; Enter keeps it), «Tipo: …» with the kinds (Texto, Texto largo, Número,
+  Lista, Lista múltiple, Fecha, Fecha y hora, Casilla, Enlace, Correo, Teléfono), «Valores» for a list (each renamed
+  in place or taken out with ✕, «Añadir un valor» at the end), «Ocultar» (this view) and «Borrar columna» (its values
+  kept, «Deshacer» in the toast). The title column only renames; a mother's column, Boni's own collections and the
+  mail's show no changes. A column's kind changes freely while empty, among texts with values; otherwise, and for a
+  list's value still in use, a toast says «No se puede: está en uso». A «+» at the head's end («Nueva columna»): a
+  name and a kind (the kind's name when left empty). On a collection's
   own page, in every layout, the page is centred and as wide as what it shows (Juan, 2026-10-30): a table's columns, a
   board's columns, a gallery's cards (220 px each), a list's rows, from 560 px up to the window's width (then a table
   or a board scrolls sideways, a gallery wraps); what is narrower than 560 px is widened to it, and a calendar fills

@@ -1041,6 +1041,8 @@ export interface DataField {
   type: string;
   options?: { id: string; name: string; color?: string }[];
   relation?: { target: string; many: boolean };
+  /** A mother's field her daughter has: changed at the mother, never in the daughter's table. */
+  inherited?: boolean;
 }
 /** A collection in the tree: its mother, its name and whether its records with a note show under it. */
 export interface TreeCollection {
@@ -1184,6 +1186,7 @@ function parseDataType(v: unknown): DataType | null {
               ...(typeof f.key === "string" ? { key: f.key.slice(0, 80) } : {}),
               name: str(f.name, 200) ?? f.id,
               type: f.type,
+              ...(f.inherited === true ? { inherited: true } : {}),
               ...(Array.isArray(f.options)
                 ? {
                     options: f.options.flatMap((o) =>
@@ -1926,6 +1929,42 @@ export class AgentApi {
     );
     return isObj(b) && typeof b.id === "string" ? b.id : "";
   };
+  /** A new column of a collection (Notion's «+»): its name and kind; its id. */
+  addColumn = async (type: string, col: { name: string; type: string }): Promise<string> => {
+    const b = await this.call("POST", `/${encodeURIComponent(type)}/fields`, col, "api/data/types");
+    return isObj(b) && typeof b.id === "string" ? b.id : "";
+  };
+  /** A column changed: its name, its kind or a list's options (each by its id when kept). */
+  changeColumn = async (
+    type: string,
+    field: string,
+    change: {
+      name?: string;
+      type?: string;
+      options?: { id?: string; name: string; color?: string }[];
+    },
+  ) =>
+    void (await this.call(
+      "PUT",
+      `/${encodeURIComponent(type)}/fields/${encodeURIComponent(field)}`,
+      change,
+      "api/data/types",
+    ));
+  /** A column out (its values kept), and back. */
+  removeColumn = async (type: string, field: string) =>
+    void (await this.call(
+      "DELETE",
+      `/${encodeURIComponent(type)}/fields/${encodeURIComponent(field)}`,
+      undefined,
+      "api/data/types",
+    ));
+  restoreColumn = async (type: string, field: string) =>
+    void (await this.call(
+      "POST",
+      `/${encodeURIComponent(type)}/fields/${encodeURIComponent(field)}/restore`,
+      {},
+      "api/data/types",
+    ));
   /** A collection out of the tree (only when nothing is left in it). */
   deleteCollection = async (type: string) =>
     void (await this.call("DELETE", `/${encodeURIComponent(type)}`, undefined, "api/data/types"));

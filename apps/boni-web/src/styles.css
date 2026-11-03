@@ -3191,6 +3191,49 @@ span.page-icon {
   max-height: min(26rem, 60cqh);
   overflow: auto;
 }
+/* A field written inside a menu (a column's name, a list's value): the menu's own width (task 40). */
+.menu-input {
+  display: block;
+  width: 100%;
+  margin: 2px 0 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}
+.menu-option {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.menu-option .menu-input {
+  margin: 1px 0;
+}
+/* A table's column name opens its menu (task 40): it reads as the header it is. */
+.th-button {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.th-button:hover {
+  color: var(--text);
+}
+th.row-tools .add-col {
+  opacity: 0.7;
+}
+th.row-tools .add-col:hover {
+  opacity: 1;
+}
 .menu-head {
   padding: 6px 8px 2px;
   color: var(--muted);
