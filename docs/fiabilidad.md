@@ -196,6 +196,26 @@ acepta sola (hoy solo el Registro), y la corrección de lo creado (cambiar el t�
 borrar.
 | F4 | Los aprendices de la tarea 13 y las sugerencias de `docs/preferencias.md` sobre el procedimiento | P3 de `docs/preferencias.md` |
 
+**Hecho, F4 (2026-11-03; A-14):** las tres señales de corrección del plan de la tarea 13 ya tienen cada una su
+aprendiz sobre el procedimiento, y cada aprendiz ajusta solo algo acotado:
+
+| Señal (desde el diario de decisiones) | Aprendiz | Qué ajusta | Dónde lo ve Juan |
+|---|---|---|---|
+| Deshacer (una propuesta aceptada sola, deshecha o borrada) | «Aceptar propuestas» (F3) | Apaga «Solo» (tres seguidas o una de cada cinco) | Ajustes › Decisiones («Apagado por Boni el…») |
+| Corregir al poco (la colección o un campo cambiados al aceptar) | La calibración (F2) | La `p` de ese nivel, desde 10 juzgadas | El Registro, «Por nivel» |
+| El mismo cambio repetido (un remitente siempre rechazado; lo de un remitente llevado siempre a la misma colección) | La revisora, **por código** (`apps/server/src/mailReview.ts`, `ruleCandidates`) | Propone una regla de la guía (catálogo cerrado), medida como las del modelo | Ajustes › Correo, la sugerencia |
+
+La revisora mira sola cuando `apps/server/src/learning.ts` lo permite: con «Aprender» encendido, sin otra sugerencia
+esperando, como mucho una al día, y solo cuando las decisiones de Juan suman las del manifiesto (`learning.every`) o
+una corrección repetida ya muestra una regla (entonces no espera a las 20). «Revisar ahora» no tiene límite. Cada
+sugerencia es una decisión del procedimiento (ámbito `mail.guide`, «Revisora» en Ajustes › Decisiones; clase B,
+siempre preguntada; `p` = lo que la guía candidata acertó de lo medido) y la respuesta de Juan la juzga: sí o
+«Cambiarlo…», acierto; no, fallo. Las sugerencias se contestan con una sola forma, [Descartar] [Cambiarlo…] [Añadir a
+la guía]: «Cambiarlo…» pone la sugerencia dicha como una persona al final de sus indicaciones, para que la escriba
+como quiera y la guarde (sus palabras, nunca las del modelo), y lo propuesto no vuelve a proponerse. Queda: la tarjeta
+«¿Lo recuerdo?» de `memory.save` (P1 de `docs/preferencias.md`) y los aprendices de otras áreas (interfaz,
+conciliación), que entrarán sobre este mismo procedimiento.
+
 Fuentes: [Horvitz, «Principles of Mixed-Initiative User Interfaces» (CHI 1999)](https://erichorvitz.com/chi99horvitz.pdf),
 [Parasuraman, Sheridan y Wickens (2000), los niveles de automatización](https://www.mitre.org/sites/default/files/2021-11/pr-16-3426-lessons-lost-automation-in-aviation-definition-of-automation.pdf)
 (tabla 1), [el modo automático de Claude Code](https://claude.com/blog/auto-mode) y

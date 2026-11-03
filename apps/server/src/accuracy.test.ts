@@ -85,7 +85,18 @@ describe("how right Boni's decisions are (docs/fiabilidad.md)", () => {
     j.addDecision({ ...base, id: "d5", area: "fill", p: 0.2, outcome: "nothing", at: 5 });
     j.setDecisionResult("d1", "right", 6);
     j.setDecisionResult("d2", "wrong", 7);
-    const [choice, fill] = accuracy(store);
+    // A question of its own (the reviewer's suggestion) is judged by Juan's answer.
+    j.addDecision({
+      ...base,
+      id: "d6",
+      area: "mail.guide",
+      cost: "B",
+      p: 0.9,
+      outcome: "ask",
+      at: 8,
+    });
+    j.setDecisionResult("d6", "right", 9);
+    const [choice, fill, guide] = accuracy(store);
     expect(choice).toMatchObject({
       area: "choice",
       total: 4,
@@ -100,6 +111,7 @@ describe("how right Boni's decisions are (docs/fiabilidad.md)", () => {
       [0.9, 1, 1],
     ]);
     expect(fill).toMatchObject({ area: "fill", total: 1, done: 0, nothing: 1, judged: 0 });
+    expect(guide).toMatchObject({ area: "mail.guide", total: 1, asked: 1, judged: 1, right: 1 });
     expect(accuracy(openUserStore(":memory:"))).toEqual([]);
   });
 });

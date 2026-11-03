@@ -300,6 +300,8 @@ interface State {
   runs: RunSummary[];
   /** The Registro's «Acierto»: Boni's decisions per area (docs/fiabilidad.md). */
   accuracy: AreaAccuracy[];
+  /** «Aprender» (docs/preferencias.md §5): whether Boni's learners may suggest anything on their own. */
+  learning: boolean;
   /** How often Boni would have accepted alone, and been right (shown on top of the Registro). */
   autoAccept: AutoAccept | null;
   /** Flips with every confirmation, so its button is never where the last one was. */
@@ -415,6 +417,7 @@ export const useStore = create<State>(() => ({
   inboxOpen: false,
   runs: [],
   accuracy: [],
+  learning: true,
   autoAccept: null,
   confirmFlip: false,
 }));
@@ -1744,12 +1747,12 @@ export async function restoreProposal(id: string, run?: string) {
 
 export async function loadRuns() {
   try {
-    const [runs, accuracy] = await Promise.all([
+    const [runs, d] = await Promise.all([
       agent.runs(),
       // A server without it: no «Acierto».
-      agent.decisions().catch(() => [] as AreaAccuracy[]),
+      agent.decisions().catch(() => ({ areas: [] as AreaAccuracy[], learning: true })),
     ]);
-    set({ ...runs, accuracy });
+    set({ ...runs, accuracy: d.areas, learning: d.learning });
   } catch {
     // the log stays as it was
   }
@@ -1861,10 +1864,10 @@ export async function reviewMail(): Promise<MailView | null> {
   }
 }
 
-/** Juan's answer to the reviewer's suggestion: the guide and the mailbox after it. */
-export async function answerSuggestion(id: string, accept: boolean) {
+/** Juan's answer to the reviewer's suggestion (yes, no, or in his words): the guide and the mailbox after it. */
+export async function answerSuggestion(id: string, accept: boolean, changed = false) {
   try {
-    return await agent.answerSuggestion(id, accept);
+    return await agent.answerSuggestion(id, accept, changed);
   } catch {
     toast(useStore.getState().t("mail.error.failed"));
     return null;
@@ -1937,9 +1940,25 @@ export async function changeVisibility(id: string, level: AiLevel): Promise<bool
 /** The areas Boni decides in, for Settings «Decisiones» (a server without them: none). */
 export async function loadDecisions() {
   try {
-    set({ accuracy: await agent.decisions() });
+    const d = await agent.decisions();
+    set({ accuracy: d.areas, learning: d.learning });
   } catch {
     // as it was
+  }
+}
+
+/** Juan turns «Aprender» (docs/preferencias.md §5): it flips at once and goes back if the server says no. */
+export async function setLearning(on: boolean): Promise<boolean> {
+  const { t, learning } = useStore.getState();
+  set({ learning: on });
+  try {
+    const d = await agent.setLearning(on);
+    set({ accuracy: d.areas, learning: d.learning });
+    return true;
+  } catch (e) {
+    set({ learning });
+    toast(e instanceof ApiError && e.status === 403 ? t("ai.personal") : t("decisions.failed"));
+    return false;
   }
 }
 
@@ -1951,7 +1970,8 @@ export async function setDecisionAuto(area: string, auto: boolean): Promise<bool
   const { t, accuracy } = useStore.getState();
   set({ accuracy: accuracy.map((a) => (a.area === area ? { ...a, auto } : a)) });
   try {
-    set({ accuracy: await agent.setDecisionAuto(area, auto) });
+    const d = await agent.setDecisionAuto(area, auto);
+    set({ accuracy: d.areas, learning: d.learning });
     return true;
   } catch (e) {
     set({ accuracy });

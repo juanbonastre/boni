@@ -22,6 +22,7 @@ import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
+import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
 import { acceptEdits } from "./proposalEdits.ts";
@@ -531,7 +532,7 @@ async function answerAgent(
       return send(res, r === "no-such-proposal" ? 404 : 409, { error: r });
     }
     case "GET /api/agent/decisions":
-      return send(res, 200, { areas: areasView(host.store(who.account), Date.now()) });
+      return send(res, 200, decisionsView(host.store(who.account)));
     case "PUT /api/agent/decisions/:area": {
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const store = host.store(who.account);
@@ -540,8 +541,17 @@ async function answerAgent(
       if (typeof b.auto !== "boolean" || !areasView(store, Date.now()).some((a) => a.area === area))
         return send(res, 400, { error: "bad-request" });
       const r = setAuto(store, area, b.auto, Date.now());
-      if (r === "ok") return send(res, 200, { areas: areasView(store, Date.now()) });
+      if (r === "ok") return send(res, 200, decisionsView(store));
       return send(res, r === "not-earned" ? 409 : 400, { error: r });
+    }
+    // «Aprender» (docs/preferencias.md §5): off, no learner suggests anything on its own. A personal device only.
+    case "PUT /api/agent/learning": {
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const store = host.store(who.account);
+      const b = await bodyOf(req);
+      if (typeof b.on !== "boolean") return send(res, 400, { error: "bad-request" });
+      setLearning(store, b.on);
+      return send(res, 200, decisionsView(store));
     }
     case "GET /api/agent/runs": {
       const store = host.store(who.account);
@@ -684,4 +694,9 @@ async function answerAgent(
     default:
       return send(res, 404, { error: "not-found" });
   }
+}
+
+/** What Settings «Decisiones» shows: every area with its accuracy and «Solo», and whether Boni learns at all. */
+function decisionsView(store: UserStore) {
+  return { areas: areasView(store, Date.now()), learning: learningOn(store) };
 }

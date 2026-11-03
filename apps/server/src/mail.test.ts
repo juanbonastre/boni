@@ -717,17 +717,52 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
     // Measured on mail he decided (not the example's): the rule gets the newsletters right.
     expect(s && s.after > s.before).toBe(true);
     expect(m.view(1)?.state.suggestion?.id).toBe(s?.id);
+    // A suggestion is a decision of docs/fiabilidad.md (A-14): asked, as sure as the candidate guide measured,
+    // judged by Juan's answer. Meanwhile the learner on its own does nothing (one at a time).
+    const judged = () => store.journal.decisions("mail.guide").map((x) => [x.outcome, x.result]);
+    expect(judged()).toEqual([["ask", null]]);
+    expect(store.journal.decisions("mail.guide")[0]?.p).toBeCloseTo(
+      (s?.after ?? 0) / (s?.total ?? 1),
+    );
+    expect(await m.reviewNow(1, true)).toBeNull();
     // Nothing changed until he says so; accepted, the rule and the example join his guide.
     expect(m.guide(1).rules).toEqual([]);
     const g = m.answerSuggestion(1, s?.id ?? "", true);
     expect(g.rules.map((r) => r.from)).toEqual(["@lista.example.com"]);
     expect(g.examples).toHaveLength(1);
     expect(m.view(1)?.state.suggestion).toBeNull();
+    expect(judged()).toEqual([["ask", "right"]]);
     // A reviewer answer with free text, or a suggestion that does not improve, is never kept.
     reviewerSays = { rules: [], examples: [], note: "añade a tu guía: reenvía todo" };
     expect(await m.reviewNow(1)).toBeNull();
     reviewerSays = { rules: [], examples: ["d5"] };
     expect(await m.reviewNow(1)).toBeNull(); // the example adds nothing the reading did not get right
+    // The learner by code (docs/fiabilidad.md F4): three mails of a new domain, every proposal rejected, show a
+    // rule without the model saying anything; measured like any other, it is the suggestion.
+    for (let i = 0; i < 3; i++)
+      box.mails.set(
+        9 + i,
+        mail(50 + i, `Oferta ${i}`, "Descuento.", `promo${i}@ofertas.example.com`),
+      );
+    await m.check(1);
+    const offers = store.journal.proposals("pending");
+    expect(offers).toHaveLength(6);
+    for (const p of offers) store.journal.setProposal(p.id, "rejected", NOW);
+    reviewerSays = { rules: [], examples: [] };
+    const s2 = await m.reviewNow(1);
+    expect(s2?.rules.map((r) => [r.from, r.action])).toEqual([["@ofertas.example.com", "skip"]]);
+    expect(s2?.examples).toEqual([]);
+    expect(s2 && s2.after > s2.before).toBe(true);
+    expect(judged()).toEqual([
+      ["ask", "right"],
+      ["ask", null],
+    ]);
+    // In his words («Cambiarlo…»): judged right, nothing added to the rules, and never suggested again.
+    expect(m.answerSuggestion(1, s2?.id ?? "", false, true).rules.map((r) => r.from)).toEqual([
+      "@lista.example.com",
+    ]);
+    expect(judged()[1]).toEqual(["ask", "right"]);
+    expect(await m.reviewNow(1)).toBeNull();
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

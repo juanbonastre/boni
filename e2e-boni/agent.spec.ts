@@ -626,6 +626,7 @@ test("«Decisiones» in Settings: each area's accuracy, and «Solo» only once e
     agent: {
       "GET api/agent/decisions": [ACCURACY],
       "PUT api/agent/decisions/:area": [{ __status: 500, error: "boom" }, ACCURACY_ON],
+      "PUT api/agent/learning": [{ ...ACCURACY, learning: false }],
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
@@ -633,15 +634,17 @@ test("«Decisiones» in Settings: each area's accuracy, and «Solo» only once e
   await modal.getByRole("tab", { name: "Decisiones" }).click();
   await expect(modal.getByRole("heading", { name: "Decisiones" })).toBeVisible();
   const rows = modal.locator(".settings-pane .setting");
-  await expect(rows).toHaveCount(3);
+  await expect(rows).toHaveCount(4);
+  // «Aprender» first (docs/preferencias.md §5): on, a switch.
+  await expect(rows.nth(0)).toContainText("Aprender");
   // An area decided inside a proposal Juan decides: its accuracy, no switch.
-  await expect(rows.nth(0)).toContainText("Colecciones");
-  await expect(rows.nth(0)).toContainText("acierto 19 de 20 (95 %)");
-  await expect(rows.nth(0).getByRole("checkbox")).toHaveCount(0);
-  await expect(rows.nth(1)).toContainText("sin juzgar aún");
+  await expect(rows.nth(1)).toContainText("Colecciones");
+  await expect(rows.nth(1)).toContainText("acierto 19 de 20 (95 %)");
+  await expect(rows.nth(1).getByRole("checkbox")).toHaveCount(0);
+  await expect(rows.nth(2)).toContainText("sin juzgar aún");
   // The area with a switch, earned: Boni says so, and the switch can be turned on.
-  await expect(rows.nth(2)).toContainText("Aceptar propuestas");
-  await expect(rows.nth(2)).toContainText("acierto 20 de 20 (100 %)");
+  await expect(rows.nth(3)).toContainText("Aceptar propuestas");
+  await expect(rows.nth(3)).toContainText("acierto 20 de 20 (100 %)");
   const solo = modal.getByRole("checkbox", { name: "Solo · Aceptar propuestas" });
   await expect(solo).toBeEnabled();
   await expect(solo).not.toBeChecked();
@@ -654,6 +657,14 @@ test("«Decisiones» in Settings: each area's accuracy, and «Solo» only once e
   expect(await requests(page, "PUT api/agent/decisions")).toEqual([
     'PUT api/agent/decisions/mail.accept {"auto":true}',
     'PUT api/agent/decisions/mail.accept {"auto":true}',
+  ]);
+  // «Aprender» off: no learner suggests anything on its own (A-14).
+  const learn = modal.getByRole("checkbox", { name: "Aprender" });
+  await expect(learn).toBeChecked();
+  await learn.uncheck();
+  await expect(learn).not.toBeChecked();
+  expect(await requests(page, "PUT api/agent/learning")).toEqual([
+    'PUT api/agent/learning {"on":false}',
   ]);
   await page.screenshot({ path: `${SHOTS}/decisions.png` });
 });
@@ -852,6 +863,35 @@ test("the reviewer's suggestion: measured, shown with what it changes, added onl
   // Review now with nothing clear: it says so.
   await modal.getByRole("button", { name: "Revisar ahora" }).click();
   await expect(page.getByText("Nada claro que sugerir por ahora")).toBeVisible();
+});
+
+test("the reviewer's suggestion in his words: «Cambiarlo…» puts it in his instructions, adds no rule", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/visibility": [VISIBILITY],
+      "GET api/mail": [MAIL_SUGGESTED],
+      "GET api/mail/guide": [GUIDE],
+      "POST api/mail/suggestion": [{ guide: GUIDE.guide, mail: MAIL.mail }],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  const modal = page.locator(".modal");
+  await modal.getByRole("tab", { name: "Correo" }).click();
+  const card = modal.getByRole("group", { name: "Sugerencia de la revisora" });
+  await card.getByRole("button", { name: "Cambiarlo…" }).click();
+  await expect(card).toHaveCount(0);
+  // The suggestion, as a person would say it, at the end of his instructions, ready to rewrite and save.
+  const text = modal.locator("#mail-guide-text");
+  await expect(text).toHaveValue(
+    `${GUIDE.guide.instructions}\nDe @boletines.example.com, nada.\n«Feria de empleo»: Nada que proponer.`,
+  );
+  await expect(text).toBeFocused();
+  await expect(modal.getByRole("button", { name: "Guardar", exact: true })).toBeEnabled();
+  expect(await requests(page, "POST api/mail/suggestion")).toEqual([
+    'POST api/mail/suggestion {"id":"g-1","accept":false,"changed":true}',
+  ]);
 });
 
 test("extensions in Settings: what each does, on or off, and what it uses", async ({ page }) => {
