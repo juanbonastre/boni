@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { timed } from "./perf.ts";
 
 /**
  * The desktop and Android apps are not served from here (another origin), so the API allows any
@@ -20,7 +21,8 @@ export const SAFE = {
 };
 
 export function send(res: ServerResponse, status: number, body: unknown): void {
-  const text = JSON.stringify(body);
+  // A big answer (the calendar's snapshot) holds the thread while it is written out: named when it takes long.
+  const text = timed("an answer written as JSON", 200, () => JSON.stringify(body));
   res.writeHead(status, {
     ...CORS,
     ...SAFE,
