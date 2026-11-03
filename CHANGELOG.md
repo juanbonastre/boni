@@ -5,6 +5,25 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (sixteenth) — server 0.8.92 · Boni desktop 0.4.66 · Boni Calendar desktop 0.8.20
+
+Needs: the server (0.8.92, to deploy), Boni desktop 0.4.66 (`release/boni_0.4.66_amd64.deb`, to install), Boni
+Calendar desktop 0.8.20 (`release/boni-calendar-desktop_0.8.20_amd64.deb`, to install) and the Android calendar
+from the CI (Obtainium: its bridge now opens links). Tasks 46 to 49, from what Juan saw trying the inbox with a
+real thread of mail.
+
+- **One thread of mail, one proposal.** Replies to the same thread no longer repeat what was already proposed, from
+  whoever they come; a reply that changes the day or the hour takes the earlier proposal's place, and the card says
+  «Antes: mié, 11 nov, 17:00». (#289, task 46)
+- **A proposal is corrected in what you decide of it.** In the card's ✎, the collection's select is grouped as
+  Tareas, Eventos and Otras (so «tarea o evento» is that one choice), and the day and the hours are rows of their
+  own, editable; another collection keeps them. (#290, task 47)
+- **«Ver correo» shows the mail's images and folds the quoted reply.** The images the mail brought come after the
+  text and Gmail's «[image: …]» marks go; the earlier message a reply quotes waits behind «···». (#291, task 48)
+- **Boni Calendar joins the call.** An event with a Zoom, Meet or Teams link has «Unirse» in its detail and a camera
+  pill on its block from ten minutes before it starts until it ends; its links open in the system's browser. (#292,
+  task 49)
+
 ## 2026-11-03 (fifteenth) — server 0.8.91
 
 Needs: the server only (0.8.91, to deploy). Tasks 45 and 29.
