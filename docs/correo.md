@@ -188,7 +188,9 @@ una tarjeta aparte.
 
 - **Hoy** un correo es un registro de «Correos» con sus campos (asunto, de, nombre, para, cc, fecha, adjuntos por
   su nombre, id de mensaje) y su cuerpo como texto plano: el HTML se reduce a texto y lo que no cabe se corta y se
-  dice. Todo `external`. El original (el `.eml`) no se guarda.
+  dice. Todo `external`. **El original (el `.eml`) se guarda** desde el 2026-11-03 (decisión 3 de §6, Juan: «Sí»):
+  un archivo más del correo, con sus adjuntos, llamado por su asunto («Actas de FUP 1.eml»), hasta 2 MB; uno más
+  grande no se guarda y el cuerpo lo dice. Abierto desde «Ver correo», lo enseña entero la app de correo del equipo.
 - **Los adjuntos se guardan** (Juan, 2026-11-02: «quiero que incluyan imágenes y archivos, así la IA puede leer un
   Excel adjunto»): cada adjunto que cabe (8 MB; el correo se trae hasta 16 MB) es un archivo de la cuenta, una fila
   de su colección de archivos en la carpeta `correo/<año-mes>`, con el nombre que traía (repetido, «nombre (2)»), y
@@ -224,7 +226,8 @@ Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/prefer
 2. **Qué modelos probar.** Propuesta para la primera tabla, baratos y de varias casas: Claude Haiku 5.5, Gemini 3.8
    Flash, GPT-5.6 Luna, DeepSeek V4.1 Flash y Qwen 3.8 Flash, cada caso dos veces: unos 0,50 $ con los precios de
    OpenRouter de hoy (la mitad, Gemini). Con Claude Sonnet 5.5, unos 0,80 $ más.
-3. **Guardar el `.eml` original de cada correo** como archivo del registro (§4.6), además de los campos de hoy: vale
+3. ~~**Guardar el `.eml` original de cada correo**~~ Decidido el 2026-11-03 (Juan: «Sí», tarea 26): se guarda,
+   hasta 2 MB (§4.6). Lo que se proponía: como archivo del registro (§4.6), además de los campos de hoy: vale
    para reabrirlo entero (HTML, adjuntos) y cuesta espacio en el NAS. Propuesta: sí, con un tope por correo (por
    ejemplo 2 MB; los adjuntos grandes se quedan fuera y se dice).
 

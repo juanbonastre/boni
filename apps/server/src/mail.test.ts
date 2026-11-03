@@ -322,13 +322,18 @@ describe("the mailbox", () => {
     });
     const notas = store.list(def.id).find((e) => e.entity.values.f_asunto === "Notas");
     const ids = notas?.entity.values.f_archivos as string[];
-    expect(ids).toHaveLength(2);
+    expect(ids).toHaveLength(3);
     const files = ids.map((id) => store.get(id)?.entity.values);
     expect(files.map((v) => [v?.f_title, v?.[FOLDER_FIELD]])).toEqual([
       ["notas.csv", "correo/2026-10"],
       ["imagen-2.png", "correo/2026-10"],
+      // The original as it came (task 26), to open whole in a mail app.
+      ["Notas.eml", "correo/2026-10"],
     ]);
     expect(store.getFile(String(files[0]?.[FILE_FIELD]))?.mime).toBe("text/csv");
+    const original = store.getFile(String(files[2]?.[FILE_FIELD]));
+    expect(original?.mime).toBe("message/rfc822");
+    expect(Buffer.from(original?.data ?? []).toString("utf8")).toBe(mailWithFiles(16, "Notas"));
     // The sheet's rows reach the reader as text; the image does not. A second file of the same name is told apart.
     expect(notas?.entity.values.f_adjuntos_texto).toBe(
       "[notas.csv]\nalumno\tnota\nAna Ejemplo\t7\nLuis Ejemplo\t9",
@@ -339,8 +344,17 @@ describe("the mailbox", () => {
     expect(againIds.map((id) => store.get(id)?.entity.values.f_title)).toEqual([
       "notas (2).csv",
       "imagen-2 (2).png",
+      "Notas otra vez.eml",
     ]);
     expect(def.fields.find((f) => f.id === "f_adjuntos_texto")?.hidden).toBe(true);
+    // An original over 2 MB is not kept, and the mail says so (task 26).
+    box.mails.set(7, mail(18, "Muy largo", "Mucho texto. ".repeat(180_000)));
+    expect((await mails.check(1)).lastError).toBeNull();
+    const big = store.list(def.id).find((e) => e.entity.values.f_asunto === "Muy largo");
+    expect(big?.entity.values.f_archivos).toBeUndefined();
+    expect(String(big?.entity.body)).toMatch(
+      /\[Boni: el correo original \(2\.\d MB\) no se guarda: pasa de 2 MB\]$/,
+    );
   });
 });
 
@@ -1271,6 +1285,9 @@ describe("attachments go to the collection of files, and no mail is lost (task 3
     const first = await m.check(1);
     expect(first.lastError).toBeNull();
     const type = first.type as string;
+    // Then the mail kept had no files (the mail with files was lost): no original either.
+    for (const e of store.list(type))
+      store.update(e.entity.id, { f_archivos: { value: null, label: u } }, { actor: "connector" });
     // As 0.8.70 to 0.8.79 left Juan's: the attachments' field toward the diary, the state from before the rescan.
     store.applySchema({ op: "remove_field", type, field: "f_archivos" }, { actor: "connector" });
     store.applySchema(
@@ -1307,7 +1324,12 @@ describe("attachments go to the collection of files, and no mail is lost (task 3
     expect(subjects()).toEqual(["Nuevo", "Perdido", "Tres", "Uno"]);
     const lost = store.list(type).find((e) => e.entity.values.f_asunto === "Perdido");
     const kept = (lost?.entity.values.f_archivos ?? []) as string[];
-    expect(kept.map((id) => store.get(id)?.entity.type)).toEqual(["t_archivo", "t_archivo"]);
+    // Its two files and its original, all in «Archivos».
+    expect(kept.map((id) => store.get(id)?.entity.type)).toEqual([
+      "t_archivo",
+      "t_archivo",
+      "t_archivo",
+    ]);
     expect(store.list("t_diario")).toHaveLength(0);
     // Once: the next check brings nothing twice.
     await m.check(1);
