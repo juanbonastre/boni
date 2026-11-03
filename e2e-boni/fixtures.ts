@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { resolveTemplateLinks, templatePage } from "../packages/views/src/templates.ts";
 import { boniEngine, boniTypes } from "./boni-records.ts";
 
@@ -1039,6 +1039,16 @@ export async function openInTree(page: Page, name: string): Promise<void> {
   await item.or(unfold).first().waitFor();
   if (!(await item.isVisible())) await unfold.click();
   await item.click();
+}
+
+/**
+ * Waits for an element's own animations to end: a menu grows in (scaled from 95 %), so where it opened is measured
+ * once it has grown.
+ */
+export async function grown(l: Locator) {
+  await l.evaluate((el) =>
+    Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined))).then(() => true),
+  );
 }
 
 export async function recorded(page: Page): Promise<Shell> {

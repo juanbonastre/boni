@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { AUDIT_SUMMARY, ROW_HISTORY, STORAGE } from "./agent-scenarios.ts";
-import { openApp, PAGE_FROM_HOME, recorded, TEMPLATE } from "./fixtures.ts";
+import { grown, openApp, PAGE_FROM_HOME, recorded, TEMPLATE } from "./fixtures.ts";
 
 /**
  * One tree (docs/clases.md §2.7; Juan, 2026-10-28): the sidebar has «Todas las páginas» beside Buscar and
@@ -119,7 +119,17 @@ test("the right button in the sidebar (task 42): a page's, a collection's and a 
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openApp(page, "/?still", { pages: [PAGE_FROM_HOME, TEMPLATE("uso-ia")] });
+  // A note opened before is in «Recientes»: renamed from the tree, it says its new name there too.
+  const before = {
+    kind: "row",
+    id: "d1",
+    type: "t_private_documentos",
+    title: "Contrato de ejemplo",
+  };
+  await openApp(page, "/?still", {
+    pages: [PAGE_FROM_HOME, TEMPLATE("uso-ia")],
+    files: { "recent.json": JSON.stringify({ items: [before] }) },
+  });
   const pages = page.locator(".sidebar").getByRole("list", { name: "Páginas" });
   const sent = async (start: string, part: string) =>
     (await recorded(page)).requests.some((r) => r.startsWith(start) && r.includes(part));
@@ -134,6 +144,7 @@ test("the right button in the sidebar (task 42): a page's, a collection's and a 
   // A page: the same menu as its «Más opciones», opened where the pointer is (task 39), its row lit meanwhile.
   const gastos = pages.locator(".page-row", { hasText: "Gastos" });
   await gastos.click({ button: "right", position: { x: 60, y: 12 } });
+  await grown(page.getByRole("dialog", { name: "Más opciones: Gastos" }));
   const at = (await gastos.boundingBox()) as { x: number; y: number };
   const menu = (await page.getByRole("dialog", { name: "Más opciones: Gastos" }).boundingBox()) as {
     x: number;
@@ -196,6 +207,9 @@ test("the right button in the sidebar (task 42): a page's, a collection's and a 
   await page.keyboard.press("Enter");
   await expect(pages.getByRole("button", { name: "Contrato firmado", exact: true })).toBeVisible();
   expect(await sent("PUT api/data/rows/d1 ", "Contrato firmado")).toBe(true);
+  await expect(page.locator(".sidebar").getByRole("list", { name: "Recientes" })).toContainText(
+    "Contrato firmado",
+  );
   // Boni's own things have nothing to be done with: no menu.
   await pages.getByRole("button", { name: "Mostrar subpáginas: Boni" }).click();
   await pages

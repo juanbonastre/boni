@@ -2572,6 +2572,13 @@ export async function renameNote(type: string, id: string, title: string) {
   const def = get().dataTypes?.find((x) => x.id === type);
   if (!def || def.system || def.readOnly) return;
   await editRowValue(type, id, def.titleField, title);
+  // «Recientes» keeps a note's title from when it was opened: this one says the new one.
+  const recent = get().recent;
+  if (recent.some((r) => r.kind === "row" && r.id === id)) {
+    const next = recent.map((r) => (r.kind === "row" && r.id === id ? { ...r, title } : r));
+    set({ recent: next });
+    void keep(FILES.recent, { items: next });
+  }
   await loadTree();
 }
 

@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
-import { type FakePage, openApp, recorded } from "./fixtures.ts";
+import { type FakePage, grown, openApp, recorded } from "./fixtures.ts";
 
 /**
  * A collection's table (Juan, 2026-10-30): each column as wide as its kind of value, widened by its edge and kept;
@@ -178,6 +178,7 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   const pedro = rows.filter({ hasText: "Pedro Páramo" });
   await pedro.click({ button: "right", position: { x: 120, y: 10 } });
   const menu = page.getByRole("dialog", { name: "Opciones de la fila" });
+  await grown(menu);
   // It opens where the pointer is (Juan, 2026-11-03: the menus opened elsewhere; task 39).
   const at = (await pedro.boundingBox()) as { x: number; y: number };
   const opened = (await menu.boundingBox()) as { x: number; y: number };
@@ -210,6 +211,7 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
   const head = page.locator(".db-head");
   const opens = async (card: ReturnType<Page["locator"]>) => {
     await card.click({ button: "right", position: { x: 40, y: 10 } });
+    await grown(menu);
     const at = (await card.boundingBox()) as { x: number; y: number };
     const opened = (await menu.boundingBox()) as { x: number; y: number };
     expect(Math.abs(opened.x - (at.x + 40))).toBeLessThan(6);
