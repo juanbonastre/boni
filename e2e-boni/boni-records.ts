@@ -77,6 +77,22 @@ function fakeStore(today: string, types: Record<string, TypeDef>) {
     audit: {
       lastAction: () => 0,
       activityByType: () => activity,
+      // What systemCollections asks since task 43: the same activity per quarter of an hour, given once (the
+      // caller keeps a running sum and asks again from the numbers it got back).
+      activitySince: (action: number) => ({
+        action: 1,
+        op: 1,
+        rows:
+          action >= 1
+            ? []
+            : activity.map((a) => ({
+                q: Math.floor(Date.parse(`${a.day}T12:00:00Z`) / 900_000),
+                by: a.by,
+                type: a.type,
+                reads: a.reads,
+                writes: a.writes,
+              })),
+      }),
     },
     schema: () => ({ types }),
     version: () => 0,
