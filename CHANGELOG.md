@@ -5,6 +5,21 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (third) — server 0.8.79 · Boni desktop 0.4.62 · Boni Calendar desktop 0.8.17
+
+Needs: the server (0.8.79, to deploy: it carries the fix of the slowness) and Boni Calendar desktop 0.8.17
+(`release/boni-calendar-desktop_0.8.17_amd64.deb`, to install). Boni desktop stays 0.4.62.
+
+- **The slowness, fixed at its cause.** Since the night's 0.8.76, the mail reviewer looked on its own on every
+  check of the mailbox whenever a rule found by code measured no better: forty reads of a model each time, each a run
+  in the journal, for hours; the server crawled, Actividad took half a minute, the calendar's writes failed half-way.
+  Now it looks on its own once a day at most whatever the last look gave, and a candidate that measured no better
+  waits a week. The log says when it looks. (#255, task 35)
+- **Boni Calendar: out goes the colour by a field.** «Color del calendario» is the swatches row again, and a split
+  definition has «Calendarios por área» with a row of swatches per calendar; «Separar por» is the only way to split
+  (Juan: «solo vamos a tener separar por… los colores se seleccionan de la matriz»). What stays: the select and the
+  swatches say «Guardando…» while the server sends the calendar back. (#256; tasks 24 and 32 undone)
+
 ## 2026-11-03 (second) — server 0.8.78 · Boni desktop 0.4.62 · Boni Calendar desktop 0.8.16
 
 Needs: the server (0.8.78, to deploy), Boni desktop 0.4.62 (`release/boni_0.4.62_amd64.deb`, to install), Boni
