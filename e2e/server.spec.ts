@@ -191,7 +191,7 @@ test("with a server, an event opens its note where the device opens notes", asyn
   expect(await page.evaluate(() => (window as any).__opened)).toEqual([id]);
 });
 
-test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and the button open it in Boni", async ({
+test("with Boni's desktop app: a double click peeks at the note, the button opens it in Boni, Ctrl+click only selects", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -238,15 +238,20 @@ test("with Boni's desktop app: a double click peeks at the note, Ctrl+click and 
   // biome-ignore lint/suspicious/noExplicitAny: reads the flag
   expect(await page.evaluate(() => (window as any).__popoverSeen)).toBe(false);
   await expect(page.locator(".popover")).toHaveCount(0); // the peek shows it, not the detail
+  // Ctrl+click selects (it adds or takes out the event) and never opens it (Juan, 2026-11-03; task 38).
+  const chosen = page.locator(".ev.selected");
+  const before = await chosen.count();
   await ev.click({ modifiers: ["Control"] });
-  await expect.poll(opened).toEqual([
-    [path, true],
-    [path, false],
-  ]);
+  await expect(chosen).toHaveCount(before === 1 ? 0 : 1);
+  await ev.click({ modifiers: ["Control"] });
+  await expect(chosen).toHaveCount(before);
+  await page.waitForTimeout(300);
+  expect(await opened()).toEqual([[path, true]]);
+  // The note opens in Boni from the event's detail.
   await ev.click();
   await page.locator(".popover").getByRole("button", { name: "Abrir en Boni" }).click();
-  await expect.poll(async () => (await opened()).length).toBe(3);
-  expect((await opened())[2]).toEqual([path, false]);
+  await expect.poll(async () => (await opened()).length).toBe(2);
+  expect((await opened())[1]).toEqual([path, false]);
   await page.keyboard.press("Escape");
   // The month too.
   await page.keyboard.press("m");

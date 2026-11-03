@@ -53,15 +53,18 @@ test("Shift+click adds every event between the anchor and the clicked one", asyn
   await page.screenshot({ path: "e2e/screenshots/multi-range.png" });
 });
 
-test("Ctrl+click on an event without a note just selects it (with a note it opens the note)", async ({
+test("Ctrl+click adds an event to the selection and takes it out again (Juan, 2026-11-03; task 38)", async ({
   page,
 }) => {
   await open(page);
   await ev(page, "Clase FUP").click();
   await clickWith(page, ev(page, "Dentista"), ["Control"]);
-  await expect(selected(page)).toHaveCount(1);
+  await expect(selected(page)).toHaveCount(2);
   await expect(ev(page, "Dentista")).toHaveClass(/selected/);
-  await expect(page.locator(".popover")).toBeVisible();
+  await expect(page.locator(".popover")).toHaveCount(0);
+  await clickWith(page, ev(page, "Dentista"), ["Control"]);
+  await expect(selected(page)).toHaveCount(1);
+  await expect(ev(page, "Clase FUP")).toHaveClass(/selected/);
 });
 
 test("holding Shift fades the detail so events under it can be clicked, but not while typing", async ({

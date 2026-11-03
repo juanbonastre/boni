@@ -52,13 +52,12 @@ describe("clickSelection", () => {
       clickSelection({ ...base, shift: true, current: [], anchor: null, clicked: "c" }).ids,
     ).toEqual(["c"]);
   });
-  it("Ctrl+click alone (an event without a note) is a plain click", () => {
+  it("Ctrl+click adds an event to the selection, or takes it out (Juan, 2026-11-03)", () => {
     expect(
       clickSelection({ ...base, ctrl: true, current: ["a"], anchor: "a", clicked: "c" }),
-    ).toEqual({
-      ids: ["c"],
-      anchor: "c",
-      popover: true,
-    });
+    ).toEqual({ ids: ["a", "c"], anchor: "c", popover: false });
+    expect(
+      clickSelection({ ...base, ctrl: true, current: ["a", "c"], anchor: "c", clicked: "a" }).ids,
+    ).toEqual(["c"]);
   });
 });

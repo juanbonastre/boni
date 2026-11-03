@@ -116,12 +116,12 @@ slate `#94a3b8`.
   selection) drops it with no undo step; with a title it becomes an ordinary
   event (and, with a server, an entry of its collection). So untitled entries are never made, and notes are never renamed.
 - **Selection:** click selects one and opens its detail; `Shift`+click adds the range from the anchor in chronological
-  order; `Ctrl+Shift`+click adds or removes one event. Dragging one selected event moves all of them. Click on empty space
+  order; `Ctrl`+click (also with `Shift`) adds or removes one event. Dragging one selected event moves all of them. Click on empty space
   or `Esc` clears. While `Ctrl`/`Shift` is held the popover lets clicks through, except while typing in a field (`Shift`
   for a capital letter must not fade it).
-- **Ctrl+click opens the event's note** (like a link): from the desktop app, in Boni (a double click, in its peek). An
-  event without a note (sample data, not saved yet) is just selected. Decided by Juan, 2026-10-16; until then
-  `Ctrl`+click toggled the selection and `Ctrl+Shift`+click added a range of one calendar.
+- **An event's note opens** from its right-button menu and its detail («Abrir en Boni»), and with a double click in
+  its peek. `Ctrl`+click selects (Juan, 2026-11-03: «debería seleccionarlo»); from 2026-10-16 to then it opened the
+  note like a link.
 - **Series:** repeating an event creates one entry per occurrence (up to 12 months ahead; the server tops up open-ended
   series). The same "this / this and
   following / all" question applies; "all" on a deletion keeps the past notes (the dialog says so); marking a task done only
@@ -461,8 +461,8 @@ contraseña ni un código aquí» under a question.
   only under the pointer (Juan, 2026-10-30); any other file (or an image too big to show) is a card with a clip, its name and "Abrir". It
   comes through the app's own channel to the server, so it shows the same on the desktop, the phone and the web.
   A file no longer there says so ("Este fichero ya no está").
-- **Peek** (2026-10-22): a note opened from another app (a double click on an event in Boni Calendar; Ctrl+click and
-  its "Abrir en Boni" open the note in Boni's main window instead). In Boni Calendar with Boni's address (Settings →
+- **Peek** (2026-10-22): a note opened from another app (a double click on an event in Boni Calendar; its "Abrir en
+  Boni", in the right-button menu and the detail, opens the note in Boni's main window instead). In Boni Calendar with Boni's address (Settings →
   Escritorio) it is the calendar's own window with Boni's note page, which asks once for the user and password (no
   address field: it is the page's own) and hides at once on a click in the calendar; it sits above the calendar's
   window only, never over other apps. A single click waits 300 ms before the event's detail where a double click

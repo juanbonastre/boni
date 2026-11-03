@@ -311,7 +311,7 @@ export interface AppState {
   /** A proposal of Boni's inbox drawn in the calendar: its page in Boni's peek; false where the host cannot. */
   openProposal: (id: string) => boolean;
   select: (id: string | null, popover?: boolean) => void;
-  /** A click on an event: selects it (Shift, Ctrl+Shift: several), or with Ctrl alone opens its note. */
+  /** A click on an event: selects it; with Shift a range, with Ctrl it adds or takes it out (never opens it). */
   clickSelect: (id: string, mods: { ctrl: boolean; shift: boolean }) => void;
   clearSelection: () => void;
   selectAllVisible: () => void;
@@ -1111,8 +1111,6 @@ export const useApp = create<AppState>((set, get) => {
       // A proposal of Boni's inbox opens in Boni's peek with one click (plan b2): there it is decided. Where the
       // host cannot, its detail shows it, read only.
       if (!mods.ctrl && !mods.shift && s.openProposal(id)) return;
-      // Ctrl+click opens the event's note (in Boni's window); an event without one is just selected.
-      if (mods.ctrl && !mods.shift && s.noteOfEvent(id)) return void s.openNote(id);
       const visible = new Set(s.data.calendars.filter((c) => c.visible).map((c) => c.id));
       const r = clickSelection({
         current: s.selectedIds,
