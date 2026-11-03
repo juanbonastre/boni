@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { plain, ScriptedProvider } from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { saveExternals } from "./account.ts";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
@@ -69,6 +70,58 @@ const mailWithFiles = (n: number, subject: string) =>
     "--mix--",
     "",
   ].join("\r\n");
+
+/** A calendar invitation as Google sends it (invented): the text, the calendar part beside it and invite.ics. */
+const invitationMail = (n: number, uid: string) => {
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "METHOD:REQUEST",
+    "BEGIN:VEVENT",
+    "DTSTART;TZID=Europe/Madrid:20261111T170000",
+    "DTEND;TZID=Europe/Madrid:20261111T180000",
+    `UID:${uid}`,
+    "DESCRIPTION:Unirse a la reunión Zoom\\nhttps://example.zoom.us/j/98765432100?pwd=abc",
+    "LOCATION:Sala 2.3",
+    "SUMMARY:Reconocimiento experiencia profesional_Ejemplo",
+    "END:VEVENT",
+    "END:VCALENDAR",
+  ].join("\r\n");
+  return [
+    "From: Secretaría Ejemplo <secretaria.ejemplo@universidad.example>",
+    "To: juan@example.com",
+    "Subject: Invitación: Reconocimiento experiencia profesional_Ejemplo mié 11 nov 2026 5pm - 6pm (CET)",
+    "Date: Tue, 03 Nov 2026 10:00:00 +0100",
+    `Message-ID: <m${n}@example.com>`,
+    'Content-Type: multipart/mixed; boundary="mix"',
+    "",
+    "--mix",
+    'Content-Type: multipart/alternative; boundary="alt"',
+    "",
+    "--alt",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "Reconocimiento experiencia profesional_Ejemplo",
+    "miércoles, 11 de noviembre de 2026 · 5pm – 6pm",
+    "--alt",
+    "Content-Type: text/calendar; charset=utf-8; method=REQUEST",
+    "",
+    ics,
+    "--alt--",
+    "--mix",
+    'Content-Type: application/ics; name="invite.ics"',
+    'Content-Disposition: attachment; filename="invite.ics"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    "QkVHSU46VkNBTEVOREFSDQpFTkQ6VkNBTEVOREFSDQo=",
+    "--mix",
+    'Content-Type: text/plain; charset=utf-8; name="convocatoria.txt"',
+    'Content-Disposition: attachment; filename="convocatoria.txt"',
+    "",
+    "Orden del día: reconocimiento de créditos.",
+    "--mix--",
+    "",
+  ].join("\r\n");
+};
 
 /** A mailbox the tests change: its messages by UID and its UIDVALIDITY. */
 const box = { uidValidity: 7, mails: new Map<number, string>() };
@@ -559,6 +612,142 @@ describe("tasks a mail asks for", () => {
       fn: "concat",
       args: [{ lit: "¿A qué colección va «" }, { ref: "$m.asunto" }, { lit: "»?" }],
     });
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("a calendar invitation (task 45)", () => {
+  it("gives its event from the .ics by code, with its hours; not again when a calendar of the account has it", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-invite-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    // The reader finds nothing of its own: the event never depends on it.
+    const known: unknown[] = [];
+    const reader = new ScriptedProvider("fake", (req) => {
+      known.push((req.input as { known?: unknown }).known ?? null);
+      return { items: [] };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_agenda",
+          key: "agenda",
+          name: "Agenda",
+          fields: [
+            { id: "t_agenda_t", key: "titulo", name: "Título", type: "text", label: own },
+            { id: "t_agenda_d", key: "fecha", name: "Fecha", type: "date", label: own },
+            { id: "t_agenda_h", key: "hora", name: "Hora de inicio", type: "time", label: own },
+            { id: "t_agenda_f", key: "hora_fin", name: "Hora de fin", type: "time", label: own },
+          ],
+          titleField: "t_agenda_t",
+          roles: { date: "t_agenda_d", time: "t_agenda_h", endTime: "t_agenda_f" },
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const feed = { text: "BEGIN:VCALENDAR\r\nEND:VCALENDAR" };
+    const feeds = new Feeds(async () => feed.text);
+    const logged: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((x: unknown) => {
+      logged.push(String(x));
+    });
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      feeds,
+      tz: "Europe/Madrid",
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 23;
+    box.mails = new Map([[1, invitationMail(31, "0123abcd@google.com")]]);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_agenda"],
+    });
+    expect(await m.check(1)).toMatchObject({ count: 1, lastError: null });
+    // The mail keeps the event as its own fields, read from the .ics: day, hours, place and link.
+    const kept = store.list(m.state(1).type as string).map((e) => e.entity.values);
+    expect(kept[0]).toMatchObject({
+      f_evento_uid: "0123abcd@google.com",
+      f_evento_titulo: "Reconocimiento experiencia profesional_Ejemplo",
+      f_evento_dia: "2026-11-11",
+      f_evento_inicio: "17:00",
+      f_evento_fin: "18:00",
+      f_evento_lugar: "Sala 2.3",
+      f_evento_enlace: "https://example.zoom.us/j/98765432100?pwd=abc",
+    });
+    // One proposal: the event with its hours in the marked collection, its place and link as its note, the
+    // invitation's line as its reason; and the reader was told to leave it out.
+    const pending = store.journal.proposals("pending");
+    expect(pending).toHaveLength(1);
+    const [first] = pending;
+    const rows =
+      (first?.view as { rows: { arg: string; value: unknown }[] } | undefined)?.rows ?? [];
+    const val = (arg: string) => rows.find((r) => r.arg === arg)?.value;
+    expect([
+      val("type"),
+      val("values.title"),
+      val("values.fecha"),
+      val("values.hora"),
+      val("values.hora_fin"),
+      val("values.body"),
+    ]).toEqual([
+      "agenda",
+      "Reconocimiento experiencia profesional_Ejemplo",
+      "2026-11-11",
+      "17:00",
+      "18:00",
+      "Sala 2.3\nhttps://example.zoom.us/j/98765432100?pwd=abc",
+    ]);
+    expect((first?.args as { why?: { value: string } } | undefined)?.why?.value).toBe(
+      "Invitación: Reconocimiento experiencia profesional_Ejemplo · 2026-11-11 17:00–18:00 · Sala 2.3",
+    );
+    expect(known[0]).toEqual(["Reconocimiento experiencia profesional_Ejemplo"]);
+    // What the code read of the attachments reached the reader (a hidden field of the mail, bound by code:
+    // through `$m` it stopped the plan with bad-ref).
+    expect((reader.requests[0]?.input as { content: string } | undefined)?.content).toContain(
+      "Adjuntos:\n[convocatoria.txt]\nOrden del día: reconocimiento de créditos.",
+    );
+    expect(
+      logged.some((l) =>
+        /^mail 1: read <secretaria\.ejemplo@universidad\.example>: «Reconocimiento experiencia profesional_Ejemplo» \(agenda, 2026-11-11 17:00–18:00\)$/.test(
+          l,
+        ),
+      ),
+    ).toBe(true);
+    // The same kind of invitation, already in one of the account's external calendars: not proposed again, and
+    // the log says so; the reader still reads the mail for anything else it asks.
+    saveExternals(sdb, key, 1, [
+      { id: "ucam", name: "UCAM", url: "https://calendar.example/ucam.ics", color: "#336699" },
+    ]);
+    feed.text = [
+      "BEGIN:VCALENDAR",
+      "BEGIN:VEVENT",
+      "UID:4567efgh@google.com",
+      "SUMMARY:Reconocimiento experiencia profesional_Ejemplo",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    box.mails.set(2, invitationMail(32, "4567efgh@google.com"));
+    expect(await m.check(1)).toMatchObject({ count: 2, lastError: null });
+    expect(store.journal.proposals("pending")).toHaveLength(1);
+    expect(known).toHaveLength(2);
+    expect(logged.some((l) => /already in calendar «UCAM»: not proposed$/.test(l))).toBe(true);
+    expect(logged.filter((l) => /: nothing proposed$/.test(l))).toHaveLength(1);
+    log.mockRestore();
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

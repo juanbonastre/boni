@@ -178,7 +178,9 @@ día en el calendario (de 9:00 a 20:00, una hora) y la tarjeta la pregunta («¿
 `p` sale de cuántas de las horas propuestas tomó Juan (Wilson, calibrada por nivel) y desde 0,9 la hora se pone sola
 (la tarjeta ya la enseña; al aceptar va con la propuesta salvo que Juan ponga otra o ninguna). Se juzga al aceptar:
 tomada o dejada, acierto; quitada o ignorada, fallo. Las horas que el correo dice (eventos casi siempre) las saca el
-lector y van a los campos con papel `hora` y `hora de fin` sin decisión (`apps/server/src/inboxCard.ts`).
+lector y van a los campos con papel `hora` y `hora de fin` sin decisión (`apps/server/src/inboxCard.ts`); las de una
+invitación de calendario las saca el código del `.ics` (tarea 45, `apps/server/src/invitation.ts`), así que su tarjeta
+nunca pregunta la hora (2026-11-03: el lector no entendió «5pm – 6pm» y la tarjeta preguntó «¿A las 09:00?»).
 
 **Hecho, F3 (2026-11-02):** Ajustes tiene «Decisiones»: cada ámbito con su acierto y, el que lo tiene, su interruptor
 «Solo» (`GET/PUT /api/agent/decisions`, `apps/server/src/accuracy.ts`). La pseudoaceptación es ya el ámbito

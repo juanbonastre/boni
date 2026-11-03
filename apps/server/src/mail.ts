@@ -13,19 +13,24 @@ import {
   type ReadingGuide,
   readMessagePrompt,
   readStore,
+  rec,
   resolveModules,
   type UserIn,
   type Val,
 } from "@boni/agent";
+import { systemTimeZone } from "@boni/calendar";
 import { type FieldDef, label, newId, rolesOf, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
 import { wrappedKeysIn } from "@boni/identity";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
 import { BODY, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
+import { readAccount } from "./account.ts";
 import type { AgentHost } from "./agent.ts";
 import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
+import type { Feeds } from "./feeds.ts";
+import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
 import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
 import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
 import { readRows } from "./money/sheets.ts";
@@ -133,6 +138,10 @@ export const modulesOfManifest = (m: ExtensionManifest) =>
     label("own", "public", [{ kind: "code", id: `extension:${m.id}` }]),
   );
 const moduleIds = (m: ExtensionManifest) => (m.readers ?? []).map((r) => r.module);
+/** The module whose items are events (a calendar invitation's event follows its route): "events" unless an extension names its own. */
+const eventModule = (m: ExtensionManifest) =>
+  (resolveModules(plain(modulesOfManifest(m))) ?? []).find((x) => x.kind === "event")?.id ??
+  "events";
 const budgetOf = (m: ExtensionManifest) =>
   m.needs.budget ? { key: m.id, perDay: m.needs.budget.readersPerDay } : undefined;
 
@@ -358,6 +367,13 @@ export function mailPlan(
      * instead of the reader choosing alone. Only for the live reading (a re-reading to measure never asks).
      */
     askWhenUnsure?: boolean;
+    /**
+     * The mail is a calendar invitation (task 45): its event comes from the mail's own fields, read from the .ics
+     * by code and bound as `$inv` (uid, titulo, dia, inicio, fin, nota, linea), and follows this module's route
+     * (the events'); no reader in between. The caller puts its title in `known`, so the reader does not propose
+     * it again.
+     */
+    invitation?: string;
   } = {},
 ): unknown {
   const modules = o.modules ?? MAIL_MODULES;
@@ -386,9 +402,9 @@ export function mailPlan(
   line("Fecha", ["fecha", "", ""]);
   line("Asunto", ["asunto", "", ""]);
   if (has.has("body")) parts.push({ lit: "\n" }, { ref: "$m.body" });
-  // What the code could read of the attachments (a sheet, a text file), after the mail's own text.
-  if (has.has("adjuntos_texto"))
-    parts.push({ lit: "\n\nAdjuntos:\n" }, { ref: "$m.adjuntos_texto" });
+  // What the code could read of the attachments (a sheet, a text file), after the mail's own text. A hidden
+  // field never comes through `$m` (entities.get leaves them out): the code binds it as `$adjuntos`.
+  if (has.has("adjuntos_texto")) parts.push({ lit: "\n\nAdjuntos:\n" }, { ref: "$adjuntos" });
   const text = { fn: "concat", args: parts };
   const known = o.known ?? [];
   const steps: unknown[] = [
@@ -486,7 +502,10 @@ export function mailPlan(
             }
           : {}),
       },
-      when: { ref: "$r.all" },
+      // With an invitation the collection is chosen even when the reader finds nothing else.
+      when: o.invitation
+        ? { fn: "or", args: [{ ref: "$r.all" }, { ref: "$inv.uid" }] }
+        : { ref: "$r.all" },
     });
   targets.forEach((t, i) => {
     for (const module of chosen)
@@ -504,6 +523,49 @@ export function mailPlan(
     if (!("propose" in r) || r.propose === "chosen") continue;
     const t = o.fixed?.find((x) => x.id === r.propose.collection);
     if (t) steps.push(...create(`f_${module}`, module, t));
+  }
+  // The invitation's event (task 45): the mail's own fields into the collection its module's route says; its
+  // place and link as the record's note, and the invitation's line as the reason the card shows.
+  const invite = (id: string, t: Target, when?: unknown) => ({
+    id,
+    op: "call",
+    tool: "entities.create",
+    ...(when ? { when } : {}),
+    why: { ref: "$inv.linea" },
+    args: {
+      type: { lit: t.key },
+      values: {
+        fn: "obj",
+        args: [
+          { lit: "title" },
+          { ref: "$inv.titulo" },
+          ...(t.date ? [{ lit: t.date }, { ref: "$inv.dia" }] : []),
+          ...(t.time ? [{ lit: t.time }, { ref: "$inv.inicio" }] : []),
+          ...(t.endTime ? [{ lit: t.endTime }, { ref: "$inv.fin" }] : []),
+          { lit: "body" },
+          { ref: "$inv.nota" },
+        ],
+      },
+    },
+  });
+  if (o.invitation) {
+    const r = route(o.invitation);
+    if ("propose" in r && r.propose === "chosen")
+      targets.forEach((t, i) => {
+        steps.push(
+          invite(
+            `inv${i}`,
+            t,
+            targets.length > 1
+              ? { fn: "eq", args: [{ ref: "$c.choice" }, { lit: t.option }] }
+              : undefined,
+          ),
+        );
+      });
+    else if ("propose" in r) {
+      const t = o.fixed?.find((x) => x.id === r.propose.collection);
+      if (t) steps.push(invite("inv_f", t));
+    }
   }
   return { version: 1, steps };
 }
@@ -603,8 +665,27 @@ function extraFields(files: TypeDef | undefined): FieldDef[] {
       hidden: true,
       label: CODE,
     },
+    ...INVITATION_FIELDS,
   ];
 }
+
+/**
+ * A calendar invitation's event, read by code from the mail's .ics (task 45; `invitation.ts`): hidden fields of
+ * the mail, from which its plan proposes the event with its exact hours, and the card says why.
+ */
+const INVITATION_FIELDS: FieldDef[] = (
+  [
+    ["evento_uid", "Evento: id", "text"],
+    ["evento_titulo", "Evento", "text"],
+    ["evento_dia", "Evento: día", "date"],
+    ["evento_inicio", "Evento: inicio", "time"],
+    ["evento_fin", "Evento: fin", "time"],
+    ["evento_lugar", "Evento: lugar", "text"],
+    ["evento_enlace", "Evento: enlace", "url"],
+    ["evento_nota", "Evento: nota", "longtext"],
+    ["invitacion", "Invitación", "text"],
+  ] as const
+).map(([key, name, type]) => ({ id: `f_${key}`, key, name, type, hidden: true, label: CODE }));
 
 /** What the code reads of an attachment for the reader: a sheet's rows (csv, xlsx, xls) or a text file; else nothing. */
 export function attachmentText(a: { name: string; type: string; content?: Uint8Array }): string {
@@ -667,6 +748,10 @@ export interface MailsOptions {
   perCheck?: number;
   /** Called with the ids of the entities made from new mail (the agent's proposals hang from it). */
   onNew?: (account: number, entities: string[]) => void;
+  /** The account's external calendars, downloaded by the server: an invitation already in one is not proposed. */
+  feeds?: Feeds;
+  /** The user's timezone, for an invitation's day and hours (the server's by default). */
+  tz?: string;
   /** Tests only: the IMAP connection. */
   connect?: () => Duplex;
 }
@@ -678,8 +763,11 @@ export class Mails {
   private reviewing = new Set<number>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
+  private readonly tz: string;
+
   constructor(o: MailsOptions) {
     this.o = o;
+    this.tz = o.tz ?? systemTimeZone();
   }
 
   private now = () => (this.o.now ?? Date.now)();
@@ -911,7 +999,11 @@ export class Mails {
         modules: moduleIds(m),
         boundModules: true,
       }),
-      { modules: modulesOfManifest(m), ...(withGuide ? { guide: guideOf(g) } : {}) },
+      {
+        modules: modulesOfManifest(m),
+        ...(withGuide ? { guide: guideOf(g) } : {}),
+        ...this.hiddenBindings(e),
+      },
       ["r"],
       measureBudget(m),
     );
@@ -1222,6 +1314,26 @@ export class Mails {
     ].filter(Boolean);
     const text = [m.text, ...notes].filter(Boolean).join("\n\n");
     if (text) values[BODY] = w(text);
+    // A calendar invitation (task 45): its event as the mail's own fields, read from the .ics by code (a
+    // cancellation or someone's reply describes an event too, but asks nothing of the user).
+    const inv = m.calendar ? invitationOf(m.calendar, this.tz) : null;
+    if (
+      inv &&
+      inv.method !== "CANCEL" &&
+      inv.method !== "REPLY" &&
+      def.fields.some((f) => f.id === "f_invitacion")
+    ) {
+      values.f_evento_uid = w(inv.uid);
+      values.f_evento_titulo = w(inv.title);
+      values.f_evento_dia = w(inv.day);
+      if (inv.start) values.f_evento_inicio = w(inv.start);
+      if (inv.end) values.f_evento_fin = w(inv.end);
+      if (inv.location) values.f_evento_lugar = w(inv.location);
+      if (inv.link) values.f_evento_enlace = w(inv.link);
+      const note = [inv.location, inv.link].filter(Boolean).join("\n");
+      if (note) values.f_evento_nota = w(note);
+      values.f_invitacion = w(invitationLine(inv));
+    }
     // The attachments that fit: each a file of the account (a row of its files, in a folder by month), named by
     // the mail, and what the code could read of them for the reader (Juan, 2026-11-02).
     const kept = m.attachments.filter((a) => a.content);
@@ -1591,10 +1703,30 @@ export class Mails {
         (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
       );
       const chosen = only.length ? only : c.targets;
+      // A calendar invitation (task 45): its event comes from the .ics by code, so the reader leaves it out
+      // (`known`); already in one of the account's external calendars, it is not proposed at all.
+      const inv =
+        typeof v.f_evento_uid === "string" && v.f_evento_uid
+          ? { uid: v.f_evento_uid, title: String(v.f_evento_titulo ?? "") }
+          : null;
+      const already = inv ? await this.calendarWith(account, inv.uid) : null;
+      if (inv && already)
+        console.log(
+          `mail ${account}: invitation «${inv.title.slice(0, 60)}» already in calendar «${already}»: not proposed`,
+        );
+      const known = [
+        ...(inv?.title ? [inv.title.slice(0, 200)] : []),
+        ...(from ? this.known(c.store, from) : []),
+      ].slice(0, 20);
+      const bound: Record<string, Val> = {
+        ...c.bound,
+        options: optionsValue(chosen),
+        ...this.hiddenBindings(e),
+      };
       const r = await c.agent.background(
         mailPlan(id, chosen, {
           has: e.entity.body ? [...has, "body"] : has,
-          known: from ? this.known(c.store, from) : [],
+          known,
           userIn: userIn(c.s.user, v.f_para, v.f_cc),
           guide: c.withGuide,
           modules: moduleIds(c.m),
@@ -1602,13 +1734,15 @@ export class Mails {
           ...(c.m.routes ? { routes: c.m.routes } : {}),
           fixed: c.fixed,
           askWhenUnsure: true,
+          ...(inv && !already ? { invitation: eventModule(c.m) } : {}),
         }),
-        { ...c.bound, options: optionsValue(chosen) },
+        bound,
         [],
         budgetOf(c.m),
       );
       const stopped = r.status === "stopped" ? (r.error ?? "stopped") : null;
       if (stopped && r.error) console.warn(`mail ${account}: plan stopped (${r.error})`);
+      this.logRead(account, c.store, from, r.proposals);
       // «Solo» on for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are
       // accepted here, each a decision he judges by leaving it or undoing it.
       if (r.proposals.length && autoOn(c.store, AUTO_AREA))
@@ -1671,6 +1805,73 @@ export class Mails {
     // The learner looks in the background when learning.ts says it may: every `learning.every` new decisions
     // of Juan's (the extension's manifest), or when his corrections already show a rule; at most once a day.
     if (c.m.learning) void this.reviewNow(account, true).catch(() => null);
+  }
+
+  /**
+   * The mail's hidden fields for its plan, bound by code with the mail's own labels: what the code read of the
+   * attachments (`$adjuntos`) and the invitation's event (`$inv`). `entities.get` leaves hidden fields out, so a
+   * `$m.` reference to one stopped the plan (bad-ref: every mail with a readable attachment, until 2026-11-03).
+   */
+  private hiddenBindings(e: NonNullable<ReturnType<UserStore["get"]>>): Record<string, Val> {
+    const v = e.entity.values;
+    const val = (fid: string): Val =>
+      leaf(
+        typeof v[fid] === "string" && v[fid] ? (v[fid] as string) : null,
+        e.labels[fid] ?? e.labels.f_asunto ?? CODE,
+      );
+    return {
+      adjuntos: val("f_adjuntos_texto"),
+      inv: rec(
+        {
+          uid: val("f_evento_uid"),
+          titulo: val("f_evento_titulo"),
+          dia: val("f_evento_dia"),
+          inicio: val("f_evento_inicio"),
+          fin: val("f_evento_fin"),
+          nota: val("f_evento_nota"),
+          linea: val("f_invitacion"),
+        },
+        e.labels.f_evento_uid ?? e.labels.f_asunto ?? CODE,
+      ),
+    };
+  }
+
+  /** The name of the account's external calendar that already holds the event `uid`, or null. */
+  private async calendarWith(account: number, uid: string): Promise<string | null> {
+    const feeds = this.o.feeds;
+    if (!feeds || !uid) return null;
+    for (const ext of readAccount(this.o.db, this.o.key, account).externals) {
+      try {
+        const copy = await feeds.get(account, ext.id, ext.url);
+        if (feedHas(copy.text, uid)) return ext.name;
+      } catch {
+        // not reachable now: the invitation is proposed anyway (at worst Juan sees it twice)
+      }
+    }
+    return null;
+  }
+
+  /**
+   * What a reading made, in the log, so the log can say why a card looks as it does (Juan, 2026-11-03: «me
+   * recomienda siempre a las 9:00»): each proposal's title, collection, day and hours.
+   */
+  private logRead(account: number, store: UserStore, from: string, ids: string[]): void {
+    const made = ids.flatMap((id) => {
+      const p = store.journal.proposal(id);
+      if (!p) return [];
+      const rows = (p.view as { rows?: { arg: string; value: unknown }[] }).rows ?? [];
+      const of = (arg: string) => rows.find((r) => r.arg === arg)?.value;
+      const text = (v: unknown) => (typeof v === "string" ? v : "");
+      const day = rows.map((r) => text(r.value)).find((x) => /^\d{4}-\d\d-\d\d$/.test(x));
+      const times = rows.map((r) => text(r.value)).filter((x) => /^\d\d:\d\d$/.test(x));
+      const when = `${day ?? ""}${times.length ? ` ${times.join("–")}` : ""}`.trim();
+      return [
+        `«${text(of("values.title")).slice(0, 60)}» (${text(of("type"))}${when ? `, ${when}` : ""})`,
+      ];
+    });
+    console.log(
+      `mail ${account}: read <${from}>: ${made.length ? made.join("; ") : "nothing proposed"}`,
+    );
   }
 
   /** The titles of the proposals from `sender`'s mail still waiting in the inbox (the latest 20). */

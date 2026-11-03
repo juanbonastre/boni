@@ -15,6 +15,9 @@ export interface ReaderCase {
   events?: RegExp[];
   /** No kept title may match these. */
   never?: RegExp[];
+  /** The hours the kept item must carry (HH:MM), when the case gives them. */
+  start?: string;
+  end?: string;
 }
 
 export const ME = "juan.ejemplo@example.com";
@@ -87,7 +90,33 @@ export const READER_CASES: ReaderCase[] = [
     body: "Os recuerdo que el plazo para enviar las propuestas de examen acaba el 5 de noviembre.",
     never: [/propuestas/i],
   },
+  {
+    // What a calendar's invitation mail says in its text part (2026-11-03: «5pm – 6pm» came back without hours).
+    name: "an invitation in a calendar's words",
+    from: "Secretaría Ejemplo <secretaria.ejemplo@universidad.example>",
+    to: `Juan Ejemplo <${ME}>`,
+    subject:
+      "Invitación: Entrevista de reconocimiento mié 11 nov 2026 5pm - 6pm (CET) (Juan Ejemplo)",
+    body: [
+      "Entrevista de reconocimiento de créditos",
+      "miércoles, 11 de noviembre de 2026 · 5pm – 6pm",
+      "Hora de Europa central - Madrid",
+      "",
+      "Ubicación",
+      "Sala 2.3, Edificio Ejemplo",
+      "",
+      "Invitados",
+      "secretaria.ejemplo@universidad.example - organizador",
+      `${ME}`,
+      "",
+      "Responder a Google Calendar: Sí / No / Quizás",
+    ].join("\n"),
+    events: [/entrevista/i],
+    start: "17:00",
+    end: "18:00",
+  },
 ];
+
 export const KNOWN: Record<string, string[]> = {
   "a reminder already known": ["Revisar y enviar las propuestas de examen"],
 };
@@ -95,4 +124,5 @@ export const KNOWN: Record<string, string[]> = {
 export const DAYS: Record<string, string> = {
   "a meeting with the user": "2026-10-27",
   "a group request with a deadline": "2026-11-05",
+  "an invitation in a calendar's words": "2026-11-11",
 };
