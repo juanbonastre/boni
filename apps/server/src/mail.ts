@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 import {
+  type Budget,
   FILL_LIMITS,
   type FillField,
   type From,
@@ -134,6 +135,19 @@ export const modulesOfManifest = (m: ExtensionManifest) =>
 const moduleIds = (m: ExtensionManifest) => (m.readers ?? []).map((r) => r.module);
 const budgetOf = (m: ExtensionManifest) =>
   m.needs.budget ? { key: m.id, perDay: m.needs.budget.readersPerDay } : undefined;
+
+/**
+ * The readings the reviewer makes to measure a guide (mail Juan already decided, read again): their own allowance
+ * per day, one review's worth (20 mails read twice, and some margin), counted in the account's day but never in the
+ * mail's own budget nor in each sender's, so measuring never leaves new mail unread (task 37; P13 in
+ * docs/nucleo.md). The reviewer looks once a day at most (learning.ts); a sender cannot make it read.
+ */
+export const MEASURE_PER_DAY = 45;
+const measureBudget = (m: ExtensionManifest): Budget => ({
+  key: `${m.id}:measure`,
+  perDay: MEASURE_PER_DAY,
+  bySender: false,
+});
 
 /** The first rule of the guide for mail from `address`. */
 export function ruleFor(guide: MailGuide, address: string): MailRule | null {
@@ -869,7 +883,7 @@ export class Mails {
       }),
       { modules: modulesOfManifest(m), ...(withGuide ? { guide: guideOf(g) } : {}) },
       ["r"],
-      budgetOf(m),
+      measureBudget(m),
     );
     const all = (r.kept?.r as { all?: { title: string }[] } | undefined)?.all;
     return all ? all.map((x) => x.title) : null;

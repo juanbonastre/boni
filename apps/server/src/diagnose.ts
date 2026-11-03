@@ -6,6 +6,7 @@ import { accuracy } from "./accuracy.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { calendarDefs, StoreCalendar } from "./calendarStore.ts";
 import { MAIL_EXTENSION } from "./extensions.ts";
+import { MEASURE_PER_DAY } from "./mail.ts";
 import { proposalsByRun, runInfo } from "./runInfo.ts";
 import { SYS_ACTIVITY, SYS_CALLS, SYS_RUNS, systemCollections } from "./systemCollections.ts";
 
@@ -70,7 +71,7 @@ export async function diagnose(
     day: "2-digit",
   }).format(o.now);
   out.push(
-    `lecturas en segundo plano hoy (${civil}): todas ${store.journal.spent(civil, "reader")} de ${RUN_LIMITS.readersPerDay}; correo ${store.journal.spent(civil, `reader:ext:${MAIL_EXTENSION.id}`)} de ${MAIL_EXTENSION.needs.budget?.readersPerDay ?? "—"}`,
+    `lecturas en segundo plano hoy (${civil}): todas ${store.journal.spent(civil, "reader")} de ${RUN_LIMITS.readersPerDay}; correo ${store.journal.spent(civil, `reader:ext:${MAIL_EXTENSION.id}`)} de ${MAIL_EXTENSION.needs.budget?.readersPerDay ?? "—"}; medir guías ${store.journal.spent(civil, `reader:ext:${MAIL_EXTENSION.id}:measure`)} de ${MEASURE_PER_DAY}`,
   );
   // ---- how long the heavy reads take
   const [cals, cold] = time(() => calendarDefs(store));

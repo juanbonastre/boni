@@ -160,6 +160,17 @@ export const PLANNER_PROMPT_HASH = createHash("sha256").update(PLANNER_PROMPT).d
  */
 const CHOICE_THRESHOLDS: Thresholds = { ask: 0, do: 0.6 };
 
+/**
+ * An extension's own daily budget of reader calls for work without a turn (P13), on top of the account's. With
+ * `bySender: false` the work does not count against each sender's day either: work the code decides and caps
+ * itself, never a sender (the mail reviewer measuring a guide on mail Juan already decided; task 37).
+ */
+export interface Budget {
+  key: string;
+  perDay: number;
+  bySender?: boolean;
+}
+
 /** The readers that may get the user's reading guide: the mail's own and those that read mail in a conversation. */
 const GUIDED: ReadonlySet<string> = new Set([
   "read_message",
@@ -329,7 +340,7 @@ interface RunState {
   controlDone: boolean;
   env: Map<string, Val>;
   /** Background work of an extension: its own daily budget of reader calls. */
-  budget?: { key: string; perDay: number };
+  budget?: Budget;
   counters: {
     writes: number;
     sensitiveReads: number;
@@ -613,7 +624,7 @@ export class Agent {
     bind: Record<string, Val> = {},
     keep: readonly string[] = [],
     /** An extension's own daily budget of reader calls, on top of the account's (P13). */
-    budget?: { key: string; perDay: number },
+    budget?: Budget,
   ): Promise<TurnResult> {
     const origin: Origin = { kind: "background", trust: "personal" };
     const run = randomUUID();
@@ -1347,7 +1358,9 @@ export class Agent {
     // P13: what work without a turn may spend per day, overall and per sender.
     if (st.origin.kind === "background") {
       const day = this.today();
-      const sender = inLabel.sources.find((s) => s.kind === "mail");
+      // Work that does not count by sender (its own budget says so) still counts in the day's and its own.
+      const sender =
+        st.budget?.bySender === false ? undefined : inLabel.sources.find((s) => s.kind === "mail");
       const keys = [
         "reader",
         ...(sender ? [`reader:${sender.kind}:${sender.id}`] : []),

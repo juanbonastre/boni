@@ -651,6 +651,28 @@ describe("the agent, with a planner that behaves", () => {
     expect(results[3]?.notices).toContainEqual({ code: "budget" });
   });
 
+  it("work the code caps itself counts in its own allowance and the day's, never a sender's (P13, task 37)", async () => {
+    env = makeEnv([{ asunto: "Hola", de: "alguien@example.com", cuerpo: "texto inventado" }]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        { id: "x", op: "read", reader: "summarize", input: ref("$m.items[0].cuerpo") },
+      ],
+    };
+    const reader = fakePlanner([{ text: "resumen" }]);
+    const agent = env.agent(fakePlanner([plan]), reader, { limits: { readersPerSenderPerDay: 2 } });
+    const measure = { key: "correo:measure", perDay: 2, bySender: false };
+    const measured = [];
+    for (let i = 0; i < 3; i++) measured.push(await agent.background(plan, {}, [], measure));
+    // Its own allowance stops it…
+    expect(measured.map((r) => r.error)).toEqual([null, null, "P13-daily-budget"]);
+    // …and the sender's day is untouched: its own mail is still read, up to its limit.
+    const read = [];
+    for (let i = 0; i < 3; i++) read.push(await agent.background(plan));
+    expect(read.map((r) => r.error)).toEqual([null, null, "P13-daily-budget"]);
+  });
+
   it("a loop goes over 50 items at most, and a run asks at most 3 confirmations (P12, P5)", async () => {
     env = makeEnv();
     for (let i = 0; i < 60; i++)
