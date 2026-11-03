@@ -60,6 +60,22 @@ describe("the minute's line about slowness", () => {
       what: "store.ts entities ← data.ts listTypes ← http.ts handle",
       share: 0.75,
     });
+    // Several of one file's functions say only its innermost, then who called that file (perf.ts's wrapper says
+    // nothing): the NAS's first named hold said «store.ts readType ← store.ts (anonymous) ← store.ts list».
+    const deep = [
+      frame(1, "(root)", "", [2, 20]),
+      frame(2, "(idle)"),
+      frame(20, "poll", "file:///app/apps/server/src/calendarStore.ts", [21]),
+      frame(21, "timed", "file:///app/apps/server/src/perf.ts", [22]),
+      frame(22, "pollNow", "file:///app/apps/server/src/calendarStore.ts", [23]),
+      frame(23, "expandNode", "file:///app/apps/server/src/calendarStore.ts", [24]),
+      frame(24, "list", "file:///app/packages/store/src/store.ts", [25]),
+      frame(25, "", "file:///app/packages/store/src/store.ts", [26]),
+      frame(26, "readType", "file:///app/packages/store/src/store.ts"),
+    ];
+    expect(longestHold({ nodes: deep, samples: [2, 26, 26, 2], timeDeltas: ms10(4) })?.what).toBe(
+      "store.ts readType ← calendarStore.ts expandNode",
+    );
     expect(longestHold({ nodes, samples: [2, 6, 6, 6, 2], timeDeltas: ms10(5) })).toEqual({
       ms: 30,
       what: "(garbage collector)",

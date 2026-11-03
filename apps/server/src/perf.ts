@@ -83,9 +83,10 @@ function scriptOf(url: string): string | null {
 }
 
 /**
- * The longest stretch a profile shows the loop busy (no «(idle)» sample in it) and what ran most in it: the three
- * innermost of Boni's own functions ("store.ts entities ← data.ts listTypes ← http.ts handle"); when none of Boni's
- * ran, the innermost of a package or a script ("imapflow fetch"), else V8's own («(garbage collector)»).
+ * The longest stretch a profile shows the loop busy (no «(idle)» sample in it) and what ran most in it: the innermost
+ * function of each of three of Boni's files on the way out ("store.ts entities ← data.ts listTypes ← http.ts
+ * handle"); when none of Boni's ran, the innermost of a package or a script ("imapflow fetch"), else V8's own
+ * («(garbage collector)»).
  */
 export function longestHold(p: CpuProfile): Hold | null {
   const byId = new Map(p.nodes.map((n) => [n.id, n]));
@@ -109,13 +110,16 @@ export function longestHold(p: CpuProfile): Hold | null {
     }
   }
   if (!best) return null;
+  // The innermost function of each of Boni's files on the way out: where the time went, and who asked for it
+  // («store.ts readType ← calendarStore.ts expandNode»); this file's own wrapper says nothing.
   const label = (id: number): string => {
     const chain: string[] = [];
+    let last = "";
     for (let n = byId.get(id); n && chain.length < 3; n = byId.get(parent.get(n.id) ?? -1)) {
       const file = OURS.exec(n.callFrame.url)?.[1];
-      if (!file) continue;
-      const name = `${file} ${n.callFrame.functionName || "(anonymous)"}`;
-      if (chain.at(-1) !== name) chain.push(name);
+      if (!file || file === "perf.ts" || file === last) continue;
+      last = file;
+      chain.push(`${file} ${n.callFrame.functionName || "(anonymous)"}`);
     }
     if (chain.length) return chain.join(" ← ");
     for (let n = byId.get(id); n; n = byId.get(parent.get(n.id) ?? -1)) {
