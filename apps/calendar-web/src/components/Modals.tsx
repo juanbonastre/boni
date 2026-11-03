@@ -288,6 +288,8 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
   const update = useApp((s) => s.updateCalendar);
   const setSchema = useApp((s) => s.setSchema);
   const source = useApp((s) => s.source);
+  // A change of the definition waits for the calendar the server sends back: the controls say «Guardando…».
+  const [busy, setBusy] = useState(0);
   const close = () => useApp.getState().set({ schemaCalendarId: null });
   // What was opened: a calendar (whole, or one a split made), or a node above some (the definition, or a value
   // split again: the group row's id). A node's properties are read through a calendar under it.
@@ -310,8 +312,17 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
   const children = node
     ? calendars.filter((c) => c.path?.length === nodeDepth + 1 && c.path[nodeDepth]?.id === node.id)
     : [];
+  const run = async (p: Promise<void>) => {
+    setBusy((b) => b + 1);
+    try {
+      await p;
+    } finally {
+      setBusy((b) => b - 1);
+    }
+  };
+  const saving = busy > 0 ? <small className="muted">{t("schema.saving")}</small> : null;
   const setColor = (id: string, color: string) =>
-    void useApp.getState().setCalendarColor(id, color);
+    void run(useApp.getState().setCalendarColor(id, color));
   // A calendar of the server can be taken away (its records stay in Boni; «+ Añadir calendario» brings it back);
   // a split one goes whole, with every calendar it makes.
   const remove = () => {
@@ -338,10 +349,11 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
         className="select"
         aria-label={t("schema.splitBy")}
         value={splitField ?? ""}
+        disabled={busy > 0}
         onChange={(e) => {
           // The properties follow the node (its id) whatever it makes next.
           useApp.getState().set({ schemaCalendarId: nodeId });
-          void useApp.getState().setSplit(nodeId, e.target.value || null);
+          void run(useApp.getState().setSplit(nodeId, e.target.value || null));
         }}
       >
         <option value="">{t("schema.splitNone")}</option>
@@ -351,29 +363,43 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
           </option>
         ))}
       </select>
+      {saving}
     </Field>
   );
-  // «Colorear por» (D-25): the definition's, shown on its properties; each value with its colour.
-  const colorBy = cal.split && source === "server" && isRoot && (
-    <>
-      <Field label={t("schema.colorBy")}>
-        <select
-          className="select"
-          aria-label={t("schema.colorBy")}
-          value={cal.colorBy?.field ?? ""}
-          onChange={(e) => void useApp.getState().setColorBy(nodeId, e.target.value || null)}
-        >
-          <option value="">{t("schema.colorNone")}</option>
-          {choices.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </Field>
-      {cal.colorBy && cal.colorBy.values.length > 0 && (
-        <>
-          <h3 className="schema-head">{t("schema.valueColors", { field: cal.colorBy.name })}</h3>
+  // The definition's colour is one control (D-25; Juan, 2026-11-03: «Separar por» and «Colorear por» side by side
+  // read alike): «Uno» (a whole calendar's own colour, its swatches) or «Por calendario» (a split one: each
+  // calendar inside keeps its own, listed below), or «Por tipo», «Por área»… (every record takes its value's
+  // colour; one row of swatches per value). «Separar por» stays what it is: calendars in the sidebar.
+  const colorMode = cal.colorBy?.field ?? "";
+  const colorField =
+    cal.split && source === "server" ? (
+      <>
+        <Field label={t("schema.color")}>
+          <select
+            className="select"
+            aria-label={t("schema.color")}
+            value={colorMode}
+            disabled={busy > 0}
+            onChange={(e) => void run(useApp.getState().setColorBy(nodeId, e.target.value || null))}
+          >
+            <option value="">{node ? t("schema.colorByCalendar") : t("schema.colorOne")}</option>
+            {choices.map((c) => (
+              <option key={c.id} value={c.id}>
+                {t("schema.colorByField", { field: c.name })}
+              </option>
+            ))}
+          </select>
+          {saving}
+        </Field>
+        {!colorMode && !node && (
+          <div className="schema-members">
+            <div className="schema-member">
+              <span className="schema-member-name">{cal.name}</span>
+              {swatches(cal.id, cal.color, cal.name)}
+            </div>
+          </div>
+        )}
+        {cal.colorBy && cal.colorBy.values.length > 0 && (
           <div className="schema-members">
             {cal.colorBy.values.map((v) => (
               <div key={v.key} className="schema-member schema-value">
@@ -385,7 +411,7 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
                       key={c}
                       className={`swatch pick ${c === v.color ? "on" : ""}`}
                       style={{ "--c": c } as React.CSSProperties}
-                      onClick={() => void useApp.getState().setValueColor(nodeId, v.key, c)}
+                      onClick={() => void run(useApp.getState().setValueColor(nodeId, v.key, c))}
                       aria-label={`${v.name}: ${c}`}
                     />
                   ))}
@@ -393,10 +419,11 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
               </div>
             ))}
           </div>
-        </>
-      )}
-    </>
-  );
+        )}
+      </>
+    ) : (
+      !node && <Field label={t("schema.color")}>{swatches(cal.id, cal.color)}</Field>
+    );
   const members = node && children.length > 0 && (
     <>
       <h3 className="schema-head">{t("schema.members", { field: node.fieldName })}</h3>
@@ -450,9 +477,8 @@ export function SchemaEditor({ calendarId }: { calendarId: string }) {
           />
         </Field>
       )}
-      {!node && <Field label={t("schema.color")}>{swatches(cal.id, cal.color)}</Field>}
+      {colorField}
       {splitBy}
-      {colorBy}
       {members}
       <ViewMapping calendarId={cal.id} />
       {source === "server" && (
