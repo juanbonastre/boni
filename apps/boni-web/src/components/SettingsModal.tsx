@@ -760,7 +760,7 @@ function MailSettings() {
       live = false;
     };
   }, []);
-  if (mail === undefined) return null;
+  if (mail === undefined) return <Loading />;
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
   const submit = async () => {
@@ -1026,7 +1026,7 @@ function MailGuideSettings({
       live = false;
     };
   }, []);
-  if (!guide) return null;
+  if (!guide) return <Loading />;
   const save = async (input: Parameters<typeof saveMailGuide>[0], done?: string) => {
     setError(null);
     const r = await saveMailGuide(input);
@@ -1428,7 +1428,7 @@ function Extensions() {
   const decide = async (id: string, action: "activate" | "reject" | "revert") => {
     if (await decideExtension(id, action)) await reload();
   };
-  if (list === undefined) return null;
+  if (list === undefined) return <Loading />;
   if (list === null) return <p className="muted small setting-note">{t("ai.off")}</p>;
   // A catalogue piece by its name in the user's language; one an extension defined, by its id.
   const named = (key: string, fallback: string) => {
@@ -1504,6 +1504,19 @@ function Extensions() {
   );
 }
 
+/** A section still coming from the server keeps its room with the pulsing placeholder (docs/design-guide.md «Waiting»). */
+function Loading() {
+  const t = useStore((s) => s.t);
+  return (
+    <div
+      className="page-loading short"
+      role="status"
+      aria-busy="true"
+      aria-label={t("chart.loading")}
+    />
+  );
+}
+
 /**
  * «Decisiones» (docs/fiabilidad.md §3.4): each area Boni decides in, how right it has been and, where it has one,
  * its «Solo» switch: on only once earned (the server says with what), off whenever Juan wants; Boni turns it off
@@ -1555,6 +1568,7 @@ function Decisions() {
           />
         </div>
       </div>
+      {!loaded && <Loading />}
       {loaded && areas.length === 0 && <p className="muted small">{t("decisions.none")}</p>}
       {areas.map((a) => (
         <div className="setting" key={a.area}>

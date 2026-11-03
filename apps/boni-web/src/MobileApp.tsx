@@ -38,6 +38,7 @@ import { RowsPanel } from "./components/RowsPanel.tsx";
 import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { EditorPanel } from "./components/SidePanel.tsx";
+import { WaitLine } from "./components/WaitLine.tsx";
 import * as B from "./core/chartBuilder.ts";
 import { emptyState } from "./core/charts.ts";
 import type { ChartSpec, FormComponent, Screen, Shortcut } from "./core/contract.ts";
@@ -99,6 +100,7 @@ export function MobileApp() {
   const chartOpen = view.kind === "chart";
   return (
     <div className="m-app">
+      <WaitLine />
       {chartOpen ? (
         <ChartScreen id={view.id} openMenu={setMenu} />
       ) : (

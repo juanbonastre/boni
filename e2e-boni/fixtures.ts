@@ -38,6 +38,8 @@ export interface Options {
   ghosts?: { id: string; proposal: string; values: Record<string, unknown>; updated: number }[];
   /** How long accepting a proposal takes (ms; default as any request, 20). */
   acceptMs?: number;
+  /** One path answered after `ms` (the line at the top while the app waits, I-15). */
+  slow?: { path: string; ms: number };
   /** How long a turn takes to answer (ms; default 20): its live steps are asked for meanwhile. */
   turnMs?: number;
   /**
@@ -859,7 +861,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                   ? opts.turnMs
                   : opts.live && path.startsWith("api/agent/live/")
                     ? opts.live.ms
-                    : 20,
+                    : opts.slow && path === opts.slow.path
+                      ? opts.slow.ms
+                      : 20,
             ),
           );
           if (!a) return { ok: false, offline: true, message: "refused" };

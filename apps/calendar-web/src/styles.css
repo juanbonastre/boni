@@ -232,12 +232,48 @@ select,
 }
 
 .topbar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   height: 62px;
   padding: 0 18px 0 22px;
   flex: none;
+}
+/* ---------- waiting (docs/design-guide.md «Waiting», I-15; Juan, 2026-11-03) ----------
+   One line for everything on the top edge of the top bar while a request, the connection or the calendar itself
+   is in flight; WaitLine.tsx shows it after 250 ms and for 500 ms at least. "Reduce motion" keeps it still. */
+.wait-line {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 95;
+}
+.wait-line::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: wait-slide 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+@keyframes wait-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wait-line::before {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
 }
 .title {
   margin: 0;

@@ -1,6 +1,7 @@
 import type { CollectionSnapshot, Row, RowChange } from "@boni/calendar";
 import type { ExternalCal } from "./external.ts";
 import { kvStore } from "./idb.ts";
+import { begin } from "./wait.ts";
 
 /**
  * The client side of Boni Calendar Server (apps/server, docs/servidor.md): log in, take a snapshot,
@@ -40,6 +41,14 @@ export class RemoteError extends Error {
 const clean = (url: string) => url.trim().replace(/\/+$/, "");
 
 async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const end = begin();
+  try {
+    return await answer<T>(url, init);
+  } finally {
+    end();
+  }
+}
+async function answer<T>(url: string, init: RequestInit = {}): Promise<T> {
   let r: Response;
   try {
     r = await fetch(url, init);
