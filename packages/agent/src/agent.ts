@@ -474,6 +474,41 @@ function loadState(x: unknown): RunState | null {
 const freeze = (v: Val): unknown => v;
 const thaw = (x: unknown): Val => x as Val;
 
+/**
+ * What a reader's answer looks like, never what it says: its keys, how long its lists are against how many texts it
+ * read, its first item's keys and its longest text (task 29: to tell why the code refused an answer).
+ */
+function shapeOf(out: unknown, expected: number): Record<string, unknown> {
+  if (!out || typeof out !== "object" || Array.isArray(out))
+    return { type: Array.isArray(out) ? "array" : typeof out };
+  const o = out as Record<string, unknown>;
+  const name = (k: string) => k.slice(0, 40);
+  let longest = 0;
+  const walk = (v: unknown, depth: number) => {
+    if (typeof v === "string") longest = Math.max(longest, v.length);
+    else if (depth < 4 && Array.isArray(v)) for (const x of v) walk(x, depth + 1);
+    else if (depth < 4 && v && typeof v === "object")
+      for (const x of Object.values(v)) walk(x, depth + 1);
+  };
+  walk(o, 0);
+  const list = Object.values(o).find(Array.isArray) as unknown[] | undefined;
+  const first = list?.[0];
+  return {
+    keys: Object.keys(o).slice(0, 10).map(name),
+    lists: Object.fromEntries(
+      Object.entries(o)
+        .filter(([, v]) => Array.isArray(v))
+        .slice(0, 5)
+        .map(([k, v]) => [name(k), (v as unknown[]).length]),
+    ),
+    expected,
+    ...(first && typeof first === "object" && !Array.isArray(first)
+      ? { itemKeys: Object.keys(first).slice(0, 10).map(name) }
+      : {}),
+    longest,
+  };
+}
+
 export class Agent {
   private o: AgentOptions;
   private limits: RunLimits;
@@ -813,11 +848,18 @@ export class Agent {
       const code = (e as { code?: unknown }).code;
       const stop = `model-${typeof code === "string" && /^[a-z0-9-]{1,30}$/.test(code) ? code : "failed"}`;
       // What was sent counts as seen even if no answer came back.
+      // Numbers only: how much it wrote when it ran out of room (the evaluation says it).
+      const tokens = (e as { tokens?: { output: number; reasoning: number } }).tokens;
       this.audit(st, {
         by: `model:${req.role}:${provider.id}`,
         tool: `model.${req.role}`,
         decision: "allow",
-        result: { error: stop },
+        result: {
+          error: stop,
+          ...(tokens && Number.isFinite(tokens.output) && Number.isFinite(tokens.reasoning)
+            ? { output: tokens.output, reasoning: tokens.reasoning }
+            : {}),
+        },
         seen,
       });
       throw new Stop(stop);
@@ -1396,10 +1438,12 @@ export class Agent {
         ? content
         : JSON.stringify(content);
     const { marker, text } = delimit(flat);
-    const read = (sys: string, schema: object, extra: Record<string, unknown> = {}) => {
+    // What the reader's last answer looked like (never what it said): told when the code refuses it.
+    let lastReaderShape: Record<string, unknown> | null = null;
+    const read = async (sys: string, schema: object, extra: Record<string, unknown> = {}) => {
       spend();
       const reviewing = step.reader === "review_reading";
-      return this.model(
+      const out = await this.model(
         st,
         (reviewing && this.o.reviewer) || this.o.reader,
         {
@@ -1424,6 +1468,8 @@ export class Agent {
         createHash("sha256").update(sys).digest("hex"),
         seen,
       );
+      lastReaderShape = shapeOf(out, texts?.length ?? 0);
+      return out;
     };
     let checked: unknown;
     if (step.reader === "fill") checked = await this.fill(st, fields, flat, read, seen);
@@ -1473,7 +1519,10 @@ export class Agent {
             );
     }
     if (!checked) {
-      this.log(st, step, "read", "deny", "R2", { reason: "reader-output-invalid" });
+      this.log(st, step, "read", "deny", "R2", {
+        reason: "reader-output-invalid",
+        why: lastReaderShape,
+      });
       throw new Stop("R2-reader-output-invalid");
     }
     const paramLabels = Object.values(params).map(deepLabel);

@@ -19,6 +19,8 @@ import type { CallOptions, ModelProvider, ModelRequest, ModelResponse } from "./
 export class ProviderError extends Error {
   code: string;
   detail: string;
+  /** When it ran out of room: how many tokens it wrote, and how many went to reasoning (numbers only). */
+  tokens?: { output: number; reasoning: number };
   constructor(code: string, detail = "") {
     super(code);
     this.code = code;

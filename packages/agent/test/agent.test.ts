@@ -1,5 +1,6 @@
 import { label } from "@boni/entities";
 import { afterEach, describe, expect, it } from "vitest";
+import { ProviderError } from "../src/anthropic.ts";
 import { fakePlanner } from "../src/providers.ts";
 import { guideValue } from "../src/reading.ts";
 import { leaf, rec } from "../src/values.ts";
@@ -559,6 +560,49 @@ describe("the agent, with a planner that behaves", () => {
       items: [{ value: "personal" }, { value: "publicidad" }],
     });
     expect(res.replies[1]?.data.values).toMatchObject({ items: [{ value: 1 }, { value: 1 }] });
+  });
+
+  it("a reader's answer refused says its shape, never its words; a model out of room says how far (task 29)", async () => {
+    env = makeEnv([
+      { asunto: "Rebajas", de: "tienda@example.com", cuerpo: "Rebajas de otoño" },
+      { asunto: "Comida", de: "lucia@example.com", cuerpo: "¿Comemos el jueves?" },
+    ]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        { id: "s", op: "read", reader: "summarize_each", input: ref("$m.items") },
+        { id: "r", op: "reply", component: "list", data: { items: ref("$s.items") } },
+      ],
+    };
+    // One line for two mails: refused, and the step says how the answer was made.
+    const res = await env
+      .agent(fakePlanner([plan]), fakePlanner([{ items: [{ line: "Una tienda y Lucía" }] }]))
+      .turn({ text: "Resume mis correos", origin: PERSONAL });
+    expect(res.error).toBe("R2-reader-output-invalid");
+    const denied = env.store.journal.steps(res.run).find((x) => x.rule === "R2");
+    expect((denied?.detail as { why?: unknown } | undefined)?.why).toEqual({
+      keys: ["items"],
+      lists: { items: 1 },
+      expected: 2,
+      itemKeys: ["line"],
+      longest: 18,
+    });
+    expect(JSON.stringify(denied?.detail)).not.toContain("Lucía");
+    // A model that ran out of room: the audit keeps how many tokens it wrote and how many went to reasoning.
+    const out = new ProviderError("max-tokens");
+    out.tokens = { output: 4000, reasoning: 3900 };
+    const failing = { ...fakePlanner([]), complete: async () => Promise.reject(out) };
+    const ran = await env
+      .agent(fakePlanner([plan]), failing as unknown as ReturnType<typeof fakePlanner>)
+      .turn({ text: "Resume mis correos", origin: PERSONAL });
+    expect(ran.error).toBe("model-max-tokens");
+    expect(
+      env.store.audit
+        .actions({ run: ran.run })
+        .map((a) => a.result)
+        .find((r) => (r as { error?: string } | null)?.error === "model-max-tokens"),
+    ).toEqual({ error: "model-max-tokens", output: 4000, reasoning: 3900 });
   });
 
   it("a reader of mail in the conversation gets the user's reading guide, bound by the code (task 23)", async () => {

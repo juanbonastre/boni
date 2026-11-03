@@ -344,11 +344,22 @@ function detailOf(store: UserStore, r: TurnResult): string {
   const decided = store.journal
     .steps(r.run)
     .filter((x) => x.decision !== "allow")
-    .map((x) => `${x.step} ${x.decision}${x.rule ? ` (${x.rule})` : ""}`);
+    .map((x) => {
+      // Why a reader's answer was refused: its shape, never what it said (task 29).
+      const why = (x.detail as { why?: unknown } | null)?.why;
+      return `${x.step} ${x.decision}${x.rule ? ` (${x.rule})` : ""}${why ? ` ${JSON.stringify(why)}` : ""}`;
+    });
+  // A model that ran out of room: how many tokens it wrote, and how many of them went to reasoning.
+  const ranOut = store.audit
+    .actions({ run: r.run })
+    .map((a) => a.result as { error?: string; output?: number; reasoning?: number } | null)
+    .filter((x) => x?.error === "model-max-tokens" && typeof x.output === "number")
+    .map((x) => `ran out at ${x?.output} tokens, ${x?.reasoning} of them reasoning`);
   return [
     `${r.status}${r.error ? ` (${r.error})` : ""}${r.pending ? `, waits on ${r.pending.kind}` : ""}, ${r.proposals.length} proposals, ${r.replies.length} replies`,
     `plan: ${outline || "none"}`,
     ...(decided.length ? [`decided: ${decided.join(", ")}`] : []),
+    ...ranOut,
   ].join("\n     ");
 }
 

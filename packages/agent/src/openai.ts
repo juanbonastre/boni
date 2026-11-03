@@ -28,6 +28,12 @@ export interface OpenAIOptions {
    * (`provider.data_collection: "deny"`) (Juan, 2026-10-24: option 1). OpenRouter refuses rather than fall back.
    */
   zdr?: boolean;
+  /**
+   * OpenRouter only: `off` asks the model not to reason before answering (`reasoning.enabled: false`). A reader
+   * reads and fills a schema: a model that reasons by default spent the whole answer on it (task 29: DeepSeek V4.1
+   * Flash stopped at 4,000 tokens on four short mails). A model none of whose providers take it is asked without.
+   */
+  reasoning?: "off";
   timeoutMs?: number;
   /** Tests only: a stand-in for the API. */
   fetch?: typeof fetch;
@@ -39,6 +45,8 @@ export class OpenAIProvider implements ModelProvider {
   id: string;
   privacy: ModelProvider["privacy"];
   private o: OpenAIOptions;
+  /** Learned: no provider of this model takes `reasoning`, so it is not asked for again. */
+  private noReasoning = false;
 
   constructor(o: OpenAIOptions) {
     const url = new URL(o.baseURL);
@@ -72,6 +80,9 @@ export class OpenAIProvider implements ModelProvider {
         : format === "json_object"
           ? { response_format: { type: "json_object" } }
           : {}),
+      ...(this.id === "openrouter" && this.o.reasoning === "off" && !this.noReasoning
+        ? { reasoning: { enabled: false } }
+        : {}),
       // OpenRouter: only to a provider that honours the format asked for, and (zdr) keeps nothing.
       ...(this.id === "openrouter" && (format !== "none" || this.o.zdr)
         ? {
@@ -104,13 +115,27 @@ export class OpenAIProvider implements ModelProvider {
       throw new ProviderError(name === "TimeoutError" ? "timeout" : "network");
     }
     const text = await res.text();
+    // OpenRouter routes only to providers that take every parameter asked for: none takes `reasoning`, ask without.
+    if (
+      res.status === 404 &&
+      "reasoning" in body &&
+      /support all parameters|no endpoints/i.test(text)
+    ) {
+      this.noReasoning = true;
+      return this.complete(req, call);
+    }
     if (!res.ok) throw new ProviderError(`http-${res.status}`, text.slice(0, 500));
     let data: {
       choices?: {
         message?: { content?: string | null; refusal?: string | null };
         finish_reason?: string;
       }[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number; cost?: number };
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        cost?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
       model?: string;
       error?: { message?: string };
     };
@@ -123,7 +148,15 @@ export class OpenAIProvider implements ModelProvider {
     if (data.error)
       throw new ProviderError("failed", String(data.error.message ?? "").slice(0, 500));
     const choice = data.choices?.[0];
-    if (choice?.finish_reason === "length") throw new ProviderError("max-tokens");
+    if (choice?.finish_reason === "length") {
+      // How many tokens it wrote, and how many of them went to reasoning: numbers, never what it said.
+      const e = new ProviderError("max-tokens");
+      e.tokens = {
+        output: data.usage?.completion_tokens ?? 0,
+        reasoning: data.usage?.completion_tokens_details?.reasoning_tokens ?? 0,
+      };
+      throw e;
+    }
     if (choice?.message?.refusal) throw new ProviderError("refusal");
     const content = choice?.message?.content ?? "";
     let json: unknown;

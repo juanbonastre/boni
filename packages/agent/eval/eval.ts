@@ -46,7 +46,13 @@ const provider = (model: string, planner: boolean): ModelProvider =>
         model,
         ...(planner ? { effort: "medium" as const, fallbacks: true } : {}),
       })
-    : new OpenAIProvider({ apiKey: routerKey, model, baseURL: "https://openrouter.ai/api/v1" });
+    : new OpenAIProvider({
+        apiKey: routerKey,
+        model,
+        baseURL: "https://openrouter.ai/api/v1",
+        // The reader answers without reasoning first, as Boni asks it (task 29).
+        ...(planner ? {} : { reasoning: "off" as const }),
+      });
 
 const only = flag("only");
 // `--guia=con,sin`: each column with the user's reading guide for mail and without it (docs/correo.md M2).
