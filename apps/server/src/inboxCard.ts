@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { calibrate, historyConfidence, type Json, levelsOf, resolve } from "@boni/agent";
-import { rolesOf, type Schema, type TypeDef } from "@boni/entities";
+import { branch, rolesOf, type Schema, type TypeDef } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { decisionHistory, wouldAccept } from "./autoAccept.ts";
 import { calendarDefs, taskDoneField } from "./calendarStore.ts";
@@ -233,11 +233,45 @@ function fieldOfProp(def: TypeDef, columns: { id: string; name: string }[], prop
 
 type Item = { title: string; start: string | null; end: string | null };
 
-/** Every calendar collection's entries by day, by their mapping (made once for all the cards of a request). */
+/**
+ * The calendar by day as last made, per store (task 43: the inbox asks every minute, and making it read the Agenda
+ * once for each of its areas, half a second on the NAS): the same while the definitions are and no record of the
+ * collections it read changed.
+ */
+const byDayMemo = new WeakMap<
+  UserStore,
+  { version: number; defs: unknown; watch: Set<string>; byDay: Map<string, Item[]> }
+>();
+
+/**
+ * Every calendar collection's entries by day, by their mapping (made once for all the cards of a request): each
+ * record once, a split calendar's from its whole branch (its parts share the mapping), each collection read once.
+ */
 function calendarByDay(store: UserStore): Map<string, Item[]> {
+  const defs = calendarDefs(store);
+  const version = store.version();
+  const was = byDayMemo.get(store);
+  if (was && was.defs === defs && was.version !== version) {
+    const ch = store.changesSince(was.version);
+    if (!ch.schemaChanged && !ch.entities.some((e) => was.watch.has(e.entity.type)))
+      was.version = version;
+  }
+  if (was && was.defs === defs && was.version === version) return was.byDay;
   const out = new Map<string, Item[]>();
   const schema = store.schema().types;
-  for (const p of calendarDefs(store)) {
+  const watch = new Set<string>();
+  const listed = new Map<string, ReturnType<UserStore["list"]>>();
+  const listOf = (t: string) => {
+    let l = listed.get(t);
+    if (!l) {
+      l = store.list(t);
+      listed.set(t, l);
+      watch.add(t);
+    }
+    return l;
+  };
+  const seen = new Set<string>();
+  for (const p of defs) {
     const def = schema[p.type];
     const when = p.def.mapping.when as {
       kind?: string;
@@ -250,7 +284,10 @@ function calendarByDay(store: UserStore): Map<string, Item[]> {
     const start = when.startTime ? fieldOfProp(def, p.def.columns, when.startTime) : undefined;
     const end = when.endTime ? fieldOfProp(def, p.def.columns, when.endTime) : undefined;
     if (!date) continue;
-    for (const s of store.list(p.type)) {
+    const types = p.where ? branch({ types: schema }, p.type) : [p.type];
+    for (const s of types.flatMap(listOf)) {
+      if (seen.has(s.entity.id)) continue;
+      seen.add(s.entity.id);
       const day = s.entity.values[date.id];
       if (typeof day !== "string") continue;
       if (!out.has(day)) out.set(day, []);
@@ -265,6 +302,7 @@ function calendarByDay(store: UserStore): Map<string, Item[]> {
     list.sort(
       (a, b) => (a.start ?? "").localeCompare(b.start ?? "") || a.title.localeCompare(b.title),
     );
+  byDayMemo.set(store, { version, defs, watch, byDay: out });
   return out;
 }
 

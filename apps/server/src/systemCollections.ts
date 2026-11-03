@@ -130,12 +130,6 @@ export interface SystemCollections {
 }
 
 /**
- * Both collections for one account, over the last `SYSTEM_DAYS` days up to `now` (reused for `FRESH_MS`: at Juan's
- * size, with tens of thousands of reads recorded, they take about a tenth of a second to make). Their schema depends on the rows
- * (a select's options are the models, actors and collections met), so both are made together; `usdToEur` is the
- * account's rate («Modelos»), a call of unknown cost has no «Coste».
- */
-/**
  * How long one account's are reused while nothing new was recorded (the app lists collections and computes blocks
  * in a row). Their rows are dated by day, so a few minutes change nothing in them (task 43: made again every 10 s,
  * listing the collections cost the NAS up to a second).
@@ -143,6 +137,71 @@ export interface SystemCollections {
 const FRESH_MS = 5 * 60_000;
 const recent = new WeakMap<UserStore, { at: number; key: string; sys: SystemCollections }>();
 
+/** A quarter of an hour, as the store counts the activity (every zone's offset is a whole number of them). */
+const QUARTER = 15 * 60_000;
+type DayCount = { day: string; by: string; type: string; reads: number; writes: number };
+
+/**
+ * Boni's activity over the window as a running sum per account (task 43): counted once, then only the actions and
+ * operations recorded since are added, each quarter of an hour to its day once; the days before the window go.
+ * Counting the thirty days again whenever a read was recorded held the NAS up to eight seconds.
+ */
+const running = new WeakMap<
+  UserStore,
+  {
+    tz: string;
+    from: number;
+    action: number;
+    op: number;
+    days: Map<string, DayCount>;
+    dayOfQ: Map<number, string>;
+  }
+>();
+function activityOf(
+  store: UserStore,
+  from: number,
+  now: number,
+  tz: string,
+  day: (ms: number) => string,
+): DayCount[] {
+  let r = running.get(store);
+  if (!r || r.tz !== tz || from < r.from) {
+    r = { tz, from, action: 0, op: 0, days: new Map(), dayOfQ: new Map() };
+    running.set(store, r);
+  }
+  const got = store.audit.activitySince(r.action, r.op, r.from);
+  for (const x of got.rows) {
+    if (x.q * QUARTER > now) continue;
+    let d = r.dayOfQ.get(x.q);
+    if (d === undefined) {
+      d = day(x.q * QUARTER);
+      r.dayOfQ.set(x.q, d);
+    }
+    const key = `${d}|${x.by}|${x.type}`;
+    const c = r.days.get(key) ?? { day: d, by: x.by, type: x.type, reads: 0, writes: 0 };
+    c.reads += x.reads;
+    c.writes += x.writes;
+    r.days.set(key, c);
+  }
+  r.action = got.action;
+  r.op = got.op;
+  const first = day(from);
+  for (const [k, c] of r.days) if (c.day < first) r.days.delete(k);
+  for (const q of r.dayOfQ.keys()) if ((q + 1) * QUARTER < from - DAY) r.dayOfQ.delete(q);
+  return [...r.days.values()]
+    .map((c) => ({ ...c }))
+    .sort(
+      (a, b) =>
+        a.day.localeCompare(b.day) || a.by.localeCompare(b.by) || a.type.localeCompare(b.type),
+    );
+}
+
+/**
+ * Both collections for one account, over the last `SYSTEM_DAYS` days up to `now` (reused for `FRESH_MS` while nothing
+ * new is recorded; the activity a running sum, `activityOf`). Their schema depends on the rows (a select's options
+ * are the models, actors and collections met), so both are made together; `usdToEur` is the account's rate
+ * («Modelos»), a call of unknown cost has no «Coste».
+ */
 export function systemCollections(
   store: UserStore,
   o: { now: number; usdToEur: number; tz: string },
@@ -164,7 +223,7 @@ function makeSystemCollections(
   // Each record dated by the account's day, as the blocks take «today» (http.ts): «this month» counts them right.
   const day = dayIn(o.tz);
   const calls = store.journal.modelCallsIn(from, o.now + 1);
-  const activity = store.audit.activityByType(from, o.now + 1, day);
+  const activity = activityOf(store, from, o.now, o.tz, day);
   const runs = store.journal.runsIn(from, o.now + 1);
   // Only «Ejecuciones» needs every proposal by run: read when its rows are.
   let byRun: Map<string, ProposalRow[]> | null = null;

@@ -1,5 +1,5 @@
 import { openUserStore } from "@boni/store";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { listTypes } from "./data.ts";
 import { SYSTEM_COLLECTIONS, systemCollections } from "./systemCollections.ts";
 
@@ -89,6 +89,51 @@ describe("Boni's own records", () => {
     expect(systemCollections(store, { ...o, now: o.now + 4 * 60_000 })).toBe(sys);
     read(o.now + 4 * 60_000);
     expect(systemCollections(store, { ...o, now: o.now + 4 * 60_000 + 1 })).not.toBe(sys);
+    store.close();
+  });
+
+  it("keep the activity as a running sum: once counted, only what was recorded since is (task 43)", () => {
+    const store = openUserStore(":memory:");
+    const at = Date.UTC(2026, 10, 3, 12);
+    const read = (when: number, n: number) =>
+      store.audit.record({
+        at: when,
+        by: "mcp:claude-ejemplo",
+        tool: "entities.search",
+        target: { type: "t_ejemplo" },
+        decision: "allow",
+        result: { rows: n },
+        seen: Array.from({ length: n }, (_, i) => ({
+          entity: `e_${when}_${i}`,
+          type: "t_ejemplo",
+          version: 1,
+          fields: [],
+          shapes: [],
+          body: "shape" as const,
+          files: [],
+        })),
+      });
+    read(at - 3 * 86_400_000, 2);
+    read(at - 1000, 3);
+    const o = { now: at, usdToEur: 0.9, tz: "Europe/Madrid" };
+    const activity = (now: number) =>
+      systemCollections(store, { ...o, now })
+        .rows("t_sys_actividad")
+        .map((r) => [r.values.f_fecha, r.values.f_filas]);
+    expect(activity(at)).toEqual([
+      ["2026-10-31", 2],
+      ["2026-11-03", 3],
+    ]);
+    const since = vi.spyOn(store.audit, "activitySince");
+    const last = store.audit.lastAction();
+    read(at + 60_000, 4);
+    expect(activity(at + 120_000)).toEqual([
+      ["2026-10-31", 2],
+      ["2026-11-03", 7],
+    ]);
+    // Only what came after the last one counted was asked for.
+    expect(since.mock.calls[0]?.[0]).toBe(last);
+    since.mockRestore();
     store.close();
   });
 });

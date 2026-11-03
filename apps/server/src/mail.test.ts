@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { plain, ScriptedProvider } from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
@@ -511,6 +511,26 @@ describe("tasks a mail asks for", () => {
     expect(readers.slice(before)).toEqual(["read_message", "classify"]);
     await expect(m.proposeFor(1, dni)).rejects.toMatchObject({ code: "not-found" });
     await expect(m.proposeFor(1, "e_nada")).rejects.toMatchObject({ code: "not-found" });
+    // The collections a mail may go to are worked out once while nothing they read changes (task 43: each check
+    // listed every record of each, 0.66 s on the NAS); a new record of one of them works them out again.
+    const targetsFor = (ids: string[]) =>
+      (m as unknown as { targetsFor(s: typeof store, i: string[]): unknown[] }).targetsFor(
+        store,
+        ids,
+      );
+    const listed = vi.spyOn(store, "list");
+    targetsFor(["t_docencia", "t_gestiones"]);
+    const once = listed.mock.calls.length;
+    targetsFor(["t_docencia", "t_gestiones"]);
+    expect(listed.mock.calls.length).toBe(once);
+    store.create(
+      "t_gestiones",
+      { t_gestiones_t: { value: "Pedir cita", label: own } },
+      { actor: "user" },
+    );
+    targetsFor(["t_docencia", "t_gestiones"]);
+    expect(listed.mock.calls.length).toBeGreaterThan(once);
+    listed.mockRestore();
     // The live reading asks Juan when the decider is unsure (the panel of requests); by default it does not.
     expect(JSON.stringify(plan)).not.toContain('"ask"');
     const live = mailPlan(

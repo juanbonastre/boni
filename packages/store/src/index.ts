@@ -6,6 +6,7 @@ export {
   type By,
   byOf,
   type EntityMeta,
+  foldDays,
   type Seen,
   type Storage,
   type Verification,
