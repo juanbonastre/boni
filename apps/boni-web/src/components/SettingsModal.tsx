@@ -1514,8 +1514,14 @@ function Decisions() {
   const lang = useStore((s) => s.settings.language);
   const areas = useStore((s) => s.accuracy);
   const learning = useStore((s) => s.learning);
+  // Until the server answers, the pane shows the switch alone: «Sin decisiones» would be false (Juan, 2026-11-03).
+  const [loaded, setLoaded] = useState(areas.length > 0);
   useEffect(() => {
-    void loadDecisions();
+    let live = true;
+    void loadDecisions().finally(() => live && setLoaded(true));
+    return () => {
+      live = false;
+    };
   }, []);
   const name = (area: string) => {
     const key = `accuracy.area.${area}`;
@@ -1549,7 +1555,7 @@ function Decisions() {
           />
         </div>
       </div>
-      {areas.length === 0 && <p className="muted small">{t("decisions.none")}</p>}
+      {loaded && areas.length === 0 && <p className="muted small">{t("decisions.none")}</p>}
       {areas.map((a) => (
         <div className="setting" key={a.area}>
           <div className="setting-label">
