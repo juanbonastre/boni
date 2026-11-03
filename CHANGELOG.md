@@ -5,7 +5,9 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
-## Unreleased
+## 2026-11-03 (fifth) — server 0.8.81
+
+Needs: the server only (0.8.81). Deployed at once at Juan's word, with his code.
 
 - **The calendar's reading, cut again.** Read on the NAS after 0.8.79: a read of the calendars costs about 475 ms
   there, and every write anywhere in Boni (a mail, a page) made the calendar read them again. Now only a change of
