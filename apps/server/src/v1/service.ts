@@ -14,6 +14,7 @@ import {
   validate,
 } from "@boni/views";
 import type { ByName } from "../byName.ts";
+import { timed } from "../perf.ts";
 import {
   ACCOUNTS,
   ACTION,
@@ -171,7 +172,9 @@ export class V1Service {
       if (!set.size) continue;
       let print: string;
       try {
-        print = this.fin({ account, device: "" }).fingerprint();
+        print = timed("the money's fingerprint", 200, () =>
+          this.fin({ account, device: "" }).fingerprint(),
+        );
       } catch {
         continue;
       }

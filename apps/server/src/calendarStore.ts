@@ -220,6 +220,8 @@ function expandNode(
   conds: Where[],
   path: PathNode[],
   depth: number,
+  pool: Listed,
+  watch: Set<string>,
 ): Placed[] {
   const t = schema.types[s.type];
   const choices = splitChoices(schema, s.type);
@@ -228,9 +230,8 @@ function expandNode(
   const field = t?.fields.find((f) => f.id === node.field && usable(f.id));
   if (!field) return [];
   const titleOf = (e: Entity) => String(e.values[schema.types[e.type]?.titleField ?? ""] ?? e.id);
-  const records = store
-    .list(s.type, { deep: true })
-    .filter((e) => conds.every((w) => matches(e.entity, w)));
+  const records = pool.filter((e) => conds.every((w) => matches(e.entity, w)));
+  if (field.type === "relation" && field.relation?.target) watch.add(field.relation.target);
   const all: { key: string; name: string }[] =
     field.type === "select"
       ? (field.options ?? []).map((o) => ({ key: o.id, name: o.name }))
@@ -257,7 +258,19 @@ function expandNode(
     const next = [...conds, w];
     const child = orEmpty ? undefined : node.by?.[v.key];
     if (child && t?.fields.some((f) => f.id === child.field && usable(f.id) && f.id !== field.id))
-      return expandNode(store, schema, s, def, child, { id, name: v.name }, next, below, depth + 1);
+      return expandNode(
+        store,
+        schema,
+        s,
+        def,
+        child,
+        { id, name: v.name },
+        next,
+        below,
+        depth + 1,
+        pool,
+        watch,
+      );
     const key = next.map((c) => c.value).join("/");
     const { colors: _c, ...rest } = s.raw;
     const raw: Record<string, unknown> = {
@@ -303,7 +316,7 @@ function expandNode(
  */
 const readDefs = new WeakMap<
   UserStore,
-  { version: number; kept: string | null; placed: Placed[] }
+  { version: number; kept: string | null; placed: Placed[]; watch: Set<string> }
 >();
 
 /** The calendars of a store as the apps read them: each definition, a split one expanded (none: no calendar). */
@@ -311,19 +324,37 @@ export function calendarDefs(store: UserStore): Placed[] {
   const version = store.version();
   const kept = store.setting(CALENDAR_DEFS);
   const was = readDefs.get(store);
-  if (was && was.version === version && was.kept === kept) return was.placed;
-  const placed = readCalendarDefs(store);
-  readDefs.set(store, { version, kept, placed });
+  if (was && was.kept === kept) {
+    if (was.version === version) return was.placed;
+    // Only a change of the schema, or of a record the definitions read (a split collection's, its values'), reads
+    // them again: the rest of Boni's writes (mail, pages, money) leave them as they were (2026-11-03: every write
+    // cost the NAS half a second; task 35).
+    const ch = store.changesSince(was.version);
+    if (!ch.schemaChanged && !ch.entities.some((e) => was.watch.has(e.entity.type))) {
+      was.version = version;
+      return was.placed;
+    }
+  }
+  const watch = new Set<string>();
+  const placed = readCalendarDefs(store, watch);
+  readDefs.set(store, { version, kept, placed, watch });
   return placed;
 }
 
-function readCalendarDefs(store: UserStore): Placed[] {
+/** The records of a store as `list` gives them. */
+type Listed = ReturnType<UserStore["list"]>;
+
+/** Reads the definitions; `watch` gets the types whose records the reading depended on. */
+function readCalendarDefs(store: UserStore, watch: Set<string>): Placed[] {
   const schema = store.schema();
   return storedCalendarDefs(store).flatMap((s) => {
     const r = parseCollectionDef(s.raw);
     if (!r.ok) return [];
     const choices = splitChoices(schema, s.type);
-    if (s.split && choices.some((c) => c.id === s.split?.field))
+    if (s.split && choices.some((c) => c.id === s.split?.field)) {
+      // The branch's records, listed once for every node of the split.
+      for (const t of branch(schema, s.type)) watch.add(t);
+      const pool = store.list(s.type, { deep: true });
       return expandNode(
         store,
         schema,
@@ -334,7 +365,10 @@ function readCalendarDefs(store: UserStore): Placed[] {
         [],
         [],
         0,
+        pool,
+        watch,
       );
+    }
     const placed: Placed = {
       type: s.type,
       raw: s.raw,

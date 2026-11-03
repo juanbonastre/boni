@@ -158,7 +158,7 @@ function agendaEnv(): {
 
 describe("the calendar asks often and reads little (A-15, task 35)", () => {
   it("reads a split definition's records once per change of the store, not on every poll or request", async () => {
-    const { store, cal, area } = agendaEnv();
+    const { store, cal, area, type } = agendaEnv();
     expect(await cal.setSplit("agenda", area)).toBe("ok");
     const list = vi.spyOn(store, "list");
     const poll = () => (cal as unknown as { poll(): void }).poll();
@@ -180,6 +180,39 @@ describe("the calendar asks often and reads little (A-15, task 35)", () => {
     for (let i = 0; i < 5; i++) poll();
     expect(list.mock.calls.length).toBe(after);
     expect(calendarDefs(store).find((p) => p.def.id === docencia)?.def.color).toBe("#123456");
+    // A write elsewhere in Boni (a note of another collection) leaves them as they were; one to the Agenda reads them.
+    const u = label("user", "personal", []);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_otra",
+          key: "otra",
+          name: "Otra",
+          fields: [{ id: "f_t", key: "t", name: "Título", type: "text", label: u }],
+          titleField: "f_t",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: u,
+        },
+      },
+      { actor: "user" },
+    );
+    calendarDefs(store);
+    const schemaRead = list.mock.calls.length;
+    store.create("t_otra", { f_t: { value: "Algo", label: u } }, { actor: "user" });
+    poll();
+    calendarDefs(store);
+    expect(list.mock.calls.length).toBe(schemaRead);
+    const agenda = store.list(type)[0]?.entity as { id: string };
+    const titleField = store.schema().types[type]?.titleField as string;
+    store.update(
+      agenda.id,
+      { [titleField]: { value: "Clase cambiada", label: u } },
+      { actor: "user" },
+    );
+    calendarDefs(store);
+    expect(list.mock.calls.length).toBeGreaterThan(schemaRead);
     list.mockRestore();
   });
 });

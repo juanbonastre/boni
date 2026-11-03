@@ -29,6 +29,7 @@ import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./lear
 import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
 import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
+import { timed } from "./perf.ts";
 import { decrypt, type SecretKey } from "./secret.ts";
 
 /**
@@ -1325,7 +1326,9 @@ export class Mails {
         const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
         if (m.messageId && known.has(m.messageId)) continue;
         // One mail that cannot be kept never stops the others (task 34: it stopped the check, and was lost).
-        const id = this.keepOne(account, store, def, m, f.internalDate);
+        const id = timed("a mail kept", 300, () =>
+          this.keepOne(account, store, def, m, f.internalDate),
+        );
         if (!id) continue;
         made.push(id);
         st.count++;
