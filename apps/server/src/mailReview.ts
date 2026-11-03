@@ -42,6 +42,8 @@ export interface Suggestion {
   after: number;
   total: number;
   at: number;
+  /** The background run that measured it (its decision of docs/fiabilidad.md hangs from it). */
+  run?: string;
 }
 
 const MIN_DECISIONS = 10;
@@ -143,6 +145,56 @@ export function checkRule(
   return { id: `s-${from}`, from, action: "collection", collection: t.id };
 }
 
+/**
+ * The rules Juan's own corrections show, found by code and nothing else (docs/fiabilidad.md F4: the same change
+ * repeated): a sender, or its domain, whose proposals he rejected three or more times and never accepted is
+ * skipped; one whose proposals he moved to the same collection twice or more, and never kept elsewhere, goes
+ * there. Each passes `checkRule` like a rule the model proposes, and is measured the same way before it is
+ * suggested. A domain's rule covers its senders' own.
+ */
+export function ruleCandidates(
+  ds: readonly Decision[],
+  targets: readonly Target[],
+  guide: MailGuide,
+  excluded: ReadonlySet<string> = new Set(),
+): MailRule[] {
+  const senders = new Set<string>();
+  for (const d of ds) {
+    const s = d.sender.trim().toLowerCase();
+    const at = s.indexOf("@");
+    if (at <= 0) continue;
+    senders.add(s);
+    senders.add(s.slice(at));
+  }
+  const out: MailRule[] = [];
+  for (const from of senders) {
+    const mine = ds.filter((d) => matches(from, d.sender));
+    if (mine.length >= 3 && mine.every((d) => !d.accepted)) {
+      const r = checkRule({ from, action: "skip", collection: null }, ds, targets, guide, excluded);
+      if (r) out.push(r);
+      continue;
+    }
+    const kept = mine.filter((d) => d.accepted);
+    const moved = kept.filter((d) => d.corrected?.collection);
+    const to = moved[0]?.collection;
+    if (moved.length >= 2 && to && kept.every((d) => d.collection === to)) {
+      const r = checkRule(
+        { from, action: "collection", collection: to },
+        ds,
+        targets,
+        guide,
+        excluded,
+      );
+      if (r) out.push(r);
+    }
+  }
+  return out.filter(
+    (r) =>
+      r.from.startsWith("@") ||
+      !out.some((o) => o.from.startsWith("@") && o.action === r.action && r.from.endsWith(o.from)),
+  );
+}
+
 /** A mail as the reader reads it (headers, then text), cut to what an example may hold. */
 export function mailText(values: Record<string, unknown>, body: string | undefined): string {
   const v = (k: string) => (typeof values[`f_${k}`] === "string" ? String(values[`f_${k}`]) : "");
@@ -219,6 +271,8 @@ export interface ReviewHost {
   now: number;
   /** Rules (by sender) and examples (by id) Juan rejected before: never suggested again. */
   excluded: ReadonlySet<string>;
+  /** Rules his corrections already show, found by code (`ruleCandidates`): suggested even if the model finds nothing. */
+  candidates?: readonly MailRule[];
 }
 
 /** One review: a suggestion that gets more of Juan's decisions right, or null. */
@@ -264,14 +318,18 @@ export async function review(h: ReviewHost): Promise<Suggestion | null> {
   const out = r.kept?.r as
     | { rules: { from: string; action: string; collection: string | null }[]; examples: string[] }
     | undefined;
-  if (!out) return null;
-  const rules = out.rules
-    .map((x) => checkRule(x, ds, h.targets, h.guide, h.excluded))
-    .filter((x): x is MailRule => !!x);
+  const found = h.candidates ?? [];
+  if (!out && !found.length) return null;
+  const rules = [
+    ...found,
+    ...(out?.rules ?? [])
+      .map((x) => checkRule(x, ds, h.targets, h.guide, h.excluded))
+      .filter((x): x is MailRule => !!x && !found.some((c) => c.from === x.from)),
+  ];
   const have = new Set(h.guide.examples.map((e) => e.id));
-  const mails = [...new Set(out.examples.map((id) => ds.find((d) => d.id === id)?.mail))].filter(
-    (m): m is string => !!m,
-  );
+  const mails = [
+    ...new Set((out?.examples ?? []).map((id) => ds.find((d) => d.id === id)?.mail)),
+  ].filter((m): m is string => !!m);
   const examples = mails
     .map((m) => exampleOf(h.store, m, ds))
     .filter((e): e is GuideExample => !!e && !have.has(e.id) && !h.excluded.has(e.id));
@@ -296,12 +354,13 @@ export async function review(h: ReviewHost): Promise<Suggestion | null> {
   const after = score(on, await produce(candidate));
   if (after <= before) return null;
   return {
-    id: `g-${h.now}`,
+    id: `g-${h.now}-${r.run.slice(0, 8)}`,
     rules,
     examples,
     before,
     after,
     total: on.length,
     at: h.now,
+    run: r.run,
   };
 }

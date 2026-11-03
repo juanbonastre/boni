@@ -603,7 +603,8 @@ contraseña ni un código aquí» under a question.
   Boni takes alone («Colecciones», «Campos»): its last decisions counted (alone, asked, left) and, of the ones alone,
   how many Juan kept as they were, as «acierto 19 de 20 (95 %)»; «Por nivel» opens the same count by level of
   confidence («0,9–1: 10 de 10»); an area with «Solo» on says so after its numbers. Nothing shows until there is a
-  decision. **Decisiones** (Settings, docs/fiabilidad.md §3.4): one row per area, as the Registro's card (its name,
+  decision. **Decisiones** (Settings, docs/fiabilidad.md §3.4): first «Aprender», a switch (on by default; off, no learner
+  suggests anything on its own, docs/preferencias.md §5; only a personal device turns it); then one row per area, as the Registro's card (its name,
   «acierto 20 de 20 (100 %)») and under it, muted, where it stands: «Dentro de una propuesta que decides tú.» for
   the areas decided inside a proposal (no switch); for «Aceptar propuestas», «Solo» with a switch at the right,
   disabled until earned, with how far it is as a count («12 de 20», the numbers from the server); when Boni
@@ -624,8 +625,9 @@ contraseña ni un código aquí» under a question.
   narrow), the examples kept from Juan's decisions (subject, what he wanted, "Quitar"; never written here), and "Revisar
   ahora" (the reviewer on demand; a toast when there is nothing clear). A **suggestion of the reviewer** waiting opens
   the group by itself (its summary says so) and comes first, as a card in the accent tint: what it would add (rules,
-  examples), how it measured ("acertaría 37 de tus últimas 40 decisiones (ahora 31)"), "Descartar" and "Añadir a la
-  guía"; "Más
+  examples), how it measured ("acertaría 37 de tus últimas 40 decisiones (ahora 31)"), "Descartar", "Cambiarlo…" (the suggestion, said as a person would, goes to the end of "Tus
+  indicaciones", focused, for him to rewrite and save; no rule is added and it is not suggested again) and "Añadir a
+  la guía"; "Más
   opciones": "Volver a leer" (a days select, 1 to 30, and "Leer": that mail is read again and its pending proposals
   are replaced; a toast says how many mails) and the mailbox with "Cambiar" and "Desconectar". The password is never
   shown again.

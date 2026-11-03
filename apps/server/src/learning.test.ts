@@ -1,0 +1,47 @@
+// The learners' pace and switch (docs/fiabilidad.md F4, docs/preferencias.md §5; A-14): at most one suggestion a day not asked for, none with «Aprender» off.
+import { openUserStore } from "@boni/store";
+import { describe, expect, it } from "vitest";
+import { DAY, learningOn, mayReview, setLearning } from "./learning.ts";
+
+describe("what a learner may do on its own (A-14)", () => {
+  const base = {
+    learning: true,
+    waiting: false,
+    suggestedAt: null,
+    now: DAY * 10,
+    fresh: () => 0,
+    every: 20,
+    candidates: () => 0,
+  };
+  it("looks when Juan's decisions add up, or when a correction of his, repeated, already shows a rule", () => {
+    expect(mayReview(base)).toBe(false);
+    expect(mayReview({ ...base, fresh: () => 20 })).toBe(true);
+    expect(mayReview({ ...base, fresh: () => 19 })).toBe(false);
+    expect(mayReview({ ...base, candidates: () => 1 })).toBe(true);
+  });
+  it("never with «Aprender» off, while a suggestion waits for him, or within a day of the last one", () => {
+    const ready = { ...base, fresh: () => 20, candidates: () => 1 };
+    expect(mayReview({ ...ready, learning: false })).toBe(false);
+    expect(mayReview({ ...ready, waiting: true })).toBe(false);
+    expect(mayReview({ ...ready, suggestedAt: ready.now - DAY + 1 })).toBe(false);
+    expect(mayReview({ ...ready, suggestedAt: ready.now - DAY })).toBe(true);
+  });
+  it("counts his proposals and decisions only once the cheap gates pass", () => {
+    let counted = 0;
+    const count = () => {
+      counted++;
+      return 0;
+    };
+    mayReview({ ...base, learning: false, fresh: count, candidates: count });
+    mayReview({ ...base, suggestedAt: base.now, fresh: count, candidates: count });
+    expect(counted).toBe(0);
+  });
+  it("«Aprender» is on until Juan turns it off, and kept in his store", () => {
+    const store = openUserStore(":memory:");
+    expect(learningOn(store)).toBe(true);
+    setLearning(store, false);
+    expect(learningOn(store)).toBe(false);
+    setLearning(store, true);
+    expect(learningOn(store)).toBe(true);
+  });
+});

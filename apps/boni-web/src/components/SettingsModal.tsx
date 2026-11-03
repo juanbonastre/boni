@@ -37,6 +37,7 @@ import {
   saveMailGuide,
   saveSettings,
   setDecisionAuto,
+  setLearning,
   setWidgetHidden,
   suggestedDevice,
   toast,
@@ -1076,21 +1077,49 @@ function MailGuideSettings({
             ))}
           </ul>
           <div className="modal-actions">
-            {[false, true].map((accept) => (
+            {(["reject", "change", "accept"] as const).map((answer) => (
               <button
-                key={String(accept)}
+                key={answer}
                 type="button"
-                className={accept ? "btn primary" : "btn"}
+                className={answer === "accept" ? "btn primary" : "btn"}
                 onClick={async () => {
-                  const r = await answerSuggestion(suggestion.id, accept);
-                  if (r?.guide) {
+                  const r = await answerSuggestion(
+                    suggestion.id,
+                    answer === "accept",
+                    answer === "change",
+                  );
+                  if (!r) return;
+                  // In his words (docs/preferencias.md §5): the suggestion, as a person would say it, goes to
+                  // his instructions for him to rewrite and save; the rules themselves are not added.
+                  if (answer === "change") {
+                    const words = [
+                      ...suggestion.rules.map((x) =>
+                        x.action === "skip"
+                          ? t("mail.suggestion.words.skip", { from: x.from })
+                          : t("mail.suggestion.words.to", {
+                              from: x.from,
+                              name: nameOf(x.collection),
+                            }),
+                      ),
+                      ...suggestion.examples.map((e) =>
+                        t("mail.suggestion.words.example", {
+                          subject: e.subject,
+                          want: e.want.length
+                            ? e.want.map((w) => w.title).join(" · ")
+                            : t("mail.guide.nothing"),
+                        }),
+                      ),
+                    ].join("\n");
+                    setText((prev) => (prev.trim() ? `${prev.trimEnd()}\n${words}` : words));
+                    setTimeout(() => document.getElementById("mail-guide-text")?.focus(), 0);
+                  } else if (r.guide) {
                     setGuide(r.guide);
                     setText(r.guide.instructions);
                   }
-                  if (r?.mail) onMail(r.mail);
+                  if (r.mail) onMail(r.mail);
                 }}
               >
-                {t(accept ? "mail.suggestion.accept" : "mail.suggestion.reject")}
+                {t(`mail.suggestion.${answer}`)}
               </button>
             ))}
           </div>
@@ -1483,6 +1512,7 @@ function Decisions() {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
   const areas = useStore((s) => s.accuracy);
+  const learning = useStore((s) => s.learning);
   useEffect(() => {
     void loadDecisions();
   }, []);
@@ -1504,6 +1534,20 @@ function Decisions() {
   };
   return (
     <>
+      <div className="setting">
+        <div className="setting-label">
+          <span>{t("decisions.learn")}</span>
+        </div>
+        <div className="setting-control">
+          <input
+            type="checkbox"
+            className="switch"
+            aria-label={t("decisions.learn")}
+            checked={learning}
+            onChange={(e) => void setLearning(e.target.checked)}
+          />
+        </div>
+      </div>
       {areas.length === 0 && <p className="muted small">{t("decisions.none")}</p>}
       {areas.map((a) => (
         <div className="setting" key={a.area}>

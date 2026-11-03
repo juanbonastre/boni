@@ -564,6 +564,15 @@ export function parseModels(b: unknown): ModelsView | null {
     evaluating: evalRole && evalChoice ? { ...evalChoice, role: evalRole } : null,
   };
 }
+/** What Settings «Decisiones» shows: the areas and whether Boni learns at all (an older server: it does). */
+export interface DecisionsView {
+  areas: AreaAccuracy[];
+  learning: boolean;
+}
+const parseDecisions = (b: unknown): DecisionsView => ({
+  areas: parseAreas(b),
+  learning: !(isObj(b) && b.learning === false),
+});
 /** The areas of `GET /api/agent/decisions` (and of the PUT that turns a switch). */
 function parseAreas(b: unknown): AreaAccuracy[] {
   const areas = isObj(b) && Array.isArray(b.areas) ? b.areas : [];
@@ -1680,12 +1689,18 @@ export class AgentApi {
   dismissRequest = async (id: string) =>
     void (await this.call("POST", `requests/${encodeURIComponent(id)}/dismiss`));
   /** Boni's decisions counted per area, with each area's «Solo» (an older server: none). */
-  async decisions(): Promise<AreaAccuracy[]> {
-    return parseAreas(await this.call("GET", "decisions"));
+  async decisions(): Promise<DecisionsView> {
+    return parseDecisions(await this.call("GET", "decisions"));
   }
   /** Juan turns an area's «Solo» (docs/fiabilidad.md §3.4): the areas as they are after it. */
-  async setDecisionAuto(area: string, auto: boolean): Promise<AreaAccuracy[]> {
-    return parseAreas(await this.call("PUT", `decisions/${encodeURIComponent(area)}`, { auto }));
+  async setDecisionAuto(area: string, auto: boolean): Promise<DecisionsView> {
+    return parseDecisions(
+      await this.call("PUT", `decisions/${encodeURIComponent(area)}`, { auto }),
+    );
+  }
+  /** Juan turns «Aprender» (docs/preferencias.md §5): off, no learner suggests anything on its own. */
+  async setLearning(on: boolean): Promise<DecisionsView> {
+    return parseDecisions(await this.call("PUT", "learning", { on }));
   }
   async runs(): Promise<{ runs: RunSummary[]; autoAccept: AutoAccept | null }> {
     const b = await this.call("GET", "runs");
@@ -2172,8 +2187,14 @@ export class AgentApi {
   forgetMail = async () => void (await this.call("POST", "/forget", {}, "api/mail"));
   private guideOf = (b: unknown) => (isObj(b) ? parseGuide(b.guide) : null);
   reviewMail = async () => this.mailOf(await this.call("POST", "/review", {}, "api/mail"));
-  answerSuggestion = async (id: string, accept: boolean) => {
-    const b = await this.call("POST", "/suggestion", { id, accept }, "api/mail");
+  /** Juan's answer to the reviewer's suggestion: yes, no, or `changed` (he writes it in his own words). */
+  answerSuggestion = async (id: string, accept: boolean, changed = false) => {
+    const b = await this.call(
+      "POST",
+      "/suggestion",
+      { id, accept, ...(changed ? { changed: true } : {}) },
+      "api/mail",
+    );
     return {
       guide: isObj(b) ? parseGuide(b.guide) : null,
       mail: isObj(b) ? parseMail(b.mail) : null,

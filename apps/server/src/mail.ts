@@ -25,7 +25,8 @@ import type { AgentHost } from "./agent.ts";
 import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
-import { decisions, review, type Suggestion } from "./mailReview.ts";
+import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview } from "./learning.ts";
+import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
 import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { decrypt, type SecretKey } from "./secret.ts";
@@ -73,6 +74,8 @@ export interface MailState {
   suggestion?: Suggestion | null;
   /** When the reviewer last looked (decisions after it count towards the next review). */
   reviewedAt?: number;
+  /** When it last suggested something: at most one a day that Juan did not ask for (learning.ts). */
+  suggestedAt?: number;
   /** Senders and example ids Juan said no to: never suggested again. */
   refused?: string[];
 }
@@ -854,9 +857,11 @@ export class Mails {
 
   /**
    * One review now (docs/nucleo.md 7.4b, point 3): Juan's latest decisions on mail proposals go to the
-   * reviewer; a suggestion that gets more of them right waits in the state for him. One at a time.
+   * reviewer, with the rules his corrections already show (found by code, docs/fiabilidad.md F4); a suggestion
+   * that gets more of them right waits in the state for him. One at a time. `auto` is the learner looking on its
+   * own (after a check of the mailbox): only when learning.ts says it may; on demand, always.
    */
-  async reviewNow(account: number): Promise<Suggestion | null> {
+  async reviewNow(account: number, auto = false): Promise<Suggestion | null> {
     if (this.reviewing.has(account)) return this.state(account).suggestion ?? null;
     this.reviewing.add(account);
     try {
@@ -865,19 +870,63 @@ export class Mails {
       if (!s || !st.type || !this.o.host.on) return null;
       const store = this.o.host.store(account);
       const guide = this.guide(account);
+      const targets = this.targets(store, s);
+      const excluded = new Set(st.refused ?? []);
+      const type = st.type;
+      let ds: Decision[] | null = null;
+      const theDs = () => (ds ??= decisions(store, type, (v) => userIn(s.user, v.f_para, v.f_cc)));
+      let found: MailRule[] | null = null;
+      const candidates = () => (found ??= ruleCandidates(theDs(), targets, guide, excluded));
+      if (auto) {
+        const every = this.manifest(account).learning?.every;
+        if (
+          every === undefined ||
+          !mayReview({
+            learning: learningOn(store),
+            waiting: !!st.suggestion,
+            suggestedAt: st.suggestedAt ?? null,
+            now: this.now(),
+            fresh: () => this.freshDecisions(store, st.reviewedAt ?? 0),
+            every,
+            candidates: () => candidates().length,
+          })
+        )
+          return null;
+      }
       const suggestion = await review({
         store,
         agent: this.o.host.agent(account),
         guide,
-        targets: this.targets(store, s),
-        ds: decisions(store, st.type, (v) => userIn(s.user, v.f_para, v.f_cc)),
+        targets,
+        ds: theDs(),
         read: (mail, g) => this.readOnce(account, mail, g),
         now: this.now(),
-        excluded: new Set(st.refused ?? []),
+        excluded,
+        candidates: candidates(),
       });
       const after = this.state(account);
       after.reviewedAt = this.now();
-      if (suggestion) after.suggestion = suggestion;
+      if (suggestion) {
+        after.suggestion = suggestion;
+        after.suggestedAt = this.now();
+        // A suggestion is a decision of docs/fiabilidad.md: class B (it touches his guide), always asked, as sure
+        // as the candidate guide was on the mail measured; Juan's answer judges it (`answerSuggestion`).
+        store.journal.addDecision({
+          id: randomUUID(),
+          run: suggestion.run ?? suggestion.id,
+          area: GUIDE_AREA,
+          cost: GUIDE_COST,
+          p: suggestion.total ? suggestion.after / suggestion.total : 0,
+          outcome: "ask",
+          detail: {
+            suggestion: suggestion.id,
+            rules: suggestion.rules.length,
+            examples: suggestion.examples.length,
+            found: candidates().length,
+          },
+          at: this.now(),
+        });
+      }
       this.saveState(account, after);
       if (suggestion) this.o.host.emit(account, "mail-suggestion", { id: suggestion.id });
       return suggestion;
@@ -886,12 +935,37 @@ export class Mails {
     }
   }
 
-  /** Juan's answer to the waiting suggestion: accepted, its rules and examples join his guide. */
-  answerSuggestion(account: number, id: string, accept: boolean): MailGuide {
+  /**
+   * Juan's decisions on mail proposals since the reviewer last looked; a correction (he changed the title or the
+   * collection before accepting) counts double: a prediction error.
+   */
+  private freshDecisions(store: UserStore, since: number): number {
+    return store.journal
+      .proposals()
+      .filter((p) => p.decided !== null && p.decided > since && p.status !== "stale")
+      .reduce((n, p) => n + (p.edits ? 2 : 1), 0);
+  }
+
+  /**
+   * Juan's answer to the waiting suggestion: accepted, its rules and examples join his guide; `changed`, he
+   * writes it in his own words in his instructions (docs/preferencias.md §5) and nothing is added here. Either
+   * way the suggestion's decision is judged right; rejected, wrong. What he did not take is never suggested again.
+   */
+  answerSuggestion(account: number, id: string, accept: boolean, changed = false): MailGuide {
     const st = this.state(account);
     const s = st.suggestion;
     const guide = this.guide(account);
     if (!s || s.id !== id) throw new MailError("no-suggestion");
+    const store = this.o.host.store(account);
+    const decision = store.journal
+      .decisions(GUIDE_AREA, 50)
+      .find((d) => !d.result && (d.detail as { suggestion?: string } | null)?.suggestion === id);
+    if (decision)
+      store.journal.setDecisionResult(
+        decision.id,
+        accept || changed ? "right" : "wrong",
+        this.now(),
+      );
     if (accept) {
       const g: MailGuide = {
         ...guide,
@@ -1335,16 +1409,9 @@ export class Mails {
       }
     }
     if (n) this.o.host.emit(account, "proposals", { n });
-    // Every `learning.every` new decisions of Juan's (the extension's manifest), the reviewer looks, in
-    // the background.
-    if (!m.learning) return;
-    const since = st.reviewedAt ?? 0;
-    // A correction (Juan changed the title or collection before accepting) counts double: a prediction error.
-    const fresh = store.journal
-      .proposals()
-      .filter((p) => p.decided !== null && p.decided > since && p.status !== "stale")
-      .reduce((n, p) => n + (p.edits ? 2 : 1), 0);
-    if (fresh >= m.learning.every && !st.suggestion) void this.reviewNow(account).catch(() => null);
+    // The learner looks in the background when learning.ts says it may: every `learning.every` new decisions
+    // of Juan's (the extension's manifest), or when his corrections already show a rule; at most once a day.
+    if (m.learning) void this.reviewNow(account, true).catch(() => null);
   }
 
   /** The titles of the proposals from `sender`'s mail still waiting in the inbox (the latest 20). */

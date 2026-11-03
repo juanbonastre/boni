@@ -49,13 +49,22 @@ jobs:
           echo "desktop=$(has '^(apps/boni-web/|apps/boni-desktop/|apps/server/|packages/|e2e-boni-desktop/|playwright\.boni-desktop\.config\.ts)')" >> "$GITHUB_OUTPUT"
           # The calendar's peek is Boni's page from Boni's server: the calendar, the server and Boni's web all count.
           echo "calendar_desktop=$(has '^(apps/calendar-web/|apps/calendar-desktop/|apps/boni-web/|apps/server/|packages/|e2e-calendar-desktop/|e2e/server-data\.ts|playwright\.calendar-desktop\.config\.ts)')" >> "$GITHUB_OUTPUT"
-          # I-05 (docs/principios.md): every change to Boni's web app ships in a new desktop version.
-          # (its tests are not shipped: a test alone needs no new version)
-          if printf '%s\n' "$files" | grep '^apps/boni-web/src/' | grep -vqE '\.test\.tsx?$' &&
-             ! git diff "origin/${{ github.base_ref }}...HEAD" -- apps/boni-desktop/package.json | grep -q '^+  "version"'; then
-            echo "::error::apps/boni-web changed: bump apps/boni-desktop/package.json's version (docs/principios.md, I-05)"
-            exit 1
-          fi
+          # I-05 (docs/principios.md): every change to a web app ships in a desktop version newer than the last
+          # release's (CHANGELOG.md's newest entry); a batch bumps it once. (Tests are not shipped: a test alone
+          # needs no new version.)
+          newer() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$2" ] && [ "$1" != "$2" ]; }
+          check_version() { # <web dir> <desktop package.json> <name in CHANGELOG.md>
+            if printf '%s\n' "$files" | grep "^$1/src/" | grep -vqE '\.test\.tsx?$'; then
+              released=$(grep -oEm1 "$3 [0-9]+\.[0-9]+\.[0-9]+" CHANGELOG.md | grep -oE '[0-9.]+$')
+              current=$(node -p "require('./$2').version")
+              if ! newer "$released" "$current"; then
+                echo "::error::$1 changed: bump $2's version above the last release's ($released; docs/principios.md, I-05)"
+                exit 1
+              fi
+            fi
+          }
+          check_version apps/boni-web apps/boni-desktop/package.json "Boni desktop"
+          check_version apps/calendar-web apps/calendar-desktop/package.json "Boni Calendar desktop"
 
   # The calendar's suite in two halves on two machines; Boni's on a third. All start without waiting for `check`.
   e2e-calendar:

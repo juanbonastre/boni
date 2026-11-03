@@ -36,7 +36,7 @@ Juan lo acepta (A11).
 | **Prompts del producto** | Cómo planear, cómo leer un correo, sus módulos | El código | Los modelos | El repo |
 | **Memoria** (colección de sistema) | Cualquier texto, hechos e instrucciones mezclados | Juan, Boni, lo importado; el planificador con `memory.save` | El planificador, en cada turno; lo que escribió un modelo, solo cuando Juan lo confirma (A11) | La colección «Memoria» y un aviso en el turno |
 | **Guía del correo** | Sus indicaciones (hasta 2.000 caracteres), reglas de un catálogo cerrado y ejemplos de correos que decidió | Juan; la revisora, con su visto bueno | El lector de correos en segundo plano | Ajustes → Correo |
-| **La revisora** | Sugerencias de reglas y ejemplos a partir de lo que Juan acepta, corrige o rechaza; un «no» no se repite | Un modelo, sobre sus decisiones | — | Ajustes → Correo |
+| **La revisora** | Sugerencias de reglas y ejemplos a partir de lo que Juan acepta, corrige o rechaza; un «no» no se repite | El código (las reglas que muestran sus correcciones repetidas) y un modelo, sobre sus decisiones; como mucho una al día que él no pida (`docs/fiabilidad.md` F4) | — | Ajustes → Correo; su acierto en Ajustes → Decisiones |
 | **Pseudoaceptación** | Si Boni acertaría al aceptar solo: mismo remitente y colección, 3 decisiones, las 5 últimas sin corregir. Solo se mide | El código | — | La Bandeja y el Registro |
 | **Correcciones** | Lo que Juan cambió al aceptar una propuesta | Juan | La revisora, como error de lectura | La propuesta |
 | **Descripción de cada colección** | Qué va en ella | Juan o una IA (`set_description`) | Solo los asistentes de fuera, por el `guide` del MCP: **ni el planificador ni el decisor** | La colección |
@@ -173,6 +173,14 @@ Deshacer. Pendiente de las decisiones de ese documento (§6).
 | P1 | La tarjeta «¿Lo recuerdo?» para `memory.save`; Memoria en «Sobre ti» y «Hechos»; las descripciones para el planificador y el decisor |
 | P2 | Los ajustes de cada extensión (Correo, con la guía de hoy; Conciliación), también en su chat. Es la M2 de `docs/correo.md` |
 | P3 | Las sugerencias con una sola forma (revisora, chat, pseudoaceptación) y el interruptor «Aprender», con maqueta antes |
+
+**Hecho, P3 (2026-11-03, en código directo, I-13; con F4 de `docs/fiabilidad.md`):** la sugerencia de la revisora se
+contesta con [Descartar] [Cambiarlo…] [Añadir a la guía]; «Cambiarlo…» la pone dicha como una persona al final de
+«Tus indicaciones», para escribirla como él quiera y guardarla (sus palabras), y nada se añade a las reglas. El
+interruptor **«Aprender»** abre Ajustes › Decisiones: apagado, ningún aprendiz sugiere nada por su cuenta («Revisar
+ahora» sigue). Como mucho una sugerencia al día que no nazca del chat. La de la pseudoaceptación es la fila de
+«Aceptar propuestas» con su interruptor (F3). Queda de P1 la tarjeta «¿Lo recuerdo?» de `memory.save`, que tomará la
+misma forma.
 
 Fuentes: [memoria e instrucciones de ChatGPT](https://iceberglakehouse.com/posts/2026-03-context-chatgpt/) (resumen de
 un tercero), [memoria de Claude](https://claude.com/blog/memory),
