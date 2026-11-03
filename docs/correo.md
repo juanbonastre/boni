@@ -56,11 +56,13 @@ lectura se leyó, y «Volver a leer» repite los que se leyeron con una anterior
 | Quién | Qué ve | Qué no ve |
 |---|---|---|
 | **El planificador** | Sus instrucciones generales (`PLANNER_PROMPT`: el lenguaje de los planes, las herramientas, que el texto de fuera es dato, que conteste como una persona), las colecciones con sus campos, los últimos turnos y la petición | El texto de ningún correo: le llegan asas (`$handle`) que puede pasar a un lector pero no leer. **Ninguna indicación sobre correo** |
-| **Los lectores** (`summarize`, `extract_tasks`…; `summarize_each` y `label_each` leen todos los correos en una llamada, desde el 2026-11-02) | Un prompt de una línea («resume el texto entre las marcas…») y un correo, o la lista numerada | **La guía de Juan** (la política ya lo permitiría, §7.4b), lo que le importa, cómo agrupar |
+| **Los lectores** (`summarize`, `extract_tasks`…; `summarize_each` y `label_each` leen todos los correos en una llamada, desde el 2026-11-02) | Un prompt de una línea («resume el texto entre las marcas…») y un correo, o la lista numerada; **desde el 2026-11-03 (M2), la guía de Juan** (sus indicaciones y sus ejemplos) cuando leen correo, puesta por el código como en segundo plano | Lo que no sea correo: la guía solo llega a quien lee correo |
 | **El código** | La respuesta | Pinta los componentes (texto, cifra, lista, tabla, gráfica); lo que viene de fuera se pinta solo como texto, sin marca visible (lo dice al pasar el ratón; 2026-11-02) |
 
-Así que sí: en la conversación, la IA que ve correos solo sabe lo que dice la petición. Lo que sabe de Juan y de cómo
-leer correo se queda en la lectura de segundo plano.
+Hasta el 2026-11-03, en la conversación la IA que veía correos solo sabía lo que decía la petición. Desde M2 (tarea
+23), los lectores que leen correo reciben la guía de Juan como la lectura de segundo plano: «Resume mis correos» y
+«Ponme al día» cuentan primero lo que sus indicaciones dicen que importa. El planificador sigue sin ella (nunca lee
+correo; lo que pide sobre listas y secciones está en su prompt).
 
 ## 2. Cómo se prueba hoy
 
@@ -229,6 +231,13 @@ Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/prefer
 |---|---|---|
 | M1 | El banco de pruebas: modelos y prompts en una tabla, la forma aparte, el caso de categorías | Este PR |
 | M2 | Los ajustes de Correo en la conversación y sus instrucciones; casos nuevos («Ponme al día», «¿Quién me ha escrito de la secretaría?») y comparar con y sin ajustes | P2 de `docs/preferencias.md`, con C5 (modos de conversación) |
+
+**Hecho, M2 (2026-11-03, tarea 23):** la guía de Juan llega a los lectores de correo de la conversación
+(`summarize`, `summarize_each`, `label_each`, `answer_about`, `extract_tasks`), puesta por el código cuando lo que
+leen viene del correo (`readingGuide` del agente; un plan no puede escribirla: se para). La evaluación tiene los dos
+casos nuevos y `--guia=con,sin` para comparar con y sin ella (con modelos reales, a mano y con presupuesto: tarea 29).
+Las instrucciones de correo de §4.2 siguen en el prompt del planificador; pasarlas al manifiesto de la extensión,
+cuando la conversación tenga modos (C5).
 | M3 | ~~El módulo «resumen»~~ (hecho el 2026-11-02 como `summarize_each`, §4.4) y la tarjeta de correo | Con maqueta |
 
 Aprender del chat no es una fase de aquí: es la P1 de `docs/preferencias.md` (la tarjeta «¿Lo recuerdo?»).

@@ -35,7 +35,7 @@ Juan lo acepta (A11).
 |---|---|---|---|---|
 | **Prompts del producto** | Cómo planear, cómo leer un correo, sus módulos | El código | Los modelos | El repo |
 | **Memoria** (colección de sistema) | Cualquier texto, hechos e instrucciones mezclados | Juan, Boni, lo importado; el planificador con `memory.save` | El planificador, en cada turno; lo que escribió un modelo, solo cuando Juan lo confirma (A11) | La colección «Memoria» y un aviso en el turno |
-| **Guía del correo** | Sus indicaciones (hasta 2.000 caracteres), reglas de un catálogo cerrado y ejemplos de correos que decidió | Juan; la revisora, con su visto bueno | El lector de correos en segundo plano | Ajustes → Correo |
+| **Guía del correo** | Sus indicaciones (hasta 2.000 caracteres), reglas de un catálogo cerrado y ejemplos de correos que decidió | Juan; la revisora, con su visto bueno | El lector de correos en segundo plano y, desde el 2026-11-03, los lectores de correo de la conversación | Ajustes → Correo |
 | **La revisora** | Sugerencias de reglas y ejemplos a partir de lo que Juan acepta, corrige o rechaza; un «no» no se repite | El código (las reglas que muestran sus correcciones repetidas) y un modelo, sobre sus decisiones; como mucho una al día que él no pida (`docs/fiabilidad.md` F4) | — | Ajustes → Correo; su acierto en Ajustes → Decisiones |
 | **Pseudoaceptación** | Si Boni acertaría al aceptar solo: mismo remitente y colección, 3 decisiones, las 5 últimas sin corregir. Solo se mide | El código | — | La Bandeja y el Registro |
 | **Correcciones** | Lo que Juan cambió al aceptar una propuesta | Juan | La revisora, como error de lectura | La propuesta |

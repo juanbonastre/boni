@@ -1998,7 +1998,11 @@ export const blockId = () => Math.random().toString(36).slice(2, 10);
 export async function loadPages(): Promise<PageInfo[] | null> {
   try {
     const pages = await agent.pages();
-    set({ pages });
+    // A page still being made here (its server id not back yet) stays in the list (task 36).
+    const making = (get().pages ?? []).filter(
+      (p) => p.id.startsWith("new-") && !pages.some((x) => x.id === p.id),
+    );
+    set({ pages: [...pages, ...making] });
     await keep(FILES.pages, { pages });
     return pages;
   } catch {
@@ -2006,12 +2010,23 @@ export async function loadPages(): Promise<PageInfo[] | null> {
   }
 }
 
-/** At start and after a reconnection: the pages again, and the start page if none is open. */
+/**
+ * At start and after a reconnection: the pages again, and the start page if none is open. If Juan went somewhere
+ * while they came (a new page he is naming, another page), that is where he stays: the list was asked before his
+ * page existed, so it is not in it (task 36: the start page took the window from a page being named after a login,
+ * and what he typed went nowhere).
+ */
 async function startPages() {
   void loadTree();
   void loadDataTypes();
+  const before = get().view;
   const pages = await loadPages();
   const v = get().view;
+  if (v !== before) {
+    // Asked again now that his page may be in: the list asked before it lacks it.
+    void loadPages();
+    return;
+  }
   if (v.kind === "home" || (v.kind === "page" && !pages?.some((p) => p.id === v.id)))
     await openStart();
   else if (v.kind === "page") await openPage(v.id);
@@ -2073,8 +2088,12 @@ export async function newPage(parent: string | null = null) {
     const page: Page = typed
       ? { ...made, title: typed.title, icon: typed.icon, spec: typed.spec }
       : made;
+    // In the list in place of the temporary one; or added, if a list read meanwhile left it out.
+    const list = get().pages ?? [];
     set({
-      pages: (get().pages ?? []).map((p) => (p.id === temp.id ? page : p)),
+      pages: list.some((p) => p.id === temp.id)
+        ? list.map((p) => (p.id === temp.id ? page : p))
+        : [...list.filter((p) => p.id !== page.id), page],
       ...(typed ? { page, view: { kind: "page" as const, id: page.id } } : {}),
     });
     if (typed && (typed.title || typed.icon || typed.spec.blocks.length))

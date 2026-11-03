@@ -171,6 +171,16 @@ export interface Budget {
   bySender?: boolean;
 }
 
+/** The readers that may get the user's reading guide: the mail's own and those that read mail in a conversation. */
+const GUIDED: ReadonlySet<string> = new Set([
+  "read_message",
+  "summarize",
+  "summarize_each",
+  "label_each",
+  "answer_about",
+  "extract_tasks",
+]);
+
 export interface RunLimits {
   maxStepRuns: number;
   maxModelCalls: number;
@@ -275,6 +285,11 @@ export interface AgentOptions {
   decider?: ModelProvider;
   /** The reviewer's own model (reader `review_reading`); without it, the reader's. */
   reviewer?: ModelProvider;
+  /**
+   * The user's reading guide for mail (`guideValue`, bound by the code), or null: a reader of mail in the
+   * conversation gets it as the background reading does (docs/correo.md §4.1, task 23).
+   */
+  readingGuide?: () => Val | null;
   /**
    * The month's spending against Juan's budget (Juan, 2026-10-24: 10 € a month): at the limit, background work
    * calls no model (P13); his own requests go on.
@@ -1231,6 +1246,17 @@ export class Agent {
       (e) => this.o.store.get(e)?.entity.type,
     );
     const inLabel = control ? join(deepLabel(input), control) : deepLabel(input);
+    // A reader of mail gets the user's reading guide, bound here by the code (never by the plan), as the background
+    // reading binds it to read_message (docs/correo.md §4.1).
+    if (
+      !params.guide &&
+      GUIDED.has(step.reader) &&
+      step.reader !== "read_message" &&
+      inLabel.sources.some((s) => s.kind === "mail")
+    ) {
+      const g = this.o.readingGuide?.() ?? null;
+      if (g) params.guide = g;
+    }
     // R3: what Juan keeps from the models (his choice per type) never reaches a reader, not even as a
     // parameter or through the step's control.
     if (!modelMaySee(inLabel) || Object.values(params).some((v) => !modelMaySee(deepLabel(v)))) {
@@ -1245,7 +1271,7 @@ export class Agent {
       const l = deepLabel(v);
       return (
         k === "guide" &&
-        step.reader === "read_message" &&
+        GUIDED.has(step.reader) &&
         l.sensitivity !== "sensitive" &&
         l.sources.length > 0 &&
         l.sources.every((s) => s.kind === "guide")
