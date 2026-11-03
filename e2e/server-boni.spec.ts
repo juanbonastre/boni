@@ -376,39 +376,6 @@ test("«Calendarios»: a dated collection is offered under «Añadir calendario�
   expect((await rowsOf("t_movimiento", h)).rows.length).toBeGreaterThan(0);
 });
 
-test("the colour by a field («Color: Por tipo»): each event takes its value's colour, the calendar stays whole; «Guardando…» meanwhile", async ({
-  page,
-}) => {
-  await connect(page);
-  const list = page.locator(".cal-list");
-  const row = list.locator(".cal-row", { hasText: "Docencia" });
-  const ev = page.locator(".ev", { hasText: /Clase/ });
-  const calColor = await row
-    .locator(".swatch")
-    .evaluate((e) => getComputedStyle(e).getPropertyValue("--c").trim());
-  await expect(ev).toHaveCSS("--c", calColor);
-  await row.locator(".gear").click();
-  const modal = page.locator(".modal");
-  // «Color» is one control: «Uno» with the calendar's swatches, or a field.
-  const color = modal.getByRole("combobox", { name: "Color del calendario" });
-  await expect(color).toHaveValue("");
-  await expect(modal.getByRole("button", { name: `Docencia: ${calColor}` })).toHaveClass(/on/);
-  await color.selectOption({ label: "Por tipo" });
-  // Whole (no group); every value of the list with its colour; the class takes «Clase»'s.
-  await expect(list.locator(".cal-group-head")).toHaveCount(0);
-  await expect(modal.locator(".schema-value")).toHaveCount(2);
-  const clase = modal.locator(".schema-value", { hasText: "Clase" });
-  await clase.getByRole("button", { name: "Clase: #fb923c" }).click();
-  await expect(ev).toHaveCSS("--c", "#fb923c");
-  await expect(row.locator(".swatch")).toHaveCSS("--c", calColor);
-  await expect(modal.getByText("Guardando…")).toHaveCount(0);
-  // One colour again: the calendar's for every event.
-  await color.selectOption("");
-  await expect(modal.locator(".schema-value")).toHaveCount(0);
-  await expect(ev).toHaveCSS("--c", calColor);
-  await page.keyboard.press("Escape");
-});
-
 test("«Separar por»: a calendar split by a field is a folded group with one calendar per value, their colours kept; whole again", async ({
   page,
 }) => {

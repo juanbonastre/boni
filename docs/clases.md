@@ -215,8 +215,8 @@ ahora el servidor guarda también para un calendario entero (`POST /api/collecti
 calendario» en uno se lleva la definición entera. Los calendarios de Juan elegidos a mano (Docencia, Gestiones,
 Planes: una definición cada uno con `where`) se juntan con `cli.ts split-check juan` (ensayo) y `split juan
 --apply` (`--undo` los devuelve), conservando colores; los ojos de la barra se guardan por id de calendario, así
-que tras juntarlos salen todos visibles. «Colorear por» está hecho (2026-11-03, D-25): un campo de lista o relación da
-a cada registro el color de su valor sin separar el calendario; los colores por valor se guardan en la definición.
+que tras juntarlos salen todos visibles. «Colorear por» se hizo el 2026-11-03 y Juan lo quitó ese mismo día: un
+calendario se separa por un campo y cada calendario toma su color de la matriz; no hay otra forma de colorear.
 
 ## 7. Orden
 

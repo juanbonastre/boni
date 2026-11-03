@@ -1,6 +1,5 @@
 import {
   type CalEvent,
-  type CalendarColorBy,
   type CollectionDef,
   type CollectionSnapshot,
   defsToModel,
@@ -130,8 +129,6 @@ export interface Stored {
   where?: Where;
   make?: Make;
   split?: SplitNode;
-  /** «Colorear por» (D-25): the field (its id) whose value colours each record; `raw.valueColors` keeps a colour per value. */
-  colorBy?: string;
 }
 
 /** A split as kept, checked (a field name per node; values split again under `by`; at most six levels). */
@@ -159,7 +156,6 @@ export function storedCalendarDefs(store: UserStore): Stored[] {
       where?: unknown;
       make?: unknown;
       split?: unknown;
-      colorBy?: unknown;
     }[];
     const schema = store.schema();
     const types = schema.types;
@@ -181,7 +177,6 @@ export function storedCalendarDefs(store: UserStore): Stored[] {
         s.make = { event: m.event, ...(inBranch(m.task) ? { task: m.task } : {}) };
       const sp = parseSplit(x.split);
       if (sp) s.split = sp;
-      if (typeof x.colorBy === "string" && x.colorBy) s.colorBy = x.colorBy;
       return [s];
     });
   } catch {
@@ -206,45 +201,6 @@ const isEmptyValue = (v: unknown) =>
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-/** A record's title, as Boni shows it. */
-const titleOf = (schema: Schema, e: Entity) =>
-  String(e.values[schema.types[e.type]?.titleField ?? ""] ?? e.id);
-
-/**
- * «Colorear por» read (D-25): the field a definition colours its records by, with every value it may hold (the
- * list's options, or the records the relation points to), each with the colour kept for it in the definition
- * (`valueColors`, by the value's key) or the palette's by its place. The rows carry the value by its name under
- * `prop` (`fieldsOf`). Nothing when the field is not one the collection could be split by.
- */
-function colorByOf(
-  store: UserStore,
-  schema: Schema,
-  s: Stored,
-  def: CollectionDef,
-): CalendarColorBy | undefined {
-  if (!s.colorBy) return undefined;
-  const field = schema.types[s.type]?.fields.find((f) => f.id === s.colorBy);
-  if (!field || !splitChoices(schema, s.type).some((c) => c.id === field.id)) return undefined;
-  const all: { key: string; name: string }[] =
-    field.type === "select"
-      ? (field.options ?? []).map((o) => ({ key: o.id, name: o.name }))
-      : store
-          .list(field.relation?.target as string)
-          .map((e) => ({ key: e.entity.id, name: titleOf(schema, e.entity) }));
-  const kept = isObj(s.raw.valueColors) ? (s.raw.valueColors as Record<string, string>) : {};
-  const palette = Object.values(PALETTE);
-  return {
-    field: field.id,
-    name: field.name,
-    prop: def.columns.find((c) => c.name === field.name)?.id ?? field.name,
-    values: all.map((v, i) => ({
-      key: v.key,
-      name: v.name,
-      color: kept[v.key] ?? palette[i % palette.length] ?? def.color,
-    })),
-  };
-}
-
 /**
  * A split definition read as calendars (D-24; Juan, 2026-11-02): at the top, one per value of the field (every
  * option of a list, or every record the relation may point to, so a new value shows up by itself); a value split
@@ -263,7 +219,6 @@ function expandNode(
   conds: Where[],
   path: PathNode[],
   depth: number,
-  colorBy?: CalendarColorBy,
 ): Placed[] {
   const t = schema.types[s.type];
   const choices = splitChoices(schema, s.type);
@@ -271,6 +226,7 @@ function expandNode(
     choices.some((c) => c.id === id) && !conds.some((w) => w.field === id);
   const field = t?.fields.find((f) => f.id === node.field && usable(f.id));
   if (!field) return [];
+  const titleOf = (e: Entity) => String(e.values[schema.types[e.type]?.titleField ?? ""] ?? e.id);
   const records = store
     .list(s.type, { deep: true })
     .filter((e) => conds.every((w) => matches(e.entity, w)));
@@ -279,7 +235,7 @@ function expandNode(
       ? (field.options ?? []).map((o) => ({ key: o.id, name: o.name }))
       : store
           .list(field.relation?.target as string)
-          .map((e) => ({ key: e.entity.id, name: titleOf(schema, e.entity) }));
+          .map((e) => ({ key: e.entity.id, name: titleOf(e.entity) }));
   // At the top every value; a value split again shows the values found among its own records.
   const present = new Set(
     records.flatMap((e) => {
@@ -300,18 +256,7 @@ function expandNode(
     const next = [...conds, w];
     const child = orEmpty ? undefined : node.by?.[v.key];
     if (child && t?.fields.some((f) => f.id === child.field && usable(f.id) && f.id !== field.id))
-      return expandNode(
-        store,
-        schema,
-        s,
-        def,
-        child,
-        { id, name: v.name },
-        next,
-        below,
-        depth + 1,
-        colorBy,
-      );
+      return expandNode(store, schema, s, def, child, { id, name: v.name }, next, below, depth + 1);
     const key = next.map((c) => c.value).join("/");
     const { colors: _c, ...rest } = s.raw;
     const raw: Record<string, unknown> = {
@@ -338,7 +283,6 @@ function expandNode(
       group: here,
       path: below,
       split: { field: null, choices: choices.filter((c) => !next.some((x) => x.field === c.id)) },
-      ...(colorBy ? { colorBy } : {}),
     };
     return [p];
   };
@@ -357,7 +301,6 @@ export function calendarDefs(store: UserStore): Placed[] {
     const r = parseCollectionDef(s.raw);
     if (!r.ok) return [];
     const choices = splitChoices(schema, s.type);
-    const colorBy = s.where ? undefined : colorByOf(store, schema, s, r.def);
     if (s.split && choices.some((c) => c.id === s.split?.field))
       return expandNode(
         store,
@@ -369,7 +312,6 @@ export function calendarDefs(store: UserStore): Placed[] {
         [],
         [],
         0,
-        colorBy,
       );
     const placed: Placed = {
       type: s.type,
@@ -382,7 +324,6 @@ export function calendarDefs(store: UserStore): Placed[] {
       ...withRoles(schema, s.type, r.def, s.make?.task ?? s.type),
       // A calendar picked by a field (the first restructurings) is not split again.
       ...(s.where ? {} : { split: { field: null, choices } }),
-      ...(colorBy ? { colorBy } : {}),
     };
     return [placed];
   });
@@ -638,64 +579,12 @@ export function setSplit(
   return "ok";
 }
 
-/** The kept definition a calendar (whole, one a split made, or a node's id) belongs to, and its place. */
-function definitionOf(store: UserStore, id: string): { defs: Stored[]; i: number } | null {
-  const read = calendarDefs(store);
-  const p = read.find((x) => x.def.id === id) ?? read.find((x) => x.path?.some((n) => n.id === id));
-  if (!p) return null;
-  const rootId = p.path?.[0]?.id ?? p.def.id;
-  const defs = storedCalendarDefs(store);
-  const i = defs.findIndex((s) => s.raw.id === rootId && !s.where);
-  return i < 0 ? null : { defs, i };
-}
-
-/**
- * «Colorear por» (D-25): the definition a calendar belongs to colours its records by a field (one the collection
- * could be split by), or by its calendar again (null). "bad-field": not such a field.
- */
-export function setColorBy(
-  store: UserStore,
-  id: string,
-  field: string | null,
-): "ok" | "no-such-calendar" | "bad-field" {
-  const found = definitionOf(store, id);
-  if (!found) return "no-such-calendar";
-  const at = found.defs[found.i] as Stored;
-  if (field !== null && !splitChoices(store.schema(), at.type).some((c) => c.id === field))
-    return "bad-field";
-  const { colorBy: _old, ...rest } = at;
-  const next: Stored = field ? { ...rest, colorBy: field } : rest;
-  saveCalendarDefs(
-    store,
-    found.defs.map((s, k) => (k === found.i ? next : s)),
-  );
-  return "ok";
-}
-
 /**
  * A calendar's colour, kept in its definition: one a split made, by its values (`colors`, joined with "/"); a whole
- * one, as its own; with `value` (a value's key of the field it colours by, D-25), that value's (`valueColors`).
+ * one, as its own.
  */
-export function setCalendarColor(
-  store: UserStore,
-  calendarId: string,
-  color: string,
-  value?: string,
-): boolean {
+export function setCalendarColor(store: UserStore, calendarId: string, color: string): boolean {
   if (!/^#[0-9a-fA-F]{6}$/.test(color)) return false;
-  if (value !== undefined) {
-    if (!value || value.length > 100) return false;
-    const found = definitionOf(store, calendarId);
-    if (!found) return false;
-    const at = found.defs[found.i] as Stored;
-    const kept = isObj(at.raw.valueColors) ? at.raw.valueColors : {};
-    const raw = { ...at.raw, valueColors: { ...kept, [value]: color } };
-    saveCalendarDefs(
-      store,
-      found.defs.map((s, k) => (k === found.i ? { ...at, raw } : s)),
-    );
-    return true;
-  }
   const placed = calendarDefs(store).find((p) => p.def.id === calendarId);
   if (!placed) return false;
   const groupId = placed.path?.[0]?.id ?? placed.def.id;
@@ -726,7 +615,6 @@ export function saveCalendarDefs(store: UserStore, list: readonly Stored[]): voi
         ...(p.where ? { where: p.where } : {}),
         ...(p.make ? { make: p.make } : {}),
         ...(p.split ? { split: p.split } : {}),
-        ...(p.colorBy ? { colorBy: p.colorBy } : {}),
       })),
     ),
   );
@@ -758,12 +646,7 @@ export interface CalendarSource {
     calendarId: string,
     field: string | null,
   ): Promise<"ok" | "no-such-calendar" | "bad-field">;
-  setColor(calendarId: string, color: string, value?: string): Promise<boolean>;
-  /** «Colorear por» (D-25): the definition coloured by a field, or by its calendar again. */
-  setColorBy(
-    calendarId: string,
-    field: string | null,
-  ): Promise<"ok" | "no-such-calendar" | "bad-field">;
+  setColor(calendarId: string, color: string): Promise<boolean>;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -1370,20 +1253,10 @@ export class StoreCalendar implements CalendarSource {
     return r;
   }
 
-  async setColor(calendarId: string, color: string, value?: string): Promise<boolean> {
+  async setColor(calendarId: string, color: string): Promise<boolean> {
     if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
-    const r = setCalendarColor(this.store, calendarId, color, value);
+    const r = setCalendarColor(this.store, calendarId, color);
     if (r) this.poll();
-    return r;
-  }
-
-  async setColorBy(
-    calendarId: string,
-    field: string | null,
-  ): Promise<"ok" | "no-such-calendar" | "bad-field"> {
-    if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
-    const r = setColorBy(this.store, calendarId, field);
-    if (r === "ok") this.poll();
     return r;
   }
 

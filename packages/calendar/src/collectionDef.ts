@@ -44,8 +44,6 @@ export interface CollectionDef {
   path?: CalendarGroup[];
   /** How the collection is split, and the fields it could be split by (set by the server, never written by hand). */
   split?: CalendarSplit;
-  /** «Colorear por» (D-25): the field whose value colours each event, with a colour per value (set by the server). */
-  colorBy?: CalendarColorBy;
 }
 
 /** The definition a split calendar belongs to: its id and name, and the field (its id) whose values split it. */
@@ -59,17 +57,6 @@ export interface CalendarGroup {
 export interface CalendarSplit {
   field: string | null;
   choices: { id: string; name: string }[];
-}
-/**
- * A calendar coloured by a field (D-25): each event takes the colour of its value, the calendar keeps its own for
- * the rest. `prop` is the key the rows carry the value under (an option's or a related record's name); `values` are
- * every value the field may hold, each with its key, its name and its colour.
- */
-export interface CalendarColorBy {
-  field: string;
-  name: string;
-  prop: string;
-  values: { key: string; name: string; color: string }[];
 }
 
 export type DefResult = { ok: true; def: CollectionDef } | { ok: false; errors: string[] };
@@ -288,7 +275,6 @@ const viewOf = (def: CollectionDef, readOnly: boolean): CalendarView => ({
   ...(def.group ? { group: def.group } : {}),
   ...(def.path ? { path: def.path } : {}),
   ...(def.split ? { split: def.split } : {}),
-  ...(def.colorBy ? { colorBy: def.colorBy } : {}),
 });
 
 /** Collections, calendar views and sidebar accounts for a set of definitions. */
