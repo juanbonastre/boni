@@ -278,6 +278,28 @@ describe("the audit", () => {
   });
 });
 
+describe("the storage figures (task 43)", () => {
+  it("are bytes, read from each row's header (a text is never read whole to be measured); the history by collection", () => {
+    const { s } = fresh();
+    s.applySchema(
+      { op: "create_type", type: { ...nota(), id: "t_otra", key: "otra", name: "Otra" } },
+      { actor: "system" },
+    );
+    // The same note in two collections, but «ñ» takes two bytes where «n» takes one.
+    s.create("t_nota", { f_titulo: t("nnnn") }, me);
+    const otra = s.create("t_otra", { f_titulo: t("ññññ") }, me);
+    const sizes = () => new Map(s.audit.storage().types.map((x) => [x.type, x]));
+    const before = sizes();
+    expect((before.get("t_otra")?.bytes ?? 0) - (before.get("t_nota")?.bytes ?? 0)).toBe(4);
+    // A change is history of its own collection only.
+    const was = before.get("t_otra")?.history ?? 0;
+    s.update(otra.entity.id, { f_estado: t("hecha") }, me);
+    const after = sizes();
+    expect(after.get("t_otra")?.history).toBeGreaterThan(was);
+    expect(after.get("t_nota")?.history).toBe(before.get("t_nota")?.history);
+  });
+});
+
 describe("blame", () => {
   it("gives each line to whoever left it as it is", () => {
     const v = (text: string | null, by: string, seq: number) => ({ text, by, at: seq, seq });

@@ -5,6 +5,17 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (ninth) — server 0.8.85
+
+Needs: the server only (0.8.85, to deploy). Task 43 again, from the log of 0.8.83's last hour.
+
+- **«Todas las páginas» no longer stops the server for ten seconds.** Its storage figures measured every text
+  whole (the models' prompts, each change's values): 9.6 s on the NAS, with nothing else answered meanwhile. Now
+  they are taken from each row's header, in bytes (34 ms on the laptop with a 300 MB store, where it took 150 to
+  230 ms reading them). (#273, task 43)
+- **The watchdog of 0.8.84 starts for sure.** When the server was busy as it started, the thread that finds out
+  what holds it could end before it began to watch; the log then never said what held the server. (#273, task 43)
+
 ## 2026-11-03 (eighth) — server 0.8.84
 
 Needs: the server only (0.8.84, to deploy). Task 43, from what the log said before 0.8.83 went out.

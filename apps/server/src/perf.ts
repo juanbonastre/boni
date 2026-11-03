@@ -160,7 +160,7 @@ export function holdWatcher(failed: (why: string) => void = () => {}): {
       // A small thread: it only keeps the profile of one hold at a time (the container has 384 MB).
       resourceLimits: { maxOldGenerationSizeMb: 32 },
     });
-    // Never unref'd: from Node 24.22 an unref'd worker's session to this thread gets no answer (so stop() ends it).
+    // Never unref'd (stop() ends it).
     let longest: Hold | null = null;
     let watching = () => {};
     const ready = new Promise<void>((ok) => {
@@ -204,10 +204,12 @@ const session = new Session();
 session.connectToMainThread();
 const post = (method, params) =>
   new Promise((ok, no) => session.post(method, params ?? {}, (e, r) => (e ? no(e) : ok(r))));
-let last = Atomics.load(beat, 0);
-let since = Date.now();
+let enabled = false;
+let last = 0;
+let since = 0;
 let profiling = false;
 const watch = () => {
+  if (!enabled) return;
   const now = Atomics.load(beat, 0);
   if (now === last) {
     if (!profiling && Date.now() - since >= after) {
@@ -222,10 +224,14 @@ const watch = () => {
   profiling = false;
   post("Profiler.stop").then((r) => parentPort.postMessage(r.profile), () => {});
 };
-// Both asked at once: from Node 24.22, a message posted from an answer's callback gets no answer.
+// The watch first: it also keeps this thread alive while the first answers come (with nothing to do, a thread ends,
+// and a busy server answers late).
+setInterval(watch, 20);
 Promise.all([post("Profiler.enable"), post("Profiler.setSamplingInterval", { interval: 10000 })]).then(
   () => {
-    setInterval(watch, 20);
+    last = Atomics.load(beat, 0);
+    since = Date.now();
+    enabled = true;
     parentPort.postMessage("watching");
   },
   (e) => parentPort.postMessage({ failed: String(e && e.message ? e.message : e) }),
