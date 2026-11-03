@@ -10,7 +10,7 @@ import {
   startOfWeek,
   weekdayNames,
 } from "@boni/calendar";
-import { Repeat } from "lucide-react";
+import { Check, Repeat } from "lucide-react";
 import {
   type CSSProperties,
   memo,
@@ -319,9 +319,14 @@ const WeekRow = memo(function WeekRow(p: {
                   type="button"
                   key={`${seg.eventId}:${day}`}
                   data-id={ev.id}
-                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.id === p.newId && !ev.title ? "draft" : ""} ${ev.done ? "done" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
+                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.id === p.newId && !ev.title ? "draft" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
                   style={{ "--c": p.calMap.get(ev.calendarId)?.color ?? "#888" } as CSSProperties}
                 >
+                  {ev.isTask && (
+                    <span className="ev-check" data-check={ev.id}>
+                      {ev.done && <Check size={8} strokeWidth={3.5} />}
+                    </span>
+                  )}
                   <span className="mchip-time">{formatMinute(seg.start, p.h24)}</span>
                   <span className="mchip-title">{ev.title || t("event.untitled")}</span>
                   {ev.recurrence && <Repeat size={10} className="rep" />}
@@ -352,7 +357,7 @@ const WeekRow = memo(function WeekRow(p: {
             type="button"
             key={b.id}
             data-id={b.id}
-            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.id === p.newId && !ev.title ? "draft" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
+            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.id === p.newId && !ev.title ? "draft" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""}`}
             style={
               {
                 "--c": p.calMap.get(ev.calendarId)?.color ?? "#888",
@@ -365,6 +370,11 @@ const WeekRow = memo(function WeekRow(p: {
           >
             {!b.clippedStart && (
               <span className="bar-handle start" data-bar-edge="start" data-bar-id={b.id} />
+            )}
+            {ev.isTask && (
+              <span className="ev-check" data-check={ev.id}>
+                {ev.done && <Check size={9} strokeWidth={3.5} />}
+              </span>
             )}
             <span className="bar-title">{ev.title || t("event.untitled")}</span>
             {ev.recurrence && <Repeat size={10} className="rep" />}

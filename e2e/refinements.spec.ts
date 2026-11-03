@@ -143,6 +143,35 @@ test("the detail offers Event / Task and the done checkbox, in the popover and i
   await expect(page.locator(".ev.task", { hasText: "Dentista" })).toHaveCount(0);
 });
 
+test("a task of the whole day has its box, in the week's all-day row and in the month; a click marks it (task 44)", async ({
+  page,
+}) => {
+  await open(page);
+  const bar = page.locator(".allday-row .bar", { hasText: "Cumpleaños de Eva" });
+  await bar.click();
+  await page.locator(".popover").getByRole("radio", { name: "Tarea" }).click();
+  await page.keyboard.press("Escape");
+  await expect(bar).toHaveClass(/\btask\b/);
+  const check = bar.locator("[data-check]");
+  await expect(check).toBeVisible();
+  await check.click();
+  await expect(bar).toHaveClass(/\bdone\b/);
+  await page.screenshot({ path: "e2e/screenshots/allday-task.png" });
+  // The month: the same box on its bar, and a click takes the mark away again.
+  await page.keyboard.press("m");
+  const mbar = page.locator(".week-row .bar", { hasText: "Cumpleaños de Eva" });
+  await expect(mbar.locator("[data-check]")).toBeVisible();
+  await mbar.locator("[data-check]").click();
+  await expect(mbar).not.toHaveClass(/\bdone\b/);
+  // A task with a time shows its box in the month too, instead of the dot.
+  const dentista = page.locator(".mchip", { hasText: "Dentista" }).first();
+  await dentista.click();
+  await page.locator(".popover").getByRole("radio", { name: "Tarea" }).click();
+  await page.keyboard.press("Escape");
+  await expect(dentista.locator("[data-check]")).toBeVisible();
+  await page.screenshot({ path: "e2e/screenshots/month-tasks.png" });
+});
+
 test("a newly created event can be made a task right away", async ({ page }) => {
   await open(page);
   const cols = await box(page.locator(".cols-viewport"));

@@ -128,7 +128,9 @@ slate `#94a3b8`.
   changes that note; changing the repetition rule replaces the later notes with the ones the new rule makes.
 - **Recurrence:** editing, moving or deleting an occurrence asks "Only this event / This and following events / All
   events" (cancel is always possible). Changing the repetition rule itself applies to the whole series.
-- **Tasks:** an event can be switched to Task in the detail or the context menu; tasks show a checkbox in the card. A
+- **Tasks:** an event can be switched to Task in the detail or the context menu; tasks show a checkbox in the card,
+  also a task of the whole day (its bar in the week's all-day row and in the month) and a month chip, where the box
+  takes the place of the colour dot; a click on the box marks it done or not (task 44). A
   calendar offers this only if its view maps a task column: a checkbox column (empty = event, unchecked = open task,
   checked = done) or a status column with chosen done states. Calendars without one show no Event / Task controls.
 - **Read-only calendars** can be selected but not edited or dragged: their detail shows every field disabled, and

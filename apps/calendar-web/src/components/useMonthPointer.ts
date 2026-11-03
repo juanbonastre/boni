@@ -81,6 +81,14 @@ export function useMonthPointer() {
     const target = e.target as HTMLElement;
     if (target.closest(".mnum, .more")) return; // plain buttons: let their own click run
     const app = useApp.getState();
+    // A task's box marks it done or not, as in the week (task 44).
+    const check = target.closest<HTMLElement>("[data-check]");
+    if (check?.dataset.check) {
+      const ev = app.getEvent(check.dataset.check);
+      if (ev) app.editEvents([ev.id], { done: !ev.done });
+      e.stopPropagation();
+      return;
+    }
 
     const edge = target.closest<HTMLElement>("[data-bar-edge]");
     if (edge?.dataset.barId) {
