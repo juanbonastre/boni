@@ -190,7 +190,9 @@ any interface is the vault note `wiki/temas/diseno-de-interfaces.md`. Here, what
   - Easing `var(--ease-out)` (`cubic-bezier(0.23, 1, 0.32, 1)`) for what enters, leaves or answers a press; never
     ease-in. 100-160 ms for a press, 150-250 ms for a menu, at most 300 ms for a panel; exits faster than entries.
   - Never from `scale(0)` (from 0.95 with opacity); menus grow from their trigger; transitions, not keyframes, for
-    anything that can be interrupted; only `transform` and `opacity`; never `transition: all`.
+    anything that can be interrupted; only `transform` and `opacity`; never `transition: all`. An entry animation
+    fills **backwards**, never forwards or both: a transform kept after it makes the element the containing block of
+    the fixed menus inside, which then open far from the pointer (2026-11-03, task 39: 252 px off in a table).
   - Buttons (`.btn`, `.pill`, the ↗ of a list line) answer a pointer press with `scale(0.97)` in 120 ms.
   - **What enters, rises** (Juan, 2026-11-02: «animaciones agradables, como Apple»): a request, each block of an
     answer, a question card, the side panel (12 px from the right) and a toast come into place from 6 px below with
