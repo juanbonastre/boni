@@ -1398,7 +1398,38 @@ export class Mails {
     return this.targetsFor(store, s.collections);
   }
 
+  /**
+   * The collections a mail may propose into as last worked out, per store (task 43: each check of the mailbox read
+   * every record of each, 0.66 s on the NAS): the same while no record they read changes (theirs and those their
+   * relations name), nor the schema, the levels or the rules. Callers get copies (`planContext` marks them).
+   */
+  private targetMemo = new WeakMap<
+    UserStore,
+    { key: string; version: number; watch: Set<string>; targets: Target[] }
+  >();
+
   private targetsFor(store: UserStore, ids: readonly string[]): Target[] {
+    const key = JSON.stringify([ids, store.aiAccess(), store.aiRules()]);
+    const version = store.version();
+    const was = this.targetMemo.get(store);
+    if (was && was.key === key && was.version !== version) {
+      const ch = store.changesSince(was.version);
+      if (!ch.schemaChanged && !ch.entities.some((e) => was.watch.has(e.entity.type)))
+        was.version = version;
+    }
+    if (was && was.key === key && was.version === version)
+      return was.targets.map((t) => ({ ...t }));
+    const schema = store.schema().types;
+    const watch = new Set<string>(ids);
+    for (const id of ids)
+      for (const f of schema[id]?.fields ?? [])
+        if (f.type === "relation" && f.relation?.target) watch.add(f.relation.target);
+    const targets = this.makeTargets(store, ids);
+    this.targetMemo.set(store, { key, version, watch, targets });
+    return targets.map((t) => ({ ...t }));
+  }
+
+  private makeTargets(store: UserStore, ids: readonly string[]): Target[] {
     // What the models may see of each: its level and its rules (a closed row is never an example).
     const ro = readStore(store);
     const levels = store.aiAccess();

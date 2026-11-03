@@ -1,6 +1,7 @@
 import { label } from "@boni/entities";
 import { openUserStore, type ProposalRow, type UserStore } from "@boni/store";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setSplit } from "./calendarStore.ts";
 import { ghostRows, listRows } from "./data.ts";
 import { freeSlot, inboxCard, judgeTime, TIME_AREA, timeOnAccept } from "./inboxCard.ts";
 import { seed } from "./seed.test-util.ts";
@@ -163,6 +164,51 @@ describe("the inbox's card for a proposal", () => {
       ["2026-10-29", ["Tutoría"]],
       ["2026-10-30", []],
     ]);
+  });
+
+  it("a split calendar's day holds each record once, its branch's too, and is kept while nothing changes (task 43)", () => {
+    const store = openUserStore(":memory:");
+    cleanups.push(() => store.close());
+    seed(
+      store,
+      [
+        {
+          key: "docencia",
+          name: "Docencia",
+          folder: "agenda/docencia/",
+          fields: { tipo: { type: "select", options: ["clase", "tutoría"] } },
+          calendar: RAW,
+        },
+        { key: "evento", name: "Evento", folder: "agenda/docencia/eventos/", parent: "docencia" },
+      ],
+      {
+        "agenda/docencia/2026-10-28 Clase.md":
+          '---\ntitle: "Clase de ejemplo"\ndate: "2026-10-28"\nstartTime: "10:00"\ntipo: clase\n---\n',
+        "agenda/docencia/eventos/2026-10-29 Tutoría.md":
+          '---\ntitle: "Tutoría"\ndate: "2026-10-29"\nstartTime: "09:00"\ntipo: tutoría\n---\n',
+      },
+    );
+    const type = Object.values(store.schema().types).find((t) => t.key === "docencia")
+      ?.id as string;
+    const tipo = store.schema().types[type]?.fields.find((f) => f.name === "tipo")?.id as string;
+    expect(setSplit(store, "docencia", tipo)).toBe("ok");
+    proposalFromMail(store, "p1", "r1", "coordinacion@example.edu");
+    const card = () =>
+      inboxCard(
+        store,
+        store.journal.proposal("p1") as NonNullable<ReturnType<typeof store.journal.proposal>>,
+        { mailAccount: "ejemplo@example.edu" },
+      );
+    // Two calendars (one per «tipo»), each record once, the Evento's (a daughter) too.
+    expect(card().context.map((d) => [d.day, d.items.map((i) => i.title)])).toEqual([
+      ["2026-10-28", ["Clase de ejemplo"]],
+      ["2026-10-29", ["Tutoría"]],
+      ["2026-10-30", []],
+    ]);
+    const list = vi.spyOn(store, "list");
+    card();
+    expect(list.mock.calls.length).toBe(0);
+    list.mockRestore();
   });
 
   it("a reason the mail does not say in those words is shown, but not as a quote", () => {

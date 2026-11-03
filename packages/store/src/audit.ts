@@ -131,6 +131,21 @@ export interface Audit {
     to: number,
     dayOf?: (ms: number) => string,
   ): { day: string; by: By; type: string; reads: number; writes: number }[];
+  /**
+   * The same counts per quarter of an hour (`q` × 15 minutes, an instant), by actor and type, of the actions after
+   * `action` and the operations after `op` only, from `from` on; and the last action's and operation's numbers, to
+   * ask from next time. A caller keeps a running sum by adding what came since (task 43: counting thirty days of
+   * reads each time held the NAS for seconds).
+   */
+  activitySince(
+    action: number,
+    op: number,
+    from: number,
+  ): {
+    action: number;
+    op: number;
+    rows: { q: number; by: By; type: string; reads: number; writes: number }[];
+  };
   /** Per type and actor: how many entities were read and how many changed. */
   byType(from: number, to: number): { type: string; by: By; reads: number; writes: number }[];
   /** Changes in a period by kind (create, update, delete, restore) and how many undid another. */
@@ -143,6 +158,37 @@ const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 /** A quarter of an hour, in ms: the step of every time zone's offset. */
 const QUARTER = 15 * 60_000;
 const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * Counts per quarter folded into days by `dayOf`, asked once per quarter (task 43: asked per row, a zone's day for
+ * each of 222,000 rows took half the time), sorted by day, actor and type.
+ */
+export function foldDays(
+  rows: { q: number; by: By; type: string; reads: number; writes: number }[],
+  dayOf: (ms: number) => string,
+): { day: string; by: By; type: string; reads: number; writes: number }[] {
+  const days = new Map<number, string>();
+  const out = new Map<
+    string,
+    { day: string; by: By; type: string; reads: number; writes: number }
+  >();
+  for (const r of rows) {
+    let day = days.get(r.q);
+    if (day === undefined) {
+      day = dayOf(r.q * QUARTER);
+      days.set(r.q, day);
+    }
+    const key = `${day}|${r.by}|${r.type}`;
+    const o = out.get(key) ?? { day, by: r.by, type: r.type, reads: 0, writes: 0 };
+    o.reads += r.reads;
+    o.writes += r.writes;
+    out.set(key, o);
+  }
+  return [...out.values()].sort(
+    (a, b) =>
+      a.day.localeCompare(b.day) || a.by.localeCompare(b.by) || a.type.localeCompare(b.type),
+  );
+}
 const j = (v: unknown) => (v === undefined || v === null ? null : JSON.stringify(v));
 const p = (s: unknown) => (typeof s === "string" ? JSON.parse(s) : null);
 
@@ -269,6 +315,48 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     result: p(r.result),
     hash: r.hash as string,
   });
+
+  /** Reads and writes per quarter, actor and type in [from, to), of the actions and operations after the numbers given. */
+  const activityRows = (
+    from: number,
+    to: number,
+    afterAction: number,
+    afterOp: number,
+    upToAction = Number.MAX_SAFE_INTEGER,
+    upToOp = Number.MAX_SAFE_INTEGER,
+  ) => {
+    const quarter = (col: string) => `(${col} / ${QUARTER})`;
+    const rows: { q: number; by: By; type: string; reads: number; writes: number }[] = [];
+    for (const r of db
+      .prepare(
+        `SELECT ${quarter("x.at")} AS q, x.by, a.type, count(*) AS n FROM access a JOIN actions x ON x.seq = a.action
+         WHERE x.seq > ? AND x.seq <= ? AND x.at >= ? AND x.at < ? AND x.decision = 'allow' GROUP BY q, x.by, a.type`,
+      )
+      .all(afterAction, upToAction, from, to))
+      rows.push({
+        q: Number(r.q),
+        by: r.by as string,
+        type: r.type as string,
+        reads: Number(r.n),
+        writes: 0,
+      });
+    for (const r of db
+      .prepare(
+        `SELECT ${quarter("o.at")} AS q, e.type,
+           coalesce(o.by, CASE o.actor WHEN 'user' THEN 'user:' || coalesce(o.device, '?') ELSE o.actor END) AS who,
+           count(*) AS n FROM ops o JOIN entities e ON e.id = o.target
+         WHERE o.seq > ? AND o.seq <= ? AND o.at >= ? AND o.at < ? AND o.kind != 'schema' GROUP BY q, e.type, who`,
+      )
+      .all(afterOp, upToOp, from, to))
+      rows.push({
+        q: Number(r.q),
+        by: r.who as string,
+        type: r.type as string,
+        reads: 0,
+        writes: Number(r.n),
+      });
+    return rows;
+  };
 
   return {
     record: (a) =>
@@ -420,37 +508,20 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
     activityByType: (from, to, dayOf = utcDay) => {
       // Counted per quarter of an hour (every zone's offset is a whole number of them), then each quarter to its day
       // in the account's zone: an action at 00:30 in Madrid on the 1st is the 1st's, not the 31st's (UTC).
-      const quarter = (col: string) => `(${col} / ${QUARTER})`;
-      const rows = new Map<
-        string,
-        { day: string; by: By; type: string; reads: number; writes: number }
-      >();
-      const add = (d: string, by: By, type: string, k: "reads" | "writes", n: number) => {
-        const key = `${d}|${by}|${type}`;
-        const r = rows.get(key) ?? { day: d, by, type, reads: 0, writes: 0 };
-        r[k] += n;
-        rows.set(key, r);
-      };
-      for (const r of db
-        .prepare(
-          `SELECT ${quarter("x.at")} AS q, x.by, a.type, count(*) AS n FROM access a JOIN actions x ON x.seq = a.action
-           WHERE x.at >= ? AND x.at < ? AND x.decision = 'allow' GROUP BY q, x.by, a.type`,
-        )
-        .all(from, to))
-        add(dayOf(Number(r.q) * QUARTER), r.by as string, r.type as string, "reads", Number(r.n));
-      for (const r of db
-        .prepare(
-          `SELECT ${quarter("o.at")} AS q, e.type,
-             coalesce(o.by, CASE o.actor WHEN 'user' THEN 'user:' || coalesce(o.device, '?') ELSE o.actor END) AS who,
-             count(*) AS n FROM ops o JOIN entities e ON e.id = o.target
-           WHERE o.at >= ? AND o.at < ? AND o.kind != 'schema' GROUP BY q, e.type, who`,
-        )
-        .all(from, to))
-        add(dayOf(Number(r.q) * QUARTER), r.who as string, r.type as string, "writes", Number(r.n));
-      return [...rows.values()].sort(
-        (a, b) =>
-          a.day.localeCompare(b.day) || a.by.localeCompare(b.by) || a.type.localeCompare(b.type),
+      return foldDays(activityRows(from, to, 0, 0), dayOf);
+    },
+    activitySince: (action, op, from) => {
+      const lastAction = Number(
+        (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM actions").get() as { n: number }).n,
       );
+      const lastOp = Number(
+        (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM ops").get() as { n: number }).n,
+      );
+      return {
+        action: lastAction,
+        op: lastOp,
+        rows: activityRows(from, Number.MAX_SAFE_INTEGER, action, op, lastAction, lastOp),
+      };
     },
     byType: (from, to) => {
       const rows = new Map<string, { type: string; by: By; reads: number; writes: number }>();

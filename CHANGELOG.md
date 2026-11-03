@@ -5,6 +5,20 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (twelfth) — server 0.8.88
+
+Needs: the server only (0.8.88, to deploy). Task 43: the three holds the log of 0.8.86 named.
+
+- **Boni's own records open without stopping the server.** «Actividad de Boni» counted thirty days of reads each
+  time it was made, and it was made again whenever anything was read: up to 8 s on the NAS with everything else
+  waiting. Now the count is kept and only what was recorded since is added. (#279)
+- **Checking the mail no longer reads your collections each time.** The collections a mail may propose into (their
+  latest titles, the field a due day goes to, their lists) were worked out on every check, reading all their
+  records; now they are kept while none of their records changes. (#279)
+- **The Bandeja's cards show each event of the day once.** The day around a proposal read the Agenda once per area
+  of a split calendar, and showed each event once per area; the events of its daughter collections were missing.
+  Now each collection is read once, each record shown once, and the result kept while nothing changes. (#279)
+
 ## 2026-11-03 (eleventh) — server 0.8.87
 
 Needs: the server only (0.8.87, to deploy). Task 43: the three holds the log of 0.8.85 and 0.8.86 named.
