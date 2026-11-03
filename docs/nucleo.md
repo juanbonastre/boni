@@ -517,7 +517,9 @@ arquitectura de módulos: una lectura genérica a la que se suman "buscar tareas
 - **Ejemplos:** casos que Juan decidió (un correo → lo que él quiso). El texto del correo del ejemplo va **entre sus
   propias marcas** (sigue siendo de fuera); lo que Juan quiso, fuera.
 - **Política (amplía 7.4 y A14):** a un lector de contenido externo se le puede pasar la guía de la cuenta además de
-  las opciones, y nada más de Juan. El intérprete lo comprueba por la etiqueta: el valor tiene que venir de la guía
+  las opciones, y nada más de Juan. Desde el 2026-11-03 (M2 de `docs/correo.md`) no solo a `read_message`: también a
+  los lectores que leen correo en la conversación (`summarize`, `summarize_each`, `label_each`, `answer_about`,
+  `extract_tasks`), y la pone el código cuando la entrada viene del correo, nunca el plan. El intérprete lo comprueba por la etiqueta: el valor tiene que venir de la guía
   (fuente `guide`), no de datos que el planificador haya leído; nada `sensitive`. La salida une la etiqueta de la guía
   (`personal`), así que P3 sigue impidiendo que salga por la red. Un plan del modelo no puede pasar la guía.
 

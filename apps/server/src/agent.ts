@@ -15,6 +15,7 @@ import {
   type ToolRegistry,
   turnViews,
   updateConversation,
+  type Val,
 } from "@boni/agent";
 import { openUserStore, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
@@ -106,6 +107,8 @@ export class AgentHost {
   mailAccountOf: ((account: number) => string | null) | null = null;
   /** The collection an account's mail is kept in (mail.ts), when it has one: read only in the apps (D-22). */
   mailTypeOf: ((account: number) => string | null) | null = null;
+  /** The account's reading guide for mail as the readers get it (mail.ts `guideOf`), or null (task 23). */
+  readingGuideOf: ((account: number) => Val | null) | null = null;
   /** The account's own models (models.ts, «Modelos»); null or a null answer: the server's. */
   providersFor: ((account: number) => Providers | null) | null = null;
   /** The account spent its month's budget (models.ts): background work calls no model. */
@@ -163,6 +166,8 @@ export class AgentHost {
         ...(p.decider ? { decider: p.decider } : {}),
         ...(p.reviewer ? { reviewer: p.reviewer } : {}),
         overBudget: () => this.overBudget?.(account) ?? false,
+        // A reader of mail in the conversation reads with Juan's guide, as the background reading does.
+        readingGuide: () => this.readingGuideOf?.(account) ?? null,
         ...(this.o.tz ? { tz: this.o.tz } : {}),
         ...(this.o.now ? { now: this.o.now } : {}),
         // To this account's devices only: the recipient is the code's (7.9).
