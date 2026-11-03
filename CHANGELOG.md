@@ -5,6 +5,27 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (seventh) — server 0.8.83 · Boni desktop 0.4.64 · Boni Calendar desktop 0.8.18
+
+Needs: the server (0.8.83, to deploy: a collection's columns and its name change through it), Boni desktop 0.4.64
+(`release/boni_0.4.64_amd64.deb`) and Boni Calendar desktop 0.8.18
+(`release/boni-calendar-desktop_0.8.18_amd64.deb`), to install. The batch of Juan's list of the afternoon (tasks 38
+to 42), with Notion as the reference.
+
+- **Ctrl+click chooses in Boni Calendar.** With an event chosen, Ctrl+click on another adds it to the selection (or
+  takes it out); it no longer tries to open it in Boni. (#267, task 38)
+- **Menus open where the pointer is again.** A row's menu, a property's options and every small box open at the
+  pointer or under their button, not a hand's width away. (#266, task 39)
+- **A collection's columns, as Notion's.** A click on a column's name, or the right button on it, opens its menu: its
+  name written in place, its kind, a list's values, «Ocultar», «Borrar columna» with Undo; «+» at the end of the
+  head adds one. (#268, task 40)
+- **The right button, everywhere.** On a page, a collection or a note of the sidebar, on a table's row and on a card
+  of the board, the gallery or the list, it opens the same menu as its «…», where the pointer is. «Cambiar nombre»
+  renames in place pages, notes and now collections too. (#269, task 42)
+- **«Opciones» gives options.** A short list, as Notion's «⋯»: Propiedades, Filtrar, Ordenar, and Agrupar, Fecha or
+  Columnas de sistema by layout, each saying what it is now and opening its panel; the collection's notes in the
+  sidebar too. (#270, task 41)
+
 ## 2026-11-03 (sixth) — server 0.8.82 · Boni desktop 0.4.63
 
 Needs: the server (0.8.82, to deploy) and Boni desktop 0.4.63 (`release/boni_0.4.63_amd64.deb`, to install). Boni
