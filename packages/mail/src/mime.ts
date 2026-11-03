@@ -38,6 +38,9 @@ export interface Message {
   truncated: boolean;
   /** The first calendar part with an event (an invitation's .ics text), for the code that reads invitations. */
   calendar: string | null;
+  /** The thread's headers (RFC 5322): the message this one answers, and the thread's ids, oldest first. */
+  inReplyTo: string | null;
+  references: string[];
 }
 
 const MAX_TEXT = 50_000;
@@ -274,8 +277,15 @@ export function parseMessage(raw: Uint8Array, partial = false, o: { keep?: numbe
   text = text.replace(/\r\n?/g, "\n").trim();
   const cut = text.length > MAX_TEXT;
   const parsedDate = Date.parse((h("date") ?? "").replace(/\s*\([^)]*\)\s*$/, ""));
+  const ids = (v: string | undefined) =>
+    (v ?? "")
+      .split(/\s+/)
+      .map((x) => x.replace(/^<|>$/g, "").slice(0, 300))
+      .filter(Boolean);
   return {
     messageId: (h("message-id") ?? "").replace(/^<|>$/g, "").slice(0, 300),
+    inReplyTo: ids(h("in-reply-to"))[0] ?? null,
+    references: ids(h("references")).slice(0, 20),
     from: parseAddresses(h("from")),
     to: parseAddresses(h("to")),
     cc: parseAddresses(h("cc")),

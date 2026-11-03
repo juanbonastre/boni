@@ -15,6 +15,7 @@ import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
+import { inboxCard } from "./inboxCard.ts";
 import { LoginGuard } from "./limits.ts";
 import { dueField, Mails, mailPlan, optionsValue, userIn } from "./mail.ts";
 import { decisions } from "./mailReview.ts";
@@ -72,13 +73,17 @@ const mailWithFiles = (n: number, subject: string) =>
   ].join("\r\n");
 
 /** A calendar invitation as Google sends it (invented): the text, the calendar part beside it and invite.ics. */
-const invitationMail = (n: number, uid: string) => {
+const invitationMail = (
+  n: number,
+  uid: string,
+  o: { start?: string; end?: string; headers?: string[] } = {},
+) => {
   const ics = [
     "BEGIN:VCALENDAR",
     "METHOD:REQUEST",
     "BEGIN:VEVENT",
-    "DTSTART;TZID=Europe/Madrid:20261111T170000",
-    "DTEND;TZID=Europe/Madrid:20261111T180000",
+    `DTSTART;TZID=Europe/Madrid:${o.start ?? "20261111T170000"}`,
+    `DTEND;TZID=Europe/Madrid:${o.end ?? "20261111T180000"}`,
     `UID:${uid}`,
     "DESCRIPTION:Unirse a la reunión Zoom\\nhttps://example.zoom.us/j/98765432100?pwd=abc",
     "LOCATION:Sala 2.3",
@@ -92,6 +97,7 @@ const invitationMail = (n: number, uid: string) => {
     "Subject: Invitación: Reconocimiento experiencia profesional_Ejemplo mié 11 nov 2026 5pm - 6pm (CET)",
     "Date: Tue, 03 Nov 2026 10:00:00 +0100",
     `Message-ID: <m${n}@example.com>`,
+    ...(o.headers ?? []),
     'Content-Type: multipart/mixed; boundary="mix"',
     "",
     "--mix",
@@ -748,6 +754,145 @@ describe("a calendar invitation (task 45)", () => {
     expect(logged.some((l) => /already in calendar «UCAM»: not proposed$/.test(l))).toBe(true);
     expect(logged.filter((l) => /: nothing proposed$/.test(l))).toHaveLength(1);
     log.mockRestore();
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("a thread of mail (task 46)", () => {
+  it("proposes once what replies repeat; a changed hour gives way to the new proposal, which says what it was", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-thread-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    // The professor's reply quotes the meeting: the reader proposes it again, as a reader would.
+    const reader = new ScriptedProvider("fake", (req) => {
+      const content = (req.input as { content?: string }).content ?? "";
+      if (/find what it asks of the user/.test(req.system) && /Yo puedo ese día/.test(content))
+        return {
+          items: [
+            {
+              quote: "Reconocimiento experiencia profesional_Ejemplo, miércoles 11 de nov, 5pm",
+              actor: "recipient",
+              kind: "event",
+              title: "Reconocimiento experiencia profesional_Ejemplo",
+              due: "2026-11-11",
+              start: "17:00",
+              end: "18:00",
+            },
+          ],
+        };
+      return { items: [] };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_agenda",
+          key: "agenda",
+          name: "Agenda",
+          fields: [
+            { id: "t_agenda_t", key: "titulo", name: "Título", type: "text", label: own },
+            { id: "t_agenda_d", key: "fecha", name: "Fecha", type: "date", label: own },
+            { id: "t_agenda_h", key: "hora", name: "Hora de inicio", type: "time", label: own },
+            { id: "t_agenda_f", key: "hora_fin", name: "Hora de fin", type: "time", label: own },
+          ],
+          titleField: "t_agenda_t",
+          roles: { date: "t_agenda_d", time: "t_agenda_h", endTime: "t_agenda_f" },
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const logged: string[] = [];
+    const log = vi.spyOn(console, "log").mockImplementation((x: unknown) => {
+      logged.push(String(x));
+    });
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      tz: "Europe/Madrid",
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    const reply = (n: number, from: string, body: string, headers: string[]) =>
+      [
+        `From: ${from}`,
+        "To: secretaria.ejemplo@universidad.example",
+        "Cc: juan@example.com",
+        "Subject: Re: Invitación: Reconocimiento experiencia profesional_Ejemplo mié 11 nov 2026 5pm - 6pm (CET)",
+        "Date: Tue, 03 Nov 2026 11:00:00 +0100",
+        `Message-ID: <m${n}@example.com>`,
+        ...headers,
+        "Content-Type: text/plain; charset=utf-8",
+        "",
+        body,
+        "",
+      ].join("\r\n");
+    box.uidValidity = 29;
+    box.mails = new Map([
+      // The invitation, a professor's reply quoting it, and the invitation sent again an hour later.
+      [1, invitationMail(41, "thread1@google.com")],
+      [
+        2,
+        reply(42, "Pedro Ejemplo <pedro.ejemplo@universidad.example>", "Yo puedo ese día.", [
+          "In-Reply-To: <m41@example.com>",
+          "References: <m41@example.com>",
+        ]),
+      ],
+      [
+        3,
+        invitationMail(43, "thread1@google.com", {
+          start: "20261111T180000",
+          end: "20261111T190000",
+          headers: ["References: <m41@example.com>"],
+        }),
+      ],
+      // A reply that lost its headers joins the thread by its subject.
+      [4, reply(44, "Ana Ejemplo <ana.ejemplo@universidad.example>", "Me viene bien.", [])],
+    ]);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_agenda"],
+    });
+    expect(await m.check(1)).toMatchObject({ count: 4, lastError: null });
+    log.mockRestore();
+    // Every mail of the thread carries the first message's id.
+    const mails = store.list(m.state(1).type as string).map((x) => x.entity.values);
+    expect(mails.map((v) => v.f_hilo)).toEqual(Array(4).fill("m41@example.com"));
+    expect(mails.map((v) => v.f_en_respuesta_a ?? null)).toEqual([
+      null,
+      "m41@example.com",
+      null,
+      null,
+    ]);
+    // One pending proposal: the meeting at its new hour, saying what it was; the first invitation's and the
+    // reply's repeat gave way.
+    const pending = store.journal.proposals("pending");
+    expect(pending).toHaveLength(1);
+    const card = inboxCard(store, pending[0] as NonNullable<(typeof pending)[number]>);
+    expect([card.title, card.day, card.start, card.end]).toEqual([
+      "Reconocimiento experiencia profesional_Ejemplo",
+      "2026-11-11",
+      "18:00",
+      "19:00",
+    ]);
+    expect(card.before).toEqual({ day: "2026-11-11", start: "17:00", end: "18:00" });
+    expect(store.journal.proposals("stale")).toHaveLength(2);
+    expect(
+      logged.filter((l) => /again in its thread \(already pending\): not proposed$/.test(l)),
+    ).toHaveLength(1);
+    expect(
+      logged.filter((l) => /changed in its thread \(was 2026-11-11 17:00–18:00\)/.test(l)),
+    ).toHaveLength(1);
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

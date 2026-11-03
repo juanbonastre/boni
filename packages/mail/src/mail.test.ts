@@ -193,6 +193,28 @@ ${ics}
     expect(parseMessage(Buffer.from(PLAIN, "latin1")).calendar).toBeNull();
   });
 
+  it("keeps the thread's headers: what it answers and the thread's ids, folded or not (task 46)", () => {
+    const reply = CRLF(`From: Pedro Ejemplo <pedro.ejemplo@example.com>
+To: juan@example.com
+Subject: Re: Entrevista
+Message-ID: <c@example.com>
+In-Reply-To: <b@example.com>
+References: <a@example.com>
+ <b@example.com>
+Content-Type: text/plain; charset="UTF-8"
+
+Yo puedo ese día.
+`);
+    const m = parseMessage(Buffer.from(reply, "utf-8"));
+    expect([m.messageId, m.inReplyTo, m.references]).toEqual([
+      "c@example.com",
+      "b@example.com",
+      ["a@example.com", "b@example.com"],
+    ]);
+    const first = parseMessage(Buffer.from(PLAIN, "latin1"));
+    expect([first.inReplyTo, first.references]).toEqual([null, []]);
+  });
+
   it("keeps an attachment's bytes when asked and it fits; an image the HTML shows by its cid is inline, named by its kind", () => {
     const kept = parseMessage(Buffer.from(MULTI, "latin1"), false, { keep: 100 });
     expect(Buffer.from(kept.attachments[0]?.content ?? []).toString("base64")).toBe("JVBERi0xLjQK");

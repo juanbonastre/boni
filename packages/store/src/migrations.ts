@@ -260,6 +260,9 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
    );
    CREATE INDEX decisions_run ON decisions(run);
    CREATE INDEX decisions_area ON decisions(area, at);`,
+  // 12: what a proposal said before a reply in the same thread of mail changed it (task 46): the earlier proposal
+  // gives way (stale) and the new one keeps its day and hours, so the card can say «Antes: …».
+  "ALTER TABLE proposals ADD COLUMN before TEXT",
 ];
 
 export function migrate(db: DatabaseSync): void {

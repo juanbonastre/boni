@@ -49,6 +49,15 @@ export interface ProposalRow {
   decided: number | null;
   /** What Juan changed when accepting it (`{ type?: { from, to }, values?: { key: { from, to } } }`). */
   edits: ProposalEdits | null;
+  /** What an earlier proposal of the same thread of mail said, when this one changed its day or hours (task 46). */
+  before: ProposalBefore | null;
+}
+export interface ProposalBefore {
+  /** The earlier proposal, now stale (or decided, when Juan had already taken it). */
+  proposal: string;
+  day: string | null;
+  start: string | null;
+  end: string | null;
 }
 export interface ProposalEdits {
   type?: { from: string; to: string };
@@ -134,7 +143,7 @@ export interface Journal {
   modelCalls(run: string): ModelCallRow[];
   /** One model call by its number (the audit's action names it). */
   modelCallById(id: number): ModelCallRow | null;
-  addProposal(p: Omit<ProposalRow, "status" | "decided" | "edits">): void;
+  addProposal(p: Omit<ProposalRow, "status" | "decided" | "edits" | "before">): void;
   proposal(id: string): ProposalRow | null;
   proposals(status?: ProposalRow["status"]): ProposalRow[];
   /** The pending proposals' ids in one string: cheap to compare every second (Boni Calendar polls it). */
@@ -145,6 +154,8 @@ export interface Journal {
     at: number,
     edits?: ProposalEdits | null,
   ): void;
+  /** What an earlier proposal of the thread said before this one changed it (null: nothing). */
+  setProposalBefore(id: string, before: ProposalBefore | null): void;
   /** A decided proposal (accepted or rejected) waits again, as if Juan had not decided («Deshacer»). */
   reopenProposal(id: string): void;
   /** A run's decisions judged no more (its proposal was taken back): Juan's next decision judges them. */
@@ -213,6 +224,7 @@ export function openJournal(db: DatabaseSync): Journal {
     created: r.created as number,
     decided: (r.decided as number | null) ?? null,
     edits: p(r.edits),
+    before: p(r.before),
   });
   const requestOf = (r: Record<string, unknown>): RequestRow => ({
     id: r.id as string,
@@ -391,6 +403,10 @@ export function openJournal(db: DatabaseSync): Journal {
       void db
         .prepare("UPDATE proposals SET status = ?, decided = ?, edits = ? WHERE id = ?")
         .run(status, at, edits ? j(edits) : null, id),
+    setProposalBefore: (id, before) =>
+      void db
+        .prepare("UPDATE proposals SET before = ? WHERE id = ?")
+        .run(before ? j(before) : null, id),
     reopenProposal: (id) =>
       void db
         .prepare(
