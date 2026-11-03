@@ -320,11 +320,7 @@ const WeekRow = memo(function WeekRow(p: {
                   key={`${seg.eventId}:${day}`}
                   data-id={ev.id}
                   className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.id === p.newId && !ev.title ? "draft" : ""} ${ev.done ? "done" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
-                  style={
-                    {
-                      "--c": ev.color ?? p.calMap.get(ev.calendarId)?.color ?? "#888",
-                    } as CSSProperties
-                  }
+                  style={{ "--c": p.calMap.get(ev.calendarId)?.color ?? "#888" } as CSSProperties}
                 >
                   <span className="mchip-time">{formatMinute(seg.start, p.h24)}</span>
                   <span className="mchip-title">{ev.title || t("event.untitled")}</span>
@@ -359,7 +355,7 @@ const WeekRow = memo(function WeekRow(p: {
             className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.id === p.newId && !ev.title ? "draft" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
             style={
               {
-                "--c": ev.color ?? p.calMap.get(ev.calendarId)?.color ?? "#888",
+                "--c": p.calMap.get(ev.calendarId)?.color ?? "#888",
                 left: `calc(${((b.startDay - weekStart) / 7) * 100}% + 2px)`,
                 width: `calc(${((b.endDay - b.startDay + 1) / 7) * 100}% - 4px)`,
                 top: `${HEAD + b.lane * LANE}px`,

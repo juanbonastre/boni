@@ -148,14 +148,11 @@ slate `#94a3b8`.
   inside at once. A calendar inside has its own gear and properties: its colour, its own «Separar por» (any field
   no node above uses: a value split again is a node of its own, with the values found among its records, nested as
   deep as wanted; Juan, 2026-11-02: «tantos subcalendarios como quiera»), and «Ajustes de Agenda» to the
-  definition's. A colour chosen anywhere is kept by the server, for a whole calendar too. **The colour is one control** (D-25;
-  Juan, 2026-11-03: «Separar por» and «Colorear por» as two selects read alike): «Color del calendario» is a select,
-  «Uno» (a whole calendar: one row below with its name and its swatches) or «Por calendario» (a split one: each
-  calendar inside keeps its own, in «Calendarios por área»), or «Por tipo», «Por área»… (every event of the
-  definition takes the colour of its value, a record without one keeps its calendar's; one row of swatches per
-  value below). The sidebar does not change: the calendar stays whole; only «Separar por» makes calendars. While
-  the server sends the calendar back after any of these changes (seconds on the NAS), the selects are disabled and
-  «Guardando…» shows beside them. Under a finger (the phone's drawer), the row buttons are always visible and
+  definition's. A colour chosen anywhere is kept by the server, for a whole calendar too. The colour is always the
+  swatches row: a calendar's own, or one per calendar a split made (a colour by a field without splitting was built
+  and taken out the same day, 2026-11-03: Juan wants one way, «Separar por» and the swatches). While the server
+  sends the calendar back after a change of the split or of a colour (seconds on the NAS), the select is disabled
+  and «Guardando…» shows beside it. Under a finger (the phone's drawer), the row buttons are always visible and
   36 px wide, the rows 40 px tall.
 - **External calendars** (Settings → External calendars, or "Add external calendar" under the sidebar's calendars):
   other services' calendars (Google Calendar...) by their iCal address, read-only, in their own sidebar group with

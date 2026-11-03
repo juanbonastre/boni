@@ -17,10 +17,8 @@ tests guard most of them.
   definition the server reads as a view per value: each view carries `group` (the definition and the field) and
   `split` (the field and the choices); `POST /api/collections/split` sets it, `POST /api/collections/color` keeps a
   colour. The sidebar folds a group's views under its name (`CalendarList.tsx`); their properties are the
-  definition's (`Modals.tsx`). **The colour by a field** (D-25; «Color: Por tipo» in the properties) colours without splitting: the view carries `colorBy`
-  (the field, the key the rows hold its value under, and every value with its colour); `rowToEvent` gives each
-  event `color` from its value, and the views paint `ev.color ?? calendar.color`; `POST /api/collections/color-by`
-  sets it, `POST /api/collections/color` with `value` keeps a value's colour.
+  definition's (`Modals.tsx`). A colour by a field without splitting was built and taken out the same day (2026-11-03,
+  Juan: only «Separar por», the colours from the swatches).
 - **Repetitions** come in two kinds, and a calendar maps one or the other:
   - A master that expands (`recurrence`, `exdates`). It is never rendered directly: `expandAll` turns it into
     occurrences (`id = "<master>~<day>"`, `seriesId`, `occurrenceDay`) for the window the views publish (`store.win`,

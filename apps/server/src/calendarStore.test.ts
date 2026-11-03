@@ -1,5 +1,5 @@
 import { leaf, rec } from "@boni/agent";
-import { makeModel, type Row, rowToEvent } from "@boni/calendar";
+import type { Row } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it } from "vitest";
@@ -155,51 +155,6 @@ function agendaEnv(): {
   });
   return { store, cal, area, tipo, type };
 }
-
-describe("«Colorear por» (D-25)", () => {
-  it("each record takes the colour of its value, kept per value in the definition; the calendar stays whole", async () => {
-    const { store, cal, area, tipo, type } = agendaEnv();
-    const own = calendarDefs(store)[0]?.def.color;
-    expect(await cal.setColorBy("agenda", "nope")).toBe("bad-field");
-    expect(await cal.setColorBy("nadie", tipo)).toBe("no-such-calendar");
-    expect(await cal.setColorBy("agenda", tipo)).toBe("ok");
-    const read = calendarDefs(store);
-    expect(read.map((p) => p.def.id)).toEqual(["agenda"]);
-    const options = store.schema().types[type]?.fields.find((f) => f.id === tipo)?.options ?? [];
-    const clase = options.find((o) => o.name === "clase")?.id as string;
-    const cb = read[0]?.def.colorBy;
-    expect(cb).toMatchObject({ field: tipo, name: "tipo", prop: "tipo" });
-    expect(cb?.values.map((v) => [v.key, v.name])).toEqual(options.map((o) => [o.id, o.name]));
-    expect(new Set(cb?.values.map((v) => v.color)).size).toBe(2); // the palette, one each
-    // A value's colour is kept by its key; the calendar's own colour stays.
-    expect(await cal.setColor("agenda", "#abcdef", clase)).toBe(true);
-    expect(storedCalendarDefs(store)[0]?.raw.valueColors).toEqual({ [clase]: "#abcdef" });
-    const again = calendarDefs(store)[0]?.def;
-    expect(again?.colorBy?.values.find((v) => v.key === clase)?.color).toBe("#abcdef");
-    expect(again?.color).toBe(own);
-    // The view carries it, and the events made of the rows take their value's colour; a record without one keeps
-    // the calendar's.
-    const snap = await cal.snapshot();
-    expect(snap.views[0]?.colorBy?.field).toBe(tipo);
-    const model = makeModel(snap.collections, snap.views, { defaultTz: "Europe/Madrid" });
-    const colours = Object.fromEntries(
-      snap.rows.map((r) => [r.values.title, rowToEvent(model, r)?.color]),
-    );
-    expect(colours).toEqual({
-      Clase: "#abcdef",
-      Reunión: again?.colorBy?.values.find((v) => v.name === "reunión")?.color,
-      Suelto: undefined,
-    });
-    // On a split definition too: set from a calendar inside, kept on the definition, read on every calendar.
-    expect(await cal.setSplit("agenda", area)).toBe("ok");
-    const docencia = calendarDefs(store).find((p) => p.def.name === "Docencia")?.def.id as string;
-    expect(await cal.setColorBy(docencia, null)).toBe("ok");
-    expect(calendarDefs(store).every((p) => !p.def.colorBy)).toBe(true);
-    expect(await cal.setColorBy(docencia, tipo)).toBe("ok");
-    expect(calendarDefs(store).every((p) => p.def.colorBy?.field === tipo)).toBe(true);
-    expect(storedCalendarDefs(store)).toHaveLength(1);
-  });
-});
 
 describe("a definition split by a field (D-24)", () => {
   it("one calendar per value, «Sin …» while some record holds nothing, colours kept by value; whole again", async () => {

@@ -270,7 +270,7 @@ function DetailBody({ ev }: { ev: CalEvent }) {
             className="task-toggle"
             disabled={!tasks}
             title={tasks ? (ev.isTask ? t("event.done") : t("event.task")) : undefined}
-            style={{ "--c": ev.color ?? cal?.color ?? "#888" } as CSSProperties}
+            style={{ "--c": cal?.color ?? "#888" } as CSSProperties}
             onClick={() => (ev.isTask ? update({ done: !ev.done }) : update({ isTask: true }))}
           >
             {ev.isTask ? (
