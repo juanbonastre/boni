@@ -1,5 +1,5 @@
 import { type Json, plain, readStore, type Val } from "@boni/agent";
-import type { FieldDef } from "@boni/entities";
+import { type FieldDef, rolesOf } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { taskDoneField } from "./calendarStore.ts";
 import { dueField } from "./mail.ts";
@@ -62,6 +62,18 @@ export function acceptEdits(
       ro.list(t.id).map((e) => e.entity),
     );
     if (dayKey && date) out.values[date.key] = vals[dayKey] ?? null;
+    // The hours go with the day, each to the field that plays its role there (task 47: a meeting corrected from
+    // the events to the tasks keeps its 17:00–18:00).
+    const schema = ro.schema();
+    const fromRoles = old ? rolesOf(schema, old.id) : {};
+    const toRoles = rolesOf(schema, t.id);
+    const keyOf = (def: typeof t, fid: string | undefined) =>
+      fid ? def.fields.find((f) => f.id === fid)?.key : undefined;
+    for (const role of ["time", "endTime"] as const) {
+      const fromKey = old ? keyOf(old, fromRoles[role]) : undefined;
+      const toKey = keyOf(t, toRoles[role]);
+      if (fromKey && toKey && typeof vals[fromKey] === "string") out.values[toKey] = vals[fromKey];
+    }
   }
   if (req.values !== undefined) {
     if (!req.values || typeof req.values !== "object" || Array.isArray(req.values))

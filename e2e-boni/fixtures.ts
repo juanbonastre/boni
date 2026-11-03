@@ -53,6 +53,8 @@ export interface Options {
   mail?: boolean;
   /** The desktop shell opens a note in its peek window, a window of its own (Boni desktop 0.4.65; task 30). */
   peek?: boolean;
+  /** Two agenda collections with their roles (tasks with a box, events with a day and hours), for the correction's kinds (task 47). */
+  agenda?: boolean;
 }
 
 export interface FakePage {
@@ -232,6 +234,44 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         fields: [{ id: "f_title", key: "title", name: "Título", type: "text" }],
         rowUi: { open: false, hidden: [] as string[] },
       };
+      // Two agenda collections with their roles (task 47): tasks keep a box, events a day and hours; their keys
+      // differ, so a correction between them has to move the day and the hours by their roles.
+      const tareas = {
+        id: "t_tareas",
+        key: "tareas",
+        name: "Tareas",
+        icon: "",
+        titleField: "f_tt",
+        count: 0,
+        level: "visible",
+        fields: [
+          { id: "f_tt", key: "titulo", name: "Título", type: "text" },
+          { id: "f_tdia", key: "dia", name: "Día", type: "date" },
+          { id: "f_tini", key: "inicio", name: "Inicio", type: "time" },
+          { id: "f_tfin", key: "fin", name: "Fin", type: "time" },
+          { id: "f_thecha", key: "hecha", name: "Hecha", type: "checkbox" },
+        ],
+        roles: { date: "f_tdia", time: "f_tini", endTime: "f_tfin", done: "f_thecha" },
+        rowUi: { open: false, hidden: [] as string[] },
+      };
+      const eventos = {
+        id: "t_eventos",
+        key: "eventos",
+        name: "Eventos",
+        icon: "",
+        titleField: "f_et",
+        count: 0,
+        level: "visible",
+        fields: [
+          { id: "f_et", key: "titulo", name: "Título", type: "text" },
+          { id: "f_efecha", key: "fecha", name: "Fecha", type: "date" },
+          { id: "f_ehora", key: "hora", name: "Hora de inicio", type: "time" },
+          { id: "f_ehfin", key: "hora_fin", name: "Hora de fin", type: "time" },
+        ],
+        roles: { date: "f_efecha", time: "f_ehora", endTime: "f_ehfin" },
+        rowUi: { open: false, hidden: [] as string[] },
+      };
+      const agenda = opts.agenda ? [tareas, eventos] : [];
       // The mail's collection (apps/server/src/mail.ts), read only and opened as a mail (D-22), with one mail.
       const correos = {
         // As the server makes it: a generated id, and the key the planner names it by.
@@ -371,7 +411,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         values: Record<string, unknown>;
         body: string;
       }[] = [];
-      const userCols = () => [libros, documentos, ...madeCols];
+      const userCols = () => [libros, documentos, ...agenda, ...madeCols];
       const own = (id: string) =>
         (id === "t_libro" ? rows.length : id === documentos.id ? 2 : 0) +
         madeRows.filter((r) => r.type === id).length;
@@ -443,6 +483,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
               types: [
                 libros,
                 documentos,
+                ...agenda,
                 ...(opts.mail ? [correos, archivos] : []),
                 ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
                 ...boni,
