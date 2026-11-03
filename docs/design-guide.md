@@ -610,7 +610,8 @@ contraseña ni un código aquí» under a question.
   the same cell the table edits it with (an option from its menu, a relation from its picker, a box); accepting
   sends only what he changed, by the field's key. **«Ver correo»** opens the mail as a mail client shows it
   (`MailView.tsx`; D-22): the subject as its title, a header of labelled lines (De: name <address>; Para; Cc;
-  Fecha in full; Adjuntos as pills that open the file, the mail's own names) and the text as it came, paragraphs
+  Fecha in full; Adjuntos as pills that open the file, the mail's own names, the last its original «Asunto.eml»,
+  which a mail app opens whole: task 26) and the text as it came, paragraphs
   kept, never as markup; nothing
   on it edits, and nothing says so (no explanations in the app, §5); the mail's collection is read only in every
   table and page (its cells plain text). Its ⤢ button opens the **proposal's page** (Juan, 2026-10-23), read only, like a row's page:

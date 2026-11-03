@@ -537,6 +537,23 @@ const FIELDS: [key: string, name: string, type: FieldDef["type"]][] = [
 /** Bytes fetched of one message (its attachments included), and kept of one attachment (Juan, 2026-11-02). */
 export const FETCH_MAX = 16 * 1024 * 1024;
 export const ATTACHMENT_MAX = 8 * 1024 * 1024;
+/**
+ * A mail's original (its `.eml`, as it came) is kept as a file of the mail up to this size (Juan, 2026-11-03, task
+ * 26: «Sí»; docs/correo.md §4.6): it opens whole in a mail app, with its HTML and its attachments.
+ */
+export const EML_MAX = 2 * 1024 * 1024;
+/** A mail's original's file name: its subject, without what a file name cannot hold. */
+const emlName = (subject: string) =>
+  subject
+    .replace(/[\p{Cc}/\\:*?"<>|]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80) || "correo";
+/** A mail's original as fetched: its bytes and its whole size (more than the bytes when it was cut). */
+interface Original {
+  raw: Uint8Array;
+  size: number;
+}
 /** Text read out of a mail's attachments (a sheet's rows, a text file) for the reader, at most. */
 const ATTACHMENTS_TEXT_MAX = 50_000;
 
@@ -1125,9 +1142,10 @@ export class Mails {
     def: TypeDef,
     m: Message,
     arrived: string | null,
+    original: Original | null = null,
   ): string | null {
     try {
-      return this.keep(store, def, m, arrived);
+      return this.keep(store, def, m, arrived, original);
     } catch (e) {
       console.error(
         `mail ${account}: a mail's attachments could not be kept (${(e as Error).message})`,
@@ -1144,8 +1162,14 @@ export class Mails {
     }
   }
 
-  /** One message as an entity: every value the sender's (external), the body as its text. */
-  private keep(store: UserStore, def: TypeDef, m: Message, arrived: string | null): string {
+  /** One message as an entity: every value the sender's (external), the body as its text, its original a file. */
+  private keep(
+    store: UserStore,
+    def: TypeDef,
+    m: Message,
+    arrived: string | null,
+    original: Original | null = null,
+  ): string {
     const from = m.from[0];
     const l = label(
       "external",
@@ -1178,6 +1202,11 @@ export class Mails {
       );
     const files = def.fields.some((f) => f.id === "f_archivos") ? filesType(store) : undefined;
     const left = m.attachments.filter((a) => !a.content && a.size > 0);
+    // The original as it came (task 26), when it came whole and fits.
+    const eml =
+      files && original && original.raw.length >= original.size && original.size <= EML_MAX
+        ? original.raw
+        : null;
     const notes = [
       m.hidden ? `[Boni: ${m.hidden} partes ocultas del HTML no se muestran]` : "",
       m.truncated ? "[Boni: el correo es más largo; solo se guarda el principio]" : "",
@@ -1187,13 +1216,16 @@ export class Mails {
               `[Boni: el adjunto «${a.name}» (${Math.round(a.size / 1024)} KB) no se guarda: pasa de ${ATTACHMENT_MAX / 1024 / 1024} MB]`,
           )
         : []),
+      files && original && !eml && original.size > EML_MAX
+        ? `[Boni: el correo original (${(original.size / 1024 / 1024).toFixed(1)} MB) no se guarda: pasa de ${EML_MAX / 1024 / 1024} MB]`
+        : "",
     ].filter(Boolean);
     const text = [m.text, ...notes].filter(Boolean).join("\n\n");
     if (text) values[BODY] = w(text);
     // The attachments that fit: each a file of the account (a row of its files, in a folder by month), named by
     // the mail, and what the code could read of them for the reader (Juan, 2026-11-02).
     const kept = m.attachments.filter((a) => a.content);
-    if (files && kept.length) {
+    if (files && (kept.length || eml)) {
       const folder = `correo/${(when ?? "").slice(0, 7) || "sin-fecha"}`;
       const taken = new Set(
         store
@@ -1202,7 +1234,13 @@ export class Mails {
           .map((e) => String(e.values[files.titleField] ?? "")),
       );
       const ids: string[] = [];
-      for (const a of kept) {
+      const all = [
+        ...kept,
+        ...(eml
+          ? [{ name: `${emlName(m.subject)}.eml`, type: "message/rfc822", content: eml }]
+          : []),
+      ];
+      for (const a of all) {
         const sha = store.putFile(a.content as Uint8Array, a.type || mimeOf(a.name));
         const dot = a.name.lastIndexOf(".");
         const [base, ext] = dot > 0 ? [a.name.slice(0, dot), a.name.slice(dot)] : [a.name, ""];
@@ -1338,7 +1376,10 @@ export class Mails {
         const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
         // Without a Message-ID a mail cannot be told from one already in: left out.
         if (!m.messageId || known.has(m.messageId)) continue;
-        const id = this.keepOne(account, store, def, m, f.internalDate);
+        const id = this.keepOne(account, store, def, m, f.internalDate, {
+          raw: f.raw,
+          size: f.size,
+        });
         if (!id) continue;
         known.add(m.messageId);
         made.push(id);
@@ -1354,7 +1395,7 @@ export class Mails {
         if (m.messageId && known.has(m.messageId)) continue;
         // One mail that cannot be kept never stops the others (task 34: it stopped the check, and was lost).
         const id = timed("a mail kept", 300, () =>
-          this.keepOne(account, store, def, m, f.internalDate),
+          this.keepOne(account, store, def, m, f.internalDate, { raw: f.raw, size: f.size }),
         );
         if (!id) continue;
         made.push(id);
