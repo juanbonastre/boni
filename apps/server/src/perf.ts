@@ -160,7 +160,7 @@ export function holdWatcher(failed: (why: string) => void = () => {}): {
       // A small thread: it only keeps the profile of one hold at a time (the container has 384 MB).
       resourceLimits: { maxOldGenerationSizeMb: 32 },
     });
-    worker.unref();
+    // Never unref'd: from Node 24.22 an unref'd worker's session to this thread gets no answer (so stop() ends it).
     let longest: Hold | null = null;
     let watching = () => {};
     const ready = new Promise<void>((ok) => {
@@ -222,15 +222,14 @@ const watch = () => {
   profiling = false;
   post("Profiler.stop").then((r) => parentPort.postMessage(r.profile), () => {});
 };
-post("Profiler.enable")
-  .then(() => post("Profiler.setSamplingInterval", { interval: 10000 }))
-  .then(
-    () => {
-      setInterval(watch, 20);
-      parentPort.postMessage("watching");
-    },
-    (e) => parentPort.postMessage({ failed: String(e && e.message ? e.message : e) }),
-  );
+// Both asked at once: from Node 24.22, a message posted from an answer's callback gets no answer.
+Promise.all([post("Profiler.enable"), post("Profiler.setSamplingInterval", { interval: 10000 })]).then(
+  () => {
+    setInterval(watch, 20);
+    parentPort.postMessage("watching");
+  },
+  (e) => parentPort.postMessage({ failed: String(e && e.message ? e.message : e) }),
+);
 `;
 
 /**
