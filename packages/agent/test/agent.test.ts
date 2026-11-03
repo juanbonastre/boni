@@ -582,6 +582,7 @@ describe("the agent, with a planner that behaves", () => {
     expect(res.error).toBe("R2-reader-output-invalid");
     const denied = env.store.journal.steps(res.run).find((x) => x.rule === "R2");
     expect((denied?.detail as { why?: unknown } | undefined)?.why).toEqual({
+      fault: "count",
       keys: ["items"],
       lists: { items: 1 },
       expected: 2,
@@ -589,6 +590,40 @@ describe("the agent, with a planner that behaves", () => {
       longest: 18,
     });
     expect(JSON.stringify(denied?.detail)).not.toContain("Lucía");
+    // With kinds to sort by, the reader's schema holds it to them; a variant of one is refused as such.
+    const sorted = {
+      ...plan,
+      steps: plan.steps.map((x) =>
+        x.id === "s"
+          ? {
+              ...x,
+              params: { options: { fn: "list", args: [lit("Te piden algo"), lit("Avisos")] } },
+            }
+          : x,
+      ),
+    };
+    const variant = fakePlanner([
+      {
+        items: [
+          { line: "Una tienda anuncia rebajas", kind: "Avisos" },
+          { line: "Lucía pregunta si comemos el jueves", kind: "Te piden algo." },
+        ],
+      },
+    ]);
+    const kinds = await env
+      .agent(fakePlanner([sorted]), variant)
+      .turn({ text: "Resume mis correos", origin: PERSONAL });
+    expect(kinds.error).toBe("R2-reader-output-invalid");
+    const why = env.store.journal.steps(kinds.run).find((x) => x.rule === "R2")?.detail as {
+      why?: { fault?: string };
+    };
+    expect(why.why?.fault).toBe("kind");
+    const sent = variant.requests[0]?.schema as
+      | { properties: { items: { items: { properties: unknown } } } }
+      | undefined;
+    expect(sent?.properties.items.items.properties).toMatchObject({
+      kind: { enum: ["Te piden algo", "Avisos"] },
+    });
     // A model that ran out of room: the audit keeps how many tokens it wrote and how many went to reasoning.
     const out = new ProviderError("max-tokens");
     out.tokens = { output: 4000, reasoning: 3900 };

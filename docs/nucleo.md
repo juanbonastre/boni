@@ -665,8 +665,15 @@ interface ModelProvider {
   gastaba en ello toda la respuesta (DeepSeek V4.1 Flash paraba a los 4.000 tokens con cuatro correos cortos, la mitad
   de los casos de la evaluación). Si ningún proveedor del modelo lo admite, se le pregunta sin ello. Cuando un modelo
   se queda sin sitio, el registro guarda cuántos tokens escribió y cuántos de ellos fueron razonamiento; cuando el
-  código rechaza la salida de un lector, el paso dice su forma (sus claves, cuántos elementos para cuántos textos, el
-  texto más largo), nunca lo que decía. La evaluación lo enseña.
+  código rechaza la salida de un lector, el paso dice la regla que rompe (`count`, `kind`, `line-too-long`…) y su
+  forma (sus claves, cuántos elementos para cuántos textos, el texto más largo), nunca lo que decía. La evaluación lo
+  enseña.
+- **Las opciones entre las que un lector elige van en su esquema** como valores enumerados (`classify`, `label_each`
+  y el tipo de `summarize_each`), no solo en el prompt, de modo que la salida estructurada ya no deja escribir una
+  variante (2026-11-03, tarea 29: nueve de once fallos de la evaluación eran líneas correctas con un tipo que no era
+  ninguna opción, como «Te piden algo.»). El código las comprueba igual. Y el planificador pregunta con `ask` solo
+  cuando un paso posterior necesita la respuesta: una pregunta de cortesía al final de una respuesta va en el texto,
+  porque un `ask` sin nada detrás deja el turno esperando y la respuesta de Juan no sirve para nada.
 - **Propuesta para el NAS:**
   - planificador `claude-opus-5-5`, con salida estructurada y esfuerzo `medium`, `high` si las pruebas lo piden;
   - lectores `claude-haiku-4-5` (barato y suficiente para extraer con esquema), o `claude-sonnet-5-5` si la calidad

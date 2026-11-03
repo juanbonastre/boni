@@ -13,7 +13,7 @@
  *   OPENROUTER_API_KEY=... node packages/agent/eval/decide.ts [runs]
  */
 import { OpenAIProvider } from "../src/openai.ts";
-import { checkReaderOutput, delimit, READER_PROMPTS, READER_SCHEMAS } from "../src/readers.ts";
+import { checkReaderOutput, delimit, READER_PROMPTS, readerSchema } from "../src/readers.ts";
 import { DECIDER_CASES as CASES, COLLECTIONS, NAMES, option } from "./lib/deciderCases.ts";
 
 const key = process.env.OPENROUTER_API_KEY;
@@ -77,7 +77,7 @@ async function classify(state: string) {
       question:
         "¿En cuál de estas colecciones apuntaría el destinatario lo que este mensaje le pide hacer o a lo que tiene que ir?",
     },
-    schema: READER_SCHEMAS.classify,
+    schema: readerSchema("classify", options),
     maxTokens: 1000,
   });
   const c = checkReaderOutput("classify", r.json, options) as { choice: string } | null;

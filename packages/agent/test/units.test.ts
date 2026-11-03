@@ -1,10 +1,11 @@
 import { label } from "@boni/entities";
 import { describe, expect, it } from "vitest";
+import { apiSchema } from "../src/anthropic.ts";
 import { marksOf } from "../src/confirm.ts";
 import { callFn } from "../src/fns.ts";
 import { isWholeSpan, validatePlan } from "../src/plan.ts";
 import { decide, type Origin } from "../src/policy.ts";
-import { checkReaderOutput } from "../src/readers.ts";
+import { checkReader, checkReaderOutput, readerSchema } from "../src/readers.ts";
 import { coreTools, neutralize, ToolRegistry } from "../src/tools.ts";
 import { at, atOrNull, leaf, list, rec, type Val } from "../src/values.ts";
 import { toPlannerView } from "../src/view.ts";
@@ -444,6 +445,46 @@ describe("readers and functions", () => {
     });
     expect(checkReaderOutput("label_each", { choices: ["c"] }, ["a", "b"], 1)).toBeNull();
     expect(checkReaderOutput("label_each", { choices: ["a"] }, ["a", "b"], 2)).toBeNull();
+    // A refused answer says the rule it breaks, never its content (task 29).
+    expect(checkReader("summarize_each", lines(["a"]), [], 2)).toEqual({ fault: "count" });
+    expect(checkReader("summarize_each", kinds, [], 2)).toEqual({ fault: "item-keys" });
+    const variant = {
+      items: [
+        { line: "a", kind: "y" },
+        { line: "b", kind: "X" },
+      ],
+    };
+    expect(checkReader("summarize_each", variant, ["x", "y"], 2)).toEqual({ fault: "kind" });
+    expect(checkReader("summarize_each", lines(["a", "https://x.example"]), [], 2)).toEqual({
+      fault: "line-link-or-html",
+    });
+    expect(checkReader("label_each", { choices: ["c"] }, ["a", "b"], 1)).toEqual({
+      fault: "choice",
+    });
+    expect(checkReader("classify", { choice: "c" }, ["a", "b"])).toEqual({ fault: "choice" });
+    expect(checkReader("extract_tasks", { tasks: [{ ...task, due: "mañana" }] })).toEqual({
+      fault: "due",
+    });
+    expect(checkReader("summarize", { text: "x".repeat(2001) })).toEqual({
+      fault: "text-too-long",
+    });
+    expect(checkReader("summarize", "no")).toEqual({ fault: "not-an-object" });
+  });
+  it("the options a reader may answer with go in its schema as an enumeration (task 29)", () => {
+    expect(readerSchema("summarize_each", ["x", "y"])).toMatchObject({
+      properties: { items: { items: { properties: { kind: { enum: ["x", "y"] } } } } },
+    });
+    expect(readerSchema("label_each", ["x", "y"])).toMatchObject({
+      properties: { choices: { items: { enum: ["x", "y"] } } },
+    });
+    expect(readerSchema("classify", ["x", "y"])).toMatchObject({
+      properties: { choice: { enum: ["x", "y"] } },
+    });
+    // Without options there is no enumeration (an empty one is not a schema), and no "kind" at all.
+    expect(JSON.stringify(readerSchema("summarize_each", []))).not.toMatch(/enum|kind/);
+    expect(JSON.stringify(readerSchema("classify", []))).not.toContain("enum");
+    // The enumeration survives what the APIs accept of a schema.
+    expect(JSON.stringify(apiSchema(readerSchema("classify", ["x"])))).toContain('"enum":["x"]');
   });
   it("functions keep the lowest label and mark what they make as derived", () => {
     const r = callFn("concat", [leaf("ana", user), leaf("@x.example", ext)], "2026-10-20");
