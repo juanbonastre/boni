@@ -175,10 +175,14 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
   await expect(rows).toHaveCount(3);
   // The right button on a row not chosen chooses it alone and opens its menu; «Cambiar nombre» writes in place.
-  await rows
-    .filter({ hasText: "Pedro Páramo" })
-    .click({ button: "right", position: { x: 120, y: 10 } });
+  const pedro = rows.filter({ hasText: "Pedro Páramo" });
+  await pedro.click({ button: "right", position: { x: 120, y: 10 } });
   const menu = page.getByRole("dialog", { name: "Opciones de la fila" });
+  // It opens where the pointer is (Juan, 2026-11-03: the menus opened elsewhere; task 39).
+  const at = (await pedro.boundingBox()) as { x: number; y: number };
+  const opened = (await menu.boundingBox()) as { x: number; y: number };
+  expect(Math.abs(opened.x - (at.x + 120))).toBeLessThan(6);
+  expect(Math.abs(opened.y - (at.y + 10))).toBeLessThan(6);
   await expect(menu.getByRole("menuitemradio")).toHaveText([
     "Abrir",
     "Cambiar nombre",
