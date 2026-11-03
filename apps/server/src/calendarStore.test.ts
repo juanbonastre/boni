@@ -284,14 +284,15 @@ describe("a definition split by a field (D-24)", () => {
     expect(await cal.setColor(clase?.def.id as string, "#abcdef")).toBe(true);
     const colors = storedCalendarDefs(store)[0]?.raw.colors as Record<string, string>;
     expect(Object.keys(colors)[0]).toMatch(/\/o_clase$/);
-    expect(calendarDefs(store)[0]?.def.color).toBe("#abcdef");
+    // (By id: the relation's targets come in no fixed order, so the calendars by area do not either.)
+    expect(calendarDefs(store).find((p) => p.def.id === clase?.def.id)?.def.color).toBe("#abcdef");
     // The node whole again by the group row's id (Docencia's), then the definition whole.
     expect(await cal.setSplit(docenciaId, null)).toBe("ok");
-    expect(calendarDefs(store).map((p) => p.def.name)).toEqual([
-      "Docencia",
-      "Gestiones",
-      "Sin area",
-    ]);
+    expect(
+      calendarDefs(store)
+        .map((p) => p.def.name)
+        .sort(),
+    ).toEqual(["Docencia", "Gestiones", "Sin area"]);
     expect(await cal.setSplit("agenda", null)).toBe("ok");
     expect(calendarDefs(store).map((p) => p.def.id)).toEqual(["agenda"]);
   });

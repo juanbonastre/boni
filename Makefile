@@ -41,13 +41,13 @@ package-boni: ## Build Boni's desktop .deb into release/
 	pnpm --filter @boni/boni-web build
 	pnpm --filter boni dist
 
-e2e-calendar-desktop: ## Boni Calendar's desktop app driven for real, its note peek included (opens windows; not in CI)
+e2e-calendar-desktop: ## Boni Calendar's desktop app driven for real, its note peek included (opens windows; CI runs it on a virtual screen)
 	pnpm --filter @boni/boni-web build
 	pnpm --filter @boni/calendar-web build
 	node apps/calendar-desktop/scripts/copy-web.mjs
 	pnpm exec playwright test -c playwright.calendar-desktop.config.ts
 
-e2e-boni-desktop: ## Boni's desktop app driven for real (opens a window; not in CI)
+e2e-boni-desktop: ## Boni's desktop app driven for real (opens a window; CI runs it on a virtual screen)
 	pnpm --filter @boni/boni-web build
 	pnpm --filter boni prepare-web
 	pnpm exec playwright test -c playwright.boni-desktop.config.ts

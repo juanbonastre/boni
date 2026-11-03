@@ -29,6 +29,7 @@ jobs:
       calendar: ${{ steps.diff.outputs.calendar }}
       boni: ${{ steps.diff.outputs.boni }}
       desktop: ${{ steps.diff.outputs.desktop }}
+      calendar_desktop: ${{ steps.diff.outputs.calendar_desktop }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +38,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "calendar=true" >> "$GITHUB_OUTPUT"; echo "boni=true" >> "$GITHUB_OUTPUT"
-            echo "desktop=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "calendar_desktop=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
           printf '%s\n' "$files"
@@ -46,6 +47,8 @@ jobs:
           echo "calendar=$(has '^(apps/calendar-web/|apps/calendar-desktop/|packages/calendar/|e2e/|playwright\.config\.ts)')" >> "$GITHUB_OUTPUT"
           echo "boni=$(has '^(apps/boni-web/|e2e-boni/|playwright\.boni\.config\.ts)')" >> "$GITHUB_OUTPUT"
           echo "desktop=$(has '^(apps/boni-web/|apps/boni-desktop/|apps/server/|packages/|e2e-boni-desktop/|playwright\.boni-desktop\.config\.ts)')" >> "$GITHUB_OUTPUT"
+          # The calendar's peek is Boni's page from Boni's server: the calendar, the server and Boni's web all count.
+          echo "calendar_desktop=$(has '^(apps/calendar-web/|apps/calendar-desktop/|apps/boni-web/|apps/server/|packages/|e2e-calendar-desktop/|e2e/server-data\.ts|playwright\.calendar-desktop\.config\.ts)')" >> "$GITHUB_OUTPUT"
           # I-05 (docs/principios.md): every change to a web app ships in a desktop version newer than the last
           # release's (CHANGELOG.md's newest entry); a batch bumps it once. (Tests are not shipped: a test alone
           # needs no new version.)
@@ -144,16 +147,42 @@ jobs:
             e2e-boni/screenshots
             test-results
 
+  # I-06 too: Boni Calendar's desktop app driven for real, with its note peek (Boni's page from Boni's server),
+  # on a virtual screen (task 25, 2026-11-03: its suite had been failing outside CI for ten days without anyone seeing).
+  e2e-calendar-desktop:
+    needs: changes
+    if: needs.changes.outputs.calendar_desktop == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: xvfb-run -a --server-args="-screen 0 1920x1080x24" make e2e-calendar-desktop
+        env:
+          CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-calendar-desktop
+          path: |
+            e2e/screenshots
+            test-results
+
   # The check `main` requires: the suites that ran passed (a skipped one is not needed by the change).
   e2e:
-    needs: [changes, e2e-calendar, e2e-boni, e2e-boni-desktop]
+    needs: [changes, e2e-calendar, e2e-boni, e2e-boni-desktop, e2e-calendar-desktop]
     if: always()
     runs-on: ubuntu-24.04
     steps:
       - run: |
-          echo "changes=${{ needs.changes.result }} calendar=${{ needs.e2e-calendar.result }} boni=${{ needs.e2e-boni.result }} desktop=${{ needs.e2e-boni-desktop.result }}"
+          echo "changes=${{ needs.changes.result }} calendar=${{ needs.e2e-calendar.result }} boni=${{ needs.e2e-boni.result }} desktop=${{ needs.e2e-boni-desktop.result }} calendar-desktop=${{ needs.e2e-calendar-desktop.result }}"
           [ "${{ needs.changes.result }}" = success ] || exit 1
-          for r in "${{ needs.e2e-calendar.result }}" "${{ needs.e2e-boni.result }}" "${{ needs.e2e-boni-desktop.result }}"; do
+          for r in "${{ needs.e2e-calendar.result }}" "${{ needs.e2e-boni.result }}" "${{ needs.e2e-boni-desktop.result }}" "${{ needs.e2e-calendar-desktop.result }}"; do
             case "$r" in success | skipped) ;; *) exit 1 ;; esac
           done
 
