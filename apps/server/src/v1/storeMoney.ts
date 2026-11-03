@@ -104,13 +104,16 @@ export class StoreMoney implements MoneySource {
       .sort((a, b) => a.label.toLowerCase().localeCompare(b.label.toLowerCase()));
   }
 
-  /** Changes when a movement or a debt does (how many, and the latest change). */
+  /**
+   * Changes when a movement or a debt does (how many, and the latest change), asked every minute: counted by the
+   * store without reading them (task 43: reading them all held the NAS up to 0.7 s).
+   */
   fingerprint(): string {
-    const parts: string[] = [];
-    for (const t of [MOVEMENTS, DEBTS]) {
-      const list = this.store.list(t);
-      parts.push(`${t}:${list.length}:${Math.max(0, ...list.map((s) => s.entity.updated))}`);
-    }
-    return parts.join("|");
+    return [MOVEMENTS, DEBTS]
+      .map((t) => {
+        const s = this.store.stamp(t);
+        return `${t}:${s.count}:${s.updated}`;
+      })
+      .join("|");
   }
 }

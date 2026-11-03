@@ -176,6 +176,11 @@ export interface UserStore {
   lastChange(id: EntityId): { seq: number; device: string | null } | null;
   /** How many entities a type has (not in the trash), without reading them. */
   count(type: TypeId): number;
+  /**
+   * How many entities a type has (not in the trash) and when the last of them changed, without reading them: a
+   * fingerprint that changes when one is added, changed or removed.
+   */
+  stamp(type: TypeId): { count: number; updated: number };
   /** The entities (not in the trash) whose `field` holds exactly `value` (a text), by one query. */
   findByValue(field: string, value: string): { id: EntityId; type: TypeId }[];
   linksTo(id: EntityId): { src: EntityId; field: string }[];
@@ -880,6 +885,14 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
             .get(type) as { n: number }
         ).n,
       ),
+    stamp: (type) => {
+      const r = db
+        .prepare(
+          "SELECT COUNT(*) AS n, COALESCE(MAX(updated), 0) AS u FROM entities WHERE type = ? AND deleted IS NULL",
+        )
+        .get(type) as { n: number; u: number };
+      return { count: Number(r.n), updated: Number(r.u) };
+    },
     findByValue: (field, value) =>
       db
         .prepare(
