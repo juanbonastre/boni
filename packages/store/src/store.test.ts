@@ -166,6 +166,19 @@ describe("the store", () => {
       "user",
     ]);
     expect(store.list("t_libro", { includeDeleted: true })).toHaveLength(3);
+    // A stamp of the type (task 43: the money's fingerprint, every minute): it moves with a change and a removal.
+    const s1 = store.stamp("t_libro");
+    expect(s1).toEqual({
+      count: 2,
+      updated: Math.max(...store.list("t_libro").map((e) => e.entity.updated)),
+    });
+    store.update(a.entity.id, { f_titulo: { value: "Uno bis", label: JUAN } }, me);
+    const s2 = store.stamp("t_libro");
+    expect(s2.count).toBe(2);
+    expect(s2.updated).toBeGreaterThan(s1.updated);
+    store.remove(a.entity.id, me);
+    expect(store.stamp("t_libro").count).toBe(1);
+    expect(store.stamp("t_nada")).toEqual({ count: 0, updated: 0 });
   });
 
   it("sees a schema another connection changed (the import while the server runs)", () => {

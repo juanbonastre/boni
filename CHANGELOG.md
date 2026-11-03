@@ -13,6 +13,10 @@ Needs: the server only (0.8.85, to deploy). Task 43 again, from the log of 0.8.8
   whole (the models' prompts, each change's values): 9.6 s on the NAS, with nothing else answered meanwhile. Now
   they are taken from each row's header, in bytes (34 ms on the laptop with a 300 MB store, where it took 150 to
   230 ms reading them). (#273, task 43)
+- **The money no longer holds the server every minute.** To tell the devices listening when the money changed, the
+  server read every movement and debt each minute: with 8,000 movements, 0.1 to 0.2 s on the laptop, and up to 0.7 s
+  on the NAS in its log. Now the store counts them and says their last change without reading them (1 to 3 ms).
+  (#274, task 43)
 - **The watchdog of 0.8.84 starts for sure.** When the server was busy as it started, the thread that finds out
   what holds it could end before it began to watch; the log then never said what held the server. (#273, task 43)
 
