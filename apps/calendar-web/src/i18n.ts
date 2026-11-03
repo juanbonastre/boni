@@ -308,8 +308,7 @@ const es = {
   "shortcuts.ctrlWheel": "Ctrl + rueda: zoom de las horas",
   "shortcuts.shiftWheel": "Mayús + rueda: moverse por los días",
   "shortcuts.drag": "Arrastrar en vacío: crear",
-  "shortcuts.multi":
-    "Ctrl+clic: abrir la nota · Mayús+clic: rango · Ctrl+Mayús+clic: añadir o quitar",
+  "shortcuts.multi": "Ctrl+clic: añadir o quitar · Mayús+clic: rango · Doble clic: abrir la nota",
   "shortcuts.selectAll": "Seleccionar todo lo visible",
 } as const;
 
@@ -621,8 +620,7 @@ const en: Record<Key, string> = {
   "shortcuts.ctrlWheel": "Ctrl + wheel: zoom the hours",
   "shortcuts.shiftWheel": "Shift + wheel: move across days",
   "shortcuts.drag": "Drag on empty space: create",
-  "shortcuts.multi":
-    "Ctrl+click: open the note · Shift+click: range · Ctrl+Shift+click: add or remove",
+  "shortcuts.multi": "Ctrl+click: add or remove · Shift+click: range · Double click: open the note",
   "shortcuts.selectAll": "Select everything visible",
 };
 

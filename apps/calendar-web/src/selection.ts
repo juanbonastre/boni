@@ -25,13 +25,14 @@ export interface ClickResult {
 const unique = (ids: string[]): string[] => [...new Set(ids)];
 
 /**
- * Selection rules for clicking an event (Ctrl+click alone opens the event's note: see the store):
- *  - plain click (or Ctrl+click on an event without a note): select only it and open its details;
+ * Selection rules for clicking an event (Juan, 2026-11-03: Ctrl+click selects, as in a file manager; from
+ * 2026-10-16 it had opened the event's note, which now opens from its menu, its detail or a double click):
+ *  - plain click: select only it and open its details;
  *  - Shift+click: add it and every visible event between the anchor and it;
- *  - Ctrl+Shift+click: add it, or remove it when already selected.
+ *  - Ctrl+click (with Shift too): add it, or remove it when already selected.
  */
 export function clickSelection(i: ClickInput): ClickResult {
-  if (!i.shift) return { ids: [i.clicked], anchor: i.clicked, popover: true };
+  if (!i.shift && !i.ctrl) return { ids: [i.clicked], anchor: i.clicked, popover: true };
 
   if (!i.ctrl) {
     const a = i.anchor ? i.ordered.indexOf(i.anchor) : -1;
