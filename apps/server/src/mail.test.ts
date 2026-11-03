@@ -501,6 +501,16 @@ describe("tasks a mail asks for", () => {
       ref: "$options",
     });
     expect(plain(optionsValue(two))).toEqual(["Docencia", "Gestiones"]);
+    // Asked from the conversation («Proponer tarea», task 30): that mail's plan now, its proposals in the inbox;
+    // what is not a mail of the mailbox says so.
+    const informe = store
+      .list(m.state(1).type as string)
+      .find((x) => x.entity.values.f_asunto === "Informe y sala")?.entity.id as string;
+    const before = readers.length;
+    expect(await m.proposeFor(1, informe)).toBe(2);
+    expect(readers.slice(before)).toEqual(["read_message", "classify"]);
+    await expect(m.proposeFor(1, dni)).rejects.toMatchObject({ code: "not-found" });
+    await expect(m.proposeFor(1, "e_nada")).rejects.toMatchObject({ code: "not-found" });
     // The live reading asks Juan when the decider is unsure (the panel of requests); by default it does not.
     expect(JSON.stringify(plan)).not.toContain('"ask"');
     const live = mailPlan(

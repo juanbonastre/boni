@@ -561,8 +561,12 @@ contraseña ni un código aquí» under a question.
   field: a small upper-case label with the count, in the items' order, 10 px apart) and its items (line height 1.5,
   2 px of air between them: short lines in a dense block read best around 1.4-1.5) show their fields with « · »
   between them, never their id or type; an item that carries the id and type of a record as the code wrote them ends
-  with a small ↗ button («Abrir»; the text itself is never a link) that opens it: a mail in the side panel as the mail
-  client shows it (the type's name as the panel's title, «Agrandar» takes it to its page), anything else as its page.
+  with a small ↗ button («Abrir»; the text itself is never a link) that opens it: a mail as the mail client shows it,
+  in a window of its own in the desktop app (the peek, which stays while Juan works elsewhere; task 30) and elsewhere
+  in the side panel (the type's name as the panel's title, «Agrandar» takes it to its page), anything else as its
+  page. A mail's line has a second small button, «Proponer tarea» (a list with a plus): the mail is read now by its
+  plan, a spinner meanwhile, and a toast says what went to the inbox («2 propuestas en la Bandeja», «Nada que
+  proponer», or where to choose the collections when there are none).
   When a request hits one of its limits (too many model calls, steps or text, P12), the error says which, not «una
   regla de seguridad».
   A question shows its options as rounded buttons with a surface and a shadow (one line, cut with an ellipsis; the

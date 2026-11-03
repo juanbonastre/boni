@@ -51,6 +51,8 @@ export interface Options {
   today?: unknown[] | null;
   /** The mail's collection as the server keeps it (`t_01m6correo`, read only, opened as a mail), with one mail (`m1`). */
   mail?: boolean;
+  /** The desktop shell opens a note in its peek window, a window of its own (Boni desktop 0.4.65; task 30). */
+  peek?: boolean;
 }
 
 export interface FakePage {
@@ -1016,6 +1018,9 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         widgetDragMove: () => record("__calls", "dragMove"),
         widgetDragEnd: () => record("__calls", "dragEnd"),
         widgetHide: () => record("__calls", "hide"),
+        ...(opts.peek
+          ? { openPeek: (screen: string) => record("__calls", `openPeek ${screen}`) }
+          : {}),
       };
     },
     { examples: EXAMPLES, opts, pages, boni: boniTypes(new Date().toISOString().slice(0, 10)) },

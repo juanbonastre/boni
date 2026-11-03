@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Inbox,
   ListChecks,
+  ListPlus,
   MessageSquarePlus,
   Pencil,
   ShieldCheck,
@@ -46,6 +47,7 @@ import {
   openConversation,
   openRecord,
   openSettings,
+  proposeFromMail,
   removeConversation,
   renameConversation,
   sendTurn,
@@ -767,7 +769,8 @@ function recordOf(item: Painted): { type: string; id: string } | null {
 
 /**
  * A list item: its shown fields as text, « · » between them (not the group's); one that points to a record gets a
- * small ↗ button after its text that opens it (Juan, 2026-11-02: not the whole line as a link).
+ * small ↗ button after its text that opens it (Juan, 2026-11-02: not the whole line as a link), and a mail also one
+ * that proposes its tasks to the inbox (task 30).
  */
 function ListItem({
   item,
@@ -782,6 +785,14 @@ function ListItem({
 }) {
   const t = useStore((s) => s.t);
   const at = recordOf(item);
+  const mail = useStore((s) =>
+    at
+      ? !!s.dataTypes?.some(
+          (x) => (x.key === at.type || x.id === at.type || x.name === at.type) && x.view === "mail",
+        )
+      : false,
+  );
+  const [proposing, setProposing] = useState(false);
   const body =
     item.t === "rec" ? (
       shownFields(fields, item.fields)
@@ -807,6 +818,26 @@ function ListItem({
           onClick={() => void openRecord(at.type, at.id)}
         >
           <ArrowUpRight size={13} strokeWidth={2} aria-hidden="true" />
+        </button>
+      )}
+      {at && mail && (
+        <button
+          type="button"
+          className="reply-open"
+          title={t("chat.proposeTask")}
+          aria-label={t("chat.proposeTask")}
+          aria-busy={proposing}
+          disabled={proposing}
+          onClick={() => {
+            setProposing(true);
+            void proposeFromMail(at.id).finally(() => setProposing(false));
+          }}
+        >
+          {proposing ? (
+            <span className="spinner" aria-hidden="true" />
+          ) : (
+            <ListPlus size={13} strokeWidth={2} aria-hidden="true" />
+          )}
         </button>
       )}
     </li>

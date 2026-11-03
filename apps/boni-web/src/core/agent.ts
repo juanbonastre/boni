@@ -2219,6 +2219,12 @@ export class AgentApi {
   mail = async () => this.mailOf(await this.call("GET", "", undefined, "api/mail"));
   saveMail = async (input: MailInput) => this.mailOf(await this.call("PUT", "", input, "api/mail"));
   checkMail = async () => this.mailOf(await this.call("POST", "/check", {}, "api/mail"));
+  /** A mail's tasks proposed now (task 30): how many went to the inbox. */
+  proposeFromMail = async (id: string) =>
+    Number(
+      ((await this.call("POST", "/propose", { id }, "api/mail")) as { proposals?: unknown })
+        .proposals ?? 0,
+    );
   /** Reads the mail of the last `days` days again; how many mails and withdrawn proposals. */
   rereadMail = async (days: number) => {
     const b = await this.call("POST", "/reread", { days }, "api/mail");

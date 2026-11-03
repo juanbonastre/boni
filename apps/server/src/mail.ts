@@ -626,6 +626,19 @@ export class MailError extends Error {
   }
 }
 
+/** What a mail's plan needs (`planContext`), made once for the mail read in a row. */
+interface PlanContext {
+  store: UserStore;
+  s: MailSettings;
+  targets: Target[];
+  fixed: Target[];
+  m: ExtensionManifest;
+  agent: ReturnType<AgentHost["agent"]>;
+  guide: MailGuide;
+  withGuide: boolean;
+  bound: Record<string, Val>;
+}
+
 export interface MailsOptions {
   db: Db;
   key: SecretKey;
@@ -1444,12 +1457,10 @@ export class Mails {
   }
 
   /**
-   * Runs the mail plan for the pending mail (up to `perCheck` each time), each one taken off the list once its
-   * plan ran; the proposals land in the inbox (and the devices are told). Waits while there is no agent or
-   * no collection marked.
+   * What a mail's plan needs, made once for the mail read in a row: the collections it may propose into (marked,
+   * and those a route names), the agent, Juan's guide and what code binds. Null without a collection.
    */
-  private async propose(account: number, s: MailSettings, st: MailState): Promise<void> {
-    if (!this.o.host.on || !st.pending?.length || !this.enabled(account)) return;
+  private planContext(account: number, s: MailSettings): PlanContext | null {
     const store = this.o.host.store(account);
     const targets = this.targets(store, s);
     const m = this.manifest(account);
@@ -1458,10 +1469,8 @@ export class Mails {
       "propose" in r && r.propose !== "chosen" ? [r.propose.collection] : [],
     );
     const fixed = this.targetsFor(store, fixedIds);
-    if (!targets.length && !fixed.length) return;
-    const agent = this.o.host.agent(account);
+    if (!targets.length && !fixed.length) return null;
     const guide = this.guide(account);
-    const version = this.readingVersion(account);
     const withGuide = !!(guide.instructions || guide.examples.length);
     const bound: Record<string, Val> = {
       modules: modulesOfManifest(m),
@@ -1473,6 +1482,107 @@ export class Mails {
       t.fillRef = `fields_${i}`;
       bound[t.fillRef] = fieldsValue(t.fill, t.fillRefs);
     });
+    return {
+      store,
+      s,
+      targets,
+      fixed,
+      m,
+      agent: this.o.host.agent(account),
+      guide,
+      withGuide,
+      bound,
+    };
+  }
+
+  /**
+   * One mail's plan: its proposals land in the inbox. `asked`: Juan asked for it (a guide rule that says never to
+   * read the sender does not stop it then). How many proposals, and why the plan stopped if it did.
+   */
+  private async proposeOne(
+    account: number,
+    c: PlanContext,
+    id: string,
+    asked = false,
+  ): Promise<{ n: number; stopped: string | null }> {
+    const e = c.store.get(id);
+    if (!e || e.entity.deleted !== undefined) return { n: 0, stopped: null };
+    const v = e.entity.values;
+    const from = String(v.f_de ?? "");
+    // Guide rules first, by code: a mail it says never to read is not read at all.
+    const rule = ruleFor(c.guide, from);
+    if (rule?.action === "skip" && !asked) return { n: 0, stopped: null };
+    const only =
+      rule?.action === "collection" ? c.targets.filter((t) => t.id === rule.collection) : [];
+    try {
+      const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto", "adjuntos_texto"].filter(
+        (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
+      );
+      const chosen = only.length ? only : c.targets;
+      const r = await c.agent.background(
+        mailPlan(id, chosen, {
+          has: e.entity.body ? [...has, "body"] : has,
+          known: from ? this.known(c.store, from) : [],
+          userIn: userIn(c.s.user, v.f_para, v.f_cc),
+          guide: c.withGuide,
+          modules: moduleIds(c.m),
+          boundModules: true,
+          ...(c.m.routes ? { routes: c.m.routes } : {}),
+          fixed: c.fixed,
+          askWhenUnsure: true,
+        }),
+        { ...c.bound, options: optionsValue(chosen) },
+        [],
+        budgetOf(c.m),
+      );
+      const stopped = r.status === "stopped" ? (r.error ?? "stopped") : null;
+      if (stopped && r.error) console.warn(`mail ${account}: plan stopped (${r.error})`);
+      // «Solo» on for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are
+      // accepted here, each a decision he judges by leaving it or undoing it.
+      if (r.proposals.length && autoOn(c.store, AUTO_AREA))
+        await acceptAlone(c.store, c.agent, r.proposals, this.now());
+      return { n: r.proposals.length, stopped };
+    } catch (err) {
+      console.error(`mail ${account}: ${(err as Error).message}`);
+      return { n: 0, stopped: (err as Error).message };
+    }
+  }
+
+  /**
+   * A mail's tasks proposed now because Juan asked (task 30: «Proponer tarea» on a mail of the conversation): the
+   * plan a new mail gets, for this one, after what the mailbox is doing; its proposals land in the inbox. How many.
+   */
+  async proposeFor(account: number, id: string): Promise<number> {
+    for (;;) {
+      const running = this.queued.get(account) ?? this.busy.get(account);
+      if (!running) break;
+      await running.catch(() => null);
+    }
+    if (!this.o.host.on || !this.o.host.hasData) throw new MailError("agent-off");
+    const st = this.state(account);
+    const e = this.o.host.store(account).get(id);
+    if (!st.type || !e || e.entity.deleted !== undefined || e.entity.type !== st.type)
+      throw new MailError("not-found");
+    const settings = this.settings(account);
+    if (!settings) throw new MailError("not-configured");
+    const c = this.planContext(account, settings);
+    if (!c) throw new MailError("no-collections");
+    const { n, stopped } = await this.proposeOne(account, c, id, true);
+    if (n) this.o.host.emit(account, "proposals", { n });
+    else if (stopped) throw new MailError("stopped");
+    return n;
+  }
+
+  /**
+   * Runs the mail plan for the pending mail (up to `perCheck` each time), each one taken off the list once its
+   * plan ran; the proposals land in the inbox (and the devices are told). Waits while there is no agent or
+   * no collection marked.
+   */
+  private async propose(account: number, s: MailSettings, st: MailState): Promise<void> {
+    if (!this.o.host.on || !st.pending?.length || !this.enabled(account)) return;
+    const c = this.planContext(account, s);
+    if (!c) return;
+    const version = this.readingVersion(account);
     let n = 0;
     for (const id of st.pending.slice(0, this.o.perCheck ?? 50)) {
       st.pending = st.pending.filter((x) => x !== id);
@@ -1483,51 +1593,12 @@ export class Mails {
       for (const k of keys.slice(0, Math.max(0, keys.length - 1000))) delete read[k];
       st.readWith = read;
       this.saveState(account, st);
-      const e = store.get(id);
-      if (!e || e.entity.deleted !== undefined) continue;
-      const v = e.entity.values;
-      const from = String(v.f_de ?? "");
-      // Guide rules first, by code: a mail it says never to read is not read at all.
-      const rule = ruleFor(guide, from);
-      if (rule?.action === "skip") continue;
-      const only =
-        rule?.action === "collection" ? targets.filter((t) => t.id === rule.collection) : [];
-      try {
-        const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto", "adjuntos_texto"].filter(
-          (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
-        );
-        const chosen = only.length ? only : targets;
-        const r = await agent.background(
-          mailPlan(id, chosen, {
-            has: e.entity.body ? [...has, "body"] : has,
-            known: from ? this.known(store, from) : [],
-            userIn: userIn(s.user, v.f_para, v.f_cc),
-            guide: withGuide,
-            modules: moduleIds(m),
-            boundModules: true,
-            ...(m.routes ? { routes: m.routes } : {}),
-            fixed,
-            askWhenUnsure: true,
-          }),
-          { ...bound, options: optionsValue(chosen) },
-          [],
-          budgetOf(m),
-        );
-        n += r.proposals.length;
-        if (r.status === "stopped" && r.error)
-          console.warn(`mail ${account}: plan stopped (${r.error})`);
-        // «Solo» on for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are
-        // accepted here, each a decision he judges by leaving it or undoing it.
-        if (r.proposals.length && autoOn(store, AUTO_AREA))
-          await acceptAlone(store, agent, r.proposals, this.now());
-      } catch (err) {
-        console.error(`mail ${account}: ${(err as Error).message}`);
-      }
+      n += (await this.proposeOne(account, c, id)).n;
     }
     if (n) this.o.host.emit(account, "proposals", { n });
     // The learner looks in the background when learning.ts says it may: every `learning.every` new decisions
     // of Juan's (the extension's manifest), or when his corrections already show a rule; at most once a day.
-    if (m.learning) void this.reviewNow(account, true).catch(() => null);
+    if (c.m.learning) void this.reviewNow(account, true).catch(() => null);
   }
 
   /** The titles of the proposals from `sender`'s mail still waiting in the inbox (the latest 20). */

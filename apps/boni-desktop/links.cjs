@@ -19,7 +19,16 @@ function screenOfUrl(url) {
   return { screen: `${u.hostname}:${id}`, peek: u.searchParams.get("peek") === "1" };
 }
 
+/**
+ * What the page may open in the peek window (task 30: a mail from the conversation, in a window of its own): a note
+ * or a proposal by a plain id, the same shapes a link may name; anything else is refused.
+ */
+const peekScreen = (screen) =>
+  typeof screen === "string" && /^(note|proposal):[A-Za-z0-9_-]{1,100}$/.test(screen)
+    ? screen
+    : null;
+
 /** The first `boni://` link among a process's arguments (a start or a second start). */
 const linkIn = (argv) => (argv ?? []).find((a) => typeof a === "string" && a.startsWith("boni://"));
 
-module.exports = { linkIn, screenOfUrl };
+module.exports = { linkIn, peekScreen, screenOfUrl };

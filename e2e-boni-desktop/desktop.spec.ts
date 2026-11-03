@@ -643,6 +643,43 @@ test("Boni Calendar's link with peek=1: a small window with the note; it stays w
   expect(await visible()).toBe(true);
 });
 
+test("the page opens a note in the peek, a window of its own (a mail from the conversation, task 30); nothing else", async () => {
+  const a = app as ElectronApplication;
+  const visible = () =>
+    a.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().some(
+        (x) => x.webContents.getURL().includes("peek=1") && x.isVisible(),
+      ),
+    );
+  // A peek shown a moment ago keeps a hide from the same click: wait that moment out.
+  await new Promise((r) => setTimeout(r, 1000));
+  openLink("boni://peek?hide=1");
+  await expect.poll(visible).toBe(false);
+  const main = a.windows().find((x) => !x.url().includes("peek=1") && !x.url().includes("widget="));
+  if (!main) throw new Error("no main window");
+  const open = (screen: string) =>
+    main.evaluate(
+      (s) =>
+        (
+          window as unknown as { boniDesktop: { openPeek: (x: string) => void } }
+        ).boniDesktop.openPeek(s),
+      screen,
+    );
+  // Only a note or a proposal by a plain id: anything else is refused by the shell.
+  await open("settings");
+  await open("note:../secreto");
+  await new Promise((r) => setTimeout(r, 800));
+  expect(await visible()).toBe(false);
+  await open(`note:${classId}`);
+  await expect.poll(visible).toBe(true);
+  const peek = a.windows().find((x) => x.url().includes("peek=1"));
+  if (!peek) throw new Error("no peek window");
+  await expect(peek.locator(".row-doc .blk-input").first()).toHaveValue(/Preparar los ejercicios/);
+  await new Promise((r) => setTimeout(r, 1000));
+  openLink("boni://peek?hide=1");
+  await expect.poll(visible).toBe(false);
+});
+
 test("in the peek, Esc first leaves the text with its block selected, then lets go, then puts the peek away", async () => {
   const a = app as ElectronApplication;
   openLink(`boni://note?id=${classId}&peek=1`);

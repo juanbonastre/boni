@@ -164,9 +164,12 @@ id y el tipo de su correo (los pone el código, nunca el modelo), y con el botó
 es un enlace) el correo se abre en el panel lateral como lo enseña el cliente de correo, con «Agrandar» para su página. Para contar por tipo, `label_each` y una gráfica
 de sus recuentos. Nada lleva marca visible: lo de fuera se pinta como texto y lo dice al pasar el ratón
 (`docs/design-guide.md`; Juan quitó la línea ámbar, también la de bloque, el 2026-11-02). Lo que Juan pidió después
-(2026-11-02, tarde) y queda: el correo en una ventana aparte desde la conversación (hoy, el panel y su página).
-
-Más adelante, con maqueta antes (I-09): una tarjeta por correo con «Abrir» (el registro en Boni) y «Proponer tarea».
+(2026-11-02, tarde), **hecho el 2026-11-03 (tarea 30, M3)**: en la app de escritorio el correo se abre en una ventana
+propia (la del peek, que se queda mientras Juan trabaja en otra cosa; en el navegador y el móvil, el panel lateral), y
+cada línea de un correo lleva también «Proponer tarea»: el correo pasa ahora por el plan de un correo nuevo
+(`POST /api/mail/propose`, `Mails.proposeFor`) y lo que propone va a la Bandeja; una regla de la guía que diga no leer
+a ese remitente no lo para, porque lo pide Juan. Sin maqueta (I-13): los botones van en la línea del correo, no en
+una tarjeta aparte.
 
 ### 4.5 El banco de pruebas (hecho en este PR)
 
@@ -238,7 +241,7 @@ leen viene del correo (`readingGuide` del agente; un plan no puede escribirla: s
 casos nuevos y `--guia=con,sin` para comparar con y sin ella (con modelos reales, a mano y con presupuesto: tarea 29).
 Las instrucciones de correo de §4.2 siguen en el prompt del planificador; pasarlas al manifiesto de la extensión,
 cuando la conversación tenga modos (C5).
-| M3 | ~~El módulo «resumen»~~ (hecho el 2026-11-02 como `summarize_each`, §4.4) y la tarjeta de correo | Con maqueta |
+| M3 | ~~El módulo «resumen»~~ (hecho el 2026-11-02 como `summarize_each`, §4.4) y ~~la tarjeta de correo~~ (hecho el 2026-11-03, tarea 30: «Abrir» en una ventana propia y «Proponer tarea» en la línea, §4.4) | Hecho |
 
 Aprender del chat no es una fase de aquí: es la P1 de `docs/preferencias.md` (la tarjeta «¿Lo recuerdo?»).
 

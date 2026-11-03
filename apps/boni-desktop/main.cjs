@@ -21,7 +21,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { allowedPath, timeoutFor } = require("./paths.cjs");
 const F = require("./files.cjs");
-const { linkIn, screenOfUrl } = require("./links.cjs");
+const { linkIn, peekScreen, screenOfUrl } = require("./links.cjs");
 const { createLive } = require("./live.cjs");
 const S = require("./settings.cjs");
 const BK = require("./backup.cjs");
@@ -287,6 +287,11 @@ async function openPeek(screenId) {
   win.focus();
 }
 ipcMain.on("shell:peek-hide", () => hidePeek());
+// A mail from the conversation, in a window of its own (task 30): only a note or a proposal by a plain id.
+ipcMain.on("shell:open-peek", (_e, screen) => {
+  const ok = peekScreen(screen);
+  if (ok) void openPeek(ok);
+});
 
 // ---------- widget windows ----------
 function workArea() {

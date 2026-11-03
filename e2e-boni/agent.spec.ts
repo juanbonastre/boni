@@ -94,16 +94,42 @@ test("a reply is painted by the code, and what came from outside is only text", 
   await page.screenshot({ path: `${SHOTS}/agent-reply.png` });
   // Last, since it leaves the conversation: a line with its mail's id and type (the code's) opens the mail in the
   // side panel; one whose id came from outside is only text; «Agrandar» takes the mail to its page.
-  await expect(list.locator(".reply-open")).toHaveCount(1);
   await expect(list.getByRole("button", { name: "Abrir" })).toHaveCount(1);
-  // The text itself is not a button: only the small ↗ after it.
-  await expect(list.locator("li").first().locator("button")).toHaveCount(1);
+  // The text itself is not a button: only the small ↗ after it, and «Proponer tarea» for a mail (task 30).
+  await expect(list.locator("li").first().locator("button")).toHaveCount(2);
   await list.getByRole("button", { name: "Abrir" }).click();
   const panel = page.locator(".side-panel");
   await expect(panel.locator(".mail-subject")).toBeVisible();
   await panel.getByRole("button", { name: "Agrandar" }).click();
   await expect(page.locator(".side-panel")).toHaveCount(0);
   await expect(page.locator(".mail-subject")).toBeVisible();
+});
+
+test("a mail of a reply opens in a window of its own in the desktop app, and proposes its tasks to the inbox (task 30)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [TEXT_REPLY],
+      "GET api/agent/proposals": [PROPOSALS],
+      "POST api/mail/propose": [{ proposals: 2 }, { proposals: 0 }],
+    },
+    mail: true,
+    peek: true,
+  });
+  await ask(page, "resume el último correo");
+  const list = page.locator(".turn-answer").first().locator(".reply-list.reply-ext");
+  await list.getByRole("button", { name: "Abrir" }).click();
+  await expect.poll(async () => (await recorded(page)).calls).toContain("openPeek note:m1");
+  await expect(page.locator(".side-panel")).toHaveCount(0);
+  // «Proponer tarea»: the mail read now by its plan; what went to the inbox is said, and nothing too.
+  await list.getByRole("button", { name: "Proponer tarea" }).click();
+  await expect(page.locator(".toast")).toContainText("2 propuestas en la Bandeja");
+  expect(await requests(page, "POST api/mail/propose ")).toEqual([
+    'POST api/mail/propose {"id":"m1"}',
+  ]);
+  await list.getByRole("button", { name: "Proponer tarea" }).click();
+  await expect(page.locator(".toast")).toContainText("Nada que proponer");
 });
 
 test("a turn in Juan's words: each step says what it does, on what and what it found; numbers to compare are a chart", async ({
