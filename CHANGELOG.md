@@ -5,7 +5,22 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
-## Unreleased
+## 2026-11-03 (night) — server 0.8.77 · Boni desktop 0.4.61 · Boni Calendar desktop 0.8.15
+
+Needs: the server (0.8.77, to deploy), Boni desktop 0.4.61 (`release/boni_0.4.61_amd64.deb`, to install),
+Boni Calendar desktop 0.8.15 (`release/boni-calendar-desktop_0.8.15_amd64.deb`, to install; it replaces the 0.8.14
+that was never installed). The batch Juan chose («13, 25, 24 y 28»), one PR per task.
+
+- **Boni Calendar: «Colorear por».** In the properties of a definition (Agenda's gear, or any calendar inside it:
+  «Ajustes de Agenda»), under «Separar por»: a list or a relation of the collection, or «Por calendario». Every
+  event takes the colour of its value without splitting the calendar; «Colores por tipo» lists each value with a row
+  of swatches. (#248, task 24)
+- **Boni: what enters rises into place**, as the conversation does since the last release: a page, a record or a
+  table opened in the main area, the inbox's cards (one after another), a dialog, the Settings pane when its tab
+  changes, the phone's screens; menus grow from their button. The system's «reduce motion» turns it all off. (#249,
+  task 28)
+- **CI.** Boni Calendar's desktop app with its note peek now runs in CI on a virtual screen, as Boni's does; its
+  suite passes again. (#247, task 25)
 
 - **Decisions.** The mail reviewer learns by code too: a sender always rejected, or always moved to the same
   collection, becomes a rule it proposes (measured as before), at most one suggestion a day it was not asked for.
