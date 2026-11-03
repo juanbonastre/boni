@@ -17,6 +17,10 @@ night's release, as two tasks.
   sends the calendar back after a change, the selects wait and say «Guardando…». (#252, task 32)
 - **Boni, Ajustes › Decisiones** waits for the server without saying «Sin decisiones», and the server logs a slow
   decisions view. (#251, task 31)
+- **The wait always shows.** In Boni and in Boni Calendar, a thin line slides along the top edge of the window while
+  anything is in flight (a request, the connection, the calendar coming), after 250 ms; the sections of Settings
+  keep their room with a pulsing placeholder while they load. The rule, with what Apple, Material and Nielsen
+  Norman Group say, is in `docs/design-guide.md` «Waiting». (#254, task 33)
 
 ## 2026-11-03 (night) — server 0.8.77 · Boni desktop 0.4.61 · Boni Calendar desktop 0.8.15
 
