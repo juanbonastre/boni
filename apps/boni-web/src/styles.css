@@ -3241,6 +3241,29 @@ th.row-tools .add-col:hover {
   color: var(--muted);
   font-size: 11.5px;
 }
+/* A view's «Opciones» (task 41, Notion's «⋯»): rows that open a panel say what they are now; a panel's head goes
+   back to the list. */
+.menu-value {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+.menu-chev {
+  flex: none;
+  color: var(--muted);
+}
+.menu-next .menu-text {
+  flex: none;
+}
+.menu-next:not(:has(.menu-value)) .menu-chev {
+  margin-left: auto;
+}
+.menu-back {
+  color: var(--muted);
+  font-weight: 600;
+}
 .welcome {
   max-width: 30rem;
 }

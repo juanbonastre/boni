@@ -38,12 +38,13 @@ import {
   openRow,
   resetColumnWidth,
   setColumnWidth,
+  setNotesInTree,
   toast,
   useStore,
 } from "../store.ts";
 import { AddColumn, ColumnMenu, columnsEditable } from "./ColumnMenu.tsx";
 import { bytes, whoName } from "./Dash.tsx";
-import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
+import { BackRow, MenuRow, MenuSep, NextRow, PointMenu, PopButton } from "./Popover.tsx";
 import { ProtectionMenu } from "./Protection.tsx";
 
 /**
@@ -475,8 +476,14 @@ function sortRows(rows: DataRow[], type: DataType | undefined, view: DatabaseVie
   });
 }
 
-/** The view's options (Notion's "…" of a view): sort, the board's grouping, the calendar's date, the
- * properties shown. */
+type OptionsPanel = "main" | "props" | "filter" | "sort" | "group" | "date" | "also" | "system";
+
+/**
+ * A view's «Opciones», as Notion's «⋯» of a view (Juan, 2026-11-03, task 41: «debería darme opciones»): a short list
+ * saying what each is now, each with its panel (the properties shown, the filter, the order, the board's grouping
+ * or the calendar's date and what else it shows, the table's system columns), and the collection's notes in the
+ * sidebar. It opens on the list again.
+ */
 function ViewOptions({
   type,
   view,
@@ -488,44 +495,158 @@ function ViewOptions({
 }) {
   const t = useStore((s) => s.t);
   const allTypes = useStore((s) => s.dataTypes);
+  const inTree = useStore((s) => s.tree?.collections.find((c) => c.id === type.id));
+  const [panel, setPanel] = useState<OptionsPanel>("main");
   const selects = type.fields.filter((f) => f.type === "select");
   const dates = type.fields.filter((f) => f.type === "date" || f.type === "datetime");
+  const props = type.fields.filter((f) => f.id !== type.titleField);
+  const others = (allTypes ?? []).filter(
+    (x) => x.id !== type.id && x.fields.some((f) => f.type === "date" || f.type === "datetime"),
+  );
+  const rules = view.filter ?? [];
+  const sortField = type.fields.find((f) => f.id === view.sort?.field);
+  const chosen = (id: string | undefined, list: DataField[]) =>
+    (list.find((f) => f.id === id) ?? list[0])?.name ?? "";
+  const count = (n: number) => (n ? String(n) : "");
+  const LABEL: Record<Exclude<OptionsPanel, "main">, string> = {
+    props: t("db.opt.properties"),
+    filter: t("db.opt.filter"),
+    sort: t("db.opt.sort"),
+    group: t("db.opt.group"),
+    date: t("db.opt.date"),
+    also: t("db.alsoShow"),
+    system: t("sys.title"),
+  };
+  const head =
+    panel === "main" ? null : (
+      <BackRow label={LABEL[panel]} back={t("db.opt.back")} onClick={() => setPanel("main")} />
+    );
   return (
     <PopButton
       className="btn ghost small"
       title={t("db.options")}
-      width={260}
+      width={panel === "filter" ? 420 : 260}
       label={t("db.options")}
+      onOpenChange={(open) => {
+        if (!open) setPanel("main");
+      }}
     >
-      {() => (
-        <div className="menu-list scroll" role="menu">
-          <div className="menu-head">{t("db.sortBy")}</div>
-          <MenuRow
-            label={t("db.noSort")}
-            on={!view.sort}
-            onClick={() => onView({ ...view, sort: undefined })}
-          />
-          {type.fields.map((f) => (
-            <MenuRow
-              key={f.id}
-              label={`${f.name}${view.sort?.field === f.id ? (view.sort.desc ? " ↓" : " ↑") : ""}`}
-              on={view.sort?.field === f.id}
-              onClick={() =>
-                onView({
-                  ...view,
-                  sort: {
-                    field: f.id,
-                    ...(view.sort?.field === f.id && !view.sort.desc ? { desc: true } : {}),
-                  },
-                })
-              }
+      {() =>
+        panel === "main" ? (
+          <div className="menu-list" role="menu">
+            <NextRow
+              label={LABEL.props}
+              value={t("db.opt.shown", {
+                n: props.filter((f) => !view.hide?.includes(f.id)).length,
+              })}
+              onClick={() => setPanel("props")}
             />
-          ))}
-          {view.layout === "board" && selects.length > 0 && (
-            <>
-              <MenuSep />
-              <div className="menu-head">{t("db.groupBy")}</div>
-              {selects.map((f) => (
+            <NextRow
+              label={LABEL.filter}
+              value={count(rules.length)}
+              onClick={() => setPanel("filter")}
+            />
+            <NextRow
+              label={LABEL.sort}
+              value={sortField ? `${sortField.name} ${view.sort?.desc ? "↓" : "↑"}` : ""}
+              onClick={() => setPanel("sort")}
+            />
+            {view.layout === "board" && selects.length > 0 && (
+              <NextRow
+                label={LABEL.group}
+                value={chosen(view.group, selects)}
+                onClick={() => setPanel("group")}
+              />
+            )}
+            {view.layout === "calendar" && dates.length > 0 && (
+              <NextRow
+                label={LABEL.date}
+                value={chosen(view.date, dates)}
+                onClick={() => setPanel("date")}
+              />
+            )}
+            {view.layout === "calendar" && others.length > 0 && (
+              <NextRow
+                label={LABEL.also}
+                value={count(view.also?.length ?? 0)}
+                onClick={() => setPanel("also")}
+              />
+            )}
+            {view.layout === "table" && (
+              <NextRow
+                label={LABEL.system}
+                value={count(view.system?.length ?? 0)}
+                onClick={() => setPanel("system")}
+              />
+            )}
+            {inTree && (
+              <>
+                <MenuSep />
+                <MenuRow
+                  label={inTree.notes ? t("tree.notesHide") : t("tree.notesShow")}
+                  onClick={() => void setNotesInTree(type.id, !inTree.notes)}
+                />
+              </>
+            )}
+          </div>
+        ) : panel === "filter" ? (
+          <div className="pop-section db-filters">
+            {head}
+            <FilterEditor
+              type={type}
+              rules={rules}
+              onChange={(next) => onView({ ...view, filter: next.length ? next : undefined })}
+            />
+          </div>
+        ) : (
+          <div className="menu-list scroll" role="menu">
+            {head}
+            {panel === "props" &&
+              props.map((f) => {
+                const hidden = view.hide?.includes(f.id) ?? false;
+                return (
+                  <MenuRow
+                    key={f.id}
+                    label={f.name}
+                    on={!hidden}
+                    onClick={() =>
+                      onView({
+                        ...view,
+                        hide: hidden
+                          ? (view.hide ?? []).filter((x) => x !== f.id)
+                          : [...(view.hide ?? []), f.id],
+                      })
+                    }
+                  />
+                );
+              })}
+            {panel === "sort" && (
+              <>
+                <MenuRow
+                  label={t("db.noSort")}
+                  on={!view.sort}
+                  onClick={() => onView({ ...view, sort: undefined })}
+                />
+                {type.fields.map((f) => (
+                  <MenuRow
+                    key={f.id}
+                    label={`${f.name}${view.sort?.field === f.id ? (view.sort.desc ? " ↓" : " ↑") : ""}`}
+                    on={view.sort?.field === f.id}
+                    onClick={() =>
+                      onView({
+                        ...view,
+                        sort: {
+                          field: f.id,
+                          ...(view.sort?.field === f.id && !view.sort.desc ? { desc: true } : {}),
+                        },
+                      })
+                    }
+                  />
+                ))}
+              </>
+            )}
+            {panel === "group" &&
+              selects.map((f) => (
                 <MenuRow
                   key={f.id}
                   label={f.name}
@@ -533,13 +654,8 @@ function ViewOptions({
                   onClick={() => onView({ ...view, group: f.id })}
                 />
               ))}
-            </>
-          )}
-          {view.layout === "calendar" && dates.length > 0 && (
-            <>
-              <MenuSep />
-              <div className="menu-head">{t("db.dateBy")}</div>
-              {dates.map((f) => (
+            {panel === "date" &&
+              dates.map((f) => (
                 <MenuRow
                   key={f.id}
                   label={f.name}
@@ -547,43 +663,27 @@ function ViewOptions({
                   onClick={() => onView({ ...view, date: f.id })}
                 />
               ))}
-            </>
-          )}
-          {view.layout === "calendar" && (
-            <>
-              <MenuSep />
-              <div className="menu-head">{t("db.alsoShow")}</div>
-              {(allTypes ?? [])
-                .filter(
-                  (x) =>
-                    x.id !== type.id &&
-                    x.fields.some((f) => f.type === "date" || f.type === "datetime"),
-                )
-                .map((x) => {
-                  const on = view.also?.includes(x.id) ?? false;
-                  return (
-                    <MenuRow
-                      key={x.id}
-                      label={x.name}
-                      on={on}
-                      onClick={() =>
-                        onView({
-                          ...view,
-                          also: on
-                            ? (view.also ?? []).filter((y) => y !== x.id)
-                            : [...(view.also ?? []), x.id].slice(0, 10),
-                        })
-                      }
-                    />
-                  );
-                })}
-            </>
-          )}
-          {view.layout === "table" && (
-            <>
-              <MenuSep />
-              <div className="menu-head">{t("sys.title")}</div>
-              {SYSTEM_COLUMNS.map((c) => {
+            {panel === "also" &&
+              others.map((x) => {
+                const on = view.also?.includes(x.id) ?? false;
+                return (
+                  <MenuRow
+                    key={x.id}
+                    label={x.name}
+                    on={on}
+                    onClick={() =>
+                      onView({
+                        ...view,
+                        also: on
+                          ? (view.also ?? []).filter((y) => y !== x.id)
+                          : [...(view.also ?? []), x.id].slice(0, 10),
+                      })
+                    }
+                  />
+                );
+              })}
+            {panel === "system" &&
+              SYSTEM_COLUMNS.map((c) => {
                 const on = view.system?.includes(c) ?? false;
                 return (
                   <MenuRow
@@ -601,32 +701,9 @@ function ViewOptions({
                   />
                 );
               })}
-            </>
-          )}
-          <MenuSep />
-          <div className="menu-head">{t("db.properties")}</div>
-          {type.fields
-            .filter((f) => f.id !== type.titleField)
-            .map((f) => {
-              const hidden = view.hide?.includes(f.id) ?? false;
-              return (
-                <MenuRow
-                  key={f.id}
-                  label={f.name}
-                  on={!hidden}
-                  onClick={() =>
-                    onView({
-                      ...view,
-                      hide: hidden
-                        ? (view.hide ?? []).filter((x) => x !== f.id)
-                        : [...(view.hide ?? []), f.id],
-                    })
-                  }
-                />
-              );
-            })}
-        </div>
-      )}
+          </div>
+        )
+      }
     </PopButton>
   );
 }
