@@ -238,6 +238,22 @@ test("deleting a chart waits for Undo before it reaches the server", async ({ pa
   );
 });
 
+test("a page made while the pages are still coming keeps the window and what is typed (task 36)", async ({
+  page,
+}) => {
+  // The pages come slowly (a login, a reconnection to a busy server): the start page must not take the window.
+  await openApp(page, "/?still", { slow: { path: "api/pages", ms: 1500 } });
+  await page.locator(".sidebar").getByRole("button", { name: "Nueva página" }).click();
+  await expect(page.locator(".doc-title")).toBeFocused();
+  await page.keyboard.type("Mi agenda", { delay: 50 });
+  // Past the moment the list arrives: still the new page, with its whole name.
+  await page.waitForTimeout(1800);
+  await page.keyboard.type(" nueva", { delay: 20 });
+  await expect(page.locator(".doc-title")).toHaveValue("Mi agenda nueva");
+  await expect(page.locator(".doc-title")).toBeFocused();
+  await expect(page.locator(".sidebar .page-row.active")).toContainText("Mi agenda nueva");
+});
+
 test('pages as Notion\'s: made from the sidebar, written in place, blocks by "/", moved and deleted', async ({
   page,
 }) => {
