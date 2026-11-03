@@ -749,6 +749,9 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
     expect(offers).toHaveLength(6);
     for (const p of offers) store.journal.setProposal(p.id, "rejected", NOW);
     reviewerSays = { rules: [], examples: [] };
+    // On its own it looked a moment ago: a candidate found by code does not make it look again today (it did,
+    // forty reads of the model on every check, 2026-11-03); on demand, now.
+    expect(await m.reviewNow(1, true)).toBeNull();
     const s2 = await m.reviewNow(1);
     expect(s2?.rules.map((r) => [r.from, r.action])).toEqual([["@ofertas.example.com", "skip"]]);
     expect(s2?.examples).toEqual([]);

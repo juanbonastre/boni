@@ -25,7 +25,7 @@ import type { AgentHost } from "./agent.ts";
 import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
-import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview } from "./learning.ts";
+import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
 import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
 import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
@@ -78,6 +78,8 @@ export interface MailState {
   suggestedAt?: number;
   /** Senders and example ids Juan said no to: never suggested again. */
   refused?: string[];
+  /** Rules found by code that measured no better, by sender, with when: not tried again for a week (learning.ts). */
+  tried?: Record<string, number>;
 }
 /**
  * Juan's reading guide (docs/nucleo.md 7.4b, point 2), kept with the mailbox's settings and encrypted the
@@ -871,7 +873,9 @@ export class Mails {
       const store = this.o.host.store(account);
       const guide = this.guide(account);
       const targets = this.targets(store, s);
-      const excluded = new Set(st.refused ?? []);
+      const now = this.now();
+      const tried = Object.entries(st.tried ?? {}).filter(([, at]) => now - at < TRIED_FOR);
+      const excluded = new Set([...(st.refused ?? []), ...tried.map(([from]) => from)]);
       const type = st.type;
       let ds: Decision[] | null = null;
       const theDs = () => (ds ??= decisions(store, type, (v) => userIn(s.user, v.f_para, v.f_cc)));
@@ -885,13 +889,17 @@ export class Mails {
             learning: learningOn(store),
             waiting: !!st.suggestion,
             suggestedAt: st.suggestedAt ?? null,
-            now: this.now(),
+            lookedAt: st.reviewedAt ?? null,
+            now,
             fresh: () => this.freshDecisions(store, st.reviewedAt ?? 0),
             every,
             candidates: () => candidates().length,
           })
         )
           return null;
+        console.log(
+          `mail ${account}: the reviewer looks on its own (${candidates().length} found by code)`,
+        );
       }
       const suggestion = await review({
         store,
@@ -906,6 +914,12 @@ export class Mails {
       });
       const after = this.state(account);
       after.reviewedAt = this.now();
+      // What the code found and did not make the cut waits a week before it is measured again.
+      const dropped = candidates();
+      if (!suggestion && dropped.length)
+        after.tried = Object.fromEntries(
+          [...tried, ...dropped.map((r) => [r.from, this.now()] as [string, number])].slice(-200),
+        );
       if (suggestion) {
         after.suggestion = suggestion;
         after.suggestedAt = this.now();

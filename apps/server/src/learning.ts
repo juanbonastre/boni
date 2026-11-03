@@ -16,16 +16,23 @@ export function setLearning(store: UserStore, on: boolean): void {
   store.setSetting(SETTING, on ? null : "off");
 }
 
+/** A candidate tried and dropped (it measured no better) is not tried again for this long. */
+export const TRIED_FOR = 7 * DAY;
+
 /**
  * Whether a learner may look now without Juan asking (docs/preferencias.md §5, A-14): never with «Aprender» off,
  * nor while a suggestion waits for him, nor within a day of the last one made; then when his decisions since the
- * last look add up to the extension's `every`, or when a correction of his, repeated, already shows a rule (a
- * candidate found by code). On demand («Revisar ahora») none of this applies.
+ * last look add up to the extension's `every`, or, at most once a day whatever the last look gave, when a
+ * correction of his, repeated, already shows a rule (a candidate found by code). On demand («Revisar ahora») none
+ * of this applies. (2026-11-03: a candidate that measured no better made it look again, forty reads of a model
+ * each time, on every check of the mailbox; the server crawled for hours.)
  */
 export function mayReview(x: {
   learning: boolean;
   waiting: boolean;
   suggestedAt: number | null;
+  /** When it last looked on its own or on demand (null: never). */
+  lookedAt: number | null;
   now: number;
   /** Counted only once the cheap gates pass (they read his proposals and decisions). */
   fresh: () => number;
@@ -34,5 +41,7 @@ export function mayReview(x: {
 }): boolean {
   if (!x.learning || x.waiting) return false;
   if (x.suggestedAt !== null && x.now - x.suggestedAt < DAY) return false;
-  return x.fresh() >= x.every || x.candidates() > 0;
+  if (x.fresh() >= x.every) return true;
+  if (x.lookedAt !== null && x.now - x.lookedAt < DAY) return false;
+  return x.candidates() > 0;
 }

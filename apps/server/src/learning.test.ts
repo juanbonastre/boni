@@ -8,6 +8,7 @@ describe("what a learner may do on its own (A-14)", () => {
     learning: true,
     waiting: false,
     suggestedAt: null,
+    lookedAt: null,
     now: DAY * 10,
     fresh: () => 0,
     every: 20,
@@ -25,6 +26,12 @@ describe("what a learner may do on its own (A-14)", () => {
     expect(mayReview({ ...ready, waiting: true })).toBe(false);
     expect(mayReview({ ...ready, suggestedAt: ready.now - DAY + 1 })).toBe(false);
     expect(mayReview({ ...ready, suggestedAt: ready.now - DAY })).toBe(true);
+  });
+  it("a candidate found by code makes it look once a day at most, whatever the last look gave; the decisions always count", () => {
+    const found = { ...base, candidates: () => 1 };
+    expect(mayReview({ ...found, lookedAt: found.now - DAY + 1 })).toBe(false);
+    expect(mayReview({ ...found, lookedAt: found.now - DAY })).toBe(true);
+    expect(mayReview({ ...found, lookedAt: found.now - 1, fresh: () => 20 })).toBe(true);
   });
   it("counts his proposals and decisions only once the cheap gates pass", () => {
     let counted = 0;
