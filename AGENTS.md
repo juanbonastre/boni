@@ -33,20 +33,34 @@ each thing lives), `docs/fiabilidad.md` (decisions by confidence and cost: do, a
 
 ## How a change is made
 
-1. A branch from `main`; nothing is pushed to `main` directly.
-2. `make check && git commit && git push` (a failure stops the chain), then a PR. Merge it yourself when CI is green
+One cycle per task, one release per batch (Juan, 2026-11-03: a day of ten PRs, five desktop versions and six deploys,
+with the same click fixed twice, was «todo un poco liado»):
+
+1. **A task first.** Every piece of work is a task of the queue (in Boni, the project's tasks: its first line says the
+   state and the criterion of done, what Juan will see). At most one task «Ahora». What Juan asks while trying things
+   goes into the queue and is prioritised, never answered with one PR per sentence.
+2. A branch from `main`; nothing is pushed to `main` directly. One PR per task, with its tests, docs and principle.
+3. `make check && git commit && git push` (a failure stops the chain), then a PR. Merge it yourself when CI is green
    (with Android changes, also wait for the APK build). While CI runs, go on with the next thing.
-3. Every change to `apps/boni-web` ships in a new desktop version: bump `apps/boni-desktop/package.json`, then
-   `make package-boni` and `make e2e-boni-desktop` (CI refuses the change otherwise, I-05).
-4. A visual or behavioural change updates `docs/design-guide.md` in the same PR. Build it directly and let Juan try it
+4. Every change to `apps/boni-web` ships in a new desktop version: bump `apps/boni-desktop/package.json`, then
+   `make package-boni` and `make e2e-boni-desktop` (CI refuses the change otherwise, I-05). A change to
+   `apps/calendar-web` ships in a new Boni Calendar desktop version (`apps/calendar-desktop/package.json`,
+   `make package`). **Bump once per batch**, in the last PR of the batch, not in every PR.
+5. **A release per batch**: versions, packages and the deploy go out together, at the end of a day or when Juan asks;
+   `CHANGELOG.md` gets one entry per release saying what he can try and what each app needs (server, desktop, APK).
+6. A visual or behavioural change updates `docs/design-guide.md` in the same PR. Build it directly and let Juan try it
    in his app; a mockup with the real app only when the shape of a screen or a flow is in doubt (I-13). The main
    screens have reference captures, made by the «screens» workflow (I-07).
-5. A decision of Juan's that code can check enters `docs/principios.md` with its test, in the same PR.
-6. Before designing something new, find what already does something like it (`docs/preferencias.md`, `docs/contexto.md`,
+7. A decision of Juan's that code can check enters `docs/principios.md` with its test, in the same PR.
+8. Before designing something new, find what already does something like it (`docs/preferencias.md`, `docs/contexto.md`,
    `make map`, a search) and extend it: a proposal starts with what exists and says what it extends (T-05).
-7. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
-   the built web app, phone-sized viewports, typing at a person's pace where timing matters. On his screen, capture only
-   the app window and delete the captures afterwards. Say what you verified and what you could not.
+9. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
+   the built web app, phone-sized viewports, typing at a person's pace where timing matters, and **data shaped like
+   his** (generated ids, his collections' keys and names: `e2e/server-data.ts`, `seed.test-util.ts`), never only the
+   stubs. On his screen, capture only the app window and delete the captures afterwards. Say what you verified and
+   what you could not. Nothing that does not run in CI counts as tested: a test outside CI rots (the calendar
+   desktop's peek test did, 2026-10-23 to 2026-11-03); an unstable test is quarantined with its task, never rerun
+   and forgotten.
 
 ## Hard rules
 
