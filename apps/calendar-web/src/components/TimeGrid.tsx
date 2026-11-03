@@ -370,7 +370,7 @@ export function TimeGrid() {
                   type="button"
                   key={s.id}
                   data-id={s.id}
-                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.id === newId && !ev.title ? "draft" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
+                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.id === newId && !ev.title ? "draft" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""}`}
                   style={
                     {
                       "--c": cal?.color ?? "#888",
@@ -382,6 +382,12 @@ export function TimeGrid() {
                 >
                   {!s.clippedStart && (
                     <span className="bar-handle start" data-bar-edge="start" data-bar-id={s.id} />
+                  )}
+                  {/* A task of the whole day has its box too (task 44), as one with a time. */}
+                  {ev.isTask && (
+                    <span className="ev-check" data-check={ev.id}>
+                      {ev.done && <Check size={9} strokeWidth={3.5} />}
+                    </span>
                   )}
                   <span className="bar-title">{ev.title || t("event.untitled")}</span>
                   {ev.recurrence && <Repeat size={10} className="rep" />}

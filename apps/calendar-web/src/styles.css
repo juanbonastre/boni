@@ -1169,6 +1169,34 @@ select,
 .ev.done .ev-check svg {
   color: var(--bg);
 }
+/* A task of the whole day, in the week's all-day row and in the month, and a month chip: its box too (task 44). */
+.bar .ev-check {
+  margin-right: 5px;
+}
+.mchip .ev-check {
+  width: 11px;
+  height: 11px;
+  color: var(--c);
+}
+.mchip.task::before {
+  display: none;
+}
+.bar.done {
+  opacity: 0.6;
+}
+.bar.done .bar-title {
+  text-decoration: line-through;
+}
+.bar.done .ev-check,
+.mchip.done .ev-check {
+  background: var(--c);
+  border-color: var(--c);
+  color: var(--bg);
+}
+.bar.done .ev-check svg,
+.mchip.done .ev-check svg {
+  color: var(--bg);
+}
 
 /* ---------------------------------------------------------------- month */
 .month {
