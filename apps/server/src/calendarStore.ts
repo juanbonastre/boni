@@ -840,10 +840,16 @@ export class StoreCalendar implements CalendarSource {
     return null;
   }
 
+  /** Titles of the records relations point to, once per poll (3,000 rows asked for the same areas again and again). */
+  private titles = new Map<string, string>();
   private titleOf(id: string): string {
+    const hit = this.titles.get(id);
+    if (hit !== undefined) return hit;
     const e = this.store.get(id);
     const tf = e ? this.store.schema().types[e.entity.type]?.titleField : undefined;
-    return e && tf ? String(e.entity.values[tf] ?? "") : "";
+    const title = e && tf ? String(e.entity.values[tf] ?? "") : "";
+    this.titles.set(id, title);
+    return title;
   }
 
   private toProp(f: FieldDef, v: unknown): PropValue {
@@ -911,6 +917,7 @@ export class StoreCalendar implements CalendarSource {
 
   /** Reads what changed in the store since the last look; a new version when anything did. */
   private poll(): void {
+    this.titles.clear();
     const storeVersion = this.store.version();
     const placed = calendarDefs(this.store);
     const defsKey = JSON.stringify(placed);

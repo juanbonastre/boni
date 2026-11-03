@@ -443,6 +443,28 @@ function withExternal(
   };
 }
 
+/**
+ * Whoever changed a definition on the server waits for the calendar the server sends back (its stream brings a new
+ * snapshot): the properties editor shows «Guardando…» meanwhile (Juan, 2026-11-03: it took seconds with no sign).
+ * Resolved by `applyLoad`, or after `ms` if nothing comes.
+ */
+let loadWaiters: (() => void)[] = [];
+export function nextLoad(ms = 12_000): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    loadWaiters.push(done);
+  });
+}
+function loadArrived(): void {
+  const waiting = loadWaiters;
+  loadWaiters = [];
+  for (const w of waiting) w();
+}
+
 /** The projector can be kept when no view changed in a way that affects how rows read or write. */
 function sameProjection(a: readonly CalendarView[], b: readonly CalendarView[]): boolean {
   // «Colorear por» (D-25) is read into each event: a change of it (or of a value's colour) projects again.
@@ -673,6 +695,7 @@ export const useApp = create<AppState>((set, get) => {
       JSON.stringify(s.accounts) === JSON.stringify(r.snapshot.accounts);
     if (sameRows && sameDefs) {
       if (JSON.stringify(s.loaded) !== JSON.stringify(loaded)) set({ loaded });
+      loadArrived();
       return;
     }
     const sameCollections =
@@ -703,6 +726,7 @@ export const useApp = create<AppState>((set, get) => {
       newEventId: s.newEventId ? now(s.newEventId) : null,
       loaded,
     });
+    loadArrived();
   };
 
   const mapViews = (fn: (v: CalendarView) => CalendarView) =>
@@ -1260,6 +1284,7 @@ export const useApp = create<AppState>((set, get) => {
       if (get().source !== "server" || !server.remote) return;
       try {
         await server.remote.setSplit(calendarId, field);
+        await nextLoad();
       } catch (e) {
         writeFailed(e);
       }
@@ -1270,6 +1295,7 @@ export const useApp = create<AppState>((set, get) => {
       if (get().source !== "server" || !server.remote) return;
       try {
         await server.remote.setColor(calendarId, color);
+        await nextLoad();
       } catch (e) {
         writeFailed(e);
       }
@@ -1279,6 +1305,7 @@ export const useApp = create<AppState>((set, get) => {
       if (get().source !== "server" || !server.remote) return;
       try {
         await server.remote.setColorBy(calendarId, field);
+        await nextLoad();
       } catch (e) {
         writeFailed(e);
       }
@@ -1288,6 +1315,7 @@ export const useApp = create<AppState>((set, get) => {
       if (get().source !== "server" || !server.remote) return;
       try {
         await server.remote.setColor(calendarId, color, value);
+        await nextLoad();
       } catch (e) {
         writeFailed(e);
       }
