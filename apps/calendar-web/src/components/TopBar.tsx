@@ -5,6 +5,7 @@ import { useState } from "react";
 import { t } from "../i18n.ts";
 import { useApp, useVisible, type ViewKind, visibleDays } from "../store.ts";
 import { Menu } from "./Menu.tsx";
+import { WaitLine } from "./WaitLine.tsx";
 
 export function TopBar() {
   const view = useApp((s) => s.view);
@@ -37,6 +38,7 @@ export function TopBar() {
   const compact = useApp((s) => s.compact);
   return (
     <header className="topbar">
+      <WaitLine />
       {!sidebarOpen && (
         <button
           type="button"

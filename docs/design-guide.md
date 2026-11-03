@@ -208,6 +208,29 @@ any interface is the vault note `wiki/temas/diseno-de-interfaces.md`. Here, what
     something entering, decelerate curves for entries).
   - **"Reduce motion"** (`prefers-reduced-motion`) is respected in both apps: transitions and animations collapse, and the
     calendar's viewport lands jumps and zooms at once (its smoothing time drops to 1 ms).
+- **Waiting** (Juan, 2026-11-03: «en general… que mostrase alguna animación o algo que indique que el sistema está
+  cargando algo»; I-15). What the guidelines say, and what Boni takes from them:
+  - Nielsen Norman Group, «Response Times: The 3 Important Limits» and «Progress Indicators Make a Slow System Less
+    Insufferable»: 0.1 s feels instant, 1 s keeps the flow of thought, 10 s is the limit of attention; under 1 s no
+    feedback is needed; a looped animation for 2–10 s; a percent-done, or the amount done, past 10 s; feedback matters
+    most when the time varies; a flash is worse than nothing (display inertia).
+  - Material Design 3, «Progress indicators»: nothing under 200 ms; a loading indicator from 200 ms to 5 s; a progress
+    indicator over 5 s; one indicator for a group, on the top edge of the page or container, never one per item; linear
+    on an edge, circular centred where the content will appear; the same variant everywhere.
+  - Apple HIG, «Progress indicators» and «Loading»: show the screen at once with placeholders and let the content
+    arrive; prefer determinate when the duration is known and switch to it when it becomes known; keep the indicator
+    moving (a stationary one reads as frozen); one consistent place; a label only when it adds something («loading»
+    adds nothing); let people halt what can be halted.
+  - Boni: **the line at the top** (`.wait-line`, the top edge of the top bar, or of the phone's screen): a thin accent
+    segment sliding along the width while anything is in flight (a request of either app to the server or to a model,
+    the calendar's connection and the calendar itself coming); it shows after 250 ms and stays at least 500 ms; one
+    line for everything, never one per element. **In place**, what is loading keeps its room with the pulsing
+    placeholder (`.page-loading`; `.short` in a section of Settings) and no word says «Cargando»; a control that
+    saves disables itself and says «Guardando…» (the calendar's properties) or shows its busy state (the inbox's
+    buttons). **Long waits** (a model's turn, the mailbox's check) say what is happening as it happens (the
+    conversation's live steps; «Comprobando…» with its count) and can be stopped («Parar»). **"Reduce motion"** keeps
+    the line and the placeholders but stops their motion. A wait never ends in silence: an error replaces it with its
+    state (a toast, «Sin conexión»).
 - **Surfaces nobody draws:** text selection in the accent's soft tint (`::selection`), a visible focus ring, styled
   scrollbars, tabular numerals in figures.
 - **Copy:** a button names its action; an error says what happened and how to fix it, never a code.

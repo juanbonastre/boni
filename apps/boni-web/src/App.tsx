@@ -14,6 +14,7 @@ import { RowView } from "./components/RowView.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
+import { WaitLine } from "./components/WaitLine.tsx";
 import { host, PHONE_QUERY } from "./host.ts";
 import { MobileApp } from "./MobileApp.tsx";
 import {
@@ -184,6 +185,7 @@ function TopBar() {
   const onPage = view.kind === "page" && page?.id === view.id;
   return (
     <header className="topbar">
+      <WaitLine />
       {!sidebarOpen && (
         <button
           type="button"

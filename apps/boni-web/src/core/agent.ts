@@ -19,6 +19,7 @@ import {
   type SystemColumns,
 } from "./audit.ts";
 import { type BlockResult, type DataBlock, parseBlockResults } from "./blocks.ts";
+import { tracked } from "./wait.ts";
 
 /**
  * The agent's conversation API (apps/server/src/agent.ts, docs/nucleo.md 7 and 7.14). What comes back is
@@ -1486,7 +1487,7 @@ export class AgentApi {
     body?: unknown,
     prefix = "api/agent/",
   ): Promise<unknown> {
-    const r = await this.transport.request(method, `${prefix}${path}`, body);
+    const r = await tracked(this.transport.request(method, `${prefix}${path}`, body));
     if (!r.ok) {
       if (r.offline) throw new OfflineError(r.message);
       throw new NotConfiguredError("not configured");
