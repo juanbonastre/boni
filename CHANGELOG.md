@@ -5,6 +5,20 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (sixth) — server 0.8.82 · Boni desktop 0.4.63
+
+Needs: the server (0.8.82, to deploy) and Boni desktop 0.4.63 (`release/boni_0.4.63_amd64.deb`, to install). Boni
+Calendar desktop stays 0.8.17. The batch Juan chose («36, 37 y 23»).
+
+- **A new page keeps the window.** After logging in or a reconnection, the pages asked before a new page existed no
+  longer take the window from it while its name is typed, nor the page from the sidebar. (#262, task 36)
+- **The conversation reads mail with Juan's guide.** «Resume mis correos», «Ponme al día» or «¿Quién me ha escrito
+  de la secretaría?»: the AI that reads the mail gets his guide (Ajustes › Correo: his instructions and the examples
+  from his decisions), as the background reading does, and tells first what it says matters. (#264, task 23)
+- **Measuring a guide never leaves new mail unread.** The reviewer's readings of mail already decided count in an
+  allowance of their own (45 a day) and in the day's total, never in the mail's 150 nor in a sender's 20. (#263,
+  task 37; P13 in `docs/nucleo.md`)
+
 ## 2026-11-03 (fifth) — server 0.8.81
 
 Needs: the server only (0.8.81). Deployed at once at Juan's word, with his code.
