@@ -36,9 +36,13 @@ export interface Message {
   attachments: Attachment[];
   /** The body was cut (the fetch was partial or the text too long). */
   truncated: boolean;
+  /** The first calendar part with an event (an invitation's .ics text), for the code that reads invitations. */
+  calendar: string | null;
 }
 
 const MAX_TEXT = 50_000;
+/** An invitation's calendar part is small; anything bigger is a feed, not an invitation. */
+const CALENDAR_MAX = 200_000;
 const latin1 = new TextDecoder("latin1");
 
 function decodeCharset(bytes: Uint8Array, charset: string | undefined): string {
@@ -166,10 +170,15 @@ export function parseAddresses(v: string | undefined): Address[] {
 }
 
 interface Walk {
-  texts: { type: string; text: string }[];
+  texts: {
+    type: string;
+    text: string;
+  }[];
   attachments: Attachment[];
   /** Bytes of an attachment kept at most (0: names only). */
   keep: number;
+  /** The calendar parts' text (text/calendar, .ics), at most a few. */
+  calendars: string[];
 }
 
 const EXT: Record<string, string> = {
@@ -196,10 +205,25 @@ function walk(part: Part, w: Walk, depth: number): void {
       const plain = parts.find((p) => params(p.headers.get("content-type")).value === "text/plain");
       const chosen = plain ?? parts[parts.length - 1];
       if (chosen) walk(chosen, w, depth + 1);
+      // A calendar invitation travels as one more alternative (Google): read beside the text.
+      for (const p of parts)
+        if (p !== chosen && params(p.headers.get("content-type")).value === "text/calendar")
+          walk(p, w, depth + 1);
       return;
     }
     for (const p of parts) walk(p, w, depth + 1);
     return;
+  }
+  // An invitation's calendar part (text/calendar, or an .ics file): its text is kept apart for the code that
+  // reads invitations (task 45); it stays a file only when it came as one.
+  if (
+    ct.value === "text/calendar" ||
+    ct.value === "application/ics" ||
+    /\.ics$/i.test(filename ?? "")
+  ) {
+    const text = decodeCharset(decodeBody(part), ct.p.charset);
+    if (w.calendars.length < 4 && text.length <= CALENDAR_MAX) w.calendars.push(text);
+    if (disp.value !== "attachment" && !filename) return;
   }
   const isText = ct.value === "text/plain" || ct.value === "text/html" || ct.value === "";
   if (isText && disp.value !== "attachment" && !filename) {
@@ -231,7 +255,7 @@ function walk(part: Part, w: Walk, depth: number): void {
 export function parseMessage(raw: Uint8Array, partial = false, o: { keep?: number } = {}): Message {
   const top = splitHead(latin1.decode(raw));
   const h = (k: string) => top.headers.get(k);
-  const w: Walk = { texts: [], attachments: [], keep: o.keep ?? 0 };
+  const w: Walk = { texts: [], attachments: [], keep: o.keep ?? 0, calendars: [] };
   walk(top, w, 0);
   const plain = w.texts.filter((t) => t.type === "text/plain");
   const html = w.texts.filter((t) => t.type === "text/html");
@@ -263,5 +287,6 @@ export function parseMessage(raw: Uint8Array, partial = false, o: { keep?: numbe
     hidden,
     attachments: w.attachments.slice(0, 50),
     truncated: partial || cut,
+    calendar: w.calendars.find((c) => /BEGIN:VEVENT/i.test(c)) ?? null,
   };
 }

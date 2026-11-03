@@ -122,6 +122,77 @@ describe("a mail as text", () => {
     ]);
   });
 
+  it("an invitation's calendar part is read beside the text (task 45), and is a file only when it came as one", () => {
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "METHOD:REQUEST",
+      "BEGIN:VEVENT",
+      "UID:abc@example",
+      "DTSTART:20261111T160000Z",
+      "DTEND:20261111T170000Z",
+      "SUMMARY:Entrevista de reconocimiento",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    // Google: the calendar part is one more alternative, and the same file comes again as invite.ics.
+    const google = CRLF(`From: Secretaría Ejemplo <secretaria.ejemplo@universidad.example>
+To: juan@example.com
+Subject: Invitación: Entrevista
+Date: Tue, 03 Nov 2026 10:00:00 +0100
+Message-ID: <inv1@example.com>
+Content-Type: multipart/mixed; boundary="mix"
+
+--mix
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset="UTF-8"
+
+Entrevista de reconocimiento, 5pm - 6pm
+--alt
+Content-Type: text/html; charset="UTF-8"
+
+<p>Entrevista de reconocimiento</p>
+--alt
+Content-Type: text/calendar; charset="UTF-8"; method=REQUEST
+
+${ics}
+--alt--
+--mix
+Content-Type: application/ics; name="invite.ics"
+Content-Disposition: attachment; filename="invite.ics"
+Content-Transfer-Encoding: base64
+
+QkVHSU46VkNBTEVOREFSDQpFTkQ6VkNBTEVOREFSDQo=
+--mix--
+`);
+    const m = parseMessage(Buffer.from(google, "utf-8"));
+    expect(m.text).toBe("Entrevista de reconocimiento, 5pm - 6pm");
+    expect(m.calendar).toContain("UID:abc@example");
+    expect(m.attachments.map((a) => a.name)).toEqual(["invite.ics"]);
+    // Outlook: the calendar part is itself the attached file: read, and kept as a file too.
+    const outlook = CRLF(`From: Secretaría Ejemplo <secretaria.ejemplo@universidad.example>
+To: juan@example.com
+Subject: Entrevista
+Content-Type: multipart/mixed; boundary="mix"
+
+--mix
+Content-Type: text/plain; charset="UTF-8"
+
+Os paso la convocatoria.
+--mix
+Content-Type: text/calendar; charset="UTF-8"; method=REQUEST; name="meeting.ics"
+Content-Disposition: attachment; filename="meeting.ics"
+
+${ics}
+--mix--
+`);
+    const o = parseMessage(Buffer.from(outlook, "utf-8"));
+    expect(o.calendar).toContain("SUMMARY:Entrevista de reconocimiento");
+    expect(o.attachments.map((a) => [a.name, a.type])).toEqual([["meeting.ics", "text/calendar"]]);
+    expect(parseMessage(Buffer.from(PLAIN, "latin1")).calendar).toBeNull();
+  });
+
   it("keeps an attachment's bytes when asked and it fits; an image the HTML shows by its cid is inline, named by its kind", () => {
     const kept = parseMessage(Buffer.from(MULTI, "latin1"), false, { keep: 100 });
     expect(Buffer.from(kept.attachments[0]?.content ?? []).toString("base64")).toBe("JVBERi0xLjQK");

@@ -41,11 +41,18 @@ cualquier cosa que nazca de él se propone, nunca se escribe sola (P4, P7).
 | Quién | Qué ve | Qué hace |
 |---|---|---|
 | **El código** | El correo | Hace el plan (no hay planificador): leer, elegir colección y proponer. Calcula dónde está Juan entre los destinatarios (`user_in`) y lo que sigue pendiente del mismo remitente (`known`) |
+| **El código, antes** (tarea 45) | Una invitación de calendario (parte `text/calendar`) | Saca el evento del `.ics` sin modelo (día, hora de inicio y fin en la zona horaria del usuario, lugar y enlace de videollamada) a campos ocultos del correo; su título entra en `known` y la propuesta sale con la hora puesta; si su UID ya está en un calendario externo de la cuenta (los que el servidor descarga para los avisos), no se propone y el log lo dice |
 | **El lector `read_message`** | Un prompt base largo y fijo (`packages/agent/src/reading.ts`), los módulos (tareas y eventos; una extensión puede añadir los suyos), la **guía de Juan** y el correo entre marcas | Lista cada cosa que menciona el correo, en orden: la cita, quién tiene que actuar, la clase, el título desde el lado de Juan y el día |
 | **El código, otra vez** | La lista (con la hora de cada cosa cuando el correo la dice: a los campos con papel `hora` y `hora de fin`; a una tarea sin hora, la primera libre del día como pregunta en la tarjeta, `docs/fiabilidad.md`) | Solo pasa lo que tiene que hacer Juan y es de un módulo activo. Aplica las reglas de la guía (no leer a un remitente, llevar sus cosas a una colección): el modelo no puede saltárselas |
 | **El decisor (Jev)** | Las colecciones posibles | Elige dónde va cada cosa; si duda, se lo pregunta a Juan en el panel de peticiones |
 | **Juan** | La propuesta en la Bandeja | Acepta, corrige o rechaza |
 | **La revisora** | Las decisiones de Juan | Propone reglas (este remitente, siempre no) y ejemplos para la guía. Las reglas que sus correcciones repetidas muestran las saca el código sin modelo (`docs/fiabilidad.md` F4); como mucho una sugerencia al día que él no pida, ninguna con «Aprender» apagado; lo que vuelve a leer para medir sale de su propio cupo diario, nunca del correo nuevo ni del de cada remitente. Juan dice sí, no o la escribe con sus palabras («Cambiarlo…») en Ajustes → Correo; nada cambia solo |
+
+Lo que cada lectura propone queda en el log del servidor (`mail N: read <remitente>: «título» (colección, día
+horas)`, o `nothing proposed`): el log responde «por qué salió así» (Juan, 2026-11-03: «me recomienda siempre a las
+9:00»). Los campos ocultos del correo («Texto de los adjuntos», los del evento) llegan al plan atados por el código
+(`$adjuntos`, `$inv`), nunca por `$m`: `entities.get` no los da, y hasta el 2026-11-03 un correo con un adjunto
+legible paraba su plan con `bad-ref`.
 
 **La guía de Juan** (Ajustes → Correo, cifrada con el buzón): sus indicaciones en lenguaje natural, reglas de un
 catálogo cerrado que aplica el código, y ejemplos de correos que él ya decidió. Cada correo guarda con qué versión de la
@@ -199,6 +206,11 @@ una tarjeta aparte.
   el lector de fondo recibe después del cuerpo, hasta 50 KB: una tarea que esté en la hoja se propone como las del
   texto. Un adjunto que pasa del tope no se guarda y el cuerpo lo dice. Un enlace a una hoja de Google en el texto
   no se sigue: traer algo de fuera es otra cosa (descargas por `@boni/net`, con su política), pendiente.
+- **Una invitación de calendario** (2026-11-03, tarea 45) guarda su evento en campos ocultos del correo («Evento»,
+  «Evento: día», «Evento: inicio», «Evento: fin», «Evento: lugar», «Evento: enlace», «Evento: nota», «Evento: id» e
+  «Invitación», la línea que la tarjeta enseña como razón), leídos del `.ics` por código (`apps/server/src/invitation.ts`);
+  el `.ics` que viene como adjunto sigue siendo un archivo del correo. Una cancelación o la respuesta de otro invitado
+  describen un evento, pero no piden nada: no se guardan como invitación.
 - **Desde hoy** «Ver correo» lo abre como lo enseña un cliente de correo (Spark, Apple Mail, Outlook): cabecera (de,
   para, cc, fecha), asunto, adjuntos aparte y el texto tal cual, en solo lectura; la colección entera es de solo
   lectura en las apps (D-22). En la tarjeta de la Bandeja, «Corregir» deja cambiar también las demás propiedades de

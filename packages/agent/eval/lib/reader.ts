@@ -29,7 +29,13 @@ export async function evalReader(p: ModelProvider, o: { runs?: number } = {}): P
     for (let i = 0; i < runs; i++) {
       out.total++;
       const { marker, text } = delimit(content(c));
-      let kept: { module: string; title: string; due: string | null }[] = [];
+      let kept: {
+        module: string;
+        title: string;
+        due: string | null;
+        start: string | null;
+        end: string | null;
+      }[] = [];
       let problem = "";
       try {
         const r = await p.complete({
@@ -62,7 +68,12 @@ export async function evalReader(p: ModelProvider, o: { runs?: number } = {}): P
       const wrong = kept.filter((k) => (c.never ?? []).some((re) => re.test(k.title)));
       const day = DAYS[c.name];
       const badDay = day && kept[0] && kept[0].due !== day ? `day ${kept[0].due}` : "";
-      const ok = !problem && !missing.length && !wrong.length && !badDay;
+      // The hours the case gives must come back as such (12-hour times converted).
+      const badTime =
+        kept[0] && ((c.start && kept[0].start !== c.start) || (c.end && kept[0].end !== c.end))
+          ? `hours ${kept[0].start ?? "none"}–${kept[0].end ?? "none"}`
+          : "";
+      const ok = !problem && !missing.length && !wrong.length && !badDay && !badTime;
       if (ok) out.right++;
       else if (wrong.length) out.wrong++;
       out.cases.push({
@@ -71,6 +82,7 @@ export async function evalReader(p: ModelProvider, o: { runs?: number } = {}): P
         note:
           problem ||
           badDay ||
+          badTime ||
           (wrong.length ? "kept what it should not" : missing.length ? "missed one" : ""),
       });
     }

@@ -170,7 +170,7 @@ agent.overBudget = (account) => models.overBudget(account);
 agent.plannerChoices = (account) => models.plannerChoices(account);
 agent.plannerFor = (account, id) => models.plannerProvider(account, id);
 // The accounts' mailboxes (mail.ts): new mail into each account's "Correos" every few minutes.
-const mails = new Mails({ db, key, host: agent });
+const mails = new Mails({ db, key, host: agent, feeds });
 agent.mailAccountOf = (account) => mails.settings(account)?.user || null;
 agent.mailTypeOf = (account) => mails.state(account).type;
 // Juan's reading guide reaches the readers of mail in the conversation too (docs/correo.md §4.1, task 23).
