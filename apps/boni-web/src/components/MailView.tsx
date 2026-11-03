@@ -1,7 +1,9 @@
 // A mail as a mail client shows it (Juan, 2026-11-02): who, to whom, when, the subject, the text and the attachments' names; read only, what arrived.
 import { Paperclip } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { DataRow, DataType } from "../core/agent.ts";
-import { agentApi, openFile, useStore } from "../store.ts";
+import { IMAGE_FILE, splitQuote, withoutImagePlaceholders } from "../core/mailText.ts";
+import { agentApi, fileInline, openFile, useStore } from "../store.ts";
 
 /**
  * The row of a mail's collection opened as a mail, not as a page: its header (from, to, cc, when), the subject, the
@@ -36,6 +38,33 @@ export function MailView({
     const sha = f && r ? r.values[f.id] : null;
     if (typeof sha === "string") await openFile(sha, titles[id] || t("db.file"));
   };
+  // The mail's own images (files it kept) painted after the text, and a reply's quoted part folded (task 48);
+  // never an image from the net: only what Boni already keeps, as a data: address.
+  const [images, setImages] = useState<{ id: string; name: string; src: string }[]>([]);
+  const [quoteOpen, setQuoteOpen] = useState(false);
+  const imageIds = fileIds.filter((id) => IMAGE_FILE.test(titles[id] ?? ""));
+  const imageKey = imageIds.join(",");
+  useEffect(() => {
+    let live = true;
+    setImages([]);
+    setQuoteOpen(false);
+    void (async () => {
+      const f = filesType?.fields.find((x) => x.type === "file");
+      const out: { id: string; name: string; src: string }[] = [];
+      for (const id of imageIds) {
+        const r = await agentApi.dataRow(id);
+        const sha = f && r ? r.values[f.id] : null;
+        const src = typeof sha === "string" ? await fileInline(sha) : null;
+        if (src) out.push({ id, name: titles[id] ?? "", src });
+      }
+      if (live) setImages(out);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [imageKey, row.id, filesType?.id]);
+  const { text, quote } = splitQuote(row.body ?? "");
+  const shown = images.length ? withoutImagePlaceholders(text) : text;
   const byKey = (key: string) => {
     const f = type.fields.find((x) => x.key === key);
     const v = f ? row.values[f.id] : null;
@@ -102,7 +131,28 @@ export function MailView({
           )
         )}
       </dl>
-      <pre className="mail-body">{row.body ?? ""}</pre>
+      <pre className="mail-body">{shown}</pre>
+      {quote &&
+        (quoteOpen ? (
+          <pre className="mail-body mail-quote">{quote}</pre>
+        ) : (
+          <button
+            type="button"
+            className="mail-quote-toggle"
+            aria-label={t("mail.quoted")}
+            title={t("mail.quoted")}
+            onClick={() => setQuoteOpen(true)}
+          >
+            ···
+          </button>
+        ))}
+      {images.length > 0 && (
+        <div className="mail-images">
+          {images.map((i) => (
+            <img key={i.id} src={i.src} alt={i.name} />
+          ))}
+        </div>
+      )}
     </article>
   );
 }

@@ -1076,13 +1076,27 @@ test("«Ver correo» opens the mail as a mail client shows it, read only (D-22)"
   );
   await expect(mail.locator(".mail-line").nth(1)).toContainText("ejemplo@example.edu");
   // Its attachments are files of the account: named by the mail, opened with a click.
-  await expect(mail.locator(".mail-attachment")).toHaveText(["actas.pdf", "orden-del-dia.docx"]);
+  await expect(mail.locator(".mail-attachment")).toHaveText([
+    "actas.pdf",
+    "orden-del-dia.docx",
+    "foto.png",
+  ]);
   await mail.getByRole("button", { name: "actas.pdf" }).click();
   await expect.poll(() => requests(page, "GET api/data/rows/a1")).toEqual(["GET api/data/rows/a1"]);
-  await expect(mail.locator(".mail-body")).toContainText("antes del jueves revisad las actas");
+  const body = mail.locator(".mail-body").first();
+  await expect(body).toContainText("antes del jueves revisad las actas");
   // Outside text stays text: a tag in the body is shown as written, never painted.
-  await expect(mail.locator(".mail-body")).toContainText("<b>no es html</b>");
+  await expect(body).toContainText("<b>no es html</b>");
   await expect(mail.locator(".mail-body b")).toHaveCount(0);
+  // The mail's own image, painted after the text from what Boni keeps (never from the net), and the webmail's
+  // placeholder for it gone (task 48).
+  await expect(mail.locator(".mail-images img")).toHaveCount(1);
+  await expect(mail.locator(".mail-images img")).toHaveAttribute("src", /^data:image\/png;base64,/);
+  await expect(body).not.toContainText("[image:");
+  // The earlier message a reply quotes is folded behind «···», and opens in place.
+  await expect(body).not.toContainText("Os paso las actas");
+  await mail.getByRole("button", { name: "Texto citado" }).click();
+  await expect(mail.locator(".mail-quote")).toContainText("Os paso las actas del tribunal");
   // Nothing on it edits: no title box, no properties, no text editor.
   await expect(page.locator(".row-doc .doc-title")).toHaveCount(0);
   await expect(page.locator(".row-prop")).toHaveCount(0);
