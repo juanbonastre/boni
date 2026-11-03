@@ -368,6 +368,78 @@ export const CARD_DETAILED = {
     context: DAYS("2026-10-29", ["2026-10-28", "2026-10-30"]),
   },
 };
+/**
+ * A meeting from mail going to the events (the agenda fixture, `agenda: true`), that took the place of an earlier
+ * proposal at another hour (task 46): its kind, day and hours can be corrected (task 47).
+ */
+export const CARD_EVENT = {
+  id: "c7",
+  tool: "entities.create",
+  view: {
+    tool: "entities.create",
+    title: "Crear",
+    rows: [
+      {
+        arg: "type",
+        role: "type",
+        value: "eventos",
+        detail: "Eventos",
+        integrity: "model",
+        sources: ["model"],
+        marks: [],
+      },
+      {
+        arg: "values.title",
+        name: "Título",
+        role: "content",
+        value: "Reunión de reconocimiento",
+        integrity: "external",
+        sources: ["mail"],
+        marks: [],
+      },
+      {
+        arg: "values.fecha",
+        name: "Fecha",
+        role: "content",
+        value: "2026-10-29",
+        integrity: "external",
+        sources: ["mail"],
+        marks: [],
+      },
+      {
+        arg: "values.hora",
+        name: "Hora de inicio",
+        role: "content",
+        value: "17:00",
+        integrity: "external",
+        sources: ["mail"],
+        marks: [],
+      },
+      {
+        arg: "values.hora_fin",
+        name: "Hora de fin",
+        role: "content",
+        value: "18:00",
+        integrity: "external",
+        sources: ["mail"],
+        marks: [],
+      },
+    ],
+  },
+  sources: ["mail:secretaria@example.edu"],
+  created: 4,
+  card: {
+    ...CARD_DETAILED.card,
+    collection: "Eventos",
+    collectionId: "t_eventos",
+    kind: "event",
+    title: "Reunión de reconocimiento",
+    day: "2026-10-29",
+    start: "17:00",
+    end: "18:00",
+    before: { day: "2026-10-29", start: "16:00", end: "17:00" },
+  },
+};
 /** The same proposal, going to the books (a collection the fake server has, with its fields): its properties can be corrected. */
 export const CARD_BOOK = {
   ...CARD_DETAILED,

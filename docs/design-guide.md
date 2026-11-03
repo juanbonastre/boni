@@ -621,9 +621,11 @@ contraseña ni un código aquí» under a question.
   Esos días (three days); Aceptar / Rechazar at the end go back to where it was opened from, as Esc and the crumb
   "Bandeja / Propuesta" do. A proposal to create something can be **corrected** before accepting (Juan,
   2026-10-23): the ✎ button beside ⤢ (on its page, beside the title) opens a small boxed form under the card's
-  content, Título (a text field) and Colección (a select of his collections), with "Boni lo toma como un error suyo
-  y aprende de él." and "Deshacer cambios"; Aceptar then sends the changes and the toast says Boni will learn from
-  them. **Deciding** (Juan, 2026-10-23): the clicked Aceptar / Rechazar keeps its size and turns into a spinner
+  content: Título (a text field), Colección (one select of his collections, grouped as Tareas, Eventos and Otras by
+  what each keeps, a done box or a day: «tarea o evento» is that one choice, task 47), then the chosen collection's
+  day and hours as its own rows (each a cell, like a table's), the rest folded under «Propiedades», and "Deshacer
+  cambios"; no sentence explains it (§5). Another collection keeps the day and the hours, each under the field that
+  plays its role there. Aceptar then sends the changes and the toast says Boni will learn from them. **Deciding** (Juan, 2026-10-23): the clicked Aceptar / Rechazar keeps its size and turns into a spinner
   (both off meanwhile) while the server answers; decisions queue in order, so the next card can be decided at
   once; a decided card leaves and the toast says «Aceptada» / «Rechazada» with «Deshacer» for a while (Juan,
   2026-11-02): taking it back undoes the acceptance's run and the card returns, pending again (the next decision's

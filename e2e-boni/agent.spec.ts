@@ -8,6 +8,7 @@ import {
   CARD_BOOK,
   CARD_COMPACT,
   CARD_DETAILED,
+  CARD_EVENT,
   CARD_MAIL,
   CARD_TIME,
   CHART_REPLY,
@@ -1127,6 +1128,59 @@ test("Corregir: the proposal's other properties, folded under «Propiedades», s
     .poll(() => requests(page, "POST api/agent/proposals/c9/accept"))
     .toEqual([
       'POST api/agent/proposals/c9/accept {"edits":{"values":{"estado":"o_leido","fav":true}}}',
+    ]);
+});
+
+test("Corregir: task or event is the collection's group, the day and hours are its own rows and move with it (task 47)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agenda: true,
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_EVENT] }],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  // A proposal that took the place of an earlier one says what it was (task 46).
+  await expect(card.locator(".inbox-before")).toContainText("Antes:");
+  await expect(card.locator(".inbox-before")).toContainText("16:00–17:00");
+  await card.getByRole("button", { name: "Corregir" }).click();
+  const form = card.locator(".inbox-correct");
+  const select = form.getByLabel("Colección");
+  await expect(select).toHaveValue("t_eventos");
+  // One control: the collections grouped by what they keep (a task has a box; an event a day and no box).
+  expect(
+    await select
+      .locator("optgroup")
+      .evaluateAll((gs) => gs.map((g) => (g as HTMLOptGroupElement).label)),
+  ).toEqual(["Tareas", "Eventos", "Otras"]);
+  // The day and the hours are the form's own rows, before «Propiedades».
+  const when = form.locator(".inbox-when .inbox-prop");
+  await expect(when.locator(".inbox-prop-name")).toHaveText([
+    "Fecha",
+    "Hora de inicio",
+    "Hora de fin",
+  ]);
+  await expect(when.nth(1)).toContainText("17:00");
+  // As a task: the same day and hours, under that collection's fields.
+  await select.selectOption({ label: "Tareas" });
+  await expect(when.locator(".inbox-prop-name")).toHaveText(["Día", "Inicio", "Fin"]);
+  await expect(when.nth(1)).toContainText("17:00");
+  await when.nth(1).getByRole("button").click();
+  await when.nth(1).locator("input").fill("18:00");
+  await when.nth(1).locator("input").press("Enter");
+  await expect(when.nth(1)).toContainText("18:00");
+  await page.screenshot({ path: `${SHOTS}/inbox-correct-kind.png` });
+  await card.getByRole("button", { name: "Aceptar" }).click();
+  await expect
+    .poll(() => requests(page, "POST api/agent/proposals/c7/accept"))
+    .toEqual([
+      'POST api/agent/proposals/c7/accept {"edits":{"collection":"t_tareas","values":{"dia":"2026-10-29","inicio":"18:00","fin":"18:00"}}}',
     ]);
 });
 

@@ -11,7 +11,15 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { ConfirmView, DataValue, InboxCard, InboxRequest, Proposal } from "../core/agent.ts";
+import type {
+  ConfirmView,
+  DataField,
+  DataType,
+  DataValue,
+  InboxCard,
+  InboxRequest,
+  Proposal,
+} from "../core/agent.ts";
 import {
   acceptProposal,
   answerRequest,
@@ -149,6 +157,31 @@ function useDayFormat() {
  * Correcting a proposal before accepting it (Juan, 2026-10-23): its title and the collection it goes to. The
  * server keeps what changed as a mistake of the reading, and the reviewer learns from it.
  */
+/**
+ * A collection's kind for the correction's select (task 47): one with a «done» box keeps tasks, one with a day and
+ * no box keeps events, the rest keep other things. Grouped, so «tarea o evento» is one choice in the one control.
+ */
+function kindOf(x: DataType): "task" | "event" | "other" {
+  const r = x.roles ?? {};
+  if (r.done) return "task";
+  if (r.date || r.start) return "event";
+  return "other";
+}
+const KIND_KEY = {
+  task: "inbox.kind.task",
+  event: "inbox.kind.event",
+  other: "inbox.kind.other",
+} as const;
+/**
+ * The fields of a collection's day, start and end, by their roles (docs/clases.md §6); none without them: a date
+ * field that only records the past (a book's «Terminado») is no day to correct.
+ */
+function whenFields(x: DataType): (DataField | undefined)[] {
+  const r = x.roles ?? {};
+  const byId = (id: string | undefined) => (id ? x.fields.find((f) => f.id === id) : undefined);
+  return [byId(r.date), byId(r.time), byId(r.endTime)];
+}
+
 function useCorrection(p: Proposal) {
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
@@ -210,11 +243,56 @@ function useCorrection(p: Proposal) {
   ].sort((a, b) => a.name.localeCompare(b.name));
   if (c?.collectionId && !options.some((x) => x.id === c.collectionId))
     options.unshift({ id: c.collectionId, name: c.collection ?? "" } as (typeof options)[number]);
-  // The chosen collection's other properties (its title is the line above), each with its own cell to change it.
+  const groups = (["task", "event", "other"] as const).map((k) => ({
+    kind: k,
+    items: options.filter((o) => kindOf(o) === k),
+  }));
+  const grouped = groups.some((g) => g.kind !== "other" && g.items.length > 0);
+  // Another collection keeps the day and the hours, each under the field that plays its role there (task 47).
+  const changeCollection = (id: string) => {
+    if (!edit) return;
+    const from = (types ?? []).find((x) => x.id === edit.collection);
+    const to = (types ?? []).find((x) => x.id === id);
+    const values = { ...edit.values };
+    if (from && to)
+      whenFields(from).forEach((f, i) => {
+        const g = whenFields(to)[i];
+        if (!f?.key || !g?.key || f.key === g.key || values[f.key] === undefined) return;
+        values[g.key] = values[f.key] as DataValue;
+        delete values[f.key];
+      });
+    setEdit({ ...edit, collection: id, values });
+  };
+  // The chosen collection's day and hours, always in view; its other properties (its title is the line above)
+  // folded under «Propiedades»; each with its own cell to change it.
   const chosen = edit ? (types ?? []).find((x) => x.id === edit.collection) : undefined;
+  const when = chosen ? whenFields(chosen).filter((f): f is DataField => !!f?.key) : [];
   const props = chosen
-    ? chosen.fields.filter((f) => f.id !== chosen.titleField && !!f.key && f.type !== "file")
+    ? chosen.fields.filter(
+        (f) => f.id !== chosen.titleField && !!f.key && f.type !== "file" && !when.includes(f),
+      )
     : [];
+  const cell = (f: DataField) =>
+    chosen && (
+      <div key={f.id} className="inbox-prop">
+        <span className="inbox-prop-name">{f.name}</span>
+        <div className="inbox-prop-value">
+          <Cell
+            type={chosen}
+            field={f}
+            row={{
+              id: `proposal:${p.id}`,
+              values: { [f.id]: edit?.values[f.key as string] ?? null },
+              updated: 0,
+            }}
+            titles={proposed.titles}
+            onSave={(v) =>
+              edit && setEdit({ ...edit, values: { ...edit.values, [f.key as string]: v } })
+            }
+          />
+        </div>
+      </div>
+    );
   const form = edit && (
     <div className="inbox-correct">
       <label className="inbox-correct-row">
@@ -231,15 +309,28 @@ function useCorrection(p: Proposal) {
         <select
           className="input"
           value={edit.collection}
-          onChange={(e) => setEdit({ ...edit, collection: e.target.value })}
+          onChange={(e) => changeCollection(e.target.value)}
         >
-          {options.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.name}
-            </option>
-          ))}
+          {grouped
+            ? groups
+                .filter((g) => g.items.length > 0)
+                .map((g) => (
+                  <optgroup key={g.kind} label={t(KIND_KEY[g.kind])}>
+                    {g.items.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))
+            : options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
         </select>
       </label>
+      {when.length > 0 && <div className="inbox-props inbox-when">{when.map(cell)}</div>}
       {props.length > 0 && (
         <button
           type="button"
@@ -251,30 +342,7 @@ function useCorrection(p: Proposal) {
           {t("inbox.properties")}
         </button>
       )}
-      {edit.open && chosen && (
-        <div className="inbox-props">
-          {props.map((f) => (
-            <div key={f.id} className="inbox-prop">
-              <span className="inbox-prop-name">{f.name}</span>
-              <div className="inbox-prop-value">
-                <Cell
-                  type={chosen}
-                  field={f}
-                  row={{
-                    id: `proposal:${p.id}`,
-                    values: { [f.id]: edit.values[f.key as string] ?? null },
-                    updated: 0,
-                  }}
-                  titles={proposed.titles}
-                  onSave={(v) =>
-                    setEdit({ ...edit, values: { ...edit.values, [f.key as string]: v } })
-                  }
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {edit.open && chosen && <div className="inbox-props">{props.map(cell)}</div>}
       <div className="inbox-correct-foot">
         <button type="button" className="btn ghost small" onClick={() => setEdit(null)}>
           {t("inbox.cancelCorrect")}
