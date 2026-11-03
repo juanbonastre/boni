@@ -216,7 +216,8 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
       icon: t.icon ?? "",
       titleField: t.titleField,
       fields: fieldsOf(t),
-      count: sys?.rows(t.id).length ?? 0,
+      // Counted without making them (task 43: making them to count cost the NAS up to a second).
+      count: sys?.count(t.id) ?? 0,
       level: "private",
       rules: [],
       rowUi: rowUiOf(store, t.id),

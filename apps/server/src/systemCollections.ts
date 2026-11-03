@@ -125,6 +125,8 @@ function optionsFrom(
 export interface SystemCollections {
   types: Record<string, TypeDef>;
   rows: (type: string) => Entity[];
+  /** How many rows one has, without making them (the list of collections only counts them; task 43). */
+  count: (type: string) => number;
 }
 
 /**
@@ -133,9 +135,12 @@ export interface SystemCollections {
  * (a select's options are the models, actors and collections met), so both are made together; `usdToEur` is the
  * account's rate («Modelos»), a call of unknown cost has no «Coste».
  */
-/** How long one account's are reused while nothing new was recorded (the app lists collections and computes blocks
- * in a row). */
-const FRESH_MS = 10_000;
+/**
+ * How long one account's are reused while nothing new was recorded (the app lists collections and computes blocks
+ * in a row). Their rows are dated by day, so a few minutes change nothing in them (task 43: made again every 10 s,
+ * listing the collections cost the NAS up to a second).
+ */
+const FRESH_MS = 5 * 60_000;
 const recent = new WeakMap<UserStore, { at: number; key: string; sys: SystemCollections }>();
 
 export function systemCollections(
@@ -247,86 +252,103 @@ function makeSystemCollections(
   let callRows: Entity[] | null = null;
   let activityRows: Entity[] | null = null;
   let runRows: Entity[] | null = null;
+  const count = (type: string): number =>
+    type === SYS_CALLS
+      ? calls.length
+      : type === SYS_ACTIVITY
+        ? activity.reduce((n, a) => n + (a.reads ? 1 : 0) + (a.writes ? 1 : 0), 0)
+        : type === SYS_RUNS
+          ? runs.length
+          : 0;
+  // Each made only when asked for, and said in the log when it takes long (task 43).
+  const made = (type: string, f: () => Entity[]) =>
+    timed(`Boni's own rows (${types[type]?.key ?? type})`, 300, f);
   const rows = (type: string): Entity[] => {
     if (type === SYS_CALLS) {
-      callRows ??= calls.map((c) => {
-        const use = useOf(c.role);
-        const values: Entity["values"] = {
-          f_titulo: `${USES[use] ?? use} · ${shortModel(c.model)}`,
-          f_fecha: day(c.at),
-          f_uso: `o_uso_${use}`,
-          f_modelo: hashId("m", c.model),
-          f_prov: hashId("p", c.provider),
-          f_tokens: c.input + c.output,
-        };
-        if (c.cost !== null)
-          values.f_coste = {
-            amount: Math.round(c.cost * o.usdToEur * 1e6) / 1e6,
-            currency: "EUR",
+      callRows ??= made(type, () =>
+        calls.map((c) => {
+          const use = useOf(c.role);
+          const values: Entity["values"] = {
+            f_titulo: `${USES[use] ?? use} · ${shortModel(c.model)}`,
+            f_fecha: day(c.at),
+            f_uso: `o_uso_${use}`,
+            f_modelo: hashId("m", c.model),
+            f_prov: hashId("p", c.provider),
+            f_tokens: c.input + c.output,
           };
-        return { id: `sys_call_${c.n}`, type, values, created: c.at, updated: c.at, version: 1 };
-      });
+          if (c.cost !== null)
+            values.f_coste = {
+              amount: Math.round(c.cost * o.usdToEur * 1e6) / 1e6,
+              currency: "EUR",
+            };
+          return { id: `sys_call_${c.n}`, type, values, created: c.at, updated: c.at, version: 1 };
+        }),
+      );
       return callRows;
     }
     if (type === SYS_ACTIVITY) {
-      activityRows ??= activity.flatMap((a) => {
-        const at = Date.parse(`${a.day}T12:00:00Z`);
-        const one = (kind: string, verb: string, n: number): Entity => ({
-          id: `sys_act_${createHash("sha256").update(`${a.day}|${a.by}|${a.type}|${kind}`).digest("hex").slice(0, 16)}`,
-          type,
-          values: {
-            f_titulo: `${whoName(a.by)} · ${verb} ${colName(a.type)}`,
-            f_fecha: a.day,
-            f_quien: hashId("q", a.by),
-            f_que: kind,
-            f_col: hashId("c", a.type),
-            f_filas: n,
-          },
-          created: at,
-          updated: at,
-          version: 1,
-        });
-        return [
-          ...(a.reads ? [one(READ, "leyó", a.reads)] : []),
-          ...(a.writes ? [one(WROTE, "cambió", a.writes)] : []),
-        ];
-      });
+      activityRows ??= made(type, () =>
+        activity.flatMap((a) => {
+          const at = Date.parse(`${a.day}T12:00:00Z`);
+          const one = (kind: string, verb: string, n: number): Entity => ({
+            id: `sys_act_${createHash("sha256").update(`${a.day}|${a.by}|${a.type}|${kind}`).digest("hex").slice(0, 16)}`,
+            type,
+            values: {
+              f_titulo: `${whoName(a.by)} · ${verb} ${colName(a.type)}`,
+              f_fecha: a.day,
+              f_quien: hashId("q", a.by),
+              f_que: kind,
+              f_col: hashId("c", a.type),
+              f_filas: n,
+            },
+            created: at,
+            updated: at,
+            version: 1,
+          });
+          return [
+            ...(a.reads ? [one(READ, "leyó", a.reads)] : []),
+            ...(a.writes ? [one(WROTE, "cambió", a.writes)] : []),
+          ];
+        }),
+      );
       return activityRows;
     }
     if (type === SYS_RUNS) {
       const mails = new Map<string, MailSeen | null>();
-      runRows ??= runs.map((r) => {
-        const info = runInfo(store, r, {
-          proposals: proposals(),
-          mailAccount: null,
-          countOnly: true,
-          mails,
-        });
-        const values: Entity["values"] = {
-          f_titulo: runTitle(info.what),
-          f_fecha: day(r.started),
-          f_estado: hashId("e", statusName(r.status)),
-          f_cambios: info.changed,
-        };
-        if (r.finished !== null) values.f_segundos = Math.round((r.finished - r.started) / 1000);
-        const cost = runCost.get(r.id);
-        if (cost !== undefined)
-          values.f_coste = {
-            amount: Math.round(cost * o.usdToEur * 1e6) / 1e6,
-            currency: "EUR",
+      runRows ??= made(type, () =>
+        runs.map((r) => {
+          const info = runInfo(store, r, {
+            proposals: proposals(),
+            mailAccount: null,
+            countOnly: true,
+            mails,
+          });
+          const values: Entity["values"] = {
+            f_titulo: runTitle(info.what),
+            f_fecha: day(r.started),
+            f_estado: hashId("e", statusName(r.status)),
+            f_cambios: info.changed,
           };
-        return {
-          id: `sys_run_${createHash("sha256").update(r.id).digest("hex").slice(0, 16)}`,
-          type,
-          values,
-          created: r.started,
-          updated: r.finished ?? r.started,
-          version: 1,
-        };
-      });
+          if (r.finished !== null) values.f_segundos = Math.round((r.finished - r.started) / 1000);
+          const cost = runCost.get(r.id);
+          if (cost !== undefined)
+            values.f_coste = {
+              amount: Math.round(cost * o.usdToEur * 1e6) / 1e6,
+              currency: "EUR",
+            };
+          return {
+            id: `sys_run_${createHash("sha256").update(r.id).digest("hex").slice(0, 16)}`,
+            type,
+            values,
+            created: r.started,
+            updated: r.finished ?? r.started,
+            version: 1,
+          };
+        }),
+      );
       return runRows;
     }
     return [];
   };
-  return { types, rows };
+  return { types, rows, count };
 }

@@ -5,6 +5,18 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (eighth) — server 0.8.84
+
+Needs: the server only (0.8.84, to deploy). Task 43, from what the log said before 0.8.83 went out.
+
+- **Listing the collections no longer holds the server.** To count Boni's own collections (its calls to models, its
+  activity, its runs), each list of the collections made all their rows, and made them again every 10 s: with
+  Juan's volume about 0.2 s on the laptop, around 0.6 s on the NAS, where the log said only «nothing named». Now
+  they are counted without being made (1 ms), and kept while nothing new is recorded. (#272, task 43)
+- **The log says what held the server.** When something holds it over half a second, the minute's line names the
+  functions that held it longest; the watchdog that finds out profiles only while the server is held (about 20 MB
+  of memory, nothing else while it runs freely). (#272, task 43)
+
 ## 2026-11-03 (seventh) — server 0.8.83 · Boni desktop 0.4.64 · Boni Calendar desktop 0.8.18
 
 Needs: the server (0.8.83, to deploy: a collection's columns and its name change through it), Boni desktop 0.4.64
