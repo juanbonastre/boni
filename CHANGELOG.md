@@ -5,6 +5,23 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (second) — server 0.8.78 · Boni desktop 0.4.62 · Boni Calendar desktop 0.8.16
+
+Needs: the server (0.8.78, to deploy), Boni desktop 0.4.62 (`release/boni_0.4.62_amd64.deb`, to install), Boni
+Calendar desktop 0.8.16 (`release/boni-calendar-desktop_0.8.16_amd64.deb`, to install). What Juan saw trying the
+night's release, as two tasks.
+
+- **Boni Calendar: the colour is one control.** «Color del calendario» is now a select: «Uno» (the calendar's
+  swatches), «Por calendario» (a split one: each calendar inside keeps its own) or «Por tipo», «Por área»… (a row
+  of swatches per value). «Separar por» stays apart: it is what makes calendars in the sidebar. While the server
+  sends the calendar back after a change, the selects wait and say «Guardando…». (#252, task 32)
+- **Boni, Ajustes › Decisiones** waits for the server without saying «Sin decisiones», and the server logs a slow
+  decisions view. (#251, task 31)
+- **The wait always shows.** In Boni and in Boni Calendar, a thin line slides along the top edge of the window while
+  anything is in flight (a request, the connection, the calendar coming), after 250 ms; the sections of Settings
+  keep their room with a pulsing placeholder while they load. The rule, with what Apple, Material and Nielsen
+  Norman Group say, is in `docs/design-guide.md` «Waiting». (#254, task 33)
+
 ## 2026-11-03 (night) — server 0.8.77 · Boni desktop 0.4.61 · Boni Calendar desktop 0.8.15
 
 Needs: the server (0.8.77, to deploy), Boni desktop 0.4.61 (`release/boni_0.4.61_amd64.deb`, to install),
