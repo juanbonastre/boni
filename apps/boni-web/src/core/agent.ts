@@ -164,6 +164,8 @@ export interface InboxCard {
     endKey: string | null;
     outcome: "ask" | "do";
   } | null;
+  /** What an earlier proposal of the same thread of mail said, when this one changed its day or hours (task 46). */
+  before: { day: string | null; start: string | null; end: string | null } | null;
 }
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -226,6 +228,13 @@ function parseCard(v: unknown): InboxCard | null {
             outcome: v.suggestedTime.outcome === "do" ? "do" : "ask",
           }
         : null,
+    before: isObj(v.before)
+      ? {
+          day: optMatch(v.before.day, DAY_RE),
+          start: optMatch(v.before.start, TIME_RE),
+          end: optMatch(v.before.end, TIME_RE),
+        }
+      : null,
     context: Array.isArray(v.context)
       ? v.context.filter(isObj).flatMap((d) => {
           const day = optMatch(d.day, DAY_RE);

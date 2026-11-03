@@ -594,7 +594,8 @@ contraseña ni un código aquí» under a question.
   2026-11-02: «Añadir tarea a Tarea» said nothing; «Añadir a Tarea» only without a title; a change or a deletion
   as the view names it; a task the mail gave no time for has, after the day, a small «¿A las 16:00?» with the
   first free hour of its day: one tap puts the time on the line and sends it with the acceptance; once Boni has
-  earned it the line says the time already), where it came
+  earned it the line says the time already; when a reply in the same thread of mail moved it, «Antes: jue, 29
+  oct, 12:00» in `--muted` after the day: the earlier card is gone and this one says what it was, task 46), where it came
   from once (the mailbox and the sender, or the note's path; never "Viene de fuera" on every row), its day and times,
   and a mini calendar: the day (detailed) or the day before, the day and the day after (compact), each a short list in
   time order with the proposal drawn with a dashed `--accent` border among what is there. Compact when the source said

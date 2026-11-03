@@ -18,6 +18,7 @@ export type {
   Journal,
   ModelCallRow,
   ModelCallUse,
+  ProposalBefore,
   ProposalEdits,
   ProposalRow,
   RequestRow,

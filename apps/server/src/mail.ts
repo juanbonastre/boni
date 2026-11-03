@@ -37,6 +37,7 @@ import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { timed } from "./perf.ts";
 import { decrypt, type SecretKey } from "./secret.ts";
+import { likeTitle, normalizeSubject, threadIdOf, whenOf, whenParts } from "./thread.ts";
 
 /**
  * Mail as a source (docs/nucleo.md, decision of 2026-10-20; plan PR 15b). An account may connect one mailbox
@@ -666,8 +667,17 @@ function extraFields(files: TypeDef | undefined): FieldDef[] {
       label: CODE,
     },
     ...INVITATION_FIELDS,
+    ...THREAD_FIELDS,
   ];
 }
+
+/** The thread a mail belongs to and what it answers (task 46; `thread.ts`): hidden, for one proposal per thread. */
+const THREAD_FIELDS: FieldDef[] = (
+  [
+    ["hilo", "Hilo", "text"],
+    ["en_respuesta_a", "En respuesta a", "text"],
+  ] as const
+).map(([key, name, type]) => ({ id: `f_${key}`, key, name, type, hidden: true, label: CODE }));
 
 /**
  * A calendar invitation's event, read by code from the mail's .ics (task 45; `invitation.ts`): hidden fields of
@@ -1275,6 +1285,12 @@ export class Mails {
       f_id_mensaje: w(m.messageId),
     };
     if (from && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from.address)) values.f_de = w(from.address);
+    // The thread (task 46): the first message's id, else what it answers, else a reply by its subject.
+    if (m.inReplyTo) values.f_en_respuesta_a = w(m.inReplyTo);
+    if (def.fields.some((f) => f.id === "f_hilo"))
+      values.f_hilo = w(
+        threadIdOf(m, () => this.sameSubjectThread(store, def, m.subject), randomUUID()),
+      );
     if (from?.name) values.f_de_nombre = w(from.name.slice(0, 200));
     const list = (as: typeof m.to) =>
       as
@@ -1743,6 +1759,7 @@ export class Mails {
       const stopped = r.status === "stopped" ? (r.error ?? "stopped") : null;
       if (stopped && r.error) console.warn(`mail ${account}: plan stopped (${r.error})`);
       this.logRead(account, c.store, from, r.proposals);
+      this.foldThread(account, c.store, e, r.proposals);
       // «Solo» on for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are
       // accepted here, each a decision he judges by leaving it or undoing it.
       if (r.proposals.length && autoOn(c.store, AUTO_AREA))
@@ -1834,6 +1851,101 @@ export class Mails {
         e.labels.f_evento_uid ?? e.labels.f_asunto ?? CODE,
       ),
     };
+  }
+
+  /** The thread of a recent mail (30 days) with this subject, for a reply that lost its thread headers. */
+  private sameSubjectThread(store: UserStore, def: TypeDef, subject: string): string | null {
+    const want = normalizeSubject(subject);
+    if (!want) return null;
+    const since = this.now() - 30 * 86_400_000;
+    const hit = store
+      .list(def.id)
+      .filter((e) => e.entity.created >= since && typeof e.entity.values.f_hilo === "string")
+      .sort((a, b) => b.entity.created - a.entity.created)
+      .find((e) => normalizeSubject(String(e.entity.values.f_asunto ?? "")) === want);
+    return hit ? String(hit.entity.values.f_hilo) : null;
+  }
+
+  /**
+   * One thread, one proposal (task 46; Juan, 2026-11-03: «me han salido múltiples recomendaciones en la bandeja
+   * cuando debería ser una sola»): what a reply proposes again the same (title, day and hours) is dropped, from
+   * whoever it comes; what it changes (another day or hour) takes the place of the earlier pending proposal, and
+   * the new one keeps what it was (`before`), so the card says «Antes: …». Decided by code over the thread's
+   * proposals of the last 60 days, never by the reader.
+   */
+  private foldThread(
+    account: number,
+    store: UserStore,
+    e: NonNullable<ReturnType<UserStore["get"]>>,
+    made: string[],
+  ): void {
+    const hilo = e.entity.values.f_hilo;
+    if (typeof hilo !== "string" || !hilo || !made.length) return;
+    const since = this.now() - 60 * 86_400_000;
+    const mails = new Set(
+      store
+        .list(e.entity.type)
+        .filter(
+          (x) =>
+            x.entity.id !== e.entity.id &&
+            x.entity.values.f_hilo === hilo &&
+            x.entity.created >= since,
+        )
+        .map((x) => x.entity.id),
+    );
+    if (!mails.size) return;
+    const j = store.journal;
+    const rowsOf = (p: { view: unknown }) =>
+      (p.view as { rows?: { arg: string; value?: unknown }[] }).rows ?? [];
+    const titleOf = (p: { view: unknown }) => {
+      const v = rowsOf(p).find((r) => r.arg === "values.title")?.value;
+      return typeof v === "string" ? v : "";
+    };
+    const mailOf = (run: string) => {
+      const plan = j.run(run)?.plan as {
+        steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[];
+      };
+      const first = plan?.steps?.[0];
+      return first?.tool === "entities.get" ? String(first.args?.id?.lit ?? "") : "";
+    };
+    const earlier = j
+      .proposals()
+      .filter(
+        (p) =>
+          p.created >= since &&
+          p.status !== "stale" &&
+          p.tool === "entities.create" &&
+          !made.includes(p.id) &&
+          mails.has(mailOf(p.run)),
+      );
+    if (!earlier.length) return;
+    const now = this.now();
+    let changed = false;
+    for (const id of made) {
+      const n = j.proposal(id);
+      if (!n || n.status !== "pending") continue;
+      const title = titleOf(n);
+      const like = earlier.filter((o) => likeTitle(titleOf(o), title));
+      if (!like.length) continue;
+      const when = whenOf(rowsOf(n));
+      const same = like.find((o) => whenOf(rowsOf(o)) === when);
+      if (same) {
+        j.setProposal(id, "stale", now);
+        changed = true;
+        console.log(
+          `mail ${account}: «${title.slice(0, 60)}» again in its thread (already ${same.status}): not proposed`,
+        );
+        continue;
+      }
+      const prev = [...like].sort((a, b) => b.created - a.created)[0] as (typeof like)[number];
+      for (const o of like) if (o.status === "pending") j.setProposal(o.id, "stale", now);
+      j.setProposalBefore(id, { proposal: prev.id, ...whenParts(rowsOf(prev)) });
+      changed = true;
+      console.log(
+        `mail ${account}: «${title.slice(0, 60)}» changed in its thread (was ${whenOf(rowsOf(prev)) || "without a day"}): the earlier proposal gives way`,
+      );
+    }
+    if (changed) this.o.host.emit(account, "proposals", { n: 0 });
   }
 
   /** The name of the account's external calendar that already holds the event `uid`, or null. */

@@ -312,6 +312,12 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
   const when = c?.day
     ? `${fmt.long(c.day)}${start ? `, ${start}${end ? `–${end}` : ""}` : ""}`
     : null;
+  // What it was before a reply in the same thread moved it (task 46): the earlier card is gone, this one says it.
+  const b = c?.before;
+  const before =
+    b && (b.day || b.start)
+      ? `${b.day ? fmt.long(b.day) : ""}${b.start ? `${b.day ? ", " : ""}${b.start}${b.end ? `–${b.end}` : ""}` : ""}`
+      : null;
   const edits = () => {
     const e = fix.edits();
     if (!taken) return e;
@@ -341,6 +347,9 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
         <p className="inbox-what">
           {where && <span className="inbox-title">{where}</span>}
           {when && <span className="muted"> · {when}</span>}
+          {before && (
+            <span className="muted inbox-before"> · {t("inbox.before", { when: before })}</span>
+          )}
           {ask && !takeTime && (
             <button
               type="button"

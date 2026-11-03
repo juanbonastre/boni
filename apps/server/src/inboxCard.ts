@@ -57,6 +57,8 @@ export interface InboxCard {
    * once his answers earn it («do»: the card's `start` and `end` already say it).
    */
   suggestedTime: SuggestedTime | null;
+  /** What an earlier proposal of the same thread of mail said, when this one changed its day or hours (task 46). */
+  before: { day: string | null; start: string | null; end: string | null } | null;
 }
 export interface SuggestedTime {
   start: string;
@@ -520,5 +522,6 @@ export function inboxCard(
         }))
       : [],
     suggestedTime,
+    before: p.before ? { day: p.before.day, start: p.before.start, end: p.before.end } : null,
   };
 }
