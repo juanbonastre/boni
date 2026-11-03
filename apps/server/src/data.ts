@@ -921,6 +921,29 @@ export function moveCollection(
   }
 }
 
+/**
+ * A collection's new name (task 42, from the sidebar's menu): its key stays (ids and exports keep it), and the name
+ * is used once, as when it was made.
+ */
+export function renameCollection(
+  store: UserStore,
+  type: string,
+  body: unknown,
+  device?: string,
+): void {
+  const mine = userTypes(store);
+  const def = mine.find((t) => t.id === type);
+  if (!def) throw new DataError("not-found");
+  const raw = (body as { name?: unknown } | null)?.name;
+  const name = typeof raw === "string" ? raw.trim().slice(0, 80) : "";
+  if (!name) throw new DataError("bad-body");
+  if (name === def.name) return;
+  if (mine.some((t) => t.id !== type && t.name.toLowerCase() === name.toLowerCase()))
+    throw new DataError("taken");
+  const l = label("user", def.sensitivity, [{ kind: "user-edit", id: device ?? "?" }]);
+  store.applySchema({ op: "rename_type", type, key: def.key, name, label: l }, meta(device));
+}
+
 /** A record moved to another collection, keeping its id and its history (docs/clases.md §2.5). */
 export function moveRow(store: UserStore, id: string, body: unknown, device?: string): void {
   const type = (body as { type?: unknown } | null)?.type;

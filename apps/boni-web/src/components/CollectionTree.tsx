@@ -8,7 +8,7 @@ import {
   MoreHorizontal,
   Plus,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TreeCollection } from "../core/agent.ts";
 import {
   deleteCollection,
@@ -17,12 +17,15 @@ import {
   openCollection,
   openPage,
   openRow,
+  renameCollection,
+  renameNote,
   setNotesInTree,
+  toast,
   toggleFold,
   trashNote,
   useStore,
 } from "../store.ts";
-import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
+import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
 /**
  * The collections of the sidebar's «Páginas» (docs/clases.md §2.7; Juan, 2026-10-28): each inside its mother, and
@@ -127,6 +130,43 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
     (view.kind === "row" && view.type === c.id && !notes.some((n) => n.id === view.id));
   const kids = daughters.length + notes.length > 0 || adding;
   const open = kids && (tools.opened.includes(c.id) || adding);
+  // The right button opens the same menu as «Más opciones», where the pointer is (task 42, as Notion's).
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const items = (close: () => void) => (
+    <div className="menu-list" role="menu">
+      <MenuRow
+        label={t("tree.newNote")}
+        onClick={() => {
+          close();
+          void newNoteIn(c.id);
+        }}
+      />
+      <MenuRow
+        label={t("tree.newInside")}
+        onClick={() => {
+          close();
+          tools.add(c.id);
+        }}
+      />
+      <MenuRow
+        label={t("tree.rename")}
+        onClick={() => {
+          close();
+          setRenaming(true);
+        }}
+      />
+      <MenuSep />
+      <MenuRow
+        label={t("tree.delete")}
+        danger
+        onClick={() => {
+          close();
+          void deleteCollection(c.id);
+        }}
+      />
+    </div>
+  );
   const icon = c.icon ? (
     <span className="page-icon">{c.icon}</span>
   ) : (
@@ -135,8 +175,13 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
   return (
     <li>
       <div
-        className={`chart-row tree-row${lit ? " active" : ""}`}
+        className={`chart-row tree-row${lit ? " active" : ""}${menu ? " menu-open" : ""}`}
         style={{ paddingLeft: depth * 14 }}
+        onContextMenu={(e) => {
+          if (renaming) return;
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY });
+        }}
       >
         {kids ? (
           <button
@@ -152,9 +197,20 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
         ) : (
           <span className="page-toggle static">{icon}</span>
         )}
-        <button type="button" className="chart-main" onClick={() => openCollection(c.id)}>
-          <span className="nav-name">{c.name}</span>
-        </button>
+        {renaming ? (
+          <RenameInput
+            name={c.name}
+            label={`${t("tree.rename")}: ${c.name}`}
+            onDone={(name) => {
+              setRenaming(false);
+              if (name) void renameCollection(c.id, name);
+            }}
+          />
+        ) : (
+          <button type="button" className="chart-main" onClick={() => openCollection(c.id)}>
+            <span className="nav-name">{c.name}</span>
+          </button>
+        )}
         <EyeToggle c={c} />
         <PopButton
           className="icon-btn tiny row-action"
@@ -162,33 +218,7 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
           align="start"
           label={<MoreHorizontal size={13} strokeWidth={1.8} />}
         >
-          {(close) => (
-            <div className="menu-list" role="menu">
-              <MenuRow
-                label={t("tree.newNote")}
-                onClick={() => {
-                  close();
-                  void newNoteIn(c.id);
-                }}
-              />
-              <MenuRow
-                label={t("tree.newInside")}
-                onClick={() => {
-                  close();
-                  tools.add(c.id);
-                }}
-              />
-              <MenuSep />
-              <MenuRow
-                label={t("tree.delete")}
-                danger
-                onClick={() => {
-                  close();
-                  void deleteCollection(c.id);
-                }}
-              />
-            </div>
-          )}
+          {items}
         </PopButton>
         <button
           type="button"
@@ -200,6 +230,16 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
           <Plus size={13} strokeWidth={1.8} />
         </button>
       </div>
+      {menu && (
+        <PointMenu
+          x={menu.x}
+          y={menu.y}
+          label={`${t("page.more")}: ${c.name}`}
+          onClose={() => setMenu(null)}
+        >
+          {items}
+        </PointMenu>
+      )}
       {open && (
         <ul className="nav-list">
           {adding && (
@@ -224,6 +264,8 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
               active={n.id}
               onOpen={() => void openRow(n.type, n.id)}
               onDelete={() => void trashNote(n.type, n.id)}
+              onRename={(name) => void renameNote(n.type, n.id, name)}
+              link={`boni://note?id=${n.id}`}
             />
           ))}
         </ul>
@@ -304,6 +346,52 @@ export function NewCollectionInput({
   );
 }
 
+/**
+ * A name changed in place, in its row of the sidebar (task 42): Enter or leaving it keeps a new name, Escape or
+ * leaving it empty does not.
+ */
+export function RenameInput({
+  name,
+  label,
+  onDone,
+}: {
+  name: string;
+  label: string;
+  onDone: (name: string | null) => void;
+}) {
+  const [value, setValue] = useState(name);
+  const ref = useRef<HTMLInputElement>(null);
+  const done = useRef(false);
+  const finish = (keep: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    const v = value.replace(/\s+/g, " ").trim();
+    onDone(keep && v && v !== name ? v : null);
+  };
+  // After the menu it was asked from has gone (its focus with it).
+  useEffect(() => {
+    const id = requestAnimationFrame(() => ref.current?.select());
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return (
+    <input
+      ref={ref}
+      className="tree-rename"
+      value={value}
+      aria-label={label}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") finish(true);
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          finish(false);
+        }
+      }}
+      onBlur={() => finish(true)}
+    />
+  );
+}
+
 function Leaf({
   name,
   depth,
@@ -311,6 +399,8 @@ function Leaf({
   table,
   onOpen,
   onDelete,
+  onRename,
+  link,
 }: {
   name: string;
   depth: number;
@@ -319,8 +409,49 @@ function Leaf({
   table?: boolean;
   onOpen: () => void;
   onDelete?: () => void;
+  onRename?: (name: string) => void;
+  /** Its `boni://` link, to copy. */
+  link?: string;
 }) {
   const t = useStore((s) => s.t);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const items = (close: () => void) => (
+    <div className="menu-list" role="menu">
+      {onRename && (
+        <MenuRow
+          label={t("tree.rename")}
+          onClick={() => {
+            close();
+            setRenaming(true);
+          }}
+        />
+      )}
+      {link && (
+        <MenuRow
+          label={t("db.copyLink")}
+          onClick={() => {
+            close();
+            void navigator.clipboard
+              ?.writeText(link)
+              .then(() => toast(t("db.linkCopied")))
+              .catch(() => {});
+          }}
+        />
+      )}
+      {(onRename || link) && <MenuSep />}
+      {onDelete && (
+        <MenuRow
+          label={t("tree.deleteNote")}
+          danger
+          onClick={() => {
+            close();
+            onDelete();
+          }}
+        />
+      )}
+    </div>
+  );
   const on = useStore(
     (s) =>
       (s.view.kind === "row" && s.view.id === active) ||
@@ -330,8 +461,14 @@ function Leaf({
   return (
     <li>
       <div
-        className={`chart-row tree-row${on ? " active" : ""}`}
+        className={`chart-row tree-row${on ? " active" : ""}${menu ? " menu-open" : ""}`}
         style={{ paddingLeft: depth * 14 }}
+        onContextMenu={(e) => {
+          // Boni's own things have nothing to be done with.
+          if (!onDelete || renaming) return;
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY });
+        }}
       >
         <span className="page-toggle static">
           {table ? (
@@ -340,9 +477,20 @@ function Leaf({
             <FileText size={14} strokeWidth={1.8} className="page-icon" />
           )}
         </span>
-        <button type="button" className="chart-main" onClick={onOpen}>
-          <span className="nav-name">{name}</span>
-        </button>
+        {renaming && onRename ? (
+          <RenameInput
+            name={name}
+            label={`${t("tree.rename")}: ${name}`}
+            onDone={(next) => {
+              setRenaming(false);
+              if (next) onRename(next);
+            }}
+          />
+        ) : (
+          <button type="button" className="chart-main" onClick={onOpen}>
+            <span className="nav-name">{name}</span>
+          </button>
+        )}
         {onDelete && (
           <PopButton
             className="icon-btn tiny row-action"
@@ -350,21 +498,20 @@ function Leaf({
             align="start"
             label={<MoreHorizontal size={13} strokeWidth={1.8} />}
           >
-            {(close) => (
-              <div className="menu-list" role="menu">
-                <MenuRow
-                  label={t("tree.deleteNote")}
-                  danger
-                  onClick={() => {
-                    close();
-                    onDelete();
-                  }}
-                />
-              </div>
-            )}
+            {items}
           </PopButton>
         )}
       </div>
+      {menu && (
+        <PointMenu
+          x={menu.x}
+          y={menu.y}
+          label={`${t("page.more")}: ${name}`}
+          onClose={() => setMenu(null)}
+        >
+          {items}
+        </PointMenu>
+      )}
     </li>
   );
 }

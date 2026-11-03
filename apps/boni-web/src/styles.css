@@ -505,7 +505,8 @@ select {
   text-align: left;
 }
 .nav-row:hover,
-.chart-row:hover {
+.chart-row:hover,
+.chart-row.menu-open {
   background: var(--hover);
 }
 .nav-row.active,
@@ -605,6 +606,7 @@ select {
   opacity: 0;
 }
 .chart-row:hover .row-action,
+.chart-row.menu-open .row-action,
 .chart-row .row-action:focus-visible,
 .row-action.eye.shown {
   opacity: 1;
@@ -3932,7 +3934,8 @@ button.crumb:hover {
   display: block;
 }
 /* A new collection's name, typed in place in the tree. */
-.tree-new input {
+.tree-new input,
+.tree-rename {
   flex: 1;
   min-width: 0;
   height: 26px;
@@ -3944,7 +3947,8 @@ button.crumb:hover {
   color: var(--text);
   outline: none;
 }
-.tree-new input:focus {
+.tree-new input:focus,
+.tree-rename:focus {
   border-color: var(--accent);
 }
 .page-icon-slot {
@@ -4762,6 +4766,14 @@ body:has(.toast) .db-selinfo {
 }
 .db-card.dragging {
   opacity: 0.4;
+}
+/* The card whose menu is open (a right click, task 42). */
+.db-card.menu-open {
+  border-color: var(--line-strong);
+  background: var(--hover);
+}
+.db-list-row.menu-open {
+  background: var(--hover);
 }
 .db-card-title .db-cell {
   font-weight: 600;

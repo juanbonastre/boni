@@ -642,6 +642,27 @@ describe("the tree (docs/clases.md §2.7; D-13)", () => {
     expect(types.some((x) => x.id === empty)).toBe(false);
   });
 
+  it("a collection is renamed from the sidebar (task 42): its id and key stay, a name is used once", async () => {
+    const t = await token();
+    const id = (await call(t, "POST", "/api/data/types", { name: "Recetas" })).body.id as string;
+    expect(id).toBeTruthy();
+    expect((await call(t, "POST", "/api/data/types", { name: "Películas" })).status).toBe(200);
+    const store = host.store(1);
+    const key = store.schema().types[id]?.key;
+    const rename = (name: unknown) => call(t, "PUT", `/api/data/types/${id}/name`, { name });
+    expect((await rename("  Recetas de casa ")).status).toBe(200);
+    expect(store.schema().types[id]).toMatchObject({ name: "Recetas de casa", key });
+    const tree = (await call(t, "GET", "/api/data/tree")).body as {
+      collections: { id: string; name: string }[];
+    };
+    expect(tree.collections.find((c) => c.id === id)?.name).toBe("Recetas de casa");
+    expect((await rename("películas")).status).toBe(409);
+    expect((await rename(" ")).status).toBe(400);
+    expect((await rename("Recetas de casa")).status).toBe(200);
+    expect((await call(t, "PUT", "/api/data/types/t_nada/name", { name: "X" })).status).toBe(404);
+    expect(store.schema().types[id]?.name).toBe("Recetas de casa");
+  });
+
   it("Inicio's «Hoy» on the phone: today in the calendars, by the device's timezone; a task's box by its calendar", async () => {
     const t = await token();
     // Invented notes: one thing today (a task, not done) and one tomorrow, in a calendar of tasks.

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { resolveTemplateLinks, templatePage } from "../packages/views/src/templates.ts";
 import { boniEngine, boniTypes } from "./boni-records.ts";
 
@@ -509,10 +509,20 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             }));
           return [200, "{}"];
         }
-        const typeOp = /^api\/data\/types\/([^/]+)(?:\/(tree|parent))?$/.exec(p);
+        const typeOp = /^api\/data\/types\/([^/]+)(?:\/(tree|parent|name))?$/.exec(p);
         if (typeOp && (method === "PUT" || method === "DELETE")) {
           const id = typeOp[1]!;
           if (!userCols().some((c) => c.id === id)) return [404, '{"error":"not-found"}'];
+          // Renamed from the sidebar (task 42): a name is used once.
+          if (typeOp[2] === "name") {
+            const name = String((body as { name?: string }).name ?? "").trim();
+            if (!name) return [400, '{"error":"bad-body"}'];
+            if (userCols().some((c) => c.id !== id && c.name.toLowerCase() === name.toLowerCase()))
+              return [409, '{"error":"taken"}'];
+            const col = userCols().find((c) => c.id === id);
+            if (col) col.name = name;
+            return [200, "{}"];
+          }
           if (typeOp[2] === "tree") {
             eye[id] = Boolean((body as { notes?: boolean }).notes);
             return [200, "{}"];
@@ -562,6 +572,19 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           };
           madeRows.push(row);
           return [200, JSON.stringify({ row })];
+        }
+        // A note of the tree renamed from the sidebar (task 42): its title.
+        const noteRow = /^api\/data\/rows\/(d\d+)$/.exec(p);
+        const tn = noteRow && method === "PUT" && treeNotes.find((n) => n.id === noteRow[1]);
+        if (tn) {
+          const title = (b.values ?? {})[documentos.titleField];
+          if (typeof title === "string") tn.title = title;
+          return [
+            200,
+            JSON.stringify({
+              row: { id: tn.id, type: tn.type, values: { f_title: tn.title }, updated: 1 },
+            }),
+          ];
         }
         const madeRow = /^api\/data\/rows\/(m\d+)$/.exec(p);
         const mr = madeRow && madeRows.find((r) => r.id === madeRow[1]);
@@ -1016,6 +1039,16 @@ export async function openInTree(page: Page, name: string): Promise<void> {
   await item.or(unfold).first().waitFor();
   if (!(await item.isVisible())) await unfold.click();
   await item.click();
+}
+
+/**
+ * Waits for an element's own animations to end: a menu grows in (scaled from 95 %), so where it opened is measured
+ * once it has grown.
+ */
+export async function grown(l: Locator) {
+  await l.evaluate((el) =>
+    Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined))).then(() => true),
+  );
 }
 
 export async function recorded(page: Page): Promise<Shell> {

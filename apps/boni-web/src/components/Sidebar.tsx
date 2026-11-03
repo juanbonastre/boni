@@ -25,14 +25,15 @@ import {
   openRow,
   openSettings,
   type Recent,
+  renamePage,
   showAllPages,
   showChat,
   toggleFold,
   toggleSidebar,
   useStore,
 } from "../store.ts";
-import { CollectionTree } from "./CollectionTree.tsx";
-import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
+import { CollectionTree, RenameInput } from "./CollectionTree.tsx";
+import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
 /**
  * The sidebar (Juan, 2026-10-28): search, the conversation with Boni and «Todas las páginas» (the whole tree, to
@@ -283,6 +284,9 @@ export function PageTree({
   const t = useStore((s) => s.t);
   const view = useStore((s) => s.view);
   const [closed, setClosed] = useState<string[]>([]);
+  // The right button opens a page's «Más opciones» where the pointer is (task 42, as Notion's).
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   // The page opened unfolds the pages above it here (Juan, 2026-10-30); folding one by hand afterwards stays.
   const opened = view.kind === "page" ? view.id : null;
   useEffect(() => {
@@ -306,14 +310,53 @@ export function PageTree({
         const kids = depth < MAX_DEPTH && pages.some((c) => c.parent === p.id);
         const open = kids && !closed.includes(p.id);
         const name = p.title || t("page.untitled");
+        const items = (close: () => void) => (
+          <div className="menu-list" role="menu">
+            <MenuRow
+              label={t("tree.rename")}
+              onClick={() => {
+                close();
+                setRenaming(p.id);
+              }}
+            />
+            <MenuRow
+              label={t("page.newSub")}
+              onClick={() => {
+                close();
+                void newPage(p.id);
+              }}
+            />
+            <MenuRow
+              label={t("page.duplicate")}
+              onClick={() => {
+                close();
+                void duplicatePage(p.id);
+              }}
+            />
+            <MenuSep />
+            <MenuRow
+              label={t("page.delete")}
+              danger
+              onClick={() => {
+                close();
+                void deletePage(p.id);
+              }}
+            />
+          </div>
+        );
         return (
           <li key={p.id}>
             <div
               className={`chart-row page-row${view.kind === "page" && view.id === p.id ? " active" : ""}${
                 drag?.over === p.id && drag.id !== p.id ? ` drop-${drag.where}` : ""
-              }${drag?.id === p.id ? " dragging" : ""}`}
+              }${drag?.id === p.id ? " dragging" : ""}${menu?.id === p.id ? " menu-open" : ""}`}
               style={{ paddingLeft: depth * 14 }}
-              draggable
+              draggable={renaming !== p.id}
+              onContextMenu={(e) => {
+                if (renaming === p.id) return;
+                e.preventDefault();
+                setMenu({ x: e.clientX, y: e.clientY, id: p.id });
+              }}
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = "move";
                 e.dataTransfer.setData("text/plain", p.id);
@@ -368,42 +411,27 @@ export function PageTree({
                   )}
                 </span>
               )}
-              <button type="button" className="chart-main" onClick={() => void openPage(p.id)}>
-                <span className={`nav-name${p.title ? "" : " untitled"}`}>{name}</span>
-              </button>
+              {renaming === p.id ? (
+                <RenameInput
+                  name={p.title}
+                  label={`${t("tree.rename")}: ${name}`}
+                  onDone={(next) => {
+                    setRenaming(null);
+                    if (next) renamePage(p.id, next);
+                  }}
+                />
+              ) : (
+                <button type="button" className="chart-main" onClick={() => void openPage(p.id)}>
+                  <span className={`nav-name${p.title ? "" : " untitled"}`}>{name}</span>
+                </button>
+              )}
               <PopButton
                 className="icon-btn tiny row-action"
                 title={`${t("page.more")}: ${name}`}
                 align="start"
                 label={<MoreHorizontal size={13} strokeWidth={1.8} />}
               >
-                {(close) => (
-                  <div className="menu-list" role="menu">
-                    <MenuRow
-                      label={t("page.newSub")}
-                      onClick={() => {
-                        close();
-                        void newPage(p.id);
-                      }}
-                    />
-                    <MenuRow
-                      label={t("page.duplicate")}
-                      onClick={() => {
-                        close();
-                        void duplicatePage(p.id);
-                      }}
-                    />
-                    <MenuSep />
-                    <MenuRow
-                      label={t("page.delete")}
-                      danger
-                      onClick={() => {
-                        close();
-                        void deletePage(p.id);
-                      }}
-                    />
-                  </div>
-                )}
+                {items}
               </PopButton>
               <button
                 type="button"
@@ -418,6 +446,16 @@ export function PageTree({
                 <Plus size={13} strokeWidth={1.8} />
               </button>
             </div>
+            {menu?.id === p.id && (
+              <PointMenu
+                x={menu.x}
+                y={menu.y}
+                label={`${t("page.more")}: ${name}`}
+                onClose={() => setMenu(null)}
+              >
+                {items}
+              </PointMenu>
+            )}
             {open && (
               <ul className="nav-list">
                 <PageTree
