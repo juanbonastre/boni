@@ -122,6 +122,13 @@ export interface CalendarView {
   path?: { id: string; name: string; field: string; fieldName: string }[];
   /** The field the definition is split by (null when whole) and the fields that could split it. */
   split?: { field: string | null; choices: { id: string; name: string }[] };
+  /** «Colorear por» (D-25): the field whose value colours each event, with a colour per value. */
+  colorBy?: {
+    field: string;
+    name: string;
+    prop: string;
+    values: { key: string; name: string; color: string }[];
+  };
 }
 
 export interface CollectionSnapshot {

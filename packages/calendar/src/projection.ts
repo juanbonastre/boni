@@ -147,6 +147,16 @@ export function rowToEvent(model: Model, row: Row): CalEvent | null {
     const own = parseReminders(v[m.reminders]);
     if (own) ev.reminders = own;
   }
+  // «Colorear por» (D-25): the colour of the row's value; a value with none, or none at all, leaves the calendar's.
+  if (view.colorBy) {
+    const raw = v[view.colorBy.prop];
+    const name = Array.isArray(raw) ? raw[0] : raw;
+    const color =
+      name === null || name === undefined
+        ? undefined
+        : view.colorBy.values.find((x) => x.name === String(name))?.color;
+    if (color) ev.color = color;
+  }
   const rule = m.recurrence ? parseRule(v[m.recurrence]) : null;
   if (rule) {
     ev.recurrence = rule;

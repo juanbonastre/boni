@@ -162,8 +162,17 @@ export class Remote {
     return this.post("/api/collections/split", { id, field });
   }
 
-  setColor(id: string, color: string): Promise<unknown> {
-    return this.post("/api/collections/color", { id, color });
+  setColor(id: string, color: string, value?: string): Promise<unknown> {
+    return this.post("/api/collections/color", {
+      id,
+      color,
+      ...(value !== undefined ? { value } : {}),
+    });
+  }
+
+  /** «Colorear por» (D-25): the definition coloured by a field, or by its calendar again. */
+  setColorBy(id: string, field: string | null): Promise<unknown> {
+    return this.post("/api/collections/color-by", { id, field });
   }
 
   private post<T>(path: string, body: unknown): Promise<T> {

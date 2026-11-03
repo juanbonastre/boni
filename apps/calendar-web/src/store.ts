@@ -344,6 +344,9 @@ export interface AppState {
   /** «Separar por»: the definition split by a field or whole again; and a colour kept in the definition (D-24). */
   setSplit: (calendarId: string, field: string | null) => Promise<void>;
   setCalendarColor: (calendarId: string, color: string) => Promise<void>;
+  /** «Colorear por» (D-25): the definition coloured by a field or by its calendar again; a value's colour. */
+  setColorBy: (calendarId: string, field: string | null) => Promise<void>;
+  setValueColor: (calendarId: string, value: string, color: string) => Promise<void>;
   /** An event's own reminders (`null`: its calendar's). Adds the column for them to the definition if needed. */
   setEventReminders: (id: string, list: Reminder[] | null) => Promise<void>;
   deleteEvent: (id: string) => void;
@@ -442,6 +445,9 @@ function withExternal(
 
 /** The projector can be kept when no view changed in a way that affects how rows read or write. */
 function sameProjection(a: readonly CalendarView[], b: readonly CalendarView[]): boolean {
+  // «Colorear por» (D-25) is read into each event: a change of it (or of a value's colour) projects again.
+  const sameColors = (x: CalendarView["colorBy"], y: CalendarView["colorBy"]) =>
+    JSON.stringify(x ?? null) === JSON.stringify(y ?? null);
   return (
     a.length === b.length &&
     a.every((v, i) => {
@@ -451,7 +457,8 @@ function sameProjection(a: readonly CalendarView[], b: readonly CalendarView[]):
         v.id === w.id &&
         v.collectionId === w.collectionId &&
         v.mapping === w.mapping &&
-        v.tz === w.tz
+        v.tz === w.tz &&
+        sameColors(v.colorBy, w.colorBy)
       );
     })
   );
@@ -1263,6 +1270,24 @@ export const useApp = create<AppState>((set, get) => {
       if (get().source !== "server" || !server.remote) return;
       try {
         await server.remote.setColor(calendarId, color);
+      } catch (e) {
+        writeFailed(e);
+      }
+    },
+
+    setColorBy: async (calendarId, field) => {
+      if (get().source !== "server" || !server.remote) return;
+      try {
+        await server.remote.setColorBy(calendarId, field);
+      } catch (e) {
+        writeFailed(e);
+      }
+    },
+
+    setValueColor: async (calendarId, value, color) => {
+      if (get().source !== "server" || !server.remote) return;
+      try {
+        await server.remote.setColor(calendarId, color, value);
       } catch (e) {
         writeFailed(e);
       }

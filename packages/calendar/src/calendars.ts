@@ -58,6 +58,7 @@ export function calendarDefs(
       ...(v.group ? { group: v.group } : {}),
       ...(v.path ? { path: v.path } : {}),
       ...(v.split ? { split: v.split } : {}),
+      ...(v.colorBy ? { colorBy: v.colorBy } : {}),
     });
   }
   return out;
