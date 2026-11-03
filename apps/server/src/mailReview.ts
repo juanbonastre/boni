@@ -53,10 +53,13 @@ const MEASURE = 20;
 
 /** The mail whose plan made a proposal (its first step reads it). */
 export function mailOfRun(store: UserStore, run: string): string | null {
-  const plan = store.journal.run(run)?.plan as
-    | { steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[] }
-    | undefined;
-  const first = plan?.steps?.[0];
+  return mailOfPlan(store.journal.run(run)?.plan);
+}
+
+/** The mail a plan reads first (a mail's reading starts by reading it), or null. */
+export function mailOfPlan(plan: unknown): string | null {
+  const first = (plan as { steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[] } | null)
+    ?.steps?.[0];
   return first?.tool === "entities.get" && typeof first.args?.id?.lit === "string"
     ? first.args.id.lit
     : null;

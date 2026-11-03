@@ -58,7 +58,9 @@ with the same click fixed twice, was «todo un poco liado»):
 9. Test it the way Juan uses it before asking him: the real desktop app (`make e2e-boni-desktop`), the server locally with
    the built web app, phone-sized viewports, typing at a person's pace where timing matters, and **data shaped like
    his** (generated ids, his collections' keys and names: `e2e/server-data.ts`, `seed.test-util.ts`), never only the
-   stubs. On his screen, capture only the app window and delete the captures afterwards. Say what you verified and
+   stubs, **and his volume** (thousands of records, a year of runs): anything the apps ask every second or on every
+   request is timed with it before it ships (A-15; 2026-11-03, «Separar por» was tested with three records and read
+   all 2,805 of his every second). On his screen, capture only the app window and delete the captures afterwards. Say what you verified and
    what you could not. Nothing that does not run in CI counts as tested: a test outside CI rots (the calendar
    desktop's peek test did, 2026-10-23 to 2026-11-03); an unstable test is quarantined with its task, never rerun
    and forgotten.

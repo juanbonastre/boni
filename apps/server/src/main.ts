@@ -7,6 +7,7 @@ import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
 import { Mails } from "./mail.ts";
 import { AccountModels } from "./models.ts";
+import { watchSlowness } from "./perf.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -171,6 +172,8 @@ const mails = new Mails({ db, key, host: agent });
 agent.mailAccountOf = (account) => mails.settings(account)?.user || null;
 agent.mailTypeOf = (account) => mails.state(account).type;
 mails.start(() => listUsers(db));
+// What is slow, once a minute in the log (perf.ts; task 35): `boni-status` shows it.
+watchSlowness();
 const app = makeApp({
   db,
   write: process.env.BONI_WRITE === "1",

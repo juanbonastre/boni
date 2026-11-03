@@ -4,7 +4,8 @@ import type { Entity, FieldDef, FieldType, SelectOption, TypeDef } from "@boni/e
 import { label } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { SYS } from "@boni/views";
-import { proposalsByRun, type RunWhat, runInfo } from "./runInfo.ts";
+import { timed } from "./perf.ts";
+import { type MailSeen, proposalsByRun, type RunWhat, runInfo } from "./runInfo.ts";
 
 /**
  * Boni's own records as collections (Juan, 2026-10-25, design audit: everything shown comes from collections):
@@ -145,7 +146,7 @@ export function systemCollections(
   const key = `${store.version()}|${store.audit.lastAction()}|${store.journal.lastModelCall()}|${store.journal.lastRun()}|${o.usdToEur}|${o.tz}`;
   const was = recent.get(store);
   if (was && was.key === key && o.now >= was.at && o.now - was.at < FRESH_MS) return was.sys;
-  const sys = makeSystemCollections(store, o);
+  const sys = timed("Boni's own records", 500, () => makeSystemCollections(store, o));
   recent.set(store, { at: o.now, key, sys });
   return sys;
 }
@@ -160,7 +161,10 @@ function makeSystemCollections(
   const calls = store.journal.modelCallsIn(from, o.now + 1);
   const activity = store.audit.activityByType(from, o.now + 1, day);
   const runs = store.journal.runsIn(from, o.now + 1);
-  const proposals = runs.length ? proposalsByRun(store) : new Map<string, ProposalRow[]>();
+  // Only «Ejecuciones» needs every proposal by run: read when its rows are.
+  let byRun: Map<string, ProposalRow[]> | null = null;
+  const proposals = () =>
+    (byRun ??= runs.length ? proposalsByRun(store) : new Map<string, ProposalRow[]>());
   const schema = store.schema().types;
 
   const uses = optionsFrom(
@@ -290,8 +294,14 @@ function makeSystemCollections(
       return activityRows;
     }
     if (type === SYS_RUNS) {
+      const mails = new Map<string, MailSeen | null>();
       runRows ??= runs.map((r) => {
-        const info = runInfo(store, r, { proposals, mailAccount: null });
+        const info = runInfo(store, r, {
+          proposals: proposals(),
+          mailAccount: null,
+          countOnly: true,
+          mails,
+        });
         const values: Entity["values"] = {
           f_titulo: runTitle(info.what),
           f_fecha: day(r.started),

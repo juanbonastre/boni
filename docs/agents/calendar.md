@@ -18,7 +18,9 @@ tests guard most of them.
   `split` (the field and the choices); `POST /api/collections/split` sets it, `POST /api/collections/color` keeps a
   colour. The sidebar folds a group's views under its name (`CalendarList.tsx`); their properties are the
   definition's (`Modals.tsx`). A colour by a field without splitting was built and taken out the same day (2026-11-03,
-  Juan: only «Separar por», the colours from the swatches).
+  Juan: only «Separar por», the colours from the swatches). The server reads the calendars (`calendarDefs`) from
+  memory while the store's version and the kept definitions do not change: a split definition lists every record
+  of its collection, and the calendar asks every second and on every request (A-15).
 - **Repetitions** come in two kinds, and a calendar maps one or the other:
   - A master that expands (`recurrence`, `exdates`). It is never rendered directly: `expandAll` turns it into
     occurrences (`id = "<master>~<day>"`, `seriesId`, `occurrenceDay`) for the window the views publish (`store.win`,

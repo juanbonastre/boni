@@ -7,14 +7,23 @@ come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: regist
 
 ## 2026-11-03 (third) — server 0.8.79 · Boni desktop 0.4.62 · Boni Calendar desktop 0.8.17
 
-Needs: the server (0.8.79, to deploy: it carries the fix of the slowness) and Boni Calendar desktop 0.8.17
+Needs: the server (0.8.79, to deploy: it carries the fixes of the slowness) and Boni Calendar desktop 0.8.17
 (`release/boni-calendar-desktop_0.8.17_amd64.deb`, to install). Boni desktop stays 0.4.62.
 
-- **The slowness, fixed at its cause.** Since the night's 0.8.76, the mail reviewer looked on its own on every
-  check of the mailbox whenever a rule found by code measured no better: forty reads of a model each time, each a run
-  in the journal, for hours; the server crawled, Actividad took half a minute, the calendar's writes failed half-way.
-  Now it looks on its own once a day at most whatever the last look gave, and a candidate that measured no better
-  waits a week. The log says when it looks. (#255, task 35)
+- **The slowness, measured and cut** (task 35). Two causes, measured with data shaped like Juan's (2,805 agenda
+  records split by area, 6,000 runs) on the laptop; the NAS is about three times slower:
+  - Since the Agenda was split by area (the night of 2026-11-02), the server read every agenda record again every
+    second (the calendar's poll) and on every request of the calendar: 68 ms a poll, 220 ms a `GET /api/changes`
+    with nothing new. Now it reads them once per change of the data: 0 ms and 1 ms; a request no longer waits
+    behind it (266 ms → 6 ms at worst). (#258)
+  - Since 0.8.77 (task 13), the mail reviewer looked on its own on every check of the mailbox whenever a rule found
+    by code measured no better: forty readings each time. They spent the day's reading budget of the mail (150), so
+    new mail stopped being read for the rest of the day, and they filled the journal with runs. Now it looks on its
+    own once a day at most, and a candidate that measured no better waits a week. (#255)
+  - Boni's «Ejecuciones» (the Registro) builds 6,000 runs in 109 ms instead of 716 ms. (#258)
+  - The server says what is slow once a minute in its log (requests over a second by route, the calendar's poll,
+    the event loop held), and `cli.ts diagnose <name>` measures with the account's own data, changing nothing.
+    (#258)
 - **Boni Calendar: out goes the colour by a field.** «Color del calendario» is the swatches row again, and a split
   definition has «Calendarios por área» with a row of swatches per calendar; «Separar por» is the only way to split
   (Juan: «solo vamos a tener separar por… los colores se seleccionan de la matriz»). What stays: the select and the
