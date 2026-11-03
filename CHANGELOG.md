@@ -5,6 +5,18 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-03 (thirteenth) — server 0.8.89 · Boni Calendar desktop 0.8.19
+
+Needs: the server (0.8.89, to deploy) and Boni Calendar desktop 0.8.19
+(`release/boni-calendar-desktop_0.8.19_amd64.deb`, to install). Boni desktop stays 0.4.65. Task 44, and task 43.
+
+- **A task of the whole day has its box.** In Boni Calendar, a task of the whole day shows its box in the week's
+  all-day row and in the month, as one with a time; a click marks it done or not. In the month, a task with a time
+  shows its box too, instead of the colour dot. (#280, task 44)
+- **The Bandeja's cards no longer read the Agenda after each change.** The day around a proposal is kept up to date
+  with what changes (an event moved, a new one) instead of reading the Agenda again (0.5-0.7 s on the NAS). (#281,
+  task 43)
+
 ## 2026-11-03 (twelfth) — server 0.8.88
 
 Needs: the server only (0.8.88, to deploy). Task 43: the three holds the log of 0.8.86 named.
