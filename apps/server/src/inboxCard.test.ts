@@ -209,6 +209,39 @@ describe("the inbox's card for a proposal", () => {
     card();
     expect(list.mock.calls.length).toBe(0);
     list.mockRestore();
+    // What changes is put in it, nothing read again (task 43): the tutorial moves to the 30th, a new class comes.
+    const defType = store.schema().types[type];
+    const field = (name: string) =>
+      defType?.fields.find((f) => f.name === name || f.key === name)?.id as string;
+    const evento = Object.values(store.schema().types).find((t) => t.key === "evento")
+      ?.id as string;
+    const tutoria = store.list(evento)[0]?.entity.id as string;
+    const clase = defType?.fields
+      .find((f) => f.id === tipo)
+      ?.options?.find((o) => o.name === "clase")?.id;
+    const l = label("user", "personal", []);
+    store.update(
+      tutoria,
+      { [field("date")]: { value: "2026-10-30", label: l } },
+      { actor: "user" },
+    );
+    store.create(
+      type,
+      {
+        [defType?.titleField as string]: { value: "Otra clase", label: l },
+        [field("date")]: { value: "2026-10-28", label: l },
+        [tipo]: { value: clase, label: l },
+      },
+      { actor: "user" },
+    );
+    const again = vi.spyOn(store, "list");
+    expect(card().context.map((d) => [d.day, d.items.map((i) => i.title)])).toEqual([
+      ["2026-10-28", ["Otra clase", "Clase de ejemplo"]],
+      ["2026-10-29", []],
+      ["2026-10-30", ["Tutoría"]],
+    ]);
+    expect(again.mock.calls.length).toBe(0);
+    again.mockRestore();
   });
 
   it("a reason the mail does not say in those words is shown, but not as a quote", () => {

@@ -233,15 +233,81 @@ function fieldOfProp(def: TypeDef, columns: { id: string; name: string }[], prop
 
 type Item = { title: string; start: string | null; end: string | null };
 
+/** How an item is read from a record of a calendar collection: its day, its times and its title. */
+interface ItemSpec {
+  date: string;
+  start?: string;
+  end?: string;
+  title: string;
+}
+interface ByDay {
+  version: number;
+  defs: unknown;
+  /** Per collection read, how its records give an item (the first calendar that read it). */
+  spec: Map<string, ItemSpec>;
+  /** Each record's item and the day it is in, to take it out when it changes. */
+  items: Map<string, { day: string; item: Item }>;
+  byDay: Map<string, Item[]>;
+}
+
 /**
- * The calendar by day as last made, per store (task 43: the inbox asks every minute, and making it read the Agenda
- * once for each of its areas, half a second on the NAS): the same while the definitions are and no record of the
- * collections it read changed.
+ * The calendar by day as last made, per store, kept up to date with what changes (task 43: the inbox asks every
+ * minute; making it read the Agenda once for each of its areas, and later once for each change, took half a second
+ * on the NAS each time). Made again only when the definitions or the schema change.
  */
-const byDayMemo = new WeakMap<
-  UserStore,
-  { version: number; defs: unknown; watch: Set<string>; byDay: Map<string, Item[]> }
->();
+const byDayMemo = new WeakMap<UserStore, ByDay>();
+
+const sortDay = (list: Item[]) =>
+  list.sort(
+    (a, b) => (a.start ?? "").localeCompare(b.start ?? "") || a.title.localeCompare(b.title),
+  );
+const itemOf = (
+  spec: ItemSpec,
+  values: Record<string, unknown>,
+): { day: string; item: Item } | null => {
+  const day = values[spec.date];
+  if (typeof day !== "string") return null;
+  return {
+    day,
+    item: {
+      title: textOf(values[spec.title]).slice(0, 120),
+      start: spec.start ? textOf(values[spec.start]) || null : null,
+      end: spec.end ? textOf(values[spec.end]) || null : null,
+    },
+  };
+};
+
+/** What changed since the memo was made, put in it: each changed record's item out of its day and into its new one. */
+function updateByDay(
+  m: ByDay,
+  changed: {
+    entity: { id: string; type: string; values: Record<string, unknown>; deleted?: number };
+  }[],
+) {
+  const touched = new Set<string>();
+  for (const { entity: e } of changed) {
+    const spec = m.spec.get(e.type);
+    const was = m.items.get(e.id);
+    if (!spec && !was) continue;
+    if (was) {
+      const list = m.byDay.get(was.day);
+      if (list) {
+        const at = list.indexOf(was.item);
+        if (at >= 0) list.splice(at, 1);
+        if (!list.length) m.byDay.delete(was.day);
+      }
+      m.items.delete(e.id);
+    }
+    const now = spec && e.deleted === undefined ? itemOf(spec, e.values) : null;
+    if (!now) continue;
+    m.items.set(e.id, now);
+    const list = m.byDay.get(now.day) ?? [];
+    list.push(now.item);
+    m.byDay.set(now.day, list);
+    touched.add(now.day);
+  }
+  for (const day of touched) sortDay(m.byDay.get(day) ?? []);
+}
 
 /**
  * Every calendar collection's entries by day, by their mapping (made once for all the cards of a request): each
@@ -251,26 +317,18 @@ function calendarByDay(store: UserStore): Map<string, Item[]> {
   const defs = calendarDefs(store);
   const version = store.version();
   const was = byDayMemo.get(store);
-  if (was && was.defs === defs && was.version !== version) {
-    const ch = store.changesSince(was.version);
-    if (!ch.schemaChanged && !ch.entities.some((e) => was.watch.has(e.entity.type)))
-      was.version = version;
-  }
-  if (was && was.defs === defs && was.version === version) return was.byDay;
-  const out = new Map<string, Item[]>();
-  const schema = store.schema().types;
-  const watch = new Set<string>();
-  const listed = new Map<string, ReturnType<UserStore["list"]>>();
-  const listOf = (t: string) => {
-    let l = listed.get(t);
-    if (!l) {
-      l = store.list(t);
-      listed.set(t, l);
-      watch.add(t);
+  if (was && was.defs === defs) {
+    if (was.version !== version) {
+      const ch = store.changesSince(was.version);
+      if (!ch.schemaChanged) {
+        updateByDay(was, ch.entities);
+        was.version = version;
+      }
     }
-    return l;
-  };
-  const seen = new Set<string>();
+    if (was.version === version) return was.byDay;
+  }
+  const m: ByDay = { version, defs, spec: new Map(), items: new Map(), byDay: new Map() };
+  const schema = store.schema().types;
   for (const p of defs) {
     const def = schema[p.type];
     const when = p.def.mapping.when as {
@@ -284,26 +342,29 @@ function calendarByDay(store: UserStore): Map<string, Item[]> {
     const start = when.startTime ? fieldOfProp(def, p.def.columns, when.startTime) : undefined;
     const end = when.endTime ? fieldOfProp(def, p.def.columns, when.endTime) : undefined;
     if (!date) continue;
-    const types = p.where ? branch({ types: schema }, p.type) : [p.type];
-    for (const s of types.flatMap(listOf)) {
-      if (seen.has(s.entity.id)) continue;
-      seen.add(s.entity.id);
-      const day = s.entity.values[date.id];
-      if (typeof day !== "string") continue;
-      if (!out.has(day)) out.set(day, []);
-      out.get(day)?.push({
-        title: textOf(s.entity.values[def.titleField]).slice(0, 120),
-        start: start ? textOf(s.entity.values[start.id]) || null : null,
-        end: end ? textOf(s.entity.values[end.id]) || null : null,
-      });
+    const spec: ItemSpec = {
+      date: date.id,
+      ...(start ? { start: start.id } : {}),
+      ...(end ? { end: end.id } : {}),
+      title: def.titleField,
+    };
+    for (const t of p.where ? branch({ types: schema }, p.type) : [p.type]) {
+      if (m.spec.has(t)) continue;
+      m.spec.set(t, spec);
+      for (const s of store.list(t)) {
+        if (m.items.has(s.entity.id)) continue;
+        const it = itemOf(spec, s.entity.values);
+        if (!it) continue;
+        m.items.set(s.entity.id, it);
+        const list = m.byDay.get(it.day) ?? [];
+        list.push(it.item);
+        m.byDay.set(it.day, list);
+      }
     }
   }
-  for (const list of out.values())
-    list.sort(
-      (a, b) => (a.start ?? "").localeCompare(b.start ?? "") || a.title.localeCompare(b.title),
-    );
-  byDayMemo.set(store, { version, defs, watch, byDay: out });
-  return out;
+  for (const list of m.byDay.values()) sortDay(list);
+  byDayMemo.set(store, m);
+  return m.byDay;
 }
 
 /**
