@@ -70,6 +70,7 @@ function fakeStore(today: string, types: Record<string, TypeDef>) {
       modelCallsIn: (from: number, to: number) => calls.filter((c) => c.at >= from && c.at < to),
       modelCalls: () => [],
       proposals: () => [],
+      proposalCounts: () => [],
       lastRun: () => runs.length + Math.max(...runs.map((r) => r.finished)),
       runsIn: (from: number, to: number) => runs.filter((r) => r.started >= from && r.started < to),
     },
