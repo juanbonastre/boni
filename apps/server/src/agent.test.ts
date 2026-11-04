@@ -11,6 +11,7 @@ import { AgentHost } from "./agent.ts";
 import { addUser, sessionUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
+import { ensureFlow } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 
@@ -428,5 +429,127 @@ describe("Juan's conversations (docs/conversacion.md 3.1, 3.5)", () => {
       error: "stopped-by-juan",
     });
     expect((await post(base, token, "/api/agent/live/no-existe-0000/stop")).status).toBe(404);
+  });
+});
+
+describe("flows over the API (docs/flujos.md, F2)", () => {
+  const call = (token: string, method: string, path: string, body?: unknown) =>
+    fetch(`${base}${path}`, {
+      method,
+      headers: { authorization: `Bearer ${token}` },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  const tally = {
+    version: 1,
+    steps: [
+      {
+        id: "n",
+        op: "call",
+        tool: "entities.aggregate",
+        args: { type: lit("tarea"), op: lit("count") },
+      },
+      {
+        id: "r",
+        op: "reply",
+        component: "text",
+        data: { template: { ref: "$titulo" }, a: { ref: "$n" } },
+      },
+    ],
+  };
+
+  it("are made, checked, saved over their version, turned on, run by hand, gone back and deleted", async () => {
+    const token = await login(base, "juan");
+    const made = (await (
+      await call(token, "POST", "/api/agent/flows", { name: "Cuántas tareas" })
+    ).json()) as {
+      id: string;
+      version: number;
+      enabled: boolean;
+    };
+    expect(made).toMatchObject({ version: 1, enabled: false, trigger: { manual: true } });
+    // The checklist of an empty flow, and of the one it will be.
+    const trigger = { manual: true, inputs: [{ name: "titulo" }] };
+    const empty = (await (
+      await call(token, "POST", "/api/agent/flows/check", {
+        trigger,
+        plan: { version: 1, steps: [] },
+      })
+    ).json()) as { problems: unknown[] };
+    expect(empty.problems).toEqual([{ step: null, at: null, code: "no-steps" }]);
+    const checked = (await (
+      await call(token, "POST", "/api/agent/flows/check", { trigger, plan: tally })
+    ).json()) as {
+      problems: unknown[];
+      refs: Record<string, { ref: string }[]>;
+    };
+    expect(checked.problems).toEqual([]);
+    expect(checked.refs.r?.map((x) => x.ref)).toEqual(["$titulo", "$n"]);
+    // Saved over the version it started from; again over the same one, refused; with a problem, refused and said.
+    const save = (body: unknown) => call(token, "PUT", `/api/agent/flows/${made.id}`, body);
+    const saved = await save({ base: 1, trigger, plan: tally });
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ version: 2, by: "user", plan: tally });
+    expect((await save({ base: 1, trigger, plan: tally })).status).toBe(409);
+    const broken = await save({
+      base: 2,
+      trigger,
+      plan: { version: 1, steps: [{ id: "a", op: "call", tool: "entities.get", args: {} }] },
+    });
+    expect(broken.status).toBe(400);
+    expect(await broken.json()).toMatchObject({
+      error: "invalid",
+      problems: [{ step: "a", code: "missing-argument" }],
+    });
+    // On, then run by hand: the plan is the saved one (no planner), the form's value Juan's own.
+    expect(
+      (await (
+        await call(token, "PUT", `/api/agent/flows/${made.id}/enabled`, { enabled: true })
+      ).json()) as unknown,
+    ).toMatchObject({ enabled: true });
+    const before = plans.length;
+    const ran = (await (
+      await call(token, "POST", `/api/agent/flows/${made.id}/run`, {
+        inputs: { titulo: "Tienes {a}" },
+      })
+    ).json()) as { status: string; replies: { data: Record<string, unknown> }[] };
+    expect(plans.length).toBe(before);
+    expect(ran.status).toBe("done");
+    expect(ran.replies[0]?.data).toMatchObject({
+      template: { value: "Tienes {a}", integrity: "user" },
+      // What the tool counted (the tests before this one change Juan's tasks).
+      a: { value: expect.any(Number) },
+    });
+    const list = (await (await call(token, "GET", "/api/agent/flows")).json()) as {
+      flows: { id: string; runs: number }[];
+    };
+    expect(list.flows.find((f) => f.id === made.id)?.runs).toBe(1);
+    // Back to its first version (a new one), then deleted: out of the list.
+    expect(
+      await (
+        await call(token, "POST", `/api/agent/flows/${made.id}/revert`, { version: 1 })
+      ).json(),
+    ).toMatchObject({
+      version: 3,
+      steps: 0,
+    });
+    expect((await call(token, "DELETE", `/api/agent/flows/${made.id}`)).status).toBe(200);
+    const after = (await (await call(token, "GET", "/api/agent/flows")).json()) as {
+      flows: { id: string }[];
+    };
+    expect(after.flows.map((f) => f.id)).not.toContain(made.id);
+    // Boni's own flows are turned off, never deleted.
+    ensureFlow(
+      host.store(1),
+      { id: "de-boni", name: "De Boni", trigger: { manual: true }, plan: tally, by: "preset" },
+      1,
+    );
+    expect((await call(token, "DELETE", "/api/agent/flows/de-boni")).status).toBe(409);
+    // The catalog: the registry's tools and the account's collections.
+    const catalog = (await (await call(token, "GET", "/api/agent/flows/catalog")).json()) as {
+      tools: { name: string }[];
+      collections: { key: string }[];
+    };
+    expect(catalog.tools.map((t) => t.name)).toContain("entities.create");
+    expect(catalog.collections.map((c) => c.key)).toContain("tarea");
   });
 });

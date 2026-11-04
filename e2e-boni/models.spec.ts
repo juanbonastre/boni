@@ -2,7 +2,10 @@ import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
   FLOW,
+  FLOW_CATALOG,
+  FLOW_CHECK,
   FLOW_DETAIL,
+  FLOW_DETAIL_SAVED,
   FLOWS,
   MODELS,
   MODELS_CATALOGUE,
@@ -312,7 +315,7 @@ test("«Modelos»: the declared flow with its numbers; a model's node names its 
   await expect(page.locator(".models-page .models-settings-role")).toContainText("Lector");
 });
 
-test("«Flujos»: the account's flows with their runs; one drawn as its trigger, its steps and their arrows, each step saying how often it ran", async ({
+test("«Flujos»: the editor draws a flow and changes it: a step's collection, saved as his version, back to Boni's; a step added", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -322,39 +325,90 @@ test("«Flujos»: the account's flows with their runs; one drawn as its trigger,
       "GET api/agent/pipeline": [FLOW],
       "GET api/agent/flows": [FLOWS],
       "GET api/agent/flows/:id": [FLOW_DETAIL],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+      "PUT api/agent/flows/:id": [FLOW_DETAIL_SAVED],
+      "POST api/agent/flows/:id/revert": [{ ...FLOW_DETAIL, version: 5 }],
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Flujos");
   const row = page.locator(".flows-table tbody tr");
   await expect(row).toHaveCount(1);
-  await expect(row.first()).toContainText("Leer correo");
-  await expect(row.first()).toContainText("Nuevo correo");
-  await expect(row.first()).toContainText("Encendido");
-  await expect(row.first()).toContainText("42");
-  await expect(row.first()).toContainText("v3");
-  // The flow drawn: the trigger with what it binds, the steps named from the registry or as readers, the arrows.
-  const canvas = page.locator(".flow-detail .flow-canvas");
-  await expect(canvas.locator(".fl-node")).toHaveCount(6);
+  for (const text of ["Leer correo", "Nuevo correo", "Encendido", "42", "v3"])
+    await expect(row.first()).toContainText(text);
+  // The flow drawn from its plan: the trigger with what it binds, each step named as the flows name it.
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  await expect(canvas.locator(".fl-node")).toHaveCount(5);
   await expect(canvas.locator(".fl-node.source")).toContainText("Nuevo correo");
   await expect(canvas.locator(".fl-node.source")).toContainText("$mail");
-  const names = canvas.locator(".fl-node .fl-name");
-  for (const name of ["Leer", "Lectora", "Decisora", "Rellenadora", "Crear"])
-    await expect(names.filter({ hasText: name })).toHaveCount(1);
-  const create = canvas.locator(".fl-node", { hasText: "Crear" });
-  await expect(create).toContainText("Docencia");
-  await expect(create).toContainText("12 veces");
-  await expect(create).toContainText("12 propuestas");
-  await expect(create).toContainText("Para cada");
-  await expect(canvas.locator(".react-flow__edge")).toHaveCount(10);
-  // A step's panel: its settings as the plan says them.
+  for (const name of ["Leer", "Lectora", "Rellenadora", "Crear"])
+    await expect(
+      canvas.locator(".fl-node .fl-name", { hasText: new RegExp(`^${name}$`) }),
+    ).toHaveCount(1);
+  const create = canvas.locator(".fl-node", {
+    has: page.locator(".fl-name", { hasText: /^Crear$/ }),
+  });
+  for (const text of ["Docencia", "12 veces", "12 propuestas", "Para cada"])
+    await expect(create).toContainText(text);
+  const save = page.getByRole("button", { name: "Guardar", exact: true });
+  await expect(save).toBeDisabled();
+  // Its collection changed in its panel: the fields follow their roles, the collection's inputs its key.
   await create.locator(".fl-name").click();
   const panel = page.locator(".flow-step-panel");
-  await expect(panel).toContainText("Crear");
-  await expect(panel).toContainText('type: "docencia"');
-  await expect(panel).toContainText("Toma de: $r, $c, $n0_tasks_f");
-  await page.screenshot({ path: `${SHOTS}/flows.png` });
+  await expect(panel.locator("h3")).toHaveText("Crear");
+  const collection = panel.locator(".flow-setting", { hasText: "Colección" }).locator("select");
+  await expect(collection).toHaveValue("docencia");
+  await collection.selectOption("gestiones");
+  await expect(create).toContainText("Gestiones");
+  await expect(panel.locator(".flow-value-row select").first()).toHaveValue("title");
+  await page.screenshot({ path: `${SHOTS}/flow-editor.png` });
+  await expect(save).toBeEnabled();
+  await save.click();
+  const body = await page.waitForFunction(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).find((b) =>
+      b.startsWith("PUT api/agent/flows/leer-correo "),
+    ),
+  );
+  const sent = JSON.parse(String(await body.jsonValue()).replace(/^PUT \S+ /, "")) as {
+    base: number;
+    plan: {
+      steps: { id: string; args?: { type?: unknown; values?: unknown }; params?: unknown }[];
+    };
+  };
+  expect(sent.base).toBe(3);
+  const made = sent.plan.steps.find((x) => x.id === "n0_tasks");
+  expect(made?.args?.type).toEqual({ lit: "gestiones" });
+  expect(JSON.stringify(made?.args?.values)).toContain('"$prefill.gestiones"');
+  expect(JSON.stringify(made?.args?.values)).toContain('{"lit":"dia"}');
+  expect(sent.plan.steps.find((x) => x.id === "n0_tasks_f")?.params).toEqual({
+    fields: { ref: "$fill.gestiones" },
+  });
+  // His version now: «Volver al de Boni» in the flow's menu.
+  await page.locator(".flow-toolbar").getByRole("button", { name: "Más opciones" }).click();
+  await page.getByRole("menuitemradio", { name: "Volver al de Boni" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
+          b.startsWith("POST api/agent/flows/leer-correo/revert"),
+        ),
+      ),
+    )
+    .toEqual(['POST api/agent/flows/leer-correo/revert {"preset":true}']);
+  // A step added after the one chosen: «Avisar», its panel open; what it says, a value of an earlier step.
+  await canvas.locator(".fl-node .fl-name", { hasText: /^Lectora$/ }).click();
+  await page.getByRole("button", { name: "Añadir paso" }).click();
+  await page.getByRole("menuitemradio", { name: "Avisar" }).click();
+  await expect(panel.locator("h3")).toHaveText("Avisar");
+  await expect(canvas.locator(".fl-node")).toHaveCount(6);
+  const text = panel.locator(".flow-setting", { hasText: "Texto" });
+  await text.getByRole("combobox", { name: "Texto: Tipo de valor" }).selectOption("ref");
+  await text.getByRole("combobox", { name: "Texto", exact: true }).fill("$m.asunto");
+  await expect(save).toBeEnabled();
   // The period asks the flow again.
   await page.getByRole("radio", { name: "30 días" }).click();
-  await expect.poll(async () => (await requests(page, "GET api/agent/flows/")).length).toBe(2);
+  await expect
+    .poll(async () => (await requests(page, "GET api/agent/flows/leer-correo")).length)
+    .toBeGreaterThan(1);
 });

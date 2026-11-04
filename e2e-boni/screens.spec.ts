@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { FLOW, FLOW_DETAIL, FLOWS, MODELS } from "./agent-scenarios.ts";
+import { FLOW, FLOW_CATALOG, FLOW_CHECK, FLOW_DETAIL, FLOWS, MODELS } from "./agent-scenarios.ts";
 import { openApp, openInTree, TEMPLATE } from "./fixtures.ts";
 
 /**
@@ -37,9 +37,12 @@ test("Flujos", async ({ page }) => {
     "GET api/agent/pipeline": [FLOW],
     "GET api/agent/flows": [FLOWS],
     "GET api/agent/flows/:id": [FLOW_DETAIL],
+    "GET api/agent/flows/catalog": [FLOW_CATALOG],
+    "POST api/agent/flows/check": [FLOW_CHECK],
   });
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
   await page.locator(".flow-detail .flow-canvas .fl-node").first().waitFor();
+  await page.getByRole("button", { name: "Añadir paso" }).waitFor();
   await page.waitForTimeout(400); // the canvas fits the flow with a short motion
   await shot(page, "flujos");
 });

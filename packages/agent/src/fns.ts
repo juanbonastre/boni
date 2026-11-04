@@ -42,6 +42,9 @@ const key = (v: Val): string => {
   return x;
 };
 const fieldOf = (v: Val, k: string): Val | null => (v.t === "rec" ? (v.fields[k] ?? null) : null);
+/** A value that says something: not null, not an empty text, not an empty list (false and 0 do). */
+const present = (v: Val): boolean =>
+  !(v.t === "v" && (v.value === null || v.value === "")) && !(v.t === "list" && !v.items.length);
 const same = (a: Json, b: Json) => JSON.stringify(a) === JSON.stringify(b);
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -114,6 +117,18 @@ export function callFn(name: string, args: Val[], today: string): Val {
         join(...(args.filter((_, i) => i % 2 === 0).map(deepLabel) as [Label, ...Label[]])),
         true,
       );
+    }
+    case "merge": {
+      // merge(a, b...): one record with the fields of all, a later one's field that has a value winning (docs/flujos.md:
+      // the values of a record made from several parts, the code's relations, what a reader filled, the item's own).
+      // Each field keeps its label; the record's is theirs. An empty part (a step skipped) adds nothing.
+      const fields: Record<string, Val> = {};
+      for (const x of args) {
+        if (x.t === "v" && (x.value === null || x.value === "")) continue;
+        if (x.t !== "rec") throw new FnError("not-a-record");
+        for (const [k, v] of Object.entries(x.fields)) if (present(v)) fields[k] = v;
+      }
+      return rec(fields, join(...(args.map((x) => x.label) as [Label, ...Label[]])), true);
     }
     case "concat":
       return out(args.map(text).join(""));

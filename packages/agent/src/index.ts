@@ -2,6 +2,7 @@ export {
   Agent,
   type AgentOptions,
   type Budget,
+  checkPlan,
   type LiveEvent,
   type Notice,
   type Painted,
@@ -14,6 +15,7 @@ export {
   type RunDetail,
   type RunLimits,
   type TurnResult,
+  toolsFor,
 } from "./agent.ts";
 export { AnthropicProvider, apiSchema, ProviderError } from "./anthropic.ts";
 export { type ConfirmView, confirmHash, confirmView, marksOf } from "./confirm.ts";
@@ -98,7 +100,11 @@ export {
   FNS,
   isWholeSpan,
   type Plan,
+  type PlanResult,
   planSchema,
+  planVocabulary,
+  READERS,
+  type ReaderKind,
   type Step,
   validatePlan,
 } from "./plan.ts";
@@ -145,5 +151,15 @@ export {
   typeName,
 } from "./tools.ts";
 export { refsOf } from "./trace.ts";
-export { deepLabel, type From, type Json, leaf, list, plain, rec, type Val } from "./values.ts";
+export {
+  deepLabel,
+  type From,
+  flowLabel,
+  type Json,
+  leaf,
+  list,
+  plain,
+  rec,
+  type Val,
+} from "./values.ts";
 export { schemaView, toPlannerView } from "./view.ts";

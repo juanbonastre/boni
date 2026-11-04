@@ -184,6 +184,7 @@ agent.plannerFor = (account, id) => models.plannerProvider(account, id);
 const mails = new Mails({ db, key, host: agent, feeds });
 agent.mailAccountOf = (account) => mails.settings(account)?.user || null;
 agent.mailTypeOf = (account) => mails.state(account).type;
+agent.mailModulesOf = (account) => mails.moduleIdsOf(account);
 // Juan's reading guide reaches the readers of mail in the conversation too (docs/correo.md §4.1, task 23).
 agent.readingGuideOf = (account) => {
   const g = mails.guide(account);

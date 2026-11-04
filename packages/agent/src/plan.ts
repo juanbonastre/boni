@@ -56,6 +56,7 @@ export const FNS: Readonly<Record<string, [number, number]>> = {
   concat: [1, 40],
   list: [1, 20],
   obj: [2, 40],
+  merge: [2, 8],
   length: [1, 1],
   eq: [2, 2],
   ne: [2, 2],
@@ -91,6 +92,29 @@ const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> 
   // Bars (or a line) of numbers the tools gave, one per label: `kind` "bar" or "line".
   chart: ["labels", "values", "kind", "unit", "caption"],
 };
+
+/**
+ * What a plan may say besides the tools, for whoever writes plans by hand (docs/flujos.md: the flow editor's catalog
+ * of nodes): each reader with its parameters (and which are required), the ask controls, the reply components with
+ * their data, the functions with their arity, and the limits.
+ */
+export function planVocabulary() {
+  return {
+    readers: Object.fromEntries(
+      READERS.map((r) => [
+        r,
+        {
+          params: READER_PARAMS[r],
+          required: r === "classify" ? ["options"] : r === "fill" ? ["fields"] : [],
+        },
+      ]),
+    ) as Record<ReaderKind, { params: string[]; required: string[] }>,
+    asks: [...ASK_CONTROLS],
+    replies: { ...REPLY_DATA } as Record<string, string[]>,
+    fns: { ...FNS },
+    limits: { steps: MAX_STEPS, each: MAX_EACH, nesting: MAX_NESTING },
+  };
+}
 
 /** What the validator needs to know of the tools the planner may use. */
 export interface PlanCatalog {

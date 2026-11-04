@@ -741,8 +741,26 @@ contraseña ni un código aquí» under a question.
   a condition, and how often it ran in the period («12 veces · 12 propuestas»); an arrow from each step or input a
   step takes its data from. A click opens the step's panel on the right: its name and its settings as the plan says
   them (`type: "docencia"`, `input: $text`), and what it takes from. The period (7 | 30 días) and «Ordenar» as in
-  «Modelos». Read-only until F2. Two tabs in a segmented control: **Flujos** (this) and **Modelos** (task 59b,
-  below).
+  «Modelos». Two tabs in a segmented control: **Flujos** (this) and **Modelos** (task 59b, below).
+- **The flow editor** (F2, `docs/flujos.md` §4.5; n8n's canvas and node panel and Dify's checklist as references):
+  the chosen flow opens in it, under «Nuevo flujo» and the rows. A toolbar: the name (edited in place), the
+  «Encendido» switch, «Añadir paso» (a menu in groups, Leer, Decidir, Datos, Otros, each node named in a word),
+  «Ejecutar» on a flow by hand (its form first when it asks for something; it runs as a turn of a new conversation,
+  where its replies, questions and confirmations show as always), then «Descartar» and «Guardar» (primary, enabled
+  only with changes and an empty checklist) and «⋯» (the versions, each «vN · Tú/Boni · date», a click goes back to
+  it as a new version; «Volver al de Boni» on a flow Boni keeps; «Duplicar»; «Eliminar» on the user's own, a second
+  click to confirm). Under it the checklist, in a `--bad`-tinted box, one line per problem («Crear: Colección:
+  falta»), a click selects the step. The canvas: a node can be dragged (where it is left is saved with the version;
+  «Ordenar» lays it out again), an arrow drawn from one node to another asks where the second uses the first's value
+  (a small menu of its settings) and moves it after the first when it ran before, Supr removes the selected node, a
+  click opens its panel on the right (340 px): its name, id and «Quitar»; its problems in `--bad`; what it is (the
+  tool, the reader, the question, the reply) and its settings from the catalog's schema: a collection as a list of
+  the collections (changing it, the record's fields follow their roles and the collection's inputs, `$fill.<key>`,
+  its key), a record's values as rows of field and value (the parts it is merged with as chips), any other as a
+  value field: a kind (Texto, Número, Sí o no, Valor de, Función, Nada) and its input; «Valor de» offers the values
+  that step may take (the server computes them: the trigger's, the earlier steps', `$item` in a loop). Then «Solo
+  si», «Para cada» and «Junto con». The trigger's panel: «Nuevo correo» with what it binds, or «A mano» with the
+  names its form asks for. A node with a problem has a `--bad` border; the selected one an `--accent` ring.
 - **«Modelos»** (the tab; task 59b, Juan 2026-11-04: see what every model does and how they work together, n8n's
   canvas as the reference; until 2026-11-04 Ajustes → Modelos, which keeps a button to it): first the
   flow Boni declares (`packages/agent/src/pipeline.ts`, A-16) as a canvas (React Flow, dagre left to right, dots in

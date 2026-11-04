@@ -23,14 +23,14 @@ import { type FieldDef, label, newId, rolesOf, type TypeDef } from "@boni/entiti
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
 import { wrappedKeysIn } from "@boni/identity";
 import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
-import { BODY, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
+import { BODY, type FlowRow, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
 import { readAccount } from "./account.ts";
 import type { AgentHost } from "./agent.ts";
 import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import type { Feeds } from "./feeds.ts";
-import { ensureFlow, MAIL_FLOW } from "./flows.ts";
+import { collectionKeysOf, ensureFlow, MAIL_FLOW } from "./flows.ts";
 import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
 import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
 import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
@@ -242,13 +242,17 @@ export function userIn(mailbox: string, para: unknown, cc: unknown): UserIn {
 export const MAIL_MODULES = ["tasks", "events"];
 
 /**
- * The background plan for one mail (docs/nucleo.md 7.4b, 7.12; a plan template made by code): read the
- * mail once with `read_message` (its headers and text, where the user is among its recipients, the
+ * The background plan for one mail (docs/nucleo.md 7.4b, 7.12; the preset of the flow «Leer correo», docs/flujos.md):
+ * read the mail once with `read_message` (its headers and text, where the user is among its recipients, the
  * modules), pick a collection when there are several (only if something is for the user), and one
  * `entities.create` per task or event in the chosen one. Every value comes from the mail, so the policy
- * sends each one to the inbox (P4, P7); nothing here is written by itself. `has`: the mail's fields that
- * have a value (the headers shown are those); `known`: the titles still waiting in the inbox from the same
- * sender, so a reminder does not propose them again (that sender's own text: nothing of Juan's, A14).
+ * sends each one to the inbox (P4, P7); nothing here is written by itself.
+ *
+ * It is the same plan for every mail of a configuration (the collections marked for mail, the modules, the routes,
+ * the guide): what varies with the mail is bound by code as the flow's inputs (`mailBindings`): the record
+ * (`$mail`), the mail as the reader reads it (`$text`), its subject, where the user is among its recipients and what
+ * that sender has waiting (`$known`), the collection a rule of the guide sends it to (`$only`), and per collection,
+ * by its key, the fields the reader fills (`$fill.<key>`) and the relations the code found (`$prefill.<key>`).
  */
 export function mailPlan(
   targets: Target[],
@@ -269,10 +273,9 @@ export function mailPlan(
      */
     askWhenUnsure?: boolean;
     /**
-     * The mail is a calendar invitation (task 45): its event comes from the mail's own fields, read from the .ics
-     * by code and bound as `$inv` (uid, titulo, dia, inicio, fin, nota, linea), and follows this module's route
-     * (the events'); no reader in between. The caller puts its title in `known`, so the reader does not propose
-     * it again.
+     * The module whose items are events (task 45): a calendar invitation's event comes from the mail's own fields,
+     * read from the .ics by code and bound as `$inv` (uid, titulo, dia, inicio, fin, nota, linea), and follows this
+     * module's route; no reader in between. Its steps run only when the mail is one (`$inv.uid`).
      */
     invitation?: string;
   } = {},
@@ -283,10 +286,6 @@ export function mailPlan(
     const r = route(m);
     return "propose" in r && r.propose === "chosen";
   });
-  // What varies with the mail is bound by code (docs/flujos.md, the flow's inputs): the record (`$mail`), the mail
-  // as the reader reads it (`$text`: headers, text, attachments), its subject, where the user is among its
-  // recipients and what that sender already has waiting (`$known`). So the plan is the same for every mail of a
-  // configuration, and the flow it is saved as changes only when the configuration does.
   const text = { ref: "$text" };
   const steps: unknown[] = [
     { id: "m", op: "call", tool: "entities.get", args: { id: { ref: "$mail" } } },
@@ -305,6 +304,11 @@ export function mailPlan(
       },
     },
   ];
+  // The collection the reading goes to: the one a rule of the guide names for this sender (`$only`), else the
+  // decider's choice; with one collection there is nothing to choose.
+  const choice = { fn: "first", args: [{ ref: "$only" }, { ref: "$c.choice" }] };
+  const goesTo = (t: Target) =>
+    targets.length > 1 ? { fn: "eq", args: [choice, { lit: t.option }] } : null;
   // Each item's other fields and its note (reader `fill`, Jev when there is one): read with the mail and the
   // item, walked along the items when creating (`zip`).
   const fillStep = (id: string, module: string, t: Target, when?: unknown) => ({
@@ -323,13 +327,23 @@ export function mailPlan(
         { ref: "$item.quote" },
       ],
     },
-    params: { fields: { ref: `$${t.fillRef}` } },
+    params: { fields: { ref: `$fill.${t.key}` } },
   });
+  // The record: the relations the code found (task 51), then what the reader filled (its choice first), then the
+  // item's own title, day and hours (`merge`: a later value wins, an empty one never).
   const create = (id: string, module: string, t: Target, when?: unknown) => {
-    const filled = !!(t.fill?.length && t.fillRef);
-    const pre = new Map(
-      t.prefillRef ? (t.prefill ?? []).map((p) => [p.key, `$${t.prefillRef}.${p.key}`]) : [],
-    );
+    const filled = !!t.fill?.length;
+    const own = {
+      fn: "obj",
+      args: [
+        { lit: "title" },
+        { ref: "$item.title" },
+        ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
+        ...(t.time ? [{ lit: t.time }, { ref: "$item.start" }] : []),
+        ...(t.endTime ? [{ lit: t.endTime }, { ref: "$item.end" }] : []),
+        ...(filled ? [{ lit: "body" }, { ref: "$zip.note" }] : []),
+      ],
+    };
     const step = {
       id,
       op: "call",
@@ -341,39 +355,18 @@ export function mailPlan(
       args: {
         type: { lit: t.key },
         values: {
-          fn: "obj",
-          args: [
-            { lit: "title" },
-            { ref: "$item.title" },
-            ...(t.date ? [{ lit: t.date }, { ref: "$item.due" }] : []),
-            ...(t.time ? [{ lit: t.time }, { ref: "$item.start" }] : []),
-            ...(t.endTime ? [{ lit: t.endTime }, { ref: "$item.end" }] : []),
-            ...(filled
-              ? [
-                  { lit: "body" },
-                  { ref: "$zip.note" },
-                  ...(t.fill ?? []).flatMap((f) => [
-                    { lit: f.key },
-                    // A relation the code found in the mail (task 51): the reader's choice first, else the code's.
-                    pre.has(f.key)
-                      ? {
-                          fn: "first",
-                          args: [{ ref: `$zip.values.${f.key}` }, { ref: pre.get(f.key) }],
-                        }
-                      : { ref: `$zip.values.${f.key}` },
-                  ]),
-                ]
-              : []),
-            ...[...pre]
-              .filter(([k]) => !(filled && t.fill?.some((f) => f.key === k)))
-              .flatMap(([k, ref]) => [{ lit: k }, { ref }]),
-          ],
+          fn: "merge",
+          args: [{ ref: `$prefill.${t.key}` }, ...(filled ? [{ ref: "$zip.values" }] : []), own],
         },
       },
     };
     return filled ? [fillStep(`${id}_f`, module, t, when), step] : [step];
   };
-  if (chosen.length && targets.length > 1)
+  if (chosen.length && targets.length > 1) {
+    // With an invitation the collection is chosen even when the reader finds nothing else.
+    const found = o.invitation
+      ? { fn: "or", args: [{ ref: "$r.all" }, { ref: "$inv.uid" }] }
+      : { ref: "$r.all" };
     steps.push({
       id: "c",
       op: "read",
@@ -397,21 +390,12 @@ export function mailPlan(
             }
           : {}),
       },
-      // With an invitation the collection is chosen even when the reader finds nothing else.
-      when: o.invitation
-        ? { fn: "or", args: [{ ref: "$r.all" }, { ref: "$inv.uid" }] }
-        : { ref: "$r.all" },
+      // A rule of the guide already says where it goes: nothing to choose.
+      when: { fn: "and", args: [found, { fn: "not", args: [{ ref: "$only" }] }] },
     });
+  }
   targets.forEach((t, i) => {
-    for (const module of chosen)
-      steps.push(
-        ...create(
-          `n${i}_${module}`,
-          module,
-          t,
-          targets.length > 1 ? { fn: "eq", args: [{ ref: "$c.choice" }, { lit: t.option }] } : null,
-        ),
-      );
+    for (const module of chosen) steps.push(...create(`n${i}_${module}`, module, t, goesTo(t)));
   });
   for (const module of modules) {
     const r = route(module);
@@ -420,9 +404,8 @@ export function mailPlan(
     if (t) steps.push(...create(`f_${module}`, module, t));
   }
   // The invitation's event (task 45): the mail's own fields into the collection its module's route says; its
-  // place and link as the record's note, and the invitation's line as the reason the card shows.
-  // Only a mail that is an invitation has `$inv.uid` (the flow is the same for every mail): the steps stay, their
-  // condition says.
+  // place and link as the record's note, and the invitation's line as the reason the card shows. Only a mail that
+  // is an invitation has `$inv.uid`: the steps stay, their condition says.
   const invite = (id: string, t: Target, when?: unknown) => ({
     id,
     op: "call",
@@ -449,15 +432,7 @@ export function mailPlan(
     const r = route(o.invitation);
     if ("propose" in r && r.propose === "chosen")
       targets.forEach((t, i) => {
-        steps.push(
-          invite(
-            `inv${i}`,
-            t,
-            targets.length > 1
-              ? { fn: "eq", args: [{ ref: "$c.choice" }, { lit: t.option }] }
-              : undefined,
-          ),
-        );
+        steps.push(invite(`inv${i}`, t, goesTo(t) ?? undefined));
       });
     else if ("propose" in r) {
       const t = o.fixed?.find((x) => x.id === r.propose.collection);
@@ -872,6 +847,10 @@ export class Mails {
       .slice(0, 12);
   }
 
+  /** The mail extension's module ids for this account (the flow editor's, docs/flujos.md). */
+  moduleIdsOf(account: number): string[] {
+    return moduleIds(this.manifest(account));
+  }
   /** The mail extension's manifest for this account (the preset until the store has one). */
   manifest(account: number): ExtensionManifest {
     return this.o.host.hasData
@@ -1483,12 +1462,6 @@ export class Mails {
       modules: modulesOfManifest(m),
       ...(withGuide ? { guide: guideOf(guide) } : {}),
     };
-    // Each collection's fields to fill, bound by code (`$fields_<n>`).
-    [...targets, ...fixed].forEach((t, i) => {
-      if (!t.fill?.length) return;
-      t.fillRef = `fields_${i}`;
-      bound[t.fillRef] = fieldsValue(t.fill, t.fillRefs);
-    });
     return {
       store,
       s,
@@ -1500,6 +1473,32 @@ export class Mails {
       withGuide,
       bound,
     };
+  }
+
+  /**
+   * The flow «Leer correo» to run (docs/flujos.md): the latest version when the user saved it (his edit runs as he
+   * left it), else Boni's plan for this configuration, saved as a new version only when it changed.
+   */
+  private mailFlow(c: PlanContext): FlowRow {
+    return ensureFlow(
+      c.store,
+      {
+        id: MAIL_FLOW,
+        name: "Leer correo",
+        trigger: { created: "correo" },
+        plan: mailPlan(c.targets, {
+          guide: c.withGuide,
+          modules: moduleIds(c.m),
+          boundModules: true,
+          ...(c.m.routes ? { routes: c.m.routes } : {}),
+          fixed: c.fixed,
+          askWhenUnsure: true,
+          invitation: eventModule(c.m),
+        }),
+        by: "preset",
+      },
+      this.now(),
+    );
   }
 
   /**
@@ -1528,8 +1527,18 @@ export class Mails {
     if (asked && !again && (mine.pending.length || mine.decided.length))
       return { ...none, already: mine.pending.length, decided: mine.decided.length };
     if (again) for (const p of mine.pending) c.store.journal.setProposal(p.id, "stale", this.now());
+    // The guide's rule that sends this sender's mail to one collection: an input of the flow (`$only`).
     const only =
-      rule?.action === "collection" ? c.targets.filter((t) => t.id === rule.collection) : [];
+      rule?.action === "collection"
+        ? (c.targets.find((t) => t.id === rule.collection)?.option ?? null)
+        : null;
+    // The flow «Leer correo» (docs/flujos.md): the version the user saved, or Boni's kept current with the
+    // configuration. Off, the mail is kept and not read.
+    const flow = this.mailFlow(c);
+    if (!flow.enabled) {
+      console.log(`mail ${account}: flow «${flow.name}» v${flow.version} is off: not read`);
+      return { ...none, stopped: "flow-off" };
+    }
     try {
       // Relations the mail plainly names (task 51, phases B and C): the sender as a record of a related collection
       // by name, a record whose title the sender's own words carry; set by code, the reader's choice first.
@@ -1551,20 +1560,26 @@ export class Mails {
         sender: String(v.f_de_nombre ?? ""),
         text: ownText(String(v.f_asunto ?? ""), e.entity.body ?? ""),
       };
-      const prefilled: Record<string, Val> = {};
-      const chosen = (only.length ? only : c.targets).map((t, i) => {
-        const def = Object.values(types).find((x) => x.key === t.key);
-        const prefill = def ? prefillOf(def, types, recordsOf, words) : [];
-        if (!prefill.length) return t;
-        console.log(
-          `mail ${account}: by code for «${t.name}»: ${prefill
-            .map((p) => `${p.name} ← «${p.title.slice(0, 40)}» (${p.by})`)
-            .join(", ")}`,
-        );
-        const prefillRef = `prefill_${i}`;
-        prefilled[prefillRef] = prefillValue(prefill);
-        return { ...t, prefill, prefillRef };
-      });
+      // Per collection the flow writes in (by its key): the fields its reader fills and the relations the code found.
+      const keys = collectionKeysOf(flow.plan);
+      const known_ = [...c.targets, ...c.fixed];
+      const fill: Record<string, Val> = {};
+      const prefill: Record<string, Val> = {};
+      for (const key of keys) {
+        const def = Object.values(types).find((x) => x.key === key);
+        const t =
+          known_.find((x) => x.key === key) ??
+          (def ? this.targetsFor(c.store, [def.id])[0] : undefined);
+        fill[key] = fieldsValue(t?.fill ?? [], t?.fillRefs ?? []);
+        const found = def ? prefillOf(def, types, recordsOf, words) : [];
+        if (found.length)
+          console.log(
+            `mail ${account}: by code for «${def?.name ?? key}»: ${found
+              .map((p) => `${p.name} ← «${p.title.slice(0, 40)}» (${p.by})`)
+              .join(", ")}`,
+          );
+        prefill[key] = prefillValue(found);
+      }
       // A calendar invitation (task 45): its event comes from the .ics by code, so the reader leaves it out
       // (`known`); already in one of the account's external calendars, it is not proposed at all.
       const inv =
@@ -1580,37 +1595,20 @@ export class Mails {
         ...(inv?.title ? [inv.title.slice(0, 200)] : []),
         ...(from && !again ? this.known(c.store, from) : []),
       ].slice(0, 20);
+      const codeOwn = label("own", "personal", [{ kind: "code", id: "mail" }]);
       const bound: Record<string, Val> = {
         ...c.bound,
-        options: optionsValue(chosen),
+        options: optionsValue(c.targets),
+        only: leaf(only, PUBLIC),
+        fill: rec(fill, codeOwn),
+        prefill: rec(prefill, codeOwn),
         ...this.mailBindings(e, c.s.user, known, { already: !!(inv && already) }),
-        ...prefilled,
       };
-      // The flow «Leer correo» (docs/flujos.md, F1): the plan the configuration gives, kept as the flow's latest
-      // version (a new one only when it changes), and executed from there, so the run names its flow and version.
-      const flow = ensureFlow(
-        c.store,
-        {
-          id: MAIL_FLOW,
-          name: "Leer correo",
-          trigger: { created: "correo" },
-          plan: mailPlan(chosen, {
-            guide: c.withGuide,
-            modules: moduleIds(c.m),
-            boundModules: true,
-            ...(c.m.routes ? { routes: c.m.routes } : {}),
-            fixed: c.fixed,
-            askWhenUnsure: true,
-            invitation: eventModule(c.m),
-          }),
-          by: "preset",
-        },
-        this.now(),
-      );
       const r = await c.agent.background(flow.plan, bound, [], budgetOf(c.m), {
         id: flow.id,
         version: flow.version,
         input: id,
+        by: flow.by,
       });
       const stopped = r.status === "stopped" ? (r.error ?? "stopped") : null;
       if (stopped && r.error) console.warn(`mail ${account}: plan stopped (${r.error})`);
@@ -1675,6 +1673,8 @@ export class Mails {
     const c = this.planContext(account, settings);
     if (!c) throw new MailError("no-collections");
     const { n, stopped, already, decided } = await this.proposeOne(account, c, id, true, again);
+    // The flow «Leer correo» is off (docs/flujos.md): said, so the app can say where to turn it on.
+    if (stopped === "flow-off") throw new MailError("flow-off");
     if (n || again) this.o.host.emit(account, "proposals", { n });
     else if (stopped) throw new MailError("stopped");
     return { n, already, decided };

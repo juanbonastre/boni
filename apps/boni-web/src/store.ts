@@ -734,7 +734,9 @@ export async function proposeFromMail(id: string, again = false) {
       t(
         e instanceof ApiError && e.code === "no-collections"
           ? "mail.proposeNoCollections"
-          : "mail.proposeFailed",
+          : e instanceof ApiError && e.code === "flow-off"
+            ? "mail.proposeFlowOff"
+            : "mail.proposeFailed",
       ),
     );
   }
@@ -1454,6 +1456,30 @@ export async function sendTurn(text: string) {
       // A server without the list: the device keeps a conversation of its own there, as before.
     }
   await agentCall(id, (live) => agent.turn(request, conversation ?? CONVERSATION, live));
+}
+/**
+ * A flow run by hand (docs/flujos.md, F2): a turn of a new conversation, so its replies, questions and confirmations
+ * are where they always are. Its plan is the saved one; what the user typed in its form is his.
+ */
+export async function runFlowInChat(id: string, name: string, inputs: Record<string, string>) {
+  if (get().chatBusy) return;
+  const request = `«${name}»`;
+  const entry = newId();
+  let conversation: string | undefined;
+  try {
+    const made = await agent.newConversation();
+    conversation = made.id;
+    set((s) => ({ conversations: [{ ...made, title: request }, ...(s.conversations ?? [])] }));
+  } catch {
+    conversation = undefined;
+  }
+  set({
+    conversationId: conversation ?? null,
+    chat: [{ id: entry, request, result: null, error: null }],
+    view: { kind: "chat" },
+    panel: null,
+  });
+  await agentCall(entry, (live) => agent.runFlow(id, inputs, conversation, live));
 }
 /** «Parar» (docs/conversacion.md 3.5): the turn stops before its next step, or where it waits. */
 export function stopTurn() {

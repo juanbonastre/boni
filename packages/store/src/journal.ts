@@ -187,6 +187,8 @@ export interface Journal {
   saveFlow(f: Omit<FlowRow, "version" | "hash">): FlowRow;
   /** Turns a flow on or off (its latest version). */
   setFlowEnabled(id: string, enabled: boolean): void;
+  /** A flow the user deleted: out of the list, its versions kept for the runs that name them. */
+  setFlowDeleted(id: string, deleted: boolean): void;
   /** How many runs a flow had, and when the last started. */
   flowRuns(id: string): { runs: number; last: number | null };
   /** The steps of a flow's runs in a period, counted by step and decision. */
@@ -390,6 +392,7 @@ export function openJournal(db: DatabaseSync): Journal {
             `SELECT f.* FROM flows f
              JOIN (SELECT id, max(version) AS version FROM flows GROUP BY id) l
                ON l.id = f.id AND l.version = f.version
+             WHERE f.deleted = 0
              ORDER BY f.name, f.id`,
           )
           .all() as Record<string, unknown>[]
@@ -439,6 +442,8 @@ export function openJournal(db: DatabaseSync): Journal {
       );
       return { ...f, layout: f.layout ?? null, version, hash };
     },
+    setFlowDeleted: (id, deleted) =>
+      void db.prepare("UPDATE flows SET deleted = ? WHERE id = ?").run(deleted ? 1 : 0, id),
     setFlowEnabled: (id, enabled) =>
       void db
         .prepare(

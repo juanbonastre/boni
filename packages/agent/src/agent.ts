@@ -21,7 +21,15 @@ import {
   readFields,
 } from "./filling.ts";
 import { callFn, FnError } from "./fns.ts";
-import { type Expr, MAX_EACH, type Plan, planSchema, type Step, validatePlan } from "./plan.ts";
+import {
+  type Expr,
+  MAX_EACH,
+  type Plan,
+  type PlanResult,
+  planSchema,
+  type Step,
+  validatePlan,
+} from "./plan.ts";
 import { DEFAULT_LIMITS, type Decision, decide, type Origin } from "./policy.ts";
 import type { ModelProvider, ModelRequest } from "./providers.ts";
 import { checkReader, delimit, READER_PROMPTS, readerSchema } from "./readers.ts";
@@ -54,6 +62,7 @@ import {
   codeLabel,
   deepLabel,
   type From,
+  flowLabel,
   type Json,
   leaf,
   list,
@@ -112,9 +121,10 @@ Expressions. Every value in "args", "params", "data", "input", "prompt", "option
 - {"quote": "..."}: a whole span of the user's request, copied exactly (at least 3 characters, between spaces or
   punctuation): use it for any value the user gave, such as a title, a name or an address.
 - {"ref": "$id.path"}: an earlier result: "$s1", "$s1.items[0].titulo", "$item.email".
-- {"fn": name, "args": [...]}: one of count, sum, min, max, pick, item, field, filter_eq, concat, obj, list, length, eq, ne,
-  gt, lt, and, or, not, today, add_days. Its args are lit, quote or ref ONLY: never another fn. To combine, add a step.
-  obj(key, value, key, value...) builds the "values" of entities.create and entities.update (field keys);
+- {"fn": name, "args": [...]}: one of count, sum, min, max, pick, item, field, filter_eq, concat, obj, merge, list, length,
+  eq, ne, gt, lt, and, or, not, today, add_days. Its args are lit, quote or ref ONLY: never another fn. To combine, add a
+  step. obj(key, value, key, value...) builds the "values" of entities.create and entities.update (field keys);
+  merge(a, b...) joins records into one, a later field with a value winning;
   field(list, key) is the list of that field of each item; count(list); eq/gt/lt(a, b); list(a, b, ...) builds a list
   (the "options" of a classify reader, for example).
 A reply's template is an expression too: {"lit": "Hecho: {a}"}, with "a".."d" filling {a}..{d}.
@@ -351,6 +361,11 @@ interface RunState {
   planner?: ModelProvider | undefined;
   /** Juan pressed «Parar»: the run stops before its next step, and a model call in flight is cut. */
   stopRequested?: boolean;
+  /**
+   * The label of the plan's literals: the planner's (`model`) unless the plan is a flow the user saved, whose
+   * literals are his (docs/flujos.md, D-41).
+   */
+  litLabel?: Label;
   abort?: AbortController | undefined;
   expiresAt: number;
 }
@@ -436,6 +451,37 @@ function fromJson(x: unknown, l: Label): Val {
  */
 export const REQUEST_DAYS = 7;
 const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * The tools a plan of this origin may name: nothing that goes out or schedules work outside a turn of Juan's on a
+ * personal device (background work, a mini-app, a shared device). The planner's catalog and a flow's (docs/flujos.md).
+ */
+export function toolsFor(registry: ToolRegistry, origin: Origin): ToolDef[] {
+  const blocked =
+    origin.kind === "background" || origin.kind === "miniapp" || origin.trust !== "personal"
+      ? new Set(["egress", "send", "schedule"])
+      : new Set<string>();
+  return registry.all().filter((t) => !blocked.has(t.effect));
+}
+
+/**
+ * Whether a flow's plan (docs/flujos.md) is one the interpreter would run for that origin: `validatePlan` with the
+ * tools the origin may use and the names its trigger binds. The same check the run makes before its first step.
+ */
+export function checkPlan(
+  plan: unknown,
+  registry: ToolRegistry,
+  origin: Origin,
+  bound: readonly string[],
+): PlanResult {
+  const allowed = new Set(toolsFor(registry, origin).map((t) => t.name));
+  return validatePlan(
+    plan,
+    { args: (name: string) => (allowed.has(name) ? registry.args(name) : null) },
+    "",
+    bound,
+  );
+}
 
 /** A waiting run as JSON for the journal (its maps as entries), and back. */
 function saveState(st: RunState): unknown {
@@ -534,11 +580,7 @@ export class Agent {
 
   /** The tools a run of this origin may use at all (by default none for what it cannot do). */
   private catalogFor(origin: Origin): ToolDef[] {
-    const blocked =
-      origin.kind === "background" || origin.kind === "miniapp" || origin.trust !== "personal"
-        ? new Set(["egress", "send", "schedule"])
-        : new Set<string>();
-    return this.o.registry.all().filter((t) => !blocked.has(t.effect));
+    return toolsFor(this.o.registry, origin);
   }
 
   // ------------------------------------------------------------ a turn
@@ -551,6 +593,11 @@ export class Agent {
     live?: (e: LiveEvent) => void;
     /** The planner chosen for this conversation (docs/conversacion.md 3.5); the account's without it. */
     planner?: ModelProvider;
+    /**
+     * A flow the user runs by hand (docs/flujos.md): its plan instead of the planner's, with what its trigger binds
+     * (the form's values, his own) and its literals his when he saved it. Checked like any plan of a turn.
+     */
+    flow?: { id: string; version: number; by: string; plan: unknown; bind: Record<string, Val> };
   }): Promise<TurnResult> {
     const run = randomUUID();
     const turn = { id: randomUUID(), text: req.text.slice(0, 8000) };
@@ -560,6 +607,7 @@ export class Agent {
       origin: req.origin.kind,
       device: req.origin.device ?? null,
       started: this.now(),
+      ...(req.flow ? { flow: req.flow.id, flowVersion: req.flow.version } : {}),
     });
     const st = this.newState(
       run,
@@ -574,6 +622,22 @@ export class Agent {
     this.active.set(run, st);
     // The turn is kept before it is planned: a device that reloads sees it, running.
     this.record(st, "waiting", null);
+    if (req.flow) {
+      // A flow by hand: no planner; the plan is the saved one, checked for this origin and what it binds.
+      if (req.flow.by === "user") st.litLabel = flowLabel(req.flow.id);
+      const v = validatePlan(
+        req.flow.plan,
+        this.catalogView(req.origin),
+        turn.text,
+        Object.keys(req.flow.bind),
+      );
+      if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
+      for (const [k, val] of Object.entries(req.flow.bind)) st.env.set(k, val);
+      st.plan = v.plan;
+      this.o.store.journal.setPlan(run, st.plan);
+      this.emit(st, { type: "planned", steps: st.plan.steps.length });
+      return this.advance(st);
+    }
     try {
       this.emit(st, { type: "planning" });
       st.plan = await this.planFor(st);
@@ -642,8 +706,11 @@ export class Agent {
     keep: readonly string[] = [],
     /** An extension's own daily budget of reader calls, on top of the account's (P13). */
     budget?: Budget,
-    /** The flow this plan is, and the record that triggered it (docs/flujos.md): kept with the run. */
-    flow?: { id: string; version: number; input?: string },
+    /**
+     * The flow this plan is, and the record that triggered it (docs/flujos.md): kept with the run. A version the user
+     * saved (`by: "user"`) has his literals.
+     */
+    flow?: { id: string; version: number; input?: string; by?: string },
   ): Promise<TurnResult> {
     const origin: Origin = { kind: "background", trust: "personal" };
     const run = randomUUID();
@@ -656,6 +723,7 @@ export class Agent {
       ...(flow ? { flow: flow.id, flowVersion: flow.version, input: flow.input ?? null } : {}),
     });
     const st = this.newState(run, { id: run, text: "" }, origin, { version: 1, steps: [] }, null);
+    if (flow?.by === "user") st.litLabel = flowLabel(flow.id);
     const v = validatePlan(plan, this.catalogView(origin), "", Object.keys(bind));
     if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
     for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
@@ -931,7 +999,7 @@ export class Agent {
 
   /** In a condition (`lenient`), a path that does not exist is null instead of an error. */
   private evalAtom(st: RunState, a: Expr, lenient = false): Val {
-    if ("lit" in a) return leaf(a.lit, modelLabel(st.id));
+    if ("lit" in a) return leaf(a.lit, st.litLabel ?? modelLabel(st.id));
     if ("quote" in a) return leaf(a.quote, this.quoteLabel(st));
     if ("ref" in a) {
       const path = parseRef(a.ref);

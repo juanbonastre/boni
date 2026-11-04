@@ -43,7 +43,9 @@ export interface SourceRef {
     | "export"
     | "guide"
     /** An extension's function (its id and the function's name), run in the box. */
-    | "extension";
+    | "extension"
+    /** A flow the user saved (docs/flujos.md): what he wrote in it (its literals) is his. */
+    | "flow";
   id: string;
 }
 
