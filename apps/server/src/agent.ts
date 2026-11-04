@@ -10,6 +10,7 @@ import {
   deleteConversation,
   ensureSystemTypes,
   type LiveEvent,
+  leaf,
   listConversations,
   type ModelProvider,
   type ToolRegistry,
@@ -17,13 +18,23 @@ import {
   updateConversation,
   type Val,
 } from "@boni/agent";
+import { label } from "@boni/entities";
 import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import type { ExternalItem } from "./externalItems.ts";
-import { flowsView, flowView } from "./flows.ts";
+import {
+  checkFlow,
+  createFlow,
+  flowCatalog,
+  flowsView,
+  flowView,
+  manualInputs,
+  revertFlow,
+  saveUserFlow,
+} from "./flows.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
@@ -107,6 +118,10 @@ export class AgentHost {
   /** The providers each account's agent was last given (they change when Juan chooses other models). */
   private used = new Map<number, Providers>();
   private registry: ToolRegistry = coreTools().freeze();
+  /** The tools every agent of this server has (the flow editor's catalog, docs/flujos.md). */
+  get tools(): ToolRegistry {
+    return this.registry;
+  }
   /** A tool's title («Crear»), for whoever draws a plan (docs/flujos.md); null for a name the registry lacks. */
   toolTitle(name: string): string | null {
     return this.registry.get(name)?.title ?? null;
@@ -122,6 +137,8 @@ export class AgentHost {
     | null = null;
   /** The collection an account's mail is kept in (mail.ts), when it has one: read only in the apps (D-22). */
   mailTypeOf: ((account: number) => string | null) | null = null;
+  /** The mail extension's modules for this account (what read_message gives, per module): the flow editor's. */
+  mailModulesOf: ((account: number) => string[]) | null = null;
   /** The account's reading guide for mail as the readers get it (mail.ts `guideOf`), or null (task 23). */
   readingGuideOf: ((account: number) => Val | null) | null = null;
   /** The account's own models (models.ts, «Modelos»); null or a null answer: the server's. */
@@ -313,26 +330,175 @@ async function serveFlows(
   who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
 ): Promise<void> {
   const store = host.store(who.account);
+  const id = params.id ?? "";
+  // Changing a flow is the user's, from a personal device (D-41); reading one, any of his devices.
+  const mine = who.trust === "personal";
+  const forEditor = () => ({
+    modules: host.mailModulesOf?.(who.account) ?? ["tasks", "events"],
+    mailType: host.mailTypeOf?.(who.account) ?? null,
+  });
+  const detail = (fid: string, days = 7) => {
+    const types = Object.values(store.schema().types);
+    return flowView(
+      store,
+      fid,
+      Date.now(),
+      days,
+      (tool) => host.toolTitle(tool),
+      (key) => types.find((t) => t.key === key)?.name ?? null,
+    );
+  };
+  if (route !== "GET /api/agent/flows" && route !== "GET /api/agent/flows/:id" && !mine)
+    return send(res, 403, { error: "personal-device-only" });
   switch (route) {
     case "GET /api/agent/flows":
       return send(res, 200, { flows: flowsView(store) });
+    case "GET /api/agent/flows/catalog":
+      return send(res, 200, flowCatalog(host.tools, store, forEditor().modules));
+    case "POST /api/agent/flows/check": {
+      const b = (await bodyOf(req)) as { trigger?: unknown; plan?: unknown };
+      return send(
+        res,
+        200,
+        checkFlow(store, host.tools, { trigger: b.trigger, plan: b.plan }, forEditor()),
+      );
+    }
+    case "POST /api/agent/flows": {
+      const b = (await bodyOf(req)) as { name?: unknown; from?: unknown };
+      const name = str(b.name, 80);
+      const from = b.from === undefined ? undefined : str(b.from, 80);
+      if (!name || from === null) return send(res, 400, { error: "bad-request" });
+      const made = createFlow(store, { name, ...(from ? { from } : {}) }, Date.now());
+      return made ? send(res, 200, detail(made.id)) : send(res, 404, { error: "not-found" });
+    }
+    case "PUT /api/agent/flows/:id": {
+      const b = (await bodyOf(req)) as {
+        base?: unknown;
+        name?: unknown;
+        trigger?: unknown;
+        plan?: unknown;
+        layout?: unknown;
+      };
+      if (typeof b.base !== "number" || !b.plan) return send(res, 400, { error: "bad-request" });
+      const name = b.name === undefined ? undefined : str(b.name, 80);
+      if (name === null) return send(res, 400, { error: "bad-request" });
+      const latest = store.journal.flow(id);
+      const trigger = b.trigger ?? latest?.trigger;
+      const check = checkFlow(store, host.tools, { trigger, plan: b.plan }, forEditor());
+      const r = saveUserFlow(
+        store,
+        id,
+        {
+          base: b.base,
+          plan: b.plan,
+          ...(name ? { name } : {}),
+          ...(b.trigger !== undefined ? { trigger: b.trigger } : {}),
+          ...(b.layout !== undefined ? { layout: layoutOf(b.layout) } : {}),
+        },
+        check.problems,
+        Date.now(),
+      );
+      if ("error" in r) {
+        const status = r.error === "not-found" ? 404 : r.error === "conflict" ? 409 : 400;
+        return send(res, status, { error: r.error, problems: check.problems });
+      }
+      return send(res, 200, detail(id));
+    }
+    case "PUT /api/agent/flows/:id/enabled": {
+      const b = (await bodyOf(req)) as { enabled?: unknown };
+      const latest = store.journal.flow(id);
+      if (!latest) return send(res, 404, { error: "not-found" });
+      if (typeof b.enabled !== "boolean") return send(res, 400, { error: "bad-request" });
+      if (b.enabled) {
+        const check = checkFlow(store, host.tools, latest, forEditor());
+        if (check.problems.length)
+          return send(res, 400, { error: "invalid", problems: check.problems });
+      }
+      store.journal.setFlowEnabled(id, b.enabled);
+      return send(res, 200, detail(id));
+    }
+    case "POST /api/agent/flows/:id/revert": {
+      const b = (await bodyOf(req)) as { version?: unknown; preset?: unknown };
+      const to =
+        b.preset === true
+          ? ({ preset: true } as const)
+          : typeof b.version === "number"
+            ? { version: b.version }
+            : null;
+      if (!to) return send(res, 400, { error: "bad-request" });
+      const v = revertFlow(store, id, to, Date.now());
+      return v ? send(res, 200, detail(id)) : send(res, 404, { error: "not-found" });
+    }
+    case "DELETE /api/agent/flows/:id": {
+      if (!store.journal.flow(id)) return send(res, 404, { error: "not-found" });
+      // Boni's own flows are turned off, never deleted.
+      if (store.journal.flowVersions(id).some((v) => v.by === "preset"))
+        return send(res, 409, { error: "preset" });
+      store.journal.setFlowDeleted(id, true);
+      return send(res, 200, {});
+    }
+    case "POST /api/agent/flows/:id/run": {
+      if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
+      const f = store.journal.flow(id);
+      if (!f) return send(res, 404, { error: "not-found" });
+      const names = manualInputs(f.trigger);
+      if (!(f.trigger as { manual?: unknown } | null)?.manual)
+        return send(res, 409, { error: "not-manual" });
+      const b = (await bodyOf(req)) as { inputs?: unknown; conversation?: unknown; live?: unknown };
+      const given = (b.inputs && typeof b.inputs === "object" ? b.inputs : {}) as Record<
+        string,
+        unknown
+      >;
+      // What the user types in the run's form is his (integrity user), as a turn's words are.
+      const typed = label("user", "personal", [{ kind: "user-edit", id: `flow:${f.id}` }]);
+      const bind: Record<string, Val> = {};
+      for (const n of names) {
+        const v = given[n];
+        if (v !== undefined && (typeof v !== "string" || v.length > 2000))
+          return send(res, 400, { error: "bad-request" });
+        bind[n] = leaf(typeof v === "string" ? v : "", typed);
+      }
+      const asked = typeof b.conversation === "string" ? str(b.conversation, 80) : null;
+      const c = asked ? conversation(store, asked) : null;
+      const live = liveId(b.live);
+      const r = await host.agent(who.account).turn({
+        text: `«${f.name}»`,
+        origin: { kind: "turn", trust: who.trust, device: who.device },
+        ...(c ? { conversation: c.id } : {}),
+        ...(live ? { live: host.liveStart(who.account, live) } : {}),
+        flow: { id: f.id, version: f.version, by: f.by, plan: f.plan, bind },
+      });
+      if (r.proposals.length) host.emit(who.account, "proposals", { n: r.proposals.length });
+      return send(res, 200, r);
+    }
     case "GET /api/agent/flows/:id": {
       const q = new URL(req.url ?? "/", "http://boni").searchParams;
       const days = Math.min(90, Math.max(1, Math.round(Number(q.get("days")) || 7)));
-      const types = Object.values(store.schema().types);
-      const v = flowView(
-        store,
-        params.id ?? "",
-        Date.now(),
-        days,
-        (tool) => host.toolTitle(tool),
-        (key) => types.find((t) => t.key === key)?.name ?? null,
-      );
+      const v = detail(id, days);
       return v ? send(res, 200, v) : send(res, 404, { error: "not-found" });
     }
     default:
       return send(res, 404, { error: "not-found" });
   }
+}
+
+/** Where the user left each node: ids to points, nothing else (presentation only). */
+function layoutOf(v: unknown): Record<string, { x: number; y: number }> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const [k, p] of Object.entries(v).slice(0, 60)) {
+    const x = (p as { x?: unknown } | null)?.x;
+    const y = (p as { y?: unknown } | null)?.y;
+    if (
+      /^[A-Za-z0-9_]{1,40}$/.test(k) &&
+      typeof x === "number" &&
+      typeof y === "number" &&
+      Number.isFinite(x) &&
+      Number.isFinite(y)
+    )
+      out[k] = { x: Math.round(x), y: Math.round(y) };
+  }
+  return out;
 }
 
 /** Juan's conversations (docs/conversacion.md 3.1) and the turns he watches live (3.5). */

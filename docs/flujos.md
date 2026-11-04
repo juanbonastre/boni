@@ -132,6 +132,12 @@ interface Flow {
   `$options`, `$modules`, `$adjuntos`, `$inv` y `$prefill_*`; «cada día a las 8» vincula `$today`; «a mano» lo que
   el usuario escriba en un formulario pequeño (el catálogo de `ask`). El lienzo enseña las entradas como el primer
   nodo, el disparador, con lo que trae y su forma (tipo y campos), como Dify enseña el nodo `start`.
+- **Las entradas por colección** van por la clave de la colección (`$fill.tarea`, `$prefill.tarea`), no por su
+  posición: así el plan de «Leer correo» es el mismo para todos los correos de una configuración (la regla de la
+  guía «directo a una colección» es una entrada, `$only`, no otro plan), y cambiar la colección de un paso en el
+  editor cambia también esas referencias. Un registro se hace con `merge` (las relaciones del código, lo que rellenó
+  el lector, lo del propio elemento; gana lo último que tenga valor), así que el plan no nombra los campos que el
+  lector rellena.
 - **El plan no cambia de lenguaje.** Lo que el planificador sabe escribir, el usuario lo puede dibujar, y al revés
   (D-41). Un flujo guardado valida con `validatePlan` contra el registro completo; uno inválido se guarda como
   borrador, nunca encendido.
@@ -242,7 +248,7 @@ todo con Deshacer y en el diario.
 | Fase | Qué | Criterio de hecho |
 |---|---|---|
 | F1 Flujos como datos (hecha el 2026-11-05, tarea 61) | La colección de sistema «Flujos»; el flujo de serie «Leer correo» guardado y versionado, que `mail.ts` ejecuta en vez de construir el plan (las entradas vinculadas como hoy); el diario con flujo y versión; «Modelos» pasa a «Flujos»: la lista y el lienzo de cada flujo, de solo lectura; el lienzo general con los números se calcula de los flujos | El correo se lee igual que hoy (las pruebas de `mail.test.ts` sin cambios), y en «Flujos» se ve «Leer correo» con sus nodos y sus números |
-| F2 El editor | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
+| F2 El editor (hecha el 2026-11-05) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
 | F3 Probar y ver | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
 | F4 Disparadores | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
 | F5 Propuestas de la IA | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |

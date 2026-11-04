@@ -1640,6 +1640,65 @@ const flowStep = (
   ran: {},
   ...o,
 });
+/** «Leer correo» as kept data (docs/flujos.md): its plan (one collection, Docencia), what the editor changes. */
+export const FLOW_PLAN = {
+  version: 1,
+  steps: [
+    { id: "m", op: "call", tool: "entities.get", args: { id: { ref: "$mail" } } },
+    {
+      id: "r",
+      op: "read",
+      reader: "read_message",
+      input: { ref: "$text" },
+      params: {
+        modules: { ref: "$modules" },
+        user_in: { ref: "$userIn" },
+        known: { ref: "$known" },
+        guide: { ref: "$guide" },
+      },
+    },
+    {
+      id: "n0_tasks_f",
+      op: "read",
+      reader: "fill",
+      each: { ref: "$r.tasks" },
+      input: {
+        fn: "concat",
+        args: [{ ref: "$text" }, { lit: "\n\nElemento: " }, { ref: "$item.title" }],
+      },
+      params: { fields: { ref: "$fill.docencia" } },
+    },
+    {
+      id: "n0_tasks",
+      op: "call",
+      tool: "entities.create",
+      each: { ref: "$r.tasks" },
+      zip: { ref: "$n0_tasks_f" },
+      why: { ref: "$item.quote" },
+      args: {
+        type: { lit: "docencia" },
+        values: {
+          fn: "merge",
+          args: [
+            { ref: "$prefill.docencia" },
+            { ref: "$zip.values" },
+            {
+              fn: "obj",
+              args: [
+                { lit: "title" },
+                { ref: "$item.title" },
+                { lit: "fecha" },
+                { ref: "$item.due" },
+                { lit: "body" },
+                { ref: "$zip.note" },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  ],
+};
 export const FLOW_DETAIL = {
   ...FLOWS.flows[0],
   inputs: [
@@ -1649,8 +1708,8 @@ export const FLOW_DETAIL = {
     { id: "userIn", what: "value" },
     { id: "known", what: "list" },
     { id: "guide", what: "guide" },
-    { id: "options", what: "options" },
-    { id: "subject", what: "text" },
+    { id: "fill", what: "fields" },
+    { id: "prefill", what: "relations" },
   ],
   nodes: [
     flowStep("m", "call", "entities.get", {
@@ -1660,36 +1719,20 @@ export const FLOW_DETAIL = {
       ran: { allow: 42 },
     }),
     flowStep("r", "read", "read_message", {
-      args: [
-        "input: $text",
-        "modules: $modules",
-        "user_in: $userIn",
-        "known: $known",
-        "guide: $guide",
-      ],
+      args: ["input: $text"],
       deps: ["text", "modules", "userIn", "known", "guide"],
       ran: { allow: 42 },
     }),
-    flowStep("c", "read", "classify", {
-      when: true,
-      args: ["input: $text", "options: $options", 'question: "¿En cuál de estas colecciones…"'],
-      deps: ["text", "options", "r"],
-      ran: { allow: 40 },
-    }),
     flowStep("n0_tasks_f", "read", "fill", {
       each: true,
-      when: true,
-      args: ['input: concat($text, "\\n\\nElemento: ", $item.title)', "fields: $fields_0"],
-      deps: ["text", "r", "c"],
+      deps: ["text", "r", "fill"],
       ran: { allow: 12 },
     }),
     flowStep("n0_tasks", "call", "entities.create", {
       title: "Crear",
       detail: "Docencia",
       each: true,
-      when: true,
-      args: ['type: "docencia"', 'values: obj("title", $item.title, "date", $item.due)'],
-      deps: ["r", "c", "n0_tasks_f"],
+      deps: ["r", "n0_tasks_f", "prefill"],
       ran: { propose: 12 },
     }),
   ],
@@ -1699,4 +1742,118 @@ export const FLOW_DETAIL = {
     { version: 2, by: "preset", created: 1761300000000 },
     { version: 1, by: "preset", created: 1760300000000 },
   ],
+  plan: FLOW_PLAN,
+  layout: null,
+  preset: 3,
+};
+/** After «Guardar»: the user's version, Boni's still in the history. */
+export const FLOW_DETAIL_SAVED = {
+  ...FLOW_DETAIL,
+  version: 4,
+  by: "user",
+  versions: [{ version: 4, by: "user", created: 1761900000000 }, ...FLOW_DETAIL.versions],
+};
+const catalogField = (key: string, name: string, roles: string[] = [], type = "text") => ({
+  key,
+  name,
+  type,
+  roles,
+  relation: null,
+});
+/** The editor's catalog (the server's `flowCatalog`), shortened: the tools and readers a flow may use. */
+export const FLOW_CATALOG = {
+  tools: [
+    {
+      name: "entities.query",
+      title: "Consultar",
+      effect: "read",
+      args: [
+        { name: "type", role: "type", required: true },
+        { name: "field", role: "field", required: false },
+        { name: "equals", role: "value", required: false },
+      ],
+    },
+    {
+      name: "entities.get",
+      title: "Leer",
+      effect: "read",
+      args: [{ name: "id", role: "entity", required: true }],
+    },
+    {
+      name: "entities.create",
+      title: "Crear",
+      effect: "write",
+      args: [
+        { name: "type", role: "type", required: true },
+        { name: "values", role: "content", required: true },
+      ],
+    },
+    {
+      name: "notify",
+      title: "Avisar",
+      effect: "notify",
+      args: [{ name: "text", role: "content", required: true }],
+    },
+  ],
+  readers: {
+    read_message: {
+      params: ["modules", "user_in", "known", "guide"],
+      required: [],
+      out: ["all", "tasks", "events"],
+    },
+    classify: { params: ["options", "question", "ask"], required: ["options"], out: ["choice"] },
+    fill: { params: ["fields"], required: ["fields"], out: ["values", "note"] },
+    summarize: { params: [], required: [], out: ["text"] },
+  },
+  asks: ["choice", "text"],
+  replies: { text: ["template", "a", "b", "c", "d"], number: ["value", "unit", "caption"] },
+  fns: { concat: [1, 40], obj: [2, 40], merge: [2, 8], first: [1, 8], eq: [2, 2] },
+  limits: { steps: 40, each: 50, nesting: 3 },
+  collections: [
+    {
+      key: "docencia",
+      name: "Docencia",
+      parent: null,
+      fields: [
+        catalogField("titulo", "Título", ["title"]),
+        catalogField("fecha", "Fecha", ["date"], "date"),
+      ],
+    },
+    {
+      key: "gestiones",
+      name: "Gestiones",
+      parent: null,
+      fields: [
+        catalogField("nombre", "Nombre", ["title"]),
+        catalogField("dia", "Día", ["date"], "date"),
+        catalogField("prioridad", "Prioridad", [], "select"),
+      ],
+    },
+  ],
+  modules: ["tasks", "events"],
+};
+/** The checklist with nothing missing, and the values each step may take (a few). */
+export const FLOW_CHECK = {
+  problems: [],
+  refs: {
+    m: [
+      { ref: "$mail", t: "text" },
+      { ref: "$text", t: "text" },
+    ],
+    r: [
+      { ref: "$text", t: "text" },
+      { ref: "$m", t: "record" },
+      { ref: "$m.asunto", t: "text" },
+    ],
+    n0_tasks_f: [
+      { ref: "$r.tasks", t: "list" },
+      { ref: "$item.title", t: "text" },
+    ],
+    n0_tasks: [
+      { ref: "$r.tasks", t: "list" },
+      { ref: "$item.title", t: "text" },
+      { ref: "$item.due", t: "text" },
+      { ref: "$zip.note", t: "text" },
+    ],
+  },
 };

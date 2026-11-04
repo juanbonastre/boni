@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { createServer, type Server, Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { plain, ScriptedProvider } from "@boni/agent";
+import { callFn, leaf, plain, rec, ScriptedProvider } from "@boni/agent";
 import { type FieldDef, label, type TypeDef } from "@boni/entities";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { saveExternals } from "./account.ts";
@@ -14,6 +14,7 @@ import { addUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
+import { MAIL_FLOW, revertFlow, saveUserFlow } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { inboxCard } from "./inboxCard.ts";
 import { LoginGuard } from "./limits.ts";
@@ -1753,34 +1754,150 @@ describe("relations the code found in the mail, in the plan (task 51, phases B a
       option: "Docencia",
       date: "date",
       fill: [{ key: "proyecto", name: "Proyecto", kind: "choice" as const, options: [] }],
-      fillRef: "fields_0",
-      prefillRef: "prefill_0",
-      prefill: [
-        { key: "proyecto", name: "Proyecto", id: "e_proy", title: "FUP 1", by: "text" as const },
-        {
-          key: "persona",
-          name: "Persona",
-          id: "e_pers",
-          title: "Lucía Ejemplo",
-          by: "sender" as const,
-        },
-      ],
     };
     const plan = mailPlan([t]) as {
-      steps: { tool?: string; args?: { values: { args: unknown[] } } }[];
+      steps: { tool?: string; reader?: string; params?: unknown; args?: { values: unknown } }[];
     };
-    const values = plan.steps.find((x) => x.tool === "entities.create")?.args?.values.args ?? [];
-    const valueAfter = (key: string) =>
-      values[values.findIndex((a) => JSON.stringify(a) === JSON.stringify({ lit: key })) + 1];
-    expect(valueAfter("proyecto")).toEqual({
-      fn: "first",
-      args: [{ ref: "$zip.values.proyecto" }, { ref: "$prefill_0.proyecto" }],
+    // The record is merged (docs/flujos.md): the code's relations for this collection, then what the reader filled,
+    // then the item's own fields; the collection's inputs by its key, the same plan for every mail.
+    const values = plan.steps.find((x) => x.tool === "entities.create")?.args?.values as {
+      fn: string;
+      args: unknown[];
+    };
+    expect(values.fn).toBe("merge");
+    expect(values.args.slice(0, 2)).toEqual([{ ref: "$prefill.docencia" }, { ref: "$zip.values" }]);
+    expect(plan.steps.find((x) => x.reader === "fill")?.params).toEqual({
+      fields: { ref: "$fill.docencia" },
     });
-    expect(valueAfter("persona")).toEqual({ ref: "$prefill_0.persona" });
+    // What that gives: the reader's choice where it gave one, the code's where it left it empty or was not offered.
+    const code = label("own", "personal", [{ kind: "code", id: "prefill" }]);
+    const prefill = prefillValue([
+      { key: "proyecto", name: "Proyecto", id: "e_proy", title: "FUP 1", by: "text" },
+      { key: "persona", name: "Persona", id: "e_pers", title: "Lucía Ejemplo", by: "sender" },
+    ]);
+    const read = (proyecto: string | null) => rec({ proyecto: leaf(proyecto, code) }, code);
+    const own = rec({ title: leaf("Clase", code) }, code);
+    expect(plain(callFn("merge", [prefill, read("e_otro"), own], "2026-11-05"))).toEqual({
+      proyecto: "e_otro",
+      persona: "e_pers",
+      title: "Clase",
+    });
+    expect(plain(callFn("merge", [prefill, read(null), own], "2026-11-05"))).toEqual({
+      proyecto: "e_proy",
+      persona: "e_pers",
+      title: "Clase",
+    });
     // Bound by code, with the code's label: never a literal of the plan.
-    expect(plain(prefillValue(t.prefill))).toEqual({ proyecto: "e_proy", persona: "e_pers" });
-    // No key twice: the plan's `obj` refuses it.
-    const keys = values.filter((_, i) => i % 2 === 0).map((a) => (a as { lit?: string }).lit);
-    expect(new Set(keys).size).toBe(keys.length);
+    expect(plain(prefill)).toEqual({ proyecto: "e_proy", persona: "e_pers" });
+  });
+});
+
+describe("the flow «Leer correo» as the user leaves it (docs/flujos.md, F2)", () => {
+  it("his saved version runs: the tasks go where he drew them; Boni's again with one click, kept current", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-flow-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const reader = new ScriptedProvider("fake", (req) => {
+      if (/find what it asks of the user/.test(req.system))
+        return {
+          items: [
+            {
+              quote: "¿Me envías el informe el jueves?",
+              actor: "recipient",
+              kind: "task",
+              title: "Enviar el informe",
+              due: "2026-10-23",
+            },
+          ],
+        };
+      return { choice: "Gestiones" };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    for (const [id, key, name] of [
+      ["t_docencia", "docencia", "Docencia"],
+      ["t_gestiones", "gestiones", "Gestiones"],
+    ] as const)
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key,
+            name,
+            fields: [
+              { id: `${id}_t`, key: "titulo", name: "Título", type: "text", label: own },
+              { id: `${id}_d`, key: "date", name: "Fecha", type: "date", label: own },
+            ],
+            titleField: `${id}_t`,
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: own,
+          },
+        },
+        { actor: "user" },
+      );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 11;
+    box.mails = new Map([[1, mail(31, "Informe", "¿Me envías el informe el jueves?")]]);
+    await m.save(1, { host: "imap.example.com", user: "juan@example.com", password: APP_PASSWORD });
+    await m.save(1, { collections: ["t_gestiones"] });
+    await m.check(1);
+    const typeOf = (p: { view: unknown }) =>
+      (p.view as { rows: { arg: string; value: string }[] }).rows.find((x) => x.arg === "type")
+        ?.value;
+    const pending = () => store.journal.proposals("pending");
+    expect(pending().map(typeOf)).toEqual(["gestiones"]);
+    const boni = store.journal.flow(MAIL_FLOW);
+    expect(boni).toMatchObject({ version: 1, by: "preset" });
+    const mailId = store.journal.run(pending()[0]?.run ?? "")?.input as string;
+    expect(mailId).toMatch(/^e_/);
+    // He changes the collection of the step that makes the tasks (as the editor does: the type and the inputs of
+    // that collection) and saves: his version runs from then on, whatever Boni would make.
+    const plan = structuredClone(boni?.plan) as { steps: Record<string, unknown>[] };
+    const text = JSON.stringify(plan)
+      .replace('"lit":"gestiones"', '"lit":"docencia"')
+      .replaceAll("$prefill.gestiones", "$prefill.docencia")
+      .replaceAll("$fill.gestiones", "$fill.docencia");
+    const saved = saveUserFlow(store, MAIL_FLOW, { base: 1, plan: JSON.parse(text) }, [], NOW);
+    expect(saved).toMatchObject({ flow: { version: 2, by: "user" } });
+    expect(await m.proposeFor(1, mailId, true)).toMatchObject({ n: 1 });
+    expect(pending().map(typeOf)).toEqual(["docencia"]);
+    expect(store.journal.run(pending()[0]?.run ?? "")).toMatchObject({
+      flow: MAIL_FLOW,
+      flowVersion: 2,
+    });
+    // A change of the configuration does not overwrite his version.
+    await m.save(1, { collections: ["t_gestiones", "t_docencia"] });
+    expect(await m.proposeFor(1, mailId, true)).toMatchObject({ n: 1 });
+    expect(store.journal.flow(MAIL_FLOW)).toMatchObject({ version: 2, by: "user" });
+    // Off: the mail is kept and not read.
+    store.journal.setFlowEnabled(MAIL_FLOW, false);
+    await expect(m.proposeFor(1, mailId, true)).rejects.toThrow("flow-off");
+    store.journal.setFlowEnabled(MAIL_FLOW, true);
+    // Back to Boni's: his version is kept in the history; Boni's runs and follows the configuration again.
+    expect(revertFlow(store, MAIL_FLOW, { preset: true }, NOW)).toMatchObject({
+      version: 3,
+      by: "preset",
+    });
+    expect(await m.proposeFor(1, mailId, true)).toMatchObject({ n: 1 });
+    expect(pending().map(typeOf)).toEqual(["gestiones"]);
+    expect(store.journal.flow(MAIL_FLOW)).toMatchObject({ version: 4, by: "preset" });
+    expect(store.journal.flowVersions(MAIL_FLOW).map((v) => v.by)).toEqual([
+      "preset",
+      "preset",
+      "user",
+      "preset",
+    ]);
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
   });
 });

@@ -653,7 +653,154 @@ export interface FlowDetailView extends FlowSummary {
   nodes: FlowStepNode[];
   days: number;
   versions: { version: number; by: string; created: number }[];
+  /** The plan itself (what the editor changes) and where the user left each node. */
+  plan: FlowPlan;
+  layout: Record<string, { x: number; y: number }> | null;
+  /** Boni's own version of it, when it has one («Volver al de Boni»). */
+  preset: number | null;
 }
+/** A flow's plan as the editor holds it (docs/flujos.md: the plan language, `packages/agent` plan.ts). */
+export interface FlowPlan {
+  version: 1;
+  steps: FlowStep[];
+}
+export type FlowStep = { id: string; op: string } & Record<string, unknown>;
+/** The editor's catalog of nodes (the server's `flowCatalog`): tools, readers, the rest of the plan language. */
+export interface FlowCatalog {
+  tools: {
+    name: string;
+    title: string;
+    effect: string;
+    args: { name: string; role: string; required: boolean }[];
+  }[];
+  readers: Record<string, { params: string[]; required: string[]; out: string[] }>;
+  asks: string[];
+  replies: Record<string, string[]>;
+  fns: Record<string, [number, number]>;
+  limits: { steps: number; each: number; nesting: number };
+  collections: {
+    key: string;
+    name: string;
+    parent: string | null;
+    fields: { key: string; name: string; type: string; roles: string[]; relation: string | null }[];
+  }[];
+  modules: string[];
+}
+/** The checklist and the values each step may take (the server's `checkFlow`). */
+export interface FlowProblem {
+  step: string | null;
+  at: string | null;
+  code: string;
+}
+export interface FlowCheck {
+  problems: FlowProblem[];
+  refs: Record<string, { ref: string; t: string }[]>;
+}
+const strOf = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
+export function parseFlowCatalog(b: unknown): FlowCatalog | null {
+  if (!isObj(b) || !Array.isArray(b.tools) || !isObj(b.readers)) return null;
+  const strs = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  return {
+    tools: b.tools.filter(isObj).flatMap((t) =>
+      typeof t.name === "string"
+        ? [
+            {
+              name: t.name,
+              title: strOf(t.title, 80) ?? t.name,
+              effect: strOf(t.effect, 40) ?? "",
+              args: (Array.isArray(t.args) ? t.args : []).filter(isObj).map((a) => ({
+                name: strOf(a.name, 40) ?? "",
+                role: strOf(a.role, 40) ?? "",
+                required: a.required === true,
+              })),
+            },
+          ]
+        : [],
+    ),
+    readers: Object.fromEntries(
+      Object.entries(b.readers)
+        .filter(([, r]) => isObj(r))
+        .map(([k, r]) => {
+          const x = r as Record<string, unknown>;
+          return [k, { params: strs(x.params), required: strs(x.required), out: strs(x.out) }];
+        }),
+    ),
+    asks: strs(b.asks),
+    replies: isObj(b.replies)
+      ? Object.fromEntries(Object.entries(b.replies).map(([k, v]) => [k, strs(v)]))
+      : {},
+    fns: isObj(b.fns)
+      ? Object.fromEntries(
+          Object.entries(b.fns).flatMap(([k, v]) =>
+            Array.isArray(v) && typeof v[0] === "number" && typeof v[1] === "number"
+              ? [[k, [v[0], v[1]] as [number, number]]]
+              : [],
+          ),
+        )
+      : {},
+    limits: isObj(b.limits)
+      ? {
+          steps: numOf(b.limits.steps, 40),
+          each: numOf(b.limits.each, 50),
+          nesting: numOf(b.limits.nesting, 3),
+        }
+      : { steps: 40, each: 50, nesting: 3 },
+    collections: (Array.isArray(b.collections) ? b.collections : []).filter(isObj).flatMap((c) =>
+      typeof c.key === "string"
+        ? [
+            {
+              key: c.key,
+              name: strOf(c.name, 120) ?? c.key,
+              parent: strOf(c.parent, 80),
+              fields: (Array.isArray(c.fields) ? c.fields : []).filter(isObj).map((f) => ({
+                key: strOf(f.key, 80) ?? "",
+                name: strOf(f.name, 120) ?? "",
+                type: strOf(f.type, 40) ?? "text",
+                roles: strs(f.roles),
+                relation: strOf(f.relation, 80),
+              })),
+            },
+          ]
+        : [],
+    ),
+    modules: strs(b.modules),
+  };
+}
+export function parseFlowCheck(b: unknown): FlowCheck {
+  if (!isObj(b)) return { problems: [], refs: {} };
+  const problems = (Array.isArray(b.problems) ? b.problems : []).filter(isObj).map((p) => ({
+    step: strOf(p.step, 80),
+    at: strOf(p.at, 120),
+    code: strOf(p.code, 60) ?? "bad-plan",
+  }));
+  const refs: FlowCheck["refs"] = {};
+  if (isObj(b.refs))
+    for (const [k, v] of Object.entries(b.refs))
+      if (Array.isArray(v))
+        refs[k] = v
+          .filter(isObj)
+          .flatMap((r) =>
+            typeof r.ref === "string" ? [{ ref: r.ref, t: strOf(r.t, 20) ?? "value" }] : [],
+          );
+  return { problems, refs };
+}
+const planOf = (v: unknown): FlowPlan =>
+  isObj(v) && Array.isArray(v.steps)
+    ? {
+        version: 1,
+        steps: v.steps.filter(
+          (s): s is FlowStep => isObj(s) && typeof s.id === "string" && typeof s.op === "string",
+        ),
+      }
+    : { version: 1, steps: [] };
+const layoutOf = (v: unknown): FlowDetailView["layout"] => {
+  if (!isObj(v)) return null;
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const [k, p] of Object.entries(v))
+    if (isObj(p) && typeof p.x === "number" && typeof p.y === "number") out[k] = { x: p.x, y: p.y };
+  return out;
+};
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 function parseFlowSummary(v: unknown): FlowSummary | null {
   if (!isObj(v) || typeof v.id !== "string" || !ID_RE.test(v.id) || typeof v.name !== "string")
@@ -713,7 +860,16 @@ export function parseFlowDetail(b: unknown): FlowDetailView | null {
         created: numOf(v.created),
       }))
     : [];
-  return { ...s, inputs, nodes, days: numOf(b.days, 7), versions };
+  return {
+    ...s,
+    inputs,
+    nodes,
+    days: numOf(b.days, 7),
+    versions,
+    plan: planOf(b.plan),
+    layout: layoutOf(b.layout),
+    preset: typeof b.preset === "number" ? b.preset : null,
+  };
 }
 
 export function parseModels(b: unknown): ModelsView | null {
@@ -1937,6 +2093,42 @@ export class AgentApi {
     parseFlow(await this.call("GET", `pipeline?days=${Math.max(1, Math.round(days))}`));
   /** The account's flows (docs/flujos.md), and one of them drawn with the last `days`' numbers. */
   flows = async () => parseFlows(await this.call("GET", "flows"));
+  /** The flow editor (docs/flujos.md, F2): its catalog, its checklist, and the user's changes. */
+  flowCatalog = async () => parseFlowCatalog(await this.call("GET", "flows/catalog"));
+  checkFlow = async (trigger: unknown, plan: FlowPlan) =>
+    parseFlowCheck(await this.call("POST", "flows/check", { trigger, plan }));
+  createFlow = async (name: string, from?: string) =>
+    parseFlowDetail(await this.call("POST", "flows", { name, ...(from ? { from } : {}) }));
+  saveFlow = async (
+    id: string,
+    body: {
+      base: number;
+      name: string;
+      trigger: unknown;
+      plan: FlowPlan;
+      layout: Record<string, { x: number; y: number }> | null;
+    },
+  ) => parseFlowDetail(await this.call("PUT", `flows/${encodeURIComponent(id)}`, body));
+  setFlowEnabled = async (id: string, enabled: boolean) =>
+    parseFlowDetail(await this.call("PUT", `flows/${encodeURIComponent(id)}/enabled`, { enabled }));
+  revertFlow = async (id: string, to: { version: number } | { preset: true }) =>
+    parseFlowDetail(await this.call("POST", `flows/${encodeURIComponent(id)}/revert`, to));
+  deleteFlow = async (id: string) =>
+    void (await this.call("DELETE", `flows/${encodeURIComponent(id)}`));
+  /** A flow by hand, as a turn of the conversation (its replies, questions and confirmations there). */
+  runFlow = async (
+    id: string,
+    inputs: Record<string, string>,
+    conversation?: string,
+    live?: string,
+  ) =>
+    parseTurn(
+      await this.call("POST", `flows/${encodeURIComponent(id)}/run`, {
+        inputs,
+        ...(conversation ? { conversation } : {}),
+        ...(live ? { live } : {}),
+      }),
+    );
   flowDetail = async (id: string, days: number) =>
     parseFlowDetail(
       await this.call(

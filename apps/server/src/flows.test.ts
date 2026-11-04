@@ -1,7 +1,21 @@
 /** (test) Flows kept as data (docs/flujos.md, F1): the mail reading saved as «Leer correo», drawn and counted. */
+import { coreTools } from "@boni/agent";
+import { label } from "@boni/entities";
 import { openUserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
-import { ensureFlow, exprText, flowsView, flowView, inputsOf, MAIL_FLOW } from "./flows.ts";
+import {
+  checkFlow,
+  createFlow,
+  ensureFlow,
+  exprText,
+  flowCatalog,
+  flowsView,
+  flowView,
+  inputsOf,
+  MAIL_FLOW,
+  revertFlow,
+  saveUserFlow,
+} from "./flows.ts";
 import { mailPlan } from "./mail.ts";
 
 const TARGETS = [
@@ -29,6 +43,8 @@ describe("flows (docs/flujos.md, F1)", () => {
       "guide:guide",
       "options:options",
       "subject:text",
+      "only:value",
+      "prefill:relations",
     ]);
     // The mail's id is bound, never written in the plan.
     expect(JSON.stringify(plan)).not.toContain("e_");
@@ -227,5 +243,213 @@ describe("flows (docs/flujos.md, F1)", () => {
       }),
     ).toBe("a(b(c(d(…))))");
     expect(exprText({ lit: "x".repeat(80) })).toBe(`"${"x".repeat(57)}…"`);
+  });
+});
+
+describe("the flow editor (docs/flujos.md, F2)", () => {
+  const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+  const withTypes = () => {
+    const store = openUserStore(":memory:");
+    for (const [id, key, name] of [
+      ["t_tarea", "tarea", "Tarea"],
+      ["t_correo", "correo", "Correos"],
+      ["t_diario", "diario", "Diario"],
+    ] as const)
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key,
+            name,
+            fields: [
+              {
+                id: `${id}_t`,
+                key: id === "t_correo" ? "asunto" : "titulo",
+                name: "Título",
+                type: "text",
+                label: own,
+              },
+              { id: `${id}_d`, key: "dia", name: "Día", type: "date", label: own },
+            ],
+            titleField: `${id}_t`,
+            roles: { date: `${id}_d` },
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: own,
+          },
+        },
+        { actor: "user" },
+      );
+    store.setAiAccess("t_diario", "restricted", "portatil");
+    return store;
+  };
+  const registry = coreTools().freeze();
+  const o = { modules: ["tasks", "events"], mailType: "t_correo" };
+
+  it("its nodes are the registry's tools and the readers, the same the planner may use (D-41)", () => {
+    const store = withTypes();
+    const c = flowCatalog(registry, store, o.modules);
+    expect(c.tools.map((t) => t.name).sort()).toEqual(registry.names().sort());
+    expect(c.tools.find((t) => t.name === "entities.create")).toMatchObject({
+      title: "Crear",
+      args: [
+        { name: "type", role: "type", required: true },
+        { name: "values", role: "content", required: true },
+      ],
+    });
+    expect(c.readers.fill).toMatchObject({ params: ["fields"], required: ["fields"] });
+    expect(c.readers.read_message?.out).toEqual(
+      expect.arrayContaining(["all", "tasks", "tasks.title"]),
+    );
+    // A collection the models may not see is not offered; each field with the roles it plays.
+    expect(c.collections.map((x) => x.key)).toEqual(["tarea", "correo"]);
+    expect(c.collections[0]?.fields).toEqual([
+      { key: "titulo", name: "Título", type: "text", roles: ["title"], relation: null },
+      { key: "dia", name: "Día", type: "date", roles: ["date"], relation: null },
+    ]);
+    store.close();
+  });
+
+  it("its checklist says what the run would refuse, step by step, and what each step may take", () => {
+    const store = withTypes();
+    const mailFlow = {
+      trigger: { created: "correo" },
+      plan: {
+        version: 1,
+        steps: [
+          { id: "m", op: "call", tool: "entities.get", args: { id: { ref: "$mail" } } },
+          { id: "r", op: "read", reader: "read_message", input: { ref: "$text" }, params: {} },
+          {
+            id: "n",
+            op: "call",
+            tool: "entities.create",
+            each: { ref: "$r.tasks" },
+            args: {
+              type: { lit: "tarea" },
+              values: { fn: "obj", args: [{ lit: "title" }, { ref: "$item.title" }] },
+            },
+          },
+        ],
+      },
+    };
+    const ok = checkFlow(store, registry, mailFlow, o);
+    expect(ok.problems).toEqual([]);
+    const refsOfN = ok.refs.n?.map((r) => r.ref) ?? [];
+    expect(refsOfN).toEqual(
+      expect.arrayContaining([
+        "$mail",
+        "$text",
+        "$m.asunto",
+        "$r.tasks",
+        "$item.title",
+        "$item.due",
+      ]),
+    );
+    expect(refsOfN).not.toContain("$n");
+    // Broken on purpose: a step that does not exist yet, a missing argument, a closed collection, a tool its origin
+    // may not use (no scheduling from work of its own), and no steps at all.
+    const broken = structuredClone(mailFlow) as typeof mailFlow & {
+      plan: { steps: Record<string, unknown>[] };
+    };
+    broken.plan.steps.push(
+      {
+        id: "x",
+        op: "call",
+        tool: "entities.create",
+        args: { type: { lit: "diario" }, values: { ref: "$nadie" } },
+      },
+      { id: "y", op: "call", tool: "entities.query", args: {} },
+      {
+        id: "z",
+        op: "call",
+        tool: "jobs.create",
+        args: { name: { lit: "a" }, schedule: { lit: "daily" }, prompt: { lit: "b" } },
+      },
+    );
+    const bad = checkFlow(store, registry, broken, o).problems;
+    expect(bad).toEqual(
+      expect.arrayContaining([
+        { step: "x", at: "args.values", code: "ref-to-unknown-step" },
+        { step: "x", at: "args.type", code: "closed-collection" },
+        { step: "y", at: "args", code: "missing-argument" },
+        { step: "z", at: null, code: "tool-not-here" },
+      ]),
+    );
+    expect(
+      checkFlow(store, registry, { trigger: { manual: true }, plan: { version: 1, steps: [] } }, o)
+        .problems,
+    ).toEqual([{ step: null, at: null, code: "no-steps" }]);
+    expect(
+      checkFlow(store, registry, { trigger: { what: 1 }, plan: mailFlow.plan }, o).problems,
+    ).toContainEqual({
+      step: null,
+      at: "trigger",
+      code: "bad-trigger",
+    });
+    // By hand, a form's names are what the plan may take.
+    const manual = {
+      trigger: { manual: true, inputs: [{ name: "tema" }] },
+      plan: {
+        version: 1,
+        steps: [{ id: "a", op: "reply", component: "text", data: { template: { ref: "$tema" } } }],
+      },
+    };
+    expect(checkFlow(store, registry, manual, o)).toMatchObject({
+      problems: [],
+      refs: { a: [{ ref: "$tema", t: "text" }] },
+    });
+    store.close();
+  });
+
+  it("a new one starts off, empty or as a copy; saved only over the version it started from, with an empty checklist", () => {
+    const store = withTypes();
+    const empty = createFlow(store, { name: "Resumen del lunes" }, 1000);
+    expect(empty).toMatchObject({
+      version: 1,
+      by: "user",
+      enabled: false,
+      trigger: { manual: true },
+    });
+    expect(empty?.id).toMatch(/^resumen-del-lunes-[0-9a-f]{6}$/);
+    const plan = {
+      version: 1,
+      steps: [{ id: "a", op: "reply", component: "text", data: { template: { lit: "Hola" } } }],
+    };
+    const id = empty?.id as string;
+    expect(saveUserFlow(store, id, { base: 2, plan }, [], 2000)).toEqual({ error: "conflict" });
+    expect(
+      saveUserFlow(store, id, { base: 1, plan }, [{ step: "a", at: null, code: "x" }], 2000),
+    ).toEqual({ error: "invalid" });
+    expect(saveUserFlow(store, id, { base: 1, plan, name: "Resumen" }, [], 2000)).toMatchObject({
+      flow: { version: 2, name: "Resumen", enabled: false },
+    });
+    expect(saveUserFlow(store, "nadie", { base: 1, plan }, [], 2000)).toEqual({
+      error: "not-found",
+    });
+    // The mail flow keeps its trigger.
+    ensureFlow(
+      store,
+      { id: MAIL_FLOW, name: "Leer correo", trigger: { created: "correo" }, plan, by: "preset" },
+      1000,
+    );
+    expect(
+      saveUserFlow(store, MAIL_FLOW, { base: 1, plan, trigger: { manual: true } }, [], 2000),
+    ).toEqual({ error: "trigger" });
+    // A copy: another id, the same plan, off.
+    const copy = createFlow(store, { name: "Copia de Resumen", from: id }, 3000);
+    expect(copy).toMatchObject({ version: 1, name: "Copia de Resumen", enabled: false, plan });
+    expect(copy?.id).not.toBe(id);
+    expect(createFlow(store, { name: "x", from: "nadie" }, 3000)).toBeNull();
+    // Back to a version: a new one, his; deleted: out of the list, its versions kept.
+    expect(revertFlow(store, id, { version: 1 }, 4000)).toMatchObject({
+      version: 3,
+      by: "user",
+      plan: { steps: [] },
+    });
+    store.journal.setFlowDeleted(id, true);
+    expect(flowsView(store).map((f) => f.id)).not.toContain(id);
+    expect(store.journal.flowVersions(id)).toHaveLength(3);
+    store.close();
   });
 });

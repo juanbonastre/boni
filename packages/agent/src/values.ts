@@ -90,6 +90,9 @@ export const modelLabel = (run: string): Label =>
   label("model", "public", [{ kind: "model", id: run }]);
 export const userLabel = (turn: string): Label =>
   label("user", "public", [{ kind: "turn", id: turn }]);
+/** What the user wrote in a flow he saved (docs/flujos.md, D-41): its literals are his, as a turn's quotes are. */
+export const flowLabel = (flow: string): Label =>
+  label("user", "public", [{ kind: "flow", id: flow }]);
 export const sourcesOf = (v: Val): readonly SourceRef[] => deepLabel(v).sources;
 
 /** A path into a value: "$s2", "$s2.items[0].title", "$item.f_email". */

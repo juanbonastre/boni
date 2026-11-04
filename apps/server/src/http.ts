@@ -356,7 +356,11 @@ export function makeApp(opts: ServerOptions): App {
         req.method !== "POST" &&
         req.method !== "PUT" &&
         // Only a conversation is deleted here (to the trash).
-        !(req.method === "DELETE" && route === "DELETE /api/agent/conversations/:id")
+        !(
+          req.method === "DELETE" &&
+          (route === "DELETE /api/agent/conversations/:id" ||
+            route === "DELETE /api/agent/flows/:id")
+        )
       )
         return send(res, 404, { error: "not-found" });
       const s = sessionUser(db, tokenOf(req));
