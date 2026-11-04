@@ -572,8 +572,11 @@ contraseña ni un código aquí» under a question.
   in a window of its own in the desktop app (the peek, which stays while Juan works elsewhere; task 30) and elsewhere
   in the side panel (the type's name as the panel's title, «Agrandar» takes it to its page), anything else as its
   page. A mail's line has a second small button, «Proponer tarea» (a list with a plus): the mail is read now by its
-  plan, a spinner meanwhile, and a toast says what went to the inbox («2 propuestas en la Bandeja», «Nada que
-  proponer», or where to choose the collections when there are none).
+  plan, a spinner meanwhile, and a toast says what came of it («2 propuestas en la Bandeja»; «Ya en la Bandeja» or
+  «Ya apuntada» when the mail's tasks already wait or were taken; «Sin tareas para ti» when the reader found none;
+  or where to choose the collections when there are none); when nothing new came of it, the toast's button «Otra
+  vez» reads the mail afresh, the waiting ones giving way (task 54: Juan, 2026-11-04, «que el usuario pudiese
+  volver a proponerlo»).
   When a request hits one of its limits (too many model calls, steps or text, P12), the error says which, not «una
   regla de seguridad».
   A question shows its options as rounded buttons with a surface and a shadow (one line, cut with an ellipsis; the

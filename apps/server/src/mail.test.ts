@@ -22,6 +22,16 @@ import { decisions } from "./mailReview.ts";
 import { FILE_FIELD, FOLDER_FIELD } from "./paths.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 
+/** The mail a reading's run read (its plan's first step), as mail.ts tells a mail's proposals apart. */
+const mailOfRun = (
+  store: { journal: { run(r: string): { plan: unknown } | null } },
+  run: string,
+): unknown =>
+  (
+    store.journal.run(run)?.plan as
+      | { steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[] }
+      | undefined
+  )?.steps?.[0]?.args?.id?.lit;
 /** The mailbox connector against a fake IMAP server (invented mail only). */
 const PASSWORD = "una contraseña larga de ejemplo";
 const APP_PASSWORD = "abcdabcdabcdabcd";
@@ -580,8 +590,17 @@ describe("tasks a mail asks for", () => {
       .list(m.state(1).type as string)
       .find((x) => x.entity.values.f_asunto === "Informe y sala")?.entity.id as string;
     const before = readers.length;
-    expect(await m.proposeFor(1, informe)).toBe(2);
+    const ofInforme = (status: "pending" | "stale") =>
+      store.journal.proposals(status).filter((p) => mailOfRun(store, p.run) === informe).length;
+    expect(ofInforme("pending")).toBe(2);
+    const staleBefore = ofInforme("stale");
+    // Already proposed by the mailbox's own reading: said, not read again (task 54)...
+    expect(await m.proposeFor(1, informe)).toEqual({ n: 0, already: 2, decided: 0 });
+    expect(readers.slice(before)).toEqual([]);
+    // ...unless Juan asks again: the two waiting give way, the mail is read afresh, two new ones wait.
+    expect(await m.proposeFor(1, informe, true)).toEqual({ n: 2, already: 0, decided: 0 });
     expect(readers.slice(before)).toEqual(["read_message", "classify"]);
+    expect([ofInforme("stale") - staleBefore, ofInforme("pending")]).toEqual([2, 2]);
     await expect(m.proposeFor(1, dni)).rejects.toMatchObject({ code: "not-found" });
     await expect(m.proposeFor(1, "e_nada")).rejects.toMatchObject({ code: "not-found" });
     // The collections a mail may go to are worked out once while nothing they read changes (task 43: each check

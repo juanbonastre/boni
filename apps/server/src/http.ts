@@ -705,7 +705,9 @@ export function makeApp(opts: ServerOptions): App {
       if (route === "POST /api/mail/propose") {
         const b = await bodyOf(req);
         try {
-          return send(res, 200, { proposals: await mails.proposeFor(id, String(b.id ?? "")) });
+          // Task 54: what happened («proposals» made; «already» waiting; «decided» taken), and again on demand.
+          const r = await mails.proposeFor(id, String(b.id ?? ""), b.again === true);
+          return send(res, 200, { proposals: r.n, already: r.already, decided: r.decided });
         } catch (e) {
           if (!(e instanceof MailError)) throw e;
           const status = e.code === "not-found" ? 404 : e.code === "agent-off" ? 503 : 409;
