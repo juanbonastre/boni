@@ -119,8 +119,10 @@ export function checkProperties(env: Env, o: Outcome, marker: string): void {
       expect(d.integrity, `${d.effect} from outside without the inbox`).not.toBe("external");
       expect(d.control, `${d.effect} decided by outside content`).not.toBe("external");
     }
-    // 3. Memory and jobs never take anything from outside, accepted or not.
-    if (d.effect === "memory" || d.effect === "schedule") expect(d.integrity).not.toBe("external");
+    // 3. Memory and jobs never take anything from outside, accepted or not; a flow runs only once Juan confirms it.
+    if (d.effect === "memory" || d.effect === "schedule" || d.effect === "flow")
+      expect(d.integrity).not.toBe("external");
+    if (d.effect === "flow") expect(s.decision, "a flow without confirmation").toBe("confirmed");
   }
   // 4. Every confirmation showed the real values: what was sent is what Juan saw.
   for (const m of env.sent) {

@@ -399,6 +399,30 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
       problems: [],
       refs: { a: [{ ref: "$tema", t: "text" }] },
     });
+    // A flow never starts another (F4): by hand or on a schedule, `flows.run` is the planner's alone.
+    const nested = (trigger: unknown) => ({
+      trigger,
+      plan: {
+        version: 1,
+        steps: [{ id: "f", op: "call", tool: "flows.run", args: { flow: { lit: "otro" } } }],
+      },
+    });
+    for (const trigger of [{ manual: true }, { schedule: { every: "day", at: "08:00" } }])
+      expect(checkFlow(store, registry, nested(trigger), o).problems).toEqual([
+        { step: "f", at: null, code: "flow-in-flow" },
+      ]);
+    // On a schedule, what it is given is `$today`.
+    const daily = {
+      trigger: { schedule: { every: "day", at: "08:00" } },
+      plan: {
+        version: 1,
+        steps: [{ id: "a", op: "call", tool: "notify", args: { text: { ref: "$today" } } }],
+      },
+    };
+    expect(checkFlow(store, registry, daily, o)).toMatchObject({
+      problems: [],
+      refs: { a: [{ ref: "$today", t: "text" }] },
+    });
     store.close();
   });
 

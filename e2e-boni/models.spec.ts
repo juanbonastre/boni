@@ -6,8 +6,10 @@ import {
   FLOW_CHECK,
   FLOW_DETAIL,
   FLOW_DETAIL_SAVED,
+  FLOW_SUMMARY,
   FLOW_TEST,
   FLOWS,
+  FLOWS_WITH_SUMMARY,
   MODELS,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
@@ -452,4 +454,64 @@ test("«Probar»: the draft run dry with the latest mail; each step says what it
   await page.getByRole("button", { name: "Quitar la prueba" }).click();
   await expect(page.locator(".flow-test-bar")).toHaveCount(0);
   await expect(create).not.toContainText("Propondría");
+});
+
+test("a daily summary drawn without code: the trigger «Programado», every day at 08:00, saved as such", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS_WITH_SUMMARY],
+      "GET api/agent/flows/:id": [FLOW_DETAIL, FLOW_SUMMARY],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [{ problems: [], refs: {} }],
+      "PUT api/agent/flows/:id": [
+        {
+          ...FLOW_SUMMARY,
+          version: 2,
+          trigger: { schedule: { every: "day", at: "07:30" } },
+          inputs: [{ id: "today", what: "text" }],
+        },
+      ],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  const rows = page.locator(".flows-table tbody tr");
+  await expect(rows).toHaveCount(2);
+  await rows.nth(1).getByRole("button", { name: "Resumen diario" }).click();
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  await expect(canvas.locator(".fl-node.source")).toContainText("A mano");
+  // The trigger's panel: «Programado», every day; the node says when, and what it gives ($today).
+  await canvas.locator(".fl-node.source .fl-name").click();
+  const panel = page.locator(".flow-step-panel");
+  await panel
+    .locator(".flow-setting", { hasText: "Disparador" })
+    .locator("select")
+    .selectOption("schedule");
+  await expect(canvas.locator(".fl-node.source")).toContainText("Cada día a las 08:00");
+  await expect(canvas.locator(".fl-node.source")).toContainText("$today");
+  await panel.getByRole("combobox", { name: "Hora" }).selectOption("07");
+  await panel.getByRole("combobox", { name: "Minuto" }).selectOption("30");
+  await expect(canvas.locator(".fl-node.source")).toContainText("Cada día a las 07:30");
+  // Every Monday, then back to every day.
+  const every = panel.locator(".flow-setting", { hasText: "Cuándo" }).locator("select");
+  await every.selectOption("week");
+  await expect(canvas.locator(".fl-node.source")).toContainText("Cada lunes a las 07:30");
+  await every.selectOption("day");
+  await page.screenshot({ path: `${SHOTS}/flow-schedule.png` });
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  const body = await page.waitForFunction(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).find((b) =>
+      b.startsWith("PUT api/agent/flows/resumen-diario "),
+    ),
+  );
+  const sent = JSON.parse(String(await body.jsonValue()).replace(/^PUT \S+ /, "")) as {
+    trigger: unknown;
+  };
+  expect(sent.trigger).toEqual({ schedule: { every: "day", at: "07:30" } });
+  // A flow never runs another: «Ejecutar flujo» is not offered as a step.
+  await page.getByRole("button", { name: "Añadir paso" }).click();
+  await expect(page.getByRole("menuitemradio", { name: "Avisar" })).toBeVisible();
+  await expect(page.getByRole("menuitemradio", { name: "Ejecutar flujo" })).toHaveCount(0);
 });

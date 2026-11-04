@@ -573,4 +573,38 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
     expect(catalog.tools.map((t) => t.name)).toContain("entities.create");
     expect(catalog.collections.map((c) => c.key)).toContain("tarea");
   });
+
+  it("a flow on a schedule runs by hand too, given today in the server's zone (F4)", async () => {
+    const token = await login(base, "juan");
+    const made = (await (
+      await call(token, "POST", "/api/agent/flows", { name: "Resumen diario" })
+    ).json()) as { id: string };
+    const trigger = { schedule: { every: "day", at: "08:00" } };
+    const plan = {
+      version: 1,
+      steps: [{ id: "r", op: "reply", component: "text", data: { template: { ref: "$today" } } }],
+    };
+    const saved = await call(token, "PUT", `/api/agent/flows/${made.id}`, {
+      base: 1,
+      trigger,
+      plan,
+    });
+    expect(saved.status).toBe(200);
+    await call(token, "PUT", `/api/agent/flows/${made.id}/enabled`, { enabled: true });
+    const ran = (await (
+      await call(token, "POST", `/api/agent/flows/${made.id}/run`, {})
+    ).json()) as { status: string; replies: { data: Record<string, { value: unknown }> }[] };
+    expect(ran.status).toBe("done");
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(
+      Date.now(),
+    );
+    expect(ran.replies[0]?.data.template?.value).toBe(today);
+    // A flow a record starts is not run by hand.
+    ensureFlow(
+      host.store(1),
+      { id: "al-llegar", name: "Al llegar", trigger: { created: "correo" }, plan, by: "preset" },
+      1,
+    );
+    expect((await call(token, "POST", "/api/agent/flows/al-llegar/run", {})).status).toBe(409);
+  });
 });

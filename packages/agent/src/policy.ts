@@ -124,6 +124,12 @@ export function decide(
       return allow("P10");
     case "notify":
       return allow("P1");
+    // One of the user's flows runs from his own turn, once he confirms it; nothing from outside starts one (P16),
+    // and no flow or background work starts another (docs/flujos.md §4.3).
+    case "flow":
+      if (externalArgs || controlExternal) return deny("P16", "external-starts-flow");
+      if (origin.kind !== "turn" || !personal) return deny("P8", "flow-outside-turn");
+      return confirm("P8");
     case "write":
     case "write_irreversible": {
       // What an e-mail decides, or what is made of it, waits in the inbox (P4, P15) unless Juan

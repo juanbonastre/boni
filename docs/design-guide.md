@@ -759,8 +759,13 @@ contraseña ni un código aquí» under a question.
   its key), a record's values as rows of field and value (the parts it is merged with as chips), any other as a
   value field: a kind (Texto, Número, Sí o no, Valor de, Función, Nada) and its input; «Valor de» offers the values
   that step may take (the server computes them: the trigger's, the earlier steps', `$item` in a loop). Then «Solo
-  si», «Para cada» and «Junto con». The trigger's panel: «Nuevo correo» with what it binds, or «A mano» with the
-  names its form asks for. A node with a problem has a `--bad` border; the selected one an `--accent` ring.
+  si», «Para cada» and «Junto con». The trigger's panel: «Nuevo correo» with what it binds, «A mano» with the
+  names its form asks for, or **«Programado»** (F4): «Cuándo» (Cada día, Cada semana with its «Día», Cada hora) and
+  «A las» as two lists, the hour and the minutes every five (never a time field: it shows AM/PM in an English
+  browser), or «Minuto» every hour; the node says it in words («Cada día a las 08:00», «Cada lunes a las 07:30»,
+  «Cada hora a y 15») and gives `$today`. «Ejecutar» runs a scheduled flow now too. The «Añadir paso» menu never
+  offers «Ejecutar flujo» (a flow does not run another). A node with a problem has a `--bad` border; the selected
+  one an `--accent` ring.
   **«Probar»** (F3; n8n's «Test step» and Dify's debug run as references) runs the draft as it is, dry: with the
   latest mail for a mail flow, with the form's values for one by hand. Readers and the decider are called (it costs
   what a reading costs); nothing is written, notified, proposed or confirmed, and a question ends it. A bar over the

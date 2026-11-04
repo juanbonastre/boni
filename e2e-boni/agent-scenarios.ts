@@ -1794,6 +1794,15 @@ export const FLOW_CATALOG = {
       effect: "notify",
       args: [{ name: "text", role: "content", required: true }],
     },
+    {
+      name: "flows.run",
+      title: "Ejecutar flujo",
+      effect: "flow",
+      args: [
+        { name: "flow", role: "option", required: true },
+        { name: "inputs", role: "content", required: false },
+      ],
+    },
   ],
   readers: {
     read_message: {
@@ -1905,4 +1914,60 @@ export const FLOW_TEST = {
       ],
     },
   },
+};
+
+/** A flow of the user's by hand (docs/flujos.md F4): it counts the tasks and says it; made a daily summary. */
+const SUMMARY_PLAN = {
+  version: 1,
+  steps: [
+    {
+      id: "n",
+      op: "call",
+      tool: "entities.aggregate",
+      args: { type: { lit: "docencia" }, op: { lit: "count" } },
+    },
+    {
+      id: "a",
+      op: "call",
+      tool: "notify",
+      args: { text: { fn: "concat", args: [{ lit: "Tareas: " }, { ref: "$n" }] } },
+    },
+  ],
+};
+export const FLOW_SUMMARY = {
+  id: "resumen-diario",
+  name: "Resumen diario",
+  version: 1,
+  trigger: { manual: true },
+  by: "user",
+  enabled: false,
+  steps: 2,
+  runs: 0,
+  last: null,
+  inputs: [],
+  nodes: [
+    flowStep("n", "call", "entities.aggregate", { title: "Contar", detail: "Docencia" }),
+    flowStep("a", "call", "notify", { title: "Avisar", deps: ["n"] }),
+  ],
+  days: 7,
+  versions: [{ version: 1, by: "user", created: 1761900000000 }],
+  plan: SUMMARY_PLAN,
+  layout: null,
+  preset: null,
+};
+export const FLOWS_WITH_SUMMARY = {
+  flows: [
+    ...FLOWS.flows,
+    {
+      id: "resumen-diario",
+      name: "Resumen diario",
+      version: 1,
+      trigger: { manual: true },
+      by: "user",
+      enabled: false,
+      steps: 2,
+      runs: 0,
+      last: null,
+    },
+  ],
 };

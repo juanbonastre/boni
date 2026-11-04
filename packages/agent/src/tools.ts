@@ -49,6 +49,8 @@ export const EFFECTS = [
   "schema",
   "memory",
   "notify",
+  // Runs one of the user's flows (docs/flujos.md F4): only from his turn, confirmed (P8).
+  "flow",
 ] as const;
 export type Effect = (typeof EFFECTS)[number];
 export const ARG_ROLES = [
@@ -100,6 +102,10 @@ export interface MemoryWriter {
 export interface JobWriter {
   create(name: Val, schedule: Val, prompt: Val, extra: Label): Val;
 }
+/** Runs one of the user's flows from a turn (`flows.run`, docs/flujos.md F4): what came of it. */
+export interface FlowStarter {
+  run(flow: Val, inputs: Val | undefined): Promise<Val>;
+}
 export interface Notifier {
   /** To the devices of this account only: the recipient is the code's, never an argument. */
   notify(text: Val): void;
@@ -120,6 +126,7 @@ export interface Caps {
   schema: { store: ReadStore; schema: SchemaWriter };
   memory: { store: ReadStore; memory: MemoryWriter };
   notify: { store: ReadStore; notifier: Notifier };
+  flow: { store: ReadStore; flows: FlowStarter };
 }
 
 export interface ToolDef<E extends Effect = Effect> {
@@ -664,6 +671,23 @@ export function coreTools(): ToolRegistry {
     },
   });
   r.register({
+    name: "flows.run",
+    effect: "flow",
+    title: "Ejecutar flujo",
+    describe:
+      'Run one of the user\'s flows (input "flows": its id and the names its form asks for); the user confirms it',
+    args: {
+      flow: { role: "option", required: true, describe: "the flow's id" },
+      inputs: {
+        role: "content",
+        describe: "the form's values by name, obj(name, value, ...), when its form asks for some",
+      },
+    },
+    run({ flows }, a) {
+      return flows.run(a.flow as Val, a.inputs);
+    },
+  });
+  r.register({
     name: "notify",
     effect: "notify",
     title: "Avisar",
@@ -704,6 +728,8 @@ export interface CapsContext {
   net?: Net;
   /** The audit action a change is made in (its operations name it). */
   action?: number;
+  /** How this run starts a flow of the user's (the agent's, docs/flujos.md F4). */
+  flows?: FlowStarter;
 }
 
 const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "external";
@@ -1042,6 +1068,10 @@ export function makeCaps(c: CapsContext): Caps {
     schema: { store: ro, schema },
     memory: { store: ro, memory },
     notify: { store: ro, notifier },
+    flow: {
+      store: ro,
+      flows: c.flows ?? { run: () => Promise.reject(new ToolError("no-flows")) },
+    },
   };
 }
 

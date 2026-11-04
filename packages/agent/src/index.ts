@@ -141,6 +141,7 @@ export {
   DESTINATION_ROLES,
   EFFECTS,
   ensureSystemTypes,
+  type FlowStarter,
   fieldName,
   makeCaps,
   type Net,
@@ -152,7 +153,9 @@ export {
   typeName,
 } from "./tools.ts";
 export { refsOf } from "./trace.ts";
+export { manualInputs, runnableNames } from "./trigger.ts";
 export {
+  codeLabel,
   deepLabel,
   type From,
   flowLabel,

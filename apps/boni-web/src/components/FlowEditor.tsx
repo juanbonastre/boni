@@ -85,8 +85,9 @@ export function triggerText(t: T, on: Record<string, unknown>): string {
   if (typeof on.created === "string") return t("flows.on.created", { what: on.created });
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
-    const at = typeof s.at === "string" ? s.at : "";
-    if (s.every === "hour") return t("flows.on.hour");
+    const at = typeof s.at === "string" ? s.at : "08:00";
+    if (s.every === "hour")
+      return at.slice(3) === "00" ? t("flows.on.hour") : t("flows.on.hourAt", { m: at.slice(3) });
     if (s.every === "week")
       return t("flows.on.week", { day: t(`flows.day.${Number(s.day ?? 1)}`), at });
     return t("flows.on.day", { at });
@@ -94,6 +95,10 @@ export function triggerText(t: T, on: Record<string, unknown>): string {
   if (on.manual) return t("flows.on.manual");
   return t("flows.on.other");
 }
+
+/** What a trigger gives its plan when it is not a record's: the form's names, or `today` on a schedule. */
+const givenNames = (trigger: Record<string, unknown>): string[] =>
+  trigger.schedule && typeof trigger.schedule === "object" ? ["today"] : formNames(trigger);
 
 /** The names a manual trigger's form asks for. */
 const formNames = (trigger: Record<string, unknown>): string[] =>
@@ -229,7 +234,7 @@ function nodesOf(
   const inputs =
     typeof draft.trigger.created === "string"
       ? detail.inputs.map((i) => i.id)
-      : formNames(draft.trigger);
+      : givenNames(draft.trigger);
   const ids = new Set(draft.plan.steps.map((s) => s.id));
   const links: { from: string; to: string }[] = [];
   for (const s of draft.plan.steps) {
@@ -322,7 +327,12 @@ function kindsOf(
       group: "other",
       items: [
         ...catalog.tools
-          .filter((x) => !x.name.startsWith("entities.") && x.name !== "schema.describe")
+          .filter(
+            (x) =>
+              !x.name.startsWith("entities.") &&
+              x.name !== "schema.describe" &&
+              x.effect !== "flow",
+          )
           .map((x) => ({ kind: { op: "call", tool: x.name } as NodeKind, name: x.name })),
         ...catalog.asks.map((c) => ({
           kind: { op: "ask", control: c } as NodeKind,
@@ -465,6 +475,10 @@ function TriggerPanel({
   const t = useStore((s) => s.t);
   const fixed = typeof draft.trigger.created === "string";
   const names = formNames(draft.trigger);
+  const schedule =
+    draft.trigger.schedule && typeof draft.trigger.schedule === "object"
+      ? (draft.trigger.schedule as ScheduleDraft)
+      : null;
   return (
     <aside className="flow-step-panel" aria-label={t("flows.trigger")}>
       <div className="flow-panel-head">
@@ -494,61 +508,183 @@ function TriggerPanel({
         <>
           <label className="flow-setting">
             <span className="flow-setting-name">{t("flows.trigger")}</span>
-            <select value="manual" onChange={() => undefined}>
-              <option value="manual">{t("flows.on.manual")}</option>
-            </select>
-          </label>
-          <span className="flow-setting-name">{t("flows.form")}</span>
-          {names.map((n, i) => (
-            <div className="flow-value-row" key={`${i}-${names.length}`}>
-              <input
-                aria-label={t("flows.formField")}
-                value={n}
-                onChange={(e) =>
-                  onTrigger({
-                    ...draft.trigger,
-                    inputs: names.map((x, j) => ({
-                      name: j === i ? e.target.value.toLowerCase() : x,
-                    })),
-                  })
-                }
-              />
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label={t("flows.expr.clear")}
-                onClick={() =>
-                  onTrigger({
-                    ...draft.trigger,
-                    inputs: names.filter((_, j) => j !== i).map((x) => ({ name: x })),
-                  })
-                }
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {names.length < 6 && (
-            <button
-              type="button"
-              className="btn ghost small"
-              onClick={() =>
-                onTrigger({
-                  ...draft.trigger,
-                  manual: true,
-                  inputs: [
-                    ...names.map((x) => ({ name: x })),
-                    { name: `campo${names.length + 1}` },
-                  ],
-                })
+            <select
+              value={schedule ? "schedule" : "manual"}
+              onChange={(e) =>
+                onTrigger(
+                  e.target.value === "schedule"
+                    ? { schedule: { every: "day", at: "08:00" } }
+                    : { manual: true },
+                )
               }
             >
-              {t("flows.addFormField")}
-            </button>
+              <option value="manual">{t("flows.on.manual")}</option>
+              <option value="schedule">{t("flows.on.scheduled")}</option>
+            </select>
+          </label>
+          {schedule ? (
+            <SchedulePanel schedule={schedule} onSchedule={(s) => onTrigger({ schedule: s })} />
+          ) : (
+            <>
+              <span className="flow-setting-name">{t("flows.form")}</span>
+              {names.map((n, i) => (
+                <div className="flow-value-row" key={`${i}-${names.length}`}>
+                  <input
+                    aria-label={t("flows.formField")}
+                    value={n}
+                    onChange={(e) =>
+                      onTrigger({
+                        ...draft.trigger,
+                        inputs: names.map((x, j) => ({
+                          name: j === i ? e.target.value.toLowerCase() : x,
+                        })),
+                      })
+                    }
+                  />
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={t("flows.expr.clear")}
+                    onClick={() =>
+                      onTrigger({
+                        ...draft.trigger,
+                        inputs: names.filter((_, j) => j !== i).map((x) => ({ name: x })),
+                      })
+                    }
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {names.length < 6 && (
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  onClick={() =>
+                    onTrigger({
+                      ...draft.trigger,
+                      manual: true,
+                      inputs: [
+                        ...names.map((x) => ({ name: x })),
+                        { name: `campo${names.length + 1}` },
+                      ],
+                    })
+                  }
+                >
+                  {t("flows.addFormField")}
+                </button>
+              )}
+            </>
           )}
         </>
       )}
     </aside>
+  );
+}
+
+/** A schedule's minutes, every five (a time in between is kept as it came). */
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
+
+interface ScheduleDraft {
+  every: "day" | "week" | "hour";
+  at?: string;
+  day?: number;
+}
+
+/** When a scheduled flow runs: every day, a day of the week or every hour, and at what time (docs/flujos.md F4). */
+function SchedulePanel({
+  schedule,
+  onSchedule,
+}: {
+  schedule: ScheduleDraft;
+  onSchedule: (s: ScheduleDraft) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const at = schedule.at ?? "08:00";
+  return (
+    <>
+      <label className="flow-setting">
+        <span className="flow-setting-name">{t("flows.schedule.every")}</span>
+        <select
+          value={schedule.every}
+          onChange={(e) => {
+            const every = e.target.value as ScheduleDraft["every"];
+            onSchedule(
+              every === "week"
+                ? { every, at: schedule.every === "hour" ? "08:00" : at, day: schedule.day ?? 1 }
+                : every === "hour"
+                  ? { every, at: `00:${at.slice(3)}` }
+                  : { every, at: schedule.every === "hour" ? "08:00" : at },
+            );
+          }}
+        >
+          <option value="day">{t("flows.every.day")}</option>
+          <option value="week">{t("flows.every.week")}</option>
+          <option value="hour">{t("flows.every.hour")}</option>
+        </select>
+      </label>
+      {schedule.every === "week" && (
+        <label className="flow-setting">
+          <span className="flow-setting-name">{t("flows.weekday")}</span>
+          <select
+            value={schedule.day ?? 1}
+            onChange={(e) => onSchedule({ ...schedule, day: Number(e.target.value) })}
+          >
+            {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+              <option key={d} value={d}>
+                {t(`flows.day.${d}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {schedule.every === "hour" ? (
+        <label className="flow-setting">
+          <span className="flow-setting-name">{t("flows.minute")}</span>
+          <select
+            value={at.slice(3)}
+            onChange={(e) => onSchedule({ every: "hour", at: `00:${e.target.value}` })}
+          >
+            {MINUTES.map((m) => (
+              <option key={m} value={m}>
+                :{m}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <div className="flow-setting">
+          <span className="flow-setting-name">{t("flows.at")}</span>
+          <div className="flow-time">
+            <select
+              aria-label={t("flows.hour")}
+              value={at.slice(0, 2)}
+              onChange={(e) => onSchedule({ ...schedule, at: `${e.target.value}:${at.slice(3)}` })}
+            >
+              {Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0")).map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </select>
+            <span>:</span>
+            <select
+              aria-label={t("flows.minute")}
+              value={at.slice(3)}
+              onChange={(e) =>
+                onSchedule({ ...schedule, at: `${at.slice(0, 2)}:${e.target.value}` })
+              }
+            >
+              {MINUTES.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -656,6 +792,8 @@ export function FlowEditor({
   };
   const step = draft.plan.steps.find((s) => s.id === selected);
   const manual = !!draft.trigger.manual;
+  // By hand: a flow with a form, or a scheduled one now; not one a record starts.
+  const runnable = manual || !!draft.trigger.schedule;
   const when = (ms: number) =>
     new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
       day: "numeric",
@@ -733,7 +871,7 @@ export function FlowEditor({
           <FlaskConical size={14} strokeWidth={1.8} aria-hidden />
           {testing ? t("flows.testing") : t("flows.test")}
         </button>
-        {manual && detail.enabled && !dirty && (
+        {runnable && detail.enabled && !dirty && (
           <button
             type="button"
             className="btn small"
