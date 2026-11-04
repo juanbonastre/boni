@@ -29,7 +29,8 @@ function Row({
   );
 }
 
-function statusText(st: ExternalStatus | undefined, locale: string, tz: string): string {
+/** An external calendar's state in words: events and when its copy was downloaded, downloading, or the error. */
+export function statusText(st: ExternalStatus | undefined, locale: string, tz: string): string {
   if (!st) return t("external.never");
   if (st.state === "loading" && st.at === undefined) return t("external.loading");
   const parts: string[] = [];

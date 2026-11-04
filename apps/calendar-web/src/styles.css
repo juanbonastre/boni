@@ -1958,6 +1958,12 @@ textarea.field-input {
   left: auto;
   right: calc(100% + 4px);
 }
+.ctx-status {
+  padding: 2px 8px 6px 34px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .ctx-colors {
   display: flex;
   flex-wrap: wrap;

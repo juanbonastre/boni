@@ -15,6 +15,7 @@ import { SelectionBar } from "./components/SelectionBar.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { TimeGrid } from "./components/TimeGrid.tsx";
 import { TopBar } from "./components/TopBar.tsx";
+import { EXTERNAL_EVERY_MS, needsRefresh } from "./external.ts";
 import { appRoot, eventTarget, getHost, onKeys, releaseFocus } from "./host.ts";
 import { t } from "./i18n.ts";
 import { noticesFor } from "./notifications.ts";
@@ -342,12 +343,29 @@ function useTrayLabels() {
   }, [locale]);
 }
 
-/** External calendars: read when the app starts and again every half hour. */
+/**
+ * External calendars: downloaded anew when the app starts, every ten minutes while it is open, and when its window
+ * comes back after a while away (task 60; Juan, 2026-11-04: a change in Google Calendar took long to show, and the
+ * desktop window hides in the tray, so closing and opening it starts nothing).
+ */
 function useExternalRefresh() {
   useEffect(() => {
-    void useApp.getState().loadExternal();
-    const id = setInterval(() => void useApp.getState().loadExternal(), 30 * 60_000);
-    return () => clearInterval(id);
+    const fresh = () => void useApp.getState().loadExternal(undefined, { fresh: true });
+    fresh();
+    const id = setInterval(fresh, EXTERNAL_EVERY_MS);
+    const back = () => {
+      if (document.visibilityState !== "visible") return;
+      const s = useApp.getState();
+      const ids = s.settings.externals.map((c) => c.id);
+      if (needsRefresh(s.external.status, ids, nowMs())) fresh();
+    };
+    document.addEventListener("visibilitychange", back);
+    window.addEventListener("focus", back);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", back);
+      window.removeEventListener("focus", back);
+    };
   }, []);
 }
 

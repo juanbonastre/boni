@@ -437,14 +437,23 @@ const FEED = [
   "END:VEVENT",
   "END:VCALENDAR",
 ].join("\r\n");
+const NEW_EVENT = [
+  "BEGIN:VEVENT",
+  "UID:nuevo@example.com",
+  "DTSTART;TZID=Europe/Madrid:20250918T190000",
+  "DTEND;TZID=Europe/Madrid:20250918T200000",
+  "SUMMARY:Taller nuevo",
+  "END:VEVENT",
+].join("\r\n");
 
 test("external calendars and preferences belong to the account: every device sees them, the server downloads them", async ({
   browser,
 }) => {
   let served = 0;
+  let body = FEED;
   const feed = createHttp((_, res) => {
     served++;
-    res.end(FEED);
+    res.end(body);
   });
   await new Promise<void>((r) => feed.listen(0, "127.0.0.1", () => r()));
   const feedUrl = `http://127.0.0.1:${(feed.address() as { port: number }).port}/ejemplo.ics`;
@@ -475,6 +484,13 @@ test("external calendars and preferences belong to the account: every device see
   await expect(laptop.locator(".ev", { hasText: "Taller de la cuenta" })).toHaveCount(1);
   expect(asked).toEqual([]); // downloaded by the server, not by the device
   expect(served).toBeGreaterThan(0);
+  // Changed at the other service: «Actualizar» on the calendar downloads it anew, not the server's copy (task 60).
+  body = FEED.replace("END:VCALENDAR", `${NEW_EVENT}\r\nEND:VCALENDAR`);
+  await laptop.locator(".cal-row", { hasText: "Talleres" }).click({ button: "right" });
+  await laptop.getByRole("menuitem", { name: "Actualizar" }).click();
+  await expect(laptop.locator(".ev", { hasText: "Taller nuevo" })).toHaveCount(1, {
+    timeout: 10_000,
+  });
 
   // The phone, a new device: nothing to add, the account's calendar is there.
   const phone = await (await browser.newContext()).newPage();

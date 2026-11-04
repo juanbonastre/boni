@@ -83,3 +83,25 @@ export function readFeed(c: ExternalCal, text: string, tz: string) {
   if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error("not-ical");
   return parseIcal(text, { calendarId: c.id, defaultTz: tz });
 }
+
+/** How often the account's external calendars are downloaded again while the app is open. */
+export const EXTERNAL_EVERY_MS = 10 * 60_000;
+/**
+ * A copy older than this is downloaded again when the window comes back (Juan, 2026-11-04: a change in Google
+ * Calendar took long to show; the desktop window hides in the tray, so closing and opening it starts nothing).
+ */
+export const EXTERNAL_OLD_MS = 5 * 60_000;
+
+/** Whether a calendar of `ids` has no copy yet or one older than `maxAge` at `now`; one on its way is not due. */
+export function needsRefresh(
+  status: Record<string, ExternalStatus>,
+  ids: readonly string[],
+  now: number,
+  maxAge = EXTERNAL_OLD_MS,
+): boolean {
+  return ids.some((id) => {
+    const st = status[id];
+    if (st?.state === "loading") return false;
+    return !st || st.at === undefined || now - st.at > maxAge;
+  });
+}

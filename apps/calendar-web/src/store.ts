@@ -387,7 +387,8 @@ export interface AppState {
   /** Shows the server's calendar (the last copy first) and follows its changes live. */
   loadServer: () => Promise<void>;
   /** Downloads external calendars again (all, or one), showing the last copy until it arrives. */
-  loadExternal: (id?: string) => Promise<void>;
+  /** Reads the external calendars again (`id`: one of them, downloaded anew; `fresh`: downloaded anew, all). */
+  loadExternal: (id?: string, o?: { fresh?: boolean }) => Promise<void>;
   addExternal: (c: Omit<ExternalCal, "id">) => string;
   updateExternal: (id: string, patch: Partial<Omit<ExternalCal, "id">>) => void;
   removeExternal: (id: string) => void;
@@ -1753,7 +1754,8 @@ export const useApp = create<AppState>((set, get) => {
       );
     },
 
-    loadExternal: async (only) => {
+    loadExternal: async (only, o = {}) => {
+      const fresh = o.fresh ?? !!only;
       const list = get().settings.externals.filter((c) => !only || c.id === only);
       await Promise.all(
         list.map(async (c) => {
@@ -1792,7 +1794,7 @@ export const useApp = create<AppState>((set, get) => {
             let at = nowMs();
             if (viaServer && server.remote) {
               await externalsSent;
-              const r = await server.remote.feed(c.id, !!only);
+              const r = await server.remote.feed(c.id, fresh);
               text = r.text;
               at = r.at;
             } else text = await downloadFeed(c.url);

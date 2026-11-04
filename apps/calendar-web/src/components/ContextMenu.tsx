@@ -10,6 +10,7 @@ import {
   EyeOff,
   Maximize2,
   Plus,
+  RefreshCw,
   SlidersHorizontal,
   Square,
   Trash2,
@@ -29,6 +30,7 @@ import { notesBridge } from "../notesBridge.ts";
 import { type CtxTarget, useApp } from "../store.ts";
 import { useViewport } from "../ViewportContext.tsx";
 import { propertiesOf } from "./CalendarList.tsx";
+import { statusText } from "./ExternalSettings.tsx";
 import { lastPointerWasTouch } from "./useTouch.ts";
 
 /** Opens the right-click menu for events, empty grid space, month cells and calendars. */
@@ -378,6 +380,16 @@ function CalendarItems({ id, close }: { id: string; close: () => void }) {
         >
           {t("ctx.reminders")}
         </Item>
+      )}
+      {isExternalCalendar(id) && (
+        <>
+          <Item icon={<RefreshCw size={14} />} onClick={run(() => app.loadExternal(id))}>
+            {t("ctx.refresh")}
+          </Item>
+          <div className="ctx-status">
+            {statusText(app.external.status[id], app.settings.locale, app.settings.tz)}
+          </div>
+        </>
       )}
       {!cal.readOnly && (
         <>
