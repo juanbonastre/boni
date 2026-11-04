@@ -5,6 +5,25 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (nineteenth) — server 0.8.95 · Boni desktop 0.4.68 · Boni Calendar desktop 0.8.21
+
+Needs: the server (0.8.95, to deploy; it carries the 0.8.94 too, which was not deployed), Boni desktop 0.4.68
+(`release/boni_0.4.68_amd64.deb`, to install; it carries the 0.4.67 too) and Boni Calendar desktop 0.8.21
+(`release/boni-calendar-desktop_0.8.21_amd64.deb`, to install). Tasks 50 and 51 (phase A), from what Juan saw with
+an external calendar next to his own records of the same classes.
+
+- **A record of yours and an external event, one item.** In Boni Calendar, an external event's detail offers
+  «Enlazar» (your records near it, like titles first) and «Crear nota» (a record in a calendar of yours, made from
+  it); when one of your records shares its moment and title, «¿Es «Clase IPM 8»?» with «Sí». Linked, the calendar
+  paints one item: your record, in its colour, with the external calendar's colour on its right edge, at the
+  external event's time, which it follows and does not let you drag; the detail's «Enlace» row names that calendar
+  and «Quitar enlace» leaves two again. The column «Evento externo» is added to your collection the first time.
+  (#301, task 50)
+- **The inbox looks at the calendar before proposing.** A card whose event is already there says «Ya en el
+  calendario: Clase IPM, 17:00–18:00»; if it is an external calendar's event, the button is «Enlazar» and the record
+  is created linked to it; another thing at the same time is «Se solapa con X»; a task's suggested hour and the mini
+  calendar count the external events too. (#302, task 51, phase A)
+
 ## 2026-11-04 (eighteenth) — server 0.8.94 · Boni desktop 0.4.67 · Boni Android
 
 Needs: the server (0.8.94, to deploy), Boni desktop 0.4.67 (`release/boni_0.4.67_amd64.deb`, to install) and Boni
