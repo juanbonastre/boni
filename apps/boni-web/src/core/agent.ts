@@ -168,6 +168,20 @@ export interface InboxCard {
   } | null;
   /** What an earlier proposal of the same thread of mail said, when this one changed its day or hours (task 46). */
   before: { day: string | null; start: string | null; end: string | null } | null;
+  /**
+   * What the calendar already has of it (task 51): an entry that is the same thing (`external`: an external
+   * calendar's event, so «Enlazar» accepts the record linked to it), and others it overlaps.
+   */
+  calendar: {
+    already: {
+      title: string;
+      start: string | null;
+      end: string | null;
+      calendar: string | null;
+      external: string | null;
+    } | null;
+    overlaps: { title: string; start: string | null; end: string | null }[];
+  } | null;
 }
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -236,6 +250,29 @@ function parseCard(v: unknown): InboxCard | null {
           day: optMatch(v.before.day, DAY_RE),
           start: optMatch(v.before.start, TIME_RE),
           end: optMatch(v.before.end, TIME_RE),
+        }
+      : null,
+    calendar: isObj(v.calendar)
+      ? {
+          already: isObj(v.calendar.already)
+            ? {
+                title: optStr(v.calendar.already.title, 120) ?? "",
+                start: optMatch(v.calendar.already.start, TIME_RE),
+                end: optMatch(v.calendar.already.end, TIME_RE),
+                calendar: optStr(v.calendar.already.calendar, 80),
+                external: optStr(v.calendar.already.external, 300),
+              }
+            : null,
+          overlaps: Array.isArray(v.calendar.overlaps)
+            ? v.calendar.overlaps
+                .filter(isObj)
+                .slice(0, 3)
+                .map((o) => ({
+                  title: optStr(o.title, 120) ?? "",
+                  start: optMatch(o.start, TIME_RE),
+                  end: optMatch(o.end, TIME_RE),
+                }))
+            : [],
         }
       : null,
     context: Array.isArray(v.context)
@@ -1644,6 +1681,8 @@ export class AgentApi {
       collection?: string;
       values?: Record<string, DataValue>;
       done?: true;
+      /** The external event the record is made linked to («Enlazar», task 51). */
+      link?: string;
     },
   ) =>
     parseTurn(

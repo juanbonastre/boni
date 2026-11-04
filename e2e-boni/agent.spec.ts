@@ -9,6 +9,7 @@ import {
   CARD_COMPACT,
   CARD_DETAILED,
   CARD_EVENT,
+  CARD_LINKED,
   CARD_MAIL,
   CARD_TIME,
   CHART_REPLY,
@@ -1177,6 +1178,51 @@ test("Corregir: the proposal's other properties, folded under «Propiedades», s
     .toEqual([
       'POST api/agent/proposals/c9/accept {"edits":{"values":{"estado":"o_leido","fav":true}}}',
     ]);
+});
+
+test("a proposal the calendar already has says so, and «Enlazar» accepts it linked to the external event (task 51)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agenda: true,
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_LINKED] }],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await expect(card.locator(".inbox-already")).toContainText(
+    "Ya en el calendario: Reconocimiento, 12:00–13:00",
+  );
+  await expect(card.locator(".inbox-overlap")).toContainText("Se solapa con Clase FUP");
+  // The primary button is «Enlazar», and it sends the event's id with the acceptance.
+  const actions = card.locator(".inbox-actions");
+  await expect(actions.getByRole("button", { name: "Aceptar" })).toHaveCount(0);
+  await actions.getByRole("button", { name: "Enlazar" }).click();
+  const prefix = "POST api/agent/proposals/c10/accept ";
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (prefix) =>
+          ((window as unknown as { __bodies?: string[] }).__bodies ?? []).find((b) =>
+            b.startsWith(prefix),
+          ) ?? null,
+        prefix,
+      ),
+    )
+    .not.toBeNull();
+  const sent = await page.evaluate(
+    (prefix) =>
+      ((window as unknown as { __bodies?: string[] }).__bodies ?? [])
+        .filter((b) => b.startsWith(prefix))
+        .map((b) => JSON.parse(b.slice(prefix.length)) as unknown),
+    prefix,
+  );
+  expect(sent[0]).toMatchObject({ edits: { link: "ext:ucam:u1" } });
 });
 
 test("Corregir: task or event is the collection's group, the day and hours are its own rows and move with it (task 47)", async ({

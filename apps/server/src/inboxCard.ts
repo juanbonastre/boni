@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { calibrate, historyConfidence, type Json, levelsOf, resolve } from "@boni/agent";
+import { likeTitle } from "@boni/calendar";
 import { branch, rolesOf, type Schema, type TypeDef } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { decisionHistory, wouldAccept } from "./autoAccept.ts";
 import { calendarDefs, taskDoneField } from "./calendarStore.ts";
+import type { ExternalItem } from "./externalItems.ts";
 import { mailOfRun } from "./mailReview.ts";
 
 /**
@@ -61,6 +63,22 @@ export interface InboxCard {
   suggestedTime: SuggestedTime | null;
   /** What an earlier proposal of the same thread of mail said, when this one changed its day or hours (task 46). */
   before: { day: string | null; start: string | null; end: string | null } | null;
+  /**
+   * What the calendar says of a proposal to create (task 51, phase A; code, never a model): an entry that is the
+   * same thing (a like title, and the same moment when both have one), from his own calendars or an external one
+   * (`external`: the event's id, so accepting links the record to it instead of making a second one), and up to
+   * three others it overlaps. Null when the proposal has no day or no title.
+   */
+  calendar: {
+    already: {
+      title: string;
+      start: string | null;
+      end: string | null;
+      calendar: string | null;
+      external: string | null;
+    } | null;
+    overlaps: Item[];
+  } | null;
 }
 export interface SuggestedTime {
   start: string;
@@ -237,6 +255,44 @@ function fieldOfProp(def: TypeDef, columns: { id: string; name: string }[], prop
 
 type Item = { title: string; start: string | null; end: string | null };
 
+/** An item's span in minutes of its day: an hour when it has no end. */
+const spanOf = (i: Item): [number, number] => {
+  const s = minutesOf(i.start as string);
+  return [s, Math.max(i.end ? minutesOf(i.end) : s + SLOT, s + 1)];
+};
+const overlapsHm = (a: Item, b: Item): boolean => {
+  const [as, ae] = spanOf(a);
+  const [bs, be] = spanOf(b);
+  return as < be && bs < ae;
+};
+/**
+ * The day's entry that is the same thing as a proposal (a like title; the same moment when both have one) and the
+ * others it overlaps (task 51, phase A). Own records and external events alike; the external ones say which.
+ */
+export function crossCalendar(
+  p: Item,
+  items: readonly (Item & { external?: string; calendar?: string })[],
+): NonNullable<InboxCard["calendar"]> {
+  const already =
+    items.find((i) => likeTitle(i.title, p.title) && (!p.start || !i.start || overlapsHm(p, i))) ??
+    null;
+  const overlaps = p.start
+    ? items.filter((i) => i !== already && !!i.start && overlapsHm(p, i)).slice(0, 3)
+    : [];
+  return {
+    already: already
+      ? {
+          title: already.title,
+          start: already.start,
+          end: already.end,
+          calendar: already.calendar ?? null,
+          external: already.external ?? null,
+        }
+      : null,
+    overlaps: overlaps.map(({ title, start, end }) => ({ title, start, end })),
+  };
+}
+
 /** How an item is read from a record of a calendar collection: its day, its times and its title. */
 interface ItemSpec {
   date: string;
@@ -377,15 +433,29 @@ function calendarByDay(store: UserStore): Map<string, Item[]> {
  */
 export interface InboxContext {
   calendar: () => Map<string, Item[]>;
+  /** A day's entries from the account's external calendars (externalItems.ts; task 51), once per day. */
+  external: (day: string) => ExternalItem[];
   accepted: () => Map<string, number>;
   /** Juan's decisions on proposals like each one, oldest first (autoAccept.ts). */
   history: () => Map<string, boolean[]>;
 }
-export function inboxContext(store: UserStore): InboxContext {
+export function inboxContext(
+  store: UserStore,
+  o: { external?: (day: string) => ExternalItem[] } = {},
+): InboxContext {
   let calendar: Map<string, Item[]> | null = null;
   let accepted: Map<string, number> | null = null;
   let history: Map<string, boolean[]> | null = null;
+  const externalByDay = new Map<string, ExternalItem[]>();
   return {
+    external: (day) => {
+      let items = externalByDay.get(day);
+      if (!items) {
+        items = o.external?.(day) ?? [];
+        externalByDay.set(day, items);
+      }
+      return items;
+    },
     history: () => {
       if (!history) history = decisionHistory(store);
       return history;
@@ -455,11 +525,19 @@ export function inboxCard(
         row(`values.${def?.fields.find((f) => f.id === def.titleField)?.key ?? ""}`)?.value,
     ) || null;
   const kind: InboxCard["kind"] = times.length ? "event" : day ? "task" : "item";
+  // What a day holds: his own records and, with them, the external calendars' events (task 51).
+  const dayItems = (d: string): Item[] => {
+    const own = ctx.calendar().get(d) ?? [];
+    const ext = ctx.external(d);
+    return ext.length
+      ? sortDay([...own, ...ext.map(({ title, start, end }) => ({ title, start, end }))])
+      : own;
+  };
   // A task with a day and no time, in a collection that keeps times: the first free hour, as a decision.
   let suggestedTime: SuggestedTime | null = null;
   const keys = def && action === "create" ? timeKeysOf(store.schema(), def) : null;
   if (kind === "task" && day && keys?.startKey && p.status === "pending") {
-    const slot = freeSlot(ctx.calendar().get(day) ?? []);
+    const slot = freeSlot(dayItems(day));
     if (slot) {
       const outcome = timeDecision(
         store,
@@ -519,12 +597,16 @@ export function inboxCard(
       wouldAccept(key ? (ctx.history().get(key) ?? []) : []),
     mode: complete && familiar >= 2 ? "compact" : "detailed",
     context: day
-      ? [addDays(day, -1), day, addDays(day, 1)].map((d) => ({
-          day: d,
-          items: ctx.calendar().get(d) ?? [],
-        }))
+      ? [addDays(day, -1), day, addDays(day, 1)].map((d) => ({ day: d, items: dayItems(d) }))
       : [],
     suggestedTime,
     before: p.before ? { day: p.before.day, start: p.before.start, end: p.before.end } : null,
+    calendar:
+      action === "create" && day && title
+        ? crossCalendar({ title, start: times[0] ?? null, end: times[1] ?? null }, [
+            ...(ctx.calendar().get(day) ?? []),
+            ...ctx.external(day),
+          ])
+        : null,
   };
 }

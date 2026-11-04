@@ -26,6 +26,7 @@ trabajar en Boni sin que nadie mantenga a mano listas que se quedan viejas. Las 
 | Lo personal de operaciones (NAS, ssh, despliegue) | Boni (el repo es público) | Fijo; el repo solo dice dónde preguntarlo |
 | Estructura de los datos: colecciones, qué va en cada una, cuántas, lo que ve la IA | El MCP de Boni, en cada llamada | Calculado; la descripción de cada colección sustituye a los README |
 | Qué sabe hacer el MCP | Su lista de herramientas, generada desde el código | Calculado |
+| Lo que el calendario dice de una propuesta de la Bandeja (ya está, se solapa; tarea 51) | Calculado al enseñar la tarjeta, por día, sobre las colecciones con calendario y los calendarios externos de la cuenta (`inboxCard.ts`, `externalItems.ts`); nada se escribe hasta aceptar | Calculado; el lector no lo ve (R1) |
 | Estado y Cola del desarrollo | Registros de una colección de Boni | Se sustituyen, no se acumulan |
 | Historia | git y el registro de operaciones de Boni | Solo se consulta |
 

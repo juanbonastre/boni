@@ -811,6 +811,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       };
       const answer = (method: string, path: string, body?: unknown): [number, string] | null => {
         const p = path.split("?")[0]!;
+        // What a request carried, for tests that check it (`window.__bodies`: "METHOD path {json}").
+        if (body !== undefined) record("__bodies", `${method} ${p} ${JSON.stringify(body)}`);
         const tree = /^api\/data\/tree(?:\?type=([^&]+))?$/.exec(path);
         if (tree && method === "GET")
           return treeAnswer(tree[1] ? decodeURIComponent(tree[1]) : null);

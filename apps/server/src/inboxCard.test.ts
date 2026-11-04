@@ -3,7 +3,14 @@ import { openUserStore, type ProposalRow, type UserStore } from "@boni/store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setSplit } from "./calendarStore.ts";
 import { ghostRows, listRows } from "./data.ts";
-import { freeSlot, inboxCard, judgeTime, TIME_AREA, timeOnAccept } from "./inboxCard.ts";
+import {
+  freeSlot,
+  inboxCard,
+  inboxContext,
+  judgeTime,
+  TIME_AREA,
+  timeOnAccept,
+} from "./inboxCard.ts";
 import { seed } from "./seed.test-util.ts";
 
 /** An invented calendar (never real notes) and mail, as the inbox meets them. */
@@ -61,6 +68,42 @@ function anotherProposal(store: UserStore, id: string, run: string, sender: stri
     sources: [`mail:${sender}`],
     created: 3,
   });
+}
+
+/** A proposal to create a record of Docencia with the given title, day and hours (invented), in a run of its own. */
+function proposalAt(
+  store: UserStore,
+  id: string,
+  o: { title: string; day?: string; start?: string; end?: string },
+): ProposalRow {
+  const l = label("user", "personal", []);
+  store.journal.startRun({
+    id: `run-${id}`,
+    turn: null,
+    origin: "background",
+    device: null,
+    started: 1,
+  });
+  store.journal.addProposal({
+    id,
+    run: `run-${id}`,
+    tool: "entities.create",
+    args: { values: {}, origins: [], why: { t: "v", value: "x", label: l, derived: false } },
+    view: {
+      tool: "entities.create",
+      title: "Crear",
+      rows: [
+        { arg: "type", role: "type", value: "docencia", detail: "Docencia" },
+        { arg: "values.title", value: o.title },
+        ...(o.day ? [{ arg: "values.date", value: o.day }] : []),
+        ...(o.start ? [{ arg: "values.startTime", value: o.start }] : []),
+        ...(o.end ? [{ arg: "values.endTime", value: o.end }] : []),
+      ],
+    },
+    sources: ["mail:alguien@example.com"],
+    created: 3,
+  });
+  return store.journal.proposal(id) as ProposalRow;
 }
 
 /** A mail and the proposal its background run made, as mail.ts leaves them. */
@@ -164,6 +207,83 @@ describe("the inbox's card for a proposal", () => {
       ["2026-10-29", ["Tutoría"]],
       ["2026-10-30", []],
     ]);
+  });
+
+  it("says what the calendar already has of a proposal, own or external, and what it overlaps (task 51)", () => {
+    const store = env();
+    const ucam = {
+      title: "Clase IPM",
+      start: "17:00",
+      end: "18:00",
+      external: "ext:ucam:u1",
+      calendar: "UCAM",
+    };
+    const ctx = () =>
+      inboxContext(store, {
+        external: (day) =>
+          day === "2026-10-28"
+            ? [ucam]
+            : day === "2026-10-30"
+              ? [{ ...ucam, title: "Claustro", start: "09:00", end: "10:00" }]
+              : [],
+      });
+    const card = (id: string, o: Parameters<typeof proposalAt>[2]) =>
+      inboxCard(store, proposalAt(store, id, o), {}, ctx());
+    // The same thing as his own record (a like title, the same moment): said, with nothing to link.
+    expect(
+      card("a", {
+        title: "Clase de ejemplo (con nota)",
+        day: "2026-10-28",
+        start: "10:30",
+        end: "11:30",
+      }).calendar,
+    ).toEqual({
+      already: {
+        title: "Clase de ejemplo",
+        start: "10:00",
+        end: null,
+        calendar: null,
+        external: null,
+      },
+      overlaps: [],
+    });
+    // Another thing at the same time: an overlap, not the same.
+    expect(
+      card("b", { title: "Reunión", day: "2026-10-28", start: "10:00", end: "11:00" }).calendar,
+    ).toEqual({
+      already: null,
+      overlaps: [{ title: "Clase de ejemplo", start: "10:00", end: null }],
+    });
+    // The same thing as an external calendar's event: its id, so «Enlazar» can make the record linked to it.
+    const c = card("c", { title: "Clase IPM 8", day: "2026-10-28", start: "17:00", end: "18:00" });
+    expect(c.calendar).toEqual({
+      already: {
+        title: "Clase IPM",
+        start: "17:00",
+        end: "18:00",
+        calendar: "UCAM",
+        external: "ext:ucam:u1",
+      },
+      overlaps: [],
+    });
+    // The external events are among the day's items too, as items only.
+    expect(c.context.find((d) => d.day === "2026-10-28")?.items).toEqual([
+      { title: "Clase de ejemplo", start: "10:00", end: null },
+      { title: "Clase IPM", start: "17:00", end: "18:00" },
+    ]);
+    // A task without a time: the same title that day is enough; and its free hour skips the external event.
+    expect(card("d", { title: "Tutoría", day: "2026-10-29" }).calendar?.already?.title).toBe(
+      "Tutoría",
+    );
+    store.applySchema(
+      { op: "set_roles", type: "t_docencia", roles: { date: "f_date", time: "f_starttime" } },
+      { actor: "user" },
+    );
+    expect(card("e", { title: "Preparar clase", day: "2026-10-30" }).suggestedTime?.start).toBe(
+      "10:00",
+    );
+    // Without a day there is nothing to cross.
+    expect(card("f", { title: "Algo" }).calendar).toBeNull();
   });
 
   it("a split calendar's day holds each record once, its branch's too, and is kept while nothing changes (task 43)", () => {

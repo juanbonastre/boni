@@ -4716,6 +4716,10 @@ body:has(.toast) .db-selinfo {
   border-radius: var(--radius);
 }
 /* The time Boni suggests for a task, on the card's line: one tap takes it. */
+/* What the calendar already has of a proposal (task 51): said in the text's colour, where the rest of the line is muted. */
+.inbox-already {
+  color: var(--text);
+}
 .inbox-time-ask {
   margin-left: 6px;
 }

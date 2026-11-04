@@ -98,6 +98,18 @@ export function acceptEdits(
   return out;
 }
 
+/**
+ * The external calendar's event a proposal is accepted linked to (task 51: «Enlazar» on a card the calendar already
+ * has): its id as the calendar app writes it, or an error when the request carries something else.
+ */
+export function linkOf(req: unknown): { id: string | null } | { error: string } {
+  const v = req && typeof req === "object" ? (req as { link?: unknown }).link : undefined;
+  if (v === undefined || v === null) return { id: null };
+  if (typeof v !== "string" || !/^ext:[^:\s]{1,80}:[^\s]{1,300}$/.test(v))
+    return { error: "bad-link" };
+  return { id: v };
+}
+
 const TEXT = 2000;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it refuses
 const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;

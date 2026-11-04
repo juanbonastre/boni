@@ -395,17 +395,26 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
     b && (b.day || b.start)
       ? `${b.day ? fmt.long(b.day) : ""}${b.start ? `${b.day ? ", " : ""}${b.start}${b.end ? `–${b.end}` : ""}` : ""}`
       : null;
+  // What the calendar already has of it (task 51): said on the line; an external event's id makes «Aceptar»
+  // «Enlazar», and the record is made linked to it (task 50) instead of a second one.
+  const already = alreadyText(c);
+  const overlaps = c?.calendar?.overlaps.length
+    ? c.calendar.overlaps.map((o) => o.title).join(", ")
+    : null;
+  const link = c?.calendar?.already?.external ?? null;
   const edits = () => {
     const e = fix.edits();
-    if (!taken) return e;
-    return {
-      ...(e ?? {}),
-      values: {
-        ...(e?.values ?? {}),
-        [taken.startKey]: taken.start,
-        ...(taken.endKey && taken.end ? { [taken.endKey]: taken.end } : {}),
-      },
-    };
+    const timed = taken
+      ? {
+          ...(e ?? {}),
+          values: {
+            ...(e?.values ?? {}),
+            [taken.startKey]: taken.start,
+            ...(taken.endKey && taken.end ? { [taken.endKey]: taken.end } : {}),
+          },
+        }
+      : e;
+    return link ? { ...(timed ?? {}), link } : timed;
   };
   const body = p.view?.rows.find((r) => r.arg === "values.body" || r.arg.endsWith(".body"));
   const rest: ConfirmView | null = p.view
@@ -426,6 +435,15 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
           {when && <span className="muted"> · {when}</span>}
           {before && (
             <span className="muted inbox-before"> · {t("inbox.before", { when: before })}</span>
+          )}
+          {already && (
+            <span className="inbox-already"> · {t("inbox.already", { what: already })}</span>
+          )}
+          {overlaps && (
+            <span className="muted inbox-overlap">
+              {" "}
+              · {t("inbox.overlaps", { title: overlaps })}
+            </span>
           )}
           {ask && !takeTime && (
             <button
@@ -523,6 +541,7 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
         <DecideButtons
           id={p.id}
           accept={() => void acceptProposal(p.id, edits())}
+          {...(link ? { acceptLabel: t("inbox.link") } : {})}
           {...(c?.canMarkDone
             ? { done: () => void acceptProposal(p.id, edits(), { done: true }) }
             : {})}
@@ -677,14 +696,24 @@ function WouldAccept() {
  * 2026-10-23), both stay off meanwhile, and other cards can be decided. A failure says why under them; one that
  * can no longer be decided (stale, already decided) can be taken out of the list.
  */
+/** «Ya en el calendario: Clase IPM, 17:00–18:00»: the entry the calendar already has of a proposal (task 51). */
+function alreadyText(c: InboxCard | null): string | null {
+  const a = c?.calendar?.already;
+  if (!a) return null;
+  return `${a.title}${a.start ? `, ${a.start}${a.end ? `–${a.end}` : ""}` : ""}`;
+}
+
 function DecideButtons({
   id,
   accept,
+  acceptLabel,
   done,
   reject,
 }: {
   id: string;
   accept: () => void;
+  /** «Enlazar» (task 51) where accepting links the record to an event the calendar already has. */
+  acceptLabel?: string;
   /** "Ya lo hice": only where the proposal can be made already done. */
   done?: () => void;
   reject: () => void;
@@ -702,7 +731,7 @@ function DecideButtons({
         aria-label={busy === "accept" ? t("inbox.accepting") : undefined}
         onClick={accept}
       >
-        <span className="decide-label">{t("inbox.accept")}</span>
+        <span className="decide-label">{acceptLabel ?? t("inbox.accept")}</span>
         {busy === "accept" && <span className="spinner" aria-hidden="true" />}
       </button>
       {done && (
@@ -882,10 +911,13 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
         rows: p.view.rows.filter((r) => r !== body),
       }
     : null;
+  const already = alreadyText(c);
+  const link = c?.calendar?.already?.external ?? null;
   const decide = async (how: "accept" | "done" | "reject") => {
+    const e = fix.edits();
     await (how === "reject"
       ? rejectProposal(id)
-      : acceptProposal(id, fix.edits(), { done: how === "done" }));
+      : acceptProposal(id, link ? { ...(e ?? {}), link } : e, { done: how === "done" }));
     const s = useStore.getState();
     // A failed decision stays on the page, saying why under its buttons.
     if (s.decideErrors[id]) return;
@@ -904,6 +936,7 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
           <h2 className="pp-title">{c?.title ?? headline(t, p, c)}</h2>
           {fix.button}
         </div>
+        {already && <p className="inbox-already">{t("inbox.already", { what: already })}</p>}
       </header>
       {rows && rows.rows.length > 0 && (
         <section className="pp-section">
@@ -951,6 +984,7 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
         <DecideButtons
           id={id}
           accept={() => void decide("accept")}
+          {...(link ? { acceptLabel: t("inbox.link") } : {})}
           {...(c?.canMarkDone ? { done: () => void decide("done") } : {})}
           reject={() => void decide("reject")}
         />
