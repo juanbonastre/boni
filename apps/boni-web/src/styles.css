@@ -4796,6 +4796,9 @@ body:has(.toast) .db-selinfo {
 .inbox-already {
   color: var(--text);
 }
+.inbox-same {
+  color: var(--text);
+}
 .inbox-time-ask {
   margin-left: 6px;
 }

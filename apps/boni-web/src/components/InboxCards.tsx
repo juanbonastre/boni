@@ -399,6 +399,7 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
   // What the calendar already has of it (task 51): said on the line; an external event's id makes «Aceptar»
   // «Enlazar», and the record is made linked to it (task 50) instead of a second one.
   const already = alreadyText(c);
+  const same = sameOf(c);
   const overlaps = c?.calendar?.overlaps.length
     ? c.calendar.overlaps.map((o) => o.title).join(", ")
     : null;
@@ -440,6 +441,7 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
           {already && (
             <span className="inbox-already"> · {t("inbox.already", { what: already })}</span>
           )}
+          {same && <span className="inbox-same"> · {t("inbox.same", { what: same.text })}</span>}
           {overlaps && (
             <span className="muted inbox-overlap">
               {" "}
@@ -543,6 +545,19 @@ export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean 
           id={p.id}
           accept={() => void acceptProposal(p.id, edits())}
           {...(link ? { acceptLabel: t("inbox.link") } : {})}
+          {...(same
+            ? {
+                same: {
+                  label: t("inbox.sameYes"),
+                  run: () =>
+                    void acceptProposal(
+                      p.id,
+                      { ...(edits() ?? {}), ...same.as },
+                      { same: same.title },
+                    ),
+                },
+              }
+            : {})}
           {...(c?.canMarkDone
             ? { done: () => void acceptProposal(p.id, edits(), { done: true }) }
             : {})}
@@ -697,17 +712,35 @@ function WouldAccept() {
  * 2026-10-23), both stay off meanwhile, and other cards can be decided. A failure says why under them; one that
  * can no longer be decided (stale, already decided) can be taken out of the list.
  */
+/** «Clase IPM, 17:00–18:00»: an entry of the calendar as a card names it (tasks 51 and 58). */
+const entryText = (a: { title: string; start: string | null; end: string | null }): string =>
+  `${a.title}${a.start ? `, ${a.start}${a.end ? `–${a.end}` : ""}` : ""}`;
+
 /** «Ya en el calendario: Clase IPM, 17:00–18:00»: the entry the calendar already has of a proposal (task 51). */
 function alreadyText(c: InboxCard | null): string | null {
   const a = c?.calendar?.already;
-  if (!a) return null;
-  return `${a.title}${a.start ? `, ${a.start}${a.end ? `–${a.end}` : ""}` : ""}`;
+  return a ? entryText(a) : null;
+}
+
+/**
+ * The entry a proposal may be («¿Es «Quedada cafe, 16:00–17:00»?», task 58) and how «Es el mismo» accepts it: linked
+ * to the external event, or into the record (what the record lacks, the server decides).
+ */
+function sameOf(
+  c: InboxCard | null,
+): { title: string; text: string; as: { link: string } | { into: string } } | null {
+  const s = c?.calendar?.same;
+  if (!s || c?.calendar?.already) return null;
+  if (s.external) return { title: s.title, text: entryText(s), as: { link: s.external } };
+  if (s.id) return { title: s.title, text: entryText(s), as: { into: s.id } };
+  return null;
 }
 
 function DecideButtons({
   id,
   accept,
   acceptLabel,
+  same,
   done,
   reject,
 }: {
@@ -715,6 +748,8 @@ function DecideButtons({
   accept: () => void;
   /** «Enlazar» (task 51) where accepting links the record to an event the calendar already has. */
   acceptLabel?: string;
+  /** «Es el mismo» (task 58): the proposal goes into the entry the calendar already has at that moment. */
+  same?: { label: string; run: () => void };
   /** "Ya lo hice": only where the proposal can be made already done. */
   done?: () => void;
   reject: () => void;
@@ -724,6 +759,16 @@ function DecideButtons({
   const failed = useStore((s) => s.decideErrors[id]);
   return (
     <>
+      {same && (
+        <button
+          type="button"
+          className="btn decide-btn"
+          disabled={!!busy || !!failed?.gone}
+          onClick={same.run}
+        >
+          <span className="decide-label">{same.label}</span>
+        </button>
+      )}
       <button
         type="button"
         className={`btn primary decide-btn${busy === "accept" ? " busy" : ""}`}
@@ -913,12 +958,15 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
       }
     : null;
   const already = alreadyText(c);
+  const same = sameOf(c);
   const link = c?.calendar?.already?.external ?? null;
-  const decide = async (how: "accept" | "done" | "reject") => {
+  const decide = async (how: "accept" | "done" | "reject" | "same") => {
     const e = fix.edits();
     await (how === "reject"
       ? rejectProposal(id)
-      : acceptProposal(id, link ? { ...(e ?? {}), link } : e, { done: how === "done" }));
+      : how === "same" && same
+        ? acceptProposal(id, { ...(e ?? {}), ...same.as }, { same: same.title })
+        : acceptProposal(id, link ? { ...(e ?? {}), link } : e, { done: how === "done" }));
     const s = useStore.getState();
     // A failed decision stays on the page, saying why under its buttons.
     if (s.decideErrors[id]) return;
@@ -947,6 +995,7 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
           )}
         </div>
         {already && <p className="inbox-already">{t("inbox.already", { what: already })}</p>}
+        {same && <p className="inbox-same">{t("inbox.same", { what: same.text })}</p>}
       </header>
       {rows && rows.rows.length > 0 && (
         <section className="pp-section">
@@ -995,6 +1044,7 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
           id={id}
           accept={() => void decide("accept")}
           {...(link ? { acceptLabel: t("inbox.link") } : {})}
+          {...(same ? { same: { label: t("inbox.sameYes"), run: () => void decide("same") } } : {})}
           {...(c?.canMarkDone ? { done: () => void decide("done") } : {})}
           reject={() => void decide("reject")}
         />

@@ -611,8 +611,11 @@ contraseña ni un código aquí» under a question.
   earned it the line says the time already; when a reply in the same thread of mail moved it, «Antes: jue, 29
   oct, 12:00» in `--muted` after the day: the earlier card is gone and this one says what it was, task 46; when the
   calendar already has the same thing, «Ya en el calendario: Clase IPM, 17:00–18:00» in the text's colour and, if
-  it is an external calendar's event, the primary button reads «Enlazar» and the record is made linked to it; another
-  entry at the same time is «Se solapa con X» in `--muted`, task 51), where it came
+  it is an external calendar's event, the primary button reads «Enlazar» and the record is made linked to it; an
+  entry at the same moment with another title may be it: «¿Es «Quedada cafe, 16:00–17:00»?» and a button «Es el
+  mismo» before «Aceptar» that puts into that record what the proposal adds (nothing of it overwritten; an external
+  event's: the record linked to it), task 58; another entry at the same time is «Se solapa con X» in `--muted`,
+  task 51), where it came
   from once (the mailbox and the sender, or the note's path; never "Viene de fuera" on every row), its day and times,
   and a mini calendar: the day (detailed) or the day before, the day and the day after (compact), each a short list in
   time order with the proposal drawn with a dashed `--accent` border among what is there. Compact when the source said

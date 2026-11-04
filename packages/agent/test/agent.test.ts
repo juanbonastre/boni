@@ -923,6 +923,54 @@ describe("the agent, with a planner that behaves", () => {
     expect(agent.restoreProposal(second)).toBe("no-such-proposal");
   });
 
+  it("accepted as the same thing as a record («Es el mismo», task 58): no new entry, that record takes the values, undone whole", async () => {
+    env = makeEnv([{ asunto: "Pan integral", de: "alguien@example.com", cuerpo: "x" }]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        {
+          id: "c",
+          op: "call",
+          tool: "entities.create",
+          args: {
+            type: lit("tarea"),
+            values: {
+              fn: "obj",
+              args: [lit("titulo"), ref("$m.items[0].asunto"), lit("fecha"), lit("2026-10-22")],
+            },
+          },
+        },
+      ],
+    };
+    const agent = env.agent(fakePlanner([plan]));
+    const first = (await agent.turn({ text: "mira el correo", origin: PERSONAL }))
+      .proposals[0] as string;
+    const n = env.store.list("t_tarea").length;
+    // The server leaves only what the record lacks (here the title is taken out); the rest goes into the record.
+    const r = await agent.acceptProposal(
+      first,
+      "personal",
+      { values: { titulo: null } },
+      { into: env.ids.tarea1 as string },
+    );
+    expect(r.error).toBeFalsy();
+    expect(env.store.list("t_tarea").length).toBe(n);
+    expect(env.store.get(env.ids.tarea1 as string)?.entity.values).toMatchObject({
+      f_titulo: "Comprar pan",
+      f_fecha: "2026-10-22",
+    });
+    expect(env.store.journal.proposal(first)).toMatchObject({
+      status: "accepted",
+      edits: { into: env.ids.tarea1 },
+    });
+    // Taken back («Deshacer»): the record is as it was.
+    expect(agent.restoreProposal(first, r.run)).toBe("ok");
+    expect(env.store.get(env.ids.tarea1 as string)?.entity.values).toMatchObject({
+      f_fecha: "2026-10-21",
+    });
+  });
+
   it("finds a contact by part of its name, any case and accents", async () => {
     env = makeEnv();
     const planner = fakePlanner([

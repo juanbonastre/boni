@@ -1678,8 +1678,10 @@ export function acceptProposal(
     collection?: string;
     values?: Record<string, DataValue>;
     link?: string;
+    into?: string;
   },
-  opts: { done?: boolean } = {},
+  /** `same`: the title of the entry the proposal went into or got linked to («Es el mismo», task 58). */
+  opts: { done?: boolean; same?: string } = {},
 ) {
   return decide(id, opts.done ? "done" : "accept", async () => {
     const t = get().t;
@@ -1704,9 +1706,15 @@ export function acceptProposal(
         dropProposal(id);
         // A while to take it back (Juan, 2026-11-02): the toast's «Deshacer» undoes what it made and the card returns.
         toast(
-          t(
-            opts.done ? "inbox.acceptedDone" : edits ? "inbox.acceptedCorrected" : "inbox.accepted",
-          ),
+          opts.same
+            ? t("inbox.acceptedSame", { title: opts.same })
+            : t(
+                opts.done
+                  ? "inbox.acceptedDone"
+                  : edits
+                    ? "inbox.acceptedCorrected"
+                    : "inbox.accepted",
+              ),
           { label: t("toast.undo"), run: () => void restoreProposal(id, r.run) },
         );
       }
