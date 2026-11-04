@@ -73,6 +73,16 @@ export const CALENDAR_DEFS = "calendar/defs";
 const KEEP = 500;
 /** The column added the first time an event gets reminders of its own (as the apps' writer did). */
 const EVENT_REMINDERS_COLUMN = { id: "avisos", name: "Avisos", type: "text" as const };
+/**
+ * The column a calendar keeps a record's link to an external calendar's event in (task 50): added to the definition
+ * the first time the user links in that calendar, mapped `external`; the collection gets the field on the first
+ * write, as every column of a definition.
+ */
+export const EVENT_LINK_COLUMN = {
+  id: "evento-externo",
+  name: "Evento externo",
+  type: "text" as const,
+};
 
 /**
  * Which records of a calendar's branch it shows (D-14: a calendar is any collection with a date, split by a field the
@@ -785,6 +795,8 @@ export interface CalendarSource {
     field: string | null,
   ): Promise<"ok" | "no-such-calendar" | "bad-field">;
   setColor(calendarId: string, color: string): Promise<boolean>;
+  /** The column that links a record to an external calendar's event, made and mapped if missing (task 50). */
+  ensureLinkColumn(collectionId: string): Promise<string | null>;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -1367,6 +1379,34 @@ export class StoreCalendar implements CalendarSource {
     );
     this.poll();
     return "ok";
+  }
+
+  /**
+   * The column that links a record of `collectionId`'s calendar to an external calendar's event (task 50): the one
+   * its definition maps as `external`, or «Evento externo» added and mapped now. Null for a calendar this store has
+   * no definition of.
+   */
+  async ensureLinkColumn(collectionId: string): Promise<string | null> {
+    if (!this.writable) throw new Error("This server does not write (BONI_WRITE)");
+    const read = calendarDefs(this.store).find((x) => x.def.id === collectionId);
+    const kept = storedCalendarDefs(this.store);
+    const p = kept.find((x) => x.raw.id === (read?.group?.id ?? read?.def.id));
+    if (!p) return null;
+    const raw: Record<string, unknown> = { ...p.raw };
+    const mapping = { ...((raw.mapping as Record<string, unknown>) ?? {}) };
+    if (typeof mapping.external === "string" && mapping.external) return mapping.external;
+    const columns = Array.isArray(raw.columns) ? [...raw.columns] : [];
+    if (!columns.some((c) => (c as { id?: unknown }).id === EVENT_LINK_COLUMN.id))
+      columns.push(EVENT_LINK_COLUMN);
+    raw.columns = columns;
+    raw.mapping = { ...mapping, external: EVENT_LINK_COLUMN.id };
+    if (!parseCollectionDef(raw).ok) return null;
+    saveCalendarDefs(
+      this.store,
+      kept.map((x) => (x === p ? { ...x, raw } : x)),
+    );
+    this.poll();
+    return EVENT_LINK_COLUMN.id;
   }
 
   async candidates(): Promise<CalendarCandidate[]> {

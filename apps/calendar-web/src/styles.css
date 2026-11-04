@@ -1055,6 +1055,19 @@ select,
 .bar.proposal [data-bar-edge] {
   display: none;
 }
+/* A record linked to an external calendar's event (task 50): its own colour, and the right edge in the colour of
+   the calendar whose time it follows; the month's dot is half and half. Its time is not dragged: no handles. */
+.ev.linked,
+.bar.linked {
+  border-right: 3px solid var(--c2, var(--c));
+}
+.mchip.linked::before {
+  background: linear-gradient(90deg, var(--c) 50%, var(--c2, var(--c)) 50%);
+}
+.ev.linked .ev-resize,
+.bar.linked [data-bar-edge] {
+  display: none;
+}
 .ev.dragging {
   opacity: 0.92;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -1445,6 +1458,70 @@ select,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+/* An external event's link to a record of the user's (task 50): the question when one looks the same, then
+   «Enlazar» (a record near it) and «Crear nota» (a calendar), outside the fields its calendar locks. In the record,
+   the external event it follows and «Quitar enlace»; its time is the external one's, so the when is not editable. */
+.detail-link {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 0 16px 8px;
+}
+/* Their menus open under the row, aligned to its left, so they stay inside the popover whatever button opened them. */
+.detail-link .choice {
+  position: static;
+}
+.detail-link .choice-menu {
+  left: 16px;
+  right: auto;
+  top: 100%;
+  max-width: calc(100% - 32px);
+}
+.detail-link .choice-btn {
+  width: auto;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+}
+.detail-link .choice-btn:hover {
+  background: var(--hover);
+}
+.detail-link-ask {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+.detail-link-ask span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.when-locked {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.linked-row .prop-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.linked-row .linked-what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .link-pill {
   max-width: 100%;

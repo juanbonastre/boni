@@ -372,10 +372,11 @@ export function TimeGrid() {
                   type="button"
                   key={s.id}
                   data-id={s.id}
-                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.id === newId && !ev.title ? "draft" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""}`}
+                  className={`bar ${selectedIds.includes(s.id) ? "selected" : ""} ${s.id === newId && !ev.title ? "draft" : ""} ${s.clippedStart ? "cut-start" : ""} ${s.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""} ${ev.linked ? "linked" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""}`}
                   style={
                     {
                       "--c": cal?.color ?? "#888",
+                      "--c2": ev.linked ? calMap.get(ev.linked.calendarId)?.color : undefined,
                       left: `calc(${s.startDay - renderStart} * var(--colw) + 2px)`,
                       width: `calc(${s.endDay - s.startDay + 1} * var(--colw) - 4px)`,
                       top: `${4 + s.lane * 22}px`,
@@ -586,6 +587,7 @@ const DayColumn = memo(function DayColumn(p: DayColumnProps) {
             cols={l.cols}
             span={l.span}
             color={p.calMap.get(ev.calendarId)?.color ?? "#888"}
+            color2={ev.linked ? p.calMap.get(ev.linked.calendarId)?.color : undefined}
             selected={p.selectedIds.includes(ev.id)}
             dragging={p.dragId === ev.id}
             draft={p.newId === ev.id && !ev.title}
@@ -613,6 +615,8 @@ const EventBlock = memo(function EventBlock(p: {
   cols: number;
   span: number;
   color: string;
+  /** The colour of the external calendar a linked record follows (task 50). */
+  color2?: string;
   selected: boolean;
   dragging: boolean;
   draft: boolean;
@@ -624,6 +628,7 @@ const EventBlock = memo(function EventBlock(p: {
   const minutes = Math.max(seg.end - seg.start, 20);
   const style = {
     "--c": p.color,
+    "--c2": p.color2,
     top: `${(seg.start / 1440) * 100}%`,
     height: `calc(${(minutes / 1440) * 100}% - 2px)`,
     left: `calc(${(p.col / p.cols) * 100}% + 1px)`,
@@ -631,7 +636,7 @@ const EventBlock = memo(function EventBlock(p: {
   } as CSSProperties;
   return (
     <div
-      className={`ev ${p.selected ? "selected" : ""} ${p.dragging ? "dragging" : ""} ${p.draft ? "draft" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${seg.continuesBefore ? "cut-top" : ""} ${seg.continuesAfter ? "cut-bottom" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
+      className={`ev ${p.selected ? "selected" : ""} ${p.dragging ? "dragging" : ""} ${p.draft ? "draft" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${seg.continuesBefore ? "cut-top" : ""} ${seg.continuesAfter ? "cut-bottom" : ""} ${isProposalId(ev.id) ? "proposal" : ""} ${ev.linked ? "linked" : ""}`}
       data-id={ev.id}
       style={style}
     >

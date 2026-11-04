@@ -108,6 +108,8 @@ import { StoreMoney } from "./v1/storeMoney.ts";
  *   POST /api/collections/remove { id } -> {} (with BONI_WRITE): the calendar's definition gone, its records kept
  *   POST /api/collections/split { id, field | null } -> {} (with BONI_WRITE): one calendar per value of the field
  *   POST /api/collections/color { id, color } -> {} (with BONI_WRITE): a calendar's colour, kept in its definition
+ *   POST /api/collections/link-column { collectionId } -> { column } (with BONI_WRITE): the column a record keeps
+ *        its link to an external calendar's event in, made and mapped if missing (task 50)
  *   PUT  /api/collections/reminders { collectionId, reminders?, eventColumn? } -> {} (with BONI_WRITE):
  *        a calendar's reminders, kept in its definition
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
@@ -900,6 +902,14 @@ export function makeApp(opts: ServerOptions): App {
         return r === "ok"
           ? send(res, 200, {})
           : send(res, r === "bad-field" ? 400 : 404, { error: r });
+      }
+      case "POST /api/collections/link-column": {
+        // Task 50: the column a record keeps its link to an external calendar's event in, made and mapped if missing.
+        if (!calendar.writable) return send(res, 403, { error: "read-only" });
+        const b = await bodyOf(req);
+        if (typeof b.collectionId !== "string") return send(res, 400, { error: "bad-request" });
+        const column = await calendar.ensureLinkColumn(b.collectionId);
+        return column ? send(res, 200, { column }) : send(res, 404, { error: "no-such-calendar" });
       }
       case "POST /api/collections/color": {
         if (!calendar.writable) return send(res, 403, { error: "read-only" });

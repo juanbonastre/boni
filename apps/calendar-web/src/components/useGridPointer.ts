@@ -290,7 +290,7 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     const edge = target.closest<HTMLElement>("[data-bar-edge]");
     if (edge?.dataset.barId) {
       const ev = app.getEvent(edge.dataset.barId);
-      if (ev?.when.kind === "allday" && !app.isLocked(ev.id)) {
+      if (ev?.when.kind === "allday" && !app.isTimeLocked(ev.id)) {
         gesture.current = {
           type: "bar-resize",
           id: ev.id,
@@ -307,7 +307,7 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     const evEl = target.closest(".ev, .bar") as HTMLElement | null;
     if (resize) {
       const ev = app.getEvent(resize.dataset.resize ?? "");
-      if (ev && ev.when.kind === "timed" && !app.isLocked(ev.id)) {
+      if (ev && ev.when.kind === "timed" && !app.isTimeLocked(ev.id)) {
         gesture.current = {
           type: "resize",
           id: ev.id,
@@ -384,7 +384,7 @@ export function useGridPointer({ bodyRef, colsRef, index }: Args) {
     if (g.type === "press") {
       if (!moved(g.x, g.y)) return;
       const ev = indexRef.current.byId.get(g.id) ?? app.getEvent(g.id);
-      if (!ev || app.isLocked(ev.id)) {
+      if (!ev || app.isTimeLocked(ev.id)) {
         gesture.current = null;
         return;
       }

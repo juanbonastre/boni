@@ -28,6 +28,7 @@ import {
   inSeries,
   isProposalId,
   type Locale,
+  linkExternals,
   makeModel,
   makeProjector,
   memoryProvider,
@@ -325,6 +326,17 @@ export interface AppState {
   getEvent: (id: string) => CalEvent | null;
   /** True when the event belongs to a read-only calendar (it can be selected but not edited). */
   isLocked: (id: string) => boolean;
+  /** True when the event's time cannot change here: locked, or a record linked to an external event (task 50). */
+  isTimeLocked: (id: string) => boolean;
+  /**
+   * A record of the user's and an external calendar's event made one (task 50; Juan, 2026-11-03: «estos dos ítems
+   * son lo mismo»): the record keeps the external event's id (its calendar gets the column the first time), shows
+   * at the external event's time and the external event goes. `createLinked` makes the record from the external
+   * event in a calendar of the user's; `unlinkEvent` lets both be two again.
+   */
+  linkEvents: (id: string, externalId: string) => Promise<void>;
+  createLinked: (externalId: string, calendarId: string) => Promise<string | null>;
+  unlinkEvent: (id: string) => void;
   updateEvent: (id: string, patch: Partial<CalEvent>, scope?: Scope) => void;
   updateEvents: (ids: string[], patch: Partial<CalEvent>, scope?: Scope) => void;
   /** Like updateEvents, but asks "this / following / all" first when a recurring event is involved. */
@@ -432,11 +444,15 @@ function withExternal(
       ? own
       : { ...own, accounts, calendars: cals, events: ownEvents };
   }
+  // A record linked to an external event shows at its time and the external event goes (task 50, `link.ts`).
+  const events = extEvents.length
+    ? [...linkExternals([...ownEvents, ...extEvents], new Set(externals.map((c) => c.id)))]
+    : ownEvents;
   return {
     ...own,
     accounts: [...accounts, { id: EXTERNAL_ACCOUNT, name: "", email: "" }],
     calendars: [...cals, ...externals.map((c) => externalDef(c, !hidden(c.id)))],
-    events: extEvents.length ? [...ownEvents, ...extEvents] : ownEvents,
+    events,
   };
 }
 
@@ -543,6 +559,8 @@ function stopFollowing() {
 const serverKey = (c: { url: string; user: string }) => `${c.url}|${c.user}`;
 /** The column an event's own reminders go to, added to its calendar the first time one has them. */
 const EVENT_REMINDERS_COLUMN = { id: "avisos", name: "Avisos" };
+/** The column that links a record to an external calendar's event (task 50), added the first time one is linked. */
+const EVENT_LINK_COLUMN = { id: "evento-externo", name: "Evento externo" };
 
 /** How long a click waits before showing an event's detail where a double click opens its note (ms). */
 export const DOUBLE_CLICK_MS = 300;
@@ -746,6 +764,38 @@ export const useApp = create<AppState>((set, get) => {
   };
 
   /** Writes a calendar's reminders where its definition lives: the server. */
+  /**
+   * The calendar's mapping has a column for the link to an external event (task 50): the one it had, or a text
+   * column added to its definition here and, on the server, kept there. False when it could not be.
+   */
+  const ensureLinkColumn = async (calendarId: string): Promise<boolean> => {
+    const s = get();
+    const view = s.views.find((v) => v.id === calendarId);
+    if (!view || view.readOnly) return false;
+    if (view.mapping.external) return true;
+    const col = EVENT_LINK_COLUMN;
+    setDefinitions({
+      collections: s.collections.map((c) =>
+        c.id === view.collectionId && !c.columns.some((x) => x.id === col.id)
+          ? { ...c, columns: [...c.columns, { id: col.id, name: col.name, type: "text" as const }] }
+          : c,
+      ),
+      views: s.views.map((v) =>
+        v.id === view.id ? { ...v, mapping: { ...v.mapping, external: col.id } } : v,
+      ),
+    });
+    if (s.source !== "server" || !server.remote) return true;
+    try {
+      const r = await server.remote.ensureLinkColumn(view.collectionId);
+      if (r.column) return true;
+      writeFailed(new Error("no link column"));
+      return false;
+    } catch (e) {
+      writeFailed(e);
+      return false;
+    }
+  };
+
   const persistReminders = async (
     collectionId: string,
     edit: { reminders?: { timed: string; allDay: string } | null; eventColumn?: boolean },
@@ -1217,11 +1267,37 @@ export const useApp = create<AppState>((set, get) => {
       return !!ev && get().data.calendars.find((c) => c.id === ev.calendarId)?.readOnly === true;
     },
 
+    isTimeLocked: (id) => get().isLocked(id) || !!get().getEvent(id)?.linked,
+
+    linkEvents: async (id, externalId) => {
+      const ev = get().getEvent(id);
+      if (!ev || get().isLocked(id) || !(await ensureLinkColumn(ev.calendarId))) return;
+      get().updateEvents([id], { external: externalId }, "this");
+    },
+
+    createLinked: async (externalId, calendarId) => {
+      const ext = get().getEvent(externalId);
+      if (!ext || !(await ensureLinkColumn(calendarId))) return null;
+      return get().addEvent({
+        calendarId,
+        title: ext.title,
+        when: ext.when,
+        location: ext.location,
+        description: ext.description,
+        external: ext.id,
+      });
+    },
+
+    unlinkEvent: (id) => get().updateEvents([id], { external: null }, "this"),
+
     updateEvent: (id, patch, scope = "all") => get().updateEvents([id], patch, scope),
 
     updateEvents: (all, patch, scope = "all") => {
-      // Read-only calendars (subscriptions) are never edited, whatever the selection holds.
-      const ids = all.filter((id) => !get().isLocked(id));
+      // Read-only calendars (subscriptions) are never edited, whatever the selection holds; nor is the time of a
+      // record linked to an external event (its calendar rules it).
+      const ids = all.filter(
+        (id) => !get().isLocked(id) && !("when" in patch && get().isTimeLocked(id)),
+      );
       if (ids.length === 0) return;
       const now = nowMs();
       commit(

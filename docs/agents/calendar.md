@@ -38,6 +38,15 @@ tests guard most of them.
 - **External calendars** (`src/external.ts`): read-only iCal subscriptions. The address is a secret (device storage,
   or the account's, encrypted); the last copy is in IndexedDB. They are merged into `data` (`withExternal`) but are
   never rows: `reconcileRows` never sees them (`isExternalEvent`), so nothing of them reaches a provider.
+- **A record linked to an external event** (task 50, `link.ts`): a text column mapped as `external` holds the
+  external event's id (`ext:<calendar>:<uid>`, `~<day>` for one occurrence). `withExternal` applies `linkExternals`:
+  the record shows at the external event's time and carries it as `linked`, the external event is absorbed (an
+  occurrence becomes an exception of its master) and nothing is written; a link whose event is gone from a calendar
+  that is here is `linkLost`, one whose calendar is not here is left alone. `isTimeLocked` keeps the grid from moving
+  a linked record and the detail from editing its when. An external event's detail offers «¿Es «X»?» (`suggestLink`:
+  the same moment and a like title, code only, never linked alone), «Enlazar» (`candidatesFor`, the records near it)
+  and «Crear nota»; the record's detail says «De {calendario}» and offers «Quitar enlace». The column is added the
+  first time (`ensureLinkColumn` in the store; `POST /api/collections/link-column` on the server).
 - **No vault mode** (2026-10-28): the calendar is a server's (or the invented sample). The desktop shell only says
   where an event's note opens (`window.boniNotes`: Boni or its peek); Android has no such bridge.
 

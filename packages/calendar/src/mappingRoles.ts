@@ -7,13 +7,21 @@ import {
 } from "./collections.ts";
 
 /** The calendar roles a user can assign to a column from the UI (title, place and notes stay fixed). */
-export type MappingRole = "date" | "startTime" | "endTime" | "endDate" | "start" | "end" | "task";
+export type MappingRole =
+  | "date"
+  | "startTime"
+  | "endTime"
+  | "endDate"
+  | "start"
+  | "end"
+  | "task"
+  | "external";
 
 /** Roles that exist for this mapping, in display order; the first one is always required. */
 export function rolesOf(m: CalendarMapping): MappingRole[] {
   return m.when.kind === "split"
-    ? ["date", "startTime", "endTime", "endDate", "task"]
-    : ["start", "end", "task"];
+    ? ["date", "startTime", "endTime", "endDate", "task", "external"]
+    : ["start", "end", "task", "external"];
 }
 
 export const isRequired = (role: MappingRole): boolean => role === "date" || role === "start";
@@ -26,11 +34,13 @@ const ACCEPTS: Record<MappingRole, ColumnType[]> = {
   start: ["date", "datetime"],
   end: ["date", "datetime"],
   task: ["checkbox", "select"],
+  external: ["text"],
 };
 
 /** The column currently playing `role`, if any. */
 export function columnOfRole(m: CalendarMapping, role: MappingRole): string | undefined {
   if (role === "task") return m.task?.column;
+  if (role === "external") return m.external;
   const w = m.when;
   if (w.kind === "split") {
     return role === "date"
@@ -73,6 +83,14 @@ export function assignRole(
   columnId: string | undefined,
 ): CalendarMapping {
   if (columnId === undefined && isRequired(role)) return m;
+  // The column that links a record to an external calendar's event (task 50).
+  if (role === "external") {
+    if (columnId === undefined) {
+      const { external: _x, ...rest } = m;
+      return rest;
+    }
+    return { ...m, external: columnId };
+  }
   if (role === "task") {
     if (columnId === undefined) {
       const { task: _t, ...rest } = m;

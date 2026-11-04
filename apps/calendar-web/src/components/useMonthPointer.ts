@@ -93,7 +93,7 @@ export function useMonthPointer() {
     const edge = target.closest<HTMLElement>("[data-bar-edge]");
     if (edge?.dataset.barId) {
       const ev = app.getEvent(edge.dataset.barId);
-      if (ev?.when.kind === "allday" && !app.isLocked(ev.id)) {
+      if (ev?.when.kind === "allday" && !app.isTimeLocked(ev.id)) {
         gesture.current = {
           type: "resize",
           id: ev.id,
@@ -133,7 +133,7 @@ export function useMonthPointer() {
     if (g.type === "press") {
       if (!moved(g.x, g.y)) return;
       const ev = app.getEvent(g.id);
-      if (!ev || app.isLocked(ev.id)) {
+      if (!ev || app.isTimeLocked(ev.id)) {
         gesture.current = null;
         return;
       }

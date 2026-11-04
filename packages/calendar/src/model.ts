@@ -104,6 +104,21 @@ export interface CalEvent {
   series?: { id: string; rule: Recurrence | null };
   /** This event's own reminders (`[]`: none); missing or null: its calendar's (reminders.ts). */
   reminders?: Reminder[] | null;
+  /** The external calendar's event this record is linked to (its id), from the column mapped `external` (task 50). */
+  external?: string | null;
+  /** Set by the merged view when the external event is there: the record shows at its time, and this says whose. */
+  linked?: LinkedExternal | null;
+  /** The external calendar is here but no longer has the event the record is linked to. */
+  linkLost?: boolean;
+}
+
+/** The external event a record is linked to, as the merged view found it (task 50). */
+export interface LinkedExternal {
+  id: string;
+  calendarId: string;
+  title: string;
+  location: string;
+  description: string;
 }
 
 export interface CalendarData {
