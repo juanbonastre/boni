@@ -70,15 +70,20 @@ export interface InboxCard {
    * three others it overlaps. Null when the proposal has no day or no title.
    */
   calendar: {
-    already: {
-      title: string;
-      start: string | null;
-      end: string | null;
-      calendar: string | null;
-      external: string | null;
-    } | null;
+    already: CalendarEntry | null;
+    /** An entry at the same moment that may be it (task 58): the card asks, «Es el mismo» puts the proposal into it. */
+    same: CalendarEntry | null;
     overlaps: Item[];
   } | null;
+}
+/** An entry of the calendar as a card names it: a record's (`id`) or an external calendar's event (`external`). */
+export interface CalendarEntry {
+  id: string | null;
+  title: string;
+  start: string | null;
+  end: string | null;
+  calendar: string | null;
+  external: string | null;
 }
 export interface SuggestedTime {
   start: string;
@@ -253,7 +258,15 @@ function fieldOfProp(def: TypeDef, columns: { id: string; name: string }[], prop
   return def.fields.find((f) => (columns.find((c) => c.name === f.name)?.id ?? f.name) === prop);
 }
 
-type Item = { title: string; start: string | null; end: string | null };
+type Item = {
+  title: string;
+  start: string | null;
+  end: string | null;
+  /** A record's id (an external calendar's event has `external` instead). */
+  id?: string;
+};
+/** An entry at the same time as a proposal might be: half an hour away at most (task 58). */
+const SAME_GAP = 30;
 
 /** An item's span in minutes of its day: an hour when it has no end. */
 const spanOf = (i: Item): [number, number] => {
@@ -276,19 +289,31 @@ export function crossCalendar(
   const already =
     items.find((i) => likeTitle(i.title, p.title) && (!p.start || !i.start || overlapsHm(p, i))) ??
     null;
+  // Not alike by title but at the same moment (half an hour away at most, the closest): it may be the same thing,
+  // and the card asks (task 58; Juan, 2026-11-04: a mail for coffee at 16:00 next to «Quedada cafe» at 16:00 only
+  // said they overlapped).
+  const start = p.start ? spanOf(p)[0] : null;
+  const gap = (i: Item) => (start === null || !i.start ? Infinity : Math.abs(spanOf(i)[0] - start));
+  const same =
+    already || start === null
+      ? null
+      : (items
+          .filter((i) => !!i.start && overlapsHm(p, i) && gap(i) <= SAME_GAP)
+          .sort((a, b) => gap(a) - gap(b))[0] ?? null);
   const overlaps = p.start
-    ? items.filter((i) => i !== already && !!i.start && overlapsHm(p, i)).slice(0, 3)
+    ? items.filter((i) => i !== already && i !== same && !!i.start && overlapsHm(p, i)).slice(0, 3)
     : [];
+  const entry = (i: (typeof items)[number]): CalendarEntry => ({
+    id: i.id ?? null,
+    title: i.title,
+    start: i.start,
+    end: i.end,
+    calendar: i.calendar ?? null,
+    external: i.external ?? null,
+  });
   return {
-    already: already
-      ? {
-          title: already.title,
-          start: already.start,
-          end: already.end,
-          calendar: already.calendar ?? null,
-          external: already.external ?? null,
-        }
-      : null,
+    already: already ? entry(already) : null,
+    same: same ? entry(same) : null,
     overlaps: overlaps.map(({ title, start, end }) => ({ title, start, end })),
   };
 }
@@ -324,12 +349,14 @@ const sortDay = (list: Item[]) =>
 const itemOf = (
   spec: ItemSpec,
   values: Record<string, unknown>,
+  id: string,
 ): { day: string; item: Item } | null => {
   const day = values[spec.date];
   if (typeof day !== "string") return null;
   return {
     day,
     item: {
+      id,
       title: textOf(values[spec.title]).slice(0, 120),
       start: spec.start ? textOf(values[spec.start]) || null : null,
       end: spec.end ? textOf(values[spec.end]) || null : null,
@@ -358,7 +385,7 @@ function updateByDay(
       }
       m.items.delete(e.id);
     }
-    const now = spec && e.deleted === undefined ? itemOf(spec, e.values) : null;
+    const now = spec && e.deleted === undefined ? itemOf(spec, e.values, e.id) : null;
     if (!now) continue;
     m.items.set(e.id, now);
     const list = m.byDay.get(now.day) ?? [];
@@ -413,7 +440,7 @@ function calendarByDay(store: UserStore): Map<string, Item[]> {
       m.spec.set(t, spec);
       for (const s of store.list(t)) {
         if (m.items.has(s.entity.id)) continue;
-        const it = itemOf(spec, s.entity.values);
+        const it = itemOf(spec, s.entity.values, s.entity.id);
         if (!it) continue;
         m.items.set(s.entity.id, it);
         const list = m.byDay.get(it.day) ?? [];

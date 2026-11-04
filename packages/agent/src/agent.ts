@@ -1959,8 +1959,12 @@ export class Agent {
      * what changed, as a prediction the reviewer learns from.
      */
     edits?: { type?: string; values?: Record<string, Json | null> },
-    /** `judge: false` when Boni accepts alone (docs/fiabilidad.md §3.4): its own acceptance vouches for nothing. */
-    o: { judge?: boolean } = {},
+    /**
+     * `judge: false` when Boni accepts alone (docs/fiabilidad.md §3.4): its own acceptance vouches for nothing.
+     * `into`: the record the proposal is the same thing as («Es el mismo», task 58): no new record, that one takes
+     * the proposal's values (as edited: the server leaves only what the record lacks).
+     */
+    o: { judge?: boolean; into?: string } = {},
   ): Promise<TurnResult> {
     const p = this.o.store.journal.proposal(id);
     const empty = (error: string): TurnResult => ({
@@ -1983,10 +1987,10 @@ export class Agent {
     }
     const args = Object.fromEntries(Object.entries(stored.values).map(([k, v]) => [k, thaw(v)]));
     let changed: ProposalEdits | null = null;
+    const mine = label("user", "personal", [{ kind: "user-edit", id }]);
     if (edits && (edits.type !== undefined || edits.values)) {
       if (tool.name !== "entities.create" || args.values?.t !== "rec")
         return empty("edit-not-allowed");
-      const mine = label("user", "personal", [{ kind: "user-edit", id }]);
       changed = {};
       const from = plain(args.type as Val);
       if (edits.type !== undefined && edits.type !== from) {
@@ -2004,6 +2008,13 @@ export class Agent {
       args.values = { ...args.values, fields };
       if (!changed.type && !changed.values) changed = null;
     }
+    // «Es el mismo» (task 58): the record named takes the proposal's fields; no new record is made.
+    const into = o.into ?? null;
+    if (into && (tool.name !== "entities.create" || args.values?.t !== "rec"))
+      return empty("edit-not-allowed");
+    const call = into ? "entities.update" : tool.name;
+    if (into && !this.o.registry.get(call)) return empty("P0-unregistered-tool");
+    if (into) changed = { ...(changed ?? {}), into };
     const run = randomUUID();
     const origin: Origin = { kind: "accepted", trust };
     this.o.store.journal.startRun({
@@ -2017,10 +2028,10 @@ export class Agent {
       run,
       { id: run, text: "" },
       origin,
-      { version: 1, steps: [{ id: "accept", op: "call", tool: tool.name, args: {} }] },
+      { version: 1, steps: [{ id: "accept", op: "call", tool: call, args: {} }] },
       null,
     );
-    st.preset.set("accept", args);
+    st.preset.set("accept", into ? { id: leaf(into, mine), values: args.values as Val } : args);
     this.o.store.journal.setProposal(id, "accepted", this.now(), changed);
     if (o.judge !== false) this.judge(p.run, changed);
     return this.advance(st);

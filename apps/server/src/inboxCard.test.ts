@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setSplit } from "./calendarStore.ts";
 import { ghostRows, listRows } from "./data.ts";
 import {
+  crossCalendar,
   freeSlot,
   inboxCard,
   inboxContext,
@@ -239,6 +240,23 @@ describe("the inbox's card for a proposal", () => {
       }).calendar,
     ).toEqual({
       already: {
+        id: expect.any(String),
+        title: "Clase de ejemplo",
+        start: "10:00",
+        end: null,
+        calendar: null,
+        external: null,
+      },
+      same: null,
+      overlaps: [],
+    });
+    // Another title at the same moment: it may be the same, so the card asks (task 58), an overlap no more.
+    expect(
+      card("b", { title: "Reunión", day: "2026-10-28", start: "10:00", end: "11:00" }).calendar,
+    ).toEqual({
+      already: null,
+      same: {
+        id: expect.any(String),
         title: "Clase de ejemplo",
         start: "10:00",
         end: null,
@@ -247,28 +265,23 @@ describe("the inbox's card for a proposal", () => {
       },
       overlaps: [],
     });
-    // Another thing at the same time: an overlap, not the same.
-    expect(
-      card("b", { title: "Reunión", day: "2026-10-28", start: "10:00", end: "11:00" }).calendar,
-    ).toEqual({
-      already: null,
-      overlaps: [{ title: "Clase de ejemplo", start: "10:00", end: null }],
-    });
     // The same thing as an external calendar's event: its id, so «Enlazar» can make the record linked to it.
     const c = card("c", { title: "Clase IPM 8", day: "2026-10-28", start: "17:00", end: "18:00" });
     expect(c.calendar).toEqual({
       already: {
+        id: null,
         title: "Clase IPM",
         start: "17:00",
         end: "18:00",
         calendar: "UCAM",
         external: "ext:ucam:u1",
       },
+      same: null,
       overlaps: [],
     });
     // The external events are among the day's items too, as items only.
     expect(c.context.find((d) => d.day === "2026-10-28")?.items).toEqual([
-      { title: "Clase de ejemplo", start: "10:00", end: null },
+      { id: expect.any(String), title: "Clase de ejemplo", start: "10:00", end: null },
       { title: "Clase IPM", start: "17:00", end: "18:00" },
     ]);
     // A task without a time: the same title that day is enough; and its free hour skips the external event.
@@ -511,5 +524,36 @@ describe("the inbox's card for a proposal", () => {
     });
     expect(freeSlot([{ start: null, end: null }])).toEqual({ start: "09:00", end: "10:00" });
     expect(freeSlot([{ start: "09:00", end: "20:00" }])).toBeNull();
+  });
+});
+
+describe("a proposal crossed with the day's entries (tasks 51 and 58)", () => {
+  const p = { title: "Tomar café con Ana", start: "16:00", end: "17:00" };
+  const quedada = { id: "e_quedada", title: "Quedada cafe", start: "16:00", end: "17:00" };
+  it("a like title is «already»; another title at the same moment is «same», to ask; the rest overlap", () => {
+    const clase = { id: "e_clase", title: "Clase de ejemplo", start: "15:00", end: "18:00" };
+    const r = crossCalendar(p, [clase, quedada]);
+    expect(r.already).toBeNull();
+    expect(r.same).toMatchObject({ id: "e_quedada", title: "Quedada cafe", start: "16:00" });
+    expect(r.overlaps.map((o) => o.title)).toEqual(["Clase de ejemplo"]);
+    // The closest moment when several; half an hour away at most.
+    const later = { id: "e_later", title: "Reunión", start: "16:20", end: "17:00" };
+    expect(crossCalendar(p, [later, quedada]).same?.id).toBe("e_quedada");
+    const far = { id: "e_far", title: "Reunión", start: "16:40", end: "17:30" };
+    expect(crossCalendar(p, [far]).same).toBeNull();
+    expect(crossCalendar(p, [far]).overlaps.map((o) => o.title)).toEqual(["Reunión"]);
+  });
+  it("alike by title it is «already», nothing is asked; an external event says which; no moment, nothing by time alone", () => {
+    const cafe = { id: "e_cafe", title: "Café con Ana", start: "16:00", end: null };
+    const alike = crossCalendar(p, [cafe, quedada]);
+    expect(alike.already?.id).toBe("e_cafe");
+    expect(alike.same).toBeNull();
+    const ext = crossCalendar(p, [
+      { title: "Coffee", start: "16:00", end: "16:30", external: "ext:g:u1", calendar: "Google" },
+    ]);
+    expect(ext.same).toMatchObject({ id: null, external: "ext:g:u1", calendar: "Google" });
+    expect(
+      crossCalendar({ title: "Tomar café", start: null, end: null }, [quedada]).same,
+    ).toBeNull();
   });
 });

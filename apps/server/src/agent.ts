@@ -27,7 +27,7 @@ import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
-import { acceptEdits, linkOf } from "./proposalEdits.ts";
+import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
@@ -553,7 +553,20 @@ async function answerAgent(
         if (!field) return send(res, 400, { error: "no-link-field" });
         final = { ...timed, values: { ...(timed.values ?? {}), [field.key]: link.id } };
       }
-      const r = await agent.acceptProposal(params.id ?? "", who.trust, final);
+      // «Es el mismo» (task 58): the record the calendar already had takes what the proposal adds; no new record.
+      const into = intoOf(b.edits);
+      if ("error" in into) return send(res, 400, { error: into.error });
+      if (into.id && p) {
+        const merged = mergeInto(store, p, into.id, final.values ?? {});
+        if ("error" in merged) return send(res, 400, { error: merged.error });
+        final = { ...final, values: merged.values };
+      }
+      const r = await agent.acceptProposal(
+        params.id ?? "",
+        who.trust,
+        final,
+        into.id ? { into: into.id } : {},
+      );
       if (p && !r.error) judgeTime(store, p, final.values ?? {}, Date.now());
       return send(res, 200, after(r));
     }

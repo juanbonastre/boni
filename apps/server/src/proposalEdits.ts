@@ -180,3 +180,39 @@ export function valueFor(
       return undefined;
   }
 }
+
+/** The id of the record a proposal is accepted as the same thing as («Es el mismo», task 58), or an error. */
+export function intoOf(req: unknown): { id: string | null } | { error: string } {
+  const v = req && typeof req === "object" ? (req as { into?: unknown }).into : undefined;
+  if (v === undefined || v === null) return { id: null };
+  if (typeof v !== "string" || !/^e_[0-9a-z]{6,60}$/.test(v)) return { error: "bad-into" };
+  return { id: v };
+}
+
+/**
+ * What of a proposal to create goes into the record it is the same thing as (task 58): each of its values (Juan's
+ * corrections over the proposal's) whose field the record's collection has and the record leaves empty, by that
+ * field's key; the rest (its title, a day it already has, a field the collection lacks) is taken out (null).
+ * Nothing of the record is overwritten.
+ */
+export function mergeInto(
+  store: UserStore,
+  p: ProposalRow,
+  into: string,
+  values: Record<string, Json | null>,
+): { values: Record<string, Json | null> } | { error: string } {
+  const s = store.get(into);
+  if (!s || s.entity.deleted !== undefined) return { error: "no-such-record" };
+  const def = store.schema().types[s.entity.type];
+  if (!def || def.system) return { error: "no-such-record" };
+  const stored = (p.args as { values?: { values?: Val } }).values ?? {};
+  const proposed = (stored.values ? plain(stored.values) : {}) as Record<string, Json>;
+  const empty = (v: unknown) =>
+    v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+  const out: Record<string, Json | null> = {};
+  for (const [k, v] of Object.entries({ ...proposed, ...values })) {
+    const f = def.fields.find((x) => x.key === k);
+    out[k] = v !== null && f && empty(s.entity.values[f.id]) ? v : null;
+  }
+  return { values: out };
+}

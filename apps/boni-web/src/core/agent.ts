@@ -182,6 +182,18 @@ export interface InboxCard {
       calendar: string | null;
       external: string | null;
     } | null;
+    /**
+     * An entry at the same moment that may be it («¿Es «X»?», task 58): «Es el mismo» accepts the proposal into
+     * that record (`id`), or linked to that external event (`external`).
+     */
+    same: {
+      id: string | null;
+      title: string;
+      start: string | null;
+      end: string | null;
+      calendar: string | null;
+      external: string | null;
+    } | null;
     overlaps: { title: string; start: string | null; end: string | null }[];
   } | null;
 }
@@ -263,6 +275,16 @@ function parseCard(v: unknown): InboxCard | null {
                 end: optMatch(v.calendar.already.end, TIME_RE),
                 calendar: optStr(v.calendar.already.calendar, 80),
                 external: optStr(v.calendar.already.external, 300),
+              }
+            : null,
+          same: isObj(v.calendar.same)
+            ? {
+                id: optStr(v.calendar.same.id, 80),
+                title: optStr(v.calendar.same.title, 120) ?? "",
+                start: optMatch(v.calendar.same.start, TIME_RE),
+                end: optMatch(v.calendar.same.end, TIME_RE),
+                calendar: optStr(v.calendar.same.calendar, 80),
+                external: optStr(v.calendar.same.external, 300),
               }
             : null,
           overlaps: Array.isArray(v.calendar.overlaps)
@@ -1707,6 +1729,8 @@ export class AgentApi {
       done?: true;
       /** The external event the record is made linked to («Enlazar», task 51). */
       link?: string;
+      /** The record the proposal is the same thing as («Es el mismo», task 58): it takes what the proposal adds. */
+      into?: string;
     },
   ) =>
     parseTurn(

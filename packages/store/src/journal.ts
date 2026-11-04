@@ -62,6 +62,8 @@ export interface ProposalBefore {
 export interface ProposalEdits {
   type?: { from: string; to: string };
   values?: Record<string, { from: unknown; to: unknown }>;
+  /** The record the proposal went into instead of a new one («Es el mismo», task 58). */
+  into?: string;
 }
 /**
  * A decision Boni took for Juan (docs/fiabilidad.md): in which area («choice», «fill», «mail.accept»…), what being
