@@ -36,6 +36,7 @@ import { type Decision, decisions, review, ruleCandidates, type Suggestion } fro
 import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { timed } from "./perf.ts";
+import { type Named, ownText, type Prefill, prefillOf } from "./prefill.ts";
 import { decrypt, type SecretKey } from "./secret.ts";
 import { likeTitle, normalizeSubject, threadIdOf, whenOf, whenParts } from "./thread.ts";
 
@@ -195,7 +196,17 @@ export interface Target {
   /** The entries whose titles `option` names, and those `fill` offers: the audit says a model saw them. */
   optionRefs?: From[];
   fillRefs?: From[];
+  /** Relations the mail plainly names, set by code for this mail (prefill.ts; task 51): the reader's choice first. */
+  prefill?: Prefill[];
+  /** The name the code binds them to in the plan (`$prefill_<n>`: each key, the record's id, labelled the code's). */
+  prefillRef?: string;
 }
+
+/** The relations the code found, bound to the plan by code (never written in it): `{ <field key>: <record id> }`. */
+export const prefillValue = (prefill: readonly Prefill[]) => {
+  const l = label("own", "personal", [{ kind: "code", id: "prefill" }]);
+  return rec(Object.fromEntries(prefill.map((p) => [p.key, leaf(p.id, l)])), l);
+};
 
 /** How many entries of a related collection a relation field offers (the latest changed). */
 const RELATION_CHOICES = 40;
@@ -455,6 +466,9 @@ export function mailPlan(
   });
   const create = (id: string, module: string, t: Target, when?: unknown) => {
     const filled = !!(t.fill?.length && t.fillRef);
+    const pre = new Map(
+      t.prefillRef ? (t.prefill ?? []).map((p) => [p.key, `$${t.prefillRef}.${p.key}`]) : [],
+    );
     const step = {
       id,
       op: "call",
@@ -479,10 +493,19 @@ export function mailPlan(
                   { ref: "$zip.note" },
                   ...(t.fill ?? []).flatMap((f) => [
                     { lit: f.key },
-                    { ref: `$zip.values.${f.key}` },
+                    // A relation the code found in the mail (task 51): the reader's choice first, else the code's.
+                    pre.has(f.key)
+                      ? {
+                          fn: "first",
+                          args: [{ ref: `$zip.values.${f.key}` }, { ref: pre.get(f.key) }],
+                        }
+                      : { ref: `$zip.values.${f.key}` },
                   ]),
                 ]
               : []),
+            ...[...pre]
+              .filter(([k]) => !(filled && t.fill?.some((f) => f.key === k)))
+              .flatMap(([k, ref]) => [{ lit: k }, { ref }]),
           ],
         },
       },
@@ -1735,7 +1758,40 @@ export class Mails {
       const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto", "adjuntos_texto"].filter(
         (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
       );
-      const chosen = only.length ? only : c.targets;
+      // Relations the mail plainly names (task 51, phases B and C): the sender as a record of a related collection
+      // by name, a record whose title the sender's own words carry; set by code, the reader's choice first.
+      const types = c.store.schema().types;
+      const titled = new Map<string, Named[]>();
+      const recordsOf = (type: string): Named[] => {
+        let list = titled.get(type);
+        if (!list) {
+          const tf = types[type]?.titleField ?? "";
+          list = c.store.list(type).flatMap((x) => {
+            const title = x.entity.values[tf];
+            return typeof title === "string" && title.trim() ? [{ id: x.entity.id, title }] : [];
+          });
+          titled.set(type, list);
+        }
+        return list;
+      };
+      const words = {
+        sender: String(v.f_de_nombre ?? ""),
+        text: ownText(String(v.f_asunto ?? ""), e.entity.body ?? ""),
+      };
+      const prefilled: Record<string, Val> = {};
+      const chosen = (only.length ? only : c.targets).map((t, i) => {
+        const def = Object.values(types).find((x) => x.key === t.key);
+        const prefill = def ? prefillOf(def, types, recordsOf, words) : [];
+        if (!prefill.length) return t;
+        console.log(
+          `mail ${account}: by code for «${t.name}»: ${prefill
+            .map((p) => `${p.name} ← «${p.title.slice(0, 40)}» (${p.by})`)
+            .join(", ")}`,
+        );
+        const prefillRef = `prefill_${i}`;
+        prefilled[prefillRef] = prefillValue(prefill);
+        return { ...t, prefill, prefillRef };
+      });
       // A calendar invitation (task 45): its event comes from the .ics by code, so the reader leaves it out
       // (`known`); already in one of the account's external calendars, it is not proposed at all.
       const inv =
@@ -1755,6 +1811,7 @@ export class Mails {
         ...c.bound,
         options: optionsValue(chosen),
         ...this.hiddenBindings(e),
+        ...prefilled,
       };
       const r = await c.agent.background(
         mailPlan(id, chosen, {

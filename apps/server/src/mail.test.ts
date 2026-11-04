@@ -17,7 +17,7 @@ import { Feeds } from "./feeds.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { inboxCard } from "./inboxCard.ts";
 import { LoginGuard } from "./limits.ts";
-import { dueField, Mails, mailPlan, optionsValue, userIn } from "./mail.ts";
+import { dueField, Mails, mailPlan, optionsValue, prefillValue, userIn } from "./mail.ts";
 import { decisions } from "./mailReview.ts";
 import { FILE_FIELD, FOLDER_FIELD } from "./paths.ts";
 import { acceptEdits } from "./proposalEdits.ts";
@@ -1367,6 +1367,23 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
         { t_proy_t: { value: "FUP 1", label: own } },
         { actor: "user" },
       );
+      // People the mail's sender is one of (task 51, phase B): records no model is shown (`noModel`), which the
+      // reader is never offered, so only the code can set the relation, from the sender's name.
+      const imported = { ...own, noModel: true as const };
+      store.applySchema(
+        { op: "create_type", type: type("t_pers", "personas", "Personas", []) },
+        { actor: "user" },
+      );
+      const lucia = store.create(
+        "t_pers",
+        { t_pers_t: { value: "Lucía Ejemplo", label: imported } },
+        { actor: "user" },
+      );
+      store.create(
+        "t_pers",
+        { t_pers_t: { value: "Pedro Ejemplo", label: imported } },
+        { actor: "user" },
+      );
       store.create("t_proy", { t_proy_t: { value: "TFG", label: own } }, { actor: "user" });
       store.applySchema(
         {
@@ -1393,6 +1410,14 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
               label: own,
             },
             { id: "t_docencia_u", key: "urgente", name: "Urgente", type: "checkbox", label: own },
+            {
+              id: "t_docencia_pe",
+              key: "persona",
+              name: "Persona",
+              type: "relation",
+              relation: { target: "t_pers", many: false },
+              label: own,
+            },
           ]),
         },
         { actor: "user" },
@@ -1423,10 +1448,13 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
       expect(v("values.proyecto")).toBe(fup.entity.id);
       expect(v("values.body")).toBe("Las actas están en la carpeta del curso.");
       expect(String(v("values.urgente"))).toBe("true");
+      // The sender, as the record of Personas with her name, set by code (task 51, phase B).
+      expect(v("values.persona")).toBe(lucia.entity.id);
       // Shown by their names: the option, and the project's title.
       const shown = (arg: string) =>
         (rows.find((r) => r.arg === arg) as { detail?: string })?.detail;
       expect([shown("values.estado"), shown("values.proyecto")]).toEqual(["Pendiente", "FUP 1"]);
+      expect(shown("values.persona")).toBe("Lucía Ejemplo");
       if (withJev) {
         // Jev chose among Juan's options; the reader wrote only the note.
         expect(JSON.stringify(decided[0])).toContain("TFG");
@@ -1460,6 +1488,7 @@ describe("mail as an extension (docs/extensiones.md 3)", () => {
             estado: null,
             proyecto: null,
             urgente: null,
+            persona: null,
             dia: "2026-10-29",
           },
         });
@@ -1708,5 +1737,45 @@ describe("attachments go to the collection of files, and no mail is lost (task 3
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("relations the code found in the mail, in the plan (task 51, phases B and C)", () => {
+  it("the reader's choice first where it is offered the field; the code's alone where it is not", () => {
+    const t = {
+      key: "docencia",
+      name: "Docencia",
+      option: "Docencia",
+      date: "date",
+      fill: [{ key: "proyecto", name: "Proyecto", kind: "choice" as const, options: [] }],
+      fillRef: "fields_0",
+      prefillRef: "prefill_0",
+      prefill: [
+        { key: "proyecto", name: "Proyecto", id: "e_proy", title: "FUP 1", by: "text" as const },
+        {
+          key: "persona",
+          name: "Persona",
+          id: "e_pers",
+          title: "Lucía Ejemplo",
+          by: "sender" as const,
+        },
+      ],
+    };
+    const plan = mailPlan("e_x", [t]) as {
+      steps: { tool?: string; args?: { values: { args: unknown[] } } }[];
+    };
+    const values = plan.steps.find((x) => x.tool === "entities.create")?.args?.values.args ?? [];
+    const valueAfter = (key: string) =>
+      values[values.findIndex((a) => JSON.stringify(a) === JSON.stringify({ lit: key })) + 1];
+    expect(valueAfter("proyecto")).toEqual({
+      fn: "first",
+      args: [{ ref: "$zip.values.proyecto" }, { ref: "$prefill_0.proyecto" }],
+    });
+    expect(valueAfter("persona")).toEqual({ ref: "$prefill_0.persona" });
+    // Bound by code, with the code's label: never a literal of the plan.
+    expect(plain(prefillValue(t.prefill))).toEqual({ proyecto: "e_proy", persona: "e_pers" });
+    // No key twice: the plan's `obj` refuses it.
+    const keys = values.filter((_, i) => i % 2 === 0).map((a) => (a as { lit?: string }).lit);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });

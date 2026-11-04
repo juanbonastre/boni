@@ -6,7 +6,9 @@
  * never quote data.
  */
 export type Atom = { lit: string | number | boolean | null } | { quote: string } | { ref: string };
-export type Expr = Atom | { fn: string; args: Atom[] };
+export type Expr = Atom | { fn: string; args: Expr[] };
+/** A function may take another's result, a few levels deep (`first(pick(...), ...)`), never without end. */
+export const MAX_NESTING = 3;
 
 export const READERS = [
   "extract_tasks",
@@ -50,6 +52,7 @@ export const FNS: Readonly<Record<string, [number, number]>> = {
   item: [2, 2],
   field: [2, 2],
   filter_eq: [3, 3],
+  first: [1, 8],
   concat: [1, 40],
   list: [1, 20],
   obj: [2, 40],
@@ -199,15 +202,16 @@ export function validatePlan(
         errors.push(`${where}: ref-to-unknown-step`);
     } else errors.push(`${where}: bad-expression`);
   };
-  const checkExpr = (where: string, e: unknown, inEach: boolean) => {
+  const checkExpr = (where: string, e: unknown, inEach: boolean, depth = 0) => {
     if (isObj(e) && "fn" in e) {
       if (!onlyKeys(e, ["fn", "args"]) || typeof e.fn !== "string" || !Array.isArray(e.args))
         return errors.push(`${where}: bad-function`);
+      if (depth >= MAX_NESTING) return errors.push(`${where}: too-deep`);
       const arity = FNS[e.fn];
       if (!arity || !Object.hasOwn(FNS, e.fn)) return errors.push(`${where}: unknown-function`);
       if (e.args.length < arity[0] || e.args.length > arity[1])
         errors.push(`${where}: wrong-arguments`);
-      for (const [i, a] of e.args.entries()) checkAtom(`${where}.args[${i}]`, a, inEach);
+      for (const [i, a] of e.args.entries()) checkExpr(`${where}.args[${i}]`, a, inEach, depth + 1);
     } else checkAtom(where, e, inEach);
   };
   const checkArgs = (
@@ -339,18 +343,20 @@ const ATOM_SCHEMA = {
     },
   ],
 };
+const callSchema = (args: object) => ({
+  type: "object",
+  properties: {
+    fn: { type: "string", enum: Object.keys(FNS) },
+    args: { type: "array", items: args },
+  },
+  required: ["fn", "args"],
+  additionalProperties: false,
+});
+/** The guide shows one function inside another; `validatePlan` allows `MAX_NESTING` (the schema is not recursive). */
 const EXPR_SCHEMA = {
   anyOf: [
     ...ATOM_SCHEMA.anyOf,
-    {
-      type: "object",
-      properties: {
-        fn: { type: "string", enum: Object.keys(FNS) },
-        args: { type: "array", items: ATOM_SCHEMA },
-      },
-      required: ["fn", "args"],
-      additionalProperties: false,
-    },
+    callSchema({ anyOf: [...ATOM_SCHEMA.anyOf, callSchema(ATOM_SCHEMA)] }),
   ],
 };
 /** A map of named expressions with exactly these names, all optional (validatePlan checks them per

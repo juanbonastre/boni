@@ -134,6 +134,12 @@ export function callFn(name: string, args: Val[], today: string): Val {
       return out(args.every(truthy));
     case "or":
       return out(args.some(truthy));
+    case "first": {
+      // first(a, b...): the first value that is not empty, as it is (its own label): what a reader chose, else
+      // what the code found (task 51: a relation the mail plainly names).
+      const hit = args.find(truthy);
+      return hit ? { ...hit, label: join(deepLabel(hit), lab), derived: true } : out(null);
+    }
     case "not":
       return out(!truthy(a));
     case "today":

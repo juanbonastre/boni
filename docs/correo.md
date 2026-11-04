@@ -225,6 +225,15 @@ ti» si el lector no encontró nada; y «Otra vez» lee el correo de nuevo a pet
   si falta): el calendario pinta uno solo. Si otra cosa se solapa, «Se solapa con X». La hora libre que sugiere para
   una tarea sin hora cuenta también los eventos externos. Nada se escribe hasta que Juan acepta; el cruce se calcula
   al enseñar la tarjeta, así que sigue lo que el calendario tenga en cada momento.
+- **Las relaciones que el correo nombra salen rellenas** (2026-11-04, tarea 51, fases B y C): al proponer, el código
+  mira, para cada relación de la colección a la que va la propuesta, los registros de la colección relacionada: el
+  remitente, cuando un registro se titula como su nombre; si no, un registro cuyo título aparece entero en las
+  palabras propias del remitente (asunto y cuerpo sin la parte citada de una respuesta), si es específico («IPM
+  25-26», «FUP 1»; nunca «Casa»). Una coincidencia o ninguna; la más concreta si contiene a las demás. Lo que el
+  lector eligió entre sus opciones va primero (`first` en el plan); lo que el código puso se ve como una fila más de
+  la tarjeta y se cambia en «Corregir». Nada nombra personas ni proyectos en el código (D-14): es cualquier relación
+  (`apps/server/src/prefill.ts`). El log dice qué puso y por qué («by code for «Docencia»: Persona ← «Lucía Ejemplo»
+  (sender)»).
 - **Desde hoy** «Ver correo» lo abre como lo enseña un cliente de correo (Spark, Apple Mail, Outlook): cabecera (de,
   para, cc, fecha), asunto, adjuntos aparte y el texto tal cual, en solo lectura; desde el 2026-11-04 (tarea 48) las
   imágenes que el correo trae (sus archivos, como direcciones `data:`; nunca las remotas) se pintan después del
