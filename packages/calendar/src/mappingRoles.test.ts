@@ -31,6 +31,7 @@ const coll: Collection = {
       ],
     },
     { id: "kind", name: "Tipo", type: "select", options: [{ id: "a", label: "A", color: "#fff" }] },
+    { id: "note", name: "Nota", type: "text" },
   ],
 };
 const split: CalendarMapping = {
@@ -41,11 +42,12 @@ const split: CalendarMapping = {
 
 describe("mapping roles", () => {
   it("lists the roles that apply to each form", () => {
-    expect(rolesOf(split)).toEqual(["date", "startTime", "endTime", "endDate", "task"]);
+    expect(rolesOf(split)).toEqual(["date", "startTime", "endTime", "endDate", "task", "external"]);
     expect(rolesOf({ title: "t", when: { kind: "range", start: "a" } })).toEqual([
       "start",
       "end",
       "task",
+      "external",
     ]);
   });
 
@@ -58,6 +60,8 @@ describe("mapping roles", () => {
     expect(ids("endTime")).toEqual(["to"]);
     // `kind` has a single option, so it cannot be an open/done pair.
     expect(ids("task")).toEqual(["ok", "flag", "state"]);
+    // A text column that nothing else uses can hold the link to an external event (task 50).
+    expect(ids("external")).toEqual(["note"]);
   });
 
   it("assigns and clears optional roles, never the required one", () => {
@@ -68,6 +72,12 @@ describe("mapping roles", () => {
     ).toBeUndefined();
     expect(assignRole(split, coll, "date", undefined)).toBe(split);
     expect(columnOfRole(assignRole(split, coll, "date", "due"), "date")).toBe("due");
+    // The column that links a record to an external calendar's event (task 50): a text column, set and cleared.
+    const linked = assignRole(split, coll, "external", "note");
+    expect(columnOfRole(linked, "external")).toBe("note");
+    expect(
+      columnOfRole(assignRole(linked, coll, "external", undefined), "external"),
+    ).toBeUndefined();
   });
 
   it("starts a status task column with its last option as done", () => {

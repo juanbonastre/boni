@@ -175,6 +175,11 @@ export class Remote {
     return this.post("/api/collections/color", { id, color });
   }
 
+  /** The column that links a collection's records to external events, added to its definition if missing (task 50). */
+  ensureLinkColumn(collectionId: string): Promise<{ column: string | null }> {
+    return this.post("/api/collections/link-column", { collectionId });
+  }
+
   private post<T>(path: string, body: unknown): Promise<T> {
     return request(`${this.url}${path}`, {
       method: "POST",

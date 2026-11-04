@@ -68,7 +68,11 @@ slate `#94a3b8`.
   outside the fields a read-only calendar locks, and every http(s) link of the event is a pill by its host in a
   «Enlaces» row before the id; both open through the host (the system's browser), never painted as HTML. In the
   day's grid the event's block carries a camera pill from ten minutes before its start until its end, as Notion
-  Calendar does (task 49).
+  Calendar does (task 49). An external calendar's event offers, under the head, «¿Es «X»?» with «Sí» when a record
+  of the user's shares its moment and title, «Enlazar» (the records near it, the closest first) and «Crear nota» (a
+  calendar of the user's); a linked record is one item in its own colour with the external calendar's colour on its
+  right edge (half the month's dot), its time is the external event's and is not edited or dragged, and an «Enlace»
+  row names the calendar it follows (the event's title and place as the tooltip), with «Quitar enlace» (task 50).
 - Context menus (right click or long press) on events, empty time slots, month cells and calendars; the same actions as
   the detail where they exist. Several selected events: actions apply to all and show "(n)".
 - Calendar properties dialog (sidebar gear, context menu): name, colour, **Calendar view** (which column of each row plays

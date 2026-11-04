@@ -147,6 +147,10 @@ export function rowToEvent(model: Model, row: Row): CalEvent | null {
     const own = parseReminders(v[m.reminders]);
     if (own) ev.reminders = own;
   }
+  if (m.external) {
+    const link = str(v[m.external]).trim();
+    if (link) ev.external = link;
+  }
   const rule = m.recurrence ? parseRule(v[m.recurrence]) : null;
   if (rule) {
     ev.recurrence = rule;
@@ -232,6 +236,7 @@ export function eventToRow(model: Model, prev: Row | null, ev: CalEvent): Row {
     set(m.series.rule, ev.series?.rule ? formatRule(ev.series.rule) : null);
   }
   if (m.reminders) set(m.reminders, ev.reminders ? formatReminders(ev.reminders) : null);
+  if (m.external) set(m.external, emptyToNull(ev.external ?? ""));
   const mapped = mappedColumns(m);
   for (const c of coll.columns) {
     if (mapped.has(c.id)) continue;

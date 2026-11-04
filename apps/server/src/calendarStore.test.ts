@@ -724,6 +724,21 @@ describe("the calendar over Boni's collections", () => {
     expect(await cal.setReminders("nada", { reminders: null })).toBe("conflict");
   });
 
+  it("keeps the column that links a record to an external calendar's event in the definition, once (task 50)", async () => {
+    const { store, cal } = env();
+    expect(await cal.ensureLinkColumn("docencia")).toBe("evento-externo");
+    const def = calendarDefs(store)[0]?.def;
+    expect(def?.mapping.external).toBe("evento-externo");
+    expect(def?.columns.some((c) => c.id === "evento-externo" && c.type === "text")).toBe(true);
+    // Asked again: the same column, nothing added twice.
+    expect(await cal.ensureLinkColumn("docencia")).toBe("evento-externo");
+    expect(
+      calendarDefs(store)[0]?.def.columns.filter((c) => c.id === "evento-externo"),
+    ).toHaveLength(1);
+    expect((await cal.snapshot()).views[0]?.mapping.external).toBe("evento-externo");
+    expect(await cal.ensureLinkColumn("nada")).toBeNull();
+  });
+
   it("a calendar over a branch split by a field (D-14): its records wherever they are, new ones where they go", async () => {
     // Invented: an Agenda with Tareas and Eventos inside, and two calendars by «area» (Casa takes those without one).
     const { columns, mapping } = RAW;

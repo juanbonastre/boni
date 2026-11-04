@@ -2,9 +2,12 @@
  * Threads of mail (task 46): which mails belong together, and whether two proposals say the same thing. A thread
  * is named by its first message's id (RFC 5322: the first of `References`, else `In-Reply-To`); a reply that lost
  * those headers joins by its subject («Re: …» of a recent mail). Two proposals are the same thing when their
- * titles match once normalised (accents, case and punctuation aside, or most of their words), and say the same
- * when their day and hours match too.
+ * titles match (`likeTitle`, shared with the calendar: @boni/calendar text.ts), and say the same when their day and
+ * hours match too.
  */
+import { likeTitle, normalizeTitle } from "@boni/calendar";
+
+export { likeTitle, normalizeTitle };
 
 /** A subject without its reply and forward marks («Re:», «RV:», «Fwd:»…), lower-case, one space between words. */
 export function normalizeSubject(subject: string): string {
@@ -35,39 +38,6 @@ export function threadIdOf(
     if (earlier) return earlier;
   }
   return (m.messageId || fallback).slice(0, 300);
-}
-
-/** A title without accents, case or punctuation, for comparing. */
-export const normalizeTitle = (t: string): string =>
-  t
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-/** Words that say nothing of what a title is about (articles, prepositions): left out when comparing. */
-const EMPTY_WORDS = new Set(
-  "el la los las de del a al en con por para y e o u un una unos unas su sus mi mis tu tus lo le les se que".split(
-    " ",
-  ),
-);
-
-/** Whether two titles name the same thing: equal once normalised, or most of their words in common. */
-export function likeTitle(a: string, b: string): boolean {
-  const x = normalizeTitle(a);
-  const y = normalizeTitle(b);
-  if (!x || !y) return false;
-  if (x === y) return true;
-  const words = (s: string) =>
-    new Set(s.split(" ").filter((w) => w.length > 1 && !EMPTY_WORDS.has(w)));
-  const wx = words(x);
-  const wy = words(y);
-  if (wx.size < 3 || wy.size < 3) return false;
-  let common = 0;
-  for (const w of wx) if (wy.has(w)) common++;
-  return common / (wx.size + wy.size - common) >= 0.7;
 }
 
 /** The day and the hours a proposal's values say, as one comparable text («2026-11-11 17:00–18:00»; "" when none). */

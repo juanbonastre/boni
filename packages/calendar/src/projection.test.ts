@@ -37,6 +37,7 @@ const agendaColumns: Collection["columns"] = [
   { id: "estimate_h", name: "Estimación (h)", type: "number" },
   { id: "recurrence", name: "Repetición", type: "text" },
   { id: "exdates", name: "Excepciones", type: "dates" },
+  { id: "link", name: "Evento externo", type: "text" },
 ];
 const agenda: Collection = { id: "agenda", name: "Agenda", columns: agendaColumns };
 const projects: Collection = {
@@ -64,6 +65,7 @@ const agendaView: CalendarView = {
     task: { column: "completed" },
     recurrence: "recurrence",
     exdates: "exdates",
+    external: "link",
   },
 };
 
@@ -146,6 +148,23 @@ describe("rows of an agenda-like collection", () => {
     // Mapped columns are not props; unmapped columns of the schema are; keys outside it are ignored.
     expect(ev?.props).toEqual({ project: "[[proyecto-ejemplo]]", estimate_h: 1.5 });
     expect(ev?.recurrence).toBeUndefined();
+  });
+
+  it("carry the link to an external calendar's event from its column, and write it back or clear it (task 50)", () => {
+    const linkedRow = row("agenda", "a9", { ...classRow.values, link: " ext:ucam:u1 " });
+    const ev = rowToEvent(model, linkedRow);
+    expect(ev?.external).toBe("ext:ucam:u1");
+    expect(ev?.props.link).toBeUndefined(); // mapped, so not a prop
+    expect(rowToEvent(model, classRow)?.external).toBeUndefined();
+    expect(
+      eventToRow(model, linkedRow, { ...(ev as CalEvent), external: null }).values.link,
+    ).toBeNull();
+    expect(
+      eventToRow(model, classRow, {
+        ...(rowToEvent(model, classRow) as CalEvent),
+        external: "ext:ucam:u2",
+      }).values.link,
+    ).toBe("ext:ucam:u2");
   });
 
   it("read the task column the way the vault does: empty = event, false = open, true = done", () => {

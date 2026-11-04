@@ -319,8 +319,13 @@ const WeekRow = memo(function WeekRow(p: {
                   type="button"
                   key={`${seg.eventId}:${day}`}
                   data-id={ev.id}
-                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.id === p.newId && !ev.title ? "draft" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${isProposalId(ev.id) ? "proposal" : ""}`}
-                  style={{ "--c": p.calMap.get(ev.calendarId)?.color ?? "#888" } as CSSProperties}
+                  className={`mchip ${p.selectedIds.includes(ev.id) ? "selected" : ""} ${ev.id === p.newId && !ev.title ? "draft" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""} ${isProposalId(ev.id) ? "proposal" : ""} ${ev.linked ? "linked" : ""}`}
+                  style={
+                    {
+                      "--c": p.calMap.get(ev.calendarId)?.color ?? "#888",
+                      "--c2": ev.linked ? p.calMap.get(ev.linked.calendarId)?.color : undefined,
+                    } as CSSProperties
+                  }
                 >
                   {ev.isTask && (
                     <span className="ev-check" data-check={ev.id}>
@@ -357,10 +362,11 @@ const WeekRow = memo(function WeekRow(p: {
             type="button"
             key={b.id}
             data-id={b.id}
-            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.id === p.newId && !ev.title ? "draft" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""}`}
+            className={`bar ${p.selectedIds.includes(b.id) ? "selected" : ""} ${b.id === p.newId && !ev.title ? "draft" : ""} ${b.clippedStart ? "cut-start" : ""} ${b.clippedEnd ? "cut-end" : ""} ${isProposalId(ev.id) ? "proposal" : ""} ${ev.linked ? "linked" : ""} ${ev.isTask ? "task" : ""} ${ev.done ? "done" : ""}`}
             style={
               {
                 "--c": p.calMap.get(ev.calendarId)?.color ?? "#888",
+                "--c2": ev.linked ? p.calMap.get(ev.linked.calendarId)?.color : undefined,
                 left: `calc(${((b.startDay - weekStart) / 7) * 100}% + 2px)`,
                 width: `calc(${((b.endDay - b.startDay + 1) / 7) * 100}% - 4px)`,
                 top: `${HEAD + b.lane * LANE}px`,

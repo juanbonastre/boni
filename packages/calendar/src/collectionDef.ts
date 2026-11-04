@@ -250,6 +250,7 @@ function parseMapping(m: unknown, errors: string[]): CalendarMapping | null {
       recurrence: opt("recurrence"),
       exdates: opt("exdates"),
       reminders: opt("reminders"),
+      external: opt("external"),
     }),
     when,
     ...(task ? { task } : {}),

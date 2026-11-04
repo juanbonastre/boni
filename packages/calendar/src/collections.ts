@@ -101,6 +101,8 @@ export interface CalendarMapping {
   series?: { id: string; rule: string };
   /** Text column with the event's own reminders ("10m, 1h"; "none"; empty: the calendar's). */
   reminders?: string;
+  /** Text column with the id of the external calendar's event the record is linked to (task 50). */
+  external?: string;
 }
 
 export interface CalendarView {
@@ -173,6 +175,7 @@ export function mappedColumns(m: CalendarMapping): Set<string> {
   add(m.series?.id);
   add(m.series?.rule);
   add(m.reminders);
+  add(m.external);
   const w = m.when;
   if (w.kind === "split") {
     add(w.date);

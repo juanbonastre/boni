@@ -4,13 +4,16 @@
  */
 import {
   type CalEvent,
+  candidatesFor,
   civilFromDays,
   eventDurationMinutes,
+  externalCalendarOf,
   formatDuration,
   formatMinute,
   fromLocal,
   gmtLabel,
   hostOf,
+  isExternalId,
   isProposalId,
   linksOf,
   monthNames,
@@ -19,6 +22,7 @@ import {
   type PropValue,
   type Recurrence,
   resolveOccurrence,
+  suggestLink,
   toLocal,
   videoLink,
   type When,
@@ -58,6 +62,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useCalendarMap } from "../hooks.ts";
 import { appRect, appRoot, findInApp, openUrl } from "../host.ts";
 import { t } from "../i18n.ts";
 import { notesBridge } from "../notesBridge.ts";
@@ -277,6 +282,8 @@ function DetailBody({ ev }: { ev: CalEvent }) {
           </button>
         </div>
       )}
+      {/* An external calendar's event (task 50): a record of the user's it is, or a new one made from it. */}
+      {isExternalId(ev.id) && <LinkExternal ev={ev} />}
       {/* A read-only calendar (a subscription): everything shows, nothing can be changed. */}
       <fieldset className="detail-fields" disabled={locked}>
         <div className="detail-title">
@@ -311,7 +318,17 @@ function DetailBody({ ev }: { ev: CalEvent }) {
         </div>
 
         <div className="detail-section">
-          <WhenEditor ev={ev} fmt={fmt} />
+          {ev.linked || ev.linkLost ? (
+            <>
+              {/* A linked record's time is the external event's (task 50): shown, not edited here. */}
+              <fieldset className="when-locked" disabled={!!ev.linked}>
+                <WhenEditor ev={ev} fmt={fmt} />
+              </fieldset>
+              <LinkedRow ev={ev} />
+            </>
+          ) : (
+            <WhenEditor ev={ev} fmt={fmt} />
+          )}
           {app.supportsRecurrence(ev.calendarId) && <RepeatRow ev={ev} />}
         </div>
 
@@ -455,6 +472,95 @@ function DetailBody({ ev }: { ev: CalEvent }) {
           name={t("event.created")}
           value={ev.created ? stamp(ev.created, app.settings.tz, app.settings.locale, h24) : "—"}
         />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Under an external event (task 50): «¿Es «X»?» when a record of the user's shares its moment and title (code's
+ * suggestion, never linked alone), «Enlazar» over the records near it and «Crear nota» over the user's calendars.
+ */
+function LinkExternal({ ev }: { ev: CalEvent }) {
+  const app = useApp();
+  const calMap = useCalendarMap();
+  const events = app.expanded();
+  const h24 = app.settings.h24;
+  const suggestion = useMemo(() => suggestLink(ev, events), [ev, events]);
+  const candidates = useMemo(() => candidatesFor(ev, events), [ev, events]);
+  const calendars = app.data.calendars.filter((c) => !c.readOnly);
+  const link = async (id: string) => {
+    await app.linkEvents(id, ev.id);
+    app.select(id, true);
+  };
+  const label = (e: CalEvent) => {
+    const title = e.title || t("event.title");
+    return e.when.kind === "timed"
+      ? `${title} · ${formatMinute(toLocal(e.when.start, e.when.tz).minute, h24)}`
+      : title;
+  };
+  return (
+    <div className="detail-link">
+      {suggestion && (
+        <div className="detail-link-ask">
+          <span>{t("event.isThis", { title: suggestion.title })}</span>
+          <button type="button" className="btn primary" onClick={() => void link(suggestion.id)}>
+            {t("event.yes")}
+          </button>
+        </div>
+      )}
+      {candidates.length > 0 && (
+        <ChoicePicker
+          choices={candidates.map((e) => ({
+            id: e.id,
+            label: label(e),
+            color: calMap.get(e.calendarId)?.color,
+          }))}
+          selected={[]}
+          onChange={(ids) => {
+            if (ids[0]) void link(ids[0]);
+          }}
+          placeholder={t("event.link")}
+          trigger={t("event.link")}
+        />
+      )}
+      {calendars.length > 0 && (
+        <ChoicePicker
+          choices={calendars.map((c) => ({ id: c.id, label: c.name, color: c.color }))}
+          selected={[]}
+          onChange={(ids) => {
+            if (ids[0]) void app.createLinked(ev.id, ids[0]);
+          }}
+          placeholder={t("event.createNote")}
+          trigger={t("event.createNote")}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * In a linked record (task 50): «Enlace» names the calendar whose event it follows (the event's title and place as the
+ * tooltip), or says that calendar no longer has it; «Quitar enlace» leaves two again.
+ */
+function LinkedRow({ ev }: { ev: CalEvent }) {
+  const app = useApp();
+  const calId = ev.linked?.calendarId ?? externalCalendarOf(ev.external ?? "");
+  const name = app.data.calendars.find((c) => c.id === calId)?.name ?? "";
+  const what = ev.linked ? [ev.linked.title, ev.linked.location].filter(Boolean).join(" · ") : "";
+  return (
+    <div className="prop-row linked-row">
+      <span className="prop-icon">
+        <LinkIcon size={15} strokeWidth={1.8} />
+      </span>
+      <span className="prop-name">{t("event.linkRow")}</span>
+      <div className="prop-value">
+        <span className="linked-what" title={what || undefined}>
+          {ev.linked ? name : t("event.linkLost", { name })}
+        </span>
+        <button type="button" className="mini-btn" onClick={() => app.unlinkEvent(ev.id)}>
+          {t("event.unlink")}
+        </button>
       </div>
     </div>
   );
