@@ -5,18 +5,6 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
-## 2026-11-04 (twenty-fifth) — Boni Calendar desktop 0.8.22
-
-Needs: Boni Calendar desktop 0.8.22 (`release/boni-calendar-desktop_0.8.22_amd64.deb`, to install) and the
-Android calendar from the CI (Obtainium). From what Juan saw trying the link of the 0.8.21.
-
-- **A linked record keeps the external event's call and links.** «Unirse» and the «Enlaces» pills of the external
-  event stay in the record's detail and on its block once linked (they were the external event's place and note).
-  (#312, task 56)
-- **An event made while the server was on its way is no longer lost.** A 502, 503 or 504 (a deploy, the proxy) or
-  a 429 keeps the device's queue and sends it when the stream is live again, like no connection does; before, the
-  change was dropped with a toast easy to miss. Juan made an event during a deploy and found it gone. (#312, task 56)
-
 ## 2026-11-04 (twenty-fourth) — server 0.8.100
 
 Needs: the server only (0.8.100, to deploy). Task 43, from the 0.8.98's log while Juan tried the apps.
