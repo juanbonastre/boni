@@ -33,8 +33,19 @@ export class RemoteError extends Error {
   constructor(
     readonly kind: "unauthorized" | "network" | "server" | "conflict" | "too-many",
     message: string,
+    /** The HTTP status for a server error: 502, 503 and 504 are a server on its way (a deploy, a proxy). */
+    readonly status?: number,
   ) {
     super(message);
+  }
+  /** Whether trying again later makes sense: no connection, a server on its way, too many at once. */
+  get transient(): boolean {
+    return (
+      this.kind === "network" ||
+      this.kind === "too-many" ||
+      (this.kind === "server" &&
+        (this.status === 502 || this.status === 503 || this.status === 504))
+    );
   }
 }
 
@@ -66,7 +77,7 @@ async function answer<T>(url: string, init: RequestInit = {}): Promise<T> {
   if (!r.ok) {
     // The server says why when it can (e.g. an external calendar it could not download).
     const why = ((await r.json().catch(() => ({}))) as { message?: string }).message;
-    throw new RemoteError("server", why ?? `HTTP ${r.status}`);
+    throw new RemoteError("server", why ?? `HTTP ${r.status}`, r.status);
   }
   return (await r.json()) as T;
 }

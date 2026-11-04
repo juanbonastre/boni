@@ -43,4 +43,21 @@ describe("an event's links and its video call (task 49)", () => {
       joinWindow({ when: { kind: "allday" as const, startDay: 20768, endDay: 20768 } }, start),
     ).toBe(false);
   });
+
+  it("a record linked to an external event has that event's call and links too (task 50)", () => {
+    const own = { location: "", description: "Mi nota" };
+    const linked = {
+      id: "ext:ucam:u1",
+      calendarId: "ucam",
+      title: "Clase IPM",
+      location: "https://zoom.us/j/123456",
+      description: "Apuntes: https://example.org/apuntes",
+    };
+    expect(videoLink({ ...own, linked })).toBe("https://zoom.us/j/123456");
+    expect(linksOf({ ...own, linked })).toEqual([
+      "https://zoom.us/j/123456",
+      "https://example.org/apuntes",
+    ]);
+    expect(videoLink({ ...own, linked: null })).toBeNull();
+  });
 });

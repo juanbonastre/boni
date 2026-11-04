@@ -82,6 +82,33 @@ describe("ServerWriter", () => {
     expect(w.outbox).toEqual([]);
   });
 
+  it("keeps the queue while the server is on its way (502, 503, 504, too many), drops it on a failure of its own", async () => {
+    let status = 502;
+    const { remote } = fakeServer(() =>
+      status === 200
+        ? { version: 9, aliases: {} }
+        : status === 429
+          ? new RemoteError("too-many", "too-many")
+          : new RemoteError("server", `HTTP ${status}`, status),
+    );
+    const { w, rejected } = writer(remote);
+    await w.apply([up(row("a.md", "Editado"))]);
+    for (status of [502, 503, 504, 429]) {
+      await w.flush();
+      expect(w.outbox).toHaveLength(1);
+      expect(rejected).toEqual([]);
+    }
+    status = 200;
+    await w.flush();
+    expect(w.outbox).toEqual([]);
+    // A 500 is the server failing at this very change: dropped and said, so the queue does not stop for good.
+    status = 500;
+    await w.apply([up(row("a.md", "Otra vez"))]);
+    await w.flush();
+    expect(w.outbox).toEqual([]);
+    expect(rejected).toEqual(["failed"]);
+  });
+
   it("learns the path of a new row and uses it from then on", async () => {
     const { remote, sent } = fakeServer((_, changes) => ({
       version: 8,

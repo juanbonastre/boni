@@ -189,6 +189,15 @@ test("a new event is only a highlighted range until it has a title; closing it u
   await expect(page.locator(".ev", { hasText: "Sin pulsar Enter" })).toHaveCount(1);
   await expect(page.locator(".ev.draft")).toHaveCount(0);
 
+  // A title typed and then Escape (the detail closed from the keyboard): kept too, with what was typed.
+  await page.mouse.dblclick(x, cols.y + 320);
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  await page.keyboard.type("Con Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".ev", { hasText: "Con Escape" })).toHaveCount(1);
+  await expect(page.locator(".ev.draft")).toHaveCount(0);
+  await expect(page.locator(".popover")).toHaveCount(0);
+
   // With a title it is an ordinary event.
   await page.mouse.dblclick(x, cols.y + 420);
   await expect(page.locator(".ev.draft")).toHaveCount(1);

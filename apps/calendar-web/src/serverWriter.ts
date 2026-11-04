@@ -119,8 +119,9 @@ export class ServerWriter implements CollectionProvider {
           else this.drafts.set(c.row.id, c.row);
         }
       } catch (e) {
-        // No connection or no session: kept for when there is one again.
-        if (e instanceof RemoteError && (e.kind === "network" || e.kind === "unauthorized")) return;
+        // No connection, no session, or a server on its way (a 502 from the proxy while it restarts: on 2026-11-04
+        // a deploy's 502 dropped an event Juan had just made): kept for when the stream is live again.
+        if (e instanceof RemoteError && (e.transient || e.kind === "unauthorized")) return;
         this.outbox.splice(0, n);
         await this.hooks.save(this.outbox);
         this.hooks.rejected(

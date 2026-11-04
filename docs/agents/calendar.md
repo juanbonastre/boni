@@ -47,6 +47,11 @@ tests guard most of them.
   the same moment and a like title, code only, never linked alone), «Enlazar» (`candidatesFor`, the records near it)
   and «Crear nota»; the record's detail has an «Enlace» row naming that calendar, with «Quitar enlace». The column is added the
   first time (`ensureLinkColumn` in the store; `POST /api/collections/link-column` on the server).
+- **Writes go through `ServerWriter`** (`src/serverWriter.ts`): shown at once, queued on the device (IndexedDB) and
+  sent in order; a batch carries the version the device had, and the server refuses it (409) only when one of its
+  records changed elsewhere after that version. The queue waits while there is no connection, no session, the
+  server is on its way (502, 503, 504: a deploy, the proxy) or it says too many (429), and goes when the stream is
+  live again; any other failure drops the batch and says so (2026-11-04: a deploy's 502 dropped a new event).
 - **No vault mode** (2026-10-28): the calendar is a server's (or the invented sample). The desktop shell only says
   where an event's note opens (`window.boniNotes`: Boni or its peek); Android has no such bridge.
 
