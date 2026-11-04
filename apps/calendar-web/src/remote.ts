@@ -131,10 +131,14 @@ export class Remote {
     base: number,
     changes: readonly RowChange[],
   ): Promise<{ version: number; aliases: Record<string, string> }> {
+    const body = JSON.stringify({ base, changes });
     return request(`${this.url}/api/apply`, {
       method: "POST",
       headers: { ...this.auth(), "content-type": "application/json" },
-      body: JSON.stringify({ base, changes }),
+      body,
+      // A change sent as the window closes still arrives (keepalive outlives the page; only for the small
+      // bodies the browser allows it, 64 KB: a long batch goes as before, kept on the device anyway).
+      ...(body.length < 60_000 ? { keepalive: true } : {}),
     });
   }
 

@@ -427,8 +427,14 @@ if (
 } else {
   // Opening the app again (the menu, the dock) shows the one that runs, also from the tray.
   app.on("second-instance", showWindow);
-  app.on("before-quit", () => {
+  // Quitting waits half a second for what the page is sending (a change made right before: task 56), once.
+  let graced = false;
+  app.on("before-quit", (e) => {
     quitting = true;
+    if (graced || BrowserWindow.getAllWindows().length === 0) return;
+    graced = true;
+    e.preventDefault();
+    setTimeout(() => app.quit(), 500);
   });
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);

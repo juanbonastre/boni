@@ -75,8 +75,11 @@ export class ServerWriter implements CollectionProvider {
   async apply(changes: readonly RowChange[]): Promise<void> {
     if (changes.length === 0) return;
     this.outbox.push({ base: this.hooks.version(), changes: [...changes] });
-    await this.hooks.save(this.outbox);
+    // The request leaves at once and the queue is kept on the device meanwhile: a window closed right after a
+    // change (2026-11-04: an event made and the app closed within seconds was gone) must have done one or the other.
+    const kept = this.hooks.save(this.outbox);
     void this.flush();
+    await kept;
   }
 
   /** The server's rows (at `version`) with what this device changed and that version lacks on top. */
