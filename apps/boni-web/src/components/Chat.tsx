@@ -3,6 +3,7 @@ import {
   ArrowUpRight,
   Check,
   ChevronDown,
+  Copy,
   Inbox,
   ListChecks,
   ListPlus,
@@ -24,6 +25,7 @@ import {
   type Pending,
   type Reply,
   type RunDetail,
+  type RunStep,
   type RunSummary,
   reveal,
   type StepWords,
@@ -47,6 +49,7 @@ import {
   openConversation,
   openRecord,
   openSettings,
+  openTrace,
   proposeFromMail,
   removeConversation,
   renameConversation,
@@ -55,6 +58,7 @@ import {
   showInbox,
   showLog,
   stopTurn,
+  toast,
   toggleChatList,
   undoRun,
   useStore,
@@ -632,6 +636,11 @@ function Turn({ entry }: { entry: ChatEntry }) {
           <button type="button" className="link-btn turn-undo" onClick={() => void undoRun(r.run)}>
             <Undo2 size={13} strokeWidth={1.8} />
             {t("chat.undo")}
+          </button>
+        )}
+        {r?.run && (
+          <button type="button" className="link-btn turn-trace" onClick={() => openTrace(r.run)}>
+            {t("log.trace")}
           </button>
         )}
       </div>
@@ -1309,6 +1318,15 @@ export function LogView() {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null | "loading">(null);
   const [groups, setGroups] = useState<Set<string>>(new Set());
+  // Arrived through «Recorrido» (a turn, a proposal): that run opens by itself.
+  const openRun = useStore((s) => s.openRun);
+  useEffect(() => {
+    if (!openRun) return;
+    useStore.setState({ openRun: null });
+    setOpen(openRun);
+    setDetail("loading");
+    void loadRunDetail(openRun).then(setDetail);
+  }, [openRun]);
   const when = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
     dateStyle: "short",
     timeStyle: "short",
@@ -1388,25 +1406,212 @@ export function LogView() {
   );
 }
 
-/** A run's request and steps, as text (the plan's own words; nothing here is a link or markup). */
+/**
+ * A run step by step («Recorrido», task 52; Juan, 2026-11-03: «ver bien cómo se están moviendo sus datos en un
+ * diagrama como el de n8n»): the diagram of its steps on top, each step with the policy's decision and what the
+ * models said in it, then what it read, changed, proposed and decided, and the models it called. All text from the
+ * journal and the audit; «Copiar» puts it in the clipboard to paste in a chat.
+ */
 function RunSteps({ t, detail }: { t: T; detail: RunDetail | null | "loading" }) {
   if (detail === "loading") return <p className="muted small log-detail">{t("log.loading")}</p>;
   if (!detail) return <p className="muted small log-detail">{t("log.noDetail")}</p>;
+  const decisionText = (s: RunStep) =>
+    `${s.error ? agentErrorText(t, s.error) : t(`log.decision.${s.decision ?? "none"}` as Parameters<T>[0])}${s.rule ? ` (${s.rule})` : ""}`;
+  const areaName = (a: string) => {
+    const key = `log.area.${a}` as Parameters<T>[0];
+    const v = t(key);
+    return v === key ? a : v;
+  };
+  const read = detail.read.map(
+    (r) =>
+      `${r.collection}: ${r.titles.map((x) => `«${x}»`).join(", ")}${r.n > r.titles.length ? ` +${r.n - r.titles.length}` : ""}`,
+  );
+  const did = detail.changes.map(
+    (c) =>
+      `${t(`log.change.${c.action}` as Parameters<T>[0], { title: c.title, collection: c.collection })}${c.undone ? ` ${t("log.change.undone")}` : ""}`,
+  );
+  const proposed = detail.proposals.map(
+    (p) => `«${p.title}» · ${t(`log.proposal.${p.status}` as Parameters<T>[0])}`,
+  );
+  const decided = detail.decisions.map(
+    (d) =>
+      `${areaName(d.area)} · ${Math.round(d.p * 100)} % · ${t(`log.outcome.${d.outcome}` as Parameters<T>[0])}${d.result ? ` · ${t(`log.judged.${d.result}` as Parameters<T>[0])}` : ""}`,
+  );
+  const models = detail.models.map(
+    (m) =>
+      `${m.role} · ${m.model} · ${m.input} → ${m.output}${m.cost !== null ? ` · ${m.cost.toFixed(4)} $` : ""}`,
+  );
+  const copy = () => {
+    const lines = [
+      `Boni · ${t("log.trace")} · ${detail.status}${detail.started ? ` · ${new Date(detail.started).toISOString()}` : ""} (${t("log.copyNote")})`,
+      ...(detail.request !== null ? [`${t("log.request")}: ${detail.request}`] : []),
+      `${t("log.steps")}:`,
+      ...detail.steps.flatMap((s, i) => [
+        `${i + 1}. ${s.what} — ${decisionText(s)}${s.deps.length ? ` ← ${s.deps.join(", ")}` : ""}${s.args ? ` · ${s.args}` : ""}`,
+        ...s.answers.map((a) => `   ${t("log.answer")}: ${a}`),
+      ]),
+      ...[
+        [t("log.read"), read],
+        [t("log.did"), did],
+        [t("log.proposed"), proposed],
+        [t("log.decisions"), decided],
+        [t("log.models"), models],
+      ].flatMap(([name, items]) =>
+        (items as string[]).length ? [`${name}:`, ...(items as string[]).map((x) => `- ${x}`)] : [],
+      ),
+    ];
+    void navigator.clipboard.writeText(lines.join("\n")).then(() => toast(t("log.copied")));
+  };
   return (
-    <div className="log-detail small">
+    <div className="log-detail small trace">
+      <div className="trace-tools">
+        <button type="button" className="link-btn small" onClick={copy}>
+          <Copy size={13} strokeWidth={1.8} />
+          {t("log.copy")}
+        </button>
+      </div>
       {detail.request !== null && <p className="log-request">{detail.request}</p>}
+      <TraceDiagram steps={detail.steps} label={t("log.steps")} />
       <ol className="log-steps">
         {detail.steps.map((s) => (
-          <li key={s.id} className={s.error ? "log-step failed" : "log-step"}>
+          <li
+            key={s.id}
+            id={`trace-step-${s.id}`}
+            className={s.error ? "log-step failed" : "log-step"}
+          >
             <span className="log-step-what">{s.what}</span>{" "}
-            <span className="muted">
-              {s.error ? agentErrorText(t, s.error) : t(`log.decision.${s.decision ?? "none"}`)}
-              {s.rule ? ` (${s.rule})` : ""}
-            </span>
+            <span className="muted">{decisionText(s)}</span>
+            {s.deps.length > 0 && <span className="muted trace-deps"> ← {s.deps.join(", ")}</span>}
             {s.args && <code className="log-args">{s.args}</code>}
+            {s.answers.map((a, i) => (
+              <details key={`${s.id}-${i}`} className="trace-answer">
+                <summary>{t("log.answer")}</summary>
+                <pre>{a}</pre>
+              </details>
+            ))}
           </li>
         ))}
       </ol>
+      <TraceBlock name={t("log.read")} items={read} />
+      <TraceBlock name={t("log.did")} items={did} />
+      <TraceBlock name={t("log.proposed")} items={proposed} />
+      <TraceBlock name={t("log.decisions")} items={decided} />
+      <TraceBlock name={t("log.models")} items={models} />
+    </div>
+  );
+}
+
+function TraceBlock({ name, items }: { name: string; items: string[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="trace-block">
+      <span className="trace-name">{name}</span>
+      <ul>
+        {items.map((x, i) => (
+          <li key={`${i}-${x.slice(0, 20)}`}>{x}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const NODE_W = 132;
+const NODE_H = 34;
+const NODE_GAP = 44;
+const NODE_VGAP = 10;
+/**
+ * The steps as nodes, left to right by what each depends on (a step after the ones it reads from), with the
+ * policy's verdict in their outline: red where it stopped or was denied, dashed where it went to the inbox, faint
+ * where it never ran. A click goes to the step's line. Plain SVG, text only, no library.
+ */
+function TraceDiagram({ steps, label }: { steps: RunStep[]; label: string }) {
+  if (steps.length < 2) return null;
+  const depth = new Map<string, number>();
+  const byId = new Map(steps.map((s) => [s.id, s]));
+  const depthOf = (id: string, seen: Set<string>): number => {
+    const d = depth.get(id);
+    if (d !== undefined) return d;
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const s = byId.get(id);
+    const n = s?.deps.length ? 1 + Math.max(...s.deps.map((x) => depthOf(x, seen))) : 0;
+    depth.set(id, n);
+    return n;
+  };
+  for (const s of steps) depthOf(s.id, new Set());
+  const rows = new Map<number, number>();
+  const pos = new Map<string, { x: number; y: number }>();
+  for (const s of steps) {
+    const col = depth.get(s.id) ?? 0;
+    const row = rows.get(col) ?? 0;
+    rows.set(col, row + 1);
+    pos.set(s.id, { x: 8 + col * (NODE_W + NODE_GAP), y: 8 + row * (NODE_H + NODE_VGAP) });
+  }
+  const cols = Math.max(...rows.keys()) + 1;
+  const tall = Math.max(...rows.values());
+  const width = 16 + cols * NODE_W + (cols - 1) * NODE_GAP;
+  const height = 16 + tall * NODE_H + (tall - 1) * NODE_VGAP;
+  const kind = (s: RunStep) =>
+    s.error || s.decision === "deny" || s.decision === "stopped"
+      ? "failed"
+      : s.decision === "propose"
+        ? "proposed"
+        : s.decision === null
+          ? "idle"
+          : "";
+  const go = (id: string) =>
+    document.getElementById(`trace-step-${id}`)?.scrollIntoView({ block: "nearest" });
+  return (
+    <div className="trace-diagram">
+      <svg
+        width={width}
+        height={height}
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={label}
+      >
+        {steps.flatMap((s) =>
+          s.deps.map((d) => {
+            const a = pos.get(d);
+            const b = pos.get(s.id);
+            if (!a || !b) return null;
+            const x1 = a.x + NODE_W;
+            const y1 = a.y + NODE_H / 2;
+            const x2 = b.x;
+            const y2 = b.y + NODE_H / 2;
+            const mx = (x1 + x2) / 2;
+            return (
+              <path
+                key={`${d}-${s.id}`}
+                className="trace-edge"
+                d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
+              />
+            );
+          }),
+        )}
+        {steps.map((s) => {
+          const p = pos.get(s.id) as { x: number; y: number };
+          const label = s.what.length > 17 ? `${s.what.slice(0, 16)}…` : s.what;
+          return (
+            // biome-ignore lint/a11y/useSemanticElements: an SVG node; the step's line below is the control
+            <g
+              key={s.id}
+              className={`trace-node ${kind(s)}`}
+              transform={`translate(${p.x} ${p.y})`}
+              onClick={() => go(s.id)}
+              onKeyDown={(e) => e.key === "Enter" && go(s.id)}
+              role="button"
+              tabIndex={0}
+            >
+              <title>{`${s.id} · ${s.what}`}</title>
+              <rect width={NODE_W} height={NODE_H} rx={7} />
+              <text x={10} y={21}>
+                {label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
     </div>
   );
 }

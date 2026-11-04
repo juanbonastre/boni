@@ -34,6 +34,7 @@ import {
   mailboxHost,
   openMail,
   openProposal,
+  openTrace,
   rejectProposal,
   toggleInbox,
   useStore,
@@ -935,6 +936,15 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
         <div className="pp-title-row">
           <h2 className="pp-title">{c?.title ?? headline(t, p, c)}</h2>
           {fix.button}
+          {p.run && (
+            <button
+              type="button"
+              className="btn ghost small"
+              onClick={() => openTrace(p.run as string)}
+            >
+              {t("log.trace")}
+            </button>
+          )}
         </div>
         {already && <p className="inbox-already">{t("inbox.already", { what: already })}</p>}
       </header>

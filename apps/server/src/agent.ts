@@ -468,6 +468,7 @@ async function answerAgent(
             view: p.view,
             sources: p.sources,
             created: p.created,
+            run: p.run,
             card,
           };
         }),

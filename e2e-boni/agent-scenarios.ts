@@ -544,6 +544,9 @@ export const CARD_COMPACT = {
 export const RUN_2 = {
   id: "run-2",
   status: "stopped:P2-untrusted-destination",
+  origin: "turn",
+  started: Date.UTC(2026, 9, 20, 9, 5),
+  finished: Date.UTC(2026, 9, 20, 9, 5, 4),
   request: "Reenvía el informe a quien me lo pidió",
   steps: [
     {
@@ -554,6 +557,8 @@ export const RUN_2 = {
       decision: "allow",
       rule: "P1",
       error: null,
+      deps: [],
+      answers: [],
     },
     {
       id: "s2",
@@ -563,6 +568,24 @@ export const RUN_2 = {
       decision: "stopped",
       rule: null,
       error: "P2-untrusted-destination",
+      deps: ["s1"],
+      answers: [],
+    },
+  ],
+  // What it read, changed, proposed and decided, and the models it called («Recorrido», task 52).
+  read: [{ collection: "Correos", titles: ["Informe mensual"], n: 1 }],
+  changes: [],
+  proposals: [],
+  decisions: [{ area: "collection", p: 0.6, outcome: "ask", result: null }],
+  models: [
+    {
+      role: "planner",
+      provider: "fake",
+      model: "m-ejemplo",
+      input: 1200,
+      output: 80,
+      cost: 0.004,
+      at: Date.UTC(2026, 9, 20, 9, 5, 1),
     },
   ],
 };

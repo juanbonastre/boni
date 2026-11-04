@@ -146,6 +146,8 @@ export interface Journal {
   addProposal(p: Omit<ProposalRow, "status" | "decided" | "edits" | "before">): void;
   proposal(id: string): ProposalRow | null;
   proposals(status?: ProposalRow["status"]): ProposalRow[];
+  /** The proposals one run made, oldest first (its trace, task 52). */
+  proposalsOf(run: string): ProposalRow[];
   /** How many proposals of each state every run made: one count, never the proposals themselves (task 43). */
   proposalCounts(): { run: string; status: ProposalRow["status"]; n: number }[];
   /** The pending proposals' ids in one string: cheap to compare every second (Boni Calendar polls it). */
@@ -390,6 +392,13 @@ export function openJournal(db: DatabaseSync): Journal {
       (status
         ? db.prepare("SELECT * FROM proposals WHERE status = ? ORDER BY created, id").all(status)
         : db.prepare("SELECT * FROM proposals ORDER BY created, id").all()
+      ).map(proposalOf),
+    proposalsOf: (run) =>
+      (
+        db.prepare("SELECT * FROM proposals WHERE run = ? ORDER BY created, id").all(run) as Record<
+          string,
+          unknown
+        >[]
       ).map(proposalOf),
     proposalCounts: () =>
       db.prepare("SELECT run, status, COUNT(*) AS n FROM proposals GROUP BY run, status").all() as {

@@ -622,6 +622,10 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
   enviado) no se puede deshacer: por eso P5 pide confirmación.
 - **Registro de ejecuciones** (`runs`, `run_steps`): el plan, cada decisión de política, cada llamada a un modelo
   (proveedor, modelo, tokens, prompt y respuesta completos, guardados en la base del usuario y cifrados) y los tiempos.
+- **«Recorrido»** (tarea 52): lo que hizo una ejecución, paso a paso y en diagrama, sale del diario y de la
+  auditoría (`packages/agent/src/trace.ts`: cada paso con su decisión y su regla, de qué pasos toma sus datos, lo
+  que contestaron los modelos; lo leído por colección, lo cambiado, lo propuesto, las decisiones y las llamadas),
+  sin registro nuevo; se copia como texto para depurar una lectura sin que nadie reciba el correo.
 - **Transparencia por niveles** (lo que Juan sí puede ajustar): ver solo lo que pide su atención, un resumen de cada
   ejecución o el detalle completo.
 
