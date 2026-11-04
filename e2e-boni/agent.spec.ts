@@ -287,7 +287,7 @@ test("the inbox: each proposal on its own, accepted or rejected; no accept-all",
     .click();
   await expect(page.locator(".title")).toContainText("Bandeja");
   await expect(page.locator(".proposal")).toHaveCount(2);
-  // No accept-all anywhere (the sidebar's «Todas las páginas» is not an accept button).
+  // No accept-all anywhere (the sidebar's «Mis datos» is not an accept button).
   await expect(page.getByRole("button", { name: /aceptar todas|accept all/i })).toHaveCount(0);
   await expect(page.locator(".proposal").first()).toContainText("Viene de fuera · un correo");
   await page.screenshot({ path: `${SHOTS}/agent-inbox.png` });

@@ -49,7 +49,7 @@ const L = {
     edit: /^Editar…/,
     settings: "Ajustes",
     pageMenu: "Más opciones",
-    collections: "Todas las páginas",
+    collections: "Mis datos",
     number: "Cifra",
     filterRows: "Solo algunas filas",
     add: "Añadir un bloque",
@@ -64,7 +64,7 @@ const L = {
     edit: /^Edit…/,
     settings: "Settings",
     pageMenu: "More options",
-    collections: "All pages",
+    collections: "My data",
     number: "Number",
     filterRows: "Only some rows",
     add: "Add a block",
@@ -490,10 +490,10 @@ for (const language of ["es", "en"] as const) {
   }
 }
 
-/** «Todas las páginas» with a collection open, a note's history and the collections' usage. */
+/** «Mis datos» with a collection open, a note's history and the collections' usage. */
 const N = {
-  es: { notes: "Todas las páginas", history: "Historial" },
-  en: { notes: "All pages", history: "History" },
+  es: { notes: "Mis datos", history: "Historial" },
+  en: { notes: "My data", history: "History" },
 };
 for (const language of ["es", "en"] as const) {
   for (const width of [1440, 900]) {

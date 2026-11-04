@@ -186,7 +186,7 @@ export async function activityAudit(page: Page, l: (typeof MODELS_TEXT)["es"], w
   return issues;
 }
 
-/** «Todas las páginas» with every collection open, a note's history, and the collections' usage below. */
+/** «Mis datos» with every collection open, a note's history, and the collections' usage below. */
 export async function notesAudit(page: Page, l: { notes: string; history: string }, where: string) {
   const issues: string[] = [];
   await page.locator(".sidebar").getByRole("button", { name: l.notes }).click();
