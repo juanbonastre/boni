@@ -5,6 +5,14 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (twenty-first) — server 0.8.97
+
+Needs: the server only (0.8.97, to deploy). Task 43, from the first minutes of the 0.8.96 in the NAS log.
+
+- **The «Registro» no longer reads every proposal to count them.** Each request of the runs counted their
+  proposals by reading all of them with their arguments (370 ms held, every minute the Registro was open); the
+  journal counts them in one query now. (#306, task 43)
+
 ## 2026-11-04 (twentieth) — server 0.8.96
 
 Needs: the server only (0.8.96, to deploy). Task 43, from the NAS log before the 0.8.95.

@@ -64,6 +64,50 @@ const runOf = (store: UserStore, id: string) =>
   store.journal.runs(50).find((r) => r.id === id) as RunRow;
 
 describe("what each run of the Registro was, and what came of it", () => {
+  it("counts every run's proposals in one go, never reading them (task 43: 3,000 of them in ms)", () => {
+    const store = env();
+    const mail = mailOf(store, "Actas");
+    const states = ["pending", "accepted", "rejected", "postponed", "stale"] as const;
+    for (let r = 0; r < 300; r++) {
+      reading(store, `r${r}`, mail);
+      for (let i = 0; i < 10; i++) {
+        const id = `p${r}_${i}`;
+        store.journal.addProposal({
+          id,
+          run: `r${r}`,
+          tool: "entities.create",
+          args: { values: { big: "x".repeat(2000) }, origins: [] },
+          view: { tool: "entities.create", title: "Crear", rows: [] },
+          sources: [],
+          created: 2,
+        });
+        const status = states[(r + i) % states.length] as (typeof states)[number];
+        if (status !== "pending") store.journal.setProposal(id, status, 3);
+      }
+    }
+    const t0 = performance.now();
+    const counts = proposalsByRun(store);
+    const ms = performance.now() - t0;
+    console.log(`proposals of 300 runs counted: ${ms.toFixed(1)} ms`);
+    expect(ms).toBeLessThan(100);
+    expect(counts.size).toBe(300);
+    // The same the proposals themselves say.
+    const slow = new Map<string, Record<string, number>>();
+    for (const p of store.journal.proposals()) {
+      const c = slow.get(p.run) ?? { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 };
+      c[p.status] = (c[p.status] ?? 0) + 1;
+      slow.set(p.run, c);
+    }
+    expect(Object.fromEntries(counts)).toEqual(Object.fromEntries(slow));
+    expect(counts.get("r0")).toEqual({
+      pending: 2,
+      accepted: 2,
+      rejected: 2,
+      postponed: 2,
+      stale: 2,
+    });
+  });
+
   it("a mail read in the background: its subject and sender, and its proposals by what Juan decided", () => {
     const store = env();
     reading(store, "r1", mailOf(store, "Actas de FUP 1"));
