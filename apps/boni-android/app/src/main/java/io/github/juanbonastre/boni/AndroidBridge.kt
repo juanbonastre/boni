@@ -1,6 +1,9 @@
 package io.github.juanbonastre.boni
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
@@ -69,6 +72,22 @@ class AndroidBridge(
         "setTargets" -> Launcher.setTargets(context, JSONArray(a.getString(0)), a.getInt(1)).let { null }
         "takeLaunch" -> activity?.takeLaunch()
         "pictureReady" -> onPicture?.let { ui.post(it) }.let { null }
+        // An outside address (a mail in its webmail, task 55): the phone's browser; http(s) only.
+        "openUrl" -> {
+            val url = a.getString(0)
+            if (!LINK.matches(url)) throw IllegalArgumentException("Bad link")
+            val open = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                context.startActivity(open)
+            } catch (e: ActivityNotFoundException) {
+                throw IllegalArgumentException("Nothing opens links")
+            }
+            null
+        }
         else -> throw IllegalArgumentException("Unknown call: $method")
+    }
+
+    private companion object {
+        val LINK = Regex("^https?://\\S{1,2000}$")
     }
 }

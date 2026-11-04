@@ -1,6 +1,24 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { linkIn, peekScreen, screenOfUrl } = require("./links.cjs");
+const { linkIn, outsideLink, peekScreen, screenOfUrl } = require("./links.cjs");
+
+test("an outside address opens in the system's browser only when it is http(s) and short (task 55)", () => {
+  assert.equal(
+    outsideLink("https://mail.google.com/mail/u/0/#search/rfc822msgid:a%40x.example"),
+    true,
+  );
+  assert.equal(outsideLink("http://example.edu/orden"), true);
+  for (const bad of [
+    "boni://note?id=x",
+    "file:///etc/passwd",
+    "javascript:alert(1)",
+    "https://example.edu/a b",
+    `https://example.edu/${"x".repeat(2000)}`,
+    42,
+    null,
+  ])
+    assert.equal(outsideLink(bad), false, String(bad));
+});
 
 test("a boni:// link opens a record by its id, nothing else (notes have no paths)", () => {
   const id = "e_01m5m5fkq7w3mhh4ywc6aa22zz";

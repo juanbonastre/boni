@@ -31,6 +31,8 @@ export interface InboxCard {
     excerpt: string;
     /** The mail's own row in Boni ("Ver correo" opens it: IMAP gives no link to a webmail). */
     open: { type: string; id: string };
+    /** Its Message-ID, for the webmail that opens a mail by it (Gmail; task 55). */
+    messageId: string | null;
   } | null;
   /**
    * Why it was made: the reader's quote of the mail (`verbatim` when the code finds those very words in it; a
@@ -485,6 +487,7 @@ export function inboxCard(
       subject: textOf(v.f_asunto).slice(0, 200),
       excerpt: (m.entity.body ?? "").replace(/\s+/g, " ").trim().slice(0, EXCERPT),
       open: { type: m.entity.type, id: m.entity.id },
+      messageId: textOf(v.f_id_mensaje).slice(0, 300) || null,
     };
     if (said) {
       const text = plain(`${textOf(v.f_asunto)} ${m.entity.body ?? ""}`);

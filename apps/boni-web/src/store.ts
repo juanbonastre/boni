@@ -1867,6 +1867,13 @@ export async function loadVisibility(): Promise<Visibility[] | null> {
   }
 }
 
+/** The mailbox's host, asked once per session (a mail's webmail link needs it, task 55); null without a mailbox. */
+let mailboxView: Promise<MailView | null | undefined> | null = null;
+export function mailboxHost(): Promise<string | null> {
+  mailboxView ??= loadMail();
+  return mailboxView.then((m) => m?.host ?? null);
+}
+
 /** The account's mailbox: null when none is connected, undefined when it cannot be read (offline, shared device). */
 export async function loadMail(): Promise<MailView | null | undefined> {
   try {
@@ -1878,6 +1885,7 @@ export async function loadMail(): Promise<MailView | null | undefined> {
 
 /** Connects or changes the mailbox; the server tries it first. Returns the view, or the error's code. */
 export async function saveMail(input: MailInput): Promise<MailView | { error: string }> {
+  mailboxView = null;
   try {
     const m = await agent.saveMail(input);
     return m ?? { error: "failed" };

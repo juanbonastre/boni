@@ -31,4 +31,15 @@ const peekScreen = (screen) =>
 /** The first `boni://` link among a process's arguments (a start or a second start). */
 const linkIn = (argv) => (argv ?? []).find((a) => typeof a === "string" && a.startsWith("boni://"));
 
-module.exports = { linkIn, peekScreen, screenOfUrl };
+/** An outside address the page may ask to open in the system's browser (task 55): http(s) only, not too long. */
+const outsideLink = (url) => {
+  if (typeof url !== "string" || url.length > 2000 || /\s/.test(url)) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
+};
+
+module.exports = { linkIn, outsideLink, peekScreen, screenOfUrl };

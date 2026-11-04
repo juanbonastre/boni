@@ -1077,18 +1077,34 @@ test("the panel: questions and proposals in one queue as they came, each saying 
 test("«Ver correo» opens the mail as a mail client shows it, read only (D-22)", async ({
   page,
 }) => {
+  // Where the host opens an outside address: here the browser's new tab, recorded instead of opened (task 55).
+  await page.addInitScript(() => {
+    (window as unknown as { __opened: string[] }).__opened = [];
+    window.open = ((u: string | URL | undefined) => {
+      (window as unknown as { __opened: string[] }).__opened.push(String(u));
+      return null;
+    }) as typeof window.open;
+  });
   await openApp(page, "/?still", {
     mail: true,
-    agent: { "GET api/agent/proposals": [{ proposals: [CARD_MAIL] }] },
+    agent: { "GET api/agent/proposals": [{ proposals: [CARD_MAIL] }], "GET api/mail": [MAIL] },
   });
   await page
     .locator(".topbar")
     .getByRole("button", { name: /^Bandeja/ })
     .click();
   const card = page.locator(".inbox-panel .inbox-card").first();
+  // A Gmail mailbox: the card's source line and the mail itself open the mail in Gmail by its Message-ID (task 55).
+  const opened = () => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened);
+  await card.getByRole("button", { name: "En Gmail" }).click();
+  await expect
+    .poll(opened)
+    .toEqual(["https://mail.google.com/mail/u/0/#search/rfc822msgid:m1%40example.com"]);
   await card.getByRole("button", { name: "Ver correo" }).click();
   const mail = page.locator(".mail-view");
   await expect(mail.locator(".mail-subject")).toHaveText("Actas pendientes");
+  await mail.getByRole("button", { name: "En Gmail" }).click();
+  await expect.poll(opened).toHaveLength(2);
   await expect(mail.locator(".mail-line").nth(0)).toContainText(
     "Coordinación de ejemplo <coordinacion@example.edu>",
   );

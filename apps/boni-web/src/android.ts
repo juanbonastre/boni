@@ -83,6 +83,11 @@ export function androidHost(native: AndroidNative): Host {
     },
     logout: () => call<ClientSettings>("logout"),
     suggestedDevice: () => call<string>("suggestedDevice"),
+    // An outside address (a mail in its webmail, task 55): the phone's browser.
+    openUrl: (url) =>
+      call<null>("openUrl", url)
+        .then(() => "opened" as const)
+        .catch(() => "error" as const),
     onEvent(cb) {
       listeners.add(cb);
       // The live connection may have come up before the page listened: start from the app's current settings.

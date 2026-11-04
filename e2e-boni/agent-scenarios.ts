@@ -499,7 +499,11 @@ export const CARD_MAIL = {
   created: 6,
   card: {
     ...CARD_DETAILED.card,
-    source: { ...CARD_DETAILED.card.source, open: { type: "t_01m6correo", id: "m1" } },
+    source: {
+      ...CARD_DETAILED.card.source,
+      open: { type: "t_01m6correo", id: "m1" },
+      messageId: "m1@example.com",
+    },
   },
 };
 export const CARD_COMPACT = {

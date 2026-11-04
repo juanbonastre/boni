@@ -181,6 +181,11 @@ export interface Host {
    */
   openFile?: (sha256: string, name: string) => Promise<"opened" | "shown" | "offline" | "error">;
   /**
+   * Opens an outside http(s) address where the host can (task 55: a mail in its webmail): the desktop's system
+   * browser, Android's intent; none: a browser's new tab. The app itself never navigates away.
+   */
+  openUrl?: (url: string) => Promise<"opened" | "error">;
+  /**
    * The page inside another app's window (Boni Calendar's note peek, Juan 2026-10-22): it says when it listens,
    * asks to be put away and to open a note in Boni. The notes to show arrive as `navigate` events.
    */
@@ -225,6 +230,7 @@ declare global {
       openPeek?(screen: string): void;
       pageReady?(): void;
       openFile?(sha256: string, name: string): Promise<"opened" | "shown" | "offline" | "error">;
+      openUrl?(url: string): Promise<"opened" | "error">;
     };
   }
 }
@@ -266,6 +272,9 @@ function desktopHost(b: NonNullable<Window["boniDesktop"]>): Host {
           openFile: (sha: string, name: string) =>
             b.openFile?.(sha, name) ?? Promise.resolve("error" as const),
         }
+      : {}),
+    ...(b.openUrl
+      ? { openUrl: (url: string) => b.openUrl?.(url) ?? Promise.resolve("error" as const) }
       : {}),
   };
 }
@@ -479,3 +488,11 @@ export const host: Host =
       : window.boniAndroid
         ? androidHost(window.boniAndroid)
         : browserHost();
+
+/** An outside http(s) address, opened where the host can; only http(s), at most 2000 characters (task 55). */
+export async function openUrl(url: string): Promise<"opened" | "error"> {
+  if (!/^https?:\/\/\S{1,2000}$/.test(url)) return "error";
+  if (host.openUrl) return host.openUrl(url);
+  window.open(url, "_blank", "noopener,noreferrer");
+  return "opened";
+}
