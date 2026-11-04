@@ -395,7 +395,9 @@ type Expr =
 ```
 
 - **Sin código libre**, sin bucles sin límite, sin recursión. Una herramienta que no está en el registro hace el plan
-  inválido. Las funciones puras son una lista cerrada y propagan etiquetas.
+  inválido. Las funciones puras son una lista cerrada y propagan etiquetas; una puede ir dentro de otra (tres
+  niveles como mucho; `first(a, b)` toma el primer valor no vacío, con su etiqueta: lo que eligió un lector, si no lo
+  que puso el código).
 - **Una clave tras una lista la toma de cada elemento** y lo junta en una lista, un nivel plano: tras leer cada correo
   con `each`, `$s2.tasks` son todas las tareas de todos los correos (2026-11-01: el planificador solo podía llegar a
   las de cada correo una a una, y paraba en el correo que no pedía nada). Los elementos no cambian; la lista nueva

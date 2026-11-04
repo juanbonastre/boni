@@ -23,6 +23,10 @@ an external calendar next to his own records of the same classes.
   calendario: Clase IPM, 17:00–18:00»; if it is an external calendar's event, the button is «Enlazar» and the record
   is created linked to it; another thing at the same time is «Se solapa con X»; a task's suggested hour and the mini
   calendar count the external events too. (#302, task 51, phase A)
+- **The relations a mail plainly names come filled.** When the collection a proposal goes to relates to another
+  whose record is the sender (by name) or whose title the sender's own words carry («IPM 25-26», «FUP 1»), the
+  proposal comes with that relation set, one match or none, by code; what the reader chose stays, and «Corregir»
+  changes it. (#304, task 51, phases B and C)
 
 ## 2026-11-04 (eighteenth) — server 0.8.94 · Boni desktop 0.4.67 · Boni Android
 

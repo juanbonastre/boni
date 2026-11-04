@@ -959,7 +959,9 @@ export class Agent {
       try {
         return callFn(
           e.fn,
-          e.args.map((a) => this.evalAtom(st, a, lenient)),
+          e.args.map((a) =>
+            "fn" in a ? this.evalExpr(st, a, lenient) : this.evalAtom(st, a, lenient),
+          ),
           this.today(),
         );
       } catch (err) {
