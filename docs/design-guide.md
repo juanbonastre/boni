@@ -773,6 +773,12 @@ contraseña ni un código aquí» under a question.
   and has × to take it away; each node says what came of it in its line: «→ 2 elementos», «→ «Gestiones»»,
   «Propondría: Crear en Docencia «Enviar el informe»», «Haría: Avisar «…»», «Preguntaría: …», «No se ejecuta (Solo
   si)», «Parado: P4»; a node it never reached fades. Changing the draft takes the test away (its lines are stale).
+- **A proposed flow in the inbox** (F5): a card like a proposal's, «Flujo propuesto» as its kind, the flow's name as
+  its title (or «Cambio en «Resumen diario»» when it changes one), a line with when it runs and how many steps
+  («Cada lunes a las 08:00 · 2 pasos»; for a change, «1 paso nuevo · 1 quitado»), the flow drawn read only (320 px,
+  as the editor draws it: the trigger with what it gives, each step named, its arrows), what it adds with an
+  `--accent` border and «Nuevo», what it changes with a dashed one and «Cambiado», what it takes away faded and
+  struck with «Quitado»; «Activar» (primary) and «Rechazar».
 - **The Recorrido on the canvas** (F3, task 59c): a run of the Registro (and a proposal's «Recorrido») is drawn
   as a flow's canvas, read only: the trigger with what it bound when the plan took values from outside, each step
   named as the editor names it, an arrow for each value it took, and its line: «Hecho», «Propuesto», «Parado

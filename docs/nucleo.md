@@ -587,6 +587,7 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P16 | Crear o cambiar mini-apps, atajos o trabajos con algo externo en su especificación | deny (Juan puede crearlos a mano o pedirlos en un turno) |
 | P17 | Escribir texto con integridad `model` o `external` que lleve recursos remotos (imágenes, iframes, `![](https://…)`) en un sitio que otro programa pinta (espejo del vault, notas) | se escribe neutralizado: el recurso pasa a texto plano |
 | P18 | Un efecto indirecto: código de Boni que haría algo con un valor guardado (descargar una URL de un campo, suscribirse a un calendario) | solo si ese valor tiene integridad `user` y la acción es una herramienta `egress` declarada |
+| P19 | `flow_save` (un flujo que escribe un modelo: `flows.save` del planificador, `flows_propose` del MCP; `docs/flujos.md` F5) | se propone siempre, y se guarda y se enciende cuando Juan lo acepta en la Bandeja; nunca desde segundo plano ni una mini-app (P8), nunca con contenido externo (P16), y solo si la lista de comprobación del editor lo dejaría guardar |
 
 - **Las confirmaciones las pinta el código** con la plantilla de cada herramienta y los argumentos reales:
   destinatario, importe, texto completo. Muestran la procedencia ("este texto viene de un correo de X"). Nunca usan un

@@ -314,6 +314,28 @@ describe("the policy engine", () => {
       decide(call("flows.run", run(user)), { kind: "turn", trust: "shared" }, counters),
     ).toMatchObject({ kind: "deny", rule: "P8" });
   });
+  it("a flow a model writes is only proposed; saved when Juan accepts it; never from outside (P19, P16, P8)", () => {
+    const def = (l: typeof user) => ({
+      name: leaf("Resumen", l),
+      trigger: leaf({ manual: true }, l),
+      plan: leaf({ version: 1, steps: [] }, l),
+    });
+    expect(decide(call("flows.save", def(model)), turn, counters)).toEqual({
+      kind: "propose",
+      rule: "P19",
+    });
+    expect(
+      decide(call("flows.save", def(model)), { kind: "accepted", trust: "personal" }, counters),
+    ).toEqual({ kind: "allow", rule: "P19" });
+    expect(decide(call("flows.save", def(ext)), turn, counters)).toMatchObject({
+      kind: "deny",
+      rule: "P16",
+    });
+    for (const kind of ["background", "miniapp"] as const)
+      expect(
+        decide(call("flows.save", def(user)), { kind, trust: "personal" }, counters),
+      ).toMatchObject({ kind: "deny", rule: "P8" });
+  });
   it("memory never from outside (P9); schema changes allowed in a turn, proposed otherwise (P10)", () => {
     expect(decide(call("memory.save", { text: leaf("x", ext) }), turn, counters)).toMatchObject({
       kind: "deny",

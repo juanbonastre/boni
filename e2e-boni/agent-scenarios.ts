@@ -1971,3 +1971,46 @@ export const FLOWS_WITH_SUMMARY = {
     },
   ],
 };
+
+/** Flows a model proposed (docs/flujos.md F5): a new one, and a change of one of the user's. */
+export const FLOW_PROPOSAL = {
+  id: "pf1",
+  tool: "flows.save",
+  view: { tool: "flows.save", title: "Proponer flujo", rows: [] },
+  sources: [],
+  created: 1761900000000,
+  run: "run-f1",
+  card: null,
+  flow: {
+    name: "Resumen del lunes",
+    changes: null,
+    trigger: { schedule: { every: "week", day: 1, at: "08:00" } },
+    inputs: [{ id: "today", what: "text" }],
+    nodes: [
+      {
+        ...flowStep("n", "call", "entities.aggregate", { title: "Contar", detail: "Docencia" }),
+        change: "same",
+      },
+      { ...flowStep("a", "call", "notify", { title: "Avisar", deps: ["n"] }), change: "same" },
+    ],
+  },
+};
+export const FLOW_CHANGE = {
+  ...FLOW_PROPOSAL,
+  id: "pf2",
+  run: "run-f2",
+  flow: {
+    name: "Resumen diario",
+    changes: { id: "resumen-diario", name: "Resumen diario", version: 1 },
+    trigger: { manual: true },
+    inputs: [],
+    nodes: [
+      {
+        ...flowStep("n", "call", "entities.aggregate", { title: "Contar", detail: "Docencia" }),
+        change: "same",
+      },
+      { ...flowStep("r", "reply", "text", { deps: ["n"] }), change: "new" },
+      { ...flowStep("a", "call", "notify", { title: "Avisar", deps: ["n"] }), change: "removed" },
+    ],
+  },
+};

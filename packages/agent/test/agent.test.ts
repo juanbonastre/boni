@@ -1394,3 +1394,144 @@ describe("a flow run from a turn (flows.run, docs/flujos.md F4)", () => {
     expect(bg.error).toBe("plan-invalid");
   });
 });
+
+describe("a flow a model proposes (flows.save, docs/flujos.md F5)", () => {
+  const weekly = {
+    version: 1,
+    steps: [
+      {
+        id: "n",
+        op: "call",
+        tool: "entities.aggregate",
+        args: { type: lit("tarea"), op: lit("count") },
+      },
+      {
+        id: "a",
+        op: "call",
+        tool: "notify",
+        args: { text: { fn: "concat", args: [lit("Tareas: "), ref("$n")] } },
+      },
+    ],
+  };
+  const proposing = (
+    plan: unknown,
+    trigger: unknown = { schedule: { every: "week", day: 1, at: "08:00" } },
+  ) => ({
+    version: 1,
+    steps: [
+      {
+        id: "f",
+        op: "call",
+        tool: "flows.save",
+        // The trigger written bare (wrapped by the validator), the plan as a literal object.
+        args: { name: lit("Resumen del lunes"), trigger, plan: { lit: plan } },
+      },
+      {
+        id: "r",
+        op: "reply",
+        component: "text",
+        data: { template: lit("Te lo dejo en la Bandeja") },
+      },
+    ],
+  });
+
+  it("only waits in the inbox; accepting it saves it as the user's and turns it on", async () => {
+    env = makeEnv();
+    const agent = env.agent(fakePlanner([proposing(weekly)]));
+    const r = await agent.turn({
+      text: "cada lunes a las 8 dime cuántas tareas tengo",
+      origin: PERSONAL,
+    });
+    expect(r.status).toBe("done");
+    expect(r.proposals).toHaveLength(1);
+    expect(env.store.journal.flows()).toEqual([]);
+    const p = env.store.journal.proposal(r.proposals[0] as string);
+    expect(p).toMatchObject({ tool: "flows.save", status: "pending" });
+    const done = await agent.acceptProposal(p?.id as string, "personal");
+    expect(done.error).toBeNull();
+    const [f] = env.store.journal.flows();
+    expect(f).toMatchObject({
+      name: "Resumen del lunes",
+      by: "user",
+      enabled: true,
+      version: 1,
+      trigger: { schedule: { every: "week", day: 1, at: "08:00" } },
+    });
+    expect(JSON.stringify(f?.plan)).toContain('"tool":"notify"');
+  });
+
+  it("is refused when the editor's checklist would refuse it, and never from background work", async () => {
+    env = makeEnv();
+    // A plan that names a value nothing gives, a flow inside a flow, a trigger Boni does not know.
+    const broken = {
+      version: 1,
+      steps: [{ id: "a", op: "call", tool: "notify", args: { text: ref("$nadie") } }],
+    };
+    const nested = {
+      version: 1,
+      steps: [{ id: "a", op: "call", tool: "flows.run", args: { flow: lit("otro") } }],
+    };
+    for (const [plan, trigger] of [
+      [broken, undefined],
+      [nested, { manual: true }],
+      [weekly, { created: "correo" }],
+    ] as const) {
+      const agent = env.agent(fakePlanner([proposing(plan, trigger)]));
+      const r = await agent.turn({ text: "hazme un flujo", origin: PERSONAL });
+      expect(r.error).toBe("flow-invalid");
+      expect(env.store.journal.proposals("pending")).toEqual([]);
+    }
+    const bg = await env.agent(fakePlanner([])).background(proposing(weekly));
+    expect(bg.error).toBe("plan-invalid");
+  });
+
+  it("an assistant proposes the same way (MCP), and a definition is an object, nothing else", async () => {
+    env = makeEnv();
+    const { proposeFlow, coreTools } = await import("../src/index.ts");
+    const registry = coreTools().freeze();
+    const mcp = label("model", "personal", [{ kind: "model", id: "mcp:claude-ejemplo" }]);
+    const made = proposeFlow(
+      env.store,
+      registry,
+      { flow: null, name: "Resumen", trigger: { manual: true }, plan: weekly },
+      { run: "mcp-1", now: 1, label: mcp },
+    );
+    expect(made).toMatchObject({ proposal: expect.any(String) });
+    expect(
+      proposeFlow(
+        env.store,
+        registry,
+        { flow: "no-existe", name: "Resumen", trigger: { manual: true }, plan: weekly },
+        { run: "mcp-2", now: 1, label: mcp },
+      ),
+    ).toEqual({ errors: ["flow: not-found"] });
+    // Outside content never makes one (P16).
+    const outside = label("external", "personal", [{ kind: "mail", id: "m1" }]);
+    expect(
+      proposeFlow(
+        env.store,
+        registry,
+        { flow: null, name: "Resumen", trigger: { manual: true }, plan: weekly },
+        { run: "mcp-3", now: 1, label: outside },
+      ),
+    ).toEqual({ errors: ["P16: deny"] });
+    // A definition given as a quote or a reference is not one.
+    const agent = env.agent(
+      fakePlanner([
+        {
+          version: 1,
+          steps: [
+            {
+              id: "f",
+              op: "call",
+              tool: "flows.save",
+              args: { name: lit("x"), trigger: lit("manual"), plan: { lit: weekly } },
+            },
+          ],
+        },
+      ]),
+    );
+    const r = await agent.turn({ text: "hazme un flujo", origin: PERSONAL });
+    expect(r.error).toBe("plan-invalid");
+  });
+});

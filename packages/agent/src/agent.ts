@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join, type Label, label, modelMaySee } from "@boni/entities";
-import type { ProposalEdits, RequestRow, Seen, UserStore } from "@boni/store";
+import type { FlowRow, ProposalEdits, RequestRow, Seen, UserStore } from "@boni/store";
 import { type ConfirmView, confirmHash, confirmView, originsFor, stillCurrent } from "./confirm.ts";
 import { history, recordTurn } from "./conversations.ts";
 import { checkAnswers, type DecisionQuestion } from "./decider.ts";
@@ -47,6 +47,7 @@ import {
 import {
   type Caps,
   type FlowStarter,
+  type FlowWriter,
   makeCaps,
   type Net,
   readStore,
@@ -57,7 +58,7 @@ import {
   type ToolRegistry,
 } from "./tools.ts";
 import { type RunDetail, traceOf } from "./trace.ts";
-import { runnableNames } from "./trigger.ts";
+import { newFlowId, originOf, runnableNames, triggerOk } from "./trigger.ts";
 import {
   at,
   atOrNull,
@@ -95,7 +96,10 @@ Input (JSON): "request" (the user's words), "today", "tools" (the only tools you
 "schema" (the user's types and fields, by key), "history" (earlier turns of this conversation), "memories", and
 "flows" when there are some: the user's own flows, each with its id, name and the inputs its form asks for. When the
 user asks to run one of them, one call to flows.run with its id (and inputs as obj(name, value, ...)): its answers
-appear in this turn, after the user confirms it.
+appear in this turn, after the user confirms it. When the user asks for something to happen on its own (every Monday,
+each morning, a button with a form), one call to flows.save with the flow written whole (its trigger and plan as
+{"lit": {...}} objects, the plan in this same language) and a short text reply saying it waits in the inbox: it is
+only proposed, the user turns it on by accepting it. A flow never runs or saves another flow.
 
 The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "id" (lowercase letters, digits, _) and
 one "op":
@@ -480,9 +484,99 @@ const DAY_MS = 24 * 60 * 60_000;
 export function toolsFor(registry: ToolRegistry, origin: Origin): ToolDef[] {
   const blocked =
     origin.kind === "background" || origin.kind === "miniapp" || origin.trust !== "personal"
-      ? new Set(["egress", "send", "schedule", "flow"])
+      ? new Set(["egress", "send", "schedule", "flow", "flow_save"])
       : new Set<string>();
   return registry.all().filter((t) => !blocked.has(t.effect));
+}
+
+/** A flow a model proposes (`flows.save`, docs/flujos.md F5): its name, trigger and plan, and the flow it changes. */
+export interface FlowDef {
+  flow: string | null;
+  name: string;
+  trigger: unknown;
+  plan: unknown;
+}
+
+/** What `flows.save` was given, as plain values; null when it has no name. */
+export function flowDefOf(args: Readonly<Record<string, Val>>): FlowDef | null {
+  const name = args.name ? plain(args.name) : null;
+  const flow = args.flow ? plain(args.flow) : null;
+  if (typeof name !== "string") return null;
+  return {
+    flow: typeof flow === "string" ? flow : null,
+    name,
+    trigger: args.trigger ? plain(args.trigger) : null,
+    plan: args.plan ? plain(args.plan) : null,
+  };
+}
+
+/**
+ * A flow a model proposes, checked as the editor's checklist would (docs/flujos.md F5): a name in a few words; a
+ * trigger by hand or on a schedule (a flow a record starts, the mail's, is changed in the editor only); the plan the
+ * interpreter would run for that trigger, with no flow inside it; and the flow it changes, when it names one.
+ */
+export function checkFlowDef(
+  def: FlowDef,
+  registry: ToolRegistry,
+  existing: FlowRow | null,
+): { ok: true; plan: Plan } | { ok: false; errors: string[] } {
+  const errors: string[] = [];
+  if (!def.name.trim() || def.name.length > 80) errors.push("name: bad-name");
+  if (def.flow && !existing) errors.push("flow: not-found");
+  if (existing && !runnableNames(existing.trigger)) errors.push("flow: started-by-a-record");
+  if (!triggerOk(def.trigger) || !runnableNames(def.trigger)) errors.push("trigger: bad-trigger");
+  if (errors.length) return { ok: false, errors };
+  const v = checkPlan(def.plan, registry, originOf(def.trigger), runnableNames(def.trigger) ?? []);
+  if (!v.ok) return v;
+  for (const s of v.plan.steps) {
+    const effect = s.op === "call" ? registry.get(s.tool)?.effect : null;
+    if (effect === "flow" || effect === "flow_save") errors.push(`step ${s.id}: flow-in-flow`);
+  }
+  return errors.length ? { ok: false, errors } : v;
+}
+
+/**
+ * A flow an assistant proposes through Boni's MCP (`flows_propose`, docs/flujos.md F5): checked as the planner's
+ * `flows.save` is, decided by the same rule (P19: it only waits in the inbox; P16: never from outside), and kept as
+ * the same proposal, so accepting it in the inbox saves it and turns it on. Its words are the assistant's (`l`).
+ */
+export function proposeFlow(
+  store: UserStore,
+  registry: ToolRegistry,
+  def: FlowDef,
+  o: { run: string; now: number; label: Label },
+): { proposal: string } | { errors: string[] } {
+  const tool = registry.get("flows.save");
+  if (!tool) return { errors: ["no-flows"] };
+  const existing = def.flow ? store.journal.flow(def.flow) : null;
+  const c = checkFlowDef(def, registry, existing);
+  if (!c.ok) return { errors: c.errors };
+  const args: Record<string, Val> = {
+    ...(def.flow ? { flow: leaf(def.flow, o.label) } : {}),
+    name: leaf(def.name.trim(), o.label),
+    trigger: leaf(def.trigger as Json, o.label),
+    plan: leaf(c.plan as unknown as Json, o.label),
+  };
+  const d = decide(
+    { tool, args, control: null },
+    { kind: "turn", trust: "personal" },
+    {
+      writes: 0,
+      sensitiveReads: 0,
+    },
+  );
+  if (d.kind !== "propose") return { errors: [`${d.rule}: ${d.kind}`] };
+  const id = randomUUID();
+  store.journal.addProposal({
+    id,
+    run: o.run,
+    tool: tool.name,
+    args: { values: args, origins: [] },
+    view: confirmView(tool, args, readStore(store)),
+    sources: [],
+    created: o.now,
+  });
+  return { proposal: id };
 }
 
 /**
@@ -1258,6 +1352,21 @@ export class Agent {
       : raw;
     const d: Decision = decide({ tool, args, control }, st.origin, st.counters, this.limits);
     if (!tool) throw new Stop("P0-unregistered-tool");
+    if (tool.effect === "flow_save" && d.kind !== "deny") {
+      // A flow is proposed only when the editor's checklist would let it be saved (docs/flujos.md F5).
+      const def = flowDefOf(args);
+      const c = def
+        ? checkFlowDef(def, this.o.registry, def.flow ? this.o.store.journal.flow(def.flow) : null)
+        : { ok: false as const, errors: ["bad-definition"] };
+      if (!c.ok) {
+        this.log(st, step, "call", "deny", "P19", {
+          tool: tool.name,
+          reason: "flow-invalid",
+          errors: c.errors.slice(0, 8),
+        });
+        throw new Stop("flow-invalid");
+      }
+    }
     const ls = Object.values(args).map(deepLabel);
     // What the journal keeps of each call: the tool, its effect and how far its inputs can be trusted.
     const info = {
@@ -1386,6 +1495,7 @@ export class Agent {
       ...(this.o.notify ? { notify: this.o.notify } : {}),
       ...(this.o.net ? { net: this.o.net } : {}),
       ...(tool.effect === "flow" ? { flows: this.flowStarter(st) } : {}),
+      ...(tool.effect === "flow_save" ? { flowWriter: this.flowWriter() } : {}),
     });
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
     const result = await tool.run(capFor as never, args, control ?? neutral);
@@ -1419,6 +1529,34 @@ export class Agent {
    * never starts another, and one that would wait for him (a question, a confirmation) stops there: he runs it from
    * «Flujos».
    */
+  /**
+   * `flows.save` once the user accepted it (docs/flujos.md F5): checked again, saved as a version of his (the flow it
+   * changes, or a new one) and on: accepting is what turns it on.
+   */
+  private flowWriter(): FlowWriter {
+    return {
+      save: (def) => {
+        const existing = def.flow ? this.o.store.journal.flow(def.flow) : null;
+        const c = checkFlowDef(def, this.o.registry, existing);
+        if (!c.ok) throw new ToolError("flow-invalid");
+        const f = this.o.store.journal.saveFlow({
+          id: existing?.id ?? newFlowId(def.name),
+          name: def.name.trim(),
+          trigger: def.trigger,
+          inputs: (runnableNames(def.trigger) ?? []).map((n) => ({ id: n, what: "text" })),
+          plan: c.plan,
+          layout: null,
+          by: "user",
+          enabled: true,
+          created: this.now(),
+        });
+        if (!f.enabled) this.o.store.journal.setFlowEnabled(f.id, true);
+        const l = codeLabel("flow");
+        return rec({ flow: leaf(f.id, l), version: leaf(f.version, l) }, l);
+      },
+    };
+  }
+
   /** A confirmation to run a flow names it as the user does (its id alone otherwise). */
   private flowNamed(view: ConfirmView, tool: ToolDef): ConfirmView {
     if (tool.effect !== "flow") return view;

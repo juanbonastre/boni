@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readStore } from "@boni/agent";
+import { coreTools, proposeFlow, readStore } from "@boni/agent";
 import {
   type FieldDef,
   type FieldType,
@@ -27,6 +27,7 @@ import {
 import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
 import { relationId, relationTargets } from "./byName.ts";
 import { CATALOGUE, installed } from "./extensions.ts";
+import { checkFlow, flowCatalog, stepsOf } from "./flows.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
@@ -314,6 +315,7 @@ interface Tool {
 }
 /** The scope each tool needs (docs/extensiones.md §11, E3): reading, writing, or proposing extensions. */
 const READS = new Set([
+  "flows_describe",
   "guide",
   "collections",
   "search",
@@ -323,6 +325,8 @@ const READS = new Set([
   "extensions_describe",
 ]);
 const PROPOSES = new Set(["extensions_propose", "extensions_test"]);
+/** The tools a flow may use: the same registry the server's agents have (docs/flujos.md, D-41). */
+const REGISTRY = coreTools().freeze();
 const scopeOf = (name: string): Scope =>
   READS.has(name) ? "read" : PROPOSES.has(name) ? "extensions:propose" : "write";
 const mayUse = (c: Ctx, name: string) => !c.scope || c.scope.includes(scopeOf(name));
@@ -1037,6 +1041,85 @@ const TOOLS: Tool[] = [
         updated: done.updated.length,
         asks: done.asks,
       };
+    },
+  },
+  {
+    name: "flows_describe",
+    description:
+      "What Boni's flows may be made of and Juan's flows: the plan language (readers, questions, replies, functions, limits), the tools a step may call with their arguments, the collections a flow may read and write (by key, with their fields), the triggers, and each flow with its trigger and plan. A flow is proposed with flows_propose; Juan turns it on by accepting it in Boni.",
+    inputSchema: obj({}),
+    call(c) {
+      const catalog = flowCatalog(REGISTRY, c.store, ["tasks", "events"]);
+      return {
+        language: {
+          steps:
+            "the same plan language as Boni's planner: {version: 1, steps: [{id, op: call|read|ask|reply, ...}]}",
+          readers: catalog.readers,
+          asks: catalog.asks,
+          replies: catalog.replies,
+          functions: catalog.fns,
+          limits: catalog.limits,
+        },
+        tools: catalog.tools.filter((t) => t.effect !== "flow" && t.effect !== "flow_save"),
+        collections: catalog.collections,
+        triggers: {
+          manual:
+            '{"manual": true, "inputs": [{"name": "tema"}]}: by hand, its form\'s names as $tema',
+          schedule:
+            '{"schedule": {"every": "day" | "week" | "hour", "at": "HH:MM", "day": 0-6}}: on its own, given $today',
+        },
+        flows: c.store.journal.flows().map((f) => ({
+          id: f.id,
+          name: f.name,
+          enabled: f.enabled,
+          version: f.version,
+          trigger: f.trigger,
+          steps: stepsOf(f.plan).length,
+          plan: f.plan,
+        })),
+      };
+    },
+  },
+  {
+    name: "flows_propose",
+    description:
+      "Proposes a flow for Juan, or a change of one of his (`flow`: its id): a name, a trigger (by hand with a form, or on a schedule) and a plan in Boni's plan language. It is checked as Boni's editor checks a flow and waits in Boni's inbox, drawn; nothing runs until Juan accepts it, which turns it on.",
+    inputSchema: obj(
+      {
+        flow: { type: "string", description: "The id of the flow it changes (none: a new one)" },
+        name: { type: "string" },
+        trigger: { type: "object" },
+        plan: { type: "object" },
+      },
+      ["name", "trigger", "plan"],
+    ),
+    call(c, a) {
+      const name = str(a.name, "name", 80);
+      const flow = a.flow === undefined ? null : str(a.flow, "flow", 80);
+      // What the editor's checklist would say too (a collection closed to the models, one that does not exist).
+      const check = checkFlow(
+        c.store,
+        REGISTRY,
+        { trigger: a.trigger, plan: a.plan },
+        {
+          modules: ["tasks", "events"],
+          mailType: null,
+        },
+      );
+      if (check.problems.length) return { proposed: false, problems: check.problems };
+      // An assistant's words: its own (`model`), never Juan's; P16 keeps anything from outside out.
+      const r = proposeFlow(
+        c.store,
+        REGISTRY,
+        { flow, name, trigger: a.trigger, plan: a.plan },
+        {
+          run: c.run,
+          now: c.now(),
+          label: label("model", "personal", [{ kind: "model", id: `mcp:${c.device}` }]),
+        },
+      );
+      if ("errors" in r) return { proposed: false, errors: r.errors };
+      return { proposed: true, proposal: r.proposal, waitsFor: "Juan, in Boni's inbox" };
     },
   },
   {

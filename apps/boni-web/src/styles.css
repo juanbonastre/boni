@@ -9036,3 +9036,24 @@ button.rows-panel-row:hover {
 .flow-time select {
   width: auto;
 }
+
+/* A flow a model proposed, drawn in the inbox (docs/flujos.md F5): what it adds, changes and takes away. */
+.flow-preview {
+  height: 320px;
+  margin: 6px 0 10px;
+}
+.fl-card.new {
+  border-color: var(--accent);
+}
+.fl-card.changed {
+  border: 1px dashed var(--accent);
+}
+.fl-card.removed {
+  opacity: 0.5;
+}
+.fl-card.removed .fl-name {
+  text-decoration: line-through;
+}
+.fl-change {
+  color: var(--accent);
+}

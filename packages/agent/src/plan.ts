@@ -118,7 +118,10 @@ export function planVocabulary() {
 
 /** What the validator needs to know of the tools the planner may use. */
 export interface PlanCatalog {
-  args(tool: string): { names: readonly string[]; required: readonly string[] } | null;
+  /** `objects`: the arguments that take a JSON object as it is, {"lit": {...}} (a flow's trigger and plan). */
+  args(
+    tool: string,
+  ): { names: readonly string[]; required: readonly string[]; objects?: readonly string[] } | null;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -244,13 +247,30 @@ export function validatePlan(
     allowed: readonly string[],
     required: readonly string[],
     inEach: boolean,
+    objects: readonly string[] = [],
   ) => {
     if (!isObj(args)) return errors.push(`${where}: bad-arguments`);
     for (const k of Object.keys(args))
       if (!allowed.includes(k)) errors.push(`${where}: unknown-argument`);
     for (const k of required) if (!(k in args)) errors.push(`${where}: missing-argument`);
-    for (const [k, v] of Object.entries(args))
-      if (allowed.includes(k)) checkExpr(`${where}.${k}`, v, inEach);
+    for (const [k, v] of Object.entries(args)) {
+      if (!allowed.includes(k)) continue;
+      if (!objects.includes(k)) {
+        checkExpr(`${where}.${k}`, v, inEach);
+        continue;
+      }
+      // A definition: a JSON object as it is, the model's own (the tool checks it whole). Written bare, it is wrapped.
+      const def = isObj(v) && onlyKeys(v, ["lit"]) && "lit" in v ? v.lit : v;
+      if (
+        !isObj(def) ||
+        "ref" in def ||
+        "quote" in def ||
+        "fn" in def ||
+        JSON.stringify(def).length > 20_000
+      )
+        errors.push(`${where}.${k}: bad-definition`);
+      else args[k] = { lit: def };
+    }
   };
 
   for (const [i, s] of (raw.steps as unknown[]).entries()) {
@@ -287,7 +307,15 @@ export function validatePlan(
         if (s.why !== undefined) checkExpr(`${where}.why`, s.why, inEach);
         const spec = typeof s.tool === "string" ? catalog.args(s.tool) : null;
         if (!spec) errors.push(`${where}: unknown-tool`);
-        else checkArgs(`${where}.args`, s.args ?? {}, spec.names, spec.required, inEach);
+        else
+          checkArgs(
+            `${where}.args`,
+            s.args ?? {},
+            spec.names,
+            spec.required,
+            inEach,
+            spec.objects ?? [],
+          );
         break;
       }
       case "read": {

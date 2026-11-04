@@ -10,15 +10,18 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   checkPlan,
   manualInputs,
+  newFlowId,
   type Origin,
+  originOf,
   planVocabulary,
   readStore,
   refsOf,
   type ToolRegistry,
   toolsFor,
+  triggerOk,
 } from "@boni/agent";
 
-export { manualInputs };
+export { manualInputs, newFlowId, originOf, triggerOk };
 
 import { type FieldDef, rolesOf, type TypeDef } from "@boni/entities";
 import type { FlowRow, UserStore } from "@boni/store";
@@ -320,43 +323,6 @@ export type Trigger =
   | { created: string }
   | { manual: true; inputs?: { name: string }[] }
   | { schedule: { every: "day" | "week" | "hour"; at?: string; day?: number } };
-
-/** Whether a trigger is one this server knows, and well formed. */
-export function triggerOk(trigger: unknown): boolean {
-  if (!trigger || typeof trigger !== "object") return false;
-  const t = trigger as Record<string, unknown>;
-  if (typeof t.created === "string") return t.created === "correo";
-  if (t.manual === true) {
-    if (t.inputs === undefined) return true;
-    return (
-      Array.isArray(t.inputs) &&
-      t.inputs.length <= 6 &&
-      manualInputs(t).length === t.inputs.length &&
-      new Set(manualInputs(t)).size === t.inputs.length
-    );
-  }
-  if (t.schedule && typeof t.schedule === "object") {
-    const s = t.schedule as Record<string, unknown>;
-    if (s.every !== "day" && s.every !== "week" && s.every !== "hour") return false;
-    if (s.at !== undefined && !(typeof s.at === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(s.at)))
-      return false;
-    if (
-      s.day !== undefined &&
-      !(Number.isInteger(s.day) && (s.day as number) >= 0 && (s.day as number) <= 6)
-    )
-      return false;
-    return true;
-  }
-  return false;
-}
-
-/** The origin a flow runs with (the policy's): work of its own with no turn, or a turn of the user's by hand. */
-export function originOf(trigger: unknown, device?: string): Origin {
-  const t = trigger as { manual?: unknown } | null;
-  return t?.manual
-    ? { kind: "turn", trust: "personal", ...(device ? { device } : {}) }
-    : { kind: "background", trust: "personal" };
-}
 
 /** The names a trigger binds to the plan. */
 export function triggerNames(trigger: unknown): string[] {
@@ -759,19 +725,6 @@ function refsFor(
 
 // ------------------------------------------------------------------ the user's changes
 
-/** A new flow's id: its name as a key and a few random letters (never a name another flow has). */
-export function newFlowId(name: string): string {
-  const base =
-    name
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 40) || "flujo";
-  return `${base}-${randomBytes(3).toString("hex")}`;
-}
-
 /** A new flow, off: an empty one by hand, or a copy of another's latest version. */
 export function createFlow(
   store: UserStore,
@@ -983,4 +936,66 @@ export function testView(
     };
   }
   return { run: r.run, status: r.status, error: r.error, sample, steps };
+}
+
+// ------------------------------------------------------------------ a flow a model proposes (F5)
+
+/** A step of a proposed flow as the inbox draws it, and what it is against the flow it changes. */
+export type ProposedNode = FlowNode & { change: "new" | "changed" | "same" | "removed" };
+
+/**
+ * A flow a model proposed (`flows.save`, docs/flujos.md F5) as the inbox draws it: its name, what starts it, its
+ * steps as nodes; and, when it changes a flow, against that flow's version now, the steps it adds, changes and takes
+ * away (those drawn too). Made by code from the proposal's arguments; the model's words are only its name and texts.
+ */
+export interface FlowProposal {
+  name: string;
+  changes: { id: string; name: string; version: number } | null;
+  trigger: unknown;
+  inputs: FlowInput[];
+  nodes: ProposedNode[];
+}
+
+export function flowProposalView(
+  store: UserStore,
+  p: { tool: string; args: unknown },
+  titleOf: (tool: string) => string | null,
+  typeName: (key: string) => string | null,
+): FlowProposal | null {
+  if (p.tool !== "flows.save") return null;
+  const values = ((p.args as { values?: Record<string, unknown> } | null)?.values ?? {}) as Record<
+    string,
+    { t?: unknown; value?: unknown } | undefined
+  >;
+  const val = (k: string) => (values[k]?.t === "v" ? values[k]?.value : undefined);
+  const name = val("name");
+  const flow = val("flow");
+  const trigger = val("trigger") ?? null;
+  const plan = val("plan") ?? null;
+  if (typeof name !== "string") return null;
+  const current = typeof flow === "string" ? store.journal.flow(flow) : null;
+  const before = new Map(stepsOf(current?.plan).map((s) => [s.id, JSON.stringify(s)]));
+  const mine = new Map(stepsOf(plan).map((s) => [s.id, JSON.stringify(s)]));
+  const change = (id: string): ProposedNode["change"] =>
+    !current
+      ? "same"
+      : !before.has(id)
+        ? "new"
+        : before.get(id) === mine.get(id)
+          ? "same"
+          : "changed";
+  return {
+    name: name.slice(0, 80),
+    changes: current ? { id: current.id, name: current.name, version: current.version } : null,
+    trigger,
+    inputs: inputsOf(plan, trigger),
+    nodes: [
+      ...nodesOf(plan, trigger, titleOf, typeName).map((n) => ({ ...n, change: change(n.id) })),
+      ...(current
+        ? nodesOf(current.plan, current.trigger, titleOf, typeName)
+            .filter((n) => !mine.has(n.id))
+            .map((n) => ({ ...n, change: "removed" as const }))
+        : []),
+    ],
+  };
 }
