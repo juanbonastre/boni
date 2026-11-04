@@ -142,7 +142,7 @@ export function embedDoubts(store: UserStore): string[] {
           folder
             ? `«${t.name}» «${title}»: ${name} — no está en Boni (en el vault estaba en ${folder})`
             : where.length
-              ? `«${t.name}» «${title}»: ${name} — ${where.length} ficheros se llaman así: ${where.join(" · ")}`
+              ? `«${t.name}» «${title}»: ${name} — ${where.length} ficheros se llaman así: ${[...where].sort().join(" · ")}`
               : `«${t.name}» «${title}»: ${name} — no está en Boni`,
         );
       }
