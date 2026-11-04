@@ -263,6 +263,11 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // 12: what a proposal said before a reply in the same thread of mail changed it (task 46): the earlier proposal
   // gives way (stale) and the new one keeps its day and hours, so the card can say «Antes: …».
   "ALTER TABLE proposals ADD COLUMN before TEXT",
+  // 13: the model calls by when (task 43). Boni's own records and the day's spending read the last days' calls on
+  // every first pass; with no index on `at` that scanned the whole table, every row carrying its request and its
+  // response (4.5 s on the NAS at start-up, 2026-11-04). The index carries the light columns those reads take, so
+  // they never touch a row. Building it once reads the table whole: the first start after it takes a few seconds.
+  "CREATE INDEX model_calls_at ON model_calls(at, run, role, provider, model, usage)",
 ];
 
 export function migrate(db: DatabaseSync): void {
