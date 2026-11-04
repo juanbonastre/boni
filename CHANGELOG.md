@@ -5,6 +5,16 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (twenty-fourth) — server 0.8.100
+
+Needs: the server only (0.8.100, to deploy). Task 43, from the 0.8.98's log while Juan tried the apps.
+
+- **A commit no longer pays the WAL's checkpoint.** A mail kept, a step of a run or an action of the audit held the
+  server a second now and then: the commit that crossed a thousand pages did SQLite's checkpoint on the NAS's disk.
+  The stores open with the automatic checkpoint off and a thread of the server's own checkpoints them passively
+  every few seconds; a commit that still takes long is said in the log with the WAL's size, and so is a checkpoint
+  that took long. (#311, task 43)
+
 ## 2026-11-04 (twenty-third) — server 0.8.99 · Boni desktop 0.4.69
 
 Needs: the server (0.8.99, to deploy; its first «Todas las páginas» sums the activity once more, for the last time)

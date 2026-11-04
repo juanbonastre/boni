@@ -22,6 +22,7 @@ import {
 } from "@boni/entities";
 import { type Audit, auditWriter, type By, byOf, openAudit } from "./audit.ts";
 import type { BlameVersion } from "./blame.ts";
+import { walBytes } from "./checkpoint.ts";
 import { type Journal, openJournal } from "./journal.ts";
 import { open, openFile, seal, sealFile } from "./keys.ts";
 import { migrate } from "./migrations.ts";
@@ -284,7 +285,19 @@ const logRow = (r: Record<string, unknown>): LogRow => {
   };
 };
 
-export function openUserStore(path: string, opts: { now?: () => number } = {}): UserStore {
+export interface StoreOptions {
+  now?: () => number;
+  /**
+   * `false`: SQLite's automatic checkpoint is off, for a server that checkpoints from a thread of its own
+   * (checkpoint.ts; task 43): with it on, the commit that crosses a thousand pages pays the checkpoint.
+   */
+  autoCheckpoint?: boolean;
+  /** Told of a commit that took more than `slowCommitMs` (250 by default), with the WAL's size then. */
+  onSlowCommit?: (ms: number, walBytes: number) => void;
+  slowCommitMs?: number;
+}
+
+export function openUserStore(path: string, opts: StoreOptions = {}): UserStore {
   const now = opts.now ?? Date.now;
   const db = new DatabaseSync(path);
   // Another process (the import, a command) may be writing: wait for it instead of failing at once.
@@ -294,6 +307,9 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
   db.exec(
     "PRAGMA busy_timeout = 15000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
   );
+  if (opts.autoCheckpoint === false) db.exec("PRAGMA wal_autocheckpoint = 0");
+  const slowCommit = opts.onSlowCommit;
+  const slowCommitMs = opts.slowCommitMs ?? 250;
   db.enableDefensive(true);
   migrate(db);
   const audited = auditWriter(db);
@@ -337,7 +353,12 @@ export function openUserStore(path: string, opts: { now?: () => number } = {}): 
     fresh(); // with the write lock held: nobody else can change it now
     try {
       const out = fn();
+      const t0 = slowCommit ? performance.now() : 0;
       db.exec("COMMIT");
+      if (slowCommit) {
+        const ms = performance.now() - t0;
+        if (ms > slowCommitMs) slowCommit(Math.round(ms), walBytes(path));
+      }
       return out;
     } catch (e) {
       db.exec("ROLLBACK");

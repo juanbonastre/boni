@@ -1,5 +1,6 @@
 import { dirname, join } from "node:path";
 import { AnthropicProvider, JevProvider, OpenAIProvider } from "@boni/agent";
+import { startCheckpoints } from "@boni/store";
 import { AgentHost } from "./agent.ts";
 import { listUsers } from "./auth.ts";
 import { startBackups } from "./backups.ts";
@@ -7,7 +8,7 @@ import { Feeds, makeFetcher } from "./feeds.ts";
 import { makeApp, serve } from "./http.ts";
 import { guideOf, Mails } from "./mail.ts";
 import { AccountModels } from "./models.ts";
-import { watchSlowness } from "./perf.ts";
+import { note, watchSlowness } from "./perf.ts";
 import { Push } from "./reminders.ts";
 import { loadKey } from "./secret.ts";
 import { databasePaths, openServerDb } from "./startup.ts";
@@ -74,8 +75,18 @@ const decider =
       : routerKey
         ? new JevProvider({ apiKey: routerKey, via: "openrouter", model: deciderModel })
         : undefined;
+// The stores' commits never pay a checkpoint (a second on the NAS's disk): a thread of its own does them every
+// few seconds (task 43); a commit that still takes long is said with the WAL's size, so the log can answer.
+const onDisk = dbPath !== ":memory:";
 const agent = new AgentHost({
-  dataDir: dbPath === ":memory:" ? null : dirname(dbPath),
+  dataDir: onDisk ? dirname(dbPath) : null,
+  storeOptions: {
+    ...(onDisk ? { autoCheckpoint: false } : {}),
+    onSlowCommit: (ms, walBytes) => {
+      note("commit", ms, 250);
+      console.warn(`slow commit: ${ms} ms, wal ${(walBytes / 1e6).toFixed(1)} MB`);
+    },
+  },
   providers: apiKey
     ? {
         planner: new AnthropicProvider({
@@ -181,6 +192,9 @@ agent.readingGuideOf = (account) => {
 mails.start(() => listUsers(db));
 // What is slow, once a minute in the log (perf.ts; task 35): `boni-status` shows it.
 const stopSlowness = watchSlowness(console.warn, { sample: true });
+const checkpoints = onDisk
+  ? startCheckpoints({ paths: () => agent.storePaths(), log: console.warn })
+  : null;
 const app = makeApp({
   db,
   write: process.env.BONI_WRITE === "1",
@@ -225,6 +239,7 @@ if (publicServer && publicPort !== null) {
 
 const stop = () => {
   stopBackups();
+  void checkpoints?.stop();
   app.close();
   void mails.close();
   agent.close();
