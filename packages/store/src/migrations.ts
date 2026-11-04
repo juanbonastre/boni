@@ -268,6 +268,23 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // response (4.5 s on the NAS at start-up, 2026-11-04). The index carries the light columns those reads take, so
   // they never touch a row. Building it once reads the table whole: the first start after it takes a few seconds.
   "CREATE INDEX model_calls_at ON model_calls(at, run, role, provider, model, usage)",
+  // 14: the activity per quarter of an hour, actor and collection, kept as it grows (task 43): Boni's «Actividad»
+  // summed the whole audit (400 days of reads, one row per entity seen) on every start, 1 to 10 s on the NAS by the
+  // disk's cache; now the sum lives here, brought up to date from the cursor on, and a start reads it in milliseconds.
+  // The first call after this fills it once from the whole audit (the old first pass, for the last time).
+  `CREATE TABLE activity_q (
+     q INTEGER NOT NULL,
+     by TEXT NOT NULL,
+     type TEXT NOT NULL,
+     reads INTEGER NOT NULL DEFAULT 0,
+     writes INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (q, by, type)
+   ) WITHOUT ROWID;
+   CREATE TABLE activity_cursor (
+     id INTEGER PRIMARY KEY CHECK (id = 1),
+     action INTEGER NOT NULL,
+     op INTEGER NOT NULL
+   );`,
 ];
 
 export function migrate(db: DatabaseSync): void {

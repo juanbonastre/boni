@@ -288,6 +288,19 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
      ON CONFLICT(entity) DO UPDATE SET viewers = excluded.viewers, seen_at = excluded.seen_at, seen_by = excluded.seen_by`,
   );
   const viewersOf = db.prepare("SELECT viewers FROM entity_meta WHERE entity = ?");
+  // The activity per quarter as kept (migration 14), and up to which action and operation it was counted.
+  const addQuarter = db.prepare(
+    `INSERT INTO activity_q (q, by, type, reads, writes) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(q, by, type) DO UPDATE SET reads = reads + excluded.reads, writes = writes + excluded.writes`,
+  );
+  const quartersFrom = db.prepare(
+    "SELECT q, by, type, reads, writes FROM activity_q WHERE q >= ? ORDER BY q, by, type",
+  );
+  const cursorOf = db.prepare("SELECT action, op FROM activity_cursor WHERE id = 1");
+  const setCursor = db.prepare(
+    `INSERT INTO activity_cursor (id, action, op) VALUES (1, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET action = excluded.action, op = excluded.op`,
+  );
   const accessRows = (seq: number) =>
     db.prepare("SELECT * FROM access WHERE action = ? ORDER BY entity").all(seq) as Record<
       string,
@@ -510,19 +523,50 @@ export function openAudit(db: DatabaseSync, tx: <T>(fn: () => T) => T): Audit {
       // in the account's zone: an action at 00:30 in Madrid on the 1st is the 1st's, not the 31st's (UTC).
       return foldDays(activityRows(from, to, 0, 0), dayOf);
     },
-    activitySince: (action, op, from) => {
-      const lastAction = Number(
-        (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM actions").get() as { n: number }).n,
-      );
-      const lastOp = Number(
-        (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM ops").get() as { n: number }).n,
-      );
-      return {
-        action: lastAction,
-        op: lastOp,
-        rows: activityRows(from, Number.MAX_SAFE_INTEGER, action, op, lastAction, lastOp),
-      };
-    },
+    activitySince: (action, op, from) =>
+      tx(() => {
+        const lastAction = Number(
+          (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM actions").get() as { n: number }).n,
+        );
+        const lastOp = Number(
+          (db.prepare("SELECT coalesce(max(seq), 0) AS n FROM ops").get() as { n: number }).n,
+        );
+        // The kept sum first: what came after its cursor goes in (everything, once, when it is new: the old first
+        // pass for the last time), so a start never counts the whole audit again.
+        const kept = (cursorOf.get() as { action: number; op: number } | undefined) ?? {
+          action: 0,
+          op: 0,
+        };
+        const fresh =
+          kept.action < lastAction || kept.op < lastOp
+            ? activityRows(0, Number.MAX_SAFE_INTEGER, kept.action, kept.op, lastAction, lastOp)
+            : [];
+        for (const r of fresh) addQuarter.run(r.q, r.by, r.type, r.reads, r.writes);
+        if (fresh.length) setCursor.run(lastAction, lastOp);
+        const first = Math.floor(from / QUARTER);
+        // The caller: from the start, the sum as kept; from where it was, only what came since.
+        const rows =
+          action === 0 && op === 0
+            ? (
+                quartersFrom.all(first) as {
+                  q: number;
+                  by: By;
+                  type: string;
+                  reads: number;
+                  writes: number;
+                }[]
+              ).map((r) => ({
+                q: Number(r.q),
+                by: r.by,
+                type: r.type,
+                reads: Number(r.reads),
+                writes: Number(r.writes),
+              }))
+            : action === kept.action && op === kept.op
+              ? fresh.filter((r) => r.q >= first)
+              : activityRows(from, Number.MAX_SAFE_INTEGER, action, op, lastAction, lastOp);
+        return { action: lastAction, op: lastOp, rows };
+      }),
     byType: (from, to) => {
       const rows = new Map<string, { type: string; by: By; reads: number; writes: number }>();
       const add = (type: string, by: By, k: "reads" | "writes", n: number) => {
