@@ -15,6 +15,11 @@ export interface RunDetail {
   started: number;
   finished: number | null;
   request: string | null;
+  /** The flow and version it ran (docs/flujos.md), so the app draws it on that flow's canvas; null for a planner's. */
+  flow: string | null;
+  flowVersion: number | null;
+  /** What the plan took from outside its own steps (what the trigger or the code bound): the trigger's node. */
+  inputs: string[];
   steps: {
     id: string;
     op: string;
@@ -26,6 +31,10 @@ export interface RunDetail {
     error: string | null;
     /** The steps it takes its data from (`$x` references in it): the diagram's edges. */
     deps: string[];
+    /** The inputs it takes (bound by the trigger or the code): an edge from the trigger's node. */
+    uses: string[];
+    /** A tool's title from the registry («Crear»), filled by the agent; null for the rest. */
+    title: string | null;
     /** What the models answered in it (a reader's, the decider's), as text: the user's own content. */
     answers: string[];
   }[];
@@ -138,6 +147,8 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
       rule: last?.rule ?? null,
       error: error?.code ?? null,
       deps: [...refs].filter((h) => h !== sid && stepIds.has(h)),
+      uses: [...refs].filter((h) => h !== sid && !stepIds.has(h) && h !== "item" && h !== "zip"),
+      title: null,
       answers,
     };
   });
@@ -194,6 +205,9 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
     started: r.started,
     finished: r.finished,
     request: typeof request === "string" ? request : null,
+    flow: r.flow,
+    flowVersion: r.flowVersion,
+    inputs: [...new Set(steps.flatMap((s) => s.uses))],
     steps,
     read: [...read.values()],
     changes,

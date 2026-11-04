@@ -366,8 +366,22 @@ interface RunState {
    * literals are his (docs/flujos.md, D-41).
    */
   litLabel?: Label;
+  /**
+   * A dry run («Probar», docs/flujos.md F3): readers and the decider are called and tools that only read run; a
+   * write, a notice, a proposal or a confirmation is kept in `would` instead of done, a question ends the run.
+   */
+  dry?: boolean;
+  would?: Map<string, Would[]>;
   abort?: AbortController | undefined;
   expiresAt: number;
+}
+
+/** What a dry run's step would have done (docs/flujos.md F3): the policy's decision and the call as code paints it. */
+export interface Would {
+  decision: "allow" | "propose" | "confirm" | "ask";
+  rule: string | null;
+  tool: string | null;
+  args: Record<string, Painted>;
 }
 
 const neutral = label("user", "public", []);
@@ -647,6 +661,46 @@ export class Agent {
       return this.finish(st, "stopped", e instanceof Stop ? e.code : "planner-failed");
     }
     return this.advance(st);
+  }
+
+  /**
+   * «Probar» (docs/flujos.md F3): a flow's plan run dry with a sample's values. Readers and the decider are called
+   * (it costs what a reading costs, and counts in the day's budget), tools that only read run; whatever would write,
+   * notify, propose or ask for a confirmation is kept as `would` instead, and a question ends it. The run is in the
+   * journal (origin `test`, its flow and version), out of the flow's counts. Each step's value is given back painted.
+   */
+  async dryRun(
+    plan: unknown,
+    bind: Record<string, Val>,
+    o: { origin: Origin; flow: { id: string; version: number; by: string; input?: string } },
+  ): Promise<TurnResult & { outputs: Record<string, Painted>; would: Record<string, Would[]> }> {
+    const run = randomUUID();
+    this.o.store.journal.startRun({
+      id: run,
+      turn: null,
+      origin: "test",
+      device: o.origin.device ?? null,
+      started: this.now(),
+      flow: o.flow.id,
+      flowVersion: o.flow.version,
+      input: o.flow.input ?? null,
+    });
+    const st = this.newState(run, { id: run, text: "" }, o.origin, { version: 1, steps: [] }, null);
+    st.dry = true;
+    st.would = new Map();
+    if (o.flow.by === "user") st.litLabel = flowLabel(o.flow.id);
+    const v = validatePlan(plan, this.catalogView(o.origin), "", Object.keys(bind));
+    if (!v.ok) return { ...this.finish(st, "stopped", "plan-invalid"), outputs: {}, would: {} };
+    for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
+    st.plan = v.plan;
+    this.o.store.journal.setPlan(run, st.plan);
+    const r = await this.advance(st);
+    const outputs: Record<string, Painted> = {};
+    for (const s of st.plan.steps) {
+      const val = st.env.get(s.id);
+      if (val) outputs[s.id] = paint(val);
+    }
+    return { ...r, outputs, would: Object.fromEntries(st.would) };
   }
 
   /**
@@ -1189,6 +1243,19 @@ export class Agent {
       integrity: ls.length ? join(ls[0] as Label, ...ls.slice(1)).integrity : "user",
       control: control?.integrity ?? null,
     };
+    if (st.dry && d.kind !== "deny" && tool.effect !== "read") {
+      // «Probar»: what it would do, painted from the real arguments; nothing written, proposed or confirmed.
+      const list = st.would?.get(step.id) ?? [];
+      list.push({
+        decision: d.kind,
+        rule: d.rule,
+        tool: tool.name,
+        args: Object.fromEntries(Object.entries(args).map(([k, v]) => [k, paint(v)])),
+      });
+      st.would?.set(step.id, list);
+      this.log(st, step, "call", d.kind, d.rule, { ...info, dry: true });
+      return leaf(null, codeLabel("dry"), true);
+    }
     switch (d.kind) {
       case "deny":
         this.log(st, step, "call", "deny", d.rule, { ...info, reason: d.reason });
@@ -1536,7 +1603,7 @@ export class Agent {
         step.reader === "classify" && this.o.decider
           ? await this.decideChoice(st, flat, options, params.question, seen)
           : null;
-      if (verdict === "unsure" && askPrompt) {
+      if (verdict === "unsure" && askPrompt && !st.dry) {
         // The decider answered but is not sure: Juan chooses (in the conversation, or in the panel of requests
         // for background work); his answer comes back here as the choice.
         const id = randomUUID();
@@ -1740,6 +1807,18 @@ export class Agent {
       (options?.t !== "list" || !options.items.length || options.items.length > 20)
     )
       throw new Stop("ask-bad-options");
+    if (st.dry) {
+      st.would?.set(step.id, [
+        {
+          decision: "ask",
+          rule: null,
+          tool: null,
+          args: { prompt: paint(prompt), ...(options ? { options: paint(options) } : {}) },
+        },
+      ]);
+      this.log(st, step, "ask", "ask", null, { dry: true });
+      throw new Stop("dry-ask");
+    }
     const id = randomUUID();
     const view: Pending = {
       kind: "ask",
@@ -2209,7 +2288,16 @@ export class Agent {
    */
   /** What a run did, step by step (trace.ts; the Registro and «Recorrido», task 52). */
   runDetail(id: string): RunDetail | null {
-    return traceOf(this.o.store, id);
+    const d = traceOf(this.o.store, id);
+    if (!d) return null;
+    // A tool's title, as the flow editor names its nodes (the canvas the Registro draws a run on).
+    return {
+      ...d,
+      steps: d.steps.map((s) => ({
+        ...s,
+        title: s.op === "call" ? (this.o.registry.get(s.what)?.title ?? null) : null,
+      })),
+    };
   }
 
   /** "Undo what this request did": every operation of the run, newest first, all or nothing. */

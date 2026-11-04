@@ -856,3 +856,127 @@ export function revertFlow(
     created: now,
   });
 }
+
+// ------------------------------------------------------------------ «Probar» (F3)
+
+/** A value as a step's line shows it: how many, a text, a number, a record's choice. */
+export type Out =
+  | { t: "list"; n: number }
+  | { t: "text"; text: string }
+  | { t: "number"; value: number }
+  | { t: "record"; text: string | null; n: number | null }
+  | { t: "none" };
+/** What a step of a test did: the policy's decision, what it gave, and what it would have done. */
+export interface TestStep {
+  decision: string | null;
+  rule: string | null;
+  error: string | null;
+  out: Out;
+  would: {
+    decision: string;
+    rule: string | null;
+    tool: string | null;
+    title: string | null;
+    type: string | null;
+    text: string | null;
+  }[];
+}
+export interface TestView {
+  run: string;
+  status: string;
+  error: string | null;
+  sample: { mail: string; subject: string } | null;
+  steps: Record<string, TestStep>;
+}
+
+type PaintedLike = {
+  t: string;
+  value?: unknown;
+  items?: unknown[];
+  fields?: Record<string, unknown>;
+};
+const short = (s: string) => (s.length > 160 ? `${s.slice(0, 157)}…` : s);
+/** The words of a painted value, as plain text (a record's title or choice or text first). */
+function textOfPainted(p: unknown): string | null {
+  const v = p as PaintedLike | null;
+  if (!v) return null;
+  if (v.t === "v")
+    return typeof v.value === "string" ? short(v.value) : v.value == null ? null : String(v.value);
+  if (v.t === "rec" && v.fields) {
+    for (const k of ["choice", "title", "text", "titulo", "line"])
+      if (k in v.fields) return textOfPainted(v.fields[k]);
+    return null;
+  }
+  return null;
+}
+function outOf(p: unknown): Out {
+  const v = p as PaintedLike | null;
+  if (!v) return { t: "none" };
+  if (v.t === "list") return { t: "list", n: v.items?.length ?? 0 };
+  if (v.t === "v") {
+    if (typeof v.value === "number") return { t: "number", value: v.value };
+    if (v.value === null || v.value === undefined) return { t: "none" };
+    return { t: "text", text: short(String(v.value)) };
+  }
+  if (v.t === "rec" && v.fields) {
+    // A reading gives lists by module: how many items it found in all.
+    const all = v.fields.all as PaintedLike | undefined;
+    return {
+      t: "record",
+      text: textOfPainted(v),
+      n: all?.t === "list" ? (all.items?.length ?? 0) : null,
+    };
+  }
+  return { t: "none" };
+}
+
+/** A dry run as the editor overlays it on the canvas: each step's decision, value and what it would have done. */
+export function testView(
+  store: UserStore,
+  r: {
+    run: string;
+    status: string;
+    error: string | null;
+    outputs: Record<string, unknown>;
+    would: Record<
+      string,
+      {
+        decision: string;
+        rule: string | null;
+        tool: string | null;
+        args: Record<string, unknown>;
+      }[]
+    >;
+  },
+  sample: { mail: string; subject: string } | null,
+  titleOf: (tool: string) => string | null,
+): TestView {
+  const types = Object.values(store.schema().types);
+  const steps: Record<string, TestStep> = {};
+  for (const s of store.journal.steps(r.run)) {
+    const d = (s.detail ?? {}) as { code?: unknown };
+    steps[s.step] = {
+      decision: s.decision,
+      rule: s.rule,
+      error: s.decision === "stopped" && typeof d.code === "string" ? d.code : null,
+      out: outOf(r.outputs[s.step]),
+      would: (r.would[s.step] ?? []).map((w) => {
+        const type = textOfPainted(w.args.type);
+        const values = w.args.values as PaintedLike | undefined;
+        const title =
+          values?.t === "rec" && values.fields
+            ? textOfPainted(values.fields.title ?? values.fields.titulo ?? null)
+            : textOfPainted(w.args.text ?? w.args.prompt ?? null);
+        return {
+          decision: w.decision,
+          rule: w.rule,
+          tool: w.tool,
+          title: w.tool ? titleOf(w.tool) : null,
+          type: type ? (types.find((t) => t.key === type)?.name ?? type) : null,
+          text: title,
+        };
+      }),
+    };
+  }
+  return { run: r.run, status: r.status, error: r.error, sample, steps };
+}

@@ -761,6 +761,18 @@ contraseña ni un código aquí» under a question.
   that step may take (the server computes them: the trigger's, the earlier steps', `$item` in a loop). Then «Solo
   si», «Para cada» and «Junto con». The trigger's panel: «Nuevo correo» with what it binds, or «A mano» with the
   names its form asks for. A node with a problem has a `--bad` border; the selected one an `--accent` ring.
+  **«Probar»** (F3; n8n's «Test step» and Dify's debug run as references) runs the draft as it is, dry: with the
+  latest mail for a mail flow, with the form's values for one by hand. Readers and the decider are called (it costs
+  what a reading costs); nothing is written, notified, proposed or confirmed, and a question ends it. A bar over the
+  canvas in `--accent-soft` says with what («Prueba con «Informe y sala» · sin escribir nada», or where it stopped)
+  and has × to take it away; each node says what came of it in its line: «→ 2 elementos», «→ «Gestiones»»,
+  «Propondría: Crear en Docencia «Enviar el informe»», «Haría: Avisar «…»», «Preguntaría: …», «No se ejecuta (Solo
+  si)», «Parado: P4»; a node it never reached fades. Changing the draft takes the test away (its lines are stale).
+- **The Recorrido on the canvas** (F3, task 59c): a run of the Registro (and a proposal's «Recorrido») is drawn
+  as a flow's canvas, read only: the trigger with what it bound when the plan took values from outside, each step
+  named as the editor names it, an arrow for each value it took, and its line: «Hecho», «Propuesto», «Parado
+  (P2)», «No se ejecutó», «No llegó», with the first words a model answered under it. It replaces the SVG diagram of
+  task 52; the steps' list, «Leyó», «Hizo», «Propuso», «Decisiones», «Modelos» and «Copiar» stay below it.
 - **«Modelos»** (the tab; task 59b, Juan 2026-11-04: see what every model does and how they work together, n8n's
   canvas as the reference; until 2026-11-04 Ajustes → Modelos, which keeps a button to it): first the
   flow Boni declares (`packages/agent/src/pipeline.ts`, A-16) as a canvas (React Flow, dagre left to right, dots in

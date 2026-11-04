@@ -871,7 +871,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")
             .replace(/\/live\/[^/]+$/, "/live/:id")
             .replace(/\/flows\/(?!catalog$|check$)[^/]+$/, "/flows/:id")
-            .replace(/\/flows\/[^/]+\/(enabled|revert|run)$/, "/flows/:id/$1")}`;
+            .replace(/\/flows\/[^/]+\/(enabled|revert|run|test)$/, "/flows/:id/$1")}`;
           const list = opts.agent?.[key];
           if (!list?.length) return [503, '{"error":"agent-off"}'];
           const n = agentCalls[key] ?? 0;

@@ -609,12 +609,15 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
   await expect(detail.locator(".log-step").first()).toContainText("«informe»");
   await expect(detail.locator(".log-step.failed")).toContainText("mail.send");
   await expect(detail.locator(".log-step.failed")).toContainText("P2");
-  await expect(detail.locator("a, img")).toHaveCount(0);
-  // «Recorrido» (task 52): the steps as a diagram (the stopped one in red, fed by the first), what it read and
-  // decided as text, and «Copiar» puts the whole as text in the clipboard.
-  await expect(detail.locator(".trace-diagram .trace-node")).toHaveCount(2);
-  await expect(detail.locator(".trace-diagram .trace-node.failed")).toContainText("mail.send");
-  await expect(detail.locator(".trace-diagram .trace-edge")).toHaveCount(1);
+  // Nothing the run read becomes a link or an image (the canvas library's own credit is the one link).
+  await expect(detail.locator("a:not(.react-flow__attribution a), img")).toHaveCount(0);
+  // «Recorrido» (task 52, on the flow canvas since docs/flujos.md F3): the steps as nodes (the stopped one in red,
+  // fed by the first), what it read and decided as text, and «Copiar» puts the whole as text in the clipboard.
+  const run = detail.locator(".run-canvas");
+  await expect(run.locator(".fl-node")).toHaveCount(2);
+  await expect(run.locator(".fl-card.bad")).toContainText("mail.send");
+  await expect(run.locator(".fl-card.bad")).toContainText("Parado");
+  await expect(run.locator(".react-flow__edge")).toHaveCount(1);
   await expect(detail.locator(".trace-block", { hasText: "Leyó" })).toContainText(
     "Correos: «Informe mensual»",
   );

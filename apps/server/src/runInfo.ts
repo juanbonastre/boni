@@ -19,6 +19,8 @@ export type RunWhat =
   | { kind: "review" }
   /** A proposal Juan accepted. */
   | { kind: "accepted" }
+  /** «Probar» on a flow (docs/flujos.md F3): a dry run, nothing written. */
+  | { kind: "test"; flow: string }
   | { kind: "other" };
 
 export interface RunChange {
@@ -86,6 +88,8 @@ export function whatOf(
   mails?: Map<string, MailSeen | null>,
 ): RunWhat {
   if (r.origin === "accepted") return { kind: "accepted" };
+  if (r.origin === "test")
+    return { kind: "test", flow: (r.flow && store.journal.flow(r.flow)?.name) || "" };
   if (r.origin === "turn" || r.turn) {
     const planner = store.journal.modelCalls(r.id).find((m) => m.role === "planner");
     const req = (planner?.request as { input?: { request?: unknown } } | undefined)?.input?.request;

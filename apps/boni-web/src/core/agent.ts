@@ -334,6 +334,9 @@ export interface Visibility {
 /** One step of a run as Juan's Registro shows it (`GET api/agent/runs/:id`). */
 export interface RunStep {
   id: string;
+  /** call, read, ask or reply; and a tool's title («Crear»), as the flow editor names its nodes. */
+  op: string;
+  title: string | null;
   what: string;
   /** The arguments as the plan wrote them, as text. */
   args: string;
@@ -342,6 +345,8 @@ export interface RunStep {
   error: string | null;
   /** The steps it took its data from: the diagram's edges («Recorrido», task 52). */
   deps: string[];
+  /** The inputs it took (what the trigger or the code bound): an edge from the trigger. */
+  uses: string[];
   /** What the models answered in it, as text (Juan's own content; never markup). */
   answers: string[];
 }
@@ -353,6 +358,10 @@ export interface RunDetail {
   started: number;
   finished: number | null;
   request: string | null;
+  /** The flow and version it ran (docs/flujos.md), when it is one; what the plan took from outside its steps. */
+  flow: string | null;
+  flowVersion: number | null;
+  inputs: string[];
   steps: RunStep[];
   read: { collection: string; titles: string[]; n: number }[];
   changes: { action: string; title: string; collection: string; undone: boolean }[];
@@ -402,6 +411,7 @@ export type RunWhat =
   | { kind: "measure"; subject: string }
   | { kind: "review" }
   | { kind: "accepted" }
+  | { kind: "test"; flow: string }
   | { kind: "other" };
 /** How often Boni would have accepted alone over Juan's last decisions, and been right (the server's rule). */
 export interface AutoAccept {
@@ -459,6 +469,8 @@ function runWhat(v: unknown): RunWhat | undefined {
     case "review":
     case "accepted":
       return { kind: v.kind };
+    case "test":
+      return { kind: "test", flow: s(v.flow, 80) };
     default:
       return { kind: "other" };
   }
@@ -685,6 +697,74 @@ export interface FlowCatalog {
     fields: { key: string; name: string; type: string; roles: string[]; relation: string | null }[];
   }[];
   modules: string[];
+}
+/** «Probar» (docs/flujos.md F3): what each step did in a dry run, and what it would have done. */
+export type TestOut =
+  | { t: "list"; n: number }
+  | { t: "text"; text: string }
+  | { t: "number"; value: number }
+  | { t: "record"; text: string | null; n: number | null }
+  | { t: "none" };
+export interface TestStepView {
+  decision: string | null;
+  rule: string | null;
+  error: string | null;
+  out: TestOut;
+  would: {
+    decision: string;
+    rule: string | null;
+    tool: string | null;
+    title: string | null;
+    type: string | null;
+    text: string | null;
+  }[];
+}
+export interface FlowTestView {
+  run: string;
+  status: string;
+  error: string | null;
+  sample: { mail: string; subject: string } | null;
+  steps: Record<string, TestStepView>;
+}
+function parseOut(v: unknown): TestOut {
+  if (!isObj(v)) return { t: "none" };
+  if (v.t === "list") return { t: "list", n: numOf(v.n) };
+  if (v.t === "number") return { t: "number", value: numOf(v.value) };
+  if (v.t === "text") return { t: "text", text: strOf(v.text, 200) ?? "" };
+  if (v.t === "record")
+    return { t: "record", text: strOf(v.text, 200), n: typeof v.n === "number" ? v.n : null };
+  return { t: "none" };
+}
+export function parseFlowTest(b: unknown): FlowTestView | null {
+  if (!isObj(b) || typeof b.run !== "string" || !isObj(b.steps)) return null;
+  const steps: Record<string, TestStepView> = {};
+  for (const [k, v] of Object.entries(b.steps)) {
+    if (!isObj(v) || !ID_RE.test(k)) continue;
+    steps[k] = {
+      decision: strOf(v.decision, 20),
+      rule: strOf(v.rule, 20),
+      error: strOf(v.error, 80),
+      out: parseOut(v.out),
+      would: (Array.isArray(v.would) ? v.would : []).filter(isObj).map((w) => ({
+        decision: strOf(w.decision, 20) ?? "",
+        rule: strOf(w.rule, 20),
+        tool: strOf(w.tool, 60),
+        title: strOf(w.title, 80),
+        type: strOf(w.type, 120),
+        text: strOf(w.text, 200),
+      })),
+    };
+  }
+  return {
+    run: b.run,
+    status: strOf(b.status, 40) ?? "",
+    error: strOf(b.error, 80),
+    sample:
+      isObj(b.sample) && typeof b.sample.mail === "string"
+        ? { mail: b.sample.mail, subject: strOf(b.sample.subject, 200) ?? "" }
+        : null,
+    steps,
+  };
 }
 /** The checklist and the values each step may take (the server's `checkFlow`). */
 export interface FlowProblem {
@@ -2115,6 +2195,11 @@ export class AgentApi {
     parseFlowDetail(await this.call("POST", `flows/${encodeURIComponent(id)}/revert`, to));
   deleteFlow = async (id: string) =>
     void (await this.call("DELETE", `flows/${encodeURIComponent(id)}`));
+  /** «Probar»: the draft dry, with a sample (the latest mail, or the form's values). */
+  testFlow = async (
+    id: string,
+    body: { plan: FlowPlan; trigger: unknown; mail?: string; inputs?: Record<string, string> },
+  ) => parseFlowTest(await this.call("POST", `flows/${encodeURIComponent(id)}/test`, body));
   /** A flow by hand, as a turn of the conversation (its replies, questions and confirmations there). */
   runFlow = async (
     id: string,
@@ -2661,8 +2746,13 @@ export class AgentApi {
       started: num(b.started),
       finished: typeof b.finished === "number" ? b.finished : null,
       request: typeof b.request === "string" ? b.request.slice(0, 4000) : null,
+      flow: str(b.flow, 80),
+      flowVersion: typeof b.flowVersion === "number" ? b.flowVersion : null,
+      inputs: strs(b.inputs).slice(0, 40),
       steps: b.steps.filter(isObj).map((x) => ({
         id: str(x.id, 40) ?? "",
+        op: str(x.op, 20) ?? "",
+        title: str(x.title, 80),
         what: str(x.what, 60) ?? "",
         args: isObj(x.args)
           ? Object.entries(x.args)
@@ -2674,6 +2764,7 @@ export class AgentApi {
         rule: str(x.rule, 10),
         error: str(x.error, 80),
         deps: strs(x.deps).slice(0, 40),
+        uses: strs(x.uses).slice(0, 40),
         answers: strs(x.answers).map((a) => a.slice(0, 4000)),
       })),
       read: list(b.read, (x) => ({

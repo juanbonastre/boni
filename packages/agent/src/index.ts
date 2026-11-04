@@ -16,6 +16,7 @@ export {
   type RunLimits,
   type TurnResult,
   toolsFor,
+  type Would,
 } from "./agent.ts";
 export { AnthropicProvider, apiSchema, ProviderError } from "./anthropic.ts";
 export { type ConfirmView, confirmHash, confirmView, marksOf } from "./confirm.ts";
