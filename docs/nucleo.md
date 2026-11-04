@@ -301,7 +301,10 @@ CREATE VIRTUAL TABLE entities_fts USING fts5(title, text, content='');
 - **`node:sqlite`** (sin módulos nativos, como el servidor actual). Se usan `enableDefensive(true)` y `setAuthorizer`:
   las consultas que compila el motor de vistas se ejecutan con un autorizador que solo permite `SELECT` sobre las
   tablas permitidas. Es una defensa más, además de compilar desde una especificación cerrada.
-- **Un escritor por usuario:** cada operación es una transacción, con un mutex por usuario y WAL.
+- **Un escritor por usuario:** cada operación es una transacción, con un mutex por usuario y WAL. El checkpoint
+  del WAL no lo paga ningún commit: el servidor abre los almacenes con el automático apagado y un hilo propio los
+  hace pasivos cada pocos segundos (`packages/store/src/checkpoint.ts`, tarea 43: en el disco del NAS costaba un
+  segundo al commit que cruzaba las mil páginas); un commit lento se dice en el log con el tamaño del WAL.
 - **Versiones para los clientes:** un contador monótono por usuario, que parte del reloj al arrancar como hoy. Así
   `changes since` sale del registro de operaciones y el flujo SSE avisa.
 

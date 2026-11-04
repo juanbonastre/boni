@@ -12,6 +12,7 @@ export {
   type Verification,
 } from "./audit.ts";
 export { type BlameLine, blame } from "./blame.ts";
+export { type Checkpointed, checkpointOnce, startCheckpoints, walBytes } from "./checkpoint.ts";
 export type {
   ConfirmationRow,
   DecisionRow,
@@ -54,6 +55,7 @@ export {
   type StoredEntity,
   type StoredFile,
   StoreError,
+  type StoreOptions,
   type UserStore,
   type Write,
   type Writes,

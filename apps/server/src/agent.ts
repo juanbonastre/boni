@@ -17,7 +17,7 @@ import {
   updateConversation,
   type Val,
 } from "@boni/agent";
-import { openUserStore, type UserStore } from "@boni/store";
+import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
@@ -94,6 +94,8 @@ export interface AgentHostOptions {
   providers: Providers | null;
   tz?: string;
   now?: () => number;
+  /** How each account's store opens (checkpoints from a thread, slow commits said: task 43). */
+  storeOptions?: Omit<StoreOptions, "now">;
 }
 
 export class AgentHost {
@@ -152,12 +154,22 @@ export class AgentHost {
       if (!this.o.dataDir) throw new Error("no data dir");
       const users = join(this.o.dataDir, "users");
       mkdirSync(users, { recursive: true, mode: 0o700 });
-      s = openUserStore(join(users, `${account}.db`), this.o.now ? { now: this.o.now } : {});
+      s = openUserStore(join(users, `${account}.db`), {
+        ...(this.o.storeOptions ?? {}),
+        ...(this.o.now ? { now: this.o.now } : {}),
+      });
       ensureSystemTypes(s);
       ensurePresets(s);
       this.stores.set(account, s);
     }
     return s;
+  }
+
+  /** The files of the stores open now (the checkpoint worker asks every few seconds). */
+  storePaths(): string[] {
+    if (!this.o.dataDir) return [];
+    const users = join(this.o.dataDir, "users");
+    return [...this.stores.keys()].map((id) => join(users, `${id}.db`));
   }
 
   agent(account: number): Agent {
