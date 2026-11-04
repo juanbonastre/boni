@@ -1,5 +1,5 @@
 import { Check, ChevronDown, X } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { FormComponent, FormField, Json, Option } from "../core/contract.ts";
 import * as F from "../core/formLogic.ts";
 import { markPanelEdited, useStore } from "../store.ts";
@@ -342,7 +342,9 @@ function FieldView({
 
 /**
  * A searchable list of options (inline or from a server source), keyboard first: typing filters, arrows move,
- * Enter picks, Esc closes. The selected ones show as removable chips.
+ * Enter picks, Esc closes. The selected ones show as removable chips (`required`: the one chosen stays, no cross).
+ * Options with a `group` show under its header; with `onCreate`, what is typed and matches nothing can be made
+ * («Crear «nombre»», the last row; task 53).
  */
 export function SearchList({
   id,
@@ -352,6 +354,8 @@ export function SearchList({
   selected,
   loadOptions,
   onChange,
+  required = false,
+  onCreate,
 }: {
   id?: string;
   source: string | null;
@@ -360,6 +364,8 @@ export function SearchList({
   selected: string[];
   loadOptions: OptionsLoader;
   onChange: (values: string[]) => void;
+  required?: boolean;
+  onCreate?: (name: string) => void | Promise<void>;
 }) {
   const t = useStore((s) => s.t);
   const [all, setAll] = useState<Option[]>(inline ?? []);
@@ -379,12 +385,26 @@ export function SearchList({
     };
   }, [source]);
 
+  useEffect(() => {
+    if (inline) setAll(inline);
+  }, [inline]);
   const labels = useMemo(() => new Map(all.map((o) => [o.value, o.label])), [all]);
   const options = useMemo(() => F.filterOptions(all, query).slice(0, 200), [all, query]);
+  // What is typed names nothing yet: the last row makes it.
+  const typed = query.trim();
+  const creatable =
+    !!onCreate && !!typed && !all.some((o) => o.label.trim().toLowerCase() === typed.toLowerCase());
+  const last = options.length - 1 + (creatable ? 1 : 0);
   useEffect(() => setActive(0), [query]);
   useEffect(() => {
-    listRef.current?.children[active]?.scrollIntoView({ block: "nearest" });
+    listRef.current?.querySelector(".option.active")?.scrollIntoView({ block: "nearest" });
   }, [active]);
+  const create = () => {
+    if (!onCreate || !typed) return;
+    setOpen(false);
+    setQuery("");
+    void onCreate(typed);
+  };
 
   const pick = (o: Option) => {
     if (multi)
@@ -405,14 +425,16 @@ export function SearchList({
           {selected.map((v) => (
             <span key={v} className="picked-chip">
               {labels.get(v) ?? v}
-              <button
-                type="button"
-                className="icon-btn tiny"
-                aria-label={t("form.remove", { label: labels.get(v) ?? v })}
-                onClick={() => onChange(selected.filter((s) => s !== v))}
-              >
-                <X size={12} strokeWidth={2} />
-              </button>
+              {!required && (
+                <button
+                  type="button"
+                  className="icon-btn tiny"
+                  aria-label={t("form.remove", { label: labels.get(v) ?? v })}
+                  onClick={() => onChange(selected.filter((s) => s !== v))}
+                >
+                  <X size={12} strokeWidth={2} />
+                </button>
+              )}
             </span>
           ))}
         </div>
@@ -433,13 +455,16 @@ export function SearchList({
           if (e.key === "ArrowDown") {
             e.preventDefault();
             setOpen(true);
-            setActive((a) => Math.min(options.length - 1, a + 1));
+            setActive((a) => Math.min(last, a + 1));
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             setActive((a) => Math.max(0, a - 1));
           } else if (e.key === "Enter" && open && options[active]) {
             e.preventDefault();
             pick(options[active]!);
+          } else if (e.key === "Enter" && open && creatable && active === options.length) {
+            e.preventDefault();
+            create();
           } else if (e.key === "Escape" && open) {
             e.preventDefault();
             e.stopPropagation();
@@ -455,30 +480,57 @@ export function SearchList({
           aria-multiselectable={multi}
           tabIndex={-1}
         >
-          {options.length === 0 && <div className="option empty muted">{t("form.noMatches")}</div>}
+          {options.length === 0 && !creatable && (
+            <div className="option empty muted">{t("form.noMatches")}</div>
+          )}
           {options.map((o, i) => {
             const on = selected.includes(o.value);
+            const header = o.group && o.group !== options[i - 1]?.group ? o.group : null;
             return (
-              <div
-                key={o.value}
-                role="option"
-                tabIndex={-1}
-                aria-selected={on}
-                className={`option${i === active ? " active" : ""}`}
-                onMouseDown={(e) => {
-                  e.preventDefault(); // keep the focus in the search box
-                  pick(o);
-                }}
-                onMouseEnter={() => setActive(i)}
-              >
-                <span className="option-check">{on && <Check size={14} strokeWidth={2} />}</span>
-                <span className="option-text">
-                  <span className="option-label">{o.label}</span>
-                  {o.hint && <span className="option-hint">{o.hint}</span>}
-                </span>
-              </div>
+              <Fragment key={o.value}>
+                {header && (
+                  <div className="option-group" role="presentation">
+                    {header}
+                  </div>
+                )}
+                <div
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={on}
+                  className={`option${i === active ? " active" : ""}`}
+                  onMouseDown={(e) => {
+                    e.preventDefault(); // keep the focus in the search box
+                    pick(o);
+                  }}
+                  onMouseEnter={() => setActive(i)}
+                >
+                  <span className="option-check">{on && <Check size={14} strokeWidth={2} />}</span>
+                  <span className="option-text">
+                    <span className="option-label">{o.label}</span>
+                    {o.hint && <span className="option-hint">{o.hint}</span>}
+                  </span>
+                </div>
+              </Fragment>
             );
           })}
+          {creatable && (
+            <div
+              role="option"
+              tabIndex={-1}
+              aria-selected={false}
+              className={`option create${active === options.length ? " active" : ""}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                create();
+              }}
+              onMouseEnter={() => setActive(options.length)}
+            >
+              <span className="option-check" />
+              <span className="option-text">
+                <span className="option-label">{t("form.createOption", { name: typed })}</span>
+              </span>
+            </div>
+          )}
         </div>
       )}
       {!open && selected.length === 0 && <div className="field-help">{t("form.typeToSearch")}</div>}

@@ -631,8 +631,11 @@ contraseña ni un código aquí» under a question.
   Esos días (three days); Aceptar / Rechazar at the end go back to where it was opened from, as Esc and the crumb
   "Bandeja / Propuesta" do. A proposal to create something can be **corrected** before accepting (Juan,
   2026-10-23): the ✎ button beside ⤢ (on its page, beside the title) opens a small boxed form under the card's
-  content: Título (a text field), Colección (one select of his collections, grouped as Tareas, Eventos and Otras by
-  what each keeps, a done box or a day: «tarea o evento» is that one choice, task 47), then the chosen collection's
+  content: Título (a text field), Colección (Boni's searchable list, the one of relations and forms: the chosen
+  collection as a chip, typing filters, the collections under Tareas, Eventos and Otras by what each keeps, a done
+  box or a day, so «tarea o evento» is that one choice, and a last row «Crear «nombre»» makes a collection that does
+  not exist yet and leaves it chosen; tasks 47 and 53, Juan 2026-11-04: «como en otras partes de Boni, con barra de
+  búsqueda y opción de crear colección»), then the chosen collection's
   day and hours as its own rows (each a cell, like a table's), the rest folded under «Propiedades», and "Deshacer
   cambios"; no sentence explains it (§5). Another collection keeps the day and the hours, each under the field that
   plays its role there. Aceptar then sends the changes and the toast says Boni will learn from them. **Deciding** (Juan, 2026-10-23): the clicked Aceptar / Rechazar keeps its size and turns into a spinner

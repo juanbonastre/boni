@@ -2481,6 +2481,21 @@ export async function loadTree(): Promise<Tree | null> {
   }
 }
 
+/**
+ * A new collection made from a picker (the inbox's correction, task 53): its id, with the types and the tree
+ * reloaded; null when it was not made (a taken name says so).
+ */
+export async function createCollectionNamed(name: string): Promise<string | null> {
+  try {
+    const id = await agent.createCollection(name);
+    await Promise.all([loadDataTypes(), loadTree()]);
+    return id || null;
+  } catch (e) {
+    toast(get().t(e instanceof ApiError && e.code === "taken" ? "tree.taken" : "tree.failed"));
+    return null;
+  }
+}
+
 /** A new collection (at the root or inside `parent`), opened on its page unless `stay`. Whether it was made. */
 export async function newCollection(name: string, parent?: string, stay = false) {
   try {

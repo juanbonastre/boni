@@ -456,9 +456,19 @@ test("a card can be corrected before accepting: its title and its collection go 
   await card.getByRole("button", { name: "Corregir" }).click();
   const form = card.locator(".inbox-correct");
   await expect(form.getByLabel("Título")).toHaveValue("Revisar actas");
-  await expect(form.getByLabel("Colección")).toHaveValue("t_docencia");
+  // The collection is Boni's searchable list (task 53): the chosen one as a chip, typing filters.
+  await expect(form.locator(".search-list .picked-chip")).toHaveText("Docencia");
   await form.getByLabel("Título").fill("Revisar las actas de FUP 1");
-  await form.getByLabel("Colección").selectOption({ label: "Libros" });
+  await form.getByLabel("Colección").fill("lib");
+  await form.getByRole("option", { name: "Libros" }).click();
+  await expect(form.locator(".search-list .picked-chip")).toHaveText("Libros");
+  // A collection that does not exist yet is made from the same list and left chosen.
+  await form.getByLabel("Colección").fill("Viajes");
+  await form.getByRole("option", { name: "Crear «Viajes»" }).click();
+  await expect(form.locator(".search-list .picked-chip")).toHaveText("Viajes");
+  expect(await requests(page, "POST api/data/types ")).toEqual([
+    'POST api/data/types {"name":"Viajes"}',
+  ]);
   // Nothing explains the correction on the screen (design guide §5): the form has its two lines and «Propiedades».
   await expect(form).not.toContainText("aprende");
   await page.screenshot({ path: `${SHOTS}/inbox-correct.png` });
@@ -468,7 +478,7 @@ test("a card can be corrected before accepting: its title and its collection go 
     r.startsWith("POST api/agent/proposals/c1/accept"),
   );
   expect(sent).toContain(
-    JSON.stringify({ edits: { title: "Revisar las actas de FUP 1", collection: "t_libro" } }),
+    JSON.stringify({ edits: { title: "Revisar las actas de FUP 1", collection: "t_hecha_1" } }),
   );
 });
 
@@ -1174,13 +1184,10 @@ test("Corregir: task or event is the collection's group, the day and hours are i
   await card.getByRole("button", { name: "Corregir" }).click();
   const form = card.locator(".inbox-correct");
   const select = form.getByLabel("Colección");
-  await expect(select).toHaveValue("t_eventos");
+  await expect(form.locator(".search-list .picked-chip")).toHaveText("Eventos");
   // One control: the collections grouped by what they keep (a task has a box; an event a day and no box).
-  expect(
-    await select
-      .locator("optgroup")
-      .evaluateAll((gs) => gs.map((g) => (g as HTMLOptGroupElement).label)),
-  ).toEqual(["Tareas", "Eventos", "Otras"]);
+  await select.click();
+  await expect(form.locator(".option-group")).toHaveText(["Tareas", "Eventos", "Otras"]);
   // The day and the hours are the form's own rows, before «Propiedades».
   const when = form.locator(".inbox-when .inbox-prop");
   await expect(when.locator(".inbox-prop-name")).toHaveText([
@@ -1190,7 +1197,8 @@ test("Corregir: task or event is the collection's group, the day and hours are i
   ]);
   await expect(when.nth(1)).toContainText("17:00");
   // As a task: the same day and hours, under that collection's fields.
-  await select.selectOption({ label: "Tareas" });
+  await form.getByRole("option", { name: "Tareas" }).click();
+  await expect(form.locator(".search-list .picked-chip")).toHaveText("Tareas");
   await expect(when.locator(".inbox-prop-name")).toHaveText(["Día", "Inicio", "Fin"]);
   await expect(when.nth(1)).toContainText("17:00");
   await when.nth(1).getByRole("button").click();

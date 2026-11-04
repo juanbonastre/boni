@@ -24,6 +24,7 @@ import {
   acceptProposal,
   answerRequest,
   closeProposal,
+  createCollectionNamed,
   dismissProposal,
   dismissRequest,
   loadDataTypes,
@@ -36,6 +37,7 @@ import {
 } from "../store.ts";
 import { CallRows, ValueText } from "./Chat.tsx";
 import { Cell } from "./DatabaseBlock.tsx";
+import { type OptionsLoader, SearchList } from "./FormView.tsx";
 
 /**
  * The inbox (Juan, 2026-10-22): a panel on the right that comes out when something new arrives, and the same cards
@@ -167,6 +169,8 @@ function kindOf(x: DataType): "task" | "event" | "other" {
   if (r.date || r.start) return "event";
   return "other";
 }
+/** The inbox's collections come inline: nothing to load from a source. */
+const NO_OPTIONS: OptionsLoader = async () => [];
 const KIND_KEY = {
   task: "inbox.kind.task",
   event: "inbox.kind.event",
@@ -248,6 +252,17 @@ function useCorrection(p: Proposal) {
     items: options.filter((o) => kindOf(o) === k),
   }));
   const grouped = groups.some((g) => g.kind !== "other" && g.items.length > 0);
+  // Boni's searchable list (the one of relations and forms; task 53): the collections under their kind, the
+  // chosen one as a chip, and «Crear «nombre»» for one that does not exist yet.
+  const listOptions = useMemo(
+    () =>
+      grouped
+        ? groups.flatMap((g) =>
+            g.items.map((o) => ({ value: o.id, label: o.name, group: t(KIND_KEY[g.kind]) })),
+          )
+        : options.map((o) => ({ value: o.id, label: o.name })),
+    [types, grouped, t],
+  );
   // Another collection keeps the day and the hours, each under the field that plays its role there (task 47).
   const changeCollection = (id: string) => {
     if (!edit) return;
@@ -304,31 +319,22 @@ function useCorrection(p: Proposal) {
           onChange={(e) => setEdit({ ...edit, title: e.target.value })}
         />
       </label>
-      <label className="inbox-correct-row">
+      <label className="inbox-correct-row" htmlFor={`correct-collection-${p.id}`}>
         <span>{t("inbox.correctCollection")}</span>
-        <select
-          className="input"
-          value={edit.collection}
-          onChange={(e) => changeCollection(e.target.value)}
-        >
-          {grouped
-            ? groups
-                .filter((g) => g.items.length > 0)
-                .map((g) => (
-                  <optgroup key={g.kind} label={t(KIND_KEY[g.kind])}>
-                    {g.items.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))
-            : options.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
-              ))}
-        </select>
+        <SearchList
+          id={`correct-collection-${p.id}`}
+          source={null}
+          inline={listOptions}
+          multi={false}
+          required
+          selected={[edit.collection]}
+          loadOptions={NO_OPTIONS}
+          onChange={([id]) => id && changeCollection(id)}
+          onCreate={async (name) => {
+            const id = await createCollectionNamed(name);
+            if (id) changeCollection(id);
+          }}
+        />
       </label>
       {when.length > 0 && <div className="inbox-props inbox-when">{when.map(cell)}</div>}
       {props.length > 0 && (

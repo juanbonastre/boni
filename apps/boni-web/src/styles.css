@@ -1279,6 +1279,16 @@ select {
 .option.active {
   background: var(--hover);
 }
+.option-group {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.option.create {
+  color: var(--accent);
+}
 .option.empty {
   cursor: default;
 }
@@ -5644,6 +5654,10 @@ body:has(.toast) .db-selinfo {
 .inbox-correct-row .input {
   min-width: 0;
   width: 100%;
+}
+.inbox-correct-row .search-list {
+  flex: 1;
+  min-width: 0;
 }
 .inbox-correct p {
   margin: 0;
