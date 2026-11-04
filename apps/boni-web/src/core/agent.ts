@@ -121,6 +121,8 @@ export interface Proposal {
   view: ConfirmView | null;
   sources: string[];
   created: number;
+  /** The run that made it («Recorrido», task 52); missing from an older server. */
+  run: string | null;
   /** What the inbox shows of it, made by the server's code (apps/server/src/inboxCard.ts). */
   card: InboxCard | null;
 }
@@ -316,12 +318,33 @@ export interface RunStep {
   decision: string | null;
   rule: string | null;
   error: string | null;
+  /** The steps it took its data from: the diagram's edges («Recorrido», task 52). */
+  deps: string[];
+  /** What the models answered in it, as text (Juan's own content; never markup). */
+  answers: string[];
 }
+/** A run step by step («Recorrido», task 52): all from the journal and the audit, painted as text. */
 export interface RunDetail {
   id: string;
   status: string;
+  origin: string;
+  started: number;
+  finished: number | null;
   request: string | null;
   steps: RunStep[];
+  read: { collection: string; titles: string[]; n: number }[];
+  changes: { action: string; title: string; collection: string; undone: boolean }[];
+  proposals: { title: string; status: string }[];
+  decisions: { area: string; p: number; outcome: string; result: string | null }[];
+  models: {
+    role: string;
+    provider: string;
+    model: string;
+    input: number;
+    output: number;
+    cost: number | null;
+    at: number;
+  }[];
 }
 
 /** A plan expression as text: a literal as it is, a quote of the request in quotes, a reference by name. */
@@ -1668,6 +1691,7 @@ export class AgentApi {
           view: parseConfirmView(p.view),
           sources: strs(p.sources),
           created: typeof p.created === "number" ? p.created : 0,
+          run: str(p.run, 80),
           card: parseCard(p.card),
         },
       ];
@@ -2247,9 +2271,15 @@ export class AgentApi {
   async runDetail(id: string): Promise<RunDetail | null> {
     const b = await this.call("GET", `runs/${encodeURIComponent(id)}`);
     if (!isObj(b) || !Array.isArray(b.steps)) return null;
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+    const list = <T>(v: unknown, of: (x: Record<string, unknown>) => T): T[] =>
+      Array.isArray(v) ? v.filter(isObj).slice(0, 200).map(of) : [];
     return {
       id: str(b.id, 80) ?? id,
       status: str(b.status, 80) ?? "",
+      origin: str(b.origin, 40) ?? "",
+      started: num(b.started),
+      finished: typeof b.finished === "number" ? b.finished : null,
       request: typeof b.request === "string" ? b.request.slice(0, 4000) : null,
       steps: b.steps.filter(isObj).map((x) => ({
         id: str(x.id, 40) ?? "",
@@ -2263,6 +2293,38 @@ export class AgentApi {
         decision: str(x.decision, 20),
         rule: str(x.rule, 10),
         error: str(x.error, 80),
+        deps: strs(x.deps).slice(0, 40),
+        answers: strs(x.answers).map((a) => a.slice(0, 4000)),
+      })),
+      read: list(b.read, (x) => ({
+        collection: str(x.collection, 80) ?? "",
+        titles: strs(x.titles).map((y) => y.slice(0, 80)),
+        n: num(x.n),
+      })),
+      changes: list(b.changes, (x) => ({
+        action: str(x.action, 20) ?? "",
+        title: str(x.title, 80) ?? "",
+        collection: str(x.collection, 80) ?? "",
+        undone: x.undone === true,
+      })),
+      proposals: list(b.proposals, (x) => ({
+        title: str(x.title, 120) ?? "",
+        status: str(x.status, 20) ?? "",
+      })),
+      decisions: list(b.decisions, (x) => ({
+        area: str(x.area, 40) ?? "",
+        p: num(x.p),
+        outcome: str(x.outcome, 20) ?? "",
+        result: str(x.result, 20),
+      })),
+      models: list(b.models, (x) => ({
+        role: str(x.role, 40) ?? "",
+        provider: str(x.provider, 40) ?? "",
+        model: str(x.model, 80) ?? "",
+        input: num(x.input),
+        output: num(x.output),
+        cost: typeof x.cost === "number" && Number.isFinite(x.cost) ? x.cost : null,
+        at: num(x.at),
       })),
     };
   }

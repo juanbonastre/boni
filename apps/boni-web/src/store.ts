@@ -298,6 +298,8 @@ interface State {
   /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
   inboxOpen: boolean;
   runs: RunSummary[];
+  /** A run the Registro opens on arrival («Recorrido» from a turn or a proposal, task 52). */
+  openRun: string | null;
   /** The Registro's «Acierto»: Boni's decisions per area (docs/fiabilidad.md). */
   accuracy: AreaAccuracy[];
   /** «Aprender» (docs/preferencias.md §5): whether Boni's learners may suggest anything on their own. */
@@ -416,6 +418,7 @@ export const useStore = create<State>(() => ({
   decideErrors: {},
   inboxOpen: false,
   runs: [],
+  openRun: null,
   accuracy: [],
   learning: true,
   autoAccept: null,
@@ -1280,6 +1283,11 @@ export const showInbox = () => set({ view: { kind: "inbox" } });
 export const showLog = () => {
   set({ view: { kind: "log" } });
   void loadRuns();
+};
+/** «Recorrido»: the Registro with that run open (from a turn of the chat or a proposal's page). */
+export const openTrace = (run: string) => {
+  set({ openRun: run });
+  showLog();
 };
 
 /** Why a run stopped, in words: a fixed code from the server, never its data. */

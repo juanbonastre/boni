@@ -393,7 +393,7 @@ contraseña ni un código aquí» under a question.
   model, calls by use), «Actividad» (reads and changes, by day, who, in which collection, the table of Boni's activity,
   a link to «Registro») and «Registro» (runs, their duration and cost, a daily chart and the table) come with every
   account as ordinary pages of ordinary blocks, over Boni's own read-only collections («Llamadas a modelos», «Actividad
-  de Boni», «Ejecuciones»). A link block opens only a real page and says if its destination is gone. Under the page's
+  de Boni», «Ejecuciones»). A run opens to its «Recorrido» (task 52): a diagram of its steps left to right by what each reads from, the verdict in the outline (red where the policy stopped or denied it, dashed where it went to the inbox, faint where it never ran), each step with its rule and what the models answered (folded, as text), then «Leyó», «Hizo», «Propuso», «Decisiones» and «Modelos» as short lists; «Copiar» puts it all in the clipboard as text, headed as carrying text of his data; «Recorrido» also opens from a turn of the chat and from a proposal's page. Nothing in it is a link or markup. A link block opens only a real page and says if its destination is gone. Under the page's
   name, «De Boni»; once changed, «Modificada», which opens the list of changes (+ added, − removed, ✎ changed, ⤢ another
   size, ↕ where the blocks are) and «Restaurar la de Boni» (Undo in the notice and Ctrl+Z). Removed, a template stays
   removed (the trash brings it back).

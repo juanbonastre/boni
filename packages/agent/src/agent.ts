@@ -47,6 +47,7 @@ import {
   ToolError,
   type ToolRegistry,
 } from "./tools.ts";
+import { type RunDetail, traceOf } from "./trace.ts";
 import {
   at,
   atOrNull,
@@ -255,21 +256,7 @@ export type LiveEvent =
   | { type: "waiting"; pending: Pending }
   | { type: "end"; status: TurnResult["status"]; error: string | null };
 
-export interface RunDetail {
-  id: string;
-  status: string;
-  request: string | null;
-  steps: {
-    id: string;
-    op: string;
-    what: string;
-    args: Record<string, unknown>;
-    /** allow, confirm, propose, deny, skip, stopped (the last one logged), or null: it never ran. */
-    decision: string | null;
-    rule: string | null;
-    error: string | null;
-  }[];
-}
+export type { RunDetail } from "./trace.ts";
 
 export interface AgentOptions {
   store: UserStore;
@@ -2137,41 +2124,9 @@ export class Agent {
    * decided and where it stopped. Arguments as the plan wrote them (literals, quotes of his request,
    * references), never the values read from his data or from outside.
    */
+  /** What a run did, step by step (trace.ts; the Registro and «Recorrido», task 52). */
   runDetail(id: string): RunDetail | null {
-    const j = this.o.store.journal;
-    const r = j.run(id);
-    if (!r) return null;
-    const planner = j.modelCalls(id).find((m) => m.role === "planner");
-    const request = (planner?.request as { input?: { request?: unknown } } | undefined)?.input
-      ?.request;
-    const logged = j.steps(id);
-    const plan = r.plan as Plan | null;
-    return {
-      id,
-      status: r.status,
-      request: typeof request === "string" ? request : null,
-      steps: (plan?.steps ?? []).map((s) => {
-        const mine = logged.filter((x) => x.step === s.id);
-        const last = mine.at(-1);
-        const error = mine.find((x) => x.kind === "error")?.detail as { code?: string } | undefined;
-        return {
-          id: s.id,
-          op: s.op,
-          what:
-            s.op === "call"
-              ? s.tool
-              : s.op === "read"
-                ? s.reader
-                : s.op === "reply"
-                  ? s.component
-                  : s.control,
-          args: s.op === "call" ? s.args : s.op === "read" ? { input: s.input } : {},
-          decision: last?.decision ?? null,
-          rule: last?.rule ?? null,
-          error: error?.code ?? null,
-        };
-      }),
-    };
+    return traceOf(this.o.store, id);
   }
 
   /** "Undo what this request did": every operation of the run, newest first, all or nothing. */

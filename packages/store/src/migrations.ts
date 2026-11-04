@@ -285,6 +285,8 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
      action INTEGER NOT NULL,
      op INTEGER NOT NULL
    );`,
+  // 15: a run's proposals by their run («Recorrido», task 52): read per run, never the whole table.
+  "CREATE INDEX proposals_run ON proposals(run)",
 ];
 
 export function migrate(db: DatabaseSync): void {

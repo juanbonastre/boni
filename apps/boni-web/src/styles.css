@@ -3083,6 +3083,82 @@ html.widget-page body {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+/* «Recorrido» (task 52): the steps as nodes left to right, the verdict in the outline; then the blocks as text. */
+.trace-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+.trace-tools .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.trace-diagram {
+  overflow-x: auto;
+  margin: 4px 0 8px;
+}
+.trace-diagram svg {
+  display: block;
+}
+.trace-node {
+  cursor: pointer;
+}
+.trace-node rect {
+  fill: var(--surface-2);
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.trace-node:hover rect,
+.trace-node:focus-visible rect {
+  stroke: var(--accent);
+}
+.trace-node text {
+  fill: var(--text);
+  font-size: 11px;
+  font-family: inherit;
+}
+.trace-node.failed rect {
+  stroke: var(--bad);
+}
+.trace-node.proposed rect {
+  stroke: var(--accent);
+  stroke-dasharray: 4 3;
+}
+.trace-node.idle {
+  opacity: 0.5;
+}
+.trace-edge {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.trace-deps {
+  font-size: 11px;
+}
+.trace-answer {
+  margin: 2px 0 0;
+}
+.trace-answer summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+}
+.trace-answer pre {
+  margin: 2px 0 0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.trace-block {
+  margin-top: 8px;
+}
+.trace-name {
+  font-weight: 600;
+}
+.trace-block ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
 .nav-count {
   margin-left: auto;
   font-size: 11px;

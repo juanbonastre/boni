@@ -577,6 +577,18 @@ test("accepting shows a spinner on that card, the next one can be decided meanwh
 });
 
 test("the log: what each request did, and Undo for it", async ({ page }) => {
+  // The clipboard as a test double: what «Copiar» writes is read back from the page.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          (window as unknown as { __copied?: string }).__copied = text;
+          return Promise.resolve();
+        },
+      },
+    });
+  });
   await openApp(page, "/?still", {
     agent: {
       "GET api/agent/runs": [RUNS],
@@ -598,6 +610,27 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
   await expect(detail.locator(".log-step.failed")).toContainText("mail.send");
   await expect(detail.locator(".log-step.failed")).toContainText("P2");
   await expect(detail.locator("a, img")).toHaveCount(0);
+  // «Recorrido» (task 52): the steps as a diagram (the stopped one in red, fed by the first), what it read and
+  // decided as text, and «Copiar» puts the whole as text in the clipboard.
+  await expect(detail.locator(".trace-diagram .trace-node")).toHaveCount(2);
+  await expect(detail.locator(".trace-diagram .trace-node.failed")).toContainText("mail.send");
+  await expect(detail.locator(".trace-diagram .trace-edge")).toHaveCount(1);
+  await expect(detail.locator(".trace-block", { hasText: "Leyó" })).toContainText(
+    "Correos: «Informe mensual»",
+  );
+  await expect(detail.locator(".trace-block", { hasText: "Decisiones" })).toContainText(
+    "Colección · 60 % · preguntó",
+  );
+  await expect(detail.locator(".trace-block", { hasText: "Modelos" })).toContainText(
+    "planner · m-ejemplo · 1200 → 80 · 0.0040 $",
+  );
+  await detail.getByRole("button", { name: "Copiar" }).click();
+  await expect(page.locator(".toast")).toContainText("Copiado");
+  const copied = await page.evaluate(() => (window as unknown as { __copied?: string }).__copied);
+  expect(copied).toContain("Reenvía el informe a quien me lo pidió");
+  expect(copied).toContain("2. mail.send");
+  expect(copied).toContain("Leyó:");
+  expect(copied).toContain("con texto de tus datos");
   // A stopped request may have left changes: it has Undo too.
   await expect(
     page.locator(".log-list li").nth(1).getByRole("button", { name: "Deshacer lo que hizo" }),
