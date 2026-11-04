@@ -312,6 +312,39 @@ test("edits go to Boni through the server: only the edited property, new events,
   await expect(page.locator(".ev", { hasText: "Tutoría inventada" })).toHaveCount(0);
 });
 
+test("a new event typed and the app closed at once: the entry is on the server when it opens again", async ({
+  page,
+}) => {
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await connect(page);
+  await expect(page.locator(".modal")).toContainText("En directo");
+  await page.keyboard.press("Escape");
+  const cols = await page.locator(".cols-viewport").boundingBox();
+  if (!cols) throw new Error("no grid");
+  const x = cols.x + (cols.width / 7) * 1.5; // Tuesday 16
+  await page.mouse.move(x, cols.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(x, cols.y + 360, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  await page.keyboard.type("Creada y cerrada");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".ev", { hasText: "Creada y cerrada" })).toHaveCount(1);
+  // Closed within the second (the window gone, its requests with it): what waited goes when it opens again.
+  await page.reload();
+  await expect(page.locator(".ev", { hasText: "Creada y cerrada" })).toHaveCount(1, {
+    timeout: 10_000,
+  });
+  const made = async () => {
+    const r = await mcp.call("read", { collection: "Docencia", title: "Creada y cerrada" });
+    return r.error ? null : (JSON.parse(r.text) as { id: string }).id;
+  };
+  await expect.poll(made, { timeout: 10_000 }).not.toBeNull();
+  // And a second start finds it as the server's entry, once.
+  await page.reload();
+  await expect(page.locator(".ev", { hasText: "Creada y cerrada" })).toHaveCount(1);
+});
+
 test("without a connection, edits wait on the device (also over a restart) and go when it is back", async ({
   page,
 }) => {

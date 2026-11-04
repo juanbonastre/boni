@@ -13,9 +13,18 @@ const CALL_HOSTS =
 export const JOIN_BEFORE_MS = 10 * 60_000;
 
 /** The http(s) addresses in an event's place and description, in that order, each once, at most eight. */
-export function linksOf(ev: Pick<CalEvent, "location" | "description">): string[] {
+export function linksOf(
+  ev: Pick<CalEvent, "location" | "description"> & Partial<Pick<CalEvent, "linked">>,
+): string[] {
   const out: string[] = [];
-  for (const text of [ev.location, ev.description]) {
+  // A record linked to an external event (task 50) keeps that event's place and note too: its call is theirs.
+  const texts = [
+    ev.location,
+    ev.description,
+    ev.linked?.location ?? "",
+    ev.linked?.description ?? "",
+  ];
+  for (const text of texts) {
     for (const m of text.matchAll(URL_RE)) {
       const url = m[0].replace(/[.,;:!?]+$/, "");
       try {
@@ -41,7 +50,9 @@ export function hostOf(url: string): string {
 }
 
 /** The event's video call, when one of its links is one. */
-export function videoLink(ev: Pick<CalEvent, "location" | "description">): string | null {
+export function videoLink(
+  ev: Pick<CalEvent, "location" | "description"> & Partial<Pick<CalEvent, "linked">>,
+): string | null {
   return linksOf(ev).find((u) => CALL_HOSTS.test(hostOf(u))) ?? null;
 }
 

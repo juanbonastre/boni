@@ -75,8 +75,11 @@ export class ServerWriter implements CollectionProvider {
   async apply(changes: readonly RowChange[]): Promise<void> {
     if (changes.length === 0) return;
     this.outbox.push({ base: this.hooks.version(), changes: [...changes] });
-    await this.hooks.save(this.outbox);
+    // The request leaves at once and the queue is kept on the device meanwhile: a window closed right after a
+    // change (2026-11-04: an event made and the app closed within seconds was gone) must have done one or the other.
+    const kept = this.hooks.save(this.outbox);
     void this.flush();
+    await kept;
   }
 
   /** The server's rows (at `version`) with what this device changed and that version lacks on top. */
@@ -119,8 +122,9 @@ export class ServerWriter implements CollectionProvider {
           else this.drafts.set(c.row.id, c.row);
         }
       } catch (e) {
-        // No connection or no session: kept for when there is one again.
-        if (e instanceof RemoteError && (e.kind === "network" || e.kind === "unauthorized")) return;
+        // No connection, no session, or a server on its way (a 502 from the proxy while it restarts: on 2026-11-04
+        // a deploy's 502 dropped an event Juan had just made): kept for when the stream is live again.
+        if (e instanceof RemoteError && (e.transient || e.kind === "unauthorized")) return;
         this.outbox.splice(0, n);
         await this.hooks.save(this.outbox);
         this.hooks.rejected(

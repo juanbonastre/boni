@@ -19,6 +19,7 @@ const FEED = [
   "RRULE:FREQ=WEEKLY;BYDAY=MO,TH",
   "SUMMARY:Taller externo",
   "LOCATION:Sala de ejemplo",
+  "DESCRIPTION:Enlace: https://zoom.us/j/123456789",
   "END:VEVENT",
   "END:VCALENDAR",
 ].join("\r\n");
@@ -65,8 +66,10 @@ test("an external event becomes a record of the user's, at its time, linked and 
   await expect(linked).toContainText("Taller externo");
   await expect(external).toHaveCount(0);
   await expect(taller(page)).toHaveCount(n);
-  // Its detail: the user's own title, «Enlace» with the calendar it follows, and a time that is not edited here.
+  // Its detail: the user's own title, «Enlace» with the calendar it follows, and a time that is not edited here;
+  // the external event's video call stays with it («Unirse», task 49).
   await expect(pop.locator(".title-input")).toBeEnabled();
+  await expect(pop.locator(".detail-join")).toBeVisible();
   await expect(pop.locator(".linked-row")).toContainText("Calendario de ejemplo");
   await expect(pop.locator(".when-locked")).toHaveAttribute("disabled", "");
   await page.screenshot({ path: "e2e/screenshots/linked.png" });
