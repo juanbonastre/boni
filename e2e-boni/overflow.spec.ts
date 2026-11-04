@@ -8,6 +8,7 @@ import {
   CARD_DETAILED,
   confirmTurn,
   EXTENSIONS,
+  FLOW,
   GUIDE,
   MAIL,
   MAIL_SUGGESTED,
@@ -462,7 +463,7 @@ for (const language of ["es", "en"] as const) {
   });
 }
 
-/** Ajustes → Modelos: every section opened, a role's cases and the panel to change it; the template pages. */
+/** «Modelos»: every section opened, a role's cases and the panel to change it; the template pages. */
 for (const language of ["es", "en"] as const) {
   for (const width of [1440, 900]) {
     test(`«Modelos», the template pages, «Registro» and «Auditoría» fit (${language}, ${width} px)`, async ({
@@ -474,6 +475,7 @@ for (const language of ["es", "en"] as const) {
         agent: {
           "GET api/agent/models": [MODELS_EVALUATED],
           "GET api/agent/models/catalogue": [MODELS_CATALOGUE],
+          "GET api/agent/pipeline": [FLOW],
           "GET api/data/audit/summary": [AUDIT_SUMMARY],
           "GET api/data/audit/actions": [AUDIT_ACTIONS],
           "GET api/data/audit/actions/:seq": [AUDIT_DETAIL],
