@@ -35,10 +35,18 @@ function filled(opts: Parameters<typeof openUserStore>[1]): { store: UserStore; 
     },
     { actor: "user" },
   );
-  // Thousands of pages into the WAL: more than the automatic checkpoint's thousand.
-  const text = "x".repeat(2000);
-  for (let i = 0; i < 1500; i++)
-    store.create("t_nota", { f_t: { value: `${i} ${text}`, label: own } }, { actor: "user" });
+  // Thousands of pages into the WAL (the notes and their operations' log): more than the automatic
+  // checkpoint's thousand, in a few commits so a slow runner takes no longer than it must.
+  const text = "x".repeat(4000);
+  for (let b = 0; b < 3; b++)
+    store.batch(() => {
+      for (let i = 0; i < 400; i++)
+        store.create(
+          "t_nota",
+          { f_t: { value: `${b}-${i} ${text}`, label: own } },
+          { actor: "user" },
+        );
+    });
   return { store, path };
 }
 
@@ -56,7 +64,9 @@ const frames = (path: string) => {
 };
 
 describe("checkpoints of the WAL from a thread of their own (task 43)", () => {
-  it("with the automatic checkpoint off the WAL grows past a thousand pages; one passive checkpoint moves it all", () => {
+  it("with the automatic checkpoint off the WAL grows past a thousand pages; one passive checkpoint moves it all", {
+    timeout: 30_000,
+  }, () => {
     const { path } = filled({ autoCheckpoint: false });
     expect(walBytes(path)).toBeGreaterThan(1000 * 4096);
     const first = checkpointOnce(path);
@@ -67,19 +77,23 @@ describe("checkpoints of the WAL from a thread of their own (task 43)", () => {
     expect(checkpointOnce(path).moved).toBe(first.frames);
   });
 
-  it("with it on (the default), SQLite keeps the WAL under its thousand pages by itself", () => {
+  it("with it on (the default), SQLite keeps the WAL under its thousand pages by itself", {
+    timeout: 30_000,
+  }, () => {
     const { path } = filled({});
     expect(frames(path).frames).toBeLessThan(1000);
   });
 
-  it("says a slow commit with the WAL's size; the worker checkpoints the databases it is told of and says what took long", async () => {
+  it("says a slow commit with the WAL's size; the worker checkpoints the databases it is told of and says what took long", {
+    timeout: 40_000,
+  }, async () => {
     const slow: [number, number][] = [];
     const { path } = filled({
       autoCheckpoint: false,
       onSlowCommit: (ms, bytes) => slow.push([ms, bytes]),
       slowCommitMs: -1, // every commit, for the test
     });
-    expect(slow.length).toBeGreaterThan(1000);
+    expect(slow.length).toBeGreaterThanOrEqual(3);
     expect(slow.at(-1)?.[1]).toBe(walBytes(path));
     const lines: string[] = [];
     const cp = startCheckpoints({
