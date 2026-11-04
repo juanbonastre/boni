@@ -166,35 +166,111 @@ export function layoutOf(d: Diagram): Layout {
   return { frames, cards };
 }
 
-/** Each card's top-left corner by dagre (the mothers as clusters keep their branch together), or a grid if it fails. */
+/** Components that share nothing are set side by side (rows at most this wide), not one under another. */
+const ROW_WIDTH = 1500;
+const COMPONENT_GAP = 60;
+
+/**
+ * Each card's top-left corner: dagre places each connected part (relations, and a mother with her daughters as a
+ * cluster), and the parts go side by side, left to right, in rows; a grid if dagre fails.
+ */
 function placeCards(
+  d: Diagram,
+  sizes: Map<string, { width: number; height: number }>,
+): Map<string, { x: number; y: number }> {
+  const out = new Map<string, { x: number; y: number }>();
+  let x = 0;
+  let y = 0;
+  let rowHeight = 0;
+  for (const part of partsOf(d)) {
+    const placed = placePart(part, sizes);
+    let width = 0;
+    let height = 0;
+    for (const [id, p] of placed) {
+      const s = sizes.get(id) as { width: number; height: number };
+      width = Math.max(width, p.x + s.width + FRAME_PAD);
+      height = Math.max(height, p.y + s.height + FRAME_PAD);
+    }
+    if (x > 0 && x + width > ROW_WIDTH) {
+      x = 0;
+      y += rowHeight + COMPONENT_GAP;
+      rowHeight = 0;
+    }
+    for (const [id, p] of placed) out.set(id, { x: p.x + x, y: p.y + y });
+    x += width + COMPONENT_GAP;
+    rowHeight = Math.max(rowHeight, height);
+  }
+  return out;
+}
+
+/** The diagram split into its connected parts: joined by an arrow, or by being in one mother's frame. */
+function partsOf(d: Diagram): Diagram[] {
+  const parent = new Map(d.cards.map((c) => [c.id, c.id]));
+  const find = (id: string): string => {
+    const p = parent.get(id) ?? id;
+    if (p === id) return id;
+    const root = find(p);
+    parent.set(id, root);
+    return root;
+  };
+  const union = (a: string, b: string) => {
+    if (parent.has(a) && parent.has(b)) parent.set(find(a), find(b));
+  };
+  for (const e of d.edges) union(e.from, e.to);
+  const ownCard = new Map(d.frames.map((f) => [f.id, cardOf(f.type)]));
+  for (const c of d.cards) if (c.frame) union(c.id, ownCard.get(c.frame) as string);
+  for (const f of d.frames)
+    if (f.frame) union(ownCard.get(f.id) as string, ownCard.get(f.frame) as string);
+  const parts = new Map<string, Diagram>();
+  for (const c of d.cards) {
+    const root = find(c.id);
+    const part = parts.get(root) ?? { frames: [], cards: [], edges: [] };
+    part.cards.push(c);
+    parts.set(root, part);
+  }
+  for (const part of parts.values()) {
+    const ids = new Set(part.cards.map((c) => c.id));
+    part.frames = d.frames.filter((f) => ids.has(ownCard.get(f.id) as string));
+    part.edges = d.edges.filter((e) => ids.has(e.from) && ids.has(e.to));
+  }
+  return [...parts.values()];
+}
+
+/** One part by dagre (its mothers as clusters), from the origin; a row if dagre fails. */
+function placePart(
   d: Diagram,
   sizes: Map<string, { width: number; height: number }>,
 ): Map<string, { x: number; y: number }> {
   const out = new Map<string, { x: number; y: number }>();
   try {
     const g = new dagre.graphlib.Graph({ compound: true });
-    g.setGraph({ rankdir: "LR", nodesep: 28, ranksep: 70, marginx: 8, marginy: 8 });
+    g.setGraph({ rankdir: "LR", nodesep: 28, ranksep: 70, marginx: 0, marginy: 0 });
     g.setDefaultEdgeLabel(() => ({}));
     for (const f of d.frames) g.setNode(f.id, { label: f.name });
     for (const f of d.frames) if (f.frame) g.setParent(f.id, f.frame);
     for (const c of d.cards) {
       const s = sizes.get(c.id) as { width: number; height: number };
-      // A frame's own card wants room above it for the frame's name.
+      // A card wants room around it for its frame, and above it for the frame's name.
       g.setNode(c.id, { width: s.width + 2 * FRAME_PAD, height: s.height + FRAME_HEAD });
       if (c.frame) g.setParent(c.id, c.frame);
     }
     for (const e of d.edges) if (e.from !== e.to) g.setEdge(e.from, e.to);
     dagre.layout(g);
+    let minX = Infinity;
+    let minY = Infinity;
     for (const c of d.cards) {
       const n = g.node(c.id);
       const s = sizes.get(c.id) as { width: number; height: number };
       if (!n || !Number.isFinite(n.x) || !Number.isFinite(n.y)) throw new Error("no position");
-      out.set(c.id, { x: n.x - s.width / 2, y: n.y - s.height / 2 + FRAME_HEAD / 2 });
+      const p = { x: n.x - s.width / 2, y: n.y - s.height / 2 + FRAME_HEAD / 2 };
+      out.set(c.id, p);
+      minX = Math.min(minX, p.x - FRAME_PAD);
+      minY = Math.min(minY, p.y - FRAME_HEAD);
     }
+    for (const [id, p] of out) out.set(id, { x: p.x - minX, y: p.y - minY });
     return out;
   } catch {
-    let x = 0;
+    let x = FRAME_PAD;
     for (const c of d.cards) {
       out.set(c.id, { x, y: FRAME_HEAD });
       x += CARD_WIDTH + 2 * FRAME_PAD + 40;

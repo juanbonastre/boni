@@ -417,6 +417,8 @@ test("«Mis datos» as a diagram: a card per collection with its fields, arrows 
   await expect(canvas.locator(".react-flow__edge")).toHaveCount(
     await canvas.locator(".dg-field.rel").count(),
   );
+  // A relation with itself is an arc over the card, named.
+  await expect(canvas.locator(".dg-loop-label")).toHaveText("Relacionado · varios");
   // The list's mode is kept per device; «Ver como la IA»: Documentos (private) fades, Libros stays.
   await page.getByRole("radio", { name: "La IA" }).click();
   await expect(cards.filter({ hasText: "Documentos" })).toHaveClass(/dim/);

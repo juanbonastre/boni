@@ -8539,6 +8539,14 @@ button.rows-panel-row:hover {
 .data-diagram .react-flow__edge-textbg {
   fill: var(--surface);
 }
+.dg-loop-label {
+  position: absolute;
+  padding: 0 4px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  pointer-events: none;
+}
 .data-diagram .react-flow__controls {
   box-shadow: none;
   border: 1px solid var(--line-strong);

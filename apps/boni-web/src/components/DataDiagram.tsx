@@ -8,8 +8,12 @@
 import {
   Background,
   BackgroundVariant,
+  BaseEdge,
   Controls,
   type Edge,
+  EdgeLabelRenderer,
+  type EdgeProps,
+  type EdgeTypes,
   Handle,
   MarkerType,
   type Node,
@@ -27,6 +31,7 @@ import { Database, LayoutGrid } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { AiLevel, DataType } from "../core/agent.ts";
 import {
+  cardHeight,
   type Diagram,
   type DiagramCard,
   type DiagramFrame,
@@ -108,6 +113,39 @@ const FrameView = memo(function FrameView({ data }: NodeProps<FrameNode>) {
 
 const NODE_TYPES: NodeTypes = { card: CardView, frame: FrameView };
 
+type LoopEdgeType = Edge<{ height: number }, "loop">;
+/** A relation of a collection with itself: an arc over its own card, out of its right side and back into its left. */
+function LoopEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  label,
+  markerEnd,
+  data,
+}: EdgeProps<LoopEdgeType>) {
+  const top = sourceY - ((data?.height ?? 80) / 2 + 26);
+  const mid = (sourceX + targetX) / 2;
+  const path = `M ${sourceX} ${sourceY} C ${sourceX + 48} ${sourceY} ${sourceX + 48} ${top} ${mid} ${top} C ${targetX - 48} ${top} ${targetX - 48} ${targetY} ${targetX} ${targetY}`;
+  return (
+    <>
+      <BaseEdge id={id} path={path} markerEnd={markerEnd} className="dg-edge" />
+      {label && (
+        <EdgeLabelRenderer>
+          <div
+            className="dg-loop-label"
+            style={{ transform: `translate(-50%, -50%) translate(${mid}px, ${top}px)` }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  );
+}
+const EDGE_TYPES: EdgeTypes = { loop: LoopEdge };
+
 /** The nodes as React Flow wants them: a frame before what it holds, children placed relative to their frame. */
 function nodesOf(d: Diagram, l: Layout, as: As): DiagramNode[] {
   const at = new Map([...l.frames, ...l.cards].map((p) => [p.id, p]));
@@ -140,15 +178,20 @@ function nodesOf(d: Diagram, l: Layout, as: As): DiagramNode[] {
 }
 
 function edgesOf(d: Diagram, many: string): Edge[] {
-  return d.edges.map((e) => ({
-    id: e.id,
-    source: e.from,
-    target: e.to,
-    type: "smoothstep",
-    label: e.many ? `${e.name} · ${many}` : e.name,
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-    className: "dg-edge",
-  }));
+  return d.edges.map((e) => {
+    const self = e.from === e.to;
+    const card = self ? d.cards.find((c) => c.id === e.from) : undefined;
+    return {
+      id: e.id,
+      source: e.from,
+      target: e.to,
+      type: self ? "loop" : "smoothstep",
+      ...(card ? { data: { height: cardHeight(card.fields.length) } } : {}),
+      label: e.many ? `${e.name} · ${many}` : e.name,
+      markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
+      className: "dg-edge",
+    };
+  });
 }
 
 function Canvas({ types }: { types: DataType[] }) {
@@ -206,6 +249,7 @@ function Canvas({ types }: { types: DataType[] }) {
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={(_, n) =>
