@@ -11,6 +11,8 @@ export interface Option {
   value: string;
   label: string;
   hint?: string | null;
+  /** A section the list shows the option under (the inbox's collections by kind, task 53). */
+  group?: string;
 }
 
 export interface Condition {
