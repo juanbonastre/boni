@@ -23,7 +23,7 @@ const requests = async (page: Page, prefix: string) =>
 
 /** «Modelos» (the sidebar; until 2026-11-04 Ajustes → Modelos, which is now a button to it). */
 async function openModels(page: Page) {
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Modelos", exact: true }).click();
   await page.locator(".use-card").first().waitFor();
 }
 
@@ -276,7 +276,7 @@ test("«Modelos»: the declared flow with its numbers; a model's node names its 
   await openApp(page, "/?still", {
     agent: { "GET api/agent/models": [MODELS], "GET api/agent/pipeline": [FLOW] },
   });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Modelos", exact: true }).click();
   const canvas = page.locator(".flow-canvas");
   const cards = canvas.locator(".fl-node");
   await expect(cards).toHaveCount(19);

@@ -33,7 +33,7 @@ test("the start page (Gastos)", async ({ page }) => {
 
 test("Modelos", async ({ page }) => {
   await open(page, { "GET api/agent/models": [MODELS], "GET api/agent/pipeline": [FLOW] });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Modelos", exact: true }).click();
   await page.locator(".flow-canvas .fl-node").first().waitFor();
   await page.locator(".use-card").first().waitFor();
   await page.waitForTimeout(400); // the canvas fits the flow with a short motion

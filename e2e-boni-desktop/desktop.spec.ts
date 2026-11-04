@@ -366,7 +366,7 @@ test("«Mis datos»: every collection, filtered by what the AI sees; private unl
 
 test("«Modelos» over the real server: the budget and a key, kept sealed and never shown again", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Modelos" }).click();
+  await w.locator(".sidebar").getByRole("button", { name: "Modelos", exact: true }).click();
   await w.locator(".use-card").first().waitFor();
   const spend = w.locator(".models-page .kpi").first();
   await expect(spend).toContainText("0,00 €");

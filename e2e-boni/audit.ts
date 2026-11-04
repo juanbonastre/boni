@@ -125,7 +125,7 @@ export const MODELS_TEXT = {
 /** «Modelos» (the section; until 2026-11-04 Ajustes → Modelos) with every part opened: the canvas, the budget, the keys, each use's panel with its cases and the list to change it. */
 export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
   const issues: string[] = [];
-  await page.locator(".sidebar").getByRole("button", { name: l.nav }).click();
+  await page.locator(".sidebar").getByRole("button", { name: l.nav, exact: true }).click();
   await page.locator(".flow-canvas .fl-node").first().waitFor();
   await page.locator(".use-card").first().waitFor();
   issues.push(...(await audit(page, `${where} models`)));
