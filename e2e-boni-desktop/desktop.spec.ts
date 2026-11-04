@@ -364,11 +364,11 @@ test("«Mis datos»: every collection, filtered by what the AI sees; private unl
   await expect(row.locator(".protect-pill")).toHaveText("Privada");
 });
 
-test("Ajustes → Modelos over the real server: the budget and a key, kept sealed and never shown again", async () => {
+test("«Modelos» over the real server: the budget and a key, kept sealed and never shown again", async () => {
   const w = await (app as ElectronApplication).firstWindow();
-  await w.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
-  await w.locator(".modal").getByRole("tab", { name: "Modelos" }).click();
-  const spend = w.locator(".modal .kpi").first();
+  await w.locator(".sidebar").getByRole("button", { name: "Modelos", exact: true }).click();
+  // The agent is off on this server: no use's card, the spending and the keys still.
+  const spend = w.locator(".models-page .kpi").first();
   await expect(spend).toContainText("0,00 €");
   await expect(spend).toContainText("de 10,00 €");
   // The agent is off on this server: no model, and it says so.

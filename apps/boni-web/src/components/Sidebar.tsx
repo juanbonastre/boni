@@ -10,6 +10,7 @@ import {
   Search,
   Settings,
   Trash2,
+  Workflow,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { PageInfo } from "../core/agent.ts";
@@ -28,6 +29,7 @@ import {
   renamePage,
   showAllPages,
   showChat,
+  showModels,
   toggleFold,
   toggleSidebar,
   useStore,
@@ -103,7 +105,14 @@ export function Sidebar() {
           <Library size={15} strokeWidth={1.8} />
           <span className="nav-name">{t("nav.notes")}</span>
         </button>
-        {/* «Modelos» is in Ajustes; what the models and Boni did are pages («Uso de la IA», «Actividad»). */}
+        <button
+          type="button"
+          className={`nav-row${view.kind === "models" ? " active" : ""}`}
+          onClick={showModels}
+        >
+          <Workflow size={15} strokeWidth={1.8} />
+          <span className="nav-name">{t("nav.models")}</span>
+        </button>
         <RecentSection open={!folded.includes("recent")} toggle={() => fold("recent")} />
         {(pages !== null || tree !== null) && (
           <>

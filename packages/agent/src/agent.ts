@@ -1432,6 +1432,7 @@ export class Agent {
         (reviewing && this.o.reviewer) || this.o.reader,
         {
           role: reviewing ? "reviewer" : "reader",
+          kind: step.reader,
           system: sys,
           input: {
             marker,

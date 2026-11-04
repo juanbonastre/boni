@@ -4,6 +4,7 @@ import {
   AUDIT_DETAIL_WORST,
   AUDIT_SUMMARY_WORST,
   EXTENSIONS,
+  FLOW,
   GUIDE,
   MAIL,
   MAIL_SUGGESTED,
@@ -262,6 +263,7 @@ for (const width of [1440, 900]) {
       agent: {
         "GET api/agent/models": [MODELS_WORST],
         "GET api/agent/models/catalogue": [MODELS_CATALOGUE_WORST],
+        "GET api/agent/pipeline": [FLOW],
         "GET api/data/audit/summary": [AUDIT_SUMMARY_WORST],
         "GET api/data/audit/actions": [AUDIT_ACTIONS_WORST],
         "GET api/data/audit/actions/:seq": [AUDIT_DETAIL_WORST],

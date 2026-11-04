@@ -564,6 +564,66 @@ function choiceOf(v: Record<string, unknown>): ModelChoice | null {
   const connection = oneOf(MODEL_CONNECTIONS, v.connection);
   return connection ? { connection, model: s200(v.model, 120), zdr: v.zdr === true } : null;
 }
+/** The flow Boni declares, with the journal's numbers of the last days on it («Modelos», task 59b). */
+export type FlowKind = "source" | "model" | "code" | "inbox" | "user" | "store";
+export interface FlowNode {
+  id: string;
+  kind: FlowKind;
+  role: ModelRole | null;
+  calls: number;
+  /** US dollars, of the calls whose cost is known. */
+  cost: number;
+  last: number | null;
+  runs: number;
+  accuracy: { judged: number; right: number } | null;
+}
+export interface FlowEdge {
+  from: string;
+  to: string;
+  what: string;
+  /** How many went through, or null when the server has no number for this arrow. */
+  n: number | null;
+}
+export interface FlowView {
+  days: number;
+  from: number;
+  to: number;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+}
+const FLOW_KINDS: readonly FlowKind[] = ["source", "model", "code", "inbox", "user", "store"];
+const numOf = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
+export function parseFlow(b: unknown): FlowView | null {
+  if (!isObj(b) || !Array.isArray(b.nodes) || !Array.isArray(b.edges)) return null;
+  const nodes: FlowNode[] = [];
+  for (const n of b.nodes) {
+    if (!isObj(n) || typeof n.id !== "string" || !/^[a-z_]{1,40}$/.test(n.id)) continue;
+    const kind = FLOW_KINDS.find((k) => k === n.kind);
+    if (!kind) continue;
+    const role = MODEL_ROLES.find((r) => r === n.role) ?? null;
+    const a = isObj(n.accuracy) ? n.accuracy : null;
+    nodes.push({
+      id: n.id,
+      kind,
+      role,
+      calls: numOf(n.calls),
+      cost: numOf(n.cost),
+      last: typeof n.last === "number" ? n.last : null,
+      runs: numOf(n.runs),
+      accuracy: a ? { judged: numOf(a.judged), right: numOf(a.right) } : null,
+    });
+  }
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges: FlowEdge[] = [];
+  for (const e of b.edges) {
+    if (!isObj(e) || typeof e.from !== "string" || typeof e.to !== "string") continue;
+    if (!ids.has(e.from) || !ids.has(e.to)) continue;
+    const what = typeof e.what === "string" && /^[a-z_]{1,40}$/.test(e.what) ? e.what : "";
+    edges.push({ from: e.from, to: e.to, what, n: typeof e.n === "number" ? e.n : null });
+  }
+  return { days: numOf(b.days, 7), from: numOf(b.from), to: numOf(b.to), nodes, edges };
+}
+
 export function parseModels(b: unknown): ModelsView | null {
   if (!isObj(b)) return null;
   const roles = (Array.isArray(b.roles) ? b.roles : []).filter(isObj).flatMap((r) => {
@@ -1780,6 +1840,9 @@ export class AgentApi {
   answerRequest = async (id: string, a: { choice: number } | { text: string }) =>
     parseTurn(await this.call("POST", `requests/${encodeURIComponent(id)}/answer`, a));
   models = async () => parseModels(await this.call("GET", "models"));
+  /** The declared flow with its numbers of the last `days` («Modelos», task 59b). */
+  flow = async (days: number) =>
+    parseFlow(await this.call("GET", `pipeline?days=${Math.max(1, Math.round(days))}`));
   catalogue = async () => parseCatalogue(await this.call("GET", "models/catalogue"));
   evaluateModel = async (role: ModelRole, c: ModelChoice) =>
     parseModels(await this.call("POST", "models/evaluate", { role, ...c }));

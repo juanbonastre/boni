@@ -90,7 +90,7 @@ export async function settingsAudit(page: Page, prefix = ""): Promise<string[]> 
   return issues;
 }
 
-/** Ajustes → Modelos, «Registro», «Auditoría» and the template pages: words to find their controls by. */
+/** «Modelos», «Registro», «Auditoría» and the template pages: words to find their controls by. */
 export const MODELS_TEXT = {
   es: {
     settings: "Ajustes",
@@ -122,11 +122,11 @@ export const MODELS_TEXT = {
   },
 };
 
-/** Ajustes → Modelos with every part opened: the budget, the keys, each use's panel with its cases and the list to change it. */
+/** «Modelos» (the section; until 2026-11-04 Ajustes → Modelos) with every part opened: the canvas, the budget, the keys, each use's panel with its cases and the list to change it. */
 export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
   const issues: string[] = [];
-  await page.locator(".sidebar").getByRole("button", { name: l.settings }).click();
-  await page.locator(".modal").getByRole("tab", { name: l.nav }).click();
+  await page.locator(".sidebar").getByRole("button", { name: l.nav, exact: true }).click();
+  await page.locator(".flow-canvas .fl-node").first().waitFor();
   await page.locator(".use-card").first().waitFor();
   issues.push(...(await audit(page, `${where} models`)));
   await page.getByRole("button", { name: l.budget }).click();
@@ -150,7 +150,7 @@ export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], whe
   issues.push(...(await audit(page, `${where} models panel`)));
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
-  await page.locator(".modal").waitFor({ state: "detached" });
+  await page.locator(".models-page").waitFor({ state: "detached" });
   return issues;
 }
 

@@ -342,7 +342,8 @@ contraseña ni un código aquí» under a question.
   gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
   pages, a welcome with "Nueva página" and "Hablar con Boni". Every account gets Boni's template pages once («Uso de
   la IA», «Actividad», «Registro»); an account that used the first Boni got, once, a page "Gastos" with what its home
-  showed, as data it can change or delete. Modelos is in Ajustes; the conversation also keeps the detailed run log.
+  showed, as data it can change or delete. «Modelos» is a section of its own under «Mis datos» (task 59b); the
+  conversation also keeps the detailed run log.
 - **A page is a Notion page** (`components/PageView.tsx`, docs/extensiones.md 6; measured on Notion on 2026-10-21):
   always editable in place, no edit mode. A reading column of 708 px centred with 64 px above (or the window's whole
   width, from the top bar's "…": "Ancho completo", where charts sit side by side); the name is the first line (40 px,
@@ -731,8 +732,17 @@ contraseña ni un código aquí» under a question.
   beside it, a click on a row filters or opens what it is about). Colours follow the thing, never its position:
   per actor, the Agente `--c1`, the Lector `--c2`, the Revisor `--c3`, the Decisor `--c4`, the MCP `--c7`, people
   muted, Boni's code `--compare`.
-- **Ajustes → Modelos** (design audit, Juan 2026-10-25: what configures Boni lives in Ajustes, not on a page; it was the
-  sidebar's «Modelos»): «Usos», a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor),
+- **«Modelos»** (the sidebar, under «Mis datos»; task 59b, Juan 2026-11-04: see what every model does and how they
+  work together, n8n's canvas as the reference; until then Ajustes → Modelos, which keeps a button to it): first the
+  flow Boni declares (`packages/agent/src/pipeline.ts`, A-16) as a canvas (React Flow, dagre left to right, dots in
+  `--line-strong`): a card per node, 200 px wide, named in a word («Correo», «Lectora», «Decisora», «Rellenadora»,
+  «Calendario», «Relaciones», «Bandeja», «Tú», «Mis datos», «Planificadora», «Lectores», «Herramientas»,
+  «Políticas», «Revisora», «Guía», «Aprendices»), its kind by its look: a model in an `--accent` border with the
+  model's id, its calls and their cost of the period and its acierto; a source with how many came in («42 correos»);
+  code dashed; «Tú» in `--accent-soft`. An arrow per flow, labelled with what flows and, when the journal counts it,
+  how many («42 correos», «12 propuestas»), in `--accent` when anything went through. A segmented control picks the
+  period (7 días, 30 días); «Ordenar» lays it out again; a click on a model's node opens its use below. Then what
+  configures the models, as it was in Ajustes: «Usos», a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor),
   the model's short id at 18 px, a pill of what its route does with the data (`--good` «No guarda tus datos», muted
   «Borra lo que recibe en 30 días», `--bad` «Puede guardar tus datos») and «€ · llamadas»; a click opens the use in
   place of the list (Esc or its close button goes back to the list, not out of Ajustes): the model and its route, what

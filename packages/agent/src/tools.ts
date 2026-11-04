@@ -147,6 +147,11 @@ export class ToolRegistry {
   private tools = new Map<string, ToolDef>();
   private frozen = false;
 
+  /** Every tool's name (the declared flow must know them all, pipeline.ts). */
+  names(): string[] {
+    return [...this.tools.keys()];
+  }
+
   /** Refuses (throws) anything not fully classified: the server must not start with it. */
   register<E extends Effect>(def: ToolDef<E>): this {
     if (this.frozen) throw new Error("the registry is frozen");

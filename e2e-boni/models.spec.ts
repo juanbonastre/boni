@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
+  FLOW,
   MODELS,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
@@ -20,22 +21,25 @@ mkdirSync(SHOTS, { recursive: true });
 const requests = async (page: Page, prefix: string) =>
   (await recorded(page)).requests.filter((r) => r.startsWith(prefix));
 
-/** Ajustes → Modelos. */
+/** «Modelos» (the sidebar; until 2026-11-04 Ajustes → Modelos, which is now a button to it). */
 async function openModels(page: Page) {
-  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
-  await page.locator(".modal").getByRole("tab", { name: "Modelos" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Modelos", exact: true }).click();
   await page.locator(".use-card").first().waitFor();
 }
 
-test("Ajustes → Modelos: each use with its model, the month's spending and budget, the keys", async ({
+test("«Modelos»: each use with its model, the month's spending and budget, the keys; Ajustes links to it", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: { "GET api/agent/models": [MODELS] } });
-  // Not in the sidebar any more: in Ajustes.
-  await expect(page.locator(".sidebar").getByRole("button", { name: "Modelos" })).toHaveCount(0);
-  await openModels(page);
-  const spend = page.locator(".modal .kpi").first();
+  // Ajustes → Modelos is a button to the section (task 59b).
+  await page.locator(".sidebar").getByRole("button", { name: "Ajustes" }).click();
+  await page.locator(".modal").getByRole("tab", { name: "Modelos" }).click();
+  await page.locator(".modal").getByRole("button", { name: "Modelos" }).click();
+  await expect(page.locator(".modal")).toHaveCount(0);
+  await expect(page.locator(".topbar h1")).toHaveText("Modelos");
+  await page.locator(".use-card").first().waitFor();
+  const spend = page.locator(".models-page .kpi").first();
   await expect(spend).toContainText("3,42 €");
   await expect(spend).toContainText("de 10,00 €");
   const reader = page.getByRole("button", { name: /^Lector/ });
@@ -68,7 +72,7 @@ test("Ajustes → Modelos: each use with its model, the month's spending and bud
   // Escape closes the use, not Ajustes.
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  await expect(page.locator(".modal")).toBeVisible();
+  await expect(page.locator(".models-page")).toBeVisible();
 
   await page.getByRole("button", { name: /^Claves/ }).click();
   const conns = page.locator(".models-card", {
@@ -159,8 +163,8 @@ test("readers only see models that answer a fixed form; the decider only Jev; Es
   await expect(panel).not.toContainText("sin esquema");
   await page.keyboard.press("Escape");
   await expect(panel).toHaveCount(0);
-  // Escape closed the use only, not Ajustes.
-  await expect(page.locator(".modal")).toBeVisible();
+  // Escape closed the use only, not the section.
+  await expect(page.locator(".models-page")).toBeVisible();
   await page.getByRole("button", { name: /^Decisor/ }).click();
   await page.getByRole("button", { name: "Cambiar" }).click();
   await expect(panel.locator(".models-option .models-name")).toHaveText([
@@ -170,7 +174,7 @@ test("readers only see models that answer a fixed form; the decider only Jev; Es
   await expect(panel.getByRole("textbox", { name: "Buscar un modelo" })).toHaveCount(0);
 });
 
-test("the budget and a key: changed in Ajustes, the key never shown", async ({ page }) => {
+test("the budget and a key: changed in «Modelos», the key never shown", async ({ page }) => {
   await openApp(page, "/?still", {
     agent: {
       "GET api/agent/models": [MODELS],
@@ -190,7 +194,7 @@ test("the budget and a key: changed in Ajustes, the key never shown", async ({ p
   await page.getByRole("textbox", { name: "Al mes (€)" }).fill("15");
   await page.getByRole("textbox", { name: "Avisar al (%)" }).fill("90");
   await page.getByRole("button", { name: "Guardar", exact: true }).click();
-  await expect(page.locator(".modal .kpi").first()).toContainText("de 15,00 €");
+  await expect(page.locator(".models-page .kpi").first()).toContainText("de 15,00 €");
   await expect(page.locator(".models-spend")).toContainText("aviso al 90 %");
 
   await page.getByRole("button", { name: /^Claves/ }).click();
@@ -263,4 +267,39 @@ test("a template page is modified like any page, its changes listed, restored as
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
   await expect(blocks).toHaveCount(3);
   await expect(pill).toHaveText("Modificada");
+});
+
+test("«Modelos»: the declared flow with its numbers; a model's node names its model and opens its use", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: { "GET api/agent/models": [MODELS], "GET api/agent/pipeline": [FLOW] },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Modelos", exact: true }).click();
+  const canvas = page.locator(".flow-canvas");
+  const cards = canvas.locator(".fl-node");
+  await expect(cards).toHaveCount(19);
+  for (const name of ["Correo", "Lectora", "Decisora", "Bandeja", "Tú", "Planificadora"])
+    await expect(cards.locator(".fl-name", { hasText: name })).toHaveCount(1);
+  // A source says what came in; a model its model, its calls and their cost; an arrow how many went through.
+  await expect(cards.filter({ hasText: "Correo" })).toContainText("42 correos");
+  const reader = cards.filter({ hasText: "Lectora" });
+  await expect(reader).toContainText("deepseek/deepseek-v4.1-flash");
+  await expect(reader).toContainText("40 llamadas");
+  await expect(reader).toContainText("$");
+  await expect(canvas.locator(".react-flow__edge-text", { hasText: "42 correos" })).toHaveCount(1);
+  await expect(canvas.locator(".react-flow__edge-text", { hasText: "12 propuestas" })).toHaveCount(
+    1,
+  );
+  await expect(cards.filter({ hasText: "Decisora" })).toContainText("acierto 3 de 4");
+  await page.screenshot({ path: "e2e-boni/screenshots/models-flow.png" });
+  // The period: the numbers of 30 days asked again.
+  await page.getByRole("radio", { name: "30 días" }).click();
+  await expect.poll(async () => (await requests(page, "GET api/agent/pipeline")).length).toBe(2);
+  expect((await requests(page, "GET api/agent/pipeline")).pop()).toContain("days=30");
+  // A click on a model's node opens its use below, as a click on its card does.
+  await reader.locator(".fl-name").click();
+  await expect(page.locator(".models-page .models-settings-role")).toBeVisible();
+  await expect(page.locator(".models-page .models-settings-role")).toContainText("Lector");
 });

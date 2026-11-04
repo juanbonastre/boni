@@ -8567,3 +8567,150 @@ button.rows-panel-row:hover {
   color: var(--muted);
   font-size: 9px;
 }
+
+/* «Modelos» (task 59b): the declared flow as a canvas, in Boni's colours. */
+.flow-canvas {
+  position: relative;
+  height: 760px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.flow-canvas .react-flow__background {
+  color: var(--line-strong);
+}
+.flow-canvas .react-flow__node {
+  cursor: default;
+}
+.flow-canvas .react-flow__node.model {
+  cursor: pointer;
+}
+.flow-arrange {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+}
+.fl-card {
+  position: relative;
+  width: 200px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.fl-card .react-flow__handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  opacity: 0;
+}
+.fl-card.model {
+  border-color: var(--accent);
+}
+.fl-card.code {
+  border-style: dashed;
+}
+.fl-card.source {
+  background: var(--surface);
+}
+.fl-card.user {
+  background: var(--accent-soft);
+}
+.fl-card.inbox,
+.fl-card.store {
+  border-color: var(--text-2);
+}
+.fl-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  font-weight: 600;
+}
+.fl-card.model .fl-head,
+.fl-card.source .fl-head,
+.fl-body + .fl-head {
+  border-bottom: 1px solid var(--line);
+}
+.fl-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+.fl-card.model .fl-icon {
+  color: var(--accent);
+}
+.fl-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fl-body {
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--line);
+}
+.fl-model {
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fl-line {
+  line-height: 18px;
+}
+.flow-canvas .react-flow__edge-path {
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.flow-canvas .react-flow__edge.busy .react-flow__edge-path {
+  stroke: var(--accent);
+}
+.flow-canvas .react-flow__arrowhead polyline {
+  stroke: var(--line-strong);
+  fill: var(--line-strong);
+}
+.flow-canvas .react-flow__edge-text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.flow-canvas .react-flow__edge.busy .react-flow__edge-text {
+  fill: var(--text);
+}
+.flow-canvas .react-flow__edge-textbg {
+  fill: var(--surface);
+}
+.flow-canvas .react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.flow-canvas .react-flow__controls button {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  fill: var(--text);
+}
+.flow-canvas .react-flow__attribution {
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+}
+.models-config {
+  margin-top: 18px;
+}
+.settings-open-models {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

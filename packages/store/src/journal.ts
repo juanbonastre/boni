@@ -108,6 +108,17 @@ export interface ModelCallUse {
   cost: number | null;
   at: number;
 }
+export interface CallsByKindRow {
+  role: string;
+  provider: string;
+  model: string;
+  kind: string | null;
+  calls: number;
+  /** US dollars, of the calls whose cost is known. */
+  cost: number;
+  /** When the last of them was. */
+  last: number;
+}
 export interface SpendRow {
   role: string;
   provider: string;
@@ -185,6 +196,17 @@ export interface Journal {
   decisionAreas(): string[];
   /** Model calls from `from` to `to` (ms), grouped by role, provider and model. */
   spending(from: number, to: number): SpendRow[];
+  /** The calls of a period by role, model and the reader the request names (null before 0.8.103): «Modelos» (task 59b). */
+  callsByKind(from: number, to: number): CallsByKindRow[];
+  /** The steps of a period, counted by kind and decision; `turns` only: of runs the user asked for. */
+  stepCounts(
+    from: number,
+    to: number,
+    o?: { turns?: boolean },
+  ): { kind: string; decision: string; n: number }[];
+  /** The proposals made in a period, and those decided in it by what was decided. */
+  proposalsMade(from: number, to: number): number;
+  proposalsDecided(from: number, to: number): Record<string, number>;
   /** Each model call in a period (oldest first): what Boni shows as its read-only collection «Llamadas a modelos». */
   modelCallsIn(from: number, to: number): ModelCallUse[];
   /** The last model call's number (0 with none): it changes whenever one is recorded. */
@@ -551,6 +573,51 @@ export function openJournal(db: DatabaseSync): Journal {
       }
       return [...days.values()];
     },
+    callsByKind: (from, to) =>
+      db
+        .prepare(
+          `SELECT role, provider, model, json_extract(request, '$.kind') AS kind, count(*) AS calls,
+             coalesce(sum(json_extract(usage, '$.cost')), 0) AS cost, max(at) AS last
+           FROM model_calls WHERE at >= ? AND at < ? GROUP BY role, provider, model, kind`,
+        )
+        .all(from, to)
+        .map((r) => ({
+          role: r.role as string,
+          provider: r.provider as string,
+          model: r.model as string,
+          kind: typeof r.kind === "string" ? r.kind : null,
+          calls: Number(r.calls),
+          cost: Number(r.cost),
+          last: Number(r.last),
+        })),
+    stepCounts: (from, to, o = {}) =>
+      db
+        .prepare(
+          o.turns
+            ? `SELECT s.kind, s.decision, count(*) AS n FROM run_steps s JOIN runs r ON r.id = s.run
+               WHERE s.at >= ? AND s.at < ? AND r.turn IS NOT NULL GROUP BY s.kind, s.decision`
+            : `SELECT kind, decision, count(*) AS n FROM run_steps WHERE at >= ? AND at < ? GROUP BY kind, decision`,
+        )
+        .all(from, to)
+        .map((r) => ({ kind: r.kind as string, decision: r.decision as string, n: Number(r.n) })),
+    proposalsMade: (from, to) =>
+      Number(
+        (
+          db
+            .prepare("SELECT count(*) AS n FROM proposals WHERE created >= ? AND created < ?")
+            .get(from, to) as { n: number }
+        ).n,
+      ),
+    proposalsDecided: (from, to) =>
+      Object.fromEntries(
+        (
+          db
+            .prepare(
+              "SELECT status, count(*) AS n FROM proposals WHERE decided >= ? AND decided < ? GROUP BY status",
+            )
+            .all(from, to) as { status: string; n: number }[]
+        ).map((r) => [r.status, Number(r.n)]),
+      ),
     saveRunState: (run, state, at) =>
       void db
         .prepare(
