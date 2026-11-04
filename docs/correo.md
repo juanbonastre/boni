@@ -215,6 +215,16 @@ ti» si el lector no encontró nada; y «Otra vez» lee el correo de nuevo a pet
   «Invitación», la línea que la tarjeta enseña como razón), leídos del `.ics` por código (`apps/server/src/invitation.ts`);
   el `.ics` que viene como adjunto sigue siendo un archivo del correo. Una cancelación o la respuesta de otro invitado
   describen un evento, pero no piden nada: no se guardan como invitación.
+- **Cada propuesta se cruza con el calendario antes de salir** (2026-11-04, tarea 51, fase A; Juan: «cruzar
+  distintas fuentes de datos para que realmente entienda el contexto»): el código, nunca el lector (que no ve datos
+  de Juan, R1), mira el día de la propuesta en sus colecciones con calendario y en los calendarios externos de la
+  cuenta (`apps/server/src/inboxCard.ts`, `externalItems.ts`: la copia que el servidor ya tiene de cada feed,
+  analizada una vez por descarga). Si algo es lo mismo (título parecido y, cuando los dos tienen hora, horas
+  solapadas), la tarjeta dice «Ya en el calendario: Clase IPM, 17:00–18:00»; si es de un calendario externo, el
+  botón de aceptar es «Enlazar» y el registro nace enlazado a ese evento (la columna «Evento externo» de la 50, creada
+  si falta): el calendario pinta uno solo. Si otra cosa se solapa, «Se solapa con X». La hora libre que sugiere para
+  una tarea sin hora cuenta también los eventos externos. Nada se escribe hasta que Juan acepta; el cruce se calcula
+  al enseñar la tarjeta, así que sigue lo que el calendario tenga en cada momento.
 - **Desde hoy** «Ver correo» lo abre como lo enseña un cliente de correo (Spark, Apple Mail, Outlook): cabecera (de,
   para, cc, fecha), asunto, adjuntos aparte y el texto tal cual, en solo lectura; desde el 2026-11-04 (tarea 48) las
   imágenes que el correo trae (sus archivos, como direcciones `data:`; nunca las remotas) se pintan después del

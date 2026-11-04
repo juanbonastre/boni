@@ -797,6 +797,8 @@ export interface CalendarSource {
   setColor(calendarId: string, color: string): Promise<boolean>;
   /** The column that links a record to an external calendar's event, made and mapped if missing (task 50). */
   ensureLinkColumn(collectionId: string): Promise<string | null>;
+  /** The field a record of `typeId` keeps that link in, made if missing (task 51: a card accepted with «Enlazar»). */
+  ensureLinkField(typeId: string, device: string): Promise<{ key: string } | null>;
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -1407,6 +1409,24 @@ export class StoreCalendar implements CalendarSource {
     );
     this.poll();
     return EVENT_LINK_COLUMN.id;
+  }
+
+  /**
+   * The field a record of `typeId` keeps its link to an external event in (task 51: a proposal accepted with
+   * «Enlazar»): its calendar's link column (made if missing, as `ensureLinkColumn`) as a field of the calendar's own
+   * collection, made now when the column had none yet. Null when no calendar takes that collection.
+   */
+  async ensureLinkField(typeId: string, device: string): Promise<FieldDef | null> {
+    const schema = this.store.schema();
+    const p = this.placed.find(
+      (x) => x.type === typeId || (x.where && branch(schema, x.type).includes(typeId)),
+    );
+    if (!p) return null;
+    const col = await this.ensureLinkColumn(p.def.id);
+    if (!col) return null;
+    this.pollNow();
+    const now = this.placed.find((x) => x.def.id === p.def.id) ?? p;
+    return this.fieldFor(now, now.type, col, "", device);
   }
 
   async candidates(): Promise<CalendarCandidate[]> {

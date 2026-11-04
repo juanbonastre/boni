@@ -22,11 +22,12 @@ import { areasView, setAuto } from "./accuracy.ts";
 import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
+import type { ExternalItem } from "./externalItems.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
-import { acceptEdits } from "./proposalEdits.ts";
+import { acceptEdits, linkOf } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
@@ -105,6 +106,12 @@ export class AgentHost {
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
   /** The account's mailbox as the inbox names it (its address), when it has one (mail.ts). */
   mailAccountOf: ((account: number) => string | null) | null = null;
+  /** The account's external calendars' events on some days (externalItems.ts), for the inbox's cards (task 51). */
+  externalItems: ((account: number, days: readonly string[]) => ExternalItem[]) | null = null;
+  /** The field a record of a collection keeps its link to an external event in, made if missing («Enlazar», task 51). */
+  linkField:
+    | ((account: number, typeId: string, device: string) => Promise<{ key: string } | null>)
+    | null = null;
   /** The collection an account's mail is kept in (mail.ts), when it has one: read only in the apps (D-22). */
   mailTypeOf: ((account: number) => string | null) | null = null;
   /** The account's reading guide for mail as the readers get it (mail.ts `guideOf`), or null (task 23). */
@@ -443,7 +450,9 @@ async function answerAgent(
       });
     case "GET /api/agent/proposals": {
       const store = host.store(who.account);
-      const ctx = inboxContext(store);
+      const ctx = inboxContext(store, {
+        external: (day) => host.externalItems?.(who.account, [day]) ?? [],
+      });
       const mailAccount = host.mailAccountOf?.(who.account) ?? null;
       return send(res, 200, {
         proposals: store.journal.proposals("pending").map((p) => {
@@ -519,8 +528,20 @@ async function answerAgent(
       if ("error" in edits) return send(res, 400, { error: edits.error });
       // A task's time the procedure set alone goes with it; what Juan made of a suggested time judges it.
       const timed = p ? timeOnAccept(store, p, edits) : edits;
-      const r = await agent.acceptProposal(params.id ?? "", who.trust, timed);
-      if (p && !r.error) judgeTime(store, p, timed.values ?? {}, Date.now());
+      // «Enlazar» (task 51): the record is made linked to the external event the calendar already had.
+      const link = linkOf(b.edits);
+      if ("error" in link) return send(res, 400, { error: link.error });
+      let final = timed;
+      if (link.id && p) {
+        const rows = (p.view as { rows?: { arg: string; value?: unknown }[] }).rows ?? [];
+        const typeKey = timed.type ?? rows.find((r) => r.arg === "type")?.value;
+        const t = Object.values(store.schema().types).find((x) => x.key === typeKey);
+        const field = t ? await host.linkField?.(who.account, t.id, who.device) : null;
+        if (!field) return send(res, 400, { error: "no-link-field" });
+        final = { ...timed, values: { ...(timed.values ?? {}), [field.key]: link.id } };
+      }
+      const r = await agent.acceptProposal(params.id ?? "", who.trust, final);
+      if (p && !r.error) judgeTime(store, p, final.values ?? {}, Date.now());
       return send(res, 200, after(r));
     }
     case "POST /api/agent/proposals/:id/reject":

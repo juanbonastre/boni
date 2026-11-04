@@ -1665,7 +1665,12 @@ export function dismissProposal(id: string) {
  */
 export function acceptProposal(
   id: string,
-  edits?: { title?: string; collection?: string; values?: Record<string, DataValue> },
+  edits?: {
+    title?: string;
+    collection?: string;
+    values?: Record<string, DataValue>;
+    link?: string;
+  },
   opts: { done?: boolean } = {},
 ) {
   return decide(id, opts.done ? "done" : "accept", async () => {

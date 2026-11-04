@@ -58,6 +58,12 @@ export class Feeds {
     return { text, at: copy.at };
   }
 
+  /** The copy the server has of a calendar, however old, or null before its first download. */
+  peek(userId: number, id: string, url: string): FeedCopy | null {
+    const c = this.copies.get(`${userId}:${id}`);
+    return c && c.url === url ? { text: c.text, at: c.at } : null;
+  }
+
   /** Forgets copies of calendars an account no longer has. */
   keepOnly(userId: number, ids: readonly string[]): void {
     for (const key of this.copies.keys()) {

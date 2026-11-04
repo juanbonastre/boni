@@ -506,6 +506,25 @@ export const CARD_MAIL = {
     },
   },
 };
+/** A proposal the calendar already has, as an external calendar's event (task 51): the card says so, «Enlazar». */
+export const CARD_LINKED = {
+  ...CARD_EVENT,
+  id: "c10",
+  created: 8,
+  card: {
+    ...CARD_EVENT.card,
+    calendar: {
+      already: {
+        title: "Reconocimiento",
+        start: "12:00",
+        end: "13:00",
+        calendar: "UCAM",
+        external: "ext:ucam:u1",
+      },
+      overlaps: [{ title: "Clase FUP", start: "12:30", end: "13:30" }],
+    },
+  },
+};
 export const CARD_COMPACT = {
   ...CARD_DETAILED,
   id: "c2",

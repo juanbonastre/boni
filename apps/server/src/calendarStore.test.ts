@@ -739,6 +739,21 @@ describe("the calendar over Boni's collections", () => {
     expect(await cal.ensureLinkColumn("nada")).toBeNull();
   });
 
+  it("makes the field a record keeps that link in, in the calendar's collection, once (task 51)", async () => {
+    const { store, cal } = env();
+    const typeId = Object.values(store.schema().types).find((t) => t.key === "docencia")
+      ?.id as string;
+    const f = await cal.ensureLinkField(typeId, "portatil");
+    expect(f).toMatchObject({ key: "evento-externo", name: "Evento externo", type: "text" });
+    expect(calendarDefs(store)[0]?.def.mapping.external).toBe("evento-externo");
+    // Asked again: the same field; a collection no calendar takes: none.
+    expect((await cal.ensureLinkField(typeId, "portatil"))?.id).toBe(f?.id);
+    expect(
+      store.schema().types[typeId]?.fields.filter((x) => x.key === "evento-externo"),
+    ).toHaveLength(1);
+    expect(await cal.ensureLinkField("t_nada", "portatil")).toBeNull();
+  });
+
   it("a calendar over a branch split by a field (D-14): its records wherever they are, new ones where they go", async () => {
     // Invented: an Agenda with Tareas and Eventos inside, and two calendars by «area» (Casa takes those without one).
     const { columns, mapping } = RAW;

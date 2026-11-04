@@ -60,6 +60,7 @@ import {
   updateRow,
 } from "./data.ts";
 import type { Db } from "./db.ts";
+import { ExternalItems } from "./externalItems.ts";
 import type { Feeds } from "./feeds.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { MailError, type Mails } from "./mail.ts";
@@ -264,6 +265,16 @@ export function makeApp(opts: ServerOptions): App {
   const boniRoot = opts.boniWebDir ? resolve(opts.boniWebDir) : null;
 
   const tz = opts.tz ?? "Europe/Madrid";
+  if (opts.agent) {
+    // Task 51: the inbox crosses each proposal with the account's external calendars, and a card accepted with
+    // «Enlazar» needs the field its record keeps the link in (the calendar's, made if missing).
+    const external = new ExternalItems(opts.feeds, tz);
+    const agentHost = opts.agent;
+    agentHost.externalItems = (account, days) =>
+      external.items(account, readAccount(db, key, account).externals, days);
+    agentHost.linkField = async (account, typeId, device) =>
+      (await calendarOf({ id: account })?.ensureLinkField(typeId, device)) ?? null;
+  }
   const v1store = new V1Store(db);
   /** The account's store when it keeps its movements in Boni (the collection Movimiento). */
   const moneyStore = (account: number) => {
