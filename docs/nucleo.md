@@ -576,7 +576,7 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P5 | `send`, pagar, borrar a petición del agente, `write_irreversible` | confirm siempre, pintada desde los argumentos reales y desde un dispositivo personal |
 | P6 | Turno ambiental (TV, voz ambiental) o dispositivo compartido | solo `read` y propose; lo sensible se confirma en el móvil |
 | P7 | Trabajo en segundo plano (sin turno de Juan) | solo `read` y propose; nunca `egress` (salvo la descarga propia de un conector, que hace código y no el agente) |
-| P8 | `schedule` (crear o cambiar trabajos) | solo desde un turno de Juan, con confirm; nunca desde segundo plano ni desde contenido externo |
+| P8 | `schedule` (crear o cambiar trabajos) y `flow` (ejecutar un flujo suyo, `flows.run`) | solo desde un turno de Juan, con confirm; nunca desde segundo plano, una mini-app, una propuesta aceptada ni contenido externo |
 | P9 | `memory` con algún argumento `external` | deny (el contenido externo nunca escribe en la memoria) |
 | P10 | `schema` | allow con aviso y Deshacer en un turno de Juan; propose si viene de contenido externo o de la jardinería; borrar datos de un campo, confirm |
 | P11 | Secuencias sospechosas (muchas lecturas sensibles y luego `egress`; más de N escrituras en una ejecución) | la ejecución se para y pide confirm |

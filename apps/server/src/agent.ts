@@ -1,8 +1,9 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 import {
   Agent,
+  codeLabel,
   conversation,
   conversationByKey,
   coreTools,
@@ -13,11 +14,13 @@ import {
   leaf,
   listConversations,
   type ModelProvider,
+  runnableNames,
   type ToolRegistry,
   turnViews,
   updateConversation,
   type Val,
 } from "@boni/agent";
+import { dayToIso, todayIn } from "@boni/calendar";
 import { label } from "@boni/entities";
 import { openUserStore, type StoreOptions, type UserStore } from "@boni/store";
 import { areasView, setAuto } from "./accuracy.ts";
@@ -31,7 +34,6 @@ import {
   flowCatalog,
   flowsView,
   flowView,
-  manualInputs,
   originOf,
   revertFlow,
   saveUserFlow,
@@ -282,6 +284,19 @@ export class AgentHost {
     for (const [id, l] of this.lives) if (l.at < old) this.lives.delete(id);
   }
 
+  /** Today's civil day in the server's zone (YYYY-MM-DD): a scheduled flow's `$today` (docs/flujos.md F4). */
+  today(): string {
+    return dayToIso(todayIn(this.o.tz ?? "Europe/Madrid", this.o.now?.() ?? Date.now()));
+  }
+
+  /** Whether the account has a store already (the scheduler opens none for an account that never used Boni). */
+  hasStore(account: number): boolean {
+    return (
+      this.stores.has(account) ||
+      (!!this.o.dataDir && existsSync(join(this.o.dataDir, "users", `${account}.db`)))
+    );
+  }
+
   close(): void {
     for (const s of this.stores.values()) s.close();
     this.stores.clear();
@@ -289,8 +304,6 @@ export class AgentHost {
   }
 }
 
-/** Today's civil day (UTC), what a scheduled flow is given as `$today` when tried by hand. */
-const today = () => new Date().toISOString().slice(0, 10);
 const str = (v: unknown, max: number) =>
   typeof v === "string" && v.length > 0 && v.length <= max ? v : null;
 
@@ -482,10 +495,10 @@ async function serveFlows(
         const typed = label("user", "personal", [{ kind: "user-edit", id: `flow:${f.id}` }]);
         for (const n of triggerNames(trigger)) {
           const v = given[n];
-          bind[n] = leaf(
-            typeof v === "string" ? v.slice(0, 2000) : n === "today" ? today() : "",
-            typed,
-          );
+          bind[n] =
+            typeof v === "string"
+              ? leaf(v.slice(0, 2000), typed)
+              : leaf(n === "today" ? host.today() : "", codeLabel("today"));
         }
       }
       const unchanged = JSON.stringify(plan) === JSON.stringify(f.plan);
@@ -508,9 +521,9 @@ async function serveFlows(
       if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
       const f = store.journal.flow(id);
       if (!f) return send(res, 404, { error: "not-found" });
-      const names = manualInputs(f.trigger);
-      if (!(f.trigger as { manual?: unknown } | null)?.manual)
-        return send(res, 409, { error: "not-manual" });
+      // By hand: a flow with a form, or a scheduled one now (its `$today` today); not one a record starts.
+      const names = runnableNames(f.trigger);
+      if (!names) return send(res, 409, { error: "not-manual" });
       const b = (await bodyOf(req)) as { inputs?: unknown; conversation?: unknown; live?: unknown };
       const given = (b.inputs && typeof b.inputs === "object" ? b.inputs : {}) as Record<
         string,
@@ -523,7 +536,10 @@ async function serveFlows(
         const v = given[n];
         if (v !== undefined && (typeof v !== "string" || v.length > 2000))
           return send(res, 400, { error: "bad-request" });
-        bind[n] = leaf(typeof v === "string" ? v : "", typed);
+        bind[n] =
+          n === "today" && v === undefined
+            ? leaf(host.today(), codeLabel("today"))
+            : leaf(typeof v === "string" ? v : "", typed);
       }
       const asked = typeof b.conversation === "string" ? str(b.conversation, 80) : null;
       const c = asked ? conversation(store, asked) : null;

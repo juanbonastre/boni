@@ -296,6 +296,24 @@ describe("the policy engine", () => {
       decide(call("jobs.create", job(user)), { kind: "background", trust: "personal" }, counters),
     ).toMatchObject({ kind: "deny", rule: "P8" });
   });
+  it("a flow runs only from Juan's turn, confirmed, never named by outside text (P8, P16; docs/flujos.md F4)", () => {
+    const run = (l: typeof user) => ({ flow: leaf("resumen", l) });
+    expect(decide(call("flows.run", run(model)), turn, counters)).toEqual({
+      kind: "confirm",
+      rule: "P8",
+    });
+    expect(decide(call("flows.run", run(ext)), turn, counters)).toMatchObject({
+      kind: "deny",
+      rule: "P16",
+    });
+    for (const kind of ["background", "miniapp", "accepted"] as const)
+      expect(
+        decide(call("flows.run", run(user)), { kind, trust: "personal" }, counters),
+      ).toMatchObject({ kind: "deny", rule: "P8" });
+    expect(
+      decide(call("flows.run", run(user)), { kind: "turn", trust: "shared" }, counters),
+    ).toMatchObject({ kind: "deny", rule: "P8" });
+  });
   it("memory never from outside (P9); schema changes allowed in a turn, proposed otherwise (P10)", () => {
     expect(decide(call("memory.save", { text: leaf("x", ext) }), turn, counters)).toMatchObject({
       kind: "deny",

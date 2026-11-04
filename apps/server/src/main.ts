@@ -5,6 +5,7 @@ import { AgentHost } from "./agent.ts";
 import { listUsers } from "./auth.ts";
 import { startBackups } from "./backups.ts";
 import { Feeds, makeFetcher } from "./feeds.ts";
+import { FlowScheduler } from "./flowScheduler.ts";
 import { makeApp, serve } from "./http.ts";
 import { guideOf, Mails } from "./mail.ts";
 import { AccountModels } from "./models.ts";
@@ -192,6 +193,14 @@ agent.readingGuideOf = (account) => {
   return g.instructions || g.examples.length ? guideOf(g) : null;
 };
 mails.start(() => listUsers(db));
+// Each account's flows on a schedule (docs/flujos.md F4), checked once a minute in the server's zone.
+const flowScheduler = new FlowScheduler({
+  host: agent,
+  accounts: () => listUsers(db).map((u) => u.id),
+  tz,
+  log: (line) => console.log(line),
+});
+if (agent.on) flowScheduler.start();
 // What is slow, once a minute in the log (perf.ts; task 35): `boni-status` shows it.
 const stopSlowness = watchSlowness(console.warn, { sample: true });
 const checkpoints = onDisk
@@ -244,6 +253,7 @@ const stop = () => {
   void checkpoints?.stop();
   app.close();
   void mails.close();
+  void flowScheduler.close();
   agent.close();
   server.close();
   publicServer?.close();

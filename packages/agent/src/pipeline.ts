@@ -97,6 +97,7 @@ export const PIPELINE: Pipeline = {
         "memory.save",
         "jobs.create",
         "notify",
+        "flows.run",
       ],
     },
     { id: "policy", kind: "code" },

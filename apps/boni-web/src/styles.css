@@ -9026,3 +9026,13 @@ button.rows-panel-row:hover {
   height: 440px;
   margin: 6px 0 10px;
 }
+
+/* A scheduled flow's time (docs/flujos.md F4): hour and minutes side by side. */
+.flow-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.flow-time select {
+  width: auto;
+}

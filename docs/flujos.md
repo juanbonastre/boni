@@ -174,6 +174,21 @@ sus argumentos a su vez con el selector. Nunca texto libre que se evalúe.
 Un flujo nunca se dispara a sí mismo ni crea trabajos (regla dura de §7.12), y una ejecución tiene los límites de
 P12 (pasos, llamadas, coste).
 
+**Cómo se programa (F4).** `{ schedule: { every: "day" | "week" | "hour", at: "HH:MM", day: 0-6 } }` en la zona del
+servidor (`BONI_TZ`): cada día a una hora, un día de la semana a una hora, o cada hora en unos minutos. Una vez por
+minuto `apps/server/src/flowScheduler.ts` mira los flujos encendidos de cada cuenta y ejecuta el que tiene su hora
+pasada después de guardarse esa versión y después de su última ejecución, una sola vez, como segundo plano con
+`$today`; si el servidor estaba parado a esa hora, lo ejecuta al volver solo dentro de un margen (media hora si es
+cada hora, tres horas si no). Cada ejecución deja una línea en el registro: `flows 1: «Resumen diario» v2
+(2026-11-05 08:00): done`. «Ejecutar» lo lanza a mano cuando se quiera.
+
+**`flows.run` (F4).** El planificador ve los flujos que puede ejecutar (encendidos, a mano o programados: su id, su
+nombre y lo que pide su formulario) y los lanza con `flows.run`; la política pide confirmarlo siempre (P8) y lo niega
+desde segundo plano, una mini-app o una propuesta aceptada, y si el flujo lo nombra algo de fuera (P16). Confirmado,
+el flujo corre como su turno: una ejecución propia en el diario, con su flujo y su versión, y lo que responde y
+propone sale en el mismo turno de la conversación. Un flujo no ejecuta otro (la lista de comprobación lo marca y el
+intérprete lo para), y uno que necesitaría preguntar o confirmar se para ahí: se ejecuta desde «Flujos».
+
 ### 4.4 Cómo se ejecuta y se registra
 
 - El mismo intérprete, con `newState(flujo.plan)` y las entradas vinculadas por `preset`; el origen dice el
@@ -250,7 +265,7 @@ todo con Deshacer y en el diario.
 | F1 Flujos como datos (hecha el 2026-11-05, tarea 61) | La colección de sistema «Flujos»; el flujo de serie «Leer correo» guardado y versionado, que `mail.ts` ejecuta en vez de construir el plan (las entradas vinculadas como hoy); el diario con flujo y versión; «Modelos» pasa a «Flujos»: la lista y el lienzo de cada flujo, de solo lectura; el lienzo general con los números se calcula de los flujos | El correo se lee igual que hoy (las pruebas de `mail.test.ts` sin cambios), y en «Flujos» se ve «Leer correo» con sus nodos y sus números |
 | F2 El editor (hecha el 2026-11-05) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
 | F3 Probar y ver (hecha el 2026-11-05) | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
-| F4 Disparadores | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
+| F4 Disparadores (hecha el 2026-11-05) | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
 | F5 Propuestas de la IA | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |
 | F6 «Mis datos» | La vista Diagrama en cualquier colección; quién lee y escribe, con filtros; editar desde el diagrama | En Agenda, el diagrama enseña Tarea y Evento con quién las escribe, y una relación nueva se dibuja arrastrando |
 

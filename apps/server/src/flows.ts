@@ -9,6 +9,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   checkPlan,
+  manualInputs,
   type Origin,
   planVocabulary,
   readStore,
@@ -16,6 +17,9 @@ import {
   type ToolRegistry,
   toolsFor,
 } from "@boni/agent";
+
+export { manualInputs };
+
 import { type FieldDef, rolesOf, type TypeDef } from "@boni/entities";
 import type { FlowRow, UserStore } from "@boni/store";
 
@@ -317,15 +321,6 @@ export type Trigger =
   | { manual: true; inputs?: { name: string }[] }
   | { schedule: { every: "day" | "week" | "hour"; at?: string; day?: number } };
 
-/** The names a manual trigger's form gives the plan (each the user's text). */
-export function manualInputs(trigger: unknown): string[] {
-  const t = trigger as { manual?: unknown; inputs?: unknown } | null;
-  if (!t?.manual || !Array.isArray(t.inputs)) return [];
-  return t.inputs
-    .map((i) => (i && typeof i === "object" ? (i as { name?: unknown }).name : null))
-    .filter((n): n is string => typeof n === "string" && /^[a-z][a-z0-9_]{0,30}$/.test(n));
-}
-
 /** Whether a trigger is one this server knows, and well formed. */
 export function triggerOk(trigger: unknown): boolean {
   if (!trigger || typeof trigger !== "object") return false;
@@ -531,7 +526,7 @@ export function checkFlow(
           registry.get(s.tool) &&
           !allowed.has(s.tool)
         )
-          code = "tool-not-here";
+          code = registry.get(s.tool)?.effect === "flow" ? "flow-in-flow" : "tool-not-here";
         problems.push({
           step: s?.id ?? null,
           at: (m[2] as string).replace(/^\./, "") || null,
@@ -554,6 +549,15 @@ export function checkFlow(
         });
     }
   }
+  // A flow never starts another (docs/flujos.md §4.3): `flows.run` is the planner's, in the user's turn.
+  for (const s of steps)
+    if (
+      s.op === "call" &&
+      typeof s.tool === "string" &&
+      registry.get(s.tool)?.effect === "flow" &&
+      !problems.some((p) => p.step === s.id && p.code === "flow-in-flow")
+    )
+      problems.push({ step: s.id, at: null, code: "flow-in-flow" });
   return { problems: problems.slice(0, 40), refs: refsFor(store, flow, o) };
 }
 

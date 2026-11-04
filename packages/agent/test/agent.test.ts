@@ -1284,3 +1284,113 @@ describe("a flow tried dry («Probar», docs/flujos.md F3)", () => {
     });
   });
 });
+
+describe("a flow run from a turn (flows.run, docs/flujos.md F4)", () => {
+  const counting = {
+    version: 1,
+    steps: [
+      {
+        id: "n",
+        op: "call",
+        tool: "entities.aggregate",
+        args: { type: lit("tarea"), op: lit("count") },
+      },
+      {
+        id: "r",
+        op: "reply",
+        component: "text",
+        data: { template: lit("{a} tareas, {b}"), a: ref("$n"), b: ref("$titulo") },
+      },
+    ],
+  };
+  const save = (o: { id: string; trigger: unknown; enabled?: boolean; plan?: unknown }) =>
+    env.store.journal.saveFlow({
+      id: o.id,
+      name: o.id === "cuenta" ? "Cuenta de tareas" : o.id,
+      trigger: o.trigger,
+      inputs: [],
+      plan: o.plan ?? counting,
+      layout: null,
+      by: "user",
+      enabled: o.enabled ?? true,
+      created: 0,
+    });
+
+  it("asks to confirm it, by its name; once confirmed it runs as a run of its own and its answers come in the turn", async () => {
+    env = makeEnv();
+    save({ id: "cuenta", trigger: { manual: true, inputs: [{ name: "titulo" }] } });
+    const plan = {
+      version: 1,
+      steps: [
+        {
+          id: "f",
+          op: "call",
+          tool: "flows.run",
+          args: { flow: lit("cuenta"), inputs: { fn: "obj", args: [lit("titulo"), lit("hoy")] } },
+        },
+      ],
+    };
+    const planner = fakePlanner([plan]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({ text: "ejecuta la cuenta de tareas", origin: PERSONAL });
+    expect(res.status).toBe("waiting");
+    expect(res.pending).toMatchObject({ kind: "confirm" });
+    const pending = res.pending as {
+      id: string;
+      view: { rows: { arg: string; detail?: string }[] };
+    };
+    expect(pending.view.rows.find((r) => r.arg === "flow")?.detail).toBe("Cuenta de tareas");
+    // The planner saw the flow it may run, with what its form asks for.
+    expect(JSON.stringify(planner.requests[0])).toContain(
+      '"flows":[{"id":"cuenta","name":"Cuenta de tareas","inputs":["titulo"]}]',
+    );
+    const done = await agent.confirm(res.run, pending.id, "personal");
+    expect(done.status).toBe("done");
+    expect(done.replies).toEqual([
+      expect.objectContaining({
+        component: "text",
+        data: expect.objectContaining({
+          template: expect.objectContaining({ value: "{a} tareas, {b}" }),
+          b: expect.objectContaining({ value: "hoy" }),
+        }),
+      }),
+    ]);
+    const child = env.store.journal.runs(10).find((r) => r.flow === "cuenta");
+    expect(child).toMatchObject({ origin: "turn", flowVersion: 1, status: "done" });
+    expect(child?.id).not.toBe(res.run);
+  });
+
+  it("is refused for a flow a record starts, one that is off, and inside a flow; never from background work", async () => {
+    env = makeEnv();
+    save({ id: "correo", trigger: { created: "correo" } });
+    save({ id: "apagado", trigger: { manual: true }, enabled: false });
+    const runIt = (flow: string) => ({
+      version: 1,
+      steps: [{ id: "f", op: "call", tool: "flows.run", args: { flow: lit(flow) } }],
+    });
+    for (const [flow, error] of [
+      ["correo", "tool-flow-not-runnable"],
+      ["apagado", "tool-flow-not-found"],
+    ] as const) {
+      const agent = env.agent(fakePlanner([runIt(flow)]));
+      const res = await agent.turn({ text: "ejecuta", origin: PERSONAL });
+      const pending = res.pending as { id: string };
+      const r = await agent.confirm(res.run, pending.id, "personal");
+      expect(r.error).toBe(error);
+    }
+    // A flow that would start another: its run is a flow's, so it stops there.
+    save({ id: "cuenta", trigger: { manual: true } });
+    save({ id: "anidado", trigger: { manual: true }, plan: runIt("cuenta") });
+    const agent = env.agent(fakePlanner([]));
+    const nested = await agent.turn({
+      text: "«anidado»",
+      origin: PERSONAL,
+      flow: { id: "anidado", version: 1, by: "user", plan: runIt("cuenta"), bind: {} },
+    });
+    const p = nested.pending as { id: string };
+    expect((await agent.confirm(nested.run, p.id, "personal")).error).toBe("tool-flow-in-flow");
+    // Background work never runs one (P8): not even in its catalogue.
+    const bg = await agent.background(runIt("cuenta"));
+    expect(bg.error).toBe("plan-invalid");
+  });
+});

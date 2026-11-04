@@ -46,6 +46,7 @@ import {
 } from "./reading.ts";
 import {
   type Caps,
+  type FlowStarter,
   makeCaps,
   type Net,
   readStore,
@@ -56,6 +57,7 @@ import {
   type ToolRegistry,
 } from "./tools.ts";
 import { type RunDetail, traceOf } from "./trace.ts";
+import { runnableNames } from "./trigger.ts";
 import {
   at,
   atOrNull,
@@ -90,7 +92,10 @@ you have no tools: you answer with one plan in the plan language below, which Bo
 The code decides what is allowed; a step it refuses stops the plan, so plan only what the request asks.
 
 Input (JSON): "request" (the user's words), "today", "tools" (the only tools you may call, with their arguments),
-"schema" (the user's types and fields, by key), "history" (earlier turns of this conversation), "memories".
+"schema" (the user's types and fields, by key), "history" (earlier turns of this conversation), "memories", and
+"flows" when there are some: the user's own flows, each with its id, name and the inputs its form asks for. When the
+user asks to run one of them, one call to flows.run with its id (and inputs as obj(name, value, ...)): its answers
+appear in this turn, after the user confirms it.
 
 The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "id" (lowercase letters, digits, _) and
 one "op":
@@ -372,6 +377,8 @@ interface RunState {
    */
   dry?: boolean;
   would?: Map<string, Would[]>;
+  /** The run is a flow's (by hand, on its trigger, tried, or started by `flows.run`): it starts no flow. */
+  flowRun?: boolean;
   abort?: AbortController | undefined;
   expiresAt: number;
 }
@@ -473,7 +480,7 @@ const DAY_MS = 24 * 60 * 60_000;
 export function toolsFor(registry: ToolRegistry, origin: Origin): ToolDef[] {
   const blocked =
     origin.kind === "background" || origin.kind === "miniapp" || origin.trust !== "personal"
-      ? new Set(["egress", "send", "schedule"])
+      ? new Set(["egress", "send", "schedule", "flow"])
       : new Set<string>();
   return registry.all().filter((t) => !blocked.has(t.effect));
 }
@@ -639,6 +646,7 @@ export class Agent {
     if (req.flow) {
       // A flow by hand: no planner; the plan is the saved one, checked for this origin and what it binds.
       if (req.flow.by === "user") st.litLabel = flowLabel(req.flow.id);
+      st.flowRun = true;
       const v = validatePlan(
         req.flow.plan,
         this.catalogView(req.origin),
@@ -688,6 +696,7 @@ export class Agent {
     const st = this.newState(run, { id: run, text: "" }, o.origin, { version: 1, steps: [] }, null);
     st.dry = true;
     st.would = new Map();
+    st.flowRun = true;
     if (o.flow.by === "user") st.litLabel = flowLabel(o.flow.id);
     const v = validatePlan(plan, this.catalogView(o.origin), "", Object.keys(bind));
     if (!v.ok) return { ...this.finish(st, "stopped", "plan-invalid"), outputs: {}, would: {} };
@@ -778,6 +787,7 @@ export class Agent {
     });
     const st = this.newState(run, { id: run, text: "" }, origin, { version: 1, steps: [] }, null);
     if (flow?.by === "user") st.litLabel = flowLabel(flow.id);
+    if (flow) st.flowRun = true;
     const v = validatePlan(plan, this.catalogView(origin), "", Object.keys(bind));
     if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
     for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
@@ -870,6 +880,18 @@ export class Agent {
           ),
         })),
       }));
+    // The user's flows `flows.run` may start (docs/flujos.md F4): their ids, names and what their forms ask for.
+    const flows = tools.some((t) => t.name === "flows.run")
+      ? this.o.store.journal
+          .flows()
+          .filter((f) => f.enabled && runnableNames(f.trigger))
+          .slice(0, 30)
+          .map((f) => ({
+            id: f.id,
+            name: f.name,
+            inputs: (runnableNames(f.trigger) ?? []).filter((n) => n !== "today"),
+          }))
+      : [];
     return {
       request: st.turn.text,
       today: this.today(),
@@ -877,6 +899,7 @@ export class Agent {
       schema: schemaView(readStore(this.o.store).schema()),
       history: past,
       memories: this.memories(),
+      ...(flows.length ? { flows } : {}),
     };
   }
 
@@ -1317,7 +1340,7 @@ export class Agent {
         if (st.counters.confirmations > this.limits.maxConfirmations)
           throw new Stop("P5-too-many-confirmations");
         const id = randomUUID();
-        const view = confirmView(tool, args, readStore(this.o.store));
+        const view = this.flowNamed(confirmView(tool, args, readStore(this.o.store)), tool);
         this.o.store.journal.addConfirmation({
           id,
           run: st.id,
@@ -1362,6 +1385,7 @@ export class Agent {
       now: this.now,
       ...(this.o.notify ? { notify: this.o.notify } : {}),
       ...(this.o.net ? { net: this.o.net } : {}),
+      ...(tool.effect === "flow" ? { flows: this.flowStarter(st) } : {}),
     });
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
     const result = await tool.run(capFor as never, args, control ?? neutral);
@@ -1386,6 +1410,62 @@ export class Agent {
     st.counters.bytes += sizeOf(result);
     if (st.counters.bytes > this.limits.maxBytes) throw new Stop("P12-bytes");
     return control ? taint(result, control) : result;
+  }
+
+  /**
+   * `flows.run` (docs/flujos.md F4): one of the user's flows that is on and runs without a record of its own, run now
+   * as his turn, once he confirmed it: what its form asks for from `inputs`, `$today` for a scheduled one. It is a run
+   * of its own in the journal, with its flow and version; what it answers and proposes goes into this turn. A flow
+   * never starts another, and one that would wait for him (a question, a confirmation) stops there: he runs it from
+   * «Flujos».
+   */
+  /** A confirmation to run a flow names it as the user does (its id alone otherwise). */
+  private flowNamed(view: ConfirmView, tool: ToolDef): ConfirmView {
+    if (tool.effect !== "flow") return view;
+    return {
+      ...view,
+      rows: view.rows.map((r) => {
+        if (r.arg !== "flow" || typeof r.value !== "string") return r;
+        const f = this.o.store.journal.flow(r.value);
+        return f ? { ...r, detail: f.name } : r;
+      }),
+    };
+  }
+
+  private flowStarter(st: RunState): FlowStarter {
+    return {
+      run: async (flow, inputs) => {
+        if (st.flowRun) throw new ToolError("flow-in-flow");
+        const id = plain(flow);
+        const f = typeof id === "string" ? this.o.store.journal.flow(id) : null;
+        if (!f?.enabled) throw new ToolError("flow-not-found");
+        const names = runnableNames(f.trigger);
+        if (!names) throw new ToolError("flow-not-runnable");
+        const given = inputs?.t === "rec" ? inputs.fields : {};
+        const bind: Record<string, Val> = {};
+        for (const n of names)
+          bind[n] =
+            given[n] ??
+            leaf(n === "today" ? this.today() : "", codeLabel(n === "today" ? "today" : "flow"));
+        const r = await this.turn({
+          text: `«${f.name}»`.slice(0, 200),
+          origin: st.origin,
+          flow: { id: f.id, version: f.version, by: f.by, plan: f.plan, bind },
+        });
+        const waiting = r.status === "waiting" ? this.runs.get(r.run) : undefined;
+        const end = waiting ? this.finish(waiting, "stopped", "flow-waits") : r;
+        st.replies.push(...end.replies);
+        st.proposals.push(...end.proposals.filter((p) => !st.proposals.includes(p)));
+        for (const n of end.notices)
+          if (n.code !== "proposals" && !st.notices.some((x) => x.code === n.code))
+            st.notices.push(n);
+        const l = codeLabel("flow");
+        return rec(
+          { run: leaf(end.run, l), status: leaf(end.status, l), error: leaf(end.error, l) },
+          l,
+        );
+      },
+    };
   }
 
   private async execRead(
