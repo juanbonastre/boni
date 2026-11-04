@@ -64,6 +64,7 @@ import {
   useStore,
 } from "../store.ts";
 import { ProposalCard, RequestCard, useInboxQueue } from "./InboxCards.tsx";
+import { RunCanvas } from "./RunCanvas.tsx";
 
 /**
  * The conversation with Boni's agent (docs/nucleo.md, 7.14; docs/conversacion.md). Everything here is painted by
@@ -1200,6 +1201,8 @@ function runTitle(t: T, r: RunSummary): string {
       return t("log.what.review");
     case "accepted":
       return r.alone ? t("log.what.alone") : t("log.what.accepted");
+    case "test":
+      return t("log.what.test", { name: w.flow });
     default:
       return t(`log.origin.${r.origin}`);
   }
@@ -1471,7 +1474,7 @@ function RunSteps({ t, detail }: { t: T; detail: RunDetail | null | "loading" })
         </button>
       </div>
       {detail.request !== null && <p className="log-request">{detail.request}</p>}
-      <TraceDiagram steps={detail.steps} label={t("log.steps")} />
+      <RunCanvas detail={detail} />
       <ol className="log-steps">
         {detail.steps.map((s) => (
           <li
@@ -1511,107 +1514,6 @@ function TraceBlock({ name, items }: { name: string; items: string[] }) {
           <li key={`${i}-${x.slice(0, 20)}`}>{x}</li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-const NODE_W = 132;
-const NODE_H = 34;
-const NODE_GAP = 44;
-const NODE_VGAP = 10;
-/**
- * The steps as nodes, left to right by what each depends on (a step after the ones it reads from), with the
- * policy's verdict in their outline: red where it stopped or was denied, dashed where it went to the inbox, faint
- * where it never ran. A click goes to the step's line. Plain SVG, text only, no library.
- */
-function TraceDiagram({ steps, label }: { steps: RunStep[]; label: string }) {
-  if (steps.length < 2) return null;
-  const depth = new Map<string, number>();
-  const byId = new Map(steps.map((s) => [s.id, s]));
-  const depthOf = (id: string, seen: Set<string>): number => {
-    const d = depth.get(id);
-    if (d !== undefined) return d;
-    if (seen.has(id)) return 0;
-    seen.add(id);
-    const s = byId.get(id);
-    const n = s?.deps.length ? 1 + Math.max(...s.deps.map((x) => depthOf(x, seen))) : 0;
-    depth.set(id, n);
-    return n;
-  };
-  for (const s of steps) depthOf(s.id, new Set());
-  const rows = new Map<number, number>();
-  const pos = new Map<string, { x: number; y: number }>();
-  for (const s of steps) {
-    const col = depth.get(s.id) ?? 0;
-    const row = rows.get(col) ?? 0;
-    rows.set(col, row + 1);
-    pos.set(s.id, { x: 8 + col * (NODE_W + NODE_GAP), y: 8 + row * (NODE_H + NODE_VGAP) });
-  }
-  const cols = Math.max(...rows.keys()) + 1;
-  const tall = Math.max(...rows.values());
-  const width = 16 + cols * NODE_W + (cols - 1) * NODE_GAP;
-  const height = 16 + tall * NODE_H + (tall - 1) * NODE_VGAP;
-  const kind = (s: RunStep) =>
-    s.error || s.decision === "deny" || s.decision === "stopped"
-      ? "failed"
-      : s.decision === "propose"
-        ? "proposed"
-        : s.decision === null
-          ? "idle"
-          : "";
-  const go = (id: string) =>
-    document.getElementById(`trace-step-${id}`)?.scrollIntoView({ block: "nearest" });
-  return (
-    <div className="trace-diagram">
-      <svg
-        width={width}
-        height={height}
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={label}
-      >
-        {steps.flatMap((s) =>
-          s.deps.map((d) => {
-            const a = pos.get(d);
-            const b = pos.get(s.id);
-            if (!a || !b) return null;
-            const x1 = a.x + NODE_W;
-            const y1 = a.y + NODE_H / 2;
-            const x2 = b.x;
-            const y2 = b.y + NODE_H / 2;
-            const mx = (x1 + x2) / 2;
-            return (
-              <path
-                key={`${d}-${s.id}`}
-                className="trace-edge"
-                d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
-              />
-            );
-          }),
-        )}
-        {steps.map((s) => {
-          const p = pos.get(s.id) as { x: number; y: number };
-          const label = s.what.length > 17 ? `${s.what.slice(0, 16)}…` : s.what;
-          return (
-            // biome-ignore lint/a11y/useSemanticElements: an SVG node; the step's line below is the control
-            <g
-              key={s.id}
-              className={`trace-node ${kind(s)}`}
-              transform={`translate(${p.x} ${p.y})`}
-              onClick={() => go(s.id)}
-              onKeyDown={(e) => e.key === "Enter" && go(s.id)}
-              role="button"
-              tabIndex={0}
-            >
-              <title>{`${s.id} · ${s.what}`}</title>
-              <rect width={NODE_W} height={NODE_H} rx={7} />
-              <text x={10} y={21}>
-                {label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
     </div>
   );
 }

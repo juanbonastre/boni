@@ -1896,6 +1896,24 @@ describe("the flow «Leer correo» as the user leaves it (docs/flujos.md, F2)", 
       "user",
       "preset",
     ]);
+    // «Probar» (F3): the latest mail bound as the reading binds it, the flow run dry: what it would propose, said;
+    // nothing proposed, and not one of the flow's runs.
+    const plan2 = store.journal.flow(MAIL_FLOW)?.plan;
+    const sample = await m.sample(1, null, plan2);
+    expect(sample).toMatchObject({ mail: mailId, subject: "Informe" });
+    const waiting = pending().length;
+    const runs = store.journal.flowRuns(MAIL_FLOW).runs;
+    const dry = await h.agent(1).dryRun(plan2, sample?.bind ?? {}, {
+      origin: { kind: "background", trust: "personal" },
+      flow: { id: MAIL_FLOW, version: 4, by: "preset", input: mailId },
+    });
+    expect(dry.status).toBe("done");
+    expect(Object.values(dry.would).flat()).toEqual([
+      expect.objectContaining({ decision: "propose", tool: "entities.create" }),
+    ]);
+    expect(pending().length).toBe(waiting);
+    expect(store.journal.flowRuns(MAIL_FLOW).runs).toBe(runs);
+    expect(await m.sample(1, "e_nadie", plan2)).toBeNull();
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

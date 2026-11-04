@@ -1857,3 +1857,52 @@ export const FLOW_CHECK = {
     ],
   },
 };
+
+/** «Probar» on «Leer correo» (docs/flujos.md F3): what each step did with the latest mail, and what it would do. */
+export const FLOW_TEST = {
+  run: "run-test-1",
+  status: "done",
+  error: null,
+  sample: { mail: "e_mail1", subject: "Informe y sala" },
+  steps: {
+    m: {
+      decision: "allow",
+      rule: "P1",
+      error: null,
+      out: { t: "record", text: "Informe y sala", n: null },
+      would: [],
+    },
+    r: {
+      decision: "allow",
+      rule: "P1",
+      error: null,
+      out: { t: "record", text: null, n: 2 },
+      would: [],
+    },
+    n0_tasks_f: { decision: "allow", rule: "P1", error: null, out: { t: "list", n: 2 }, would: [] },
+    n0_tasks: {
+      decision: "propose",
+      rule: "P4",
+      error: null,
+      out: { t: "list", n: 2 },
+      would: [
+        {
+          decision: "propose",
+          rule: "P4",
+          tool: "entities.create",
+          title: "Crear",
+          type: "Docencia",
+          text: "Enviar el informe",
+        },
+        {
+          decision: "propose",
+          rule: "P4",
+          tool: "entities.create",
+          title: "Crear",
+          type: "Docencia",
+          text: "Reservar la sala",
+        },
+      ],
+    },
+  },
+};

@@ -6,6 +6,7 @@ import {
   FLOW_CHECK,
   FLOW_DETAIL,
   FLOW_DETAIL_SAVED,
+  FLOW_TEST,
   FLOWS,
   MODELS,
   MODELS_CATALOGUE,
@@ -411,4 +412,44 @@ test("«Flujos»: the editor draws a flow and changes it: a step's collection, s
   await expect
     .poll(async () => (await requests(page, "GET api/agent/flows/leer-correo")).length)
     .toBeGreaterThan(1);
+});
+
+test("«Probar»: the draft run dry with the latest mail; each step says what it gave or would do; nothing written", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS],
+      "GET api/agent/flows/:id": [FLOW_DETAIL],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+      "POST api/agent/flows/:id/test": [FLOW_TEST],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  await expect(canvas.locator(".fl-node")).toHaveCount(5);
+  await page.getByRole("button", { name: "Probar", exact: true }).click();
+  await expect(page.locator(".flow-test-bar")).toContainText(
+    "Prueba con «Informe y sala» · sin escribir nada",
+  );
+  const create = canvas.locator(".fl-node", {
+    has: page.locator(".fl-name", { hasText: /^Crear$/ }),
+  });
+  await expect(create).toContainText("Propondría: Crear en Docencia «Enviar el informe»");
+  await expect(
+    canvas.locator(".fl-node", { has: page.locator(".fl-name", { hasText: /^Lectora$/ }) }),
+  ).toContainText("→ 2 elementos");
+  const sent = await page.evaluate(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).find((b) =>
+      b.startsWith("POST api/agent/flows/leer-correo/test"),
+    ),
+  );
+  expect(sent).toContain('"plan"');
+  await page.screenshot({ path: `${SHOTS}/flow-test.png` });
+  // Taken away: the canvas as it was.
+  await page.getByRole("button", { name: "Quitar la prueba" }).click();
+  await expect(page.locator(".flow-test-bar")).toHaveCount(0);
+  await expect(create).not.toContainText("Propondría");
 });

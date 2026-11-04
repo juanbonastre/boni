@@ -452,7 +452,9 @@ export function openJournal(db: DatabaseSync): Journal {
         .run(enabled ? 1 : 0, id, id),
     flowRuns: (id) => {
       const r = db
-        .prepare("SELECT count(*) AS n, max(started) AS last FROM runs WHERE flow = ?")
+        .prepare(
+          "SELECT count(*) AS n, max(started) AS last FROM runs WHERE flow = ? AND origin != 'test'",
+        )
         .get(id) as { n: number; last: number | null };
       return { runs: Number(r.n), last: r.last === null ? null : Number(r.last) };
     },
@@ -461,7 +463,8 @@ export function openJournal(db: DatabaseSync): Journal {
         db
           .prepare(
             `SELECT s.step, s.decision, count(*) AS n FROM run_steps s JOIN runs r ON r.id = s.run
-             WHERE r.flow = ? AND r.started >= ? AND r.started < ? GROUP BY s.step, s.decision`,
+             WHERE r.flow = ? AND r.started >= ? AND r.started < ? AND r.origin != 'test'
+             GROUP BY s.step, s.decision`,
           )
           .all(flow, from, to) as { step: string; decision: string; n: number }[]
       ).map((r) => ({ step: r.step, decision: r.decision, n: Number(r.n) })),

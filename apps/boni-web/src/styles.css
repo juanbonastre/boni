@@ -8997,3 +8997,32 @@ button.rows-panel-row:hover {
 .flow-editor .flow-value-row > select {
   flex: 0 0 84px;
 }
+
+/* «Probar» and the Recorrido on the canvas (docs/flujos.md F3). */
+.fl-test {
+  color: var(--text);
+}
+.fl-answer {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fl-card.idle {
+  opacity: 0.55;
+}
+.flow-test-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 6px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 12.5px;
+}
+.run-canvas {
+  height: 440px;
+  margin: 6px 0 10px;
+}

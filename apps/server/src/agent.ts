@@ -32,8 +32,11 @@ import {
   flowsView,
   flowView,
   manualInputs,
+  originOf,
   revertFlow,
   saveUserFlow,
+  testView,
+  triggerNames,
 } from "./flows.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
@@ -139,6 +142,14 @@ export class AgentHost {
   mailTypeOf: ((account: number) => string | null) | null = null;
   /** The mail extension's modules for this account (what read_message gives, per module): the flow editor's. */
   mailModulesOf: ((account: number) => string[]) | null = null;
+  /** A mail to try a mail flow with and what it binds to a plan («Probar», mail.ts `sample`). */
+  mailSample:
+    | ((
+        account: number,
+        mail: string | null,
+        plan: unknown,
+      ) => Promise<{ bind: Record<string, Val>; mail: string; subject: string } | null>)
+    | null = null;
   /** The account's reading guide for mail as the readers get it (mail.ts `guideOf`), or null (task 23). */
   readingGuideOf: ((account: number) => Val | null) | null = null;
   /** The account's own models (models.ts, «Modelos»); null or a null answer: the server's. */
@@ -278,6 +289,8 @@ export class AgentHost {
   }
 }
 
+/** Today's civil day (UTC), what a scheduled flow is given as `$today` when tried by hand. */
+const today = () => new Date().toISOString().slice(0, 10);
 const str = (v: unknown, max: number) =>
   typeof v === "string" && v.length > 0 && v.length <= max ? v : null;
 
@@ -436,6 +449,60 @@ async function serveFlows(
         return send(res, 409, { error: "preset" });
       store.journal.setFlowDeleted(id, true);
       return send(res, 200, {});
+    }
+    case "POST /api/agent/flows/:id/test": {
+      // «Probar» (docs/flujos.md F3): the draft as the editor has it (or the saved flow), dry, with a sample.
+      if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
+      const f = store.journal.flow(id);
+      if (!f) return send(res, 404, { error: "not-found" });
+      const b = (await bodyOf(req)) as {
+        plan?: unknown;
+        trigger?: unknown;
+        mail?: unknown;
+        inputs?: unknown;
+      };
+      const plan = b.plan ?? f.plan;
+      const trigger = b.trigger ?? f.trigger;
+      const check = checkFlow(store, host.tools, { trigger, plan }, forEditor());
+      if (check.problems.length)
+        return send(res, 400, { error: "invalid", problems: check.problems });
+      let bind: Record<string, Val> = {};
+      let sample: { mail: string; subject: string } | null = null;
+      if (typeof (trigger as { created?: unknown }).created === "string") {
+        const mail = b.mail === undefined ? null : str(b.mail, 80);
+        const s = await host.mailSample?.(who.account, mail, plan);
+        if (!s) return send(res, 409, { error: "no-sample" });
+        bind = s.bind;
+        sample = { mail: s.mail, subject: s.subject };
+      } else {
+        const given = (b.inputs && typeof b.inputs === "object" ? b.inputs : {}) as Record<
+          string,
+          unknown
+        >;
+        const typed = label("user", "personal", [{ kind: "user-edit", id: `flow:${f.id}` }]);
+        for (const n of triggerNames(trigger)) {
+          const v = given[n];
+          bind[n] = leaf(
+            typeof v === "string" ? v.slice(0, 2000) : n === "today" ? today() : "",
+            typed,
+          );
+        }
+      }
+      const unchanged = JSON.stringify(plan) === JSON.stringify(f.plan);
+      const r = await host.agent(who.account).dryRun(plan, bind, {
+        origin: originOf(trigger, who.device),
+        flow: {
+          id: f.id,
+          version: f.version,
+          by: unchanged ? f.by : "user",
+          ...(sample ? { input: sample.mail } : {}),
+        },
+      });
+      return send(
+        res,
+        200,
+        testView(store, r, sample, (tool) => host.toolTitle(tool)),
+      );
     }
     case "POST /api/agent/flows/:id/run": {
       if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });

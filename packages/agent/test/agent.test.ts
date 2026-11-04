@@ -1232,3 +1232,55 @@ describe("what Juan keeps from the models (per type, his choice)", () => {
     ).toEqual([]);
   });
 });
+
+describe("a flow tried dry («Probar», docs/flujos.md F3)", () => {
+  it("reads and calls the readers; what would write, notify, propose or ask is said, nothing done; the run is a test", async () => {
+    env = makeEnv([{ asunto: "Pan integral", de: "alguien@example.com", cuerpo: "Compra pan" }]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        {
+          id: "c",
+          op: "call",
+          tool: "entities.create",
+          args: {
+            type: lit("tarea"),
+            values: { fn: "obj", args: [lit("titulo"), ref("$m.items[0].asunto")] },
+          },
+        },
+        { id: "n", op: "call", tool: "notify", args: { text: lit("Hecho") } },
+        { id: "q", op: "ask", control: "text", prompt: lit("¿Seguro?") },
+        { id: "z", op: "call", tool: "entities.query", args: { type: lit("tarea") } },
+      ],
+    };
+    const agent = env.agent(fakePlanner([]));
+    const before = env.store.list("t_tarea").length;
+    const r = await agent.dryRun(
+      plan,
+      {},
+      {
+        origin: { kind: "background", trust: "personal" },
+        flow: { id: "probar", version: 2, by: "user" },
+      },
+    );
+    // It stopped where it would ask; the read ran, the rest was only said.
+    expect(r.status).toBe("stopped");
+    expect(r.error).toBe("dry-ask");
+    expect(r.outputs.m).toMatchObject({ t: "list" });
+    expect(r.would.c).toEqual([
+      expect.objectContaining({ decision: "propose", rule: "P4", tool: "entities.create" }),
+    ]);
+    expect(JSON.stringify(r.would.c?.[0]?.args.values)).toContain("Pan integral");
+    expect(r.would.n).toEqual([expect.objectContaining({ decision: "allow", tool: "notify" })]);
+    expect(r.would.q).toEqual([expect.objectContaining({ decision: "ask" })]);
+    expect(r.outputs.z).toBeUndefined();
+    expect(env.store.list("t_tarea").length).toBe(before);
+    expect(env.store.journal.proposals("pending")).toEqual([]);
+    expect(env.store.journal.run(r.run)).toMatchObject({
+      origin: "test",
+      flow: "probar",
+      flowVersion: 2,
+    });
+  });
+});

@@ -1502,6 +1502,119 @@ export class Mails {
   }
 
   /**
+   * What a mail binds to a flow of the mail (docs/flujos.md, its inputs): the reading's context (the modules, the
+   * guide, the options), the guide's rule (`$only`), per collection the flow writes in (by its key) the fields its
+   * reader fills and the relations the code found in the mail (task 51), and the mail itself (`mailBindings`): the
+   * same for the live reading and for «Probar».
+   */
+  private async bindingsFor(
+    account: number,
+    c: PlanContext,
+    e: NonNullable<ReturnType<UserStore["get"]>>,
+    plan: unknown,
+    o: { only: string | null; again: boolean },
+  ): Promise<Record<string, Val>> {
+    const v = e.entity.values;
+    const from = String(v.f_de ?? "");
+    // Relations the mail plainly names (task 51, phases B and C): the sender as a record of a related collection
+    // by name, a record whose title the sender's own words carry; set by code, the reader's choice first.
+    const types = c.store.schema().types;
+    const titled = new Map<string, Named[]>();
+    const recordsOf = (type: string): Named[] => {
+      let list = titled.get(type);
+      if (!list) {
+        const tf = types[type]?.titleField ?? "";
+        list = c.store.list(type).flatMap((x) => {
+          const title = x.entity.values[tf];
+          return typeof title === "string" && title.trim() ? [{ id: x.entity.id, title }] : [];
+        });
+        titled.set(type, list);
+      }
+      return list;
+    };
+    const words = {
+      sender: String(v.f_de_nombre ?? ""),
+      text: ownText(String(v.f_asunto ?? ""), e.entity.body ?? ""),
+    };
+    // Per collection the flow writes in (by its key): the fields its reader fills and the relations the code found.
+    const known_ = [...c.targets, ...c.fixed];
+    const fill: Record<string, Val> = {};
+    const prefill: Record<string, Val> = {};
+    for (const key of collectionKeysOf(plan)) {
+      const def = Object.values(types).find((x) => x.key === key);
+      const t =
+        known_.find((x) => x.key === key) ??
+        (def ? this.targetsFor(c.store, [def.id])[0] : undefined);
+      fill[key] = fieldsValue(t?.fill ?? [], t?.fillRefs ?? []);
+      const found = def ? prefillOf(def, types, recordsOf, words) : [];
+      if (found.length)
+        console.log(
+          `mail ${account}: by code for «${def?.name ?? key}»: ${found
+            .map((p) => `${p.name} ← «${p.title.slice(0, 40)}» (${p.by})`)
+            .join(", ")}`,
+        );
+      prefill[key] = prefillValue(found);
+    }
+    // A calendar invitation (task 45): its event comes from the .ics by code, so the reader leaves it out
+    // (`known`); already in one of the account's external calendars, it is not proposed at all.
+    const inv =
+      typeof v.f_evento_uid === "string" && v.f_evento_uid
+        ? { uid: v.f_evento_uid, title: String(v.f_evento_titulo ?? "") }
+        : null;
+    const already = inv ? await this.calendarWith(account, inv.uid) : null;
+    if (inv && already)
+      console.log(
+        `mail ${account}: invitation «${inv.title.slice(0, 60)}» already in calendar «${already}»: not proposed`,
+      );
+    const known = [
+      ...(inv?.title ? [inv.title.slice(0, 200)] : []),
+      ...(from && !o.again ? this.known(c.store, from) : []),
+    ].slice(0, 20);
+    const codeOwn = label("own", "personal", [{ kind: "code", id: "mail" }]);
+    return {
+      ...c.bound,
+      options: optionsValue(c.targets),
+      only: leaf(o.only, PUBLIC),
+      fill: rec(fill, codeOwn),
+      prefill: rec(prefill, codeOwn),
+      ...this.mailBindings(e, c.s.user, known, { already: !!(inv && already) }),
+    };
+  }
+
+  /**
+   * A mail to try a flow with («Probar», docs/flujos.md F3): the one asked for, else the latest kept; what it binds to
+   * that plan, as the live reading would. Null without a configured mailbox, a collection or a mail.
+   */
+  async sample(
+    account: number,
+    mail: string | null,
+    plan: unknown,
+  ): Promise<{ bind: Record<string, Val>; mail: string; subject: string } | null> {
+    const s = this.settings(account);
+    const st = this.state(account);
+    if (!s || !st.type) return null;
+    const c = this.planContext(account, s);
+    if (!c) return null;
+    const e = mail
+      ? c.store.get(mail)
+      : (c.store
+          .list(st.type)
+          .filter((x) => x.entity.deleted === undefined)
+          .sort((a, b) => b.entity.created - a.entity.created)[0] ?? null);
+    if (!e || e.entity.type !== st.type || e.entity.deleted !== undefined) return null;
+    const rule = ruleFor(c.guide, String(e.entity.values.f_de ?? ""));
+    const only =
+      rule?.action === "collection"
+        ? (c.targets.find((t) => t.id === rule.collection)?.option ?? null)
+        : null;
+    return {
+      bind: await this.bindingsFor(account, c, e, plan, { only, again: true }),
+      mail: e.entity.id,
+      subject: String(e.entity.values.f_asunto ?? ""),
+    };
+  }
+
+  /**
    * One mail's plan: its proposals land in the inbox. `asked`: Juan asked for it (a guide rule that says never to
    * read the sender does not stop it then). How many proposals, and why the plan stopped if it did.
    */
@@ -1540,70 +1653,7 @@ export class Mails {
       return { ...none, stopped: "flow-off" };
     }
     try {
-      // Relations the mail plainly names (task 51, phases B and C): the sender as a record of a related collection
-      // by name, a record whose title the sender's own words carry; set by code, the reader's choice first.
-      const types = c.store.schema().types;
-      const titled = new Map<string, Named[]>();
-      const recordsOf = (type: string): Named[] => {
-        let list = titled.get(type);
-        if (!list) {
-          const tf = types[type]?.titleField ?? "";
-          list = c.store.list(type).flatMap((x) => {
-            const title = x.entity.values[tf];
-            return typeof title === "string" && title.trim() ? [{ id: x.entity.id, title }] : [];
-          });
-          titled.set(type, list);
-        }
-        return list;
-      };
-      const words = {
-        sender: String(v.f_de_nombre ?? ""),
-        text: ownText(String(v.f_asunto ?? ""), e.entity.body ?? ""),
-      };
-      // Per collection the flow writes in (by its key): the fields its reader fills and the relations the code found.
-      const keys = collectionKeysOf(flow.plan);
-      const known_ = [...c.targets, ...c.fixed];
-      const fill: Record<string, Val> = {};
-      const prefill: Record<string, Val> = {};
-      for (const key of keys) {
-        const def = Object.values(types).find((x) => x.key === key);
-        const t =
-          known_.find((x) => x.key === key) ??
-          (def ? this.targetsFor(c.store, [def.id])[0] : undefined);
-        fill[key] = fieldsValue(t?.fill ?? [], t?.fillRefs ?? []);
-        const found = def ? prefillOf(def, types, recordsOf, words) : [];
-        if (found.length)
-          console.log(
-            `mail ${account}: by code for «${def?.name ?? key}»: ${found
-              .map((p) => `${p.name} ← «${p.title.slice(0, 40)}» (${p.by})`)
-              .join(", ")}`,
-          );
-        prefill[key] = prefillValue(found);
-      }
-      // A calendar invitation (task 45): its event comes from the .ics by code, so the reader leaves it out
-      // (`known`); already in one of the account's external calendars, it is not proposed at all.
-      const inv =
-        typeof v.f_evento_uid === "string" && v.f_evento_uid
-          ? { uid: v.f_evento_uid, title: String(v.f_evento_titulo ?? "") }
-          : null;
-      const already = inv ? await this.calendarWith(account, inv.uid) : null;
-      if (inv && already)
-        console.log(
-          `mail ${account}: invitation «${inv.title.slice(0, 60)}» already in calendar «${already}»: not proposed`,
-        );
-      const known = [
-        ...(inv?.title ? [inv.title.slice(0, 200)] : []),
-        ...(from && !again ? this.known(c.store, from) : []),
-      ].slice(0, 20);
-      const codeOwn = label("own", "personal", [{ kind: "code", id: "mail" }]);
-      const bound: Record<string, Val> = {
-        ...c.bound,
-        options: optionsValue(c.targets),
-        only: leaf(only, PUBLIC),
-        fill: rec(fill, codeOwn),
-        prefill: rec(prefill, codeOwn),
-        ...this.mailBindings(e, c.s.user, known, { already: !!(inv && already) }),
-      };
+      const bound = await this.bindingsFor(account, c, e, flow.plan, { only, again });
       const r = await c.agent.background(flow.plan, bound, [], budgetOf(c.m), {
         id: flow.id,
         version: flow.version,

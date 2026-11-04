@@ -523,6 +523,27 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
       flows: { id: string; runs: number }[];
     };
     expect(list.flows.find((f) => f.id === made.id)?.runs).toBe(1);
+    // «Probar» (F3): the draft dry, with the form's value; what it gives, step by step, and nothing written.
+    const tried = (await (
+      await call(token, "POST", `/api/agent/flows/${made.id}/test`, {
+        plan: tally,
+        trigger,
+        inputs: { titulo: "Hay {a}" },
+      })
+    ).json()) as {
+      status: string;
+      steps: Record<string, { decision: string; out: { t: string } }>;
+    };
+    expect(tried.status).toBe("done");
+    expect(tried.steps.n).toMatchObject({ decision: "allow", out: { t: "number" } });
+    expect(
+      (
+        await call(token, "POST", `/api/agent/flows/${made.id}/test`, {
+          plan: { version: 1, steps: [] },
+          trigger,
+        })
+      ).status,
+    ).toBe(400);
     // Back to its first version (a new one), then deleted: out of the list.
     expect(
       await (

@@ -27,12 +27,14 @@ import "@xyflow/react/dist/style.css";
 import {
   Bot,
   Braces,
+  FlaskConical,
   HelpCircle,
   LayoutGrid,
   MessageSquare,
   MoreHorizontal,
   Play,
   Plus,
+  X,
   Zap,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +45,8 @@ import type {
   FlowPlan,
   FlowProblem,
   FlowStep,
+  FlowTestView,
+  TestStepView,
 } from "../core/agent.ts";
 import {
   addStep,
@@ -109,11 +113,40 @@ type StepCard = Node<
     ran: Record<string, number>;
     bad: boolean;
     on: boolean;
+    /** «Probar»: what this step did in the dry run (null: it did not run), or undefined without a test. */
+    test?: TestStepView | null;
   },
   "step"
 >;
 type TriggerCard = Node<{ text: string; inputs: string[]; bad: boolean; on: boolean }, "trigger">;
 type Card = StepCard | TriggerCard;
+
+/** A step's line in a test: what it would do, what it gave, or why it did not run. */
+export function testLine(t: T, x: TestStepView): string {
+  const w = x.would[0];
+  if (w) {
+    const what = [
+      w.title,
+      w.type ? t("flows.test.in", { type: w.type }) : null,
+      w.text ? `«${w.text}»` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    return t(`flows.test.would.${w.decision}`, { what });
+  }
+  if (x.decision === "skip") return t("flows.test.skipped");
+  if (x.decision === "deny" || x.decision === "stopped")
+    return t("flows.test.stopped", { why: x.rule ?? x.error ?? "" });
+  const o = x.out;
+  if (o.t === "list") return t(o.n === 1 ? "flows.test.items.one" : "flows.test.items", { n: o.n });
+  if (o.t === "number") return `→ ${o.value}`;
+  if (o.t === "text") return `→ «${o.text}»`;
+  if (o.t === "record") {
+    if (o.n !== null) return t(o.n === 1 ? "flows.test.items.one" : "flows.test.items", { n: o.n });
+    if (o.text) return `→ «${o.text}»`;
+  }
+  return t("flows.test.done");
+}
 
 const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
   const t = useStore((s) => s.t);
@@ -131,7 +164,7 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
     );
   return (
     <div
-      className={`fl-card ${step.op === "read" ? "model" : "code"}${data.bad ? " bad" : ""}${data.on ? " on" : ""}`}
+      className={`fl-card ${step.op === "read" ? "model" : "code"}${data.bad ? " bad" : ""}${data.on ? " on" : ""}${data.test === null ? " idle" : ""}`}
     >
       <Handle type="target" position={Position.Top} />
       <div className="fl-head">
@@ -140,10 +173,11 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
         {step.each !== undefined && <span className="fl-badge">{t("flows.each")}</span>}
         {step.when !== undefined && <span className="fl-badge">{t("flows.when")}</span>}
       </div>
-      {(data.detail || ran > 0) && (
+      {(data.detail || ran > 0 || data.test) && (
         <div className="fl-body">
           {data.detail && <div className="fl-line">{data.detail}</div>}
-          {ran > 0 && (
+          {data.test && <div className="fl-line fl-test">{testLine(t, data.test)}</div>}
+          {ran > 0 && !data.test && (
             <div className="fl-line muted">
               {t(ran === 1 ? "flows.ran.one" : "flows.ran", { n: ran })}
               {data.ran.propose ? ` · ${t("flows.proposed", { n: data.ran.propose })}` : ""}
@@ -190,6 +224,7 @@ function nodesOf(
   catalog: FlowCatalog | null,
   problems: readonly FlowProblem[],
   selected: string | null,
+  test: FlowTestView | null,
 ): { nodes: Card[]; edges: Edge[] } {
   const inputs =
     typeof draft.trigger.created === "string"
@@ -249,6 +284,7 @@ function nodesOf(
           ran: ran.get(s.id) ?? {},
           bad: bad.has(s.id),
           on: selected === s.id,
+          ...(test ? { test: test.steps[s.id] ?? null } : {}),
         },
         className: `fl-node ${s.op === "read" ? "model" : "code"}`,
       }),
@@ -313,6 +349,7 @@ function Canvas({
   catalog,
   check,
   selected,
+  test,
   onSelect,
   onPlan,
   onLayout,
@@ -322,6 +359,7 @@ function Canvas({
   catalog: FlowCatalog | null;
   check: FlowCheck | null;
   selected: string | null;
+  test: FlowTestView | null;
   onSelect: (id: string | null) => void;
   onPlan: (p: FlowPlan) => void;
   onLayout: (l: Record<string, { x: number; y: number }> | null) => void;
@@ -333,14 +371,14 @@ function Canvas({
   const [linking, setLinking] = useState<{ from: string; to: string } | null>(null);
   const fitted = useRef(false);
   useEffect(() => {
-    const g = nodesOf(t, draft, detail, catalog, check?.problems ?? [], selected);
+    const g = nodesOf(t, draft, detail, catalog, check?.problems ?? [], selected, test);
     setNodes(g.nodes);
     setEdges(g.edges);
     if (!fitted.current) {
       fitted.current = true;
       requestAnimationFrame(() => void fitView({ padding: 0.06, duration: 200 }));
     }
-  }, [t, draft, detail, catalog, check, selected, setNodes, setEdges, fitView]);
+  }, [t, draft, detail, catalog, check, selected, test, setNodes, setEdges, fitView]);
   const keepPositions = useCallback(() => {
     const out: Record<string, { x: number; y: number }> = {};
     for (const n of nodes) out[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
@@ -535,7 +573,11 @@ export function FlowEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [running, setRunning] = useState<Record<string, string> | null>(null);
+  const [running, setRunning] = useState<{ values: Record<string, string>; test: boolean } | null>(
+    null,
+  );
+  const [test, setTest] = useState<FlowTestView | null>(null);
+  const [testing, setTesting] = useState(false);
   // A new version from the server (saved, switched, gone back): the draft starts from it.
   const shown = useRef(detail);
   useEffect(() => {
@@ -561,6 +603,27 @@ export function FlowEditor({
     };
   }, [draft.trigger, draft.plan]);
   const problems = check?.problems ?? [];
+  // «Probar» (F3): the draft as it is, dry, with the latest mail or the form's values; its result on the canvas.
+  const tryIt = async (inputs?: Record<string, string>) => {
+    setTesting(true);
+    setError(null);
+    try {
+      setTest(
+        await agentApi.testFlow(detail.id, {
+          plan: draft.plan,
+          trigger: draft.trigger,
+          ...(inputs ? { inputs } : {}),
+        }),
+      );
+    } catch (e) {
+      setError(errorText(t, e));
+    } finally {
+      setTesting(false);
+    }
+  };
+  // A change of the draft makes the last test's lines stale.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: on the plan and trigger only
+  useEffect(() => setTest(null), [draft.plan, draft.trigger]);
   const setPlan = (plan: FlowPlan) => setDraft((d) => ({ ...d, plan }));
   const act = async (f: () => Promise<FlowDetailView | null>) => {
     setBusy(true);
@@ -655,6 +718,21 @@ export function FlowEditor({
             )}
           </PopButton>
         )}
+        <button
+          type="button"
+          className={`btn small${testing ? " busy" : ""}`}
+          disabled={busy || testing || problems.length > 0 || !draft.plan.steps.length}
+          aria-busy={testing}
+          onClick={() => {
+            const names = formNames(draft.trigger);
+            if (manual && names.length)
+              setRunning({ values: Object.fromEntries(names.map((n) => [n, ""])), test: true });
+            else void tryIt();
+          }}
+        >
+          <FlaskConical size={14} strokeWidth={1.8} aria-hidden />
+          {testing ? t("flows.testing") : t("flows.test")}
+        </button>
         {manual && detail.enabled && !dirty && (
           <button
             type="button"
@@ -662,7 +740,8 @@ export function FlowEditor({
             disabled={busy}
             onClick={() => {
               const names = formNames(draft.trigger);
-              if (names.length) setRunning(Object.fromEntries(names.map((n) => [n, ""])));
+              if (names.length)
+                setRunning({ values: Object.fromEntries(names.map((n) => [n, ""])), test: false });
               else void runFlowInChat(detail.id, detail.name, {});
             }}
           >
@@ -785,26 +864,58 @@ export function FlowEditor({
           className="flow-run-form"
           onSubmit={(e) => {
             e.preventDefault();
-            const inputs = running;
+            const { values, test: dry } = running;
             setRunning(null);
-            void runFlowInChat(detail.id, detail.name, inputs);
+            if (dry) void tryIt(values);
+            else void runFlowInChat(detail.id, detail.name, values);
           }}
         >
-          {Object.entries(running).map(([k, v]) => (
+          {Object.entries(running.values).map(([k, v]) => (
             <label key={k} className="flow-setting">
               <span className="flow-setting-name">{k}</span>
-              <input value={v} onChange={(e) => setRunning({ ...running, [k]: e.target.value })} />
+              <input
+                value={v}
+                onChange={(e) =>
+                  setRunning({ ...running, values: { ...running.values, [k]: e.target.value } })
+                }
+              />
             </label>
           ))}
           <div className="row">
             <button type="submit" className="btn primary small">
-              {t("flows.run")}
+              {running.test ? t("flows.test") : t("flows.run")}
             </button>
             <button type="button" className="btn small" onClick={() => setRunning(null)}>
               {t("flows.cancel")}
             </button>
           </div>
         </form>
+      )}
+      {test && (
+        <div className="flow-test-bar" role="status">
+          <FlaskConical size={14} strokeWidth={1.8} aria-hidden />
+          <span>
+            {test.sample
+              ? t("flows.test.with", { subject: test.sample.subject })
+              : t("flows.test.title")}
+            {" · "}
+            {test.status === "done"
+              ? t("flows.test.ok")
+              : test.error === "dry-ask"
+                ? t("flows.test.asks")
+                : t("flows.test.stoppedRun", { why: test.error ?? "" })}
+          </span>
+          <span className="spacer" />
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t("flows.test.clear")}
+            title={t("flows.test.clear")}
+            onClick={() => setTest(null)}
+          >
+            <X size={14} strokeWidth={1.8} />
+          </button>
+        </div>
       )}
       <div className="flow-stage">
         <ReactFlowProvider>
@@ -814,6 +925,7 @@ export function FlowEditor({
             catalog={catalog}
             check={check}
             selected={selected}
+            test={test}
             onSelect={setSelected}
             onPlan={setPlan}
             onLayout={(layout) => setDraft((d) => ({ ...d, layout }))}
