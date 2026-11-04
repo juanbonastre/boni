@@ -5,6 +5,15 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (seventeenth) — server 0.8.93
+
+Needs: the server only (0.8.93, to deploy). Task 43.
+
+- **The server no longer writes to its database on every request.** A session's «last seen» is written at most once
+  a minute instead of twice per request: with the desktop asking every 350 ms and the calendar every second, each
+  write was a commit on the NAS, and a slow one held the server half a second, every minute the apps were open.
+  (#295, task 43)
+
 ## 2026-11-04 (sixteenth) — server 0.8.92 · Boni desktop 0.4.66 · Boni Calendar desktop 0.8.20
 
 Needs: the server (0.8.92, to deploy), Boni desktop 0.4.66 (`release/boni_0.4.66_amd64.deb`, to install), Boni
