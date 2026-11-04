@@ -642,6 +642,8 @@ export class Agent {
     keep: readonly string[] = [],
     /** An extension's own daily budget of reader calls, on top of the account's (P13). */
     budget?: Budget,
+    /** The flow this plan is, and the record that triggered it (docs/flujos.md): kept with the run. */
+    flow?: { id: string; version: number; input?: string },
   ): Promise<TurnResult> {
     const origin: Origin = { kind: "background", trust: "personal" };
     const run = randomUUID();
@@ -651,6 +653,7 @@ export class Agent {
       origin: "background",
       device: null,
       started: this.now(),
+      ...(flow ? { flow: flow.id, flowVersion: flow.version, input: flow.input ?? null } : {}),
     });
     const st = this.newState(run, { id: run, text: "" }, origin, { version: 1, steps: [] }, null);
     const v = validatePlan(plan, this.catalogView(origin), "", Object.keys(bind));

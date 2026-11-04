@@ -22,16 +22,11 @@ import { decisions } from "./mailReview.ts";
 import { FILE_FIELD, FOLDER_FIELD } from "./paths.ts";
 import { acceptEdits } from "./proposalEdits.ts";
 
-/** The mail a reading's run read (its plan's first step), as mail.ts tells a mail's proposals apart. */
+/** The mail a reading's run read (the run's input, bound to the flow as `$mail`), as mail.ts tells a mail's proposals apart. */
 const mailOfRun = (
-  store: { journal: { run(r: string): { plan: unknown } | null } },
+  store: { journal: { run(r: string): { input: string | null } | null } },
   run: string,
-): unknown =>
-  (
-    store.journal.run(run)?.plan as
-      | { steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[] }
-      | undefined
-  )?.steps?.[0]?.args?.id?.lit;
+): unknown => store.journal.run(run)?.input ?? undefined;
 /** The mailbox connector against a fake IMAP server (invented mail only). */
 const PASSWORD = "una contraseña larga de ejemplo";
 const APP_PASSWORD = "abcdabcdabcdabcd";
@@ -576,7 +571,7 @@ describe("tasks a mail asks for", () => {
       { key: "docencia", name: "Docencia", option: "Docencia", date: "date" },
       { key: "gestiones", name: "Gestiones", option: "Gestiones", date: "date" },
     ];
-    const plan = mailPlan("e_x", two) as {
+    const plan = mailPlan(two) as {
       steps: { reader?: string; params?: { options: unknown } }[];
     };
     // The options are bound by code (with the entries they name, for the audit), never written in the plan.
@@ -633,7 +628,6 @@ describe("tasks a mail asks for", () => {
     // The live reading asks Juan when the decider is unsure (the panel of requests); by default it does not.
     expect(JSON.stringify(plan)).not.toContain('"ask"');
     const live = mailPlan(
-      "e_x",
       [
         { key: "docencia", name: "Docencia", option: "Docencia", date: "date" },
         { key: "gestiones", name: "Gestiones", option: "Gestiones", date: "date" },
@@ -642,7 +636,11 @@ describe("tasks a mail asks for", () => {
     ) as { steps: { reader?: string; params?: { ask?: unknown } }[] };
     expect(live.steps.find((x) => x.reader === "classify")?.params?.ask).toEqual({
       fn: "concat",
-      args: [{ lit: "¿A qué colección va «" }, { ref: "$m.asunto" }, { lit: "»?" }],
+      args: [
+        { lit: "¿A qué colección va «" },
+        { fn: "first", args: [{ ref: "$subject" }, { lit: "este correo" }] },
+        { lit: "»?" },
+      ],
     });
     h.close();
     sdb.close();
@@ -1768,7 +1766,7 @@ describe("relations the code found in the mail, in the plan (task 51, phases B a
         },
       ],
     };
-    const plan = mailPlan("e_x", [t]) as {
+    const plan = mailPlan([t]) as {
       steps: { tool?: string; args?: { values: { args: unknown[] } } }[];
     };
     const values = plan.steps.find((x) => x.tool === "entities.create")?.args?.values.args ?? [];

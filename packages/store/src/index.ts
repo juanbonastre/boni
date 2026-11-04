@@ -16,6 +16,7 @@ export { type Checkpointed, checkpointOnce, startCheckpoints, walBytes } from ".
 export type {
   ConfirmationRow,
   DecisionRow,
+  FlowRow,
   Journal,
   ModelCallRow,
   ModelCallUse,

@@ -287,6 +287,27 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
    );`,
   // 15: a run's proposals by their run («Recorrido», task 52): read per run, never the whole table.
   "CREATE INDEX proposals_run ON proposals(run)",
+  // 16: flows (docs/flujos.md, F1): a plan with a trigger kept as data, a row per version, the latest one current;
+  // and which flow and version a run executed, with the record that triggered it (a mail's id: the flow's plan
+  // names it `$mail`, so the plan no longer carries it).
+  `CREATE TABLE flows (
+     id TEXT NOT NULL,
+     version INTEGER NOT NULL,
+     name TEXT NOT NULL,
+     trigger TEXT NOT NULL,
+     inputs TEXT NOT NULL,
+     plan TEXT NOT NULL,
+     layout TEXT,
+     by TEXT NOT NULL,
+     enabled INTEGER NOT NULL DEFAULT 1,
+     hash TEXT NOT NULL,
+     created INTEGER NOT NULL,
+     PRIMARY KEY (id, version)
+   );
+   ALTER TABLE runs ADD COLUMN flow TEXT;
+   ALTER TABLE runs ADD COLUMN flow_version INTEGER;
+   ALTER TABLE runs ADD COLUMN input TEXT;
+   CREATE INDEX runs_flow ON runs(flow, started);`,
 ];
 
 export function migrate(db: DatabaseSync): void {

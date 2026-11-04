@@ -23,6 +23,7 @@ import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import type { ExternalItem } from "./externalItems.ts";
+import { flowsView, flowView } from "./flows.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
@@ -106,6 +107,10 @@ export class AgentHost {
   /** The providers each account's agent was last given (they change when Juan chooses other models). */
   private used = new Map<number, Providers>();
   private registry: ToolRegistry = coreTools().freeze();
+  /** A tool's title («Crear»), for whoever draws a plan (docs/flujos.md); null for a name the registry lacks. */
+  toolTitle(name: string): string | null {
+    return this.registry.get(name)?.title ?? null;
+  }
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
   /** The account's mailbox as the inbox names it (its address), when it has one (mail.ts). */
   mailAccountOf: ((account: number) => string | null) | null = null;
@@ -289,8 +294,45 @@ export async function serveAgent(
     if (!host.hasData) return send(res, 503, { error: "no-store" });
     return serveConversations(host, req, res, route, params, who);
   }
+  // The flows (docs/flujos.md) are data of the account: drawn with the agent off too.
+  if (route.includes(" /api/agent/flows")) {
+    if (!host.hasData) return send(res, 503, { error: "no-store" });
+    return serveFlows(host, req, res, route, params, who);
+  }
   if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
   await answerAgent(host, req, res, route, params, who);
+}
+
+/** The flows of the account (docs/flujos.md, F1): the list with their runs, and one as nodes and arrows. */
+async function serveFlows(
+  host: AgentHost,
+  req: IncomingMessage,
+  res: ServerResponse,
+  route: string,
+  params: Record<string, string>,
+  who: { account: number; device: string; trust: "personal" | "shared" | "ambient" },
+): Promise<void> {
+  const store = host.store(who.account);
+  switch (route) {
+    case "GET /api/agent/flows":
+      return send(res, 200, { flows: flowsView(store) });
+    case "GET /api/agent/flows/:id": {
+      const q = new URL(req.url ?? "/", "http://boni").searchParams;
+      const days = Math.min(90, Math.max(1, Math.round(Number(q.get("days")) || 7)));
+      const types = Object.values(store.schema().types);
+      const v = flowView(
+        store,
+        params.id ?? "",
+        Date.now(),
+        days,
+        (tool) => host.toolTitle(tool),
+        (key) => types.find((t) => t.key === key)?.name ?? null,
+      );
+      return v ? send(res, 200, v) : send(res, 404, { error: "not-found" });
+    }
+    default:
+      return send(res, 404, { error: "not-found" });
+  }
 }
 
 /** Juan's conversations (docs/conversacion.md 3.1) and the turns he watches live (3.5). */

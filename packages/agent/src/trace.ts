@@ -57,6 +57,13 @@ const TITLES = 8;
 const CHANGES = 50;
 const ANSWER = 4000;
 
+/** The names a plan's step refers to (`$name`, `$name.field`), in its arguments, condition and iteration. */
+export function refsOf(step: unknown): string[] {
+  const out = new Set<string>();
+  refsIn(step, out);
+  return [...out];
+}
+
 /** The names a plan expression refers to (`$name`, `$name.field`, `$name[0]`), anywhere inside `v`. */
 function refsIn(v: unknown, out: Set<string>): void {
   if (Array.isArray(v)) for (const x of v) refsIn(x, out);

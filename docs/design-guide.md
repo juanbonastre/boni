@@ -732,8 +732,19 @@ contraseña ni un código aquí» under a question.
   beside it, a click on a row filters or opens what it is about). Colours follow the thing, never its position:
   per actor, the Agente `--c1`, the Lector `--c2`, the Revisor `--c3`, the Decisor `--c4`, the MCP `--c7`, people
   muted, Boni's code `--compare`.
-- **«Modelos»** (the sidebar, under «Mis datos»; task 59b, Juan 2026-11-04: see what every model does and how they
-  work together, n8n's canvas as the reference; until then Ajustes → Modelos, which keeps a button to it): first the
+- **«Flujos»** (the sidebar, under «Mis datos»; `docs/flujos.md`, F1, 2026-11-05): the account's flows as rows
+  (Nombre, Disparador, Estado, Ejecuciones, Última, Versión) and the chosen one drawn (React Flow, dagre top to
+  bottom): the trigger first («Nuevo correo»), a card in `--surface` listing what it binds (`$mail` registro,
+  `$text` texto…); then a card per step, a reader in an `--accent` border named as the models' flow names it
+  («Lectora», «Decisora», «Rellenadora»), a tool dashed with its title from the registry («Crear», «Leer») and a
+  word more (the collection it creates in), with the badges «Para cada» and «Solo si» when the step iterates or has
+  a condition, and how often it ran in the period («12 veces · 12 propuestas»); an arrow from each step or input a
+  step takes its data from. A click opens the step's panel on the right: its name and its settings as the plan says
+  them (`type: "docencia"`, `input: $text`), and what it takes from. The period (7 | 30 días) and «Ordenar» as in
+  «Modelos». Read-only until F2. Two tabs in a segmented control: **Flujos** (this) and **Modelos** (task 59b,
+  below).
+- **«Modelos»** (the tab; task 59b, Juan 2026-11-04: see what every model does and how they work together, n8n's
+  canvas as the reference; until 2026-11-04 Ajustes → Modelos, which keeps a button to it): first the
   flow Boni declares (`packages/agent/src/pipeline.ts`, A-16) as a canvas (React Flow, dagre left to right, dots in
   `--line-strong`): a card per node, 200 px wide, named in a word («Correo», «Lectora», «Decisora», «Rellenadora»,
   «Calendario», «Relaciones», «Bandeja», «Tú», «Mis datos», «Planificadora», «Lectores», «Herramientas»,
