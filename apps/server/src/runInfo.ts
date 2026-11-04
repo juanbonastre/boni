@@ -46,13 +46,29 @@ const TEXT = 200;
 const text = (v: unknown, max = TEXT): string =>
   typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "";
 
-/** The proposals of each run, from one read of the journal (the Registro asks for 50 runs at a time). */
-export function proposalsByRun(store: UserStore): Map<string, ProposalRow[]> {
-  const out = new Map<string, ProposalRow[]>();
-  for (const p of store.journal.proposals()) {
-    const l = out.get(p.run);
-    if (l) l.push(p);
-    else out.set(p.run, [p]);
+export type ProposalCounts = Record<ProposalRow["status"], number>;
+const NO_PROPOSALS: ProposalCounts = {
+  pending: 0,
+  accepted: 0,
+  rejected: 0,
+  postponed: 0,
+  stale: 0,
+};
+
+/**
+ * How many proposals of each state every run made, from one count in the journal (the Registro asks for 50 runs at
+ * a time). Counting beats reading every proposal with its arguments: with Juan's journal that read held the server
+ * 370 ms on each request of the Registro (2026-11-04, task 43).
+ */
+export function proposalsByRun(store: UserStore): Map<string, ProposalCounts> {
+  const out = new Map<string, ProposalCounts>();
+  for (const { run, status, n } of store.journal.proposalCounts()) {
+    let c = out.get(run);
+    if (!c) {
+      c = { ...NO_PROPOSALS };
+      out.set(run, c);
+    }
+    if (status in c) c[status] += n;
   }
   return out;
 }
@@ -101,7 +117,7 @@ export function runInfo(
   store: UserStore,
   r: RunRow,
   o: {
-    proposals?: Map<string, ProposalRow[]>;
+    proposals?: Map<string, ProposalCounts>;
     mailAccount?: string | null;
     /** The runs in which Boni accepted a proposal alone (autoAccept.ts). */
     alone?: Set<string>;
@@ -111,9 +127,7 @@ export function runInfo(
     mails?: Map<string, MailSeen | null>;
   } = {},
 ): RunInfo {
-  const mine = (o.proposals ?? proposalsByRun(store)).get(r.id) ?? [];
-  const proposals = { pending: 0, accepted: 0, rejected: 0, postponed: 0, stale: 0 };
-  for (const p of mine) proposals[p.status]++;
+  const proposals = { ...NO_PROPOSALS, ...(o.proposals ?? proposalsByRun(store)).get(r.id) };
   const ops = store.runOps(r.id);
   const schema = store.schema().types;
   const changes: RunChange[] = [];

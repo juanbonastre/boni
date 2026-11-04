@@ -5,7 +5,13 @@ import { label } from "@boni/entities";
 import type { ProposalRow, UserStore } from "@boni/store";
 import { SYS } from "@boni/views";
 import { timed } from "./perf.ts";
-import { type MailSeen, proposalsByRun, type RunWhat, runInfo } from "./runInfo.ts";
+import {
+  type MailSeen,
+  type ProposalCounts,
+  proposalsByRun,
+  type RunWhat,
+  runInfo,
+} from "./runInfo.ts";
 
 /**
  * Boni's own records as collections (Juan, 2026-10-25, design audit: everything shown comes from collections):
@@ -226,9 +232,9 @@ function makeSystemCollections(
   const activity = activityOf(store, from, o.now, o.tz, day);
   const runs = store.journal.runsIn(from, o.now + 1);
   // Only «Ejecuciones» needs every proposal by run: read when its rows are.
-  let byRun: Map<string, ProposalRow[]> | null = null;
+  let byRun: Map<string, ProposalCounts> | null = null;
   const proposals = () =>
-    (byRun ??= runs.length ? proposalsByRun(store) : new Map<string, ProposalRow[]>());
+    (byRun ??= runs.length ? proposalsByRun(store) : new Map<string, ProposalCounts>());
   const schema = store.schema().types;
 
   const uses = optionsFrom(
