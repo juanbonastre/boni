@@ -194,7 +194,7 @@ function Canvas({
   );
 }
 
-export function ModelsView() {
+export function ModelsPanel() {
   const t = useStore((s) => s.t);
   const [days, setDays] = useState<(typeof PERIODS)[number]>(7);
   const [flow, setFlow] = useState<FlowView | null>(null);
@@ -233,27 +233,24 @@ export function ModelsView() {
     [days, t],
   );
   return (
-    <div className="content page-doc full models-page">
-      <div className="doc cols">
-        <h1 className="cols-title">{t("nav.models")}</h1>
-        <div className="data-tools">
-          <div className="segmented" role="radiogroup" aria-label={t("flow.period")}>
-            {periods}
-          </div>
+    <>
+      <div className="data-tools">
+        <div className="segmented" role="radiogroup" aria-label={t("flow.period")}>
+          {periods}
         </div>
-        {error && !flow ? (
-          <p className="form-error">{error}</p>
-        ) : !flow ? (
-          <div className="page-loading" role="status" aria-busy="true" />
-        ) : (
-          <ReactFlowProvider>
-            <Canvas flow={flow} models={models} onRole={setRole} />
-          </ReactFlowProvider>
-        )}
-        <section className="models-config">
-          <ModelsSettings role={role} onRole={setRole} />
-        </section>
       </div>
-    </div>
+      {error && !flow ? (
+        <p className="form-error">{error}</p>
+      ) : !flow ? (
+        <div className="page-loading" role="status" aria-busy="true" />
+      ) : (
+        <ReactFlowProvider>
+          <Canvas flow={flow} models={models} onRole={setRole} />
+        </ReactFlowProvider>
+      )}
+      <section className="models-config">
+        <ModelsSettings role={role} onRole={setRole} />
+      </section>
+    </>
   );
 }

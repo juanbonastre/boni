@@ -29,7 +29,7 @@ import {
   renamePage,
   showAllPages,
   showChat,
-  showModels,
+  showFlows,
   toggleFold,
   toggleSidebar,
   useStore,
@@ -107,11 +107,11 @@ export function Sidebar() {
         </button>
         <button
           type="button"
-          className={`nav-row${view.kind === "models" ? " active" : ""}`}
-          onClick={showModels}
+          className={`nav-row${view.kind === "flows" ? " active" : ""}`}
+          onClick={() => showFlows()}
         >
           <Workflow size={15} strokeWidth={1.8} />
-          <span className="nav-name">{t("nav.models")}</span>
+          <span className="nav-name">{t("nav.flows")}</span>
         </button>
         <RecentSection open={!folded.includes("recent")} toggle={() => fold("recent")} />
         {(pages !== null || tree !== null) && (

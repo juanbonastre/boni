@@ -26,7 +26,7 @@ test("the sidebar: «Mis datos» by Buscar and Conversación, then «Recientes»
     /^Buscar/,
     "Conversación",
     "Mis datos",
-    "Modelos",
+    "Flujos",
   ]);
   const pages = side.getByRole("list", { name: "Páginas" });
   // The user's pages, then the collections (folded), then Boni's own things.

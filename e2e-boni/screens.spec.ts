@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { FLOW, MODELS } from "./agent-scenarios.ts";
+import { FLOW, FLOW_DETAIL, FLOWS, MODELS } from "./agent-scenarios.ts";
 import { openApp, openInTree, TEMPLATE } from "./fixtures.ts";
 
 /**
@@ -31,12 +31,31 @@ test("the start page (Gastos)", async ({ page }) => {
   await shot(page, "gastos");
 });
 
-test("Modelos", async ({ page }) => {
-  await open(page, { "GET api/agent/models": [MODELS], "GET api/agent/pipeline": [FLOW] });
-  await page.locator(".sidebar").getByRole("button", { name: "Modelos", exact: true }).click();
+test("Flujos", async ({ page }) => {
+  await open(page, {
+    "GET api/agent/models": [MODELS],
+    "GET api/agent/pipeline": [FLOW],
+    "GET api/agent/flows": [FLOWS],
+    "GET api/agent/flows/:id": [FLOW_DETAIL],
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page.locator(".flow-detail .flow-canvas .fl-node").first().waitFor();
+  await page.waitForTimeout(400); // the canvas fits the flow with a short motion
+  await shot(page, "flujos");
+});
+
+test("Flujos: Modelos", async ({ page }) => {
+  await open(page, {
+    "GET api/agent/models": [MODELS],
+    "GET api/agent/pipeline": [FLOW],
+    "GET api/agent/flows": [FLOWS],
+    "GET api/agent/flows/:id": [FLOW_DETAIL],
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page.getByRole("radio", { name: "Modelos" }).click();
   await page.locator(".flow-canvas .fl-node").first().waitFor();
   await page.locator(".use-card").first().waitFor();
-  await page.waitForTimeout(400); // the canvas fits the flow with a short motion
+  await page.waitForTimeout(400);
   await shot(page, "modelos");
 });
 

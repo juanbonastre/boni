@@ -624,6 +624,98 @@ export function parseFlow(b: unknown): FlowView | null {
   return { days: numOf(b.days, 7), from: numOf(b.from), to: numOf(b.to), nodes, edges };
 }
 
+/** A flow (docs/flujos.md): a plan with a trigger kept as data, as the list shows it. */
+export interface FlowSummary {
+  id: string;
+  name: string;
+  version: number;
+  trigger: Record<string, unknown>;
+  by: string;
+  enabled: boolean;
+  steps: number;
+  runs: number;
+  last: number | null;
+}
+export interface FlowStepNode {
+  id: string;
+  op: string;
+  what: string;
+  title: string | null;
+  detail: string | null;
+  when: boolean;
+  each: boolean;
+  args: string[];
+  deps: string[];
+  ran: Record<string, number>;
+}
+export interface FlowDetailView extends FlowSummary {
+  inputs: { id: string; what: string }[];
+  nodes: FlowStepNode[];
+  days: number;
+  versions: { version: number; by: string; created: number }[];
+}
+const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
+function parseFlowSummary(v: unknown): FlowSummary | null {
+  if (!isObj(v) || typeof v.id !== "string" || !ID_RE.test(v.id) || typeof v.name !== "string")
+    return null;
+  return {
+    id: v.id,
+    name: v.name.slice(0, 120),
+    version: numOf(v.version, 1),
+    trigger: isObj(v.trigger) ? v.trigger : {},
+    by: typeof v.by === "string" ? v.by.slice(0, 40) : "",
+    enabled: v.enabled !== false,
+    steps: numOf(v.steps),
+    runs: numOf(v.runs),
+    last: typeof v.last === "number" ? v.last : null,
+  };
+}
+export function parseFlows(b: unknown): FlowSummary[] {
+  if (!isObj(b) || !Array.isArray(b.flows)) return [];
+  return b.flows.map(parseFlowSummary).filter((f): f is FlowSummary => f !== null);
+}
+export function parseFlowDetail(b: unknown): FlowDetailView | null {
+  const s = parseFlowSummary(b);
+  if (!s || !isObj(b) || !Array.isArray(b.nodes)) return null;
+  const strs = (v: unknown, max: number) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : [];
+  const nodes: FlowStepNode[] = [];
+  for (const n of b.nodes) {
+    if (!isObj(n) || typeof n.id !== "string" || !ID_RE.test(n.id)) continue;
+    const ran: Record<string, number> = {};
+    if (isObj(n.ran))
+      for (const [k, x] of Object.entries(n.ran)) if (/^[a-z]+$/.test(k)) ran[k] = numOf(x);
+    nodes.push({
+      id: n.id,
+      op: typeof n.op === "string" ? n.op : "",
+      what: typeof n.what === "string" ? n.what.slice(0, 80) : "",
+      title: typeof n.title === "string" ? n.title.slice(0, 80) : null,
+      detail: typeof n.detail === "string" ? n.detail.slice(0, 120) : null,
+      when: n.when === true,
+      each: n.each === true,
+      args: strs(n.args, 40).map((a) => a.slice(0, 300)),
+      deps: strs(n.deps, 40),
+      ran,
+    });
+  }
+  const inputs = Array.isArray(b.inputs)
+    ? b.inputs
+        .filter((i): i is { id: string; what: string } => isObj(i) && typeof i.id === "string")
+        .map((i) => ({
+          id: i.id.slice(0, 40),
+          what: typeof i.what === "string" ? i.what : "value",
+        }))
+    : [];
+  const versions = Array.isArray(b.versions)
+    ? b.versions.filter(isObj).map((v) => ({
+        version: numOf(v.version),
+        by: typeof v.by === "string" ? v.by : "",
+        created: numOf(v.created),
+      }))
+    : [];
+  return { ...s, inputs, nodes, days: numOf(b.days, 7), versions };
+}
+
 export function parseModels(b: unknown): ModelsView | null {
   if (!isObj(b)) return null;
   const roles = (Array.isArray(b.roles) ? b.roles : []).filter(isObj).flatMap((r) => {
@@ -1843,6 +1935,15 @@ export class AgentApi {
   /** The declared flow with its numbers of the last `days` («Modelos», task 59b). */
   flow = async (days: number) =>
     parseFlow(await this.call("GET", `pipeline?days=${Math.max(1, Math.round(days))}`));
+  /** The account's flows (docs/flujos.md), and one of them drawn with the last `days`' numbers. */
+  flows = async () => parseFlows(await this.call("GET", "flows"));
+  flowDetail = async (id: string, days: number) =>
+    parseFlowDetail(
+      await this.call(
+        "GET",
+        `flows/${encodeURIComponent(id)}?days=${Math.max(1, Math.round(days))}`,
+      ),
+    );
   catalogue = async () => parseCatalogue(await this.call("GET", "models/catalogue"));
   evaluateModel = async (role: ModelRole, c: ModelChoice) =>
     parseModels(await this.call("POST", "models/evaluate", { role, ...c }));

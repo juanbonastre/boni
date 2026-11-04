@@ -39,7 +39,7 @@ import {
   setDecisionAuto,
   setLearning,
   setWidgetHidden,
-  showModels,
+  showFlows,
   suggestedDevice,
   toast,
   useStore,
@@ -135,11 +135,11 @@ export function SettingsModal() {
                 className="btn settings-open-models"
                 onClick={() => {
                   close();
-                  showModels();
+                  showFlows("models");
                 }}
               >
                 <Workflow size={14} strokeWidth={1.8} aria-hidden />
-                {t("nav.models")}
+                {t("nav.flows")}
               </button>
             )}
             {section === "ai" && <AiVisibility />}

@@ -96,7 +96,7 @@ export function whatOf(
     const steps = plan?.steps ?? [];
     if (steps[0]?.reader === "review_reading") return { kind: "review" };
     // The run's own plan says which mail it read (no second read of the journal).
-    const mail = mailOfPlan(plan);
+    const mail = r.input ?? mailOfPlan(plan);
     let seen = mail ? mails?.get(mail) : null;
     if (mail && seen === undefined) {
       const v = store.get(mail)?.entity.values;

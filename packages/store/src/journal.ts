@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 /**
@@ -15,6 +16,30 @@ export interface RunRow {
   plan: unknown;
   started: number;
   finished: number | null;
+  /** The flow and the version it executed (docs/flujos.md), or null for a plan the planner or code made alone. */
+  flow: string | null;
+  flowVersion: number | null;
+  /** The record that triggered it (a mail's id), bound to the plan as `$mail`. */
+  input: string | null;
+}
+/** A flow (docs/flujos.md): a plan with a trigger, kept as data; a row per version, the latest one is the flow. */
+export interface FlowRow {
+  id: string;
+  version: number;
+  name: string;
+  /** What starts it: `{ created: "correo" }`, `{ schedule: "…" }`, `{ manual: true }`. */
+  trigger: unknown;
+  /** What the trigger binds to the plan by name (`$mail`, `$text`, `$guide`…), each with what it is. */
+  inputs: unknown;
+  plan: unknown;
+  /** Where the user left each node (presentation only), or null. */
+  layout: unknown | null;
+  /** Who wrote this version: Boni's preset, the user, or an extension. */
+  by: string;
+  enabled: boolean;
+  /** A hash of the plan: the same plan is not saved twice as two versions. */
+  hash: string;
+  created: number;
 }
 export interface StepRow {
   run: string;
@@ -142,13 +167,34 @@ export interface ConfirmationRow {
 }
 
 export interface Journal {
-  startRun(r: Omit<RunRow, "finished" | "status" | "plan">): void;
+  startRun(
+    r: Omit<RunRow, "finished" | "status" | "plan" | "flow" | "flowVersion" | "input"> &
+      Partial<Pick<RunRow, "flow" | "flowVersion" | "input">>,
+  ): void;
   finishRun(id: string, status: string, plan: unknown, at: number): void;
   setPlan(id: string, plan: unknown): void;
   run(id: string): RunRow | null;
   runs(limit?: number): RunRow[];
   /** Each run that started in the period, oldest first (the read-only collection «Ejecuciones»). */
   runsIn(from: number, to: number): RunRow[];
+  /** The flows (docs/flujos.md), each at its latest version, by name. */
+  flows(): FlowRow[];
+  /** A flow at its latest version, or at `version`. */
+  flow(id: string, version?: number): FlowRow | null;
+  /** Every version of a flow, the newest first. */
+  flowVersions(id: string): FlowRow[];
+  /** A new version of a flow (the first when it is new); the hash of its plan is computed here. */
+  saveFlow(f: Omit<FlowRow, "version" | "hash">): FlowRow;
+  /** Turns a flow on or off (its latest version). */
+  setFlowEnabled(id: string, enabled: boolean): void;
+  /** How many runs a flow had, and when the last started. */
+  flowRuns(id: string): { runs: number; last: number | null };
+  /** The steps of a flow's runs in a period, counted by step and decision. */
+  stepCountsOf(
+    flow: string,
+    from: number,
+    to: number,
+  ): { step: string; decision: string; n: number }[];
   step(r: Omit<StepRow, "seq">): void;
   steps(run: string): StepRow[];
   /** Keeps a model call; gives its number (the audit's action refers to it). */
@@ -240,6 +286,22 @@ export function openJournal(db: DatabaseSync): Journal {
     plan: p(r.plan),
     started: r.started as number,
     finished: (r.finished as number | null) ?? null,
+    flow: (r.flow as string | null) ?? null,
+    flowVersion: (r.flow_version as number | null) ?? null,
+    input: (r.input as string | null) ?? null,
+  });
+  const flowOf = (r: Record<string, unknown>): FlowRow => ({
+    id: r.id as string,
+    version: Number(r.version),
+    name: r.name as string,
+    trigger: p(r.trigger),
+    inputs: p(r.inputs) ?? [],
+    plan: p(r.plan),
+    layout: p(r.layout),
+    by: r.by as string,
+    enabled: Number(r.enabled) === 1,
+    hash: r.hash as string,
+    created: Number(r.created),
   });
   const proposalOf = (r: Record<string, unknown>): ProposalRow => ({
     id: r.id as string,
@@ -309,9 +371,95 @@ export function openJournal(db: DatabaseSync): Journal {
     startRun: (r) =>
       void db
         .prepare(
-          "INSERT INTO runs (id, turn, origin, device, status, started) VALUES (?, ?, ?, ?, 'running', ?)",
+          "INSERT INTO runs (id, turn, origin, device, status, started, flow, flow_version, input) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?)",
         )
-        .run(r.id, r.turn, r.origin, r.device, r.started),
+        .run(
+          r.id,
+          r.turn,
+          r.origin,
+          r.device,
+          r.started,
+          r.flow ?? null,
+          r.flowVersion ?? null,
+          r.input ?? null,
+        ),
+    flows: () =>
+      (
+        db
+          .prepare(
+            `SELECT f.* FROM flows f
+             JOIN (SELECT id, max(version) AS version FROM flows GROUP BY id) l
+               ON l.id = f.id AND l.version = f.version
+             ORDER BY f.name, f.id`,
+          )
+          .all() as Record<string, unknown>[]
+      ).map(flowOf),
+    flow: (id, version) => {
+      const r = (
+        version === undefined
+          ? db.prepare("SELECT * FROM flows WHERE id = ? ORDER BY version DESC LIMIT 1").get(id)
+          : db.prepare("SELECT * FROM flows WHERE id = ? AND version = ?").get(id, version)
+      ) as Record<string, unknown> | undefined;
+      return r ? flowOf(r) : null;
+    },
+    flowVersions: (id) =>
+      (
+        db.prepare("SELECT * FROM flows WHERE id = ? ORDER BY version DESC").all(id) as Record<
+          string,
+          unknown
+        >[]
+      ).map(flowOf),
+    saveFlow: (f) => {
+      const version =
+        Number(
+          (
+            db
+              .prepare("SELECT coalesce(max(version), 0) AS v FROM flows WHERE id = ?")
+              .get(f.id) as {
+              v: number;
+            }
+          ).v,
+        ) + 1;
+      const hash = createHash("sha256").update(j(f.plan)).digest("hex").slice(0, 16);
+      db.prepare(
+        `INSERT INTO flows (id, version, name, trigger, inputs, plan, layout, by, enabled, hash, created)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        f.id,
+        version,
+        f.name,
+        j(f.trigger),
+        j(f.inputs),
+        j(f.plan),
+        f.layout === null || f.layout === undefined ? null : j(f.layout),
+        f.by,
+        f.enabled ? 1 : 0,
+        hash,
+        f.created,
+      );
+      return { ...f, layout: f.layout ?? null, version, hash };
+    },
+    setFlowEnabled: (id, enabled) =>
+      void db
+        .prepare(
+          "UPDATE flows SET enabled = ? WHERE id = ? AND version = (SELECT max(version) FROM flows WHERE id = ?)",
+        )
+        .run(enabled ? 1 : 0, id, id),
+    flowRuns: (id) => {
+      const r = db
+        .prepare("SELECT count(*) AS n, max(started) AS last FROM runs WHERE flow = ?")
+        .get(id) as { n: number; last: number | null };
+      return { runs: Number(r.n), last: r.last === null ? null : Number(r.last) };
+    },
+    stepCountsOf: (flow, from, to) =>
+      (
+        db
+          .prepare(
+            `SELECT s.step, s.decision, count(*) AS n FROM run_steps s JOIN runs r ON r.id = s.run
+             WHERE r.flow = ? AND r.started >= ? AND r.started < ? GROUP BY s.step, s.decision`,
+          )
+          .all(flow, from, to) as { step: string; decision: string; n: number }[]
+      ).map((r) => ({ step: r.step, decision: r.decision, n: Number(r.n) })),
     finishRun: (id, status, plan, at) =>
       void db
         .prepare("UPDATE runs SET status = ?, plan = ?, finished = ? WHERE id = ?")

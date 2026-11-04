@@ -53,7 +53,8 @@ const MEASURE = 20;
 
 /** The mail whose plan made a proposal (its first step reads it). */
 export function mailOfRun(store: UserStore, run: string): string | null {
-  return mailOfPlan(store.journal.run(run)?.plan);
+  const r = store.journal.run(run);
+  return r?.input ?? mailOfPlan(r?.plan);
 }
 
 /** The mail a plan reads first (a mail's reading starts by reading it), or null. */

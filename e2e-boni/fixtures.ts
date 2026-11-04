@@ -869,7 +869,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/audit\/actions\/[^/]+$/, "/audit/actions/:seq")
             .replace(/\/audit\/rows\/[^/]+$/, "/audit/rows/:id")
             .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")
-            .replace(/\/live\/[^/]+$/, "/live/:id")}`;
+            .replace(/\/live\/[^/]+$/, "/live/:id")
+            .replace(/\/flows\/[^/]+$/, "/flows/:id")}`;
           const list = opts.agent?.[key];
           if (!list?.length) return [503, '{"error":"agent-off"}'];
           const n = agentCalls[key] ?? 0;

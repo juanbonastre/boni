@@ -1597,3 +1597,106 @@ export const FLOW = {
     { from: "assistants", to: "store", what: "reads", n: null },
   ],
 };
+
+/** The account's flows (docs/flujos.md, F1): the mail reading as kept data, with a week's invented runs. */
+export const FLOWS = {
+  flows: [
+    {
+      id: "leer-correo",
+      name: "Leer correo",
+      version: 3,
+      trigger: { created: "correo" },
+      by: "preset",
+      enabled: true,
+      steps: 5,
+      runs: 42,
+      last: 1761900000000,
+    },
+  ],
+};
+const flowStep = (
+  id: string,
+  op: string,
+  what: string,
+  o: Partial<{
+    title: string;
+    detail: string;
+    when: boolean;
+    each: boolean;
+    args: string[];
+    deps: string[];
+    ran: Record<string, number>;
+  }> = {},
+) => ({
+  id,
+  op,
+  what,
+  title: null,
+  detail: null,
+  when: false,
+  each: false,
+  args: [],
+  deps: [],
+  ran: {},
+  ...o,
+});
+export const FLOW_DETAIL = {
+  ...FLOWS.flows[0],
+  inputs: [
+    { id: "mail", what: "record" },
+    { id: "text", what: "text" },
+    { id: "modules", what: "modules" },
+    { id: "userIn", what: "value" },
+    { id: "known", what: "list" },
+    { id: "guide", what: "guide" },
+    { id: "options", what: "options" },
+    { id: "subject", what: "text" },
+  ],
+  nodes: [
+    flowStep("m", "call", "entities.get", {
+      title: "Leer",
+      args: ["id: $mail"],
+      deps: ["mail"],
+      ran: { allow: 42 },
+    }),
+    flowStep("r", "read", "read_message", {
+      args: [
+        "input: $text",
+        "modules: $modules",
+        "user_in: $userIn",
+        "known: $known",
+        "guide: $guide",
+      ],
+      deps: ["text", "modules", "userIn", "known", "guide"],
+      ran: { allow: 42 },
+    }),
+    flowStep("c", "read", "classify", {
+      when: true,
+      args: ["input: $text", "options: $options", 'question: "¿En cuál de estas colecciones…"'],
+      deps: ["text", "options", "r"],
+      ran: { allow: 40 },
+    }),
+    flowStep("n0_tasks_f", "read", "fill", {
+      each: true,
+      when: true,
+      args: ['input: concat($text, "\\n\\nElemento: ", $item.title)', "fields: $fields_0"],
+      deps: ["text", "r", "c"],
+      ran: { allow: 12 },
+    }),
+    flowStep("n0_tasks", "call", "entities.create", {
+      title: "Crear",
+      detail: "Docencia",
+      each: true,
+      when: true,
+      args: ['type: "docencia"', 'values: obj("title", $item.title, "date", $item.due)'],
+      deps: ["r", "c", "n0_tasks_f"],
+      ran: { propose: 12 },
+    }),
+  ],
+  days: 7,
+  versions: [
+    { version: 3, by: "preset", created: 1761800000000 },
+    { version: 2, by: "preset", created: 1761300000000 },
+    { version: 1, by: "preset", created: 1760300000000 },
+  ],
+};

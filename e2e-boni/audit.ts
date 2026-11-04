@@ -94,7 +94,8 @@ export async function settingsAudit(page: Page, prefix = ""): Promise<string[]> 
 export const MODELS_TEXT = {
   es: {
     settings: "Ajustes",
-    nav: "Modelos",
+    nav: "Flujos",
+    modelsTab: "Modelos",
     conns: /^Claves/,
     budget: "Cambiar el presupuesto",
     change: "Cambiar",
@@ -108,7 +109,8 @@ export const MODELS_TEXT = {
   },
   en: {
     settings: "Settings",
-    nav: "Models",
+    nav: "Flows",
+    modelsTab: "Models",
     conns: /^Keys/,
     budget: "Change the budget",
     change: "Change",
@@ -126,6 +128,7 @@ export const MODELS_TEXT = {
 export async function modelsAudit(page: Page, l: (typeof MODELS_TEXT)["es"], where: string) {
   const issues: string[] = [];
   await page.locator(".sidebar").getByRole("button", { name: l.nav, exact: true }).click();
+  await page.getByRole("radio", { name: l.modelsTab }).click();
   await page.locator(".flow-canvas .fl-node").first().waitFor();
   await page.locator(".use-card").first().waitFor();
   issues.push(...(await audit(page, `${where} models`)));

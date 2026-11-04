@@ -86,3 +86,86 @@ describe("the journal's model calls by when (task 43)", () => {
     expect(again.journal.modelCallsIn(from, to)).toHaveLength(300);
   });
 });
+
+describe("flows (docs/flujos.md, F1)", () => {
+  it("keeps a flow as versions, the latest being the flow; a run says which it executed", () => {
+    const dir = mkdtempSync(join(tmpdir(), "boni-journal-"));
+    const store = openUserStore(join(dir, "user.db"));
+    cleanups.push(() => {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const j = store.journal;
+    const plan = { version: 1, steps: [{ id: "m", op: "call", tool: "entities.get", args: {} }] };
+    const first = j.saveFlow({
+      id: "leer-correo",
+      name: "Leer correo",
+      trigger: { created: "correo" },
+      inputs: [{ id: "mail", what: "record" }],
+      plan,
+      layout: null,
+      by: "preset",
+      enabled: true,
+      created: 1000,
+    });
+    expect(first).toMatchObject({ version: 1, hash: expect.any(String) });
+    expect(j.flows().map((f) => [f.id, f.version])).toEqual([["leer-correo", 1]]);
+    // The same plan again is still the same hash; a changed one is a new version, and the flow is the latest.
+    const again = j.saveFlow({
+      ...first,
+      plan: { ...plan, steps: [...plan.steps, { id: "r", op: "read" }] },
+    });
+    expect(again.version).toBe(2);
+    expect(again.hash).not.toBe(first.hash);
+    expect(j.flow("leer-correo")?.version).toBe(2);
+    expect(j.flow("leer-correo", 1)?.plan).toEqual(plan);
+    expect(j.flowVersions("leer-correo").map((f) => f.version)).toEqual([2, 1]);
+    expect(j.flow("nadie")).toBeNull();
+    j.setFlowEnabled("leer-correo", false);
+    expect(j.flow("leer-correo")?.enabled).toBe(false);
+    expect(j.flow("leer-correo", 1)?.enabled).toBe(true);
+    // Runs of the flow, and their steps counted per step.
+    j.startRun({
+      id: "run-1",
+      turn: null,
+      origin: "background",
+      device: null,
+      started: 2000,
+      flow: "leer-correo",
+      flowVersion: 2,
+      input: "e_mail1",
+    });
+    j.startRun({
+      id: "run-2",
+      turn: null,
+      origin: "background",
+      device: null,
+      started: 3000,
+      flow: "leer-correo",
+      flowVersion: 2,
+      input: "e_mail2",
+    });
+    j.startRun({ id: "run-3", turn: null, origin: "background", device: null, started: 3500 });
+    expect(j.run("run-1")).toMatchObject({ flow: "leer-correo", flowVersion: 2, input: "e_mail1" });
+    expect(j.run("run-3")).toMatchObject({ flow: null, flowVersion: null, input: null });
+    expect(j.flowRuns("leer-correo")).toEqual({ runs: 2, last: 3000 });
+    expect(j.flowRuns("nadie")).toEqual({ runs: 0, last: null });
+    for (const [run, step, decision] of [
+      ["run-1", "m", "allow"],
+      ["run-1", "r", "allow"],
+      ["run-2", "m", "allow"],
+      ["run-2", "r", "deny"],
+      ["run-3", "m", "allow"],
+    ] as const)
+      j.step({ run, step, kind: "call", decision, rule: null, detail: null, at: 4000 });
+    expect(j.stepCountsOf("leer-correo", 0, 10_000)).toEqual([
+      { step: "m", decision: "allow", n: 2 },
+      { step: "r", decision: "allow", n: 1 },
+      { step: "r", decision: "deny", n: 1 },
+    ]);
+    expect(j.stepCountsOf("leer-correo", 2500, 10_000)).toEqual([
+      { step: "m", decision: "allow", n: 1 },
+      { step: "r", decision: "deny", n: 1 },
+    ]);
+  });
+});

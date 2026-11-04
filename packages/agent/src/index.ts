@@ -144,5 +144,6 @@ export {
   ToolRegistry,
   typeName,
 } from "./tools.ts";
+export { refsOf } from "./trace.ts";
 export { deepLabel, type From, type Json, leaf, list, plain, rec, type Val } from "./values.ts";
 export { schemaView, toPlannerView } from "./view.ts";

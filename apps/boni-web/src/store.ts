@@ -115,8 +115,8 @@ export type View =
   | { kind: "row"; type: string; id: string; from?: "collection" | "allPages" | "page" }
   /** «Todas las páginas» (Juan, 2026-10-28): the whole tree, to manage (filter, protection, the eye, move). */
   | { kind: "allPages" }
-  /** «Modelos» (task 59b): the declared flow with its numbers, and what configures the models. */
-  | { kind: "models" }
+  /** «Flujos» (docs/flujos.md): the flows with their canvases, and «Modelos» (task 59b) as a tab inside. */
+  | { kind: "flows"; tab?: "flows" | "models" }
   | { kind: "audit"; filter: AuditFilter }
   /** One collection on a page of its own (its protection is unlocked only here). */
   | { kind: "collection"; type: string }
@@ -2728,7 +2728,8 @@ export const showAllPages = () => {
   void loadDataTypes();
   void loadTree();
 };
-export const showModels = () => set({ view: { kind: "models" }, panel: null });
+export const showFlows = (tab: "flows" | "models" = "flows") =>
+  set({ view: { kind: "flows", tab }, panel: null });
 
 /**
  * The sidebar's folding, kept on this device: `sections` lists the folded sections, `branches` the unfolded

@@ -30,6 +30,7 @@ import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import type { Feeds } from "./feeds.ts";
+import { ensureFlow, MAIL_FLOW } from "./flows.ts";
 import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
 import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
 import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
@@ -141,13 +142,35 @@ export const modulesOfManifest = (m: ExtensionManifest) =>
     label("own", "public", [{ kind: "code", id: `extension:${m.id}` }]),
   );
 const moduleIds = (m: ExtensionManifest) => (m.readers ?? []).map((r) => r.module);
-/** The mail a reading's run read: its plan's first step (`entities.get` with the mail's id), else "". */
+/** The mail a reading's run read: the run's input (a flow's run), else its plan's first step (older runs), else "". */
 function mailOfRun(j: UserStore["journal"], run: string): string {
-  const plan = j.run(run)?.plan as {
+  const r = j.run(run);
+  if (r?.input) return r.input;
+  const plan = r?.plan as {
     steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[];
   };
   const first = plan?.steps?.[0];
   return first?.tool === "entities.get" ? String(first.args?.id?.lit ?? "") : "";
+}
+
+/**
+ * A mail as the reader reads it (docs/flujos.md: bound to the flow as `$text`): its headers that have a value, its
+ * text, and what the code read of its attachments. The same lines the plan used to join from the record's fields.
+ */
+export function mailAsText(values: Record<string, unknown>, body: string | undefined): string {
+  const v = (k: string) =>
+    typeof values[`f_${k}`] === "string" && values[`f_${k}`] !== "" ? String(values[`f_${k}`]) : "";
+  const lines: string[] = [];
+  if (v("de_nombre") || v("de"))
+    lines.push(`De: ${v("de_nombre") ? `${v("de_nombre")} ` : ""}${v("de") ? `<${v("de")}>` : ""}`);
+  if (v("para")) lines.push(`Para: ${v("para")}`);
+  if (v("cc")) lines.push(`Cc: ${v("cc")}`);
+  if (v("fecha")) lines.push(`Fecha: ${v("fecha")}`);
+  if (v("asunto")) lines.push(`Asunto: ${v("asunto")}`);
+  let text = lines.map((l) => `${l}\n`).join("");
+  if (body) text += `\n${body}`;
+  if (v("adjuntos_texto")) text += `\n\nAdjuntos:\n${v("adjuntos_texto")}`;
+  return text;
 }
 /** The module whose items are events (a calendar invitation's event follows its route): "events" unless an extension names its own. */
 const eventModule = (m: ExtensionManifest) =>
@@ -228,12 +251,8 @@ export const MAIL_MODULES = ["tasks", "events"];
  * sender, so a reminder does not propose them again (that sender's own text: nothing of Juan's, A14).
  */
 export function mailPlan(
-  mail: string,
   targets: Target[],
   o: {
-    has?: readonly string[];
-    known?: string[];
-    userIn?: UserIn;
     /** The extension's module ids (each one's items go where its route says). */
     modules?: string[];
     /** The reader gets `$modules` (the extension's definitions, bound by code) instead of built-in ids. */
@@ -264,33 +283,13 @@ export function mailPlan(
     const r = route(m);
     return "propose" in r && r.propose === "chosen";
   });
-  const has = new Set(o.has ?? ["asunto", "body"]);
-  const parts: unknown[] = [];
-  const line = (name: string, ...keys: [string, string, string][]) => {
-    const present = keys.filter(([k]) => has.has(k));
-    if (!present.length) return;
-    parts.push({ lit: `${name}: ` });
-    for (const [k, before, after] of present)
-      parts.push(
-        ...(before ? [{ lit: before }] : []),
-        { ref: `$m.${k}` },
-        ...(after ? [{ lit: after }] : []),
-      );
-    parts.push({ lit: "\n" });
-  };
-  line("De", ["de_nombre", "", " "], ["de", "<", ">"]);
-  line("Para", ["para", "", ""]);
-  line("Cc", ["cc", "", ""]);
-  line("Fecha", ["fecha", "", ""]);
-  line("Asunto", ["asunto", "", ""]);
-  if (has.has("body")) parts.push({ lit: "\n" }, { ref: "$m.body" });
-  // What the code could read of the attachments (a sheet, a text file), after the mail's own text. A hidden
-  // field never comes through `$m` (entities.get leaves them out): the code binds it as `$adjuntos`.
-  if (has.has("adjuntos_texto")) parts.push({ lit: "\n\nAdjuntos:\n" }, { ref: "$adjuntos" });
-  const text = { fn: "concat", args: parts };
-  const known = o.known ?? [];
+  // What varies with the mail is bound by code (docs/flujos.md, the flow's inputs): the record (`$mail`), the mail
+  // as the reader reads it (`$text`: headers, text, attachments), its subject, where the user is among its
+  // recipients and what that sender already has waiting (`$known`). So the plan is the same for every mail of a
+  // configuration, and the flow it is saved as changes only when the configuration does.
+  const text = { ref: "$text" };
   const steps: unknown[] = [
-    { id: "m", op: "call", tool: "entities.get", args: { id: { lit: mail } } },
+    { id: "m", op: "call", tool: "entities.get", args: { id: { ref: "$mail" } } },
     {
       id: "r",
       op: "read",
@@ -300,8 +299,8 @@ export function mailPlan(
         modules: o.boundModules
           ? { ref: "$modules" }
           : { fn: "list", args: modules.map((m) => ({ lit: m })) },
-        user_in: { lit: o.userIn ?? "group" },
-        ...(known.length ? { known: { fn: "list", args: known.map((k) => ({ lit: k })) } } : {}),
+        user_in: { ref: "$userIn" },
+        known: { ref: "$known" },
         ...(o.guide ? { guide: { ref: "$guide" } } : {}),
       },
     },
@@ -317,7 +316,7 @@ export function mailPlan(
     input: {
       fn: "concat",
       args: [
-        ...parts,
+        text,
         { lit: "\n\nElemento: " },
         { ref: "$item.title" },
         { lit: "\nPalabras del correo que lo piden: " },
@@ -387,12 +386,14 @@ export function mailPlan(
         },
         ...(o.askWhenUnsure
           ? {
-              ask: has.has("asunto")
-                ? {
-                    fn: "concat",
-                    args: [{ lit: "¿A qué colección va «" }, { ref: "$m.asunto" }, { lit: "»?" }],
-                  }
-                : { lit: "¿A qué colección va este correo?" },
+              ask: {
+                fn: "concat",
+                args: [
+                  { lit: "¿A qué colección va «" },
+                  { fn: "first", args: [{ ref: "$subject" }, { lit: "este correo" }] },
+                  { lit: "»?" },
+                ],
+              },
             }
           : {}),
       },
@@ -420,11 +421,13 @@ export function mailPlan(
   }
   // The invitation's event (task 45): the mail's own fields into the collection its module's route says; its
   // place and link as the record's note, and the invitation's line as the reason the card shows.
+  // Only a mail that is an invitation has `$inv.uid` (the flow is the same for every mail): the steps stay, their
+  // condition says.
   const invite = (id: string, t: Target, when?: unknown) => ({
     id,
     op: "call",
     tool: "entities.create",
-    ...(when ? { when } : {}),
+    when: when ? { fn: "and", args: [{ ref: "$inv.uid" }, when] } : { ref: "$inv.uid" },
     why: { ref: "$inv.linea" },
     args: {
       type: { lit: t.key },
@@ -479,6 +482,8 @@ const EMPTY: MailState = {
   count: 0,
 };
 const CODE = label("own", "personal", [{ kind: "code", id: "mail" }]);
+/** What the code tells a reader of outside text about the mail itself (where the user is, what waits): nothing of Juan's (A14, R1). */
+const PUBLIC = label("own", "public", [{ kind: "code", id: "mail" }]);
 const FIELDS: [key: string, name: string, type: FieldDef["type"]][] = [
   ["asunto", "Asunto", "text"],
   ["de", "De", "email"],
@@ -889,15 +894,10 @@ export class Mails {
     if (!s || !e) return null;
     const v = e.entity.values;
     if (ruleFor(g, String(v.f_de ?? ""))?.action === "skip") return null;
-    const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto", "adjuntos_texto"].filter(
-      (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
-    );
     const withGuide = !!(g.instructions || g.examples.length);
     const m = this.manifest(account);
     const r = await this.o.host.agent(account).background(
-      mailPlan(mail, [], {
-        has: e.entity.body ? [...has, "body"] : has,
-        userIn: userIn(s.user, v.f_para, v.f_cc),
+      mailPlan([], {
         guide: withGuide,
         modules: moduleIds(m),
         boundModules: true,
@@ -905,7 +905,7 @@ export class Mails {
       {
         modules: modulesOfManifest(m),
         ...(withGuide ? { guide: guideOf(g) } : {}),
-        ...this.hiddenBindings(e),
+        ...this.mailBindings(e, s.user, []),
       },
       ["r"],
       measureBudget(m),
@@ -1337,11 +1337,7 @@ export class Mails {
     const j = store.journal;
     let withdrawn = 0;
     for (const p of j.proposals("pending")) {
-      const plan = j.run(p.run)?.plan as {
-        steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[];
-      };
-      const first = plan?.steps?.[0];
-      if (first?.tool === "entities.get" && set.has(String(first.args?.id?.lit))) {
+      if (set.has(mailOfRun(j, p.run))) {
         j.setProposal(p.id, "stale", this.now());
         withdrawn++;
       }
@@ -1535,9 +1531,6 @@ export class Mails {
     const only =
       rule?.action === "collection" ? c.targets.filter((t) => t.id === rule.collection) : [];
     try {
-      const has = ["de_nombre", "de", "para", "cc", "fecha", "asunto", "adjuntos_texto"].filter(
-        (k) => typeof v[`f_${k}`] === "string" && v[`f_${k}`] !== "",
-      );
       // Relations the mail plainly names (task 51, phases B and C): the sender as a record of a related collection
       // by name, a record whose title the sender's own words carry; set by code, the reader's choice first.
       const types = c.store.schema().types;
@@ -1590,26 +1583,35 @@ export class Mails {
       const bound: Record<string, Val> = {
         ...c.bound,
         options: optionsValue(chosen),
-        ...this.hiddenBindings(e),
+        ...this.mailBindings(e, c.s.user, known, { already: !!(inv && already) }),
         ...prefilled,
       };
-      const r = await c.agent.background(
-        mailPlan(id, chosen, {
-          has: e.entity.body ? [...has, "body"] : has,
-          known,
-          userIn: userIn(c.s.user, v.f_para, v.f_cc),
-          guide: c.withGuide,
-          modules: moduleIds(c.m),
-          boundModules: true,
-          ...(c.m.routes ? { routes: c.m.routes } : {}),
-          fixed: c.fixed,
-          askWhenUnsure: true,
-          ...(inv && !already ? { invitation: eventModule(c.m) } : {}),
-        }),
-        bound,
-        [],
-        budgetOf(c.m),
+      // The flow «Leer correo» (docs/flujos.md, F1): the plan the configuration gives, kept as the flow's latest
+      // version (a new one only when it changes), and executed from there, so the run names its flow and version.
+      const flow = ensureFlow(
+        c.store,
+        {
+          id: MAIL_FLOW,
+          name: "Leer correo",
+          trigger: { created: "correo" },
+          plan: mailPlan(chosen, {
+            guide: c.withGuide,
+            modules: moduleIds(c.m),
+            boundModules: true,
+            ...(c.m.routes ? { routes: c.m.routes } : {}),
+            fixed: c.fixed,
+            askWhenUnsure: true,
+            invitation: eventModule(c.m),
+          }),
+          by: "preset",
+        },
+        this.now(),
       );
+      const r = await c.agent.background(flow.plan, bound, [], budgetOf(c.m), {
+        id: flow.id,
+        version: flow.version,
+        input: id,
+      });
       const stopped = r.status === "stopped" ? (r.error ?? "stopped") : null;
       if (stopped && r.error) console.warn(`mail ${account}: plan stopped (${r.error})`);
       this.logRead(account, c.store, from, r.proposals);
@@ -1711,6 +1713,37 @@ export class Mails {
    * attachments (`$adjuntos`) and the invitation's event (`$inv`). `entities.get` leaves hidden fields out, so a
    * `$m.` reference to one stopped the plan (bad-ref: every mail with a readable attachment, until 2026-11-03).
    */
+  /**
+   * What a mail binds to the flow «Leer correo» (docs/flujos.md, its inputs): the record, the mail as text, its
+   * subject, where the user is among its recipients, what that sender has waiting, and the hidden fields. An
+   * invitation already in a calendar of the account is bound without its uid: the flow then proposes no event.
+   */
+  private mailBindings(
+    e: NonNullable<ReturnType<UserStore["get"]>>,
+    mailbox: string,
+    known: readonly string[],
+    o: { already?: boolean } = {},
+  ): Record<string, Val> {
+    const v = e.entity.values;
+    const l = e.labels.f_asunto ?? e.labels.f_de ?? CODE;
+    const hidden = this.hiddenBindings(e);
+    const inv = hidden.inv as Val;
+    return {
+      mail: leaf(e.entity.id, CODE),
+      text: leaf(mailAsText(v, e.entity.body), l),
+      subject: leaf(typeof v.f_asunto === "string" ? v.f_asunto : "", l),
+      userIn: leaf(userIn(mailbox, v.f_para, v.f_cc), PUBLIC),
+      known: list(
+        known.map((k) => leaf(k, PUBLIC)),
+        PUBLIC,
+      ),
+      ...hidden,
+      ...(o.already && inv.t === "rec"
+        ? { inv: rec({ ...inv.fields, uid: leaf(null, CODE) }, inv.label) }
+        : {}),
+    };
+  }
+
   private hiddenBindings(e: NonNullable<ReturnType<UserStore["get"]>>): Record<string, Val> {
     const v = e.entity.values;
     const val = (fid: string): Val =>
