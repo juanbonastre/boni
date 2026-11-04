@@ -177,7 +177,10 @@ propia (la del peek, que se queda mientras Juan trabaja en otra cosa; en el nave
 cada línea de un correo lleva también «Proponer tarea»: el correo pasa ahora por el plan de un correo nuevo
 (`POST /api/mail/propose`, `Mails.proposeFor`) y lo que propone va a la Bandeja; una regla de la guía que diga no leer
 a ese remitente no lo para, porque lo pide Juan. Sin maqueta (I-13): los botones van en la línea del correo, no en
-una tarjeta aparte.
+una tarjeta aparte. Desde el 2026-11-04 (tarea 54) el aviso dice lo que pasó: cuántas propuestas nuevas, «Ya en la
+Bandeja» o «Ya apuntada» si lo que pide ya espera o ya se aceptó (entonces no se vuelve a leer), «Sin tareas para
+ti» si el lector no encontró nada; y «Otra vez» lee el correo de nuevo a petición de Juan, retirando las pendientes
+(`again` en `POST /api/mail/propose`).
 
 ### 4.5 El banco de pruebas (hecho en este PR)
 

@@ -113,7 +113,7 @@ test("a mail of a reply opens in a window of its own in the desktop app, and pro
     agent: {
       "POST api/agent/turn": [TEXT_REPLY],
       "GET api/agent/proposals": [PROPOSALS],
-      "POST api/mail/propose": [{ proposals: 2 }, { proposals: 0 }],
+      "POST api/mail/propose": [{ proposals: 2 }, { proposals: 0, already: 2 }, { proposals: 1 }],
     },
     mail: true,
     peek: true,
@@ -129,8 +129,16 @@ test("a mail of a reply opens in a window of its own in the desktop app, and pro
   expect(await requests(page, "POST api/mail/propose ")).toEqual([
     'POST api/mail/propose {"id":"m1"}',
   ]);
+  // Already waiting in the inbox: the toast says so and offers to read it again (task 54), which asks again.
   await list.getByRole("button", { name: "Proponer tarea" }).click();
-  await expect(page.locator(".toast")).toContainText("Nada que proponer");
+  await expect(page.locator(".toast")).toContainText("Ya en la Bandeja");
+  await page.locator(".toast").getByRole("button", { name: "Otra vez" }).click();
+  await expect(page.locator(".toast")).toContainText("Propuesta en la Bandeja");
+  expect(await requests(page, "POST api/mail/propose ")).toEqual([
+    'POST api/mail/propose {"id":"m1"}',
+    'POST api/mail/propose {"id":"m1"}',
+    'POST api/mail/propose {"id":"m1","again":true}',
+  ]);
 });
 
 test("a turn in Juan's words: each step says what it does, on what and what it found; numbers to compare are a chart", async ({

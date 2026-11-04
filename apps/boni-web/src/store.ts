@@ -709,13 +709,21 @@ export async function openRecord(typeName: string, id: string) {
   else await openRow(type.id, id);
 }
 
-/** A mail's tasks proposed now, from the conversation (task 30): they go to the inbox, which says so. */
-export async function proposeFromMail(id: string) {
+/**
+ * A mail's tasks proposed now, from the conversation (task 30): they go to the inbox, which says so. When nothing
+ * new comes of it, the toast says why (already waiting, already taken, nothing for you) and offers to read the mail
+ * again (task 54; Juan, 2026-11-04: «que el usuario pudiese volver a proponerlo»).
+ */
+export async function proposeFromMail(id: string, again = false) {
   const t = get().t;
   try {
-    const n = await agent.proposeFromMail(id);
-    toast(n === 1 ? t("mail.proposedOne") : n ? t("mail.proposed", { n }) : t("mail.proposedNone"));
-    if (n) void loadInbox();
+    const r = await agent.proposeFromMail(id, again);
+    const retry = { label: t("mail.proposeAgain"), run: () => void proposeFromMail(id, true) };
+    if (r.n) toast(r.n === 1 ? t("mail.proposedOne") : t("mail.proposed", { n: r.n }));
+    else if (r.already) toast(t("mail.proposedAlready"), retry);
+    else if (r.decided) toast(t("mail.proposedDecided"), retry);
+    else toast(t("mail.proposedNone"), retry);
+    if (r.n || again) void loadInbox();
   } catch (e) {
     toast(
       t(

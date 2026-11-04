@@ -139,6 +139,14 @@ export const modulesOfManifest = (m: ExtensionManifest) =>
     label("own", "public", [{ kind: "code", id: `extension:${m.id}` }]),
   );
 const moduleIds = (m: ExtensionManifest) => (m.readers ?? []).map((r) => r.module);
+/** The mail a reading's run read: its plan's first step (`entities.get` with the mail's id), else "". */
+function mailOfRun(j: UserStore["journal"], run: string): string {
+  const plan = j.run(run)?.plan as {
+    steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[];
+  };
+  const first = plan?.steps?.[0];
+  return first?.tool === "entities.get" ? String(first.args?.id?.lit ?? "") : "";
+}
 /** The module whose items are events (a calendar invitation's event follows its route): "events" unless an extension names its own. */
 const eventModule = (m: ExtensionManifest) =>
   (resolveModules(plain(modulesOfManifest(m))) ?? []).find((x) => x.kind === "event")?.id ??
@@ -1704,14 +1712,23 @@ export class Mails {
     c: PlanContext,
     id: string,
     asked = false,
-  ): Promise<{ n: number; stopped: string | null }> {
+    again = false,
+  ): Promise<{ n: number; stopped: string | null; already: number; decided: number }> {
+    const none = { n: 0, stopped: null, already: 0, decided: 0 };
     const e = c.store.get(id);
-    if (!e || e.entity.deleted !== undefined) return { n: 0, stopped: null };
+    if (!e || e.entity.deleted !== undefined) return none;
     const v = e.entity.values;
     const from = String(v.f_de ?? "");
     // Guide rules first, by code: a mail it says never to read is not read at all.
     const rule = ruleFor(c.guide, from);
-    if (rule?.action === "skip" && !asked) return { n: 0, stopped: null };
+    if (rule?.action === "skip" && !asked) return none;
+    // Asked from the conversation (task 54): what this mail already proposed is said, not made again; asked again,
+    // its pending proposals give way and the mail is read afresh (Juan, 2026-11-04: «que el usuario pudiese
+    // volver a proponerlo»).
+    const mine = asked ? this.proposalsOf(c.store, id) : { pending: [], decided: [] };
+    if (asked && !again && (mine.pending.length || mine.decided.length))
+      return { ...none, already: mine.pending.length, decided: mine.decided.length };
+    if (again) for (const p of mine.pending) c.store.journal.setProposal(p.id, "stale", this.now());
     const only =
       rule?.action === "collection" ? c.targets.filter((t) => t.id === rule.collection) : [];
     try {
@@ -1732,7 +1749,7 @@ export class Mails {
         );
       const known = [
         ...(inv?.title ? [inv.title.slice(0, 200)] : []),
-        ...(from ? this.known(c.store, from) : []),
+        ...(from && !again ? this.known(c.store, from) : []),
       ].slice(0, 20);
       const bound: Record<string, Val> = {
         ...c.bound,
@@ -1759,23 +1776,51 @@ export class Mails {
       const stopped = r.status === "stopped" ? (r.error ?? "stopped") : null;
       if (stopped && r.error) console.warn(`mail ${account}: plan stopped (${r.error})`);
       this.logRead(account, c.store, from, r.proposals);
-      this.foldThread(account, c.store, e, r.proposals);
+      if (!again) this.foldThread(account, c.store, e, r.proposals);
+      // What stays after the thread's fold (a repeat gave way): the proposals this reading made.
+      const made = r.proposals.filter((p) => c.store.journal.proposal(p)?.status !== "stale");
       // «Solo» on for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are
       // accepted here, each a decision he judges by leaving it or undoing it.
-      if (r.proposals.length && autoOn(c.store, AUTO_AREA))
-        await acceptAlone(c.store, c.agent, r.proposals, this.now());
-      return { n: r.proposals.length, stopped };
+      if (made.length && autoOn(c.store, AUTO_AREA))
+        await acceptAlone(c.store, c.agent, made, this.now());
+      return { n: made.length, stopped, already: 0, decided: mine.decided.length };
     } catch (err) {
       console.error(`mail ${account}: ${(err as Error).message}`);
-      return { n: 0, stopped: (err as Error).message };
+      return { ...none, stopped: (err as Error).message };
     }
+  }
+
+  /** The proposals a mail made (last 60 days): the ones still waiting, and the ones Juan accepted. */
+  private proposalsOf(
+    store: UserStore,
+    mail: string,
+  ): { pending: { id: string }[]; decided: { id: string }[] } {
+    const since = this.now() - 60 * 86_400_000;
+    const j = store.journal;
+    const mine = j
+      .proposals()
+      .filter(
+        (p) =>
+          p.created >= since &&
+          p.tool === "entities.create" &&
+          (p.status === "pending" || p.status === "accepted") &&
+          mailOfRun(j, p.run) === mail,
+      );
+    return {
+      pending: mine.filter((p) => p.status === "pending"),
+      decided: mine.filter((p) => p.status === "accepted"),
+    };
   }
 
   /**
    * A mail's tasks proposed now because Juan asked (task 30: «Proponer tarea» on a mail of the conversation): the
    * plan a new mail gets, for this one, after what the mailbox is doing; its proposals land in the inbox. How many.
    */
-  async proposeFor(account: number, id: string): Promise<number> {
+  async proposeFor(
+    account: number,
+    id: string,
+    again = false,
+  ): Promise<{ n: number; already: number; decided: number }> {
     for (;;) {
       const running = this.queued.get(account) ?? this.busy.get(account);
       if (!running) break;
@@ -1790,10 +1835,10 @@ export class Mails {
     if (!settings) throw new MailError("not-configured");
     const c = this.planContext(account, settings);
     if (!c) throw new MailError("no-collections");
-    const { n, stopped } = await this.proposeOne(account, c, id, true);
-    if (n) this.o.host.emit(account, "proposals", { n });
+    const { n, stopped, already, decided } = await this.proposeOne(account, c, id, true, again);
+    if (n || again) this.o.host.emit(account, "proposals", { n });
     else if (stopped) throw new MailError("stopped");
-    return n;
+    return { n, already, decided };
   }
 
   /**
@@ -1901,13 +1946,6 @@ export class Mails {
       const v = rowsOf(p).find((r) => r.arg === "values.title")?.value;
       return typeof v === "string" ? v : "";
     };
-    const mailOf = (run: string) => {
-      const plan = j.run(run)?.plan as {
-        steps?: { tool?: string; args?: { id?: { lit?: unknown } } }[];
-      };
-      const first = plan?.steps?.[0];
-      return first?.tool === "entities.get" ? String(first.args?.id?.lit ?? "") : "";
-    };
     const earlier = j
       .proposals()
       .filter(
@@ -1916,7 +1954,7 @@ export class Mails {
           p.status !== "stale" &&
           p.tool === "entities.create" &&
           !made.includes(p.id) &&
-          mails.has(mailOf(p.run)),
+          mails.has(mailOfRun(j, p.run)),
       );
     if (!earlier.length) return;
     const now = this.now();
