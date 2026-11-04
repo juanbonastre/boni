@@ -11,6 +11,7 @@ import {
   login,
   openSystemDb,
   revokeDevice,
+  SEEN_EVERY_MS,
   SESSION_IDLE_MS,
   type SystemDb,
   sessionOf,
@@ -68,7 +69,27 @@ describe("accounts and sessions", () => {
     expect(JSON.stringify(db.prepare("SELECT * FROM sessions").all())).not.toContain(
       s?.token as string,
     );
-    expect(sessionOf(db, s?.token, Date.now() + SESSION_IDLE_MS + 1000)).toBeNull();
+    // Its last_seen is written at most once a minute (task 43): a request a few seconds later leaves it.
+    const h = tokenHash(s?.token as string);
+    const seen = () =>
+      (
+        db.prepare("SELECT last_seen FROM sessions WHERE token_hash = ?").get(h) as {
+          last_seen: number;
+        }
+      ).last_seen;
+    const t0 = seen();
+    expect(sessionOf(db, s?.token, t0 + 30_000)?.account.name).toBe("ana");
+    expect(seen()).toBe(t0);
+    expect(sessionOf(db, s?.token, t0 + SEEN_EVERY_MS)?.account.name).toBe("ana");
+    expect(seen()).toBe(t0 + SEEN_EVERY_MS);
+    expect(
+      (
+        db.prepare("SELECT last_seen FROM devices WHERE name = 'portatil'").get() as {
+          last_seen: number;
+        }
+      ).last_seen,
+    ).toBe(t0 + SEEN_EVERY_MS);
+    expect(sessionOf(db, s?.token, t0 + SEEN_EVERY_MS + SESSION_IDLE_MS + 1000)).toBeNull();
     expect(sessionOf(db, s?.token)).toBeNull(); // and it is gone
   });
 

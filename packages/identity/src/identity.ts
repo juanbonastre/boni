@@ -135,6 +135,12 @@ const NAME = /^[a-z0-9._-]{2,32}$/i;
 export const MIN_PASSWORD = 12;
 /** A session not used for this long ends (a lost or forgotten device stops being a way in). */
 export const SESSION_IDLE_MS = 90 * 86_400_000;
+/**
+ * How often a session's and its device's `last_seen` are written, at most (task 43, 2026-11-04): the apps ask every
+ * second, and each write is a commit to system.db; on the NAS a slow fsync held the server half a second per
+ * request, every minute Juan used them. A minute's grain is plenty for a 90-day idle limit.
+ */
+export const SEEN_EVERY_MS = 60_000;
 
 // ---------------------------------------------------------------- accounts
 
@@ -349,8 +355,10 @@ export function sessionOf(
     db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(h);
     return null;
   }
-  db.prepare("UPDATE sessions SET last_seen = ? WHERE token_hash = ?").run(now, h);
-  db.prepare("UPDATE devices SET last_seen = ? WHERE id = ?").run(now, r.did);
+  if (now - r.last_seen >= SEEN_EVERY_MS) {
+    db.prepare("UPDATE sessions SET last_seen = ? WHERE token_hash = ?").run(now, h);
+    db.prepare("UPDATE devices SET last_seen = ? WHERE id = ?").run(now, r.did);
+  }
   return {
     account: { id: r.id, name: r.name, vault: r.vault },
     device: {
