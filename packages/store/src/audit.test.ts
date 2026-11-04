@@ -173,6 +173,95 @@ describe("the audit", () => {
     ]);
   });
 
+  it("keeps the activity per quarter in the store: a new instance starts from the sum, never from every row (task 43)", () => {
+    const { s, path } = fresh();
+    const at0 = Date.UTC(2026, 9, 1, 10);
+    const ids = Array.from(
+      { length: 50 },
+      (_, i) => s.create("t_nota", { f_titulo: t(`Nota ${i}`) }, me).entity.id,
+    );
+    const seen = (id: string) => ({
+      entity: id,
+      type: "t_nota",
+      version: 1,
+      fields: ["f_titulo"],
+      shapes: [],
+      body: null,
+      files: [],
+    });
+    // Invented volume shaped like his: 2,000 reads over 40 days, each seeing ten notes (20,000 rows of access).
+    s.batch(() => {
+      for (let i = 0; i < 2000; i++)
+        s.audit.record({
+          at: at0 + (i % 40) * DAY_AHEAD + (i % 7) * 60_000,
+          by: i % 2 ? "model:reader:fake" : "mcp:claude-ejemplo",
+          run: `r${i}`,
+          tool: "mcp.query",
+          target: {},
+          decision: "allow",
+          result: null,
+          seen: ids.slice((i * 10) % 50, ((i * 10) % 50) + 10).map(seen),
+        });
+    });
+    const from = at0 + 10 * DAY_AHEAD;
+    const sum = (rows: { by: string; type: string; reads: number; writes: number }[]) => {
+      const m = new Map<string, { reads: number; writes: number }>();
+      for (const r of rows) {
+        const c = m.get(`${r.by}|${r.type}`) ?? { reads: 0, writes: 0 };
+        c.reads += r.reads;
+        c.writes += r.writes;
+        m.set(`${r.by}|${r.type}`, c);
+      }
+      return Object.fromEntries(m);
+    };
+    const t1 = performance.now();
+    const first = s.audit.activitySince(0, 0, from);
+    const firstMs = performance.now() - t1;
+    // 30 of the 40 days: 1,500 reads of ten notes each, half by each actor; and the 50 creations (the store's clock).
+    expect(sum(first.rows)).toEqual({
+      "model:reader:fake|t_nota": { reads: 7500, writes: 0 },
+      "mcp:claude-ejemplo|t_nota": { reads: 7500, writes: 0 },
+      "user:portatil|t_nota": { reads: 0, writes: 50 },
+    });
+    // From where it was: only what came since; nothing new, nothing.
+    expect(s.audit.activitySince(first.action, first.op, from).rows).toEqual([]);
+    s.audit.record({
+      at: at0 + 39 * DAY_AHEAD,
+      by: "mcp:claude-ejemplo",
+      run: "r-new",
+      tool: "mcp.read",
+      target: {},
+      decision: "allow",
+      result: null,
+      seen: [seen(ids[0] as string)],
+    });
+    const since = s.audit.activitySince(first.action, first.op, from);
+    expect(sum(since.rows)).toEqual({ "mcp:claude-ejemplo|t_nota": { reads: 1, writes: 0 } });
+    // Opened again (a restart): the sum as kept, in milliseconds, the same numbers.
+    s.close();
+    stores.splice(stores.indexOf(s), 1);
+    const again = openUserStore(path);
+    stores.push(again);
+    const t2 = performance.now();
+    const restarted = again.audit.activitySince(0, 0, from);
+    const againMs = performance.now() - t2;
+    console.log(
+      `activity of 20,000 reads: the first pass ${firstMs.toFixed(0)} ms, after a restart ${againMs.toFixed(0)} ms`,
+    );
+    expect(sum(restarted.rows)).toEqual({
+      "model:reader:fake|t_nota": { reads: 7500, writes: 0 },
+      "mcp:claude-ejemplo|t_nota": { reads: 7501, writes: 0 },
+      "user:portatil|t_nota": { reads: 0, writes: 50 },
+    });
+    expect(againMs).toBeLessThan(Math.max(50, firstMs / 2));
+    // The window moving later leaves the earlier quarters out; the whole audit stays summed in the table.
+    // (the day 39's fifty reads are all the reader's, and the one read added after.)
+    expect(sum(again.audit.activitySince(0, 0, at0 + 39 * DAY_AHEAD).rows)).toEqual({
+      "model:reader:fake|t_nota": { reads: 500, writes: 0 },
+      "mcp:claude-ejemplo|t_nota": { reads: 1, writes: 0 },
+    });
+  });
+
   it("filters actions by kind of actor and by collection", () => {
     const { s } = fresh();
     const e = s.create("t_nota", { f_titulo: t("Uno") }, me);

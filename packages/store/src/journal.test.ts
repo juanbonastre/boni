@@ -60,7 +60,7 @@ describe("the journal's model calls by when (task 43)", () => {
     try {
       expect(
         (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version,
-      ).toBe(13);
+      ).toBeGreaterThanOrEqual(13);
       const plan = (sql: string) =>
         (db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all() as { detail: string }[])
           .map((r) => r.detail)
