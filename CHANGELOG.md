@@ -5,6 +5,22 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-05 (twenty-eighth) — server 0.8.103 · Boni desktop 0.4.72
+
+Needs: the server (0.8.103, to deploy: the flow's numbers and the web app it serves) and Boni desktop 0.4.72
+(`release/boni_0.4.72_amd64.deb`, to install). Task 59b.
+
+- **«Modelos»**, a section of its own under «Mis datos»: the flow of models and code as a canvas, read top to
+  bottom: where each thing comes in (Correo, Conversación, Calendarios externos, Asistentes), which model reads it
+  (Lectora, Decisora, Rellenadora, Planificadora, Lectores, Revisora: each with its model, its calls and their cost
+  of the period, its acierto and its last call), what the code decides (Calendario, Relaciones, Herramientas,
+  Políticas, Guía, Aprendices), the Bandeja, you, and your data; each arrow says what flows and how many went through
+  («42 correos», «12 propuestas»). A period of 7 or 30 days; «Ordenar»; a click on a model's node opens its use
+  below, where what was Ajustes → Modelos now lives (Ajustes keeps a button to it). The flow is declared as data in
+  the code and the CI refuses a reader, a role, a tool or a kind of run without its node (A-16), so the canvas cannot
+  drift from what Boni does. From this version each reader's call says which reader it was; older calls count at
+  their role's node. (#320, task 59b)
+
 ## 2026-11-05 (twenty-seventh) — server 0.8.102 · Boni desktop 0.4.71
 
 Needs: the server (0.8.102, to deploy: it serves Boni's web app to Android and the browser) and Boni desktop 0.4.71
