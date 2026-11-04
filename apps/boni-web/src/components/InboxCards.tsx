@@ -20,6 +20,8 @@ import type {
   InboxRequest,
   Proposal,
 } from "../core/agent.ts";
+import { webmailLink } from "../core/webmail.ts";
+import { openUrl } from "../host.ts";
 import {
   acceptProposal,
   answerRequest,
@@ -29,6 +31,7 @@ import {
   dismissRequest,
   loadDataTypes,
   loadInbox,
+  mailboxHost,
   openMail,
   openProposal,
   rejectProposal,
@@ -790,9 +793,24 @@ function FieldRows({
   );
 }
 
-/** Where a mail proposal came from (mailbox and sender), with "Ver correo": its own row in Boni. */
+/**
+ * Where a mail proposal came from (mailbox and sender), with "Ver correo": its own row in Boni; and «En Gmail»
+ * when the mailbox has a webmail that opens a mail by its Message-ID (task 55).
+ */
 function MailSource({ source }: { source: Extract<InboxCard["source"], { kind: "mail" }> }) {
   const t = useStore((s) => s.t);
+  const [webmail, setWebmail] = useState<{ name: string; url: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    setWebmail(null);
+    if (source.messageId)
+      void mailboxHost().then(
+        (h) => live && setWebmail(h ? webmailLink(h, source.messageId) : null),
+      );
+    return () => {
+      live = false;
+    };
+  }, [source.messageId]);
   return (
     <p className="inbox-source">
       <Mail size={13} strokeWidth={1.8} aria-hidden="true" />
@@ -807,6 +825,15 @@ function MailSource({ source }: { source: Extract<InboxCard["source"], { kind: "
           onClick={() => source.open && openMail(source.open)}
         >
           {t("inbox.seeMail")}
+        </button>
+      )}
+      {webmail && (
+        <button
+          type="button"
+          className="btn ghost small inbox-webmail"
+          onClick={() => void openUrl(webmail.url)}
+        >
+          {t("mail.inWebmail", { name: webmail.name })}
         </button>
       )}
     </p>

@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld("boniDesktop", {
   widgetDragEnd: () => ipcRenderer.send("widget:drag-end"),
   widgetHide: () => ipcRenderer.send("widget:hide"),
   openFile: (sha, name) => ipcRenderer.invoke("file:open", sha, name),
+  openUrl: (url) => ipcRenderer.invoke("url:open", url),
   peekHide: () => ipcRenderer.send("shell:peek-hide"),
   openPeek: (screen) => ipcRenderer.send("shell:open-peek", screen),
   pageReady: () => ipcRenderer.send("shell:page-ready"),

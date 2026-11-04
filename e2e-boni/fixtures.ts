@@ -290,6 +290,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           { id: "f_cc", key: "cc", name: "Cc", type: "text" },
           { id: "f_fecha", key: "fecha", name: "Fecha", type: "datetime" },
           { id: "f_adjuntos", key: "adjuntos", name: "Adjuntos", type: "text" },
+          { id: "f_id_mensaje", key: "id_mensaje", name: "Id del mensaje", type: "text" },
           {
             id: "f_archivos",
             key: "archivos",
@@ -348,6 +349,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           f_para: "ejemplo@example.edu",
           f_fecha: "2026-10-27T09:15:00Z",
           f_adjuntos: "actas.pdf, orden-del-dia.docx, foto.png",
+          f_id_mensaje: "m1@example.com",
           f_archivos: ["a1", "a2", "a3"],
         },
         updated: 7,

@@ -221,7 +221,11 @@ ti» si el lector no encontró nada; y «Otra vez» lee el correo de nuevo a pet
   texto, los «[image: …]» que Gmail escribe en su lugar desaparecen cuando se enseñan, y la parte citada de una
   respuesta («El … escribió:», «De:/Enviado:», líneas con «>») queda plegada tras «···», como en Gmail y Apple Mail.
   El texto sigue saliendo de la parte de texto plano cuando la hay y del HTML solo cuando no: es lo que lee el
-  lector y donde se cuentan las partes ocultas; si Juan ve correos que así se lean mal, se decide por correo; la colección entera es de solo
+  lector y donde se cuentan las partes ocultas; si Juan ve correos que así se lean mal, se decide por correo. Desde
+  el 2026-11-04 (tarea 55) «En Gmail», en «Ver correo» y en la línea de origen de la tarjeta, abre el correo en el
+  webmail por su Message-ID (la búsqueda `rfc822msgid` de Gmail, que lleva al hilo) cuando el buzón es de Google; el
+  enlace lo construye el código con el id guardado, sale por el anfitrión (el navegador del sistema, la intención de
+  Android, una pestaña nueva) y no existe para otros buzones (Outlook no abre por Message-ID); la colección entera es de solo
   lectura en las apps (D-22). En la tarjeta de la Bandeja, «Corregir» deja cambiar también las demás propiedades de
   la propuesta, plegadas bajo «Propiedades».
 - **Cómo guardan el correo los clientes:** un almacén de mensajes tal cual (un fichero por mensaje: Maildir, EML,

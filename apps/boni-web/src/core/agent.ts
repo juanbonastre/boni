@@ -142,6 +142,8 @@ export interface InboxCard {
     excerpt: string;
     /** The mail's own row in Boni, for "Ver correo". */
     open: { type: string; id: string } | null;
+    /** Its Message-ID: the webmail that opens a mail by it (Gmail; task 55). */
+    messageId: string | null;
   } | null;
   /** Why it was made: the reader's quote of the mail (verbatim when the server found it in the mail). */
   why: { text: string; verbatim: boolean } | null;
@@ -184,6 +186,7 @@ function parseCard(v: unknown): InboxCard | null {
           from: optStr(src.from, 200) ?? "",
           subject: optStr(src.subject, 200) ?? "",
           excerpt: optStr(src.excerpt, 1500) ?? "",
+          messageId: optStr(src.messageId, 300),
           open:
             isObj(src.open) && typeof src.open.type === "string" && typeof src.open.id === "string"
               ? { type: src.open.type.slice(0, 100), id: src.open.id.slice(0, 100) }

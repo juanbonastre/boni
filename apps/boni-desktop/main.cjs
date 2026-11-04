@@ -21,7 +21,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { allowedPath, timeoutFor } = require("./paths.cjs");
 const F = require("./files.cjs");
-const { linkIn, peekScreen, screenOfUrl } = require("./links.cjs");
+const { linkIn, outsideLink, peekScreen, screenOfUrl } = require("./links.cjs");
 const { createLive } = require("./live.cjs");
 const S = require("./settings.cjs");
 const BK = require("./backup.cjs");
@@ -718,6 +718,14 @@ ipcMain.handle("file:open", async (_e, sha, name) => {
   } catch {
     return "offline";
   }
+});
+
+// An outside address from the page (a mail in its webmail, task 55): the system's browser; http(s) only, checked
+// here. The windows themselves never open windows nor navigate away.
+ipcMain.handle("url:open", async (_e, url) => {
+  if (!outsideLink(url)) return "error";
+  await shell.openExternal(url);
+  return "opened";
 });
 
 // ---------- small files of the page (queue, last chart answers, widget list) ----------

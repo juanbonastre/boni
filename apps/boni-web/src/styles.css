@@ -4622,6 +4622,14 @@ body:has(.toast) .db-selinfo {
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
+.mail-actions {
+  margin: 0 0 12px;
+}
+.mail-webmail {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .mail-head {
   margin: 0 0 10px;
   padding: 10px 0;
