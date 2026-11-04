@@ -5,6 +5,22 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-05 (twenty-seventh) — server 0.8.102 · Boni desktop 0.4.71
+
+Needs: the server (0.8.102, to deploy: it serves Boni's web app to Android and the browser) and Boni desktop 0.4.71
+(`release/boni_0.4.71_amd64.deb`, to install). Task 59a, the first of «Mis datos» and «Modelos» (Juan, 2026-11-04:
+«Sí, las cinco»).
+
+- **«Mis datos»**, the sidebar's top entry, replaces «Todas las páginas»; it has two modes, **Lista** (what it was) and
+  **Diagrama**, kept per device. The diagram: a card per collection with its icon, name, the eye of its level, its
+  count and its own fields (a relation as «→ Target»); a dashed frame per mother around her own card and her
+  daughters'; an arrow per relation, named («· varios» when it takes several; a relation with itself, an arc over
+  the card). Laid out by itself, left to right, mothers kept together and unrelated parts side by side; cards can be
+  dragged and **«Ordenar»** lays it out again; **«Ver como»** (Todo | La IA) fades a restricted or private
+  collection and the fields of an opaque one; a click opens the collection. Computed from the schema, never drawn by
+  hand (D-40). References read for it: n8n's canvas and Supabase Studio's schema visualizer. Next: 59b, the
+  «Modelos» canvas with the pipeline declared as data. (#318, task 59a)
+
 ## 2026-11-04 (twenty-sixth) — server 0.8.101 · Boni desktop 0.4.70 · Boni Calendar desktop 0.8.23
 
 Needs: the server (0.8.101, to deploy), Boni desktop 0.4.70 (`release/boni_0.4.70_amd64.deb`, to install) and
