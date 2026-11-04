@@ -1291,14 +1291,21 @@ export class StoreCalendar implements CalendarSource {
       return hit;
     };
     const idOf = (c: RowChange) => known(c.op === "upsert" ? c.row.id : c.id);
-    const conflict = changes.map(idOf).filter((id) => {
+    // One change per record, the last of the batch: a row made, titled and moved before the server answered comes
+    // as several changes of one id, and out of one calendar and into another (the app sends the removal first) is
+    // one move, never a removal (2026-11-04: an event made and moved to another calendar went to the trash, and
+    // one moved before the server answered was made twice).
+    const last = new Map<string, RowChange>();
+    for (const c of changes) last.set(idOf(c), c);
+    const batch = [...last.values()];
+    const conflict = batch.map(idOf).filter((id) => {
       const c = this.changedAt.get(id);
       return !!c && c.version > base && c.by !== device;
     });
     if (conflict.length > 0) return { ok: false, conflict: [...new Set(conflict)] };
     const meta = { actor: "user" as const, device };
     const touched: string[] = [];
-    for (const c of changes) {
+    for (const c of batch) {
       const id = idOf(c);
       // A proposal (`ghost:<id>`) is decided in Boni, never written from a device.
       if (isProposalId(id)) continue;
