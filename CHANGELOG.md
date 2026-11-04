@@ -5,6 +5,16 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (twenty-second) — server 0.8.98
+
+Needs: the server only (0.8.98, to deploy; its first start builds an index over the model calls, a few seconds
+more once). Task 43, from the start-up minute of the 0.8.97 in the NAS log.
+
+- **The start-up no longer scans every model call with its texts.** Boni's own records («Llamadas a modelos»,
+  the uses and models they offer) and the day's spending read the last days' calls by when; with no index on when,
+  that read scanned the whole table, each row carrying its prompt and answer (4.5 s held at start-up, and the
+  first «Todas las páginas» 4.1 s). An index now carries what those reads take. (#307, task 43)
+
 ## 2026-11-04 (twenty-first) — server 0.8.97
 
 Needs: the server only (0.8.97, to deploy). Task 43, from the first minutes of the 0.8.96 in the NAS log.
