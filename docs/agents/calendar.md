@@ -37,7 +37,10 @@ tests guard most of them.
   (web) make the notifications; the host shows them (`host.notify`).
 - **External calendars** (`src/external.ts`): read-only iCal subscriptions. The address is a secret (device storage,
   or the account's, encrypted); the last copy is in IndexedDB. They are merged into `data` (`withExternal`) but are
-  never rows: `reconcileRows` never sees them (`isExternalEvent`), so nothing of them reaches a provider.
+  never rows: `reconcileRows` never sees them (`isExternalEvent`), so nothing of them reaches a provider. With a
+  server, the server downloads them (its copy serves for ten minutes unless asked `fresh`); the app asks fresh at
+  start, every ten minutes and when its window comes back (`needsRefresh`, task 60), and `loadExternal(id)` is
+  «Actualizar». The server logs each download (`external <id>: N KB in M ms`).
 - **A record linked to an external event** (task 50, `link.ts`): a text column mapped as `external` holds the
   external event's id (`ext:<calendar>:<uid>`, `~<day>` for one occurrence). `withExternal` applies `linkExternals`:
   the record shows at the external event's time and carries it as `linked`, the external event is absorbed (an

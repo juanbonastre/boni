@@ -168,8 +168,10 @@ slate `#94a3b8`.
 - **External calendars** (Settings → External calendars, or "Add external calendar" under the sidebar's calendars):
   other services' calendars (Google Calendar...) by their iCal address, read-only, in their own sidebar group with
   colour and eye like any other. Each row in Settings shows how many events came and when, or why the download
-  failed (refresh, edit, remove next to it). The last copy shows without a connection; they refresh when the app
-  opens and every half hour. The address of a private calendar is a secret: it stays on the device or in the account,
+  failed (refresh, edit, remove next to it). The last copy shows without a connection; they are downloaded anew when
+  the app opens, every ten minutes while it is open, and when its window comes back after five minutes away (the
+  desktop window hides in the tray); a calendar's context menu has «Actualizar» and the state of its copy (task 60).
+  The address of a private calendar is a secret: it stays on the device or in the account,
   encrypted. A repetition the app cannot repeat (e.g. "second Tuesday") shows once and Settings says how many.
 - **Data from a server** (Settings → Data; without a server, the invented sample): address, user,
   password; the device keeps only a session token. The calendar opens on the last copy kept on the device, then follows the

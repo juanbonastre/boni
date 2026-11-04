@@ -861,7 +861,13 @@ export function makeApp(opts: ServerOptions): App {
         const cal = readAccount(db, key, user.id).externals.find((c) => c.id === id);
         if (!cal) return send(res, 404, { error: "not-found" });
         try {
+          const t0 = Date.now();
           const copy = await feeds.get(user.id, cal.id, cal.url, url.searchParams.has("fresh"));
+          // Downloaded now (not the copy of a few minutes ago): said, so the log answers when a change took long.
+          if (copy.at >= t0)
+            console.log(
+              `external ${cal.id}: ${Math.round(copy.text.length / 1024)} KB in ${Date.now() - t0} ms`,
+            );
           return send(res, 200, copy);
         } catch (e) {
           return send(res, 502, {

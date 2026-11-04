@@ -65,6 +65,7 @@ const es = {
   "notice.tomorrow": "Mañana",
   "notice.allDay": "todo el día",
   "ctx.reminders": "Avisos…",
+  "ctx.refresh": "Actualizar",
   "network.blocked":
     "Boni Calendar no tiene permiso de red: actívalo en los ajustes de la app (Permisos → Red).",
   "network.openSettings": "Abrir permisos",
@@ -387,6 +388,7 @@ const en: Record<Key, string> = {
   "notice.tomorrow": "Tomorrow",
   "notice.allDay": "all day",
   "ctx.reminders": "Reminders…",
+  "ctx.refresh": "Refresh",
   "network.blocked":
     "Boni Calendar may not use the network: allow it in the app's settings (Permissions → Network).",
   "network.openSettings": "Open permissions",
