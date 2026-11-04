@@ -5,6 +5,15 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (twentieth) — server 0.8.96
+
+Needs: the server only (0.8.96, to deploy). Task 43, from the NAS log before the 0.8.95.
+
+- **One record changed no longer makes the mail reader read every collection again.** The collections a mail may
+  go to are remembered by parts: a collection's due field and examples follow its own records, its fields to fill
+  follow the collections they point to; a new task, or a class moved in the calendar, no longer re-reads the whole
+  Agenda (2,805 records, 0.55–0.9 s on the NAS each time a mail was read). (#305, task 43)
+
 ## 2026-11-04 (nineteenth) — server 0.8.95 · Boni desktop 0.4.68 · Boni Calendar desktop 0.8.21
 
 Needs: the server (0.8.95, to deploy; it carries the 0.8.94 too, which was not deployed), Boni desktop 0.4.68

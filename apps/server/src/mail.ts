@@ -33,6 +33,7 @@ import type { Feeds } from "./feeds.ts";
 import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
 import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
 import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
+import { dueField, fillFields, type Target, TargetMemo } from "./mailTargets.ts";
 import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { timed } from "./perf.ts";
@@ -168,39 +169,7 @@ const measureBudget = (m: ExtensionManifest): Budget => ({
   bySender: false,
 });
 
-/** The first rule of the guide for mail from `address`. */
-export function ruleFor(guide: MailGuide, address: string): MailRule | null {
-  const a = address.trim().toLowerCase();
-  return (
-    guide.rules.find((r) => (r.from.startsWith("@") ? a.endsWith(r.from) : a === r.from)) ?? null
-  );
-}
-
-/** A collection tasks may go to, as the plan names it. */
-export interface Target {
-  /** The type's id (a guide rule names it). */
-  id?: string;
-  key: string;
-  name: string;
-  /** The option the reader sees: the name and a few of Juan's own titles in it, so it knows what goes there. */
-  option: string;
-  /** The date field a task's due day goes to (`dueField`; none: the day is left out). */
-  date: string | null;
-  /** The fields playing `time` and `endTime` (docs/clases.md §6), where the mail's times go; none: left out. */
-  time?: string | null;
-  endTime?: string | null;
-  /** Its fields with a closed set of values, filled per item by the reader `fill` (docs/extensiones.md 9). */
-  fill?: FillField[];
-  /** The name the code binds `fill` to in the plan (`$fields_<n>`). */
-  fillRef?: string;
-  /** The entries whose titles `option` names, and those `fill` offers: the audit says a model saw them. */
-  optionRefs?: From[];
-  fillRefs?: From[];
-  /** Relations the mail plainly names, set by code for this mail (prefill.ts; task 51): the reader's choice first. */
-  prefill?: Prefill[];
-  /** The name the code binds them to in the plan (`$prefill_<n>`: each key, the record's id, labelled the code's). */
-  prefillRef?: string;
-}
+export { dueField, fillFields, type Target } from "./mailTargets.ts";
 
 /** The relations the code found, bound to the plan by code (never written in it): `{ <field key>: <record id> }`. */
 export const prefillValue = (prefill: readonly Prefill[]) => {
@@ -209,7 +178,15 @@ export const prefillValue = (prefill: readonly Prefill[]) => {
 };
 
 /** How many entries of a related collection a relation field offers (the latest changed). */
-const RELATION_CHOICES = 40;
+
+/** The first rule of the guide for mail from `address`. */
+export function ruleFor(guide: MailGuide, address: string): MailRule | null {
+  const a = address.trim().toLowerCase();
+  return (
+    guide.rules.find((r) => (r.from.startsWith("@") ? a.endsWith(r.from) : a === r.from)) ?? null
+  );
+}
+
 /** The fields bound to the plan: made by code (only code may name them as a reader's fields). */
 export const fieldsValue = (fields: FillField[], refs: From[] = []) => ({
   ...leaf(
@@ -229,121 +206,6 @@ export const optionsValue = (targets: Target[]) => {
     l,
   );
 };
-
-/**
- * What the reader `fill` may set in a collection (Juan, 2026-10-23: proposals with their columns filled): a
- * select's options, the entries a relation may point to (of a collection the models may see, the latest
- * changed, titled by Juan or his import, nothing sensitive) and checkboxes. Never the title or the date (the
- * reading gives them), hidden, archived, sensitive or Boni's own fields.
- */
-export function fillFields(
-  ro: ReturnType<typeof readStore>,
-  t: TypeDef,
-  date: string | null,
-  refs: From[] = [],
-): FillField[] {
-  const types = ro.schema().types;
-  const out: FillField[] = [];
-  for (const f of t.fields) {
-    if (out.length >= FILL_LIMITS.fields) break;
-    if (f.id === t.titleField || f.key === date || f.hidden || f.archived) continue;
-    if (
-      f.sensitivity === "sensitive" ||
-      f.key.startsWith("boni") ||
-      !/^[a-z0-9_-]{1,64}$/i.test(f.key)
-    )
-      continue;
-    const name = f.name.slice(0, FILL_LIMITS.label);
-    if (f.type === "checkbox") out.push({ key: f.key, name, kind: "check", options: [] });
-    else if (f.type === "select" && f.options?.length)
-      out.push({
-        key: f.key,
-        name,
-        kind: "choice",
-        options: f.options
-          .filter((o) => o.name.trim())
-          .slice(0, FILL_LIMITS.options)
-          .map((o) => ({ value: o.id, label: o.name.slice(0, FILL_LIMITS.label) })),
-      });
-    else if (f.type === "relation" && f.relation && !f.relation.many) {
-      const target = types[f.relation.target];
-      if (!target || target.system || target.archived) continue;
-      const seen = new Set<string>();
-      const options = ro
-        .list(target.id)
-        .filter((e) => {
-          const l = e.labels[target.titleField];
-          const title = e.entity.values[target.titleField];
-          return (
-            typeof title === "string" &&
-            title.trim() !== "" &&
-            l !== undefined &&
-            !l.noModel &&
-            (l.integrity === "user" || l.integrity === "own" || l.integrity === "imported") &&
-            l.sensitivity !== "sensitive"
-          );
-        })
-        .sort((a, b) => b.entity.updated - a.entity.updated)
-        .flatMap((e) => {
-          const label = String(e.entity.values[target.titleField])
-            .replace(/\s+/g, " ")
-            .slice(0, FILL_LIMITS.label);
-          if (seen.has(label)) return [];
-          seen.add(label);
-          return [{ value: e.entity.id, label, at: e.entity.version }];
-        })
-        .slice(0, Math.min(RELATION_CHOICES, FILL_LIMITS.options));
-      for (const o of options)
-        refs.push({ e: o.value, v: o.at, f: target.titleField, t: target.id });
-      if (options.length)
-        out.push({
-          key: f.key,
-          name,
-          kind: "choice",
-          options: options.map(({ value, label }) => ({ value, label })),
-        });
-    }
-  }
-  return out.filter((f) => f.kind === "check" || f.options.length > 0);
-}
-
-/** Fewer values than this say nothing about what a date field holds. */
-const EVIDENCE = 3;
-const DAY_MS = 86_400_000;
-
-/**
- * The date field of a collection a due day goes to, judged by its data, never by its name (no field is
- * special to Boni): a field some of whose days fall after the day its item was recorded holds days ahead
- * (a due day, a meeting, a project's end), the one with most such days wins; a field with enough values and
- * none after that day only records what already happened (when a note was made, last reviewed, a birthday
- * written down) and never gets a due day. With no field of the first kind, the first one without enough
- * values to tell (a new collection); otherwise none. "After" means more than a day after the instant it was
- * stored, so a day written in another time zone is not taken for one ahead.
- */
-export function dueField(
-  type: TypeDef,
-  entities: readonly { values: Record<string, unknown>; created: number }[],
-): FieldDef | null {
-  const dates = type.fields.filter((f) => f.type === "date" && !f.archived && !f.hidden);
-  let best: FieldDef | null = null;
-  let most = 0;
-  let unknown: FieldDef | null = null;
-  for (const f of dates) {
-    let n = 0;
-    let ahead = 0;
-    for (const e of entities) {
-      const v = e.values[f.id];
-      if (typeof v !== "string") continue;
-      const at = Date.parse(`${v}T00:00:00Z`);
-      if (Number.isNaN(at)) continue;
-      n++;
-      if (at - e.created > DAY_MS) ahead++;
-    }
-    if (ahead > most) [best, most] = [f, ahead];
-    else if (!ahead && n < EVIDENCE && !unknown) unknown = f;
-  }
-  return best ?? unknown;
-}
 
 /** Where the mailbox's address is among a mail's recipients: in Para, only in Cc, or neither (a list). */
 export function userIn(mailbox: string, para: unknown, cc: unknown): UserIn {
@@ -1598,93 +1460,11 @@ export class Mails {
     return this.targetsFor(store, s.collections);
   }
 
-  /**
-   * The collections a mail may propose into as last worked out, per store (task 43: each check of the mailbox read
-   * every record of each, 0.66 s on the NAS): the same while no record they read changes (theirs and those their
-   * relations name), nor the schema, the levels or the rules. Callers get copies (`planContext` marks them).
-   */
-  private targetMemo = new WeakMap<
-    UserStore,
-    { key: string; version: number; watch: Set<string>; targets: Target[] }
-  >();
+  /** The targets of a store, each part kept while nothing it reads changes (mailTargets.ts; task 43). */
+  private targetMemo = new TargetMemo();
 
   private targetsFor(store: UserStore, ids: readonly string[]): Target[] {
-    const key = JSON.stringify([ids, store.aiAccess(), store.aiRules()]);
-    const version = store.version();
-    const was = this.targetMemo.get(store);
-    if (was && was.key === key && was.version !== version) {
-      const ch = store.changesSince(was.version);
-      if (!ch.schemaChanged && !ch.entities.some((e) => was.watch.has(e.entity.type)))
-        was.version = version;
-    }
-    if (was && was.key === key && was.version === version)
-      return was.targets.map((t) => ({ ...t }));
-    const schema = store.schema().types;
-    const watch = new Set<string>(ids);
-    for (const id of ids)
-      for (const f of schema[id]?.fields ?? [])
-        if (f.type === "relation" && f.relation?.target) watch.add(f.relation.target);
-    const targets = this.makeTargets(store, ids);
-    this.targetMemo.set(store, { key, version, watch, targets });
-    return targets.map((t) => ({ ...t }));
-  }
-
-  private makeTargets(store: UserStore, ids: readonly string[]): Target[] {
-    // What the models may see of each: its level and its rules (a closed row is never an example).
-    const ro = readStore(store);
-    const levels = store.aiAccess();
-    const types = ro.schema().types;
-    return ids.flatMap((id) => {
-      const t = types[id];
-      if (!t || t.archived || t.system) return [];
-      const all = ro.list(id);
-      const date = dueField(
-        t,
-        all.map((e) => e.entity),
-      );
-      const examples =
-        levels[id] === "opaque"
-          ? []
-          : all
-              .filter((e) => {
-                const l = e.labels[t.titleField];
-                return (
-                  l !== undefined &&
-                  !l.noModel &&
-                  (l.integrity === "user" || l.integrity === "own" || l.integrity === "imported") &&
-                  l.sensitivity !== "sensitive"
-                );
-              })
-              .sort((a, b) => b.entity.updated - a.entity.updated)
-              .slice(0, 3);
-      const titles = examples.map((e) =>
-        String(e.entity.values[t.titleField]).replace(/\s+/g, " ").slice(0, 40),
-      );
-      const option = titles.length ? `${t.name} (p. ej.: ${titles.join("; ")})` : t.name;
-      const fillRefs: From[] = [];
-      const fill = levels[id] === "opaque" ? null : fillFields(ro, t, date?.key ?? null, fillRefs);
-      const roles = rolesOf(ro.schema(), id);
-      const keyOf = (fid: string | undefined) =>
-        fid ? (t.fields.find((f) => f.id === fid)?.key ?? null) : null;
-      return [
-        {
-          id: t.id,
-          key: t.key,
-          name: t.name,
-          option: option.slice(0, 200),
-          date: date?.key ?? null,
-          time: keyOf(roles.time),
-          endTime: keyOf(roles.endTime),
-          optionRefs: examples.map((e) => ({
-            e: e.entity.id,
-            v: e.entity.version,
-            f: t.titleField,
-            t: t.id,
-          })),
-          ...(fill ? { fill, fillRefs } : {}),
-        },
-      ];
-    });
+    return this.targetMemo.targetsFor(store, ids);
   }
 
   /**

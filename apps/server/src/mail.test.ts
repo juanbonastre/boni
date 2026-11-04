@@ -610,18 +610,25 @@ describe("tasks a mail asks for", () => {
         store,
         ids,
       );
+    const read = vi.spyOn(store, "entities");
     const listed = vi.spyOn(store, "list");
     targetsFor(["t_docencia", "t_gestiones"]);
-    const once = listed.mock.calls.length;
+    const once = read.mock.calls.length + listed.mock.calls.length;
     targetsFor(["t_docencia", "t_gestiones"]);
-    expect(listed.mock.calls.length).toBe(once);
+    expect(read.mock.calls.length + listed.mock.calls.length).toBe(once);
+    // ...and only that collection is read again, not the other one (2026-11-04: one record changed anywhere made
+    // every target read again, the Agenda's 2,805 records among them).
+    read.mockClear();
+    listed.mockClear();
     store.create(
       "t_gestiones",
       { t_gestiones_t: { value: "Pedir cita", label: own } },
       { actor: "user" },
     );
     targetsFor(["t_docencia", "t_gestiones"]);
-    expect(listed.mock.calls.length).toBeGreaterThan(once);
+    expect(read.mock.calls.map((c) => c[0])).toEqual(["t_gestiones"]);
+    expect(listed.mock.calls.map((c) => c[0])).toEqual([]);
+    read.mockRestore();
     listed.mockRestore();
     // The live reading asks Juan when the decider is unsure (the panel of requests); by default it does not.
     expect(JSON.stringify(plan)).not.toContain('"ask"');
