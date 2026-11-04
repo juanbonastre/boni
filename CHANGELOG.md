@@ -5,6 +5,20 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-05 (twenty-ninth) — server 0.8.104 · Boni desktop 0.4.73
+
+Needs: the server (0.8.104, to deploy: the flows live in its journal) and Boni desktop 0.4.73
+(`release/boni_0.4.73_amd64.deb`, to install). Task 61, phase F1 of `docs/flujos.md`.
+
+- **«Flujos»** in the sidebar (where «Modelos» was; «Modelos» is a tab inside, as it was). The mail reading is now a
+  flow, **«Leer correo»**, kept as data in your account and versioned: a new version only when the collections
+  marked for mail, the modules or the guide change. Each reading executes the stored version and says so in the
+  Registro. The section lists the flows with their runs and draws the chosen one: the trigger («Nuevo correo») with
+  what it binds, each step named as the models' flow names it («Lectora», «Decisora», «Rellenadora») or by its tool
+  («Leer», «Crear en Docencia»), «Para cada» and «Solo si» where the step iterates or has a condition, how often it
+  ran in the period and how many proposals it made; a click opens the step's settings as the plan says them. Read
+  only: the editor comes with F2. (#323, task 61)
+
 ## 2026-11-05 (twenty-eighth) — server 0.8.103 · Boni desktop 0.4.72
 
 Needs: the server (0.8.103, to deploy: the flow's numbers and the web app it serves) and Boni desktop 0.4.72
