@@ -5,6 +5,19 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (twenty-third) — server 0.8.99 · Boni desktop 0.4.69
+
+Needs: the server (0.8.99, to deploy; its first «Todas las páginas» sums the activity once more, for the last time)
+and Boni desktop 0.4.69 (`release/boni_0.4.69_amd64.deb`, to install). Tasks 43 and 52.
+
+- **«Recorrido».** In the Registro, a run opens to what it did: a diagram of its steps (red where a rule stopped
+  it, dashed where it went to the inbox), each step with its verdict, its rule and what the models answered, then
+  what it read, changed, proposed and decided, and the models it called; «Copiar» puts it all in the clipboard as
+  text, to paste in a chat and work out a reading without sending the mail to anyone. «Recorrido» also from a turn
+  of the conversation and from a proposal's page. (#309, task 52)
+- **The start-up no longer sums the whole audit.** Boni's «Actividad» counted 400 days of reads on every start (1 to
+  10 s on the NAS); the sum lives in the store now and grows with what comes. (#308, task 43)
+
 ## 2026-11-04 (twenty-second) — server 0.8.98
 
 Needs: the server only (0.8.98, to deploy; its first start builds an index over the model calls, a few seconds
