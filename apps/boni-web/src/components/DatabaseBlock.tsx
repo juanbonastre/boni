@@ -14,6 +14,7 @@ import {
   LayoutGrid,
   List,
   Maximize2,
+  Network,
   Paperclip,
   Plus,
   Table2,
@@ -44,6 +45,7 @@ import {
 } from "../store.ts";
 import { AddColumn, ColumnMenu, columnsEditable } from "./ColumnMenu.tsx";
 import { bytes, whoName } from "./Dash.tsx";
+import { DataDiagram } from "./DataDiagram.tsx";
 import { BackRow, MenuRow, MenuSep, NextRow, PointMenu, PopButton } from "./Popover.tsx";
 import { ProtectionMenu } from "./Protection.tsx";
 
@@ -60,6 +62,8 @@ const LAYOUTS: { id: DatabaseView["layout"]; icon: ReactNode }[] = [
   { id: "list", icon: <List size={14} strokeWidth={1.8} /> },
   { id: "gallery", icon: <LayoutGrid size={14} strokeWidth={1.8} /> },
   { id: "calendar", icon: <CalendarIcon size={14} strokeWidth={1.8} /> },
+  // The collection with her daughters and what a relation joins to it, and who reads and writes each (F6).
+  { id: "diagram", icon: <Network size={14} strokeWidth={1.8} /> },
 ];
 
 /** Notion's option colours, by name (the core keeps a colour name or none). */
@@ -166,7 +170,9 @@ export function DatabaseBlock({
           </button>
         )}
       </header>
-      {!type || !data ? (
+      {view.layout === "diagram" && type ? (
+        <DataDiagram root={type.id} />
+      ) : !type || !data ? (
         <div className="db-loading">{t("chart.loading")}</div>
       ) : view.layout === "table" ? (
         <TableView

@@ -90,7 +90,7 @@ export type PageBlock = (
 
 /** How a database block shows its collection: Notion's layouts and their settings, all closed. */
 export interface DatabaseView {
-  layout: "table" | "board" | "list" | "gallery" | "calendar";
+  layout: "table" | "board" | "list" | "gallery" | "calendar" | "diagram";
   /** The select field whose options are a board's columns. */
   group?: string;
   /** The date field a calendar places rows by. */
@@ -141,7 +141,14 @@ export const FILTER_OPS = [
   "gt",
   "lt",
 ] as const;
-export const DATABASE_LAYOUTS = ["table", "board", "list", "gallery", "calendar"] as const;
+export const DATABASE_LAYOUTS = [
+  "table",
+  "board",
+  "list",
+  "gallery",
+  "calendar",
+  "diagram",
+] as const;
 
 export interface PageSpec {
   version: 1;

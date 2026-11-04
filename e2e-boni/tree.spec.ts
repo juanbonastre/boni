@@ -402,7 +402,7 @@ test("«Mis datos» says what the collections take: records, storage and its par
   await expect(page.locator(".topbar")).toContainText("Auditoría");
 });
 
-test("«Mis datos» as a diagram: a card per collection with its fields, arrows for relations, «Ver como la IA» dims what no model reads, a click opens the collection", async ({
+test("«Mis datos» as a diagram: a card per collection with its fields, arrows for relations, «Nivel» dims the others, a click opens its panel and «Abrir» the collection", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -420,14 +420,19 @@ test("«Mis datos» as a diagram: a card per collection with its fields, arrows 
   );
   // A relation with itself is an arc over the card, named.
   await expect(canvas.locator(".dg-loop-label")).toHaveText("Relacionado · varios");
-  // The list's mode is kept per device; «Ver como la IA»: Documentos (private) fades, Libros stays.
-  await page.getByRole("radio", { name: "La IA" }).click();
-  await expect(cards.filter({ hasText: "Documentos" })).toHaveClass(/dim/);
-  await expect(libros).not.toHaveClass(/dim/);
-  await page.getByRole("radio", { name: "Todo" }).click();
+  // A filter by level (no «Ver como» any more, F6): the private one stays, the others fade; nothing moves.
+  const level = page.locator(".data-filter", { hasText: "Nivel" }).locator("select");
+  await level.selectOption("private");
   await expect(cards.filter({ hasText: "Documentos" })).not.toHaveClass(/dim/);
+  await expect(libros).toHaveClass(/dim/);
+  await level.selectOption("");
+  await expect(libros).not.toHaveClass(/dim/);
   await page.screenshot({ path: `${SHOTS}/data-diagram.png` });
+  // A click opens its panel: its level, who writes and reads it, «Abrir».
   await libros.locator(".dg-name").click();
+  const panel = page.locator(".data-panel");
+  await expect(panel.locator("h3")).toContainText("Libros");
+  await panel.getByRole("button", { name: "Abrir", exact: true }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Libros");
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
   await expect(page.getByRole("radio", { name: "Diagrama" })).toHaveAttribute(
@@ -436,4 +441,74 @@ test("«Mis datos» as a diagram: a card per collection with its fields, arrows 
   );
   await page.getByRole("radio", { name: "Lista" }).click();
   await expect(page.locator(".all-table")).toBeVisible();
+});
+
+test("a collection's «Diagrama» (F6): Agenda with her daughters and who writes and reads them; filters; a relation drawn by dragging", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: AGENT,
+    agenda: "mother",
+    usage: {
+      days: 30,
+      types: {
+        t_tareas: {
+          writes: [
+            { id: "leer-correo", name: "Leer correo", kind: "flow", n: 42, on: true },
+            { id: "user", name: "Tú", kind: "user", n: 7 },
+          ],
+          reads: [{ id: "resumen-diario", name: "Resumen diario", kind: "flow", n: 3, on: false }],
+        },
+        t_eventos: { writes: [{ id: "user", name: "Tú", kind: "user", n: 2 }], reads: [] },
+      },
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await page.locator(".all-table").getByText("Agenda", { exact: true }).first().click();
+  await expect(page.locator(".topbar h1")).toHaveText("Agenda");
+  await page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }).click();
+  const canvas = page.locator(".data-diagram");
+  await expect(canvas.locator(".dg-frame")).toContainText("Agenda");
+  const cards = canvas.locator(".dg-card-node");
+  await expect(cards).toHaveCount(3);
+  const tareas = cards.filter({ has: page.locator(".dg-name", { hasText: /^Tareas$/ }) });
+  const eventos = cards.filter({ has: page.locator(".dg-name", { hasText: /^Eventos$/ }) });
+  await expect(tareas.locator(".dg-who")).toContainText("Leer correo · Tú");
+  await expect(tareas.locator(".dg-who")).toContainText("Resumen diario");
+  await expect(eventos.locator(".dg-who")).toContainText("Tú");
+  // «Escrita por» «Leer correo»: Eventos fades, Tareas stays.
+  const writer = page.locator(".data-filter", { hasText: "Escrita por" }).locator("select");
+  await writer.selectOption("leer-correo");
+  await expect(eventos).toHaveClass(/dim/);
+  await expect(tareas).not.toHaveClass(/dim/);
+  await writer.selectOption("");
+  await page.screenshot({ path: `${SHOTS}/data-diagram-agenda.png` });
+  // A relation drawn from Tareas to Eventos: a column of Tareas pointing to Eventos, said with «Deshacer».
+  await tareas.hover();
+  const from = await tareas.locator(".react-flow__handle.source").boundingBox();
+  const to = await eventos.locator(".react-flow__handle.target").boundingBox();
+  if (!from || !to) throw new Error("no handles");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 30, to.y + 10, { steps: 12 });
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".toast")).toContainText("Tareas apunta ahora a Eventos");
+  const sent = await page.evaluate(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
+      b.startsWith("POST api/data/types/t_tareas/fields"),
+    ),
+  );
+  expect(sent).toEqual([
+    'POST api/data/types/t_tareas/fields {"name":"Eventos","type":"relation","target":"t_eventos"}',
+  ]);
+  await expect(tareas.locator(".dg-field.rel .dg-type")).toHaveText("→ Eventos");
+  // Its panel: who writes it, a flow on; who reads it, a flow off.
+  await tareas.locator(".dg-name").click();
+  const panel = page.locator(".data-panel");
+  await expect(panel).toContainText("Leer correo");
+  await expect(panel).toContainText("flujo encendido");
+  await expect(panel).toContainText("Resumen diario");
+  await expect(panel).toContainText("flujo apagado");
 });

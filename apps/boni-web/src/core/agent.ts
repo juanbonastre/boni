@@ -128,6 +128,47 @@ export interface Proposal {
   /** A flow a model proposed (docs/flujos.md F5): drawn by the server, with what it changes. */
   flow?: FlowProposalView;
 }
+/** Who reads or writes a collection (F6, apps/server/src/usage.ts): a flow, or who did in the period. */
+export interface Who {
+  id: string;
+  name: string;
+  kind: "flow" | "user" | "assistant" | "model" | "boni";
+  n: number;
+  /** A flow: whether it is on. */
+  on?: boolean;
+}
+export interface DataUsage {
+  days: number;
+  types: Record<string, { reads: Who[]; writes: Who[] }>;
+}
+const WHO_KINDS = ["flow", "user", "assistant", "model", "boni"] as const;
+export function parseUsage(b: unknown): DataUsage {
+  const out: DataUsage = { days: 30, types: {} };
+  if (!isObj(b) || !isObj(b.types)) return out;
+  if (typeof b.days === "number") out.days = b.days;
+  const whos = (v: unknown): Who[] =>
+    Array.isArray(v)
+      ? v.flatMap((w) =>
+          isObj(w) &&
+          typeof w.id === "string" &&
+          typeof w.name === "string" &&
+          (WHO_KINDS as readonly unknown[]).includes(w.kind)
+            ? [
+                {
+                  id: w.id.slice(0, 80),
+                  name: w.name.slice(0, 80),
+                  kind: w.kind as Who["kind"],
+                  n: typeof w.n === "number" ? w.n : 0,
+                  ...(typeof w.on === "boolean" ? { on: w.on } : {}),
+                },
+              ]
+            : [],
+        )
+      : [];
+  for (const [type, u] of Object.entries(b.types))
+    if (isObj(u)) out.types[type] = { reads: whos(u.reads), writes: whos(u.writes) };
+  return out;
+}
 /** A flow a model proposed, as the inbox draws it (apps/server/src/flows.ts `flowProposalView`). */
 export interface FlowProposalView {
   name: string;
@@ -2510,6 +2551,19 @@ export class AgentApi {
       "POST",
       "",
       { name, ...(parent ? { parent } : {}) },
+      "api/data/types",
+    );
+    return isObj(b) && typeof b.id === "string" ? b.id : "";
+  };
+  /** Who reads and writes each collection (F6): the flows that name it, and who did in the last days. */
+  dataUsage = async (): Promise<DataUsage> =>
+    parseUsage(await this.call("GET", "", undefined, "api/data/usage"));
+  /** A relation drawn from the diagram (F6): a column of `type` pointing to `target`; its id. */
+  addRelation = async (type: string, rel: { name: string; target: string }): Promise<string> => {
+    const b = await this.call(
+      "POST",
+      `/${encodeURIComponent(type)}/fields`,
+      { name: rel.name, type: "relation", target: rel.target },
       "api/data/types",
     );
     return isObj(b) && typeof b.id === "string" ? b.id : "";

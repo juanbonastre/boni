@@ -203,6 +203,47 @@ function activityOf(
 }
 
 /**
+ * What each actor read and changed of each collection over the last `days` days (docs/flujos.md §4.7, F6): the same
+ * running sum Boni's records keep (its window is `SYSTEM_DAYS`; only the days asked for are summed here).
+ */
+export function recentActivity(
+  store: UserStore,
+  o: { now: number; tz: string; days: number },
+): { by: string; type: string; reads: number; writes: number }[] {
+  const day = dayIn(o.tz);
+  const first = day(o.now - o.days * DAY);
+  const sum = new Map<string, { by: string; type: string; reads: number; writes: number }>();
+  for (const c of activityOf(store, o.now - SYSTEM_DAYS * DAY, o.now, o.tz, day)) {
+    if (c.day < first) continue;
+    const k = `${c.by}|${c.type}`;
+    const s = sum.get(k) ?? { by: c.by, type: c.type, reads: 0, writes: 0 };
+    s.reads += c.reads;
+    s.writes += c.writes;
+    sum.set(k, s);
+  }
+  return [...sum.values()];
+}
+
+/** An actor of the audit as «Mis datos» names it (F6): the user, an assistant, a model's use, or Boni's own work. */
+export function actorOf(by: string): {
+  id: string;
+  name: string;
+  kind: "user" | "assistant" | "model" | "boni";
+} {
+  if (by.startsWith("user:")) return { id: "user", name: "Tú", kind: "user" };
+  if (by.startsWith("mcp:"))
+    return { id: by, name: `Asistente · ${by.slice(4, 44)}`, kind: "assistant" };
+  if (by.startsWith("model:")) {
+    const role = by.split(":")[1] ?? "";
+    const use = useOf(role);
+    return { id: `model:${use}`, name: USES[use] ?? role, kind: "model" };
+  }
+  if (by === "import") return { id: "import", name: "Importación", kind: "boni" };
+  if (by.startsWith("connector")) return { id: "mail", name: "Correo", kind: "boni" };
+  return { id: "boni", name: "Boni", kind: "boni" };
+}
+
+/**
  * Both collections for one account, over the last `SYSTEM_DAYS` days up to `now` (reused for `FRESH_MS` while nothing
  * new is recorded; the activity a running sum, `activityOf`). Their schema depends on the rows (a select's options
  * are the models, actors and collections met), so both are made together; `usdToEur` is the account's rate

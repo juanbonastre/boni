@@ -780,7 +780,12 @@ export function addColumn(
   const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const name = nameOf(b.name);
   const kind = b.type as FieldType;
-  if (!name || !COLUMN_TYPES.includes(kind)) throw new DataError("bad-body");
+  // A relation (drawn from «Mis datos», docs/flujos.md F6): to another of the user's collections, one or many.
+  const target =
+    kind === "relation" && typeof b.target === "string"
+      ? userTypes(store).find((t) => t.id === b.target && !t.system)
+      : undefined;
+  if (!name || !(COLUMN_TYPES.includes(kind) || target)) throw new DataError("bad-body");
   if (taken(def, name)) throw new DataError("taken");
   const l = label("user", def.sensitivity, [{ kind: "user-edit", id: device ?? "?" }]);
   // A field's id is unique in its branch and its mothers (a daughter has her mother's fields).
@@ -801,6 +806,7 @@ export function addColumn(
     ...(kind === "select" || kind === "multiselect"
       ? { options: b.options === undefined ? [] : optionsFrom(b.options, [], l) }
       : {}),
+    ...(target ? { relation: { target: target.id, many: b.many === true } } : {}),
   };
   try {
     store.applySchema({ op: "add_field", type, field }, meta(device));

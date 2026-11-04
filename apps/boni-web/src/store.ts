@@ -17,6 +17,7 @@ import {
   type ConversationSummary,
   type DataRow,
   type DataType,
+  type DataUsage,
   type DataValue,
   type ExtensionView,
   type InboxRequest,
@@ -248,6 +249,8 @@ interface State {
   chartForPage: { page: string; block: string } | null;
   /** The user's collections (as databases), and the rows loaded of each. */
   dataTypes: DataType[] | null;
+  /** Who reads and writes each collection (F6), for the diagrams; null until asked. */
+  dataUsage: DataUsage | null;
   /** The tree of the sidebar (docs/clases.md §2.7): collections and the records with a note they show. */
   tree: Tree | null;
   /** What was opened last on this device, newest first (the sidebar's «Recientes»). */
@@ -401,6 +404,7 @@ export const useStore = create<State>(() => ({
   findOpen: false,
   trash: null,
   dataTypes: null,
+  dataUsage: null,
   tree: null,
   recent: [],
   fold: { sections: [], branches: [] },
@@ -2654,6 +2658,41 @@ export async function removeColumn(type: string, field: string, name: string) {
     });
   } catch (e) {
     toast(columnError(e));
+  }
+}
+
+/** Who reads and writes each collection (F6): asked when a diagram opens. */
+export async function loadDataUsage() {
+  try {
+    set({ dataUsage: await agent.dataUsage() });
+  } catch {
+    // the diagram shows without it
+  }
+}
+
+/**
+ * A relation drawn from one collection to another in a diagram (F6): a column of the first named as the second,
+ * one record; the toast's «Deshacer» takes it out again.
+ */
+export async function addRelation(type: string, target: string): Promise<boolean> {
+  const types = get().dataTypes ?? [];
+  const from = types.find((x) => x.id === type);
+  const to = types.find((x) => x.id === target);
+  if (!from || !to) return false;
+  let name = to.name;
+  for (let n = 2; from.fields.some((f) => f.name.toLowerCase() === name.toLowerCase()); n++)
+    name = `${to.name} ${n}`;
+  try {
+    const id = await agent.addRelation(type, { name, target });
+    await loadDataTypes();
+    toast(get().t("data.related", { from: from.name, to: to.name }), {
+      label: get().t("toast.undo"),
+      run: () => void removeColumn(type, id, name),
+    });
+    return true;
+  } catch (e) {
+    toast(columnError(e));
+    return false;
   }
 }
 
