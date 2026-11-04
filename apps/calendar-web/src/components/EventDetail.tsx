@@ -539,7 +539,10 @@ function LinkExternal({ ev }: { ev: CalEvent }) {
   );
 }
 
-/** In a linked record (task 50): the external event it follows, or that its calendar no longer has it; «Quitar enlace». */
+/**
+ * In a linked record (task 50): «Enlace» names the calendar whose event it follows (the event's title and place as the
+ * tooltip), or says that calendar no longer has it; «Quitar enlace» leaves two again.
+ */
 function LinkedRow({ ev }: { ev: CalEvent }) {
   const app = useApp();
   const calId = ev.linked?.calendarId ?? externalCalendarOf(ev.external ?? "");
@@ -550,15 +553,11 @@ function LinkedRow({ ev }: { ev: CalEvent }) {
       <span className="prop-icon">
         <LinkIcon size={15} strokeWidth={1.8} />
       </span>
-      <span className="prop-name">
-        {ev.linked ? t("event.linkedFrom", { name }) : t("event.linkLost", { name })}
-      </span>
+      <span className="prop-name">{t("event.linkRow")}</span>
       <div className="prop-value">
-        {what && (
-          <span className="linked-what" title={what}>
-            {what}
-          </span>
-        )}
+        <span className="linked-what" title={what || undefined}>
+          {ev.linked ? name : t("event.linkLost", { name })}
+        </span>
         <button type="button" className="mini-btn" onClick={() => app.unlinkEvent(ev.id)}>
           {t("event.unlink")}
         </button>
