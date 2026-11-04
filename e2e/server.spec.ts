@@ -79,6 +79,12 @@ test.beforeAll(async () => {
         folder: "agenda/docencia/",
         calendar: calendarDef("docencia", "Docencia", "agenda/docencia"),
       },
+      {
+        key: "planes",
+        name: "Planes",
+        folder: "agenda/planes/",
+        calendar: calendarDef("planes", "Planes", "agenda/planes"),
+      },
     ],
     {
       "agenda/docencia/2025-09-17 Clase del servidor.md": note(
@@ -343,6 +349,47 @@ test("a new event typed and the app closed at once: the entry is on the server w
   // And a second start finds it as the server's entry, once.
   await page.reload();
   await expect(page.locator(".ev", { hasText: "Creada y cerrada" })).toHaveCount(1);
+});
+
+test("a new event typed and moved to another calendar at once is one entry there when the app opens again", async ({
+  page,
+}) => {
+  await page.goto(`/?now=${NOW}&tz=Europe/Madrid`);
+  await connect(page);
+  await expect(page.locator(".modal")).toContainText("En directo");
+  await page.keyboard.press("Escape");
+  const cols = await page.locator(".cols-viewport").boundingBox();
+  if (!cols) throw new Error("no grid");
+  const x = cols.x + (cols.width / 7) * 2.5; // Wednesday 17
+  await page.mouse.move(x, cols.y + 420);
+  await page.mouse.down();
+  await page.mouse.move(x, cols.y + 480, { steps: 6 });
+  await page.mouse.up();
+  await expect(page.locator(".popover .title-input")).toBeFocused();
+  await page.keyboard.type("Movida a Planes");
+  // The calendar changed right after the title (2026-11-04: made in one calendar, named and moved to another, the
+  // event was gone when the app opened again: the server took the move as a removal).
+  await page
+    .locator(".popover .prop-row")
+    .filter({ has: page.locator(".prop-name", { hasText: /^Calendario$/ }) })
+    .locator(".choice-btn")
+    .click();
+  await page.locator(".choice-menu").getByRole("button", { name: "Planes" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".ev", { hasText: "Movida a Planes" })).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator(".ev", { hasText: "Movida a Planes" })).toHaveCount(1, {
+    timeout: 10_000,
+  });
+  const made = async () => {
+    const r = await mcp.call("read", { collection: "Planes", title: "Movida a Planes" });
+    return r.error ? null : (JSON.parse(r.text) as { id: string }).id;
+  };
+  await expect.poll(made, { timeout: 10_000 }).not.toBeNull();
+  await page.reload();
+  await expect(page.locator(".ev", { hasText: "Movida a Planes" })).toHaveCount(1);
+  const gone = await mcp.call("read", { collection: "Docencia", title: "Movida a Planes" });
+  expect(gone.error).toBeTruthy();
 });
 
 test("without a connection, edits wait on the device (also over a restart) and go when it is back", async ({

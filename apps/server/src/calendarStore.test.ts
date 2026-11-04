@@ -559,6 +559,54 @@ describe("the calendar over Boni's collections", () => {
     });
   });
 
+  it("a move as the calendar app sends it (out of the old calendar, then into the new one) is one move: the record stays, in the new collection (task 57)", async () => {
+    const { store, cal } = env(true);
+    const snap = await cal.snapshot();
+    const entityId = idAt(store, CLASS);
+    const row = await rowOf(cal, entityId);
+    const r = await cal.apply(
+      snap.version,
+      [
+        { op: "remove", collectionId: "docencia", id: entityId },
+        { op: "upsert", row: { ...row, collectionId: "planes" } },
+      ],
+      "token-a",
+      "portatil",
+    );
+    expect(r).toMatchObject({ ok: true, aliases: {} });
+    const rows = (await cal.snapshot()).rows.filter((x) => x.values.title === "Clase de ejemplo");
+    expect(rows.map((x) => [x.id, x.collectionId])).toEqual([[entityId, "planes"]]);
+    expect(store.get(entityId)?.entity.deleted).toBeUndefined();
+  });
+
+  it("a row made, titled and moved before the server answered (one request) is one record, in the calendar it went to (task 57)", async () => {
+    const { cal } = env(true);
+    const snap = await cal.snapshot();
+    const fresh: Row = {
+      id: "ev-nuevo",
+      collectionId: "docencia",
+      values: { date: "2026-10-24", startTime: "10:00", endTime: "11:00" },
+      created: 0,
+      updated: 0,
+    };
+    const titled = { ...fresh, values: { ...fresh.values, title: "Reunión movida" } };
+    const r = await cal.apply(
+      snap.version,
+      [
+        { op: "upsert", row: fresh },
+        { op: "upsert", row: titled },
+        { op: "remove", collectionId: "docencia", id: "ev-nuevo" },
+        { op: "upsert", row: { ...titled, collectionId: "planes" } },
+      ],
+      "token-a",
+      "portatil",
+    );
+    expect(r.ok).toBe(true);
+    const rows = (await cal.snapshot()).rows.filter((x) => x.values.title === "Reunión movida");
+    expect(rows.map((x) => x.collectionId)).toEqual(["planes"]);
+    expect(r.ok && r.aliases["ev-nuevo"]).toBe(rows[0]?.id);
+  });
+
   it("a device's draft sent again before the server's copy came back keeps what the server added (the area)", async () => {
     const { store, cal } = env(true);
     const snap = await cal.snapshot();
