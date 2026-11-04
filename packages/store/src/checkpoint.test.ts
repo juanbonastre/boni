@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -69,11 +69,15 @@ describe("checkpoints of the WAL from a thread of their own (task 43)", () => {
   }, () => {
     const { path } = filled({ autoCheckpoint: false });
     expect(walBytes(path)).toBeGreaterThan(1000 * 4096);
+    // Nothing moved yet: the database file holds little more than the schema, the WAL everything else.
+    const before = statSync(path).size;
+    expect(before).toBeLessThan(1_000_000);
     const first = checkpointOnce(path);
     expect(first.frames).toBeGreaterThan(1000);
     expect(first.moved).toBe(first.frames);
     expect(first.bytes).toBe(walBytes(path));
-    // Nothing left to move; the file stays (SQLite reuses it from its start).
+    expect(statSync(path).size).toBeGreaterThan(before + 1000 * 4096);
+    // Nothing left to move; the WAL file stays (SQLite reuses it from its start).
     expect(checkpointOnce(path).moved).toBe(first.frames);
   });
 
@@ -81,7 +85,8 @@ describe("checkpoints of the WAL from a thread of their own (task 43)", () => {
     timeout: 30_000,
   }, () => {
     const { path } = filled({});
-    expect(frames(path).frames).toBeLessThan(1000);
+    // The commits themselves moved the pages into the database: no checkpoint of ours was needed.
+    expect(statSync(path).size).toBeGreaterThan(1000 * 4096);
   });
 
   it("says a slow commit with the WAL's size; the worker checkpoints the databases it is told of and says what took long", {
