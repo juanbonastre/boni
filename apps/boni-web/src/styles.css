@@ -8387,3 +8387,175 @@ button.rows-panel-row:hover {
     transition: none;
   }
 }
+
+/* «Mis datos» as a diagram (task 59a): React Flow's canvas in Boni's colours. */
+.data-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.data-tools-label {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.data-diagram {
+  height: calc(100vh - 230px);
+  min-height: 420px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.data-diagram .react-flow__background {
+  color: var(--line-strong);
+}
+.data-diagram .react-flow__node {
+  cursor: pointer;
+}
+.data-diagram .react-flow__node.dim {
+  opacity: 0.28;
+}
+.data-diagram .react-flow__node.half .dg-fields {
+  opacity: 0.4;
+}
+.data-diagram .react-flow__node.dg-frame-node {
+  cursor: default;
+}
+.data-diagram .react-flow__node.selected .dg-card {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.dg-card {
+  position: relative;
+  width: 220px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.dg-card .react-flow__handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  opacity: 0;
+}
+.dg-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.dg-icon {
+  display: inline-flex;
+  width: 16px;
+  justify-content: center;
+  color: var(--muted);
+}
+.dg-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dg-level {
+  display: inline-flex;
+  color: var(--muted);
+}
+.dg-count {
+  color: var(--muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.dg-fields {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+.dg-field {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  height: 20px;
+  padding: 0 10px;
+  line-height: 20px;
+}
+.dg-fname {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dg-type {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.dg-field.rel .dg-type {
+  color: var(--accent);
+}
+.dg-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
+}
+.dg-frame-title {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.data-diagram .react-flow__edge-path {
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.data-diagram .react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--accent);
+}
+.data-diagram .react-flow__arrowhead polyline {
+  stroke: var(--line-strong);
+  fill: var(--line-strong);
+}
+.data-diagram .react-flow__edge-text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.data-diagram .react-flow__edge-textbg {
+  fill: var(--surface);
+}
+.data-diagram .react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.data-diagram .react-flow__controls button {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  fill: var(--text);
+}
+.data-diagram .react-flow__controls button:hover {
+  background: var(--hover);
+}
+.data-diagram .react-flow__attribution {
+  background: transparent;
+  color: var(--muted);
+  font-size: 9px;
+}

@@ -4,8 +4,8 @@ import { AUDIT_SUMMARY, ROW_HISTORY, STORAGE } from "./agent-scenarios.ts";
 import { grown, openApp, PAGE_FROM_HOME, recorded, TEMPLATE } from "./fixtures.ts";
 
 /**
- * One tree (docs/clases.md §2.7; Juan, 2026-10-28): the sidebar has «Todas las páginas» beside Buscar and
- * Conversación, then «Recientes» and «Páginas» (to open, add and delete, with the eye); «Todas las páginas» manages
+ * One tree (docs/clases.md §2.7; Juan, 2026-10-28): the sidebar has «Mis datos» beside Buscar and
+ * Conversación, then «Recientes» and «Páginas» (to open, add and delete, with the eye); «Mis datos» manages
  * it all (search, what the AI sees, the eye, «Mover a…»), with what the AIs read and each note's history.
  */
 const SHOTS = "e2e-boni/screenshots";
@@ -16,7 +16,7 @@ const AGENT = {
   "GET api/data/audit/summary": [AUDIT_SUMMARY],
 };
 
-test("the sidebar: «Todas las páginas» by Buscar and Conversación, then «Recientes» and «Páginas», folded by their names", async ({
+test("the sidebar: «Mis datos» by Buscar and Conversación, then «Recientes» and «Páginas», folded by their names", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -25,7 +25,7 @@ test("the sidebar: «Todas las páginas» by Buscar and Conversación, then «Re
   await expect(side.locator(".sidebar-scroll > .nav-row")).toHaveText([
     /^Buscar/,
     "Conversación",
-    "Todas las páginas",
+    "Mis datos",
   ]);
   const pages = side.getByRole("list", { name: "Páginas" });
   // The user's pages, then the collections (folded), then Boni's own things.
@@ -218,13 +218,13 @@ test("the right button in the sidebar (task 42): a page's, a collection's and a 
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("«Todas las páginas»: everything to manage; a search or a level lists it flat; «Mover a…»; a note's history", async ({
+test("«Mis datos»: everything to manage; a search or a level lists it flat; «Mover a…»; a note's history", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT });
-  await page.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Todas las páginas");
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Mis datos");
   const table = page.locator(".all-table");
   const names = table.locator("tbody .cols-name");
   // The user's pages, then the collections, then Boni's own things.
@@ -285,7 +285,7 @@ test("«Todas las páginas»: everything to manage; a search or a level lists it
   // A note opens as its page, after its collection; its history beside it; Escape comes back here.
   await table.getByRole("button", { name: "Rayuela", exact: true }).click();
   await expect(page.locator(".topbar .crumbs")).toHaveText(
-    /Todas las páginas\s*\/\s*Libros\s*\/\s*Rayuela/,
+    /Mis datos\s*\/\s*Libros\s*\/\s*Rayuela/,
   );
   await page.getByRole("button", { name: "Historial" }).click();
   const h = page.locator(".history-panel");
@@ -310,7 +310,7 @@ test("«Todas las páginas»: everything to manage; a search or a level lists it
   await page.keyboard.press("Escape");
   await expect(h).toHaveCount(0);
   await page.keyboard.press("Escape");
-  await expect(page.locator(".topbar h1")).toHaveText("Todas las páginas");
+  await expect(page.locator(".topbar h1")).toHaveText("Mis datos");
   // A page of the list opens as itself.
   await table.getByRole("button", { name: "Gastos", exact: true }).click();
   await expect(page.locator(".page-doc .doc-title")).toHaveValue("Gastos");
@@ -321,7 +321,7 @@ test("a note is a page: the full editor, and what Markdown cannot say saved as a
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT, pages: [] });
-  // Libros' notes are not in the sidebar: «Todas las páginas» lists them with Libros open.
+  // Libros' notes are not in the sidebar: «Mis datos» lists them with Libros open.
   const open = async () => {
     await page
       .locator(".all-table")
@@ -329,7 +329,7 @@ test("a note is a page: the full editor, and what Markdown cannot say saved as a
       .click();
     await page.locator(".all-table").getByRole("button", { name: "Rayuela", exact: true }).click();
   };
-  await page.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
   await open();
   const doc = page.locator(".doc-editor");
   // The page's own «/»: a Cifra over the collection the note belongs to, computed like any page's.
@@ -339,8 +339,8 @@ test("a note is a page: the full editor, and what Markdown cannot say saved as a
   await expect(doc.locator(".blk-number .kpi-value")).toBeVisible();
   // Leaving by its crumb (the new block's title keeps the focus, as when Juan types) saves the note's text;
   // the block travels as a fenced «boni» block and comes back the same.
-  await page.locator(".topbar .crumbs").getByRole("button", { name: "Todas las páginas" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Todas las páginas");
+  await page.locator(".topbar .crumbs").getByRole("button", { name: "Mis datos" }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Mis datos");
   await open();
   await expect(page.locator(".doc-editor .blk-number .kpi-value")).toBeVisible();
   const body = await page.evaluate(async () => {
@@ -360,7 +360,7 @@ test("system columns in a table: none by default, chosen from the view's options
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT });
-  await page.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
   await page.getByRole("button", { name: "Abrir Libros" }).click();
   const table = page.locator(".db-table");
   await expect(table.locator("th.sys-col")).toHaveCount(0);
@@ -379,12 +379,12 @@ test("system columns in a table: none by default, chosen from the view's options
   await page.screenshot({ path: `${SHOTS}/system-columns.png` });
 });
 
-test("«Todas las páginas» says what the collections take: records, storage and its parts, size and use, advice", async ({
+test("«Mis datos» says what the collections take: records, storage and its parts, size and use, advice", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT });
-  await page.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
   const usage = page.locator(".cols-usage");
   await expect(usage.locator(".kpi")).toHaveText([
     /Registros\s*85/,
@@ -399,4 +399,38 @@ test("«Todas las páginas» says what the collections take: records, storage an
   await page.screenshot({ path: `${SHOTS}/collections-usage.png`, fullPage: true });
   await usage.locator(".barlist").last().locator(".barlist-row", { hasText: "Correos" }).click();
   await expect(page.locator(".topbar")).toContainText("Auditoría");
+});
+
+test("«Mis datos» as a diagram: a card per collection with its fields, arrows for relations, «Ver como la IA» dims what no model reads, a click opens the collection", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", { agent: AGENT });
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await page.getByRole("radio", { name: "Diagrama" }).click();
+  const canvas = page.locator(".data-diagram");
+  const cards = canvas.locator(".dg-card-node");
+  await expect(cards.locator(".dg-name")).toContainText(["Libros", "Documentos"]);
+  const libros = cards.filter({ hasText: "Libros" });
+  await expect(libros.locator(".dg-field")).toContainText(["Título", "Estado", "Relacionado"]);
+  await expect(libros.locator(".dg-field.rel .dg-type")).toHaveText("→ Libros");
+  await expect(canvas.locator(".react-flow__edge")).toHaveCount(
+    await canvas.locator(".dg-field.rel").count(),
+  );
+  // The list's mode is kept per device; «Ver como la IA»: Documentos (private) fades, Libros stays.
+  await page.getByRole("radio", { name: "La IA" }).click();
+  await expect(cards.filter({ hasText: "Documentos" })).toHaveClass(/dim/);
+  await expect(libros).not.toHaveClass(/dim/);
+  await page.getByRole("radio", { name: "Todo" }).click();
+  await expect(cards.filter({ hasText: "Documentos" })).not.toHaveClass(/dim/);
+  await page.screenshot({ path: `${SHOTS}/data-diagram.png` });
+  await libros.locator(".dg-name").click();
+  await expect(page.locator(".topbar h1")).toHaveText("Libros");
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await expect(page.getByRole("radio", { name: "Diagrama" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await page.getByRole("radio", { name: "Lista" }).click();
+  await expect(page.locator(".all-table")).toBeVisible();
 });

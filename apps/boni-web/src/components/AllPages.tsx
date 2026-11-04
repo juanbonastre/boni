@@ -35,11 +35,24 @@ import { CollectionsUsage } from "./Collections.tsx";
 import { byName, EyeToggle, NewCollectionInput, treeOrder } from "./CollectionTree.tsx";
 import { whoName } from "./Dash.tsx";
 import { SystemPill } from "./DatabaseBlock.tsx";
+import { DataDiagram } from "./DataDiagram.tsx";
 import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
 import { LEVEL_ICONS, ProtectionMenu } from "./Protection.tsx";
 
+/** How «Mis datos» is seen: the list, or the collections as a diagram (task 59a); kept per device. */
+type DataMode = "list" | "diagram";
+const MODE_KEY = "boni:dataMode";
+const storedMode = (): DataMode => {
+  try {
+    return localStorage.getItem(MODE_KEY) === "diagram" ? "diagram" : "list";
+  } catch {
+    return "list";
+  }
+};
+
 /**
- * «Todas las páginas» (Juan, 2026-10-28): what the sidebar's «Páginas» holds, to manage it. The user's pages,
+ * «Mis datos» (before, «Todas las páginas»; Juan, 2026-10-28 and 2026-11-04): what the sidebar's «Páginas» holds,
+ * to manage it, as a list or as a diagram (`DataDiagram`). The list: the user's pages,
  * every collection inside its mother with all its notes (whatever its eye says) and Boni's own things last, with
  * what the old «Colecciones» had (the usage, a search, the filter by what the AI sees, each protection), the
  * eye, new collections and notes, «Mover a…» and deleting. A search or a level lists what matches flat, each with
@@ -52,6 +65,13 @@ export function AllPagesView() {
   const pages = useStore((s) => s.pages);
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState<AiLevel | null>(null);
+  const [mode, setMode] = useState<DataMode>(storedMode);
+  const pick = (m: DataMode) => {
+    setMode(m);
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {}
+  };
   const [open, setOpen] = useState<string[]>([]);
   const [notes, setNotes] = useState<Record<string, TreeNote[]>>({});
   // Where a new collection is being named: the top level (""), inside a collection, or nowhere.
@@ -177,37 +197,57 @@ export function AllPagesView() {
         <h1 className="cols-title">{t("nav.notes")}</h1>
         <p className="cols-help">{t("col.help")}</p>
         <div className="cols-tools">
-          <label className="cols-search">
-            <Search size={14} strokeWidth={1.8} aria-hidden />
-            <input
-              value={query}
-              placeholder={t("col.search")}
-              aria-label={t("col.search")}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-          <div className="cols-filter" role="radiogroup" aria-label={t("col.ai")}>
-            {[null, ...AI_LEVELS].map((l) => (
+          <div className="segmented data-mode" role="radiogroup" aria-label={t("data.mode")}>
+            {(["list", "diagram"] as const).map((m) => (
               <button
-                key={l ?? "all"}
+                key={m}
                 type="button"
                 role="radio"
-                aria-checked={level === l}
-                className={`cols-chip${level === l ? " on" : ""}`}
-                onClick={() => setLevel(l)}
+                aria-checked={mode === m}
+                className={mode === m ? "on" : ""}
+                onClick={() => pick(m)}
               >
-                {l && LEVEL_ICONS[l]}
-                {l ? t(`ai.level.${l}`) : t("col.all")}
-                {l && <span className="cols-chip-n">{count(l)}</span>}
+                {t(`data.${m}`)}
               </button>
             ))}
           </div>
-          <button type="button" className="btn small all-new" onClick={() => setAdding("")}>
-            <Plus size={14} strokeWidth={1.8} />
-            {t("tree.newCollection")}
-          </button>
+          {mode === "list" && (
+            <>
+              <label className="cols-search">
+                <Search size={14} strokeWidth={1.8} aria-hidden />
+                <input
+                  value={query}
+                  placeholder={t("col.search")}
+                  aria-label={t("col.search")}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </label>
+              <div className="cols-filter" role="radiogroup" aria-label={t("col.ai")}>
+                {[null, ...AI_LEVELS].map((l) => (
+                  <button
+                    key={l ?? "all"}
+                    type="button"
+                    role="radio"
+                    aria-checked={level === l}
+                    className={`cols-chip${level === l ? " on" : ""}`}
+                    onClick={() => setLevel(l)}
+                  >
+                    {l && LEVEL_ICONS[l]}
+                    {l ? t(`ai.level.${l}`) : t("col.all")}
+                    {l && <span className="cols-chip-n">{count(l)}</span>}
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="btn small all-new" onClick={() => setAdding("")}>
+                <Plus size={14} strokeWidth={1.8} />
+                {t("tree.newCollection")}
+              </button>
+            </>
+          )}
         </div>
-        {tree === null && types === null ? (
+        {mode === "diagram" ? (
+          <DataDiagram />
+        ) : tree === null && types === null ? (
           <div className="page-loading" role="status" aria-busy="true" />
         ) : !rows.length ? (
           <p className="cols-empty">{q || level ? t("col.empty") : t("col.none")}</p>
@@ -228,7 +268,7 @@ export function AllPagesView() {
             <tbody>{rows}</tbody>
           </table>
         )}
-        <CollectionsUsage />
+        {mode === "list" && <CollectionsUsage />}
       </div>
     </div>
   );

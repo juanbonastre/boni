@@ -60,9 +60,9 @@ test("«Registro», a template page over Boni's runs", async ({ page }) => {
   await shot(page, "registro");
 });
 
-test("Todas las páginas", async ({ page }) => {
+test("Mis datos", async ({ page }) => {
   await open(page);
-  await page.locator(".sidebar").getByRole("button", { name: "Todas las páginas" }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
   await page.locator(".cols-table tbody tr").first().waitFor();
   await shot(page, "todas-las-paginas");
 });
