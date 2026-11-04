@@ -5,6 +5,20 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (eighteenth) — server 0.8.94 · Boni desktop 0.4.67 · Boni Android
+
+Needs: the server (0.8.94, to deploy), Boni desktop 0.4.67 (`release/boni_0.4.67_amd64.deb`, to install) and Boni
+Android from the CI (Obtainium: its bridge now opens links). Tasks 53 to 55, from what Juan saw trying the 0.4.66.
+
+- **«Proponer tarea» says what came of it.** «2 propuestas en la Bandeja»; «Ya en la Bandeja» or «Ya apuntada» when
+  the mail's tasks already wait or were taken; «Sin tareas para ti» when the reader found none; and «Otra vez» reads
+  the mail afresh when you ask, the waiting ones giving way. Never «Nada que proponer». (#297, task 54)
+- **The collection of a proposal, with Boni's searchable list.** In the card's ✎, the collection is chosen as
+  everywhere in Boni: the chosen one as a chip, typing filters, the collections under Tareas, Eventos and Otras, and
+  «Crear «nombre»» makes one that does not exist yet. (#298, task 53)
+- **«En Gmail».** In «Ver correo» and on a card from mail, the mail opens in Gmail by its Message-ID, in the system's
+  browser (the desktop, the phone) or a new tab; only for a Google mailbox. (#299, task 55)
+
 ## 2026-11-04 (seventeenth) — server 0.8.93
 
 Needs: the server only (0.8.93, to deploy). Task 43.
