@@ -9,12 +9,26 @@ import { Connections, RoleCard, RolePanel, Spending } from "./Models.tsx";
  * and its model (a click opens it: change it, evaluate another), the month's spending and the budget, the keys.
  * What the models did is a page of ordinary blocks over Boni's records («Uso de la IA»).
  */
-export function ModelsSettings() {
+export function ModelsSettings({
+  role: wanted,
+  onRole,
+}: {
+  /** The role whose panel is open, when «Modelos» opens one from its canvas (task 59b). */
+  role?: ModelRole | null;
+  onRole?: (r: ModelRole | null) => void;
+} = {}) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
   const [view, setView] = useState<View | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [role, setRole] = useState<ModelRole | null>(null);
+  const [role, setRoleState] = useState<ModelRole | null>(wanted ?? null);
+  const setRole = (r: ModelRole | null) => {
+    setRoleState(r);
+    onRole?.(r);
+  };
+  useEffect(() => {
+    if (wanted !== undefined) setRoleState(wanted);
+  }, [wanted]);
   const [keys, setKeys] = useState(false);
   const load = async () => {
     try {

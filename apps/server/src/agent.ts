@@ -27,6 +27,7 @@ import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
+import { pipelineView } from "./pipeline.ts";
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
@@ -460,6 +461,21 @@ async function answerAgent(
           current: p.current,
         })),
       });
+    case "GET /api/agent/pipeline": {
+      // «Modelos» (task 59b): the declared flow's numbers of the last days (7 by default, 90 at most).
+      const q = new URL(req.url ?? "/", "http://boni").searchParams;
+      const days = Math.min(90, Math.max(1, Math.round(Number(q.get("days")) || 7)));
+      return send(
+        res,
+        200,
+        pipelineView(
+          host.store(who.account),
+          Date.now(),
+          days,
+          host.mailAccountOf?.(who.account) ?? null,
+        ),
+      );
+    }
     case "GET /api/agent/proposals": {
       const store = host.store(who.account);
       const ctx = inboxContext(store, {

@@ -79,7 +79,7 @@ export interface MailSeen {
   from: string;
 }
 
-function whatOf(
+export function whatOf(
   store: UserStore,
   r: RunRow,
   mailAccount: string | null,

@@ -6,6 +6,7 @@ import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { CollectionView } from "./components/Collections.tsx";
 import { InboxButton, InboxPanel, ProposalPage } from "./components/InboxCards.tsx";
+import { ModelsView } from "./components/ModelsView.tsx";
 import { useEnterFlip } from "./components/motion.ts";
 import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
@@ -240,6 +241,8 @@ function TopBar() {
           </span>
         ) : view.kind === "allPages" ? (
           t("nav.notes")
+        ) : view.kind === "models" ? (
+          t("nav.models")
         ) : view.kind === "audit" ? (
           <span className="crumbs">
             <span className="crumb-part">
@@ -477,6 +480,7 @@ function Content() {
   if (view.kind === "row") return <RowView />;
   if (view.kind === "proposal") return <ProposalPage key={view.id} id={view.id} />;
   if (view.kind === "allPages") return <AllPagesView />;
+  if (view.kind === "models") return <ModelsView />;
   if (view.kind === "collection") return <CollectionView />;
   return <Welcome error={pages?.length ? null : loadError} after={<QueueNotes />} />;
 }

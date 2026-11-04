@@ -78,6 +78,22 @@ export {
 } from "./models.ts";
 export { type OpenAIOptions, OpenAIProvider } from "./openai.ts";
 export {
+  DECISION_AREAS,
+  nodeOfArea,
+  nodeOfReader,
+  nodeOfRole,
+  nodeOfRun,
+  nodeOfTool,
+  PIPELINE,
+  type Pipeline,
+  type PipelineEdge,
+  type PipelineKind,
+  type PipelineNode,
+  pipelineGaps,
+  RUN_KINDS,
+  type RunKind,
+} from "./pipeline.ts";
+export {
   type Expr,
   FNS,
   isWholeSpan,

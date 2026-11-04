@@ -13,6 +13,8 @@ export interface Usage {
 export interface ModelRequest {
   /** `reviewer`: the reader `review_reading`, with its own model when Juan chose one (Modelos). */
   role: "planner" | "reader" | "decider" | "reviewer";
+  /** The reader it is (plan.ts), kept with the call in the journal: «Modelos» counts each reader apart (task 59b). */
+  kind?: string;
   system: string;
   input: unknown;
   schema: object;
