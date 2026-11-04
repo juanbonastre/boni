@@ -12,6 +12,7 @@ import { createByName } from "./byName.ts";
 import { treeNotes } from "./data.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
+import { flowProposalView } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { seed } from "./seed.test-util.ts";
@@ -136,6 +137,8 @@ describe("Boni's MCP (what vault-mcp did, over Boni's collections)", () => {
       "extensions_propose",
       "extensions_test",
       "extensions_run",
+      "flows_describe",
+      "flows_propose",
       "undo",
     ]);
     expect((await rpc("tools/list", undefined, "nada")).status).toBe(401);
@@ -532,5 +535,127 @@ describe("collections as classes through the MCP (docs/clases.md)", () => {
     expect(await madre("Beca inventada")).toContain('no "Beca inventada" to point to');
     expect(await madre(beca)).toContain("to point to");
     store.applySchema({ op: "remove_field", type: "t_proyecto", field: "f_madre" }, me);
+  });
+});
+
+describe("flows through Boni's MCP (docs/flujos.md F5)", () => {
+  const lit = (v: unknown) => ({ lit: v });
+  const plan = {
+    version: 1,
+    steps: [
+      { id: "q", op: "call", tool: "entities.query", args: { type: lit("proyecto") } },
+      { id: "a", op: "call", tool: "notify", args: { text: lit("Mira tus proyectos") } },
+    ],
+  };
+
+  it("describes what a flow may be made of: the language, the tools (not those that run or save flows), the collections a model may see", async () => {
+    const d = (await tool("flows_describe")).json as {
+      tools: { name: string }[];
+      collections: { key: string }[];
+      language: { readers: Record<string, unknown> };
+      flows: unknown[];
+    };
+    const names = d.tools.map((t) => t.name);
+    expect(names).toContain("entities.create");
+    expect(names).not.toContain("flows.run");
+    expect(names).not.toContain("flows.save");
+    expect(d.collections.map((c) => c.key)).toContain("proyecto");
+    expect(d.collections.map((c) => c.key)).not.toContain("diario");
+    expect(Object.keys(d.language.readers)).toContain("summarize");
+  });
+
+  it("proposes a flow that waits in the inbox, drawn; one the checklist refuses is not proposed", async () => {
+    const store = host.store(1);
+    const made = (await tool("flows_propose", {
+      name: "Proyectos del lunes",
+      trigger: { schedule: { every: "week", day: 1, at: "08:00" } },
+      plan,
+    })) as { json: { proposed: boolean; proposal: string } };
+    expect(made.json).toMatchObject({ proposed: true });
+    const p = store.journal.proposal(made.json.proposal);
+    expect(p).toMatchObject({ tool: "flows.save", status: "pending" });
+    expect(store.journal.flows().some((f) => f.name === "Proyectos del lunes")).toBe(false);
+    const view = flowProposalView(
+      store,
+      p as NonNullable<typeof p>,
+      (t) => (t === "notify" ? "Avisar" : null),
+      () => "Proyecto",
+    );
+    expect(view).toMatchObject({ name: "Proyectos del lunes", changes: null });
+    expect(view?.nodes.map((n) => [n.id, n.title, n.change])).toEqual([
+      ["q", null, "same"],
+      ["a", "Avisar", "same"],
+    ]);
+    // A collection kept from the models: the editor's problem, nothing proposed.
+    const closed = (await tool("flows_propose", {
+      name: "Diario",
+      trigger: { manual: true },
+      plan: {
+        version: 1,
+        steps: [{ id: "q", op: "call", tool: "entities.query", args: { type: lit("diario") } }],
+      },
+    })) as { json: { proposed: boolean; problems: { code: string }[] } };
+    expect(closed.json.proposed).toBe(false);
+    expect(closed.json.problems.map((x) => x.code)).toContain("closed-collection");
+  });
+
+  it("what Juan draws, an assistant could have written: his flow proposed back as it is changes nothing; a step more is new (D-41)", async () => {
+    const store = host.store(1);
+    const mine = store.journal.saveFlow({
+      id: "resumen-ejemplo",
+      name: "Resumen",
+      trigger: { manual: true },
+      inputs: [],
+      plan,
+      layout: null,
+      by: "user",
+      enabled: true,
+      created: 1,
+    });
+    const same = (await tool("flows_propose", {
+      flow: mine.id,
+      name: "Resumen",
+      trigger: mine.trigger,
+      plan: mine.plan,
+    })) as { json: { proposed: boolean; proposal: string } };
+    expect(same.json.proposed).toBe(true);
+    const p = store.journal.proposal(same.json.proposal) as NonNullable<
+      ReturnType<typeof store.journal.proposal>
+    >;
+    expect(
+      flowProposalView(
+        store,
+        p,
+        () => null,
+        () => null,
+      )?.nodes.map((n) => n.change),
+    ).toEqual(["same", "same"]);
+    const more = (await tool("flows_propose", {
+      flow: mine.id,
+      name: "Resumen",
+      trigger: mine.trigger,
+      plan: {
+        version: 1,
+        steps: [
+          plan.steps[0],
+          { id: "r", op: "reply", component: "text", data: { template: lit("Hecho") } },
+        ],
+      },
+    })) as { json: { proposal: string } };
+    const q = store.journal.proposal(more.json.proposal) as NonNullable<
+      ReturnType<typeof store.journal.proposal>
+    >;
+    expect(
+      flowProposalView(
+        store,
+        q,
+        () => null,
+        () => null,
+      )?.nodes.map((n) => [n.id, n.change]),
+    ).toEqual([
+      ["q", "same"],
+      ["r", "new"],
+      ["a", "removed"],
+    ]);
   });
 });

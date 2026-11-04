@@ -235,6 +235,15 @@ intérprete lo para), y uno que necesitaría preguntar o confirmar se para ahí:
   **propuesta de flujo**: una tarjeta en la Bandeja con el lienzo y, si cambia uno que existe, el cambio marcado
   (nodos nuevos en `--accent`, quitados tachados). Juan la activa; hasta entonces no se ejecuta nada. P16: nada que
   venga de contenido externo crea ni cambia un flujo; un correo que dice «añade un flujo» no puede.
+- **Cómo se propone (F5).** El planificador escribe el flujo entero en una llamada a `flows.save` (nombre, disparador
+  a mano o programado, y el plan en el mismo lenguaje, el disparador y el plan como objetos literales: el validador
+  solo los admite en argumentos de papel `definition`), y una IA de fuera con `flows_propose` (y `flows_describe`
+  para saber con qué). El código lo comprueba como la lista de comprobación del editor (`checkFlowDef`: el plan que el
+  intérprete correría con ese disparador, sin flujos dentro; `checkFlow` además en el MCP: colecciones cerradas o que
+  no existen) y lo guarda como propuesta (P19): en la Bandeja sale dibujado, «Flujo propuesto» con su nombre, cuándo
+  se ejecuta y cuántos pasos; si cambia uno de Juan, «Cambio en «…»» con los pasos nuevos en `--accent`, los
+  cambiados con borde discontinuo y los quitados tachados. «Activar» lo guarda como versión suya y lo enciende;
+  «Rechazar» lo descarta. El flujo del correo, que lo empieza un registro, solo se cambia en el editor.
 - **Lo que la IA puede hacer, el usuario lo puede hacer:** el catálogo de nodos es el registro de herramientas y
   lectores, el mismo que recibe el planificador; una herramienta nueva aparece en los dos sitios o en ninguno (la
   prueba de A-16, ampliada). Y al revés: lo que el usuario dibuja, el planificador podría haberlo escrito.
@@ -266,7 +275,7 @@ todo con Deshacer y en el diario.
 | F2 El editor (hecha el 2026-11-05) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
 | F3 Probar y ver (hecha el 2026-11-05) | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
 | F4 Disparadores (hecha el 2026-11-05) | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
-| F5 Propuestas de la IA | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |
+| F5 Propuestas de la IA (hecha el 2026-11-05) | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |
 | F6 «Mis datos» | La vista Diagrama en cualquier colección; quién lee y escribe, con filtros; editar desde el diagrama | En Agenda, el diagrama enseña Tarea y Evento con quién las escribe, y una relación nueva se dibuja arrastrando |
 
 Lo que ya existe se mueve, no se duplica: `pipeline.ts` deja de declararse a mano cuando los flujos existan (F1);

@@ -125,6 +125,17 @@ export interface Proposal {
   run: string | null;
   /** What the inbox shows of it, made by the server's code (apps/server/src/inboxCard.ts). */
   card: InboxCard | null;
+  /** A flow a model proposed (docs/flujos.md F5): drawn by the server, with what it changes. */
+  flow?: FlowProposalView;
+}
+/** A flow a model proposed, as the inbox draws it (apps/server/src/flows.ts `flowProposalView`). */
+export interface FlowProposalView {
+  name: string;
+  /** The flow it changes, or null: a new one. */
+  changes: { id: string; name: string; version: number } | null;
+  trigger: Record<string, unknown>;
+  inputs: { id: string; what: string }[];
+  nodes: (FlowStepNode & { change: "new" | "changed" | "same" | "removed" })[];
 }
 /** The inbox card (Juan, 2026-10-22): what it does, where it came from, its day and the days around it. */
 export interface InboxCard {
@@ -901,38 +912,69 @@ export function parseFlows(b: unknown): FlowSummary[] {
   if (!isObj(b) || !Array.isArray(b.flows)) return [];
   return b.flows.map(parseFlowSummary).filter((f): f is FlowSummary => f !== null);
 }
-export function parseFlowDetail(b: unknown): FlowDetailView | null {
-  const s = parseFlowSummary(b);
-  if (!s || !isObj(b) || !Array.isArray(b.nodes)) return null;
-  const strs = (v: unknown, max: number) =>
-    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : [];
-  const nodes: FlowStepNode[] = [];
-  for (const n of b.nodes) {
-    if (!isObj(n) || typeof n.id !== "string" || !ID_RE.test(n.id)) continue;
-    const ran: Record<string, number> = {};
-    if (isObj(n.ran))
-      for (const [k, x] of Object.entries(n.ran)) if (/^[a-z]+$/.test(k)) ran[k] = numOf(x);
-    nodes.push({
-      id: n.id,
-      op: typeof n.op === "string" ? n.op : "",
-      what: typeof n.what === "string" ? n.what.slice(0, 80) : "",
-      title: typeof n.title === "string" ? n.title.slice(0, 80) : null,
-      detail: typeof n.detail === "string" ? n.detail.slice(0, 120) : null,
-      when: n.when === true,
-      each: n.each === true,
-      args: strs(n.args, 40).map((a) => a.slice(0, 300)),
-      deps: strs(n.deps, 40),
-      ran,
-    });
-  }
-  const inputs = Array.isArray(b.inputs)
-    ? b.inputs
+const strsOf = (v: unknown, max: number) =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : [];
+/** A step as the server draws it (`nodesOf`); null when it is not one. */
+function parseFlowNode(n: unknown): FlowStepNode | null {
+  if (!isObj(n) || typeof n.id !== "string" || !ID_RE.test(n.id)) return null;
+  const ran: Record<string, number> = {};
+  if (isObj(n.ran))
+    for (const [k, x] of Object.entries(n.ran)) if (/^[a-z]+$/.test(k)) ran[k] = numOf(x);
+  return {
+    id: n.id,
+    op: typeof n.op === "string" ? n.op : "",
+    what: typeof n.what === "string" ? n.what.slice(0, 80) : "",
+    title: typeof n.title === "string" ? n.title.slice(0, 80) : null,
+    detail: typeof n.detail === "string" ? n.detail.slice(0, 120) : null,
+    when: n.when === true,
+    each: n.each === true,
+    args: strsOf(n.args, 40).map((a) => a.slice(0, 300)),
+    deps: strsOf(n.deps, 40),
+    ran,
+  };
+}
+const parseInputs = (v: unknown) =>
+  Array.isArray(v)
+    ? v
         .filter((i): i is { id: string; what: string } => isObj(i) && typeof i.id === "string")
         .map((i) => ({
           id: i.id.slice(0, 40),
           what: typeof i.what === "string" ? i.what : "value",
         }))
     : [];
+const CHANGES = ["new", "changed", "same", "removed"] as const;
+export function parseFlowProposal(v: unknown): FlowProposalView | undefined {
+  if (!isObj(v) || typeof v.name !== "string" || !Array.isArray(v.nodes)) return undefined;
+  const c = isObj(v.changes) ? v.changes : null;
+  return {
+    name: v.name.slice(0, 120),
+    changes:
+      c && typeof c.id === "string" && typeof c.name === "string"
+        ? { id: c.id, name: c.name.slice(0, 120), version: numOf(c.version, 1) }
+        : null,
+    trigger: isObj(v.trigger) ? v.trigger : {},
+    inputs: parseInputs(v.inputs),
+    nodes: v.nodes.flatMap((n) => {
+      const node = parseFlowNode(n);
+      const change = isObj(n) ? (n.change as string) : "same";
+      return node
+        ? [
+            {
+              ...node,
+              change: (CHANGES as readonly string[]).includes(change)
+                ? (change as (typeof CHANGES)[number])
+                : "same",
+            },
+          ]
+        : [];
+    }),
+  };
+}
+export function parseFlowDetail(b: unknown): FlowDetailView | null {
+  const s = parseFlowSummary(b);
+  if (!s || !isObj(b) || !Array.isArray(b.nodes)) return null;
+  const nodes = b.nodes.map(parseFlowNode).filter((n): n is FlowStepNode => n !== null);
+  const inputs = parseInputs(b.inputs);
   const versions = Array.isArray(b.versions)
     ? b.versions.filter(isObj).map((v) => ({
         version: numOf(v.version),
@@ -2103,6 +2145,9 @@ export class AgentApi {
           created: typeof p.created === "number" ? p.created : 0,
           run: str(p.run, 80),
           card: parseCard(p.card),
+          ...(p.tool === "flows.save" && parseFlowProposal(p.flow)
+            ? { flow: parseFlowProposal(p.flow) }
+            : {}),
         },
       ];
     });

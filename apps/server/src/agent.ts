@@ -32,6 +32,7 @@ import {
   checkFlow,
   createFlow,
   flowCatalog,
+  flowProposalView,
   flowsView,
   flowView,
   originOf,
@@ -781,6 +782,17 @@ async function answerAgent(
           } catch {
             // a proposal the card cannot read still shows with its rows
           }
+          // A flow a model proposed (docs/flujos.md F5): drawn, with what it changes.
+          const flow =
+            p.tool === "flows.save"
+              ? flowProposalView(
+                  store,
+                  p,
+                  (tool) => host.toolTitle(tool),
+                  (key) =>
+                    Object.values(store.schema().types).find((t) => t.key === key)?.name ?? null,
+                )
+              : null;
           return {
             id: p.id,
             tool: p.tool,
@@ -789,6 +801,7 @@ async function answerAgent(
             created: p.created,
             run: p.run,
             card,
+            ...(flow ? { flow } : {}),
           };
         }),
       });

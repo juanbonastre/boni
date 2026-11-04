@@ -1,11 +1,14 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
+  DONE,
   FLOW,
   FLOW_CATALOG,
+  FLOW_CHANGE,
   FLOW_CHECK,
   FLOW_DETAIL,
   FLOW_DETAIL_SAVED,
+  FLOW_PROPOSAL,
   FLOW_SUMMARY,
   FLOW_TEST,
   FLOWS,
@@ -514,4 +517,41 @@ test("a daily summary drawn without code: the trigger «Programado», every day 
   await page.getByRole("button", { name: "Añadir paso" }).click();
   await expect(page.getByRole("menuitemradio", { name: "Avisar" })).toBeVisible();
   await expect(page.getByRole("menuitemradio", { name: "Ejecutar flujo" })).toHaveCount(0);
+});
+
+test("a flow a model proposed waits in the inbox, drawn with what it changes; «Activar» turns it on", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [FLOW_PROPOSAL, FLOW_CHANGE] }],
+      "POST api/agent/proposals/:id/accept": [DONE],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await page
+    .locator(".chat-tools")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const cards = page.locator(".proposal.flow-proposal");
+  await expect(cards).toHaveCount(2);
+  const made = cards.first();
+  await expect(made.locator(".inbox-kind")).toHaveText("Flujo propuesto");
+  await expect(made.locator("h3")).toHaveText("Resumen del lunes");
+  await expect(made.locator(".inbox-what")).toHaveText("Cada lunes a las 08:00 · 2 pasos");
+  await expect(made.locator(".fl-node")).toHaveCount(3);
+  await expect(made.locator(".fl-node.source")).toContainText("$today");
+  // A change: what it adds and what it takes away, said and drawn.
+  const change = cards.nth(1);
+  await expect(change.locator("h3")).toHaveText("Cambio en «Resumen diario»");
+  await expect(change.locator(".inbox-what")).toContainText("1 paso nuevo · 1 quitado");
+  await expect(change.locator(".fl-card.new")).toContainText("Nuevo");
+  await expect(change.locator(".fl-card.removed")).toContainText("Avisar");
+  await page.screenshot({ path: `${SHOTS}/flow-proposal.png` });
+  await made.getByRole("button", { name: "Activar" }).click();
+  await expect(cards).toHaveCount(1);
+  expect(await requests(page, "POST api/agent/proposals/")).toEqual([
+    "POST api/agent/proposals/pf1/accept",
+  ]);
 });

@@ -16,6 +16,7 @@ import type {
   DataField,
   DataType,
   DataValue,
+  FlowProposalView,
   InboxCard,
   InboxRequest,
   Proposal,
@@ -41,6 +42,8 @@ import {
 } from "../store.ts";
 import { CallRows, ValueText } from "./Chat.tsx";
 import { Cell } from "./DatabaseBlock.tsx";
+import { triggerText } from "./FlowEditor.tsx";
+import { FlowPreview } from "./FlowPreview.tsx";
 import { type OptionsLoader, SearchList } from "./FormView.tsx";
 
 /**
@@ -376,6 +379,57 @@ function useCorrection(p: Proposal) {
 }
 
 export function ProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }) {
+  return p.flow ? (
+    <FlowProposalCard p={p} flow={p.flow} />
+  ) : (
+    <RecordProposalCard p={p} wide={wide} />
+  );
+}
+
+/**
+ * A flow a model proposed (docs/flujos.md F5): its name, what starts it and what it changes, the flow drawn (what it
+ * adds in `--accent`, what it takes away struck); «Activar» saves it as the user's and turns it on.
+ */
+function FlowProposalCard({ p, flow }: { p: Proposal; flow: FlowProposalView }) {
+  const t = useStore((s) => s.t);
+  const count = (c: "new" | "changed" | "removed") =>
+    flow.nodes.filter((n) => n.change === c).length;
+  const said = (c: "new" | "changed" | "removed") => {
+    const n = count(c);
+    return n ? t(n === 1 ? `inbox.flow.${c}.one` : `inbox.flow.${c}.n`, { n }) : null;
+  };
+  const steps = flow.nodes.filter((n) => n.change !== "removed").length;
+  const summary = flow.changes
+    ? [said("new"), said("changed"), said("removed")].filter(Boolean).join(" · ") ||
+      t("inbox.flow.same")
+    : t(steps === 1 ? "inbox.flow.steps.one" : "inbox.flow.steps", { n: steps });
+  return (
+    <section className="card proposal inbox-card detailed flow-proposal">
+      <p className="inbox-kind">
+        <Inbox size={12} strokeWidth={1.8} aria-hidden="true" />
+        {t("inbox.kind.flow")}
+      </p>
+      <header className="inbox-card-head">
+        <h3>{flow.changes ? t("inbox.flow.change", { name: flow.changes.name }) : flow.name}</h3>
+      </header>
+      <p className="inbox-what">
+        <span className="inbox-title">{triggerText(t, flow.trigger)}</span>
+        <span className="muted"> · {summary}</span>
+      </p>
+      <FlowPreview flow={flow} />
+      <div className="inbox-actions">
+        <DecideButtons
+          id={p.id}
+          accept={() => void acceptProposal(p.id)}
+          acceptLabel={t("inbox.flow.activate")}
+          reject={() => void rejectProposal(p.id)}
+        />
+      </div>
+    </section>
+  );
+}
+
+function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }) {
   const t = useStore((s) => s.t);
   const c = p.card;
   const fmt = useDayFormat();
@@ -939,6 +993,12 @@ export function ProposalPage({ id, onDone }: { id: string; onDone?: () => void }
     return (
       <div className="content proposal-page">
         {!loading && <p className="muted center-note">{t("inbox.gone")}</p>}
+      </div>
+    );
+  if (p.flow)
+    return (
+      <div className="content proposal-page">
+        <FlowProposalCard p={p} flow={p.flow} />
       </div>
     );
   return <ProposalPageOf p={p} onDone={onDone} />;

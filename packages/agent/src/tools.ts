@@ -51,6 +51,8 @@ export const EFFECTS = [
   "notify",
   // Runs one of the user's flows (docs/flujos.md F4): only from his turn, confirmed (P8).
   "flow",
+  // Saves a flow a model wrote (docs/flujos.md F5): it is only proposed; it is saved when the user accepts it (P19).
+  "flow_save",
 ] as const;
 export type Effect = (typeof EFFECTS)[number];
 export const ARG_ROLES = [
@@ -66,6 +68,9 @@ export const ARG_ROLES = [
   "value",
   "option",
   "limit",
+  // A JSON object given as it is (a flow's trigger and plan, `flows.save`): the plan language lets {"lit": {...}}
+  // only here, and the tool checks it whole.
+  "definition",
 ] as const;
 export type ArgRole = (typeof ARG_ROLES)[number];
 /** Roles whose value says where something goes: only a value taken as it is from Juan or his data (P2, P14). */
@@ -102,6 +107,10 @@ export interface MemoryWriter {
 export interface JobWriter {
   create(name: Val, schedule: Val, prompt: Val, extra: Label): Val;
 }
+/** Saves a flow the user accepted (`flows.save`, docs/flujos.md F5): its id and version. */
+export interface FlowWriter {
+  save(def: { flow: string | null; name: string; trigger: unknown; plan: unknown }): Val;
+}
 /** Runs one of the user's flows from a turn (`flows.run`, docs/flujos.md F4): what came of it. */
 export interface FlowStarter {
   run(flow: Val, inputs: Val | undefined): Promise<Val>;
@@ -127,6 +136,7 @@ export interface Caps {
   memory: { store: ReadStore; memory: MemoryWriter };
   notify: { store: ReadStore; notifier: Notifier };
   flow: { store: ReadStore; flows: FlowStarter };
+  flow_save: { store: ReadStore; flows: FlowWriter };
 }
 
 export interface ToolDef<E extends Effect = Effect> {
@@ -204,6 +214,9 @@ export class ToolRegistry {
       names: Object.keys(t.args),
       required: Object.entries(t.args)
         .filter(([, a]) => a.required)
+        .map(([n]) => n),
+      objects: Object.entries(t.args)
+        .filter(([, a]) => a.role === "definition")
         .map(([n]) => n),
     };
   }
@@ -688,6 +701,30 @@ export function coreTools(): ToolRegistry {
     },
   });
   r.register({
+    name: "flows.save",
+    effect: "flow_save",
+    title: "Proponer flujo",
+    describe:
+      'Propose a flow for the user, a plan that runs on its own trigger: it waits in his inbox until he accepts it. trigger: {"lit": {"manual": true, "inputs": [{"name": "..."}]}} (by hand, with a form) or {"lit": {"schedule": {"every": "day" | "week" | "hour", "at": "HH:MM", "day": 0-6}}}; plan: {"lit": {"version": 1, "steps": [...]}} in this same plan language, its form\'s names and $today (on a schedule) as refs; flow: the id of one of "flows" to change',
+    args: {
+      flow: { role: "option", describe: "the id of the flow it changes (none: a new one)" },
+      name: { role: "content", required: true, describe: "the flow's name, in a few words" },
+      trigger: { role: "definition", required: true, describe: "what starts it" },
+      plan: { role: "definition", required: true, describe: "what it does" },
+    },
+    run({ flows }, a) {
+      const name = plain(a.name as Val);
+      const flow = a.flow ? plain(a.flow) : null;
+      if (typeof name !== "string") throw new ToolError("bad-argument");
+      return flows.save({
+        flow: typeof flow === "string" ? flow : null,
+        name,
+        trigger: a.trigger ? plain(a.trigger) : null,
+        plan: a.plan ? plain(a.plan) : null,
+      });
+    },
+  });
+  r.register({
     name: "notify",
     effect: "notify",
     title: "Avisar",
@@ -730,6 +767,8 @@ export interface CapsContext {
   action?: number;
   /** How this run starts a flow of the user's (the agent's, docs/flujos.md F4). */
   flows?: FlowStarter;
+  /** How an accepted flow is saved (the agent's, docs/flujos.md F5). */
+  flowWriter?: FlowWriter;
 }
 
 const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "external";
@@ -1071,6 +1110,14 @@ export function makeCaps(c: CapsContext): Caps {
     flow: {
       store: ro,
       flows: c.flows ?? { run: () => Promise.reject(new ToolError("no-flows")) },
+    },
+    flow_save: {
+      store: ro,
+      flows: c.flowWriter ?? {
+        save: () => {
+          throw new ToolError("no-flows");
+        },
+      },
     },
   };
 }

@@ -130,6 +130,13 @@ export function decide(
       if (externalArgs || controlExternal) return deny("P16", "external-starts-flow");
       if (origin.kind !== "turn" || !personal) return deny("P8", "flow-outside-turn");
       return confirm("P8");
+    // A flow a model writes is only proposed; it is saved when the user accepts it (P19, D-41). Nothing from outside
+    // makes or changes one (P16), and no work of its own does.
+    case "flow_save":
+      if (externalArgs || controlExternal) return deny("P16", "external-in-flow");
+      if (origin.kind === "accepted") return allow("P19");
+      if (origin.kind === "turn") return propose("P19");
+      return deny("P8", "flow-outside-turn");
     case "write":
     case "write_irreversible": {
       // What an e-mail decides, or what is made of it, waits in the inbox (P4, P15) unless Juan

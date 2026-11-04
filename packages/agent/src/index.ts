@@ -2,7 +2,10 @@ export {
   Agent,
   type AgentOptions,
   type Budget,
+  checkFlowDef,
   checkPlan,
+  type FlowDef,
+  flowDefOf,
   type LiveEvent,
   type Notice,
   type Painted,
@@ -10,6 +13,7 @@ export {
   PLANNER_PROMPT,
   PLANNER_PROMPT_HASH,
   paint,
+  proposeFlow,
   type Reply,
   RUN_LIMITS,
   type RunDetail,
@@ -142,6 +146,7 @@ export {
   EFFECTS,
   ensureSystemTypes,
   type FlowStarter,
+  type FlowWriter,
   fieldName,
   makeCaps,
   type Net,
@@ -153,7 +158,7 @@ export {
   typeName,
 } from "./tools.ts";
 export { refsOf } from "./trace.ts";
-export { manualInputs, runnableNames } from "./trigger.ts";
+export { manualInputs, newFlowId, originOf, runnableNames, triggerOk } from "./trigger.ts";
 export {
   codeLabel,
   deepLabel,
