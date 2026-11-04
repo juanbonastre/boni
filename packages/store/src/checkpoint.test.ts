@@ -89,13 +89,26 @@ describe("checkpoints of the WAL from a thread of their own (task 43)", () => {
       log: (l) => lines.push(l),
     });
     cleanups.push(() => cp.stop());
-    // Moved by the worker: our own passive checkpoint then finds every frame already in the database.
-    await new Promise((r) => setTimeout(r, 600));
-    const after = frames(path);
-    expect(after.moved).toBe(after.frames);
-    expect(after.frames).toBeGreaterThan(1000);
+    const until = async (ok: () => boolean, ms = 15_000) => {
+      const t0 = Date.now();
+      while (!ok()) {
+        if (Date.now() - t0 > ms) return false;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return true;
+    };
     // Many frames: said in the log, as the worker's own line (a database that is not there is not).
-    expect(lines.some((l) => /^wal checkpoint: user\.db \d+ of \d+ frames/.test(l))).toBe(true);
+    expect(
+      await until(() => lines.some((l) => /^wal checkpoint: user\.db \d+ of \d+ frames/.test(l))),
+    ).toBe(true);
+    // Moved by the worker: our own passive checkpoint then finds every frame already in the database (-1 while
+    // the worker holds the checkpoint lock that very moment: asked again).
+    expect(
+      await until(() => {
+        const f = frames(path);
+        return f.frames > 1000 && f.moved === f.frames;
+      }),
+    ).toBe(true);
     expect(lines.some((l) => /failed/.test(l))).toBe(false);
     await cp.stop();
   });
