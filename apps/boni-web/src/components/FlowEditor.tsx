@@ -241,7 +241,10 @@ function nodesOf(
         position: at(s.id),
         data: {
           step: s,
-          name: stepName(t, s, catalog),
+          name:
+            s.op === "call" && !catalog
+              ? (detail.nodes.find((n) => n.id === s.id)?.title ?? stepName(t, s, catalog))
+              : stepName(t, s, catalog),
           detail: s.op === "call" ? collection(s) : null,
           ran: ran.get(s.id) ?? {},
           bad: bad.has(s.id),
