@@ -63,7 +63,10 @@ with the same click fixed twice, was «todo un poco liado»):
    all 2,805 of his every second). On his screen, capture only the app window and delete the captures afterwards. Say what you verified and
    what you could not. Nothing that does not run in CI counts as tested: a test outside CI rots (the calendar
    desktop's peek test did, 2026-10-23 to 2026-11-03); an unstable test is quarantined with its task, never rerun
-   and forgotten.
+   and forgotten. **Before a PR that touches `apps/boni-web`, run the whole `make e2e-boni` here, not only the
+   specs you touched**, and read `e2e-boni-desktop/desktop.spec.ts` for what it clicks (it runs on CI's virtual
+   screen; here it opens windows): on 2026-11-04 four CI rounds were lost to tests not updated after a rename and a
+   move, and the desktop suite runs in series, so one failure drags the twelve after it.
 
 ## Hard rules
 
