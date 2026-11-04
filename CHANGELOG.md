@@ -5,6 +5,28 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-04 (twenty-sixth) — server 0.8.101 · Boni desktop 0.4.70 · Boni Calendar desktop 0.8.23
+
+Needs: the server (0.8.101, to deploy), Boni desktop 0.4.70 (`release/boni_0.4.70_amd64.deb`, to install) and
+Boni Calendar desktop 0.8.23 (`release/boni-calendar-desktop_0.8.23_amd64.deb`, to install); the Android apps
+from the CI (Obtainium). From what Juan saw trying the 0.8.22 and the Bandeja: tasks 57, 58 and 60.
+
+- **A new event moved to another calendar is no longer lost.** Made, titled and moved from the default calendar to
+  another at once, it was gone when Boni Calendar opened again (and once made twice): the app sends a move as a
+  removal plus the row in the new calendar, and the server trashed the record before moving it. The server now
+  takes one change per record of a batch, the last: a move is one change of collection, a new row is made once, in
+  the calendar it went to. Server only. (#314, task 57)
+- **The inbox asks «¿Es «Quedada cafe, 16:00–17:00»?».** A proposal at the same moment as an entry whose title is
+  not alike names it as the one it may be, with a button «Es el mismo» before «Aceptar»: no new record, that one
+  takes what the proposal adds and it lacked (a person, an end time, a note; its title and day stay), undone whole
+  with «Deshacer»; of an external calendar's event, the record is made linked to it. Before, the card only said
+  «Se solapa con…» and offered Aceptar or Rechazar. Boni desktop and the server. (#316, task 58)
+- **External calendars (Google) are downloaded anew sooner.** At start, every ten minutes while the app is open and
+  when its window comes back after five minutes away (the desktop window hides in the tray, so closing and opening
+  it started nothing); «Actualizar» in a calendar's context menu, with the state of its copy; the server logs each
+  download. Google's own iCal address is served from Google's cache, often hours behind: that part is not ours.
+  Boni Calendar desktop and the server. (#315, task 60)
+
 ## 2026-11-04 (twenty-fifth) — Boni Calendar desktop 0.8.22
 
 Needs: Boni Calendar desktop 0.8.22 (`release/boni-calendar-desktop_0.8.22_amd64.deb`, to install) and the
