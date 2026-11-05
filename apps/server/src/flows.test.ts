@@ -347,6 +347,27 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
       ]),
     );
     expect(refsOfN).not.toContain("$n");
+    // What each step gives, for its panel's «Sale» (task 70): the mail a record, the reading its lists, a step in a
+    // loop a list of what one round makes.
+    expect(ok.outs.m?.[0]).toEqual({ ref: "$m", t: "record" });
+    expect(ok.outs.r).toEqual(expect.arrayContaining([{ ref: "$r.tasks", t: "list" }]));
+    expect(ok.outs.n?.[0]).toEqual({ ref: "$n", t: "list" });
+    const told = checkFlow(
+      store,
+      registry,
+      {
+        trigger: { manual: true },
+        plan: {
+          version: 1,
+          steps: [
+            { id: "a", op: "call", tool: "notify", args: { text: { lit: "hola" } } },
+            { id: "b", op: "reply", component: "text", data: { template: { lit: "hecho" } } },
+          ],
+        },
+      },
+      o,
+    );
+    expect(told.outs).toEqual({ a: [{ ref: "$a", t: "bool" }], b: [] });
     // Broken on purpose: a step that does not exist yet, a missing argument, a closed collection, a tool its origin
     // may not use (no flow saved from work of its own), and no steps at all.
     const broken = structuredClone(mailFlow) as typeof mailFlow & {

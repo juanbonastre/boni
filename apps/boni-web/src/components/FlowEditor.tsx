@@ -51,8 +51,10 @@ import type {
 import {
   addStep,
   depsOf,
+  duplicateStep,
   type NodeKind,
   newStep,
+  planUpTo,
   removeStep,
   slotsOf,
   takeValue,
@@ -60,7 +62,7 @@ import {
 import { flowLayout } from "../core/flowLayout.ts";
 import { agentApi, errorText, runFlowInChat, toast, useStore } from "../store.ts";
 import { FlowStepPanel, problemText, stepName } from "./FlowStepPanel.tsx";
-import { MenuRow, MenuSep, PopButton } from "./Popover.tsx";
+import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
 const WIDTH = 200;
 const TRIGGER = "trigger";
@@ -126,19 +128,27 @@ type StepCard = Node<
 type TriggerCard = Node<{ text: string; inputs: string[]; bad: boolean; on: boolean }, "trigger">;
 type Card = StepCard | TriggerCard;
 
+/** What a test says a step would have done, in words: «Propondría: Crear en Docencia «…»». */
+function wouldText(t: T, w: TestStepView["would"][number]): string {
+  const what = [
+    w.title,
+    w.type ? t("flows.test.in", { type: w.type }) : null,
+    w.text ? `«${w.text}»` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return t(`flows.test.would.${w.decision}`, { what });
+}
+
+/** A step's lines in a test, for its panel's «Sale»: each thing it would do, or the one line of the canvas. */
+export function testLines(t: T, x: TestStepView): string[] {
+  return x.would.length ? x.would.slice(0, 20).map((w) => wouldText(t, w)) : [testLine(t, x)];
+}
+
 /** A step's line in a test: what it would do, what it gave, or why it did not run. */
 export function testLine(t: T, x: TestStepView): string {
   const w = x.would[0];
-  if (w) {
-    const what = [
-      w.title,
-      w.type ? t("flows.test.in", { type: w.type }) : null,
-      w.text ? `«${w.text}»` : null,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return t(`flows.test.would.${w.decision}`, { what });
-  }
+  if (w) return wouldText(t, w);
   if (x.decision === "skip") return t("flows.test.skipped");
   if (x.decision === "deny" || x.decision === "stopped")
     return t("flows.test.stopped", { why: x.rule ?? x.error ?? "" });
@@ -307,44 +317,117 @@ function nodesOf(
   return { nodes, edges };
 }
 
-/** The node kinds the «Añadir paso» menu offers, in groups: what reads, what decides, the data, the rest. */
+/**
+ * The node kinds «Añadir paso» offers, in groups by what they do (docs/flujos.md §4.5; task 70): Leer, Decidir,
+ * Datos, Avisar, Preguntar, Responder, and the rest.
+ */
 function kindsOf(
   catalog: FlowCatalog,
 ): { group: string; items: { kind: NodeKind; name: string }[] }[] {
   const reads = Object.keys(catalog.readers).filter(
     (r) => r !== "classify" && r !== "review_reading",
   );
-  return [
+  // A flow neither starts another nor saves one (docs/flujos.md §4.3): `flows.run` and `flows.save` are not offered.
+  const tools = catalog.tools.filter((x) => x.effect !== "flow" && x.effect !== "flow_save");
+  const isData = (x: { name: string; effect: string }) =>
+    x.name.startsWith("entities.") || x.name.startsWith("schema.") || x.effect === "memory";
+  const isNotice = (x: { effect: string }) => x.effect === "notify";
+  const call = (x: { name: string }) => ({
+    kind: { op: "call", tool: x.name } as NodeKind,
+    name: x.name,
+  });
+  const groups: { group: string; items: { kind: NodeKind; name: string }[] }[] = [
     { group: "read", items: reads.map((r) => ({ kind: { op: "read", reader: r }, name: r })) },
     { group: "decide", items: [{ kind: { op: "read", reader: "classify" }, name: "classify" }] },
+    { group: "data", items: tools.filter(isData).map(call) },
+    { group: "notify", items: tools.filter(isNotice).map(call) },
     {
-      group: "data",
-      items: catalog.tools
-        .filter((x) => x.name.startsWith("entities.") || x.name === "schema.describe")
-        .map((x) => ({ kind: { op: "call", tool: x.name }, name: x.name })),
+      group: "ask",
+      items: catalog.asks.map((c) => ({
+        kind: { op: "ask", control: c } as NodeKind,
+        name: `ask.${c}`,
+      })),
     },
     {
-      group: "other",
-      items: [
-        ...catalog.tools
-          .filter(
-            (x) =>
-              !x.name.startsWith("entities.") &&
-              x.name !== "schema.describe" &&
-              x.effect !== "flow",
-          )
-          .map((x) => ({ kind: { op: "call", tool: x.name } as NodeKind, name: x.name })),
-        ...catalog.asks.map((c) => ({
-          kind: { op: "ask", control: c } as NodeKind,
-          name: `ask.${c}`,
-        })),
-        ...Object.keys(catalog.replies).map((c) => ({
-          kind: { op: "reply", component: c } as NodeKind,
-          name: `reply.${c}`,
-        })),
-      ],
+      group: "reply",
+      items: Object.keys(catalog.replies).map((c) => ({
+        kind: { op: "reply", component: c } as NodeKind,
+        name: `reply.${c}`,
+      })),
     },
+    { group: "other", items: tools.filter((x) => !isData(x) && !isNotice(x)).map(call) },
   ];
+  return groups.filter((g) => g.items.length > 0);
+}
+
+/** Text as a search compares it: lower case, without accents. */
+const fold = (s: string) =>
+  s
+    .toLocaleLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+/**
+ * «Añadir paso» (task 70; Juan, 2026-11-05: «no veo ninguna opción de avisar… falta darle control al usuario»): a
+ * search over every kind of step, by its name or its group's, and the kinds in their groups; Enter takes the first.
+ */
+function StepPicker({ catalog, onPick }: { catalog: FlowCatalog; onPick: (k: NodeKind) => void }) {
+  const t = useStore((s) => s.t);
+  const [q, setQ] = useState("");
+  const search = useRef<HTMLInputElement>(null);
+  // Once its box is placed and shown: a box still hidden takes no focus.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => search.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const groups = useMemo(() => kindsOf(catalog), [catalog]);
+  const want = fold(q.trim());
+  const shown = groups
+    .map((g) => ({
+      ...g,
+      items: g.items.filter(
+        (it) =>
+          !want ||
+          fold(
+            `${kindName(t, it.kind, catalog)} ${t(`flows.group.${g.group}`)} ${it.name}`,
+          ).includes(want),
+      ),
+    }))
+    .filter((g) => g.items.length > 0);
+  return (
+    <div className="flow-kinds">
+      <input
+        ref={search}
+        className="input flow-kind-search"
+        value={q}
+        placeholder={t("flows.findStep")}
+        aria-label={t("flows.findStep")}
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => {
+          const first = want ? shown[0]?.items[0] : undefined;
+          if (e.key === "Enter" && first) {
+            e.preventDefault();
+            onPick(first.kind);
+          }
+        }}
+      />
+      <div className="flow-kind-list">
+        {shown.map((g) => (
+          <div key={g.group} className="flow-kind-group">
+            <p className="menu-head">{t(`flows.group.${g.group}`)}</p>
+            {g.items.map((it) => (
+              <MenuRow
+                key={it.name}
+                label={kindName(t, it.kind, catalog)}
+                onClick={() => onPick(it.kind)}
+              />
+            ))}
+          </div>
+        ))}
+        {shown.length === 0 && <p className="muted small flow-kind-none">{t("flows.noStep")}</p>}
+      </div>
+    </div>
+  );
 }
 
 function kindName(t: T, k: NodeKind, catalog: FlowCatalog): string {
@@ -363,6 +446,10 @@ function Canvas({
   onSelect,
   onPlan,
   onLayout,
+  onDuplicate,
+  onRemove,
+  onTestUpTo,
+  canTestUpTo,
 }: {
   draft: Draft;
   detail: FlowDetailView;
@@ -373,8 +460,15 @@ function Canvas({
   onSelect: (id: string | null) => void;
   onPlan: (p: FlowPlan) => void;
   onLayout: (l: Record<string, { x: number; y: number }> | null) => void;
+  onDuplicate: (id: string) => void;
+  onRemove: (id: string) => void;
+  onTestUpTo: (id: string) => void;
+  /** Whether the flow can be tried as far as that step now (no test running, no problem up to it). */
+  canTestUpTo: (id: string) => boolean;
 }) {
   const t = useStore((s) => s.t);
+  // The right button on a node: its actions where the pointer is (task 70); «Abrir» opens its panel.
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Card>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView } = useReactFlow();
@@ -405,6 +499,10 @@ function Canvas({
         onEdgesChange={onEdgesChange}
         onNodeDragStop={keepPositions}
         onNodeClick={(_, n) => onSelect(n.id)}
+        onNodeContextMenu={(e, n) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY, id: n.id });
+        }}
         onPaneClick={() => onSelect(null)}
         onConnect={(c: Connection) => {
           if (!c.source || !c.target || c.source === TRIGGER || c.source === c.target) return;
@@ -436,6 +534,49 @@ function Canvas({
         <LayoutGrid size={14} strokeWidth={1.8} aria-hidden />
         {t("data.arrange")}
       </button>
+      {menu && (
+        <PointMenu x={menu.x} y={menu.y} label={t("flows.nodeMenu")} onClose={() => setMenu(null)}>
+          {(close) => (
+            <>
+              <MenuRow
+                label={t("flows.open")}
+                onClick={() => {
+                  onSelect(menu.id);
+                  close();
+                }}
+              />
+              {menu.id !== TRIGGER && (
+                <>
+                  <MenuRow
+                    label={t("flows.duplicateStep")}
+                    onClick={() => {
+                      onDuplicate(menu.id);
+                      close();
+                    }}
+                  />
+                  <MenuRow
+                    label={t("flows.testUpTo")}
+                    disabled={!canTestUpTo(menu.id)}
+                    onClick={() => {
+                      onTestUpTo(menu.id);
+                      close();
+                    }}
+                  />
+                  <MenuSep />
+                  <MenuRow
+                    danger
+                    label={t("flows.remove")}
+                    onClick={() => {
+                      onRemove(menu.id);
+                      close();
+                    }}
+                  />
+                </>
+              )}
+            </>
+          )}
+        </PointMenu>
+      )}
       {linking && target && catalog && (
         <div className="flow-link-menu" role="menu" aria-label={t("flows.useIn")}>
           <p className="flow-link-title">
@@ -709,10 +850,15 @@ export function FlowEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [running, setRunning] = useState<{ values: Record<string, string>; test: boolean } | null>(
-    null,
-  );
+  const [running, setRunning] = useState<{
+    values: Record<string, string>;
+    test: boolean;
+    /** «Probar hasta aquí»: the step the test stops at. */
+    upTo?: string | null;
+  } | null>(null);
   const [test, setTest] = useState<FlowTestView | null>(null);
+  // The step a test went as far as («Probar hasta aquí», task 70), or null for the whole flow.
+  const [testUpTo, setTestUpTo] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   // A new version from the server (saved, switched, gone back): the draft starts from it.
   const shown = useRef(detail);
@@ -740,17 +886,19 @@ export function FlowEditor({
   }, [draft.trigger, draft.plan]);
   const problems = check?.problems ?? [];
   // «Probar» (F3): the draft as it is, dry, with the latest mail or the form's values; its result on the canvas.
-  const tryIt = async (inputs?: Record<string, string>) => {
+  // As far as a step («Probar hasta aquí»): that step and the ones before it, nothing after.
+  const tryIt = async (inputs?: Record<string, string>, upTo: string | null = null) => {
     setTesting(true);
     setError(null);
     try {
       setTest(
         await agentApi.testFlow(detail.id, {
-          plan: draft.plan,
+          plan: upTo ? planUpTo(draft.plan, upTo) : draft.plan,
           trigger: draft.trigger,
           ...(inputs ? { inputs } : {}),
         }),
       );
+      setTestUpTo(upTo);
     } catch (e) {
       setError(errorText(t, e));
     } finally {
@@ -790,8 +938,37 @@ export function FlowEditor({
     setPlan(addStep(draft.plan, step, after));
     setSelected(step.id);
   };
+  // The right button's «Duplicar»: the copy right after it, chosen.
+  const duplicate = (id: string) => {
+    const r = duplicateStep(draft.plan, id);
+    const copy = r.id;
+    if (!copy) return;
+    // Where the user left the original, the copy a little below and to the right of it.
+    setDraft((d) => {
+      const at = d.layout?.[id];
+      return {
+        ...d,
+        plan: r.plan,
+        layout: at && d.layout ? { ...d.layout, [copy]: { x: at.x + 32, y: at.y + 32 } } : d.layout,
+      };
+    });
+    setSelected(copy);
+  };
+  // As far as a step: not while a test or a change runs, nor with a problem in it, before it or in the trigger.
+  const canTestUpTo = (id: string) => {
+    if (testing || busy) return false;
+    const upTo = new Set(planUpTo(draft.plan, id).steps.map((s) => s.id));
+    return !problems.some((p) => p.step === null || upTo.has(p.step));
+  };
   const step = draft.plan.steps.find((s) => s.id === selected);
   const manual = !!draft.trigger.manual;
+  // A test of the flow, or as far as a step: a flow with a form asks for its values first.
+  const startTest = (upTo: string | null) => {
+    const names = formNames(draft.trigger);
+    if (manual && names.length)
+      setRunning({ values: Object.fromEntries(names.map((n) => [n, ""])), test: true, upTo });
+    else void tryIt(undefined, upTo);
+  };
   // By hand: a flow with a form, or a scheduled one now; not one a record starts.
   const runnable = manual || !!draft.trigger.schedule;
   const when = (ms: number) =>
@@ -801,7 +978,6 @@ export function FlowEditor({
       hour: "2-digit",
       minute: "2-digit",
     }).format(ms);
-  const kinds = useMemo(() => (catalog ? kindsOf(catalog) : []), [catalog]);
   return (
     <section className="flow-detail flow-editor">
       <div className="flow-toolbar">
@@ -836,23 +1012,13 @@ export function FlowEditor({
             width={260}
           >
             {(close) => (
-              <div className="flow-kinds">
-                {kinds.map((g) => (
-                  <div key={g.group} className="flow-kind-group">
-                    <p className="menu-head">{t(`flows.group.${g.group}`)}</p>
-                    {g.items.map((it) => (
-                      <MenuRow
-                        key={it.name}
-                        label={kindName(t, it.kind, catalog)}
-                        onClick={() => {
-                          add(it.kind);
-                          close();
-                        }}
-                      />
-                    ))}
-                  </div>
-                ))}
-              </div>
+              <StepPicker
+                catalog={catalog}
+                onPick={(kind) => {
+                  add(kind);
+                  close();
+                }}
+              />
             )}
           </PopButton>
         )}
@@ -861,12 +1027,7 @@ export function FlowEditor({
           className={`btn small${testing ? " busy" : ""}`}
           disabled={busy || testing || problems.length > 0 || !draft.plan.steps.length}
           aria-busy={testing}
-          onClick={() => {
-            const names = formNames(draft.trigger);
-            if (manual && names.length)
-              setRunning({ values: Object.fromEntries(names.map((n) => [n, ""])), test: true });
-            else void tryIt();
-          }}
+          onClick={() => startTest(null)}
         >
           <FlaskConical size={14} strokeWidth={1.8} aria-hidden />
           {testing ? t("flows.testing") : t("flows.test")}
@@ -1002,9 +1163,9 @@ export function FlowEditor({
           className="flow-run-form"
           onSubmit={(e) => {
             e.preventDefault();
-            const { values, test: dry } = running;
+            const { values, test: dry, upTo } = running;
             setRunning(null);
-            if (dry) void tryIt(values);
+            if (dry) void tryIt(values, upTo ?? null);
             else void runFlowInChat(detail.id, detail.name, values);
           }}
         >
@@ -1037,6 +1198,15 @@ export function FlowEditor({
               ? t("flows.test.with", { subject: test.sample.subject })
               : t("flows.test.title")}
             {" · "}
+            {testUpTo && draft.plan.steps.some((s) => s.id === testUpTo)
+              ? `${t("flows.test.upTo", {
+                  name: stepName(
+                    t,
+                    draft.plan.steps.find((s) => s.id === testUpTo) as FlowStep,
+                    catalog,
+                  ),
+                })} · `
+              : ""}
             {test.status === "done"
               ? t("flows.test.ok")
               : test.error === "dry-ask"
@@ -1067,6 +1237,13 @@ export function FlowEditor({
             onSelect={setSelected}
             onPlan={setPlan}
             onLayout={(layout) => setDraft((d) => ({ ...d, layout }))}
+            onDuplicate={duplicate}
+            onRemove={(id) => {
+              setPlan(removeStep(draft.plan, id));
+              setSelected(null);
+            }}
+            onTestUpTo={startTest}
+            canTestUpTo={canTestUpTo}
           />
         </ReactFlowProvider>
         {selected === TRIGGER && (
@@ -1083,6 +1260,14 @@ export function FlowEditor({
             plan={draft.plan}
             catalog={catalog}
             refs={check?.refs[step.id] ?? []}
+            outs={check?.outs[step.id] ?? []}
+            tried={
+              test
+                ? test.steps[step.id]
+                  ? testLines(t, test.steps[step.id] as TestStepView)
+                  : []
+                : null
+            }
             problems={problems.filter((p) => p.step === step.id)}
             onPlan={setPlan}
             onRemove={() => {

@@ -783,7 +783,11 @@ contraseña ni un código aquí» under a question.
   «Modelos». Two tabs in a segmented control: **Flujos** (this) and **Modelos** (task 59b, below).
 - **The flow editor** (F2, `docs/flujos.md` §4.5; n8n's canvas and node panel and Dify's checklist as references):
   the chosen flow opens in it, under «Nuevo flujo» and the rows. A toolbar: the name (edited in place), the
-  «Encendido» switch, «Añadir paso» (a menu in groups, Leer, Decidir, Datos, Otros, each node named in a word),
+  «Encendido» switch, «Añadir paso» (task 70: a search on top, «Buscar paso», which takes the keys at once and finds
+  a kind by its name, its group's or its tool's, Enter taking the first once something is typed, «Ningún paso se
+  llama así» when none; under it the kinds in groups by what they do, Leer, Decidir, Datos, Avisar, Preguntar,
+  Responder and Otros, a group with nothing to offer left out, each node named in a word; never a step that runs or
+  saves a flow),
   «Ejecutar» on a flow by hand (its form first when it asks for something; it runs as a turn of a new conversation,
   where its replies, questions and confirmations show as always), then «Descartar» and «Guardar» (primary, enabled
   only with changes and an empty checklist) and «⋯» (the versions, each «vN · Tú/Boni · date», a click goes back to
@@ -791,14 +795,24 @@ contraseña ni un código aquí» under a question.
   click to confirm). Under it the checklist, in a `--bad`-tinted box, one line per problem («Crear: Colección:
   falta»), a click selects the step. The canvas: a node can be dragged (where it is left is saved with the version;
   «Ordenar» lays it out again), an arrow drawn from one node to another asks where the second uses the first's value
-  (a small menu of its settings) and moves it after the first when it ran before, Supr removes the selected node, a
-  click opens its panel on the right (340 px): its name, id and «Quitar»; its problems in `--bad`; what it is (the
+  (a small menu of its settings) and moves it after the first when it ran before, Supr removes the selected node, the
+  right button on a node opens its actions where the pointer is, without opening its panel (task 70: Abrir, its
+  panel; Duplicar, a copy right after it under an id of its own, a little below and right of it; Probar hasta aquí,
+  the flow tried as far as it and the test bar saying «hasta «…»», greyed while a test runs or with a problem up to
+  it; and Quitar; the trigger has only Abrir), a click opens its panel on the right (340 px): its name, id and
+  «Quitar»; its
+  problems in `--bad`; **«Entra»** (task 70: each value it takes, `$m.asunto`, with what it is, «texto», «lista»,
+  «registro», muted on the right; «Nada de antes» without any); what it is (the
   tool, the reader, the question, the reply) and its settings from the catalog's schema: a collection as a list of
   the collections (changing it, the record's fields follow their roles and the collection's inputs, `$fill.<key>`,
   its key), a record's values as rows of field and value (the parts it is merged with as chips), any other as a
   value field: a kind (Texto, Número, Sí o no, Valor de, Función, Nada) and its input; «Valor de» offers the values
   that step may take (the server computes them: the trigger's, the earlier steps', `$item` in a loop). Then «Solo
-  si», «Para cada» and «Junto con». The trigger's panel: «Nuevo correo» with what it binds, «A mano» with the
+  si», «Para cada» and «Junto con»; under a line, **«Sale»** (what it gives the steps after it, itself and its
+  fields, as «Entra» shows them: the server computes them with the values a step may take; a reply gives «Nada»),
+  and after a test «En la
+  prueba» (what it gave or would do, the node's lines in full; «No llegó a este paso» when the test stopped
+  before). The trigger's panel: «Nuevo correo» with what it binds, «A mano» with the
   names its form asks for, or **«Programado»** (F4): «Cuándo» (Cada día, Cada semana with its «Día», Cada hora) and
   «A las» as two lists, the hour and the minutes every five (never a time field: it shows AM/PM in an English
   browser), or «Minuto» every hour; the node says it in words («Cada día a las 08:00», «Cada lunes a las 07:30»,

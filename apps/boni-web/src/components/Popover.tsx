@@ -196,12 +196,15 @@ export function MenuRow({
   on,
   danger,
   icon,
+  disabled,
   onClick,
 }: {
   label: string;
   on?: boolean;
   danger?: boolean;
   icon?: ReactNode;
+  /** Not usable now (a flow's «Probar hasta aquí» while a test runs, say): shown greyed. */
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -210,6 +213,7 @@ export function MenuRow({
       role="menuitemradio"
       aria-checked={Boolean(on)}
       className={`menu-item${on ? " on" : ""}${danger ? " danger" : ""}`}
+      disabled={disabled}
       onClick={onClick}
     >
       {icon && <span className="menu-icon">{icon}</span>}

@@ -70,6 +70,37 @@ export function addStep(plan: FlowPlan, step: FlowStep, after?: string | null): 
   return { ...plan, steps };
 }
 
+/**
+ * The plan with a copy of that step right after it, under an id of its own, and that id (what took the original's
+ * value keeps it; task 70, the node's menu).
+ */
+export function duplicateStep(plan: FlowPlan, id: string): { plan: FlowPlan; id: string | null } {
+  const step = plan.steps.find((s) => s.id === id);
+  if (!step) return { plan, id: null };
+  const copy = { ...(JSON.parse(JSON.stringify(step)) as FlowStep), id: newStepId(plan, step.id) };
+  return { plan: addStep(plan, copy, id), id: copy.id };
+}
+
+/** The plan as far as that step, it included («Probar hasta aquí»: what comes after it is not run). */
+export function planUpTo(plan: FlowPlan, id: string): FlowPlan {
+  const i = plan.steps.findIndex((s) => s.id === id);
+  return i < 0 ? plan : { ...plan, steps: plan.steps.slice(0, i + 1) };
+}
+
+/** The references a step reads (`$m.asunto`, `$r.tasks`), each once, as they appear (its panel's «Entra»). */
+export function refsUsed(step: FlowStep): string[] {
+  const out: string[] = [];
+  const scan = (v: unknown): void => {
+    if (Array.isArray(v)) for (const x of v) scan(x);
+    else if (isObj(v)) {
+      if (typeof v.ref === "string" && !out.includes(v.ref)) out.push(v.ref);
+      for (const x of Object.values(v)) scan(x);
+    }
+  };
+  scan(step);
+  return out;
+}
+
 /** The plan without that step (what took its value is said by the checklist). */
 export function removeStep(plan: FlowPlan, id: string): FlowPlan {
   return { ...plan, steps: plan.steps.filter((s) => s.id !== id) };

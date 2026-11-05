@@ -419,6 +419,100 @@ test("«Flujos»: the editor draws a flow and changes it: a step's collection, s
     .toBeGreaterThan(1);
 });
 
+test("the editor gives control (task 70): «Añadir paso» with a search and groups, a node's right button, «Entra» and «Sale», tried up to a step", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS],
+      "GET api/agent/flows/:id": [FLOW_DETAIL],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+      "POST api/agent/flows/:id/test": [FLOW_TEST],
+    },
+    // A test takes a moment: «Probar hasta aquí» waits greyed while one runs.
+    slow: { path: "api/agent/flows/leer-correo/test", ms: 1500 },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  const nodes = canvas.locator(".fl-node");
+  await expect(nodes).toHaveCount(5);
+  const panel = page.locator(".flow-step-panel");
+  // «Añadir paso»: the kinds in groups by what they do, and a search that takes the keys at once («avis»: Avisar).
+  await page.getByRole("button", { name: "Añadir paso" }).click();
+  const add = page.getByRole("dialog", { name: "Añadir paso" });
+  await expect(add.locator(".menu-head")).toHaveText([
+    "Leer",
+    "Decidir",
+    "Datos",
+    "Avisar",
+    "Preguntar",
+    "Responder",
+  ]);
+  await expect(add.getByRole("textbox", { name: "Buscar paso" })).toBeFocused();
+  await page.keyboard.type("avis", { delay: 15 });
+  await expect(add.getByRole("menuitemradio")).toHaveText(["Avisar"]);
+  await page.screenshot({ path: `${SHOTS}/flow-add-step.png` });
+  await page.keyboard.press("Enter");
+  await expect(panel.locator("h3")).toHaveText("Avisar");
+  await expect(nodes).toHaveCount(6);
+  // The right button on a node: its actions where the pointer is. «Duplicar»: a copy right after it, chosen.
+  const reader = canvas.locator('.react-flow__node[data-id="r"]');
+  await reader.click({ button: "right" });
+  const menu = page.getByRole("dialog", { name: "Acciones del paso" });
+  await expect(menu.getByRole("menuitemradio")).toHaveText([
+    "Abrir",
+    "Duplicar",
+    "Probar hasta aquí",
+    "Quitar",
+  ]);
+  await page.screenshot({ path: `${SHOTS}/flow-node-menu.png` });
+  await menu.getByRole("menuitemradio", { name: "Duplicar" }).click();
+  await expect(nodes).toHaveCount(7);
+  await expect(panel.locator(".flow-step-id")).toHaveText("r_2");
+  await canvas.locator('.react-flow__node[data-id="r_2"]').click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Quitar" }).click();
+  await expect(nodes).toHaveCount(6);
+  // The right button opens nothing by itself: «Abrir» opens its panel. The trigger's menu only opens it.
+  await expect(panel).toHaveCount(0);
+  await canvas.locator('.react-flow__node[data-id="trigger"]').click({ button: "right" });
+  await expect(menu.getByRole("menuitemradio")).toHaveText(["Abrir"]);
+  await page.keyboard.press("Escape");
+  await reader.click({ button: "right" });
+  await expect(panel).toHaveCount(0);
+  await page.getByRole("menuitemradio", { name: "Abrir" }).click();
+  // Its panel: «Entra», what it takes and what each value is; «Sale», what it gives the steps after it.
+  await expect(panel.locator("h3")).toHaveText("Lectora");
+  const entra = panel.getByRole("region", { name: "Entra" });
+  await expect(entra.locator("li").first()).toHaveText(/^\$text\s*texto$/);
+  await expect(entra.locator("li")).toHaveCount(5);
+  await expect(panel.getByRole("region", { name: "Sale" }).locator("li")).toHaveText([
+    /^\$r\s*registro$/,
+    /^\$r\.all\s*lista$/,
+    /^\$r\.tasks\s*lista$/,
+    /^\$r\.events\s*lista$/,
+  ]);
+  // «Probar hasta aquí»: the flow as far as it, nothing after; its panel says what it gave.
+  await reader.click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Probar hasta aquí" }).click();
+  await reader.click({ button: "right" });
+  await expect(page.getByRole("menuitemradio", { name: "Probar hasta aquí" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".flow-test-bar")).toContainText("hasta «Lectora»");
+  const sent = await page.evaluate(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
+      b.startsWith("POST api/agent/flows/leer-correo/test"),
+    ),
+  );
+  const tried = JSON.parse((sent.at(-1) ?? "").replace(/^\S+ \S+ /, "")) as {
+    plan: { steps: { id: string }[] };
+  };
+  expect(tried.plan.steps.map((x) => x.id)).toEqual(["m", "r"]);
+  await expect(panel.getByRole("region", { name: "En la prueba" })).toHaveText(/2 elementos/);
+  await page.screenshot({ path: `${SHOTS}/flow-step-io.png` });
+});
+
 test("«Probar»: the draft run dry with the latest mail; each step says what it gave or would do; nothing written", async ({
   page,
 }) => {

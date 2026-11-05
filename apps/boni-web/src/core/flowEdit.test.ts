@@ -5,10 +5,13 @@ import {
   addStep,
   changeCollection,
   depsOf,
+  duplicateStep,
   exprText,
   moveAfter,
   newStep,
   newStepId,
+  planUpTo,
+  refsUsed,
   removeStep,
   setAt,
   slotsOf,
@@ -138,6 +141,31 @@ describe("the flow editor's changes (docs/flujos.md, F2)", () => {
       input: { lit: "" },
       params: {},
     });
+  });
+
+  it("a node's menu (task 70): duplicated right after it under an id of its own; tried as far as it; what it reads", () => {
+    const copy = duplicateStep(PLAN, "n0_tasks_f");
+    expect(copy.id).toBe("n0_tasks_f_2");
+    expect(copy.plan.steps.map((s) => s.id)).toEqual([
+      "r",
+      "n0_tasks_f",
+      "n0_tasks_f_2",
+      "n0_tasks",
+    ]);
+    const [orig, dup] = [copy.plan.steps[1], copy.plan.steps[2]];
+    expect({ ...dup, id: orig?.id }).toEqual(orig);
+    // A copy is its own: changing it leaves the original as it was.
+    const changed = setAt(copy.plan, "n0_tasks_f_2", ["when"], { lit: true });
+    expect(changed.steps[1]?.when).toBeUndefined();
+    expect(duplicateStep(PLAN, "nadie")).toEqual({ plan: PLAN, id: null });
+    expect(planUpTo(PLAN, "n0_tasks_f").steps.map((s) => s.id)).toEqual(["r", "n0_tasks_f"]);
+    expect(planUpTo(PLAN, "nadie")).toBe(PLAN);
+    const create = PLAN.steps.find((s) => s.id === "n0_tasks");
+    if (!create) throw new Error("no create step");
+    expect(refsUsed(create)).toEqual(
+      expect.arrayContaining(["$r.tasks", "$item.title", "$item.due", "$zip.note"]),
+    );
+    expect(new Set(refsUsed(create)).size).toBe(refsUsed(create).length);
   });
 
   it("sets and takes out an argument; an arrow uses one step's value in another, which then runs after it", () => {

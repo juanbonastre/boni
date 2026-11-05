@@ -1877,6 +1877,21 @@ export const FLOW_CHECK = {
       { ref: "$zip.note", t: "text" },
     ],
   },
+  // What each step gives (task 70: its panel's «Sale»).
+  outs: {
+    m: [
+      { ref: "$m", t: "record" },
+      { ref: "$m.asunto", t: "text" },
+    ],
+    r: [
+      { ref: "$r", t: "record" },
+      { ref: "$r.all", t: "list" },
+      { ref: "$r.tasks", t: "list" },
+      { ref: "$r.events", t: "list" },
+    ],
+    n0_tasks_f: [{ ref: "$n0_tasks_f", t: "list" }],
+    n0_tasks: [{ ref: "$n0_tasks", t: "list" }],
+  },
 };
 
 /** «Probar» on «Leer correo» (docs/flujos.md F3): what each step did with the latest mail, and what it would do. */

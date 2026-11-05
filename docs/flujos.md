@@ -216,12 +216,17 @@ intérprete lo para), y uno que necesitaría preguntar o confirmar se para ahí:
   disparador arriba; un nodo es una tarjeta con su icono, su nombre en una o dos palabras, lo esencial de sus ajustes
   («Lectora · con la guía», «Crear en Tarea») y, con una ejecución encima, su salida («3 elementos», «propuesta»).
   Una flecha por referencia. «+» en una flecha o al final añade un nodo del catálogo (buscador, grupos por lo que
-  hacen: Leer, Decidir, Datos, Preguntar, Responder, Funciones). Arrastrar mueve; las posiciones se guardan en
-  `layout`; «Ordenar» vuelve a colocar.
-- **El panel del nodo** (a la derecha, como Dify; tres partes como n8n): **Entra** (lo que llega de los nodos
-  anteriores, con su forma), **Ajustes** (el formulario del esquema, con el selector de valores), **Sale** (la forma
-  de su salida y, tras «Probar», la salida real). Nombres en una o dos palabras, nada de explicaciones en pantalla
-  (design-guide §5); lo que necesite explicarse va a esta nota.
+  hacen: Leer, Decidir, Datos, Avisar, Preguntar, Responder, Funciones y Otros; tarea 70: por ahora desde «Añadir
+  paso» de la barra, y «Funciones» llegará con las funciones de extensión de `extensiones.md` §11). Un flujo no
+  ofrece pasos que ejecuten o guarden flujos. El botón derecho en un nodo da sus acciones: Abrir, Duplicar, Probar
+  hasta aquí y Quitar (tarea 70). Arrastrar mueve; las posiciones se guardan en `layout`; «Ordenar» vuelve a
+  colocar.
+- **El panel del nodo** (a la derecha, como Dify; tres partes como n8n): **Entra** (los valores que toma de los
+  nodos anteriores, con su forma; todo lo que le llega lo ofrece el selector de cada ajuste), **Ajustes** (el
+  formulario del esquema, con el selector de valores), **Sale** (la forma de su salida, la misma que toman los
+  siguientes; una respuesta no da nada, y, tras «Probar», lo que salió en resumen: cuántos elementos, su título o
+  lo que haría; los valores mismos aún no, porque la prueba solo los resume). Nombres en una o dos palabras, nada de
+  explicaciones en pantalla (design-guide §5); lo que necesite explicarse va a esta nota.
 - **Guardar es una versión.** «Versiones» lista cada una con quién y cuándo; «Volver a esta» es un clic; un flujo de
   serie tiene «Volver al de Boni». Un flujo encendido no se cambia a medias: se edita el borrador y «Encender» valida.
 - **La lista de comprobación** (Dify): un nodo sin un argumento obligatorio, una referencia a un nodo que ya no
@@ -295,7 +300,7 @@ Una fase está «en main» cuando su PR está fusionado con el CI en verde, y «
 | Fase | Qué | Criterio de hecho |
 |---|---|---|
 | F1 Flujos como datos (en main el 2026-11-05, tarea 61; faltan dos puntos que encontró la auditoría: «Flujos» como colección de sistema y el lienzo general calculado de los flujos, tarea 63) | La colección de sistema «Flujos»; el flujo de serie «Leer correo» guardado y versionado, que `mail.ts` ejecuta en vez de construir el plan (las entradas vinculadas como hoy); el diario con flujo y versión; «Modelos» pasa a «Flujos»: la lista y el lienzo de cada flujo, de solo lectura; el lienzo general con los números se calcula de los flujos | El correo se lee igual que hoy (las pruebas de `mail.test.ts` sin cambios), y en «Flujos» se ve «Leer correo» con sus nodos y sus números |
-| F2 El editor (en main el 2026-11-05; faltan «Entra» y «Sale» en el panel, «+» en una flecha con buscador, y guardar un flujo incompleto como borrador, tarea 63) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
+| F2 El editor (en main el 2026-11-05; «Entra» y «Sale» en el panel, el buscador y los grupos de «Añadir paso» y el clic derecho en un nodo, tarea 70; faltan «+» en una flecha, guardar un flujo incompleto como borrador (tarea 63), los valores mismos de la salida tras «Probar» y el grupo «Funciones», que llega con las funciones de extensión) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
 | F3 Probar y ver (en main el 2026-11-05; falta elegir el correo con el que se prueba, tarea 63) | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
 | F4 Disparadores (en main el 2026-11-05; F4b quitó `jobs.create`, que guardaba trabajos que nada ejecutaba) | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
 | F5 Propuestas de la IA (en main el 2026-11-05) | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |
