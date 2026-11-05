@@ -663,19 +663,7 @@ export function RequestCard({ r }: { r: InboxRequest }) {
             {about.from ? ` · ${about.from}` : ""}
             {about.subject ? ` · ${about.subject}` : ""}
           </span>
-          {r.open && (
-            <span className="inbox-source-tools">
-              <button
-                type="button"
-                className="icon-btn inbox-see-mail"
-                title={t("inbox.seeMail")}
-                aria-label={t("inbox.seeMail")}
-                onClick={() => r.open && peekMail(r.open)}
-              >
-                <KeptMail />
-              </button>
-            </span>
-          )}
+          {r.open && <MailTools open={r.open} />}
         </p>
       )}
       {about?.kind === "review" && <p className="inbox-source muted">{t("inbox.fromReview")}</p>}
@@ -937,6 +925,47 @@ function FieldRows({
  * it whole), and, for a Gmail mailbox, Gmail's own address of that mail in its account (the server finds it). When the
  * proposal also comes from earlier mails of its thread, «+N correos» shows them, each to see the same way.
  */
+/**
+ * A mail's two icons at the end of its card's line (tasks 68 and 74), on a proposal's card and a question's: the mail
+ * kept in Boni, seen without leaving the Bandeja (the desktop's peek, else the side panel), and, from a Gmail mailbox,
+ * that very mail in Gmail. Never shrunk by a long sender.
+ */
+function MailTools({ open }: { open: { type: string; id: string } }) {
+  const t = useStore((s) => s.t);
+  const [gmail, setGmail] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void mailboxHost().then((h) => live && setGmail(!!h && webmailOf(h) === "gmail"));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <span className="inbox-source-tools">
+      <button
+        type="button"
+        className="icon-btn inbox-see-mail"
+        title={t("inbox.seeMail")}
+        aria-label={t("inbox.seeMail")}
+        onClick={() => peekMail(open)}
+      >
+        <KeptMail />
+      </button>
+      {gmail && (
+        <button
+          type="button"
+          className="icon-btn inbox-webmail"
+          title={t("inbox.inGmail")}
+          aria-label={t("inbox.inGmail")}
+          onClick={() => void openWebmail(open.id)}
+        >
+          <GmailMark />
+        </button>
+      )}
+    </span>
+  );
+}
+
 function MailSource({
   source,
   earlier,
@@ -946,15 +975,7 @@ function MailSource({
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
-  const [gmail, setGmail] = useState(false);
   const [showEarlier, setShowEarlier] = useState(false);
-  useEffect(() => {
-    let live = true;
-    void mailboxHost().then((h) => live && setGmail(!!h && webmailOf(h) === "gmail"));
-    return () => {
-      live = false;
-    };
-  }, []);
   const day = (at: string | null) => {
     const ms = at ? Date.parse(at) : Number.NaN;
     return Number.isFinite(ms)
@@ -984,30 +1005,7 @@ function MailSource({
               : t("inbox.earlier", { n: earlier.length })}
           </button>
         )}
-        <span className="inbox-source-tools">
-          {source.open && (
-            <button
-              type="button"
-              className="icon-btn inbox-see-mail"
-              title={t("inbox.seeMail")}
-              aria-label={t("inbox.seeMail")}
-              onClick={() => source.open && peekMail(source.open)}
-            >
-              <KeptMail />
-            </button>
-          )}
-          {gmail && source.open && (
-            <button
-              type="button"
-              className="icon-btn inbox-webmail"
-              title={t("inbox.inGmail")}
-              aria-label={t("inbox.inGmail")}
-              onClick={() => source.open && void openWebmail(source.open.id)}
-            >
-              <GmailMark />
-            </button>
-          )}
-        </span>
+        {source.open && <MailTools open={source.open} />}
       </p>
       {showEarlier && (
         <ul className="inbox-earlier">

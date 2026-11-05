@@ -630,7 +630,7 @@ contraseña ni un código aquí» under a question.
   confirmation, so nothing is accepted out of habit. **Questions from background work** (Juan, 2026-10-24, the panel of
   requests, option A) share the inbox's one queue, in the order things arrived; every card says what it is on a small
   muted line on top ("Pregunta · caduca en 7 días", "Propuesta"). A question card: the prompt as its title, where it
-  came from (the mailbox, the sender and the subject, outside text with its mark, and "Ver correo"), its options as
+  came from (the mailbox, the sender and the subject, outside text with its mark, and the mail's two icons), its options as
   pills or a line to type in with "Enviar", and a quiet "Descartar" (Boni does nothing more with it). The clicked
   answer turns into the same spinner as deciding a proposal; one that no longer waits (answered elsewhere, expired)
   says so on the card with "Quitar". The counts (top bar, sidebar, conversation) are proposals and questions together,
@@ -657,10 +657,13 @@ contraseña ni un código aquí» under a question.
   the inbox's own page (more room) a detailed card from mail is two columns: the mail (up to twelve lines) and the
   fields on the left, the three days on the right (titles on two lines); one column when the card is narrow. A
   changed note's text shows as reading text (headings, lists, to-dos), never raw Markdown. Accept and Reject on each
-  card (never "accept all"). A card from mail ends its source line with two icons that a long sender never hides (task
-  68; Juan, 2026-11-05): the mail kept in Boni (an envelope with a small data mark), which opens it in the side panel
-  without leaving the inbox (closing gives the inbox back; «Agrandar» there opens it whole), and, when the mailbox is
-  Google's, Gmail's envelope with a small ↗ («Abrir en Gmail»), which opens that very mail in its account (its Gmail
+  card (never "accept all"). A card from mail (a proposal's and a question's) ends its source line with two icons that
+  a long sender never hides (tasks 68 and 74; Juan, 2026-11-05), 28 px buttons with an 18 px drawing whose mark is part
+  of it at the same stroke, never a tiny badge (Juan: «el mini icono es demasiado pequeño para verlo, se ve raro»): the
+  mail kept in Boni (an envelope with an arrow down beside it), which opens it without leaving the inbox: in the
+  desktop app in the peek, its window of its own, as the conversation opens a mail (task 30); elsewhere in the side
+  panel (closing gives the inbox back as it was; «Agrandar» there opens it whole); and, when the mailbox is Google's,
+  Gmail's envelope in its colours with ↗ at its upper right («Abrir en Gmail»), which opens that very mail in its account (its Gmail
   thread, `authuser`; the server finds it, by IMAP's thread id for a new mail and once by its Message-ID for an older
   one; Gmail's search only when it is no longer in the folder). Their names are their tooltips. When the proposal also
   comes from earlier mails of its thread (a reply that moved it), «+1 correo» (accent text) unfolds them under the line,

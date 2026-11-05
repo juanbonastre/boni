@@ -1448,7 +1448,7 @@ export async function grown(l: Locator) {
 
 /**
  * A mail card's source line keeps its icons whole however long its sender (task 68, I-21): the sender ends before
- * them, cut with «…»; each icon 26 px, inside the line.
+ * them, cut with «…»; each icon 28 px (task 74), inside the line.
  */
 export async function iconsWhole(card: Locator) {
   const see = card.getByRole("button", { name: "Ver correo" });
@@ -1461,8 +1461,8 @@ export async function iconsWhole(card: Locator) {
   if (!text || !tools || !line) throw new Error("the card's source line is not on screen");
   expect(text.x + text.width).toBeLessThanOrEqual(tools.x + 0.5);
   expect(tools.x + tools.width).toBeLessThanOrEqual(line.x + line.width + 0.5);
-  expect(Math.round((await see.boundingBox())?.width ?? 0)).toBe(26);
-  expect(Math.round((await gmail.boundingBox())?.width ?? 0)).toBe(26);
+  expect(Math.round((await see.boundingBox())?.width ?? 0)).toBe(28);
+  expect(Math.round((await gmail.boundingBox())?.width ?? 0)).toBe(28);
   expect(
     await card
       .locator(".inbox-source-text")

@@ -1236,6 +1236,37 @@ test("a long sender never hides a mail card's icons (task 68, I-21): the sender 
     .screenshot({ path: `${SHOTS}/inbox-long-sender.png` });
 });
 
+test("in the desktop app a card's mail opens in its own window and the Bandeja stays as it was; a question's card has both icons too (task 74)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    mail: true,
+    peek: true,
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [CARD_MAIL] }],
+      "GET api/agent/requests": [REQUESTS],
+      "GET api/mail": [MAIL],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const inbox = page.locator(".inbox-panel");
+  const proposal = inbox.locator(".inbox-card:not(.request-card)").first();
+  await proposal.getByRole("button", { name: "Ver correo" }).click();
+  // The peek, as the conversation opens a mail (task 30): nothing over the Bandeja.
+  await expect.poll(async () => (await recorded(page)).calls).toContain("openPeek note:m1");
+  await expect(inbox).toBeVisible();
+  await expect(page.locator(".side-panel:not(.inbox-panel)")).toHaveCount(0);
+  // A question about a mail: its two icons, whole, the mail in the peek too.
+  const question = inbox.locator(".request-card").first();
+  await iconsWhole(question);
+  await question.getByRole("button", { name: "Ver correo" }).click();
+  await expect.poll(async () => (await recorded(page)).calls).toContain("openPeek note:e_correo1");
+  await inbox.screenshot({ path: `${SHOTS}/inbox-mail-icons-peek.png` });
+});
+
 test("Corregir: the proposal's other properties, folded under «Propiedades», sent by their key", async ({
   page,
 }) => {
