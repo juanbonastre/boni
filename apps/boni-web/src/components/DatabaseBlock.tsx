@@ -563,7 +563,8 @@ type OptionsPanel =
   | "system";
 
 /**
- * A view's «Opciones», as Notion's «⋯» of a view (Juan, 2026-11-03, task 41: «debería darme opciones»): a short list
+ * A view's settings (its icon; «Opciones» until task 69), as Notion's «⋯» of a view (Juan, 2026-11-03, task 41:
+ * «debería darme opciones»): the view's name, its layout, and a short list
  * saying what each is now, each with its panel (the properties shown, the filter, the order, the board's grouping
  * or the calendar's date and what else it shows, the table's system columns), and the collection's notes in the
  * sidebar. It opens on the list again.

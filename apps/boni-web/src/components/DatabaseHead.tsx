@@ -8,6 +8,7 @@ import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import type { DataType } from "../core/agent.ts";
 import { useStore } from "../store.ts";
+import { RenameInput } from "./CollectionTree.tsx";
 import { FilterEditor, filterText, opsFor } from "./DatabaseBlock.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
@@ -99,8 +100,9 @@ export interface ViewsControl {
 }
 
 /**
- * The views as tabs (Notion's): a click opens one; the right button or a double click its menu (rename in place,
- * duplicate, delete: never the last one); «+» chooses the new one's layout.
+ * The views as tabs (Notion's): a click opens one, a double click renames it in place (Enter or leaving keeps the
+ * name, Escape does not), the right button opens its menu (rename, duplicate, delete: never the last one); «+»
+ * chooses the new one's layout.
  */
 export function ViewTabs({ views, layouts }: { views: ViewsControl; layouts: Layouts }) {
   const t = useStore((s) => s.t);
@@ -111,24 +113,16 @@ export function ViewTabs({ views, layouts }: { views: ViewsControl; layouts: Lay
     <div className="db-views" role="tablist" aria-label={t("db.views")}>
       {views.list.map((v) =>
         renaming === v.id ? (
-          <input
-            key={v.id}
-            className="db-view-name"
-            // biome-ignore lint/a11y/noAutofocus: renaming in place, as Notion does
-            autoFocus
-            defaultValue={v.name}
-            aria-label={t("db.view.name")}
-            maxLength={60}
-            onFocus={(e) => e.currentTarget.select()}
-            onBlur={(e) => {
-              views.onRename(v.id, e.currentTarget.value);
-              setRenaming(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.currentTarget.blur();
-              if (e.key === "Escape") setRenaming(null);
-            }}
-          />
+          <span key={v.id} className="db-view-name">
+            <RenameInput
+              name={v.name}
+              label={t("db.view.name")}
+              onDone={(name) => {
+                if (name) views.onRename(v.id, name.slice(0, 60));
+                setRenaming(null);
+              }}
+            />
+          </span>
         ) : (
           <button
             key={v.id}

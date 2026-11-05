@@ -191,8 +191,12 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   const db = w.locator(".db");
   await expect(db.locator(".db-table tbody tr")).toHaveCount(2);
   await shot(w, "table");
-  // The calendar: the class today at its time.
-  await db.getByRole("radio", { name: "Calendario" }).click();
+  // The calendar: the class today at its time. A page's block keeps one view: its tab changes its layout (task 69).
+  await db.locator(".db-head").getByRole("button", { name: "Diseño", exact: true }).click();
+  await w
+    .getByRole("dialog", { name: "Diseño" })
+    .getByRole("radio", { name: "Calendario" })
+    .click();
   await expect(db.locator(".db-cal-day.today")).toContainText("10:00");
   await expect(db.locator(".db-cal-day.today")).toContainText("Clase de ejemplo");
   await shot(w, "calendar");

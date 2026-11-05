@@ -386,18 +386,40 @@ test("a collection's views as Notion's tabs (task 69): «+» by layout, renamed,
   await rename.fill("Por estado");
   await rename.press("Enter");
   await expect(tabs).toHaveText(["Tabla", "Por estado"]);
-  await head.getByRole("tab", { name: "Por estado" }).click({ button: "right" });
-  await page.getByRole("menuitemradio", { name: "Duplicar vista" }).click();
-  await expect(tabs).toHaveText(["Tabla", "Por estado", "Por estado (copia)"]);
-  await head.getByRole("tab", { name: "Por estado (copia)" }).click({ button: "right" });
-  await page.getByRole("menuitemradio", { name: "Eliminar vista" }).click();
+  // Escape keeps the name it had; the menu's «Cambiar nombre» renames it in place too.
+  await head.getByRole("tab", { name: "Por estado" }).dblclick();
+  await expect(rename).toBeFocused();
+  await page.keyboard.type("Otro nombre");
+  await page.keyboard.press("Escape");
   await expect(tabs).toHaveText(["Tabla", "Por estado"]);
-  await expect(head.getByRole("tab", { name: "Por estado" })).toHaveAttribute(
+  await head.getByRole("tab", { name: "Tabla" }).click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Cambiar nombre" }).click();
+  await expect(rename).toBeFocused();
+  await page.keyboard.type("Todos");
+  await page.keyboard.press("Enter");
+  await expect(tabs).toHaveText(["Todos", "Por estado"]);
+  // The view's settings: its name too.
+  await head.getByRole("tab", { name: "Por estado" }).click();
+  await head.getByRole("button", { name: "Ajustes de la vista" }).click();
+  const named = page
+    .getByRole("dialog", { name: "Ajustes de la vista" })
+    .getByRole("textbox", { name: "Nombre de la vista" });
+  await named.fill("Por lectura");
+  await named.press("Enter");
+  await page.keyboard.press("Escape");
+  await expect(tabs).toHaveText(["Todos", "Por lectura"]);
+  await head.getByRole("tab", { name: "Por lectura" }).click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Duplicar vista" }).click();
+  await expect(tabs).toHaveText(["Todos", "Por lectura", "Por lectura (copia)"]);
+  await head.getByRole("tab", { name: "Por lectura (copia)" }).click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Eliminar vista" }).click();
+  await expect(tabs).toHaveText(["Todos", "Por lectura"]);
+  await expect(head.getByRole("tab", { name: "Por lectura" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  // Back on «Tabla», all its rows; the account has the views as they are now (one request for a burst).
-  await head.getByRole("tab", { name: "Tabla" }).click();
+  // Back on «Todos», all its rows; the account has the views as they are now (one request for a burst).
+  await head.getByRole("tab", { name: "Todos" }).click();
   await expect(titles).toHaveCount(3);
   await expect
     .poll(async () => {
@@ -410,7 +432,7 @@ test("a collection's views as Notion's tabs (task 69): «+» by layout, renamed,
       };
       return (body.views ?? []).map((v) => `${v.name}:${v.layout}`);
     })
-    .toEqual(["Tabla:table", "Por estado:board"]);
+    .toEqual(["Todos:table", "Por lectura:board"]);
 });
 
 test("what is open shows lit in «Páginas», unfolded down to it: a record, its collection, a page inside another", async ({

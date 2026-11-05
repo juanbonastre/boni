@@ -2988,7 +2988,7 @@ export function addView(type: string, views: SavedView[], view: DatabaseView, na
 }
 export function renameView(type: string, views: SavedView[], id: string, name: string) {
   const n = name.trim().slice(0, 60);
-  if (n)
+  if (n && n !== views.find((x) => x.id === id)?.name)
     keepViews(
       type,
       views.map((x) => (x.id === id ? { ...x, name: n } : x)),

@@ -420,10 +420,11 @@ contraseña ni un código aquí» under a question.
   collection's name puts it on a page. **The head as Notion's** (task 69; Juan, 2026-11-05, with Notion's «Tareas BD»
   as the reference: «más limpio, menos texto»): on the left a collection's **views as tabs** (its own page and «Mis
   datos»), each its layout's icon and its name, the open one lit; a click opens one, a double click renames it in
-  place, the right button opens its menu (Cambiar nombre, Duplicar vista, Eliminar vista: never the last one); «+»
-  («Añadir vista») shows the layouts as tiles (Tabla, Tablero, Lista, Galería, Calendario, Diagrama) and makes a view
-  of that one, named after it and opened. A view still named after its layout takes the new one's name when its
-  layout changes. The account keeps a collection's views (`rowUi.views`, at most 20), the same on every device; which
+  place (Enter or leaving keeps the name, Esc does not), the right button opens its menu (Cambiar nombre, Duplicar
+  vista, Eliminar vista: never the last one); «+» («Añadir vista») shows the layouts as tiles (Tabla, Tablero,
+  Lista, Galería, Calendario, Diagrama) and makes a view of that one, named after it and opened. A view still named
+  after its layout takes the new one's name when its layout changes. The account keeps a collection's views
+  (`rowUi.views`, at most 20), the same on every device; which
   one is open is this device's. A page's block keeps one view (in the page): its name, then that view's tab, which
   opens the layouts' tiles. On the right, **icons**: Filtro, Ordenar, Buscar (it turns into a field; the rows whose
   title has the words, nothing kept; Esc closes it), the view's settings (Ajustes de la vista), then «Nuevo». An icon
@@ -474,7 +475,7 @@ contraseña ni un código aquí» under a question.
   or a board scrolls sideways, a gallery wraps); what is narrower than 560 px is widened to it, and a calendar fills
   the width. The title sits over the first column (a table's boxes in the margin), the head's options end where the
   content ends, and the views' tabs keep only their icons when the head is narrow.
-  Boni's own tables have no boxes, menu or delete column; their widths are kept too.
+  Boni's own tables have no boxes, menu or delete column; their widths and their views are kept too.
   Board: a column per option (and "Sin X" when used), cards dragged between columns change the select. Calendar: a
   month from Monday, today marked, "+" on a day adds a row on it; "Semana" shows seven tall days with every item
   (its start time over its title); "También en el calendario" (the view's settings) adds other collections, each with
