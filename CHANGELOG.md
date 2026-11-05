@@ -5,6 +5,46 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-05 (thirty-second) — server 0.8.107 · Boni desktop 0.4.76 · Boni Android
+
+Needs:
+- The server, 0.8.107, to deploy: Gmail threads of your mail, the views each collection keeps, and what each flow
+  step gives.
+- Boni desktop 0.4.76 (`release/boni_0.4.76_amd64.deb`), to install.
+- Boni Android from main, through Obtainium.
+
+Tasks 67, 68, 69 and 70: what you asked for on 2026-11-05.
+
+- **A mail's «hoy» is the mail's day** (task 67). Ask about yesterday's mail that said «hoy a las 12h»: Boni now
+  says «ayer a las 12h». The fault was Boni's, not the model's: nothing told the readers that a message's «hoy» is
+  the day it was written, and the planner passed only the mail's text, without its date. Now every date a reader
+  sees comes marked as it stands today («ayer», «hace 3 días»), and the readers are told to count from the mail's
+  date (D-46). Still open: the extra mails you got when you asked about «tutor personal». (#336)
+- **Mail cards in the Bandeja** (task 68):
+  - «Ver correo» and Gmail are now two icons at the end of the card's line. A long sender is cut with «…» and never
+    hides them.
+  - The mail icon opens the mail in the side panel. Nothing else changes until «Agrandar»; closing it brings the
+    Bandeja back as it was.
+  - Gmail's icon opens that very mail in your account, not a search. For mail from before this version, Boni finds
+    its thread once, in the folder or in «Todos» if you archived it.
+  - When a proposal comes from several mails of a thread, «+N correos» unfolds them, and each one opens in the side
+    panel. (#337)
+- **Collections like Notion** (task 69):
+  - A collection's views are tabs on the left. «+» adds one by its layout.
+  - A double click renames a tab; the right button duplicates or deletes it.
+  - On the right there are icons: Filtro, Ordenar, Buscar, and the view's settings.
+  - Filtro and Ordenar show the bar under the head: the order on the left, the filters on the right, each a chip.
+    Ordenar opens with its chip's menu already open.
+  - Your views are kept in your account, the same on every device.
+  - Try it on a collection of yours: «+» → Tablero; then Filtro → a property → its value. (#338)
+- **The flow editor gives you control** (task 70):
+  - «Añadir paso» has a search and groups by what each step does. «Avisar» has its own group: type «avis» and Enter.
+  - The right button on a step has Abrir, Duplicar, Probar hasta aquí and Quitar.
+  - A step's panel says what goes in («Entra») and what comes out («Sale»), each with what it is. After «Probar», it
+    also says what the step gave. (#339)
+- **Fixed while testing:** menus and popovers near the window's edge no longer end a few pixels outside it (the
+  widget's menu did), and a new page rises in once instead of twice.
+
 ## 2026-11-05 (thirty-first) — server 0.8.106 · Boni desktop 0.4.75 · Boni Android
 
 Needs:
