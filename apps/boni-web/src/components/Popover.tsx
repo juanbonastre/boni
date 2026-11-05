@@ -14,6 +14,7 @@ export function PopButton({
   width,
   onOpenChange,
   initialOpen = false,
+  disabled = false,
   children,
 }: {
   label: ReactNode;
@@ -24,6 +25,8 @@ export function PopButton({
   onOpenChange?: (open: boolean) => void;
   /** Open as it appears (a chip the bar of a collection's view opens at once; task 69). */
   initialOpen?: boolean;
+  /** Not usable now (a flow's «Probar con…» while a test runs). */
+  disabled?: boolean;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(initialOpen);
@@ -94,6 +97,7 @@ export function PopButton({
         aria-label={title}
         aria-haspopup="true"
         aria-expanded={open}
+        disabled={disabled}
         onClick={(e) => {
           e.stopPropagation();
           change(!open);

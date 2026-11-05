@@ -32,6 +32,7 @@ import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./f
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
+import { withPieces } from "./pieces.ts";
 import { proposals, propose } from "./proposals.ts";
 import { codeHash } from "./sandbox.ts";
 
@@ -326,7 +327,8 @@ const READS = new Set([
 ]);
 const PROPOSES = new Set(["extensions_propose", "extensions_test"]);
 /** The tools a flow may use: the same registry the server's agents have (docs/flujos.md, D-41). */
-const REGISTRY = coreTools().freeze();
+// The core's tools and Boni's pieces (docs/sistema.md §4.2), as the server's agents have them.
+const REGISTRY = withPieces(coreTools()).freeze();
 const scopeOf = (name: string): Scope =>
   READS.has(name) ? "read" : PROPOSES.has(name) ? "extensions:propose" : "write";
 const mayUse = (c: Ctx, name: string) => !c.scope || c.scope.includes(scopeOf(name));

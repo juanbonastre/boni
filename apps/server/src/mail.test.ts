@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { saveExternals } from "./account.ts";
 import { AgentHost } from "./agent.ts";
 import { addUser } from "./auth.ts";
+import { AUTO_AREA, setAutoState } from "./autoAccept.ts";
 import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
@@ -2039,6 +2040,133 @@ describe("the flow «Leer correo» as the user leaves it (docs/flujos.md, F2)", 
     expect(pending().length).toBe(waiting);
     expect(store.journal.flowRuns(MAIL_FLOW).runs).toBe(runs);
     expect(await m.sample(1, "e_nadie", plan2)).toBeNull();
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("Boni's pieces in «Leer correo» (docs/sistema.md §4.2, F7)", () => {
+  /** An account with one collection marked for mail and a reader that finds one task per mail (invented). */
+  const setup = (dir: string) => {
+    const sdb = openDb(join(dir, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const reader = new ScriptedProvider("fake", (req) => {
+      if (!/find what it asks of the user/.test(req.system)) return { choice: "Docencia" };
+      const content = String((req.input as { content?: unknown }).content ?? "");
+      const title = /Asunto: (.+)/.exec(content)?.[1]?.trim() ?? "Algo";
+      return { items: [{ quote: "…", actor: "recipient", kind: "task", title, due: null }] };
+    });
+    const h = new AgentHost({ dataDir: dir, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_docencia",
+          key: "docencia",
+          name: "Docencia",
+          fields: [{ id: "t_docencia_t", key: "titulo", name: "Título", type: "text", label: own }],
+          titleField: "t_docencia_t",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    return { sdb, reader, h, store, m };
+  };
+  const reads = (reader: ScriptedProvider) =>
+    reader.requests.filter((r) => /find what it asks of the user/.test(r.system)).length;
+
+  it("the guide's rule ends the reading at its step, as done, without a model; a mail Juan asks for is read", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-pieces-"));
+    const { sdb, reader, h, store, m } = setup(d);
+    box.uidValidity = 51;
+    box.mails = new Map([
+      [1, mail(51, "Boletín", "Novedades de la semana.", "noticias@lista.example.com")],
+    ]);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia"],
+    });
+    m.saveGuide(1, { rules: [{ from: "@lista.example.com", action: "skip" }] });
+    await m.check(1);
+    // The flow ran and ended at «Reglas de la guía»: done, nothing read by a model, nothing proposed.
+    expect(reads(reader)).toBe(0);
+    const run = store.journal.runs().find((r) => r.flow === MAIL_FLOW);
+    expect(run).toMatchObject({ status: "done", origin: "background" });
+    const steps = store.journal.steps(run?.id ?? "");
+    expect(steps.map((s) => [s.step, s.decision])).toEqual([
+      ["m", "allow"],
+      ["only", "allow"],
+      ["only", "end"],
+    ]);
+    expect(steps.at(-1)).toMatchObject({
+      kind: "end",
+      rule: "P20",
+      detail: { code: "guide-skip" },
+    });
+    expect(store.journal.proposals("pending")).toEqual([]);
+    // Asked for by Juan (from the conversation), the same mail is read: the rule does not stop it then.
+    const mailId = run?.input as string;
+    expect(await m.proposeFor(1, mailId)).toMatchObject({ n: 1 });
+    expect(reads(reader)).toBe(1);
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+
+  it("with «Solo» on, a proposal like the ones Juan always kept is accepted in its own reading, a step of the flow", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-pieces-"));
+    const { sdb, h, store, m } = setup(d);
+    box.uidValidity = 52;
+    box.mails = new Map([
+      [1, mail(52, "Acta uno", "¿Revisas el acta?")],
+      [2, mail(53, "Acta dos", "¿Revisas el acta?")],
+      [3, mail(54, "Acta tres", "¿Revisas el acta?")],
+    ]);
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia"],
+    });
+    await m.check(1);
+    const pending = () => store.journal.proposals("pending");
+    expect(pending()).toHaveLength(3);
+    // Juan keeps the three as they were proposed.
+    for (const p of pending())
+      expect((await h.agent(1).acceptProposal(p.id, "personal")).run).toBeTruthy();
+    // With «Solo» off, the fourth waits for him; with it on, its reading accepts it at its step «Aceptar solas».
+    setAutoState(store, AUTO_AREA, true, "juan", NOW);
+    box.mails.set(4, mail(55, "Acta cuatro", "¿Revisas el acta?"));
+    await m.check(1);
+    expect(pending()).toEqual([]);
+    const last = store.journal
+      .proposals()
+      .filter((p) => p.status === "accepted")
+      .sort((a, b) => b.created - a.created)[0];
+    const run = store.journal.run(last?.run ?? "");
+    expect(run).toMatchObject({ flow: MAIL_FLOW, status: "done" });
+    expect(
+      store.journal
+        .steps(run?.id ?? "")
+        .filter((s) => s.step === "alone")
+        .map((s) => [s.decision, s.rule]),
+    ).toEqual([["allow", "P20"]]);
+    expect(store.journal.decisions(AUTO_AREA).map((x) => x.outcome)).toEqual(["do"]);
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

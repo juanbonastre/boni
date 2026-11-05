@@ -1,5 +1,5 @@
 /** (test) Flows kept as data (docs/flujos.md, F1): the mail reading saved as «Leer correo», drawn and counted. */
-import { coreTools } from "@boni/agent";
+import { checkPlan, coreTools } from "@boni/agent";
 import { label } from "@boni/entities";
 import { openUserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
@@ -17,6 +17,7 @@ import {
   saveUserFlow,
 } from "./flows.ts";
 import { mailPlan } from "./mail.ts";
+import { withPieces } from "./pieces.ts";
 
 const TARGETS = [
   { key: "docencia", name: "Docencia", option: "Docencia", date: "date", id: "t_docencia" },
@@ -34,17 +35,30 @@ describe("flows (docs/flujos.md, F1)", () => {
   it("the mail plan is the same for every mail of a configuration: what varies is its inputs", () => {
     const plan = planOf();
     expect(JSON.stringify(plan)).toBe(JSON.stringify(planOf()));
+    // What the code worked out around the models (the guide's rule, what waits, the relations) is Boni's pieces,
+    // steps of the plan (docs/sistema.md §4.2): no longer inputs.
     expect(inputsOf(plan).map((i) => `${i.id}:${i.what}`)).toEqual([
       "mail:record",
+      "asked:value",
+      "again:value",
+      "writes:list",
       "text:text",
       "modules:modules",
       "userIn:value",
-      "known:list",
       "guide:guide",
       "options:options",
       "subject:text",
-      "only:value",
-      "prefill:relations",
+    ]);
+    expect(
+      (plan as { steps: { id: string; tool?: string }[] }).steps
+        .filter((s) => s.tool && /^(mail|inbox)\./.test(s.tool))
+        .map((s) => `${s.id}:${s.tool}`),
+    ).toEqual([
+      "only:mail.rule",
+      "known:mail.known",
+      "prefill:mail.relations",
+      "fold:inbox.fold",
+      "alone:inbox.accept_alone",
     ]);
     // The mail's id is bound, never written in the plan.
     expect(JSON.stringify(plan)).not.toContain("e_");
@@ -284,7 +298,8 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     store.setAiAccess("t_diario", "restricted", "portatil");
     return store;
   };
-  const registry = coreTools().freeze();
+  // The server's registry: the core's tools and Boni's pieces (docs/sistema.md §4.2).
+  const registry = withPieces(coreTools()).freeze();
   const o = { modules: ["tasks", "events"], mailType: "t_correo" };
 
   it("its nodes are the registry's tools and the readers, the same the planner may use (D-41)", () => {
@@ -308,6 +323,42 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
       { key: "titulo", name: "Título", type: "text", roles: ["title"], relation: null },
       { key: "dia", name: "Día", type: "date", roles: ["date"], relation: null },
     ]);
+    store.close();
+  });
+
+  it("a piece of Boni is only in a flow a record starts, never in a model's plan (P20; docs/sistema.md §4.2)", () => {
+    const store = withTypes();
+    const piece = { id: "g", op: "call", tool: "mail.rule", args: { mail: { ref: "$mail" } } };
+    const byMail = checkFlow(
+      store,
+      registry,
+      { trigger: { created: "correo" }, plan: { version: 1, steps: [piece] } },
+      o,
+    );
+    expect(byMail.problems).toEqual([]);
+    const byHand = checkFlow(
+      store,
+      registry,
+      {
+        trigger: { manual: true },
+        plan: { version: 1, steps: [{ ...piece, args: { mail: { lit: "e_x" } } }] },
+      },
+      o,
+    );
+    expect(byHand.problems).toContainEqual({ step: "g", at: null, code: "piece-needs-record" });
+    // The editor offers it, marked as a piece that works on the record; a model's plan cannot name it.
+    expect(
+      flowCatalog(registry, store, o.modules).tools.find((t) => t.name === "mail.rule"),
+    ).toMatchObject({
+      effect: "piece",
+      record: true,
+      title: "Reglas de la guía",
+    });
+    expect(
+      checkPlan({ version: 1, steps: [piece] }, registry, { kind: "turn", trust: "personal" }, [
+        "mail",
+      ]).ok,
+    ).toBe(false);
     store.close();
   });
 

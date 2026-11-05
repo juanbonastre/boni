@@ -25,6 +25,7 @@ import { memo, useEffect, useMemo } from "react";
 import type { RunDetail, RunStep } from "../core/agent.ts";
 import { flowLayout } from "../core/flowLayout.ts";
 import { useStore } from "../store.ts";
+import { inputName } from "./FlowStepPanel.tsx";
 
 const WIDTH = 200;
 const TRIGGER = "trigger";
@@ -88,6 +89,7 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
 });
 
 const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) {
+  const t = useStore((s) => s.t);
   return (
     <div className="fl-card source">
       <div className="fl-head">
@@ -100,7 +102,7 @@ const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) 
         <div className="fl-body">
           {data.inputs.map((i) => (
             <div key={i} className="fl-line fl-input">
-              <span>${i}</span>
+              <span>{inputName(t, i)}</span>
             </div>
           ))}
         </div>

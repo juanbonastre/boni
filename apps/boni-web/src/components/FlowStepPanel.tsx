@@ -33,6 +33,16 @@ export function stepName(
   return String(s.op);
 }
 
+/**
+ * What a trigger brings, named as a person says it (`flows.inputName.<name>`: «Correo», «Asunto»…), never the plan's
+ * own name (I-08); a name Juan gave a form's field is his and stays as he wrote it.
+ */
+export const inputName = (t: T, n: string) => {
+  const k = `flows.inputName.${n}`;
+  const v = t(k);
+  return v === k ? n : v;
+};
+
 /** A name of the plan language in Spanish when it has one (`flows.arg.<name>`), else as it is. */
 export const argName = (t: T, n: string) => {
   const k = `flows.arg.${n}`;

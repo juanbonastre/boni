@@ -547,8 +547,16 @@ export function inboxContext(
   };
 }
 
-/** The proposal's source as a key ("mail:<sender>"): what "like it" compares. */
-const sourceKey = (p: ProposalRow) => (p.sources[0] ?? "").replace(/@[0-9a-f]{12}$/, "");
+/**
+ * The proposal's source as a key ("mail:<sender>"): what "like it" compares. A mail's proposal carries other sources
+ * before its sender's (the reading's extension, the code: 2026-11-05, F7, its first source was the extension's, so
+ * every mail's proposals of a collection were "like" each other and «Solo» never found Juan's decisions).
+ */
+const sourceKey = (p: ProposalRow) =>
+  (p.sources.find((s) => s.startsWith("mail:")) ?? p.sources[0] ?? "").replace(
+    /@[0-9a-f]{12}$/,
+    "",
+  );
 /** Proposals "like" each other: the same tool, source and collection. */
 export const likeKey = (p: ProposalRow) => {
   const src = sourceKey(p);

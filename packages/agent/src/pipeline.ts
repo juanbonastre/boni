@@ -67,9 +67,16 @@ export const PIPELINE: Pipeline = {
       areas: ["choice"],
     },
     { id: "fill", kind: "model", role: "reader", readers: ["fill"], areas: ["fill"] },
-    { id: "calendar", kind: "code", areas: ["time"] },
-    { id: "relations", kind: "code" },
-    { id: "inbox", kind: "inbox", runs: ["accepted"], areas: ["mail.accept"] },
+    // Boni's pieces of «Leer correo» (docs/sistema.md §4.2) count where the code did their work before.
+    { id: "calendar", kind: "code", areas: ["time"], tools: ["mail.invitation"] },
+    { id: "relations", kind: "code", tools: ["mail.relations", "mail.known"] },
+    {
+      id: "inbox",
+      kind: "inbox",
+      runs: ["accepted"],
+      areas: ["mail.accept"],
+      tools: ["inbox.fold", "inbox.accept_alone"],
+    },
     { id: "user", kind: "user" },
     { id: "store", kind: "store" },
     // The conversation (docs/nucleo.md 7): the planner's plans, the readers it asks, the tools under the policy.
@@ -111,7 +118,7 @@ export const PIPELINE: Pipeline = {
       runs: ["review", "measure"],
       areas: ["mail.guide"],
     },
-    { id: "guide", kind: "code" },
+    { id: "guide", kind: "code", tools: ["mail.rule"] },
     { id: "learners", kind: "code" },
   ],
   edges: [

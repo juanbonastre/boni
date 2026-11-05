@@ -46,6 +46,7 @@ import {
 } from "./reading.ts";
 import {
   type Caps,
+  EndRun,
   type FlowStarter,
   type FlowWriter,
   makeCaps,
@@ -292,6 +293,8 @@ export interface AgentOptions {
    * conversation gets it as the background reading does (docs/correo.md §4.1, task 23).
    */
   readingGuide?: () => Val | null;
+  /** What the server gives Boni's pieces for this account (docs/sistema.md §4.2): opaque to the core (A-02). */
+  pieces?: () => unknown;
   /**
    * The month's spending against Juan's budget (Juan, 2026-10-24: 10 € a month): at the limit, background work
    * calls no model (P13); his own requests go on.
@@ -577,11 +580,16 @@ const DAY_MS = 24 * 60 * 60_000;
  * The tools a plan of this origin may name: nothing that goes out or schedules work outside a turn of Juan's on a
  * personal device (background work, a mini-app, a shared device). The planner's catalog and a flow's (docs/flujos.md).
  */
-export function toolsFor(registry: ToolRegistry, origin: Origin): ToolDef[] {
+/**
+ * The tools a plan of this origin may name. Boni's pieces (docs/sistema.md §4.2) only in a saved flow's plan
+ * (`inFlow`), never in one a model writes for a turn (P20).
+ */
+export function toolsFor(registry: ToolRegistry, origin: Origin, inFlow = false): ToolDef[] {
   const blocked =
     origin.kind === "background" || origin.kind === "miniapp" || origin.trust !== "personal"
       ? new Set(["egress", "send", "flow", "flow_save"])
       : new Set<string>();
+  if (!inFlow) blocked.add("piece");
   return registry.all().filter((t) => !blocked.has(t.effect));
 }
 
@@ -684,8 +692,10 @@ export function checkPlan(
   registry: ToolRegistry,
   origin: Origin,
   bound: readonly string[],
+  /** A saved flow's plan (the editor's): Boni's pieces may be in it. */
+  inFlow = false,
 ): PlanResult {
-  const allowed = new Set(toolsFor(registry, origin).map((t) => t.name));
+  const allowed = new Set(toolsFor(registry, origin, inFlow).map((t) => t.name));
   return validatePlan(
     plan,
     { args: (name: string) => (allowed.has(name) ? registry.args(name) : null) },
@@ -790,8 +800,8 @@ export class Agent {
   }
 
   /** The tools a run of this origin may use at all (by default none for what it cannot do). */
-  private catalogFor(origin: Origin): ToolDef[] {
-    return toolsFor(this.o.registry, origin);
+  private catalogFor(origin: Origin, inFlow = false): ToolDef[] {
+    return toolsFor(this.o.registry, origin, inFlow);
   }
 
   // ------------------------------------------------------------ a turn
@@ -839,7 +849,7 @@ export class Agent {
       st.flowRun = true;
       const v = validatePlan(
         req.flow.plan,
-        this.catalogView(req.origin),
+        this.catalogView(req.origin, true),
         turn.text,
         Object.keys(req.flow.bind),
       );
@@ -888,7 +898,7 @@ export class Agent {
     st.would = new Map();
     st.flowRun = true;
     if (o.flow.by === "user") st.litLabel = flowLabel(o.flow.id);
-    const v = validatePlan(plan, this.catalogView(o.origin), "", Object.keys(bind));
+    const v = validatePlan(plan, this.catalogView(o.origin, true), "", Object.keys(bind));
     if (!v.ok) return { ...this.finish(st, "stopped", "plan-invalid"), outputs: {}, would: {} };
     for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
     st.plan = v.plan;
@@ -978,7 +988,7 @@ export class Agent {
     const st = this.newState(run, { id: run, text: "" }, origin, { version: 1, steps: [] }, null);
     if (flow?.by === "user") st.litLabel = flowLabel(flow.id);
     if (flow) st.flowRun = true;
-    const v = validatePlan(plan, this.catalogView(origin), "", Object.keys(bind));
+    const v = validatePlan(plan, this.catalogView(origin, !!flow), "", Object.keys(bind));
     if (!v.ok) return this.finish(st, "stopped", "plan-invalid");
     for (const [k, val] of Object.entries(bind)) st.env.set(k, val);
     if (budget) st.budget = budget;
@@ -1035,8 +1045,8 @@ export class Agent {
     };
   }
 
-  private catalogView(origin: Origin) {
-    const allowed = new Set(this.catalogFor(origin).map((t) => t.name));
+  private catalogView(origin: Origin, inFlow = false) {
+    const allowed = new Set(this.catalogFor(origin, inFlow).map((t) => t.name));
     return { args: (name: string) => (allowed.has(name) ? this.o.registry.args(name) : null) };
   }
 
@@ -1395,6 +1405,13 @@ export class Agent {
       }
       return this.finish(st, "done", null);
     } catch (e) {
+      // A piece of Boni said there is nothing more to do (docs/sistema.md §4.2): the run is done here, and its log
+      // says where and why.
+      if (e instanceof EndRun) {
+        const step = st.plan.steps[st.pc];
+        if (step) this.log(st, step, "end", "end", "P20", { code: e.code });
+        return this.finish(st, "done", null);
+      }
       const code = e instanceof Stop ? e.code : e instanceof ToolError ? `tool-${e.code}` : null;
       if (code === null) throw e;
       // The log says at which step it stopped (Juan's Registro shows it).
@@ -1446,7 +1463,12 @@ export class Agent {
     const args = control
       ? Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, taint(v, control)]))
       : raw;
-    const d: Decision = decide({ tool, args, control }, st.origin, st.counters, this.limits);
+    const d: Decision = decide(
+      { tool, args, control, flow: !!st.flowRun, dry: !!st.dry },
+      st.origin,
+      st.counters,
+      this.limits,
+    );
     if (!tool) throw new Stop("P0-unregistered-tool");
     if (tool.effect === "flow_save" && d.kind !== "deny") {
       // A flow is proposed only when the editor's checklist would let it be saved (docs/flujos.md F5).
@@ -1471,7 +1493,10 @@ export class Agent {
       integrity: ls.length ? join(ls[0] as Label, ...ls.slice(1)).integrity : "user",
       control: control?.integrity ?? null,
     };
-    if (st.dry && d.kind !== "deny" && tool.effect !== "read") {
+    // Boni's pieces run when the flow is tried too: the steps after them need what they give, and the ones that
+    // change the inbox find nothing to change (a dry run proposes nothing: they get no proposals).
+    const reads = tool.effect === "read" || tool.effect === "piece";
+    if (st.dry && d.kind !== "deny" && !reads) {
       // «Probar»: what it would do, painted from the real arguments; nothing written, proposed or confirmed.
       const list = st.would?.get(step.id) ?? [];
       list.push({
@@ -1577,8 +1602,10 @@ export class Agent {
     args: Record<string, Val>,
     control: Label | null,
   ): Promise<Val> {
-    // A change is made in its own audit action (its operations name it); a read is recorded with what it read.
-    const writes = tool.effect !== "read" && tool.effect !== "notify";
+    // A change is made in its own audit action (its operations name it); a read is recorded with what it read. A
+    // piece of Boni changes something only when it says so (it folds or accepts proposals).
+    const writes =
+      tool.effect === "piece" ? !!tool.changes : tool.effect !== "read" && tool.effect !== "notify";
     const action = writes
       ? this.audit(st, { by: "agent", tool: tool.name, decision: "allow", result: null })
       : null;
@@ -1592,9 +1619,19 @@ export class Agent {
       ...(this.o.net ? { net: this.o.net } : {}),
       ...(tool.effect === "flow" ? { flows: this.flowStarter(st) } : {}),
       ...(tool.effect === "flow_save" ? { flowWriter: this.flowWriter() } : {}),
+      ...(tool.effect === "piece"
+        ? { pieces: this.o.pieces?.() ?? null, proposals: () => (st.dry ? [] : st.proposals) }
+        : {}),
     });
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
-    const result = await tool.run(capFor as never, args, control ?? neutral);
+    let result: Val;
+    try {
+      result = await tool.run(capFor as never, args, control ?? neutral);
+    } catch (e) {
+      // Only a piece of Boni may end its run (the guide's rule); anything else that tries is an error.
+      if (e instanceof EndRun && tool.effect !== "piece") throw new ToolError("end-not-allowed");
+      throw e;
+    }
     if (!writes)
       this.audit(st, {
         by: "agent",
@@ -1603,7 +1640,7 @@ export class Agent {
         target: { effect: tool.effect },
         seen: exposure([result], "clear", (e) => this.o.store.get(e)?.entity.type),
       });
-    if (tool.effect !== "read" && tool.effect !== "notify") st.counters.writes++;
+    if (writes) st.counters.writes++;
     if (tool.effect === "schema" && !st.notices.some((n) => n.code === "schema-changed"))
       st.notices.push({ code: "schema-changed" });
     if (tool.effect === "memory") {

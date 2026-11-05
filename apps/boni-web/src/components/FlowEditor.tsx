@@ -20,6 +20,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useEdgesState,
+  useNodesInitialized,
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
@@ -30,6 +31,7 @@ import {
   FlaskConical,
   HelpCircle,
   LayoutGrid,
+  ListFilter,
   MessageSquare,
   MoreHorizontal,
   Play,
@@ -61,7 +63,7 @@ import {
 } from "../core/flowEdit.ts";
 import { flowLayout } from "../core/flowLayout.ts";
 import { agentApi, errorText, runFlowInChat, toast, useStore } from "../store.ts";
-import { argName, FlowStepPanel, problemText, stepName } from "./FlowStepPanel.tsx";
+import { argName, FlowStepPanel, inputName, problemText, stepName } from "./FlowStepPanel.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
 const WIDTH = 200;
@@ -207,6 +209,7 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
 });
 
 const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) {
+  const t = useStore((s) => s.t);
   return (
     <div className={`fl-card source${data.bad ? " bad" : ""}${data.on ? " on" : ""}`}>
       <div className="fl-head">
@@ -219,7 +222,7 @@ const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) 
         <div className="fl-body">
           {data.inputs.map((i) => (
             <div key={i} className="fl-line fl-input">
-              <span>${i}</span>
+              <span>{inputName(t, i)}</span>
             </div>
           ))}
         </div>
@@ -320,10 +323,12 @@ function nodesOf(
 
 /**
  * The node kinds «Añadir paso» offers, in groups by what they do (docs/flujos.md §4.5; task 70): Leer, Decidir,
- * Datos, Avisar, Preguntar, Responder, and the rest.
+ * Datos, Avisar, Preguntar, Responder, the rest, and Boni's pieces («De Boni», docs/sistema.md §4.2) in a flow a
+ * record starts (`byRecord`), the only one they work in.
  */
 function kindsOf(
   catalog: FlowCatalog,
+  byRecord: boolean,
 ): { group: string; items: { kind: NodeKind; name: string }[] }[] {
   const reads = Object.keys(catalog.readers).filter(
     (r) => r !== "classify" && r !== "review_reading",
@@ -333,6 +338,7 @@ function kindsOf(
   const isData = (x: { name: string; effect: string }) =>
     x.name.startsWith("entities.") || x.name.startsWith("schema.") || x.effect === "memory";
   const isNotice = (x: { effect: string }) => x.effect === "notify";
+  const isPiece = (x: { effect: string }) => x.effect === "piece";
   const call = (x: { name: string }) => ({
     kind: { op: "call", tool: x.name } as NodeKind,
     name: x.name,
@@ -356,7 +362,11 @@ function kindsOf(
         name: `reply.${c}`,
       })),
     },
-    { group: "other", items: tools.filter((x) => !isData(x) && !isNotice(x)).map(call) },
+    {
+      group: "other",
+      items: tools.filter((x) => !isData(x) && !isNotice(x) && !isPiece(x)).map(call),
+    },
+    { group: "boni", items: byRecord ? tools.filter((x) => isPiece(x) && x.record).map(call) : [] },
   ];
   return groups.filter((g) => g.items.length > 0);
 }
@@ -372,7 +382,16 @@ const fold = (s: string) =>
  * «Añadir paso» (task 70; Juan, 2026-11-05: «no veo ninguna opción de avisar… falta darle control al usuario»): a
  * search over every kind of step, by its name or its group's, and the kinds in their groups; Enter takes the first.
  */
-function StepPicker({ catalog, onPick }: { catalog: FlowCatalog; onPick: (k: NodeKind) => void }) {
+function StepPicker({
+  catalog,
+  byRecord,
+  onPick,
+}: {
+  catalog: FlowCatalog;
+  /** The flow starts with a record (a mail): Boni's pieces are offered. */
+  byRecord: boolean;
+  onPick: (k: NodeKind) => void;
+}) {
   const t = useStore((s) => s.t);
   const [q, setQ] = useState("");
   const search = useRef<HTMLInputElement>(null);
@@ -381,7 +400,7 @@ function StepPicker({ catalog, onPick }: { catalog: FlowCatalog; onPick: (k: Nod
     const id = requestAnimationFrame(() => search.current?.focus());
     return () => cancelAnimationFrame(id);
   }, []);
-  const groups = useMemo(() => kindsOf(catalog), [catalog]);
+  const groups = useMemo(() => kindsOf(catalog, byRecord), [catalog, byRecord]);
   const want = fold(q.trim());
   const shown = groups
     .map((g) => ({
@@ -431,6 +450,101 @@ function StepPicker({ catalog, onPick }: { catalog: FlowCatalog; onPick: (k: Nod
   );
 }
 
+/**
+ * «Probar con…» (task 63, point 6): a mail of the mail's collection, by its subject and newest first, filtered as one
+ * types; the flow is tried with it instead of the latest. Its rows are read when the list opens.
+ */
+function MailToTry({ disabled, onPick }: { disabled: boolean; onPick: (mail: string) => void }) {
+  const t = useStore((s) => s.t);
+  const type = useStore((s) => s.dataTypes?.find((x) => x.view === "mail") ?? null);
+  const [rows, setRows] = useState<{ id: string; title: string }[] | null>(null);
+  const load = async () => {
+    if (!type) return setRows([]);
+    try {
+      const r = await agentApi.dataRows(type.id);
+      setRows(
+        r.rows
+          .slice()
+          .sort((a, b) => b.updated - a.updated)
+          .map((x) => {
+            const v = x.values[type.titleField];
+            return { id: x.id, title: typeof v === "string" ? v : "" };
+          }),
+      );
+    } catch {
+      setRows([]);
+    }
+  };
+  if (!type) return null;
+  return (
+    <PopButton
+      label={<ListFilter size={14} strokeWidth={1.8} aria-hidden />}
+      title={t("flows.testWith")}
+      className="btn small"
+      align="start"
+      width={300}
+      disabled={disabled}
+      onOpenChange={(open) => {
+        if (open) {
+          setRows(null);
+          void load();
+        }
+      }}
+    >
+      {(close) => (
+        <MailList
+          rows={rows}
+          onPick={(id) => {
+            close();
+            onPick(id);
+          }}
+        />
+      )}
+    </PopButton>
+  );
+}
+
+/** The mails «Probar con…» offers, and its search, which takes the keys once the box shows (a box still hidden
+ * while it is placed takes no focus: «Errores y soluciones», 2026-10-25). */
+function MailList({
+  rows,
+  onPick,
+}: {
+  rows: { id: string; title: string }[] | null;
+  onPick: (id: string) => void;
+}) {
+  const t = useStore((s) => s.t);
+  const [q, setQ] = useState("");
+  const search = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => search.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const want = fold(q.trim());
+  const shown = (rows ?? []).filter((r) => !want || fold(r.title).includes(want)).slice(0, 50);
+  return (
+    <div className="menu-list scroll" role="menu">
+      <input
+        ref={search}
+        className="input small db-find"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder={t("flows.findMail")}
+        aria-label={t("flows.findMail")}
+      />
+      {rows === null ? (
+        <div className="muted small db-note">{t("db.loading")}</div>
+      ) : shown.length === 0 ? (
+        <div className="muted small db-note">{t("db.noRows")}</div>
+      ) : (
+        shown.map((r) => (
+          <MenuRow key={r.id} label={r.title || t("page.untitled")} onClick={() => onPick(r.id)} />
+        ))
+      )}
+    </div>
+  );
+}
+
 function kindName(t: T, k: NodeKind, catalog: FlowCatalog): string {
   if (k.op === "ask") return t(`flows.control.${k.control}`);
   if (k.op === "reply") return t(`flows.component.${k.component}`);
@@ -476,6 +590,10 @@ function Canvas({
   const [nodes, setNodes, onNodesChange] = useNodesState<Card>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const { fitView, screenToFlowPosition } = useReactFlow();
+  // Fitted once its nodes are measured, and again for another flow: fitted before, the first nodes were not there
+  // yet and the canvas opened too far out to read (2026-11-05, task 70).
+  const measured = useNodesInitialized();
+  const fittedFor = useRef<string | null>(null);
   const [linking, setLinking] = useState<{ from: string; to: string } | null>(null);
   // An arrow being drawn: every step shows where it lands (task 78).
   const [connecting, setConnecting] = useState(false);
@@ -487,16 +605,16 @@ function Canvas({
     at: { x: number; y: number };
     from: string | null;
   } | null>(null);
-  const fitted = useRef(false);
   useEffect(() => {
     const g = nodesOf(t, draft, detail, catalog, check?.problems ?? [], selected, test);
     setNodes(g.nodes);
     setEdges(g.edges);
-    if (!fitted.current) {
-      fitted.current = true;
-      requestAnimationFrame(() => void fitView({ padding: 0.06, duration: 200 }));
-    }
-  }, [t, draft, detail, catalog, check, selected, test, setNodes, setEdges, fitView]);
+  }, [t, draft, detail, catalog, check, selected, test, setNodes, setEdges]);
+  useEffect(() => {
+    if (!measured || !nodes.length || fittedFor.current === detail.id) return;
+    fittedFor.current = detail.id;
+    requestAnimationFrame(() => void fitView({ padding: 0.06, duration: 200 }));
+  }, [measured, nodes.length, detail.id, fitView]);
   const keepPositions = useCallback(() => {
     const out: Record<string, { x: number; y: number }> = {};
     for (const n of nodes) out[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
@@ -641,6 +759,7 @@ function Canvas({
           {(close) => (
             <StepPicker
               catalog={catalog}
+              byRecord={typeof draft.trigger.created === "string"}
               onPick={(kind) => {
                 const id = onAddAt(kind, adding.at, adding.from);
                 if (adding.from) setLinking({ from: adding.from, to: id });
@@ -713,7 +832,7 @@ function TriggerPanel({
           <ul className="flow-args">
             {detail.inputs.map((i) => (
               <li key={i.id}>
-                <code>${i.id}</code> <span className="muted">{t(`flows.input.${i.what}`)}</span>
+                {inputName(t, i.id)} <span className="muted">{t(`flows.input.${i.what}`)}</span>
               </li>
             ))}
           </ul>
@@ -960,7 +1079,12 @@ export function FlowEditor({
   const problems = check?.problems ?? [];
   // «Probar» (F3): the draft as it is, dry, with the latest mail or the form's values; its result on the canvas.
   // As far as a step («Probar hasta aquí»): that step and the ones before it, nothing after.
-  const tryIt = async (inputs?: Record<string, string>, upTo: string | null = null) => {
+  const tryIt = async (
+    inputs?: Record<string, string>,
+    upTo: string | null = null,
+    /** A flow a record starts, with this mail instead of the latest (task 63, point 6). */
+    mail: string | null = null,
+  ) => {
     setTesting(true);
     setError(null);
     try {
@@ -969,6 +1093,7 @@ export function FlowEditor({
           plan: upTo ? planUpTo(draft.plan, upTo) : draft.plan,
           trigger: draft.trigger,
           ...(inputs ? { inputs } : {}),
+          ...(mail ? { mail } : {}),
         }),
       );
       setTestUpTo(upTo);
@@ -1050,6 +1175,7 @@ export function FlowEditor({
   };
   const step = draft.plan.steps.find((s) => s.id === selected);
   const manual = !!draft.trigger.manual;
+  const byRecord = typeof draft.trigger.created === "string";
   // A test of the flow, or as far as a step: a flow with a form asks for its values first.
   const startTest = (upTo: string | null) => {
     const names = formNames(draft.trigger);
@@ -1102,6 +1228,7 @@ export function FlowEditor({
             {(close) => (
               <StepPicker
                 catalog={catalog}
+                byRecord={byRecord}
                 onPick={(kind) => {
                   add(kind);
                   close();
@@ -1120,6 +1247,12 @@ export function FlowEditor({
           <FlaskConical size={14} strokeWidth={1.8} aria-hidden />
           {testing ? t("flows.testing") : t("flows.test")}
         </button>
+        {byRecord && (
+          <MailToTry
+            disabled={busy || testing || problems.length > 0 || !draft.plan.steps.length}
+            onPick={(mail) => void tryIt(undefined, null, mail)}
+          />
+        )}
         {runnable && detail.enabled && !dirty && (
           <button
             type="button"

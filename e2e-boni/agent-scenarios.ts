@@ -1806,6 +1806,28 @@ export const FLOW_CATALOG = {
       effect: "notify",
       args: [{ name: "text", role: "content", required: true }],
     },
+    // Boni's pieces (docs/sistema.md §4.2, F7): the code that works on the mail, offered in a flow a mail starts.
+    {
+      name: "mail.rule",
+      title: "Reglas de la guía",
+      effect: "piece",
+      record: true,
+      args: [
+        { name: "mail", role: "entity", required: true },
+        { name: "asked", role: "value", required: false },
+      ],
+    },
+    {
+      name: "inbox.fold",
+      title: "Plegar hilo",
+      effect: "piece",
+      record: true,
+      changes: true,
+      args: [
+        { name: "mail", role: "entity", required: true },
+        { name: "again", role: "value", required: false },
+      ],
+    },
     {
       name: "flows.run",
       title: "Ejecutar flujo",

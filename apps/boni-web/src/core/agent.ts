@@ -762,6 +762,10 @@ export interface FlowCatalog {
     title: string;
     effect: string;
     args: { name: string; role: string; required: boolean }[];
+    /** A piece of Boni that works on the record that started the flow (docs/sistema.md §4.2). */
+    record?: boolean;
+    /** A piece that changes the inbox. */
+    changes?: boolean;
   }[];
   readers: Record<string, { params: string[]; required: string[]; out: string[] }>;
   asks: string[];
@@ -874,6 +878,8 @@ export function parseFlowCatalog(b: unknown): FlowCatalog | null {
                 role: strOf(a.role, 40) ?? "",
                 required: a.required === true,
               })),
+              ...(t.record === true ? { record: true } : {}),
+              ...(t.changes === true ? { changes: true } : {}),
             },
           ]
         : [],
