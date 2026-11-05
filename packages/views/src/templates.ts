@@ -39,7 +39,47 @@ export const SYS = {
     changes: "f_cambios",
     cost: "f_coste",
   },
+  /**
+   * «Mis datos» (docs/flujos.md §4.7, F6b): a row per collection and page of the user's, and Boni's own last. The
+   * one Boni's collection a person changes: a row's name, mother, level and eye are the collection's or the page's.
+   */
+  data: {
+    id: "t_sys_datos",
+    title: "f_titulo",
+    kind: "f_tipo",
+    mother: "f_madre",
+    level: "f_nivel",
+    notes: "f_notas",
+    bar: "f_barra",
+    reads: "f_lee",
+    writes: "f_escribe",
+    origin: "f_origen",
+    /** «Tipo». */
+    collection: "o_tipo_coleccion",
+    page: "o_tipo_pagina",
+    boni: "o_tipo_boni",
+    /** A row's id: this, then its collection's or its page's own id. */
+    row: "sys_data_",
+    /** What a person changes in a row (the rest is computed). */
+    editable: ["f_titulo", "f_madre", "f_nivel", "f_barra"],
+  },
 } as const;
+
+/** The level options of «Mis datos» by level, and back. */
+export const dataLevel = (level: string) => `o_nivel_${level}`;
+/**
+ * What of a row of «Mis datos» stays as it is: a page has no level and no eye; Boni's own rows change nowhere there.
+ * The server refuses a change to them; the app shows them as text.
+ */
+export const dataRowFixed = (values: Record<string, unknown>): readonly string[] =>
+  values[SYS.data.kind] === SYS.data.page
+    ? [SYS.data.level, SYS.data.bar]
+    : values[SYS.data.kind] === SYS.data.boni
+      ? SYS.data.editable
+      : [];
+/** A row of «Mis datos» as the id of what it is (a collection's, a page's); null for any other row. */
+export const dataRowTarget = (row: string): string | null =>
+  row.startsWith(SYS.data.row) ? row.slice(SYS.data.row.length) : null;
 
 const at = (row: string, col: number, w: number, h?: "s" | "m" | "l") => ({
   row,

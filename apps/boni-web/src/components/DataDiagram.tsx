@@ -1,12 +1,14 @@
 /**
  * The collections as a diagram (task 59a; docs/flujos.md §4.7, F6): each collection a card with its fields and who
  * writes and reads it (the flows that name it, and who did in the last days), a mother a frame around her own card
- * and her daughters', a relation an arrow to the collection it points to. «Mis datos» draws them all; a collection's
- * «Diagrama» view draws her branch and, as plain cards, the collections a relation joins to it. Filters dim what does
- * not match («Leída por», «Escrita por», «Nivel», «Madre»). It is edited here too: a click opens the collection's
- * panel (its level, who reads and writes it, «Abrir», a new collection inside), a drag from a card's edge to another
- * draws a relation, a card dropped on another puts it inside, «Nueva colección». React Flow draws it, dagre lays it
- * out (`core/diagram.ts`); «Ordenar» lays it out again. Docs: docs/design-guide.md «Mis datos».
+ * and her daughters', a relation an arrow to the collection it points to. «Mis datos» draws them all, as one more
+ * view of its collection (F6b): what its view's filter leaves out is dimmed, and its «Nuevo» makes a collection. A
+ * collection's «Diagrama» view draws her branch and, as plain cards, the collections a relation joins to it, with
+ * filters of its own that dim what does not match («Leída por», «Escrita por», «Nivel», «Madre») and «Nueva
+ * colección». It is edited here too: a click opens the collection's panel (its level, who reads and writes it,
+ * «Abrir», a new collection inside), a drag from a card's edge to another draws a relation, a card dropped on another
+ * puts it inside. React Flow draws it, dagre lays it out (`core/diagram.ts`); «Ordenar» lays it out again. Docs:
+ * docs/design-guide.md «Mis datos».
  */
 import {
   Background,
@@ -58,13 +60,13 @@ const LEVELS: AiLevel[] = ["visible", "opaque", "restricted", "private"];
 /** How many names a card says of who writes it and who reads it. */
 const SHOWN = 2;
 
+/** A collection's «Diagrama» filters («Mis datos» filters with its view's «Filtrar»). */
 interface Filters {
   reader: string;
   writer: string;
   level: string;
-  mother: string;
 }
-const NO_FILTERS: Filters = { reader: "", writer: "", level: "", mother: "" };
+const NO_FILTERS: Filters = { reader: "", writer: "", level: "" };
 
 type CardData = {
   card: DiagramCard;
@@ -250,33 +252,12 @@ const linesOf = (usage: DataUsage | null) => (type: string) => {
   return (u.writes.length ? 1 : 0) + (u.reads.length ? 1 : 0);
 };
 
-/** The collections a mother holds, at any depth, and herself. */
-function branchOf(types: readonly DataType[], root: string): Set<string> {
-  const out = new Set<string>([root]);
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const t of types)
-      if (t.parent && out.has(t.parent) && !out.has(t.id)) {
-        out.add(t.id);
-        grew = true;
-      }
-  }
-  return out;
-}
-
 /** Whether a collection matches the filters (the others are dimmed, nothing moves). */
-function matches(
-  f: Filters,
-  card: DiagramCard,
-  usage: DataUsage | null,
-  types: readonly DataType[],
-) {
+function matches(f: Filters, card: DiagramCard, usage: DataUsage | null) {
   const u = usageOf(usage, card.type);
   if (f.reader && !u.reads.some((w) => w.id === f.reader)) return false;
   if (f.writer && !u.writes.some((w) => w.id === f.writer)) return false;
   if (f.level && card.level !== f.level) return false;
-  if (f.mother && !branchOf(types, f.mother).has(card.type)) return false;
   return true;
 }
 
@@ -290,7 +271,16 @@ function whoOptions(usage: DataUsage | null, types: Set<string>, side: "reads" |
   );
 }
 
-function Canvas({ types, root }: { types: DataType[]; root: string | null }) {
+function Canvas({
+  types,
+  root,
+  only,
+}: {
+  types: DataType[];
+  root: string | null;
+  /** «Mis datos» (no `root`): the collections its view's filter keeps; the rest dimmed. All, when none. */
+  only?: Set<string>;
+}) {
   const t = useStore((s) => s.t);
   const usage = useStore((s) => s.dataUsage);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
@@ -317,18 +307,15 @@ function Canvas({ types, root }: { types: DataType[]; root: string | null }) {
         n.type === "card"
           ? {
               ...n,
-              className: `dg-card-node${matches(filters, (n as CardNode).data.card, usage, types) ? "" : " dim"}`,
+              className: `dg-card-node${(root === null ? !only || only.has((n as CardNode).data.card.type) : matches(filters, (n as CardNode).data.card, usage)) ? "" : " dim"}`,
             }
           : n,
       ),
     );
-  }, [filters, usage, types, setNodes]);
+  }, [filters, usage, types, only, root, setNodes]);
   const shown = useMemo(() => new Set(diagram.cards.map((c) => c.type)), [diagram]);
   const readers = useMemo(() => whoOptions(usage, shown, "reads"), [usage, shown]);
   const writers = useMemo(() => whoOptions(usage, shown, "writes"), [usage, shown]);
-  const mothers = types.filter(
-    (m) => !m.system && types.some((d) => d.parent === m.id) && (!root || shown.has(m.id)),
-  );
   const typeOfNode = (id: string | null) =>
     id ? (diagram.cards.find((c) => c.id === id)?.type ?? null) : null;
   // A relation drawn from one card to another: a column of the first, pointing to the second.
@@ -379,19 +366,25 @@ function Canvas({ types, root }: { types: DataType[]; root: string | null }) {
   return (
     <>
       <div className="data-tools">
-        {select("reader", t("data.readBy"), readers)}
-        {select("writer", t("data.writtenBy"), writers)}
-        {select(
-          "level",
-          t("data.level"),
-          LEVELS.map((l) => ({ id: l, name: t(`ai.level.${l}`) })),
+        {/* In «Mis datos» its view's «Filtrar» and «Nuevo» do this (the header above). */}
+        {root !== null && (
+          <>
+            {select("reader", t("data.readBy"), readers)}
+            {select("writer", t("data.writtenBy"), writers)}
+            {select(
+              "level",
+              t("data.level"),
+              LEVELS.map((l) => ({ id: l, name: t(`ai.level.${l}`) })),
+            )}
+          </>
         )}
-        {!root && mothers.length > 0 && select("mother", t("data.mother"), mothers)}
         <span className="spacer" />
-        <button type="button" className="btn small" onClick={() => setNaming({ parent: root })}>
-          <Plus size={14} strokeWidth={1.8} aria-hidden />
-          {t("data.newCollection")}
-        </button>
+        {root !== null && (
+          <button type="button" className="btn small" onClick={() => setNaming({ parent: root })}>
+            <Plus size={14} strokeWidth={1.8} aria-hidden />
+            {t("data.newCollection")}
+          </button>
+        )}
         <button type="button" className="btn small" onClick={arrange}>
           <LayoutGrid size={14} strokeWidth={1.8} aria-hidden />
           {t("data.arrange")}
@@ -541,13 +534,13 @@ function CollectionPanel({
   );
 }
 
-/** «Mis datos» as a diagram, or one collection's («Diagrama», `root`). */
-export function DataDiagram({ root = null }: { root?: string | null }) {
+/** «Mis datos» as a diagram (`only`: what its view's filter keeps), or one collection's («Diagrama», `root`). */
+export function DataDiagram({ root = null, only }: { root?: string | null; only?: Set<string> }) {
   const types = useStore((s) => s.dataTypes);
   if (types === null) return <div className="page-loading" role="status" aria-busy="true" />;
   return (
     <ReactFlowProvider>
-      <Canvas types={types} root={root} />
+      <Canvas types={types} root={root} only={only} />
     </ReactFlowProvider>
   );
 }

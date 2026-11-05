@@ -19,7 +19,7 @@ import {
   type UserStore,
   type Zone,
 } from "@boni/store";
-import { filterErrors } from "@boni/views";
+import { dataRowFixed, filterErrors, SYS } from "@boni/views";
 import { mimeOf } from "./paths.ts";
 import { isSystemCollection, type SystemCollections } from "./systemCollections.ts";
 
@@ -66,6 +66,11 @@ export interface DataType {
   rowUi: RowUi;
   /** Boni's own records (systemCollections.ts): read only, never seen by a model. */
   system?: true;
+  /**
+   * The fields a person changes in one of Boni's collections («Mis datos», myData.ts: a row's name, mother, level and
+   * eye are its collection's or its page's); the rest is computed. None in any other of Boni's.
+   */
+  editable?: string[];
 }
 export interface RowUi {
   open: boolean;
@@ -175,6 +180,8 @@ export interface DataRow {
   updated: number;
   /** The row's free text (a note's body, Markdown), only when one row is asked for. */
   body?: string;
+  /** What of it a person does not change, though its collection lets him change it elsewhere («Mis datos»). */
+  fixed?: string[];
 }
 
 export class DataError extends Error {
@@ -222,6 +229,7 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
       rules: [],
       rowUi: rowUiOf(store, t.id),
       system: true,
+      ...(t.id === SYS.data.id ? { editable: [...SYS.data.editable] } : {}),
     }),
   );
   const types = store.schema();
@@ -361,6 +369,17 @@ export function listRows(
   sys?: SystemCollections,
 ): { rows: DataRow[]; titles: Record<string, string>; truncated: boolean; ghosts: GhostRow[] } {
   const mine = sys?.types[type];
+  if (mine && type === SYS.data.id) {
+    // «Mis datos» (myData.ts): in the tree's order, a row's mother by its name.
+    const all = sys?.rows(type) ?? [];
+    const titles = Object.fromEntries(all.map((e) => [e.id, String(e.values.f_titulo ?? "")]));
+    return {
+      rows: all.map(myDataRow),
+      titles,
+      truncated: false,
+      ghosts: [],
+    };
+  }
   if (mine) {
     // Boni's own records: the latest first, no relations, no proposals.
     const all = [...(sys?.rows(type) ?? [])].sort((a, b) => b.updated - a.updated);
@@ -378,6 +397,22 @@ export function listRows(
     truncated: all.length > ROW_LIMIT,
     ghosts: ghostRows(store, type),
   };
+}
+
+/** A row of «Mis datos» as the app takes it: its values, and what of it stays as it is (`dataRowFixed`). */
+export function myDataRow(e: Entity): DataRow {
+  const fixed = dataRowFixed(e.values);
+  return {
+    id: e.id,
+    values: e.values,
+    updated: e.updated,
+    ...(fixed.length ? { fixed: [...fixed] } : {}),
+  };
+}
+/** One row of «Mis datos» as the app takes it, made again (after a change to it); null when it is gone. */
+export function myDataRowOf(sys: SystemCollections, id: string): DataRow | null {
+  const e = sys.rows(SYS.data.id).find((r) => r.id === id);
+  return e ? myDataRow(e) : null;
 }
 
 /** Rows of a type as a table shows them, with the titles of what their relations point to. */
@@ -907,6 +942,13 @@ export function deleteCollection(store: UserStore, type: string, device?: string
   const live = branch(schema, type).filter((id) => !schema.types[id]?.archived);
   if (live.length > 1 || live.some((id) => store.count(id) > 0)) throw new DataError("not-empty");
   store.applySchema({ op: "archive_type", type, archived: true }, meta(device));
+}
+
+/** A deleted collection back where it was (the Undo of deleting it in «Mis datos»). */
+export function restoreCollection(store: UserStore, type: string, device?: string): void {
+  const def = store.schema().types[type];
+  if (!def || def.system || !def.archived) throw new DataError("not-found");
+  store.applySchema({ op: "archive_type", type, archived: false }, meta(device));
 }
 
 /** A collection moved under another (`parent: null`: to the root), with its whole branch. */

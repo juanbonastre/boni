@@ -324,27 +324,28 @@ test("a zone moved into Boni: marked as private, its attachment opened from the 
   expect(execFileSync("cat", [saved]).toString()).toBe("%PDF-1.7 inventado");
 });
 
-test("«Mis datos»: every collection, filtered by what the AI sees; private unlocked only on its page", async () => {
+test("«Mis datos» over the real server is a collection (F6b): a row per page and collection, filtered by its level; private unlocked only on its page", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  const table = w.locator(".cols-table");
-  // The user's pages, Docencia, Documentos, Persona, Pertenencia, and Boni's own things (read only, no level of
-  // the user's).
-  await expect(table.locator("tbody .cols-name", { hasText: "Pertenencia" })).toBeVisible();
-  await table.getByRole("button", { name: "Mostrar subpáginas: Boni" }).click();
-  await expect(table.locator("tbody tr", { hasText: "Llamadas a modelos" })).toContainText(
-    "De Boni · solo lectura",
-  );
-  await w
-    .locator(".cols-filter")
-    .getByRole("radio", { name: /Privada/ })
-    .click();
-  await expect(table.locator("tbody tr")).toHaveCount(1);
-  await expect(table).toContainText("private/ del vault");
+  const table = w.locator(".my-data .db-table");
+  const line = (name: string) =>
+    table.locator("tbody tr", { has: w.getByRole("button", { name, exact: true }) });
+  // The user's pages and collections, and Boni's own after them (never deleted nor renamed here).
+  await expect(line("Pertenencia")).toContainText("Colección");
+  await expect(line("Llamadas a modelos")).toContainText("De Boni");
+  await expect(line("Llamadas a modelos").getByRole("button", { name: /^Borrar/ })).toHaveCount(0);
+  // Filtered as any collection: «Nivel es Privada».
+  await w.locator(".db-head").getByRole("button", { name: "Filtro" }).click();
+  await w.getByRole("button", { name: "Añadir filtro" }).click();
+  await w.getByRole("combobox", { name: "Propiedad" }).selectOption({ label: "Nivel" });
+  await w.getByRole("combobox", { name: "Valor" }).selectOption({ label: "Privada" });
+  await w.keyboard.press("Escape");
+  await expect(line("Documentos")).toHaveCount(1);
+  await expect(line("Pertenencia")).toHaveCount(0);
   await shot(w, "collections");
-  await w.getByRole("button", { name: "Abrir Documentos" }).click();
+  // Opened: its own page, where it is unlocked, choosing the new level and typing its name.
+  await line("Documentos").getByRole("button", { name: "Documentos", exact: true }).click();
   await expect(w.locator(".db-table tbody tr")).toHaveCount(2);
-  // On its own page: unlock, choosing the new level and typing its name.
   await w.locator(".col-protect .protect-pill").click();
   await w.locator(".protect-menu").getByRole("menuitemradio", { name: "Desbloquear…" }).click();
   const dialog = w.getByRole("dialog");
@@ -355,13 +356,22 @@ test("«Mis datos»: every collection, filtered by what the AI sees; private unl
   await dialog.getByRole("button", { name: "Desbloquear" }).click();
   await expect(w.locator(".col-protect .protect-pill")).toHaveText("Opaca");
   await expect(dialog).toHaveCount(0);
-  // And back to private from the list, in one click (raising is never locked).
+  // Back in «Mis datos» (its filter kept), without it, and private again from its «Nivel», in one click (raising
+  // is never locked); lowering it there says where it is done.
   await w.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await w.locator(".cols-filter").getByRole("radio", { name: "Todas" }).click();
-  const row = table.locator("tbody tr", { hasText: "Documentos" });
-  await row.locator(".protect-pill").click();
-  await w.locator(".protect-menu").getByRole("menuitemradio", { name: "Privada" }).click();
-  await expect(row.locator(".protect-pill")).toHaveText("Privada");
+  await w
+    .locator(".db-head")
+    .getByRole("button", { name: /^Filtro/ })
+    .click();
+  await w.getByRole("button", { name: "Quitar filtro" }).click();
+  await w.keyboard.press("Escape");
+  await line("Documentos").locator("td").nth(4).locator(".db-cell").click();
+  await w.getByRole("menu").getByText("Privada", { exact: true }).click();
+  await expect(line("Documentos")).toContainText("Privada");
+  await line("Documentos").locator("td").nth(4).locator(".db-cell").click();
+  await w.getByRole("menu").getByText("Visible", { exact: true }).click();
+  await expect(w.locator(".toast")).toContainText("solo se abre a la IA desde su página");
+  await expect(line("Documentos")).toContainText("Privada");
 });
 
 test("«Flujos» → Modelos over the real server: the budget and a key, kept sealed and never shown again", async () => {
@@ -446,14 +456,18 @@ test("«Registro» and «Auditoría» over the real server: Juan's read of a pri
   await w.keyboard.press("Escape");
 });
 
-test("«Mis datos» over the real server: a collection's notes, a note's history", async () => {
+test("«Mis datos» over the real server: a collection opened, its notes, a note's history", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  const table = w.locator(".all-table");
-  // Docencia has fields of its own: its notes are not in the sidebar, but they are all here.
-  await table.getByRole("button", { name: "Mostrar subpáginas: Docencia" }).click();
-  await table.getByRole("button", { name: "Clase de ejemplo", exact: true }).click();
-  await expect(w.locator(".topbar .crumbs")).toContainText("Mis datos");
+  // Docencia has fields of its own: its notes are not in the sidebar; «Mis datos» opens it, and it them.
+  await w
+    .locator(".my-data .db-table")
+    .getByRole("button", { name: "Docencia", exact: true })
+    .click();
+  await w
+    .locator(".db-table")
+    .getByRole("button", { name: "Clase de ejemplo", exact: true })
+    .click();
   await expect(w.locator(".topbar .crumbs")).toContainText("Docencia");
   await w.getByRole("button", { name: "Historial" }).click();
   const h = w.locator(".history-panel");
@@ -468,7 +482,10 @@ test("«Mis datos» over the real server: a collection's notes, a note's history
 test("a part of a collection with its own level: a rule made from Notion's filter", async () => {
   const w = await (app as ElectronApplication).firstWindow();
   await w.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await w.getByRole("button", { name: "Abrir Docencia" }).click();
+  await w
+    .locator(".my-data .db-table")
+    .getByRole("button", { name: "Docencia", exact: true })
+    .click();
   await w.locator(".col-protect .protect-pill").click();
   await w
     .locator(".protect-menu")

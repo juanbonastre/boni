@@ -412,9 +412,10 @@ contraseña ni un código aquí» under a question.
   name, «De Boni»; once changed, «Modificada», which opens the list of changes (+ added, − removed, ✎ changed, ⤢ another
   size, ↕ where the blocks are) and «Restaurar la de Boni» (Undo in the notice and Ctrl+Z). Removed, a template stays
   removed (the trash brings it back).
-- **Boni's own collections** (`apps/server/src/systemCollections.ts`): in «Mis datos» and in a database block they carry
-  «De Boni · solo lectura» instead of a level of what the AI sees (no AI sees them): no «Nuevo», no editing, no opening
-  a row. They are counted like any collection.
+- **Boni's own collections** (`apps/server/src/systemCollections.ts`): in a database block they carry «De Boni · solo
+  lectura» instead of a level of what the AI sees (no AI sees them): no «Nuevo», no editing, no opening a row. They
+  are counted like any collection. «Mis datos» is the one a person changes (its rows are his collections and pages:
+  the item «Mis datos» below), so it has no pill.
 - **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`): "/" + a collection's name puts it on a
   page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Filtro", "Opciones" and
   "Nuevo". **«Opciones»** is Notion's «⋯» of a view (Juan, 2026-11-03, task 41): a short list, each row saying what it
@@ -831,19 +832,19 @@ contraseña ni un código aquí» under a question.
   shape), «Lo que escribió» (a model's own answer as plain text, or the records it changed), «Argumentos», whether it
   was allowed, and «Ver toda la ejecución».
 - **«Mis datos»** (Boni, the sidebar's top; Juan, 2026-10-28: everything, with every way to manage it; «Todas las
-  páginas» until 2026-11-04): two modes in a segmented control, Lista and Diagrama, kept per device. The list: the
-  sidebar's «Páginas» as a table (Nombre, Elementos, IA, En la barra, Origen, "…"), each line indented
-  18 px under its mother: the user's pages, the collections (a chevron opens one: its daughters, then all its notes,
-  whatever its eye says; «Ninguno de sus registros tiene nota» when there are none) and «Boni», folded. A search
-  (names and the notes' titles) or a level's chip lists what matches flat, each line with where it is, muted, after
-  its name. The eye is a column; each collection's pill changes what the AI sees. "…" on a collection: «Nueva nota»,
-  «Nueva colección dentro», «Mover a…» (the menu becomes the list of where it can go, «Al primer nivel» first, each
-  with its mothers: never into itself or a daughter, never where it is) and «Eliminar colección»; on a note:
-  «Mover a…» (it keeps its id and history) and «Mover a la papelera». «Nueva colección» beside the chips names one in
-  place at the top. A spark in `--accent` marks a note an AI has read (who and when on hover). A note opens as its
-  row's page, with the crumbs «Mis datos / its mothers / collection / title» and the page's own editor («/»
-  and «+», data blocks included; the blocks Markdown cannot say are kept in the note's text as fenced «boni»
-  blocks); Esc comes back. Below the table, what the collections take (next item).
+  páginas» until 2026-11-04; a collection since 2026-11-05, F6b: «que la sección se comportase como una página de
+  colección»): the page of one of Boni's collections, «Mis datos» (`apps/server/src/myData.ts`), laid out as any
+  collection's page: its title, then the head of its block with the layouts (Tabla, Tablero, Lista, Galería,
+  Calendario, Diagrama), «Filtro», «Opciones» and «Nuevo». A row per page of the user's (each after its mother), per
+  collection (each mother before her daughters, by name), then Boni's own (its template pages and its records). Its
+  columns: Nombre, Tipo (Página, Colección, De Boni), Madre, Nivel (the level's pill), Elementos, En la barra (the
+  eye: its notes in the sidebar), Leída por, Escrita por and Origen (hidden at first). Nombre, Madre, Nivel and En la
+  barra change in place and are done to what the row is, with their usual rules and toasts: a name used once, a
+  private collection lowered only from its own page («Una colección privada solo se abre a la IA desde su página.»),
+  only an empty collection deleted; what does not apply to a row is plain text (a page has no level nor eye; Boni's
+  rows have no box and no bin). «Nuevo» makes «Nueva colección» (then «… 2»); a row's bin deletes it, with
+  «Deshacer». A click on a row's name opens what it is: the collection's page, or the page. Its view (the layout,
+  filters, columns) is kept on the device. Below the block, what the collections take (the last item of this list).
 - **«Mis datos» as a diagram** (task 59a; Juan, 2026-11-04: the collections as a database diagram, how they relate
   and what the AI sees; the schema visualizer of Supabase Studio and n8n's canvas as references): a canvas (React
   Flow, dots in `--line-strong`, zoom buttons bottom left) with a card per collection, 220 px wide, in
@@ -857,9 +858,11 @@ contraseña ni un código aquí» under a question.
   **Who reads and writes it, and editing it there** (F6, `docs/flujos.md` §4.7; «Ver como» is gone): under its
   fields each card has two muted 11 px lines, a pen with who writes it and an eye with who reads it (the flows whose
   steps name it, then who did in the last 30 days: «Tú», «Asistente · …», a model's use, «Boni»; two names and «+N»).
-  The toolbar has filters as small lists, «Leída por», «Escrita por», «Nivel» and «Madre» (in «Mis datos» only):
-  what does not match fades to 28 % and nothing moves; then «Nueva colección» (a name field under the toolbar,
-  «Crear» and «Cancelar») and «Ordenar». A click on a card opens its panel on the right, as the flow editor's (its
+  In «Mis datos» it is one more layout of its block: its «Filtro» fades what it leaves out to 28 % (nothing moves),
+  its «Nuevo» makes a collection, and the canvas's toolbar has only «Ordenar». In a collection's «Diagrama» the
+  toolbar has filters as small lists, «Leída por», «Escrita por» and «Nivel», with the same fading, then «Nueva
+  colección» (a name field under the toolbar, «Crear» and «Cancelar») and «Ordenar». A click on a card opens its
+  panel on the right, as the flow editor's (its
   name and count, «Nivel» with the level's pill and menu, «Escrita por» and «Leída por» with each flow «flujo
   encendido/apagado» or how many times in the period, «Abrir» and «Nueva colección dentro»). A drag from a card's
   right edge (a dot in `--accent` on hover) to another card draws a relation: a column of the first named as the
@@ -879,7 +882,7 @@ contraseña ni un código aquí» under a question.
 - **System columns** (any table; Juan, 2026-10-24): Creado, Creado por, Modificado, Modificado por, Editores, Visto
   por, Último acceso de una IA, Origen, Versión, Tamaño. None shown by default; the view's «Opciones» has a «Columnas
   de sistema» panel to show each. Their cells are muted 12.5 px text, ellipsized (full text on hover), never editable.
-- **«Mis datos»** (its list) ends with the tiles Registros, Almacenamiento, Historial and Textos de los modelos,
+- **«Mis datos»** (under its block) ends with the tiles Registros, Almacenamiento, Historial and Textos de los modelos,
   Boni's storage advice when something grows (an amber-tinted line with a bulb; nothing is deleted by itself), and two
   bar lists: «Tamaño por colección» (data and history; a click opens the collection) and «Uso en 30 días» (read and
   edited; a click opens its audit).

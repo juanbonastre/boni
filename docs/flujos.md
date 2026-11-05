@@ -270,6 +270,17 @@ intérprete lo para), y uno que necesitaría preguntar o confirmar se para ahí:
   desde el panel de la colección (el mismo menú del candado de su página), no desde la tarjeta: un menú dentro del
   lienzo se escala con él. Solo una colección de arriba se mete en una madre arrastrándola (una hija se mueve en el
   árbol). Una relación arrastrada es una columna de la primera que apunta a la segunda, de un registro.
+- **Cómo quedó (F6b, 2026-11-05).** F6 dejó «Mis datos» como su propia página con «Lista | Diagrama», y Juan lo vio
+  al probarla («¿no se supone que la sección se comportaría como una página de colección?»). Ahora «Mis datos» es
+  una colección de Boni (`apps/server/src/myData.ts`; `SYS.data` en `packages/views`): una fila por página y
+  colección del usuario y las de Boni al final, con Nombre, Tipo, Madre, Nivel, Elementos, En la barra, Leída por,
+  Escrita por y Origen, hecha en cada lectura. La sección es su página, la de cualquier colección (las vistas,
+  «Filtro», «Opciones», «Nuevo»); el diagrama es una vista más y su filtro es el de la vista (los selectores propios
+  del lienzo quedan para el «Diagrama» de cada colección). Es la única colección de Boni que se cambia (D-04): lo que
+  se cambia en una fila se hace a lo que la fila es (renombrar, mover, el nivel —una privada solo se baja desde su
+  página—, el ojo; borrar solo una vacía; todo con Deshacer), y lo que no aplica a una fila no se ofrece
+  (`dataRowFixed`: una página no tiene nivel ni ojo; las de Boni no se cambian aquí). Se va el árbol con las notas
+  dentro: las notas de una colección se ven en su página.
 
 ### 4.8 Lo que no cambia
 
@@ -281,12 +292,12 @@ todo con Deshacer y en el diario.
 
 | Fase | Qué | Criterio de hecho |
 |---|---|---|
-| F1 Flujos como datos (hecha el 2026-11-05, tarea 61) | La colección de sistema «Flujos»; el flujo de serie «Leer correo» guardado y versionado, que `mail.ts` ejecuta en vez de construir el plan (las entradas vinculadas como hoy); el diario con flujo y versión; «Modelos» pasa a «Flujos»: la lista y el lienzo de cada flujo, de solo lectura; el lienzo general con los números se calcula de los flujos | El correo se lee igual que hoy (las pruebas de `mail.test.ts` sin cambios), y en «Flujos» se ve «Leer correo» con sus nodos y sus números |
-| F2 El editor (hecha el 2026-11-05) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
-| F3 Probar y ver (hecha el 2026-11-05) | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
+| F1 Flujos como datos (hecha el 2026-11-05, tarea 61, salvo dos puntos que la auditoría encontró: «Flujos» como colección de sistema y el lienzo general calculado de los flujos; tarea 63) | La colección de sistema «Flujos»; el flujo de serie «Leer correo» guardado y versionado, que `mail.ts` ejecuta en vez de construir el plan (las entradas vinculadas como hoy); el diario con flujo y versión; «Modelos» pasa a «Flujos»: la lista y el lienzo de cada flujo, de solo lectura; el lienzo general con los números se calcula de los flujos | El correo se lee igual que hoy (las pruebas de `mail.test.ts` sin cambios), y en «Flujos» se ve «Leer correo» con sus nodos y sus números |
+| F2 El editor (hecha el 2026-11-05, salvo «Entra» y «Sale» en el panel, «+» en una flecha con buscador, y guardar un flujo incompleto como borrador; tarea 63) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
+| F3 Probar y ver (hecha el 2026-11-05, salvo elegir el correo con el que se prueba; tarea 63) | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
 | F4 Disparadores (hecha el 2026-11-05; F4b quitó `jobs.create`, que guardaba trabajos que nada ejecutaba) | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
 | F5 Propuestas de la IA (hecha el 2026-11-05) | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |
-| F6 «Mis datos» (hecha el 2026-11-05) | La vista Diagrama en cualquier colección; quién lee y escribe, con filtros; editar desde el diagrama | En Agenda, el diagrama enseña Tarea y Evento con quién las escribe, y una relación nueva se dibuja arrastrando |
+| F6 «Mis datos» (hecha el 2026-11-05; «Mis datos» como página de una colección, F6b, el mismo día) | La vista Diagrama en cualquier colección; quién lee y escribe, con filtros; editar desde el diagrama | En Agenda, el diagrama enseña Tarea y Evento con quién las escribe, y una relación nueva se dibuja arrastrando |
 
 Lo que ya existe se mueve, no se duplica: `pipeline.ts` deja de declararse a mano cuando los flujos existan (F1);
 `mailPlan` deja de ser código cuando el flujo de serie lo sustituya (F1); «Modelos» se queda dentro de «Flujos».
