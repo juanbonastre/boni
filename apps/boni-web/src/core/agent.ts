@@ -853,6 +853,8 @@ export interface FlowProblem {
 export interface FlowCheck {
   problems: FlowProblem[];
   refs: Record<string, { ref: string; t: string }[]>;
+  /** What each step gives (its panel's «Sale»; task 70): itself and its fields. */
+  outs: Record<string, { ref: string; t: string }[]>;
 }
 const strOf = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
 export function parseFlowCatalog(b: unknown): FlowCatalog | null {
@@ -926,22 +928,26 @@ export function parseFlowCatalog(b: unknown): FlowCatalog | null {
   };
 }
 export function parseFlowCheck(b: unknown): FlowCheck {
-  if (!isObj(b)) return { problems: [], refs: {} };
+  if (!isObj(b)) return { problems: [], refs: {}, outs: {} };
   const problems = (Array.isArray(b.problems) ? b.problems : []).filter(isObj).map((p) => ({
     step: strOf(p.step, 80),
     at: strOf(p.at, 120),
     code: strOf(p.code, 60) ?? "bad-plan",
   }));
-  const refs: FlowCheck["refs"] = {};
-  if (isObj(b.refs))
-    for (const [k, v] of Object.entries(b.refs))
-      if (Array.isArray(v))
-        refs[k] = v
-          .filter(isObj)
-          .flatMap((r) =>
-            typeof r.ref === "string" ? [{ ref: r.ref, t: strOf(r.t, 20) ?? "value" }] : [],
-          );
-  return { problems, refs };
+  const byStep = (x: unknown): FlowCheck["refs"] => {
+    const out: FlowCheck["refs"] = {};
+    if (isObj(x))
+      for (const [k, v] of Object.entries(x))
+        if (Array.isArray(v))
+          out[k] = v
+            .filter(isObj)
+            .flatMap((r) =>
+              typeof r.ref === "string" ? [{ ref: r.ref, t: strOf(r.t, 20) ?? "value" }] : [],
+            );
+    return out;
+  };
+  // A server before task 70 says nothing of what each step gives.
+  return { problems, refs: byStep(b.refs), outs: byStep(b.outs) };
 }
 const planOf = (v: unknown): FlowPlan =>
   isObj(v) && Array.isArray(v.steps)

@@ -1,12 +1,14 @@
 /**
  * A step's panel in the flow editor (docs/flujos.md §4.5): what the step is (a tool, a reader, a question or a
- * reply), its settings drawn from the catalog's schema (a tool's arguments by their role, a reader's input and
- * parameters), «Solo si», «Para cada» and «Junto con», and the checklist's problems of that step. A record's
- * collection is a list of the collections; its values are rows of field and value.
+ * reply), «Entra» (the values it takes from the trigger and the steps before it, each with what it is), its settings
+ * drawn from the catalog's schema (a tool's arguments by their role, a reader's input and parameters), «Solo si»,
+ * «Para cada» and «Junto con», «Sale» (what it gives the steps after it and, after «Probar», what it gave), and the
+ * checklist's problems of that step. A record's collection is a list of the collections; its values are rows of field
+ * and value.
  */
 import { Trash2, X } from "lucide-react";
 import type { FlowCatalog, FlowPlan, FlowProblem, FlowStep } from "../core/agent.ts";
-import { changeCollection, type Expr, isExpr, setAt } from "../core/flowEdit.ts";
+import { changeCollection, type Expr, isExpr, refsUsed, setAt } from "../core/flowEdit.ts";
 import { useStore } from "../store.ts";
 import { ExprField } from "./ExprField.tsx";
 
@@ -43,11 +45,42 @@ const litOf = (v: unknown): string | null =>
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** What a value is, in a word (`flows.shape.<t>`): «texto», «lista», «registro»… */
+const shapeName = (t: T, s: string | undefined) => {
+  const k = `flows.shape.${s ?? "value"}`;
+  const v = t(k);
+  return v === k ? (s ?? "") : v;
+};
+
+/** «Entra» or «Sale» (task 70): the references, each with what it is; a word when there are none. */
+function IoList({ title, items, none }: { title: string; items: Refs; none: string }) {
+  const t = useStore((s) => s.t);
+  return (
+    <section className="flow-io" aria-label={title}>
+      <h4 className="flow-io-title">{title}</h4>
+      {items.length ? (
+        <ul className="flow-io-list">
+          {items.map((r) => (
+            <li key={r.ref}>
+              <code>{r.ref}</code>
+              <span className="muted">{shapeName(t, r.t)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="muted small">{none}</p>
+      )}
+    </section>
+  );
+}
+
 export function FlowStepPanel({
   step,
   plan,
   catalog,
   refs,
+  outs,
+  tried,
   problems,
   onPlan,
   onRemove,
@@ -57,6 +90,10 @@ export function FlowStepPanel({
   plan: FlowPlan;
   catalog: FlowCatalog;
   refs: Refs;
+  /** What it gives (the server's check; none from a server before task 70). */
+  outs: Refs;
+  /** After «Probar», what it gave or would do, in words ([]: it did not run); null without a test. */
+  tried: string[] | null;
   problems: readonly FlowProblem[];
   onPlan: (p: FlowPlan) => void;
   onRemove: () => void;
@@ -297,11 +334,35 @@ export function FlowStepPanel({
           ))}
         </ul>
       )}
+      <IoList
+        title={t("flows.in")}
+        items={refsUsed(step).map((ref) => ({
+          ref,
+          t: refs.find((r) => r.ref === ref)?.t ?? "value",
+        }))}
+        none={t("flows.in.none")}
+      />
       {body}
       <div className="flow-panel-sep" />
       {field(t("flows.when"), ["when"], step.when, true)}
       {refSelect(t("flows.each"), "each")}
       {step.each !== undefined && refSelect(t("flows.zip"), "zip")}
+      <div className="flow-panel-sep" />
+      <IoList title={t("flows.out")} items={outs} none={t("flows.out.none")} />
+      {tried && (
+        <section className="flow-io flow-tried" aria-label={t("flows.tried")}>
+          <h4 className="flow-io-title">{t("flows.tried")}</h4>
+          {tried.length ? (
+            <ul className="flow-io-list">
+              {tried.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted small">{t("flows.tried.none")}</p>
+          )}
+        </section>
+      )}
     </aside>
   );
 }

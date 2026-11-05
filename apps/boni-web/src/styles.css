@@ -9176,12 +9176,60 @@ button.rows-panel-row:hover {
   color: var(--muted);
   font-size: 12px;
 }
+/* «Añadir paso» (task 70): a search on top, the kinds in their groups under it, scrolling alone. */
 .flow-kinds {
+  display: flex;
+  flex-direction: column;
   max-height: 420px;
+}
+.flow-kind-search {
+  margin: 4px 4px 6px;
+}
+.flow-kind-list {
   overflow: auto;
+  min-height: 0;
+}
+.flow-kind-none {
+  margin: 6px 8px;
 }
 .flow-kind-group + .flow-kind-group {
   margin-top: 6px;
+}
+/* A step's «Entra» and «Sale» (task 70): each value it takes or gives, and what it is, muted. */
+.flow-io {
+  margin: 4px 0 8px;
+}
+.flow-step-panel h4.flow-io-title {
+  margin: 6px 0 4px;
+}
+.flow-io-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+  font-size: 12.5px;
+}
+.flow-io-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.flow-io-list code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.flow-io-list .muted {
+  flex: none;
+  margin-left: auto;
+  font-size: 11.5px;
+}
+.flow-tried .flow-io-list li {
+  display: block;
+  overflow-wrap: anywhere;
 }
 .flow-run-form {
   display: flex;

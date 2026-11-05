@@ -454,6 +454,8 @@ export interface FlowCheck {
   problems: Problem[];
   /** For each step, the values it may take (the editor's picker), in order: inputs, earlier steps, the item. */
   refs: Record<string, RefOption[]>;
+  /** For each step, what it gives (its panel's «Sale»; task 70): itself and its fields, as the next steps take them. */
+  outs: Record<string, RefOption[]>;
 }
 
 /**
@@ -524,7 +526,7 @@ export function checkFlow(
       !problems.some((p) => p.step === s.id && p.code === "flow-in-flow")
     )
       problems.push({ step: s.id, at: null, code: "flow-in-flow" });
-  return { problems: problems.slice(0, 40), refs: refsFor(store, flow, o) };
+  return { problems: problems.slice(0, 40), ...refsFor(store, flow, o) };
 }
 
 // ------------------------------------------------------------------ the values a step may take
@@ -690,17 +692,24 @@ function paths(shape: Shape, depth: number, base = ""): { path: string; t: Shape
 
 const REFS_PER_STEP = 300;
 
-/** For each step, the values it may take: the trigger's, the earlier steps', and `$item`/`$zip` in a loop. */
+/** What a step gives, as its panel says it: itself and its fields, at most this many. */
+const OUTS_PER_STEP = 40;
+
+/**
+ * For each step, the values it may take (the trigger's, the earlier steps', and `$item`/`$zip` in a loop) and what it
+ * gives (itself and its fields).
+ */
 function refsFor(
   store: UserStore,
   flow: { trigger: unknown; plan: unknown },
   o: { modules: readonly string[]; mailType: string | null },
-): Record<string, RefOption[]> {
+): { refs: Record<string, RefOption[]>; outs: Record<string, RefOption[]> } {
   const types = visibleTypes(store);
   const byKey = new Map(types.map((t) => [t.key, t]));
   const mailType = o.mailType ? store.schema().types[o.mailType] : undefined;
   const env = new Map<string, Shape>(Object.entries(inputShapes(flow.trigger, types)));
   const out: Record<string, RefOption[]> = {};
+  const outs: Record<string, RefOption[]> = {};
   for (const s of stepsOf(flow.plan)) {
     const local = new Map(env);
     const each = (s.each as { ref?: unknown } | undefined)?.ref;
@@ -718,9 +727,13 @@ function refsFor(
       for (const p of paths(shape, name === "fill" || name === "prefill" ? 1 : 3, name))
         if (opts.length < REFS_PER_STEP) opts.push({ ref: `$${p.path}`, t: p.t });
     out[s.id] = opts;
-    env.set(s.id, stepShape(s, byKey, mailType, o.modules));
+    const gives = stepShape(s, byKey, mailType, o.modules);
+    env.set(s.id, gives);
+    outs[s.id] = paths(gives, 1, s.id)
+      .slice(0, OUTS_PER_STEP)
+      .map((p) => ({ ref: `$${p.path}`, t: p.t }));
   }
-  return out;
+  return { refs: out, outs };
 }
 
 // ------------------------------------------------------------------ the user's changes
