@@ -256,9 +256,11 @@ test("«Mis datos» is a collection (F6b): a row per page and collection, then B
   await page.screenshot({ path: `${SHOTS}/all-pages.png` });
   // Its name, in place; the sidebar says it too.
   await line("Libros").getByRole("button", { name: "Libros", exact: true }).dblclick();
-  await page.keyboard.press("ControlOrMeta+a");
-  await page.keyboard.type("Lecturas", { delay: 20 });
-  await page.keyboard.press("Enter");
+  // The name is written once its box has the focus (on a slow machine a key typed before is lost).
+  const naming = table.locator("tbody td.is-title input");
+  await expect(naming).toBeFocused();
+  await naming.fill("Lecturas");
+  await naming.press("Enter");
   await expect.poll(() => sent("PUT api/data/rows/sys_data_t_libro ", "Lecturas")).toBe(true);
   await expect(page.locator(".sidebar")).toContainText("Lecturas");
   // Its level: up from here; a private one comes down only from its own page.
