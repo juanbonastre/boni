@@ -1666,6 +1666,11 @@ export interface DataType {
   /** Boni's own records (calls to models, its activity): read only, never seen by a model. */
   system?: true;
   /**
+   * In one of Boni's collections that a person changes («Mis datos»: a row's name, mother, level and eye are its
+   * collection's or its page's), the fields he changes; the rest is computed.
+   */
+  editable?: string[];
+  /**
    * The box that marks a record done (its calendar's task column, Boni Calendar's «Hecha»), by its field's id: what
    * the phone's lists tick and filter by. None when the collection keeps no tasks.
    */
@@ -1692,7 +1697,17 @@ export interface DataRow {
   type?: string;
   /** A pending proposal drawn as a row (its id): never an entity, nothing counts it until accepted. */
   ghost?: string;
+  /** What of it a person does not change here, though its collection lets him («Mis datos»: a page's level). */
+  fixed?: string[];
 }
+
+/**
+ * Whether a person changes a field of a collection from the app: any of his own (not one a connector fills); in Boni's,
+ * only what it says he changes («Mis datos»).
+ */
+export const fieldEditable = (t: DataType, field: string, row?: DataRow) =>
+  (t.editable ? t.editable.includes(field) : !t.system && !t.readOnly) &&
+  !row?.fixed?.includes(field);
 
 function parseDataType(v: unknown): DataType | null {
   if (!isObj(v) || typeof v.id !== "string" || !Array.isArray(v.fields)) return null;
@@ -1706,6 +1721,9 @@ function parseDataType(v: unknown): DataType | null {
     count: typeof v.count === "number" ? v.count : 0,
     level: levelOf(v.level),
     ...(v.system === true ? { system: true as const } : {}),
+    ...(Array.isArray(v.editable)
+      ? { editable: v.editable.filter((x): x is string => typeof x === "string").slice(0, 20) }
+      : {}),
     ...(typeof v.done === "string" ? { done: v.done } : {}),
     ...(v.readOnly === true ? { readOnly: true } : {}),
     ...(v.view === "mail" ? { view: "mail" as const } : {}),
@@ -1834,6 +1852,9 @@ function parseRow(v: unknown): DataRow | null {
     updated: Number(v.updated) || 0,
     ...(typeof v.body === "string" ? { body: v.body } : {}),
     ...(typeof v.type === "string" ? { type: v.type } : {}),
+    ...(Array.isArray(v.fixed)
+      ? { fixed: v.fixed.filter((x): x is string => typeof x === "string").slice(0, 20) }
+      : {}),
   };
 }
 

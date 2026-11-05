@@ -192,25 +192,22 @@ for (const language of ["es", "en"] as const) {
       issues.push(...(await audit(page, "protection menu")));
       await page.keyboard.press("Escape");
       await page.locator(".sidebar").getByRole("button", { name: l.collections }).click();
-      await page.locator(".cols-table").waitFor();
+      await page.locator(".my-data .db-table").waitFor();
       issues.push(...(await audit(page, "collections")));
+      // «Mis datos» is a collection (F6b): a row's level and its mother are picked in its cells.
+      const documentos = page.locator(".my-data .db-table tbody tr", { hasText: "Documentos" });
+      await documentos.locator("td").nth(4).locator(".db-cell").click();
+      await page.getByRole("menu").waitFor();
+      issues.push(...(await audit(page, "level menu")));
+      await page.keyboard.press("Escape");
+      await documentos.locator("td").nth(3).locator(".db-cell").click();
+      await page.getByRole("menu").waitFor();
+      issues.push(...(await audit(page, "mother picker")));
+      await page.keyboard.press("Escape");
       await page
-        .locator(".cols-table tr", { hasText: "Documentos" })
-        .locator(".protect-pill")
+        .locator(".my-data .db-table")
+        .getByRole("button", { name: "Libros", exact: true })
         .click();
-      await page.locator(".protect-menu").waitFor();
-      issues.push(...(await audit(page, "protection menu, locked")));
-      await page.keyboard.press("Escape");
-      // The tree's menus: a collection's, and «Mover a…».
-      await page.locator(".cols-table .page-toggle:not(.static)").first().click();
-      await page.locator(".cols-table .all-act .icon-btn").nth(1).click();
-      await page.locator(".menu-list").waitFor();
-      issues.push(...(await audit(page, "collection menu")));
-      await page.locator(".menu-list .menu-item").nth(2).click();
-      await page.locator(".all-move").waitFor();
-      issues.push(...(await audit(page, "move to")));
-      await page.keyboard.press("Escape");
-      await page.locator(".cols-table tr", { hasText: "Libros" }).locator(".cols-name").click();
       await page.locator(".col-protect").waitFor();
       issues.push(...(await audit(page, "collection page")));
 

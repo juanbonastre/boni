@@ -39,6 +39,9 @@ export {
 } from "./page.ts";
 export { pyRound, pySum } from "./pyround.ts";
 export {
+  dataLevel,
+  dataRowFixed,
+  dataRowTarget,
   resolveTemplateLinks,
   SYS,
   type TemplateChange,

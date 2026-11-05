@@ -9,6 +9,7 @@ import {
 } from "@boni/calendar";
 import { rolesOf } from "@boni/entities";
 import { exportChunks, releaseSent } from "@boni/export";
+import { dataRowTarget } from "@boni/views";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
 import {
@@ -46,6 +47,7 @@ import {
   listTypes,
   moveCollection,
   moveRow,
+  myDataRowOf,
   removeColumn,
   removeRow,
   renameCollection,
@@ -65,6 +67,7 @@ import type { Feeds } from "./feeds.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { MailError, type Mails } from "./mail.ts";
 import { mcpAnswer } from "./mcp.ts";
+import { createMyData, deleteMyData, restoreMyData, updateMyData, withMyData } from "./myData.ts";
 import {
   createPage,
   getPage,
@@ -83,7 +86,7 @@ import { noticesOfAccount, type Push } from "./reminders.ts";
 import { bodyOf, CORS, header, SAFE, send, sendFile, tokenOf } from "./reply.ts";
 import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
 import type { SecretKey } from "./secret.ts";
-import { isSystemCollection, systemCollections } from "./systemCollections.ts";
+import { isSystemCollection, SYS_DATA, systemCollections } from "./systemCollections.ts";
 import { todayOf } from "./today.ts";
 import { usageOf } from "./usage.ts";
 import { serveV1 } from "./v1/http.ts";
@@ -215,7 +218,8 @@ export function serve(app: App, listener: Listener): Server {
  * streams of the other.
  */
 /** Data errors that say the request clashes with what is there (409), not that it is malformed. */
-const CONFLICTS = new Set(["taken", "not-empty", "in-use"]);
+// «locked»: a private collection lowered away from its own page (myData.ts says it as the protection route does).
+const CONFLICTS = new Set(["taken", "not-empty", "in-use", "locked"]);
 
 export function makeApp(opts: ServerOptions): App {
   const { db, key, feeds, push } = opts;
@@ -421,14 +425,19 @@ export function makeApp(opts: ServerOptions): App {
       if (s.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const store = opts.agent.store(s.user.id);
       const now = opts.now ?? Date.now;
-      // Boni's own records as read-only collections (systemCollections.ts), made only when a route needs them.
+      // Boni's own records as read-only collections (systemCollections.ts), made only when a route needs them, and
+      // «Mis datos» over them (myData.ts).
       const sys = () =>
-        systemCollections(store, {
-          now: now(),
-          usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
-          // The zone the blocks take «today» in (below), so a record and «this month» agree.
-          tz: opts.tz ?? "Europe/Madrid",
-        });
+        withMyData(
+          store,
+          systemCollections(store, {
+            now: now(),
+            usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
+            // The zone the blocks take «today» in (below), so a record and «this month» agree.
+            tz: opts.tz ?? "Europe/Madrid",
+          }),
+          { now: now(), tz: opts.tz ?? "Europe/Madrid" },
+        );
       try {
         if (route === "GET /api/data/today") {
           // Inicio's «Hoy» on the phone (today.ts): the device's timezone says which day it is.
@@ -520,6 +529,14 @@ export function makeApp(opts: ServerOptions): App {
           recordUserRead(store, s.device, "data.rows", type, ids, false, now());
           return send(res, 200, { ...out, columns: systemColumns(store, ids) });
         }
+        if (route === "POST /api/data/types/:type/rows" && params.type === SYS_DATA) {
+          // «Nuevo» in «Mis datos»: a collection (or a page), its row back.
+          const b = (await bodyOf(req)) as { values?: unknown };
+          const id = createMyData(store, b.values ?? {}, s.device);
+          return send(res, 200, {
+            row: myDataRowOf(sys(), id),
+          });
+        }
         if (route === "POST /api/data/types/:type/rows") {
           const b = (await bodyOf(req)) as { values?: unknown };
           return send(res, 200, {
@@ -565,6 +582,25 @@ export function makeApp(opts: ServerOptions): App {
         if (route === "PUT /api/data/audit/settings") {
           const r = setAuditSettings(store, await bodyOf(req));
           return r ? send(res, 200, r) : send(res, 400, { error: "bad-request" });
+        }
+        // A row of «Mis datos» is a collection or a page: what changes in it is done to that (myData.ts).
+        if (dataRowTarget(params.id ?? "") !== null) {
+          const id = params.id ?? "";
+          if (route === "PUT /api/data/rows/:id") {
+            const b = (await bodyOf(req)) as { values?: unknown };
+            updateMyData(store, id, b.values, s.device);
+            return send(res, 200, {
+              row: myDataRowOf(sys(), id),
+            });
+          }
+          if (route === "DELETE /api/data/rows/:id") {
+            deleteMyData(store, id, s.device);
+            return send(res, 200, {});
+          }
+          if (route === "POST /api/data/rows/:id/restore") {
+            restoreMyData(store, id, s.device);
+            return send(res, 200, {});
+          }
         }
         if (route === "PUT /api/data/rows/:id") {
           const b = (await bodyOf(req)) as { values?: unknown; body?: unknown };

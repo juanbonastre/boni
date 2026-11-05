@@ -28,7 +28,9 @@ import {
 export const SYS_CALLS = SYS.calls.id;
 export const SYS_ACTIVITY = SYS.activity.id;
 export const SYS_RUNS = SYS.runs.id;
-export const SYSTEM_COLLECTIONS = [SYS_CALLS, SYS_ACTIVITY, SYS_RUNS] as const;
+/** «Mis datos» (myData.ts): made apart, on each read, over these (it lists them too). */
+export const SYS_DATA = SYS.data.id;
+export const SYSTEM_COLLECTIONS = [SYS_CALLS, SYS_ACTIVITY, SYS_RUNS, SYS_DATA] as const;
 export const isSystemCollection = (id: string) =>
   (SYSTEM_COLLECTIONS as readonly string[]).includes(id);
 

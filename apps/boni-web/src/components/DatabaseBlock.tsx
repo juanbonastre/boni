@@ -1,7 +1,9 @@
 import {
   type DatabaseFilter,
   type DatabaseView,
+  dataRowTarget,
   matchesFilters,
+  SYS,
   SYSTEM_COLUMNS,
   type SystemColumn,
 } from "@boni/views";
@@ -23,7 +25,13 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { DataField, DataRow, DataType, DataValue } from "../core/agent.ts";
+import {
+  type DataField,
+  type DataRow,
+  type DataType,
+  type DataValue,
+  fieldEditable,
+} from "../core/agent.ts";
 import type { SystemColumns } from "../core/audit.ts";
 import type { T } from "../i18n.ts";
 import {
@@ -139,39 +147,52 @@ export function DatabaseBlock({
           <h3 className="db-name">
             {type?.icon && <span className="db-icon">{type.icon}</span>}
             {type?.name ?? "…"}
-            {type?.system ? <SystemPill /> : type && <ProtectionMenu type={type} />}
+            {type?.system
+              ? !type.editable && <SystemPill />
+              : type && <ProtectionMenu type={type} />}
           </h3>
         ) : (
           <span className="db-name" />
         )}
         <div className="db-layouts" role="radiogroup" aria-label={t("db.layout")}>
-          {/* Boni's own records have no diagram: they are not the user's data (F6). */}
-          {LAYOUTS.filter((l) => l.id !== "diagram" || !type?.system).map((l) => (
-            <button
-              key={l.id}
-              type="button"
-              role="radio"
-              aria-checked={view.layout === l.id}
-              className={`db-layout${view.layout === l.id ? " on" : ""}`}
-              title={t(`db.layouts.${l.id}`)}
-              aria-label={t(`db.layouts.${l.id}`)}
-              onClick={() => onView({ ...view, layout: l.id })}
-            >
-              {l.icon}
-              <span>{t(`db.layouts.${l.id}`)}</span>
-            </button>
-          ))}
+          {/* Boni's own records have no diagram: they are not the user's data (F6); «Mis datos» is all of it. */}
+          {LAYOUTS.filter((l) => l.id !== "diagram" || !type?.system || !!type.editable).map(
+            (l) => (
+              <button
+                key={l.id}
+                type="button"
+                role="radio"
+                aria-checked={view.layout === l.id}
+                className={`db-layout${view.layout === l.id ? " on" : ""}`}
+                title={t(`db.layouts.${l.id}`)}
+                aria-label={t(`db.layouts.${l.id}`)}
+                onClick={() => onView({ ...view, layout: l.id })}
+              >
+                {l.icon}
+                <span>{t(`db.layouts.${l.id}`)}</span>
+              </button>
+            ),
+          )}
         </div>
         {type && <FilterButton type={type} view={view} onView={onView} />}
         {type && <ViewOptions type={type} view={view} onView={onView} />}
-        {!type?.system && (
+        {(!type?.system || type.editable) && (
           <button type="button" className="btn primary small" onClick={() => void add()}>
             <Plus size={14} strokeWidth={2} />
             {t("db.new")}
           </button>
         )}
       </header>
-      {view.layout === "diagram" && type ? (
+      {view.layout === "diagram" && type?.id === SYS.data.id ? (
+        // «Mis datos»: every collection, the ones its filter leaves out dimmed (docs/flujos.md §4.7, F6b).
+        <DataDiagram
+          only={
+            data && view.filter?.length
+              ? new Set(sorted.flatMap((r) => dataRowTarget(r.id) ?? []))
+              : undefined
+          }
+        />
+      ) : view.layout === "diagram" && type ? (
         <DataDiagram root={type.id} />
       ) : !type || !data ? (
         <div className="db-loading">{t("chart.loading")}</div>
@@ -830,8 +851,9 @@ function TableView({
     ...sys.map((c) => ({ key: `_sys.${c}`, base: 160, name: t(`sys.${c}`) })),
   ];
   const width = (key: string, base: number) => widths?.[key] ?? base;
-  // Boni's own tables are read only: no boxes, no menu, no tools (their rows have nothing to be done with).
-  const pickable = !type.system;
+  // Boni's own tables are read only: no boxes, no menu, no tools (their rows have nothing to be done with); in
+  // «Mis datos», a row is a collection or a page, opened and deleted as one.
+  const pickable = !type.system || !!type.editable;
   const total = (pickable ? SEL + TOOLS : 0) + cols.reduce((n, c) => n + width(c.key, c.base), 0);
   const grab = (key: string, from: number) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -1140,7 +1162,8 @@ function TableView({
                 )}
                 {ordered.map((f) => (
                   <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
-                    {type.system ? (
+                    {/* Boni's records: text; in «Mis datos» a title opens what it is, the rest as Cell says. */}
+                    {type.system && !type.editable ? (
                       <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
                     ) : f.id === type.titleField ? (
                       <TitleCell
@@ -1173,15 +1196,18 @@ function TableView({
                 })}
                 {pickable && (
                   <td className="row-tools">
-                    <button
-                      type="button"
-                      className="icon-btn tiny"
-                      title={t("db.delete")}
-                      aria-label={`${t("db.delete")}: ${name}`}
-                      onClick={() => remove([r.id])}
-                    >
-                      <Trash2 size={13} strokeWidth={1.8} />
-                    </button>
+                    {/* A row that stays as it is (Boni's own, in «Mis datos») is not deleted either. */}
+                    {!r.fixed?.includes(type.titleField) && (
+                      <button
+                        type="button"
+                        className="icon-btn tiny"
+                        title={t("db.delete")}
+                        aria-label={`${t("db.delete")}: ${name}`}
+                        onClick={() => remove([r.id])}
+                      >
+                        <Trash2 size={13} strokeWidth={1.8} />
+                      </button>
+                    )}
                   </td>
                 )}
               </tr>
@@ -1189,7 +1215,7 @@ function TableView({
           })}
         </tbody>
       </table>
-      {!type.system && (
+      {(!type.system || type.editable) && (
         <button type="button" className="db-add-row" onClick={onAdd}>
           <Plus size={14} strokeWidth={1.8} />
           {t("db.new")}
@@ -1423,7 +1449,7 @@ function TitleCell({
           clearTimeout(timer.current);
           timer.current = null;
         }
-        onRename(true);
+        if (fieldEditable(type, field.id, row)) onRename(true);
       }}
     >
       {title || <span className="db-empty">{t("page.untitled")}</span>}
@@ -1497,8 +1523,9 @@ export function Cell({
   const locale = useStore((s) => (s.settings.language === "en" ? "en-GB" : "es-ES"));
   const value = row.values[field.id] ?? null;
   const save = onSave ?? ((v: DataValue) => void editCell(type.id, row.id, field.id, v));
-  // A collection a connector fills (the mail's) is shown, never edited (D-22).
-  if (type.readOnly) return <span className="db-ro">{ghostText(field, value, locale)}</span>;
+  // A collection a connector fills (the mail's) is shown, never edited (D-22); in «Mis datos», what is computed.
+  if (!fieldEditable(type, field.id, row))
+    return <span className="db-ro">{ghostText(field, value, locale)}</span>;
   switch (field.type) {
     case "checkbox":
       return (
@@ -1954,7 +1981,8 @@ function BoardView({
               <div
                 key={r.id}
                 className={`db-card${dragging === r.id ? " dragging" : ""}${cards.open === r.id ? " menu-open" : ""}`}
-                draggable={cards.renaming !== r.id}
+                // A card moves to another column only when its value is one a person changes.
+                draggable={cards.renaming !== r.id && fieldEditable(type, group.id, r)}
                 onContextMenu={cards.onMenu(r)}
                 onDragStart={(e) => {
                   e.dataTransfer.effectAllowed = "move";

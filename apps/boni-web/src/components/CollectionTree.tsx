@@ -41,7 +41,8 @@ export function CollectionTree() {
   const [adding, setAdding] = useState<string | null>(null);
   const toggle = (id: string) => toggleFold("branches", id);
   const templates = (pages ?? []).filter((p) => p.template);
-  const system = (types ?? []).filter((x) => x.system);
+  // Boni's records («Mis datos» has its own place, above).
+  const system = (types ?? []).filter((x) => x.system && !x.editable);
   const boni = opened.includes("boni");
   const tools: NodeTools = {
     opened,

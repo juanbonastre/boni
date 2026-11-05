@@ -5,8 +5,9 @@ import { grown, openApp, PAGE_FROM_HOME, recorded, TEMPLATE } from "./fixtures.t
 
 /**
  * One tree (docs/clases.md §2.7; Juan, 2026-10-28): the sidebar has «Mis datos» beside Buscar and
- * Conversación, then «Recientes» and «Páginas» (to open, add and delete, with the eye); «Mis datos» manages
- * it all (search, what the AI sees, the eye, «Mover a…»), with what the AIs read and each note's history.
+ * Conversación, then «Recientes» and «Páginas» (to open, add and delete, with the eye); «Mis datos» is a
+ * collection of it all (docs/flujos.md §4.7, F6b): a row per page and collection, changed in place, with the
+ * views of any collection (the diagram one of them); and each note's history.
  */
 const SHOTS = "e2e-boni/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -219,75 +220,97 @@ test("the right button in the sidebar (task 42): a page's, a collection's and a 
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("«Mis datos»: everything to manage; a search or a level lists it flat; «Mover a…»; a note's history", async ({
+test("«Mis datos» is a collection (F6b): a row per page and collection, then Boni's; name, level, mother and eye change in place; «Nuevo», delete and Undo; a row opens what it is", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", { agent: AGENT });
+  const sent = async (start: string, part: string) =>
+    (await recorded(page)).requests.some((r) => r.startsWith(start) && r.includes(part));
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Mis datos");
+  const table = page.locator(".my-data .db-table");
+  const titles = table.locator("tbody td.is-title");
+  // The user's pages, then his collections, then Boni's own (D-04).
+  await expect(titles).toHaveText([
+    "Gastos",
+    "Documentos",
+    "Libros",
+    "Llamadas a modelos",
+    "Actividad de Boni",
+    "Ejecuciones",
+  ]);
+  const line = (name: string) =>
+    table.locator("tbody tr", { has: page.getByRole("button", { name, exact: true }) });
+  await expect(line("Gastos")).toContainText("Página");
+  await expect(line("Libros")).toContainText("Colección");
+  await expect(line("Documentos")).toContainText("Privada");
+  await expect(line("Ejecuciones")).toContainText("De Boni");
+  // What does not apply to a row is text: a page has no eye; Boni's own rows are not deleted here.
+  await expect(line("Gastos").getByRole("checkbox", { name: "En la barra" })).toHaveCount(0);
+  await expect(line("Ejecuciones").getByRole("button", { name: /^Borrar/ })).toHaveCount(0);
+  await expect(line("Libros").getByRole("checkbox", { name: "En la barra" })).toHaveCount(1);
+  // What any collection's page has: its views (the diagram one of them), «Filtro», «Nuevo».
+  await expect(page.locator(".db-layouts").getByRole("radio")).toHaveCount(6);
+  await expect(page.locator(".db-head").getByRole("button", { name: "Nuevo" })).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/all-pages.png` });
+  // Its name, in place; the sidebar says it too.
+  await line("Libros").getByRole("button", { name: "Libros", exact: true }).dblclick();
+  await page.keyboard.press("ControlOrMeta+a");
+  await page.keyboard.type("Lecturas", { delay: 20 });
+  await page.keyboard.press("Enter");
+  await expect.poll(() => sent("PUT api/data/rows/sys_data_t_libro ", "Lecturas")).toBe(true);
+  await expect(page.locator(".sidebar")).toContainText("Lecturas");
+  // Its level: up from here; a private one comes down only from its own page.
+  await line("Lecturas").locator("td").nth(4).locator(".db-cell").click();
+  await page.getByRole("menu").getByText("Restringida", { exact: true }).click();
+  await expect
+    .poll(() => sent("PUT api/data/rows/sys_data_t_libro ", "o_nivel_restricted"))
+    .toBe(true);
+  await expect(line("Lecturas")).toContainText("Restringida");
+  await line("Documentos").locator("td").nth(4).locator(".db-cell").click();
+  await page.getByRole("menu").getByText("Visible", { exact: true }).click();
+  await expect(page.locator(".toast")).toContainText("solo se abre a la IA desde su página");
+  await expect(line("Documentos")).toContainText("Privada");
+  // Its eye: whether its notes show in the sidebar.
+  await line("Documentos").getByRole("checkbox", { name: "En la barra" }).uncheck();
+  await expect
+    .poll(() => sent("PUT api/data/rows/sys_data_t_private_documentos ", '"f_barra":false'))
+    .toBe(true);
+  // «Nuevo»: a collection, «Nueva colección»; deleted, and back with «Deshacer».
+  await page.locator(".db-head").getByRole("button", { name: "Nuevo" }).click();
+  await expect(line("Nueva colección")).toContainText("Colección");
+  await expect(page.locator(".sidebar")).toContainText("Nueva colección");
+  await line("Nueva colección")
+    .getByRole("button", { name: /^Borrar/ })
+    .click();
+  await expect(line("Nueva colección")).toHaveCount(0);
+  await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
+  await expect(line("Nueva colección")).toHaveCount(1);
+  // One with notes is not deleted: it says why.
+  await line("Lecturas")
+    .getByRole("button", { name: /^Borrar/ })
+    .click();
+  await expect(page.locator(".toast")).toContainText("Solo se elimina una colección vacía");
+  await expect(line("Lecturas")).toHaveCount(1);
+  // A row opens what it is: the collection's page, the page.
+  await line("Lecturas").getByRole("button", { name: "Lecturas", exact: true }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Lecturas");
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await line("Gastos").getByRole("button", { name: "Gastos", exact: true }).click();
+  await expect(page.locator(".page-doc .doc-title")).toHaveValue("Gastos");
+});
+
+test("a note's history: who wrote what, each in their colour, and what each AI saw", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT });
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Mis datos");
-  const table = page.locator(".all-table");
-  const names = table.locator("tbody .cols-name");
-  // The user's pages, then the collections, then Boni's own things.
-  await expect(names).toHaveText(["Gastos", "Documentos", "Libros", "Boni"]);
-  // Libros open: all its notes, whatever its eye says, each with the AIs that read it.
-  await table.getByRole("button", { name: "Mostrar subpáginas: Libros" }).click();
-  await expect(
-    table.locator(".all-row", { hasText: "Rayuela" }).locator(".notes-ai"),
-  ).toHaveAttribute("title", /La ha leído MCP · claude-ejemplo, Agente · claude-opus-5-5/);
-  await expect(
-    table.getByRole("button", { name: "Mostrar sus notas en la barra: Libros" }),
-  ).toHaveAttribute("aria-pressed", "false");
-  await page.screenshot({ path: `${SHOTS}/all-pages.png` });
-  // A search lists what matches flat, each with where it is.
-  const search = page.getByRole("textbox", { name: "Buscar por nombre o título" });
-  await search.pressSequentially("contrato", { delay: 20 });
-  await expect(names).toHaveText(["Contrato de ejemplo"]);
-  await expect(table.locator(".all-where")).toHaveText("Documentos");
-  await search.fill("");
-  // A level lists the collections at it.
-  await page.getByRole("radio", { name: /Privada/ }).click();
-  await expect(names).toHaveText(["Documentos"]);
-  await page.getByRole("radio", { name: "Todas" }).click();
-  // «Mover a…»: a note of Documentos into Libros (never where it already is).
-  await table.getByRole("button", { name: "Mostrar subpáginas: Documentos" }).click();
-  await table.getByRole("button", { name: "Más opciones: Póliza de ejemplo" }).click();
-  await page.getByRole("menuitemradio", { name: "Mover a…" }).click();
-  await expect(page.locator(".all-move .menu-item")).toHaveText(["Libros"]);
-  await page.getByRole("menuitemradio", { name: "Libros" }).click();
-  await expect(names).toHaveText([
-    "Gastos",
-    "Documentos",
-    "Contrato de ejemplo",
-    "Libros",
-    "Rayuela",
-    "Póliza de ejemplo",
-    "Boni",
-  ]);
-  // A collection into another, and back to the top level.
-  await table.getByRole("button", { name: "Más opciones: Documentos" }).click();
-  await page.getByRole("menuitemradio", { name: "Mover a…" }).click();
-  await expect(page.locator(".all-move .menu-item")).toHaveText(["Libros"]);
-  await page.getByRole("menuitemradio", { name: "Libros" }).click();
-  await expect(names).toHaveText([
-    "Gastos",
-    "Libros",
-    "Documentos",
-    "Contrato de ejemplo",
-    "Rayuela",
-    "Póliza de ejemplo",
-    "Boni",
-  ]);
-  await table.getByRole("button", { name: "Más opciones: Documentos" }).click();
-  await page.getByRole("menuitemradio", { name: "Mover a…" }).click();
-  await expect(page.locator(".all-move .menu-item")).toHaveText(["Al primer nivel"]);
-  await page.getByRole("menuitemradio", { name: "Al primer nivel" }).click();
-  await expect(names.nth(1)).toHaveText("Documentos");
-  // A note opens as its page, after its collection; its history beside it; Escape comes back here.
-  await table.getByRole("button", { name: "Rayuela", exact: true }).click();
-  await expect(page.locator(".topbar .crumbs")).toHaveText(
-    /Mis datos\s*\/\s*Libros\s*\/\s*Rayuela/,
-  );
+  await page.locator(".my-data").getByRole("button", { name: "Libros", exact: true }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Libros");
+  await page.locator(".db-table").getByRole("button", { name: "Rayuela", exact: true }).click();
+  await expect(page.locator(".topbar .crumbs")).toHaveText(/Libros\s*\/\s*Rayuela/);
   await page.getByRole("button", { name: "Historial" }).click();
   const h = page.locator(".history-panel");
   await expect(h.locator(".history-cols")).toContainText("Creado porTú · portatil");
@@ -310,11 +333,6 @@ test("«Mis datos»: everything to manage; a search or a level lists it flat; «
   await page.screenshot({ path: `${SHOTS}/history.png` });
   await page.keyboard.press("Escape");
   await expect(h).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  await expect(page.locator(".topbar h1")).toHaveText("Mis datos");
-  // A page of the list opens as itself.
-  await table.getByRole("button", { name: "Gastos", exact: true }).click();
-  await expect(page.locator(".page-doc .doc-title")).toHaveValue("Gastos");
 });
 
 test("a note is a page: the full editor, and what Markdown cannot say saved as a marked block", async ({
@@ -322,15 +340,12 @@ test("a note is a page: the full editor, and what Markdown cannot say saved as a
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT, pages: [] });
-  // Libros' notes are not in the sidebar: «Mis datos» lists them with Libros open.
+  // Libros' notes are not in the sidebar: «Mis datos» opens Libros, and Libros its notes.
   const open = async () => {
-    await page
-      .locator(".all-table")
-      .getByRole("button", { name: "Mostrar subpáginas: Libros" })
-      .click();
-    await page.locator(".all-table").getByRole("button", { name: "Rayuela", exact: true }).click();
+    await page.locator(".db-table").getByRole("button", { name: "Rayuela", exact: true }).click();
   };
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await page.locator(".my-data").getByRole("button", { name: "Libros", exact: true }).click();
   await open();
   const doc = page.locator(".doc-editor");
   // The page's own «/»: a Cifra over the collection the note belongs to, computed like any page's.
@@ -340,8 +355,8 @@ test("a note is a page: the full editor, and what Markdown cannot say saved as a
   await expect(doc.locator(".blk-number .kpi-value")).toBeVisible();
   // Leaving by its crumb (the new block's title keeps the focus, as when Juan types) saves the note's text;
   // the block travels as a fenced «boni» block and comes back the same.
-  await page.locator(".topbar .crumbs").getByRole("button", { name: "Mis datos" }).click();
-  await expect(page.locator(".topbar h1")).toHaveText("Mis datos");
+  await page.locator(".topbar .crumbs").getByRole("button", { name: "Libros" }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Libros");
   await open();
   await expect(page.locator(".doc-editor .blk-number .kpi-value")).toBeVisible();
   const body = await page.evaluate(async () => {
@@ -362,7 +377,8 @@ test("system columns in a table: none by default, chosen from the view's options
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT });
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await page.getByRole("button", { name: "Abrir Libros" }).click();
+  await page.locator(".my-data").getByRole("button", { name: "Libros", exact: true }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Libros");
   const table = page.locator(".db-table");
   await expect(table.locator("th.sys-col")).toHaveCount(0);
   await page.getByRole("button", { name: "Opciones", exact: true }).click();
@@ -402,13 +418,13 @@ test("«Mis datos» says what the collections take: records, storage and its par
   await expect(page.locator(".topbar")).toContainText("Auditoría");
 });
 
-test("«Mis datos» as a diagram: a card per collection with its fields, arrows for relations, «Nivel» dims the others, a click opens its panel and «Abrir» the collection", async ({
+test("«Mis datos» as a diagram, one more of its views: a card per collection with its fields, arrows for relations, its «Filtro» dims the others, a click opens its panel and «Abrir» the collection", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT });
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await page.getByRole("radio", { name: "Diagrama" }).click();
+  await page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }).click();
   const canvas = page.locator(".data-diagram");
   const cards = canvas.locator(".dg-card-node");
   await expect(cards.locator(".dg-name")).toContainText(["Libros", "Documentos"]);
@@ -420,27 +436,40 @@ test("«Mis datos» as a diagram: a card per collection with its fields, arrows 
   );
   // A relation with itself is an arc over the card, named.
   await expect(canvas.locator(".dg-loop-label")).toHaveText("Relacionado · varios");
-  // A filter by level (no «Ver como» any more, F6): the private one stays, the others fade; nothing moves.
-  const level = page.locator(".data-filter", { hasText: "Nivel" }).locator("select");
-  await level.selectOption("private");
+  // Its own selects are gone: the view's «Filtro» does it, as on any collection (F6b). «Nivel es Privada»: the
+  // private one stays, the others fade; nothing moves.
+  await expect(page.locator(".data-filter")).toHaveCount(0);
+  await page.locator(".db-head").getByRole("button", { name: "Filtro" }).click();
+  await page.getByRole("button", { name: "Añadir filtro" }).click();
+  await page.getByRole("combobox", { name: "Propiedad" }).selectOption({ label: "Nivel" });
+  await page.getByRole("combobox", { name: "Valor" }).selectOption({ label: "Privada" });
+  await page.keyboard.press("Escape");
   await expect(cards.filter({ hasText: "Documentos" })).not.toHaveClass(/dim/);
   await expect(libros).toHaveClass(/dim/);
-  await level.selectOption("");
-  await expect(libros).not.toHaveClass(/dim/);
   await page.screenshot({ path: `${SHOTS}/data-diagram.png` });
+  // The same filter in the table: only the private one.
+  await page.locator(".db-layouts").getByRole("radio", { name: "Tabla" }).click();
+  await expect(page.locator(".my-data .db-table tbody td.is-title")).toContainText(["Documentos"]);
+  await expect(page.locator(".my-data .db-table tbody td.is-title")).not.toContainText(["Libros"]);
+  await page
+    .locator(".db-head")
+    .getByRole("button", { name: /^Filtro/ })
+    .click();
+  await page.getByRole("button", { name: "Quitar filtro" }).click();
+  await page.keyboard.press("Escape");
+  await page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }).click();
+  await expect(libros).not.toHaveClass(/dim/);
   // A click opens its panel: its level, who writes and reads it, «Abrir».
   await libros.locator(".dg-name").click();
   const panel = page.locator(".data-panel");
   await expect(panel.locator("h3")).toContainText("Libros");
   await panel.getByRole("button", { name: "Abrir", exact: true }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Libros");
+  // Back in «Mis datos», the view it was left in.
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await expect(page.getByRole("radio", { name: "Diagrama" })).toHaveAttribute(
-    "aria-checked",
-    "true",
-  );
-  await page.getByRole("radio", { name: "Lista" }).click();
-  await expect(page.locator(".all-table")).toBeVisible();
+  await expect(
+    page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }),
+  ).toHaveAttribute("aria-checked", "true");
 });
 
 test("a collection's «Diagrama» (F6): Agenda with her daughters and who writes and reads them; filters; a relation drawn by dragging", async ({
@@ -465,7 +494,7 @@ test("a collection's «Diagrama» (F6): Agenda with her daughters and who writes
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await page.locator(".all-table").getByText("Agenda", { exact: true }).first().click();
+  await page.locator(".my-data").getByRole("button", { name: "Agenda", exact: true }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Agenda");
   await page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }).click();
   const canvas = page.locator(".data-diagram");

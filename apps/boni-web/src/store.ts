@@ -2,9 +2,11 @@ import {
   blocksToMarkdown,
   type DatabaseFilter,
   type DatabaseView,
+  dataRowTarget,
   markdownToBlocks,
   type PageSpec,
   resolveTemplateLinks,
+  SYS,
   templatePage,
 } from "@boni/views";
 import { useMemo } from "react";
@@ -20,6 +22,7 @@ import {
   type DataUsage,
   type DataValue,
   type ExtensionView,
+  fieldEditable,
   type InboxRequest,
   type LiveEvent,
   type MailGuide,
@@ -2961,21 +2964,49 @@ const putRow = (type: string, row: DataRow) => {
   });
 };
 
-/** A cell changed in a view: at once here, then on the server (its answer is the truth). */
-/** Boni's own records (calls to models, its activity): read only, so nothing here changes or opens them. */
-const readOnly = (type: string) => get().dataTypes?.find((x) => x.id === type)?.system === true;
+/**
+ * Boni's own records (calls to models, its activity): read only, so nothing here changes or opens them. «Mis datos»
+ * is the one Boni's collection a person changes (its rows are his collections and pages).
+ */
+const readOnly = (type: string) => {
+  const def = get().dataTypes?.find((x) => x.id === type);
+  return def?.system === true && !def.editable;
+};
+const MY_DATA = SYS.data.id;
 
+/**
+ * After a change in «Mis datos»: what it changed shows everywhere (the sidebar's tree and pages, the collections) and
+ * its rows again (a mother renamed is her daughters' «Madre» too).
+ */
+const afterMyData = () =>
+  Promise.all([loadDataTypes(), loadTree(), loadPages(), loadRows(MY_DATA)]).catch(() => undefined);
+/** Why a change in «Mis datos» was refused, in words; the general one for the rest. */
+const myDataError = (e: unknown) => {
+  const t = get().t;
+  const code = e instanceof ApiError ? e.code : "";
+  return code === "taken"
+    ? t("tree.taken")
+    : code === "not-empty"
+      ? t("tree.notEmpty")
+      : code === "locked"
+        ? t("data.locked")
+        : t("db.saveError");
+};
+
+/** A cell changed in a view: at once here, then on the server (its answer is the truth). */
 export async function editCell(type: string, id: string, field: string, value: DataValue) {
-  if (readOnly(type)) return;
+  const def = get().dataTypes?.find((x) => x.id === type);
+  if (readOnly(type) || (def && !fieldEditable(def, field))) return;
   const before = get().rows[type]?.rows.find((r) => r.id === id);
   if (!before) return;
   putRow(type, { ...before, values: { ...before.values, [field]: value } });
   try {
     const saved = await agent.updateRow(id, { [field]: value });
     if (saved) putRow(type, saved);
-  } catch {
+    if (type === MY_DATA) await afterMyData();
+  } catch (e) {
     putRow(type, before);
-    toast(get().t("db.saveError"));
+    toast(type === MY_DATA ? myDataError(e) : get().t("db.saveError"));
   }
 }
 
@@ -3006,9 +3037,10 @@ export async function addRow(type: string, values: Record<string, DataValue> = {
   try {
     const row = await agent.createRow(type, values);
     if (row) putRow(type, row);
+    if (type === MY_DATA) await afterMyData();
     return row;
-  } catch {
-    toast(get().t("db.saveError"));
+  } catch (e) {
+    toast(type === MY_DATA ? myDataError(e) : get().t("db.saveError"));
     return null;
   }
 }
@@ -3022,12 +3054,17 @@ export async function deleteRows(type: string, ids: string[]) {
     try {
       await agent.deleteRow(id);
       gone.push(id);
-    } catch {
-      toast(t("db.saveError"));
+    } catch (e) {
+      toast(type === MY_DATA ? myDataError(e) : t("db.saveError"));
       break;
     }
   }
   if (!gone.length) return;
+  if (type === MY_DATA) {
+    // A collection or a page went: forget it in «Recientes» too.
+    for (const id of gone) forgetRecent(dataRowTarget(id) ?? id);
+    void afterMyData();
+  }
   const now = get().rows[type];
   if (now)
     set({
@@ -3041,7 +3078,10 @@ export async function deleteRows(type: string, ids: string[]) {
     label: t("toast.undo"),
     run: () =>
       void Promise.all(gone.map((id) => agent.restoreRow(id)))
-        .then(() => Promise.all([loadRows(type), loadTree()]))
+        .then(async () => {
+          if (type === MY_DATA) await afterMyData();
+          else await Promise.all([loadRows(type), loadTree()]);
+        })
         .catch(() => toast(t("db.saveError"))),
   });
 }
@@ -3065,6 +3105,13 @@ export async function openNoteAt(id: string) {
 
 /** A row opened as a page: its properties and its text (a note's body). */
 export async function openRow(type: string, id: string) {
+  // A row of «Mis datos» opens what it is: its collection's page, or the page.
+  if (type === MY_DATA) {
+    const target = dataRowTarget(id);
+    if (!target) return;
+    if (get().dataTypes?.some((x) => x.id === target)) return openCollection(target);
+    return openPage(target);
+  }
   if (readOnly(type)) return;
   await flushPage();
   await flushRowBody();
