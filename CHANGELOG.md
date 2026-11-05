@@ -19,7 +19,7 @@ Tasks 67, 68, 69 and 70: what you asked for on 2026-11-05.
   says «ayer a las 12h». The fault was Boni's, not the model's: nothing told the readers that a message's «hoy» is
   the day it was written, and the planner passed only the mail's text, without its date. Now every date a reader
   sees comes marked as it stands today («ayer», «hace 3 días»), and the readers are told to count from the mail's
-  date (D-46). Still open: the extra mails you got when you asked about «tutor personal». (#336)
+  date (D-46). Still open: the extra mails a search in the conversation gave you (task 71). (#336)
 - **Mail cards in the Bandeja** (task 68):
   - «Ver correo» and Gmail are now two icons at the end of the card's line. A long sender is cut with «…» and never
     hides them.

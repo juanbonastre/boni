@@ -435,7 +435,20 @@ export function dayFromToday(day: string, today: string): string | null {
   return d < 0 ? `${-d} days ago` : `in ${d} days`;
 }
 
-/** Each date of a reader's input with where it stands from today (`2026-11-04T10:00:00Z (yesterday)`), in `tz`. */
+/** A civil day (YYYY-MM-DD) by its weekday and number, as a reader is told it: "Wednesday 4 November". */
+export function dayName(day: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(Date.parse(`${day}T12:00:00Z`));
+}
+
+/**
+ * Each date of a reader's input with its weekday and where it stands from today
+ * (`2026-11-04T10:00:00Z (yesterday: Wednesday 4 November)`), its day where Juan lives (`tz`).
+ */
 export function withDays(v: Json, today: string, tz: string): Json {
   if (typeof v === "string") {
     const day = DAY_ONLY.test(v)
@@ -448,14 +461,31 @@ export function withDays(v: Json, today: string, tz: string): Json {
             day: "2-digit",
           }).format(Date.parse(v))
         : null;
-    const when = day ? dayFromToday(day, today) : null;
-    return when ? `${v} (${when})` : v;
+    if (!day || !Number.isFinite(Date.parse(`${day}T12:00:00Z`))) return v;
+    const when = dayFromToday(day, today);
+    return `${v} (${when ? `${when}: ` : ""}${dayName(day)})`;
   }
   if (Array.isArray(v)) return v.map((x) => withDays(x, today, tz));
   if (v && typeof v === "object")
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, withDays(x, today, tz)]));
   return v;
 }
+/**
+ * A relative day in what a prose reader wrote (task 72): «hoy», «mañana» (not «por la mañana»), «ayer», «pasado
+ * mañana», «esta tarde», «anoche»… and their English. Read on another day it says another day.
+ */
+const RELATIVE_DAY =
+  /(?<!\p{L})(?:hoy|ayer|anteayer|anoche|pasado mañana|(?<!\b(?:la|las)\s)mañana|esta (?:mañana|tarde|noche)|today|tomorrow|yesterday|tonight)(?!\p{L})/iu;
+export function relativeDayIn(v: unknown): boolean {
+  if (typeof v === "string") return RELATIVE_DAY.test(v);
+  if (Array.isArray(v)) return v.some(relativeDayIn);
+  if (v && typeof v === "object") return Object.values(v).some(relativeDayIn);
+  return false;
+}
+/** What a prose reader is told when its answer wrote a relative day, to answer again (once). */
+const RELATIVE_FIX =
+  'Your previous answer wrote a relative day ("hoy", "mañana", "ayer"...): write each day by its weekday and number, counted from the message\'s own date.';
+
 function readerText(c: Json): string {
   const s =
     typeof c === "string"
@@ -1899,16 +1929,25 @@ export class Agent {
       else if (mods.length)
         checked = checkReadMessage(await read(system, readMessageSchema(mods)), mods);
       else {
-        const r = checkReader(
+        const schema = readerSchema(step.reader, options);
+        const extra = texts ? { count: texts.length } : {};
+        let r = checkReader(
           step.reader,
-          await read(
-            system,
-            readerSchema(step.reader, options),
-            texts ? { count: texts.length } : {},
-          ),
+          await read(system, schema, extra),
           options,
           texts?.length ?? 0,
         );
+        // A prose reader never writes a relative day (task 72: read another day, «hoy» says another day): its answer
+        // goes back to it once, saying so; the second answer stands if it is valid.
+        if ("ok" in r && PROSE_READERS.has(String(step.reader)) && relativeDayIn(r.ok)) {
+          const again = checkReader(
+            step.reader,
+            await read(system, schema, { ...extra, fix: RELATIVE_FIX }),
+            options,
+            texts?.length ?? 0,
+          );
+          if ("ok" in again) r = again;
+        }
         if ("ok" in r) checked = r.ok;
         else fault = r.fault;
       }

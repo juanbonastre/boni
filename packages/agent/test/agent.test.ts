@@ -597,7 +597,7 @@ describe("the agent, with a planner that behaves", () => {
     const prose = reader.requests[0];
     if (!prose) throw new Error("the reader was called");
     expect(String((prose.input as { content?: string }).content)).toContain(
-      "2026-10-21 (tomorrow)",
+      "2026-10-21 (tomorrow: Wednesday 21 October)",
     );
     expect(prose.system).toContain("count from that message's own date");
     // A reader that only chooses among options gets the dates as they are.
@@ -611,8 +611,8 @@ describe("the agent, with a planner that behaves", () => {
     env = makeEnv([
       {
         asunto: "Firma",
-        de: "miguel.ejemplo@example.com",
-        cuerpo: "¿Nos vemos hoy a las 12h para firmar el documento?",
+        de: "lucia.ejemplo@example.com",
+        cuerpo: "¿Nos vemos hoy a las 12h para revisar el acta?",
         fecha: "2026-10-19T08:15:00Z",
       },
     ]);
@@ -638,14 +638,71 @@ describe("the agent, with a planner that behaves", () => {
     const reader = fakePlanner([{ text: "Proponía verse ayer a las 12h." }]);
     const res = await env
       .agent(fakePlanner([plan]), reader)
-      .turn({ text: "¿Cuándo me propone verse Miguel?", origin: PERSONAL });
+      .turn({ text: "¿Cuándo me propone verse Lucía?", origin: PERSONAL });
     expect([res.status, res.error]).toEqual(["done", null]);
     const got = reader.requests[0];
     if (!got) throw new Error("the reader was called");
     expect(String((got.input as { content?: string }).content)).toContain(
-      "2026-10-19T08:15:00Z (yesterday)",
+      "2026-10-19T08:15:00Z (yesterday: Monday 19 October)",
     );
     expect(got.system).toContain("count from that message's own date");
+  });
+
+  it("a prose reader never writes a relative day: an answer that says «hoy» goes back to it once, saying so; «por la mañana» stands (task 72)", async () => {
+    // The fixture's day is 2026-10-20 in Madrid; Lucía's mail came on the 19th and says «hoy».
+    env = makeEnv([
+      {
+        asunto: "Firma",
+        de: "lucia.ejemplo@example.com",
+        cuerpo: "¿Quedamos hoy a las 12? Si no, el viernes por la mañana.",
+        fecha: "2026-10-19T08:15:00Z",
+      },
+    ]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        { id: "s", op: "read", reader: "summarize_each", input: ref("$m.items") },
+        {
+          id: "r",
+          op: "reply",
+          component: "list",
+          data: { items: ref("$s.items"), fields: lit("line") },
+        },
+      ],
+    };
+    const reader = fakePlanner([
+      { items: [{ line: "Lucía propone verse hoy a las 12 o el viernes por la mañana" }] },
+      {
+        items: [{ line: "Lucía propone verse el lunes 19 a las 12 o el viernes 23 por la mañana" }],
+      },
+    ]);
+    const res = await env
+      .agent(fakePlanner([plan]), reader)
+      .turn({ text: "¿Qué me dice Lucía?", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["done", null]);
+    expect(reader.requests).toHaveLength(2);
+    const [first, second] = reader.requests;
+    if (!first || !second) throw new Error("the reader was called twice");
+    expect((first.input as { fix?: string }).fix).toBeUndefined();
+    expect((second.input as { fix?: string }).fix).toContain("relative day");
+    expect(reader.requests[0]?.system).toContain("never write a relative day");
+    type Item = { fields: Record<string, { value: unknown } | undefined> };
+    const items = (res.replies[0]?.data.items as { items: Item[] } | undefined)?.items ?? [];
+    expect(items.map((i) => i.fields.line?.value)).toEqual([
+      "Lucía propone verse el lunes 19 a las 12 o el viernes 23 por la mañana",
+    ]);
+    // An answer without a relative day is not asked again: «por la mañana» is a time of day, not a day.
+    const once = fakePlanner([
+      {
+        items: [{ line: "Lucía propone verse el lunes 19 a las 12 o el viernes 23 por la mañana" }],
+      },
+    ]);
+    const again = await env
+      .agent(fakePlanner([plan]), once)
+      .turn({ text: "¿Qué me dice Lucía?", origin: PERSONAL });
+    expect(again.status).toBe("done");
+    expect(once.requests).toHaveLength(1);
   });
 
   it("reads several mails in one call: a line per mail, and the counts by kind are the code's", async () => {

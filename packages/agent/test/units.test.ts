@@ -1,6 +1,6 @@
 import { label } from "@boni/entities";
 import { describe, expect, it } from "vitest";
-import { dayFromToday, withDays } from "../src/agent.ts";
+import { dayFromToday, dayName, relativeDayIn, withDays } from "../src/agent.ts";
 import { apiSchema } from "../src/anthropic.ts";
 import { marksOf } from "../src/confirm.ts";
 import { callFn } from "../src/fns.ts";
@@ -579,14 +579,37 @@ describe("where a date stands from today, for a reader that writes for Juan (tas
       ),
     ).toEqual({
       de: "Lucía",
-      fecha: "2026-11-03T23:30:00Z (yesterday)",
+      fecha: "2026-11-03T23:30:00Z (yesterday: Wednesday 4 November)",
       texto: "nos vemos hoy a las 12",
       n: 3,
     });
+    // A far day keeps its weekday (task 72), without where it stands.
     expect(withDays(["2026-11-05", "2025-01-01", "no es fecha"], today, "Europe/Madrid")).toEqual([
-      "2026-11-05 (today)",
-      "2025-01-01",
+      "2026-11-05 (today: Thursday 5 November)",
+      "2025-01-01 (Wednesday 1 January)",
       "no es fecha",
     ]);
+    expect(dayName("2026-11-06")).toBe("Friday 6 November");
+  });
+  it("finds a relative day in what a reader wrote, not a time of day (task 72)", () => {
+    for (const s of [
+      "Lucía propone verse hoy a las 12",
+      "Mañana hay junta",
+      "la reunión es pasado mañana",
+      "Lo dijo ayer",
+      "esta tarde llega el paquete",
+      "anoche escribió",
+      "a meeting tomorrow",
+      "de mañana no pasa",
+    ])
+      expect(relativeDayIn({ items: [{ line: s }] }), s).toBe(true);
+    for (const s of [
+      "el lunes por la mañana",
+      "a las 10 de la mañana",
+      "las mañanas de los martes",
+      "Hoyos y Cía. escribe",
+      "el miércoles 4 a las 12",
+    ])
+      expect(relativeDayIn({ text: s }), s).toBe(false);
   });
 });
