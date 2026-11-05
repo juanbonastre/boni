@@ -5,6 +5,50 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-05 (thirty-third) — server 0.8.108 · Boni desktop 0.4.77 · Boni Android
+
+Needs:
+- The server, 0.8.108, to deploy: how readers write days, and «Mis datos»' «Padre».
+- Boni desktop 0.4.77 (`release/boni_0.4.77_amd64.deb`), to install.
+- Boni Android from main, through Obtainium.
+
+Tasks 72, 74, 77 and 78: what you found trying the thirty-second.
+
+- **A mail's «hoy», for good** (task 72). With task 67 deployed, a reader still told yesterday's «hoy a las 12» as
+  today. The note asked it to say the day «as it stands now», and it copied the mail's word. Now:
+  - Readers that write for you never write a relative day («hoy», «mañana», «ayer», «esta semana», «el viernes»
+    without its number…). They write the day by its weekday and number («el miércoles 4 a las 12»), counted from the
+    mail's date, because you read it on another day.
+  - Each date they read carries its weekday.
+  - The code checks it: an answer with a relative day goes back to the reader once. If one still comes through, the
+    run's Recorrido says so.
+  - Still to try with a real model: ask again about yesterday's mail. (#341)
+- **Mail cards** (task 74):
+  - In the desktop app, a card's mail opens in its own small window, as the conversation's mails do. The Bandeja
+    stays as it was.
+  - The two icons are each one drawing, without tiny marks: an envelope with an arrow down, and Gmail's M with ↗. On
+    the phone they are as big as a finger needs.
+  - Question cards about a mail have both icons too; before, only the first. (#342, #345)
+- **The collections' diagram** (task 77):
+  - An arrow from a collection's dot lands wherever you leave it on another collection. Before, the dots to land on
+    were a pixel.
+  - Left on the canvas, the arrow asks for a new collection that the first then points to.
+  - The right button on a collection has Abrir, «Abrir» its parent, Cambiar nombre, Nueva colección dentro, «Sacar de»
+    its parent and Borrar (only an empty one, with «Deshacer»).
+  - What the diagram changes shows in «Mis datos»' table at once.
+  - «Madre» is «Padre». (#344)
+- **Flows** (task 78):
+  - Steps connect by dragging: a dot under a step to drag from, and the arrow lands anywhere on the other step. Left
+    on the canvas, it adds a new step there. Before, the dots were a pixel.
+  - The right button on the canvas adds a step where you clicked.
+  - «A mano» is «Disparado por el usuario».
+  - Still for task 78: renaming a flow from the list, and keeping your changes without «Guardar». (#343, #346)
+- In the queue, from your notes:
+  - 73: the Bandeja's cards checked again when you see them.
+  - 75: advanced filters.
+  - 76: a column's menu as Notion's.
+  - 79: a chat inside a page, which was designed (C5) but never built.
+
 ## 2026-11-05 (thirty-second) — server 0.8.107 · Boni desktop 0.4.76 · Boni Android
 
 Needs:
