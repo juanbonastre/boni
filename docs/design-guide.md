@@ -880,8 +880,9 @@ contraseña ni un código aquí» under a question.
   collection's page: its title, then the head of its block, as any collection's (its views as tabs with «+», the
   diagram one of their layouts; Filtro, Ordenar, Buscar, the view's settings; «Nuevo»). A row per page of the user's (each after its mother), per
   collection (each mother before her daughters, by name), then Boni's own (its template pages and its records). Its
-  columns: Nombre, Tipo (Página, Colección, De Boni), Madre, Nivel (the level's pill), Elementos, En la barra (the
-  eye: its notes in the sidebar), Leída por, Escrita por and Origen (hidden at first). Nombre, Madre, Nivel and En la
+  columns: Nombre, Tipo (Página, Colección, De Boni), Padre («Madre» until task 77: Juan, «me suena raro»), Nivel (the
+  level's pill), Elementos, En la barra (the eye: its notes in the sidebar), Leída por, Escrita por and Origen (hidden
+  at first). Nombre, Padre, Nivel and En la
   barra change in place and are done to what the row is, with their usual rules and toasts: a name used once, a
   private collection lowered only from its own page («Una colección privada solo se abre a la IA desde su página.»),
   only an empty collection deleted; what does not apply to a row is plain text (a page has no level nor eye; Boni's
@@ -910,8 +911,14 @@ contraseña ni un código aquí» under a question.
   name and count, «Nivel» with the level's pill and menu, «Escrita por» and «Leída por» with each flow «flujo
   encendido/apagado» or how many times in the period, «Abrir» and «Nueva colección dentro»). A drag from a card's
   right edge (a dot in `--accent` on hover) to another card draws a relation: a column of the first named as the
-  second, said in a toast with «Deshacer»; a card at the top level dropped on another card or frame goes inside it,
-  also with «Deshacer». **A collection's «Diagrama»** is one more of its layouts (Tabla, Tablero, Lista, Galería,
+  second, said in a toast with «Deshacer»; the arrow lands wherever it is left on the card (a dot on each card's left
+  shows while it is drawn; task 77: Juan, 2026-11-05, «no puedo conectar con nada»: the dots to land on were a
+  pixel), and left on the canvas it opens the new collection's name form, the first then pointing to it. A card at
+  the top level dropped on another card or frame goes inside it, also with «Deshacer». **The right button** on a
+  card or a mother's frame (task 77) opens its actions where the pointer is: Abrir, Cambiar nombre (the name form,
+  filled), Nueva colección dentro, «Sacar de {padre}» (to its parent's parent, with «Deshacer») and Borrar (only an
+  empty one: «Borrar (solo vacía)» greyed otherwise; with «Deshacer», as «Mis datos»' bin); Boni's own collections,
+  only Abrir. What the diagram changes shows in «Mis datos»' table at once (its rows read again). **A collection's «Diagrama»** is one more of its layouts (Tabla, Tablero, Lista, Galería,
   Calendario, Diagrama): the same canvas over her branch, with the collections a relation joins to it as dashed
   cards without fields.
 - **Historial** (a row's page, the button beside its collection's name): a panel on the right with «Quién hizo qué»,

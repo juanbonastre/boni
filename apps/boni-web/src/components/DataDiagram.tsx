@@ -33,6 +33,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { SYS } from "@boni/views";
 import { Database, Eye, LayoutGrid, PenLine, Plus } from "lucide-react";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { AiLevel, DataType, DataUsage, Who } from "../core/agent.ts";
@@ -47,13 +48,16 @@ import {
 } from "../core/diagram.ts";
 import {
   addRelation,
+  deleteRows,
   loadDataUsage,
   moveInTree,
   newCollection,
   openCollection,
+  renameCollection,
   toast,
   useStore,
 } from "../store.ts";
+import { MenuRow, MenuSep, PointMenu } from "./Popover.tsx";
 import { LEVEL_ICONS, ProtectionMenu } from "./Protection.tsx";
 
 const LEVELS: AiLevel[] = ["visible", "opaque", "restricted", "private"];
@@ -285,7 +289,17 @@ function Canvas({
   const usage = useStore((s) => s.dataUsage);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
   const [picked, setPicked] = useState<string | null>(null);
-  const [naming, setNaming] = useState<{ parent: string | null } | null>(null);
+  // The small form over the canvas: a new collection (inside `parent`, related from `relateFrom` when an arrow was
+  // left on the canvas), or a collection's new name (`rename`).
+  const [naming, setNaming] = useState<{
+    parent: string | null;
+    relateFrom?: string;
+    rename?: { type: string; name: string };
+  } | null>(null);
+  // The right button on a collection: what can be done with it, where the pointer is (task 77).
+  const [menu, setMenu] = useState<{ x: number; y: number; type: string } | null>(null);
+  // An arrow being drawn: every collection shows where it lands.
+  const [connecting, setConnecting] = useState(false);
   const diagram = useMemo(() => diagramOf(types, root, linesOf(usage)), [types, root, usage]);
   const [nodes, setNodes, onNodesChange] = useNodesState<DiagramNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -363,6 +377,16 @@ function Canvas({
     </label>
   );
   const pickedType = types.find((x) => x.id === picked) ?? null;
+  const menuType = menu ? (types.find((x) => x.id === menu.type) ?? null) : null;
+  const parentOf = (id: string) =>
+    types.find((x) => x.id === types.find((y) => y.id === id)?.parent);
+  // A collection by its node (a card, or the frame of a mother).
+  const collectionOfNode = (n: DiagramNode) =>
+    n.type === "card"
+      ? (n as CardNode).data.card.type
+      : n.type === "frame"
+        ? (n as FrameNode).data.frame.type
+        : null;
   return (
     <>
       <div className="data-tools">
@@ -396,22 +420,31 @@ function Canvas({
           onSubmit={(e) => {
             e.preventDefault();
             const name = String(new FormData(e.currentTarget).get("name") ?? "").trim();
-            const parent = naming.parent;
+            const { parent, relateFrom, rename } = naming;
             setNaming(null);
-            if (name) void newCollection(name, parent ?? undefined, true);
+            if (!name) return;
+            if (rename) {
+              if (name !== rename.name) void renameCollection(rename.type, name);
+              return;
+            }
+            void newCollection(name, parent ?? undefined, true).then(
+              (id) => id && relateFrom && void addRelation(relateFrom, id),
+            );
           }}
         >
           <input
             name="name"
             // biome-ignore lint/a11y/noAutofocus: the name is what the form asks for, at once
             autoFocus
-            aria-label={t("data.newName")}
+            defaultValue={naming.rename?.name ?? ""}
+            aria-label={naming.rename ? t("data.renameTo") : t("data.newName")}
             placeholder={t("data.newName")}
             maxLength={80}
+            onFocus={(e) => e.currentTarget.select()}
             onKeyDown={(e) => e.key === "Escape" && setNaming(null)}
           />
           <button type="submit" className="btn primary small">
-            {t("data.create")}
+            {naming.rename ? t("data.renameSave") : t("data.create")}
           </button>
           <button type="button" className="btn small" onClick={() => setNaming(null)}>
             {t("data.cancel")}
@@ -419,7 +452,7 @@ function Canvas({
         </form>
       )}
       <div className="data-stage">
-        <div className="data-diagram editable">
+        <div className={`data-diagram editable${connecting ? " connecting" : ""}`}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -430,7 +463,32 @@ function Canvas({
             onNodeClick={(_, n) => n.type === "card" && setPicked((n as CardNode).data.card.type)}
             onPaneClick={() => setPicked(null)}
             onNodeDragStop={(_, n) => dropped(n)}
+            onNodeContextMenu={(e, n) => {
+              const type = collectionOfNode(n);
+              if (!type) return;
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, type });
+            }}
+            onConnectStart={() => setConnecting(true)}
             onConnect={connect}
+            // Left anywhere on a collection, the arrow lands on it; on the canvas, it offers a new collection that
+            // the first one points to (task 77; Juan, 2026-11-05: «no puedo conectar con nada del diagrama»).
+            onConnectEnd={(e, state) => {
+              setConnecting(false);
+              const fromNode = nodes.find((x) => x.id === state.fromNode?.id);
+              if (state.isValid || !fromNode) return;
+              const from = collectionOfNode(fromNode);
+              if (!from || types.find((x) => x.id === from)?.readOnly) return;
+              const p = "changedTouches" in e ? e.changedTouches[0] : e;
+              if (!p) return;
+              const el = document
+                .elementFromPoint(p.clientX, p.clientY)
+                ?.closest(".react-flow__node");
+              const hit = el ? nodes.find((x) => x.id === el.getAttribute("data-id")) : undefined;
+              const to = hit ? collectionOfNode(hit) : null;
+              if (to) void addRelation(from, to);
+              else if (!el) setNaming({ parent: root, relateFrom: from });
+            }}
             isValidConnection={(c) => !!typeOfNode(c.source) && !!typeOfNode(c.target)}
             fitView
             minZoom={0.15}
@@ -442,6 +500,75 @@ function Canvas({
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
+        {menu && menuType && (
+          <PointMenu x={menu.x} y={menu.y} label={t("data.menu")} onClose={() => setMenu(null)}>
+            {(close) => {
+              const parent = parentOf(menuType.id);
+              const own = !menuType.system && !menuType.readOnly;
+              return (
+                <>
+                  <MenuRow
+                    label={t("data.open")}
+                    onClick={() => {
+                      close();
+                      openCollection(menuType.id);
+                    }}
+                  />
+                  {own && (
+                    <>
+                      <MenuRow
+                        label={t("data.rename")}
+                        onClick={() => {
+                          close();
+                          setNaming({
+                            parent: null,
+                            rename: { type: menuType.id, name: menuType.name },
+                          });
+                        }}
+                      />
+                      <MenuRow
+                        label={t("data.newInside")}
+                        onClick={() => {
+                          close();
+                          setNaming({ parent: menuType.id });
+                        }}
+                      />
+                      {parent && (
+                        <MenuRow
+                          label={t("data.moveOut", { name: parent.name })}
+                          onClick={() => {
+                            close();
+                            const up = parent.parent ?? null;
+                            void moveInTree({ collection: menuType.id }, up).then(() =>
+                              toast(
+                                t("data.movedOut", { name: menuType.name, from: parent.name }),
+                                {
+                                  label: t("toast.undo"),
+                                  run: () =>
+                                    void moveInTree({ collection: menuType.id }, parent.id),
+                                },
+                              ),
+                            );
+                          }}
+                        />
+                      )}
+                      <MenuSep />
+                      <MenuRow
+                        danger
+                        label={menuType.count ? t("data.deleteNotEmpty") : t("data.delete")}
+                        disabled={menuType.count > 0}
+                        onClick={() => {
+                          close();
+                          void deleteRows(SYS.data.id, [`${SYS.data.row}${menuType.id}`]);
+                        }}
+                      />
+                    </>
+                  )}
+                </>
+              );
+            }}
+          </PointMenu>
+        )}
         {pickedType && (
           <CollectionPanel
             type={pickedType}

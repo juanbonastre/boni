@@ -9395,3 +9395,16 @@ button.rows-panel-row:hover {
 .data-diagram.editable .react-flow__node:hover .dg-card .react-flow__handle.source {
   opacity: 1;
 }
+/* Where an arrow lands (task 77; Juan, 2026-11-05: «no puedo conectar con nada»): a dot on each card's left, shown
+   while an arrow is drawn; the whole card takes it too. */
+.data-diagram.editable .dg-card .react-flow__handle.target {
+  width: 10px;
+  height: 10px;
+  left: -5px;
+  border-radius: 50%;
+  background: var(--line-strong);
+  opacity: 0;
+}
+.data-diagram.editable.connecting .dg-card .react-flow__handle.target {
+  opacity: 1;
+}

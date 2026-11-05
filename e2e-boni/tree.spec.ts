@@ -566,3 +566,104 @@ test("a collection's «Diagrama» (F6): Agenda with her daughters and who writes
   await expect(panel).toContainText("Resumen diario");
   await expect(panel).toContainText("flujo apagado");
 });
+
+test("the diagram gives control (task 77): an arrow left anywhere on a collection relates it, left on the canvas makes a related one; the right button's actions; what changes shows in the table at once", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", { agent: AGENT, agenda: "mother" });
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await page.locator(".my-data").getByRole("button", { name: "Agenda", exact: true }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Agenda");
+  await setLayout(page, page.locator(".db"), "Diagrama");
+  const canvas = page.locator(".data-diagram");
+  const cards = canvas.locator(".dg-card-node");
+  await expect(cards).toHaveCount(3);
+  const card = (name: string) =>
+    cards.filter({ has: page.locator(".dg-name", { hasText: new RegExp(`^${name}$`) }) });
+  const center = async (l: import("@playwright/test").Locator) => {
+    const b = await l.boundingBox();
+    if (!b) throw new Error("not on screen");
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  const posts = (start: string) =>
+    page.evaluate(
+      (s) =>
+        ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
+          b.startsWith(s),
+        ),
+      start,
+    );
+  // An arrow from Tareas' dot left anywhere on Eventos (not on its small dot): Tareas points to Eventos.
+  await card("Tareas").hover();
+  const from = await center(card("Tareas").locator(".react-flow__handle.source"));
+  const onEventos = await center(card("Eventos").locator(".dg-name"));
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(onEventos.x, onEventos.y, { steps: 14 });
+  await expect(card("Eventos").locator(".react-flow__handle.target")).toHaveCSS("opacity", "1");
+  await page.mouse.up();
+  await expect(page.locator(".toast")).toContainText("Tareas apunta ahora a Eventos");
+  await expect
+    .poll(() => posts("POST api/data/types/t_tareas/fields"))
+    .toEqual([
+      'POST api/data/types/t_tareas/fields {"name":"Eventos","type":"relation","target":"t_eventos"}',
+    ]);
+  // Left on the canvas: a new collection, which Eventos then points to.
+  const pane = await canvas.locator(".react-flow__pane").boundingBox();
+  if (!pane) throw new Error("no canvas");
+  await card("Eventos").hover();
+  const start = await center(card("Eventos").locator(".react-flow__handle.source"));
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  // An empty corner of the canvas, on screen and outside Agenda's frame.
+  await page.mouse.move(pane.x + 16, pane.y + 16, { steps: 14 });
+  await page.mouse.up();
+  const name = page.getByRole("textbox", { name: "Nombre de la colección" });
+  await expect(name).toBeFocused();
+  await name.fill("Salas");
+  await name.press("Enter");
+  await expect(card("Salas")).toHaveCount(1);
+  await expect(page.locator(".toast")).toContainText("Eventos apunta ahora a Salas");
+  // The right button on a collection: what can be done with it.
+  await card("Eventos").locator(".dg-name").click({ button: "right" });
+  const menu = page.getByRole("dialog", { name: "Acciones de la colección" });
+  await expect(menu.getByRole("menuitemradio")).toHaveText([
+    "Abrir",
+    "Cambiar nombre",
+    "Nueva colección dentro",
+    "Sacar de Agenda",
+    "Borrar",
+  ]);
+  await page.screenshot({ path: `${SHOTS}/data-diagram-menu.png` });
+  // «Sacar de Agenda»: out of its mother, with Undo.
+  await menu.getByRole("menuitemradio", { name: "Sacar de Agenda" }).click();
+  await expect(page.locator(".toast")).toContainText("Eventos ya no está dentro de Agenda");
+  await expect.poll(() => posts("PUT api/data/types/t_eventos/parent")).not.toEqual([]);
+  // «Cambiar nombre», in place over the canvas.
+  await card("Salas").locator(".dg-name").click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Cambiar nombre" }).click();
+  const rename = page.getByRole("textbox", { name: "Nuevo nombre" });
+  await expect(rename).toHaveValue("Salas");
+  await rename.fill("Aulas");
+  await rename.press("Enter");
+  await expect(card("Aulas")).toHaveCount(1);
+  // In «Mis datos», a collection made in its diagram is in its table at once, the page not opened again (Juan: «tuve
+  // que abrir otra página y volver para ver el cambio reflejado»).
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
+  await expect(page.locator(".my-data")).toBeVisible();
+  const db = page.locator(".my-data .db");
+  await setLayout(page, db, "Diagrama");
+  // A collection with notes is not deleted from here: «Borrar» waits until it is empty.
+  await card("Libros").locator(".dg-name").click({ button: "right" });
+  await expect(page.getByRole("menuitemradio", { name: "Borrar (solo vacía)" })).toBeDisabled();
+  await page.getByRole("menuitemradio", { name: "Nueva colección dentro" }).click();
+  const made = page.getByRole("textbox", { name: "Nombre de la colección" });
+  await made.fill("Préstamos");
+  await made.press("Enter");
+  await expect(card("Préstamos")).toHaveCount(1);
+  await setLayout(page, db, "Tabla");
+  await expect(page.locator(".my-data .db-table tbody tr", { hasText: "Préstamos" })).toHaveCount(
+    1,
+  );
+});
