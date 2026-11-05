@@ -581,9 +581,16 @@ test("steps connected by dragging as a person does (task 78): a step's dot to an
   await expect(link).toBeVisible();
   await link.getByRole("menuitemradio").first().click();
   await expect(link).toHaveCount(0);
-  // The trigger shows no dot: its values are the flow's inputs, taken by their names.
+  // The trigger shows no dot (its values are the flow's inputs, taken by their names), but its arrows start at it.
   await node("trigger").hover();
-  await expect(node("trigger").locator(".react-flow__handle.source")).toBeHidden();
+  await expect(node("trigger").locator(".react-flow__handle.source")).toHaveCSS("opacity", "0");
+  const trigger = await node("trigger").boundingBox();
+  const fromTrigger = await canvas
+    .locator('.react-flow__edge[data-id^="trigger>"] path')
+    .first()
+    .boundingBox();
+  if (!trigger || !fromTrigger) throw new Error("no trigger arrow");
+  expect(fromTrigger.y).toBeGreaterThanOrEqual(trigger.y + trigger.height - 4);
 });
 
 test("«Probar»: the draft run dry with the latest mail; each step says what it gave or would do; nothing written", async ({
