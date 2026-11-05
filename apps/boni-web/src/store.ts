@@ -1806,8 +1806,6 @@ export function closeProposal() {
   else if (v.back.kind === "page") void openPage(v.back.id);
   else set({ view: v.back });
 }
-/** The mail a proposal came from, as its row in Boni ("Ver correo": IMAP gives no webmail link). */
-export const openMail = (at: { type: string; id: string }) => void openRow(at.type, at.id);
 
 /**
  * A mail seen without leaving where Juan is (task 68; Juan, 2026-11-05: «quiero que se abra como peek, que no me

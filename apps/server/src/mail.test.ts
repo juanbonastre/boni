@@ -135,8 +135,16 @@ const invitationMail = (
   ].join("\r\n");
 };
 
-/** A mailbox the tests change: its messages by UID and its UIDVALIDITY. */
-const box = { uidValidity: 7, mails: new Map<number, string>(), gmail: false };
+/**
+ * A mailbox the tests change: its messages by UID and its UIDVALIDITY; from Gmail, the ones archived out of the
+ * folder, in «Todos» (its All Mail) only.
+ */
+const box = {
+  uidValidity: 7,
+  mails: new Map<number, string>(),
+  gmail: false,
+  archived: new Map<number, string>(),
+};
 /** The Gmail thread the fake gives a message (invented ids, by its UID). */
 const threadOf = (uid: number) => String(1800000000000000000n + BigInt(uid));
 const asked: string[] = [];
@@ -147,6 +155,8 @@ function fakeImap(): Promise<void> {
   imap = createServer((s) => {
     s.write("* OK ready\r\n");
     let buf = "";
+    // The folder examined: Gmail's «Todos» has the archived ones too.
+    let all = false;
     s.on("data", (d) => {
       buf += d.toString("latin1");
       for (let i = buf.indexOf("\r\n"); i >= 0; i = buf.indexOf("\r\n")) {
@@ -163,18 +173,33 @@ function fakeImap(): Promise<void> {
               : `${tag} NO bad\r\n`,
           );
         else if (box.gmail && cmd.startsWith("UID SEARCH X-GM-RAW ")) {
-          // Gmail's own search, by Message-ID.
+          // Gmail's own search, by Message-ID, in the folder examined.
           const id = /rfc822msgid:([^"]+)"/.exec(cmd)?.[1] ?? "";
-          const uid = uids.find((u) => (box.mails.get(u) ?? "").includes(`Message-ID: <${id}>`));
+          const there = all ? new Map([...box.mails, ...box.archived]) : box.mails;
+          const uid = [...there.keys()].find((u) =>
+            (there.get(u) ?? "").includes(`Message-ID: <${id}>`),
+          );
           s.write(`* SEARCH${uid ? ` ${uid}` : ""}\r\n${tag} OK\r\n`);
-        } else if (box.gmail && /^UID FETCH \d+ \(UID X-GM-THRID\)$/.test(cmd)) {
+        } else if (box.gmail && cmd === 'LIST "" "*"')
+          s.write(
+            [
+              '* LIST (\\HasNoChildren) "/" "INBOX"',
+              '* LIST (\\HasChildren \\Noselect) "/" "[Gmail]"',
+              '* LIST (\\All \\HasNoChildren) "/" "[Gmail]/Todos"',
+              '* LIST (\\HasNoChildren \\Sent) "/" "[Gmail]/Enviados"',
+              `${tag} OK`,
+              "",
+            ].join("\r\n"),
+          );
+        else if (box.gmail && /^UID FETCH \d+ \(UID X-GM-THRID\)$/.test(cmd)) {
           const uid = Number(/UID FETCH (\d+)/.exec(cmd)?.[1]);
           s.write(`* 1 FETCH (UID ${uid} X-GM-THRID ${threadOf(uid)})\r\n${tag} OK\r\n`);
-        } else if (cmd.startsWith("EXAMINE "))
+        } else if (cmd.startsWith("EXAMINE ")) {
+          all = cmd === 'EXAMINE "[Gmail]/Todos"';
           s.write(
             `* ${uids.length} EXISTS\r\n* OK [UIDVALIDITY ${box.uidValidity}] x\r\n${tag} OK\r\n`,
           );
-        else if (cmd.startsWith("UID SEARCH UID ")) {
+        } else if (cmd.startsWith("UID SEARCH UID ")) {
           const from = Number(/UID (\d+):/.exec(cmd)?.[1]);
           const found = uids.filter((u) => u >= from);
           const last = uids[uids.length - 1];
@@ -364,17 +389,34 @@ describe("the mailbox", () => {
       expect(await m.webmail(1, byId(201)?.id as string)).toBe(at(1));
       expect(await m.webmail(1, byId(201)?.id as string)).toBe(at(1));
       expect(searched()).toBe(before + 1);
-      // Not in the folder any more: Gmail's search by its id, in its account.
+      // Archived out of the folder: found in «Todos» (Gmail's All Mail, by its flag), and opened as itself.
+      const fresh = (now = () => Date.now()) =>
+        new Mails({
+          db: sdb,
+          key,
+          host: h,
+          now,
+          connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+        });
+      box.archived.set(1, box.mails.get(1) as string);
       box.mails.delete(1);
-      const other = new Mails({
-        db: sdb,
-        key,
-        host: h,
-        connect: () => new Socket().connect(imapPort, "127.0.0.1"),
-      });
-      expect(await other.webmail(1, byId(201)?.id as string)).toBe(
-        "https://mail.google.com/mail/?authuser=juan%40example.com#search/rfc822msgid:m201%40example.com",
-      );
+      expect(await fresh().webmail(1, byId(201)?.id as string)).toBe(at(1));
+      expect(asked.some((l) => l.endsWith(' LIST "" "*"'))).toBe(true);
+      expect(asked.some((l) => l.endsWith('EXAMINE "[Gmail]/Todos"'))).toBe(true);
+      // Not even there (deleted): Gmail's search by its id, in its account; not looked for again for a while.
+      box.archived.delete(1);
+      let clock = Date.parse("2026-11-05T10:00:00Z");
+      const other = fresh(() => clock);
+      const search =
+        "https://mail.google.com/mail/?authuser=juan%40example.com#search/rfc822msgid:m201%40example.com";
+      const sessions = () => asked.filter((l) => l.startsWith("B1 LOGIN")).length;
+      expect(await other.webmail(1, byId(201)?.id as string)).toBe(search);
+      const opened = sessions();
+      expect(await other.webmail(1, byId(201)?.id as string)).toBe(search);
+      expect(sessions()).toBe(opened);
+      clock += 11 * 60_000;
+      expect(await other.webmail(1, byId(201)?.id as string)).toBe(search);
+      expect(sessions()).toBe(opened + 1);
       await expect(m.webmail(1, "e_no_existe")).rejects.toMatchObject({ code: "not-found" });
       // A mailbox that is not Gmail has none.
       await m.save(1, {
@@ -385,6 +427,7 @@ describe("the mailbox", () => {
       expect(await m.webmail(1, byId(202)?.id as string)).toBeNull();
     } finally {
       box.gmail = false;
+      box.archived.clear();
       h.close();
       sdb.close();
       rmSync(d, { recursive: true, force: true });

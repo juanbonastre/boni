@@ -245,9 +245,11 @@ ti» si el lector no encontró nada; y «Otra vez» lee el correo de nuevo a pet
   webmail cuando el buzón es de Google; desde el 2026-11-05 (tarea 68; Juan: «quiero que se abra el correo, no que me
   abra el buscador») abre ese mismo correo en su cuenta, no una búsqueda: el servidor guarda el hilo de Gmail de cada
   correo nuevo (`X-GM-THRID`, que IMAP da cuando el buzón habla la extensión de Gmail) y, para uno de antes, lo busca
-  una vez por su Message-ID (`X-GM-RAW`, en una sesión corta de solo lectura); la dirección lleva la cuenta
-  (`authuser`) para que se abra la buena con varias abiertas, y solo si ya no está en la carpeta queda la búsqueda de
-  Gmail. Sale por el anfitrión (el navegador del sistema, la intención de Android, una pestaña nueva) y no existe para
+  una vez por su Message-ID (`X-GM-RAW`, en una sesión corta de solo lectura), en la carpeta y, si se archivó, en
+  «Todos» (el «All Mail» de Gmail, que se encuentra por su marca `\All` y no por su nombre, que cambia con el
+  idioma); la dirección lleva la cuenta (`authuser`) para que se abra la buena con varias abiertas, y solo si ni
+  «Todos» lo tiene (borrado) queda la búsqueda de Gmail; uno que no se encontró no se vuelve a buscar en diez
+  minutos. Sale por el anfitrión (el navegador del sistema, la intención de Android, una pestaña nueva) y no existe para
   otros buzones (Outlook no abre por Message-ID); la colección entera es de solo
   lectura en las apps (D-22). En la tarjeta de la Bandeja, «Corregir» deja cambiar también las demás propiedades de
   la propuesta, plegadas bajo «Propiedades».

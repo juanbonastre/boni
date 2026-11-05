@@ -37,6 +37,7 @@ interface Line {
 const ALLOWED = new Set([
   "CAPABILITY",
   "LOGIN",
+  "LIST",
   "EXAMINE",
   "UID SEARCH",
   "UID FETCH",
@@ -295,6 +296,23 @@ export class ImapReader {
     for (const l of lines) {
       const m = /X-GM-THRID (\d{1,20})/i.exec(l.text);
       if (m) return m[1] as string;
+    }
+    return null;
+  }
+
+  /**
+   * The folder with every message (RFC 6154's `\All`: Gmail's «All Mail», «Todos» in Spanish), by its flag and not its
+   * name, which changes with the account's language; null when the server has none. Read-only: it only lists.
+   */
+  async allMailFolder(): Promise<string | null> {
+    const lines = await this.command("LIST", `"" "*"`);
+    for (const l of lines) {
+      const m = /^\* LIST \(([^)]*)\) (?:"(?:[^"\\]|\\.)*"|NIL) (.+)$/i.exec(l.text);
+      if (!m || !/(^|\s)\\All(\s|$)/i.test(m[1] as string)) continue;
+      const name = (m[2] as string).trim();
+      if (/^\{\d+\}$/.test(name)) return l.literals[0]?.toString("utf8") ?? null;
+      if (name.startsWith('"')) return name.slice(1, -1).replace(/\\(["\\])/g, "$1");
+      return name;
     }
     return null;
   }

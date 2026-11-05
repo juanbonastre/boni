@@ -19,6 +19,7 @@ import {
   EXTENSIONS,
   GUIDE,
   LIVE_STEPS,
+  LONG_SENDER,
   MAIL,
   MAIL_SUGGESTED,
   PROPOSALS,
@@ -31,7 +32,7 @@ import {
   TEXT_REPLY,
   VISIBILITY,
 } from "./agent-scenarios.ts";
-import { emit, openApp, recorded } from "./fixtures.ts";
+import { emit, iconsWhole, openApp, recorded } from "./fixtures.ts";
 
 /** A request as sent, without the live id the device made for it (a new one every time). */
 const withoutLive = (r: string) => r.replace(/,"live":"[0-9a-f-]+"/, "");
@@ -1136,7 +1137,7 @@ test("«Ver correo» shows the mail in the side panel as a mail client does, rea
           from: "Coordinación de ejemplo",
           subject: "Actas: primera convocatoria",
           at: "2026-10-15T08:00:00Z",
-          open: { type: "t_01m6correo", id: "m1" },
+          open: { type: "t_01m6correo", id: "m0" },
         },
       ],
     },
@@ -1160,10 +1161,24 @@ test("«Ver correo» shows the mail in the side panel as a mail client does, rea
   await card.getByRole("button", { name: "Abrir en Gmail" }).click();
   await expect.poll(opened).toEqual([GMAIL]);
   expect(await requests(page, "GET api/mail/webmail/m1")).toEqual(["GET api/mail/webmail/m1"]);
-  // The earlier mails of its thread, unfolded, each to see.
+  // The earlier mails of its thread, unfolded, each to see in the side panel; closed, the inbox is as it was.
   await card.getByRole("button", { name: "+1 correo" }).click();
   await expect(card.locator(".inbox-earlier-mail")).toContainText("Actas: primera convocatoria");
   await card.screenshot({ path: `${SHOTS}/inbox-mail-icons.png` });
+  await card.locator(".inbox-earlier-mail").click();
+  await expect(page.locator(".row-panel .mail-view .mail-subject")).toHaveText(
+    "Actas: primera convocatoria",
+  );
+  await expect(page.locator(".inbox-panel")).toBeHidden();
+  await page
+    .locator(".side-panel:not(.inbox-panel)")
+    .getByRole("button", { name: "Cerrar" })
+    .click();
+  await expect(page.locator(".inbox-panel")).toBeVisible();
+  await expect(card.getByRole("button", { name: "+1 correo" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await card.getByRole("button", { name: "Ver correo" }).click();
   // In the side panel, the inbox a click away: the mail as a mail client shows it.
   const mail = page.locator(".row-panel .mail-view");
@@ -1201,6 +1216,24 @@ test("«Ver correo» shows the mail in the side panel as a mail client does, rea
   await expect(page.locator(".row-prop")).toHaveCount(0);
   await expect(page.locator(".row-doc .blk-input")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/mail-view.png` });
+});
+
+test("a long sender never hides a mail card's icons (task 68, I-21): the sender is cut, the icons stay whole", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    mail: true,
+    agent: { "GET api/agent/proposals": [{ proposals: [LONG_SENDER] }], "GET api/mail": [MAIL] },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  await iconsWhole(page.locator(".inbox-panel .inbox-card").first());
+  await page
+    .locator(".inbox-panel .inbox-card")
+    .first()
+    .screenshot({ path: `${SHOTS}/inbox-long-sender.png` });
 });
 
 test("Corregir: the proposal's other properties, folded under «Propiedades», sent by their key", async ({

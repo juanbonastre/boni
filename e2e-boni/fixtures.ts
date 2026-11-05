@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Locator, Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { resolveTemplateLinks, templatePage } from "../packages/views/src/templates.ts";
 import { boniEngine, boniTypes } from "./boni-records.ts";
 
@@ -1028,6 +1028,27 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           ];
         if (opts.mail && p === "api/data/rows/m1" && method === "GET")
           return [200, JSON.stringify({ row: { ...mailRow, type: "t_01m6correo" } })];
+        // An earlier mail of its thread (task 68: a card's «+1 correo»).
+        if (opts.mail && p === "api/data/rows/m0" && method === "GET")
+          return [
+            200,
+            JSON.stringify({
+              row: {
+                id: "m0",
+                type: "t_01m6correo",
+                values: {
+                  f_asunto: "Actas: primera convocatoria",
+                  f_de: "coordinacion@example.edu",
+                  f_de_nombre: "Coordinación de ejemplo",
+                  f_para: "ejemplo@example.edu",
+                  f_fecha: "2026-10-15T08:00:00Z",
+                  f_id_mensaje: "m0@example.com",
+                },
+                updated: 5,
+                body: "Os convocamos para revisar las actas.",
+              },
+            }),
+          ];
         // An image of the mail, as the server gives it to paint in place (a data: address).
         if (opts.mail && /^api\/data\/files\/[^/]+\/inline$/.test(p) && method === "GET")
           return [200, JSON.stringify({ mime: "image/png", data: "iVBORw0KGgo=" })];
@@ -1416,6 +1437,29 @@ export async function grown(l: Locator) {
   );
 }
 
+/**
+ * A mail card's source line keeps its icons whole however long its sender (task 68, I-21): the sender ends before
+ * them, cut with «…»; each icon 26 px, inside the line.
+ */
+export async function iconsWhole(card: Locator) {
+  const see = card.getByRole("button", { name: "Ver correo" });
+  const gmail = card.getByRole("button", { name: "Abrir en Gmail" });
+  await expect(see).toBeVisible();
+  await expect(gmail).toBeVisible();
+  const text = await card.locator(".inbox-source-text").boundingBox();
+  const tools = await card.locator(".inbox-source-tools").boundingBox();
+  const line = await card.locator(".inbox-source").boundingBox();
+  if (!text || !tools || !line) throw new Error("the card's source line is not on screen");
+  expect(text.x + text.width).toBeLessThanOrEqual(tools.x + 0.5);
+  expect(tools.x + tools.width).toBeLessThanOrEqual(line.x + line.width + 0.5);
+  expect(Math.round((await see.boundingBox())?.width ?? 0)).toBe(26);
+  expect(Math.round((await gmail.boundingBox())?.width ?? 0)).toBe(26);
+  expect(
+    await card
+      .locator(".inbox-source-text")
+      .evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow),
+  ).toBe("ellipsis");
+}
 export async function recorded(page: Page): Promise<Shell> {
   return page.evaluate(() => {
     const w = window as unknown as Record<string, string[] | undefined>;

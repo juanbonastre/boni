@@ -31,9 +31,12 @@ export interface InboxCard {
     from: string;
     subject: string;
     excerpt: string;
-    /** The mail's own row in Boni ("Ver correo" opens it: IMAP gives no link to a webmail). */
+    /**
+     * The mail's own row in Boni: «Ver correo» shows it in the side panel, and Gmail's icon asks the server for the
+     * address of that very mail (`GET /api/mail/webmail/:id`, task 68).
+     */
     open: { type: string; id: string };
-    /** Its Message-ID, for the webmail that opens a mail by it (Gmail; task 55). */
+    /** Its Message-ID (the search Gmail falls back to when even «Todos» has it no more; task 55). */
     messageId: string | null;
   } | null;
   /**

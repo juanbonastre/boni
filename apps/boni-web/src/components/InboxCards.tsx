@@ -55,7 +55,7 @@ import { GmailMark, KeptMail } from "./MailIcons.tsx";
  * (three days, little text), detailed otherwise (the mail's words, the fields, one day): the server's code decides,
  * and "Más detalles" opens it anyway. Everything is painted as text from the server's values: nothing is followed.
  */
-export function InboxPanel() {
+export function InboxPanel({ under = false }: { under?: boolean }) {
   const t = useStore((s) => s.t);
   const open = useStore((s) => s.inboxOpen);
   const queue = useInboxQueue();
@@ -73,7 +73,11 @@ export function InboxPanel() {
   }, [open]);
   if (!open) return null;
   return (
-    <aside className="side-panel inbox-panel" aria-label={t("inbox.title")}>
+    <aside
+      className="side-panel inbox-panel"
+      aria-label={t("inbox.title")}
+      style={under ? { display: "none" } : undefined}
+    >
       <header className="panel-head">
         <h2>{queue.length ? t("inbox.titleN", { n: queue.length }) : t("inbox.title")}</h2>
         <button

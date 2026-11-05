@@ -643,6 +643,9 @@ export interface MailsOptions {
   connect?: () => Duplex;
 }
 
+/** How long a Gmail thread not found is not looked for again (`Mails.webmail`). */
+const MISS_TTL = 10 * 60_000;
+
 export class Mails {
   private o: MailsOptions;
   private busy = new Map<number, Promise<MailState>>();
@@ -1731,27 +1734,39 @@ export class Mails {
     const messageId = String(e.entity.values.f_id_mensaje ?? "")
       .trim()
       .replace(/^<|>$/g, "");
-    let thread =
-      String(e.entity.values.f_gmail_hilo ?? "") || this.gmailThreads.get(`${account}:${id}`) || "";
-    if (!thread && messageId) {
+    const key = `${account}:${id}`;
+    let thread = String(e.entity.values.f_gmail_hilo ?? "") || this.gmailThreads.get(key) || "";
+    const missed = this.gmailMisses.get(key);
+    if (!thread && messageId && !(missed && this.now() - missed < MISS_TTL)) {
       const r = await this.open(settings);
       try {
         await r.examine(settings.folder);
         thread = (await r.gmailThreadOf(messageId)) ?? "";
+        // Archived out of the folder: in «Todos» (Gmail's All Mail, found by its flag), where every mail is.
+        if (!thread) {
+          const all = await r.allMailFolder();
+          if (all && all !== settings.folder) {
+            await r.examine(all);
+            thread = (await r.gmailThreadOf(messageId)) ?? "";
+          }
+        }
       } finally {
         r.close();
       }
-      if (thread) this.gmailThreads.set(`${account}:${id}`, thread);
+      if (thread) this.gmailThreads.set(key, thread);
+      else this.gmailMisses.set(key, this.now());
     }
     const url = thread ? gmailThreadUrl(thread, settings.user) : null;
     if (url) return url;
-    // Not found (moved out of the folder, say): Gmail's own search by its Message-ID, in its account.
+    // Not even in «Todos» (deleted, say): Gmail's own search by its Message-ID, in its account.
     return messageId && !/[\s<>"']/.test(messageId)
       ? `https://mail.google.com/mail/?authuser=${encodeURIComponent(settings.user)}#search/rfc822msgid:${encodeURIComponent(messageId)}`
       : null;
   }
   /** Gmail threads found by Message-ID for mails kept before Boni kept them (`webmail`), by account and row. */
   private gmailThreads = new Map<string, string>();
+  /** When a mail's thread was looked for and not found: not looked for again for a while (one IMAP session a click). */
+  private gmailMisses = new Map<string, number>();
 
   async proposeFor(
     account: number,

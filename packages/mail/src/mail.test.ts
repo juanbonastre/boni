@@ -270,6 +270,10 @@ function fakeImap(mails: Record<number, string>, password = "una-clave-de-prueba
         else if (gmail && /^UID SEARCH X-GM-RAW "rfc822msgid:hilo-1@example\.com"$/.test(cmd))
           s.write(`* SEARCH 12\r\n${tag} OK\r\n`);
         else if (gmail && /^UID SEARCH X-GM-RAW /.test(cmd)) s.write(`* SEARCH\r\n${tag} OK\r\n`);
+        else if (gmail && cmd === 'LIST "" "*"')
+          s.write(
+            `* LIST (\\HasNoChildren) "/" INBOX\r\n* LIST (\\HasNoChildren \\All) "/" "[Gmail]/Todos \\"2\\""\r\n${tag} OK\r\n`,
+          );
         else if (gmail && /^UID FETCH 12 \(UID X-GM-THRID\)$/.test(cmd))
           s.write(`* 1 FETCH (UID 12 X-GM-THRID ${THREAD})\r\n${tag} OK\r\n`);
         else if (/^EXAMINE /.test(cmd))
@@ -365,6 +369,8 @@ describe("the read-only IMAP client", () => {
     expect(await r.gmailThreadOf("otro@example.com")).toBeNull();
     // Nothing that is not a Message-ID is searched.
     expect(await r.gmailThreadOf('a" OR ALL')).toBeNull();
+    // «Todos» (All Mail) by its flag, whatever its name: where an archived mail still is.
+    expect(await r.allMailFolder()).toBe('[Gmail]/Todos "2"');
     r.close();
     expect(asked.filter((l) => l.includes("FETCH")).every((l) => !/BODY\[/.test(l))).toBe(true);
     expect(gmailThreadUrl(THREAD, "ejemplo@example.com")).toBe(
