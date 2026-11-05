@@ -5,10 +5,11 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
-## 2026-11-05 (thirty-fourth) — server 0.8.109 · Boni desktop 0.4.78 · Boni Android
+## 2026-11-05 (thirty-fourth) — server 0.8.110 · Boni desktop 0.4.78 · Boni Android
 
 Needs:
-- The server, 0.8.109, to deploy: Boni's pieces in «Leer correo», and «Solo» matching real mail.
+- The server, 0.8.110 (deployed): Boni's pieces in «Leer correo», «Solo» matching real mail, and «Flujos» showing
+  Boni's «Leer correo» as it is now (0.8.109 went first, without that last one).
 - Boni desktop 0.4.78 (`release/boni_0.4.78_amd64.deb`), to install.
 - Boni Android from main, through Obtainium.
 
@@ -24,8 +25,8 @@ and its first step: F7, part 1 (task 83), with task 70's canvas and task 63's po
   - A sender the guide never reads ends the reading at «Reglas de la guía» («Acaba aquí»); no model is called.
   - These pieces only run inside a flow; the conversation's AI never gets them (P20).
   - To try: «Flujos» → «Leer correo», and a reading of the Registro on its canvas.
-  - If «Leer correo» shows no pieces, it is a version of yours saved before: «⋯ → Volver al de Boni» brings Boni's.
-    (#350)
+  - Opening «Flujos» brings Boni's «Leer correo» up to date; before, only a new mail did. If it still shows no
+    pieces, it is a version of yours saved before: «⋯ → Volver al de Boni» brings Boni's. (#350, #352)
 - **The flow editor**: what a trigger brings by its name («Correo», «Asunto», «Destinatarios»; never `$mail`); Boni's
   pieces under «De Boni» when adding a step to a flow a mail starts; the canvas fits when it opens (task 70); and the
   icon beside «Probar» tries the flow with a mail you choose by its subject (task 63, point 6). (#350)
