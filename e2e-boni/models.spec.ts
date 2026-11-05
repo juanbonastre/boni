@@ -513,6 +513,79 @@ test("the editor gives control (task 70): «Añadir paso» with a search and gro
   await page.screenshot({ path: `${SHOTS}/flow-step-io.png` });
 });
 
+test("steps connected by dragging as a person does (task 78): a step's dot to anywhere on another, or to the canvas for a new step; the canvas's right button adds one where it was", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS],
+      "GET api/agent/flows/:id": [FLOW_DETAIL],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  const nodes = canvas.locator(".fl-node");
+  await expect(nodes).toHaveCount(5);
+  const node = (id: string) => canvas.locator(`.react-flow__node[data-id="${id}"]`);
+  const center = async (l: import("@playwright/test").Locator) => {
+    const b = await l.boundingBox();
+    if (!b) throw new Error("not on screen");
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  };
+  // The canvas's right button: «Añadir paso» where it was, its search taking the keys.
+  const pane = await canvas.locator(".react-flow__pane").boundingBox();
+  if (!pane) throw new Error("no canvas");
+  // An empty spot of the canvas that is on screen (it may go on below the window): its upper left.
+  await page.mouse.click(pane.x + 60, pane.y + 60, { button: "right" });
+  const add = page.getByRole("dialog", { name: "Añadir paso" });
+  await expect(add.getByRole("textbox", { name: "Buscar paso" })).toBeFocused();
+  await page.keyboard.type("avis", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await expect(nodes).toHaveCount(6);
+  await expect(node("notify")).toBeVisible();
+  // A step's dot shows under the pointer; dragged to anywhere on another step, it asks where that one uses its value.
+  await node("m").hover();
+  const dot = node("m").locator(".react-flow__handle.source");
+  await expect(dot).toHaveCSS("opacity", "1");
+  const from = await center(dot);
+  const to = await center(node("notify"));
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 12 });
+  // While drawing, every step shows where it lands.
+  await expect(node("notify").locator(".react-flow__handle.target")).toHaveCSS("opacity", "1");
+  await page.mouse.up();
+  const link = page.getByRole("menu", { name: "Usar en" });
+  await expect(link).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/flow-connect.png` });
+  const edges = canvas.locator(".react-flow__edge");
+  const before = await edges.count();
+  // Each place named as the step's panel names it («Texto», not its key).
+  await link.getByRole("menuitemradio", { name: "Texto" }).click();
+  await expect(link).toHaveCount(0);
+  await expect(edges).toHaveCount(before + 1);
+  // Left on the canvas: a new step there, which then says where it takes the value.
+  await node("r").hover();
+  const start = await center(node("r").locator(".react-flow__handle.source"));
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(pane.x + 60, pane.y + 160, { steps: 12 });
+  await page.mouse.up();
+  await expect(add.getByRole("textbox", { name: "Buscar paso" })).toBeFocused();
+  await page.keyboard.type("consul", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await expect(nodes).toHaveCount(7);
+  await expect(link).toBeVisible();
+  await link.getByRole("menuitemradio").first().click();
+  await expect(link).toHaveCount(0);
+  // The trigger shows no dot: its values are the flow's inputs, taken by their names.
+  await node("trigger").hover();
+  await expect(node("trigger").locator(".react-flow__handle.source")).toBeHidden();
+});
+
 test("«Probar»: the draft run dry with the latest mail; each step says what it gave or would do; nothing written", async ({
   page,
 }) => {
@@ -578,7 +651,8 @@ test("a daily summary drawn without code: the trigger «Programado», every day 
   await expect(rows).toHaveCount(2);
   await rows.nth(1).getByRole("button", { name: "Resumen diario" }).click();
   const canvas = page.locator(".flow-editor .flow-canvas");
-  await expect(canvas.locator(".fl-node.source")).toContainText("A mano");
+  // By hand is «Disparado por el usuario» (Juan, 2026-11-05: «en vez de "A mano"»; task 78).
+  await expect(canvas.locator(".fl-node.source")).toContainText("Disparado por el usuario");
   // The trigger's panel: «Programado», every day; the node says when, and what it gives ($today).
   await canvas.locator(".fl-node.source .fl-name").click();
   const panel = page.locator(".flow-step-panel");

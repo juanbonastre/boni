@@ -798,7 +798,13 @@ contraseña ni un código aquí» under a question.
   click to confirm). Under it the checklist, in a `--bad`-tinted box, one line per problem («Crear: Colección:
   falta»), a click selects the step. The canvas: a node can be dragged (where it is left is saved with the version;
   «Ordenar» lays it out again), an arrow drawn from one node to another asks where the second uses the first's value
-  (a small menu of its settings) and moves it after the first when it ran before, Supr removes the selected node, the
+  (a small menu, «Usar en», of its settings by the names its panel gives them) and moves it after the first when it
+  ran before (task 78; Juan, 2026-11-05: «no puedo conectarlo entre ellos»: the dots were a pixel): a 12 px dot under a
+  step (the accent's) to drag from and one over each step to land on, shown under the pointer and, while an arrow is
+  drawn, on every step; the arrow lands on a step wherever it is left on it, and left on the canvas it opens «Añadir
+  paso» there, the new step then asking where it takes the value; the trigger has no dot (its values are the flow's
+  inputs, taken by name). The right button on the canvas opens «Añadir paso» where it was, the step placed there
+  (task 78). Supr removes the selected node, the
   right button on a node opens its actions where the pointer is, without opening its panel (task 70: Abrir, its
   panel; Duplicar, a copy right after it under an id of its own, a little below and right of it; Probar hasta aquí,
   the flow tried as far as it and the test bar saying «hasta «…»», greyed while a test runs or with a problem up to
@@ -815,7 +821,8 @@ contraseña ni un código aquí» under a question.
   fields, as «Entra» shows them: the server computes them with the values a step may take; a reply gives «Nada»),
   and after a test «En la
   prueba» (what it gave or would do, the node's lines in full; «No llegó a este paso» when the test stopped
-  before). The trigger's panel: «Nuevo correo» with what it binds, «A mano» with the
+  before). The trigger's panel: «Nuevo correo» with what it binds, «Disparado por el usuario» (task 78; «A mano» until
+  then) with the
   names its form asks for, or **«Programado»** (F4): «Cuándo» (Cada día, Cada semana with its «Día», Cada hora) and
   «A las» as two lists, the hour and the minutes every five (never a time field: it shows AM/PM in an English
   browser), or «Minuto» every hour; the node says it in words («Cada día a las 08:00», «Cada lunes a las 07:30»,
