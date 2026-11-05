@@ -13,6 +13,7 @@ export function PopButton({
   align = "end",
   width,
   onOpenChange,
+  initialOpen = false,
   children,
 }: {
   label: ReactNode;
@@ -21,9 +22,11 @@ export function PopButton({
   align?: "start" | "end";
   width?: number;
   onOpenChange?: (open: boolean) => void;
+  /** Open as it appears (a chip the bar of a collection's view opens at once; task 69). */
+  initialOpen?: boolean;
   children: (close: () => void) => ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const button = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);

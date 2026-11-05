@@ -48,6 +48,9 @@ const L = {
     period: "Periodo",
     filters: "Filtros",
     addFilter: "Añadir filtro",
+    filter: "Filtro",
+    viewSettings: "Ajustes de la vista",
+    addView: "Añadir vista",
     more: "Más",
     edit: /^Editar…/,
     settings: "Ajustes",
@@ -63,6 +66,9 @@ const L = {
     period: "Period",
     filters: "Filters",
     addFilter: "Add filter",
+    filter: "Filter",
+    viewSettings: "View settings",
+    addView: "Add a view",
     more: "More",
     edit: /^Edit…/,
     settings: "Settings",
@@ -181,10 +187,22 @@ for (const language of ["es", "en"] as const) {
       await page.keyboard.press("Enter");
       await page.locator(".db-table tbody tr").first().waitFor();
       issues.push(...(await audit(page, "database table")));
-      await page.locator(".db-layout").nth(1).click();
+      // The head (task 69): the bar of order and filters, the view's settings.
+      await page.locator(".db-head").getByRole("button", { name: l.filter, exact: true }).click();
+      await page.locator(".db-bar").waitFor();
+      issues.push(...(await audit(page, "view bar")));
+      await page.keyboard.press("Escape");
+      await page.locator(".db-head").getByRole("button", { name: l.viewSettings }).click();
+      issues.push(...(await audit(page, "view settings")));
+      await page.keyboard.press("Escape");
+      // A page's block keeps one view: its tab changes its layout.
+      await page.locator(".db-views .db-view-tab").click();
+      issues.push(...(await audit(page, "view layouts")));
+      await page.locator(".db-layout-tile").nth(1).click();
       await page.locator(".db-column").first().waitFor();
       issues.push(...(await audit(page, "database board")));
-      await page.locator(".db-layout").nth(4).click();
+      await page.locator(".db-views .db-view-tab").click();
+      await page.locator(".db-layout-tile").nth(4).click();
       await page.locator(".db-cal-grid").waitFor();
       issues.push(...(await audit(page, "database calendar")));
       await page.locator(".db .protect-pill").click();
@@ -194,6 +212,9 @@ for (const language of ["es", "en"] as const) {
       await page.locator(".sidebar").getByRole("button", { name: l.collections }).click();
       await page.locator(".my-data .db-table").waitFor();
       issues.push(...(await audit(page, "collections")));
+      await page.locator(".my-data .db-head").getByRole("button", { name: l.addView }).click();
+      issues.push(...(await audit(page, "new view")));
+      await page.keyboard.press("Escape");
       // «Mis datos» is a collection (F6b): a row's level and its mother are picked in its cells.
       const documentos = page.locator(".my-data .db-table tbody tr", { hasText: "Documentos" });
       await documentos.locator("td").nth(4).locator(".db-cell").click();

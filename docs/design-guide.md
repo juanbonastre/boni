@@ -416,13 +416,31 @@ contraseña ni un código aquí» under a question.
   lectura» instead of a level of what the AI sees (no AI sees them): no «Nuevo», no editing, no opening a row. They
   are counted like any collection. «Mis datos» is the one a person changes (its rows are his collections and pages:
   the item «Mis datos» below), so it has no pill.
-- **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`): "/" + a collection's name puts it on a
-  page; its head has the name, the layouts (Tabla, Tablero, Lista, Galería, Calendario), "Filtro", "Opciones" and
-  "Nuevo". **«Opciones»** is Notion's «⋯» of a view (Juan, 2026-11-03, task 41): a short list, each row saying what it
-  is now on the right («5 visibles», «Título ↓») with a chevron, and opening its panel in the same box (its head, «‹»
-  and its name, goes back): Propiedades (each shown or not), Filtrar (the view's rules, as "Filtro"), Ordenar (none, or
-  a column up and, again, down), Agrupar (a board's list), Fecha and «También en el calendario» (a calendar), Columnas
-  de sistema (a table); under a line, the collection's notes in the sidebar (its eye). It opens on the list again. Table: the title column first, 34 px rows,
+- **Databases as Notion's** (plan PR 19, `components/DatabaseBlock.tsx`, its head in `DatabaseHead.tsx`): "/" + a
+  collection's name puts it on a page. **The head as Notion's** (task 69; Juan, 2026-11-05, with Notion's «Tareas BD»
+  as the reference: «más limpio, menos texto»): on the left a collection's **views as tabs** (its own page and «Mis
+  datos»), each its layout's icon and its name, the open one lit; a click opens one, a double click renames it in
+  place (Enter or leaving keeps the name, Esc does not), the right button opens its menu (Cambiar nombre, Duplicar
+  vista, Eliminar vista: never the last one); «+» («Añadir vista») shows the layouts as tiles (Tabla, Tablero,
+  Lista, Galería, Calendario, Diagrama) and makes a view of that one, named after it and opened. A view still named
+  after its layout takes the new one's name when its layout changes. The account keeps a collection's views
+  (`rowUi.views`, at most 20), the same on every device; which
+  one is open is this device's. A page's block keeps one view (in the page): its name, then that view's tab, which
+  opens the layouts' tiles. On the right, **icons**: Filtro, Ordenar, Buscar (it turns into a field; the rows whose
+  title has the words, nothing kept; Esc closes it), the view's settings (Ajustes de la vista), then «Nuevo». An icon
+  whose part of the view is on (a filter, an order) is in the accent's colour. Filtro and Ordenar show **the bar**
+  under the head, Notion's: the order on the left, a vertical line, the filters on the right and «+ Filtro», each a
+  chip (the order's says its column with ↑ or ↓; a filter's says itself, «Estado es Leído»). Ordenar shows it with
+  the order's chip open (its columns, Ascendente, Descendente, Quitar orden); Filtro with «+ Filtro» open (the
+  properties): a property chosen adds its rule and opens its chip for the condition and the value; a rule without
+  its value yet filters nothing. The bar stays while the view has an order or a filter, and goes when they go.
+  **The view's settings** (its icon) are Notion's «⋯» of a view (Juan, 2026-11-03, task 41): the view's name (a field,
+  on a collection's page), then a short list, each row saying what it is now on the right («Tabla», «5 visibles»,
+  «Título ↓») with a chevron, and opening its panel in the same box (its head, «‹» and its name, goes back): Diseño
+  (the layouts as tiles, the view's marked), Propiedades (each shown or not), Filtrar (the view's rules, as the
+  bar's), Ordenar (none, or a column up and, again, down), Agrupar (a board's list), Fecha and «También en el
+  calendario» (a calendar), Columnas de sistema (a table); under a line, the collection's notes in the sidebar (its
+  eye), Duplicar vista and Eliminar vista. It opens on the list again. Table: the title column first, 34 px rows,
   hairline grid, each cell edited where it is (text and numbers as a field, Enter or leaving saves, Esc does not;
   selects as Notion's coloured pills from a menu; checkboxes at once; relations from a picker: the target's rows by
   title, filtered as one types, one with «Ninguno» or several with a click each; Juan, 2026-11-02: every property
@@ -456,14 +474,15 @@ contraseña ni un código aquí» under a question.
   board's columns, a gallery's cards (220 px each), a list's rows, from 560 px up to the window's width (then a table
   or a board scrolls sideways, a gallery wraps); what is narrower than 560 px is widened to it, and a calendar fills
   the width. The title sits over the first column (a table's boxes in the margin), the head's options end where the
-  content ends, and the layouts keep only their icons when the head is narrow.
-  Boni's own tables have no boxes, menu or delete column; their widths are kept too.
+  content ends, and the views' tabs keep only their icons when the head is narrow.
+  Boni's own tables have no boxes, menu or delete column; their widths and their views are kept too.
   Board: a column per option (and "Sin X" when used), cards dragged between columns change the select. Calendar: a
   month from Monday, today marked, "+" on a day adds a row on it; "Semana" shows seven tall days with every item
-  (its start time over its title); "También en el calendario" (Opciones) adds other collections, each with its colour
-  and a legend. "Filtro" (Notion's): rules of a property, a condition that fits its type (es, contiene, está vacío,
-  antes de / después de hoy or a date, mayor que…) and a value; the button shows how many are on. The view (layout, sort, grouping, hidden
-  properties) is the page block's; the rows are the collection's (`/api/data/*`, a personal device only).
+  (its start time over its title); "También en el calendario" (the view's settings) adds other collections, each with
+  its colour and a legend. A filter (Notion's): a property, a condition that fits its type (es, contiene, está vacío,
+  antes de / después de hoy or a date, mayor que…) and a value. On a page, the view (layout, sort, grouping, hidden
+  properties) is the page block's; on a collection's page and «Mis datos», the collection's saved views; the rows are
+  the collection's (`/api/data/*`, a personal device only).
   Every collection's head has a quiet pill with what the AI sees of it (Visible, Opaca, Restringida, Privada, each
   with its icon); it opens the four levels with a line of help each. Privada is locked: elsewhere its menu only says
   where to unlock it; on the collection's own page (its name in the tree) "Desbloquear…" opens a dialog that asks
@@ -841,8 +860,8 @@ contraseña ni un código aquí» under a question.
 - **«Mis datos»** (Boni, the sidebar's top; Juan, 2026-10-28: everything, with every way to manage it; «Todas las
   páginas» until 2026-11-04; a collection since 2026-11-05, F6b: «que la sección se comportase como una página de
   colección»): the page of one of Boni's collections, «Mis datos» (`apps/server/src/myData.ts`), laid out as any
-  collection's page: its title, then the head of its block with the layouts (Tabla, Tablero, Lista, Galería,
-  Calendario, Diagrama), «Filtro», «Opciones» and «Nuevo». A row per page of the user's (each after its mother), per
+  collection's page: its title, then the head of its block, as any collection's (its views as tabs with «+», the
+  diagram one of their layouts; Filtro, Ordenar, Buscar, the view's settings; «Nuevo»). A row per page of the user's (each after its mother), per
   collection (each mother before her daughters, by name), then Boni's own (its template pages and its records). Its
   columns: Nombre, Tipo (Página, Colección, De Boni), Madre, Nivel (the level's pill), Elementos, En la barra (the
   eye: its notes in the sidebar), Leída por, Escrita por and Origen (hidden at first). Nombre, Madre, Nivel and En la
@@ -850,8 +869,9 @@ contraseña ni un código aquí» under a question.
   private collection lowered only from its own page («Una colección privada solo se abre a la IA desde su página.»),
   only an empty collection deleted; what does not apply to a row is plain text (a page has no level nor eye; Boni's
   rows have no box and no bin). «Nuevo» makes «Nueva colección» (then «… 2»); a row's bin deletes it, with
-  «Deshacer». A click on a row's name opens what it is: the collection's page, or the page. Its view (the layout,
-  filters, columns) is kept on the device. Below the block, what the collections take (the last item of this list).
+  «Deshacer». A click on a row's name opens what it is: the collection's page, or the page. Its views (each its
+  layout, filters, order, columns) are kept in the account as any collection's (task 69; until then, one view on the
+  device, which became its first). Below the block, what the collections take (the last item of this list).
 - **«Mis datos» as a diagram** (task 59a; Juan, 2026-11-04: the collections as a database diagram, how they relate
   and what the AI sees; the schema visualizer of Supabase Studio and n8n's canvas as references): a canvas (React
   Flow, dots in `--line-strong`, zoom buttons bottom left) with a card per collection, 220 px wide, in
@@ -865,7 +885,7 @@ contraseña ni un código aquí» under a question.
   **Who reads and writes it, and editing it there** (F6, `docs/flujos.md` §4.7; «Ver como» is gone): under its
   fields each card has two muted 11 px lines, a pen with who writes it and an eye with who reads it (the flows whose
   steps name it, then who did in the last 30 days: «Tú», «Asistente · …», a model's use, «Boni»; two names and «+N»).
-  In «Mis datos» it is one more layout of its block: its «Filtro» fades what it leaves out to 28 % (nothing moves),
+  In «Mis datos» it is one more layout of its views: its filters fade what they leave out to 28 % (nothing moves),
   its «Nuevo» makes a collection, and the canvas's toolbar has only «Ordenar». In a collection's «Diagrama» the
   toolbar has filters as small lists, «Leída por», «Escrita por» and «Nivel», with the same fading, then «Nueva
   colección» (a name field under the toolbar, «Crear» and «Cancelar») and «Ordenar». A click on a card opens its
@@ -887,7 +907,7 @@ contraseña ni un código aquí» under a question.
   «Quién hizo qué» lists each one with their colour and how much is theirs («4 líneas · 1 propiedad»); a click on one
   lights only theirs and brings it into view, a second click all again. Closing the panel leaves the page as it was.
 - **System columns** (any table; Juan, 2026-10-24): Creado, Creado por, Modificado, Modificado por, Editores, Visto
-  por, Último acceso de una IA, Origen, Versión, Tamaño. None shown by default; the view's «Opciones» has a «Columnas
+  por, Último acceso de una IA, Origen, Versión, Tamaño. None shown by default; the view's settings have a «Columnas
   de sistema» panel to show each. Their cells are muted 12.5 px text, ellipsized (full text on hover), never editable.
 - **«Mis datos»** (under its block) ends with the tiles Registros, Almacenamiento, Historial and Textos de los modelos,
   Boni's storage advice when something grows (an amber-tinted line with a bulb; nothing is deleted by itself), and two

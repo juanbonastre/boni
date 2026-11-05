@@ -6,9 +6,9 @@ import {
   agentApi,
   loadDataTypes,
   openCollection,
-  setCollectionView,
   showAudit,
   useStore,
+  useViews,
 } from "../store.ts";
 import { BarList, bytes, Kpi } from "./Dash.tsx";
 import { DatabaseBlock, SystemPill } from "./DatabaseBlock.tsx";
@@ -20,7 +20,8 @@ export function CollectionView() {
   const id = useStore((s) => (s.view.kind === "collection" ? s.view.type : ""));
   const type = useStore((s) => s.dataTypes?.find((x) => x.id === id));
   const mother = useStore((s) => s.dataTypes?.find((x) => x.id === type?.parent));
-  const view = useStore((s) => s.collectionViews[id]) ?? DEFAULT_VIEW;
+  // Its saved views as tabs (task 69), the one open on this device.
+  const views = useViews(id, DEFAULT_VIEW);
   useEffect(() => {
     void loadDataTypes();
   }, [id]);
@@ -51,9 +52,10 @@ export function CollectionView() {
         </div>
         <DatabaseBlock
           source={type.id}
-          view={view}
+          view={views.view}
           named={false}
-          onView={(v) => setCollectionView(type.id, v)}
+          onView={views.onView}
+          views={views.control}
         />
       </div>
     </div>

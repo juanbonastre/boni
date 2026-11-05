@@ -1,7 +1,16 @@
 import { mkdirSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 import { AUDIT_SUMMARY, ROW_HISTORY, STORAGE } from "./agent-scenarios.ts";
-import { grown, openApp, PAGE_FROM_HOME, recorded, TEMPLATE } from "./fixtures.ts";
+import {
+  addFilter,
+  grown,
+  openApp,
+  PAGE_FROM_HOME,
+  recorded,
+  removeFilter,
+  setLayout,
+  TEMPLATE,
+} from "./fixtures.ts";
 
 /**
  * One tree (docs/clases.md §2.7; Juan, 2026-10-28): the sidebar has «Mis datos» beside Buscar and
@@ -250,9 +259,29 @@ test("«Mis datos» is a collection (F6b): a row per page and collection, then B
   await expect(line("Gastos").getByRole("checkbox", { name: "En la barra" })).toHaveCount(0);
   await expect(line("Ejecuciones").getByRole("button", { name: /^Borrar/ })).toHaveCount(0);
   await expect(line("Libros").getByRole("checkbox", { name: "En la barra" })).toHaveCount(1);
-  // What any collection's page has: its views (the diagram one of them), «Filtro», «Nuevo».
-  await expect(page.locator(".db-layouts").getByRole("radio")).toHaveCount(6);
-  await expect(page.locator(".db-head").getByRole("button", { name: "Nuevo" })).toBeVisible();
+  // What any collection's page has: its views as tabs with «+» (the diagram one of their layouts), «Filtro»,
+  // «Ordenar», «Buscar», its settings, «Nuevo».
+  const head = page.locator(".db-head");
+  await expect(head.getByRole("tab")).toHaveText(["Tabla"]);
+  for (const name of [
+    "Añadir vista",
+    "Filtro",
+    "Ordenar",
+    "Buscar",
+    "Ajustes de la vista",
+    "Nuevo",
+  ])
+    await expect(head.getByRole("button", { name, exact: true })).toBeVisible();
+  await head.getByRole("button", { name: "Añadir vista" }).click();
+  await expect(page.getByRole("dialog", { name: "Añadir vista" }).getByRole("button")).toHaveText([
+    "Tabla",
+    "Tablero",
+    "Lista",
+    "Galería",
+    "Calendario",
+    "Diagrama",
+  ]);
+  await page.keyboard.press("Escape");
   await page.screenshot({ path: `${SHOTS}/all-pages.png` });
   // Its name, in place; the sidebar says it too.
   await line("Libros").getByRole("button", { name: "Libros", exact: true }).dblclick();
@@ -383,7 +412,7 @@ test("system columns in a table: none by default, chosen from the view's options
   await expect(page.locator(".topbar h1")).toHaveText("Libros");
   const table = page.locator(".db-table");
   await expect(table.locator("th.sys-col")).toHaveCount(0);
-  await page.getByRole("button", { name: "Opciones", exact: true }).click();
+  await page.getByRole("button", { name: "Ajustes de la vista" }).click();
   await page.getByRole("menuitem", { name: "Columnas de sistema" }).click();
   await page.getByRole("menuitemradio", { name: "Creado por" }).click();
   await page.getByRole("menuitemradio", { name: "Visto por" }).click();
@@ -426,7 +455,7 @@ test("«Mis datos» as a diagram, one more of its views: a card per collection w
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", { agent: AGENT });
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }).click();
+  await setLayout(page, page.locator(".db"), "Diagrama");
   const canvas = page.locator(".data-diagram");
   const cards = canvas.locator(".dg-card-node");
   await expect(cards.locator(".dg-name")).toContainText(["Libros", "Documentos"]);
@@ -441,25 +470,17 @@ test("«Mis datos» as a diagram, one more of its views: a card per collection w
   // Its own selects are gone: the view's «Filtro» does it, as on any collection (F6b). «Nivel es Privada»: the
   // private one stays, the others fade; nothing moves.
   await expect(page.locator(".data-filter")).toHaveCount(0);
-  await page.locator(".db-head").getByRole("button", { name: "Filtro" }).click();
-  await page.getByRole("button", { name: "Añadir filtro" }).click();
-  await page.getByRole("combobox", { name: "Propiedad" }).selectOption({ label: "Nivel" });
-  await page.getByRole("combobox", { name: "Valor" }).selectOption({ label: "Privada" });
-  await page.keyboard.press("Escape");
+  const db = page.locator(".db");
+  await addFilter(page, db, "Nivel", "Privada");
   await expect(cards.filter({ hasText: "Documentos" })).not.toHaveClass(/dim/);
   await expect(libros).toHaveClass(/dim/);
   await page.screenshot({ path: `${SHOTS}/data-diagram.png` });
   // The same filter in the table: only the private one.
-  await page.locator(".db-layouts").getByRole("radio", { name: "Tabla" }).click();
+  await setLayout(page, db, "Tabla");
   await expect(page.locator(".my-data .db-table tbody td.is-title")).toContainText(["Documentos"]);
   await expect(page.locator(".my-data .db-table tbody td.is-title")).not.toContainText(["Libros"]);
-  await page
-    .locator(".db-head")
-    .getByRole("button", { name: /^Filtro/ })
-    .click();
-  await page.getByRole("button", { name: "Quitar filtro" }).click();
-  await page.keyboard.press("Escape");
-  await page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }).click();
+  await removeFilter(page, db, "Nivel es Privada");
+  await setLayout(page, db, "Diagrama");
   await expect(libros).not.toHaveClass(/dim/);
   // A click opens its panel: its level, who writes and reads it, «Abrir».
   await libros.locator(".dg-name").click();
@@ -469,9 +490,11 @@ test("«Mis datos» as a diagram, one more of its views: a card per collection w
   await expect(page.locator(".topbar h1")).toHaveText("Libros");
   // Back in «Mis datos», the view it was left in.
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await expect(
-    page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }),
-  ).toHaveAttribute("aria-checked", "true");
+  await expect(page.locator(".db-head").getByRole("tab", { name: "Diagrama" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(canvas).toBeVisible();
 });
 
 test("a collection's «Diagrama» (F6): Agenda with her daughters and who writes and reads them; filters; a relation drawn by dragging", async ({
@@ -498,7 +521,7 @@ test("a collection's «Diagrama» (F6): Agenda with her daughters and who writes
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
   await page.locator(".my-data").getByRole("button", { name: "Agenda", exact: true }).click();
   await expect(page.locator(".topbar h1")).toHaveText("Agenda");
-  await page.locator(".db-layouts").getByRole("radio", { name: "Diagrama" }).click();
+  await setLayout(page, page.locator(".db"), "Diagrama");
   const canvas = page.locator(".data-diagram");
   await expect(canvas.locator(".dg-frame")).toContainText("Agenda");
   const cards = canvas.locator(".dg-card-node");

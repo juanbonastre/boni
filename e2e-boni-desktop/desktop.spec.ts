@@ -191,8 +191,12 @@ test("the desktop app: logs in, makes a page, the agenda as a calendar, a note o
   const db = w.locator(".db");
   await expect(db.locator(".db-table tbody tr")).toHaveCount(2);
   await shot(w, "table");
-  // The calendar: the class today at its time.
-  await db.getByRole("radio", { name: "Calendario" }).click();
+  // The calendar: the class today at its time. A page's block keeps one view: its tab changes its layout (task 69).
+  await db.locator(".db-head").getByRole("button", { name: "Diseño", exact: true }).click();
+  await w
+    .getByRole("dialog", { name: "Diseño" })
+    .getByRole("radio", { name: "Calendario" })
+    .click();
   await expect(db.locator(".db-cal-day.today")).toContainText("10:00");
   await expect(db.locator(".db-cal-day.today")).toContainText("Clase de ejemplo");
   await shot(w, "calendar");
@@ -335,9 +339,12 @@ test("«Mis datos» over the real server is a collection (F6b): a row per page a
   await expect(line("Llamadas a modelos")).toContainText("De Boni");
   await expect(line("Llamadas a modelos").getByRole("button", { name: /^Borrar/ })).toHaveCount(0);
   // Filtered as any collection: «Nivel es Privada».
-  await w.locator(".db-head").getByRole("button", { name: "Filtro" }).click();
-  await w.getByRole("button", { name: "Añadir filtro" }).click();
-  await w.getByRole("combobox", { name: "Propiedad" }).selectOption({ label: "Nivel" });
+  // The head's «Filtro» shows the bar with «+ Filtro» open; the property, then its value in its chip (task 69).
+  await w.locator(".db-head").getByRole("button", { name: "Filtro", exact: true }).click();
+  await w
+    .getByRole("dialog", { name: "Añadir filtro" })
+    .getByRole("menuitemradio", { name: "Nivel", exact: true })
+    .click();
   await w.getByRole("combobox", { name: "Valor" }).selectOption({ label: "Privada" });
   await w.keyboard.press("Escape");
   await expect(line("Documentos")).toHaveCount(1);
@@ -359,12 +366,8 @@ test("«Mis datos» over the real server is a collection (F6b): a row per page a
   // Back in «Mis datos» (its filter kept), without it, and private again from its «Nivel», in one click (raising
   // is never locked); lowering it there says where it is done.
   await w.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await w
-    .locator(".db-head")
-    .getByRole("button", { name: /^Filtro/ })
-    .click();
+  await w.locator(".db-bar").getByRole("button", { name: "Nivel es Privada" }).click();
   await w.getByRole("button", { name: "Quitar filtro" }).click();
-  await w.keyboard.press("Escape");
   await line("Documentos").locator("td").nth(4).locator(".db-cell").click();
   await w.getByRole("menu").getByText("Privada", { exact: true }).click();
   await expect(line("Documentos")).toContainText("Privada");

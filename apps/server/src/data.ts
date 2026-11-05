@@ -19,7 +19,7 @@ import {
   type UserStore,
   type Zone,
 } from "@boni/store";
-import { dataRowFixed, filterErrors, SYS } from "@boni/views";
+import { dataRowFixed, filterErrors, type SavedView, SYS, savedViewsOf } from "@boni/views";
 import { mimeOf } from "./paths.ts";
 import { isSystemCollection, type SystemCollections } from "./systemCollections.ts";
 
@@ -80,6 +80,8 @@ export interface RowUi {
   folded: string[];
   /** Its table's columns' widths in px, by field (or a column of the table's own), as the user left them. */
   widths: Record<string, number>;
+  /** Its views as tabs (task 69, Notion's): each its layout and settings, its id and name; none until one is made. */
+  views: SavedView[];
 }
 const COLUMN = /^[A-Za-z0-9_.:-]{1,64}$/;
 const widthsOf = (v: unknown): Record<string, number> => {
@@ -104,15 +106,16 @@ export function rowUiOf(store: UserStore, typeId: string): RowUi {
         ? v.folded.filter((x) => typeof x === "string" && GROUP.test(x))
         : [],
       widths: widthsOf(v.widths),
+      views: savedViewsOf(v.views),
     };
   } catch {
-    return { open: true, hidden: [], related: false, folded: [], widths: {} };
+    return { open: true, hidden: [], related: false, folded: [], widths: {}, views: [] };
   }
 }
 /**
  * Folds or unfolds a collection's properties, or hides or shows some of them (fields it has); its rows'
- * «Relacionado», whole or group by group; its table's columns' widths. Boni's own tables keep only their widths
- * (their rows neither open nor fold).
+ * «Relacionado», whole or group by group; its table's columns' widths; its views (task 69). Boni's own tables keep
+ * only their widths and their views (their rows neither open nor fold).
  */
 export function setRowUi(
   store: UserStore,
@@ -122,7 +125,7 @@ export function setRowUi(
   const own = isSystemCollection(typeId);
   const t = own ? undefined : userTypes(store).find((x) => x.id === typeId);
   if (!own && !t) return { status: 404, error: "not-found" };
-  if (own && Object.keys(body).some((k) => k !== "widths"))
+  if (own && Object.keys(body).some((k) => k !== "widths" && k !== "views"))
     return { status: 400, error: "bad-body" };
   const next = rowUiOf(store, typeId);
   if (body.open !== undefined) {
@@ -150,6 +153,13 @@ export function setRowUi(
     )
       return { status: 400, error: "bad-folded" };
     next.folded = [...new Set(body.folded as string[])];
+  }
+  if (body.views !== undefined) {
+    // Every view as it came, or none: a view that is not one is refused, never dropped in silence.
+    const views = savedViewsOf(body.views);
+    if (!Array.isArray(body.views) || views.length !== body.views.length)
+      return { status: 400, error: "bad-views" };
+    next.views = views;
   }
   if (body.widths !== undefined) {
     const w = widthsOf(body.widths);

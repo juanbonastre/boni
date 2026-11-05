@@ -6,6 +6,8 @@ import {
   type PageSpec,
   type PageTemplate,
   pageErrors,
+  type SavedView,
+  savedViewsOf,
   withoutRetired,
 } from "@boni/views";
 import { ApiError, NotConfiguredError, OfflineError, type Transport } from "./api.ts";
@@ -1686,6 +1688,8 @@ export interface DataType {
     folded: string[];
     /** The table's columns' widths in px, by field (as the user left them). */
     widths: Record<string, number>;
+    /** Its views as tabs (task 69): the account's, the same on every device. */
+    views: SavedView[];
   };
   /** Boni's own records (calls to models, its activity): read only, never seen by a model. */
   system?: true;
@@ -1784,6 +1788,7 @@ function parseDataType(v: unknown): DataType | null {
           (e): e is [string, number] => typeof e[1] === "number" && e[1] >= 40 && e[1] <= 1600,
         ),
       ),
+      views: savedViewsOf(isObj(v.rowUi) ? v.rowUi.views : undefined),
     },
     fields: v.fields.flatMap((f): DataField[] =>
       isObj(f) && typeof f.id === "string" && typeof f.type === "string"
@@ -2847,6 +2852,7 @@ export class AgentApi {
       related?: boolean;
       folded?: string[];
       widths?: Record<string, number>;
+      views?: SavedView[];
     },
   ) =>
     void (await this.call("PUT", `/${encodeURIComponent(type)}/row-ui`, patch, "api/data/types"));
