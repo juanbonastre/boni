@@ -2181,3 +2181,70 @@ describe("Boni's pieces in «Leer correo» (docs/sistema.md §4.2, F7)", () => {
     rmSync(d, { recursive: true, force: true });
   });
 });
+
+describe("Boni's «Leer correo» kept current (release 34)", () => {
+  it("is brought up to date when «Flujos» is opened, not only when a mail is read; a version Juan saved stays", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-current-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const reader = new ScriptedProvider("fake", () => ({ items: [] }));
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    for (const [id, key, name] of [
+      ["t_docencia", "docencia", "Docencia"],
+      ["t_gestiones", "gestiones", "Gestiones"],
+    ] as const)
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key,
+            name,
+            fields: [{ id: `${id}_t`, key: "titulo", name: "Título", type: "text", label: own }],
+            titleField: `${id}_t`,
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: own,
+          },
+        },
+        { actor: "user" },
+      );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 61;
+    box.mails = new Map();
+    await m.save(1, {
+      host: "imap.example.com",
+      user: "juan@example.com",
+      password: APP_PASSWORD,
+      collections: ["t_docencia"],
+    });
+    // No mail read yet: opening «Flujos» saves Boni's version, with its pieces.
+    expect(store.journal.flow(MAIL_FLOW)).toBeNull();
+    h.mailFlowCurrent?.(1);
+    const first = store.journal.flow(MAIL_FLOW);
+    expect(first).toMatchObject({ version: 1, by: "preset" });
+    expect(JSON.stringify(first?.plan)).toContain('"tool":"mail.rule"');
+    // A change of the configuration shows at once; opened again with nothing new, no new version.
+    await m.save(1, { collections: ["t_docencia", "t_gestiones"] });
+    h.mailFlowCurrent?.(1);
+    expect(store.journal.flow(MAIL_FLOW)).toMatchObject({ version: 2, by: "preset" });
+    h.mailFlowCurrent?.(1);
+    expect(store.journal.flow(MAIL_FLOW)?.version).toBe(2);
+    // His own version stays as he left it.
+    const mine = saveUserFlow(store, MAIL_FLOW, { base: 2, plan: first?.plan }, [], NOW);
+    expect(mine).toMatchObject({ flow: { version: 3, by: "user" } });
+    h.mailFlowCurrent?.(1);
+    expect(store.journal.flow(MAIL_FLOW)).toMatchObject({ version: 3, by: "user" });
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});

@@ -702,6 +702,8 @@ export class Mails {
     this.tz = o.tz ?? systemTimeZone();
     // Boni's pieces of «Leer correo» run this code, as steps of the flow (docs/sistema.md §4.2).
     o.host.pieces = (account) => this.piecesFor(account);
+    // «Flujos» shows Boni's «Leer correo» as the code makes it now.
+    o.host.mailFlowCurrent = (account) => this.keepFlowCurrent(account);
   }
 
   /**
@@ -1588,6 +1590,25 @@ export class Mails {
       withGuide,
       bound,
     };
+  }
+
+  /**
+   * Boni's «Leer correo» kept current when «Flujos» is opened, not only when a mail is read: a new build or a change
+   * of the configuration shows at once (2026-11-05: after the deploy of the pieces, the old version showed until the
+   * next mail). A version the user saved stays as he left it. Nothing without a mailbox, a collection or the agent.
+   */
+  keepFlowCurrent(account: number): void {
+    if (!this.o.host.on || !this.o.host.hasData) return;
+    const s = this.settings(account);
+    if (!s) return;
+    try {
+      const c = this.planContext(account, s);
+      if (c) this.mailFlow(c);
+    } catch (e) {
+      console.warn(
+        `mail ${account}: «Leer correo» not brought up to date (${(e as Error).message})`,
+      );
+    }
   }
 
   /**
