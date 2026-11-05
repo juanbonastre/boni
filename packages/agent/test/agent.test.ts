@@ -71,6 +71,63 @@ describe("the agent, with a planner that behaves", () => {
     expect(env.store.list("t_tarea").length).toBe(1);
   });
 
+  it("changes a record at Juan's request, in his words, and Undo puts it back as it was", async () => {
+    env = makeEnv();
+    const before = env.store.list("t_tarea")[0];
+    if (!before) throw new Error("the fixture has a task");
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "u",
+            op: "call",
+            tool: "entities.update",
+            args: {
+              id: lit(before.entity.id),
+              values: { fn: "obj", args: [lit("titulo"), { quote: "comprar pan integral" }] },
+            },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({ text: "Cámbiala a: comprar pan integral", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["done", null]);
+    const after = env.store.get(before.entity.id);
+    expect(after?.entity.values.f_titulo).toBe("comprar pan integral");
+    expect(after?.labels.f_titulo?.integrity).toBe("user");
+    expect(agent.undoRun(res.run).length).toBe(1);
+    expect(env.store.get(before.entity.id)?.entity.values.f_titulo).toBe(
+      before.entity.values.f_titulo,
+    );
+  });
+
+  it("says what collections Juan has and their fields, from the schema (schema.describe)", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          { id: "s", op: "call", tool: "schema.describe", args: {} },
+          {
+            id: "r",
+            op: "reply",
+            component: "list",
+            data: { items: ref("$s"), fields: lit("name") },
+          },
+        ],
+      },
+    ]);
+    const res = await env
+      .agent(planner)
+      .turn({ text: "¿Qué colecciones tengo?", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["done", null]);
+    const shown = JSON.stringify(res.replies[0]?.data);
+    expect(shown).toContain("tarea");
+    expect(shown).toContain("correo");
+  });
+
   it("refuses a plan that quotes what Juan did not say, and retries once", async () => {
     env = makeEnv();
     const bad = {
@@ -262,6 +319,32 @@ describe("the agent, with a planner that behaves", () => {
     expect(res.notices).toContainEqual({ code: "memory-unconfirmed" });
     await agent.turn({ text: "otra cosa", origin: PERSONAL });
     expect(JSON.stringify(planner.requests[1]?.input)).not.toContain("prefiere");
+  });
+
+  it("a memory in Juan's own words reaches the planner in the turns after (A11)", async () => {
+    env = makeEnv();
+    const planner = fakePlanner([
+      {
+        version: 1,
+        steps: [
+          {
+            id: "m",
+            op: "call",
+            tool: "memory.save",
+            args: { text: { quote: "mi hermana se llama Ana" } },
+          },
+        ],
+      },
+    ]);
+    const agent = env.agent(planner);
+    const res = await agent.turn({
+      text: "Recuerda que mi hermana se llama Ana",
+      origin: PERSONAL,
+    });
+    expect([res.status, res.error]).toEqual(["done", null]);
+    expect(res.notices).not.toContainEqual({ code: "memory-unconfirmed" });
+    await agent.turn({ text: "¿Cómo se llama mi hermana?", origin: PERSONAL });
+    expect(JSON.stringify(planner.requests[1]?.input)).toContain("mi hermana se llama Ana");
   });
 
   it("changes the schema at Juan's request and says so", async () => {
