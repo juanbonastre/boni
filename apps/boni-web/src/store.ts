@@ -2586,15 +2586,23 @@ export async function createCollectionNamed(name: string): Promise<string | null
 }
 
 /** A new collection (at the root or inside `parent`), opened on its page unless `stay`. Whether it was made. */
-export async function newCollection(name: string, parent?: string, stay = false) {
+/**
+ * A new collection (inside `parent`), opened unless `stay`; its id, or null when it could not be made. What it changes
+ * shows everywhere at once, «Mis datos»'s rows too (task 77: made from the diagram, the table did not show it).
+ */
+export async function newCollection(
+  name: string,
+  parent?: string,
+  stay = false,
+): Promise<string | null> {
   try {
     const id = await agent.createCollection(name, parent);
-    await Promise.all([loadDataTypes(), loadTree()]);
+    await afterMyData();
     if (id && !stay) openCollection(id);
-    return true;
+    return id ?? null;
   } catch (e) {
     toast(get().t(e instanceof ApiError && e.code === "taken" ? "tree.taken" : "tree.failed"));
-    return false;
+    return null;
   }
 }
 
@@ -2613,7 +2621,7 @@ export async function renameCollection(type: string, name: string) {
   } catch (e) {
     toast(get().t(e instanceof ApiError && e.code === "taken" ? "tree.taken" : "tree.failed"));
   }
-  await Promise.all([loadDataTypes(), loadTree()]);
+  await afterMyData();
 }
 
 /** A collection out of the tree: only an empty one (otherwise it says why). */
@@ -2621,7 +2629,7 @@ export async function deleteCollection(type: string) {
   try {
     await agent.deleteCollection(type);
     forgetRecent(type);
-    await Promise.all([loadDataTypes(), loadTree()]);
+    await afterMyData();
   } catch (e) {
     toast(
       get().t(e instanceof ApiError && e.code === "not-empty" ? "tree.notEmpty" : "tree.failed"),
@@ -2712,7 +2720,7 @@ export async function addRelation(type: string, target: string): Promise<boolean
     name = `${to.name} ${n}`;
   try {
     const id = await agent.addRelation(type, { name, target });
-    await loadDataTypes();
+    await afterMyData();
     toast(get().t("data.related", { from: from.name, to: to.name }), {
       label: get().t("toast.undo"),
       run: () => void removeColumn(type, id, name),
@@ -2728,13 +2736,15 @@ export async function addRelation(type: string, target: string): Promise<boolean
 export async function moveInTree(
   what: { collection: string } | { row: string },
   to: string | null,
-) {
+): Promise<boolean> {
   try {
     if ("collection" in what) await agent.moveCollection(what.collection, to);
     else if (to) await agent.moveRow(what.row, to);
-    await Promise.all([loadDataTypes(), loadTree()]);
+    await afterMyData();
+    return true;
   } catch {
     toast(get().t("tree.failed"));
+    return false;
   }
 }
 
@@ -3074,6 +3084,7 @@ export async function changeProtection(type: string, level: AiLevel, unlock = fa
   put(level);
   try {
     await agent.setProtection(type, level, unlock);
+    if (get().rows[SYS.data.id]) void loadRows(SYS.data.id);
     return true;
   } catch (e) {
     if (was) put(was);
@@ -3146,10 +3157,12 @@ const MY_DATA = SYS.data.id;
 
 /**
  * After a change in «Mis datos»: what it changed shows everywhere (the sidebar's tree and pages, the collections) and
- * its rows again (a mother renamed is her daughters' «Madre» too).
+ * its rows again (a mother renamed is her daughters' «Padre» too).
  */
 const afterMyData = () =>
-  Promise.all([loadDataTypes(), loadTree(), loadPages(), loadRows(MY_DATA)]).catch(() => undefined);
+  Promise.all([loadDataTypes(), loadTree(), loadPages(), loadRows(SYS.data.id)]).catch(
+    () => undefined,
+  );
 /** Why a change in «Mis datos» was refused, in words; the general one for the rest. */
 const myDataError = (e: unknown) => {
   const t = get().t;

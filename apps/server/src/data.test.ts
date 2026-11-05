@@ -927,7 +927,7 @@ describe("«Mis datos» over the API (docs/flujos.md §4.7, F6b; D-04)", () => {
     expect(mine?.fields.map((f) => f.name)).toEqual([
       "Nombre",
       "Tipo",
-      "Madre",
+      "Padre",
       "Nivel",
       "Elementos",
       "En la barra",

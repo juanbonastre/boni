@@ -617,7 +617,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             {
               id: "f_madre",
               key: "madre",
-              name: "Madre",
+              name: "Padre",
               type: "relation",
               relation: { target: MY, many: false },
             },

@@ -75,7 +75,8 @@ function typeOf(who: SelectOption[], zones: SelectOption[]): TypeDef {
       field(D.kind, "Tipo", "select", {
         options: [opt(D.page, "Página"), opt(D.collection, "Colección"), opt(D.boni, "De Boni")],
       }),
-      field(D.mother, "Madre", "relation", { relation: { target: SYS_DATA, many: false } }),
+      // «Padre» (Juan, 2026-11-05: «Madre» «me suena raro»); its key stays.
+      field(D.mother, "Padre", "relation", { relation: { target: SYS_DATA, many: false } }),
       field(D.level, "Nivel", "select", {
         options: AI_LEVELS.map((l) => opt(dataLevel(l), LEVEL_NAMES[l])),
       }),
