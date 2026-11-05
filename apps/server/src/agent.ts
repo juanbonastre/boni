@@ -35,6 +35,7 @@ import {
   flowProposalView,
   flowsView,
   flowView,
+  MAIL_FLOW,
   originOf,
   revertFlow,
   saveUserFlow,
@@ -164,6 +165,8 @@ export class AgentHost {
   overBudget: ((account: number) => boolean) | null = null;
   /** What Boni's pieces work with for an account (mail.ts `piecesFor`, set by the mail when it starts). */
   pieces: ((account: number) => unknown) | null = null;
+  /** Brings Boni's «Leer correo» up to date for an account (mail.ts `keepFlowCurrent`), before «Flujos» shows it. */
+  mailFlowCurrent: ((account: number) => void) | null = null;
   /** «Modelos» (models.ts): its routes are served here, under /api/agent/models. */
   models: AccountModels | null = null;
   /** The planners a conversation may use, and one of them by its id (models.ts); none: only the account's. */
@@ -420,6 +423,7 @@ async function serveFlows(
     return send(res, 403, { error: "personal-device-only" });
   switch (route) {
     case "GET /api/agent/flows":
+      host.mailFlowCurrent?.(who.account);
       return send(res, 200, { flows: flowsView(store) });
     case "GET /api/agent/flows/catalog":
       return send(res, 200, flowCatalog(host.tools, store, forEditor().modules));
@@ -597,6 +601,7 @@ async function serveFlows(
       return send(res, 200, r);
     }
     case "GET /api/agent/flows/:id": {
+      if (id === MAIL_FLOW) host.mailFlowCurrent?.(who.account);
       const q = new URL(req.url ?? "/", "http://boni").searchParams;
       const days = Math.min(90, Math.max(1, Math.round(Number(q.get("days")) || 7)));
       const v = detail(id, days);
