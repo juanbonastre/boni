@@ -189,17 +189,22 @@ export async function activityAudit(page: Page, l: (typeof MODELS_TEXT)["es"], w
   return issues;
 }
 
-/** «Mis datos» with every collection open, a note's history, and the collections' usage below. */
+/**
+ * «Mis datos» (a collection of the user's pages and collections, F6b) with the collections' usage below, then a
+ * note's history: opened from its collection, opened from «Mis datos».
+ */
 export async function notesAudit(page: Page, l: { notes: string; history: string }, where: string) {
   const issues: string[] = [];
   await page.locator(".sidebar").getByRole("button", { name: l.notes }).click();
-  await page.locator(".all-table tbody tr").first().waitFor();
-  for (const f of await page.locator(".all-table .page-toggle:not(.static)").all()) await f.click();
-  await page.locator(".all-table .notes-ai").first().waitFor();
+  await page.locator(".my-data .db-table tbody tr").first().waitFor();
   await page.locator(".cols-usage .kpi").first().waitFor();
   issues.push(...(await audit(page, `${where} all pages`)));
   // A note the fake server has as a row (the fixtures' Libros).
-  await page.locator(".all-table .all-row", { hasText: "Rayuela" }).locator(".cols-name").click();
+  await page
+    .locator(".my-data .db-table")
+    .getByRole("button", { name: "Libros", exact: true })
+    .click();
+  await page.locator(".db-table").getByRole("button", { name: "Rayuela", exact: true }).click();
   await page.getByRole("button", { name: l.history }).click();
   await page.locator(".history-panel .history-cols").waitFor();
   issues.push(...(await audit(page, `${where} history`)));

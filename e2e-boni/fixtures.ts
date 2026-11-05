@@ -481,7 +481,265 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         ];
       };
       const goneCols: { id: string; name: string; type: string }[] = [];
+      // «Mis datos» (apps/server/src/myData.ts): a row per page and collection kept here, then Boni's; a change to a
+      // row is done to what it is, with the server's rules (a name used once, a private one not lowered from here,
+      // only an empty collection deleted).
+      const MY = "t_sys_datos";
+      const R = "sys_data_";
+      const LEVELS = ["visible", "opaque", "restricted", "private"];
+      const LEVEL_NAMES = ["Visible", "Opaca", "Restringida", "Privada"];
+      const levelId = (l: string) => `o_nivel_${l}`;
+      // Boni's own rows change nowhere here.
+      const BONI_FIXED = ["f_titulo", "f_madre", "f_nivel", "f_barra"];
+      const whoId = (id: string) => `o_w_${id.replace(/[^a-z0-9]/gi, "_")}`;
+      const usageOf = () =>
+        ((opts.usage as { types?: object } | undefined)?.types ?? {}) as Record<
+          string,
+          { reads: { id: string; name: string }[]; writes: { id: string; name: string }[] }
+        >;
+      const goneMine: (typeof madeCols)[number][] = [];
+      const parentOf = (c: { id: string; parent?: string }) => parents[c.id] ?? c.parent;
+      const myRows = () => {
+        const out: {
+          id: string;
+          values: Record<string, unknown>;
+          updated: number;
+          fixed?: string[];
+        }[] = [];
+        const own = pageList.filter((x) => !x.template);
+        const walkPages = (parent: unknown, depth: number) => {
+          for (const x of own.filter((y) =>
+            parent === null
+              ? !y.parent || !own.some((z) => z.id === y.parent)
+              : y.parent === parent,
+          )) {
+            out.push({
+              id: `${R}${x.id}`,
+              values: {
+                f_titulo: x.title,
+                f_tipo: "o_tipo_pagina",
+                ...(x.parent && own.some((z) => z.id === x.parent)
+                  ? { f_madre: `${R}${x.parent}` }
+                  : {}),
+              },
+              updated: 0,
+              // A page has no level and no eye (as the server's `dataRowFixed` says).
+              fixed: ["f_nivel", "f_barra"],
+            });
+            if (depth < 6) walkPages(x.id, depth + 1);
+          }
+        };
+        walkPages(null, 0);
+        const cols = userCols() as { id: string; name: string; level: string; parent?: string }[];
+        const isRoot = (c: (typeof cols)[number]) => {
+          const m = parentOf(c);
+          return !m || !cols.some((y) => y.id === m);
+        };
+        const walk = (parent: string | null) => {
+          for (const c of cols
+            .filter((x) => (parent === null ? isRoot(x) : parentOf(x) === parent))
+            .sort((a, z) => a.name.localeCompare(z.name, "es"))) {
+            const u = usageOf()[c.id];
+            out.push({
+              id: `${R}${c.id}`,
+              values: {
+                f_titulo: c.name,
+                f_tipo: "o_tipo_coleccion",
+                ...(isRoot(c) ? {} : { f_madre: `${R}${parentOf(c)}` }),
+                f_nivel: levelId(c.level),
+                f_notas: deep(c.id),
+                f_barra: eye[c.id] ?? true,
+                ...(u?.reads.length ? { f_lee: u.reads.map((w) => whoId(w.id)) } : {}),
+                ...(u?.writes.length ? { f_escribe: u.writes.map((w) => whoId(w.id)) } : {}),
+              },
+              updated: 0,
+            });
+            walk(c.id);
+          }
+        };
+        walk(null);
+        for (const x of pageList.filter((y) => y.template))
+          out.push({
+            id: `${R}${x.id}`,
+            values: { f_titulo: x.title, f_tipo: "o_tipo_boni" },
+            updated: 0,
+            fixed: BONI_FIXED,
+          });
+        for (const x of boni as { id: string; name: string; count?: number }[])
+          out.push({
+            id: `${R}${x.id}`,
+            values: {
+              f_titulo: x.name,
+              f_tipo: "o_tipo_boni",
+              f_nivel: levelId("private"),
+              f_notas: x.count ?? 0,
+            },
+            updated: 0,
+            fixed: BONI_FIXED,
+          });
+        return out;
+      };
+      const myType = () => {
+        const who = new Map<string, string>();
+        for (const u of Object.values(usageOf()))
+          for (const w of [...u.reads, ...u.writes]) who.set(whoId(w.id), w.name);
+        const whoOptions = [...who].map(([id, name]) => ({ id, name }));
+        return {
+          id: MY,
+          key: "datos",
+          name: "Mis datos",
+          icon: "🗂️",
+          titleField: "f_titulo",
+          count: myRows().length,
+          level: "private",
+          rules: [],
+          rowUi: { open: false, hidden: [] as string[] },
+          system: true,
+          editable: ["f_titulo", "f_madre", "f_nivel", "f_barra"],
+          fields: [
+            { id: "f_titulo", key: "titulo", name: "Nombre", type: "text" },
+            {
+              id: "f_tipo",
+              key: "tipo",
+              name: "Tipo",
+              type: "select",
+              options: [
+                { id: "o_tipo_pagina", name: "Página" },
+                { id: "o_tipo_coleccion", name: "Colección" },
+                { id: "o_tipo_boni", name: "De Boni" },
+              ],
+            },
+            {
+              id: "f_madre",
+              key: "madre",
+              name: "Madre",
+              type: "relation",
+              relation: { target: MY, many: false },
+            },
+            {
+              id: "f_nivel",
+              key: "nivel",
+              name: "Nivel",
+              type: "select",
+              options: LEVELS.map((l, i) => ({ id: levelId(l), name: LEVEL_NAMES[i] })),
+            },
+            { id: "f_notas", key: "notas", name: "Elementos", type: "number" },
+            { id: "f_barra", key: "barra", name: "En la barra", type: "checkbox" },
+            {
+              id: "f_lee",
+              key: "lee",
+              name: "Leída por",
+              type: "multiselect",
+              options: whoOptions,
+            },
+            {
+              id: "f_escribe",
+              key: "escribe",
+              name: "Escrita por",
+              type: "multiselect",
+              options: whoOptions,
+            },
+            { id: "f_origen", key: "origen", name: "Origen", type: "select", options: [] },
+          ],
+        };
+      };
+      const myAnswer = (method: string, p: string, body?: unknown): [number, string] | null => {
+        const values = ((body ?? {}) as { values?: Record<string, unknown> }).values ?? {};
+        const rowOf = (id: string) =>
+          JSON.stringify({ row: myRows().find((r) => r.id === id) ?? null });
+        if (p === `api/data/types/${MY}/rows` && method === "GET") {
+          const list = myRows();
+          return [
+            200,
+            JSON.stringify({
+              rows: list,
+              titles: Object.fromEntries(list.map((r) => [r.id, String(r.values.f_titulo)])),
+              truncated: false,
+              ghosts: [],
+              columns: {},
+            }),
+          ];
+        }
+        if (p === `api/data/types/${MY}/rows` && method === "POST") {
+          const taken = (n: string) =>
+            userCols().some((c) => c.name.toLowerCase() === n.toLowerCase());
+          let name = "Nueva colección";
+          for (let n = 2; taken(name); n++) name = `Nueva colección ${n}`;
+          const id = `t_hecha_${madeCols.length + goneMine.length + 1}`;
+          madeCols.push({
+            id,
+            name,
+            icon: "",
+            titleField: "f_titulo",
+            count: 0,
+            level: "visible",
+            fields: [{ id: "f_titulo", name: "Título", type: "text" }],
+            rowUi: { open: false, hidden: [] },
+          });
+          return [200, rowOf(`${R}${id}`)];
+        }
+        const m = /^api\/data\/rows\/(sys_data_[^/]+?)(\/restore)?$/.exec(p);
+        if (!m) return null;
+        const id = m[1]!;
+        const target = id.slice(R.length);
+        const col = userCols().find((c) => c.id === target) as
+          | { id: string; name: string; level: string }
+          | undefined;
+        const page = pageList.find((x) => x.id === target);
+        if (m[2] && method === "POST") {
+          const i = goneMine.findIndex((c) => c.id === target);
+          if (i >= 0) madeCols.push(...goneMine.splice(i, 1));
+          const j = trash.findIndex((x) => x.id === target);
+          if (j >= 0) pageList.push(...trash.splice(j, 1));
+          return [200, "{}"];
+        }
+        if (!col && !page) return [400, '{"error":"read-only"}'];
+        if (method === "DELETE") {
+          if (page) {
+            pageList.splice(pageList.indexOf(page), 1);
+            trash.push(page);
+            return [200, "{}"];
+          }
+          const i = madeCols.findIndex((c) => c.id === target);
+          if (i < 0 || deep(target) > 0 || treeNotes.some((n) => n.type === target))
+            return [409, '{"error":"not-empty"}'];
+          goneMine.push(...madeCols.splice(i, 1));
+          return [200, "{}"];
+        }
+        for (const [f, v] of Object.entries(values)) {
+          if (f === "f_titulo") {
+            const name = String(v ?? "").trim();
+            if (!name) return [400, '{"error":"bad-body"}'];
+            if (page) page.title = name;
+            else if (col) {
+              if (
+                userCols().some(
+                  (c) => c.id !== col.id && c.name.toLowerCase() === name.toLowerCase(),
+                )
+              )
+                return [409, '{"error":"taken"}'];
+              col.name = name;
+            }
+          } else if (f === "f_madre") {
+            const to = typeof v === "string" ? v.slice(R.length) : null;
+            if (page) page.parent = to;
+            else if (col) {
+              if (to && !userCols().some((c) => c.id === to)) return [400, '{"error":"bad-body"}'];
+              if (to) parents[col.id] = to;
+              else delete parents[col.id];
+            }
+          } else if (f === "f_nivel" && col) {
+            const level = String(v).replace("o_nivel_", "");
+            if (col.level === "private" && level !== "private") return [409, '{"error":"locked"}'];
+            col.level = level;
+          } else if (f === "f_barra" && col) eye[col.id] = Boolean(v);
+          else return [400, '{"error":"read-only"}'];
+        }
+        return [200, rowOf(id)];
+      };
       const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
+        const mine = myAnswer(method, p, body);
+        if (mine) return mine;
         const b = (body ?? {}) as { values?: Record<string, unknown> };
         if (p === "api/data/types" && method === "POST") {
           const want = (body ?? {}) as { name?: string; parent?: string };
@@ -537,6 +795,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 ...(opts.mail ? [correos, archivos] : []),
                 ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
                 ...boni,
+                myType(),
               ],
             }),
           ];
@@ -991,7 +1250,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       ): Promise<[number, string] | null> => {
         const p = path.split("?")[0]!;
         const own = /^api\/data\/types\/(t_sys_[a-z]+)\/rows$/.exec(p);
-        if (own && method === "GET") return [200, JSON.stringify(await call("list", own[1]))];
+        if (own && method === "GET" && own[1] !== "t_sys_datos")
+          return [200, JSON.stringify(await call("list", own[1]))];
         if (p === "api/data/blocks/rows") {
           const b = (body ?? {}) as { block?: Record<string, unknown>; drill?: string };
           if (isSys(b.block)) return [200, JSON.stringify(await call("rows", b))];

@@ -849,3 +849,72 @@ describe("the diagram over the API (docs/flujos.md F6)", () => {
     });
   });
 });
+
+describe("«Mis datos» over the API (docs/flujos.md §4.7, F6b; D-04)", () => {
+  it("is one of Boni's collections the app changes: a row's name, level and mother are the collection's", async () => {
+    const t = await token();
+    const types = (await call(t, "GET", "/api/data/types")).body.types as {
+      id: string;
+      system?: boolean;
+      editable?: string[];
+      fields: { id: string; name: string }[];
+    }[];
+    const mine = types.find((x) => x.id === "t_sys_datos");
+    expect(mine).toMatchObject({
+      system: true,
+      editable: ["f_titulo", "f_madre", "f_nivel", "f_barra"],
+    });
+    expect(mine?.fields.map((f) => f.name)).toEqual([
+      "Nombre",
+      "Tipo",
+      "Madre",
+      "Nivel",
+      "Elementos",
+      "En la barra",
+      "Leída por",
+      "Escrita por",
+      "Origen",
+    ]);
+    // Only the other Boni's collections are read only.
+    expect(types.find((x) => x.id === SYS_RUNS)?.editable).toBeUndefined();
+    const listed = await call(t, "GET", "/api/data/types/t_sys_datos/rows");
+    const rows = listed.body.rows as { id: string; values: Record<string, unknown> }[];
+    const libros = rows.find((r) => r.id === "sys_data_t_libro");
+    expect(libros?.values).toMatchObject({ f_titulo: "Libros", f_tipo: "o_tipo_coleccion" });
+    expect((listed.body.titles as Record<string, string>).sys_data_t_libro).toBe("Libros");
+    // «Nuevo», renamed, raised, lowered (refused away from its page), deleted and back.
+    const made = await call(t, "POST", "/api/data/types/t_sys_datos/rows", { values: {} });
+    const id = (made.body.row as { id: string }).id;
+    expect((made.body.row as { values: Record<string, unknown> }).values.f_titulo).toBe(
+      "Nueva colección",
+    );
+    const renamed = await call(t, "PUT", `/api/data/rows/${id}`, {
+      values: { f_titulo: "Recetas" },
+    });
+    expect((renamed.body.row as { values: Record<string, unknown> }).values.f_titulo).toBe(
+      "Recetas",
+    );
+    expect(
+      (await call(t, "PUT", `/api/data/rows/${id}`, { values: { f_nivel: "o_nivel_private" } }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await call(t, "PUT", `/api/data/rows/${id}`, { values: { f_nivel: "o_nivel_visible" } }))
+        .body,
+    ).toEqual({ error: "locked" });
+    expect((await call(t, "PUT", `/api/data/rows/${id}`, { values: { f_notas: 9 } })).body).toEqual(
+      { error: "read-only" },
+    );
+    expect((await call(t, "DELETE", `/api/data/rows/${id}`)).status).toBe(200);
+    expect(host.store(1).schema().types[id.slice("sys_data_".length)]?.archived).toBe(true);
+    expect((await call(t, "POST", `/api/data/rows/${id}/restore`)).status).toBe(200);
+    const after = (await call(t, "GET", "/api/data/types/t_sys_datos/rows")).body.rows as {
+      id: string;
+    }[];
+    expect(after.some((r) => r.id === id)).toBe(true);
+    // A collection with records is not deleted from here either.
+    expect((await call(t, "DELETE", "/api/data/rows/sys_data_t_libro")).body).toEqual({
+      error: "not-empty",
+    });
+  });
+});
