@@ -2119,8 +2119,17 @@ describe("Boni's pieces in «Leer correo» (docs/sistema.md §4.2, F7)", () => {
       detail: { code: "guide-skip" },
     });
     expect(store.journal.proposals("pending")).toEqual([]);
-    // Asked for by Juan (from the conversation), the same mail is read: the rule does not stop it then.
+    // «Probar» reads it as a new mail is read: it ends at the rule too, dry, with no model.
     const mailId = run?.input as string;
+    const flow = store.journal.flow(MAIL_FLOW);
+    const sample = await m.sample(1, mailId, flow?.plan);
+    const dry = await h.agent(1).dryRun(flow?.plan, sample?.bind ?? {}, {
+      origin: { kind: "turn", trust: "personal" },
+      flow: { id: MAIL_FLOW, version: flow?.version ?? 1, by: "preset", input: mailId },
+    });
+    expect(dry.status).toBe("done");
+    expect(reads(reader)).toBe(0);
+    // Asked for by Juan (from the conversation), the same mail is read: the rule does not stop it then.
     expect(await m.proposeFor(1, mailId)).toMatchObject({ n: 1 });
     expect(reads(reader)).toBe(1);
     h.close();

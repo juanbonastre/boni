@@ -488,7 +488,8 @@ test("the editor gives control (task 70): «Añadir paso» with a search and gro
   // Its panel: «Entra», what it takes and what each value is; «Sale», what it gives the steps after it.
   await expect(panel.locator("h3")).toHaveText("Lectora");
   const entra = panel.getByRole("region", { name: "Entra" });
-  await expect(entra.locator("li").first()).toHaveText(/^\$text\s*texto$/);
+  // What the trigger binds, by its name (F7, I-08: never `$text`).
+  await expect(entra.locator("li").first()).toHaveText(/^Texto\s*texto$/);
   await expect(entra.locator("li")).toHaveCount(5);
   await expect(panel.getByRole("region", { name: "Sale" }).locator("li")).toHaveText([
     /^\$r\s*registro$/,
@@ -625,6 +626,14 @@ test("Boni's pieces in «Leer correo» (F7): the trigger's inputs by name, the c
   const area = await canvas.boundingBox();
   const box = await trigger.boundingBox();
   expect(box && area && box.y >= area.y && box.y + box.height <= area.y + area.height).toBe(true);
+  // At 860 px too (where it was seen too far out): opened again, fitted, readable.
+  await page.setViewportSize({ width: 860, height: 900 });
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos", exact: true }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await expect
+    .poll(async () => (await trigger.boundingBox())?.width ?? 0, { timeout: 5000 })
+    .toBeGreaterThan(120);
+  await page.setViewportSize({ width: 1440, height: 900 });
   // «Añadir paso» offers Boni's pieces in a flow a mail starts.
   await page.getByRole("button", { name: "Añadir paso" }).click();
   const add = page.getByRole("dialog", { name: "Añadir paso" });

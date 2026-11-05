@@ -105,7 +105,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
     args: {
       mail,
       types: {
-        role: "type",
+        role: "value",
         required: true,
         describe: "the keys of the collections the flow writes in (the code gives them)",
       },

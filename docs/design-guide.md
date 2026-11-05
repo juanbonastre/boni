@@ -814,8 +814,9 @@ contraseña ni un código aquí» under a question.
   the flow tried as far as it and the test bar saying «hasta «…»», greyed while a test runs or with a problem up to
   it; and Quitar; the trigger has only Abrir), a click opens its panel on the right (340 px): its name, id and
   «Quitar»; its
-  problems in `--bad`; **«Entra»** (task 70: each value it takes, `$m.asunto`, with what it is, «texto», «lista»,
-  «registro», muted on the right; «Nada de antes» without any); what it is (the
+  problems in `--bad`; **«Entra»** (task 70: each value it takes, what the trigger binds by its name, «Correo»,
+  «Texto» (F7, I-08), an earlier step's as `$m.asunto`, with what it is, «texto», «lista», «registro», muted on the
+  right; «Nada de antes» without any); what it is (the
   tool, the reader, the question, the reply) and its settings from the catalog's schema: a collection as a list of
   the collections (changing it, the record's fields follow their roles and the collection's inputs, `$fill.<key>`,
   its key), a record's values as rows of field and value (the parts it is merged with as chips), any other as a

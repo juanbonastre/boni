@@ -484,7 +484,11 @@ export function checkFlow(
   if (!steps.length) problems.push({ step: null, at: null, code: "no-steps" });
   else {
     const origin = originOf(flow.trigger);
-    const v = checkPlan(flow.plan, registry, origin, triggerNames(flow.trigger), true);
+    // A name a step of the plan has is the step's, never the trigger's (Boni's pieces are steps named as the values
+    // the code bound before F7: `only`, `known`, `inv`, `prefill`).
+    const own = new Set(steps.map((s) => s.id));
+    const bound = triggerNames(flow.trigger).filter((n) => !own.has(n));
+    const v = checkPlan(flow.plan, registry, origin, bound, true);
     if (!v.ok) {
       const allowed = new Set(toolsFor(registry, origin, true).map((t) => t.name));
       for (const e of v.errors) {

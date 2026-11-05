@@ -62,6 +62,15 @@ const shapeName = (t: T, s: string | undefined) => {
   return v === k ? (s ?? "") : v;
 };
 
+/** A reference as «Entra» shows it: what the trigger binds by its name («Correo», F7: I-08), a step's as it is. */
+function refName(t: T, ref: string): string {
+  const m = /^\$([A-Za-z_][A-Za-z0-9_]*)(.*)$/.exec(ref);
+  if (!m) return ref;
+  const k = `flows.inputName.${m[1]}`;
+  const v = t(k);
+  return v === k ? ref : `${v}${m[2] ?? ""}`;
+}
+
 /** «Entra» or «Sale» (task 70): the references, each with what it is; a word when there are none. */
 function IoList({ title, items, none }: { title: string; items: Refs; none: string }) {
   const t = useStore((s) => s.t);
@@ -72,7 +81,7 @@ function IoList({ title, items, none }: { title: string; items: Refs; none: stri
         <ul className="flow-io-list">
           {items.map((r) => (
             <li key={r.ref}>
-              <code>{r.ref}</code>
+              <code>{refName(t, r.ref)}</code>
               <span className="muted">{shapeName(t, r.t)}</span>
             </li>
           ))}

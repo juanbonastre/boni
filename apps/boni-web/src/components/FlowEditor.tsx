@@ -168,7 +168,8 @@ export function testLine(t: T, x: TestStepView): string {
 const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
   const t = useStore((s) => s.t);
   const { step } = data;
-  const ran = Object.values(data.ran).reduce((a, b) => a + b, 0);
+  // «end» follows the step's own «allow» (a piece ended the run there): the same run, not another.
+  const ran = Object.entries(data.ran).reduce((a, [k, b]) => (k === "end" ? a : a + b), 0);
   const icon =
     step.op === "read" ? (
       <Bot size={14} strokeWidth={1.8} aria-hidden />
@@ -199,6 +200,7 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
               {t(ran === 1 ? "flows.ran.one" : "flows.ran", { n: ran })}
               {data.ran.propose ? ` · ${t("flows.proposed", { n: data.ran.propose })}` : ""}
               {data.ran.deny ? ` · ${t("flows.denied", { n: data.ran.deny })}` : ""}
+              {data.ran.end ? ` · ${t("flows.ended", { n: data.ran.end })}` : ""}
             </div>
           )}
         </div>

@@ -362,6 +362,23 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     store.close();
   });
 
+  it("Boni's own «Leer correo», with its pieces named as the values the code bound, passes the checklist (F7)", () => {
+    // The independent review of F7 found it: the pieces' steps (`only`, `known`, `inv`, `prefill`) were taken for the
+    // trigger's names, and the editor greyed out «Probar» and «Guardar».
+    const store = withTypes();
+    const plan = mailPlan(
+      [{ key: "tarea", name: "Tarea", option: "Tarea", date: "dia", id: "t_tarea" }],
+      { guide: true, modules: ["tasks", "events"], boundModules: true, invitation: "events" },
+    );
+    const c = checkFlow(store, registry, { trigger: { created: "correo" }, plan }, o);
+    expect(c.problems).toEqual([]);
+    // Each piece offers what it gives to the steps after it.
+    expect(c.refs.r?.map((x) => x.ref)).toEqual(
+      expect.arrayContaining(["$only", "$known", "$inv.uid", "$prefill.tarea"]),
+    );
+    store.close();
+  });
+
   it("its checklist says what the run would refuse, step by step, and what each step may take", () => {
     const store = withTypes();
     const mailFlow = {

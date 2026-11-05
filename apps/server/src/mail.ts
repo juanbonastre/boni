@@ -1773,7 +1773,8 @@ export class Mails {
         ? (c.targets.find((t) => t.id === rule.collection)?.option ?? null)
         : null;
     return {
-      bind: await this.bindingsFor(account, c, e, plan, { only, again: true, asked: true }),
+      // As a new mail is read (`asked` false): a sender the guide never reads ends the try at its rule.
+      bind: await this.bindingsFor(account, c, e, plan, { only, again: true, asked: false }),
       mail: e.entity.id,
       subject: String(e.entity.values.f_asunto ?? ""),
     };
