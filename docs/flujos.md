@@ -300,7 +300,7 @@ Una fase está «en main» cuando su PR está fusionado con el CI en verde, y «
 | Fase | Qué | Criterio de hecho |
 |---|---|---|
 | F1 Flujos como datos (en main el 2026-11-05, tarea 61; faltan dos puntos que encontró la auditoría: «Flujos» como colección de sistema y el lienzo general calculado de los flujos, tarea 63) | La colección de sistema «Flujos»; el flujo de serie «Leer correo» guardado y versionado, que `mail.ts` ejecuta en vez de construir el plan (las entradas vinculadas como hoy); el diario con flujo y versión; «Modelos» pasa a «Flujos»: la lista y el lienzo de cada flujo, de solo lectura; el lienzo general con los números se calcula de los flujos | El correo se lee igual que hoy (las pruebas de `mail.test.ts` sin cambios), y en «Flujos» se ve «Leer correo» con sus nodos y sus números |
-| F2 El editor (en main el 2026-11-05; «Entra» y «Sale» en el panel, el buscador y los grupos de «Añadir paso» y el clic derecho en un nodo, tarea 70; faltan «+» en una flecha, guardar un flujo incompleto como borrador (tarea 63), los valores mismos de la salida tras «Probar» y el grupo «Funciones», que llega con las funciones de extensión) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
+| F2 El editor (en main el 2026-11-05; «Entra» y «Sale» en el panel, el buscador y los grupos de «Añadir paso» y el clic derecho en un nodo, tarea 70; conectar pasos arrastrando y el clic derecho en el lienzo, tarea 78; faltan «+» en una flecha, los valores mismos de la salida tras «Probar» y el grupo «Funciones», que llega con las funciones de extensión (tarea 63), y cambiar el nombre desde la lista y guardar solo lo que se cambia, como borrador, que espera la decisión 6 de §6 (tarea 80)) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
 | F3 Probar y ver (en main el 2026-11-05; falta elegir el correo con el que se prueba, tarea 63) | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
 | F4 Disparadores (en main el 2026-11-05; F4b quitó `jobs.create`, que guardaba trabajos que nada ejecutaba) | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
 | F5 Propuestas de la IA (en main el 2026-11-05) | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |
@@ -311,6 +311,8 @@ Lo que ya existe se mueve, no se duplica: `pipeline.ts` deja de declararse a man
 
 ## 6. Decisiones de Juan
 
+Las cinco primeras se tomaron como se recomendaba: F1 a F6 están en main. Queda la 6.
+
 1. **La lectura del correo como primer flujo editable** (F1): sí, con «Volver al de Boni» y versiones; o dejar la
    lectura en código y empezar los flujos por los nuevos. Recomendado: sí; si no, el lienzo enseña algo que no se
    puede tocar, que es lo que no quería.
@@ -320,3 +322,13 @@ Lo que ya existe se mueve, no se duplica: `pipeline.ts` deja de declararse a man
    JavaScript libre en un nodo: recomendado.
 4. **El planificador puede ejecutar flujos del usuario** (F4, con confirmación): recomendado.
 5. **Empezar por F1 ahora.**
+6. **Lo que se cambia en un flujo se guarda solo** (F2, tarea 80; pendiente). Juan, 2026-11-05: «creo que no
+   debería tener que esperar a darle a guardar para grabar los cambios»; cambió el nombre de un flujo nuevo y la
+   lista no lo enseñaba. Hoy el borrador vive en la pantalla hasta «Guardar» y se pierde al salir.
+   - Propuesta: cada cambio se guarda al momento como borrador del flujo, que no se pierde al salir. Un flujo
+     encendido sigue con su última versión hasta que «Guardar» hace la nueva, y «Descartar» vuelve a ella. Por
+     ejemplo, Juan cambia la colección de «Leer correo», cierra la app y al día siguiente el borrador sigue ahí,
+     mientras el correo se lee con la versión de antes.
+   - La otra: cada cambio vale al momento, también en un flujo encendido. Es más directo, pero un cambio a medias
+     corre con el siguiente correo.
+   - Cambiar el nombre desde la lista no espera a la decisión: va con la tarea 80 en cualquiera de las dos.

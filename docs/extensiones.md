@@ -473,7 +473,7 @@ siempre lo mismo.
 
 | # | Qué | Depende de |
 |---|---|---|
-| E1 | La caja. **Programada (2026-10-30):** `packages/sandbox`, `apps/sandbox` (con su `Dockerfile`), el cliente del servidor y `cli.ts sandbox-check`; falta su contenedor en el NAS | — |
+| E1 | La caja. **Programada (2026-10-30):** `packages/sandbox`, `apps/sandbox` (con su `Dockerfile`), el cliente del servidor y `cli.ts sandbox-check`. Su contenedor ya corre en el NAS (auditoría del 2026-11-05, tarea 63) | — |
 | E2 | `functions` y `tests` en el manifiesto; etiquetas de la salida. **Programada (2026-10-30):** `packages/extensions/src/functions.ts` (lo que lee campo a campo, lo que escribe, sus pruebas, el conjunto de cambios y lo que pide de más) y `apps/server/src/functions.ts` (la entrada como la ve la IA, la llamada a la caja, el ensayo, la política y una ejecución con Deshacer) | E1 |
 | E3 | Proponer por MCP y activar en Boni; tokens con alcance; versiones. **Programada (2026-10-30):** `cli.ts token --scope`, `extensions_describe` / `_propose` / `_test` / `_run` en el MCP, `apps/server/src/proposals.ts`, la tarjeta en Ajustes → Extensiones y «Volver a la versión N» | E2 |
 | E4 | La conciliación como primera extensión con funciones; «Subir extracto»; dudas como tarjetas | E3; la conversación, C1-C5 (`docs/conversacion.md`) |
