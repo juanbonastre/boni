@@ -525,7 +525,8 @@ contraseña ni un código aquí» under a question.
   only under the pointer (Juan, 2026-10-30); any other file (or an image too big to show) is a card with a clip, its name and "Abrir". It
   comes through the app's own channel to the server, so it shows the same on the desktop, the phone and the web.
   A file no longer there says so ("Este fichero ya no está").
-- **Peek** (2026-10-22): a note opened from another app (a double click on an event in Boni Calendar; its "Abrir en
+- **Peek** (2026-10-22): a note opened from another app, or a mail from the conversation or a Bandeja card (tasks 30
+  and 74; a mail shows as the mail client view) (a double click on an event in Boni Calendar; its "Abrir en
   Boni", in the right-button menu and the detail, opens the note in Boni's main window instead). In Boni Calendar with Boni's address (Settings →
   Escritorio) it is the calendar's own window with Boni's note page, which asks once for the user and password (no
   address field: it is the page's own) and hides at once on a click in the calendar; it sits above the calendar's
