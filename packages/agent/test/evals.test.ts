@@ -33,8 +33,9 @@ describe("the evaluations a model passes before it takes a role", () => {
 
   it("the planner: a planner that answers nothing useful fails, and each case runs in a store of its own", async () => {
     const r = await evalPlanner(fakePlanner([{ version: 1, steps: [] }]), fakePlanner([]));
-    // Twelve cases since M2 added «Ponme al día» and «¿Quién me ha escrito de la secretaría?» (docs/correo.md).
-    expect(r.total).toBe(12);
+    // Thirteen: M2 added «Ponme al día» and «¿Quién me ha escrito de la secretaría?» (docs/correo.md), task 67 the
+    // mail of yesterday that says «hoy».
+    expect(r.total).toBe(13);
     expect(r.right).toBe(0);
   });
 

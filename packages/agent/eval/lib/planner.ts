@@ -76,6 +76,8 @@ function evalStore(dir: string): UserStore {
           field("f_asunto", "asunto", "text"),
           field("f_de", "de", "text"),
           field("f_cuerpo", "cuerpo", "longtext"),
+          // When it was sent (task 67): a mail of yesterday says «hoy» of its own day.
+          field("f_fecha", "fecha", "datetime"),
         ],
         { sensitivity: "personal" },
       ),
@@ -151,8 +153,15 @@ function evalStore(dir: string): UserStore {
       "boletin@noticias.example.com",
       "Las novedades de esta semana en la tienda y una encuesta de satisfacción.",
     ],
+    [
+      "Firma del documento de tutoría",
+      "miguel.ejemplo@alumnos.example.es",
+      "Hola, ¿podemos vernos hoy a las 12h o el viernes antes de las 10h para firmar el documento de tutoría?",
+      // Sent yesterday (the store's day is 2026-10-20): its «hoy» is the 19th.
+      "2026-10-19T08:15:00Z",
+    ],
   ];
-  mails.forEach(([asunto, de, cuerpo], i) => {
+  mails.forEach(([asunto, de, cuerpo, fecha], i) => {
     const l = label("external", "personal", [{ kind: "mail", id: `m${i}` }], true);
     store.create(
       "t_correo",
@@ -160,6 +169,7 @@ function evalStore(dir: string): UserStore {
         f_asunto: { value: asunto, label: l },
         f_de: { value: de, label: l },
         f_cuerpo: { value: cuerpo, label: l },
+        ...(fecha ? { f_fecha: { value: fecha, label: l } } : {}),
       },
       { actor: "connector" },
       `e_mail${i}`,
@@ -286,6 +296,17 @@ const CASES: {
     request: "Ponme al día",
     check: (r) => (r.status === "done" && r.replies.length > 0 ? "" : "no catch-up"),
     shows: (r) => (shownRows(r, ["list"]) >= 2 ? "" : "not one item per mail"),
+  },
+  {
+    // Task 67 (Juan, 2026-11-05): a mail of yesterday that says «hoy» is told as yesterday, never as today.
+    request: "¿Qué me han propuesto para firmar el documento de tutoría?",
+    check: (r) => {
+      const said = saidText(r);
+      if (r.status !== "done" || !/firm/i.test(said)) return "the mail not said";
+      return /\bhoy\b/i.test(said) && !/\bayer\b/i.test(said)
+        ? "yesterday's «hoy» told as today"
+        : "";
+    },
   },
   {
     request: "¿Quién me ha escrito de la secretaría?",
