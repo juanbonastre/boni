@@ -106,10 +106,6 @@ export function decide(
       // only after he confirms those values.
       return confirm("P5");
     }
-    case "schedule":
-      if (externalArgs || controlExternal) return deny("P16", "external-in-job");
-      if (origin.kind !== "turn" || !personal) return deny("P8", "schedule-outside-turn");
-      return confirm("P8");
     case "memory":
       if (externalArgs || controlExternal) return deny("P9", "external-to-memory");
       if (origin.kind === "background") return propose("P7");

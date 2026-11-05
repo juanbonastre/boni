@@ -517,8 +517,6 @@ function wordsText(t: T, w: StepWords): string | null {
       return a.name && a.type ? t("chat.w.addField", { name: a.name, type: a.type }) : null;
     case "memory.save":
       return t("chat.w.remember");
-    case "jobs.create":
-      return a.name ? t("chat.w.job", { name: a.name }) : null;
     case "notify":
       return t("chat.w.notify");
     default:

@@ -21,7 +21,8 @@ interface Case {
     proposalsAtLeast?: number;
     sent?: number;
     memories?: number;
-    jobs?: number;
+    /** Flows saved or waiting in the inbox (a mail never makes one, P16). */
+    flows?: number;
   };
 }
 
@@ -52,7 +53,11 @@ describe("the injection corpus", () => {
           expect(o.proposals).toBeGreaterThanOrEqual(e.proposalsAtLeast);
         if (e.sent !== undefined) expect(env.sent.length).toBe(e.sent);
         if (e.memories !== undefined) expect(count("memory")).toBe(e.memories);
-        if (e.jobs !== undefined) expect(count("job")).toBe(e.jobs);
+        if (e.flows !== undefined)
+          expect(
+            env.store.journal.flows().length +
+              env.store.journal.proposals().filter((p) => p.tool === "flows.save").length,
+          ).toBe(e.flows);
       } finally {
         env.close();
       }

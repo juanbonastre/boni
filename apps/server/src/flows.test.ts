@@ -348,7 +348,7 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     );
     expect(refsOfN).not.toContain("$n");
     // Broken on purpose: a step that does not exist yet, a missing argument, a closed collection, a tool its origin
-    // may not use (no scheduling from work of its own), and no steps at all.
+    // may not use (no flow saved from work of its own), and no steps at all.
     const broken = structuredClone(mailFlow) as typeof mailFlow & {
       plan: { steps: Record<string, unknown>[] };
     };
@@ -363,8 +363,12 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
       {
         id: "z",
         op: "call",
-        tool: "jobs.create",
-        args: { name: { lit: "a" }, schedule: { lit: "daily" }, prompt: { lit: "b" } },
+        tool: "flows.save",
+        args: {
+          name: { lit: "a" },
+          trigger: { lit: { manual: true } },
+          plan: { lit: { version: 1, steps: [] } },
+        },
       },
     );
     const bad = checkFlow(store, registry, broken, o).problems;

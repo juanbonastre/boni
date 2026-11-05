@@ -95,7 +95,6 @@ export const PIPELINE: Pipeline = {
         "schema.create_type",
         "schema.add_field",
         "memory.save",
-        "jobs.create",
         "notify",
         "flows.run",
         "flows.save",

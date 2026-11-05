@@ -101,7 +101,8 @@ más escribe planes: el usuario, con un lienzo.
   lectura del correo está instalada como preset de ese sistema.
 - **El programador y las mini-apps** (`nucleo.md` §7.12 y §7.13; sin código todavía): trabajos declarativos (un plan
   plantilla más un horario), creados desde un turno con confirmación (P8), ejecutados como segundo plano (P7);
-  mini-apps y atajos como especificaciones, nunca desde contenido externo (P16).
+  mini-apps y atajos como especificaciones, nunca desde contenido externo (P16). (Había una herramienta
+  `jobs.create` que guardaba un trabajo y nada lo ejecutaba; F4b la quitó: el programador son los flujos programados.)
 - **«Modelos»** (59b): el flujo declarado en `packages/agent/src/pipeline.ts`, con la prueba que obliga a que cada
   lector, papel, herramienta, clase de ejecución y área de decisión tenga su nodo (A-16), dibujado con React Flow y
   dagre de arriba abajo con los números del diario, y lo que configura los modelos debajo.
@@ -283,7 +284,7 @@ todo con Deshacer y en el diario.
 | F1 Flujos como datos (hecha el 2026-11-05, tarea 61) | La colección de sistema «Flujos»; el flujo de serie «Leer correo» guardado y versionado, que `mail.ts` ejecuta en vez de construir el plan (las entradas vinculadas como hoy); el diario con flujo y versión; «Modelos» pasa a «Flujos»: la lista y el lienzo de cada flujo, de solo lectura; el lienzo general con los números se calcula de los flujos | El correo se lee igual que hoy (las pruebas de `mail.test.ts` sin cambios), y en «Flujos» se ve «Leer correo» con sus nodos y sus números |
 | F2 El editor (hecha el 2026-11-05) | Añadir, quitar y conectar nodos; el panel del nodo desde los esquemas; el selector de valores; la lista de comprobación; guardar como versión, encender y apagar, volver a una versión; «Nuevo flujo» y «Duplicar»; «Ejecutar» a mano | Juan cambia la colección a la que van las tareas del correo desde el lienzo y vuelve al de Boni con un clic |
 | F3 Probar y ver (hecha el 2026-11-05) | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
-| F4 Disparadores (hecha el 2026-11-05) | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
+| F4 Disparadores (hecha el 2026-11-05; F4b quitó `jobs.create`, que guardaba trabajos que nada ejecutaba) | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
 | F5 Propuestas de la IA (hecha el 2026-11-05) | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |
 | F6 «Mis datos» (hecha el 2026-11-05) | La vista Diagrama en cualquier colección; quién lee y escribe, con filtros; editar desde el diagrama | En Agenda, el diagrama enseña Tarea y Evento con quién las escribe, y una relación nueva se dibuja arrastrando |
 
