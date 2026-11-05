@@ -60,6 +60,8 @@ dependencies {
     implementation(libs.androidx.webkit)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.work)
+    implementation(libs.unifiedpush.connector)
     testImplementation(libs.junit)
     testImplementation(libs.json)
+    testImplementation(libs.tink)
 }

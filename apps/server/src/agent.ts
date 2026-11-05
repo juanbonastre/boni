@@ -88,7 +88,8 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *   GET  /api/agent/planners                 -> { planners } the models a conversation may plan with
  *   GET  /api/agent/live/:id?after=n         -> { events, done } what a turn did since event n, while it runs
  *   POST /api/agent/live/:id/stop            -> { stopping } «Parar»: before its next step, or where it waits
- *   GET  /api/agent/events                   -> Server-Sent Events: "notify" ({ text }) and "proposals"
+ *   GET  /api/agent/events                   -> Server-Sent Events: "notify" ({ text, integrity }), "proposals",
+ *                                               "requests"…; open with the models off too (the desktop app's notices)
  *   GET  /api/agent/visibility               -> { types: [{ id, name, level, count }] } what the models may see
  *   PUT  /api/agent/visibility/:type         { level: visible | opaque | hidden } (a personal device only)
  *   GET  /api/agent/extensions               -> { extensions: [{ id, name, description, version, preset, enabled, needs, … }] }
@@ -227,7 +228,7 @@ export class AgentHost {
         ...(this.o.tz ? { tz: this.o.tz } : {}),
         ...(this.o.now ? { now: this.o.now } : {}),
         // To this account's devices only: the recipient is the code's (7.9).
-        notify: (text, l) => this.emit(account, "notify", { text, integrity: l.integrity }),
+        notify: (text, l) => this.notify(account, text, l.integrity),
         onRequest: () => this.emit(account, "requests", {}),
       });
       this.agents.set(account, a);
@@ -251,6 +252,18 @@ export class AgentHost {
   }
   emit(account: number, event: string, data: unknown): void {
     for (const l of this.listeners.get(account) ?? []) l(event, data);
+  }
+
+  /** How a notice reaches the account's devices that are not connected now (UnifiedPush, reminders.ts; task 62). */
+  pushNotice: ((account: number, text: string) => void) | null = null;
+  /**
+   * A notice of Boni's for this account's devices (the agent's `notify`, a flow's «Avisar», the month's budget): to
+   * those connected now («notify» on GET /api/agent/events, the desktop app's) and, by UnifiedPush, to the phone
+   * with Boni closed. The recipient is the code's, never an argument (docs/nucleo.md 7.9).
+   */
+  notify(account: number, text: string, integrity: string): void {
+    this.emit(account, "notify", { text, integrity });
+    this.pushNotice?.(account, text);
   }
 
   /** A turn about to run, watched from the device that gave `id`: what it does goes here as it happens. */
@@ -342,6 +355,29 @@ export async function serveAgent(
   if (route.includes(" /api/agent/flows")) {
     if (!host.hasData) return send(res, 503, { error: "no-store" });
     return serveFlows(host, req, res, route, params, who);
+  }
+  switch (route) {
+    // What the account's agent tells its devices, while it is open: with the models off too, since the desktop app
+    // keeps it for Boni's notices (task 62).
+    case "GET /api/agent/events": {
+      res.writeHead(200, {
+        ...CORS,
+        ...SAFE,
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-store",
+        connection: "keep-alive",
+      });
+      res.write(": connected\n\n");
+      const off = host.subscribe(who.account, (event, data) =>
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+      );
+      const ping = setInterval(() => res.write(": ping\n\n"), 25_000);
+      req.on("close", () => {
+        off();
+        clearInterval(ping);
+      });
+      return;
+    }
   }
   if (!host.onFor(who.account)) return send(res, 503, { error: "agent-off" });
   await answerAgent(host, req, res, route, params, who);
@@ -1043,25 +1079,6 @@ async function answerAgent(
       return i
         ? send(res, 200, { id: i.manifest.id, enabled: i.enabled })
         : send(res, 404, { error: "not-found" });
-    }
-    case "GET /api/agent/events": {
-      res.writeHead(200, {
-        ...CORS,
-        ...SAFE,
-        "content-type": "text/event-stream; charset=utf-8",
-        "cache-control": "no-store",
-        connection: "keep-alive",
-      });
-      res.write(": connected\n\n");
-      const off = host.subscribe(who.account, (event, data) =>
-        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
-      );
-      const ping = setInterval(() => res.write(": ping\n\n"), 25_000);
-      req.on("close", () => {
-        off();
-        clearInterval(ping);
-      });
-      return;
     }
     default:
       return send(res, 404, { error: "not-found" });

@@ -322,6 +322,18 @@ contraseña ni un código aquí» under a question.
   (`--surface`, 10 px radius, `--line-strong` border) and is fully interactive: hover for values, click for a detail;
   dragging anywhere moves it, the bottom-right corner resizes it; on hover it shows its period and its menu (the chart
   controls below, compact), and right click opens the same menu (open or edit in the app, refresh, hide here, remove).
+- **Boni's notices outside the app** (task 62, A-17): what Boni says on its own (a flow's «Avisar», the agent's
+  `notify`, the month's budget) is a system notification on the phone and on the computer even when Boni is closed,
+  so the summary of 08:00 is seen at 08:00. From Material 3 («Notifications»: short, timely information from an app
+  that is not in use) and Apple's HIG («Notifications»: timely, useful, never a flood): only what Juan drew or asked
+  for notifies, at most ten an hour (the server stops there), and NN/g's warning that interruptions cost attention.
+  - **Android:** channel «Avisos» (high importance, it shows over the screen), the bell as its small icon, no title
+    (the system's header already says «Boni»), the text as it came on one line and whole when expanded, its time; a
+    tap opens Boni. The permission is asked once (Android 13 and later), the first time the app opens with a session.
+  - **Desktop:** while Boni runs, its window open or only in the tray, «Boni» as the title and the text; a click opens
+    the main window. Nothing inside the app: a notice is not a toast.
+  - **The text is text:** at most 500 characters (the server cuts it), never bold or a link (on Linux its markup shows
+    as it was typed), and it travels sealed for each device (the distributor never reads it).
 - **Boni's main window** is laid out as this app: the sidebar, the main area and the right side panel. The sidebar
   (Juan, 2026-10-28; docs/clases.md §2.7): Buscar, the conversation and «Mis datos» at the top; then two
   sections, each folded and unfolded by a click on its name (a chevron beside it on hover; kept on this device):

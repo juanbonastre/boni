@@ -1,8 +1,11 @@
 package io.github.juanbonastre.boni
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -120,6 +123,8 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, frame).isAppearanceLightStatusBars = false
         pendingLaunch = intent.launchTarget()
         web.loadUrl("https://appassets.androidplatform.net/assets/web/index.html")
+        // Boni's notices reach the phone with the app closed (task 62): its address, once per start with a session.
+        if (shell.configured()) Notices.start(this)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             // Back closes what is open in the page (a sheet, a chart, the charts tab); with nothing open the app
@@ -130,6 +135,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
         })
+    }
+
+    /** Android 13 and later ask before an app notifies: once, the first time there may be a notice (Boni Calendar's way). */
+    fun askNotificationPermission() {
+        val prefs = getSharedPreferences("notices", MODE_PRIVATE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !prefs.getBoolean("asked", false)
+        ) {
+            prefs.edit().putBoolean("asked", true).apply()
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
     }
 
     /** What a home-screen shortcut or a link opened when it started the app, until the page asks for it. */

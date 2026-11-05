@@ -65,8 +65,12 @@ class AndroidBridge(
         "storeRemove" -> shell.storeRemove(a.getString(0)).let { null }
         "getSettings" -> shell.clientSettings()
         "setSettings" -> shell.setSettings(JSONObject(a.getString(0)))
-        "login" -> shell.login(JSONObject(a.getString(0)))
-        "logout" -> shell.logout()
+        // After a login the phone gets its address for Boni's notices; after a logout it lets it go (task 62).
+        "login" -> shell.login(JSONObject(a.getString(0))).also { answer ->
+            val act = activity
+            if (answer.optBoolean("ok") && act != null) ui.post { Notices.start(act) }
+        }
+        "logout" -> shell.logout().also { Notices.stop(context) }
         "suggestedDevice" -> shell.suggestedDevice()
         "pin" -> Launcher.pin(context, JSONObject(a.getString(0)))
         "setTargets" -> Launcher.setTargets(context, JSONArray(a.getString(0)), a.getInt(1)).let { null }

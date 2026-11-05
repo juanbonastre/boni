@@ -87,6 +87,12 @@ const MIGRATIONS = [
    );`,
   // What a session may do (an assistant's token, `cli.ts token --scope`); none is everything (an app's login).
   `ALTER TABLE sessions ADD COLUMN scope TEXT;`,
+  // What a push address is for (task 62): «reminders», Boni Calendar asks for its reminders again; «notices», Boni's
+  // app shows a notice of Boni's, which travels encrypted for that device alone with the Web Push keys it gave
+  // (RFC 8291: p256dh, its public key; auth, its secret).
+  `ALTER TABLE push ADD COLUMN kind TEXT NOT NULL DEFAULT 'reminders';
+   ALTER TABLE push ADD COLUMN p256dh TEXT;
+   ALTER TABLE push ADD COLUMN auth TEXT;`,
 ];
 
 export function openSystemDb(path: string): SystemDb {
