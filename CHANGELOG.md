@@ -5,6 +5,35 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-05 (thirtieth) — server 0.8.105 · Boni desktop 0.4.74
+
+Needs: the server (0.8.105, to deploy: the scheduler, the new routes and the web app it serves) and Boni desktop 0.4.74
+(`release/boni_0.4.74_amd64.deb`, to install). Task 61, phases F2 to F6 of `docs/flujos.md`.
+
+- **The flow editor** (F2). In «Flujos», the chosen flow opens in an editor: add a step from «Añadir paso», drag
+  nodes, draw an arrow to use one step's value in another, Supr removes one; a click opens its panel with its
+  settings (the collection as a list, a record's values field by field, «Valor de» with what that step may take).
+  The checklist says what would be refused before saving. «Guardar» makes your version; «⋯» has the versions, «Volver
+  al de Boni», «Duplicar» and «Eliminar». «Nuevo flujo» makes one by hand, with a form, and «Ejecutar» runs it in a
+  conversation. Try it on «Leer correo»: change the collection the tasks go to, save, and go back to Boni's. (#325)
+- **«Probar»** (F3) runs the draft dry with the latest mail (or the form's values): readers are called, nothing is
+  written, and each node says what it gave or would do («Propondría: Crear en Docencia «…»»). A run of the Registro
+  is now drawn on the flow's canvas. (#326)
+- **Flows on a schedule** (F4): in the trigger's panel, «Programado», every day, a day of the week or every hour, at
+  a time (Madrid). Draw a daily summary at 8 without code: «Nuevo flujo», «Programado» at 08:00, a «Consultar» or
+  «Calcular» step and «Avisar», «Guardar», turn it on. «Ejecutar» runs it now. The notice reaches the devices that
+  have Boni open at that moment (as Boni's notices do today); the run is in the Registro either way. In a conversation you can also ask
+  Boni to run one of your flows by name: it asks you to confirm and its answers come in the same turn. (#327)
+- **Flows proposed by the AI** (F5): ask in the conversation for something to happen on its own («cada lunes a las
+  8 dime cuántas tareas tengo»): the flow waits in the Bandeja, drawn, and «Activar» saves it as yours and turns it
+  on. An assistant can propose one through the MCP (`flows_describe`, `flows_propose`); a change of one of yours
+  shows what it adds and takes away. (#328)
+- **Who reads and writes your data** (F6): «Mis datos» → Diagrama says under each collection who writes it and who
+  reads it (your flows, and who did in the last 30 days), with filters («Leída por», «Escrita por», «Nivel»,
+  «Madre») instead of «Ver como». A click opens its panel (its level, who, «Abrir», a new collection inside); drag
+  from a card's right edge to another to make a relation, drop a collection on another to put it inside, «Nueva
+  colección». Each collection has «Diagrama» among its layouts too: try it on Agenda. (#329)
+
 ## 2026-11-05 (twenty-ninth) — server 0.8.104 · Boni desktop 0.4.73
 
 Needs: the server (0.8.104, to deploy: the flows live in its journal) and Boni desktop 0.4.73
