@@ -638,14 +638,21 @@ contraseña ni un código aquí» under a question.
   the inbox's own page (more room) a detailed card from mail is two columns: the mail (up to twelve lines) and the
   fields on the left, the three days on the right (titles on two lines); one column when the card is narrow. A
   changed note's text shows as reading text (headings, lists, to-dos), never raw Markdown. Accept and Reject on each
-  card (never "accept all"). A card from mail has "Ver correo" on its source line, and «En Gmail» when the
-  mailbox is Google's (the mail in its webmail, found by its Message-ID through the host's browser; task 55; the mail's own row in Boni: IMAP
-  gives no webmail link; the line carries no amber mark: it says itself it is a mail, Juan, 2026-11-02) and, detailed, "Por qué: «…»" (the reader's quote; in « » only when the code found those
+  card (never "accept all"). A card from mail ends its source line with two icons that a long sender never hides (task
+  68; Juan, 2026-11-05): the mail kept in Boni (an envelope with a small data mark), which opens it in the side panel
+  without leaving the inbox (closing gives the inbox back; «Agrandar» there opens it whole), and, when the mailbox is
+  Google's, Gmail's envelope with a small ↗ («Abrir en Gmail»), which opens that very mail in its account (its Gmail
+  thread, `authuser`; the server finds it, by IMAP's thread id for a new mail and once by its Message-ID for an older
+  one; Gmail's search only when it is no longer in the folder). Their names are their tooltips. When the proposal also
+  comes from earlier mails of its thread (a reply that moved it), «+1 correo» (accent text) unfolds them under the line,
+  one per row: who, the subject and the day, each opening the same way. The line carries no amber mark: it says itself
+  it is a mail (Juan, 2026-11-02). Detailed, "Por qué: «…»" (the reader's quote; in « » only when the code found those
   words in the mail). **Corregir** (the pencil): the title and the collection on two lines and, folded under
   «Propiedades» (Juan, 2026-11-02: there, but not all at once), the chosen collection's other properties, each with
   the same cell the table edits it with (an option from its menu, a relation from its picker, a box); accepting
   sends only what he changed, by the field's key. **«Ver correo»** opens the mail as a mail client shows it
-  (`MailView.tsx`; D-22): the subject as its title, under it «En Gmail» when the mailbox is Google's (task 55), a
+  (`MailView.tsx`; D-22): the subject as its title, under it «En Gmail» with Gmail's mark when the mailbox is Google's
+  (tasks 55 and 68: that very mail in its account), a
   header of labelled lines (De: name <address>; Para; Cc;
   Fecha in full; Adjuntos as pills that open the file, the mail's own names, the last its original «Asunto.eml»,
   which a mail app opens whole: task 26) and the text as it came, paragraphs

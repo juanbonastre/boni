@@ -72,6 +72,7 @@ import {
   type Host,
   type LoginAnswer,
   type LoginForm,
+  openUrl,
   type SettingsPatch,
 } from "./host.ts";
 import { type T, translator } from "./i18n.ts";
@@ -1805,8 +1806,24 @@ export function closeProposal() {
   else if (v.back.kind === "page") void openPage(v.back.id);
   else set({ view: v.back });
 }
-/** The mail a proposal came from, as its row in Boni ("Ver correo": IMAP gives no webmail link). */
-export const openMail = (at: { type: string; id: string }) => void openRow(at.type, at.id);
+
+/**
+ * A mail seen without leaving where Juan is (task 68; Juan, 2026-11-05: «quiero que se abra como peek, que no me
+ * cambie de pestaña hasta que no le dé a algún botón de abrir en grande»): in the side panel, where «Agrandar» takes
+ * it to its page; closing it gives the inbox back.
+ */
+export const peekMail = (at: { type: string; id: string }) =>
+  set({ panel: { kind: "row", type: at.type, id: at.id }, ...FRESH_PANEL });
+
+/** A mail in its webmail (task 68): the address the server gives (Gmail's own, in its account), opened outside. */
+export async function openWebmail(id: string) {
+  try {
+    const url = await agent.mailWebmail(id);
+    if (!url || (await openUrl(url)) === "error") toast(get().t("mail.webmailFailed"));
+  } catch {
+    toast(get().t("mail.webmailFailed"));
+  }
+}
 export function rejectProposal(id: string) {
   return decide(id, "reject", async () => {
     try {

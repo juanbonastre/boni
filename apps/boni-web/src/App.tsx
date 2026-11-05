@@ -62,8 +62,10 @@ export function App() {
   const narrow = useMedia("(max-width: 1100px)");
   const showSidebar = sidebarOpen && !(narrow && (panelOpen || inboxOpen));
   // What the main area shows rises into place, again when another page takes its place (4b «Motion», I-14).
+  // A new page is shown at once with a temporary id, then with the server's: the same page, it rises once.
   const enter = useEnterFlip(
     useStore((s) => `${s.view.kind}:${(s.view as { id?: string }).id ?? ""}`),
+    (from, to) => from.startsWith("page:new-") && to.startsWith("page:"),
   );
   if (mobile) return <MobileApp />;
   return (
@@ -73,7 +75,9 @@ export function App() {
         <TopBar />
         <Content />
       </div>
-      {panelOpen ? <SidePanel /> : <InboxPanel />}
+      {panelOpen && <SidePanel />}
+      {/* Under a mail seen from a card it stays as it was (its cards, what was unfolded), back when that closes. */}
+      <InboxPanel under={panelOpen} />
       {settingsOpen && <SettingsModal />}
       {findOpen && <QuickFind />}
       {trashOpen && <TrashDialog />}

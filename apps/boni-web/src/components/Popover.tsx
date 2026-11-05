@@ -40,8 +40,10 @@ export function PopButton({
     }
     const place = () => {
       const b = button.current?.getBoundingClientRect();
-      const r = box.current?.getBoundingClientRect();
-      if (!b || !r) return;
+      // Its size as laid out: it grows in from 95 %, and measured while it did it could end out of the window.
+      const el = box.current;
+      if (!b || !el) return;
+      const r = { width: el.offsetWidth, height: el.offsetHeight };
       const vw = window.innerWidth;
       const vh = window.innerHeight;
       let left = align === "end" ? b.right - r.width : b.left;
@@ -139,11 +141,12 @@ export function PointMenu({
   const box = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
-    const r = box.current?.getBoundingClientRect();
-    if (!r) return;
+    // By its size as laid out, not as it grows in (from 95 %).
+    const el = box.current;
+    if (!el) return;
     setPos({
-      left: Math.round(Math.max(4, Math.min(x, window.innerWidth - r.width - 4))),
-      top: Math.round(Math.max(4, Math.min(y, window.innerHeight - r.height - 4))),
+      left: Math.round(Math.max(4, Math.min(x, window.innerWidth - el.offsetWidth - 4))),
+      top: Math.round(Math.max(4, Math.min(y, window.innerHeight - el.offsetHeight - 4))),
     });
   }, [x, y]);
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { PROPOSALS } from "./agent-scenarios.ts";
-import { EXAMPLES, emit, openApp, recorded } from "./fixtures.ts";
+import { LONG_SENDER, MAIL, PROPOSALS } from "./agent-scenarios.ts";
+import { EXAMPLES, emit, iconsWhole, openApp, recorded } from "./fixtures.ts";
 
 /**
  * The phone (narrower than 640 px; the Android app), made for the phone (docs/design-guide.md, «El móvil»): four
@@ -500,6 +500,19 @@ test("the Bandeja is a place: its proposals under its large title", async ({ pag
   await expect(title(page)).toHaveText("Bandeja");
   await expect(page.getByRole("button", { name: "Aceptar" }).first()).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/phone-inbox.png` });
+});
+
+test("on the phone too, a long sender never hides a mail card's icons (task 68, I-21)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    mail: true,
+    agent: { "GET api/agent/proposals": [{ proposals: [LONG_SENDER] }], "GET api/mail": [MAIL] },
+  });
+  await tab(page, "Bandeja");
+  const card = page.locator(".inbox-card").first();
+  await iconsWhole(card);
+  await card.screenshot({ path: `${SHOTS}/phone-inbox-long-sender.png` });
 });
 
 test("offline on the phone: the capture waits on the device and says so", async ({ page }) => {

@@ -506,6 +506,18 @@ export const CARD_MAIL = {
     },
   },
 };
+/** A mail card whose sender has no name: its bare address, with no space to break at (the server sends it so). */
+export const LONG_SENDER = {
+  ...CARD_MAIL,
+  id: "c8b",
+  card: {
+    ...CARD_MAIL.card,
+    source: {
+      ...CARD_MAIL.card.source,
+      from: "notificaciones-automaticas-de-la-coordinacion-del-departamento@example.edu",
+    },
+  },
+};
 /** A proposal the calendar already has, as an external calendar's event (task 51): the card says so, «Enlazar». */
 export const CARD_LINKED = {
   ...CARD_EVENT,

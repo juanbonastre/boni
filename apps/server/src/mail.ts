@@ -22,7 +22,7 @@ import { systemTimeZone } from "@boni/calendar";
 import { type FieldDef, label, newId, rolesOf, type TypeDef } from "@boni/entities";
 import type { ExtensionManifest, RouteSpec } from "@boni/extensions";
 import { wrappedKeysIn } from "@boni/identity";
-import { ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
+import { gmailThreadUrl, ImapError, ImapReader, type Message, parseMessage } from "@boni/mail";
 import { BODY, type FlowRow, open, seal, type UserStore, wrappedKeyProvider } from "@boni/store";
 import { readAccount } from "./account.ts";
 import type { AgentHost } from "./agent.ts";
@@ -489,6 +489,8 @@ const emlName = (subject: string) =>
 interface Original {
   raw: Uint8Array;
   size: number;
+  /** Its Gmail thread, from Gmail's IMAP (task 68): what opens the mail itself in Gmail. */
+  gmailThread?: string | null;
 }
 /** Text read out of a mail's attachments (a sheet's rows, a text file) for the reader, at most. */
 const ATTACHMENTS_TEXT_MAX = 50_000;
@@ -549,6 +551,8 @@ const THREAD_FIELDS: FieldDef[] = (
   [
     ["hilo", "Hilo", "text"],
     ["en_respuesta_a", "En respuesta a", "text"],
+    // Gmail's own thread id (task 68), so «Gmail» opens the mail and not a search.
+    ["gmail_hilo", "Hilo de Gmail", "text"],
   ] as const
 ).map(([key, name, type]) => ({ id: `f_${key}`, key, name, type, hidden: true, label: CODE }));
 
@@ -638,6 +642,9 @@ export interface MailsOptions {
   /** Tests only: the IMAP connection. */
   connect?: () => Duplex;
 }
+
+/** How long a Gmail thread not found is not looked for again (`Mails.webmail`). */
+const MISS_TTL = 10 * 60_000;
 
 export class Mails {
   private o: MailsOptions;
@@ -1163,6 +1170,8 @@ export class Mails {
       values.f_hilo = w(
         threadIdOf(m, () => this.sameSubjectThread(store, def, m.subject), randomUUID()),
       );
+    if (original?.gmailThread && def.fields.some((f) => f.id === "f_gmail_hilo"))
+      values.f_gmail_hilo = w(original.gmailThread);
     if (from?.name) values.f_de_nombre = w(from.name.slice(0, 200));
     const list = (as: typeof m.to) =>
       as
@@ -1375,6 +1384,7 @@ export class Mails {
         const id = this.keepOne(account, store, def, m, f.internalDate, {
           raw: f.raw,
           size: f.size,
+          gmailThread: f.gmailThread,
         });
         if (!id) continue;
         known.add(m.messageId);
@@ -1391,7 +1401,11 @@ export class Mails {
         if (m.messageId && known.has(m.messageId)) continue;
         // One mail that cannot be kept never stops the others (task 34: it stopped the check, and was lost).
         const id = timed("a mail kept", 300, () =>
-          this.keepOne(account, store, def, m, f.internalDate, { raw: f.raw, size: f.size }),
+          this.keepOne(account, store, def, m, f.internalDate, {
+            raw: f.raw,
+            size: f.size,
+            gmailThread: f.gmailThread,
+          }),
         );
         if (!id) continue;
         made.push(id);
@@ -1703,6 +1717,57 @@ export class Mails {
    * A mail's tasks proposed now because Juan asked (task 30: «Proponer tarea» on a mail of the conversation): the
    * plan a new mail gets, for this one, after what the mailbox is doing; its proposals land in the inbox. How many.
    */
+  /**
+   * Where a mail of the collection opens in its webmail (task 68; Juan, 2026-11-05: «quiero que se abra el correo, no
+   * que me abra el buscador»): Gmail's address of its thread, in its account. A mail kept before Boni kept thread ids
+   * has its thread found once by its Message-ID (one short IMAP session, remembered while the server runs); when it
+   * cannot be found, Gmail's search by that id. Null for a mailbox that is not Gmail.
+   */
+  async webmail(account: number, id: string): Promise<string | null> {
+    const st = this.state(account);
+    const e = this.o.host.store(account).get(id);
+    if (!st.type || !e || e.entity.deleted !== undefined || e.entity.type !== st.type)
+      throw new MailError("not-found");
+    const settings = this.settings(account);
+    if (!settings) throw new MailError("not-configured");
+    if (!/(^|\.)(gmail|googlemail)\.com$/i.test(settings.host.trim())) return null;
+    const messageId = String(e.entity.values.f_id_mensaje ?? "")
+      .trim()
+      .replace(/^<|>$/g, "");
+    const key = `${account}:${id}`;
+    let thread = String(e.entity.values.f_gmail_hilo ?? "") || this.gmailThreads.get(key) || "";
+    const missed = this.gmailMisses.get(key);
+    if (!thread && messageId && !(missed && this.now() - missed < MISS_TTL)) {
+      const r = await this.open(settings);
+      try {
+        await r.examine(settings.folder);
+        thread = (await r.gmailThreadOf(messageId)) ?? "";
+        // Archived out of the folder: in «Todos» (Gmail's All Mail, found by its flag), where every mail is.
+        if (!thread) {
+          const all = await r.allMailFolder();
+          if (all && all !== settings.folder) {
+            await r.examine(all);
+            thread = (await r.gmailThreadOf(messageId)) ?? "";
+          }
+        }
+      } finally {
+        r.close();
+      }
+      if (thread) this.gmailThreads.set(key, thread);
+      else this.gmailMisses.set(key, this.now());
+    }
+    const url = thread ? gmailThreadUrl(thread, settings.user) : null;
+    if (url) return url;
+    // Not even in «Todos» (deleted, say): Gmail's own search by its Message-ID, in its account.
+    return messageId && !/[\s<>"']/.test(messageId)
+      ? `https://mail.google.com/mail/?authuser=${encodeURIComponent(settings.user)}#search/rfc822msgid:${encodeURIComponent(messageId)}`
+      : null;
+  }
+  /** Gmail threads found by Message-ID for mails kept before Boni kept them (`webmail`), by account and row. */
+  private gmailThreads = new Map<string, string>();
+  /** When a mail's thread was looked for and not found: not looked for again for a while (one IMAP session a click). */
+  private gmailMisses = new Map<string, number>();
+
   async proposeFor(
     account: number,
     id: string,

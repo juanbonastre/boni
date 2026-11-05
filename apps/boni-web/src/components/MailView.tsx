@@ -1,11 +1,11 @@
 // A mail as a mail client shows it (Juan, 2026-11-02): who, to whom, when, the subject, the text and the attachments' names; read only, what arrived.
-import { ExternalLink, Paperclip } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { DataRow, DataType } from "../core/agent.ts";
 import { IMAGE_FILE, splitQuote, withoutImagePlaceholders } from "../core/mailText.ts";
-import { webmailLink } from "../core/webmail.ts";
-import { openUrl } from "../host.ts";
-import { agentApi, fileInline, mailboxHost, openFile, useStore } from "../store.ts";
+import { webmailOf } from "../core/webmail.ts";
+import { agentApi, fileInline, mailboxHost, openFile, openWebmail, useStore } from "../store.ts";
+import { GmailMark } from "./MailIcons.tsx";
 
 /**
  * The row of a mail's collection opened as a mail, not as a page: its header (from, to, cc, when), the subject, the
@@ -72,18 +72,15 @@ export function MailView({
     const v = f ? row.values[f.id] : null;
     return typeof v === "string" ? v : "";
   };
-  // The same mail in its webmail (task 55): a link built from its Message-ID, when the mailbox has one (Gmail).
-  const messageId = byKey("id_mensaje");
-  const [webmail, setWebmail] = useState<{ name: string; url: string } | null>(null);
+  // The same mail in its webmail (tasks 55 and 68): Gmail's own address of it, which the server finds.
+  const [gmail, setGmail] = useState(false);
   useEffect(() => {
     let live = true;
-    setWebmail(null);
-    if (messageId)
-      void mailboxHost().then((h) => live && setWebmail(h ? webmailLink(h, messageId) : null));
+    void mailboxHost().then((h) => live && setGmail(!!h && webmailOf(h) === "gmail"));
     return () => {
       live = false;
     };
-  }, [messageId]);
+  }, []);
   const name = byKey("de_nombre");
   const from = byKey("de");
   const when = byKey("fecha");
@@ -108,15 +105,15 @@ export function MailView({
   return (
     <article className="mail-view" aria-label={t("mail.view")}>
       <h1 className="mail-subject">{byKey("asunto") || t("page.untitled")}</h1>
-      {webmail && (
+      {gmail && (
         <p className="mail-actions">
           <button
             type="button"
             className="btn ghost small mail-webmail"
-            onClick={() => void openUrl(webmail.url)}
+            onClick={() => void openWebmail(row.id)}
           >
-            <ExternalLink size={12} strokeWidth={2} aria-hidden="true" />
-            {t("mail.inWebmail", { name: webmail.name })}
+            <GmailMark />
+            {t("mail.inWebmail", { name: "Gmail" })}
           </button>
         </p>
       )}

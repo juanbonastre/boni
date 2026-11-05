@@ -718,7 +718,8 @@ export function makeApp(opts: ServerOptions): App {
       route === "POST /api/mail/review" ||
       route === "POST /api/mail/suggestion" ||
       route === "POST /api/mail/propose" ||
-      route === "POST /api/mail/forget"
+      route === "POST /api/mail/forget" ||
+      route === "GET /api/mail/webmail/:id"
     ) {
       // The account's mailbox (mail.ts), from a personal device only; the password never comes back.
       const s = sessionUser(db, tokenOf(req));
@@ -728,6 +729,16 @@ export function makeApp(opts: ServerOptions): App {
       if (!mails || !opts.agent?.hasData) return send(res, 503, { error: "no-store" });
       const id = s.user.id;
       if (route === "GET /api/mail") return send(res, 200, { mail: mails.view(id) });
+      // Where a mail opens in its webmail (task 68): Gmail's own address of it, in its account.
+      if (route === "GET /api/mail/webmail/:id") {
+        try {
+          return send(res, 200, { url: await mails.webmail(id, params.id ?? "") });
+        } catch (e) {
+          if (e instanceof MailError)
+            return send(res, e.code === "not-found" ? 404 : 409, { error: e.code });
+          throw e;
+        }
+      }
       if (route === "POST /api/mail/forget") {
         mails.forget(id);
         return send(res, 200, { mail: null });

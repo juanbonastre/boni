@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChartCard } from "./components/ChartCard.tsx";
 import { MenuRow } from "./components/Popover.tsx";
 import { host } from "./host.ts";
@@ -125,14 +125,21 @@ function WidgetMenu({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
-  useEffect(() => {
-    // Inside the small window: shift left/up when it would stick out.
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
-    setPos({
-      left: Math.max(4, Math.min(x, window.innerWidth - r.width - 4)),
-      top: Math.max(4, Math.min(y, window.innerHeight - r.height - 4)),
-    });
+  useLayoutEffect(() => {
+    // Inside the small window: shift left/up when it would stick out, by its size as laid out (it grows in from 97 %:
+    // measured while it did, it ended 4 px below a 260 px window), and again if that size changes.
+    const place = () => {
+      const el = ref.current;
+      if (!el) return;
+      setPos({
+        left: Math.max(4, Math.min(x, window.innerWidth - el.offsetWidth - 4)),
+        top: Math.max(4, Math.min(y, window.innerHeight - el.offsetHeight - 4)),
+      });
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
   }, [x, y]);
   return (
     <>
