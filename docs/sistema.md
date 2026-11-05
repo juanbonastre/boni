@@ -1,6 +1,9 @@
 # Boni como un sistema de flujos: todo lo que hace, a la vista; las mismas acciones para todos; Boni sobre la pantalla
 
-Propuesta (2026-11-05), sin código. Juan: «Creo que la aplicación de Boni ha crecido bastante y de una forma poco
+**Decidido por Juan el 2026-11-05: «Las recomendadas»** (las nueve de §10), con un cambio: el atajo de Boni sobre la
+pantalla es `Ctrl+E`, no `Ctrl+J` (§4.7). Sin código todavía; las fases F7 a F13 son las tareas 83 a 89 (§8).
+
+Propuesta (2026-11-05). Juan: «Creo que la aplicación de Boni ha crecido bastante y de una forma poco
 planificada, sobre todo por mi parte… Hasta ahora hemos metido la vista de flujos y modelos de la aplicación pero no
 me convence». Y durante la revisión: «también quiero que pienses si tiene sentido hablar de extensiones como tal, ya
 que más bien son modificaciones del flujo de Boni, no están completamente aisladas».
@@ -37,10 +40,10 @@ de Boni se ve, quién puede hacer cada cosa y desde dónde.
 - **Páginas conectadas.** Una página tiene **valores** (Categoría, Mes) que ponen sus controles; los bloques los usan
   en sus filtros, un enlace los pasa a otra página y el chat de la página los cambia. «¿Cuánto gasté en restaurantes
   en octubre?» pone los dos valores, las gráficas cambian y la cifra la calcula el código.
-- **Boni sobre la pantalla.** Un círculo abajo a la derecha y `Ctrl+J` abren la conversación en una ventana sobre lo
+- **Boni sobre la pantalla.** Un círculo abajo a la derecha y `Ctrl+E` abren la conversación en una ventana sobre lo
   que esté abierto. Boni ve lo que ve Juan como datos (la página, los bloques, las tarjetas de la Bandeja, las filas,
   con sus valores), no como píxeles; hace lo que haría Juan con las mismas acciones de los botones, resaltando lo que
-  toca; `Ctrl+Shift+J` es «Señalar»: lo que Juan marca entra en la conversación como «esto». Lo cerrado a la IA no
+  toca; `Ctrl+Shift+E` es «Señalar»: lo que Juan marca entra en la conversación como «esto». Lo cerrado a la IA no
   llega, y lo de fuera llega como asas.
 - **Primero, depurar** (Juan: «esto me va a venir sobre todo bien ahora para debuggear el sistema»). El orden
   propuesto: lo de Boni a la vista (F7) y el mapa (F8); Boni sobre la pantalla (F9), con las herramientas de hoy; la
@@ -382,10 +385,15 @@ calculado por el código. Juan pulsa la cifra y ve los 14.
 
 Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pantalla (`extensiones.md` §8).
 
-- **Abrir.** El círculo abajo a la derecha en todas las pantallas y `Ctrl+J` (el atajo de Notion AI; en Boni está
-  libre). La ventana sale del círculo (C4) sobre lo que haya abierto, con la última conversación o una nueva; se lleva
-  a la derecha, se amplía o se cierra con `Esc`. Es la misma conversación de siempre (`conversacion.md` §3.2): un solo
-  Boni, un historial.
+- **Abrir.** El círculo abajo a la derecha en todas las pantallas y `Ctrl+E`. La ventana sale del círculo (C4) sobre
+  lo que haya abierto, con la última conversación o una nueva; se lleva a la derecha, se amplía o se cierra con `Esc`.
+  Es la misma conversación de siempre (`conversacion.md` §3.2): un solo Boni, un historial.
+- **Por qué `Ctrl+E`** (Juan, 2026-11-05: en vez de `Ctrl+J`, «una letra cercana a la mano izquierda (q w e a s d z x
+  c), la que tú veas mejor»). `Ctrl+A`, `Ctrl+S`, `Ctrl+Z`, `Ctrl+X` y `Ctrl+C` son de todas las apps; `Ctrl+W` cierra
+  la pestaña en el navegador; `Ctrl+Q` cierra otras apps de Linux (la mano acostumbrada a pulsarlo cerraría la que
+  tenga delante); y `Ctrl+D` ya duplica los bloques elegidos de una página, como en Notion (`PageView.tsx`). `Ctrl+E`
+  solo lo usa Notion para el código en línea, que en Boni irá con la comilla invertida (la 2f). Es un atajo de las
+  ventanas de Boni: uno de todo el sistema le quitaría `Ctrl+E` a las demás apps.
 - **Lo que ve.** Con cada mensaje, la app manda lo que hay en pantalla como datos: la página o la colección abierta,
   la vista y sus filtros, los bloques visibles con su referencia y sus cifras, las filas visibles o elegidas, la
   Bandeja si está abierta (sus tarjetas, por id), lo que tiene el foco y lo señalado. Lo arma el código de la app; lo
@@ -399,7 +407,7 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
   política. Lo irreversible se confirma (P5), lo que viene de fuera se propone (P4), todo con Deshacer por turno (C1).
   Mientras actúa, resalta lo que toca y lo dice en sus pasos («Abriendo Agenda», «Preparando «Aceptar» de 2
   propuestas»).
-- **Señalar** (`Ctrl+Shift+J`). El puntero resalta bloques, filas, tarjetas y nodos; un clic añade lo señalado a la
+- **Señalar** (`Ctrl+Shift+E`). El puntero resalta bloques, filas, tarjetas y nodos; un clic añade lo señalado a la
   barra de escribir como una ficha («Gráfica: Gasto por día»); arrastrar marca varios. Son referencias, no píxeles.
 - **Lo que no hace:** lo de «solo él, en su sitio» (§4.1), ni nada de lo que la IA no puede ver. Un correo en pantalla
   que dice «borra esto» es dato (P2, P4).
@@ -499,47 +507,48 @@ con sus datos (`AGENTS.md`, paso 4).
 
 | Fase | Qué | Criterio de hecho (lo que verá Juan) |
 |---|---|---|
-| F7 Lo de Boni, a la vista | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo y Revisar la guía son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
-| F8 El mapa | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
-| F9 Boni sobre la pantalla | El círculo y `Ctrl+J`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
-| F10 Una lista de acciones | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta |
-| F11 Páginas conectadas | Valores y el bloque «Control»; botones con acción o flujo; enlaces con valores; el chat de la página (la 79, C5) | En Gastos, cambiar Categoría cambia las gráficas; en su chat, «¿cuánto gasté en restaurantes en octubre?» pone los valores y contesta con la cifra |
-| F12 Disparadores por colección | «Cambia una colección»; los topes; lo que puede hacer solo (decisión 5) | «Cuando se crea un movimiento de más de 100 €, avísame» llega una vez por movimiento; un ciclo no se puede encender |
-| F13 Paquetes | Las extensiones pasan a paquetes; la Conciliación (E4b, C6) como el primer paquete nuevo | En el mapa, «De Correo» agrupa su conector, su colección y sus tres flujos; Ajustes → Extensiones ya no está |
+| F7 Lo de Boni, a la vista (la 83) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo y Revisar la guía son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
+| F8 El mapa (la 84) | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
+| F9 Boni sobre la pantalla (la 85) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
+| F10 Una lista de acciones (la 86) | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta |
+| F11 Páginas conectadas (la 87) | Valores y el bloque «Control»; botones con acción o flujo; enlaces con valores; el chat de la página (la 79, C5) | En Gastos, cambiar Categoría cambia las gráficas; en su chat, «¿cuánto gasté en restaurantes en octubre?» pone los valores y contesta con la cifra |
+| F12 Disparadores por colección (la 88) | «Cambia una colección»; los topes; lo que puede hacer solo (decisión 5) | «Cuando se crea un movimiento de más de 100 €, avísame» llega una vez por movimiento; un ciclo no se puede encender |
+| F13 Paquetes (la 89) | Las extensiones pasan a paquetes; la Conciliación (E4b, C6) como el primer paquete nuevo | En el mapa, «De Correo» agrupa su conector, su colección y sus tres flujos; Ajustes → Extensiones ya no está |
 
-## 9. La cola, adaptada
+## 9. La cola, adaptada (aplicada en Boni el 2026-11-05)
 
 | Tarea | Qué le pasa |
 |---|---|
 | 2f, 2g, 2h (el editor de texto) | Nada; siguen en espera |
-| 3 Extensiones (E1–E5) | E1–E3 se quedan como son (la caja, las funciones, proponer por el MCP); E4b/C6 y E5 pasan a F13. La 3 se funde en la tarea de F13 |
+| 3 Extensiones (E1–E5) | E1–E3 se quedan como son (la caja, las funciones, proponer por el MCP); E4b/C6 y E5 pasan a F13. Fundida en la 89 |
 | 4 Interfaces (Fechable, Completable, Importe) | Nada; sus papeles son los que usa el mapa para «¿qué crea eventos?» |
 | 4b Bancos | Su «extensión preset `bancos`» pasa a ser el conector Bancos y el flujo «Traer del banco»; su decisión pendiente (§4.3, la colección «Banco») sigue |
-| 9 Gráficas y atajos v1 | Se funde en F11: los atajos de la v1 pasan a ser botones con acción |
+| 9 Gráficas y atajos v1 | Fundida en la 87 (F11): los atajos de la v1 pasan a ser botones con acción |
 | 11 El Diseñador de páginas | Después de F10: con las acciones de páginas, el planificador ya hace páginas; queda su revisión |
-| 27 Conversación (C4, C3, C1) | C4 pasa a F9; la 27 sigue con C3 y lo que falta de C1 |
-| 59 «Mis datos» y «Modelos» | «Modelos» lo sustituye F8; lo de «Mis datos» (el diagrama, D-40) sigue y es lo que Juan prueba |
+| 27 Conversación (C4, C3, C1) | C4 pasa a la 85 (F9); la 27 sigue con C3 y lo que falta de C1 |
+| 59 «Mis datos» y «Modelos» | «Modelos» lo sustituye la 84 (F8); lo de «Mis datos» (el diagrama, D-40) sigue y es lo que Juan prueba |
 | 61 Flujos F1–F6 | Nada; sigue esperando la prueba de Juan (el resumen de las 8, el diagrama de su Agenda); F7–F13 la continúan |
 | 62 Avisos con la app cerrada | Nada |
 | 63 Lo que piden los diseños | Los puntos 1, 2 y 14 pasan a F8; el 6, a F7; el 12, a F11; el 13, a F10; el 11, a F13; el resto sigue |
 | 64 Que lo hecho cumpla el diseño | Nada; se aplica a F7–F13 |
-| 66 Puntos numerados | Este diseño nace con sus puntos numerados cuando Juan lo decida (más barato que convertirlo después) |
+| 66 Puntos numerados | Los puntos de este diseño se numeran al empezar cada fase (F7, la primera), con una prueba pendiente por punto (las medidas A y B de la 64) |
 | 68, 69, 72, 77 (en main) | Nada; la 77 gana «Ver en el mapa» en su clic derecho con F8 |
 | 70 El editor de flujos | Gana un punto: el lienzo no encaja al abrir (visto el 2026-11-05) |
 | 71 Los correos de más | Nada (`entities.search` es una acción más) |
 | 73 La Bandeja vuelve a comprobar | Nada; su decisión sigue pendiente |
 | 75, 76 Filtros avanzados y menú de columna | Nada; los filtros de la 75 son los que usarán los valores de página y los disparadores por colección |
-| 79 El chat dentro de una página (C5) | Pasa a F11, detrás de F9 (necesita la ventana); su diseño cambia: es un flujo con disparador «Chat» |
+| 79 El chat dentro de una página (C5) | Fundida en la 87 (F11), detrás de la 85 (necesita la ventana); su diseño cambia: es un flujo con disparador «Chat» |
 | 80 Nombre desde la lista y guardar solo | Su decisión sigue pendiente; el nombre desde la lista llega solo con «Flujos» como colección (F8) |
-| 81 El círculo y la voz (C7) | El círculo pasa a F9; la 81 se queda con la voz |
+| 81 El círculo y la voz (C7) | El círculo pasa a la 85 (F9); la 81 se queda con la voz |
 
-**Orden propuesto** (decisión 9): F7 → F8 → F9 → F10 por áreas → la 27 (C3, C1) → F11 (con la 79 y la 9) → la 76, la
-75 y la 71 → F12 → F13 (con la 3) → la 66, lo que queda de la 63, la 4, la 4b, la 11 y la 81 (la voz) → la 2g, la 2h y
-la 2f.
+**Orden** (decisión 9): la 83 (F7) → la 84 (F8) → la 85 (F9) → la 86 (F10, por áreas) → la 27 (C3, C1) → la 87
+(F11, con la 79 y la 9) → la 76, la 75 y la 71 → la 88 (F12) → la 89 (F13, con la 3) → la 66, lo que queda de la 63,
+la 4, la 4b, la 11 y la 81 (la voz) → la 2g, la 2h y la 2f.
 
-## 10. Decisiones de Juan
+## 10. Decisiones de Juan (2026-11-05: «Las recomendadas»)
 
-Cada una con el resultado de la recomendada primero.
+Juan eligió las nueve recomendadas, y en la 7, en vez de `Ctrl+J`, «una letra cercana a la mano izquierda (q w e a s d
+z x c), la que tú veas mejor»: `Ctrl+E` (§4.7). Cada una, con el resultado de la recomendada primero.
 
 1. **Una lista de acciones para la app, la IA, los flujos y el MCP** (§4.1).
    - Recomendada: sí, con lo de «con su toque» y «solo él, en su sitio». Juan dice «hazme una página Gastos con el
@@ -573,7 +582,7 @@ Cada una con el resultado de la recomendada primero.
    - La otra: un formulario que guarda un registro en una colección y gráficas que leen el último. Funciona entre
      páginas sin enlaces, pero cada cambio de filtro es un registro nuevo en sus datos.
 7. **Boni sobre la pantalla: los atajos y lo que ve** (§4.7).
-   - Recomendada: el círculo y `Ctrl+J`; señalar con `Ctrl+Shift+J`; ve la pantalla como datos, sin capturas por
+   - Recomendada: el círculo y `Ctrl+E`; señalar con `Ctrl+Shift+E`; ve la pantalla como datos, sin capturas por
      ahora.
    - La otra: con capturas desde el principio (con lo cerrado tapado): entiende también el aspecto («esto se ve
      raro»), pero cada mensaje cuesta más, tarda más y manda una imagen de su pantalla al proveedor del modelo.

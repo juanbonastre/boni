@@ -5,6 +5,11 @@ núcleo seguro (entidades, procedencia, agente con planes, políticas, lectores 
 construye todo lo demás encima** sin que el código se llene de casos especiales. Prioridad: el escritorio (Electron y
 Chrome); el móvil, más adelante.
 
+**Desde el 2026-11-05 (`docs/sistema.md`, decisiones 4 y 7):** la extensión deja de ser un concepto aparte. Cada parte
+vive en su sitio (el conector, las colecciones, los flujos, las funciones como pasos, el chat como un flujo con
+disparador «Chat») y queda el **paquete**: lo que llega, se activa, se versiona y se quita junto (F13). El asistente
+que ve la pantalla (§8) es Boni sobre la pantalla (`sistema.md` §4.7, F9): `Ctrl+E` lo abre y `Ctrl+Shift+E` señala.
+
 ## 1. El problema, visto en el correo
 
 El lector de correos de hoy funciona, pero está hecho a mano de punta a punta:
