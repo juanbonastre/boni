@@ -280,6 +280,18 @@ Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/prefer
    hasta 2 MB (§4.6). Lo que se proponía: como archivo del registro (§4.6), además de los campos de hoy: vale
    para reabrirlo entero (HTML, adjuntos) y cuesta espacio en el NAS. Propuesta: sí, con un tope por correo (por
    ejemplo 2 MB; los adjuntos grandes se quedan fuera y se dice).
+4. **Una tarjeta de la Bandeja que ya no hace falta** (tarea 73; pendiente). Juan, 2026-11-05: «Boni tendría que
+   ser capaz de reprocesar las cosas de la bandeja para ver si ya se han hecho, si hay cosas en el calendario ya
+   para esa fecha, si he abierto el correo». Una tarjeta se escribe al leer el correo, y lo que propone puede
+   haber pasado, o estar ya hecho, cuando Juan la ve. Por ejemplo, la propuesta «Reunión el miércoles 4 a las
+   12», de un correo del día 3, vista el 5.
+   - Qué cuenta como «ya hecho»: la misma tarea marcada como hecha, el mismo evento en el calendario, el correo
+     ya leído, o una fecha que ya pasó.
+   - Qué hace Boni entonces:
+     - (a) lo dice en la tarjeta y Juan decide. Recomendado para empezar: nada se va solo;
+     - (b) la tarjeta se va sola cuando es seguro (la fecha ya pasó, lo mismo ya está en el calendario), con
+       «Deshacer»: el nivel 7 de `fiabilidad.md` §2;
+     - (c) (b) para lo que ya pasó y (a) para lo demás.
 
 ## 7. Fases
 
