@@ -606,6 +606,48 @@ describe("the agent, with a planner that behaves", () => {
     expect(String((choosing.input as { content?: string }).content)).not.toContain("(tomorrow)");
   });
 
+  it("a mail of yesterday read on its own reaches its reader with its date marked as yesterday (task 67)", async () => {
+    // The fixture's day is 2026-10-20 in Madrid; the mail came on the 19th.
+    env = makeEnv([
+      {
+        asunto: "Firma",
+        de: "miguel.ejemplo@example.com",
+        cuerpo: "¿Nos vemos hoy a las 12h para firmar el documento?",
+        fecha: "2026-10-19T08:15:00Z",
+      },
+    ]);
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("correo") } },
+        {
+          id: "a",
+          op: "read",
+          reader: "answer_about",
+          input: ref("$m.items[0]"),
+          params: { question: lit("¿Cuándo propone verse?") },
+        },
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: { template: lit("{a}"), a: ref("$a.text") },
+        },
+      ],
+    };
+    const reader = fakePlanner([{ text: "Proponía verse ayer a las 12h." }]);
+    const res = await env
+      .agent(fakePlanner([plan]), reader)
+      .turn({ text: "¿Cuándo me propone verse Miguel?", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["done", null]);
+    const got = reader.requests[0];
+    if (!got) throw new Error("the reader was called");
+    expect(String((got.input as { content?: string }).content)).toContain(
+      "2026-10-19T08:15:00Z (yesterday)",
+    );
+    expect(got.system).toContain("count from that message's own date");
+  });
+
   it("reads several mails in one call: a line per mail, and the counts by kind are the code's", async () => {
     env = makeEnv([
       { asunto: "Reunión", de: "lucia@example.com", cuerpo: "¿Nos vemos el jueves?" },

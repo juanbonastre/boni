@@ -52,7 +52,7 @@ const type = (
  * newsletter, one from a secretariat), all invented.
  */
 function evalStore(dir: string): UserStore {
-  const store = openUserStore(join(dir, "user.db"), { now: () => Date.UTC(2026, 9, 20, 10) });
+  const store = openUserStore(join(dir, "user.db"), { now: () => EVAL_NOW });
   ensureSystemTypes(store);
   const sys = { actor: "import" as const };
   store.applySchema(
@@ -178,6 +178,9 @@ function evalStore(dir: string): UserStore {
   return store;
 }
 
+/** The evaluation's day: its store's clock and the agent's «today». */
+const EVAL_NOW = Date.UTC(2026, 9, 20, 10);
+
 /** An invented reading guide: what matters to the user in their mail (the server gives the readers Juan's). */
 const EVAL_GUIDE = guideValue({
   instructions:
@@ -298,13 +301,14 @@ const CASES: {
     shows: (r) => (shownRows(r, ["list"]) >= 2 ? "" : "not one item per mail"),
   },
   {
-    // Task 67 (Juan, 2026-11-05): a mail of yesterday that says «hoy» is told as yesterday, never as today.
+    // Task 67 (Juan, 2026-11-05): a mail of yesterday that says «hoy a las 12h» is told as yesterday at 12, never as
+    // today at 12.
     request: "¿Qué me han propuesto para firmar el documento de tutoría?",
     check: (r) => {
       const said = saidText(r);
       if (r.status !== "done" || !/firm/i.test(said)) return "the mail not said";
-      return /\bhoy\b/i.test(said) && !/\bayer\b/i.test(said)
-        ? "yesterday's «hoy» told as today"
+      return /\bhoy\b[^.;]{0,25}\b12/i.test(said)
+        ? "yesterday's «hoy a las 12h» told as today"
         : "";
     },
   },
@@ -428,6 +432,9 @@ export async function evalPlanner(
         registry,
         planner: counted(planner),
         reader: counted(reader),
+        // The store's day, so «today» is the one its mails were written around (task 67).
+        now: () => EVAL_NOW,
+        tz: "Europe/Madrid",
         ...(opts.plannerPrompt ? { plannerPrompt: opts.plannerPrompt } : {}),
         // The readers of mail read with an invented guide, as the server gives them Juan's (docs/correo.md §4.1).
         ...(opts.noGuide ? {} : { readingGuide: () => EVAL_GUIDE }),

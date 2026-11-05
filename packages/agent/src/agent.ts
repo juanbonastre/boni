@@ -144,7 +144,8 @@ Results:
 - entities.get / entities.create / entities.update: one record. entities.aggregate: a number.
 - readers: extract_tasks -> {"tasks": [{"title", "due", "sender", "message_id"}]} (loop with
   "each": {"ref": "$s2.tasks"}); classify -> {"choice"}; summarize, rewrite, answer_about -> {"text"}.
-  A reader reads one text: to read several items, give the read step "each" and "input": {"ref": "$item.cuerpo"}, or
+  A reader reads one text: to read several items, give the read step "each" and "input": {"ref": "$item"} (the whole
+  record, not only its text: a message's date comes with it, so its "hoy" is read as the day it was written), or
   better one summarize_each / label_each over the list: summarize_each -> {"items": [{"line", "kind", "id", "type"}]}
   (one per record, sorted by kind in the options' order, each with the id and type of its record, so a list of them
   opens each one; with options also "counts" as below); label_each -> {"choices": [...], "counts": [{"option", "n"}]}
@@ -419,12 +420,15 @@ const PROSE_READERS = new Set(["summarize", "summarize_each", "answer_about"]);
 const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
-/** A civil day as it stands from `today` (both YYYY-MM-DD): "today", "yesterday", "3 days ago", "in 2 days"; far ones none. */
+/**
+ * A civil day as it stands from `today` (both YYYY-MM-DD): "today", "yesterday", "3 days ago", "in 2 days"; none beyond
+ * two months either way.
+ */
 export function dayFromToday(day: string, today: string): string | null {
   const d = Math.round(
     (Date.parse(`${day}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
   );
-  if (!Number.isFinite(d) || Math.abs(d) > 6) return null;
+  if (!Number.isFinite(d) || Math.abs(d) > 60) return null;
   if (d === 0) return "today";
   if (d === -1) return "yesterday";
   if (d === 1) return "tomorrow";
