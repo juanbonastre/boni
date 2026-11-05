@@ -4,7 +4,7 @@
  * and her daughters', a relation an arrow to the collection it points to. «Mis datos» draws them all, as one more
  * view of its collection (F6b): what its view's filter leaves out is dimmed, and its «Nuevo» makes a collection. A
  * collection's «Diagrama» view draws her branch and, as plain cards, the collections a relation joins to it, with
- * filters of its own that dim what does not match («Leída por», «Escrita por», «Nivel», «Madre») and «Nueva
+ * filters of its own that dim what does not match («Leída por», «Escrita por», «Nivel», «Padre») and «Nueva
  * colección». It is edited here too: a click opens the collection's panel (its level, who reads and writes it,
  * «Abrir», a new collection inside), a drag from a card's edge to another draws a relation, a card dropped on another
  * puts it inside. React Flow draws it, dagre lays it out (`core/diagram.ts`); «Ordenar» lays it out again. Docs:
@@ -353,11 +353,13 @@ function Canvas({
       : null;
     if (!into || into === card.type) return;
     const name = types.find((x) => x.id === into)?.name ?? "";
-    void moveInTree({ collection: card.type }, into).then(() =>
-      toast(t("data.movedInto", { name: card.name, into: name }), {
-        label: t("toast.undo"),
-        run: () => void moveInTree({ collection: card.type }, null),
-      }),
+    void moveInTree({ collection: card.type }, into).then(
+      (done) =>
+        done &&
+        toast(t("data.movedInto", { name: card.name, into: name }), {
+          label: t("toast.undo"),
+          run: () => void moveInTree({ collection: card.type }, null),
+        }),
     );
   };
   const select = (key: keyof Filters, label: string, options: { id: string; name: string }[]) => (
@@ -433,6 +435,7 @@ function Canvas({
           }}
         >
           <input
+            key={naming.rename?.type ?? `new-${naming.parent ?? ""}-${naming.relateFrom ?? ""}`}
             name="name"
             // biome-ignore lint/a11y/noAutofocus: the name is what the form asks for, at once
             autoFocus
@@ -481,13 +484,15 @@ function Canvas({
               if (!from || types.find((x) => x.id === from)?.readOnly) return;
               const p = "changedTouches" in e ? e.changedTouches[0] : e;
               if (!p) return;
-              const el = document
-                .elementFromPoint(p.clientX, p.clientY)
-                ?.closest(".react-flow__node");
+              const under = document.elementFromPoint(p.clientX, p.clientY);
+              const el = under?.closest(".react-flow__node");
               const hit = el ? nodes.find((x) => x.id === el.getAttribute("data-id")) : undefined;
               const to = hit ? collectionOfNode(hit) : null;
-              if (to) void addRelation(from, to);
-              else if (!el) setNaming({ parent: root, relateFrom: from });
+              // Back on its own card (or a short drag of its dot) relates nothing.
+              if (to && to !== from) void addRelation(from, to);
+              // Left on the canvas itself (not over its panel or tools): a new collection it points to.
+              else if (!el && under?.closest(".react-flow__pane"))
+                setNaming({ parent: root, relateFrom: from });
             }}
             isValidConnection={(c) => !!typeOfNode(c.source) && !!typeOfNode(c.target)}
             fitView
@@ -514,6 +519,15 @@ function Canvas({
                       openCollection(menuType.id);
                     }}
                   />
+                  {parent && (
+                    <MenuRow
+                      label={t("data.openParent", { name: parent.name })}
+                      onClick={() => {
+                        close();
+                        openCollection(parent.id);
+                      }}
+                    />
+                  )}
                   {own && (
                     <>
                       <MenuRow
@@ -539,15 +553,17 @@ function Canvas({
                           onClick={() => {
                             close();
                             const up = parent.parent ?? null;
-                            void moveInTree({ collection: menuType.id }, up).then(() =>
-                              toast(
-                                t("data.movedOut", { name: menuType.name, from: parent.name }),
-                                {
-                                  label: t("toast.undo"),
-                                  run: () =>
-                                    void moveInTree({ collection: menuType.id }, parent.id),
-                                },
-                              ),
+                            void moveInTree({ collection: menuType.id }, up).then(
+                              (done) =>
+                                done &&
+                                toast(
+                                  t("data.movedOut", { name: menuType.name, from: parent.name }),
+                                  {
+                                    label: t("toast.undo"),
+                                    run: () =>
+                                      void moveInTree({ collection: menuType.id }, parent.id),
+                                  },
+                                ),
                             );
                           }}
                         />
@@ -555,7 +571,7 @@ function Canvas({
                       <MenuSep />
                       <MenuRow
                         danger
-                        label={menuType.count ? t("data.deleteNotEmpty") : t("data.delete")}
+                        label={t("data.delete")}
                         disabled={menuType.count > 0}
                         onClick={() => {
                           close();

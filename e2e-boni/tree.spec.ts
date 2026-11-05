@@ -630,6 +630,7 @@ test("the diagram gives control (task 77): an arrow left anywhere on a collectio
   const menu = page.getByRole("dialog", { name: "Acciones de la colección" });
   await expect(menu.getByRole("menuitemradio")).toHaveText([
     "Abrir",
+    "Abrir Agenda",
     "Cambiar nombre",
     "Nueva colección dentro",
     "Sacar de Agenda",
@@ -656,7 +657,7 @@ test("the diagram gives control (task 77): an arrow left anywhere on a collectio
   await setLayout(page, db, "Diagrama");
   // A collection with notes is not deleted from here: «Borrar» waits until it is empty.
   await card("Libros").locator(".dg-name").click({ button: "right" });
-  await expect(page.getByRole("menuitemradio", { name: "Borrar (solo vacía)" })).toBeDisabled();
+  await expect(page.getByRole("menuitemradio", { name: "Borrar" })).toBeDisabled();
   await page.getByRole("menuitemradio", { name: "Nueva colección dentro" }).click();
   const made = page.getByRole("textbox", { name: "Nombre de la colección" });
   await made.fill("Préstamos");

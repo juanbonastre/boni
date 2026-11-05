@@ -915,10 +915,10 @@ contraseña ni un código aquí» under a question.
   shows while it is drawn; task 77: Juan, 2026-11-05, «no puedo conectar con nada»: the dots to land on were a
   pixel), and left on the canvas it opens the new collection's name form, the first then pointing to it. A card at
   the top level dropped on another card or frame goes inside it, also with «Deshacer». **The right button** on a
-  card or a mother's frame (task 77) opens its actions where the pointer is: Abrir, Cambiar nombre (the name form,
-  filled), Nueva colección dentro, «Sacar de {padre}» (to its parent's parent, with «Deshacer») and Borrar (only an
-  empty one: «Borrar (solo vacía)» greyed otherwise; with «Deshacer», as «Mis datos»' bin); Boni's own collections,
-  only Abrir. What the diagram changes shows in «Mis datos»' table at once (its rows read again). **A collection's «Diagrama»** is one more of its layouts (Tabla, Tablero, Lista, Galería,
+  card or a mother's frame (task 77) opens its actions where the pointer is: Abrir, «Abrir {padre}» (one inside
+  another), Cambiar nombre (the name form, filled), Nueva colección dentro, «Sacar de {padre}» (to its parent's
+  parent, with «Deshacer») and Borrar (only an empty one, greyed otherwise; with «Deshacer», as «Mis datos»' bin);
+  a collection a connector fills, only Abrir. An arrow released back on its own card relates nothing. What the diagram changes shows in «Mis datos»' table at once (its rows read again). **A collection's «Diagrama»** is one more of its layouts (Tabla, Tablero, Lista, Galería,
   Calendario, Diagrama): the same canvas over her branch, with the collections a relation joins to it as dashed
   cards without fields.
 - **Historial** (a row's page, the button beside its collection's name): a panel on the right with «Quién hizo qué»,

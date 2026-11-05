@@ -2736,13 +2736,15 @@ export async function addRelation(type: string, target: string): Promise<boolean
 export async function moveInTree(
   what: { collection: string } | { row: string },
   to: string | null,
-) {
+): Promise<boolean> {
   try {
     if ("collection" in what) await agent.moveCollection(what.collection, to);
     else if (to) await agent.moveRow(what.row, to);
     await afterMyData();
+    return true;
   } catch {
     toast(get().t("tree.failed"));
+    return false;
   }
 }
 
@@ -3082,6 +3084,7 @@ export async function changeProtection(type: string, level: AiLevel, unlock = fa
   put(level);
   try {
     await agent.setProtection(type, level, unlock);
+    if (get().rows[SYS.data.id]) void loadRows(SYS.data.id);
     return true;
   } catch (e) {
     if (was) put(was);
@@ -3154,7 +3157,7 @@ const MY_DATA = SYS.data.id;
 
 /**
  * After a change in «Mis datos»: what it changed shows everywhere (the sidebar's tree and pages, the collections) and
- * its rows again (a mother renamed is her daughters' «Madre» too).
+ * its rows again (a mother renamed is her daughters' «Padre» too).
  */
 const afterMyData = () =>
   Promise.all([loadDataTypes(), loadTree(), loadPages(), loadRows(SYS.data.id)]).catch(

@@ -278,7 +278,7 @@ intérprete lo para), y uno que necesitaría preguntar o confirmar se para ahí:
 - **Cómo quedó (F6b, 2026-11-05).** F6 dejó «Mis datos» como su propia página con «Lista | Diagrama», y Juan lo vio
   al probarla («¿no se supone que la sección se comportaría como una página de colección?»). Ahora «Mis datos» es
   una colección de Boni (`apps/server/src/myData.ts`; `SYS.data` en `packages/views`): una fila por página y
-  colección del usuario y las de Boni al final, con Nombre, Tipo, Madre, Nivel, Elementos, En la barra, Leída por,
+  colección del usuario y las de Boni al final, con Nombre, Tipo, Padre («Madre» hasta la tarea 77), Nivel, Elementos, En la barra, Leída por,
   Escrita por y Origen, hecha en cada lectura. La sección es su página, la de cualquier colección (las vistas,
   «Filtro», «Opciones», «Nuevo»); el diagrama es una vista más y su filtro es el de la vista (los selectores propios
   del lienzo quedan para el «Diagrama» de cada colección). Es la única colección de Boni que se cambia (D-04): lo que
