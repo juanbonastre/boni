@@ -319,7 +319,7 @@ function nodesOf(
 
 /**
  * The node kinds «Añadir paso» offers, in groups by what they do (docs/flujos.md §4.5; task 70): Leer, Decidir,
- * Datos, Avisar, Preguntar, Responder, and the rest. A flow never starts another (`flows.run` is not offered).
+ * Datos, Avisar, Preguntar, Responder, and the rest.
  */
 function kindsOf(
   catalog: FlowCatalog,
@@ -327,7 +327,8 @@ function kindsOf(
   const reads = Object.keys(catalog.readers).filter(
     (r) => r !== "classify" && r !== "review_reading",
   );
-  const tools = catalog.tools.filter((x) => x.effect !== "flow");
+  // A flow neither starts another nor saves one (docs/flujos.md §4.3): `flows.run` and `flows.save` are not offered.
+  const tools = catalog.tools.filter((x) => x.effect !== "flow" && x.effect !== "flow_save");
   const isData = (x: { name: string; effect: string }) =>
     x.name.startsWith("entities.") || x.name.startsWith("schema.") || x.effect === "memory";
   const isNotice = (x: { effect: string }) => x.effect === "notify";
@@ -403,7 +404,7 @@ function StepPicker({ catalog, onPick }: { catalog: FlowCatalog; onPick: (k: Nod
         aria-label={t("flows.findStep")}
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
-          const first = shown[0]?.items[0];
+          const first = want ? shown[0]?.items[0] : undefined;
           if (e.key === "Enter" && first) {
             e.preventDefault();
             onPick(first.kind);
@@ -448,6 +449,7 @@ function Canvas({
   onDuplicate,
   onRemove,
   onTestUpTo,
+  canTestUpTo,
 }: {
   draft: Draft;
   detail: FlowDetailView;
@@ -461,9 +463,11 @@ function Canvas({
   onDuplicate: (id: string) => void;
   onRemove: (id: string) => void;
   onTestUpTo: (id: string) => void;
+  /** Whether the flow can be tried as far as that step now (no test running, no problem up to it). */
+  canTestUpTo: (id: string) => boolean;
 }) {
   const t = useStore((s) => s.t);
-  // The right button on a node: its actions where the pointer is (task 70), the node chosen.
+  // The right button on a node: its actions where the pointer is (task 70); «Abrir» opens its panel.
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Card>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -497,7 +501,6 @@ function Canvas({
         onNodeClick={(_, n) => onSelect(n.id)}
         onNodeContextMenu={(e, n) => {
           e.preventDefault();
-          onSelect(n.id);
           setMenu({ x: e.clientX, y: e.clientY, id: n.id });
         }}
         onPaneClick={() => onSelect(null)}
@@ -553,6 +556,7 @@ function Canvas({
                   />
                   <MenuRow
                     label={t("flows.testUpTo")}
+                    disabled={!canTestUpTo(menu.id)}
                     onClick={() => {
                       onTestUpTo(menu.id);
                       close();
@@ -937,9 +941,24 @@ export function FlowEditor({
   // The right button's «Duplicar»: the copy right after it, chosen.
   const duplicate = (id: string) => {
     const r = duplicateStep(draft.plan, id);
-    if (!r.id) return;
-    setPlan(r.plan);
-    setSelected(r.id);
+    const copy = r.id;
+    if (!copy) return;
+    // Where the user left the original, the copy a little below and to the right of it.
+    setDraft((d) => {
+      const at = d.layout?.[id];
+      return {
+        ...d,
+        plan: r.plan,
+        layout: at && d.layout ? { ...d.layout, [copy]: { x: at.x + 32, y: at.y + 32 } } : d.layout,
+      };
+    });
+    setSelected(copy);
+  };
+  // As far as a step: not while a test or a change runs, nor with a problem in it, before it or in the trigger.
+  const canTestUpTo = (id: string) => {
+    if (testing || busy) return false;
+    const upTo = new Set(planUpTo(draft.plan, id).steps.map((s) => s.id));
+    return !problems.some((p) => p.step === null || upTo.has(p.step));
   };
   const step = draft.plan.steps.find((s) => s.id === selected);
   const manual = !!draft.trigger.manual;
@@ -1224,6 +1243,7 @@ export function FlowEditor({
               setSelected(null);
             }}
             onTestUpTo={startTest}
+            canTestUpTo={canTestUpTo}
           />
         </ReactFlowProvider>
         {selected === TRIGGER && (

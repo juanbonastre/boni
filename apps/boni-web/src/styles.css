@@ -422,6 +422,14 @@ select {
 .menu-item:hover {
   background: var(--hover);
 }
+/* A row that cannot be used now: greyed, no hover. */
+.menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.menu-item:disabled:hover {
+  background: none;
+}
 .menu-item.on {
   color: var(--accent);
 }

@@ -647,6 +647,10 @@ function stepShape(
       case "entities.aggregate":
         one = NUM();
         break;
+      // Whether the notice was sent.
+      case "notify":
+        one = { t: "bool" };
+        break;
     }
   } else if (s.op === "read") one = readerShape(String(s.reader ?? ""), modules);
   else if (s.op === "ask") one = TEXT();
@@ -729,9 +733,13 @@ function refsFor(
     out[s.id] = opts;
     const gives = stepShape(s, byKey, mailType, o.modules);
     env.set(s.id, gives);
-    outs[s.id] = paths(gives, 1, s.id)
-      .slice(0, OUTS_PER_STEP)
-      .map((p) => ({ ref: `$${p.path}`, t: p.t }));
+    // A reply gives the steps after it nothing (the interpreter's value is null).
+    outs[s.id] =
+      s.op === "reply"
+        ? []
+        : paths(gives, 1, s.id)
+            .slice(0, OUTS_PER_STEP)
+            .map((p) => ({ ref: `$${p.path}`, t: p.t }));
   }
   return { refs: out, outs };
 }

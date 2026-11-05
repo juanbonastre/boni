@@ -431,6 +431,8 @@ test("the editor gives control (task 70): «Añadir paso» with a search and gro
       "POST api/agent/flows/check": [FLOW_CHECK],
       "POST api/agent/flows/:id/test": [FLOW_TEST],
     },
+    // A test takes a moment: «Probar hasta aquí» waits greyed while one runs.
+    slow: { path: "api/agent/flows/leer-correo/test", ms: 1500 },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
   const canvas = page.locator(".flow-editor .flow-canvas");
@@ -472,9 +474,15 @@ test("the editor gives control (task 70): «Añadir paso» with a search and gro
   await canvas.locator('.react-flow__node[data-id="r_2"]').click({ button: "right" });
   await page.getByRole("menuitemradio", { name: "Quitar" }).click();
   await expect(nodes).toHaveCount(6);
-  // Its panel: «Entra», what it takes and what each value is; «Sale», what it gives the steps after it.
+  // The right button opens nothing by itself: «Abrir» opens its panel. The trigger's menu only opens it.
+  await expect(panel).toHaveCount(0);
+  await canvas.locator('.react-flow__node[data-id="trigger"]').click({ button: "right" });
+  await expect(menu.getByRole("menuitemradio")).toHaveText(["Abrir"]);
+  await page.keyboard.press("Escape");
   await reader.click({ button: "right" });
+  await expect(panel).toHaveCount(0);
   await page.getByRole("menuitemradio", { name: "Abrir" }).click();
+  // Its panel: «Entra», what it takes and what each value is; «Sale», what it gives the steps after it.
   await expect(panel.locator("h3")).toHaveText("Lectora");
   const entra = panel.getByRole("region", { name: "Entra" });
   await expect(entra.locator("li").first()).toHaveText(/^\$text\s*texto$/);
@@ -488,6 +496,9 @@ test("the editor gives control (task 70): «Añadir paso» with a search and gro
   // «Probar hasta aquí»: the flow as far as it, nothing after; its panel says what it gave.
   await reader.click({ button: "right" });
   await page.getByRole("menuitemradio", { name: "Probar hasta aquí" }).click();
+  await reader.click({ button: "right" });
+  await expect(page.getByRole("menuitemradio", { name: "Probar hasta aquí" })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await expect(page.locator(".flow-test-bar")).toContainText("hasta «Lectora»");
   const sent = await page.evaluate(() =>
     ((window as unknown as { __bodies?: string[] }).__bodies ?? []).filter((b) =>
