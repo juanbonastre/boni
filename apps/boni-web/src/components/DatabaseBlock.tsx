@@ -145,7 +145,8 @@ export function DatabaseBlock({
           <span className="db-name" />
         )}
         <div className="db-layouts" role="radiogroup" aria-label={t("db.layout")}>
-          {LAYOUTS.map((l) => (
+          {/* Boni's own records have no diagram: they are not the user's data (F6). */}
+          {LAYOUTS.filter((l) => l.id !== "diagram" || !type?.system).map((l) => (
             <button
               key={l.id}
               type="button"
