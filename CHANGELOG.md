@@ -5,6 +5,38 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-05 (thirty-fourth) — server 0.8.109 · Boni desktop 0.4.78 · Boni Android
+
+Needs:
+- The server, 0.8.109, to deploy: Boni's pieces in «Leer correo», and «Solo» matching real mail.
+- Boni desktop 0.4.78 (`release/boni_0.4.78_amd64.deb`), to install.
+- Boni Android from main, through Obtainium.
+
+Boni as a system of flows (`docs/sistema.md`, decided with «Las recomendadas», `Ctrl+E` instead of `Ctrl+J`; task 82),
+and its first step: F7, part 1 (task 83), with task 70's canvas and task 63's point 6.
+
+- **The design** (#349): what Boni does on its own becomes flows that show, one map instead of «Flujos | Modelos», one
+  list of actions for the app, the AI, flows and the MCP, extensions as packages, pages with values, and Boni over the
+  screen (`Ctrl+E`; `Ctrl+Shift+E` to point). The queue has its phases as tasks 83 to 89, in the order you chose.
+- **«Leer correo» shows what it does around its models** (task 83). What the code did hidden around the reading is now
+  steps of the flow, on its canvas and in each reading's Recorrido: «Reglas de la guía», «Lo pendiente», «Invitación»,
+  «Relaciones», «Plegar hilo» and «Aceptar solas».
+  - A sender the guide never reads ends the reading at «Reglas de la guía» («Acaba aquí»); no model is called.
+  - These pieces only run inside a flow; the conversation's AI never gets them (P20).
+  - To try: «Flujos» → «Leer correo», and a reading of the Registro on its canvas.
+  - If «Leer correo» shows no pieces, it is a version of yours saved before: «⋯ → Volver al de Boni» brings Boni's.
+    (#350)
+- **The flow editor**: what a trigger brings by its name («Correo», «Asunto», «Destinatarios»; never `$mail`); Boni's
+  pieces under «De Boni» when adding a step to a flow a mail starts; the canvas fits when it opens (task 70); and the
+  icon beside «Probar» tries the flow with a mail you choose by its subject (task 63, point 6). (#350)
+- **«Solo» for the mail's proposals now recognises real mail.** It looked for the sender in the wrong place of a
+  proposal, so it never found your decisions on real mail. With «Solo» on (Ajustes → Decisiones), Boni starts
+  accepting alone the mail proposals like the ones you always kept as they came; with it off, nothing changes. (#350)
+- Still in task 83: one «Crear» instead of one per collection («Crear en la elegida»; your «Leer correo» has 21
+  steps), Boni's other flows (Traer correo, Revisar la guía, Aprender, Conversación, Aviso del presupuesto), and what
+  the independent review left (each piece's settings, «Bandeja» as a step, «Probar» comparing with the version that
+  runs).
+
 ## 2026-11-05 (thirty-third) — server 0.8.108 · Boni desktop 0.4.77 · Boni Android
 
 Needs:
