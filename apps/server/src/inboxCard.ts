@@ -64,6 +64,17 @@ export interface InboxCard {
   /** What an earlier proposal of the same thread of mail said, when this one changed its day or hours (task 46). */
   before: { day: string | null; start: string | null; end: string | null } | null;
   /**
+   * The earlier mails of its thread it also comes from (task 68; Juan, 2026-11-05: «si esa acción sugerida se basa en
+   * varios correos, tendría que ofrecer algo para desplegar y ver los correos involucrados»): newest first, at most
+   * five, found by following each earlier proposal back. Empty when it comes from one mail.
+   */
+  earlier: {
+    from: string;
+    subject: string;
+    at: string | null;
+    open: { type: string; id: string };
+  }[];
+  /**
    * What the calendar says of a proposal to create (task 51, phase A; code, never a model): an entry that is the
    * same thing (a like title, and the same moment when both have one), from his own calendars or an external one
    * (`external`: the event's id, so accepting links the record to it instead of making a second one), and up to
@@ -97,6 +108,35 @@ export interface SuggestedTime {
 export const TIME_AREA = "time";
 /** Asked from the first; set alone from 0.9 of his answers (calibrated), as a decision inside the proposal. */
 export const TIME_THRESHOLDS = { ask: 0, do: 0.9 } as const;
+/** The earlier mails a proposal of a thread comes from (task 68): each earlier proposal's mail, back along `before`. */
+function earlierMails(
+  store: UserStore,
+  p: ProposalRow,
+  current: string | null,
+): InboxCard["earlier"] {
+  const out: InboxCard["earlier"] = [];
+  const seen = new Set<string>([p.id]);
+  const mails = new Set<string>(current ? [current] : []);
+  let at = p.before?.proposal ? store.journal.proposal(p.before.proposal) : null;
+  while (at && out.length < 5 && !seen.has(at.id)) {
+    seen.add(at.id);
+    const mail = at.run ? mailOfRun(store, at.run) : null;
+    const m = mail && !mails.has(mail) ? store.get(mail) : null;
+    if (mail && m && m.entity.deleted === undefined) {
+      mails.add(mail);
+      const v = m.entity.values;
+      out.push({
+        from: textOf(v.f_de_nombre) || textOf(v.f_de),
+        subject: textOf(v.f_asunto).slice(0, 200),
+        at: textOf(v.f_fecha) || null,
+        open: { type: m.entity.type, id: m.entity.id },
+      });
+    }
+    at = at.before?.proposal ? store.journal.proposal(at.before.proposal) : null;
+  }
+  return out;
+}
+
 const WORK = { from: 9 * 60, to: 20 * 60 };
 const SLOT = 60;
 const minutesOf = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
@@ -628,6 +668,7 @@ export function inboxCard(
       : [],
     suggestedTime,
     before: p.before ? { day: p.before.day, start: p.before.start, end: p.before.end } : null,
+    earlier: earlierMails(store, p, mail),
     calendar:
       action === "create" && day && title
         ? crossCalendar({ title, start: times[0] ?? null, end: times[1] ?? null }, [

@@ -222,6 +222,13 @@ export interface InboxCard {
   } | null;
   /** What an earlier proposal of the same thread of mail said, when this one changed its day or hours (task 46). */
   before: { day: string | null; start: string | null; end: string | null } | null;
+  /** The earlier mails of its thread it also comes from (task 68), newest first; empty when it comes from one. */
+  earlier: {
+    from: string;
+    subject: string;
+    at: string | null;
+    open: { type: string; id: string };
+  }[];
   /**
    * What the calendar already has of it (task 51): an entry that is the same thing (`external`: an external
    * calendar's event, so «Enlazar» accepts the record linked to it), and others it overlaps.
@@ -318,6 +325,23 @@ function parseCard(v: unknown): InboxCard | null {
           end: optMatch(v.before.end, TIME_RE),
         }
       : null,
+    earlier: Array.isArray(v.earlier)
+      ? v.earlier.slice(0, 5).flatMap((e) =>
+          isObj(e) &&
+          isObj(e.open) &&
+          typeof e.open.type === "string" &&
+          typeof e.open.id === "string"
+            ? [
+                {
+                  from: optStr(e.from, 200) ?? "",
+                  subject: optStr(e.subject, 200) ?? "",
+                  at: optStr(e.at, 40) ?? null,
+                  open: { type: e.open.type, id: e.open.id },
+                },
+              ]
+            : [],
+        )
+      : [],
     calendar: isObj(v.calendar)
       ? {
           already: isObj(v.calendar.already)
@@ -2948,6 +2972,12 @@ export class AgentApi {
     };
   };
   forgetMail = async () => void (await this.call("POST", "/forget", {}, "api/mail"));
+  /** Where a mail of the collection opens in its webmail (task 68): Gmail's own address of it, or null. */
+  mailWebmail = async (id: string): Promise<string | null> => {
+    const b = await this.call("GET", `/webmail/${encodeURIComponent(id)}`, undefined, "api/mail");
+    const url = isObj(b) && typeof b.url === "string" ? b.url : null;
+    return url && /^https:\/\/mail\.google\.com\//.test(url) ? url : null;
+  };
   private guideOf = (b: unknown) => (isObj(b) ? parseGuide(b.guide) : null);
   reviewMail = async () => this.mailOf(await this.call("POST", "/review", {}, "api/mail"));
   /** Juan's answer to the reviewer's suggestion: yes, no, or `changed` (he writes it in his own words). */

@@ -136,7 +136,9 @@ const invitationMail = (
 };
 
 /** A mailbox the tests change: its messages by UID and its UIDVALIDITY. */
-const box = { uidValidity: 7, mails: new Map<number, string>() };
+const box = { uidValidity: 7, mails: new Map<number, string>(), gmail: false };
+/** The Gmail thread the fake gives a message (invented ids, by its UID). */
+const threadOf = (uid: number) => String(1800000000000000000n + BigInt(uid));
 const asked: string[] = [];
 let imap: Server;
 let imapPort = 0;
@@ -155,8 +157,20 @@ function fakeImap(): Promise<void> {
         const cmd = rest.join(" ");
         const uids = [...box.mails.keys()].sort((a, b) => a - b);
         if (cmd.startsWith("LOGIN "))
-          s.write(cmd.includes(`"${APP_PASSWORD}"`) ? `${tag} OK\r\n` : `${tag} NO bad\r\n`);
-        else if (cmd.startsWith("EXAMINE "))
+          s.write(
+            cmd.includes(`"${APP_PASSWORD}"`)
+              ? `${box.gmail ? "* CAPABILITY IMAP4rev1 X-GM-EXT-1\r\n" : ""}${tag} OK\r\n`
+              : `${tag} NO bad\r\n`,
+          );
+        else if (box.gmail && cmd.startsWith("UID SEARCH X-GM-RAW ")) {
+          // Gmail's own search, by Message-ID.
+          const id = /rfc822msgid:([^"]+)"/.exec(cmd)?.[1] ?? "";
+          const uid = uids.find((u) => (box.mails.get(u) ?? "").includes(`Message-ID: <${id}>`));
+          s.write(`* SEARCH${uid ? ` ${uid}` : ""}\r\n${tag} OK\r\n`);
+        } else if (box.gmail && /^UID FETCH \d+ \(UID X-GM-THRID\)$/.test(cmd)) {
+          const uid = Number(/UID FETCH (\d+)/.exec(cmd)?.[1]);
+          s.write(`* 1 FETCH (UID ${uid} X-GM-THRID ${threadOf(uid)})\r\n${tag} OK\r\n`);
+        } else if (cmd.startsWith("EXAMINE "))
           s.write(
             `* ${uids.length} EXISTS\r\n* OK [UIDVALIDITY ${box.uidValidity}] x\r\n${tag} OK\r\n`,
           );
@@ -175,7 +189,7 @@ function fakeImap(): Promise<void> {
           s.write(
             Buffer.concat([
               Buffer.from(
-                `* 1 FETCH (UID ${uid} RFC822.SIZE ${raw.length} BODY[]<0> {${raw.length}}\r\n`,
+                `* 1 FETCH (UID ${uid} RFC822.SIZE ${raw.length}${box.gmail && cmd.includes("X-GM-THRID") ? ` X-GM-THRID ${threadOf(uid)}` : ""} BODY[]<0> {${raw.length}}\r\n`,
               ),
               raw,
               Buffer.from(`)\r\n${tag} OK\r\n`),
@@ -312,6 +326,69 @@ describe("the mailbox", () => {
     box.mails.set(15, mail(15, "Acta", "Te paso el acta."));
     expect(await mails.check(1)).toMatchObject({ count: 3, lastUid: 15 });
     expect(asked.some((l) => /SELECT|STORE|EXPUNGE|COPY|MOVE| BODY\[\]/.test(l))).toBe(false);
+  });
+
+  it("from Gmail, a mail keeps its thread, and «Gmail» opens that mail in its account (task 68)", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-gmail-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const h = new AgentHost({ dataDir: d, providers: null });
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 31;
+    box.gmail = false;
+    box.mails = new Map([[1, mail(201, "Antes", "Un correo de antes de guardar los hilos.")]]);
+    try {
+      await m.save(1, { host: "imap.gmail.com", user: "juan@example.com", password: APP_PASSWORD });
+      await m.check(1);
+      // Then the mailbox speaks Gmail's extension: new mail keeps its thread.
+      box.gmail = true;
+      box.mails.set(2, mail(202, "Después", "Uno nuevo."));
+      await m.check(1);
+      const store = h.store(1);
+      const rows = store.list(m.state(1).type as string);
+      const byId = (n: number) =>
+        rows.find((x) => String(x.entity.values.f_id_mensaje).includes(`m${n}@`))?.entity;
+      expect(byId(202)?.values.f_gmail_hilo).toBe(threadOf(2));
+      expect(byId(201)?.values.f_gmail_hilo).toBeUndefined();
+      const at = (uid: number) =>
+        `https://mail.google.com/mail/?authuser=juan%40example.com#all/${BigInt(threadOf(uid)).toString(16)}`;
+      expect(await m.webmail(1, byId(202)?.id as string)).toBe(at(2));
+      // One kept before: its thread found once by its Message-ID.
+      const searched = () => asked.filter((l) => l.includes("X-GM-RAW")).length;
+      const before = searched();
+      expect(await m.webmail(1, byId(201)?.id as string)).toBe(at(1));
+      expect(await m.webmail(1, byId(201)?.id as string)).toBe(at(1));
+      expect(searched()).toBe(before + 1);
+      // Not in the folder any more: Gmail's search by its id, in its account.
+      box.mails.delete(1);
+      const other = new Mails({
+        db: sdb,
+        key,
+        host: h,
+        connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+      });
+      expect(await other.webmail(1, byId(201)?.id as string)).toBe(
+        "https://mail.google.com/mail/?authuser=juan%40example.com#search/rfc822msgid:m201%40example.com",
+      );
+      await expect(m.webmail(1, "e_no_existe")).rejects.toMatchObject({ code: "not-found" });
+      // A mailbox that is not Gmail has none.
+      await m.save(1, {
+        host: "imap.example.com",
+        user: "juan@example.com",
+        password: APP_PASSWORD,
+      });
+      expect(await m.webmail(1, byId(202)?.id as string)).toBeNull();
+    } finally {
+      box.gmail = false;
+      h.close();
+      sdb.close();
+      rmSync(d, { recursive: true, force: true });
+    }
   });
 
   it("a new UIDVALIDITY starts over without bringing anything twice; a wrong password is reported", async () => {
@@ -911,6 +988,11 @@ describe("a thread of mail (task 46)", () => {
       "19:00",
     ]);
     expect(card.before).toEqual({ day: "2026-11-11", start: "17:00", end: "18:00" });
+    // It also comes from the first invitation's mail: the card lists it, to open (task 68).
+    const first = store
+      .list(m.state(1).type as string)
+      .find((x) => String(x.entity.values.f_id_mensaje).includes("m41@"));
+    expect(card.earlier.map((e) => e.open.id)).toEqual([first?.entity.id]);
     expect(store.journal.proposals("stale")).toHaveLength(2);
     expect(
       logged.filter((l) => /again in its thread \(already pending\): not proposed$/.test(l)),

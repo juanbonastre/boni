@@ -21,8 +21,7 @@ import type {
   InboxRequest,
   Proposal,
 } from "../core/agent.ts";
-import { webmailLink } from "../core/webmail.ts";
-import { openUrl } from "../host.ts";
+import { webmailOf } from "../core/webmail.ts";
 import {
   acceptProposal,
   answerRequest,
@@ -33,9 +32,10 @@ import {
   loadDataTypes,
   loadInbox,
   mailboxHost,
-  openMail,
   openProposal,
   openTrace,
+  openWebmail,
+  peekMail,
   rejectProposal,
   toggleInbox,
   useStore,
@@ -45,6 +45,7 @@ import { Cell } from "./DatabaseBlock.tsx";
 import { triggerText } from "./FlowEditor.tsx";
 import { FlowPreview } from "./FlowPreview.tsx";
 import { type OptionsLoader, SearchList } from "./FormView.tsx";
+import { GmailMark, KeptMail } from "./MailIcons.tsx";
 
 /**
  * The inbox (Juan, 2026-10-22): a panel on the right that comes out when something new arrives, and the same cards
@@ -513,7 +514,7 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
           )}
         </p>
       )}
-      {c?.source?.kind === "mail" && <MailSource source={c.source} />}
+      {c?.source?.kind === "mail" && <MailSource source={c.source} earlier={c.earlier} />}
     </>
   );
   const mail = more && c?.source?.kind === "mail" && (c.source.subject || c.source.excerpt) && (
@@ -659,13 +660,17 @@ export function RequestCard({ r }: { r: InboxRequest }) {
             {about.subject ? ` · ${about.subject}` : ""}
           </span>
           {r.open && (
-            <button
-              type="button"
-              className="btn ghost small inbox-see-mail"
-              onClick={() => r.open && openMail(r.open)}
-            >
-              {t("inbox.seeMail")}
-            </button>
+            <span className="inbox-source-tools">
+              <button
+                type="button"
+                className="icon-btn inbox-see-mail"
+                title={t("inbox.seeMail")}
+                aria-label={t("inbox.seeMail")}
+                onClick={() => r.open && peekMail(r.open)}
+              >
+                <KeptMail />
+              </button>
+            </span>
           )}
         </p>
       )}
@@ -923,49 +928,102 @@ function FieldRows({
 }
 
 /**
- * Where a mail proposal came from (mailbox and sender), with "Ver correo": its own row in Boni; and «En Gmail»
- * when the mailbox has a webmail that opens a mail by its Message-ID (task 55).
+ * Where a mail proposal came from (mailbox and sender), with two icons that never give way to a long sender (task 68;
+ * Juan, 2026-11-05): the mail kept in Boni, seen in the side panel without leaving the inbox («Agrandar» there opens
+ * it whole), and, for a Gmail mailbox, Gmail's own address of that mail in its account (the server finds it). When the
+ * proposal also comes from earlier mails of its thread, «+N correos» shows them, each to see the same way.
  */
-function MailSource({ source }: { source: Extract<InboxCard["source"], { kind: "mail" }> }) {
+function MailSource({
+  source,
+  earlier,
+}: {
+  source: Extract<InboxCard["source"], { kind: "mail" }>;
+  earlier: InboxCard["earlier"];
+}) {
   const t = useStore((s) => s.t);
-  const [webmail, setWebmail] = useState<{ name: string; url: string } | null>(null);
+  const lang = useStore((s) => s.settings.language);
+  const [gmail, setGmail] = useState(false);
+  const [showEarlier, setShowEarlier] = useState(false);
   useEffect(() => {
     let live = true;
-    setWebmail(null);
-    if (source.messageId)
-      void mailboxHost().then(
-        (h) => live && setWebmail(h ? webmailLink(h, source.messageId) : null),
-      );
+    void mailboxHost().then((h) => live && setGmail(!!h && webmailOf(h) === "gmail"));
     return () => {
       live = false;
     };
-  }, [source.messageId]);
+  }, []);
+  const day = (at: string | null) => {
+    const ms = at ? Date.parse(at) : Number.NaN;
+    return Number.isFinite(ms)
+      ? new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
+          day: "numeric",
+          month: "short",
+        }).format(ms)
+      : "";
+  };
   return (
-    <p className="inbox-source">
-      <Mail size={13} strokeWidth={1.8} aria-hidden="true" />
-      <span className="inbox-source-text">
-        {source.account ?? t("inbox.mail")}
-        {source.from ? ` · ${source.from}` : ""}
-      </span>
-      {source.open && (
-        <button
-          type="button"
-          className="btn ghost small inbox-see-mail"
-          onClick={() => source.open && openMail(source.open)}
-        >
-          {t("inbox.seeMail")}
-        </button>
+    <>
+      <p className="inbox-source">
+        <Mail size={13} strokeWidth={1.8} aria-hidden="true" />
+        <span className="inbox-source-text">
+          {source.account ?? t("inbox.mail")}
+          {source.from ? ` · ${source.from}` : ""}
+        </span>
+        {earlier.length > 0 && (
+          <button
+            type="button"
+            className="btn ghost small inbox-earlier-toggle"
+            aria-expanded={showEarlier}
+            onClick={() => setShowEarlier(!showEarlier)}
+          >
+            {earlier.length === 1
+              ? t("inbox.earlier.one")
+              : t("inbox.earlier", { n: earlier.length })}
+          </button>
+        )}
+        <span className="inbox-source-tools">
+          {source.open && (
+            <button
+              type="button"
+              className="icon-btn inbox-see-mail"
+              title={t("inbox.seeMail")}
+              aria-label={t("inbox.seeMail")}
+              onClick={() => source.open && peekMail(source.open)}
+            >
+              <KeptMail />
+            </button>
+          )}
+          {gmail && source.open && (
+            <button
+              type="button"
+              className="icon-btn inbox-webmail"
+              title={t("inbox.inGmail")}
+              aria-label={t("inbox.inGmail")}
+              onClick={() => source.open && void openWebmail(source.open.id)}
+            >
+              <GmailMark />
+            </button>
+          )}
+        </span>
+      </p>
+      {showEarlier && (
+        <ul className="inbox-earlier">
+          {earlier.map((e) => (
+            <li key={e.open.id}>
+              <button
+                type="button"
+                className="inbox-earlier-mail"
+                title={t("inbox.seeMail")}
+                onClick={() => peekMail(e.open)}
+              >
+                <span className="inbox-earlier-from">{e.from}</span>
+                <span className="inbox-earlier-subject">{e.subject}</span>
+                <span className="inbox-earlier-at">{day(e.at)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
-      {webmail && (
-        <button
-          type="button"
-          className="btn ghost small inbox-webmail"
-          onClick={() => void openUrl(webmail.url)}
-        >
-          {t("mail.inWebmail", { name: webmail.name })}
-        </button>
-      )}
-    </p>
+    </>
   );
 }
 
@@ -1083,7 +1141,7 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
       {c?.source && (
         <section className="pp-section">
           <h3>{t("inbox.origin")}</h3>
-          <MailSource source={c.source} />
+          <MailSource source={c.source} earlier={c.earlier} />
           {c.source.subject && <p className="inbox-subject">{c.source.subject}</p>}
           {c.source.excerpt && <p className="inbox-quote long">«{c.source.excerpt}»</p>}
         </section>

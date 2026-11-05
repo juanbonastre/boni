@@ -412,8 +412,11 @@ test("a proposal opens on a page of its own: its values, why, where from, and th
   await expect(pp.locator(".mini-day")).toHaveCount(3);
   await page.locator(".inbox-panel .panel-head").getByRole("button").click();
   await page.screenshot({ path: `${SHOTS}/proposal-page.png` });
-  // "Ver correo" opens the mail's row in Boni; back, Esc returns to where it was opened from.
+  // "Ver correo" shows it in the side panel without leaving the proposal (task 68); «Agrandar» opens it whole.
   await pp.getByRole("button", { name: "Ver correo" }).click();
+  await expect(page.locator(".row-panel")).toContainText("Rayuela");
+  await expect(page.locator(".proposal-page")).toHaveCount(1);
+  await page.locator(".row-panel").getByRole("button", { name: "Agrandar" }).click();
   await expect(page.locator(".row-doc .doc-title")).toContainText("Rayuela");
   await expect(page.locator(".proposal-page")).toHaveCount(0);
   // From its page, rejecting it goes back.
@@ -1111,7 +1114,7 @@ test("the panel: questions and proposals in one queue as they came, each saying 
   ]);
 });
 
-test("«Ver correo» opens the mail as a mail client shows it, read only (D-22)", async ({
+test("«Ver correo» shows the mail in the side panel as a mail client does, read only (D-22); Gmail opens that mail; the earlier mails of its thread (task 68)", async ({
   page,
 }) => {
   // Where the host opens an outside address: here the browser's new tab, recorded instead of opened (task 55).
@@ -1122,23 +1125,48 @@ test("«Ver correo» opens the mail as a mail client shows it, read only (D-22)"
       return null;
     }) as typeof window.open;
   });
+  const GMAIL = "https://mail.google.com/mail/?authuser=ejemplo%40example.edu#all/18f0a1b2c3d4e5f6";
+  // The same proposal also comes from an earlier mail of its thread.
+  const threaded = {
+    ...CARD_MAIL,
+    card: {
+      ...CARD_MAIL.card,
+      earlier: [
+        {
+          from: "Coordinación de ejemplo",
+          subject: "Actas: primera convocatoria",
+          at: "2026-10-15T08:00:00Z",
+          open: { type: "t_01m6correo", id: "m1" },
+        },
+      ],
+    },
+  };
   await openApp(page, "/?still", {
     mail: true,
-    agent: { "GET api/agent/proposals": [{ proposals: [CARD_MAIL] }], "GET api/mail": [MAIL] },
+    agent: {
+      "GET api/agent/proposals": [{ proposals: [threaded] }],
+      "GET api/mail": [MAIL],
+      "GET api/mail/webmail/:id": [{ url: GMAIL }],
+    },
   });
   await page
     .locator(".topbar")
     .getByRole("button", { name: /^Bandeja/ })
     .click();
   const card = page.locator(".inbox-panel .inbox-card").first();
-  // A Gmail mailbox: the card's source line and the mail itself open the mail in Gmail by its Message-ID (task 55).
+  // A Gmail mailbox: the card's icon and the mail itself open that mail in Gmail, at the address the server gives
+  // (its thread, in its account; task 68).
   const opened = () => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened);
-  await card.getByRole("button", { name: "En Gmail" }).click();
-  await expect
-    .poll(opened)
-    .toEqual(["https://mail.google.com/mail/u/0/#search/rfc822msgid:m1%40example.com"]);
+  await card.getByRole("button", { name: "Abrir en Gmail" }).click();
+  await expect.poll(opened).toEqual([GMAIL]);
+  expect(await requests(page, "GET api/mail/webmail/m1")).toEqual(["GET api/mail/webmail/m1"]);
+  // The earlier mails of its thread, unfolded, each to see.
+  await card.getByRole("button", { name: "+1 correo" }).click();
+  await expect(card.locator(".inbox-earlier-mail")).toContainText("Actas: primera convocatoria");
+  await card.screenshot({ path: `${SHOTS}/inbox-mail-icons.png` });
   await card.getByRole("button", { name: "Ver correo" }).click();
-  const mail = page.locator(".mail-view");
+  // In the side panel, the inbox a click away: the mail as a mail client shows it.
+  const mail = page.locator(".row-panel .mail-view");
   await expect(mail.locator(".mail-subject")).toHaveText("Actas pendientes");
   await mail.getByRole("button", { name: "En Gmail" }).click();
   await expect.poll(opened).toHaveLength(2);

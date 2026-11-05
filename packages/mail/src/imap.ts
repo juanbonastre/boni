@@ -66,6 +66,11 @@ export class ImapReader {
   private failed: ImapError | null = null;
   private tag = 0;
   private timeoutMs: number;
+  /**
+   * The server speaks Gmail's extension (X-GM-EXT-1, task 68): a mail's thread id is fetched with it, so the app can
+   * open the mail itself in Gmail instead of a search.
+   */
+  gmail = false;
 
   private constructor(socket: Duplex, timeoutMs: number) {
     this.socket = socket;
@@ -87,14 +92,24 @@ export class ImapReader {
     const greeting = await r.next();
     if (!/^\* (OK|PREAUTH)\b/i.test(greeting.text))
       throw new ImapError("protocol", "the server did not greet");
+    let after: Line[];
     try {
-      await r.command("LOGIN", `${quote(o.user)} ${quote(o.password)}`);
+      after = await r.command("LOGIN", `${quote(o.user)} ${quote(o.password)}`);
     } catch (e) {
       r.close();
       if (e instanceof ImapError && e.code === "protocol")
         throw new ImapError("auth", "the server refused the user or password");
       throw e;
     }
+    // Its capabilities: said after the login by most servers (Gmail does), else asked; a server that does not
+    // answer is taken as plain IMAP.
+    let caps = after.find((l) => /^\* CAPABILITY\b/i.test(l.text))?.text ?? "";
+    if (!caps)
+      caps =
+        (await r.command("CAPABILITY").catch(() => [] as Line[])).find((l) =>
+          /^\* CAPABILITY\b/i.test(l.text),
+        )?.text ?? "";
+    r.gmail = /\bX-GM-EXT-1\b/i.test(caps);
     return r;
   }
 
@@ -225,15 +240,23 @@ export class ImapReader {
     return [...new Set(uids)].filter((u) => u > after).sort((a, b) => a - b);
   }
 
-  /** One message's first `maxBytes` bytes (never marked read), its size and its arrival time. */
+  /**
+   * One message's first `maxBytes` bytes (never marked read), its size, its arrival time and, from Gmail, its thread
+   * id (a decimal number as text; `gmailThreadUrl` makes the address that opens it).
+   */
   async fetch(
     uid: number,
     maxBytes = 2 * 1024 * 1024,
-  ): Promise<{ raw: Buffer; size: number; internalDate: string | null } | null> {
+  ): Promise<{
+    raw: Buffer;
+    size: number;
+    internalDate: string | null;
+    gmailThread: string | null;
+  } | null> {
     if (!Number.isInteger(uid) || uid <= 0) throw new ImapError("refused", "bad uid");
     const lines = await this.command(
       "UID FETCH",
-      `${uid} (UID RFC822.SIZE INTERNALDATE BODY.PEEK[]<0.${Math.floor(maxBytes)}>)`,
+      `${uid} (UID RFC822.SIZE INTERNALDATE${this.gmail ? " X-GM-THRID" : ""} BODY.PEEK[]<0.${Math.floor(maxBytes)}>)`,
     );
     const line = lines.find(
       (l) => /^\* \d+ FETCH/i.test(l.text) && new RegExp(`\\bUID ${uid}\\b`).test(l.text),
@@ -246,7 +269,34 @@ export class ImapReader {
       raw: line.literals[line.literals.length - 1] as Buffer,
       size,
       internalDate: Number.isFinite(parsed) ? new Date(parsed).toISOString() : null,
+      gmailThread: /X-GM-THRID (\d{1,20})/i.exec(line.text)?.[1] ?? null,
     };
+  }
+
+  /**
+   * The Gmail thread of the message with this Message-ID in the open folder (task 68: a mail read before Boni kept
+   * thread ids), or null: found by Gmail's own search (X-GM-RAW «rfc822msgid:»), read without its body.
+   */
+  async gmailThreadOf(messageId: string): Promise<string | null> {
+    const id = messageId.trim().replace(/^<|>$/g, "");
+    if (!this.gmail || !id || id.length > 300 || /[\s<>"']/.test(id)) return null;
+    const found = await this.command("UID SEARCH", `X-GM-RAW ${quote(`rfc822msgid:${id}`)}`);
+    const uid = found
+      .filter((l) => /^\* SEARCH\b/i.test(l.text))
+      .flatMap((l) =>
+        l.text
+          .replace(/^\* SEARCH/i, "")
+          .trim()
+          .split(/\s+/),
+      )
+      .find((x) => /^\d+$/.test(x));
+    if (!uid) return null;
+    const lines = await this.command("UID FETCH", `${uid} (UID X-GM-THRID)`);
+    for (const l of lines) {
+      const m = /X-GM-THRID (\d{1,20})/i.exec(l.text);
+      if (m) return m[1] as string;
+    }
+    return null;
   }
 
   close(): void {
@@ -261,4 +311,18 @@ export class ImapReader {
   _try(name: string, args = ""): Promise<Line[]> {
     return this.command(name, args);
   }
+}
+
+/**
+ * The address that opens a Gmail thread in that account (task 68; Juan, 2026-11-05: «quiero que se abra el correo, no
+ * que me abra el buscador»): its thread id in hex, and the account by its address so the right one opens when several
+ * are signed in. Null for anything that is not a thread id.
+ */
+export function gmailThreadUrl(thread: string, account: string): string | null {
+  if (!/^\d{1,20}$/.test(thread)) return null;
+  const hex = BigInt(thread).toString(16);
+  const who = /^[^\s@"<>]+@[^\s@"<>]+$/.test(account)
+    ? `?authuser=${encodeURIComponent(account)}`
+    : "";
+  return `https://mail.google.com/mail/${who}#all/${hex}`;
 }

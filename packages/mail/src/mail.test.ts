@@ -1,7 +1,7 @@
 import { createServer, type Server, Socket } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { htmlToText } from "./html.ts";
-import { ImapError, ImapReader, imapDate, quote } from "./imap.ts";
+import { gmailThreadUrl, ImapError, ImapReader, imapDate, quote } from "./imap.ts";
 import { decodeWords, parseAddresses, parseMessage } from "./mime.ts";
 
 const CRLF = (s: string) => s.replace(/\r?\n/g, "\r\n");
@@ -246,7 +246,9 @@ Yo puedo ese día.
 });
 
 /** A fake IMAP server: answers from a script, keeps what it was asked. */
-function fakeImap(mails: Record<number, string>, password = "una-clave-de-prueba") {
+/** A Gmail thread id as Gmail gives it (an invented one). */
+const THREAD = "1798273412345678901";
+function fakeImap(mails: Record<number, string>, password = "una-clave-de-prueba", gmail = false) {
   const asked: string[] = [];
   const server: Server = createServer((s) => {
     s.write("* OK fake IMAP ready\r\n");
@@ -262,9 +264,14 @@ function fakeImap(mails: Record<number, string>, password = "una-clave-de-prueba
         if (/^LOGIN /.test(cmd))
           s.write(
             cmd.includes(`"${password}"`)
-              ? `${tag} OK logged in\r\n`
+              ? `${gmail ? "* CAPABILITY IMAP4rev1 X-GM-EXT-1 UIDPLUS\r\n" : ""}${tag} OK logged in\r\n`
               : `${tag} NO [AUTHENTICATIONFAILED] Invalid\r\n`,
           );
+        else if (gmail && /^UID SEARCH X-GM-RAW "rfc822msgid:hilo-1@example\.com"$/.test(cmd))
+          s.write(`* SEARCH 12\r\n${tag} OK\r\n`);
+        else if (gmail && /^UID SEARCH X-GM-RAW /.test(cmd)) s.write(`* SEARCH\r\n${tag} OK\r\n`);
+        else if (gmail && /^UID FETCH 12 \(UID X-GM-THRID\)$/.test(cmd))
+          s.write(`* 1 FETCH (UID 12 X-GM-THRID ${THREAD})\r\n${tag} OK\r\n`);
         else if (/^EXAMINE /.test(cmd))
           s.write(
             `* 3 EXISTS\r\n* OK [UIDVALIDITY 777] ok\r\n* OK [UIDNEXT 13] ok\r\n${tag} OK [READ-ONLY] done\r\n`,
@@ -284,7 +291,7 @@ function fakeImap(mails: Record<number, string>, password = "una-clave-de-prueba
           s.write(
             Buffer.concat([
               Buffer.from(
-                `* 1 FETCH (UID ${uid} RFC822.SIZE ${raw.length} INTERNALDATE "19-Oct-2026 09:31:00 +0200" BODY[]<0> {${part.length}}\r\n`,
+                `* 1 FETCH (UID ${uid} RFC822.SIZE ${raw.length} INTERNALDATE "19-Oct-2026 09:31:00 +0200"${gmail && cmd.includes("X-GM-THRID") ? ` X-GM-THRID ${THREAD}` : ""} BODY[]<0> {${part.length}}\r\n`,
                 "latin1",
               ),
               part,
@@ -310,8 +317,13 @@ const servers: Server[] = [];
 afterEach(() => {
   for (const s of servers.splice(0)) s.close();
 });
-const open = async (mails: Record<number, string>, password = "una-clave-de-prueba") => {
-  const f = await fakeImap(mails);
+const open = async (
+  mails: Record<number, string>,
+  password = "una-clave-de-prueba",
+  gmail = false,
+) => {
+  // The server always expects the right password; `password` is what the client tries.
+  const f = await fakeImap(mails, undefined, gmail);
   servers.push(f.server);
   const r = await ImapReader.open({
     host: "imap.example.com",
@@ -342,6 +354,30 @@ describe("the read-only IMAP client", () => {
       true,
     );
     expect(asked.some((l) => /SELECT|STORE|EXPUNGE|COPY|MOVE/.test(l))).toBe(false);
+  });
+
+  it("from Gmail, a mail's thread comes with it and is found by its Message-ID; its address opens that mail in its account (task 68)", async () => {
+    const { r, asked } = await open({ 12: PLAIN }, "una-clave-de-prueba", true);
+    expect(r.gmail).toBe(true);
+    await r.examine();
+    expect((await r.fetch(12))?.gmailThread).toBe(THREAD);
+    expect(await r.gmailThreadOf("<hilo-1@example.com>")).toBe(THREAD);
+    expect(await r.gmailThreadOf("otro@example.com")).toBeNull();
+    // Nothing that is not a Message-ID is searched.
+    expect(await r.gmailThreadOf('a" OR ALL')).toBeNull();
+    r.close();
+    expect(asked.filter((l) => l.includes("FETCH")).every((l) => !/BODY\[/.test(l))).toBe(true);
+    expect(gmailThreadUrl(THREAD, "ejemplo@example.com")).toBe(
+      `https://mail.google.com/mail/?authuser=ejemplo%40example.com#all/${BigInt(THREAD).toString(16)}`,
+    );
+    expect(gmailThreadUrl("no es un hilo", "ejemplo@example.com")).toBeNull();
+    // A server without Gmail's extension: no thread asked, none given.
+    const plain = await open({ 12: PLAIN });
+    expect(plain.r.gmail).toBe(false);
+    expect((await plain.r.fetch(12))?.gmailThread).toBeNull();
+    expect(await plain.r.gmailThreadOf("hilo-1@example.com")).toBeNull();
+    plain.r.close();
+    expect(plain.asked.some((l) => l.includes("X-GM"))).toBe(false);
   });
 
   it("refuses anything that could change the mailbox, before it is sent", async () => {

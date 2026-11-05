@@ -372,6 +372,10 @@ const es = {
   "inbox.yes": "Sí",
   "inbox.no": "No",
   "inbox.seeMail": "Ver correo",
+  "inbox.inGmail": "Abrir en Gmail",
+  "inbox.earlier": "+{n} correos",
+  "inbox.earlier.one": "+1 correo",
+  "mail.webmailFailed": "No se pudo abrir en Gmail.",
   "models.help":
     "Qué modelo hace cada cosa en Boni, cuánto gasta y qué hace con tus datos. Un modelo nuevo pasa antes su evaluación.",
   "models.spend": "Gasto de {month}",
@@ -2184,6 +2188,10 @@ const en: Record<Key, string> = {
   "inbox.yes": "Yes",
   "inbox.no": "No",
   "inbox.seeMail": "See mail",
+  "inbox.inGmail": "Open in Gmail",
+  "inbox.earlier": "+{n} mails",
+  "inbox.earlier.one": "+1 mail",
+  "mail.webmailFailed": "Could not open it in Gmail.",
   "models.help":
     "Which model does what in Boni, what it spends and what it does with your data. A new model passes its evaluation first.",
   "models.spend": "Spending in {month}",
