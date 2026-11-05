@@ -577,7 +577,7 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P5 | `send`, pagar, borrar a petición del agente, `write_irreversible` | confirm siempre, pintada desde los argumentos reales y desde un dispositivo personal |
 | P6 | Turno ambiental (TV, voz ambiental) o dispositivo compartido | solo `read` y propose; lo sensible se confirma en el móvil |
 | P7 | Trabajo en segundo plano (sin turno de Juan) | solo `read` y propose; nunca `egress` (salvo la descarga propia de un conector, que hace código y no el agente) |
-| P8 | `schedule` (crear o cambiar trabajos) y `flow` (ejecutar un flujo suyo, `flows.run`) | solo desde un turno de Juan, con confirm; nunca desde segundo plano, una mini-app, una propuesta aceptada ni contenido externo |
+| P8 | `flow` (ejecutar un flujo suyo, `flows.run`); antes también `schedule` (`jobs.create`, quitado en F4b: los trabajos programados son flujos que solo se proponen, P19) | solo desde un turno de Juan, con confirm; nunca desde segundo plano, una mini-app, una propuesta aceptada ni contenido externo |
 | P9 | `memory` con algún argumento `external` | deny (el contenido externo nunca escribe en la memoria) |
 | P10 | `schema` | allow con aviso y Deshacer en un turno de Juan; propose si viene de contenido externo o de la jardinería; borrar datos de un campo, confirm |
 | P11 | Secuencias sospechosas (muchas lecturas sensibles y luego `egress`; más de N escrituras en una ejecución) | la ejecución se para y pide confirm |
@@ -731,6 +731,11 @@ interface ModelProvider {
 - **El agente no se programa tareas a sí mismo.** Es una regla dura y sin opción para quitarla. En Hermes es una opción
   de configuración (`cron.allow_agent_scheduling`) que su propio código describe como "loop prevention, not a security
   boundary".
+- **Cómo quedó (2026-11-05):** los trabajos programados son los flujos programados (`docs/flujos.md` F4: un plan con
+  disparador «cada día, semana u hora», en segundo plano). Desde un turno, el planificador solo los propone
+  (`flows.save`, P19) y Juan los activa. La herramienta `jobs.create` («Programar») que guardaba un trabajo con un
+  texto se quitó (F4b): nada lo ejecutaba, así que lo que Juan confirmaba nunca ocurría (auditoría del 2026-11-05).
+  Una cuenta que guardó alguno conserva el tipo «Trabajos» y sus filas.
 
 ### 7.13 Mini-apps, atajos y memoria
 - **Mini-apps y atajos:** son especificaciones declarativas (formulario + consulta + acción del catálogo), nunca código.

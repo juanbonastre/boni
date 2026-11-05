@@ -36,16 +36,35 @@
             {
               "id": "j",
               "op": "call",
-              "tool": "jobs.create",
+              "tool": "flows.save",
               "args": {
                 "name": {
-                  "lit": "diario"
-                },
-                "schedule": {
-                  "lit": "daily"
-                },
-                "prompt": {
                   "ref": "$x.tasks[0].title"
+                },
+                "trigger": {
+                  "lit": {
+                    "schedule": {
+                      "every": "day",
+                      "at": "08:00"
+                    }
+                  }
+                },
+                "plan": {
+                  "lit": {
+                    "version": 1,
+                    "steps": [
+                      {
+                        "id": "n",
+                        "op": "call",
+                        "tool": "notify",
+                        "args": {
+                          "text": {
+                            "lit": "hoy"
+                          }
+                        }
+                      }
+                    ]
+                  }
                 }
               }
             }
@@ -65,7 +84,7 @@
     ]
   },
   "expect": {
-    "errors": ["P16-external-in-job"],
-    "jobs": 0
+    "errors": ["P16-external-in-flow"],
+    "flows": 0
   }
 }

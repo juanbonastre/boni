@@ -45,7 +45,6 @@ export const EFFECTS = [
   "write_irreversible",
   "egress",
   "send",
-  "schedule",
   "schema",
   "memory",
   "notify",
@@ -104,9 +103,6 @@ export interface SchemaWriter {
 export interface MemoryWriter {
   save(text: Val, extra: Label): Val;
 }
-export interface JobWriter {
-  create(name: Val, schedule: Val, prompt: Val, extra: Label): Val;
-}
 /** Saves a flow the user accepted (`flows.save`, docs/flujos.md F5): its id and version. */
 export interface FlowWriter {
   save(def: { flow: string | null; name: string; trigger: unknown; plan: unknown }): Val;
@@ -131,7 +127,6 @@ export interface Caps {
   write_irreversible: { store: ReadStore; writer: Writer };
   egress: { store: ReadStore; net: Pick<Net, "fetchText"> };
   send: { store: ReadStore; net: Pick<Net, "send"> };
-  schedule: { store: ReadStore; jobs: JobWriter };
   schema: { store: ReadStore; schema: SchemaWriter };
   memory: { store: ReadStore; memory: MemoryWriter };
   notify: { store: ReadStore; notifier: Notifier };
@@ -670,20 +665,6 @@ export function coreTools(): ToolRegistry {
     },
   });
   r.register({
-    name: "jobs.create",
-    effect: "schedule",
-    title: "Programar",
-    describe: 'A recurring job: schedule "daily" or "weekly", prompt is what Boni does then',
-    args: {
-      name: { role: "content", required: true, describe: "name of the job" },
-      schedule: { role: "option", required: true, describe: '"daily" or "weekly"' },
-      prompt: { role: "content", required: true, describe: "the request to run" },
-    },
-    run({ jobs }, a, extra) {
-      return jobs.create(a.name as Val, a.schedule as Val, a.prompt as Val, extra);
-    },
-  });
-  r.register({
     name: "flows.run",
     effect: "flow",
     title: "Ejecutar flujo",
@@ -1029,32 +1010,6 @@ export function makeCaps(c: CapsContext): Caps {
       return leaf(s.entity.id, codeLabel("memory"));
     },
   };
-  const jobs: JobWriter = {
-    create(name, schedule, prompt, extra) {
-      const def = c.store.schema().types.job;
-      if (!def) throw new ToolError("no-jobs");
-      const sch = plain(schedule);
-      if (sch !== "daily" && sch !== "weekly") throw new ToolError("bad-option");
-      const byKey = (k: string) => def.fields.find((x) => x.key === k)?.id as string;
-      const text = (v: Val) => {
-        const x = plain(v);
-        const l = join(deepLabel(v), extra);
-        return { value: typeof x === "string" && lowIntegrity(l) ? neutralize(x) : x, label: l };
-      };
-      const s = wrap(() =>
-        c.store.create(
-          def.id,
-          {
-            [byKey("name")]: text(name),
-            [byKey("schedule")]: { value: sch, label: join(deepLabel(schedule), extra) },
-            [byKey("prompt")]: text(prompt),
-          },
-          system,
-        ),
-      );
-      return leaf(s.entity.id, codeLabel("job"));
-    },
-  };
   const notifier: Notifier = {
     notify(text) {
       const v = plain(text);
@@ -1103,7 +1058,6 @@ export function makeCaps(c: CapsContext): Caps {
         },
       },
     },
-    schedule: { store: ro, jobs },
     schema: { store: ro, schema },
     memory: { store: ro, memory },
     notify: { store: ro, notifier },
@@ -1122,7 +1076,7 @@ export function makeCaps(c: CapsContext): Caps {
   };
 }
 
-/** Boni's own types written through code (memory, jobs, extensions): made once, by the code. The agent's
+/** Boni's own types written through code (memory, extensions, pages): made once, by the code. The agent's
  * entity tools never touch a system type. */
 export function ensureSystemTypes(store: UserStore): void {
   const code = label("own", "personal", [{ kind: "code", id: "system-types" }]);
@@ -1143,7 +1097,7 @@ export function ensureSystemTypes(store: UserStore): void {
     label: code,
   });
   const make = (
-    id: "memory" | "job" | "extension" | "page" | "conversation" | "turn",
+    id: "memory" | "extension" | "page" | "conversation" | "turn",
     name: string,
     keys: string[],
   ) => {
@@ -1174,8 +1128,9 @@ export function ensureSystemTypes(store: UserStore): void {
       { actor: "system" },
     );
   };
+  // «Trabajos» (`jobs.create`) is gone (docs/flujos.md F4b): scheduled flows do it, and nothing ran a job. An account
+  // that has the type keeps it and its rows.
   make("memory", "Memoria", ["text"]);
-  make("job", "Trabajos", ["name", "schedule", "prompt"]);
   // docs/extensiones.md 3: one entity per installed extension; `preset` is the preset version it still is
   // (empty once it was changed), `state` "on" or "off"; §11 (E3): `proposal` a version proposed and not yet
   // activated (JSON: manifest, who, when, its tests and dry runs), `previous` the version before the active one.

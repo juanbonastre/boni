@@ -484,7 +484,7 @@ const DAY_MS = 24 * 60 * 60_000;
 export function toolsFor(registry: ToolRegistry, origin: Origin): ToolDef[] {
   const blocked =
     origin.kind === "background" || origin.kind === "miniapp" || origin.trust !== "personal"
-      ? new Set(["egress", "send", "schedule", "flow", "flow_save"])
+      ? new Set(["egress", "send", "flow", "flow_save"])
       : new Set<string>();
   return registry.all().filter((t) => !blocked.has(t.effect));
 }

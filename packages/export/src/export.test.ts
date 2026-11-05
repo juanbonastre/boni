@@ -237,7 +237,6 @@ describe("the export", () => {
       // Juan's conversations with Boni are his data too (docs/conversacion.md 3.1).
       "json/conversation.ndjson",
       "json/extension.ndjson",
-      "json/job.ndjson",
       "json/memory.ndjson",
       "json/movimiento.ndjson",
       "json/page.ndjson",

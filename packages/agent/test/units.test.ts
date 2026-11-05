@@ -278,24 +278,6 @@ describe("the policy engine", () => {
       ),
     ).toEqual({ kind: "allow", rule: "P1" });
   });
-  it("jobs only from Juan's turn, confirmed, never with outside text (P8, P16)", () => {
-    const job = (l: typeof user) => ({
-      name: leaf("x", user),
-      schedule: leaf("daily", model),
-      prompt: leaf("resumen", l),
-    });
-    expect(decide(call("jobs.create", job(user)), turn, counters)).toEqual({
-      kind: "confirm",
-      rule: "P8",
-    });
-    expect(decide(call("jobs.create", job(ext)), turn, counters)).toMatchObject({
-      kind: "deny",
-      rule: "P16",
-    });
-    expect(
-      decide(call("jobs.create", job(user)), { kind: "background", trust: "personal" }, counters),
-    ).toMatchObject({ kind: "deny", rule: "P8" });
-  });
   it("a flow runs only from Juan's turn, confirmed, never named by outside text (P8, P16; docs/flujos.md F4)", () => {
     const run = (l: typeof user) => ({ flow: leaf("resumen", l) });
     expect(decide(call("flows.run", run(model)), turn, counters)).toEqual({

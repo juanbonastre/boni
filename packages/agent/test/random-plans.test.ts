@@ -106,8 +106,7 @@ function randomPlan(r: ReturnType<typeof rng>) {
       });
     else if (k === 4) call("entities.delete", { id: inEach ? { ref: "$item.id" } : r.pick(IDS()) });
     else if (k === 5) call("memory.save", { text: text() });
-    else if (k === 6)
-      call("jobs.create", { name: text(), schedule: { lit: "daily" }, prompt: text() });
+    else if (k === 6) call("notify", { text: text() });
     else if (k === 7)
       call("schema.add_field", {
         type: { lit: "tarea" },
