@@ -5,6 +5,42 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-05 (thirty-first) — server 0.8.106 · Boni desktop 0.4.75 · Boni Android
+
+Needs:
+- The server, 0.8.106, to deploy: `system.db`'s migration 3 for the notices, and «Mis datos» as a collection.
+- Boni desktop 0.4.75 (`release/boni_0.4.75_amd64.deb`), to install.
+- Boni Android from main, through Obtainium.
+
+Tasks 61 (F6b, F4b), 62, 63 and 64.
+
+- **Boni's notices reach you with the app closed** (task 62). «Avisar» of a flow, the agent's notices and the
+  budget's reach you two ways:
+  - on the phone, by UnifiedPush, sealed for that device, as a system notification (channel «Avisos»);
+  - on the desktop, from the tray, with the window closed.
+
+  Open Boni once on the phone so it asks to send notifications and registers with ntfy. **A correction to the
+  thirtieth entry:** «Avisar» did not reach the devices with Boni open, as that entry said. No app listened to it,
+  so until now it reached nobody. (#331)
+- **«Mis datos» is a collection** (F6b; you asked for the section to work like a collection's page).
+  - Its page is any collection's: Tabla, Tablero, Lista, Galería, Calendario and Diagrama, «Filtro» and «Nuevo».
+  - It has a row per page and collection of yours, then Boni's.
+  - In the row itself you rename one, or change its mother, its level or whether it shows in the sidebar. A private
+    collection is opened to the AI only from its own page.
+  - «Nuevo» makes «Nueva colección». The bin deletes an empty one, with «Deshacer».
+  - Things to try: a Tablero grouped by «Nivel», dragging a collection from one level to another; or filter «Escrita
+    por» and switch to Diagrama, which is now as wide as the window.
+  - The tree with the notes inside is gone: a collection's notes are on its own page. (#332)
+- **«Programar» is gone** (F4b). The conversation could save a daily or weekly job that nothing ever ran. Ask for
+  something recurring and Boni proposes a scheduled flow in the Bandeja instead. (#333)
+- **What the designs ask for and is not built** is in the queue: task 63, from an audit of the designs.
+- **How a phase is called done** (task 64, what you chose):
+  - A merged phase is «en main»; it is «hecha» when you have tried it.
+  - Before a phase is called finished, an agent that did not build it checks it against its design, point by point.
+  - Every tool a model can call has a test that runs it end to end (A-18). That test found three tools no test ran,
+    and they work. It also found a dead end: a memory the model writes in its own words waits for a confirmation the
+    app has no place for (task 63, point 17). (#334)
+
 ## 2026-11-05 (thirtieth) — server 0.8.105 · Boni desktop 0.4.74
 
 Needs: the server (0.8.105, to deploy: the scheduler, the new routes and the web app it serves) and Boni desktop 0.4.74
