@@ -94,7 +94,9 @@ export function testRegistry(): ToolRegistry {
   return r.freeze();
 }
 
-export function makeEnv(mails: { asunto: string; de: string; cuerpo: string }[] = []): Env {
+export function makeEnv(
+  mails: { asunto: string; de: string; cuerpo: string; fecha?: string }[] = [],
+): Env {
   const dir = mkdtempSync(join(tmpdir(), "boni-agent-"));
   const store = openUserStore(join(dir, "user.db"), { now: () => Date.UTC(2026, 9, 20, 10) });
   ensureSystemTypes(store);
@@ -132,6 +134,8 @@ export function makeEnv(mails: { asunto: string; de: string; cuerpo: string }[] 
           field("f_asunto", "asunto", "text"),
           field("f_de", "de", "text"),
           field("f_cuerpo", "cuerpo", "longtext"),
+          // When it was sent (task 67), for the mails that say it.
+          field("f_fecha", "fecha", "datetime"),
         ],
         { sensitivity: "personal" },
       ),
@@ -186,6 +190,7 @@ export function makeEnv(mails: { asunto: string; de: string; cuerpo: string }[] 
         f_asunto: { value: m.asunto, label: l },
         f_de: { value: m.de, label: l },
         f_cuerpo: { value: m.cuerpo, label: l },
+        ...(m.fecha ? { f_fecha: { value: m.fecha, label: l } } : {}),
       },
       { actor: "connector" },
       `e_mail${i}`,

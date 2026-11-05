@@ -1,11 +1,12 @@
 import { label } from "@boni/entities";
 import { describe, expect, it } from "vitest";
+import { dayFromToday, withDays } from "../src/agent.ts";
 import { apiSchema } from "../src/anthropic.ts";
 import { marksOf } from "../src/confirm.ts";
 import { callFn } from "../src/fns.ts";
 import { isWholeSpan, validatePlan } from "../src/plan.ts";
 import { decide, type Origin } from "../src/policy.ts";
-import { checkReader, checkReaderOutput, readerSchema } from "../src/readers.ts";
+import { checkReader, checkReaderOutput, READER_PROMPTS, readerSchema } from "../src/readers.ts";
 import { coreTools, neutralize, ToolRegistry } from "../src/tools.ts";
 import { at, atOrNull, leaf, list, rec, type Val } from "../src/values.ts";
 import { toPlannerView } from "../src/view.ts";
@@ -548,5 +549,44 @@ describe("readers and functions", () => {
     expect(neutralize("![x](https://evil.example/a.png?q=1) <img src=x> <iframe>")).toBe(
       "x (https:⁄⁄evil.example/a.png?q=1) &lt;img src=x> &lt;iframe>",
     );
+  });
+});
+
+describe("where a date stands from today, for a reader that writes for Juan (task 67)", () => {
+  it("the readers that read dates from a message count them from its own date (task 67)", () => {
+    expect(READER_PROMPTS.extract_tasks).toContain("count from the message's own date");
+    expect(READER_PROMPTS.read_message).toContain('the day the e-mail was sent ("Fecha")');
+    for (const r of ["summarize", "summarize_each", "answer_about"] as const)
+      expect(READER_PROMPTS[r], r).toContain("count from that message's own date");
+  });
+  it("says today, yesterday, tomorrow and a few days either way; nothing for far ones", () => {
+    expect(dayFromToday("2026-11-05", "2026-11-05")).toBe("today");
+    expect(dayFromToday("2026-11-04", "2026-11-05")).toBe("yesterday");
+    expect(dayFromToday("2026-11-06", "2026-11-05")).toBe("tomorrow");
+    expect(dayFromToday("2026-11-02", "2026-11-05")).toBe("3 days ago");
+    expect(dayFromToday("2026-11-09", "2026-11-05")).toBe("in 4 days");
+    expect(dayFromToday("2026-10-01", "2026-11-05")).toBe("35 days ago");
+    expect(dayFromToday("2026-01-01", "2026-11-05")).toBeNull();
+  });
+  it("marks each date of an input, an instant by its day where Juan lives, and leaves everything else", () => {
+    const today = "2026-11-05";
+    // 23:30 UTC on the 3rd is already the 4th in Madrid: yesterday.
+    expect(
+      withDays(
+        { de: "Lucía", fecha: "2026-11-03T23:30:00Z", texto: "nos vemos hoy a las 12", n: 3 },
+        today,
+        "Europe/Madrid",
+      ),
+    ).toEqual({
+      de: "Lucía",
+      fecha: "2026-11-03T23:30:00Z (yesterday)",
+      texto: "nos vemos hoy a las 12",
+      n: 3,
+    });
+    expect(withDays(["2026-11-05", "2025-01-01", "no es fecha"], today, "Europe/Madrid")).toEqual([
+      "2026-11-05 (today)",
+      "2025-01-01",
+      "no es fecha",
+    ]);
   });
 });

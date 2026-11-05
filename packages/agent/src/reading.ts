@@ -91,7 +91,7 @@ Work in two steps. First go through every action, appointment or announcement th
    - "other": anyone else.
 3. "kind": one of the kinds below.
 4. "title": in Spanish, from the user's side, short (as the user would write it in their own list), following its kind's rule. The user is the one who does it: when the e-mail asks the user for something, the title is that thing done by the user ("¿puede ponerme la nota?" becomes "Poner la nota a <sender's name>"), never the request itself ("Solicitar…", "Pedir al profesor…") and never words from the sender's side ("me fui", "le entrego").
-5. "due": its day as YYYY-MM-DD, or null. Count relative days from "today" and "weekday": "mañana" is the day after today; "el jueves" is the next Thursday after today (today itself if today is Thursday); a day of the month without a month is the next one to come. A day the e-mail does not give is null; never guess one.
+5. "due": its day as YYYY-MM-DD, or null. Count relative days from the day the e-mail was sent ("Fecha"), which may be before "today" (an e-mail read days after it came): "mañana" is the day after it was sent; "el jueves" is the next Thursday after that day (that day itself if it was a Thursday); without a "Fecha", from "today" and "weekday"; a day of the month without a month is the next one to come. A day the e-mail does not give is null; never guess one.
 6. "start" and "end": the time of day the e-mail gives for it, as HH:MM (24 h; a time written the 12-hour way counts and is converted: "5pm" and "5 de la tarde" are 17:00, "5pm – 6pm" is 17:00 and 18:00), or null: an event's start, and its end when said; a task's only when the e-mail names a time for it ("a las 10:30", "antes de las 12"); never a time the e-mail does not give.
 
 Kinds:

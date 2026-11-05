@@ -52,7 +52,7 @@ const type = (
  * newsletter, one from a secretariat), all invented.
  */
 function evalStore(dir: string): UserStore {
-  const store = openUserStore(join(dir, "user.db"), { now: () => Date.UTC(2026, 9, 20, 10) });
+  const store = openUserStore(join(dir, "user.db"), { now: () => EVAL_NOW });
   ensureSystemTypes(store);
   const sys = { actor: "import" as const };
   store.applySchema(
@@ -76,6 +76,8 @@ function evalStore(dir: string): UserStore {
           field("f_asunto", "asunto", "text"),
           field("f_de", "de", "text"),
           field("f_cuerpo", "cuerpo", "longtext"),
+          // When it was sent (task 67): a mail of yesterday says «hoy» of its own day.
+          field("f_fecha", "fecha", "datetime"),
         ],
         { sensitivity: "personal" },
       ),
@@ -151,8 +153,15 @@ function evalStore(dir: string): UserStore {
       "boletin@noticias.example.com",
       "Las novedades de esta semana en la tienda y una encuesta de satisfacción.",
     ],
+    [
+      "Firma del documento de tutoría",
+      "miguel.ejemplo@alumnos.example.es",
+      "Hola, ¿podemos vernos hoy a las 12h o el viernes antes de las 10h para firmar el documento de tutoría?",
+      // Sent yesterday (the store's day is 2026-10-20): its «hoy» is the 19th.
+      "2026-10-19T08:15:00Z",
+    ],
   ];
-  mails.forEach(([asunto, de, cuerpo], i) => {
+  mails.forEach(([asunto, de, cuerpo, fecha], i) => {
     const l = label("external", "personal", [{ kind: "mail", id: `m${i}` }], true);
     store.create(
       "t_correo",
@@ -160,6 +169,7 @@ function evalStore(dir: string): UserStore {
         f_asunto: { value: asunto, label: l },
         f_de: { value: de, label: l },
         f_cuerpo: { value: cuerpo, label: l },
+        ...(fecha ? { f_fecha: { value: fecha, label: l } } : {}),
       },
       { actor: "connector" },
       `e_mail${i}`,
@@ -167,6 +177,9 @@ function evalStore(dir: string): UserStore {
   });
   return store;
 }
+
+/** The evaluation's day: its store's clock and the agent's «today». */
+const EVAL_NOW = Date.UTC(2026, 9, 20, 10);
 
 /** An invented reading guide: what matters to the user in their mail (the server gives the readers Juan's). */
 const EVAL_GUIDE = guideValue({
@@ -288,6 +301,18 @@ const CASES: {
     shows: (r) => (shownRows(r, ["list"]) >= 2 ? "" : "not one item per mail"),
   },
   {
+    // Task 67 (Juan, 2026-11-05): a mail of yesterday that says «hoy a las 12h» is told as yesterday at 12, never as
+    // today at 12.
+    request: "¿Qué me han propuesto para firmar el documento de tutoría?",
+    check: (r) => {
+      const said = saidText(r);
+      if (r.status !== "done" || !/firm/i.test(said)) return "the mail not said";
+      return /\bhoy\b[^.;]{0,25}\b12/i.test(said)
+        ? "yesterday's «hoy a las 12h» told as today"
+        : "";
+    },
+  },
+  {
     request: "¿Quién me ha escrito de la secretaría?",
     check: (r) =>
       r.status === "done" && /secretar/i.test(saidText(r)) ? "" : "the secretariat's mail not said",
@@ -407,6 +432,9 @@ export async function evalPlanner(
         registry,
         planner: counted(planner),
         reader: counted(reader),
+        // The store's day, so «today» is the one its mails were written around (task 67).
+        now: () => EVAL_NOW,
+        tz: "Europe/Madrid",
         ...(opts.plannerPrompt ? { plannerPrompt: opts.plannerPrompt } : {}),
         // The readers of mail read with an invented guide, as the server gives them Juan's (docs/correo.md §4.1).
         ...(opts.noGuide ? {} : { readingGuide: () => EVAL_GUIDE }),

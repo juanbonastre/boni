@@ -144,7 +144,8 @@ Results:
 - entities.get / entities.create / entities.update: one record. entities.aggregate: a number.
 - readers: extract_tasks -> {"tasks": [{"title", "due", "sender", "message_id"}]} (loop with
   "each": {"ref": "$s2.tasks"}); classify -> {"choice"}; summarize, rewrite, answer_about -> {"text"}.
-  A reader reads one text: to read several items, give the read step "each" and "input": {"ref": "$item.cuerpo"}, or
+  A reader reads one text: to read several items, give the read step "each" and "input": {"ref": "$item"} (the whole
+  record, not only its text: a message's date comes with it, so its "hoy" is read as the day it was written), or
   better one summarize_each / label_each over the list: summarize_each -> {"items": [{"line", "kind", "id", "type"}]}
   (one per record, sorted by kind in the options' order, each with the id and type of its record, so a list of them
   opens each one; with options also "counts" as below); label_each -> {"choices": [...], "counts": [{"option", "n"}]}
@@ -409,6 +410,52 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 /** JSON -> Val, every part with `l` (a reader's answer, all of it as trusted as its input). */
 /** What a reader over a list gets of each text: a record as its fields, one per line (not its id or type), cut short. */
 const READER_TEXT_MAX = 4000;
+
+/**
+ * The readers that write prose about what they read for the user (task 67): each date in their input says where it
+ * stands from today, so a message of yesterday that says «hoy» is told as yesterday. Not the readers whose answer
+ * carries dates as values (`fill`, `extract_tasks`, `read_message`): they could copy the note into one.
+ */
+const PROSE_READERS = new Set(["summarize", "summarize_each", "answer_about"]);
+const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * A civil day as it stands from `today` (both YYYY-MM-DD): "today", "yesterday", "3 days ago", "in 2 days"; none beyond
+ * two months either way.
+ */
+export function dayFromToday(day: string, today: string): string | null {
+  const d = Math.round(
+    (Date.parse(`${day}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
+  );
+  if (!Number.isFinite(d) || Math.abs(d) > 60) return null;
+  if (d === 0) return "today";
+  if (d === -1) return "yesterday";
+  if (d === 1) return "tomorrow";
+  return d < 0 ? `${-d} days ago` : `in ${d} days`;
+}
+
+/** Each date of a reader's input with where it stands from today (`2026-11-04T10:00:00Z (yesterday)`), in `tz`. */
+export function withDays(v: Json, today: string, tz: string): Json {
+  if (typeof v === "string") {
+    const day = DAY_ONLY.test(v)
+      ? v
+      : INSTANT.test(v) && Number.isFinite(Date.parse(v))
+        ? new Intl.DateTimeFormat("en-CA", {
+            timeZone: tz,
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(Date.parse(v))
+        : null;
+    const when = day ? dayFromToday(day, today) : null;
+    return when ? `${v} (${when})` : v;
+  }
+  if (Array.isArray(v)) return v.map((x) => withDays(x, today, tz));
+  if (v && typeof v === "object")
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, withDays(x, today, tz)]));
+  return v;
+}
 function readerText(c: Json): string {
   const s =
     typeof c === "string"
@@ -1764,7 +1811,11 @@ export class Agent {
         spend = () => {};
       };
     }
-    const content = plain(input);
+    const raw = plain(input);
+    // A prose reader is told where each date stands from today (task 67: a mail of yesterday saying «hoy»).
+    const content = PROSE_READERS.has(String(step.reader))
+      ? withDays(raw, this.today(), this.o.tz ?? "Europe/Madrid")
+      : raw;
     // A reader over a list (summarize_each, label_each) reads every text in one call, each under its number.
     const batch = step.reader === "summarize_each" || step.reader === "label_each";
     const texts = batch ? (Array.isArray(content) ? content : [content]).map(readerText) : null;

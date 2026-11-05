@@ -282,6 +282,22 @@ Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/prefer
 | M1 | El banco de pruebas: modelos y prompts en una tabla, la forma aparte, el caso de categorías | Este PR |
 | M2 | Los ajustes de Correo en la conversación y sus instrucciones; casos nuevos («Ponme al día», «¿Quién me ha escrito de la secretaría?») y comparar con y sin ajustes | P2 de `docs/preferencias.md`, con C5 (modos de conversación) |
 
+**Las fechas de un correo de otro día (2026-11-05, tarea 67; D-46):** Juan preguntó en la conversación por los correos de
+«tutor personal» y Boni le contó «propone verse hoy a las 12h» de un correo de ayer. Los lectores ya recibían el día de
+hoy, y la fecha del correo cuando el plan les pasaba el registro; les faltaba la regla, y el planificador solía pasarles
+solo el texto. Ahora:
+- el planificador da a un lector el registro entero (`$item`), con su fecha, y no solo su texto;
+- los lectores que escriben para Juan (`summarize`, `summarize_each`, `answer_about`) leen cada fecha con dónde queda
+  respecto a hoy («2026-11-04T10:00:00Z (yesterday)», puesto por el código, hasta dos meses), y sus instrucciones dicen
+  que los días relativos de un mensaje cuentan desde su fecha y se dicen como quedan hoy;
+- `extract_tasks` cuenta los días relativos desde la fecha del mensaje, y la lectura de cada correo (`read_message`)
+  desde su «Fecha», que no siempre es hoy: la primera sincronización, «Volver a leer» y la nueva lectura de los adjuntos
+  leen correos de días atrás.
+
+La evaluación a mano tiene el caso, con el día del almacén como «hoy» («¿Qué me han propuesto para firmar el documento de
+tutoría?»). Sin pasar todavía con un modelo de verdad. Lo encontró la revisión independiente de la tarea (medida C de la
+64): la primera versión solo marcaba fechas que el planificador no pasaba.
+
 **Hecho, M2 (2026-11-03, tarea 23):** la guía de Juan llega a los lectores de correo de la conversación
 (`summarize`, `summarize_each`, `label_each`, `answer_about`, `extract_tasks`), puesta por el código cuando lo que
 leen viene del correo (`readingGuide` del agente; un plan no puede escribirla: se para). La evaluación tiene los dos
