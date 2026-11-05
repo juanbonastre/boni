@@ -61,7 +61,7 @@ import {
 } from "../core/flowEdit.ts";
 import { flowLayout } from "../core/flowLayout.ts";
 import { agentApi, errorText, runFlowInChat, toast, useStore } from "../store.ts";
-import { FlowStepPanel, problemText, stepName } from "./FlowStepPanel.tsx";
+import { argName, FlowStepPanel, problemText, stepName } from "./FlowStepPanel.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
 const WIDTH = 200;
@@ -283,6 +283,7 @@ function nodesOf(
       },
       className: "fl-node source",
       deletable: false,
+      connectable: false,
     },
     ...draft.plan.steps.map(
       (s): StepCard => ({
@@ -450,6 +451,7 @@ function Canvas({
   onRemove,
   onTestUpTo,
   canTestUpTo,
+  onAddAt,
 }: {
   draft: Draft;
   detail: FlowDetailView;
@@ -465,14 +467,26 @@ function Canvas({
   onTestUpTo: (id: string) => void;
   /** Whether the flow can be tried as far as that step now (no test running, no problem up to it). */
   canTestUpTo: (id: string) => boolean;
+  /** A new step of that kind where the canvas was clicked (after `after`, or where «Añadir paso» puts one): its id. */
+  onAddAt: (kind: NodeKind, at: { x: number; y: number }, after: string | null) => string;
 }) {
   const t = useStore((s) => s.t);
   // The right button on a node: its actions where the pointer is (task 70); «Abrir» opens its panel.
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Card>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const { fitView } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const [linking, setLinking] = useState<{ from: string; to: string } | null>(null);
+  // An arrow being drawn: every step shows where it lands (task 78).
+  const [connecting, setConnecting] = useState(false);
+  // The right button on the canvas, or an arrow left on it: «Añadir paso» there (task 78; from: the step it takes a
+  // value of).
+  const [adding, setAdding] = useState<{
+    x: number;
+    y: number;
+    at: { x: number; y: number };
+    from: string | null;
+  } | null>(null);
   const fitted = useRef(false);
   useEffect(() => {
     const g = nodesOf(t, draft, detail, catalog, check?.problems ?? [], selected, test);
@@ -490,7 +504,7 @@ function Canvas({
   }, [nodes, onLayout]);
   const target = linking ? draft.plan.steps.find((s) => s.id === linking.to) : undefined;
   return (
-    <div className="flow-canvas">
+    <div className={`flow-canvas flow-editing${connecting ? " connecting" : ""}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -504,9 +518,44 @@ function Canvas({
           setMenu({ x: e.clientX, y: e.clientY, id: n.id });
         }}
         onPaneClick={() => onSelect(null)}
+        onPaneContextMenu={(e) => {
+          e.preventDefault();
+          if (!catalog) return;
+          setAdding({
+            x: e.clientX,
+            y: e.clientY,
+            at: screenToFlowPosition({ x: e.clientX, y: e.clientY }),
+            from: null,
+          });
+        }}
+        onConnectStart={() => setConnecting(true)}
         onConnect={(c: Connection) => {
           if (!c.source || !c.target || c.source === TRIGGER || c.source === c.target) return;
           setLinking({ from: c.source, to: c.target });
+        }}
+        // Left anywhere on a step, the arrow lands on it (its dot is small); left on the canvas, a new step there
+        // takes its value (n8n's way; Juan, 2026-11-05: «no puedo conectarlo entre ellos»).
+        onConnectEnd={(e, state) => {
+          setConnecting(false);
+          const from = state.fromNode?.id;
+          if (state.isValid || !from || from === TRIGGER) return;
+          const p = "changedTouches" in e ? e.changedTouches[0] : e;
+          if (!p) return;
+          const node = document
+            .elementFromPoint(p.clientX, p.clientY)
+            ?.closest(".react-flow__node");
+          const to = node?.getAttribute("data-id");
+          if (node) {
+            if (to && to !== from && to !== TRIGGER) setLinking({ from, to });
+            return;
+          }
+          if (catalog)
+            setAdding({
+              x: p.clientX,
+              y: p.clientY,
+              at: screenToFlowPosition({ x: p.clientX, y: p.clientY }),
+              from,
+            });
         }}
         onNodesDelete={(gone) => {
           let p = draft.plan;
@@ -577,6 +626,26 @@ function Canvas({
           )}
         </PointMenu>
       )}
+      {adding && catalog && (
+        <PointMenu
+          x={adding.x}
+          y={adding.y}
+          width={260}
+          label={t("flows.addStep")}
+          onClose={() => setAdding(null)}
+        >
+          {(close) => (
+            <StepPicker
+              catalog={catalog}
+              onPick={(kind) => {
+                const id = onAddAt(kind, adding.at, adding.from);
+                if (adding.from) setLinking({ from: adding.from, to: id });
+                close();
+              }}
+            />
+          )}
+        </PointMenu>
+      )}
       {linking && target && catalog && (
         <div className="flow-link-menu" role="menu" aria-label={t("flows.useIn")}>
           <p className="flow-link-title">
@@ -585,7 +654,7 @@ function Canvas({
           {slotsOf(target, catalog).map((slot) => (
             <MenuRow
               key={slot.join(".")}
-              label={slot.at(-1) ?? ""}
+              label={argName(t, slot.at(-1) ?? "")}
               onClick={() => {
                 onPlan(takeValue(draft.plan, linking.from, linking.to, slot));
                 setLinking(null);
@@ -938,6 +1007,21 @@ export function FlowEditor({
     setPlan(addStep(draft.plan, step, after));
     setSelected(step.id);
   };
+  // The canvas's right button or an arrow left on it (task 78): the step where it was, after `after` when an arrow
+  // came from it, else where «Añadir paso» puts one; chosen.
+  const addAt = (kind: NodeKind, at: { x: number; y: number }, after: string | null) => {
+    const step = newStep(draft.plan, kind);
+    const where =
+      after ??
+      (selected && selected !== TRIGGER ? selected : (draft.plan.steps.at(-1)?.id ?? null));
+    setDraft((d) => ({
+      ...d,
+      plan: addStep(d.plan, step, where),
+      layout: { ...(d.layout ?? {}), [step.id]: { x: Math.round(at.x), y: Math.round(at.y) } },
+    }));
+    setSelected(step.id);
+    return step.id;
+  };
   // The right button's «Duplicar»: the copy right after it, chosen.
   const duplicate = (id: string) => {
     const r = duplicateStep(draft.plan, id);
@@ -1244,6 +1328,7 @@ export function FlowEditor({
             }}
             onTestUpTo={startTest}
             canTestUpTo={canTestUpTo}
+            onAddAt={addAt}
           />
         </ReactFlowProvider>
         {selected === TRIGGER && (

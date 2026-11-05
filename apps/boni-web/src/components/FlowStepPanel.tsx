@@ -34,7 +34,7 @@ export function stepName(
 }
 
 /** A name of the plan language in Spanish when it has one (`flows.arg.<name>`), else as it is. */
-const argName = (t: T, n: string) => {
+export const argName = (t: T, n: string) => {
   const k = `flows.arg.${n}`;
   const v = t(k);
   return v === k ? n : v;

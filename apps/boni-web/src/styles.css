@@ -8813,6 +8813,29 @@ button.rows-panel-row:hover {
   border: 0;
   opacity: 0;
 }
+/* In the editor, where an arrow starts and lands (task 78; Juan, 2026-11-05: «no puedo conectarlo entre ellos»): a
+   dot under a step to drag from (the accent's), one over each step to land on, shown under the pointer and, while an
+   arrow is drawn, on every step; the whole step takes the arrow too. */
+.flow-editing .fl-card .react-flow__handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--surface-2);
+  border-radius: 50%;
+  background: var(--line-strong);
+  transition: opacity 120ms;
+}
+.flow-editing .fl-card .react-flow__handle.source {
+  background: var(--accent);
+  cursor: crosshair;
+}
+.flow-editing .react-flow__node:hover .fl-card .react-flow__handle,
+.flow-editing.connecting .fl-card .react-flow__handle.target {
+  opacity: 1;
+}
+/* The trigger starts no arrow (its values are the flow's inputs, taken by name): no dot. */
+.flow-editing .fl-card.source .react-flow__handle {
+  display: none;
+}
 .fl-card.model {
   border-color: var(--accent);
 }
