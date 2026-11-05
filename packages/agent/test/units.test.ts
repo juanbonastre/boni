@@ -1,13 +1,13 @@
 import { label } from "@boni/entities";
 import { describe, expect, it } from "vitest";
-import { dayFromToday, dayName, relativeDayIn, withDays } from "../src/agent.ts";
+import { dayFromToday, dayName, relativeDayIn, toolsFor, withDays } from "../src/agent.ts";
 import { apiSchema } from "../src/anthropic.ts";
 import { marksOf } from "../src/confirm.ts";
 import { callFn } from "../src/fns.ts";
 import { isWholeSpan, validatePlan } from "../src/plan.ts";
 import { decide, type Origin } from "../src/policy.ts";
 import { checkReader, checkReaderOutput, READER_PROMPTS, readerSchema } from "../src/readers.ts";
-import { coreTools, neutralize, ToolRegistry } from "../src/tools.ts";
+import { coreTools, neutralize, type ToolDef, ToolRegistry } from "../src/tools.ts";
 import { at, atOrNull, leaf, list, rec, type Val } from "../src/values.ts";
 import { toPlannerView } from "../src/view.ts";
 import { testRegistry } from "./fixture.ts";
@@ -296,6 +296,42 @@ describe("the policy engine", () => {
     expect(
       decide(call("flows.run", run(user)), { kind: "turn", trust: "shared" }, counters),
     ).toMatchObject({ kind: "deny", rule: "P8" });
+  });
+  it("a piece of Boni runs only in a flow; one that changes the inbox only in the flow's own background run, or tried (P20)", () => {
+    // docs/sistema.md §4.2: Boni's own code as a step of a flow, never in a plan a model writes for a turn.
+    const piece = (changes: boolean): ToolDef<"piece"> => ({
+      name: changes ? "inbox.fold" : "mail.rule",
+      effect: "piece",
+      title: "Pieza",
+      describe: "a piece of Boni",
+      args: { mail: { role: "entity", describe: "the mail" } },
+      ...(changes ? { changes: true } : {}),
+      run: () => leaf(null, model),
+    });
+    const args = { mail: leaf("e1", user) };
+    const bg: Origin = { kind: "background", trust: "personal" };
+    expect(decide({ tool: piece(false), args, control: null }, bg, counters)).toEqual({
+      kind: "deny",
+      rule: "P20",
+      reason: "piece-outside-flow",
+    });
+    expect(decide({ tool: piece(false), args, control: null, flow: true }, turn, counters)).toEqual(
+      { kind: "allow", rule: "P20" },
+    );
+    expect(
+      decide({ tool: piece(true), args, control: null, flow: true }, turn, counters),
+    ).toMatchObject({ kind: "deny", rule: "P20", reason: "piece-outside-background" });
+    expect(
+      decide({ tool: piece(true), args, control: null, flow: true, dry: true }, turn, counters),
+    ).toEqual({ kind: "allow", rule: "P20" });
+    expect(decide({ tool: piece(true), args, control: null, flow: true }, bg, counters)).toEqual({
+      kind: "allow",
+      rule: "P20",
+    });
+    // The planner's catalog never has one; a saved flow's has.
+    const r = new ToolRegistry().register(piece(false)).register(piece(true));
+    expect(toolsFor(r, turn).map((t) => t.name)).toEqual([]);
+    expect(toolsFor(r, turn, true).map((t) => t.name)).toEqual(["mail.rule", "inbox.fold"]);
   });
   it("a flow a model writes is only proposed; saved when Juan accepts it; never from outside (P19, P16, P8)", () => {
     const def = (l: typeof user) => ({

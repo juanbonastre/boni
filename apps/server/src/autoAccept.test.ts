@@ -47,6 +47,8 @@ function proposal(
   store: UserStore,
   sender: string,
   decided?: { accept: boolean; corrected?: boolean },
+  /** The sources before the sender's, as the reading gives them (its extension, the code). */
+  before: readonly string[] = [],
 ): ProposalRow {
   const id = `p${++n}`;
   store.journal.startRun({
@@ -72,7 +74,7 @@ function proposal(
         { arg: "values.title", value: "Tarea inventada" },
       ],
     },
-    sources: [`mail:${sender}`],
+    sources: [...before, `mail:${sender}`],
     created: n,
   });
   if (decided)
@@ -86,6 +88,19 @@ function proposal(
 }
 
 describe("when Boni would accept a proposal alone (measured, not done)", () => {
+  it("knows a mail's proposals by their sender wherever it is among their sources, as the reading makes them", () => {
+    // 2026-11-05 (F7): a reading's proposal carries its extension's and the code's sources before its sender's; only
+    // the first one was read, so no real mail's proposal counted and all of a collection were "like" each other.
+    const store = env();
+    const reading = ["code:extension:correo", "code:mail"];
+    for (let i = 0; i < 3; i++)
+      proposal(store, "ana.ejemplo@example.com", { accept: true }, reading);
+    proposal(store, "otro.ejemplo@example.com", { accept: false }, reading);
+    const history = decisionHistory(store);
+    expect([...history.values()].map((v) => v.length).sort()).toEqual([1, 3]);
+    expect([...history.keys()].every((k) => k.includes("mail:"))).toBe(true);
+  });
+
   it("the rule: at least MIN decided like it, the last WINDOW all accepted as proposed", () => {
     expect(MIN).toBe(3);
     expect(WINDOW).toBe(5);

@@ -21,6 +21,10 @@ export interface Call {
   args: Readonly<Record<string, Val>>;
   /** The label of what decided that the step runs (its `when` / `each`), when there is one. */
   control: Label | null;
+  /** The run is a saved flow's (docs/flujos.md D-42), not a plan a model wrote for a turn. */
+  flow?: boolean;
+  /** «Probar»: nothing is written, proposed or confirmed; what a step would do is said. */
+  dry?: boolean;
 }
 export interface RunCounters {
   writes: number;
@@ -150,6 +154,14 @@ export function decide(
     }
     case "read":
       return allow("P1");
+    // A piece of Boni (docs/sistema.md §4.2) is Boni's own code as a step: only in a flow, never in a plan a model
+    // wrote; one that changes the inbox (folds a thread, accepts alone), only in the flow's own background run, or
+    // said as «haría» when the flow is tried (P20).
+    case "piece":
+      if (!call.flow) return deny("P20", "piece-outside-flow");
+      if (tool.changes && origin.kind !== "background" && !call.dry)
+        return deny("P20", "piece-outside-background");
+      return allow("P20");
     default:
       return deny("P0", "unforeseen");
   }

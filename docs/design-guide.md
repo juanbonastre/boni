@@ -790,8 +790,10 @@ contraseña ni un código aquí» under a question.
   «Encendido» switch, «Añadir paso» (task 70: a search on top, «Buscar paso», which takes the keys at once and finds
   a kind by its name, its group's or its tool's, Enter taking the first once something is typed, «Ningún paso se
   llama así» when none; under it the kinds in groups by what they do, Leer, Decidir, Datos, Avisar, Preguntar,
-  Responder and Otros, a group with nothing to offer left out, each node named in a word; never a step that runs or
-  saves a flow),
+  Responder and Otros, and **«De Boni»** in a flow a mail starts (F7, `docs/sistema.md` §4.2: Boni's pieces, «Reglas
+  de la guía», «Lo pendiente», «Invitación», «Relaciones», «Plegar hilo», «Aceptar solas», the code that works on the
+  mail, which only such a flow has), a group with nothing to offer left out, each node named in a word; never a step
+  that runs or saves a flow),
   «Ejecutar» on a flow by hand (its form first when it asks for something; it runs as a turn of a new conversation,
   where its replies, questions and confirmations show as always), then «Descartar» and «Guardar» (primary, enabled
   only with changes and an empty checklist) and «⋯» (the versions, each «vN · Tú/Boni · date», a click goes back to
@@ -805,14 +807,16 @@ contraseña ni un código aquí» under a question.
   drawn, on every step; the arrow lands on a step wherever it is left on it, and left on the canvas it opens «Añadir
   paso» there, the new step then asking where it takes the value; the trigger has no dot (its values are the flow's
   inputs, taken by name). The right button on the canvas opens «Añadir paso» where it was, the step placed there
-  (task 78). Supr removes the selected node, the
+  (task 78). The canvas fits its flow once its nodes are measured, and again for another flow (fitted before, it
+  opened too far out to read: 2026-11-05). Supr removes the selected node, the
   right button on a node opens its actions where the pointer is, without opening its panel (task 70: Abrir, its
   panel; Duplicar, a copy right after it under an id of its own, a little below and right of it; Probar hasta aquí,
   the flow tried as far as it and the test bar saying «hasta «…»», greyed while a test runs or with a problem up to
   it; and Quitar; the trigger has only Abrir), a click opens its panel on the right (340 px): its name, id and
   «Quitar»; its
-  problems in `--bad`; **«Entra»** (task 70: each value it takes, `$m.asunto`, with what it is, «texto», «lista»,
-  «registro», muted on the right; «Nada de antes» without any); what it is (the
+  problems in `--bad`; **«Entra»** (task 70: each value it takes, what the trigger binds by its name, «Correo»,
+  «Texto» (F7, I-08), an earlier step's as `$m.asunto`, with what it is, «texto», «lista», «registro», muted on the
+  right; «Nada de antes» without any); what it is (the
   tool, the reader, the question, the reply) and its settings from the catalog's schema: a collection as a list of
   the collections (changing it, the record's fields follow their roles and the collection's inputs, `$fill.<key>`,
   its key), a record's values as rows of field and value (the parts it is merged with as chips), any other as a
@@ -822,8 +826,9 @@ contraseña ni un código aquí» under a question.
   fields, as «Entra» shows them: the server computes them with the values a step may take; a reply gives «Nada»),
   and after a test «En la
   prueba» (what it gave or would do, the node's lines in full; «No llegó a este paso» when the test stopped
-  before). The trigger's panel: «Nuevo correo» with what it binds, «Disparado por el usuario» (task 78; «A mano» until
-  then) with the
+  before). The trigger's panel and node name what it binds as a person says it («Correo», «Asunto», «Destinatarios»,
+  «Guía», «A petición», «Dónde escribe»; F7, I-08: never `$mail`): «Nuevo correo» with what it binds, «Disparado por
+  el usuario» (task 78; «A mano» until then) with the
   names its form asks for, or **«Programado»** (F4): «Cuándo» (Cada día, Cada semana with its «Día», Cada hora) and
   «A las» as two lists, the hour and the minutes every five (never a time field: it shows AM/PM in an English
   browser), or «Minuto» every hour; the node says it in words («Cada día a las 08:00», «Cada lunes a las 07:30»,
@@ -831,7 +836,10 @@ contraseña ni un código aquí» under a question.
   offers «Ejecutar flujo» (a flow does not run another). A node with a problem has a `--bad` border; the selected
   one an `--accent` ring.
   **«Probar»** (F3; n8n's «Test step» and Dify's debug run as references) runs the draft as it is, dry: with the
-  latest mail for a mail flow, with the form's values for one by hand. Readers and the decider are called (it costs
+  latest mail for a mail flow, or with the one chosen in **«Probar con…»** (F7, task 63 point 6: an icon button beside
+  it, a list of the mails by subject, newest first, «Buscar correo» filtering it as one types), with the form's
+  values for one by hand. Boni's pieces run too (a dry run proposes nothing, so «Plegar hilo» and «Aceptar solas»
+  find nothing to change). Readers and the decider are called (it costs
   what a reading costs); nothing is written, notified, proposed or confirmed, and a question ends it. A bar over the
   canvas in `--accent-soft` says with what («Prueba con «Informe y sala» · sin escribir nada», or where it stopped)
   and has × to take it away; each node says what came of it in its line: «→ 2 elementos», «→ «Gestiones»»,
@@ -846,7 +854,8 @@ contraseña ni un código aquí» under a question.
 - **The Recorrido on the canvas** (F3, task 59c): a run of the Registro (and a proposal's «Recorrido») is drawn
   as a flow's canvas, read only: the trigger with what it bound when the plan took values from outside, each step
   named as the editor names it, an arrow for each value it took, and its line: «Hecho», «Propuesto», «Parado
-  (P2)», «No se ejecutó», «No llegó», with the first words a model answered under it. It replaces the SVG diagram of
+  (P2)», «No se ejecutó», «No llegó», «Acaba aquí» (F7: a piece of Boni ended the run there, done, such as «Reglas de
+  la guía» for a sender it never reads), with the first words a model answered under it. It replaces the SVG diagram of
   task 52; the steps' list, «Leyó», «Hizo», «Propuso», «Decisiones», «Modelos» and «Copiar» stay below it.
 - **«Modelos»** (the tab; task 59b, Juan 2026-11-04: see what every model does and how they work together, n8n's
   canvas as the reference; until 2026-11-04 Ajustes → Modelos, which keeps a button to it): first the

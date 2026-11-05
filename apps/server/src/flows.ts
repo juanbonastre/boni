@@ -62,6 +62,9 @@ export const MAIL_INPUTS: Readonly<Record<string, FlowInput["what"]>> = {
   prefill: "relations",
   adjuntos: "text",
   inv: "value",
+  asked: "value",
+  again: "value",
+  writes: "list",
 };
 /** The inputs a step's collection decides, by the collection's key. */
 export const PER_COLLECTION = ["fill", "prefill"];
@@ -348,6 +351,10 @@ export interface FlowCatalog {
     title: string;
     effect: string;
     args: { name: string; role: string; required: boolean }[];
+    /** A piece of Boni that works on the record that started the flow: only where a record starts it. */
+    record?: boolean;
+    /** A piece that changes the inbox: «Probar» says what it would do. */
+    changes?: boolean;
   }[];
   readers: Record<string, { params: string[]; required: string[]; out: string[] }>;
   asks: string[];
@@ -400,6 +407,8 @@ export function flowCatalog(
         role: a.role,
         required: !!a.required,
       })),
+      ...(t.record ? { record: true } : {}),
+      ...(t.changes ? { changes: true } : {}),
     })),
     readers,
     asks: v.asks,
@@ -475,9 +484,13 @@ export function checkFlow(
   if (!steps.length) problems.push({ step: null, at: null, code: "no-steps" });
   else {
     const origin = originOf(flow.trigger);
-    const v = checkPlan(flow.plan, registry, origin, triggerNames(flow.trigger));
+    // A name a step of the plan has is the step's, never the trigger's (Boni's pieces are steps named as the values
+    // the code bound before F7: `only`, `known`, `inv`, `prefill`).
+    const own = new Set(steps.map((s) => s.id));
+    const bound = triggerNames(flow.trigger).filter((n) => !own.has(n));
+    const v = checkPlan(flow.plan, registry, origin, bound, true);
     if (!v.ok) {
-      const allowed = new Set(toolsFor(registry, origin).map((t) => t.name));
+      const allowed = new Set(toolsFor(registry, origin, true).map((t) => t.name));
       for (const e of v.errors) {
         const m = /^step (\d+)((?:\.[^:]+)?): (.+)$/.exec(e);
         if (!m) {
@@ -517,6 +530,12 @@ export function checkFlow(
         });
     }
   }
+  // A piece of Boni that works on the record that started the flow (a mail) is only in a flow a record starts
+  // (docs/sistema.md §4.2).
+  const byRecord = typeof (flow.trigger as { created?: unknown } | null)?.created === "string";
+  for (const s of steps)
+    if (s.op === "call" && typeof s.tool === "string" && registry.get(s.tool)?.record && !byRecord)
+      problems.push({ step: s.id, at: null, code: "piece-needs-record" });
   // A flow never starts another (docs/flujos.md §4.3): `flows.run` is the planner's, in the user's turn.
   for (const s of steps)
     if (
@@ -611,6 +630,9 @@ function inputShapes(trigger: unknown, types: TypeDef[]): Record<string, Shape> 
       prefill: rec(Object.fromEntries(types.map((d) => [d.key, relations(d)]))),
       adjuntos: TEXT(),
       inv: rec(fieldsOf(["uid", "titulo", "dia", "inicio", "fin", "nota", "linea"])),
+      asked: { t: "bool" },
+      again: { t: "bool" },
+      writes: list(TEXT()),
     };
   }
   if (t?.schedule) return { today: TEXT() };
@@ -650,6 +672,37 @@ function stepShape(
       // Whether the notice was sent.
       case "notify":
         one = { t: "bool" };
+        break;
+      // Boni's pieces (docs/sistema.md §4.2).
+      case "mail.rule":
+        one = TEXT();
+        break;
+      case "mail.known":
+        one = list(TEXT());
+        break;
+      case "mail.invitation":
+        one = rec(fieldsOf(["uid", "titulo", "dia", "inicio", "fin", "nota", "linea"]));
+        break;
+      // For each collection the flow writes in (by key), its relations.
+      case "mail.relations":
+        one = rec(
+          Object.fromEntries(
+            [...byKey.values()].map((def) => [
+              def.key,
+              rec(
+                Object.fromEntries(
+                  def.fields
+                    .filter((f) => f.type === "relation" && !f.archived)
+                    .map((f) => [f.key, VALUE()]),
+                ),
+              ),
+            ]),
+          ),
+        );
+        break;
+      case "inbox.fold":
+      case "inbox.accept_alone":
+        one = NUM();
         break;
     }
   } else if (s.op === "read") one = readerShape(String(s.reader ?? ""), modules);

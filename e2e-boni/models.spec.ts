@@ -347,7 +347,9 @@ test("«Flujos»: the editor draws a flow and changes it: a step's collection, s
   const canvas = page.locator(".flow-editor .flow-canvas");
   await expect(canvas.locator(".fl-node")).toHaveCount(5);
   await expect(canvas.locator(".fl-node.source")).toContainText("Nuevo correo");
-  await expect(canvas.locator(".fl-node.source")).toContainText("$mail");
+  // What it binds, by name (F7, I-08: never `$mail`).
+  await expect(canvas.locator(".fl-node.source")).toContainText("Correo");
+  await expect(canvas.locator(".fl-node.source")).not.toContainText("$");
   for (const name of ["Leer", "Lectora", "Rellenadora", "Crear"])
     await expect(
       canvas.locator(".fl-node .fl-name", { hasText: new RegExp(`^${name}$`) }),
@@ -449,6 +451,7 @@ test("the editor gives control (task 70): «Añadir paso» with a search and gro
     "Avisar",
     "Preguntar",
     "Responder",
+    "De Boni",
   ]);
   await expect(add.getByRole("textbox", { name: "Buscar paso" })).toBeFocused();
   await page.keyboard.type("avis", { delay: 15 });
@@ -485,7 +488,8 @@ test("the editor gives control (task 70): «Añadir paso» with a search and gro
   // Its panel: «Entra», what it takes and what each value is; «Sale», what it gives the steps after it.
   await expect(panel.locator("h3")).toHaveText("Lectora");
   const entra = panel.getByRole("region", { name: "Entra" });
-  await expect(entra.locator("li").first()).toHaveText(/^\$text\s*texto$/);
+  // What the trigger binds, by its name (F7, I-08: never `$text`).
+  await expect(entra.locator("li").first()).toHaveText(/^Texto\s*texto$/);
   await expect(entra.locator("li")).toHaveCount(5);
   await expect(panel.getByRole("region", { name: "Sale" }).locator("li")).toHaveText([
     /^\$r\s*registro$/,
@@ -593,6 +597,66 @@ test("steps connected by dragging as a person does (task 78): a step's dot to an
   expect(fromTrigger.y).toBeGreaterThanOrEqual(trigger.y + trigger.height - 4);
 });
 
+test("Boni's pieces in «Leer correo» (F7): the trigger's inputs by name, the canvas fitted, «De Boni» to add, «Probar con…» a chosen mail", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    mail: true,
+    agent: {
+      "GET api/agent/flows": [FLOWS],
+      "GET api/agent/flows/:id": [FLOW_DETAIL],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+      "POST api/agent/flows/:id/test": [FLOW_TEST],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  await expect(canvas.locator(".fl-node")).toHaveCount(5);
+  // What the trigger binds, as a person says it: never the plan's own names (I-08).
+  const trigger = canvas.locator(".fl-card.source");
+  for (const name of ["Correo", "Texto", "Qué busca", "Destinatarios", "Lo pendiente", "Guía"])
+    await expect(trigger).toContainText(name);
+  await expect(trigger).not.toContainText("$");
+  // Fitted once its nodes are measured: readable, and inside the canvas (it opened too far out to read).
+  await expect
+    .poll(async () => (await trigger.boundingBox())?.width ?? 0, { timeout: 5000 })
+    .toBeGreaterThan(150);
+  const area = await canvas.boundingBox();
+  const box = await trigger.boundingBox();
+  expect(box && area && box.y >= area.y && box.y + box.height <= area.y + area.height).toBe(true);
+  // At 860 px too (where it was seen too far out): opened again, fitted, readable.
+  await page.setViewportSize({ width: 860, height: 900 });
+  await page.locator(".sidebar").getByRole("button", { name: "Mis datos", exact: true }).click();
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await expect
+    .poll(async () => (await trigger.boundingBox())?.width ?? 0, { timeout: 5000 })
+    .toBeGreaterThan(120);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  // «Añadir paso» offers Boni's pieces in a flow a mail starts.
+  await page.getByRole("button", { name: "Añadir paso" }).click();
+  const add = page.getByRole("dialog", { name: "Añadir paso" });
+  await expect(add.locator(".menu-head").last()).toHaveText("De Boni");
+  await expect(add.getByRole("menuitemradio", { name: "Reglas de la guía" })).toBeVisible();
+  await expect(add.getByRole("menuitemradio", { name: "Plegar hilo" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  // «Probar con…»: a mail of Correos by its subject; the flow is tried with that one.
+  await page.getByRole("button", { name: "Probar con…" }).click();
+  const list = page.getByRole("dialog", { name: "Probar con…" });
+  await expect(list.getByRole("textbox", { name: "Buscar correo" })).toBeFocused();
+  await page.keyboard.type("actas", { delay: 15 });
+  await list.getByRole("menuitemradio", { name: "Actas pendientes" }).click();
+  await expect(page.locator(".flow-test-bar")).toBeVisible();
+  const sent = await page.evaluate(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).find((b) =>
+      b.startsWith("POST api/agent/flows/leer-correo/test"),
+    ),
+  );
+  expect(sent).toContain('"mail":"m1"');
+  await page.screenshot({ path: `${SHOTS}/flow-pieces.png` });
+});
+
 test("«Probar»: the draft run dry with the latest mail; each step says what it gave or would do; nothing written", async ({
   page,
 }) => {
@@ -668,7 +732,7 @@ test("a daily summary drawn without code: the trigger «Programado», every day 
     .locator("select")
     .selectOption("schedule");
   await expect(canvas.locator(".fl-node.source")).toContainText("Cada día a las 08:00");
-  await expect(canvas.locator(".fl-node.source")).toContainText("$today");
+  await expect(canvas.locator(".fl-node.source")).toContainText("Hoy");
   await panel.getByRole("combobox", { name: "Hora" }).selectOption("07");
   await panel.getByRole("combobox", { name: "Minuto" }).selectOption("30");
   await expect(canvas.locator(".fl-node.source")).toContainText("Cada día a las 07:30");
@@ -716,7 +780,7 @@ test("a flow a model proposed waits in the inbox, drawn with what it changes; «
   await expect(made.locator("h3")).toHaveText("Resumen del lunes");
   await expect(made.locator(".inbox-what")).toHaveText("Cada lunes a las 08:00 · 2 pasos");
   await expect(made.locator(".fl-node")).toHaveCount(3);
-  await expect(made.locator(".fl-node.source")).toContainText("$today");
+  await expect(made.locator(".fl-node.source")).toContainText("Hoy");
   // A change: what it adds and what it takes away, said and drawn.
   const change = cards.nth(1);
   await expect(change.locator("h3")).toHaveText("Cambio en «Resumen diario»");

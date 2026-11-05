@@ -127,7 +127,8 @@ function decided(store: UserStore): { p: ProposalRow; right: boolean }[] {
       (p) =>
         p.tool === "entities.create" &&
         p.decided !== null &&
-        (p.sources[0] ?? "").startsWith("mail:"),
+        // A mail's: its sender is among its sources, not always the first (inboxCard.ts `sourceKey`).
+        p.sources.some((s) => s.startsWith("mail:")),
     )
     .sort((a, b) => (a.decided ?? 0) - (b.decided ?? 0) || a.created - b.created)
     .flatMap((p) => {

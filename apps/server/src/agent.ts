@@ -45,6 +45,7 @@ import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
+import { withPieces } from "./pieces.ts";
 import { pipelineView } from "./pipeline.ts";
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
@@ -124,7 +125,8 @@ export class AgentHost {
   private agents = new Map<number, Agent>();
   /** The providers each account's agent was last given (they change when Juan chooses other models). */
   private used = new Map<number, Providers>();
-  private registry: ToolRegistry = coreTools().freeze();
+  // The core's tools and Boni's pieces (docs/sistema.md §4.2): a piece runs only in a flow (P20).
+  private registry: ToolRegistry = withPieces(coreTools()).freeze();
   /** The tools every agent of this server has (the flow editor's catalog, docs/flujos.md). */
   get tools(): ToolRegistry {
     return this.registry;
@@ -160,6 +162,8 @@ export class AgentHost {
   providersFor: ((account: number) => Providers | null) | null = null;
   /** The account spent its month's budget (models.ts): background work calls no model. */
   overBudget: ((account: number) => boolean) | null = null;
+  /** What Boni's pieces work with for an account (mail.ts `piecesFor`, set by the mail when it starts). */
+  pieces: ((account: number) => unknown) | null = null;
   /** «Modelos» (models.ts): its routes are served here, under /api/agent/models. */
   models: AccountModels | null = null;
   /** The planners a conversation may use, and one of them by its id (models.ts); none: only the account's. */
@@ -225,6 +229,7 @@ export class AgentHost {
         overBudget: () => this.overBudget?.(account) ?? false,
         // A reader of mail in the conversation reads with Juan's guide, as the background reading does.
         readingGuide: () => this.readingGuideOf?.(account) ?? null,
+        pieces: () => this.pieces?.(account) ?? null,
         ...(this.o.tz ? { tz: this.o.tz } : {}),
         ...(this.o.now ? { now: this.o.now } : {}),
         // To this account's devices only: the recipient is the code's (7.9).

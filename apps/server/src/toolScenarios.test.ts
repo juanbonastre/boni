@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { coreTools, EFFECTS } from "@boni/agent";
 import { describe, expect, it } from "vitest";
+import { withPieces } from "./pieces.ts";
 
 /**
  * A-18 (docs/principios.md; Juan, 2026-11-05, task 64, measure E): every tool a model can call has its scenario, a test
@@ -12,6 +13,7 @@ import { describe, expect, it } from "vitest";
  */
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 const AGENT = "packages/agent/test/agent.test.ts";
+const MAIL = "apps/server/src/mail.test.ts";
 
 const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "entities.query": [
@@ -92,6 +94,47 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
       test: "a scheduled flow's «Avisar» reaches the phone with Boni closed, sealed for it alone; the calendar's address only hears «reminders»",
     },
   ],
+  // Boni's pieces (docs/sistema.md §4.2): no model calls them; the flow «Leer correo» runs each, for real.
+  "mail.rule": [
+    {
+      file: MAIL,
+      test: "his words reach the reader; rules are code: never read, or straight to one collection",
+    },
+    {
+      file: MAIL,
+      test: "the guide's rule ends the reading at its step, as done, without a model; a mail Juan asks for is read",
+    },
+  ],
+  "mail.known": [
+    {
+      file: MAIL,
+      test: "become proposals in a collection the reader picks among the marked ones, never writes",
+    },
+  ],
+  "mail.invitation": [
+    {
+      file: MAIL,
+      test: "gives its event from the .ics by code, with its hours; not again when a calendar of the account has it",
+    },
+  ],
+  "mail.relations": [
+    {
+      file: MAIL,
+      test: "come with their other fields filled from Juan's own options, and a note (Jev when there is one)",
+    },
+  ],
+  "inbox.fold": [
+    {
+      file: MAIL,
+      test: "proposes once what replies repeat; a changed hour gives way to the new proposal, which says what it was",
+    },
+  ],
+  "inbox.accept_alone": [
+    {
+      file: MAIL,
+      test: "with «Solo» on, a proposal like the ones Juan always kept is accepted in its own reading, a step of the flow",
+    },
+  ],
 };
 /**
  * Effects no tool of the registry has yet, with their policy ready (docs/nucleo.md §7.5): a write with no Undo
@@ -102,7 +145,8 @@ const NO_TOOL_YET = ["write_irreversible", "egress", "send"];
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 describe("every tool a model can call has its scenario (A-18)", () => {
-  const tools = coreTools()
+  // The server's registry: the core's tools and Boni's pieces.
+  const tools = withPieces(coreTools())
     .all()
     .map((t) => t.name)
     .sort();
@@ -127,7 +171,7 @@ describe("every tool a model can call has its scenario (A-18)", () => {
 
   it("every effect has a tool that runs it, or is one no tool has yet", () => {
     const used = new Set(
-      coreTools()
+      withPieces(coreTools())
         .all()
         .map((t) => t.effect as string),
     );

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Duplex } from "node:stream";
 import {
   type Budget,
+  EndRun,
   FILL_LIMITS,
   type FillField,
   type From,
@@ -15,6 +16,7 @@ import {
   readStore,
   rec,
   resolveModules,
+  ToolError,
   type UserIn,
   type Val,
 } from "@boni/agent";
@@ -30,7 +32,7 @@ import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import type { Feeds } from "./feeds.ts";
-import { collectionKeysOf, ensureFlow, MAIL_FLOW } from "./flows.ts";
+import { collectionKeysOf, ensureFlow, inputsOf, MAIL_FLOW, stepsOf } from "./flows.ts";
 import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
 import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
 import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
@@ -38,6 +40,7 @@ import { dueField, fillFields, type Target, TargetMemo } from "./mailTargets.ts"
 import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { timed } from "./perf.ts";
+import { type MailPieces, PIECES } from "./pieces.ts";
 import { type Named, ownText, type Prefill, prefillOf } from "./prefill.ts";
 import { decrypt, type SecretKey } from "./secret.ts";
 import { likeTitle, normalizeSubject, threadIdOf, whenOf, whenParts } from "./thread.ts";
@@ -250,9 +253,12 @@ export const MAIL_MODULES = ["tasks", "events"];
  *
  * It is the same plan for every mail of a configuration (the collections marked for mail, the modules, the routes,
  * the guide): what varies with the mail is bound by code as the flow's inputs (`mailBindings`): the record
- * (`$mail`), the mail as the reader reads it (`$text`), its subject, where the user is among its recipients and what
- * that sender has waiting (`$known`), the collection a rule of the guide sends it to (`$only`), and per collection,
- * by its key, the fields the reader fills (`$fill.<key>`) and the relations the code found (`$prefill.<key>`).
+ * (`$mail`), the mail as the reader reads it (`$text`), its subject, where the user is among its recipients, whether
+ * Juan asked for it (`$asked`) or to read it again (`$again`), the collections the plan writes in (`$writes`), and per
+ * collection, by its key, the fields the reader fills (`$fill.<key>`). What the code works out around the models is done by Boni's pieces, as steps of the plan
+ * that show on its canvas (docs/sistema.md §4.2, pieces.ts): the guide's rules (`only`: the collection a rule sends
+ * the sender to, or the run ends there), what the sender has waiting (`known`), the invitation's event (`inv`), the
+ * relations the mail names (`prefill.<key>`), and, once proposed, folding the thread and «Aceptar solas».
  */
 export function mailPlan(
   targets: Target[],
@@ -278,8 +284,12 @@ export function mailPlan(
      * module's route; no reader in between. Its steps run only when the mail is one (`$inv.uid`).
      */
     invitation?: string;
+    /** Boni's pieces as steps (the flow «Leer correo»); without them (a reading that only measures, no flow), the
+     * plan reads `$only`, `$known`, `$inv` and `$prefill` as bound values, as it did before F7. */
+    pieces?: boolean;
   } = {},
 ): unknown {
+  const withPieces = o.pieces !== false;
   const modules = o.modules ?? MAIL_MODULES;
   const route = (m: string): RouteSpec => o.routes?.[m] ?? { propose: "chosen" };
   const chosen = modules.filter((m) => {
@@ -287,8 +297,27 @@ export function mailPlan(
     return "propose" in r && r.propose === "chosen";
   });
   const text = { ref: "$text" };
+  const mail = { ref: "$mail" };
+  // Boni's pieces before the reading (pieces.ts): their step names are what the rest of the plan reads.
+  const before = withPieces
+    ? [
+        { id: "only", op: "call", tool: "mail.rule", args: { mail, asked: { ref: "$asked" } } },
+        { id: "known", op: "call", tool: "mail.known", args: { mail, again: { ref: "$again" } } },
+        ...(o.invitation
+          ? [{ id: "inv", op: "call", tool: "mail.invitation", args: { mail } }]
+          : []),
+        // The collections the plan writes in come from the code (`$writes`): a step's collection changes in one place.
+        {
+          id: "prefill",
+          op: "call",
+          tool: "mail.relations",
+          args: { mail, types: { ref: "$writes" } },
+        },
+      ]
+    : [];
   const steps: unknown[] = [
-    { id: "m", op: "call", tool: "entities.get", args: { id: { ref: "$mail" } } },
+    { id: "m", op: "call", tool: "entities.get", args: { id: mail } },
+    ...before,
     {
       id: "r",
       op: "read",
@@ -439,8 +468,21 @@ export function mailPlan(
       if (t) steps.push(invite("inv_f", t));
     }
   }
+  // Boni's pieces after the proposals: one thread, one proposal (D-29), then «Aceptar solas» when «Solo» is on.
+  if (withPieces)
+    steps.push(
+      { id: "fold", op: "call", tool: "inbox.fold", args: { mail, again: { ref: "$again" } } },
+      { id: "alone", op: "call", tool: "inbox.accept_alone", args: {} },
+    );
   return { version: 1, steps };
 }
+
+/** A plan with Boni's pieces in it (F7): what it does around its models is in it, not around it. One saved before
+ * the pieces existed has none, and the code still does those things for it. */
+export const usesPieces = (plan: unknown): boolean =>
+  stepsOf(plan).some(
+    (s) => s.op === "call" && (PIECES as readonly string[]).includes(String(s.tool)),
+  );
 
 /** What a device sees: everything but the password. */
 export type MailView = Omit<MailSettings, "password"> & {
@@ -658,6 +700,63 @@ export class Mails {
   constructor(o: MailsOptions) {
     this.o = o;
     this.tz = o.tz ?? systemTimeZone();
+    // Boni's pieces of «Leer correo» run this code, as steps of the flow (docs/sistema.md §4.2).
+    o.host.pieces = (account) => this.piecesFor(account);
+  }
+
+  /**
+   * Boni's pieces for one account (pieces.ts): what the mail reading did around its plan, now steps of it, each
+   * the same code with the same labels as the values it bound before.
+   */
+  piecesFor(account: number): MailPieces {
+    const store = () => this.o.host.store(account);
+    const mailOf = (id: string) => {
+      const e = store().get(id);
+      if (!e || e.entity.deleted !== undefined) throw new ToolError("not-found");
+      return e;
+    };
+    return {
+      rule: (id, asked) => {
+        const from = String(mailOf(id).entity.values.f_de ?? "");
+        const rule = ruleFor(this.guide(account), from);
+        if (rule?.action === "skip" && !asked) {
+          console.log(`mail ${account}: the guide says not to read ${from}: not read`);
+          throw new EndRun("guide-skip");
+        }
+        const s = this.settings(account);
+        const only =
+          rule?.action === "collection" && s
+            ? (this.targets(store(), s).find((t) => t.id === rule.collection)?.option ?? null)
+            : null;
+        return leaf(only, PUBLIC);
+      },
+      known: (id, again) => {
+        const v = mailOf(id).entity.values;
+        const from = String(v.f_de ?? "");
+        const inv =
+          typeof v.f_evento_uid === "string" && v.f_evento_uid
+            ? String(v.f_evento_titulo ?? "")
+            : "";
+        const known = [
+          ...(inv ? [inv.slice(0, 200)] : []),
+          ...(from && !again ? this.known(store(), from) : []),
+        ].slice(0, 20);
+        return list(
+          known.map((k) => leaf(k, PUBLIC)),
+          PUBLIC,
+        );
+      },
+      invitation: async (id) => this.invitationOf(account, mailOf(id)),
+      relations: (id, keys) => rec(this.relationsOf(account, store(), mailOf(id), keys), CODE),
+      fold: (id, again, proposals) =>
+        leaf(again ? 0 : this.foldThread(account, store(), mailOf(id), [...proposals]), CODE),
+      acceptAlone: async (proposals) => {
+        const st = store();
+        const made = proposals.filter((p) => st.journal.proposal(p)?.status !== "stale");
+        if (!made.length || !autoOn(st, AUTO_AREA)) return leaf(0, CODE);
+        return leaf(await acceptAlone(st, this.o.host.agent(account), made, this.now()), CODE);
+      },
+    };
   }
 
   private now = () => (this.o.now ?? Date.now)();
@@ -887,11 +986,13 @@ export class Mails {
         guide: withGuide,
         modules: moduleIds(m),
         boundModules: true,
+        pieces: false,
       }),
       {
         modules: modulesOfManifest(m),
         ...(withGuide ? { guide: guideOf(g) } : {}),
-        ...this.mailBindings(e, s.user, []),
+        ...this.mailBindings(e, s.user),
+        known: list([], PUBLIC),
       },
       ["r"],
       measureBudget(m),
@@ -1526,19 +1627,78 @@ export class Mails {
     c: PlanContext,
     e: NonNullable<ReturnType<UserStore["get"]>>,
     plan: unknown,
-    o: { only: string | null; again: boolean },
+    o: { only: string | null; again: boolean; asked: boolean },
   ): Promise<Record<string, Val>> {
     const v = e.entity.values;
     const from = String(v.f_de ?? "");
-    // Relations the mail plainly names (task 51, phases B and C): the sender as a record of a related collection
-    // by name, a record whose title the sender's own words carry; set by code, the reader's choice first.
+    // What the plan reads from outside its own steps: a plan with Boni's pieces gets the old values from them
+    // (`only`, `known`, `inv`, `prefill` are its steps); one saved before them still gets them bound here.
+    const wants = new Set(inputsOf(plan).map((i) => i.id));
     const types = c.store.schema().types;
+    // Per collection the flow writes in (by its key): the fields its reader fills.
+    const known_ = [...c.targets, ...c.fixed];
+    const fill: Record<string, Val> = {};
+    for (const key of collectionKeysOf(plan)) {
+      const def = Object.values(types).find((x) => x.key === key);
+      const t =
+        known_.find((x) => x.key === key) ??
+        (def ? this.targetsFor(c.store, [def.id])[0] : undefined);
+      fill[key] = fieldsValue(t?.fill ?? [], t?.fillRefs ?? []);
+    }
+    const old: Record<string, Val> = {};
+    if (wants.has("prefill"))
+      old.prefill = rec(this.relationsOf(account, c.store, e, collectionKeysOf(plan)), CODE);
+    if (wants.has("only")) old.only = leaf(o.only, PUBLIC);
+    if (wants.has("inv")) old.inv = await this.invitationOf(account, e);
+    if (wants.has("known")) {
+      const inv =
+        typeof v.f_evento_uid === "string" && v.f_evento_uid ? String(v.f_evento_titulo ?? "") : "";
+      const known = [
+        ...(inv ? [inv.slice(0, 200)] : []),
+        ...(from && !o.again ? this.known(c.store, from) : []),
+      ].slice(0, 20);
+      old.known = list(
+        known.map((k) => leaf(k, PUBLIC)),
+        PUBLIC,
+      );
+    }
+    const own = new Set(stepsOf(plan).map((x) => x.id));
+    const all: Record<string, Val> = {
+      ...c.bound,
+      options: optionsValue(c.targets),
+      fill: rec(fill, CODE),
+      writes: list(
+        collectionKeysOf(plan).map((k) => leaf(k, CODE)),
+        CODE,
+      ),
+      asked: leaf(o.asked, CODE),
+      again: leaf(o.again, CODE),
+      ...this.mailBindings(e, c.s.user),
+      ...old,
+    };
+    // A name a step of the plan has is the step's, never bound.
+    return Object.fromEntries(Object.entries(all).filter(([k]) => !own.has(k)));
+  }
+
+  /**
+   * The relations the mail plainly names (task 51, phases B and C), for each collection key: the sender as a record
+   * of a related collection by name, a record whose title the sender's own words carry; set by code, the reader's
+   * choice first (`merge`). The piece «Relaciones» and the bindings of a plan saved before the pieces.
+   */
+  private relationsOf(
+    account: number,
+    store: UserStore,
+    e: NonNullable<ReturnType<UserStore["get"]>>,
+    keys: readonly string[],
+  ): Record<string, Val> {
+    const v = e.entity.values;
+    const types = store.schema().types;
     const titled = new Map<string, Named[]>();
     const recordsOf = (type: string): Named[] => {
       let list = titled.get(type);
       if (!list) {
         const tf = types[type]?.titleField ?? "";
-        list = c.store.list(type).flatMap((x) => {
+        list = store.list(type).flatMap((x) => {
           const title = x.entity.values[tf];
           return typeof title === "string" && title.trim() ? [{ id: x.entity.id, title }] : [];
         });
@@ -1550,16 +1710,9 @@ export class Mails {
       sender: String(v.f_de_nombre ?? ""),
       text: ownText(String(v.f_asunto ?? ""), e.entity.body ?? ""),
     };
-    // Per collection the flow writes in (by its key): the fields its reader fills and the relations the code found.
-    const known_ = [...c.targets, ...c.fixed];
-    const fill: Record<string, Val> = {};
-    const prefill: Record<string, Val> = {};
-    for (const key of collectionKeysOf(plan)) {
+    const out: Record<string, Val> = {};
+    for (const key of keys) {
       const def = Object.values(types).find((x) => x.key === key);
-      const t =
-        known_.find((x) => x.key === key) ??
-        (def ? this.targetsFor(c.store, [def.id])[0] : undefined);
-      fill[key] = fieldsValue(t?.fill ?? [], t?.fillRefs ?? []);
       const found = def ? prefillOf(def, types, recordsOf, words) : [];
       if (found.length)
         console.log(
@@ -1567,32 +1720,30 @@ export class Mails {
             .map((p) => `${p.name} ← «${p.title.slice(0, 40)}» (${p.by})`)
             .join(", ")}`,
         );
-      prefill[key] = prefillValue(found);
+      out[key] = prefillValue(found);
     }
-    // A calendar invitation (task 45): its event comes from the .ics by code, so the reader leaves it out
-    // (`known`); already in one of the account's external calendars, it is not proposed at all.
-    const inv =
-      typeof v.f_evento_uid === "string" && v.f_evento_uid
-        ? { uid: v.f_evento_uid, title: String(v.f_evento_titulo ?? "") }
-        : null;
-    const already = inv ? await this.calendarWith(account, inv.uid) : null;
-    if (inv && already)
-      console.log(
-        `mail ${account}: invitation «${inv.title.slice(0, 60)}» already in calendar «${already}»: not proposed`,
-      );
-    const known = [
-      ...(inv?.title ? [inv.title.slice(0, 200)] : []),
-      ...(from && !o.again ? this.known(c.store, from) : []),
-    ].slice(0, 20);
-    const codeOwn = label("own", "personal", [{ kind: "code", id: "mail" }]);
-    return {
-      ...c.bound,
-      options: optionsValue(c.targets),
-      only: leaf(o.only, PUBLIC),
-      fill: rec(fill, codeOwn),
-      prefill: rec(prefill, codeOwn),
-      ...this.mailBindings(e, c.s.user, known, { already: !!(inv && already) }),
-    };
+    return out;
+  }
+
+  /**
+   * A calendar invitation's event (task 45), read from its .ics by code into the mail's hidden fields, with the
+   * mail's own labels; already in one of the account's external calendars, it comes without its uid and the plan
+   * proposes no event. The piece «Invitación» and the bindings of a plan saved before the pieces.
+   */
+  private async invitationOf(
+    account: number,
+    e: NonNullable<ReturnType<UserStore["get"]>>,
+  ): Promise<Val> {
+    const inv = this.hiddenBindings(e).inv as Val;
+    const v = e.entity.values;
+    const uid = typeof v.f_evento_uid === "string" ? v.f_evento_uid : "";
+    if (!uid || inv.t !== "rec") return inv;
+    const already = await this.calendarWith(account, uid);
+    if (!already) return inv;
+    console.log(
+      `mail ${account}: invitation «${String(v.f_evento_titulo ?? "").slice(0, 60)}» already in calendar «${already}»: not proposed`,
+    );
+    return rec({ ...inv.fields, uid: leaf(null, CODE) }, inv.label);
   }
 
   /**
@@ -1622,7 +1773,8 @@ export class Mails {
         ? (c.targets.find((t) => t.id === rule.collection)?.option ?? null)
         : null;
     return {
-      bind: await this.bindingsFor(account, c, e, plan, { only, again: true }),
+      // As a new mail is read (`asked` false): a sender the guide never reads ends the try at its rule.
+      bind: await this.bindingsFor(account, c, e, plan, { only, again: true, asked: false }),
       mail: e.entity.id,
       subject: String(e.entity.values.f_asunto ?? ""),
     };
@@ -1644,9 +1796,13 @@ export class Mails {
     if (!e || e.entity.deleted !== undefined) return none;
     const v = e.entity.values;
     const from = String(v.f_de ?? "");
-    // Guide rules first, by code: a mail it says never to read is not read at all.
+    // The flow «Leer correo» (docs/flujos.md): the version the user saved, or Boni's kept current with the
+    // configuration. With Boni's pieces in it (docs/sistema.md §4.2) the guide's rules, the thread and «Aceptar
+    // solas» are its steps; a version saved before them gets them from the code here, as it did.
+    const flow = this.mailFlow(c);
+    const pieces = usesPieces(flow.plan);
     const rule = ruleFor(c.guide, from);
-    if (rule?.action === "skip" && !asked) return none;
+    if (!pieces && rule?.action === "skip" && !asked) return none;
     // Asked from the conversation (task 54): what this mail already proposed is said, not made again; asked again,
     // its pending proposals give way and the mail is read afresh (Juan, 2026-11-04: «que el usuario pudiese
     // volver a proponerlo»).
@@ -1659,15 +1815,13 @@ export class Mails {
       rule?.action === "collection"
         ? (c.targets.find((t) => t.id === rule.collection)?.option ?? null)
         : null;
-    // The flow «Leer correo» (docs/flujos.md): the version the user saved, or Boni's kept current with the
-    // configuration. Off, the mail is kept and not read.
-    const flow = this.mailFlow(c);
+    // Off, the mail is kept and not read.
     if (!flow.enabled) {
       console.log(`mail ${account}: flow «${flow.name}» v${flow.version} is off: not read`);
       return { ...none, stopped: "flow-off" };
     }
     try {
-      const bound = await this.bindingsFor(account, c, e, flow.plan, { only, again });
+      const bound = await this.bindingsFor(account, c, e, flow.plan, { only, again, asked });
       const r = await c.agent.background(flow.plan, bound, [], budgetOf(c.m), {
         id: flow.id,
         version: flow.version,
@@ -1677,12 +1831,12 @@ export class Mails {
       const stopped = r.status === "stopped" ? (r.error ?? "stopped") : null;
       if (stopped && r.error) console.warn(`mail ${account}: plan stopped (${r.error})`);
       this.logRead(account, c.store, from, r.proposals);
-      if (!again) this.foldThread(account, c.store, e, r.proposals);
+      if (!pieces && !again) this.foldThread(account, c.store, e, r.proposals);
       // What stays after the thread's fold (a repeat gave way): the proposals this reading made.
       const made = r.proposals.filter((p) => c.store.journal.proposal(p)?.status !== "stale");
       // «Solo» on for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are
       // accepted here, each a decision he judges by leaving it or undoing it.
-      if (made.length && autoOn(c.store, AUTO_AREA))
+      if (!pieces && made.length && autoOn(c.store, AUTO_AREA))
         await acceptAlone(c.store, c.agent, made, this.now());
       return { n: made.length, stopped, already: 0, decided: mine.decided.length };
     } catch (err) {
@@ -1836,26 +1990,15 @@ export class Mails {
   private mailBindings(
     e: NonNullable<ReturnType<UserStore["get"]>>,
     mailbox: string,
-    known: readonly string[],
-    o: { already?: boolean } = {},
   ): Record<string, Val> {
     const v = e.entity.values;
     const l = e.labels.f_asunto ?? e.labels.f_de ?? CODE;
-    const hidden = this.hiddenBindings(e);
-    const inv = hidden.inv as Val;
     return {
       mail: leaf(e.entity.id, CODE),
       text: leaf(mailAsText(v, e.entity.body), l),
       subject: leaf(typeof v.f_asunto === "string" ? v.f_asunto : "", l),
       userIn: leaf(userIn(mailbox, v.f_para, v.f_cc), PUBLIC),
-      known: list(
-        known.map((k) => leaf(k, PUBLIC)),
-        PUBLIC,
-      ),
-      ...hidden,
-      ...(o.already && inv.t === "rec"
-        ? { inv: rec({ ...inv.fields, uid: leaf(null, CODE) }, inv.label) }
-        : {}),
+      adjuntos: this.hiddenBindings(e).adjuntos as Val,
     };
   }
 
@@ -1908,9 +2051,9 @@ export class Mails {
     store: UserStore,
     e: NonNullable<ReturnType<UserStore["get"]>>,
     made: string[],
-  ): void {
+  ): number {
     const hilo = e.entity.values.f_hilo;
-    if (typeof hilo !== "string" || !hilo || !made.length) return;
+    if (typeof hilo !== "string" || !hilo || !made.length) return 0;
     const since = this.now() - 60 * 86_400_000;
     const mails = new Set(
       store
@@ -1923,7 +2066,7 @@ export class Mails {
         )
         .map((x) => x.entity.id),
     );
-    if (!mails.size) return;
+    if (!mails.size) return 0;
     const j = store.journal;
     const rowsOf = (p: { view: unknown }) =>
       (p.view as { rows?: { arg: string; value?: unknown }[] }).rows ?? [];
@@ -1941,9 +2084,9 @@ export class Mails {
           !made.includes(p.id) &&
           mails.has(mailOfRun(j, p.run)),
       );
-    if (!earlier.length) return;
+    if (!earlier.length) return 0;
     const now = this.now();
-    let changed = false;
+    let changed = 0;
     for (const id of made) {
       const n = j.proposal(id);
       if (!n || n.status !== "pending") continue;
@@ -1954,7 +2097,7 @@ export class Mails {
       const same = like.find((o) => whenOf(rowsOf(o)) === when);
       if (same) {
         j.setProposal(id, "stale", now);
-        changed = true;
+        changed++;
         console.log(
           `mail ${account}: «${title.slice(0, 60)}» again in its thread (already ${same.status}): not proposed`,
         );
@@ -1963,12 +2106,13 @@ export class Mails {
       const prev = [...like].sort((a, b) => b.created - a.created)[0] as (typeof like)[number];
       for (const o of like) if (o.status === "pending") j.setProposal(o.id, "stale", now);
       j.setProposalBefore(id, { proposal: prev.id, ...whenParts(rowsOf(prev)) });
-      changed = true;
+      changed++;
       console.log(
         `mail ${account}: «${title.slice(0, 60)}» changed in its thread (was ${whenOf(rowsOf(prev)) || "without a day"}): the earlier proposal gives way`,
       );
     }
     if (changed) this.o.host.emit(account, "proposals", { n: 0 });
+    return changed;
   }
 
   /** The name of the account's external calendar that already holds the event `uid`, or null. */

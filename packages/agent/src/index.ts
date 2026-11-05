@@ -141,9 +141,11 @@ export {
 } from "./reading.ts";
 export {
   ARG_ROLES,
+  type Caps,
   coreTools,
   DESTINATION_ROLES,
   EFFECTS,
+  EndRun,
   ensureSystemTypes,
   type FlowStarter,
   type FlowWriter,

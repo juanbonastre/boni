@@ -52,6 +52,9 @@ export const EFFECTS = [
   "flow",
   // Saves a flow a model wrote (docs/flujos.md F5): it is only proposed; it is saved when the user accepts it (P19).
   "flow_save",
+  // A piece of Boni (docs/sistema.md §4.2): Boni's own code as a step of a flow (the guide's rules, a mail's
+  // invitation, folding a thread…). It runs only in a flow (P20); the server gives it what it works with.
+  "piece",
 ] as const;
 export type Effect = (typeof EFFECTS)[number];
 export const ARG_ROLES = [
@@ -132,6 +135,9 @@ export interface Caps {
   notify: { store: ReadStore; notifier: Notifier };
   flow: { store: ReadStore; flows: FlowStarter };
   flow_save: { store: ReadStore; flows: FlowWriter };
+  /** What the server gives Boni's pieces for this account (opaque here: the core knows no app, A-02), and the
+   * proposals this run has made so far. */
+  piece: { pieces: unknown; proposals: () => readonly string[] };
 }
 
 export interface ToolDef<E extends Effect = Effect> {
@@ -144,7 +150,23 @@ export interface ToolDef<E extends Effect = Effect> {
   alwaysConfirm?: boolean;
   /** How the confirmation names the action ("Borrar", "Enviar correo"). */
   title: string;
+  /** A piece that changes something (the inbox): «Probar» says what it would do instead of running it. */
+  changes?: boolean;
+  /** A piece that works on the record that started the flow: only in a flow a record starts (`created`). */
+  record?: boolean;
   run(caps: Caps[E], args: Readonly<Record<string, Val>>, extra: Label): Val | Promise<Val>;
+}
+
+/**
+ * A piece of Boni ends its run here, as done (docs/sistema.md §4.2: the guide's rule says not to read this sender):
+ * the steps after it do not run, and the run's log says where and why. Only a piece may end a run.
+ */
+export class EndRun extends Error {
+  code: string;
+  constructor(code: string) {
+    super(code);
+    this.code = code;
+  }
 }
 
 export class ToolError extends Error {
@@ -750,6 +772,10 @@ export interface CapsContext {
   flows?: FlowStarter;
   /** How an accepted flow is saved (the agent's, docs/flujos.md F5). */
   flowWriter?: FlowWriter;
+  /** What the server gives Boni's pieces for this account (docs/sistema.md §4.2). */
+  pieces?: unknown;
+  /** The proposals the run has made so far (a piece folds or accepts them). */
+  proposals?: () => readonly string[];
 }
 
 const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "external";
@@ -1073,6 +1099,7 @@ export function makeCaps(c: CapsContext): Caps {
         },
       },
     },
+    piece: { pieces: c.pieces ?? null, proposals: c.proposals ?? (() => []) },
   };
 }
 

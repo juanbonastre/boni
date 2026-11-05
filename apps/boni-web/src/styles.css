@@ -9018,12 +9018,12 @@ button.rows-panel-row:hover {
   font-weight: 500;
   white-space: nowrap;
 }
+/* What a trigger binds, by name as a person says it («Correo», «Asunto»: F7, I-08), in the app's own type. */
 .fl-input {
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-family: var(--mono, monospace);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* The flow editor (docs/flujos.md, F2): its toolbar, checklist, step panel, value fields and the arrow's menu. */
