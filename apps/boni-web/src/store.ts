@@ -1811,12 +1811,17 @@ export function closeProposal() {
 }
 
 /**
- * A mail seen without leaving where Juan is (task 68; Juan, 2026-11-05: «quiero que se abra como peek, que no me
- * cambie de pestaña hasta que no le dé a algún botón de abrir en grande»): in the side panel, where «Agrandar» takes
- * it to its page; closing it gives the inbox back.
+ * A mail seen without leaving where Juan is (tasks 68 and 74; Juan, 2026-11-05: «quiero que se abra como peek»; then
+ * «lo abre en la bandeja, ocultando todas las tarjetas, debería aparecer como una ventana peek»): in the desktop app,
+ * in the peek, its window of its own, as the conversation opens a mail (task 30); elsewhere in the side panel, where
+ * «Agrandar» takes it to its page and closing it gives the inbox back.
  */
-export const peekMail = (at: { type: string; id: string }) =>
-  set({ panel: { kind: "row", type: at.type, id: at.id }, ...FRESH_PANEL });
+export async function peekMail(at: { type: string; id: string }) {
+  if (!get().dataTypes) await loadDataTypes();
+  const peek = hostRef.desktop?.openPeek;
+  if (peek && replyType(at.type)?.view === "mail") peek(`note:${at.id}`);
+  else set({ panel: { kind: "row", type: at.type, id: at.id }, ...FRESH_PANEL });
+}
 
 /** A mail in its webmail (task 68): the address the server gives (Gmail's own, in its account), opened outside. */
 export async function openWebmail(id: string) {

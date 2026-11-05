@@ -5805,24 +5805,14 @@ body:has(.toast) .db-selinfo {
   margin-left: auto;
   overflow: visible;
 }
+/* The mail's two icons (task 74): 28 px each, an 18 px drawing whose mark is part of it. */
 .inbox-source-tools .icon-btn {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
 }
-/* An icon with a small mark at its corner: the mail kept in Boni, Gmail's arrow out. */
-.icon-stack {
-  position: relative;
-  display: inline-flex;
-  overflow: visible;
-}
-.icon-stack .icon-badge {
-  position: absolute;
-  right: -4px;
-  bottom: -3px;
-  padding: 1px;
-  border-radius: 3px;
-  background: var(--surface);
-  color: var(--text);
+.mail-icon {
+  flex: none;
+  display: block;
 }
 .inbox-earlier-toggle {
   flex: none;
