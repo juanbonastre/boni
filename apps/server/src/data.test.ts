@@ -805,3 +805,47 @@ describe("a collection's columns, as Notion's properties (task 40)", () => {
     store.remove(row.entity.id, { actor: "user" });
   });
 });
+
+describe("the diagram over the API (docs/flujos.md F6)", () => {
+  it("says who reads and writes each collection, and makes a relation drawn there", async () => {
+    const r = await fetch(`${base}/api/login`, {
+      method: "POST",
+      body: JSON.stringify({ user: "ana", password: PASSWORD, device: "portatil-ejemplo" }),
+    });
+    const h = { authorization: `Bearer ${((await r.json()) as { token: string }).token}` };
+    const store = host.store(1);
+    store.journal.saveFlow({
+      id: "lecturas",
+      name: "Lecturas",
+      trigger: { manual: true },
+      inputs: [],
+      plan: {
+        version: 1,
+        steps: [{ id: "q", op: "call", tool: "entities.query", args: { type: { lit: "libro" } } }],
+      },
+      layout: null,
+      by: "user",
+      enabled: true,
+      created: 1,
+    });
+    const usage = (await (await fetch(`${base}/api/data/usage`, { headers: h })).json()) as {
+      days: number;
+      types: Record<string, { reads: { id: string; kind: string }[] }>;
+    };
+    expect(usage.days).toBe(30);
+    expect(usage.types.t_libro?.reads).toContainEqual(
+      expect.objectContaining({ id: "lecturas", kind: "flow" }),
+    );
+    const made = await fetch(`${base}/api/data/types/t_libro/fields`, {
+      method: "POST",
+      headers: h,
+      body: JSON.stringify({ name: "Saga", type: "relation", target: "t_libro" }),
+    });
+    expect(made.status).toBe(200);
+    const id = ((await made.json()) as { id: string }).id;
+    expect(store.schema().types.t_libro?.fields.find((f) => f.id === id)?.relation).toEqual({
+      target: "t_libro",
+      many: false,
+    });
+  });
+});

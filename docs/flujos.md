@@ -260,6 +260,13 @@ intérprete lo para), y uno que necesitaría preguntar o confirmar se para ahí:
   el nivel decide qué colección ve cualquier modelo.
 - **Editar desde el diagrama** (lo que ya hacen otras pantallas, desde aquí): nueva colección, meterla en una madre
   arrastrándola, una relación arrastrando de una tarjeta a otra, cambiar el nivel desde su candado.
+- **Cómo quedó (F6).** `apps/server/src/usage.ts` calcula quién lee y quién escribe cada colección: los flujos cuyos
+  pasos la nombran (`entities.query`, `search`, `aggregate`, `get` leen; `create`, `update`, `delete` escriben, por
+  el `type` literal de cada paso) y quién lo hizo en los últimos 30 días (la suma de la auditoría que ya llevan los
+  registros de Boni, sin recorrerla en cada petición). Lo pide la app en `GET /api/data/usage`. El nivel se cambia
+  desde el panel de la colección (el mismo menú del candado de su página), no desde la tarjeta: un menú dentro del
+  lienzo se escala con él. Solo una colección de arriba se mete en una madre arrastrándola (una hija se mueve en el
+  árbol). Una relación arrastrada es una columna de la primera que apunta a la segunda, de un registro.
 
 ### 4.8 Lo que no cambia
 
@@ -276,7 +283,7 @@ todo con Deshacer y en el diario.
 | F3 Probar y ver (hecha el 2026-11-05) | «Probar» en seco con un ejemplo; la salida de cada nodo sobre el lienzo; el Recorrido de una ejecución sobre el lienzo de su versión (59c) | Una lectura del Registro se abre sobre el lienzo con lo que salió en cada paso |
 | F4 Disparadores (hecha el 2026-11-05) | Cron y «a mano» con formulario; un flujo como herramienta del planificador (`flows.run`, confirmado) | Un resumen diario a las 8 que Juan dibuja sin tocar código |
 | F5 Propuestas de la IA (hecha el 2026-11-05) | `flows_propose` por MCP y desde un turno; la tarjeta con el cambio dibujado; activación solo de Juan | Pedir un flujo en la conversación lo deja en la Bandeja dibujado, y activarlo lo enciende |
-| F6 «Mis datos» | La vista Diagrama en cualquier colección; quién lee y escribe, con filtros; editar desde el diagrama | En Agenda, el diagrama enseña Tarea y Evento con quién las escribe, y una relación nueva se dibuja arrastrando |
+| F6 «Mis datos» (hecha el 2026-11-05) | La vista Diagrama en cualquier colección; quién lee y escribe, con filtros; editar desde el diagrama | En Agenda, el diagrama enseña Tarea y Evento con quién las escribe, y una relación nueva se dibuja arrastrando |
 
 Lo que ya existe se mueve, no se duplica: `pipeline.ts` deja de declararse a mano cuando los flujos existan (F1);
 `mailPlan` deja de ser código cuando el flujo de serie lo sustituya (F1); «Modelos» se queda dentro de «Flujos».

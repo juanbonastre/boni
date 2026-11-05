@@ -840,10 +840,21 @@ contraseña ni un código aquí» under a question.
   mother is a dashed frame around her own card and her daughters' (nested when they are mothers too), her name at
   its top left. A relation field is an arrow (smooth steps, closed head) from its card to the collection it points
   to, labelled with the field's name and «· varios» when it takes several. Dagre lays it out left to right, mothers
-  kept together; «Ordenar» lays it out again after cards were dragged. «Ver como» (Todo | La IA) is the other
-  control: as the AI, a restricted or private collection fades to 28 % (no model reads it) and an opaque one keeps
-  its head and fades its fields (a model knows it exists, never its content). A click opens the collection. Boni's
-  own records are not in it. Computed from the schema, never drawn by hand (D-40).
+  kept together; «Ordenar» lays it out again after cards were dragged. Boni's own records are not in it. Computed
+  from the schema, never drawn by hand (D-40).
+  **Who reads and writes it, and editing it there** (F6, `docs/flujos.md` §4.7; «Ver como» is gone): under its
+  fields each card has two muted 11 px lines, a pen with who writes it and an eye with who reads it (the flows whose
+  steps name it, then who did in the last 30 days: «Tú», «Asistente · …», a model's use, «Boni»; two names and «+N»).
+  The toolbar has filters as small lists, «Leída por», «Escrita por», «Nivel» and «Madre» (in «Mis datos» only):
+  what does not match fades to 28 % and nothing moves; then «Nueva colección» (a name field under the toolbar,
+  «Crear» and «Cancelar») and «Ordenar». A click on a card opens its panel on the right, as the flow editor's (its
+  name and count, «Nivel» with the level's pill and menu, «Escrita por» and «Leída por» with each flow «flujo
+  encendido/apagado» or how many times in the period, «Abrir» and «Nueva colección dentro»). A drag from a card's
+  right edge (a dot in `--accent` on hover) to another card draws a relation: a column of the first named as the
+  second, said in a toast with «Deshacer»; a card at the top level dropped on another card or frame goes inside it,
+  also with «Deshacer». **A collection's «Diagrama»** is one more of its layouts (Tabla, Tablero, Lista, Galería,
+  Calendario, Diagrama): the same canvas over her branch, with the collections a relation joins to it as dashed
+  cards without fields.
 - **Historial** (a row's page, the button beside its collection's name): a panel on the right with «Quién hizo qué»,
   «Cambios» (newest first, a dot in each one's colour: who · what, then when and which fields, Boni's hidden fields
   left out), its system columns (two columns, name muted), «Quién lo ha visto» («con la nota» amber, «sin la nota»

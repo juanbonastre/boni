@@ -9057,3 +9057,90 @@ button.rows-panel-row:hover {
 .fl-change {
   color: var(--accent);
 }
+
+/* The diagram edited (docs/flujos.md F6): filters, who writes and reads each card, its panel, relations drawn. */
+.data-tools {
+  flex-wrap: wrap;
+}
+.data-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.data-filter select {
+  width: auto;
+  max-width: 180px;
+}
+.data-new {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.data-new input {
+  max-width: 280px;
+}
+.data-stage {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+}
+.data-stage .data-diagram {
+  flex: 1;
+  min-width: 0;
+}
+.data-panel {
+  max-height: calc(100vh - 230px);
+  overflow: auto;
+}
+.data-panel-level {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 10px;
+}
+.data-who-list {
+  list-style: none;
+  margin: 2px 0 10px;
+  padding: 0;
+  font-size: 12.5px;
+}
+.data-who-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+.dg-who {
+  border-top: 1px solid var(--line);
+  padding: 4px 10px 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.dg-who-line {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dg-who-line span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dg-card.related {
+  border-style: dashed;
+}
+.data-diagram.editable .dg-card .react-flow__handle.source {
+  width: 10px;
+  height: 10px;
+  right: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  cursor: crosshair;
+}
+.data-diagram.editable .react-flow__node:hover .dg-card .react-flow__handle.source {
+  opacity: 1;
+}

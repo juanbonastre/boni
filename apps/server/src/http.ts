@@ -85,6 +85,7 @@ import { allowed, type Listener, ROUTES, routeOf } from "./routes.ts";
 import type { SecretKey } from "./secret.ts";
 import { isSystemCollection, systemCollections } from "./systemCollections.ts";
 import { todayOf } from "./today.ts";
+import { usageOf } from "./usage.ts";
 import { serveV1 } from "./v1/http.ts";
 import { V1Service } from "./v1/service.ts";
 import { V1Store } from "./v1/store.ts";
@@ -438,6 +439,9 @@ export function makeApp(opts: ServerOptions): App {
               : { day: null, items: [] },
           );
         }
+        // Who reads and writes each collection (F6): the flows that name it, and who did in the last 30 days.
+        if (route === "GET /api/data/usage")
+          return send(res, 200, usageOf(store, { now: now(), tz: opts.tz ?? "Europe/Madrid" }));
         if (route === "GET /api/data/tree") {
           const type = url.searchParams.get("type");
           return send(res, 200, type ? { notes: treeNotes(store, type) } : treeOf(store));

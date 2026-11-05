@@ -53,8 +53,13 @@ export interface Options {
   mail?: boolean;
   /** The desktop shell opens a note in its peek window, a window of its own (Boni desktop 0.4.65; task 30). */
   peek?: boolean;
-  /** Two agenda collections with their roles (tasks with a box, events with a day and hours), for the correction's kinds (task 47). */
-  agenda?: boolean;
+  /**
+   * Two agenda collections with their roles (tasks with a box, events with a day and hours), for the correction's
+   * kinds (task 47); `"mother"`: both inside a mother «Agenda» (F6).
+   */
+  agenda?: boolean | "mother";
+  /** Who reads and writes each collection (`/api/data/usage`, F6). */
+  usage?: unknown;
 }
 
 export interface FakePage {
@@ -271,7 +276,24 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         roles: { date: "f_efecha", time: "f_ehora", endTime: "f_ehfin" },
         rowUi: { open: false, hidden: [] as string[] },
       };
-      const agenda = opts.agenda ? [tareas, eventos] : [];
+      // In a mother «Agenda» (F6): her daughters carry her id as their parent.
+      const mother = {
+        id: "t_agenda",
+        key: "agenda",
+        name: "Agenda",
+        icon: "",
+        titleField: "f_at",
+        count: 0,
+        level: "visible",
+        fields: [{ id: "f_at", key: "titulo", name: "Título", type: "text" }],
+        rowUi: { open: false, hidden: [] as string[] },
+      };
+      const agenda =
+        opts.agenda === "mother"
+          ? [mother, { ...tareas, parent: "t_agenda" }, { ...eventos, parent: "t_agenda" }]
+          : opts.agenda
+            ? [tareas, eventos]
+            : [];
       // The mail's collection (apps/server/src/mail.ts), read only and opened as a mail (D-22), with one mail.
       const correos = {
         // As the server makes it: a generated id, and the key the planner names it by.
@@ -481,6 +503,25 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           if (want.parent) parents[id] = want.parent;
           return [200, JSON.stringify({ id })];
         }
+        if (p === "api/data/usage")
+          return [200, JSON.stringify(opts.usage ?? { days: 30, types: {} })];
+        // A new column (task 40), or a relation drawn in a diagram (F6): on the collection, its id back.
+        const fieldsOf = /^api\/data\/types\/([^/]+)\/fields$/.exec(p);
+        if (fieldsOf && method === "POST") {
+          const col = userCols().find((c) => c.id === fieldsOf[1]) as
+            | { fields: Record<string, unknown>[] }
+            | undefined;
+          if (!col) return [404, '{"error":"not-found"}'];
+          const want = (body ?? {}) as { name?: string; type?: string; target?: string };
+          const id = `f_hecho_${col.fields.length + 1}`;
+          col.fields.push({
+            id,
+            name: want.name,
+            type: want.type,
+            ...(want.type === "relation" ? { relation: { target: want.target, many: false } } : {}),
+          });
+          return [200, JSON.stringify({ id })];
+        }
         if (p === "api/data/today")
           return opts.today === null
             ? [404, '{"error":"not-found"}']
@@ -603,7 +644,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           n.type = to;
           return [200, "{}"];
         }
-        const madeList = /^api\/data\/types\/(t_hecha_\d+|t_private_documentos)\/rows$/.exec(p);
+        const madeList =
+          /^api\/data\/types\/(t_hecha_\d+|t_private_documentos|t_agenda)\/rows$/.exec(p);
         if (madeList && method === "GET" && madeList[1] !== documentos.id)
           return [
             200,

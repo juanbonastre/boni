@@ -26,6 +26,13 @@ export interface DiagramCard {
   readOnly: boolean;
   frame: string | null;
   fields: DiagramField[];
+  /**
+   * A collection outside the one whose diagram this is, drawn because a relation joins them (F6): its card without
+   * its fields, outside any frame.
+   */
+  related: boolean;
+  /** Lines under its fields (who writes it, who reads it), for its height. */
+  lines: number;
 }
 /** A mother's frame: around her own card and her daughters' cards and frames. */
 export interface DiagramFrame {
@@ -54,10 +61,38 @@ export interface Diagram {
 export const cardOf = (type: string): string => `card:${type}`;
 export const frameOf = (type: string): string => `frame:${type}`;
 
-export function diagramOf(types: readonly DataType[]): Diagram {
-  const own = types.filter((t) => !t.system);
+/**
+ * The diagram of all the user's collections («Mis datos»), or of one (`root`, its «Diagrama» view, F6): her branch,
+ * her daughters inside her frame, and, as plain cards, the collections a relation joins to it either way.
+ */
+export function diagramOf(
+  types: readonly DataType[],
+  root: string | null = null,
+  lines: (type: string) => number = () => 0,
+): Diagram {
+  const all = types.filter((t) => !t.system);
+  const inBranch = new Set<string>();
+  if (root) {
+    const add = (id: string) => {
+      inBranch.add(id);
+      for (const d of all) if (d.parent === id && !inBranch.has(d.id)) add(d.id);
+    };
+    add(root);
+  }
+  const related = new Set<string>();
+  if (root)
+    for (const t of all)
+      for (const f of t.fields) {
+        const target = f.relation?.target;
+        if (!target || f.inherited) continue;
+        if (inBranch.has(t.id) && !inBranch.has(target)) related.add(target);
+        if (!inBranch.has(t.id) && inBranch.has(target)) related.add(t.id);
+      }
+  const own = root ? all.filter((t) => inBranch.has(t.id) || related.has(t.id)) : all;
   const byId = new Map(own.map((t) => [t.id, t]));
-  const motherOf = (t: DataType) => (t.parent && byId.has(t.parent) ? t.parent : null);
+  // The root's mother and a related collection's are not drawn: they stand alone.
+  const motherOf = (t: DataType) =>
+    t.parent && byId.has(t.parent) && !related.has(t.id) && t.id !== root ? t.parent : null;
   const mothers = new Set(own.map(motherOf).filter((m): m is string => m !== null));
   const depth = (t: DataType): number => {
     const m = motherOf(t);
@@ -88,19 +123,35 @@ export function diagramOf(types: readonly DataType[]): Diagram {
       level: t.level,
       readOnly: !!t.readOnly,
       frame: mothers.has(t.id) ? frameOf(t.id) : m ? frameOf(m) : null,
-      fields: t.fields
-        .filter((f) => !f.inherited)
-        .map((f) => ({
-          id: f.id,
-          name: f.name,
-          type: f.type,
-          relation: f.relation ? { target: f.relation.target, many: f.relation.many } : null,
-        })),
+      fields: related.has(t.id)
+        ? []
+        : t.fields
+            .filter((f) => !f.inherited)
+            .map((f) => ({
+              id: f.id,
+              name: f.name,
+              type: f.type,
+              relation: f.relation ? { target: f.relation.target, many: f.relation.many } : null,
+            })),
+      related: related.has(t.id),
+      lines: lines(t.id),
     };
   });
   const edges: DiagramEdge[] = [];
+  // A related card shows no fields: its relations into the branch are drawn from the types themselves.
+  const fieldsOf = (c: DiagramCard): DiagramField[] =>
+    c.related
+      ? (byId.get(c.type)?.fields ?? [])
+          .filter((f) => !f.inherited && f.relation && inBranch.has(f.relation.target))
+          .map((f) => ({
+            id: f.id,
+            name: f.name,
+            type: f.type,
+            relation: f.relation ? { target: f.relation.target, many: f.relation.many } : null,
+          }))
+      : c.fields;
   for (const c of cards)
-    for (const f of c.fields)
+    for (const f of fieldsOf(c))
       if (f.relation && byId.has(f.relation.target))
         edges.push({
           id: `${c.type}:${f.id}`,
@@ -116,8 +167,9 @@ export function diagramOf(types: readonly DataType[]): Diagram {
 export const CARD_WIDTH = 220;
 const CARD_HEAD = 38;
 const FIELD_ROW = 20;
-export const cardHeight = (fields: number): number =>
-  CARD_HEAD + Math.max(1, fields) * FIELD_ROW + 8;
+const LINE_ROW = 18;
+export const cardHeight = (fields: number, lines = 0): number =>
+  CARD_HEAD + Math.max(1, fields) * FIELD_ROW + 8 + (lines ? lines * LINE_ROW + 6 : 0);
 
 /** Room a frame leaves around what it holds, and above it for its name. */
 const FRAME_PAD = 16;
@@ -138,7 +190,10 @@ export interface Layout {
 /** Where everything goes (absolute, top-left corners): dagre places the cards, the frames wrap theirs. */
 export function layoutOf(d: Diagram): Layout {
   const sizes = new Map(
-    d.cards.map((c) => [c.id, { width: CARD_WIDTH, height: cardHeight(c.fields.length) }]),
+    d.cards.map((c) => [
+      c.id,
+      { width: CARD_WIDTH, height: cardHeight(c.related ? 0 : c.fields.length, c.lines) },
+    ]),
   );
   const placed = placeCards(d, sizes);
   const cards: Placed[] = d.cards.map((c) => {
