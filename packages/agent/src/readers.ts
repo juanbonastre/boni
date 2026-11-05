@@ -89,7 +89,7 @@ export const READER_SCHEMAS: Readonly<Record<ReaderKind, object>> = {
  * told as today): a message's relative days are its own date's, said as they stand for the user now.
  */
 const DATES_NOTE =
-  ' Relative days in a message ("hoy", "mañana", "ayer", "el viernes", "esta semana") count from that message\'s own date (its "fecha", "Fecha" or "date" line, when it has one), not from "today" given outside the markers; a date in the input may say in brackets where it stands from today, e.g. "(yesterday)". Say such a day as it stands for the user now ("ayer", "hoy", "el viernes 7"): never repeat a message\'s "hoy" or "mañana" as if it were written today.';
+  ' What you write is read later, on another day: never write a relative day ("hoy", "mañana", "ayer", "pasado mañana", "esta tarde", "esta noche", "anoche"; "today", "tomorrow", "yesterday", "tonight"); write each day by its weekday and number ("el miércoles 4", "el viernes 6 a las 10"). A message\'s relative words ("hoy", "mañana", "el viernes", "esta semana") count from that message\'s own date (its "fecha", "Fecha" or "date" line, when it has one), never from "today" given outside the markers. Each date in the input says in brackets its weekday and where it stands from today, e.g. "2026-11-04T10:18:20Z (yesterday: Wednesday 4 November)": a message of Wednesday 4 that says "hoy a las 12" means "el miércoles 4 a las 12". When "fix" is given outside the markers, your previous answer broke this: answer again keeping to it.';
 
 /** For the readers that may read mail (docs/correo.md §4.1): the user's reading guide, when the code gives it. */
 const GUIDE_NOTE =

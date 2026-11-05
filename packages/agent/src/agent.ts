@@ -435,7 +435,20 @@ export function dayFromToday(day: string, today: string): string | null {
   return d < 0 ? `${-d} days ago` : `in ${d} days`;
 }
 
-/** Each date of a reader's input with where it stands from today (`2026-11-04T10:00:00Z (yesterday)`), in `tz`. */
+/** A civil day (YYYY-MM-DD) by its weekday and number, as a reader is told it: "Wednesday 4 November". */
+export function dayName(day: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(Date.parse(`${day}T12:00:00Z`));
+}
+
+/**
+ * Each date of a reader's input with its weekday and where it stands from today
+ * (`2026-11-04T10:00:00Z (yesterday: Wednesday 4 November)`), its day where Juan lives (`tz`).
+ */
 export function withDays(v: Json, today: string, tz: string): Json {
   if (typeof v === "string") {
     const day = DAY_ONLY.test(v)
@@ -448,14 +461,50 @@ export function withDays(v: Json, today: string, tz: string): Json {
             day: "2-digit",
           }).format(Date.parse(v))
         : null;
-    const when = day ? dayFromToday(day, today) : null;
-    return when ? `${v} (${when})` : v;
+    if (!day || !Number.isFinite(Date.parse(`${day}T12:00:00Z`))) return v;
+    const when = dayFromToday(day, today);
+    return `${v} (${when ? `${when}: ` : ""}${dayName(day)})`;
   }
   if (Array.isArray(v)) return v.map((x) => withDays(x, today, tz));
   if (v && typeof v === "object")
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, withDays(x, today, tz)]));
   return v;
 }
+/**
+ * A relative day in what a prose reader wrote (task 72): read on another day it says another day. «hoy» (not «hoy en
+ * día», «hoy por hoy»), «mañana» (not a morning: «por la mañana», «cada mañana», «a media mañana»), «ayer», «pasado
+ * mañana», «esta tarde», «anoche», «esta semana», «el fin de semana», «la semana que viene», «el próximo lunes»,
+ * «este viernes», «dentro de dos días», a weekday without its number («el viernes por la mañana»), and their English.
+ */
+const WEEKDAY = "(?:lunes|martes|miércoles|jueves|viernes|sábado|domingo)";
+const RELATIVE_DAY = new RegExp(
+  [
+    "(?<!\\p{L})(?<!hoy\\s+por\\s+)hoy(?!\\s+(?:en\\s+día|por\\s+hoy))(?!\\p{L})",
+    "(?<!\\p{L})(?:ayer|anteayer|anoche|pasado\\s+mañana)(?!\\p{L})",
+    "(?<!\\p{L})(?<!(?:la|las|media|cada|una|buena|toda\\s+la)\\s+)mañana(?!\\p{L})",
+    "(?<!\\p{L})est[ae]\\s+(?:mañana|tarde|noche|semana|mes|fin\\s+de\\s+semana)(?!\\p{L})",
+    "(?<!\\p{L})(?:el\\s+fin\\s+de\\s+semana|la\\s+(?:semana|próxima\\s+semana)(?:\\s+que\\s+viene)?|el\\s+mes\\s+que\\s+viene)(?!\\p{L})",
+    `(?<!\\p{L})(?:(?:el|la)\\s+próxim[oa]\\s+|este\\s+)${WEEKDAY}(?!\\p{L})`,
+    `(?<!\\p{L})el\\s+${WEEKDAY}(?!\\p{L})(?!,?\\s+(?:\\d|día))`,
+    "(?<!\\p{L})dentro\\s+de\\s+(?:\\d+|un|una|dos|tres|cuatro|cinco)\\s+(?:días?|semanas?)(?!\\p{L})",
+    "\\b(?:today|tomorrow|yesterday|tonight|last\\s+night|this\\s+(?:morning|afternoon|evening|week|weekend)|next\\s+(?:week|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\\b",
+  ].join("|"),
+  "iu",
+);
+/** Whether what a prose reader wrote for Juan says a relative day: its text, or each of its lines (not its kinds). */
+export function relativeDayIn(answer: unknown): boolean {
+  if (!answer || typeof answer !== "object") return false;
+  const a = answer as { text?: unknown; items?: unknown };
+  const texts = [
+    a.text,
+    ...(Array.isArray(a.items) ? a.items.map((i) => (i as { line?: unknown } | null)?.line) : []),
+  ];
+  return texts.some((x) => typeof x === "string" && RELATIVE_DAY.test(x));
+}
+/** What a prose reader is told when its answer wrote a relative day, to answer again (once). */
+const RELATIVE_FIX =
+  'Your previous answer wrote a relative day ("hoy", "mañana", "ayer"...): write each day by its weekday and number, counted from the message\'s own date.';
+
 function readerText(c: Json): string {
   const s =
     typeof c === "string"
@@ -1866,6 +1915,8 @@ export class Agent {
     let checked: unknown;
     // The rule a refused answer breaks (task 29): said with its shape, never its words.
     let fault: string | null = null;
+    // A prose answer sent back for a relative day (task 72): fixed by the second answer, or kept.
+    let relative: "fixed" | "kept" | null = null;
     if (step.reader === "fill") checked = await this.fill(st, fields, flat, read, seen);
     else {
       const verdict =
@@ -1899,16 +1950,27 @@ export class Agent {
       else if (mods.length)
         checked = checkReadMessage(await read(system, readMessageSchema(mods)), mods);
       else {
-        const r = checkReader(
+        const schema = readerSchema(step.reader, options);
+        const extra = texts ? { count: texts.length } : {};
+        let r = checkReader(
           step.reader,
-          await read(
-            system,
-            readerSchema(step.reader, options),
-            texts ? { count: texts.length } : {},
-          ),
+          await read(system, schema, extra),
           options,
           texts?.length ?? 0,
         );
+        // A prose reader never writes a relative day (task 72: read another day, «hoy» says another day): its answer
+        // goes back to it once, saying so; the second answer stands if it is valid. The step's entry in the journal
+        // says it happened and whether one still came through (an answer that insists, or a second that is invalid).
+        if ("ok" in r && PROSE_READERS.has(String(step.reader)) && relativeDayIn(r.ok)) {
+          const again = checkReader(
+            step.reader,
+            await read(system, schema, { ...extra, fix: RELATIVE_FIX }),
+            options,
+            texts?.length ?? 0,
+          );
+          if ("ok" in again) r = again;
+          relative = "ok" in r && relativeDayIn(r.ok) ? "kept" : "fixed";
+        }
         if ("ok" in r) checked = r.ok;
         else fault = r.fault;
       }
@@ -1925,7 +1987,10 @@ export class Agent {
     const outLabel = external
       ? join(inLabel, ...paramLabels)
       : join(inLabel, modelLabel(st.id), ...paramLabels);
-    this.log(st, step, "read", "allow", "P1", { reader: step.reader });
+    this.log(st, step, "read", "allow", "P1", {
+      reader: step.reader,
+      ...(relative ? { relativeDay: relative } : {}),
+    });
     const out = fromJson(checked as Json, outLabel);
     return step.reader === "summarize_each" ? withSources(out, input, options) : out;
   }

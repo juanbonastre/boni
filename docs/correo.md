@@ -288,21 +288,42 @@ Dónde vive lo que se aprende y cómo se acepta lo decidió Juan en `docs/prefer
 | M1 | El banco de pruebas: modelos y prompts en una tabla, la forma aparte, el caso de categorías | Este PR |
 | M2 | Los ajustes de Correo en la conversación y sus instrucciones; casos nuevos («Ponme al día», «¿Quién me ha escrito de la secretaría?») y comparar con y sin ajustes | P2 de `docs/preferencias.md`, con C5 (modos de conversación) |
 
-**Las fechas de un correo de otro día (2026-11-05, tarea 67; D-46):** Juan preguntó en la conversación por los correos de
-«tutor personal» y Boni le contó «propone verse hoy a las 12h» de un correo de ayer. Los lectores ya recibían el día de
+**Las fechas de un correo de otro día (2026-11-05, tarea 67; D-46):** Juan preguntó en la conversación por unos correos y
+Boni le contó como de hoy el «hoy a las 12h» de un correo de ayer. Los lectores ya recibían el día de
 hoy, y la fecha del correo cuando el plan les pasaba el registro; les faltaba la regla, y el planificador solía pasarles
 solo el texto. Ahora:
 - el planificador da a un lector el registro entero (`$item`), con su fecha, y no solo su texto;
 - los lectores que escriben para Juan (`summarize`, `summarize_each`, `answer_about`) leen cada fecha con dónde queda
-  respecto a hoy («2026-11-04T10:00:00Z (yesterday)», puesto por el código, hasta dos meses), y sus instrucciones dicen
+  respecto a hoy (entonces «2026-11-04T10:00:00Z (yesterday)», puesto por el código, hasta dos meses; desde la tarea 72 con
+  su día de la semana), y sus instrucciones dicen
   que los días relativos de un mensaje cuentan desde su fecha y se dicen como quedan hoy;
 - `extract_tasks` cuenta los días relativos desde la fecha del mensaje, y la lectura de cada correo (`read_message`)
   desde su «Fecha», que no siempre es hoy: la primera sincronización, «Volver a leer» y la nueva lectura de los adjuntos
   leen correos de días atrás.
 
-La evaluación a mano tiene el caso, con el día del almacén como «hoy» («¿Qué me han propuesto para firmar el documento de
-tutoría?»). Sin pasar todavía con un modelo de verdad. Lo encontró la revisión independiente de la tarea (medida C de la
+La evaluación a mano tiene el caso, con el día del almacén como «hoy» («¿Qué me han propuesto para revisar el
+acta?»). Sin pasar todavía con un modelo de verdad. Lo encontró la revisión independiente de la tarea (medida C de la
 64): la primera versión solo marcaba fechas que el planificador no pasaba.
+
+**Nunca días relativos (2026-11-05, tarea 72; D-46):** desplegada la 67, Juan volvió a preguntar y el lector (Haiku 4.5)
+volvió a contar como de hoy el «hoy» de un correo de ayer: la fecha le llegaba marcada, pero la nota le pedía decir el
+día «como queda hoy» («ayer», «hoy»…) y copió el del correo. Además lo que escribe se lee otro día (la
+conversación, y en la Bandeja la tarjeta que Juan abre más tarde). Ahora:
+- los lectores que escriben para Juan nunca escriben un día relativo («hoy», «mañana», «ayer», «pasado mañana», «esta
+  tarde», «anoche»): escriben el día por su nombre y número («el miércoles 4 a las 12»), contado desde la fecha del
+  mensaje;
+- cada fecha que leen trae su día de la semana («2026-11-04T10:18:20Z (yesterday: Wednesday 4 November)»), también las
+  lejanas;
+- el código lo comprueba en lo que se lee (el texto, cada línea; no las clases que dio el plan): una respuesta con un
+  día relativo vuelve al lector una vez, diciéndoselo, y vale la segunda si es válida. Cuentan «hoy», «mañana»,
+  «ayer», «pasado mañana», «esta tarde», «anoche», «esta semana», «el fin de semana», «la semana que viene», «el
+  próximo lunes», «este viernes», «dentro de dos días» y un día de la semana sin su número; no «por la mañana», «cada
+  mañana», «hoy en día» ni «hoy por hoy». Si el lector insiste (o su segunda respuesta no vale y queda la primera),
+  el paso lo dice en el diario (`relativeDay: "kept"`), y en el Recorrido;
+- lo que escriben los lectores de la Bandeja (el título de una propuesta, la nota de `fill`) aún no pasa por esto: va
+  con la tarea 73, que vuelve a mirar las tarjetas al verlas.
+
+El caso de la evaluación pide además el día por su nombre o su número.
 
 **Hecho, M2 (2026-11-03, tarea 23):** la guía de Juan llega a los lectores de correo de la conversación
 (`summarize`, `summarize_each`, `label_each`, `answer_about`, `extract_tasks`), puesta por el código cuando lo que

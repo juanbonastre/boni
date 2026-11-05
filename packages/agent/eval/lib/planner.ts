@@ -154,9 +154,9 @@ function evalStore(dir: string): UserStore {
       "Las novedades de esta semana en la tienda y una encuesta de satisfacción.",
     ],
     [
-      "Firma del documento de tutoría",
-      "miguel.ejemplo@alumnos.example.es",
-      "Hola, ¿podemos vernos hoy a las 12h o el viernes antes de las 10h para firmar el documento de tutoría?",
+      "Revisión del acta",
+      "lucia.ejemplo@example.es",
+      "Hola, ¿podemos vernos hoy a las 12h o el viernes antes de las 10h para revisar el acta?",
       // Sent yesterday (the store's day is 2026-10-20): its «hoy» is the 19th.
       "2026-10-19T08:15:00Z",
     ],
@@ -301,15 +301,14 @@ const CASES: {
     shows: (r) => (shownRows(r, ["list"]) >= 2 ? "" : "not one item per mail"),
   },
   {
-    // Task 67 (Juan, 2026-11-05): a mail of yesterday that says «hoy a las 12h» is told as yesterday at 12, never as
-    // today at 12.
-    request: "¿Qué me han propuesto para firmar el documento de tutoría?",
+    // Tasks 67 and 72 (Juan, 2026-11-05, twice): a mail of yesterday that says «hoy a las 12h» is told by its day
+    // (the 19th, a Monday), never as today; and no relative day at all, as what is written is read another day.
+    request: "¿Qué me han propuesto para revisar el acta?",
     check: (r) => {
       const said = saidText(r);
-      if (r.status !== "done" || !/firm/i.test(said)) return "the mail not said";
-      return /\bhoy\b[^.;]{0,25}\b12/i.test(said)
-        ? "yesterday's «hoy a las 12h» told as today"
-        : "";
+      if (r.status !== "done" || !/acta/i.test(said)) return "the mail not said";
+      if (/\bhoy\b[^.;]{0,25}\b12/i.test(said)) return "yesterday's «hoy a las 12h» told as today";
+      return /\b(lunes|19)\b/i.test(said) ? "" : "its day not said by its weekday or number";
     },
   },
   {
