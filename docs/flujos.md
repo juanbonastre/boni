@@ -11,6 +11,10 @@ Amplía `docs/nucleo.md` §7 (el lenguaje de planes, el motor de políticas, el 
 `docs/principios.md` cambia: el modelo sigue planeando y el código sigue decidiendo (A-01); lo que cambia es quién
 más escribe planes: el usuario, con un lienzo.
 
+**Sigue en `docs/sistema.md`** (decidido por Juan el 2026-11-05): lo que Boni hace solo pasa a ser flujos de Boni a la
+vista, con el código como pasos (F7); «Flujos» con un mapa calculado sustituye a «Modelos» y a `pipeline.ts` (F8); las
+fases siguen de F7 a F13.
+
 ## 0. Resumen
 
 - **Un flujo es un plan con disparador**, guardado como datos en la cuenta: «cuando llega un correo, léelo, elige la
@@ -317,7 +321,8 @@ Las cinco primeras se tomaron como se recomendaba: F1 a F6 están en main. Queda
    lectura en código y empezar los flujos por los nuevos. Recomendado: sí; si no, el lienzo enseña algo que no se
    puede tocar, que es lo que no quería.
 2. **«Modelos» pasa a llamarse «Flujos»** (la lista de flujos, cada lienzo, y dentro lo de los modelos): recomendado;
-   o dos secciones, «Flujos» y «Modelos».
+   o dos secciones, «Flujos» y «Modelos». **Sustituida el 2026-11-05:** «Modelos» desaparece y «Flujos» tiene «Tabla»
+   y «Mapa» (`docs/sistema.md`, decisión 3).
 3. **Nodos de código solo como funciones de extensión en la caja** (lo decidido en `extensiones.md` §11), nunca
    JavaScript libre en un nodo: recomendado.
 4. **El planificador puede ejecutar flujos del usuario** (F4, con confirmación): recomendado.

@@ -9,6 +9,10 @@ Amplía `docs/nucleo.md` §7 (el agente), y en `docs/extensiones.md` el Lienzo (
 ve la pantalla (§8) y los papeles de modelo (§9). Ninguna regla de `docs/principios.md` cambia: el modelo sigue
 planeando y el código sigue decidiendo (A-01).
 
+**Desde el 2026-11-05 (`docs/sistema.md`):** la ventana (C4) y el círculo (C7, sin la voz) son la fase F9, Boni sobre
+la pantalla, con `Ctrl+E`; el bloque «Chat» (C5) es un flujo con disparador «Chat» y un paso «Agente» (F11); y los
+modos de conversación de una extensión (§3.3) son los flujos de chat de un paquete, sin sección «Extensiones».
+
 ## 0. Resumen
 
 Hoy la conversación es una pantalla con un historial que se pierde al reiniciar el servidor, y un turno solo se ve

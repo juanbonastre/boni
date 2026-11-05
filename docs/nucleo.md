@@ -649,6 +649,10 @@ con modelo: de otro proveedor o local, y vigilando llamadas a herramientas, no r
     aunque Boni esté cerrado: al móvil por UnifiedPush, cifrado para él (A-17), y a la app de escritorio en la bandeja.
 - **Lo que no hay en el primer PR del agente:** nada con `egress` ni `send`. Llegan con el correo (paso 2 del plan) y
   con el trabajador web (después), y entonces ya está el corpus de inyecciones para probarlas.
+- **Desde el 2026-11-05 (`docs/sistema.md` §4.1, F10):** el registro pasa a ser la lista de acciones de Boni, una para
+  la app, los flujos, el planificador y el MCP; lo que solo decide Juan, la IA lo prepara y él lo confirma o lo hace en
+  su sitio. Con F12 (decisión 5 de allí), un flujo de Juan disparado por sus propios datos, sin nada de fuera, escribe
+  con Deshacer y avisa (amplía P7).
 
 ### 7.10 Capa de modelos intercambiable
 
