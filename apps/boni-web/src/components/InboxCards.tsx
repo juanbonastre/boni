@@ -920,12 +920,6 @@ function FieldRows({
 }
 
 /**
- * Where a mail proposal came from (mailbox and sender), with two icons that never give way to a long sender (task 68;
- * Juan, 2026-11-05): the mail kept in Boni, seen in the side panel without leaving the inbox («Agrandar» there opens
- * it whole), and, for a Gmail mailbox, Gmail's own address of that mail in its account (the server finds it). When the
- * proposal also comes from earlier mails of its thread, «+N correos» shows them, each to see the same way.
- */
-/**
  * A mail's two icons at the end of its card's line (tasks 68 and 74), on a proposal's card and a question's: the mail
  * kept in Boni, seen without leaving the Bandeja (the desktop's peek, else the side panel), and, from a Gmail mailbox,
  * that very mail in Gmail. Never shrunk by a long sender.
@@ -966,6 +960,10 @@ function MailTools({ open }: { open: { type: string; id: string } }) {
   );
 }
 
+/**
+ * Where a mail proposal came from (mailbox and sender), with its two icons (`MailTools`, tasks 68 and 74). When the
+ * proposal also comes from earlier mails of its thread, «+N correos» shows them, each opening as the card's mail does.
+ */
 function MailSource({
   source,
   earlier,

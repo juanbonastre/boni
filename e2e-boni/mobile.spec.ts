@@ -511,7 +511,7 @@ test("on the phone too, a long sender never hides a mail card's icons (task 68, 
   });
   await tab(page, "Bandeja");
   const card = page.locator(".inbox-card").first();
-  await iconsWhole(card);
+  await iconsWhole(card, 44);
   await card.screenshot({ path: `${SHOTS}/phone-inbox-long-sender.png` });
 });
 

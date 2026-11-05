@@ -5805,10 +5805,15 @@ body:has(.toast) .db-selinfo {
   margin-left: auto;
   overflow: visible;
 }
-/* The mail's two icons (task 74): 28 px each, an 18 px drawing whose mark is part of it. */
+/* The mail's two icons (task 74): 28 px each, an 18 px drawing whose mark is part of it; on the phone, 44 px for the
+   finger, as every icon there (the design guide's mobile targets). */
 .inbox-source-tools .icon-btn {
   width: 28px;
   height: 28px;
+}
+.m-app .inbox-source-tools .icon-btn {
+  width: 44px;
+  height: 44px;
 }
 .mail-icon {
   flex: none;
