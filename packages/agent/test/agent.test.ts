@@ -692,6 +692,9 @@ describe("the agent, with a planner that behaves", () => {
     expect(items.map((i) => i.fields.line?.value)).toEqual([
       "Lucía propone verse el lunes 19 a las 12 o el viernes 23 por la mañana",
     ]);
+    // The step's entry says it was sent back and fixed.
+    const read = env.store.journal.steps(res.run).find((x) => x.step === "s");
+    expect(JSON.stringify(read)).toContain('"relativeDay":"fixed"');
     // An answer without a relative day is not asked again: «por la mañana» is a time of day, not a day.
     const once = fakePlanner([
       {
@@ -749,7 +752,7 @@ describe("the agent, with a planner that behaves", () => {
       {
         items: [
           { line: "Una tienda anuncia rebajas", kind: "publicidad" },
-          { line: "Lucía pregunta si quedamos el jueves", kind: "piden algo" },
+          { line: "Lucía pregunta si quedamos el jueves 22", kind: "piden algo" },
         ],
       },
       { choices: ["personal", "publicidad"] },
@@ -770,7 +773,7 @@ describe("the agent, with a planner that behaves", () => {
     type Item = { fields: Record<string, { value: unknown; integrity: string } | undefined> };
     const items = (res.replies[0]?.data.items as { items: Item[] } | undefined)?.items ?? [];
     expect(items.map((i) => [i.fields.line?.value, i.fields.kind?.value])).toEqual([
-      ["Lucía pregunta si quedamos el jueves", "piden algo"],
+      ["Lucía pregunta si quedamos el jueves 22", "piden algo"],
       ["Una tienda anuncia rebajas", "publicidad"],
     ]);
     expect(items[0]?.fields.line).toMatchObject({ integrity: "external" });

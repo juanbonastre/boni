@@ -593,7 +593,14 @@ describe("where a date stands from today, for a reader that writes for Juan (tas
   });
   it("finds a relative day in what a reader wrote, not a time of day (task 72)", () => {
     for (const s of [
-      "Lucía propone verse hoy a las 12",
+      "el viernes por la mañana",
+      "esta semana hay junta",
+      "el próximo lunes",
+      "la semana que viene",
+      "este viernes",
+      "dentro de dos días",
+      "el fin de semana",
+      "next week",
       "Mañana hay junta",
       "la reunión es pasado mañana",
       "Lo dijo ayer",
@@ -604,12 +611,21 @@ describe("where a date stands from today, for a reader that writes for Juan (tas
     ])
       expect(relativeDayIn({ items: [{ line: s }] }), s).toBe(true);
     for (const s of [
-      "el lunes por la mañana",
+      "el lunes 9 por la mañana",
       "a las 10 de la mañana",
       "las mañanas de los martes",
       "Hoyos y Cía. escribe",
       "el miércoles 4 a las 12",
+      "el viernes, 6 de noviembre",
+      "hoy en día todo va por correo",
+      "hoy por hoy no hay plazas",
+      "cada mañana revisa el buzón",
+      "a media mañana",
+      "una mañana de mayo",
+      "la  mañana del jueves 5",
     ])
       expect(relativeDayIn({ text: s }), s).toBe(false);
+    // Only what is written for Juan: a kind the plan gave is not a day said.
+    expect(relativeDayIn({ items: [{ line: "Lucía pide el acta", kind: "Hoy" }] })).toBe(false);
   });
 });

@@ -294,7 +294,8 @@ hoy, y la fecha del correo cuando el plan les pasaba el registro; les faltaba la
 solo el texto. Ahora:
 - el planificador da a un lector el registro entero (`$item`), con su fecha, y no solo su texto;
 - los lectores que escriben para Juan (`summarize`, `summarize_each`, `answer_about`) leen cada fecha con dónde queda
-  respecto a hoy («2026-11-04T10:00:00Z (yesterday)», puesto por el código, hasta dos meses), y sus instrucciones dicen
+  respecto a hoy (entonces «2026-11-04T10:00:00Z (yesterday)», puesto por el código, hasta dos meses; desde la tarea 72 con
+  su día de la semana), y sus instrucciones dicen
   que los días relativos de un mensaje cuentan desde su fecha y se dicen como quedan hoy;
 - `extract_tasks` cuenta los días relativos desde la fecha del mensaje, y la lectura de cada correo (`read_message`)
   desde su «Fecha», que no siempre es hoy: la primera sincronización, «Volver a leer» y la nueva lectura de los adjuntos
@@ -313,8 +314,14 @@ conversación, y en la Bandeja la tarjeta que Juan abre más tarde). Ahora:
   mensaje;
 - cada fecha que leen trae su día de la semana («2026-11-04T10:18:20Z (yesterday: Wednesday 4 November)»), también las
   lejanas;
-- el código lo comprueba: una respuesta con un día relativo vuelve al lector una vez, diciéndoselo, y vale la segunda
-  si es válida («por la mañana» o «de la mañana» no cuentan: son horas, no días).
+- el código lo comprueba en lo que se lee (el texto, cada línea; no las clases que dio el plan): una respuesta con un
+  día relativo vuelve al lector una vez, diciéndoselo, y vale la segunda si es válida. Cuentan «hoy», «mañana»,
+  «ayer», «pasado mañana», «esta tarde», «anoche», «esta semana», «el fin de semana», «la semana que viene», «el
+  próximo lunes», «este viernes», «dentro de dos días» y un día de la semana sin su número; no «por la mañana», «cada
+  mañana», «hoy en día» ni «hoy por hoy». Si el lector insiste (o su segunda respuesta no vale y queda la primera),
+  el paso lo dice en el diario (`relativeDay: "kept"`), y en el Recorrido;
+- lo que escriben los lectores de la Bandeja (el título de una propuesta, la nota de `fill`) aún no pasa por esto: va
+  con la tarea 73, que vuelve a mirar las tarjetas al verlas.
 
 El caso de la evaluación pide además el día por su nombre o su número.
 
