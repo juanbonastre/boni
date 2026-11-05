@@ -90,6 +90,7 @@ import { serveV1 } from "./v1/http.ts";
 import { V1Service } from "./v1/service.ts";
 import { V1Store } from "./v1/store.ts";
 import { StoreMoney } from "./v1/storeMoney.ts";
+import { type PushKeys, validKeys } from "./webpush.ts";
 
 /**
  * The server's HTTP API (JSON), all under /api, every call but login with `Authorization: Bearer
@@ -115,7 +116,8 @@ import { StoreMoney } from "./v1/storeMoney.ts";
  *   PUT  /api/collections/reminders { collectionId, reminders?, eventColumn? } -> {} (with BONI_WRITE):
  *        a calendar's reminders, kept in its definition
  *   GET  /api/reminders?tz=&hours=&locale=&h24= -> { notices }: the account's reminders of the coming hours
- *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change)
+ *   PUT  /api/push { endpoint } / DELETE /api/push: this device's UnifiedPush address (told when they change);
+ *        { endpoint, for: "notices", keys: { p256dh, auth } }: Boni's app, told Boni's notices sealed for it (task 62)
  *   GET  /api/mail · PUT /api/mail { host, port, user, password?, folder, collections, on } · POST /api/mail/check ·
  *        POST /api/mail/reread { days } (the pending proposals of that mail withdrawn, the mail read again) ·
  *        GET · PUT /api/mail/guide { instructions?, rules?, keepExamples? } (the reading guide, docs/nucleo.md 7.4b) ·
@@ -275,6 +277,12 @@ export function makeApp(opts: ServerOptions): App {
       external.items(account, readAccount(db, key, account).externals, days);
     agentHost.linkField = async (account, typeId, device) =>
       (await calendarOf({ id: account })?.ensureLinkField(typeId, device)) ?? null;
+    // Task 62: a notice of Boni's also goes by UnifiedPush to the account's devices with Boni closed.
+    if (push)
+      agentHost.pushNotice = (account, text) =>
+        void push
+          .notice(account, text)
+          .catch((e) => console.warn("push notice failed", e instanceof Error ? e.message : e));
   }
   const v1store = new V1Store(db);
   /** The account's store when it keeps its movements in Boni (the collection Movimiento). */
@@ -969,10 +977,19 @@ export function makeApp(opts: ServerOptions): App {
         return send(res, 200, { notices });
       }
       case "PUT /api/push": {
-        const endpoint = String((await bodyOf(req)).endpoint ?? "");
+        const b = await bodyOf(req);
+        const endpoint = String(b.endpoint ?? "");
         if (!push) return send(res, 404, { error: "no-push" });
         if (!push.allowed(endpoint)) return send(res, 400, { error: "push-host" });
-        push.register(tokenHash(tokenOf(req) ?? ""), user.id, endpoint);
+        // Boni's app, for notices: only with the keys its device made, so a notice never travels in the clear.
+        if (b.for === "notices" && !validKeys(b.keys))
+          return send(res, 400, { error: "push-keys" });
+        push.register(
+          tokenHash(tokenOf(req) ?? ""),
+          user.id,
+          endpoint,
+          b.for === "notices" ? (b.keys as PushKeys) : undefined,
+        );
         return send(res, 200, {});
       }
       case "DELETE /api/push":

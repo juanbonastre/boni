@@ -44,7 +44,7 @@ Todo en JSON bajo `/api`; salvo el inicio de sesion, con `Authorization: Bearer 
 | `GET /api/external?id=X[&fresh=1]` | Ese calendario externo, descargado por el servidor: `{ text, at }` |
 | `PUT /api/collections/reminders` `{ collectionId, reminders?, eventColumn? }` | Avisos de un calendario, escritos en su definicion (fase 5, con `BONI_WRITE`) |
 | `GET /api/reminders?tz=&hours=&locale=&h24=` | Los avisos de la cuenta de las proximas horas, ya redactados para el dispositivo (fase 5) |
-| `PUT /api/push` `{ endpoint }` / `DELETE /api/push` | Direccion UnifiedPush de este dispositivo (solo en los hosts de `BONI_PUSH_HOSTS`) |
+| `PUT /api/push` `{ endpoint }` / `DELETE /api/push` | Direccion UnifiedPush de este dispositivo (solo en los hosts de `BONI_PUSH_HOSTS`); `{ endpoint, for: "notices", keys: { p256dh, auth } }`: la de la app de Boni para sus avisos, con las claves de Web Push del dispositivo (sin ellas, 400) |
 | Cualquier otra ruta | La app web (para abrir el calendario desde un navegador) |
 
 Una nota sin cambios conserva la misma fila, asi que el servidor sabe exactamente que cambio comparando filas. El vigilante del
@@ -127,6 +127,15 @@ creciendo tras un reinicio: un dispositivo con una version anterior pide una fot
   al reiniciar el movil y cada pocas horas por si se perdio alguno. Las alarmas se vuelven a poner tras reiniciar.
 - Para UnifiedPush en el NAS: `BONI_PUSH_HOSTS` con el host de ntfy y `BONI_PUSH_TOKEN` (cuenta de ntfy con escritura en
   `up*`); en ntfy, la cuenta del movil necesita lectura en `up*`.
+- **Avisos de Boni** (tarea 62, A-17): lo que Boni avisa por su cuenta (el `notify` del agente, el «Avisar» de un flujo,
+  el presupuesto del mes) sale de `AgentHost.notify`: el evento «notify» de `GET /api/agent/events` (lo tiene abierto la
+  app de escritorio, con su ventana o solo en la bandeja, y se sirve aunque los modelos estén apagados) y, a la vez, un
+  mensaje UnifiedPush a cada dirección de la cuenta registrada «para avisos» (la app de Boni en Android). Ese mensaje sí
+  lleva el texto, pero cifrado para ese dispositivo con las claves que dio al registrarse (Web Push, RFC 8291,
+  `webpush.ts`): ntfy guarda bytes que no puede leer, y el móvil lo enseña aunque no llegue a la tailnet (con Mullvad,
+  por ejemplo). Las direcciones de Boni Calendar siguen recibiendo solo «reminders». Como mucho diez avisos por hora y
+  cuenta; el log dice a cuántos dispositivos fue cada uno (`push 1: notice sent to 1 of 1 devices`). `system.db` guarda
+  de cada dirección para qué es (`kind`), la clave pública del dispositivo (`p256dh`) y su secreto (`auth`).
 
 ## Abierto a internet (fase 6)
 Decision de Juan (2026-10-17): Funnel con protecciones, un solo vault (sin varios usuarios por ahora).

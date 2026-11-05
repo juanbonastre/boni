@@ -239,6 +239,12 @@ describe("the conversation API", () => {
     expect((await post(base, token, "/api/agent/turn", {})).status).toBe(400);
     const r = await post(offBase, token, "/api/agent/turn", { text: "hola" });
     expect([r.status, await r.json()]).toEqual([503, { error: "agent-off" }]);
+    // Its notices' stream stays open with the models off: the desktop app keeps it (task 62).
+    const events = await fetch(`${offBase}/api/agent/events`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(events.status).toBe(200);
+    await events.body?.cancel();
   });
 
   it("tells the account's devices what the agent notifies", async () => {

@@ -328,7 +328,8 @@ CREATE VIRTUAL TABLE entities_fts USING fts5(title, text, content='');
 
 - **Tablas (system.db):** `accounts (id, name, pass, created, disabled)`; `devices (id, account, name, kind, trust,
   created, last_seen)`, con `kind` ∈ phone/desktop/browser/tv/watch/speaker y `trust` ∈ personal/shared/ambient;
-  `sessions (token_hash, device, created, last_seen, listener)`; `push (session, endpoint)`.
+  `sessions (token_hash, device, created, last_seen, listener)`; `push (session, endpoint, kind, p256dh, auth)` (para qué es
+  la dirección, recordatorios o avisos de Boni, y las claves de Web Push con las que se cifra un aviso: tarea 62).
 - **Inicio de sesión igual que hoy en las dos apps** (`POST /api/login {user, password, device}` y su equivalente en
   `/api/v1/login`). Nada de registro abierto. Tampoco cambian la regla de 90 días sin uso ni los límites de intentos
   (`limits.ts`, igual en las dos implementaciones).
@@ -644,7 +645,8 @@ con modelo: de otro proveedor o local, y vigilando llamadas a herramientas, no r
 - **Otras:**
   - `capture.expense` (un `entities.create` sobre el tipo movimiento, con sus reglas);
   - `ask` (lo resuelve el intérprete);
-  - `notify` (solo a los dispositivos de la propia cuenta: el destinatario lo fija el código, no es un argumento).
+  - `notify` (solo a los dispositivos de la propia cuenta: el destinatario lo fija el código, no es un argumento). Llega
+    aunque Boni esté cerrado: al móvil por UnifiedPush, cifrado para él (A-17), y a la app de escritorio en la bandeja.
 - **Lo que no hay en el primer PR del agente:** nada con `egress` ni `send`. Llegan con el correo (paso 2 del plan) y
   con el trabajador web (después), y entonces ya está el corpus de inyecciones para probarlas.
 

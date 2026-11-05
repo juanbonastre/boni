@@ -2,6 +2,7 @@ package io.github.juanbonastre.boni
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -166,6 +167,22 @@ class Shell private constructor(context: Context) {
     }
 
     private fun offline(message: String) = JSONObject().put("ok", false).put("offline", true).put("message", message)
+
+    /**
+     * This phone's UnifiedPush address for Boni's notices, with the keys its connector made (Notices, task 62), told to
+     * the server with the session's token: PUT /api/push «for notices».
+     */
+    fun registerPush(body: JSONObject): Boolean {
+        val (server, token) = target() ?: return false
+        return try {
+            val r = Http.send("PUT", "$server/api/push", token, body.toString(), 15_000)
+            if (r.status != 200) Log.w(MainActivity.TAG, "push address not registered: HTTP ${r.status}")
+            r.status == 200
+        } catch (e: IOException) {
+            Log.w(MainActivity.TAG, "push address not registered: ${e.message}")
+            false
+        }
+    }
 
     /** One queued capture, sent by the worker with the app closed (POST /api/v1/actions). */
     fun sendAction(request: JSONObject): QueueLogic.Outcome {

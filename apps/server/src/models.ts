@@ -271,10 +271,11 @@ export class AccountModels {
     const month = this.month().label;
     if (eur >= budget.monthlyEur * budget.warnAt && store.setting(WARNED) !== month) {
       store.setSetting(WARNED, month);
-      this.o.host.emit(account, "notify", {
-        text: `Los modelos llevan ${eur.toFixed(2)} € de ${budget.monthlyEur} € este mes.`,
-        integrity: "own",
-      });
+      this.o.host.notify(
+        account,
+        `Los modelos llevan ${eur.toFixed(2)} € de ${budget.monthlyEur} € este mes.`,
+        "own",
+      );
     }
     return budget.monthlyEur > 0 && eur >= budget.monthlyEur;
   }

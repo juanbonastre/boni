@@ -180,7 +180,9 @@ minuto `apps/server/src/flowScheduler.ts` mira los flujos encendidos de cada cue
 pasada después de guardarse esa versión y después de su última ejecución, una sola vez, como segundo plano con
 `$today`; si el servidor estaba parado a esa hora, lo ejecuta al volver solo dentro de un margen (media hora si es
 cada hora, tres horas si no). Cada ejecución deja una línea en el registro: `flows 1: «Resumen diario» v2
-(2026-11-05 08:00): done`. «Ejecutar» lo lanza a mano cuando se quiera.
+(2026-11-05 08:00): done`. «Ejecutar» lo lanza a mano cuando se quiera. Su «Avisar» llega a su hora aunque Boni esté
+cerrado: al móvil por UnifiedPush, cifrado para él, y a la app de escritorio en la bandeja (tarea 62, A-17;
+`docs/servidor.md`, «Avisos de Boni»).
 
 **`flows.run` (F4).** El planificador ve los flujos que puede ejecutar (encendidos, a mano o programados: su id, su
 nombre y lo que pide su formulario) y los lanza con `flows.run`; la política pide confirmarlo siempre (P8) y lo niega

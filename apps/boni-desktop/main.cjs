@@ -10,6 +10,7 @@ const {
   ipcMain,
   Menu,
   nativeImage,
+  Notification,
   net,
   screen,
   shell,
@@ -23,6 +24,7 @@ const { allowedPath, timeoutFor } = require("./paths.cjs");
 const F = require("./files.cjs");
 const { linkIn, outsideLink, peekScreen, screenOfUrl } = require("./links.cjs");
 const { createLive } = require("./live.cjs");
+const { createNotices, noticeBody } = require("./notices.cjs");
 const S = require("./settings.cjs");
 const BK = require("./backup.cjs");
 const { Readable } = require("node:stream");
@@ -122,6 +124,32 @@ const live = createLive({
     broadcast({ type: "changed", what });
   },
   onState: () => broadcast({ type: "settings", settings: clientSettings() }),
+  log,
+});
+
+// ---------- Boni's notices (task 62): a system notification for each, with the window open or only the tray ----------
+/** The notifications on screen, kept until clicked or closed (Electron drops the events of one it collected). */
+const notifications = new Set();
+function showNotice(text) {
+  const body = noticeBody(text);
+  if (!body || !Notification.isSupported()) return;
+  const n = new Notification({ title: "Boni", body, icon: ICON });
+  notifications.add(n);
+  n.on("click", () => {
+    notifications.delete(n);
+    openMain();
+  });
+  n.on("close", () => notifications.delete(n));
+  n.show();
+  log("notice shown");
+}
+const notices = createNotices({
+  fetch: (url, init) => net.fetch(url, init),
+  target: () =>
+    settings.serverUrl && settings.token
+      ? { serverUrl: settings.serverUrl, token: settings.token }
+      : null,
+  onNotice: showNotice,
   log,
 });
 
@@ -541,7 +569,10 @@ function setSettings(patch) {
     applyZoom();
     broadcast({ type: "settings", settings: clientSettings() });
   }
-  if (settings.serverUrl !== before.serverUrl) live.restart();
+  if (settings.serverUrl !== before.serverUrl) {
+    live.restart();
+    notices.restart();
+  }
   if (typeof patch?.autostart === "boolean" && packaged()) {
     try {
       autostart.setOn(P.autostart, patch.autostart, execPath());
@@ -639,6 +670,7 @@ ipcMain.handle("account:login", async (_e, form) => {
     `logged in as ${r.json.user} on ${r.json.device}${old ? " (the old device token is no longer used)" : ""}`,
   );
   live.restart();
+  notices.restart();
   broadcast({ type: "settings", settings: clientSettings() });
   broadcast({ type: "changed", what: "all" });
   return { ok: true, settings: clientSettings() };
@@ -655,6 +687,7 @@ ipcMain.handle("account:logout", async () => {
   settings = { ...settings, token: "", user: "" };
   save();
   live.stop();
+  notices.stop();
   broadcast({ type: "settings", settings: clientSettings() });
   return clientSettings();
 });
@@ -893,6 +926,7 @@ function start() {
     if (settings.serverUrl && settings.token && !process.env.BONI_SCREENSHOT)
       setTimeout(() => void makePeek(), 4000);
     live.restart();
+    notices.restart();
     // Started by a boni:// link (Boni Calendar's "Abrir en Boni"): the window, on what it names.
     const link = linkIn(process.argv);
     const opened = link ? screenOfUrl(link) : null;
