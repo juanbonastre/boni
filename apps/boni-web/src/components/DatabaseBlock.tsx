@@ -8,6 +8,7 @@ import {
   type SystemColumn,
 } from "@boni/views";
 import {
+  ArrowUpDown,
   Calendar as CalendarIcon,
   Check,
   ChevronLeft,
@@ -15,10 +16,13 @@ import {
   Columns3,
   LayoutGrid,
   List,
+  ListFilter,
   Maximize2,
   Network,
   Paperclip,
   Plus,
+  Search,
+  SlidersHorizontal,
   Table2,
   Trash2,
   X,
@@ -53,6 +57,15 @@ import {
 } from "../store.ts";
 import { AddColumn, ColumnMenu, columnsEditable } from "./ColumnMenu.tsx";
 import { bytes, whoName } from "./Dash.tsx";
+import {
+  type BarFocus,
+  type Layouts,
+  LayoutTab,
+  LayoutTiles,
+  ViewBar,
+  type ViewsControl,
+  ViewTabs,
+} from "./DatabaseHead.tsx";
 import { DataDiagram } from "./DataDiagram.tsx";
 import { BackRow, MenuRow, MenuSep, NextRow, PointMenu, PopButton } from "./Popover.tsx";
 import { ProtectionMenu } from "./Protection.tsx";
@@ -64,7 +77,7 @@ import { ProtectionMenu } from "./Protection.tsx";
  * as plain text like any other, never as a link or HTML.
  */
 
-const LAYOUTS: { id: DatabaseView["layout"]; icon: ReactNode }[] = [
+const LAYOUTS: Layouts = [
   { id: "table", icon: <Table2 size={14} strokeWidth={1.8} /> },
   { id: "board", icon: <Columns3 size={14} strokeWidth={1.8} /> },
   { id: "list", icon: <List size={14} strokeWidth={1.8} /> },
@@ -100,12 +113,15 @@ export function DatabaseBlock({
   view,
   onView,
   named = true,
+  views,
 }: {
   source: string;
   view: DatabaseView;
   onView: (v: DatabaseView) => void;
   /** Its name and protection in its head (not on the collection's own page, whose title has them). */
   named?: boolean;
+  /** Its saved views as tabs (a collection's own page and «Mis datos»; task 69). */
+  views?: ViewsControl;
 }) {
   const t = useStore((s) => s.t);
   const types = useStore((s) => s.dataTypes);
@@ -115,6 +131,10 @@ export function DatabaseBlock({
   const [limit, setLimit] = useState(50);
   // The table's chosen rows (Juan, 2026-10-30), here so the head can say what can be done with them.
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // The bar of order and filters, shown by its icons (task 69), with the editor of the icon pressed open.
+  const [bar, setBar] = useState<{ what: BarFocus; n: number }>({ what: null, n: 0 });
+  // The head's search: rows whose title has these words (this device, this moment; nothing saved).
+  const [query, setQuery] = useState<string | null>(null);
   const also = view.layout === "calendar" ? (view.also ?? []) : [];
   useEffect(() => {
     if (!types) void loadDataTypes();
@@ -125,12 +145,22 @@ export function DatabaseBlock({
   }, [also.join(",")]);
   const type = types?.find((x) => x.id === source);
   if (types && !type) return <p className="doc-gone">{t("db.gone")}</p>;
-  const sorted = sortRows(filterRows(data?.rows ?? [], type, view.filter), type, view);
+  const q = (query ?? "").trim().toLocaleLowerCase();
+  const found = (data?.rows ?? []).filter(
+    (r) =>
+      !q ||
+      String(type ? (r.values[type.titleField] ?? "") : "")
+        .toLocaleLowerCase()
+        .includes(q),
+  );
+  const sorted = sortRows(filterRows(found, type, view.filter), type, view);
   const rows =
     view.layout === "calendar" || view.layout === "board" ? sorted : sorted.slice(0, limit);
   const more = sorted.length - rows.length;
   const shown = type?.fields.filter((f) => !view.hide?.includes(f.id)) ?? [];
   const titleField = type?.fields.find((f) => f.id === type.titleField);
+  // Boni's own records have no diagram: they are not the user's data (F6); «Mis datos» is all of it.
+  const layouts = LAYOUTS.filter((l) => l.id !== "diagram" || !type?.system || !!type.editable);
   const add = async (values: Record<string, DataValue> = {}) => {
     await addRow(source, values);
   };
@@ -151,31 +181,62 @@ export function DatabaseBlock({
               ? !type.editable && <SystemPill />
               : type && <ProtectionMenu type={type} />}
           </h3>
+        ) : null}
+        {views ? (
+          <ViewTabs views={views} layouts={layouts} />
         ) : (
-          <span className="db-name" />
+          <LayoutTab view={view} onView={onView} layouts={layouts} />
         )}
-        <div className="db-layouts" role="radiogroup" aria-label={t("db.layout")}>
-          {/* Boni's own records have no diagram: they are not the user's data (F6); «Mis datos» is all of it. */}
-          {LAYOUTS.filter((l) => l.id !== "diagram" || !type?.system || !!type.editable).map(
-            (l) => (
-              <button
-                key={l.id}
-                type="button"
-                role="radio"
-                aria-checked={view.layout === l.id}
-                className={`db-layout${view.layout === l.id ? " on" : ""}`}
-                title={t(`db.layouts.${l.id}`)}
-                aria-label={t(`db.layouts.${l.id}`)}
-                onClick={() => onView({ ...view, layout: l.id })}
-              >
-                {l.icon}
-                <span>{t(`db.layouts.${l.id}`)}</span>
-              </button>
-            ),
+        <div className="db-tools">
+          {type && (
+            <button
+              type="button"
+              className={`icon-btn${view.filter?.length ? " on" : ""}`}
+              title={t("db.filter")}
+              aria-label={t("db.filter")}
+              onClick={() => setBar((b) => ({ what: "filter", n: b.n + 1 }))}
+            >
+              <ListFilter size={15} strokeWidth={1.8} />
+            </button>
+          )}
+          {type && (
+            <button
+              type="button"
+              className={`icon-btn${view.sort ? " on" : ""}`}
+              title={t("db.opt.sort")}
+              aria-label={t("db.opt.sort")}
+              onClick={() => setBar((b) => ({ what: "sort", n: b.n + 1 }))}
+            >
+              <ArrowUpDown size={15} strokeWidth={1.8} />
+            </button>
+          )}
+          {query === null ? (
+            <button
+              type="button"
+              className="icon-btn"
+              title={t("db.search")}
+              aria-label={t("db.search")}
+              onClick={() => setQuery("")}
+            >
+              <Search size={15} strokeWidth={1.8} />
+            </button>
+          ) : (
+            <input
+              className="db-search"
+              // biome-ignore lint/a11y/noAutofocus: the search was just asked for
+              autoFocus
+              value={query}
+              placeholder={t("db.search")}
+              aria-label={t("db.search")}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setQuery(null)}
+              onBlur={() => !query && setQuery(null)}
+            />
+          )}
+          {type && (
+            <ViewOptions type={type} view={view} onView={onView} views={views} layouts={layouts} />
           )}
         </div>
-        {type && <FilterButton type={type} view={view} onView={onView} />}
-        {type && <ViewOptions type={type} view={view} onView={onView} />}
         {(!type?.system || type.editable) && (
           <button type="button" className="btn primary small" onClick={() => void add()}>
             <Plus size={14} strokeWidth={2} />
@@ -183,6 +244,15 @@ export function DatabaseBlock({
           </button>
         )}
       </header>
+      {type && (bar.what || view.sort || view.filter?.length) ? (
+        <ViewBar
+          type={type}
+          view={view}
+          onView={onView}
+          focus={bar}
+          onDone={() => setBar((b) => ({ what: null, n: b.n }))}
+        />
+      ) : null}
       {view.layout === "diagram" && type?.id === SYS.data.id ? (
         // «Mis datos»: every collection, the ones its filter leaves out dimmed (docs/flujos.md §4.7, F6b).
         <DataDiagram
@@ -257,10 +327,14 @@ export function filterRows(
   type: DataType | undefined,
   rules: DatabaseFilter[] | undefined,
 ): DataRow[] {
-  if (!type || !rules?.length) return rows;
+  // A rule still waiting for its value filters nothing, as in Notion (one just added from the bar).
+  const live = (rules ?? []).filter(
+    (r) => NO_VALUE.has(r.op) || (r.value !== undefined && r.value !== ""),
+  );
+  if (!type || !live.length) return rows;
   const today = ymd(new Date());
   const typeOf = (id: string) => type.fields.find((x) => x.id === id)?.type;
-  return rows.filter((row) => matchesFilters(row.values, typeOf, rules, today));
+  return rows.filter((row) => matchesFilters(row.values, typeOf, live, today));
 }
 
 /** The operators that fit a field, as Notion offers them. */
@@ -289,54 +363,25 @@ export function opsFor(f: DataField): DatabaseFilter["op"][] {
 }
 const NO_VALUE = new Set(["empty", "not_empty", "checked", "unchecked"]);
 
-/** "Filtro": the view's rules, each a field, an operator and a value; added and removed here. */
-function FilterButton({
-  type,
-  view,
-  onView,
-}: {
-  type: DataType;
-  view: DatabaseView;
-  onView: (v: DatabaseView) => void;
-}) {
-  const t = useStore((s) => s.t);
-  const rules = view.filter ?? [];
-  return (
-    <PopButton
-      className={`btn ghost small${rules.length ? " on" : ""}`}
-      title={t("db.filter")}
-      width={420}
-      label={rules.length ? `${t("db.filter")} (${rules.length})` : t("db.filter")}
-    >
-      {() => (
-        <div className="pop-section db-filters">
-          <FilterEditor
-            type={type}
-            rules={rules}
-            onChange={(next) => onView({ ...view, filter: next.length ? next : undefined })}
-          />
-        </div>
-      )}
-    </PopButton>
-  );
-}
-
 /** Notion's filter rules, edited: a field, an operator that fits it, a value; add and remove. */
 export function FilterEditor({
   type,
   rules,
   onChange,
+  single = false,
 }: {
   type: DataType;
   rules: DatabaseFilter[];
   onChange: (next: DatabaseFilter[]) => void;
+  /** One rule, its chip's in the bar (task 69): no «Añadir filtro» here, the bar has its own. */
+  single?: boolean;
 }) {
   const t = useStore((s) => s.t);
   const put = onChange;
   const fields = type.fields;
   return (
     <>
-      {rules.length === 0 && <p className="muted small">{t("db.noFilter")}</p>}
+      {rules.length === 0 && !single && <p className="muted small">{t("db.noFilter")}</p>}
       {rules.map((r, i) => {
         const f = fields.find((x) => x.id === r.field);
         const ops = f ? opsFor(f) : [];
@@ -386,17 +431,19 @@ export function FilterEditor({
           </div>
         );
       })}
-      <button
-        type="button"
-        className="btn ghost small"
-        onClick={() => {
-          const f = fields[0];
-          if (f) put([...rules, { field: f.id, op: opsFor(f)[0] ?? "contains" }]);
-        }}
-      >
-        <Plus size={14} strokeWidth={1.8} />
-        {t("db.filterAdd")}
-      </button>
+      {!single && (
+        <button
+          type="button"
+          className="btn ghost small"
+          onClick={() => {
+            const f = fields[0];
+            if (f) put([...rules, { field: f.id, op: opsFor(f)[0] ?? "contains" }]);
+          }}
+        >
+          <Plus size={14} strokeWidth={1.8} />
+          {t("db.filterAdd")}
+        </button>
+      )}
     </>
   );
 }
@@ -504,7 +551,16 @@ function sortRows(rows: DataRow[], type: DataType | undefined, view: DatabaseVie
   });
 }
 
-type OptionsPanel = "main" | "props" | "filter" | "sort" | "group" | "date" | "also" | "system";
+type OptionsPanel =
+  | "main"
+  | "layout"
+  | "props"
+  | "filter"
+  | "sort"
+  | "group"
+  | "date"
+  | "also"
+  | "system";
 
 /**
  * A view's «Opciones», as Notion's «⋯» of a view (Juan, 2026-11-03, task 41: «debería darme opciones»): a short list
@@ -516,10 +572,15 @@ function ViewOptions({
   type,
   view,
   onView,
+  views,
+  layouts,
 }: {
   type: DataType;
   view: DatabaseView;
   onView: (v: DatabaseView) => void;
+  /** Its saved views (task 69): this one's name, duplicate and delete here too. */
+  views?: ViewsControl;
+  layouts: Layouts;
 }) {
   const t = useStore((s) => s.t);
   const allTypes = useStore((s) => s.dataTypes);
@@ -536,7 +597,9 @@ function ViewOptions({
   const chosen = (id: string | undefined, list: DataField[]) =>
     (list.find((f) => f.id === id) ?? list[0])?.name ?? "";
   const count = (n: number) => (n ? String(n) : "");
+  const saved = views?.list.find((v) => v.id === views.active);
   const LABEL: Record<Exclude<OptionsPanel, "main">, string> = {
+    layout: t("db.layout"),
     props: t("db.opt.properties"),
     filter: t("db.opt.filter"),
     sort: t("db.opt.sort"),
@@ -551,17 +614,33 @@ function ViewOptions({
     );
   return (
     <PopButton
-      className="btn ghost small"
-      title={t("db.options")}
+      className="icon-btn"
+      title={t("db.settings")}
       width={panel === "filter" ? 420 : 260}
-      label={t("db.options")}
+      label={<SlidersHorizontal size={15} strokeWidth={1.8} />}
       onOpenChange={(open) => {
         if (!open) setPanel("main");
       }}
     >
-      {() =>
+      {(close) =>
         panel === "main" ? (
           <div className="menu-list" role="menu">
+            {views && saved && (
+              <input
+                className="input db-view-rename"
+                key={saved.id}
+                defaultValue={saved.name}
+                aria-label={t("db.view.name")}
+                maxLength={60}
+                onBlur={(e) => views.onRename(saved.id, e.currentTarget.value)}
+                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+              />
+            )}
+            <NextRow
+              label={LABEL.layout}
+              value={t(`db.layouts.${view.layout}`)}
+              onClick={() => setPanel("layout")}
+            />
             <NextRow
               label={LABEL.props}
               value={t("db.opt.shown", {
@@ -616,6 +695,36 @@ function ViewOptions({
                 />
               </>
             )}
+            {views && saved && (
+              <>
+                <MenuSep />
+                <MenuRow
+                  label={t("db.view.duplicate")}
+                  onClick={() => {
+                    views.onDuplicate(saved.id);
+                    close();
+                  }}
+                />
+                {views.list.length > 1 && (
+                  <MenuRow
+                    label={t("db.view.delete")}
+                    onClick={() => {
+                      views.onDelete(saved.id);
+                      close();
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </div>
+        ) : panel === "layout" ? (
+          <div className="pop-section">
+            {head}
+            <LayoutTiles
+              layouts={layouts}
+              current={view.layout}
+              onPick={(layout) => onView({ ...view, layout })}
+            />
           </div>
         ) : panel === "filter" ? (
           <div className="pop-section db-filters">

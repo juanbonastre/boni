@@ -1,7 +1,15 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import { CARD_DETAILED } from "./agent-scenarios.ts";
-import { EXAMPLES, emit, openApp, recorded } from "./fixtures.ts";
+import {
+  addFilter,
+  EXAMPLES,
+  emit,
+  openApp,
+  recorded,
+  removeFilter,
+  setLayout,
+} from "./fixtures.ts";
 
 const SHOTS = "e2e-boni/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -441,7 +449,7 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
     .toBe(true);
   await page.screenshot({ path: `${SHOTS}/db-table.png` });
   // The board groups by the select; a card dragged to another column changes it.
-  await db.getByRole("radio", { name: "Tablero" }).click();
+  await setLayout(page, db, "Tablero");
   await expect(db.locator(".db-column")).toHaveCount(3);
   // By its title: Rayuela's card names Ficciones too, as what it relates to.
   await db
@@ -456,7 +464,7 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
     .toBe(true);
   await page.screenshot({ path: `${SHOTS}/db-board.png` });
   // A row opened as a page: its properties and its text, saved by itself.
-  await db.getByRole("radio", { name: "Tabla" }).click();
+  await setLayout(page, db, "Tabla");
   const rayuela = db.getByRole("button", { name: "Rayuela", exact: true });
   await rayuela.click();
   await expect(page.locator(".row-doc .doc-title")).toHaveValue("Rayuela");
@@ -519,19 +527,14 @@ test("a collection as a Notion database: table, board, calendar; cells edited in
   await expect(page.locator(".row-prop")).toHaveCount(0);
   await page.locator(".topbar .crumb", { hasText: "Lecturas" }).click();
   // Notion's filter: only what matches every rule.
-  await db.getByRole("button", { name: "Filtro" }).click();
-  await page.getByRole("button", { name: "Añadir filtro" }).click();
-  await page.getByRole("combobox", { name: "Propiedad" }).selectOption({ label: "Estado" });
-  await page.getByRole("combobox", { name: "Valor" }).selectOption({ label: "Leído" });
-  await page.keyboard.press("Escape");
+  await addFilter(page, db, "Estado", "Leído");
   await expect(db.locator(".db-table tbody tr")).toHaveCount(1);
-  await expect(db.getByRole("button", { name: "Filtro" })).toHaveText("Filtro (1)");
-  await db.getByRole("button", { name: "Filtro" }).click();
-  await page.getByRole("button", { name: "Quitar filtro" }).click();
-  await page.keyboard.press("Escape");
+  await expect(db.locator(".db-bar .db-chip.on")).toHaveText("Estado es Leído");
+  await removeFilter(page, db, "Estado es Leído");
   await expect(db.locator(".db-table tbody tr")).toHaveCount(3);
+  await expect(db.locator(".db-bar")).toHaveCount(0);
   // The calendar places a row by its date (Ficciones ended today), by month or by week.
-  await db.getByRole("radio", { name: "Calendario" }).click();
+  await setLayout(page, db, "Calendario");
   await expect(db.locator(".db-cal-day.today")).toContainText("Ficciones");
   await db.getByRole("radio", { name: "Semana" }).click();
   await expect(db.locator(".db-cal-grid.week .db-cal-day")).toHaveCount(7);
@@ -735,9 +738,9 @@ test("ghost rows: a pending proposal drawn dashed in its collection, accepted or
   await expect(ghost).toContainText("Propuesta");
   await page.screenshot({ path: `${SHOTS}/db-ghost.png` });
   // In the calendar layout too, dashed.
-  await db.getByRole("radio", { name: "Calendario" }).click();
+  await setLayout(page, db, "Calendario");
   await expect(db.locator(".db-cal-item.ghost")).toContainText("Leer Rayuela otra vez");
-  await db.getByRole("radio", { name: "Tabla" }).click();
+  await setLayout(page, db, "Tabla");
   // Its title opens the proposal on its own page (read only); Esc comes back.
   await ghost.getByRole("button", { name: "Leer Rayuela otra vez", exact: true }).click();
   await expect(page.locator(".proposal-page .pp-title")).toHaveText("Leer Rayuela otra vez");

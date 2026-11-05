@@ -579,6 +579,11 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           });
         return out;
       };
+      // Its views and what this device's head keeps (task 69), kept as the server keeps any collection's.
+      let myUi: { open: boolean; hidden: string[]; views?: unknown[] } = {
+        open: false,
+        hidden: [],
+      };
       const myType = () => {
         const who = new Map<string, string>();
         for (const u of Object.values(usageOf()))
@@ -593,7 +598,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
           count: myRows().length,
           level: "private",
           rules: [],
-          rowUi: { open: false, hidden: [] as string[] },
+          rowUi: myUi,
           system: true,
           editable: ["f_titulo", "f_madre", "f_nivel", "f_barra"],
           fields: [
@@ -1000,6 +1005,10 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         const rowUi = /^api\/data\/types\/([^/]+)\/row-ui$/.exec(p);
         if (rowUi) {
+          if (rowUi[1] === MY) {
+            myUi = { ...myUi, ...((body ?? {}) as Partial<typeof myUi>) };
+            return [200, JSON.stringify(myUi)];
+          }
           const t = userCols().find((x) => x.id === rowUi[1]);
           if (!t) return [404, '{"error":"not-found"}'];
           t.rowUi = { ...t.rowUi, ...((body ?? {}) as Partial<typeof t.rowUi>) };
@@ -1460,6 +1469,43 @@ export async function iconsWhole(card: Locator) {
       .evaluate((el) => el.scrollWidth > el.clientWidth && getComputedStyle(el).textOverflow),
   ).toBe("ellipsis");
 }
+
+/**
+ * Changes the open view's layout (task 69), as a person does: a page's block by its one tab, a collection's view
+ * by its settings' «Diseño». `db` is the block (`.db`).
+ */
+export async function setLayout(page: Page, db: Locator, name: string): Promise<void> {
+  const head = db.locator(".db-head").first();
+  const tab = head.getByRole("button", { name: "Diseño", exact: true });
+  if (await tab.count()) {
+    await tab.click();
+    await page.getByRole("dialog", { name: "Diseño" }).getByRole("radio", { name }).click();
+    return;
+  }
+  await head.getByRole("button", { name: "Ajustes de la vista" }).click();
+  const box = page.getByRole("dialog", { name: "Ajustes de la vista" });
+  await box.getByRole("menuitem", { name: /^Diseño/ }).click();
+  await box.getByRole("radio", { name }).click();
+  await page.keyboard.press("Escape");
+}
+
+/** Filters the open view by a property's value from the bar (task 69): the head's «Filtro», the property, its value. */
+export async function addFilter(page: Page, db: Locator, field: string, value: string) {
+  await db.locator(".db-head").first().getByRole("button", { name: "Filtro", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Añadir filtro" })
+    .getByRole("menuitemradio", { name: field, exact: true })
+    .click();
+  await page.getByRole("combobox", { name: "Valor" }).selectOption({ label: value });
+  await page.keyboard.press("Escape");
+}
+
+/** Takes a filter away by its chip in the bar (task 69). */
+export async function removeFilter(page: Page, db: Locator, text: string) {
+  await db.locator(".db-bar").getByRole("button", { name: text }).click();
+  await page.getByRole("button", { name: "Quitar filtro" }).click();
+}
+
 export async function recorded(page: Page): Promise<Shell> {
   return page.evaluate(() => {
     const w = window as unknown as Record<string, string[] | undefined>;

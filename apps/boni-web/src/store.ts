@@ -3,9 +3,11 @@ import {
   type DatabaseFilter,
   type DatabaseView,
   dataRowTarget,
+  MAX_VIEWS,
   markdownToBlocks,
   type PageSpec,
   resolveTemplateLinks,
+  type SavedView,
   SYS,
   templatePage,
 } from "@boni/views";
@@ -289,7 +291,8 @@ interface State {
   /** The record opened from another app (its id), for the peek's "Abrir en Boni". */
   openedNote: string | null;
   /** How each collection is shown on its own page (this session). */
-  collectionViews: Record<string, DatabaseView>;
+  /** Which saved view of each collection is open on this device (task 69), by its id. */
+  activeViews: Record<string, string>;
   /** Ctrl+K: the quick find over the pages. */
   findOpen: boolean;
   /** The pages in the trash, while its list is open. */
@@ -413,7 +416,7 @@ export const useStore = create<State>(() => ({
   recent: [],
   fold: { sections: [], branches: [] },
   rows: {},
-  collectionViews: {},
+  activeViews: readActiveViews(),
   openedNote: null,
   row: null,
   rowDoc: null,
@@ -2780,7 +2783,14 @@ export async function setNotesInTree(type: string, notes: boolean) {
 
 export async function loadDataTypes(): Promise<DataType[] | null> {
   try {
-    const dataTypes = await agent.dataTypes();
+    const fresh = await agent.dataTypes();
+    // A collection's views changed here and not yet in the account stay as they are here (task 69).
+    const dataTypes = pendingViews.size
+      ? fresh.map((x) => {
+          const views = pendingViews.get(x.id);
+          return views ? { ...x, rowUi: { ...x.rowUi, views } } : x;
+        })
+      : fresh;
     set({ dataTypes });
     return dataTypes;
   } catch {
@@ -2904,8 +2914,146 @@ export const openCollection = (type: string) => {
   const name = get().dataTypes?.find((x) => x.id === type)?.name;
   if (name) noteRecent({ kind: "collection", id: type, title: name });
 };
-export const setCollectionView = (type: string, v: DatabaseView) =>
-  set({ collectionViews: { ...get().collectionViews, [type]: v } });
+
+// ---------- a collection's views (task 69; Juan, 2026-11-05: Notion's views as tabs, with «+») ----------
+const ACTIVE_VIEWS = "boni:activeViews";
+function readActiveViews(): Record<string, string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(ACTIVE_VIEWS) ?? "{}") as unknown;
+    return v && typeof v === "object" && !Array.isArray(v)
+      ? Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).filter(
+            (e): e is [string, string] => typeof e[1] === "string",
+          ),
+        )
+      : {};
+  } catch {
+    return {};
+  }
+}
+/** The first view of a collection that keeps none yet: its table, or what its page gives (`first`). */
+const FIRST_VIEW = "v_inicio";
+const saveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const pendingViews = new Map<string, SavedView[]>();
+/** A collection's views as they are now: here at once, in the account a moment later (one request for a burst). */
+function keepViews(type: string, views: SavedView[]) {
+  set({
+    dataTypes:
+      get().dataTypes?.map((x) => (x.id === type ? { ...x, rowUi: { ...x.rowUi, views } } : x)) ??
+      null,
+  });
+  pendingViews.set(type, views);
+  clearTimeout(saveTimers.get(type));
+  saveTimers.set(
+    type,
+    setTimeout(() => {
+      saveTimers.delete(type);
+      void agent
+        .setRowUi(type, { views })
+        .catch(() => toast(get().t("db.saveError")))
+        .finally(() => {
+          if (pendingViews.get(type) === views) pendingViews.delete(type);
+        });
+    }, 300),
+  );
+}
+/** Opens one of a collection's views on this device. */
+export function chooseView(type: string, id: string) {
+  const activeViews = { ...get().activeViews, [type]: id };
+  set({ activeViews });
+  try {
+    localStorage.setItem(ACTIVE_VIEWS, JSON.stringify(activeViews));
+  } catch {}
+}
+/** A view changed (its layout, filter, sort, columns…): kept with its id and its name, or the one given. */
+export function changeView(
+  type: string,
+  views: SavedView[],
+  id: string,
+  v: DatabaseView,
+  name?: string,
+) {
+  keepViews(
+    type,
+    views.map((x) => (x.id === id ? { ...v, id: x.id, name: name ?? x.name } : x)),
+  );
+}
+const newViewId = () => `v_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+/** «+»: a new view with this layout, named by it, opened. */
+export function addView(type: string, views: SavedView[], view: DatabaseView, name: string) {
+  if (views.length >= MAX_VIEWS) return;
+  const id = newViewId();
+  keepViews(type, [...views, { ...view, id, name }]);
+  chooseView(type, id);
+}
+export function renameView(type: string, views: SavedView[], id: string, name: string) {
+  const n = name.trim().slice(0, 60);
+  if (n)
+    keepViews(
+      type,
+      views.map((x) => (x.id === id ? { ...x, name: n } : x)),
+    );
+}
+export function duplicateView(type: string, views: SavedView[], id: string, name: string) {
+  const v = views.find((x) => x.id === id);
+  if (!v || views.length >= MAX_VIEWS) return;
+  const copy = { ...v, id: newViewId(), name };
+  const at = views.indexOf(v) + 1;
+  keepViews(type, [...views.slice(0, at), copy, ...views.slice(at)]);
+  chooseView(type, copy.id);
+}
+/**
+ * A collection's views for its page (task 69): those kept or its first, the one open, and what the head's tabs do. The
+ * first one is named after its layout; a new one too; a copy says it is one.
+ */
+export function useViews(type: string, first: DatabaseView) {
+  const t = useStore((s) => s.t);
+  const kept = useStore((s) => s.dataTypes?.find((x) => x.id === type)?.rowUi.views);
+  const chosen = useStore((s) => s.activeViews[type]);
+  const views: SavedView[] = kept?.length
+    ? kept
+    : [{ ...first, id: FIRST_VIEW, name: t(`db.layouts.${first.layout}`) }];
+  const active = views.find((v) => v.id === chosen) ?? (views[0] as SavedView);
+  return {
+    view: active as DatabaseView,
+    // A view still named after its layout takes the new one's name with it (Notion's).
+    onView: (v: DatabaseView) =>
+      changeView(
+        type,
+        views,
+        active.id,
+        v,
+        v.layout !== active.layout && active.name === t(`db.layouts.${active.layout}`)
+          ? t(`db.layouts.${v.layout}`)
+          : undefined,
+      ),
+    control: {
+      list: views,
+      active: active.id,
+      onSwitch: (id: string) => chooseView(type, id),
+      onAdd: (layout: DatabaseView["layout"]) =>
+        addView(type, views, { layout }, t(`db.layouts.${layout}`)),
+      onRename: (id: string, name: string) => renameView(type, views, id, name),
+      onDuplicate: (id: string) =>
+        duplicateView(
+          type,
+          views,
+          id,
+          t("db.view.copyOf", { name: views.find((v) => v.id === id)?.name ?? "" }),
+        ),
+      onDelete: (id: string) => deleteView(type, views, id, active.id),
+    },
+  };
+}
+
+/** A view gone (never the last one); if it was the one open, its neighbour opens. */
+export function deleteView(type: string, views: SavedView[], id: string, open: string) {
+  if (views.length <= 1) return;
+  const at = views.findIndex((x) => x.id === id);
+  const rest = views.filter((x) => x.id !== id);
+  keepViews(type, rest);
+  if (open === id) chooseView(type, (rest[Math.max(0, at - 1)] as SavedView).id);
+}
 
 /**
  * How much the models may see of a collection, Juan's choice (at once here, then on the server). A private one
@@ -3178,6 +3326,7 @@ function changeRowUi(
     related?: boolean;
     folded?: string[];
     widths?: Record<string, number>;
+    views?: SavedView[];
   },
 ) {
   set({

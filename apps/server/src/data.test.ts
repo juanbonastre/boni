@@ -14,7 +14,7 @@ import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 import { mcpAnswer } from "./mcp.ts";
 import { seed } from "./seed.test-util.ts";
-import { SYS_RUNS } from "./systemCollections.ts";
+import { SYS_DATA, SYS_RUNS } from "./systemCollections.ts";
 
 const PASSWORD = "una contraseña larga de ejemplo";
 let dir: string;
@@ -184,7 +184,7 @@ describe("collections as databases (plan PR 19)", () => {
       (
         (await call(t, "GET", "/api/data/types")).body.types as {
           id: string;
-          rowUi: { open: boolean; hidden: string[] };
+          rowUi: { open: boolean; hidden: string[]; views?: unknown[] };
         }[]
       ).find((x) => x.id === "t_libro")?.rowUi;
     expect(await ui()).toEqual({
@@ -193,6 +193,7 @@ describe("collections as databases (plan PR 19)", () => {
       related: false,
       folded: [],
       widths: {},
+      views: [],
     });
     const r = await call(t, "PUT", "/api/data/types/t_libro/row-ui", {
       open: true,
@@ -204,6 +205,7 @@ describe("collections as databases (plan PR 19)", () => {
       related: false,
       folded: [],
       widths: {},
+      views: [],
     });
     // Another device of the account sees the same.
     const other = await token("otro-equipo");
@@ -217,6 +219,7 @@ describe("collections as databases (plan PR 19)", () => {
       related: false,
       folded: [],
       widths: {},
+      views: [],
     });
     expect(
       (await call(t, "PUT", "/api/data/types/t_libro/row-ui", { hidden: ["f_nada"] })).status,
@@ -250,6 +253,62 @@ describe("collections as databases (plan PR 19)", () => {
         }[]
       ).find((x) => x.id === SYS_RUNS)?.rowUi.widths,
     ).toEqual({ f_status: 120 });
+    // Its views as tabs (task 69): kept whole, the same on every device; one that is not a view refuses them all.
+    const views = [
+      { id: "v_inicio", name: "Tabla", layout: "table", hide: ["f_paginas"] },
+      {
+        id: "v_m2k9ab12",
+        name: "Por estado",
+        layout: "board",
+        group: "f_estado",
+        sort: { field: "f_titulo", desc: true },
+        filter: [
+          { field: "f_estado", op: "is", value: "o_leido" },
+          { field: "f_titulo", op: "contains" },
+        ],
+      },
+    ];
+    expect((await call(t, "PUT", "/api/data/types/t_libro/row-ui", { views })).body.views).toEqual(
+      views,
+    );
+    expect(
+      (
+        (await call(other, "GET", "/api/data/types")).body.types as {
+          id: string;
+          rowUi: { views: unknown };
+        }[]
+      ).find((x) => x.id === "t_libro")?.rowUi.views,
+    ).toEqual(views);
+    for (const bad of [
+      [{ id: "v_x", name: "Mapa", layout: "mapa" }],
+      [{ id: "x", name: "Tabla", layout: "table" }],
+      [{ id: "v_x", name: "  ", layout: "table" }],
+      [{ id: "v_x", name: "Tabla", layout: "table", html: "<b>hola</b>" }],
+      [{ id: "v_x", name: "Tabla", layout: "table", filter: [{ field: "f_estado", op: "drop" }] }],
+      [views[0], views[0]],
+      Array.from({ length: 21 }, (_, i) => ({ id: `v_${i}`, name: `Vista ${i}`, layout: "table" })),
+      "tabla",
+    ])
+      expect((await call(t, "PUT", "/api/data/types/t_libro/row-ui", { views: bad })).status).toBe(
+        400,
+      );
+    expect((await ui())?.views).toEqual(views);
+    // «Mis datos» and Boni's own tables keep their views too.
+    const mine = await call(t, "PUT", `/api/data/types/${SYS_DATA}/row-ui`, {
+      views: [{ id: "v_dg", name: "Diagrama", layout: "diagram" }],
+    });
+    expect(mine.status).toBe(200);
+    expect(
+      (
+        (await call(t, "GET", "/api/data/types")).body.types as {
+          id: string;
+          rowUi: { views: { name: string }[] };
+        }[]
+      )
+        .find((x) => x.id === SYS_DATA)
+        ?.rowUi.views.map((v) => v.name),
+    ).toEqual(["Diagrama"]);
+    await call(t, "PUT", "/api/data/types/t_libro/row-ui", { views: [] });
     await call(t, "PUT", "/api/data/types/t_libro/row-ui", { open: false, widths: {} });
     expect(await ui()).toEqual({
       open: false,
@@ -257,6 +316,7 @@ describe("collections as databases (plan PR 19)", () => {
       related: false,
       folded: [],
       widths: {},
+      views: [],
     });
   });
 

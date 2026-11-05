@@ -93,7 +93,12 @@ test("Mis datos", async ({ page }) => {
 test("Mis datos: diagrama", async ({ page }) => {
   await open(page);
   await page.locator(".sidebar").getByRole("button", { name: "Mis datos" }).click();
-  await page.getByRole("radio", { name: "Diagrama" }).click();
+  // A view of its own (task 69): «+», «Diagrama».
+  await page.locator(".my-data .db-head").getByRole("button", { name: "Añadir vista" }).click();
+  await page
+    .getByRole("dialog", { name: "Añadir vista" })
+    .getByRole("button", { name: "Diagrama" })
+    .click();
   await page.locator(".data-diagram .dg-card-node").first().waitFor();
   await page.waitForTimeout(400); // the canvas fits the diagram with a short motion
   await shot(page, "mis-datos-diagrama");

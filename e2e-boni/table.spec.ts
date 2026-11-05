@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
-import { type FakePage, grown, openApp, recorded } from "./fixtures.ts";
+import { type FakePage, grown, openApp, recorded, setLayout } from "./fixtures.ts";
 
 /**
  * A collection's table (Juan, 2026-10-30): each column as wide as its kind of value, widened by its edge and kept;
@@ -100,18 +100,18 @@ test("a collection's page in every layout: centred, as wide as what it shows, th
     return b;
   };
   // Three books: a gallery three cards wide, a board of its columns, a list as wide as the minimum.
-  await page.locator(".db-head").getByRole("radio", { name: "Galería" }).click();
+  await setLayout(page, page.locator(".db"), "Galería");
   await centred();
   expect(Math.round((await endsWith(".db-gallery")).width)).toBe(3 * 232 - 12);
-  await page.locator(".db-head").getByRole("radio", { name: "Tablero" }).click();
+  await setLayout(page, page.locator(".db"), "Tablero");
   await centred();
   await endsWith(".db-board");
   await page.screenshot({ path: `${SHOTS}/collection-board.png` });
-  await page.locator(".db-head").getByRole("radio", { name: "Lista" }).click();
+  await setLayout(page, page.locator(".db"), "Lista");
   expect(Math.round((await centred()).width)).toBe(560);
   await endsWith(".db-list");
   // The calendar fills the width.
-  await page.locator(".db-head").getByRole("radio", { name: "Calendario" }).click();
+  await setLayout(page, page.locator(".db"), "Calendario");
   const doc = await centred();
   expect(doc.width).toBeGreaterThan((await box(page, ".content")).width - 2 * 48 - 2);
 });
@@ -146,7 +146,7 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   // The head keeps its options; a click on one lets go of the rows.
   await expect(page.locator(".db-head").getByRole("button", { name: "Nuevo" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/table-selection.png` });
-  await page.locator(".db-head").getByRole("button", { name: "Opciones", exact: true }).click();
+  await page.locator(".db-head").getByRole("button", { name: "Ajustes de la vista" }).click();
   await expect(chosen).toHaveCount(0);
   await page.keyboard.press("Escape");
   // Anywhere in the margin up to the sidebar lights the row beside the pointer and chooses it alone.
@@ -225,7 +225,7 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
     await expect(card).toHaveClass(/menu-open/);
   };
   // The board: «Cambiar nombre» writes the card's title in place.
-  await head.getByRole("radio", { name: "Tablero" }).click();
+  await setLayout(page, page.locator(".db"), "Tablero");
   await opens(page.locator(".db-board .db-card", { hasText: "Pedro Páramo" }));
   await page.screenshot({ path: `${SHOTS}/board-menu.png` });
   await menu.getByRole("menuitemradio", { name: "Cambiar nombre" }).click();
@@ -235,7 +235,7 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
   await expect(page.locator(".db-board .db-card", { hasText: "Los de abajo" })).toHaveCount(1);
   await expect.poll(() => sent(page, "PUT api/data/rows/r3 ", "Los de abajo")).toBe(true);
   // The gallery: «Borrar» sends the card to the trash, its toast's Undo brings it back.
-  await head.getByRole("radio", { name: "Galería" }).click();
+  await setLayout(page, page.locator(".db"), "Galería");
   const cards = page.locator(".db-gallery .db-card");
   await opens(cards.filter({ hasText: /^Ficciones/ }));
   await menu.getByRole("menuitemradio", { name: "Borrar" }).click();
@@ -243,7 +243,7 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
   await page.locator(".toast").getByRole("button", { name: "Deshacer" }).click();
   await expect(cards).toHaveCount(3);
   // The list: «Abrir» opens the row as a page; Escape closes the menu without doing anything.
-  await head.getByRole("radio", { name: "Lista" }).click();
+  await setLayout(page, page.locator(".db"), "Lista");
   const rayuela = page.locator(".db-list .db-list-row", { hasText: "Rayuela" });
   await opens(rayuela);
   await page.keyboard.press("Escape");
@@ -253,16 +253,18 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
   await expect(page.locator(".topbar .crumbs")).toHaveText(/Libros\s*\/\s*Rayuela/);
 });
 
-test("«Opciones» as Notion's «⋯» of a view (task 41): a short list saying what each is now, each with its panel", async ({
+test("a view's settings as Notion's (tasks 41 and 69): its name, a short list saying what each is now, each with its panel", async ({
   page,
 }) => {
   await libros(page);
   const head = page.locator(".db-head");
-  const options = head.getByRole("button", { name: "Opciones", exact: true });
-  const box = page.getByRole("dialog", { name: "Opciones" });
+  const options = head.getByRole("button", { name: "Ajustes de la vista" });
+  const box = page.getByRole("dialog", { name: "Ajustes de la vista" });
   const list = box.getByRole("menuitem");
   await options.click();
+  await expect(box.getByRole("textbox", { name: "Nombre de la vista" })).toHaveValue("Tabla");
   await expect(list).toHaveText([
+    /^Diseño\s*Tabla/,
     /^Propiedades\s*5 visibles/,
     /^Filtrar$/,
     /^Ordenar$/,
@@ -292,22 +294,123 @@ test("«Opciones» as Notion's «⋯» of a view (task 41): a short list saying 
   // Closed and opened again, it is the list again; the collection's notes in the sidebar, from here too.
   await page.keyboard.press("Escape");
   await options.click();
-  await expect(list.first()).toHaveText(/^Propiedades/);
+  await expect(list.first()).toHaveText(/^Diseño/);
   await box.getByRole("menuitemradio", { name: "Mostrar sus notas en la barra" }).click();
   await expect.poll(() => sent(page, "PUT api/data/types/t_libro/tree ", "true")).toBe(true);
   await expect(
     box.getByRole("menuitemradio", { name: "Ocultar sus notas de la barra" }),
   ).toBeVisible();
-  await page.keyboard.press("Escape");
-  // The board groups by a list; the calendar shows by a date, and other collections with dates.
-  await head.getByRole("radio", { name: "Tablero" }).click();
-  await options.click();
-  await expect(list).toHaveText([/^Propiedades/, /^Filtrar/, /^Ordenar/, /^Agrupar\s*Estado/]);
-  await page.keyboard.press("Escape");
-  await head.getByRole("radio", { name: "Calendario" }).click();
-  await options.click();
+  // «Diseño»: the board groups by a list (the view, named after its layout, takes the new one's name); the calendar
+  // shows by a date, and other collections with dates.
+  await list.filter({ hasText: "Diseño" }).click();
+  await box.getByRole("radio", { name: "Tablero" }).click();
+  await box.getByRole("button", { name: "Volver: Diseño" }).click();
+  await expect(list).toHaveText([
+    /^Diseño\s*Tablero/,
+    /^Propiedades/,
+    /^Filtrar/,
+    /^Ordenar/,
+    /^Agrupar\s*Estado/,
+  ]);
+  await expect(head.getByRole("tab")).toHaveText(["Tablero"]);
+  await list.filter({ hasText: "Diseño" }).click();
+  await box.getByRole("radio", { name: "Calendario" }).click();
+  await box.getByRole("button", { name: "Volver: Diseño" }).click();
   await expect(list.filter({ hasText: "Fecha" })).toHaveText(/^Fecha\s*Terminado/);
   await expect(list.filter({ hasText: "Columnas de sistema" })).toHaveCount(0);
+});
+
+test("a collection's views as Notion's tabs (task 69): «+» by layout, renamed, duplicated, deleted; the bar of order and filters from their icons; kept in the account", async ({
+  page,
+}) => {
+  await libros(page);
+  const head = page.locator(".db-head");
+  const tabs = head.getByRole("tab");
+  const titles = page.locator(".db-table tbody td.is-title");
+  await expect(tabs).toHaveText(["Tabla"]);
+  await expect(tabs.first()).toHaveAttribute("aria-selected", "true");
+  // No bar until its icons ask for it.
+  const bar = page.locator(".db-bar");
+  await expect(bar).toHaveCount(0);
+  // «Ordenar»: the bar, its order's chip open at once; by title, then the other way.
+  await head.getByRole("button", { name: "Ordenar" }).click();
+  const sortBox = page.getByRole("dialog", { name: "Ordenar" });
+  await sortBox.getByRole("menuitemradio", { name: "Título" }).click();
+  await expect(titles).toHaveText([/^Ficciones/, /^Pedro Páramo/, /^Rayuela/]);
+  await sortBox.getByRole("menuitemradio", { name: "Descendente" }).click();
+  await expect(titles).toHaveText([/^Rayuela/, /^Pedro Páramo/, /^Ficciones/]);
+  await page.keyboard.press("Escape");
+  await expect(bar.locator(".db-bar-sorts")).toHaveText("Título");
+  // «Filtro»: the same bar, «+ Filtro» open; a property, and its chip opens for the value. Until it has one, it hides
+  // nothing.
+  await head.getByRole("button", { name: "Filtro" }).click();
+  await page
+    .getByRole("dialog", { name: "Añadir filtro" })
+    .getByRole("menuitemradio", { name: "Estado" })
+    .click();
+  await expect(titles).toHaveCount(3);
+  await page.getByRole("combobox", { name: "Valor" }).selectOption({ label: "Leído" });
+  await expect(titles).toHaveText([/^Ficciones/]);
+  await page.screenshot({ path: `${SHOTS}/view-bar.png` });
+  await page.keyboard.press("Escape");
+  await expect(bar.locator(".db-bar-filters .db-chip.on")).toHaveText("Estado es Leído");
+  await expect(bar.locator(".db-bar-sep")).toHaveCount(1);
+  // Its chip changes it or takes it away; the order's too, and the bar goes with them.
+  await bar.getByRole("button", { name: "Estado es Leído" }).click();
+  await page.getByRole("button", { name: "Quitar filtro" }).click();
+  await expect(titles).toHaveCount(3);
+  await bar.getByRole("button", { name: "Ordenar" }).click();
+  await sortBox.getByRole("menuitemradio", { name: "Quitar orden" }).click();
+  await expect(bar).toHaveCount(0);
+  // The search: rows whose title has the words, nothing kept.
+  await head.getByRole("button", { name: "Buscar" }).click();
+  await head.getByRole("textbox", { name: "Buscar" }).fill("ray");
+  await expect(titles).toHaveText([/^Rayuela/]);
+  await page.keyboard.press("Escape");
+  await expect(titles).toHaveCount(3);
+  // «+»: a new view by its layout, named after it and open; kept in the account.
+  await head.getByRole("button", { name: "Añadir vista" }).click();
+  await page
+    .getByRole("dialog", { name: "Añadir vista" })
+    .getByRole("button", { name: "Tablero" })
+    .click();
+  await expect(tabs).toHaveText(["Tabla", "Tablero"]);
+  await expect(head.getByRole("tab", { name: "Tablero" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".db-board")).toBeVisible();
+  await expect.poll(() => sent(page, "PUT api/data/types/t_libro/row-ui ", "Tablero")).toBe(true);
+  await page.screenshot({ path: `${SHOTS}/view-tabs.png` });
+  // A double click renames it in place; the right button duplicates it or deletes it (never the last one).
+  await head.getByRole("tab", { name: "Tablero" }).dblclick();
+  const rename = head.getByRole("textbox", { name: "Nombre de la vista" });
+  await expect(rename).toBeFocused();
+  await rename.fill("Por estado");
+  await rename.press("Enter");
+  await expect(tabs).toHaveText(["Tabla", "Por estado"]);
+  await head.getByRole("tab", { name: "Por estado" }).click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Duplicar vista" }).click();
+  await expect(tabs).toHaveText(["Tabla", "Por estado", "Por estado (copia)"]);
+  await head.getByRole("tab", { name: "Por estado (copia)" }).click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "Eliminar vista" }).click();
+  await expect(tabs).toHaveText(["Tabla", "Por estado"]);
+  await expect(head.getByRole("tab", { name: "Por estado" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  // Back on «Tabla», all its rows; the account has the views as they are now (one request for a burst).
+  await head.getByRole("tab", { name: "Tabla" }).click();
+  await expect(titles).toHaveCount(3);
+  await expect
+    .poll(async () => {
+      const puts = (await recorded(page)).requests.filter((r) =>
+        r.startsWith("PUT api/data/types/t_libro/row-ui "),
+      );
+      const last = puts.at(-1) ?? "";
+      const body = JSON.parse(last.slice(last.indexOf("{")) || "{}") as {
+        views?: { name: string; layout: string }[];
+      };
+      return (body.views ?? []).map((v) => `${v.name}:${v.layout}`);
+    })
+    .toEqual(["Tabla:table", "Por estado:board"]);
 });
 
 test("what is open shows lit in «Páginas», unfolded down to it: a record, its collection, a page inside another", async ({

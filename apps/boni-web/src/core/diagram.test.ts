@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { DataType } from "./agent.ts";
 import { cardOf, diagramOf, frameOf, layoutOf } from "./diagram.ts";
 
-const rowUi = { open: false, hidden: [], related: false, folded: [], widths: {} };
+const rowUi = { open: false, hidden: [], related: false, folded: [], widths: {}, views: [] };
 const type = (t: Partial<DataType> & { id: string; name: string }): DataType => ({
   icon: "",
   titleField: "f_title",

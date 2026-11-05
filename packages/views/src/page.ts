@@ -107,6 +107,62 @@ export interface DatabaseView {
   /** System columns shown (Juan, 2026-10-24): kept by Boni, never edited by anyone; none by default. */
   system?: SystemColumn[];
 }
+/**
+ * A view a collection keeps (task 69; Juan, 2026-11-05, Notion's views as tabs): a view with its own id and name. A
+ * collection's views live in its account preferences (`rowUi.views`), the same on every device.
+ */
+export type SavedView = DatabaseView & { id: string; name: string };
+const VIEW_ID = /^v_[a-z0-9]{1,24}$/;
+/** At most this many views a collection keeps. */
+export const MAX_VIEWS = 20;
+
+/** Whether a value is a closed view: its layout and its settings, nothing else (a page block's, a saved one's). */
+export function databaseViewOk(view: unknown): view is DatabaseView {
+  const v = isObj(view) ? view : null;
+  const okField = (f: unknown) => f === undefined || (typeof f === "string" && ID.test(f));
+  const sortOk =
+    v?.sort === undefined ||
+    (isObj(v.sort) &&
+      only(v.sort, ["field", "desc"]) &&
+      okField(v.sort.field) &&
+      v.sort.field !== undefined &&
+      (v.sort.desc === undefined || typeof v.sort.desc === "boolean"));
+  return !(
+    !v ||
+    !only(v, ["layout", "group", "date", "sort", "hide", "also", "span", "filter", "system"]) ||
+    (v.span !== undefined && v.span !== "month" && v.span !== "week") ||
+    (v.filter !== undefined && filterErrors(v.filter).length > 0) ||
+    (v.also !== undefined &&
+      (!Array.isArray(v.also) || v.also.length > 10 || !v.also.every((f) => okField(f)))) ||
+    !(DATABASE_LAYOUTS as readonly unknown[]).includes(v.layout) ||
+    !okField(v.group) ||
+    !okField(v.date) ||
+    !sortOk ||
+    (v.hide !== undefined &&
+      (!Array.isArray(v.hide) || v.hide.length > 100 || !v.hide.every((f) => okField(f)))) ||
+    (v.system !== undefined &&
+      (!Array.isArray(v.system) ||
+        !v.system.every((c) => (SYSTEM_COLUMNS as readonly unknown[]).includes(c))))
+  );
+}
+
+/** The saved views among a value (what is not one is left out; ids once each; at most `MAX_VIEWS`). */
+export function savedViewsOf(value: unknown): SavedView[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: SavedView[] = [];
+  for (const x of value) {
+    if (!isObj(x) || typeof x.id !== "string" || !VIEW_ID.test(x.id) || seen.has(x.id)) continue;
+    const name = typeof x.name === "string" ? x.name.trim().slice(0, 60) : "";
+    const { id, name: _n, ...view } = x;
+    if (!name || !databaseViewOk(view)) continue;
+    seen.add(id);
+    out.push({ ...(view as unknown as DatabaseView), id, name });
+    if (out.length >= MAX_VIEWS) break;
+  }
+  return out;
+}
+
 /** Each row's system columns, in the order a table shows them. */
 export const SYSTEM_COLUMNS = [
   "created",
@@ -358,44 +414,11 @@ export function pageErrors(spec: unknown): string[] {
           errors.push(`${w}: a chart names its chart`);
         break;
       case "database": {
-        const v = isObj(b.view) ? b.view : null;
-        const okField = (f: unknown) => f === undefined || (typeof f === "string" && ID.test(f));
-        const sortOk =
-          v?.sort === undefined ||
-          (isObj(v.sort) &&
-            only(v.sort, ["field", "desc"]) &&
-            okField(v.sort.field) &&
-            v.sort.field !== undefined &&
-            (v.sort.desc === undefined || typeof v.sort.desc === "boolean"));
         if (
           !only(b, ["at", "id", "type", "source", "view"]) ||
           typeof b.source !== "string" ||
           !ID.test(b.source) ||
-          !v ||
-          !only(v, [
-            "layout",
-            "group",
-            "date",
-            "sort",
-            "hide",
-            "also",
-            "span",
-            "filter",
-            "system",
-          ]) ||
-          (v.span !== undefined && v.span !== "month" && v.span !== "week") ||
-          (v.filter !== undefined && filterErrors(v.filter).length > 0) ||
-          (v.also !== undefined &&
-            (!Array.isArray(v.also) || v.also.length > 10 || !v.also.every((f) => okField(f)))) ||
-          !(DATABASE_LAYOUTS as readonly unknown[]).includes(v.layout) ||
-          !okField(v.group) ||
-          !okField(v.date) ||
-          !sortOk ||
-          (v.hide !== undefined &&
-            (!Array.isArray(v.hide) || v.hide.length > 100 || !v.hide.every((f) => okField(f)))) ||
-          (v.system !== undefined &&
-            (!Array.isArray(v.system) ||
-              !v.system.every((c) => (SYSTEM_COLUMNS as readonly unknown[]).includes(c))))
+          !databaseViewOk(b.view)
         )
           errors.push(`${w}: a database names its collection and a closed view`);
         break;

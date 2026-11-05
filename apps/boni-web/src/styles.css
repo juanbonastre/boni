@@ -4386,8 +4386,8 @@ button.find-row:hover {
      icons when the room is short. */
   container: db-head / inline-size;
 }
-@container db-head (max-width: 760px) {
-  .is-collection .db-layout span {
+@container db-head (max-width: 560px) {
+  .db-view-tab span {
     display: none;
   }
 }
@@ -4427,12 +4427,20 @@ body:has(.toast) .db-selinfo {
   font-weight: 650;
   min-width: 0;
 }
-.db-layouts {
+/* A collection's head as Notion's (task 69): its views as tabs on the left, «+»; icons and «Nuevo» on the right.
+   A page's block: its name, then its one view's tab. */
+.db-head:has(.db-views) .db-name {
+  margin-right: 0;
+}
+.db-views {
   display: flex;
+  align-items: center;
   gap: 2px;
   flex-wrap: wrap;
+  margin-right: auto;
+  min-width: 0;
 }
-.db-layout {
+.db-view-tab {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -4443,12 +4451,121 @@ body:has(.toast) .db-selinfo {
   font-size: 13px;
   white-space: nowrap;
 }
-.db-layout:hover {
+.db-view-tab:hover {
   background: var(--hover);
 }
-.db-layout.on {
+.db-view-tab.on {
   color: var(--text);
   background: var(--hover);
+}
+.db-view-name {
+  height: 28px;
+  width: 140px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.db-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.db-tools .icon-btn.on {
+  color: var(--accent);
+}
+.db-search {
+  height: 28px;
+  width: 180px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.db-view-rename {
+  width: calc(100% - 12px);
+  margin: 4px 6px 6px;
+}
+/* The bar of the view's order (left) and filters (right), a line between them (Notion's). */
+.db-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.db-bar-sorts,
+.db-bar-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.db-bar-sep {
+  width: 1px;
+  align-self: stretch;
+  min-height: 20px;
+  background: var(--line-strong);
+}
+.db-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  background: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.db-chip.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.db-chip.ghost {
+  border-style: dashed;
+}
+.db-chip:hover {
+  background: var(--hover);
+}
+/* The layouts as tiles: «+» of the tabs and the settings' «Diseño». */
+.db-layout-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px 6px 6px;
+}
+.db-layout-tile {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.db-layout-tile:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.db-layout-tile.on {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .btn.small {
   height: 28px;
