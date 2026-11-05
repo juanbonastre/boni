@@ -4584,7 +4584,7 @@ body:has(.toast) .db-selinfo {
 /* A collection's own page (Juan, 2026-10-30), in every layout: centred and as wide as what it shows (a table's
    columns, a board's columns, a gallery's cards, a list's rows) from a sensible minimum up to the window's width, so
    the head's options end where the content ends; what is narrower than the minimum is widened to it. A calendar
-   fills the width. The table's boxes sit in the page's margin, its first column under the title. */
+   and a diagram («Mis datos», a collection's «Diagrama») fill the width. The table's boxes sit in the page's margin, its first column under the title. */
 .content.page-doc.is-collection {
   padding: 0 48px;
 }
@@ -4607,7 +4607,8 @@ body:has(.toast) .db-selinfo {
   min-width: 100%;
   max-width: 100%;
 }
-.content.is-collection .db-calendar {
+.content.is-collection .db-calendar,
+.content.is-collection .data-stage {
   width: 100vw;
   max-width: 100%;
 }
