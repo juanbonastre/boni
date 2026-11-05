@@ -8837,9 +8837,12 @@ button.rows-panel-row:hover {
 .flow-editing.connecting .fl-card .react-flow__handle.target {
   opacity: 1;
 }
-/* The trigger starts no arrow (its values are the flow's inputs, taken by name): no dot. */
-.flow-editing .fl-card.source .react-flow__handle {
-  display: none;
+/* The trigger starts no arrow (its values are the flow's inputs, taken by name): no dot, but its box stays, as React
+   Flow measures it to draw the trigger's arrows (display: none would start them at the window's corner). */
+.flow-editing .fl-card.source .react-flow__handle,
+.flow-editing .react-flow__node:hover .fl-card.source .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
 }
 .fl-card.model {
   border-color: var(--accent);

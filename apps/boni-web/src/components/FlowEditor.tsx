@@ -224,7 +224,7 @@ const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) 
           ))}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Bottom} isConnectable={false} />
     </div>
   );
 });
@@ -549,7 +549,11 @@ function Canvas({
             if (to && to !== from && to !== TRIGGER) setLinking({ from, to });
             return;
           }
-          if (catalog)
+          // Left on the canvas itself, not over its panel or the toolbar (dragging away cancels it).
+          const pane = document
+            .elementFromPoint(p.clientX, p.clientY)
+            ?.closest(".react-flow__pane");
+          if (pane && catalog)
             setAdding({
               x: p.clientX,
               y: p.clientY,
