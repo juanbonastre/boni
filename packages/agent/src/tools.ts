@@ -517,7 +517,7 @@ export function coreTools(): ToolRegistry {
     effect: "read",
     title: "De dónde viene",
     describe:
-      "Where a record comes from (Juan asks «¿de dónde viene?», «¿quién lo apuntó?»): who made it, in a word (who: the flow's name, the assistant or the device; by is a code, never to be shown), when (at), the flow whose run made or proposed it (flow.name), the record that started that run (input: the mail, as entities.get gives it), when it was proposed and accepted from the inbox (proposed, accepted; alone: Boni accepted it on its own), and its run (a reply «run» draws it)",
+      "Where a record comes from (Juan asks «¿de dónde viene?», «¿quién lo apuntó?»): who made it, in a word (who: the flow's name, the assistant's or the device's; when null, say by in words: chat is the conversation, user is Juan himself, boni is Boni on its own, import an import, connector the mail's connector; never show by's code), when (at), the flow whose run made or proposed it (flow.name), the record that started that run (input: the mail, as entities.get gives it), when it was proposed and accepted from the inbox (proposed, accepted; alone: Boni accepted it on its own), and its run (a reply «run» draws it)",
     args: { id: { role: "entity", required: true, describe: "entity id" } },
     run({ store, origin }, a) {
       const id = str(a.id);
@@ -567,7 +567,7 @@ export function coreTools(): ToolRegistry {
     effect: "read",
     title: "En la Bandeja",
     describe:
-      "The proposals waiting in Juan's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed (proposed), who proposed it in a word (who: the flow's name; by is a code, never to be shown), the record that started it (input: the mail, as entities.get gives it) and its run (a reply «run» draws it). text: only those whose title has these words. Juan accepts or rejects them himself",
+      "The proposals waiting in Juan's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed (proposed), who proposed it in a word (who: the flow's name; when null, by in words: chat is the conversation, boni is Boni on its own; never show by's code), the record that started it (input: the mail, as entities.get gives it) and its run (a reply «run» draws it). text: only those whose title has these words. Juan accepts or rejects them himself",
     args: {
       text: { role: "query", describe: "words of its title" },
       limit: { role: "limit", describe: "at most this many (default 20, max 50)" },

@@ -572,7 +572,7 @@ const TOOLS: Tool[] = [
   {
     name: "origin",
     description:
-      "Where a note comes from (Juan's «¿De dónde viene?»): who made it (by: flow, chat, user, assistant, import, connector, boni), when, on which device, the flow whose run made or proposed it, the note that started that run (a mail, as read gives it), and when it was proposed and accepted in Boni's inbox (alone: Boni accepted it on its own). By id, or by collection and exact title.",
+      "Where a note comes from (Juan's «¿De dónde viene?»): who made it (by: flow, chat, user, assistant, import, connector, boni; who: the flow's, the assistant's or the device's name), when, the flow whose run made or proposed it, the note that started that run (a mail, as read gives it), when it was proposed and accepted in Boni's inbox (alone: Boni accepted it on its own), and its run. By id, or by collection and exact title.",
     inputSchema: obj(REF),
     call(c, a) {
       const v = view(c);
@@ -600,7 +600,7 @@ const TOOLS: Tool[] = [
   {
     name: "inbox",
     description:
-      "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed, who proposed it (a flow reading a mail, the conversation) and the note that started it (a mail, as read gives it). `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
+      "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed, who proposed it (by: flow or chat; who: the flow's name), the note that started it (a mail, as read gives it) and its run. `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
     inputSchema: obj({
       text: { type: "string", description: "Words of its title" },
       limit: { type: "number", description: "At most 50 (default 20)" },

@@ -802,8 +802,9 @@ contraseña ni un código aquí» under a question.
   assistant («Asistente · claude-ejemplo · Por el MCP»), a page. An arrow per verb, its words in a pill: «trae · 42»,
   «pone en marcha · 42», «lee», «escribe · 61», «propone · 12» (dashed, into the Bandeja), «aceptadas · 7» (out of it,
   to each collection), «decides · 11» (yours, in it), «tus decisiones · 11» (to the guide's reviewer), «mejora»,
-  «muestra»; one that carries a mail's words in `--c5` («Lleva texto de fuera» on hover; `--c4` until task 90, too near
-  a run's orange), its words keeping the mark when lit; one going back, right to
+  «muestra»; one that carries a mail's words with a small mail in its words and a dotted line («Lleva texto de fuera»
+  on hover; a colour of its own until task 91, read as something lit), its words keeping the mark when lit; one going
+  back, right to
   left (what you or the conversation read, a lesson to an earlier flow), says its words only when it is lit, so they
   never cover a card's name. The Bandeja is crossed, not
   counted: «Profundidad: 1» of Evento shows the Bandeja and, in the same step, the flows that propose into Evento (not
@@ -840,7 +841,9 @@ contraseña ni un código aquí» under a question.
   show only where they cover no box and no other words: the rest when one of its ends is pointed at (a run's way
   too). What carries a mail's words has a small mail in its words («Lleva texto de fuera» on hover), never a colour of
   its own (task 91: Juan read the pink arrows as something lit). Under the map, on the right, whose numbers they are:
-  «Las cifras son de los últimos 7 días» and, with a run on it, «En naranja, lo de esta ejecución» in `--c2`. A click
+  «Las cifras son de los últimos 7 días» and, with a run on it, «En naranja, lo de esta ejecución» in `--c2` (beside a
+  box's panel, never over it; on the phone, away while the panel is open, and under the map when a run's card stands
+  above it). A click
   on a step opens its own panel: its name, «Paso de «Leer correo»», what it does, its model and «42 llamadas · 0,21 US$
   en 7 días». The map fits what it shows whenever its
   boxes move, never on a hover. **«Ver en el mapa»** (I-25), in the right-click menus of a collection, a page, a row,
@@ -885,8 +888,10 @@ contraseña ni un código aquí» under a question.
   component «run» (the planner gives it a run that `entities.origin` or `inbox.pending` named) draws its way as the
   map does, in a row that wraps: the mail's connector, the collection with «Reunión con secretaría el jueves», the flow
   with what came of it, the Bandeja with «Preparar la reunión» · aceptada, the collection where it went, each box in
-  orange with an arrow before it and the same light going along them again and again; «Ampliar» under it opens the
-  map with the run on it. Its names are the map's; who proposed something is said by its name («lo propuso Leer
+  orange with an arrow before it and the same light going along them again and again (a proposal still waiting: the
+  collection it would go to, dashed and still, «espera en la Bandeja»; words from a mail or a model dotted underneath,
+  «Viene de fuera» on hover); «Ampliar» under it opens the map with the run on it. Only a run a tool gave is drawn,
+  never an id a model wrote. Its names are the map's; who proposed something is said by its name («lo propuso Leer
   correo»), never by a code.
 - **A flow's page** (F8): «Flujos › Leer correo» above it (the crumb goes back to «Flujos») with the period (7 días |
   30 días) on its right, then the editor, its canvas taking the window's height.

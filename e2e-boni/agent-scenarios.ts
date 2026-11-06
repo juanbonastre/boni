@@ -706,8 +706,17 @@ export const RUN_MAIL = {
       // What it gave the next step, and its call in this run (task 91).
       calls: 1,
       cost: 0.0021,
+      // As the step keeps it: the reading for Juan by its kinds of thing.
       output: {
-        tasks: [{ title: "Preparar la reunión", due: "2026-10-23", why: "¿Puedes prepararla?" }],
+        tasks: [
+          {
+            title: "Preparar la reunión",
+            due: "2026-10-23",
+            start: null,
+            end: null,
+            quote: "¿Puedes prepararla?",
+          },
+        ],
         events: [],
       },
     },
@@ -2040,6 +2049,9 @@ export const RUN_MAIL_LANES = {
   ...RUN_MAIL,
   id: "run-5",
   flowVersion: 6,
+  // It read Evento (what was pending there) without going there: Evento is not on its way.
+  read: [...RUN_MAIL.read, { collection: "Evento", type: "t_01evento", titles: [], n: 3 }],
+  proposals: [{ ...RUN_MAIL.proposals[0], step: "n1_tasks" }],
   steps: [
     ...RUN_MAIL.steps.filter((x) => x.id === "m" || x.id === "r"),
     {

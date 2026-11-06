@@ -11,20 +11,25 @@ import type { MapView, RunDetail } from "../core/agent.ts";
 import { mapNodeName, runStatusLine } from "../core/runText.ts";
 import { agentApi, showRun, useStore } from "../store.ts";
 
-/** The map's names, asked once while the app is open: a run drawn in a chat names its boxes as the map does. */
-let mapOnce: Promise<MapView | null> | null = null;
+/** The map's names, asked again after a minute: a run drawn in a chat names its boxes as the map does. */
+let mapOnce: { at: number; map: Promise<MapView | null> } | null = null;
 const mapNames = () => {
-  mapOnce ??= agentApi.map(7).catch(() => {
-    mapOnce = null;
-    return null;
-  });
-  return mapOnce;
+  if (!mapOnce || Date.now() - mapOnce.at > 60_000)
+    mapOnce = {
+      at: Date.now(),
+      map: agentApi.map(7).catch(() => {
+        mapOnce = null;
+        return null;
+      }),
+    };
+  return mapOnce.map;
 };
 
 export function RunPath({ run: id, caption }: { run: string; caption?: React.ReactNode }) {
   const t = useStore((s) => s.t);
   const [d, setD] = useState<RunDetail | null | "loading">("loading");
-  const [map, setMap] = useState<MapView | null>(null);
+  // The map's names (null: the server could not say them; undefined: still asked).
+  const [map, setMap] = useState<MapView | null | undefined>(undefined);
   useEffect(() => {
     let on = true;
     agentApi.runDetail(id).then(
@@ -36,24 +41,37 @@ export function RunPath({ run: id, caption }: { run: string; caption?: React.Rea
       on = false;
     };
   }, [id]);
-  if (d === "loading") return <div className="run-path muted small">{t("run.path.loading")}</div>;
+  if (d === "loading" || map === undefined)
+    return <div className="run-path muted small">{t("run.path.loading")}</div>;
   if (!d) return null;
   const name = (node: string, fallback: string) => {
     const n = map?.nodes.find((x) => x.id === node);
     return n ? mapNodeName(t, n) : fallback;
   };
   const owner = d.owner ?? (d.flow ? `flow:${d.flow}` : "boni:chat");
-  const boxes: { id: string; name: string; line: string | null }[] = [];
+  // A line from a mail or a model is marked as from outside, as the reply's words are.
+  const boxes: {
+    id: string;
+    name: string;
+    line: string | null;
+    outside?: boolean;
+    waits?: boolean;
+  }[] = [];
   if (d.input) {
     const into = `col:${d.input.type}`;
     // What brought it: the mail's connector.
     const brings = map?.edges.find((e) => e.kind === "brings" && e.to === into);
     if (brings) boxes.push({ id: brings.from, name: name(brings.from, ""), line: null });
-    boxes.push({ id: into, name: d.input.collection, line: `«${d.input.title || "…"}»` });
+    boxes.push({
+      id: into,
+      name: d.input.collection,
+      line: `«${d.input.title || "…"}»`,
+      outside: true,
+    });
   }
   boxes.push({
     id: owner,
-    name: name(owner, d.flow ?? t("map.node.chat")),
+    name: name(owner, owner === "boni:chat" ? t("map.node.chat") : t("map.kind.flow")),
     line: runStatusLine(t, d.status),
   });
   if (d.proposals.length)
@@ -64,15 +82,24 @@ export function RunPath({ run: id, caption }: { run: string; caption?: React.Rea
         d.proposals.length === 1
           ? `«${d.proposals[0]?.title || "…"}» · ${t(`log.proposal.${d.proposals[0]?.status}`)}`
           : t("run.path.proposals", { n: d.proposals.length }),
+      outside: d.proposals.length === 1,
     });
-  const ends = new Map<string, string | null>();
+  // Where it went: the collection where a proposal was accepted, or where it waits to go, or where it wrote.
+  const ends = new Map<string, { line: string | null; waits: boolean }>();
   for (const p of d.proposals)
-    if (p.status === "accepted" && p.type)
-      ends.set(`col:${p.type}`, p.record?.title ?? p.title ?? null);
+    if (p.type && (p.status === "accepted" || p.status === "pending"))
+      ends.set(`col:${p.type}`, {
+        line:
+          p.status === "pending"
+            ? t("run.out.proposal.pending")
+            : `«${p.record?.title ?? p.title ?? "…"}»`,
+        waits: p.status === "pending",
+      });
   for (const c of d.changes)
-    if (c.type && !ends.has(`col:${c.type}`)) ends.set(`col:${c.type}`, c.title);
-  for (const [col, line] of ends)
-    boxes.push({ id: col, name: name(col, ""), line: line ? `«${line}»` : null });
+    if (c.type && !ends.has(`col:${c.type}`))
+      ends.set(`col:${c.type}`, { line: `«${c.title}»`, waits: false });
+  for (const [col, end] of ends)
+    boxes.push({ id: col, name: name(col, ""), line: end.line, waits: end.waits });
   const shown = boxes.filter((b) => b.name);
   return (
     <div
@@ -86,11 +113,18 @@ export function RunPath({ run: id, caption }: { run: string; caption?: React.Rea
         {shown.map((b, i) => (
           <li
             key={`${b.id}:${i}`}
-            className="run-path-box"
+            className={`run-path-box${b.waits ? " waits" : ""}`}
             style={{ "--way-i": i } as React.CSSProperties}
           >
             <strong>{b.name}</strong>
-            {b.line && <span className="muted">{b.line}</span>}
+            {b.line && (
+              <span
+                className={`muted${b.outside ? " run-path-ext" : ""}`}
+                title={b.outside ? t("chat.fromOutside") : undefined}
+              >
+                {b.line}
+              </span>
+            )}
           </li>
         ))}
       </ol>

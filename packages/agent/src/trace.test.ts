@@ -266,4 +266,134 @@ describe("a run's trace from the journal and the audit (task 52)", () => {
     expect(traceOf(store, "nada")).toBeNull();
     store.close();
   });
+
+  it("what a step gave the next one: kept with it, or worked out from its answer for an older run; each «Aceptar» its own record (task 91)", () => {
+    const store = openUserStore(":memory:");
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_tarea",
+          key: "tarea",
+          name: "Tareas",
+          fields: [{ id: "f_titulo", key: "titulo", name: "Título", type: "text", label: own }],
+          titleField: "f_titulo",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const j = store.journal;
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "r", op: "read", reader: "read_message", input: { ref: "$text" } },
+        { id: "c", op: "read", reader: "classify", input: { ref: "$text" } },
+        { id: "f", op: "read", reader: "fill", input: { ref: "$item" } },
+        { id: "k", op: "read", reader: "summarize", input: { ref: "$text" } },
+      ],
+    };
+    j.startRun({ id: "r2", turn: null, origin: "background", device: null, started: 1000 });
+    j.setPlan("r2", plan);
+    const call = (step: string, response: unknown, at: number, request: unknown = {}) =>
+      j.modelCall({
+        run: "r2",
+        role: "reader",
+        provider: "fake",
+        model: "m",
+        promptHash: "h",
+        request,
+        response,
+        usage: { input: 1, output: 1, cost: 0.001 },
+        at,
+        step,
+      });
+    // The raw answers of a run from before steps kept what they gave on: the reading's items for anyone, the
+    // decider's two answers, the fields by their codes.
+    call(
+      "r",
+      {
+        items: [
+          {
+            kind: "task",
+            actor: "recipient",
+            title: "Preparar la reunión",
+            due: "2026-10-23",
+            quote: "…",
+          },
+          { kind: "task", actor: "sender", title: "Lo que hará el remitente" },
+          { kind: "event", actor: "recipient", title: "Reunión", start: "2026-10-23T10:00:00Z" },
+        ],
+      },
+      1100,
+    );
+    call(
+      "c",
+      { c: { type: "choice", choice: "Gestiones", confidence: 0.9 }, r: { choice: "Gestiones" } },
+      1200,
+    );
+    call("f", { values: { f0: "Pendiente", f1: null }, note: "Para el jueves" }, 1300, {
+      input: { fields: [{ name: "Estado" }, { name: "Área" }] },
+    });
+    call("k", { text: "Un resumen" }, 1400);
+    for (const [step, at] of [
+      ["r", 1150],
+      ["c", 1250],
+      ["f", 1350],
+    ] as const)
+      j.step({ run: "r2", step, kind: "read", decision: "allow", rule: "P1", detail: null, at });
+    // One kept with its step (since 2026-11-06): that, not the answer.
+    j.step({
+      run: "r2",
+      step: "k",
+      kind: "read",
+      decision: "allow",
+      rule: "P1",
+      detail: { reader: "summarize", out: { text: "Lo que dio al siguiente" } },
+      at: 1450,
+    });
+    // Two proposals accepted in the same second by «Solo», before runs kept their proposal: each its own record.
+    for (const [id, title, at] of [
+      ["p1", "Primera", 1500],
+      ["p2", "Segunda", 1700],
+    ] as const) {
+      j.addProposal({
+        id,
+        run: "r2",
+        tool: "entities.create",
+        args: { values: { type: { t: "v", value: "tarea" } }, origins: [] },
+        view: {
+          tool: "entities.create",
+          title: "Crear",
+          rows: [{ arg: "values.title", value: title }],
+        },
+        sources: [],
+        created: 1400,
+      });
+      j.startRun({ id: `a_${id}`, turn: null, origin: "accepted", device: null, started: at });
+      store.create(
+        "t_tarea",
+        { f_titulo: { value: title, label: own } },
+        { actor: "agent", run: `a_${id}` },
+      );
+      j.setProposal(id, "accepted", at + 100);
+    }
+    j.finishRun("r2", "done", plan, 1800);
+    const d = traceOf(store, "r2");
+    const out = Object.fromEntries((d?.steps ?? []).map((x) => [x.id, x.output]));
+    expect(out.r).toEqual({
+      tasks: [{ title: "Preparar la reunión", due: "2026-10-23" }],
+      events: [{ title: "Reunión", start: "2026-10-23T10:00:00Z" }],
+    });
+    expect(out.c).toEqual({ choice: "Gestiones" });
+    expect(out.f).toEqual({ values: { Estado: "Pendiente" }, note: "Para el jueves" });
+    expect(out.k).toEqual({ text: "Lo que dio al siguiente" });
+    expect(d?.proposals.map((p) => [p.id, p.record?.title])).toEqual([
+      ["p1", "Primera"],
+      ["p2", "Segunda"],
+    ]);
+    store.close();
+  });
 });

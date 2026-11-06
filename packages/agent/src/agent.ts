@@ -59,7 +59,7 @@ import {
   ToolError,
   type ToolRegistry,
 } from "./tools.ts";
-import { type RunDetail, traceOf } from "./trace.ts";
+import { type RunDetail, smallJson, traceOf } from "./trace.ts";
 import { newFlowId, originOf, runnableNames, triggerOk } from "./trigger.ts";
 import {
   at,
@@ -1777,7 +1777,11 @@ export class Agent {
         const o = params.options ? plain(params.options) : null;
         if (typeof g !== "string" || !Array.isArray(o) || !o.includes(g))
           throw new Stop("reader-bad-given");
-        this.log(st, step, "read", "allow", "P1", { reader: step.reader, given: true });
+        this.log(st, step, "read", "allow", "P1", {
+          reader: step.reader,
+          given: true,
+          out: { choice: plain(given) },
+        });
         return rec({ choice: given }, deepLabel(given));
       }
     }
@@ -2075,6 +2079,13 @@ export class Agent {
     this.log(st, step, "read", "allow", "P1", {
       reader: step.reader,
       ...(relative ? { relativeDay: relative } : {}),
+      // What it gave the next step, cut to what the map's panel shows (task 91: «lo que ha enviado al siguiente paso»);
+      // a mail's reading by its kinds of thing, without `all`, which repeats them.
+      out: smallJson(
+        checked && typeof checked === "object" && !Array.isArray(checked) && "all" in checked
+          ? Object.fromEntries(Object.entries(checked).filter(([k]) => k !== "all"))
+          : checked,
+      ),
     });
     const out = fromJson(checked as Json, outLabel);
     return step.reader === "summarize_each" ? withSources(out, input, options) : out;

@@ -91,8 +91,69 @@ const text = (v: unknown, max: number) =>
 const TITLES = 8;
 const CHANGES = 50;
 const ANSWER = 4000;
-/** An answer bigger than this is said as text only (its `answers`). */
-const OUTPUT = 16_000;
+/** What a step gave the next one is kept at most this big (lists cut to 20 items, texts to 300 characters). */
+const OUTPUT = 12_000;
+
+/** A value cut to what a panel shows: lists of 20 items, texts of 300 characters, four levels deep. */
+export function smallJson(v: unknown, depth = 0): unknown {
+  if (typeof v === "string") return v.length > 300 ? `${v.slice(0, 300)}…` : v;
+  if (v === null || typeof v !== "object") return v;
+  if (depth > 3) return null;
+  if (Array.isArray(v)) return v.slice(0, 20).map((x) => smallJson(x, depth + 1));
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>)
+      .slice(0, 30)
+      .map(([k, x]) => [k, smallJson(x, depth + 1)]),
+  );
+}
+
+/**
+ * What a reader gave the next step, worked out from its model's answer, for a run from before steps kept it
+ * (2026-11-06): the reading's items for Juan as tasks and events, the decider's choice, the fields by their names.
+ */
+function fromAnswers(
+  reader: string,
+  its: readonly { response: unknown; request: unknown }[],
+): unknown {
+  const said = its.map((c) => c.response).filter((x) => x !== null && x !== undefined);
+  if (!said.length) return null;
+  const one = (r: unknown, request: unknown): unknown => {
+    if (!isObj(r)) return r;
+    // The decider answers twice ({c, r}): its choice is the first's.
+    if (isObj(r.c) && "choice" in r.c) return { choice: r.c.choice };
+    if (reader === "read_message" && Array.isArray(r.items)) {
+      const mine = r.items.filter(
+        (x) => isObj(x) && (x.actor === undefined || x.actor === "recipient"),
+      );
+      const pick = (kind: string) =>
+        mine
+          .filter((x) => isObj(x) && (x.kind ?? "task") === kind)
+          .map((x) => {
+            const o = x as Record<string, unknown>;
+            return Object.fromEntries(
+              ["title", "due", "start", "end"].filter((k) => o[k] != null).map((k) => [k, o[k]]),
+            );
+          });
+      return { tasks: pick("task"), events: pick("event") };
+    }
+    if (reader === "fill" && isObj(r.values)) {
+      // The fields by the names the reader was given (f0, f1… in their order).
+      const asked = isObj(request) && isObj(request.input) ? request.input.fields : null;
+      const names = Array.isArray(asked)
+        ? asked.map((f) => (isObj(f) && typeof f.name === "string" ? f.name : null))
+        : [];
+      const values = Object.fromEntries(
+        Object.entries(r.values)
+          .filter(([, x]) => x !== null)
+          .map(([k, x]) => [names[Number(k.slice(1))] ?? k, x]),
+      );
+      return { values, note: r.note ?? null };
+    }
+    return r;
+  };
+  const out = its.map((c) => one(c.response, c.request)).filter((x) => x !== null);
+  return out.length === 1 ? out[0] : out;
+}
 const FIELDS = 12;
 
 /** A record as the panel of a box shows it: its title, collection and fields by their names, as text. */
@@ -204,9 +265,14 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
         : mine.length > 0 && c.role !== "planner" && c.at > before && c.at <= endAt,
     );
     const answers = its.map((c) => text(JSON.stringify(c.response), ANSWER)).filter(Boolean);
-    const said = its.map((c) => c.response).filter((x) => x !== null && x !== undefined);
-    const whole = said.length === 1 ? said[0] : said.length ? said : null;
-    const output = whole !== null && JSON.stringify(whole).length <= OUTPUT ? whole : null;
+    // What it gave the next step: kept with its last line since 2026-11-06; before, worked out from the answers.
+    const kept = mine
+      .map((x) => (isObj(x.detail) ? x.detail.out : undefined))
+      .find((x) => x !== undefined);
+    const raw =
+      kept !== undefined ? kept : s.op === "read" ? fromAnswers(String(s.reader), its) : null;
+    const output =
+      raw !== null && raw !== undefined && JSON.stringify(raw).length <= OUTPUT ? raw : null;
     if (endAt) before = Math.max(before, endAt);
     const refs = new Set<string>();
     for (const [k, v] of Object.entries(s)) if (k !== "id") refsIn(v, refs);
@@ -268,10 +334,19 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
   // The steps that proposed: a proposal made before its step was kept with it belongs to the one there was.
   const proposing = steps.filter((s) => s.decision === "propose").map((s) => s.id);
   // Who accepted each: the run of its «Aceptar» (it keeps the proposal since 2026-11-06; before, the one at that time).
+  const used = new Set<string>();
   const acceptRun = (pid: string, decided: number | null) => {
     if (decided === null) return null;
     const near = j.runsIn(decided - 5000, decided + 5000).filter((x) => x.origin === "accepted");
-    return near.find((x) => x.proposal === pid) ?? near.find((x) => !x.proposal) ?? null;
+    const own = near.find((x) => x.proposal === pid);
+    if (own) return own;
+    // Before runs kept their proposal: the one that started closest to its decision, each run for one proposal only
+    // (several accepted at once by «Solo» are each their own).
+    const was = near
+      .filter((x) => !x.proposal && !used.has(x.id) && Math.abs(x.started - decided) <= 2000)
+      .sort((a, b) => Math.abs(a.started - decided) - Math.abs(b.started - decided))[0];
+    if (was) used.add(was.id);
+    return was ?? null;
   };
   const proposals = j.proposalsOf(id).map((p) => {
     const rows =
@@ -287,9 +362,9 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
     const key = typeof moved === "string" ? moved : typeof raw === "string" ? raw : null;
     const step = isObj(p.args) && typeof p.args.step === "string" ? p.args.step : null;
     const accepted = p.status === "accepted" ? acceptRun(p.id, p.decided) : null;
-    const made = accepted
-      ? store.runOps(accepted.id).find((op) => op.kind === "create")
-      : undefined;
+    // The record it became, or the one it changed («Es el mismo»).
+    const ops = accepted ? store.runOps(accepted.id) : [];
+    const made = ops.find((op) => op.kind === "create") ?? ops.find((op) => op.kind === "update");
     return {
       id: p.id,
       title: text(rows.rows?.find((x) => x.arg === "values.title")?.value ?? rows.title, 120),

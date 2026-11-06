@@ -565,12 +565,15 @@ function RunHere({
   step,
   collectionName,
   money,
+  onWay,
 }: {
   run: RunDetail & { owner: string };
   node: MapNode;
   step: string | null;
   collectionName: (type: string | null) => string;
   money: (usd: number) => string;
+  /** The box is on the run's way (a connector off it brought something else). */
+  onWay: boolean;
 }) {
   const t = useStore((s) => s.t);
   const mail = run.input ? (
@@ -623,7 +626,10 @@ function RunHere({
         {cost ? ` · ${money(cost)}` : ""}
       </p>
     );
-  } else if (node.kind === "connector" || (run.input && node.id === `col:${run.input.type}`))
+  } else if (
+    onWay &&
+    (node.kind === "connector" || (run.input && node.id === `col:${run.input.type}`))
+  )
     body = mail;
   else if (node.id === "boni:inbox")
     body = run.proposals.length ? (
@@ -1046,7 +1052,13 @@ function Canvas({
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(asked?.center ?? null);
   // The run's «Explicación», hidden on this device until shown again (task 91).
-  const [wayHidden, setWayHidden] = useState(() => localStorage.getItem(WAY_HIDDEN) === "1");
+  const [wayHidden, setWayHidden] = useState(() => {
+    try {
+      return localStorage.getItem(WAY_HIDDEN) === "1";
+    } catch {
+      return false;
+    }
+  });
   const hideWay = (h: boolean) => {
     setWayHidden(h);
     try {
@@ -1058,6 +1070,11 @@ function Canvas({
   };
   // A step of the chosen flow, when a step was clicked: its own panel (task 91).
   const [picked, setPicked] = useState<string | null>(null);
+  // A box chosen any other way (its name in a panel, the search, a menu, «×»): the step picked before is forgotten.
+  const pick = (id: string | null) => {
+    setSelected(id);
+    setPicked(null);
+  };
   const [hover, setHover] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [byRole, setByRole] = useState<Record<string, string>>({});
@@ -1501,7 +1518,8 @@ function Canvas({
           models,
           hot: n.id === selected,
           dim: near ? !near.has(n.id) : !!way && !way.nodes.has(n.id),
-          way: !near && !!way && way.nodes.has(n.id),
+          // On the way whatever is pointed at: the light keeps its turn (task 91's review: a hover restarted it).
+          way: !!way && way.nodes.has(n.id),
           wayI: wayOrder?.pos.get(n.id),
           centre: n.id === center,
           open: false,
@@ -1538,9 +1556,9 @@ function Canvas({
       // (propone, 23)» for Evento), not to all.
       const n = center && e.per && center in e.per ? (e.per[center] ?? 0) : e.n;
       const label = `${t(`map.edge.${e.kind}`)}${n !== null && n > 0 ? ` · ${n.toLocaleString(lang === "en" ? "en-GB" : "es-ES")}` : ""}`;
-      const onWay = !focus && !!way && way.edges.has(`${e.from}>${e.to}>${e.kind}`);
+      const onWay = !!way && way.edges.has(`${e.from}>${e.to}>${e.kind}`);
       const hot = focus ? e.from === focus || e.to === focus : onWay;
-      const dim = focus ? !hot : !!way && !onWay;
+      const dim = focus ? !hot && !onWay : !!way && !onWay;
       // An arrow going back (right to left: what someone who acts reads, a lesson to an earlier flow) crosses the
       // boxes in between: its words only when it is lit, never over a card's name.
       const back =
@@ -1723,7 +1741,7 @@ function Canvas({
             nodes={findable}
             onPick={(id) => {
               setCenter(id);
-              setSelected(id);
+              pick(id);
             }}
           />
         )}
@@ -1916,7 +1934,7 @@ function Canvas({
                 className="icon-btn"
                 aria-label={t("flows.close")}
                 title={t("flows.close")}
-                onClick={() => setSelected(null)}
+                onClick={() => pick(null)}
               >
                 <X size={15} strokeWidth={1.8} />
               </button>
@@ -1954,6 +1972,7 @@ function Canvas({
                 step={chosen.id === run.owner ? picked : null}
                 collectionName={(type) => (type ? (nameOf.get(`col:${type}`) ?? "") : "")}
                 money={money}
+                onWay={!!way?.nodes.has(chosen.id)}
               />
             )}
             {!pickedStep && (
@@ -1966,7 +1985,7 @@ function Canvas({
                     name: nameOf.get(e.from) ?? e.from,
                     label: label(e),
                   }))}
-                onPick={(id) => setSelected(id)}
+                onPick={(id) => pick(id)}
               />
             )}
             {!pickedStep && (
@@ -1975,7 +1994,7 @@ function Canvas({
                 list={map.edges
                   .filter((e) => e.from === chosen.id)
                   .map((e) => ({ id: e.to, name: nameOf.get(e.to) ?? e.to, label: label(e) }))}
-                onPick={(id) => setSelected(id)}
+                onPick={(id) => pick(id)}
               />
             )}
             <div className="mp-actions">
@@ -2013,7 +2032,7 @@ function Canvas({
                   label={t("map.toCentre")}
                   onClick={() => {
                     setCenter(m.id);
-                    setSelected(m.id);
+                    pick(m.id);
                     close();
                   }}
                 />

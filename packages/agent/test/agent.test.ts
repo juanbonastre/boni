@@ -738,6 +738,13 @@ describe("the agent, with a planner that behaves", () => {
     expect(calls[0]).toMatchObject({ role: "planner", step: null });
     expect(calls.slice(1).every((c) => c.role === "reader")).toBe(true);
     expect([...new Set(calls.slice(1).map((c) => c.step))]).toEqual(["s", "f"]);
+    // What each reading gave the next step is kept with it (task 91): the map's panel says it.
+    const kept = env.store.journal
+      .steps(res.run)
+      .filter((x) => x.step === "f")
+      .map((x) => (x.detail as { out?: unknown } | null)?.out)
+      .find((x) => x !== undefined);
+    expect(kept).toMatchObject({ choices: ["a"] });
   });
 
   it("writes what a run does with its id, so the journal tells what happened and why", async () => {

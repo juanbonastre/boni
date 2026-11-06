@@ -30,4 +30,18 @@ describe("a plan's expressions", () => {
       "step 1.args.values.args[0]: ref-to-unknown-step",
     ]);
   });
+
+  it("a «run» reply draws a run a tool gave: a reference, never a model's own id (task 92, I-29)", () => {
+    const drawn = (run: unknown) => ({
+      version: 1,
+      steps: [
+        { id: "o", op: "call", tool: "entities.create", args: { type: { lit: "x" } } },
+        { id: "w", op: "reply", component: "run", data: { run } },
+      ],
+    });
+    expect(validatePlan(drawn({ ref: "$o.run" }), catalog, "¿de dónde viene?").ok).toBe(true);
+    const lit = validatePlan(drawn({ lit: "run-3" }), catalog, "¿de dónde viene?");
+    expect(lit.ok).toBe(false);
+    expect(lit.ok ? [] : lit.errors).toContain("step 2.data: run-not-from-a-tool");
+  });
 });

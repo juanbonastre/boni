@@ -101,22 +101,29 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
     setFolded(f);
     keep(LIST_FOLDED, f ? "1" : null);
   };
+  const sized = (w: number) => Math.round(Math.min(LIST_MAX, Math.max(LIST_MIN, w)));
   const widen = (w: number) => {
-    const x = Math.round(Math.min(LIST_MAX, Math.max(LIST_MIN, w)));
+    const x = sized(w);
     setWidth(x);
     keep(LIST_WIDTH, String(x));
   };
-  const drag = (e: React.PointerEvent) => {
+  // A drag follows the pointer it started with, even outside the window; the width is kept once it is let go.
+  const dragging = useRef<{ from: number; was: number } | null>(null);
+  const drag = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const from = e.clientX;
-    const was = width;
-    const move = (ev: PointerEvent) => widen(was + ev.clientX - from);
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    dragging.current = { from: e.clientX, was: width };
+  };
+  const dragMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragging.current;
+    if (d) setWidth(sized(d.was + e.clientX - d.from));
+  };
+  const dragEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragging.current;
+    if (!d) return;
+    dragging.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    widen(d.was + e.clientX - d.from);
   };
   return (
     <div className={`chat-layout${compact ? " compact" : ""}`}>
@@ -146,6 +153,9 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
               aria-valuemax={LIST_MAX}
               tabIndex={0}
               onPointerDown={drag}
+              onPointerMove={dragMove}
+              onPointerUp={dragEnd}
+              onPointerCancel={dragEnd}
               onKeyDown={(e) => {
                 if (e.key === "ArrowLeft") widen(width - 16);
                 if (e.key === "ArrowRight") widen(width + 16);
@@ -1024,8 +1034,12 @@ function ReplyView({ reply }: { reply: Reply }) {
       );
     }
     case "run": {
-      // A run drawn in the conversation, with «Ampliar» to the map (task 92); its id is a tool's, never a model's word.
-      const id = d.run?.t === "v" && typeof d.run.value === "string" ? d.run.value : null;
+      // A run drawn in the conversation, with «Ampliar» to the map (task 92): only one a tool gave (the code's own
+      // value, I-29), never a model's word nor text from outside.
+      const id =
+        d.run?.t === "v" && d.run.integrity === "own" && typeof d.run.value === "string"
+          ? d.run.value
+          : null;
       return id ? <RunPath run={id} caption={caption} /> : null;
     }
     case "chart": {

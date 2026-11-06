@@ -9901,8 +9901,12 @@ button.rows-panel-row:hover {
 .mp-edge.shows {
   stroke-width: 1;
 }
-/* What carries a mail's words: a small mail in its words («Lleva texto de fuera» on hover), never a colour of its own
-   (task 91: Juan read the pink arrows as something lit). */
+/* What carries a mail's words: a small mail in its words («Lleva texto de fuera» on hover) and a dotted line, never a
+   colour of its own (task 91: Juan read the pink arrows as something lit); a dotted line marks it when its words are
+   not shown. */
+.mp-edge.outside:not(.proposes):not(.way) {
+  stroke-dasharray: 2 3;
+}
 .mp-edge.hot {
   stroke: var(--accent);
   stroke-width: 2;
@@ -10181,6 +10185,20 @@ button.rows-panel-row:hover {
 .mp-legend .mp-legend-run {
   color: var(--c2);
 }
+/* Never over a box's panel: beside it on the desktop; on the phone, where the panel is a sheet, away while it is
+   open, and under the map when a run's card stands above it. */
+.mp-stage.with-panel .mp-legend {
+  right: 312px;
+}
+.m-flows .mp-stage.with-panel .mp-legend {
+  display: none;
+}
+.m-flows .mp-stage:has(> .mp-way) > .mp-legend {
+  position: static;
+  order: 9;
+  flex-wrap: wrap;
+  padding: 4px 8px 8px;
+}
 /* An unfolded flow's first box: what starts it. */
 .mp-trig {
   min-height: 0;
@@ -10384,6 +10402,17 @@ button.rows-panel-row:hover {
 }
 .run-path-box .muted {
   font-size: 11.5px;
+}
+/* Where a proposal waits to go: not yet on its way, dashed and still. */
+.run-path-box.waits {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  box-shadow: none;
+  animation: none;
+}
+.run-path-ext {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
 }
 .run-path-open {
   display: inline-flex;

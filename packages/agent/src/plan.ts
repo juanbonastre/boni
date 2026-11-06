@@ -358,7 +358,7 @@ export function validatePlan(
         if (!onlyKeys(s, [...common, "component", "data"])) errors.push(`${where}: unknown-key`);
         if (!(REPLY_COMPONENTS as readonly unknown[]).includes(s.component))
           errors.push(`${where}: unknown-component`);
-        else
+        else {
           checkArgs(
             `${where}.data`,
             s.data ?? {},
@@ -366,6 +366,11 @@ export function validatePlan(
             [],
             inEach,
           );
+          // The run a reply draws is one a tool gave (I-29): a reference, never a model's own id.
+          const run = isObj(s.data) ? s.data.run : undefined;
+          if (s.component === "run" && !(isObj(run) && typeof run.ref === "string"))
+            errors.push(`${where}.data: run-not-from-a-tool`);
+        }
         break;
       }
       default:
