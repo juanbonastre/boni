@@ -63,6 +63,7 @@ import {
   setPageIcon,
   setPageTitle,
   showChat,
+  showMap,
   toast,
   undoPage,
   useStore,
@@ -1079,6 +1080,19 @@ const TURN_INTO: TextKind[] = [
 ];
 
 /** The handle's menu: turn into (text blocks), the button's text, duplicate, move, delete. */
+/** The collection a block shows (a number, a chart, a table): «Ver en el mapa» puts it in the centre. */
+const blockCollection = (block: Block): string | null => {
+  const b = block as { collection?: unknown; source?: unknown };
+  const id =
+    typeof b.collection === "string"
+      ? b.collection
+      : typeof b.source === "string"
+        ? b.source
+        : null;
+  // Boni's own records (Uso de la IA's blocks) are on no map: they are not the user's data.
+  return id && !id.startsWith("t_sys_") ? id : null;
+};
+
 function BlockMenu({ block, page, close }: { block: Block; page: Page; close: () => void }) {
   const t = useStore((s) => s.t);
   const spec = useStore((s) =>
@@ -1151,6 +1165,15 @@ function BlockMenu({ block, page, close }: { block: Block; page: Page; close: ()
           put(next);
         }}
       />
+      {blockCollection(block) && (
+        <MenuRow
+          label={t("map.show")}
+          onClick={() => {
+            close();
+            showMap(`col:${blockCollection(block)}`);
+          }}
+        />
+      )}
       {i > 0 && <MenuRow label={t("block.up")} onClick={() => move(-1)} />}
       {i < blocks.length - 1 && <MenuRow label={t("block.down")} onClick={() => move(1)} />}
       <MenuSep />

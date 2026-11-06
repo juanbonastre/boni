@@ -181,7 +181,7 @@ export class ToolRegistry {
   private tools = new Map<string, ToolDef>();
   private frozen = false;
 
-  /** Every tool's name (the declared flow must know them all, pipeline.ts). */
+  /** Every tool's name. */
   names(): string[] {
     return [...this.tools.keys()];
   }

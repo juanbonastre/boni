@@ -310,6 +310,9 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
    CREATE INDEX runs_flow ON runs(flow, started);`,
   // 17: a flow the user deleted (docs/flujos.md, F2): its versions stay (its runs name them), the list leaves it out.
   "ALTER TABLE flows ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0",
+  // 18: the proposal an «accepted» run applied («¿De dónde viene?», docs/sistema.md §4.4): from a record to the run
+  // that proposed it.
+  "ALTER TABLE runs ADD COLUMN proposal TEXT",
 ];
 
 export function migrate(db: DatabaseSync): void {

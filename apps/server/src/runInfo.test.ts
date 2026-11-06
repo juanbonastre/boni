@@ -221,4 +221,36 @@ describe("what each run of the Registro was, and what came of it", () => {
     });
     expect(runInfo(store, runOf(store, "r6")).what).toEqual({ kind: "other" });
   });
+
+  it("a run of one of his flows, on its schedule or by hand, is named by the flow (F8)", () => {
+    const store = env();
+    store.journal.saveFlow({
+      id: "repaso-k3",
+      name: "Repaso semanal",
+      trigger: { schedule: { every: "day", at: "02:30" } },
+      inputs: [],
+      plan: { version: 1, steps: [] },
+      layout: null,
+      by: "user",
+      enabled: true,
+      created: 1,
+    });
+    const start = (id: string, origin: string) =>
+      store.journal.startRun({
+        id,
+        turn: null,
+        origin,
+        device: null,
+        started: 2,
+        flow: "repaso-k3",
+        flowVersion: 1,
+      });
+    start("r7", "background");
+    start("r8", "turn");
+    for (const id of ["r7", "r8"])
+      expect(runInfo(store, runOf(store, id)).what).toEqual({
+        kind: "flow",
+        flow: "Repaso semanal",
+      });
+  });
 });

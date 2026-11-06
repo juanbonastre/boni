@@ -33,6 +33,35 @@ export function stepName(
   return String(s.op);
 }
 
+/** What a step goes over, in words: «cada tarea» (its `each`), «la invitación» (it runs only with one); null. */
+function overWords(t: T, s: Record<string, unknown>): string | null {
+  const each = s.each as { ref?: unknown } | undefined;
+  if (each && typeof each.ref === "string") {
+    const m = /^\$[A-Za-z_][A-Za-z0-9_]*\.([A-Za-z_]+)$/.exec(each.ref);
+    const k = m ? `flows.over.${m[1]}` : "";
+    const v = k ? t(k) : k;
+    return v && v !== k ? v : t("flows.over.each");
+  }
+  // It runs only with an invitation: its condition is the invitation's uid, or that and something more.
+  const w = s.when as { ref?: unknown; fn?: unknown; args?: unknown } | undefined;
+  const inv = (x: unknown) => (x as { ref?: unknown } | null)?.ref === "$inv.uid";
+  if (inv(w) || (w?.fn === "and" && Array.isArray(w.args) && w.args.some(inv)))
+    return t("flows.over.inv");
+  return null;
+}
+
+/**
+ * A step's line under its name on a canvas: the collection it works in and what it goes over, so steps of the same
+ * kind tell themselves apart («Tarea · cada tarea», «Tarea · cada evento», «Tarea · la invitación»).
+ */
+export function stepDetail(
+  t: T,
+  s: Record<string, unknown>,
+  collection: string | null,
+): string | null {
+  return [collection, overWords(t, s)].filter(Boolean).join(" · ") || null;
+}
+
 /**
  * What a trigger brings, named as a person says it (`flows.inputName.<name>`: «Correo», «Asunto»…), never the plan's
  * own name (I-08); a name Juan gave a form's field is his and stays as he wrote it.
@@ -62,17 +91,33 @@ const shapeName = (t: T, s: string | undefined) => {
   return v === k ? (s ?? "") : v;
 };
 
-/** A reference as «Entra» shows it: what the trigger binds by its name («Correo», F7: I-08), a step's as it is. */
-function refName(t: T, ref: string): string {
+/**
+ * A reference as «Entra» and «Sale» show it (I-08): what the trigger binds by its name («Correo»), a form's field as
+ * he named it, a step's value by the step's name and the path in it («Crear › titulo»); never the plan's `$names`.
+ */
+function refName(t: T, ref: string, stepOf: (id: string) => string | null): string {
   const m = /^\$([A-Za-z_][A-Za-z0-9_]*)(.*)$/.exec(ref);
   if (!m) return ref;
-  const k = `flows.inputName.${m[1]}`;
+  const head = m[1] as string;
+  const path = (m[2] ?? "").split(".").filter(Boolean).join(" › ");
+  const k = `flows.inputName.${head}`;
   const v = t(k);
-  return v === k ? ref : `${v}${m[2] ?? ""}`;
+  const name = stepOf(head) ?? (v === k ? head : v);
+  return path ? `${name} › ${path}` : name;
 }
 
 /** «Entra» or «Sale» (task 70): the references, each with what it is; a word when there are none. */
-function IoList({ title, items, none }: { title: string; items: Refs; none: string }) {
+function IoList({
+  title,
+  items,
+  none,
+  stepOf,
+}: {
+  title: string;
+  items: Refs;
+  none: string;
+  stepOf: (id: string) => string | null;
+}) {
   const t = useStore((s) => s.t);
   return (
     <section className="flow-io" aria-label={title}>
@@ -81,7 +126,9 @@ function IoList({ title, items, none }: { title: string; items: Refs; none: stri
         <ul className="flow-io-list">
           {items.map((r) => (
             <li key={r.ref}>
-              <code>{refName(t, r.ref)}</code>
+              <span className="flow-io-name" title={r.ref}>
+                {refName(t, r.ref, stepOf)}
+              </span>
               <span className="muted">{shapeName(t, r.t)}</span>
             </li>
           ))}
@@ -101,6 +148,7 @@ export function FlowStepPanel({
   outs,
   tried,
   problems,
+  byRecord = false,
   onPlan,
   onRemove,
   onClose,
@@ -114,12 +162,28 @@ export function FlowStepPanel({
   /** After «Probar», what it gave or would do, in words ([]: it did not run); null without a test. */
   tried: string[] | null;
   problems: readonly FlowProblem[];
+  /** The flow starts with a record (a mail): Boni's pieces may be chosen («Añadir paso» offers the same). */
+  byRecord?: boolean;
   onPlan: (p: FlowPlan) => void;
   onRemove: () => void;
   onClose: () => void;
 }) {
   const t = useStore((s) => s.t);
   const set = (path: string[], v: unknown) => onPlan(setAt(plan, step.id, path, v));
+  // A step's name by its id: what «Entra» and «Sale» say of another step's value.
+  const stepOf = (id: string) => {
+    const s = plan.steps.find((x) => x.id === id);
+    return s ? stepName(t, s, catalog) : null;
+  };
+  // The tools a step may be, as «Añadir paso» offers them: no flow starts or saves another, and Boni's pieces only in a
+  // flow a record starts; the one it is, always.
+  const tools = catalog.tools.filter(
+    (x) =>
+      x.name === step.tool ||
+      (x.effect !== "flow" &&
+        x.effect !== "flow_save" &&
+        (x.effect !== "piece" || (byRecord && x.record))),
+  );
   const field = (label: string, path: string[], value: unknown, optional: boolean) => (
     <div className="flow-setting" key={path.join(".")}>
       <span className="flow-setting-name">{label}</span>
@@ -170,7 +234,7 @@ export function FlowStepPanel({
               onPlan(setAt(setAt(plan, step.id, ["tool"], e.target.value), step.id, ["args"], {}))
             }
           >
-            {catalog.tools.map((x) => (
+            {tools.map((x) => (
               <option key={x.name} value={x.name}>
                 {x.title}
               </option>
@@ -354,6 +418,7 @@ export function FlowStepPanel({
         </ul>
       )}
       <IoList
+        stepOf={stepOf}
         title={t("flows.in")}
         items={refsUsed(step).map((ref) => ({
           ref,
@@ -367,7 +432,7 @@ export function FlowStepPanel({
       {refSelect(t("flows.each"), "each")}
       {step.each !== undefined && refSelect(t("flows.zip"), "zip")}
       <div className="flow-panel-sep" />
-      <IoList title={t("flows.out")} items={outs} none={t("flows.out.none")} />
+      <IoList stepOf={stepOf} title={t("flows.out")} items={outs} none={t("flows.out.none")} />
       {tried && (
         <section className="flow-io flow-tried" aria-label={t("flows.tried")}>
           <h4 className="flow-io-title">{t("flows.tried")}</h4>

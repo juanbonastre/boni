@@ -21,6 +21,8 @@ export interface RunRow {
   flowVersion: number | null;
   /** The record that triggered it (a mail's id), bound to the plan as `$mail`. */
   input: string | null;
+  /** An «accepted» run: the proposal it applied («¿De dónde viene?», docs/sistema.md §4.4); null before 2026-11-06. */
+  proposal: string | null;
 }
 /** A flow (docs/flujos.md): a plan with a trigger, kept as data; a row per version, the latest one is the flow. */
 export interface FlowRow {
@@ -168,8 +170,11 @@ export interface ConfirmationRow {
 
 export interface Journal {
   startRun(
-    r: Omit<RunRow, "finished" | "status" | "plan" | "flow" | "flowVersion" | "input"> &
-      Partial<Pick<RunRow, "flow" | "flowVersion" | "input">>,
+    r: Omit<
+      RunRow,
+      "finished" | "status" | "plan" | "flow" | "flowVersion" | "input" | "proposal"
+    > &
+      Partial<Pick<RunRow, "flow" | "flowVersion" | "input" | "proposal">>,
   ): void;
   finishRun(id: string, status: string, plan: unknown, at: number): void;
   setPlan(id: string, plan: unknown): void;
@@ -255,6 +260,19 @@ export interface Journal {
   /** The proposals made in a period, and those decided in it by what was decided. */
   proposalsMade(from: number, to: number): number;
   proposalsDecided(from: number, to: number): Record<string, number>;
+  /** The proposal accepted closest to `at`, within `ms`: what an «accepted» run applied when it did not keep it (its
+   * run starts as the proposal is decided). */
+  proposalAcceptedNear(at: number, ms: number): ProposalRow | null;
+  /** The proposals decided in a period, by the run that made them and what was decided (whose decisions teach). */
+  proposalsDecidedByRun(from: number, to: number): { run: string; status: string; n: number }[];
+  /**
+   * The proposals made in a period by their run, the collection they propose in (its key, as the tool's arguments
+   * say it) and what became of them (the map's arrows: each run's owner, a flow or the conversation, says whose).
+   */
+  proposalsByRun(
+    from: number,
+    to: number,
+  ): { run: string; type: string | null; status: string; n: number }[];
   /** Each model call in a period (oldest first): what Boni shows as its read-only collection «Llamadas a modelos». */
   modelCallsIn(from: number, to: number): ModelCallUse[];
   /** The last model call's number (0 with none): it changes whenever one is recorded. */
@@ -291,6 +309,7 @@ export function openJournal(db: DatabaseSync): Journal {
     flow: (r.flow as string | null) ?? null,
     flowVersion: (r.flow_version as number | null) ?? null,
     input: (r.input as string | null) ?? null,
+    proposal: (r.proposal as string | null) ?? null,
   });
   const flowOf = (r: Record<string, unknown>): FlowRow => ({
     id: r.id as string,
@@ -373,7 +392,7 @@ export function openJournal(db: DatabaseSync): Journal {
     startRun: (r) =>
       void db
         .prepare(
-          "INSERT INTO runs (id, turn, origin, device, status, started, flow, flow_version, input) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?)",
+          "INSERT INTO runs (id, turn, origin, device, status, started, flow, flow_version, input, proposal) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)",
         )
         .run(
           r.id,
@@ -384,6 +403,7 @@ export function openJournal(db: DatabaseSync): Journal {
           r.flow ?? null,
           r.flowVersion ?? null,
           r.input ?? null,
+          r.proposal ?? null,
         ),
     flows: () =>
       (
@@ -764,6 +784,39 @@ export function openJournal(db: DatabaseSync): Journal {
             .get(from, to) as { n: number }
         ).n,
       ),
+    proposalsByRun: (from, to) =>
+      db
+        .prepare(
+          // The collection's key: where it was accepted when the user moved it to another (`edits.type.to`), else
+          // where it was proposed (the agent stores a labelled value: `values.type.value`).
+          `SELECT run, coalesce(
+               CASE WHEN status = 'accepted' THEN json_extract(edits, '$.type.to') END,
+               json_extract(args, '$.values.type.value'), json_extract(args, '$.values.type')) AS type,
+             status, count(*) AS n
+           FROM proposals WHERE created >= ? AND created < ? GROUP BY run, type, status`,
+        )
+        .all(from, to)
+        .map((r) => ({
+          run: r.run as string,
+          type: typeof r.type === "string" ? r.type : null,
+          status: r.status as string,
+          n: Number(r.n),
+        })),
+    proposalAcceptedNear: (at, ms) => {
+      const r = db
+        .prepare(
+          "SELECT * FROM proposals WHERE status = 'accepted' AND decided BETWEEN ? AND ? ORDER BY abs(decided - ?), decided, id LIMIT 1",
+        )
+        .get(at - ms, at + ms, at) as Record<string, unknown> | undefined;
+      return r ? proposalOf(r) : null;
+    },
+    proposalsDecidedByRun: (from, to) =>
+      db
+        .prepare(
+          "SELECT run, status, count(*) AS n FROM proposals WHERE decided >= ? AND decided < ? GROUP BY run, status",
+        )
+        .all(from, to)
+        .map((r) => ({ run: r.run as string, status: r.status as string, n: Number(r.n) })),
     proposalsDecided: (from, to) =>
       Object.fromEntries(
         (

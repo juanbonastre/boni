@@ -1704,7 +1704,7 @@ export class Mails {
   /**
    * The relations the mail plainly names (task 51, phases B and C), for each collection key: the sender as a record
    * of a related collection by name, a record whose title the sender's own words carry; set by code, the reader's
-   * choice first (`merge`). The piece «Relaciones» and the bindings of a plan saved before the pieces.
+   * choice first (`merge`). The piece «Buscar relaciones» and the bindings of a plan saved before the pieces.
    */
   private relationsOf(
     account: number,
@@ -1749,7 +1749,7 @@ export class Mails {
   /**
    * A calendar invitation's event (task 45), read from its .ics by code into the mail's hidden fields, with the
    * mail's own labels; already in one of the account's external calendars, it comes without its uid and the plan
-   * proposes no event. The piece «Invitación» and the bindings of a plan saved before the pieces.
+   * proposes no event. The piece «Leer invitación» and the bindings of a plan saved before the pieces.
    */
   private async invitationOf(
     account: number,

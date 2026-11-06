@@ -2103,7 +2103,7 @@ describe("Boni's pieces in «Leer correo» (docs/sistema.md §4.2, F7)", () => {
     });
     m.saveGuide(1, { rules: [{ from: "@lista.example.com", action: "skip" }] });
     await m.check(1);
-    // The flow ran and ended at «Reglas de la guía»: done, nothing read by a model, nothing proposed.
+    // The flow ran and ended at «Regla del remitente»: done, nothing read by a model, nothing proposed.
     expect(reads(reader)).toBe(0);
     const run = store.journal.runs().find((r) => r.flow === MAIL_FLOW);
     expect(run).toMatchObject({ status: "done", origin: "background" });

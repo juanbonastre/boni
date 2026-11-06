@@ -165,7 +165,14 @@ test("the right button in the sidebar (task 42): a page's, a collection's and a 
   expect(Math.abs(menu.y - (at.y + 12))).toBeLessThan(6);
   await expect(gastos).toHaveClass(/menu-open/);
   await page.screenshot({ path: `${SHOTS}/sidebar-menu.png` });
-  const pageItems = ["Cambiar nombre", "Añadir subpágina", "Duplicar", "Borrar página"];
+  // «Ver en el mapa» (I-25): the page in the centre of «Flujos»' map.
+  const pageItems = [
+    "Cambiar nombre",
+    "Añadir subpágina",
+    "Duplicar",
+    "Ver en el mapa",
+    "Borrar página",
+  ];
   await expect(items("Gastos")).toHaveText(pageItems);
   await page.keyboard.press("Escape");
   await expect(items("Gastos")).toHaveCount(0);
@@ -192,6 +199,7 @@ test("the right button in the sidebar (task 42): a page's, a collection's and a 
     "Nueva nota",
     "Nueva colección dentro",
     "Cambiar nombre",
+    "Ver en el mapa",
     "Eliminar colección",
   ]);
   await rename("Libros", "Lecturas");

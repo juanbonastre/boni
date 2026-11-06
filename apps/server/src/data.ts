@@ -239,7 +239,11 @@ export function listTypes(store: UserStore, sys?: SystemCollections): DataType[]
       rules: [],
       rowUi: rowUiOf(store, t.id),
       system: true,
-      ...(t.id === SYS.data.id ? { editable: [...SYS.data.editable] } : {}),
+      ...(t.id === SYS.data.id
+        ? { editable: [...SYS.data.editable] }
+        : t.id === SYS.flows.id
+          ? { editable: [...SYS.flows.editable] }
+          : {}),
     }),
   );
   const types = store.schema();
@@ -390,6 +394,10 @@ export function listRows(
       ghosts: [],
     };
   }
+  if (mine && type === SYS.flows.id) {
+    // «Flujos» (flowsCollection.ts): the flows on first, then by name.
+    return { rows: (sys?.rows(type) ?? []).map(flowRow), titles: {}, truncated: false, ghosts: [] };
+  }
   if (mine) {
     // Boni's own records: the latest first, no relations, no proposals.
     const all = [...(sys?.rows(type) ?? [])].sort((a, b) => b.updated - a.updated);
@@ -423,6 +431,21 @@ export function myDataRow(e: Entity): DataRow {
 export function myDataRowOf(sys: SystemCollections, id: string): DataRow | null {
   const e = sys.rows(SYS.data.id).find((r) => r.id === id);
   return e ? myDataRow(e) : null;
+}
+
+/** A row of «Flujos» as the app takes it: a flow of Boni's keeps the name Boni gives it. */
+export function flowRow(e: Entity): DataRow {
+  return {
+    id: e.id,
+    values: e.values,
+    updated: e.updated,
+    ...(e.values[SYS.flows.by] === SYS.flows.boni ? { fixed: [SYS.flows.title] } : {}),
+  };
+}
+/** One row of «Flujos» as the app takes it, made again (after a change to it); null when it is gone. */
+export function flowRowOf(sys: SystemCollections, id: string): DataRow | null {
+  const e = sys.rows(SYS.flows.id).find((r) => r.id === id);
+  return e ? flowRow(e) : null;
 }
 
 /** Rows of a type as a table shows them, with the titles of what their relations point to. */

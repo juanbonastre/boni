@@ -28,6 +28,7 @@ import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import type { ExternalItem } from "./externalItems.ts";
+import { flowMap, mapOwnerOf } from "./flowMap.ts";
 import {
   checkFlow,
   createFlow,
@@ -46,8 +47,8 @@ import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
+import { recordOrigin } from "./origin.ts";
 import { withPieces } from "./pieces.ts";
-import { pipelineView } from "./pipeline.ts";
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
@@ -81,6 +82,8 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *                                               what came of it (runInfo.ts), and `autoAccept`: how often
  *                                               Boni would have accepted alone, and been right (autoAccept.ts)
  *   GET  /api/agent/runs/:id                 -> RunDetail: the request and each step (a personal device only)
+ *   GET  /api/agent/origin/:id               -> Origin: who made a record and from what, the run that proposed it
+ *                                               («¿De dónde viene?», origin.ts; a personal device only)
  *   POST /api/agent/runs/:id/undo            -> { undone } every operation of that run
  *   GET  /api/agent/conversations            -> { conversations } Juan's conversations, the latest first
  *   POST /api/agent/conversations            { title? } -> { conversation } a new one
@@ -306,6 +309,10 @@ export class AgentHost {
     for (const [id, l] of this.lives) if (l.at < old) this.lives.delete(id);
   }
 
+  /** The zone the account's days are in (the server's). */
+  get tz(): string {
+    return this.o.tz ?? "Europe/Madrid";
+  }
   /** Today's civil day in the server's zone (YYYY-MM-DD): a scheduled flow's `$today` (docs/flujos.md F4). */
   today(): string {
     return dayToIso(todayIn(this.o.tz ?? "Europe/Madrid", this.o.now?.() ?? Date.now()));
@@ -365,6 +372,27 @@ export async function serveAgent(
     return serveFlows(host, req, res, route, params, who);
   }
   switch (route) {
+    // The map (docs/sistema.md §4.4, F8): the account's data and what moves it, drawn with the agent off too, on his
+    // personal devices (it names his collections and counts their rows).
+    case "GET /api/agent/map": {
+      if (!host.hasData) return send(res, 503, { error: "no-store" });
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      host.mailFlowCurrent?.(who.account);
+      const q = new URL(req.url ?? "/", "http://boni").searchParams;
+      const days = Math.min(90, Math.max(1, Math.round(Number(q.get("days")) || 7)));
+      return send(
+        res,
+        200,
+        flowMap(host.store(who.account), {
+          now: Date.now(),
+          days,
+          tz: host.tz,
+          mailType: host.mailTypeOf?.(who.account) ?? null,
+          mailAccount: host.mailAccountOf?.(who.account) ?? null,
+          titleOf: (tool) => host.toolTitle(tool),
+        }),
+      );
+    }
     // What the account's agent tells its devices, while it is open: with the models off too, since the desktop app
     // keeps it for Boni's notices (task 62).
     case "GET /api/agent/events": {
@@ -449,7 +477,6 @@ async function serveFlows(
         name?: unknown;
         trigger?: unknown;
         plan?: unknown;
-        layout?: unknown;
       };
       if (typeof b.base !== "number" || !b.plan) return send(res, 400, { error: "bad-request" });
       const name = b.name === undefined ? undefined : str(b.name, 80);
@@ -465,7 +492,6 @@ async function serveFlows(
           plan: b.plan,
           ...(name ? { name } : {}),
           ...(b.trigger !== undefined ? { trigger: b.trigger } : {}),
-          ...(b.layout !== undefined ? { layout: layoutOf(b.layout) } : {}),
         },
         check.problems,
         Date.now(),
@@ -560,7 +586,7 @@ async function serveFlows(
       return send(
         res,
         200,
-        testView(store, r, sample, (tool) => host.toolTitle(tool)),
+        testView(store, r, sample, (tool) => host.toolTitle(tool), plan),
       );
     }
     case "POST /api/agent/flows/:id/run": {
@@ -610,25 +636,6 @@ async function serveFlows(
     default:
       return send(res, 404, { error: "not-found" });
   }
-}
-
-/** Where the user left each node: ids to points, nothing else (presentation only). */
-function layoutOf(v: unknown): Record<string, { x: number; y: number }> | null {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-  const out: Record<string, { x: number; y: number }> = {};
-  for (const [k, p] of Object.entries(v).slice(0, 60)) {
-    const x = (p as { x?: unknown } | null)?.x;
-    const y = (p as { y?: unknown } | null)?.y;
-    if (
-      /^[A-Za-z0-9_]{1,40}$/.test(k) &&
-      typeof x === "number" &&
-      typeof y === "number" &&
-      Number.isFinite(x) &&
-      Number.isFinite(y)
-    )
-      out[k] = { x: Math.round(x), y: Math.round(y) };
-  }
-  return out;
 }
 
 /** Juan's conversations (docs/conversacion.md 3.1) and the turns he watches live (3.5). */
@@ -799,21 +806,6 @@ async function answerAgent(
           current: p.current,
         })),
       });
-    case "GET /api/agent/pipeline": {
-      // «Modelos» (task 59b): the declared flow's numbers of the last days (7 by default, 90 at most).
-      const q = new URL(req.url ?? "/", "http://boni").searchParams;
-      const days = Math.min(90, Math.max(1, Math.round(Number(q.get("days")) || 7)));
-      return send(
-        res,
-        200,
-        pipelineView(
-          host.store(who.account),
-          Date.now(),
-          days,
-          host.mailAccountOf?.(who.account) ?? null,
-        ),
-      );
-    }
     case "GET /api/agent/proposals": {
       const store = host.store(who.account);
       const ctx = inboxContext(store, {
@@ -846,6 +838,8 @@ async function answerAgent(
             sources: p.sources,
             created: p.created,
             run: p.run,
+            // The flow whose run made it, for «Ver en el mapa» (null: a turn of the conversation).
+            madeBy: store.journal.run(p.run)?.flow ?? null,
             card,
             ...(flow ? { flow } : {}),
           };
@@ -1007,7 +1001,20 @@ async function answerAgent(
     case "GET /api/agent/runs/:id": {
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const d = agent.runDetail(params.id ?? "");
-      return d ? send(res, 200, d) : send(res, 404, { error: "not-found" });
+      if (!d) return send(res, 404, { error: "not-found" });
+      // Where the map draws it: its flow, the conversation, the reviewer, the Bandeja (docs/sistema.md §4.4).
+      const store = host.store(who.account);
+      const r = store.journal.run(d.id);
+      const owner = r ? mapOwnerOf(store, r, host.mailAccountOf?.(who.account) ?? null) : null;
+      return send(res, 200, { ...d, owner });
+    }
+    case "GET /api/agent/origin/:id": {
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const store = host.store(who.account);
+      const o = recordOrigin(store, params.id ?? "", {
+        mailAccount: host.mailAccountOf?.(who.account) ?? null,
+      });
+      return o ? send(res, 200, o) : send(res, 404, { error: "not-found" });
     }
     case "POST /api/agent/runs/:id/undo":
       try {

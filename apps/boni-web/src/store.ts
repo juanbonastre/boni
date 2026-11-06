@@ -3,6 +3,7 @@ import {
   type DatabaseFilter,
   type DatabaseView,
   dataRowTarget,
+  flowRowTarget,
   MAX_VIEWS,
   markdownToBlocks,
   type PageSpec,
@@ -30,6 +31,7 @@ import {
   type MailGuide,
   type MailInput,
   type MailView,
+  type Origin,
   type Page,
   type PageInfo,
   type Planner,
@@ -122,8 +124,22 @@ export type View =
   | { kind: "row"; type: string; id: string; from?: "collection" | "allPages" | "page" }
   /** «Todas las páginas» (Juan, 2026-10-28): the whole tree, to manage (filter, protection, the eye, move). */
   | { kind: "allPages" }
-  /** «Flujos» (docs/flujos.md): the flows with their canvases, and «Modelos» (task 59b) as a tab inside. */
-  | { kind: "flows"; tab?: "flows" | "models" }
+  /**
+   * «Flujos» (docs/sistema.md §4.4, F8): Boni's collection of flows with its views («Tabla», «Mapa»); `flow`: one flow
+   * on a page of its own, in its editor; `map`: the map opened on something («Ver en el mapa»), `n` new each time.
+   */
+  | {
+      kind: "flows";
+      flow?: string;
+      map?: {
+        center: string | null;
+        pages?: boolean;
+        run?: string;
+        /** «¿De dónde viene?»: the record asked about (its title) and where it comes from. */
+        origin?: { title: string; origin: Origin };
+        n: number;
+      };
+    }
   | { kind: "audit"; filter: AuditFilter }
   /** One collection on a page of its own (its protection is unlocked only here). */
   | { kind: "collection"; type: string }
@@ -353,6 +369,12 @@ export function errorText(t: T, e: unknown): string {
   }
   return (e as Error)?.message || t("error.generic");
 }
+
+/**
+ * Where this device keeps the view each collection has open. Declared before the store, which reads it as it is made:
+ * declared after it, the read failed in silence and every collection opened on its first view after a restart.
+ */
+const ACTIVE_VIEWS = "boni:activeViews";
 
 export const useStore = create<State>(() => ({
   ready: false,
@@ -791,6 +813,8 @@ export function goBack(): boolean {
   else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
   else if (s.view.kind === "chart") showHome();
   else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
+  // A flow's page goes back to «Flujos».
+  else if (s.view.kind === "flows" && s.view.flow) showFlows();
   // The phone's «Páginas» goes back a step at a time: a record to its collection, a collection or a page to the tree.
   else if (s.tab === "pages" && s.view.kind === "row") {
     void flushRowBody();
@@ -2838,8 +2862,89 @@ export const showAllPages = () => {
   void loadDataTypes();
   void loadTree();
 };
-export const showFlows = (tab: "flows" | "models" = "flows") =>
-  set({ view: { kind: "flows", tab }, panel: null });
+/** «Flujos»: its views, as last left on this device. */
+export const showFlows = () => set({ view: { kind: "flows" }, panel: null });
+/** One flow on a page of its own, in its editor. */
+export const showFlow = (id: string) => set({ view: { kind: "flows", flow: id }, panel: null });
+let mapAsks = 0;
+/**
+ * «Ver en el mapa» of a row: a flow's row its flow, a row of «Mis datos» what it is (Boni's own records are on no
+ * map), any other its collection.
+ */
+export function showMapOf(type: string, row: string) {
+  if (type === SYS.flows.id) {
+    const flow = flowRowTarget(row);
+    return showMap(flow ? `flow:${flow}` : null);
+  }
+  if (type === SYS.data.id) {
+    const id = dataRowTarget(row);
+    if (!id) return showMap(null);
+    const def = get().dataTypes?.find((x) => x.id === id);
+    if (def?.system) return showMap(null);
+    return def ? showMap(`col:${id}`) : showMap(`page:${id}`, { pages: true });
+  }
+  showMap(`col:${type}`);
+}
+/**
+ * «Ver en el mapa» (docs/sistema.md §4.4; I-25): «Flujos» on its map, with this in the centre (a map node's id:
+ * `col:<collection>`, `flow:<id>`, `page:<id>`, `boni:chat`…); `pages`: with the pages shown while it is there (a page);
+ * `run`: that run drawn on it.
+ */
+export const showMap = (
+  center: string | null,
+  o: { pages?: boolean; run?: string; origin?: { title: string; origin: Origin } } = {},
+) =>
+  set({
+    view: {
+      kind: "flows",
+      map: {
+        center,
+        ...(o.pages ? { pages: true } : {}),
+        // A run drawn on it (§4.4, «una ejecución encima»): its flow unfolded, the way it went.
+        ...(o.run ? { run: o.run } : {}),
+        ...(o.origin ? { origin: o.origin } : {}),
+        n: ++mapAsks,
+      },
+    },
+    panel: null,
+    settingsOpen: false,
+  });
+
+/**
+ * «¿De dónde viene?» of a record (docs/sistema.md §4.4): what a flow or the conversation proposed or wrote, on the map
+ * with that run drawn on it and the way it came told in words; what someone wrote, said in a notice.
+ */
+export async function showOrigin(id: string, title: string) {
+  const t = get().t;
+  let o: Origin | null = null;
+  try {
+    o = await agentApi.origin(id);
+  } catch (e) {
+    return toast(errorText(t, e));
+  }
+  if (!o) return toast(t("origin.none"));
+  if (o.run)
+    return showMap(o.run.owner ?? (o.run.flow ? `flow:${o.run.flow}` : "boni:chat"), {
+      run: o.run.id,
+      origin: { title, origin: o },
+    });
+  toast(originText(t, o));
+}
+
+/** Who wrote a record no run made, in words («Lo escribiste tú, en portatil, el 5 nov 12:10»). */
+export function originText(t: T, o: Origin): string {
+  const when = new Intl.DateTimeFormat(get().settings.language === "en" ? "en-GB" : "es-ES", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: deviceZone(),
+  }).format(o.at);
+  if (o.by === "user")
+    return o.device ? t("origin.user.on", { device: o.device, when }) : t("origin.user", { when });
+  if (o.by === "assistant") return t("origin.assistant", { name: o.device ?? "", when });
+  return t(`origin.${o.by}`, { when });
+}
 
 /**
  * The sidebar's folding, kept on this device: `sections` lists the folded sections, `branches` the unfolded
@@ -2925,13 +3030,14 @@ export const showAudit = (filter: AuditFilter) => {
   void loadDataTypes();
 };
 export const openCollection = (type: string) => {
+  // «Flujos» is a section of its own (its row in «Mis datos» opens it there).
+  if (type === SYS.flows.id) return showFlows();
   set({ view: { kind: "collection", type }, panel: null });
   const name = get().dataTypes?.find((x) => x.id === type)?.name;
   if (name) noteRecent({ kind: "collection", id: type, title: name });
 };
 
 // ---------- a collection's views (task 69; Juan, 2026-11-05: Notion's views as tabs, with «+») ----------
-const ACTIVE_VIEWS = "boni:activeViews";
 function readActiveViews(): Record<string, string> {
   try {
     const v = JSON.parse(localStorage.getItem(ACTIVE_VIEWS) ?? "{}") as unknown;
@@ -3021,13 +3127,24 @@ export function duplicateView(type: string, views: SavedView[], id: string, name
  * A collection's views for its page (task 69): those kept or its first, the one open, and what the head's tabs do. The
  * first one is named after its layout; a new one too; a copy says it is one.
  */
-export function useViews(type: string, first: DatabaseView) {
+export function useViews(
+  type: string,
+  first: DatabaseView,
+  /** More views a collection starts with besides the first («Flujos»: its «Mapa»), each with its name. */
+  more: readonly { view: DatabaseView; name: string }[] = [],
+  /** A layout's name where the collection says it its own way («Flujos»: the diagram is its «Mapa»). */
+  layoutName?: (layout: DatabaseView["layout"]) => string | undefined,
+) {
   const t = useStore((s) => s.t);
+  const nameOf = (l: DatabaseView["layout"]) => layoutName?.(l) ?? t(`db.layouts.${l}`);
   const kept = useStore((s) => s.dataTypes?.find((x) => x.id === type)?.rowUi.views);
   const chosen = useStore((s) => s.activeViews[type]);
   const views: SavedView[] = kept?.length
     ? kept
-    : [{ ...first, id: FIRST_VIEW, name: t(`db.layouts.${first.layout}`) }];
+    : [
+        { ...first, id: FIRST_VIEW, name: nameOf(first.layout) },
+        ...more.map((m, i) => ({ ...m.view, id: `${FIRST_VIEW}_${i + 1}`, name: m.name })),
+      ];
   const active = views.find((v) => v.id === chosen) ?? (views[0] as SavedView);
   return {
     view: active as DatabaseView,
@@ -3038,16 +3155,15 @@ export function useViews(type: string, first: DatabaseView) {
         views,
         active.id,
         v,
-        v.layout !== active.layout && active.name === t(`db.layouts.${active.layout}`)
-          ? t(`db.layouts.${v.layout}`)
+        v.layout !== active.layout && active.name === nameOf(active.layout)
+          ? nameOf(v.layout)
           : undefined,
       ),
     control: {
       list: views,
       active: active.id,
       onSwitch: (id: string) => chooseView(type, id),
-      onAdd: (layout: DatabaseView["layout"]) =>
-        addView(type, views, { layout }, t(`db.layouts.${layout}`)),
+      onAdd: (layout: DatabaseView["layout"]) => addView(type, views, { layout }, nameOf(layout)),
       onRename: (id: string, name: string) => renameView(type, views, id, name),
       onDuplicate: (id: string) =>
         duplicateView(
@@ -3154,6 +3270,8 @@ const readOnly = (type: string) => {
   return def?.system === true && !def.editable;
 };
 const MY_DATA = SYS.data.id;
+/** Boni's own collections a person changes: their rows are what they stand for (a collection, a page, a flow). */
+const OWN = (type: string) => type === MY_DATA || type === SYS.flows.id;
 
 /**
  * After a change in «Mis datos»: what it changed shows everywhere (the sidebar's tree and pages, the collections) and
@@ -3167,6 +3285,8 @@ const afterMyData = () =>
 const myDataError = (e: unknown) => {
   const t = get().t;
   const code = e instanceof ApiError ? e.code : "";
+  // «Flujos» (flowsCollection.ts): what a change to a flow's row was refused for.
+  if (code.startsWith("flow-")) return t(`flows.err.${code.slice(5)}`);
   return code === "taken"
     ? t("tree.taken")
     : code === "not-empty"
@@ -3189,7 +3309,7 @@ export async function editCell(type: string, id: string, field: string, value: D
     if (type === MY_DATA) await afterMyData();
   } catch (e) {
     putRow(type, before);
-    toast(type === MY_DATA ? myDataError(e) : get().t("db.saveError"));
+    toast(OWN(type) ? myDataError(e) : get().t("db.saveError"));
   }
 }
 
@@ -3223,7 +3343,7 @@ export async function addRow(type: string, values: Record<string, DataValue> = {
     if (type === MY_DATA) await afterMyData();
     return row;
   } catch (e) {
-    toast(type === MY_DATA ? myDataError(e) : get().t("db.saveError"));
+    toast(OWN(type) ? myDataError(e) : get().t("db.saveError"));
     return null;
   }
 }
@@ -3238,7 +3358,7 @@ export async function deleteRows(type: string, ids: string[]) {
       await agent.deleteRow(id);
       gone.push(id);
     } catch (e) {
-      toast(type === MY_DATA ? myDataError(e) : t("db.saveError"));
+      toast(OWN(type) ? myDataError(e) : t("db.saveError"));
       break;
     }
   }
@@ -3288,6 +3408,12 @@ export async function openNoteAt(id: string) {
 
 /** A row opened as a page: its properties and its text (a note's body). */
 export async function openRow(type: string, id: string) {
+  // A row of «Flujos» opens its flow's page.
+  if (type === SYS.flows.id) {
+    const flow = flowRowTarget(id);
+    if (flow) showFlow(flow);
+    return;
+  }
   // A row of «Mis datos» opens what it is: its collection's page, or the page.
   if (type === MY_DATA) {
     const target = dataRowTarget(id);

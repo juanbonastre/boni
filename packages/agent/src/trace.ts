@@ -38,12 +38,14 @@ export interface RunDetail {
     /** What the models answered in it (a reader's, the decider's), as text: the user's own content. */
     answers: string[];
   }[];
-  /** What it read, per collection: some titles and how many entities. */
-  read: { collection: string; titles: string[]; n: number }[];
+  /** What it read, per collection (its name, and its id as `type`): some titles and how many entities. */
+  read: { collection: string; type: string; titles: string[]; n: number }[];
   /** What it changed, each entity by its title and collection, and whether that was undone. */
-  changes: { action: string; title: string; collection: string; undone: boolean }[];
-  /** The proposals it made, by title and state. */
-  proposals: { title: string; status: string }[];
+  changes: { action: string; title: string; collection: string; type: string; undone: boolean }[];
+  /** The proposals it made, by title, state and the collection each would write in (its id; null: none). */
+  proposals: { title: string; status: string; type: string | null }[];
+  /** The record that started it (a mail), by its title and collection: the map draws the way from it. */
+  input: { id: string; title: string; collection: string; type: string } | null;
   /** Its decisions (docs/fiabilidad.md): the area, the confidence, what came of it and whether it was right. */
   decisions: { area: string; p: number; outcome: string; result: string | null }[];
   /** The models it called: role, model, tokens and cost (null when unknown). */
@@ -85,17 +87,25 @@ function refsIn(v: unknown, out: Set<string>): void {
   }
 }
 
+/** The record a plan reads first (`entities.get` of a literal id): what a mail's reading from before flows read. */
+function firstRead(plan: unknown): string | null {
+  const first = isObj(plan) && Array.isArray(plan.steps) ? plan.steps[0] : null;
+  if (!isObj(first) || first.tool !== "entities.get" || !isObj(first.args)) return null;
+  const id = first.args.id;
+  return isObj(id) && typeof id.lit === "string" ? id.lit : null;
+}
+
 /** A run's trace, or null when the journal has no such run. */
 export function traceOf(store: UserStore, id: string): RunDetail | null {
   const j = store.journal;
   const r = j.run(id);
   if (!r) return null;
   const types = store.schema().types;
-  const titleOf = (entity: string): { title: string; collection: string } | null => {
+  const titleOf = (entity: string): { title: string; collection: string; type: string } | null => {
     const s = store.get(entity);
     const t = s ? types[s.entity.type] : undefined;
     if (!s || !t) return null;
-    return { title: text(s.entity.values[t.titleField], 80), collection: t.name };
+    return { title: text(s.entity.values[t.titleField], 80), collection: t.name, type: t.id };
   };
   const calls = j
     .modelCalls(id)
@@ -154,11 +164,16 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
   });
   // What it read: the audit's accesses of the run, by collection.
   const acts = store.audit.actions({ run: id, limit: 1000 });
-  const read = new Map<string, { collection: string; titles: string[]; n: number }>();
+  const read = new Map<string, { collection: string; type: string; titles: string[]; n: number }>();
   for (const seen of store.audit.accessOf(acts.map((a) => a.seq)).values())
     for (const s of seen) {
       const t = types[s.type];
-      const g = read.get(s.type) ?? { collection: t?.name ?? s.type, titles: [], n: 0 };
+      const g = read.get(s.type) ?? {
+        collection: t?.name ?? s.type,
+        type: s.type,
+        titles: [],
+        n: 0,
+      };
       g.n++;
       const title = titleOf(s.entity)?.title;
       if (title && g.titles.length < TITLES && !g.titles.includes(title)) g.titles.push(title);
@@ -169,16 +184,27 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
     .slice(0, CHANGES)
     .map((op) => ({
       action: op.kind,
-      ...(titleOf(op.target) ?? { title: "", collection: "" }),
+      ...(titleOf(op.target) ?? { title: "", collection: "", type: "" }),
       undone: op.undone,
     }));
+  const byKey = new Map(Object.values(types).map((t) => [t.key, t.id]));
   const proposals = j.proposalsOf(id).map((p) => {
     const rows = (p.view as { rows?: { arg: string; value?: unknown }[]; title?: unknown }) ?? {};
+    // The collection's key: where it was accepted when the user moved it, else where it was proposed (the agent
+    // stores a labelled value in `values.type`).
+    const v = isObj(p.args) && isObj(p.args.values) ? p.args.values.type : null;
+    const raw = isObj(v) ? v.value : v;
+    const moved = p.status === "accepted" ? p.edits?.type?.to : undefined;
+    const key = typeof moved === "string" ? moved : typeof raw === "string" ? raw : null;
     return {
       title: text(rows.rows?.find((x) => x.arg === "values.title")?.value ?? rows.title, 120),
       status: p.status,
+      type: key ? (byKey.get(key) ?? (types[key] ? key : null)) : null,
     };
   });
+  // What started it: the record its trigger bound; a mail's reading from before flows, the mail its plan read first.
+  const inputId = r.input ?? (r.origin === "background" && !r.flow ? firstRead(r.plan) : null);
+  const started = inputId ? titleOf(inputId) : null;
   const decisions = j.decisionsOf(id).map((d) => ({
     area: d.area,
     p: d.p,
@@ -212,6 +238,7 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
     read: [...read.values()],
     changes,
     proposals,
+    input: inputId && started ? { id: inputId, ...started } : null,
     decisions,
     models,
   };

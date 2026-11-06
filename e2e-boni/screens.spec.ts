@@ -1,5 +1,12 @@
 import { expect, type Page, test } from "@playwright/test";
-import { FLOW, FLOW_CATALOG, FLOW_CHECK, FLOW_DETAIL, FLOWS, MODELS } from "./agent-scenarios.ts";
+import {
+  FLOW_CATALOG,
+  FLOW_CHECK,
+  FLOW_DETAIL,
+  FLOWS_WITH_SUMMARY,
+  MAP,
+  MODELS,
+} from "./agent-scenarios.ts";
 import { openApp, openInTree, TEMPLATE } from "./fixtures.ts";
 
 /**
@@ -31,35 +38,39 @@ test("the start page (Gastos)", async ({ page }) => {
   await shot(page, "gastos");
 });
 
+const FLOW_AGENT = {
+  "GET api/agent/models": [MODELS],
+  "GET api/agent/map": [MAP],
+  "GET api/agent/flows": [FLOWS_WITH_SUMMARY],
+  "GET api/agent/flows/:id": [FLOW_DETAIL],
+  "GET api/agent/flows/catalog": [FLOW_CATALOG],
+  "POST api/agent/flows/check": [FLOW_CHECK],
+};
+
 test("Flujos", async ({ page }) => {
-  await open(page, {
-    "GET api/agent/models": [MODELS],
-    "GET api/agent/pipeline": [FLOW],
-    "GET api/agent/flows": [FLOWS],
-    "GET api/agent/flows/:id": [FLOW_DETAIL],
-    "GET api/agent/flows/catalog": [FLOW_CATALOG],
-    "POST api/agent/flows/check": [FLOW_CHECK],
-  });
+  await open(page, FLOW_AGENT);
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
-  await page.locator(".flow-detail .flow-canvas .fl-node").first().waitFor();
-  await page.getByRole("button", { name: "Añadir paso" }).waitFor();
-  await page.waitForTimeout(400); // the canvas fits the flow with a short motion
+  await page.locator(".db-table tbody tr").first().waitFor();
   await shot(page, "flujos");
 });
 
-test("Flujos: Modelos", async ({ page }) => {
-  await open(page, {
-    "GET api/agent/models": [MODELS],
-    "GET api/agent/pipeline": [FLOW],
-    "GET api/agent/flows": [FLOWS],
-    "GET api/agent/flows/:id": [FLOW_DETAIL],
-  });
+test("Flujos: el mapa", async ({ page }) => {
+  await open(page, FLOW_AGENT);
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
-  await page.getByRole("radio", { name: "Modelos" }).click();
-  await page.locator(".flow-canvas .fl-node").first().waitFor();
-  await page.locator(".use-card").first().waitFor();
-  await page.waitForTimeout(400);
-  await shot(page, "modelos");
+  await page.getByRole("tab", { name: "Mapa" }).click();
+  await page.locator(".mp-card").first().waitFor();
+  await page.waitForTimeout(600); // the map fits what it shows with a short motion
+  await shot(page, "flujos-mapa");
+});
+
+test("Flujos: un flujo", async ({ page }) => {
+  await open(page, FLOW_AGENT);
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page.locator(".db-table").getByText("Leer correo", { exact: true }).click();
+  await page.locator(".flow-editor .flow-canvas .fl-node").first().waitFor();
+  await page.getByRole("button", { name: "Añadir paso" }).waitFor();
+  await page.waitForTimeout(400); // the canvas fits the flow with a short motion
+  await shot(page, "flujos-flujo");
 });
 
 test("«Uso de la IA», a template page over Boni's records", async ({ page }) => {

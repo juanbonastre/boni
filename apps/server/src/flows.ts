@@ -138,7 +138,8 @@ export function ensureFlow(
     trigger: f.trigger,
     inputs: inputsOf(f.plan, f.trigger),
     plan: f.plan,
-    layout: latest?.layout ?? null,
+    // Its canvas lays itself out (docs/sistema.md §4.4): no positions are kept.
+    layout: null,
     by: f.by,
     enabled: latest?.enabled ?? true,
     created: now,
@@ -203,9 +204,8 @@ export interface FlowDetail extends FlowSummary {
   nodes: FlowNode[];
   days: number;
   versions: { version: number; by: string; created: number }[];
-  /** The plan itself and where the user left each node: what the editor changes. */
+  /** The plan itself: what the editor changes (its canvas lays itself out, nothing of where is kept). */
   plan: unknown;
-  layout: unknown;
   /** Boni's own version of it, when it has one (`Volver al de Boni`). */
   preset: number | null;
 }
@@ -239,7 +239,6 @@ export function flowView(
     days,
     versions: versions.map((v) => ({ version: v.version, by: v.by, created: v.created })),
     plan: f.plan,
-    layout: f.layout,
     preset: versions.find((v) => v.by === "preset")?.version ?? null,
   };
 }
@@ -521,13 +520,18 @@ export function checkFlow(
     for (const s of steps) {
       if (s.op !== "call" || typeof s.tool !== "string" || !s.tool.startsWith("entities."))
         continue;
-      const t = litOf((s.args as Record<string, unknown> | undefined)?.type);
+      const given = (s.args as Record<string, unknown> | undefined)?.type;
+      const t = litOf(given);
       if (t && !visible.has(t))
         problems.push({
           step: s.id,
           at: "args.type",
           code: all.has(t) ? "closed-collection" : "unknown-collection",
         });
+      // The collection a step reads or writes is written in it, never worked out as it runs: so the map says where a
+      // flow writes before it runs (docs/sistema.md §4.4, D-48; Home Assistant's «Related» misses what a variable picks).
+      else if (given !== undefined && !t)
+        problems.push({ step: s.id, at: "args.type", code: "collection-not-literal" });
     }
   }
   // A piece of Boni that works on the record that started the flow (a mail) is only in a flow a record starts
@@ -813,7 +817,7 @@ export function createFlow(
     trigger: from ? from.trigger : { manual: true },
     inputs: from ? from.inputs : [],
     plan: from ? from.plan : { version: 1, steps: [] },
-    layout: from ? from.layout : null,
+    layout: null,
     by: "user",
     enabled: false,
     created: now,
@@ -831,7 +835,7 @@ export type SaveResult =
 export function saveUserFlow(
   store: UserStore,
   id: string,
-  edit: { base: number; name?: string; trigger?: unknown; plan: unknown; layout?: unknown },
+  edit: { base: number; name?: string; trigger?: unknown; plan: unknown },
   problems: readonly Problem[],
   now: number,
 ): SaveResult {
@@ -849,7 +853,7 @@ export function saveUserFlow(
       trigger,
       inputs: inputsOf(edit.plan, trigger),
       plan: edit.plan,
-      layout: edit.layout === undefined ? latest.layout : edit.layout,
+      layout: null,
       by: "user",
       enabled: latest.enabled,
       created: now,
@@ -881,7 +885,7 @@ export function revertFlow(
     trigger: v.trigger,
     inputs: v.inputs,
     plan: v.plan,
-    layout: v.layout,
+    layout: null,
     by: "preset" in to ? "preset" : "user",
     enabled: latest.enabled,
     created: now,
@@ -897,12 +901,34 @@ export type Out =
   | { t: "number"; value: number }
   | { t: "record"; text: string | null; n: number | null }
   | { t: "none" };
+/**
+ * What one of Boni's pieces found in a test (docs/sistema.md §4.2), for its line on the canvas: the collection the
+ * sender's rule sends the mail to (null: no rule, it goes on), what that sender already has proposed, the
+ * invitation's event (or none; `held`: an external calendar has it), the records the mail names, and how many
+ * proposals it would fold or accept alone (none in a test: they are made only when the mail is read).
+ */
+export type PieceSaid =
+  | { piece: "mail.rule"; to: string | null }
+  | { piece: "mail.known"; n: number }
+  | {
+      piece: "mail.invitation";
+      title: string | null;
+      day: string | null;
+      start: string | null;
+      held: boolean;
+    }
+  | { piece: "mail.relations"; found: { field: string; title: string }[] }
+  | { piece: "inbox.fold"; n: number }
+  | { piece: "inbox.accept_alone"; n: number };
+
 /** What a step of a test did: the policy's decision, what it gave, and what it would have done. */
 export interface TestStep {
   decision: string | null;
   rule: string | null;
   error: string | null;
   out: Out;
+  /** One of Boni's pieces: what it found, in its own terms. */
+  piece?: PieceSaid;
   would: {
     decision: string;
     rule: string | null;
@@ -961,6 +987,65 @@ function outOf(p: unknown): Out {
   return { t: "none" };
 }
 
+const paintedField = (p: unknown, k: string): unknown =>
+  (p as PaintedLike | null)?.t === "rec" ? (p as PaintedLike).fields?.[k] : undefined;
+const paintedText = (p: unknown): string | null => {
+  const v = p as PaintedLike | null;
+  return v?.t === "v" && typeof v.value === "string" && v.value ? short(v.value) : null;
+};
+const paintedNumber = (p: unknown): number => {
+  const v = p as PaintedLike | null;
+  return v?.t === "v" && typeof v.value === "number" ? v.value : 0;
+};
+
+/** What a piece's output says, read with the store (a relation's record by its title, a field by its name). */
+function pieceSaid(store: UserStore, tool: string, out: unknown): PieceSaid | undefined {
+  const v = out as PaintedLike | null;
+  switch (tool) {
+    case "mail.rule":
+      return { piece: tool, to: paintedText(out) };
+    case "mail.known":
+      return { piece: tool, n: v?.t === "list" ? (v.items?.length ?? 0) : 0 };
+    case "mail.invitation": {
+      const title = paintedText(paintedField(out, "titulo"));
+      const uid = paintedText(paintedField(out, "uid"));
+      return {
+        piece: tool,
+        title,
+        day: paintedText(paintedField(out, "dia")),
+        start: paintedText(paintedField(out, "inicio")),
+        held: !!title && !uid,
+      };
+    }
+    case "mail.relations": {
+      const types = Object.values(store.schema().types);
+      const found: { field: string; title: string }[] = [];
+      for (const [key, rec] of Object.entries(v?.t === "rec" ? (v.fields ?? {}) : {})) {
+        const def = types.find((t) => t.key === key);
+        for (const [fk, id] of Object.entries((rec as PaintedLike | null)?.fields ?? {})) {
+          const rid = paintedText(id);
+          const e = rid ? store.get(rid) : null;
+          if (!e) continue;
+          const title =
+            e.entity.values[types.find((t) => t.id === e.entity.type)?.titleField ?? ""];
+          const field = def?.fields.find((f) => f.key === fk || f.id === fk)?.name ?? fk;
+          if (
+            typeof title === "string" &&
+            !found.some((x) => x.field === field && x.title === title)
+          )
+            found.push({ field, title: short(title) });
+        }
+      }
+      return { piece: tool, found: found.slice(0, 6) };
+    }
+    case "inbox.fold":
+    case "inbox.accept_alone":
+      return { piece: tool, n: paintedNumber(out) };
+    default:
+      return undefined;
+  }
+}
+
 /** A dry run as the editor overlays it on the canvas: each step's decision, value and what it would have done. */
 export function testView(
   store: UserStore,
@@ -981,15 +1066,29 @@ export function testView(
   },
   sample: { mail: string; subject: string } | null,
   titleOf: (tool: string) => string | null,
+  plan: unknown = null,
 ): TestView {
   const types = Object.values(store.schema().types);
+  const tools = new Map(
+    stepsOf(plan).flatMap((x) =>
+      x.op === "call" && typeof x.tool === "string" ? [[x.id, x.tool]] : [],
+    ),
+  );
   const steps: Record<string, TestStep> = {};
   for (const s of store.journal.steps(r.run)) {
     const d = (s.detail ?? {}) as { code?: unknown };
+    // A piece that ended the run is logged twice (its call, then «end»): the call's line says what it found.
+    if (s.decision === "end" && steps[s.step]) {
+      steps[s.step] = { ...(steps[s.step] as TestStep), decision: "end", rule: s.rule };
+      continue;
+    }
+    const tool = tools.get(s.step);
+    const said = tool ? pieceSaid(store, tool, r.outputs[s.step]) : undefined;
     steps[s.step] = {
       decision: s.decision,
       rule: s.rule,
       error: s.decision === "stopped" && typeof d.code === "string" ? d.code : null,
+      ...(said ? { piece: said } : {}),
       out: outOf(r.outputs[s.step]),
       would: (r.would[s.step] ?? []).map((w) => {
         const type = textOfPainted(w.args.type);

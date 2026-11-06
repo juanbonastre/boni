@@ -46,6 +46,7 @@ export {
   dataLevel,
   dataRowFixed,
   dataRowTarget,
+  flowRowTarget,
   resolveTemplateLinks,
   SYS,
   type TemplateChange,

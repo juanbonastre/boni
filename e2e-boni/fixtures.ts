@@ -742,9 +742,196 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
         }
         return [200, rowOf(id)];
       };
+      // «Flujos» (apps/server/src/flowsCollection.ts): a row per flow the agent's list has (its `GET api/agent/flows`),
+      // a change to a row done to its flow with the server's rules (Boni's keep their name and are never deleted).
+      const FL = "t_sys_flujos";
+      const FR = "sys_flow_";
+      type FlowHere = {
+        id: string;
+        name: string;
+        version: number;
+        trigger: Record<string, unknown>;
+        by: string;
+        enabled: boolean;
+        steps: number;
+        runs: number;
+        last: number | null;
+      };
+      let flowsHere: FlowHere[] | null = null;
+      const flowsGone: FlowHere[] = [];
+      const flowsNow = (): FlowHere[] => {
+        flowsHere ??= JSON.parse(
+          JSON.stringify(
+            ((opts.agent?.["GET api/agent/flows"]?.[0] as { flows?: unknown[] } | undefined)
+              ?.flows ?? []) as FlowHere[],
+          ),
+        ) as FlowHere[];
+        return flowsHere;
+      };
+      let flowsUi: { open: boolean; hidden: string[]; views?: unknown[] } = {
+        open: false,
+        hidden: [],
+      };
+      const DAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+      const flowWords = (on: Record<string, unknown>) => {
+        if (typeof on.created === "string") {
+          const named = [correos, libros, ...madeCols].find(
+            (c) => (c as { key?: string }).key === on.created,
+          );
+          return `Llega a ${named?.name ?? on.created}`;
+        }
+        const sch = on.schedule as { every?: string; at?: string; day?: number } | undefined;
+        if (sch) {
+          const at = sch.at ?? "08:00";
+          if (sch.every === "hour")
+            return at.slice(3) === "00" ? "Cada hora" : `Cada hora a y ${at.slice(3)}`;
+          if (sch.every === "week") return `Cada ${DAYS[sch.day ?? 1]} a las ${at}`;
+          return `Cada día a las ${at}`;
+        }
+        return "Disparado por el usuario";
+      };
+      const wordId = (w: string) => `o_disp_${w.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+      const flowRows = () =>
+        flowsNow()
+          .slice()
+          .sort(
+            (a, z) => Number(z.enabled) - Number(a.enabled) || a.name.localeCompare(z.name, "es"),
+          )
+          .map((f) => ({
+            id: `${FR}${f.id}`,
+            values: {
+              f_titulo: f.name,
+              f_disparador: wordId(flowWords(f.trigger)),
+              f_estado: f.enabled ? "o_estado_encendido" : "o_estado_apagado",
+              f_de: f.by === "preset" ? "o_de_boni" : "o_de_tu",
+              f_pasos: f.steps,
+              f_ejecuciones: f.runs,
+              ...(f.last !== null ? { f_ultima: new Date(f.last).toISOString() } : {}),
+              f_version: f.version,
+            },
+            updated: f.last ?? 0,
+            ...(f.by === "preset" ? { fixed: ["f_titulo"] } : {}),
+          }));
+      const flowsType = () => ({
+        id: FL,
+        key: "flujos",
+        name: "Flujos",
+        icon: "⚡",
+        titleField: "f_titulo",
+        count: flowsNow().length,
+        level: "private",
+        rules: [],
+        rowUi: flowsUi,
+        system: true,
+        editable: ["f_titulo", "f_estado"],
+        fields: [
+          { id: "f_titulo", key: "titulo", name: "Nombre", type: "text" },
+          {
+            id: "f_disparador",
+            key: "disparador",
+            name: "Disparador",
+            type: "select",
+            options: [...new Set(flowsNow().map((f) => flowWords(f.trigger)))].map((w) => ({
+              id: wordId(w),
+              name: w,
+            })),
+          },
+          {
+            id: "f_estado",
+            key: "estado",
+            name: "Estado",
+            type: "select",
+            options: [
+              { id: "o_estado_encendido", name: "Encendido" },
+              { id: "o_estado_apagado", name: "Apagado" },
+            ],
+          },
+          {
+            id: "f_de",
+            key: "de",
+            name: "Versión de",
+            type: "select",
+            options: [
+              { id: "o_de_boni", name: "Boni" },
+              { id: "o_de_tu", name: "Ti" },
+            ],
+          },
+          { id: "f_pasos", key: "pasos", name: "Pasos", type: "number" },
+          { id: "f_ejecuciones", key: "ejecuciones", name: "Ejecuciones", type: "number" },
+          { id: "f_ultima", key: "ultima", name: "Última", type: "datetime" },
+          { id: "f_version", key: "version", name: "Versión", type: "number" },
+        ],
+      });
+      const flowsAnswer = (method: string, p: string, body?: unknown): [number, string] | null => {
+        const values = ((body ?? {}) as { values?: Record<string, unknown> }).values ?? {};
+        const rowOf = (id: string) =>
+          JSON.stringify({ row: flowRows().find((r) => r.id === id) ?? null });
+        if (p === `api/data/types/${FL}/rows` && method === "GET")
+          return [
+            200,
+            JSON.stringify({
+              rows: flowRows(),
+              titles: {},
+              truncated: false,
+              ghosts: [],
+              columns: {},
+            }),
+          ];
+        if (p === `api/data/types/${FL}/rows` && method === "POST") {
+          const n = flowsNow().length + flowsGone.length + 1;
+          const name =
+            typeof values.f_titulo === "string" && values.f_titulo
+              ? values.f_titulo
+              : "Nuevo flujo";
+          const id = `nuevo-flujo-${n}`;
+          flowsNow().push({
+            id,
+            name,
+            version: 1,
+            trigger: { manual: true },
+            by: "user",
+            enabled: false,
+            steps: 0,
+            runs: 0,
+            last: null,
+          });
+          return [200, rowOf(`${FR}${id}`)];
+        }
+        if (p === `api/data/types/${FL}/row-ui`) {
+          flowsUi = { ...flowsUi, ...((body ?? {}) as Partial<typeof flowsUi>) };
+          return [200, JSON.stringify(flowsUi)];
+        }
+        const m = /^api\/data\/rows\/(sys_flow_[^/]+?)(\/restore)?$/.exec(p);
+        if (!m) return null;
+        const id = m[1] as string;
+        const fid = id.slice(FR.length);
+        if (m[2] && method === "POST") {
+          const i = flowsGone.findIndex((f) => f.id === fid);
+          if (i >= 0) flowsNow().push(...flowsGone.splice(i, 1));
+          return [200, "{}"];
+        }
+        const f = flowsNow().find((x) => x.id === fid);
+        if (!f) return [404, '{"error":"not-found"}'];
+        if (method === "DELETE") {
+          if (f.by === "preset") return [400, '{"error":"flow-boni-delete"}'];
+          flowsGone.push(...flowsNow().splice(flowsNow().indexOf(f), 1));
+          return [200, "{}"];
+        }
+        for (const [k, v] of Object.entries(values)) {
+          if (k === "f_titulo") {
+            if (f.by === "preset") return [400, '{"error":"flow-boni-name"}'];
+            f.name = String(v ?? "").trim() || f.name;
+            f.version++;
+          } else if (k === "f_estado") f.enabled = v === "o_estado_encendido";
+          else return [400, '{"error":"read-only"}'];
+        }
+        return [200, rowOf(id)];
+      };
       const dataAnswer = (method: string, p: string, body?: unknown): [number, string] => {
         const mine = myAnswer(method, p, body);
         if (mine) return mine;
+        const ours = flowsAnswer(method, p, body);
+        if (ours) return ours;
         const b = (body ?? {}) as { values?: Record<string, unknown> };
         if (p === "api/data/types" && method === "POST") {
           const want = (body ?? {}) as { name?: string; parent?: string };
@@ -801,6 +988,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
                 ...madeCols.map((c) => ({ ...c, count: own(c.id), parent: parents[c.id] })),
                 ...boni,
                 myType(),
+                flowsType(),
               ],
             }),
           ];
@@ -1201,6 +1389,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/audit\/rows\/[^/]+$/, "/audit/rows/:id")
             .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")
             .replace(/\/live\/[^/]+$/, "/live/:id")
+            .replace(/\/origin\/[^/]+$/, "/origin/:id")
             .replace(/\/flows\/(?!catalog$|check$)[^/]+$/, "/flows/:id")
             .replace(/\/flows\/[^/]+\/(enabled|revert|run|test)$/, "/flows/:id/$1")
             .replace(/\/mail\/webmail\/[^/]+$/, "/mail/webmail/:id")}`;
@@ -1281,7 +1470,8 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       ): Promise<[number, string] | null> => {
         const p = path.split("?")[0]!;
         const own = /^api\/data\/types\/(t_sys_[a-z]+)\/rows$/.exec(p);
-        if (own && method === "GET" && own[1] !== "t_sys_datos")
+        // «Mis datos» and «Flujos» are made apart (myRows, flowRows), as on the server.
+        if (own && method === "GET" && own[1] !== "t_sys_datos" && own[1] !== "t_sys_flujos")
           return [200, JSON.stringify(await call("list", own[1]))];
         if (p === "api/data/blocks/rows") {
           const b = (body ?? {}) as { block?: Record<string, unknown>; drill?: string };

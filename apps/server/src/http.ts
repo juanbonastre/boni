@@ -9,7 +9,7 @@ import {
 } from "@boni/calendar";
 import { rolesOf } from "@boni/entities";
 import { exportChunks, releaseSent } from "@boni/export";
-import { dataRowTarget } from "@boni/views";
+import { dataRowTarget, flowRowTarget } from "@boni/views";
 import { readAccount, saveExternals, savePrefs, validExternals, validPrefs } from "./account.ts";
 import { type AgentHost, serveAgent } from "./agent.ts";
 import {
@@ -42,6 +42,7 @@ import {
   DataError,
   deleteCollection,
   fileInline,
+  flowRowOf,
   getRow,
   listRows,
   listTypes,
@@ -64,6 +65,15 @@ import {
 import type { Db } from "./db.ts";
 import { ExternalItems } from "./externalItems.ts";
 import type { Feeds } from "./feeds.ts";
+import { checkFlow } from "./flows.ts";
+import {
+  createFlowRow,
+  deleteFlowRow,
+  restoreFlowRow,
+  SYS_FLOWS,
+  updateFlowRow,
+  withFlows,
+} from "./flowsCollection.ts";
 import { clientAddress, LoginGuard } from "./limits.ts";
 import { MailError, type Mails } from "./mail.ts";
 import { mcpAnswer } from "./mcp.ts";
@@ -430,14 +440,27 @@ export function makeApp(opts: ServerOptions): App {
       const sys = () =>
         withMyData(
           store,
-          systemCollections(store, {
-            now: now(),
-            usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
-            // The zone the blocks take «today» in (below), so a record and «this month» agree.
-            tz: opts.tz ?? "Europe/Madrid",
-          }),
+          withFlows(
+            store,
+            systemCollections(store, {
+              now: now(),
+              usdToEur: opts.agent?.models?.config(s.user.id).usdToEur ?? 0.9,
+              // The zone the blocks take «today» in (below), so a record and «this month» agree.
+              tz: opts.tz ?? "Europe/Madrid",
+            }),
+          ),
           { now: now(), tz: opts.tz ?? "Europe/Madrid" },
         );
+      // A flow turned on from «Flujos» passes the same checklist as in its editor.
+      const flowProblems = (f: { trigger: unknown; plan: unknown }) => {
+        const host = opts.agent;
+        // With no agent here its checklist cannot be made: a flow is not turned on blind.
+        if (!host) return [{ step: null, at: null, code: "no-agent" }];
+        return checkFlow(store, host.tools, f, {
+          modules: host.mailModulesOf?.(s.user.id) ?? ["tasks", "events"],
+          mailType: host.mailTypeOf?.(s.user.id) ?? null,
+        }).problems;
+      };
       try {
         if (route === "GET /api/data/today") {
           // Inicio's «Hoy» on the phone (today.ts): the device's timezone says which day it is.
@@ -529,6 +552,12 @@ export function makeApp(opts: ServerOptions): App {
           recordUserRead(store, s.device, "data.rows", type, ids, false, now());
           return send(res, 200, { ...out, columns: systemColumns(store, ids) });
         }
+        if (route === "POST /api/data/types/:type/rows" && params.type === SYS_FLOWS) {
+          // «Nuevo» in «Flujos»: a flow by hand, off; its row back.
+          const b = (await bodyOf(req)) as { values?: unknown };
+          const id = createFlowRow(store, b.values ?? {}, now());
+          return send(res, 200, { row: flowRowOf(sys(), id) });
+        }
         if (route === "POST /api/data/types/:type/rows" && params.type === SYS_DATA) {
           // «Nuevo» in «Mis datos»: a collection (or a page), its row back.
           const b = (await bodyOf(req)) as { values?: unknown };
@@ -582,6 +611,23 @@ export function makeApp(opts: ServerOptions): App {
         if (route === "PUT /api/data/audit/settings") {
           const r = setAuditSettings(store, await bodyOf(req));
           return r ? send(res, 200, r) : send(res, 400, { error: "bad-request" });
+        }
+        // A row of «Flujos» is a flow: what changes in it is done to the flow (flowsCollection.ts).
+        if (flowRowTarget(params.id ?? "") !== null) {
+          const id = params.id ?? "";
+          if (route === "PUT /api/data/rows/:id") {
+            const b = (await bodyOf(req)) as { values?: unknown };
+            updateFlowRow(store, id, b.values, flowProblems, now());
+            return send(res, 200, { row: flowRowOf(sys(), id) });
+          }
+          if (route === "DELETE /api/data/rows/:id") {
+            deleteFlowRow(store, id);
+            return send(res, 200, {});
+          }
+          if (route === "POST /api/data/rows/:id/restore") {
+            restoreFlowRow(store, id);
+            return send(res, 200, {});
+          }
         }
         // A row of «Mis datos» is a collection or a page: what changes in it is done to that (myData.ts).
         if (dataRowTarget(params.id ?? "") !== null) {

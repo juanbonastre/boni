@@ -1126,6 +1126,8 @@ describe("the agent, with a planner that behaves", () => {
     const accepted = await agent.acceptProposal(first, "personal");
     const made = env.store.runOps(accepted.run).find((o) => o.kind === "create")?.target as string;
     expect(env.store.get(made)?.entity.deleted).toBeUndefined();
+    // The acceptance keeps what it applied: from the entry back to the run that proposed it («¿De dónde viene?»).
+    expect(journal.run(accepted.run)?.proposal).toBe(first);
     // Without the acceptance's run there is nothing to undo; with it, the entry goes and the proposal waits again.
     expect(agent.restoreProposal(first)).toBe("cannot-undo");
     expect(agent.restoreProposal(first, accepted.run)).toBe("ok");

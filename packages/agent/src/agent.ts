@@ -2545,6 +2545,8 @@ export class Agent {
       origin: "accepted",
       device: null,
       started: this.now(),
+      // What it applies: a record it makes leads back to the run that proposed it («¿De dónde viene?»).
+      proposal: id,
     });
     const st = this.newState(
       run,

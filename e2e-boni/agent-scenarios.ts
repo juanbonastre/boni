@@ -601,6 +601,87 @@ export const RUN_2 = {
     },
   ],
 };
+/** A reading of a mail by «Leer correo», as its Recorrido says it: what each step did, one skipped (docs/sistema.md §4.4). */
+export const RUN_MAIL = {
+  ...RUN_2,
+  id: "run-3",
+  status: "done",
+  origin: "background",
+  request: null,
+  flow: "leer-correo",
+  flowVersion: 3,
+  inputs: ["mail", "text"],
+  // The mail it read, what it proposed and where that went: the way the map draws (docs/sistema.md §4.4).
+  input: {
+    id: "e_01m6mail0001",
+    title: "Reunión con secretaría el jueves",
+    collection: "Correos",
+    type: "t_01m6correo",
+  },
+  read: [
+    {
+      collection: "Correos",
+      type: "t_01m6correo",
+      titles: ["Reunión con secretaría el jueves"],
+      n: 1,
+    },
+  ],
+  proposals: [{ title: "Preparar la reunión", status: "accepted", type: "t_01tarea" }],
+  // Where the map draws it, as the server says.
+  owner: "flow:leer-correo",
+  steps: [
+    {
+      id: "m",
+      op: "call",
+      what: "entities.get",
+      title: "Leer",
+      args: {},
+      decision: "allow",
+      rule: "P1",
+      error: null,
+      deps: [],
+      uses: ["mail"],
+      answers: [],
+    },
+    {
+      id: "r",
+      op: "read",
+      what: "read_message",
+      args: {},
+      decision: "allow",
+      rule: "P1",
+      error: null,
+      deps: [],
+      uses: ["text"],
+      answers: [],
+    },
+    {
+      id: "n0_tasks_f",
+      op: "read",
+      what: "fill",
+      args: {},
+      decision: "skip",
+      rule: null,
+      error: null,
+      deps: ["r"],
+      uses: [],
+      answers: [],
+    },
+    {
+      id: "n0_tasks",
+      op: "call",
+      what: "entities.create",
+      title: "Crear",
+      args: {},
+      decision: "propose",
+      rule: "P7",
+      error: null,
+      deps: ["r"],
+      uses: [],
+      answers: [],
+    },
+  ],
+};
 export const RUNS = {
   runs: [
     {
@@ -1549,68 +1630,6 @@ export const STORAGE = {
   advice: [{ code: "model-texts", bytes: 130_000_000 }],
 };
 
-/** The declared flow with a week's invented numbers («Modelos», task 59b), as GET api/agent/pipeline answers. */
-const flowNode = (
-  id: string,
-  kind: "source" | "model" | "code" | "inbox" | "user" | "store",
-  role: string | null,
-  calls = 0,
-  cost = 0,
-  runs = 0,
-  accuracy: { judged: number; right: number } | null = null,
-) => ({ id, kind, role, calls, cost, last: calls ? 1761900000000 : null, runs, accuracy });
-export const FLOW = {
-  days: 7,
-  from: 1761300000000,
-  to: 1761904800000,
-  nodes: [
-    flowNode("mail", "source", null, 0, 0, 42),
-    flowNode("conversation", "source", null, 0, 0, 5),
-    flowNode("external", "source", null),
-    flowNode("assistants", "source", null),
-    flowNode("read_message", "model", "reader", 40, 0.31),
-    flowNode("classify", "model", "decider", 40, 0.02, 0, { judged: 4, right: 3 }),
-    flowNode("fill", "model", "reader", 12, 0.09, 0, { judged: 4, right: 4 }),
-    flowNode("calendar", "code", null),
-    flowNode("relations", "code", null),
-    flowNode("inbox", "inbox", null, 0, 0, 3, { judged: 9, right: 7 }),
-    flowNode("user", "user", null),
-    flowNode("store", "store", null),
-    flowNode("planner", "model", "planner", 5, 0.4),
-    flowNode("readers", "model", "reader", 2, 0.01),
-    flowNode("tools", "code", null),
-    flowNode("policy", "code", null),
-    flowNode("reviewer", "model", "reviewer", 1, 0.05, 1),
-    flowNode("guide", "code", null),
-    flowNode("learners", "code", null),
-  ],
-  edges: [
-    { from: "mail", to: "read_message", what: "mails", n: 42 },
-    { from: "read_message", to: "classify", what: "items", n: 40 },
-    { from: "classify", to: "fill", what: "collection", n: 12 },
-    { from: "fill", to: "calendar", what: "fields", n: 12 },
-    { from: "external", to: "calendar", what: "events", n: null },
-    { from: "calendar", to: "relations", what: "crossed", n: 12 },
-    { from: "relations", to: "inbox", what: "proposals", n: 12 },
-    { from: "inbox", to: "user", what: "cards", n: 9 },
-    { from: "user", to: "store", what: "accepted", n: 7 },
-    { from: "user", to: "reviewer", what: "decisions", n: 9 },
-    { from: "reviewer", to: "guide", what: "suggestions", n: 1 },
-    { from: "guide", to: "read_message", what: "guide", n: null },
-    { from: "user", to: "learners", what: "decisions", n: 9 },
-    { from: "learners", to: "inbox", what: "alone", n: 0 },
-    { from: "conversation", to: "planner", what: "requests", n: 5 },
-    { from: "planner", to: "readers", what: "texts", n: 2 },
-    { from: "planner", to: "tools", what: "calls", n: 11 },
-    { from: "tools", to: "policy", what: "calls", n: 11 },
-    { from: "policy", to: "store", what: "changes", n: 3 },
-    { from: "policy", to: "inbox", what: "proposals", n: 2 },
-    { from: "planner", to: "conversation", what: "answers", n: 5 },
-    { from: "assistants", to: "store", what: "reads", n: null },
-  ],
-};
-
-/** The account's flows (docs/flujos.md, F1): the mail reading as kept data, with a week's invented runs. */
 export const FLOWS = {
   flows: [
     {
@@ -1758,6 +1777,242 @@ export const FLOW_DETAIL = {
   layout: null,
   preset: 3,
 };
+
+/**
+ * Boni's map (docs/sistema.md §4.4, F8) with a week's invented numbers, as GET api/agent/map answers (apps/server
+ * flowMap.ts): the mail coming in and «Leer correo» proposing in Tarea and Evento, a flow of his by hand that writes,
+ * the conversation, the guide's reviewer, Juan from his apps, Claude through the MCP and a page over Tarea. Generated
+ * collection ids and his collections' names, as the server sends them.
+ */
+const mapNode = (n: Record<string, unknown> & { id: string; kind: string }) => ({
+  name: null,
+  code: null,
+  icon: "",
+  runs: 0,
+  last: null,
+  calls: 0,
+  cost: 0,
+  models: [],
+  roles: [],
+  proposals: 0,
+  accepted: 0,
+  ...n,
+});
+const mapEdge = (from: string, to: string, kind: string, n: number | null, more = {}) => ({
+  from,
+  to,
+  kind,
+  n,
+  outside: false,
+  ...more,
+});
+export const MAP = {
+  days: 7,
+  from: 1761300000000,
+  to: 1761904800000,
+  nodes: [
+    mapNode({ id: "conn:mail", kind: "connector", code: "mail", pack: "correo" }),
+    mapNode({
+      id: "col:t_01m6correo",
+      kind: "collection",
+      name: "Correos",
+      key: "correo",
+      rows: 412,
+      parent: null,
+      pack: "correo",
+    }),
+    mapNode({
+      id: "col:t_01trabajo",
+      kind: "collection",
+      name: "Trabajo",
+      key: "trabajo",
+      rows: 3,
+    }),
+    mapNode({
+      id: "col:t_01tarea",
+      kind: "collection",
+      name: "Tarea",
+      key: "tarea",
+      rows: 128,
+      parent: "col:t_01trabajo",
+    }),
+    mapNode({
+      id: "col:t_01evento",
+      kind: "collection",
+      name: "Evento",
+      key: "evento",
+      rows: 64,
+      parent: "col:t_01trabajo",
+    }),
+    mapNode({ id: "col:t_01gastos", kind: "collection", name: "Gastos", key: "gastos", rows: 905 }),
+    mapNode({
+      id: "flow:leer-correo",
+      kind: "flow",
+      name: "Leer correo",
+      trigger: { created: "correo" },
+      on: true,
+      by: "preset",
+      boni: true,
+      runs: 42,
+      last: 1761900000000,
+      calls: 96,
+      cost: 0.41,
+      models: ["claude-haiku-4-5", "jev-1.14.0"],
+      roles: ["reader", "decider"],
+      proposals: 12,
+      accepted: 9,
+      plan: FLOW_PLAN,
+      steps: [
+        flowStep("m", "call", "entities.get", { title: "Leer", ran: { allow: 42 } }),
+        flowStep("r", "read", "read_message", { ran: { allow: 42 } }),
+        flowStep("n0_tasks_f", "read", "fill", { each: true, ran: { allow: 12 } }),
+        flowStep("n0_tasks", "call", "entities.create", {
+          title: "Crear",
+          detail: "Tarea",
+          each: true,
+          ran: { propose: 12 },
+        }),
+      ],
+      pack: "correo",
+    }),
+    mapNode({
+      id: "flow:apuntar-gasto",
+      kind: "flow",
+      name: "Apuntar gasto",
+      trigger: { manual: true, inputs: [{ name: "concepto" }] },
+      on: false,
+      by: "user",
+      runs: 3,
+      steps: [],
+    }),
+    mapNode({
+      id: "boni:chat",
+      kind: "boni",
+      code: "chat",
+      runs: 5,
+      calls: 7,
+      cost: 0.12,
+      roles: ["planner", "reader"],
+      models: ["claude-opus-5-5"],
+    }),
+    mapNode({
+      id: "boni:review",
+      kind: "boni",
+      code: "review",
+      runs: 1,
+      calls: 2,
+      cost: 0.03,
+      roles: ["reviewer"],
+      pack: "correo",
+    }),
+    // The Bandeja: what «Leer correo» and the conversation propose waits in it.
+    mapNode({
+      id: "boni:inbox",
+      kind: "boni",
+      code: "inbox",
+      proposals: 14,
+      accepted: 10,
+      rejected: 2,
+      pending: 3,
+      through: true,
+    }),
+    mapNode({ id: "actor:user", kind: "actor", code: "user" }),
+    mapNode({
+      id: "actor:mcp:claude-ejemplo",
+      kind: "actor",
+      code: "assistant",
+      name: "claude-ejemplo",
+    }),
+    mapNode({ id: "page:p_01agenda", kind: "page", name: "Agenda" }),
+    // One of the app's own (e2e-boni fixtures' «Libros»): «Ver en el mapa» from its menu puts it in the centre.
+    mapNode({ id: "col:t_libro", kind: "collection", name: "Libros", key: "libro", rows: 4 }),
+  ],
+  edges: [
+    mapEdge("conn:mail", "col:t_01m6correo", "brings", 42, { outside: true }),
+    mapEdge("col:t_01m6correo", "flow:leer-correo", "starts", 42, { outside: true }),
+    mapEdge("flow:leer-correo", "boni:inbox", "proposes", 12, {
+      outside: true,
+      steps: ["n0_tasks"],
+      into: ["col:t_01evento", "col:t_01tarea", "col:t_libro"],
+      per: { "col:t_01tarea": 8, "col:t_01evento": 3, "col:t_libro": 1 },
+    }),
+    mapEdge("boni:chat", "boni:inbox", "proposes", 2, {
+      into: ["col:t_01gastos"],
+      per: { "col:t_01gastos": 2 },
+    }),
+    mapEdge("boni:inbox", "col:t_01tarea", "accepts", 7, { outside: true }),
+    mapEdge("boni:inbox", "col:t_01evento", "accepts", 2, { outside: true }),
+    mapEdge("boni:inbox", "col:t_01gastos", "accepts", 1),
+    mapEdge("boni:inbox", "col:t_libro", "accepts", 1, { outside: true }),
+    mapEdge("flow:apuntar-gasto", "col:t_01gastos", "writes", 3),
+    mapEdge("boni:chat", "col:t_01tarea", "writes", 2),
+    mapEdge("col:t_01gastos", "boni:chat", "reads", 30),
+    mapEdge("actor:user", "col:t_01tarea", "writes", 14),
+    mapEdge("actor:user", "col:t_01gastos", "writes", 61),
+    mapEdge("actor:user", "boni:inbox", "decides", 11),
+    mapEdge("boni:inbox", "boni:review", "learns", 9, { via: ["flow:leer-correo"] }),
+    mapEdge("boni:review", "flow:leer-correo", "improves", 1),
+    mapEdge("actor:mcp:claude-ejemplo", "col:t_01evento", "writes", 2),
+    mapEdge("col:t_01tarea", "page:p_01agenda", "shows", null),
+    mapEdge("actor:user", "col:t_libro", "writes", 3),
+  ],
+};
+/** A reading of a mail recommending books: it proposed two to Libros, one accepted (the e2e fixtures' «Libros»). */
+export const RUN_BOOK = {
+  ...RUN_MAIL,
+  id: "run-4",
+  input: {
+    id: "e_01m6mail0002",
+    title: "Libros para el club de lectura",
+    collection: "Correos",
+    type: "t_01m6correo",
+  },
+  read: [
+    {
+      collection: "Correos",
+      type: "t_01m6correo",
+      titles: ["Libros para el club de lectura"],
+      n: 1,
+    },
+  ],
+  proposals: [
+    { title: "Pedro Páramo", status: "accepted", type: "t_libro" },
+    { title: "Rayuela", status: "rejected", type: "t_libro" },
+  ],
+};
+/** «¿De dónde viene?» of a book «Leer correo» proposed and Juan accepted (apps/server origin.ts). */
+export const ORIGIN_MAIL = {
+  by: "flow",
+  at: Date.UTC(2026, 9, 20, 11, 30),
+  device: null,
+  run: {
+    id: "run-4",
+    flow: "leer-correo",
+    flowVersion: 3,
+    started: Date.UTC(2026, 9, 20, 9, 5),
+    owner: "flow:leer-correo",
+  },
+  input: {
+    id: "e_01m6mail0002",
+    title: "Libros para el club de lectura",
+    collection: "Correos",
+  },
+  proposal: {
+    title: "Pedro Páramo",
+    created: Date.UTC(2026, 9, 20, 9, 5, 3),
+    decided: Date.UTC(2026, 9, 20, 11, 30),
+    alone: false,
+  },
+};
+/** «¿De dónde viene?» of a record Juan wrote himself. */
+export const ORIGIN_USER = {
+  by: "user",
+  at: Date.UTC(2026, 9, 21, 17, 45),
+  device: "portatil",
+  run: null,
+  input: null,
+  proposal: null,
+};
 /** After «Guardar»: the user's version, Boni's still in the history. */
 export const FLOW_DETAIL_SAVED = {
   ...FLOW_DETAIL,
@@ -1809,7 +2064,7 @@ export const FLOW_CATALOG = {
     // Boni's pieces (docs/sistema.md §4.2, F7): the code that works on the mail, offered in a flow a mail starts.
     {
       name: "mail.rule",
-      title: "Reglas de la guía",
+      title: "Regla del remitente",
       effect: "piece",
       record: true,
       args: [
@@ -1871,6 +2126,13 @@ export const FLOW_CATALOG = {
         catalogField("dia", "Día", ["date"], "date"),
         catalogField("prioridad", "Prioridad", [], "select"),
       ],
+    },
+    // The mail's own collection (its key is what «Leer correo» starts on): «Llega a Correos».
+    {
+      key: "correo",
+      name: "Correos",
+      parent: null,
+      fields: [catalogField("asunto", "Asunto", ["title"])],
     },
   ],
   modules: ["tasks", "events"],

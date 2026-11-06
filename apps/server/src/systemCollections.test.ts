@@ -1,7 +1,12 @@
 import { openUserStore } from "@boni/store";
 import { describe, expect, it, vi } from "vitest";
 import { listTypes } from "./data.ts";
-import { SYS_DATA, SYSTEM_COLLECTIONS, systemCollections } from "./systemCollections.ts";
+import {
+  SYS_DATA,
+  SYS_FLOWS_ID,
+  SYSTEM_COLLECTIONS,
+  systemCollections,
+} from "./systemCollections.ts";
 
 /**
  * Boni's own records (calls to models, its activity, its runs) are dated by the account's day, as the blocks take
@@ -82,8 +87,8 @@ describe("Boni's own records", () => {
       },
     });
     expect(made).toBe(0);
-    // «Mis datos» is made apart, over these (myData.test.ts).
-    for (const id of SYSTEM_COLLECTIONS.filter((x) => x !== SYS_DATA))
+    // «Mis datos» and «Flujos» are made apart, over these (myData.test.ts, flowsCollection.test.ts).
+    for (const id of SYSTEM_COLLECTIONS.filter((x) => x !== SYS_DATA && x !== SYS_FLOWS_ID))
       expect(types.find((t) => t.id === id)?.count).toBe(sys.rows(id).length);
     expect(sys.rows("t_sys_runs")).toHaveLength(1);
     // Minutes later with nothing new: the same; a new read recorded: made again.

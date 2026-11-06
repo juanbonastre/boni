@@ -37,6 +37,7 @@ import {
   openWebmail,
   peekMail,
   rejectProposal,
+  showMap,
   toggleInbox,
   useStore,
 } from "../store.ts";
@@ -46,6 +47,7 @@ import { triggerText } from "./FlowEditor.tsx";
 import { FlowPreview } from "./FlowPreview.tsx";
 import { type OptionsLoader, SearchList } from "./FormView.tsx";
 import { GmailMark, KeptMail } from "./MailIcons.tsx";
+import { MenuRow, PointMenu } from "./Popover.tsx";
 
 /**
  * The inbox (Juan, 2026-10-22): a panel on the right that comes out when something new arrives, and the same cards
@@ -443,6 +445,8 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
   // A time Boni suggests for a task (the first free hour): one tap takes it, and it goes with the acceptance.
   const ask = c?.suggestedTime?.outcome === "ask" ? c.suggestedTime : null;
   const [takeTime, setTakeTime] = useState(false);
+  // The right button (I-17): the card's menu where the pointer is, with «Ver en el mapa» (I-25).
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const taken = takeTime && ask ? ask : null;
   const start = c?.start ?? taken?.start ?? null;
   const end = c?.end ?? taken?.end ?? null;
@@ -553,7 +557,46 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
   return (
     <section
       className={`card proposal inbox-card${more ? " detailed" : " compact"}${two ? " two" : ""}`}
+      onContextMenu={(e) => {
+        // Text chosen in the card keeps the browser's own menu (to copy it).
+        if (window.getSelection()?.toString()) return;
+        e.preventDefault();
+        setMenu({ x: e.clientX, y: e.clientY });
+      }}
     >
+      {menu && (
+        <PointMenu x={menu.x} y={menu.y} label={t("inbox.menu")} onClose={() => setMenu(null)}>
+          {(close) => (
+            <div className="menu-list" role="menu">
+              <MenuRow
+                label={t("inbox.open")}
+                onClick={() => {
+                  close();
+                  void openProposal(p.id);
+                }}
+              />
+              {p.run && (
+                <MenuRow
+                  label={t("log.trace")}
+                  onClick={() => {
+                    close();
+                    openTrace(p.run as string);
+                  }}
+                />
+              )}
+              {p.run && (
+                <MenuRow
+                  label={t("map.show")}
+                  onClick={() => {
+                    close();
+                    showMap(p.madeBy ? `flow:${p.madeBy}` : "boni:chat", { run: p.run as string });
+                  }}
+                />
+              )}
+            </div>
+          )}
+        </PointMenu>
+      )}
       <p className="inbox-kind">
         <Inbox size={12} strokeWidth={1.8} aria-hidden="true" />
         {t("inbox.kind.proposal")}
@@ -1109,6 +1152,17 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
               onClick={() => openTrace(p.run as string)}
             >
               {t("log.trace")}
+            </button>
+          )}
+          {p.run && (
+            <button
+              type="button"
+              className="btn ghost small"
+              onClick={() =>
+                showMap(p.madeBy ? `flow:${p.madeBy}` : "boni:chat", { run: p.run as string })
+              }
+            >
+              {t("map.show")}
             </button>
           )}
         </div>

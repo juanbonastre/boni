@@ -1,7 +1,7 @@
 /**
  * A run drawn on the flow canvas (the Recorrido, docs/flujos.md F3; task 59c): the trigger with what it bound, each
- * step as the flow editor names it, an arrow for each value a step took from another, and on each node what came of
- * it: the policy's decision (done, proposed, stopped, skipped) and the first line of what a model answered. Read
+ * step as the flow editor names it, downwards in the order the run went (as its flow's canvas), and on each node what
+ * came of it: the policy's decision (done, proposed, stopped, skipped) and the first line of what a model answered. Read
  * only; a click on a node brings its line of the steps' list into view. It replaces the SVG diagram of task 52.
  */
 import {
@@ -23,7 +23,7 @@ import "@xyflow/react/dist/style.css";
 import { Bot, Braces, HelpCircle, MessageSquare, Zap } from "lucide-react";
 import { memo, useEffect, useMemo } from "react";
 import type { RunDetail, RunStep } from "../core/agent.ts";
-import { flowLayout } from "../core/flowLayout.ts";
+import { stepLayout } from "../core/flowLayout.ts";
 import { useStore } from "../store.ts";
 import { inputName } from "./FlowStepPanel.tsx";
 
@@ -48,8 +48,8 @@ function nameOf(t: T, s: RunStep): string {
   return s.what;
 }
 
-/** What came of a step, in a word or two. */
-function lineOf(t: T, s: RunStep): string {
+/** What came of a step, in a word or two (also the map's, with a run on it). */
+export function runStepLine(t: T, s: RunStep): string {
   if (s.error) return t("run.node.stopped", { why: s.error });
   if (s.decision === null) return t("run.node.never");
   const k = `run.node.${s.decision}`;
@@ -129,19 +129,22 @@ function Canvas({ detail, onPick }: { detail: RunDetail; onPick: (id: string) =>
   const { fitView } = useReactFlow();
   const { nodes, edges } = useMemo(() => {
     const steps = detail.steps;
-    const links: { from: string; to: string }[] = [];
-    for (const s of steps) {
-      for (const d of s.deps) links.push({ from: d, to: s.id });
-      if (s.uses.length && detail.inputs.length) links.push({ from: TRIGGER, to: s.id });
-    }
     const withTrigger = detail.inputs.length > 0;
-    const boxes = [
-      ...(withTrigger
-        ? [{ id: TRIGGER, width: WIDTH, height: 40 + Math.min(detail.inputs.length, 9) * 18 + 8 }]
-        : []),
-      ...steps.map((s) => ({ id: s.id, width: WIDTH, height: s.answers.length ? 96 : 76 })),
-    ];
-    const at = flowLayout(boxes, links);
+    // Downwards in the order the run went (the same as its flow's canvas, docs/sistema.md §4.4): what did not run is
+    // greyed in its place.
+    const l = stepLayout(
+      steps.map((s) => ({ id: s.id, op: s.op })),
+      {
+        trigger: withTrigger
+          ? { id: TRIGGER, height: 40 + Math.min(detail.inputs.length, 9) * 18 + 8 }
+          : null,
+        width: WIDTH,
+        height: (id) => (steps.find((s) => s.id === id)?.answers.length ? 96 : 76),
+        gapY: 30,
+      },
+    );
+    const at = l.at;
+    const links = l.links;
     const nodes: Card[] = [
       ...(withTrigger
         ? [
@@ -165,10 +168,11 @@ function Canvas({ detail, onPick }: { detail: RunDetail; onPick: (id: string) =>
           data: {
             step: s,
             name: nameOf(t, s),
-            line: lineOf(t, s),
+            line: runStepLine(t, s),
             answer: firstWords(s.answers[0]),
           },
-          className: `fl-node ${s.op === "read" ? "model" : "code"}`,
+          // A click picks its line in the list below, never starts a pan.
+          className: `fl-node ${s.op === "read" ? "model" : "code"} nopan`,
         }),
       ),
     ];
@@ -178,12 +182,12 @@ function Canvas({ detail, onPick }: { detail: RunDetail; onPick: (id: string) =>
       target: e.to,
       type: "smoothstep",
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-      className: "fl-edge",
+      className: "fl-edge order",
     }));
     return { nodes, edges };
   }, [detail, t]);
   useEffect(() => {
-    requestAnimationFrame(() => void fitView({ padding: 0.06 }));
+    requestAnimationFrame(() => void fitView({ padding: 0.08, maxZoom: 1 }));
   }, [fitView]);
   return (
     <div className="flow-canvas run-canvas">
@@ -193,6 +197,7 @@ function Canvas({ detail, onPick }: { detail: RunDetail; onPick: (id: string) =>
         nodeTypes={NODE_TYPES}
         onNodeClick={(_, n) => n.id !== TRIGGER && onPick(n.id)}
         fitView
+        fitViewOptions={{ padding: 0.08, maxZoom: 1 }}
         minZoom={0.2}
         maxZoom={1.6}
         nodesDraggable={false}

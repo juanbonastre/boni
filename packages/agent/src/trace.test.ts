@@ -107,7 +107,8 @@ describe("a run's trace from the journal and the audit (task 52)", () => {
       id: "p1",
       run: "r1",
       tool: "entities.create",
-      args: { values: {}, origins: [] },
+      // As the agent stores them: each argument a labelled value (the collection by its key).
+      args: { values: { type: { t: "v", value: "tarea" } }, origins: [] },
       view: {
         tool: "entities.create",
         title: "Crear",
@@ -170,12 +171,48 @@ describe("a run's trace from the journal and the audit (task 52)", () => {
     // The reader's answer belongs to the read step, as text.
     expect(d?.steps[1]?.answers).toEqual(['{"items":[{"title":"Revisar actas"}]}']);
     expect(d?.steps[0]?.answers).toEqual([]);
-    expect(d?.read).toEqual([{ collection: "Correos", titles: ["Actas de FUP 1"], n: 1 }]);
+    // Each collection by its name and its id: the map draws the way the run went (docs/sistema.md §4.4).
+    expect(d?.read).toEqual([
+      { collection: "Correos", type: "t_correo", titles: ["Actas de FUP 1"], n: 1 },
+    ]);
     expect(d?.changes).toEqual([
-      { action: "create", title: "Revisar actas", collection: "Tareas", undone: false },
+      {
+        action: "create",
+        title: "Revisar actas",
+        collection: "Tareas",
+        type: "t_tarea",
+        undone: false,
+      },
     ]);
     expect(made.entity.id).toBeTruthy();
-    expect(d?.proposals).toEqual([{ title: "Revisar actas", status: "pending" }]);
+    expect(d?.proposals).toEqual([{ title: "Revisar actas", status: "pending", type: "t_tarea" }]);
+    // A reading from before flows: the mail its plan read first started it.
+    expect(d?.input).toEqual({
+      id: expect.any(String),
+      title: "Actas de FUP 1",
+      collection: "Correos",
+      type: "t_correo",
+    });
+    // Moved to another collection as it was accepted: it says where it went, not where it was proposed.
+    j.addProposal({
+      id: "p2",
+      run: "r1",
+      tool: "entities.create",
+      args: { values: { type: { t: "v", value: "tarea" } }, origins: [] },
+      view: {
+        tool: "entities.create",
+        title: "Crear",
+        rows: [{ arg: "values.title", value: "Actas" }],
+      },
+      sources: [],
+      created: 1450,
+    });
+    j.setProposal("p2", "accepted", 1460, { type: { from: "tarea", to: "correo" } });
+    expect(traceOf(store, "r1")?.proposals.at(-1)).toEqual({
+      title: "Actas",
+      status: "accepted",
+      type: "t_correo",
+    });
     expect(d?.decisions).toEqual([{ area: "fill", p: 0.8, outcome: "do", result: null }]);
     expect(d?.models).toEqual([
       {

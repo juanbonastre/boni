@@ -354,7 +354,7 @@ contraseña ni un código aquí» under a question.
   gasto" button, no list of charts. The window opens on the last page seen on this device (else the first); with no
   pages, a welcome with "Nueva página" and "Hablar con Boni". Every account gets Boni's template pages once («Uso de
   la IA», «Actividad», «Registro»); an account that used the first Boni got, once, a page "Gastos" with what its home
-  showed, as data it can change or delete. «Modelos» is a section of its own under «Mis datos» (task 59b); the
+  showed, as data it can change or delete. «Flujos», with its map, is a section of its own under «Mis datos» (F8); the
   conversation also keeps the detailed run log.
 - **A page is a Notion page** (`components/PageView.tsx`, docs/extensiones.md 6; measured on Notion on 2026-10-21):
   always editable in place, no edit mode. A reading column of 708 px centred with 64 px above (or the window's whole
@@ -593,7 +593,7 @@ contraseña ni un código aquí» under a question.
   `--accent` dot on its left (still with reduced motion) and the done ones with a tick; once it answered, its steps fold
   into a quiet «Pasos (n)» above the answer. **The bar** (3.6): one rounded box (16 px) whose text grows with what is
   written, up to about eight lines, with no resize grip; inside, below the text, the model the conversation plans with
-  (a quiet chip; its menu lists the account's own and the ones evaluated in «Modelos», and links there) and a round
+  (a quiet chip; its menu lists the account's own and the ones evaluated in Ajustes → Modelos, and links there) and a round
   button on the right: an arrow that sends, or a square that stops the turn («Parar»; the turn then says «Parado.» in
   muted text, never as an error). Juan's turns on the right in an `--accent-soft` bubble; the answers are painted by the code from the reply components
   (text with slots, a big number in tabular figures, a list, a table, and a chart: bars across, label, bar and value on
@@ -775,48 +775,122 @@ contraseña ni un código aquí» under a question.
   beside it, a click on a row filters or opens what it is about). Colours follow the thing, never its position:
   per actor, the Agente `--c1`, the Lector `--c2`, the Revisor `--c3`, the Decisor `--c4`, the MCP `--c7`, people
   muted, Boni's code `--compare`.
-- **«Flujos»** (the sidebar, under «Mis datos»; `docs/flujos.md`, F1, 2026-11-05): the account's flows as rows
-  (Nombre, Disparador, Estado, Ejecuciones, Última, Versión) and the chosen one drawn (React Flow, dagre top to
-  bottom): the trigger first («Nuevo correo»), a card in `--surface` listing what it binds (`$mail` registro,
-  `$text` texto…); then a card per step, a reader in an `--accent` border named as the models' flow names it
-  («Lectora», «Decisora», «Rellenadora»), a tool dashed with its title from the registry («Crear», «Leer») and a
-  word more (the collection it creates in), with the badges «Para cada» and «Solo si» when the step iterates or has
-  a condition, and how often it ran in the period («12 veces · 12 propuestas»); an arrow from each step or input a
-  step takes its data from. A click opens the step's panel on the right: its name and its settings as the plan says
-  them (`type: "docencia"`, `input: $text`), and what it takes from. The period (7 | 30 días) and «Ordenar» as in
-  «Modelos». Two tabs in a segmented control: **Flujos** (this) and **Modelos** (task 59b, below).
+- **«Flujos»** (the sidebar, under «Mis datos»; `docs/flujos.md`, F1; `docs/sistema.md` §4.4, F8, 2026-11-06): one of
+  Boni's collections, like «Mis datos»: a page with any collection's head (its views as tabs with «+», filter, sort,
+  search, its settings and «Nuevo», which makes a flow by hand, off, and opens it), starting with two views:
+  **«Tabla»** (Nombre; Disparador as it is said everywhere, «Llega a Correos», «Cada día a las 08:00», «Disparado por
+  el usuario»; Estado; Versión de, Boni or Ti; Pasos; Ejecuciones; Última; Versión hidden: a name and the state change
+  in place, a flow of Boni's keeps its name and is turned off, never deleted) and **«Mapa»** (below). A flow's name
+  opens it on a page of its own; its row in «Mis datos» opens «Flujos». No «Modelos» tab any more (decision 3): what
+  configures the models is Ajustes → Modelos, what they do and cost is on the map. On the phone «Páginas» lists
+  «Flujos» under «De Boni»: there the map is looked at and a flow tried or run, never changed (no «Nuevo», in the
+  header or under the table; its rows only open, nothing chosen, renamed, deleted or edited in a cell; the editor
+  read only, with «Probar»); the map opens no smaller than half its size, so its cards can be read, the rest a finger
+  or a pinch away.
+- **The map** («Mapa», F8; dbt's and Dagster's lineage, Home Assistant's «Related» and Grafana's node graph as
+  references): everything that brings, starts, reads and writes the account's data, computed by the server
+  (`apps/server/src/flowMap.ts`, A-16) and never placed by hand: React Flow, dagre left to right (who acts, you, an
+  assistant or the conversation, on the left with what they write, what they read coming back to them; where things come in
+  first, where they end last; columns 150 px apart so an arrow's words fit between them), dots in `--line-strong`,
+  the canvas taking the window's height. A card per node, 212 px: the mail connector («Correo · Conector», dashed), a
+  collection («Tarea · 128 elementos», in `--surface`), a flow (an `--accent` border, dashed when off: its trigger,
+  «42 ejecuciones · 0,41 US$», tags «De Boni», «Apagado» and its models' ids, and a chevron that unfolds its steps),
+  Boni's own work that is not a flow yet («Conversación», «Revisar la guía», `--accent`), **the Bandeja** («Bandeja ·
+  3 esperan»: what a flow in the background or the conversation proposes waits there), «Tú» («Desde tus apps»), an
+  assistant («Asistente · claude-ejemplo · Por el MCP»), a page. An arrow per verb, its words in a pill: «trae · 42»,
+  «pone en marcha · 42», «lee», «escribe · 61», «propone · 12» (dashed, into the Bandeja), «aceptadas · 7» (out of it,
+  to each collection), «decides · 11» (yours, in it), «tus decisiones · 11» (to the guide's reviewer), «mejora»,
+  «muestra»; one that carries a mail's words in `--c4` («Lleva texto de fuera» on hover); one going back, right to
+  left (what you or the conversation read, a lesson to an earlier flow), says its words only when it is lit, so they
+  never cover a card's name. The Bandeja is crossed, not
+  counted: «Antes: 1» of Evento shows the Bandeja and, in the same step, the flows that propose into Evento (not those
+  that propose elsewhere), each «propone» with what went to Evento (not its total), so «who writes in Evento» still
+  reads «Leer correo (propone · 3)»; «Después: Todo» of the mail goes Correo → Correos → Leer correo → Bandeja →
+  Tarea, Evento and → Revisar la guía → Leer correo. «decides» counts your decisions, not what Boni accepted alone
+  («Solo»); «tus decisiones» only those on the mail's proposals (the reviewer learns from nothing else), and the lens
+  goes from the Bandeja to the reviewer only from «Leer correo». What you moved to another collection as you
+  accepted it counts where it went. Without a centre
+  it shows everything joined to something (a node alone says nothing), pages only with «Con páginas». Over it, one
+  bar: **«Buscar en el mapa»** (by name; Enter takes the first) puts a node **in the centre**, then a chip «En el
+  centro · Tarea ×» and **«Antes»** and **«Después»** (1 | 2 | Todo arrows back and forth, dbt's `+model+`);
+  **«Agrupar»** (Sin agrupar; Por disparador, frames «Llega a Correos», «Disparado por el usuario», «De Boni»; Por
+  flujo, every flow unfolded into its steps; Por colección, a frame for each collection that holds others; Por paquete,
+  «Correo» round its connector, collection, flow and reviewer); **«Filtros»** (Solo con IA, Solo lo que escribe, Solo
+  lo encendido, Solo lo que pasó, an arrow with a number in the period; Con páginas), with a count on the button when
+  any is on; and the period (7 días | 30 días). The lenses, the
+  grouping and the period are kept on the device; «Flujos»' own filter and search take flows off the map too.
+  Hovering a card lights its arrows and quiets the rest; a click shows its panel docked on the right (300 px; a sheet
+  at the bottom on the phone): its name and kind, its numbers («7 propuestas · 4 aceptadas», «21 llamadas a
+  modelos», its models), **«Entra»** and **«Sale»** (each arrow's other end as a link that chooses it, with its verb
+  and number), and «Poner en el centro», «Ver los pasos» / «Plegar los pasos» on a flow and «Abrir» (primary: a flow's
+  page, a collection's, a page, the conversation); a double click opens it; the right button gives the same as a menu.
+  A box chosen out of view is brought to the middle. An unfolded flow is a frame with its steps inside, laid out as
+  its editor lays them out, its arrows leaving from the steps that make them. The map fits what it shows whenever its
+  boxes move, never on a hover. **«Ver en el mapa»** (I-25), in the right-click menus of a collection, a page, a row,
+  a block over a collection, a flow and an Inbox card (with «Abrir propuesta» and «Recorrido»; text chosen in the card
+  keeps the browser's own menu), in a run's «Recorrido» and on a proposal's page, opens it with that in the
+  centre and its panel open; a page put in the centre shows the pages while it is there; what the map does not have
+  (a page none of whose blocks shows a collection) says «No sale en el mapa» and opens it whole. From a run (its
+  Recorrido, a proposal) **the run is drawn on it**: its flow unfolded, each step with what came of it («Hecho»,
+  «Propuesto», «No se ejecutó»), what ran ringed in `--accent`, what did not faded; **its way across the map** lit
+  (the mail's connector and collection, the flow, the Bandeja and the collection where what it proposed was accepted,
+  where it wrote, an `--accent` border on each card) and the rest quiet; a card over the top left corner, «Por dónde
+  fue», telling it in words («Empezó con «Reunión con secretaría el jueves» (Correos)», «Leer correo (v3) · 20 oct,
+  11:05», «Propuso «Preparar la reunión» · aceptada», «Escribió «Café» en Gastos»; three of each, then «y 2 más»)
+  with «Ver el Recorrido»; and a chip «Ejecución · 6 nov, 00:52 ×» that takes both away. **«¿De dónde viene?»**, in a
+  row's right-click menu (not in Boni's own collections), asks the server who made the record: one a flow or the
+  conversation proposed or wrote opens the map with that run drawn on it and the card titled «¿De dónde viene
+  «Pedro Páramo»?»: the mail it started with, the run, «Lo propuso como «Pedro Páramo»» (and «y propuso 1 más»), and
+  the «Aceptar» («Lo aceptaste · 20 oct, 13:30», or «Boni lo aceptó solo»); a run is drawn where the server says it
+  belongs (its flow, the conversation, the reviewer, the Bandeja for an «Aceptar», «Leer correo» for a reading from
+  before flows, whose mail is the one its plan read first); one
+  written by hand, by an assistant, by an import or by the connector says so in a notice («Lo escribiste tú, en
+  portatil, el 21 oct, 19:45»), with no map.
+- **A flow's page** (F8): «Flujos › Leer correo» above it (the crumb goes back to «Flujos») with the period (7 días |
+  30 días) on its right, then the editor, its canvas taking the window's height.
 - **The flow editor** (F2, `docs/flujos.md` §4.5; n8n's canvas and node panel and Dify's checklist as references):
-  the chosen flow opens in it, under «Nuevo flujo» and the rows. A toolbar: the name (edited in place), the
-  «Encendido» switch, «Añadir paso» (task 70: a search on top, «Buscar paso», which takes the keys at once and finds
+  a flow's page. A toolbar: the name (edited in place), a pill saying whose version runs («De Boni» in `--accent`, kept
+  up to date by Boni; «Tu versión», which Boni no longer changes), the «Encendido» switch, «Añadir paso» (task 70: a search on top, «Buscar paso», which takes the keys at once and finds
   a kind by its name, its group's or its tool's, Enter taking the first once something is typed, «Ningún paso se
   llama así» when none; under it the kinds in groups by what they do, Leer, Decidir, Datos, Avisar, Preguntar,
-  Responder and Otros, and **«De Boni»** in a flow a mail starts (F7, `docs/sistema.md` §4.2: Boni's pieces, «Reglas
-  de la guía», «Lo pendiente», «Invitación», «Relaciones», «Plegar hilo», «Aceptar solas», the code that works on the
-  mail, which only such a flow has), a group with nothing to offer left out, each node named in a word; never a step
+  Responder and Otros, and **«De Boni»** in a flow a mail starts (F7, `docs/sistema.md` §4.2: Boni's pieces, named as
+  what they do, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», «Plegar hilo», «Aceptar
+  solas» (2026-11-06; Juan did not know what «Lo pendiente», «Invitación» or «Relaciones» meant), the code that works
+  on the mail, which only such a flow has), a group with nothing to offer left out, each node named in a word; never a step
   that runs or saves a flow),
   «Ejecutar» on a flow by hand (its form first when it asks for something; it runs as a turn of a new conversation,
   where its replies, questions and confirmations show as always), then «Descartar» and «Guardar» (primary, enabled
   only with changes and an empty checklist) and «⋯» (the versions, each «vN · Tú/Boni · date», a click goes back to
-  it as a new version; «Volver al de Boni» on a flow Boni keeps; «Duplicar»; «Eliminar» on the user's own, a second
-  click to confirm). Under it the checklist, in a `--bad`-tinted box, one line per problem («Crear: Colección:
-  falta»), a click selects the step. The canvas: a node can be dragged (where it is left is saved with the version;
-  «Ordenar» lays it out again), an arrow drawn from one node to another asks where the second uses the first's value
+  it as a new version; «Volver al de Boni» on a flow Boni keeps; «Ver en el mapa»; «Duplicar»; «Eliminar» on the
+  user's own, a second click to confirm). Under it the checklist, in a `--bad`-tinted box, one line per problem («Crear: Colección:
+  falta»), a click selects the step. The canvas lays itself out (I-26; 2026-11-06: «Leer correo» opened in a heap,
+  positions left over from an older version, «Aceptar solas» on top and «Guardar» lit with nothing changed): the
+  trigger on top, the steps downwards in the order they run, those that run only for one choice side by side in lanes
+  named by the choice (an `--accent-soft` pill over each lane's first step: «Tarea», «Evento»), a grey arrow from each
+  to the next with a «+» on it (shown on hover; none into a lane) that puts a new step there, and, for the chosen
+  step, its values' arrows dashed in `--accent` round the right side, the steps it takes them from ringed. A card's
+  line says what it works in and over («Tarea · cada tarea», «Tarea · cada evento», «Tarea · la invitación»), one
+  row per line (the whole line in its panel and its tooltip). Nothing is dragged, nothing of where things are is kept,
+  no «Ordenar»: looking never asks to save. The wheel scrolls the canvas (Ctrl or a pinch zooms); it opens fitted to
+  its first eight boxes at a size to read (at most 100 %), the rest a scroll below. An arrow drawn from one node to
+  another asks where the second uses the first's value
   (a small menu, «Usar en», of its settings by the names its panel gives them) and moves it after the first when it
   ran before (task 78; Juan, 2026-11-05: «no puedo conectarlo entre ellos»: the dots were a pixel): a 12 px dot under a
   step (the accent's) to drag from and one over each step to land on, shown under the pointer and, while an arrow is
   drawn, on every step; the arrow lands on a step wherever it is left on it, and left on the canvas it opens «Añadir
-  paso» there, the new step then asking where it takes the value; the trigger has no dot (its values are the flow's
-  inputs, taken by name). The right button on the canvas opens «Añadir paso» where it was, the step placed there
-  (task 78). The canvas fits its flow once its nodes are measured, and again for another flow (fitted before, it
-  opened too far out to read: 2026-11-05). Supr removes the selected node, the
+  paso» there, the new step going after the one the arrow came from and then asking where it takes the value; the
+  trigger has no dot (its values are the flow's inputs, taken by name). The right button on the canvas opens «Añadir
+  paso» there, the step going after the chosen one or at the end (task 78). Supr removes the selected node, the
   right button on a node opens its actions where the pointer is, without opening its panel (task 70: Abrir, its
-  panel; Duplicar, a copy right after it under an id of its own, a little below and right of it; Probar hasta aquí,
+  panel; Duplicar, a copy right after it under an id of its own; Probar hasta aquí,
   the flow tried as far as it and the test bar saying «hasta «…»», greyed while a test runs or with a problem up to
   it; and Quitar; the trigger has only Abrir), a click opens its panel on the right (340 px): its name, id and
   «Quitar»; its
   problems in `--bad`; **«Entra»** (task 70: each value it takes, what the trigger binds by its name, «Correo»,
-  «Texto» (F7, I-08), an earlier step's as `$m.asunto`, with what it is, «texto», «lista», «registro», muted on the
-  right; «Nada de antes» without any); what it is (the
+  «Texto» (F7, I-08), an earlier step's by the step's name and the path in it, «Lectora › tasks», «Buscar relaciones ›
+  tarea», a loop's item as «Elemento › quote», with what it is, «texto», «lista», «registro», muted on the right; «Nada
+  de antes» without any); what it is (the tool, among those «Añadir paso» offers, the reader, the question, the reply)
+  and its settings from the catalog's schema (the
   tool, the reader, the question, the reply) and its settings from the catalog's schema: a collection as a list of
   the collections (changing it, the record's fields follow their roles and the collection's inputs, `$fill.<key>`,
   its key), a record's values as rows of field and value (the parts it is merged with as chips), any other as a
@@ -827,8 +901,9 @@ contraseña ni un código aquí» under a question.
   and after a test «En la
   prueba» (what it gave or would do, the node's lines in full; «No llegó a este paso» when the test stopped
   before). The trigger's panel and node name what it binds as a person says it («Correo», «Asunto», «Destinatarios»,
-  «Guía», «A petición», «Dónde escribe»; F7, I-08: never `$mail`): «Nuevo correo» with what it binds, «Disparado por
-  el usuario» (task 78; «A mano» until then) with the
+  «Guía», «A petición», «Dónde escribe», «Ya propuesto»; F7, I-08: never `$mail`): «Llega a Correos» (the collection by
+  its name; «Nuevo correo» until 2026-11-06) with what it binds, «Disparado por el usuario» (task 78; «A mano» until
+  then) with the
   names its form asks for, or **«Programado»** (F4): «Cuándo» (Cada día, Cada semana with its «Día», Cada hora) and
   «A las» as two lists, the hour and the minutes every five (never a time field: it shows AM/PM in an English
   browser), or «Minuto» every hour; the node says it in words («Cada día a las 08:00», «Cada lunes a las 07:30»,
@@ -838,8 +913,11 @@ contraseña ni un código aquí» under a question.
   **«Probar»** (F3; n8n's «Test step» and Dify's debug run as references) runs the draft as it is, dry: with the
   latest mail for a mail flow, or with the one chosen in **«Probar con…»** (F7, task 63 point 6: an icon button beside
   it, a list of the mails by subject, newest first, «Buscar correo» filtering it as one types), with the form's
-  values for one by hand. Boni's pieces run too (a dry run proposes nothing, so «Plegar hilo» and «Aceptar solas»
-  find nothing to change). Readers and the decider are called (it costs
+  values for one by hand. Boni's pieces run too and say what they found (2026-11-06; «Hecho» said nothing): «Va a
+  Tarea», «Sin regla: sigue» or «La guía dice no leerlo: acaba aquí»; «Nada propuesto antes» or «2 ya propuestos»;
+  the invitation's event («Reunión con secretaría · 06/11 12:00»), «No es una invitación» or «Ya está en un
+  calendario»; the relations found («Persona: Ana Ejemplo») or «Sin relaciones»; and «Sin propuestas en la prueba»
+  for «Plegar hilo» and «Aceptar solas» (a dry run proposes nothing, so they find nothing to change). Readers and the decider are called (it costs
   what a reading costs); nothing is written, notified, proposed or confirmed, and a question ends it. A bar over the
   canvas in `--accent-soft` says with what («Prueba con «Informe y sala» · sin escribir nada», or where it stopped)
   and has × to take it away; each node says what came of it in its line: «→ 2 elementos», «→ «Gestiones»»,
@@ -852,22 +930,16 @@ contraseña ni un código aquí» under a question.
   `--accent` border and «Nuevo», what it changes with a dashed one and «Cambiado», what it takes away faded and
   struck with «Quitado»; «Activar» (primary) and «Rechazar».
 - **The Recorrido on the canvas** (F3, task 59c): a run of the Registro (and a proposal's «Recorrido») is drawn
-  as a flow's canvas, read only: the trigger with what it bound when the plan took values from outside, each step
-  named as the editor names it, an arrow for each value it took, and its line: «Hecho», «Propuesto», «Parado
-  (P2)», «No se ejecutó», «No llegó», «Acaba aquí» (F7: a piece of Boni ended the run there, done, such as «Reglas de
-  la guía» for a sender it never reads), with the first words a model answered under it. It replaces the SVG diagram of
-  task 52; the steps' list, «Leyó», «Hizo», «Propuso», «Decisiones», «Modelos» and «Copiar» stay below it.
-- **«Modelos»** (the tab; task 59b, Juan 2026-11-04: see what every model does and how they work together, n8n's
-  canvas as the reference; until 2026-11-04 Ajustes → Modelos, which keeps a button to it): first the
-  flow Boni declares (`packages/agent/src/pipeline.ts`, A-16) as a canvas (React Flow, dagre left to right, dots in
-  `--line-strong`): a card per node, 200 px wide, named in a word («Correo», «Lectora», «Decisora», «Rellenadora»,
-  «Calendario», «Relaciones», «Bandeja», «Tú», «Mis datos», «Planificadora», «Lectores», «Herramientas»,
-  «Políticas», «Revisora», «Guía», «Aprendices»), its kind by its look: a model in an `--accent` border with the
-  model's id, its calls and their cost of the period and its acierto; a source with how many came in («42 correos»);
-  code dashed; «Tú» in `--accent-soft`. An arrow per flow, labelled with what flows and, when the journal counts it,
-  how many («42 correos», «12 propuestas»), in `--accent` when anything went through. A segmented control picks the
-  period (7 días, 30 días); «Ordenar» lays it out again; a click on a model's node opens its use below. Then what
-  configures the models, as it was in Ajustes: «Usos», a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor),
+  as a flow's canvas, read only, laid out as the editor lays out its flow (downwards in the order the run went, at
+  most 100 %): the trigger with what it bound when the plan took values from outside, each step named as the editor
+  names it, and its line: «Hecho», «Propuesto», «Parado
+  (P2)», «No se ejecutó», «No llegó», «Acaba aquí» (F7: a piece of Boni ended the run there, done, such as «Regla
+  del remitente» for a sender it never reads), with the first words a model answered under it. It replaces the SVG diagram of
+  task 52; the steps' list, «Leyó», «Hizo», «Propuso», «Decisiones», «Modelos» and «Copiar» stay below it, with «Ver
+  en el mapa» beside «Copiar» (its flow, or the conversation, in the centre).
+- **Ajustes → Modelos** (again its place, 2026-11-06: the tab «Modelos» of «Flujos», task 59b, is gone with its declared
+  canvas; what every model does and costs is on the map's flows and steps, `docs/sistema.md` §4.4): what configures
+  the models: «Usos», a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor),
   the model's short id at 18 px, a pill of what its route does with the data (`--good` «No guarda tus datos», muted
   «Borra lo que recibe en 30 días», `--bad` «Puede guardar tus datos») and «€ · llamadas»; a click opens the use in
   place of the list (Esc or its close button goes back to the list, not out of Ajustes): the model and its route, what

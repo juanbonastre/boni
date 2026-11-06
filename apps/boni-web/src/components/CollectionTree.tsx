@@ -20,6 +20,7 @@ import {
   renameCollection,
   renameNote,
   setNotesInTree,
+  showMap,
   toast,
   toggleFold,
   trashNote,
@@ -155,6 +156,13 @@ function Node({ c, depth, tools }: { c: TreeCollection; depth: number; tools: No
         onClick={() => {
           close();
           setRenaming(true);
+        }}
+      />
+      <MenuRow
+        label={t("map.show")}
+        onClick={() => {
+          close();
+          showMap(`col:${c.id}`);
         }}
       />
       <MenuSep />

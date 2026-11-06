@@ -37,6 +37,7 @@ import {
   SYS_ACTIVITY,
   SYS_CALLS,
   SYS_DATA,
+  SYS_FLOWS_ID,
   SYS_RUNS,
   type SystemCollections,
 } from "./systemCollections.ts";
@@ -55,7 +56,7 @@ const ZONE_NAMES: Record<string, string> = {
   private: "private/ del vault",
 };
 /** Boni's records listed here (not «Mis datos» itself). */
-const BONI_RECORDS: readonly string[] = [SYS_CALLS, SYS_ACTIVITY, SYS_RUNS];
+const BONI_RECORDS: readonly string[] = [SYS_CALLS, SYS_ACTIVITY, SYS_RUNS, SYS_FLOWS_ID];
 const NEW_NAME = "Nueva colección";
 
 const opt = (id: string, name: string): SelectOption => ({ id, name, label: L });
