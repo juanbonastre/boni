@@ -63,11 +63,20 @@ function setUp(planner = fakePlanner([])) {
     tool: "entities.create",
     args: {
       type: leaf("tarea", codeLabel("plan")),
-      values: rec({ titulo: leaf("Revisar las actas", mail) }, mail),
+      values: rec({ title: leaf("Revisar las actas", mail) }, mail),
     },
     origin: "test",
   });
-  return { host, store, typeOf, rowOf, proposal };
+  // One into a collection closed to the models, whose values a flow wrote (Juan's own words).
+  const closed = host.agent(1).propose({
+    tool: "entities.create",
+    args: {
+      type: leaf("privado", codeLabel("plan")),
+      values: rec({ title: leaf("Lo que no ve nadie", codeLabel("flow")) }, codeLabel("flow")),
+    },
+    origin: "test",
+  });
+  return { host, store, typeOf, rowOf, proposal, closed };
 }
 
 describe("the screen as data (F9, task 85)", () => {
@@ -85,11 +94,14 @@ describe("the screen as data (F9, task 85)", () => {
     expect(many?.chosen).toHaveLength(50);
   });
 
-  it("is made of what the store holds, through the models' view: nothing closed, the opaque and the outside as they are labelled", () => {
-    const { store, typeOf, rowOf, proposal } = setUp();
+  it("is made of what the store holds, through the models' view: rows by reference, nothing closed or opaque, a card as `inbox.pending` gives it", () => {
+    const { store, typeOf, rowOf, proposal, closed } = setUp();
     const screen = screenOf(store, {
       open: { kind: "collection", id: typeOf("tarea").id },
-      inbox: [{ kind: "proposal", id: proposal }],
+      inbox: [
+        { kind: "proposal", id: proposal },
+        { kind: "proposal", id: closed },
+      ],
       chosen: [rowOf("tarea"), rowOf("privado"), rowOf("opaca")],
     });
     if (screen?.t !== "rec") throw new Error("no screen");
@@ -98,24 +110,26 @@ describe("the screen as data (F9, task 85)", () => {
       collection: "tarea",
       name: "Tarea",
     });
-    // The restricted row is not there; the opaque one is, its values kept from the models.
-    const chosen = screen.fields.chosen as Val;
-    if (chosen.t !== "list") throw new Error("no rows");
-    expect(chosen.items).toHaveLength(2);
-    expect(deepLabel(chosen.items[1] as Val).noModel).toBe(true);
-    // The card: what it would make, its title labelled as from the mail.
+    // Only the open collection's row, by reference: the restricted one and the opaque one are not there.
+    const chosen = plain(screen.fields.chosen as Val) as { id: string; type: string }[];
+    expect(chosen).toEqual([expect.objectContaining({ id: rowOf("tarea"), type: "tarea" })]);
+    expect(Object.keys(chosen[0] ?? {}).sort()).toEqual(["id", "title", "type"]);
+    // The card: its title from outside, its collection; never what it would write. The closed one is not there.
     const inbox = screen.fields.inbox as Val;
     if (inbox.t !== "list" || inbox.items[0]?.t !== "rec") throw new Error("no cards");
-    const args = inbox.items[0].fields.args as Val;
-    expect(deepLabel(args).integrity).toBe("external");
-    expect(plain(args)).toMatchObject({ type: "tarea", values: { titulo: "Revisar las actas" } });
+    expect(inbox.items).toHaveLength(1);
+    const card = inbox.items[0];
+    expect(plain(card.fields.collection as Val)).toBe("tarea");
+    expect(deepLabel(card.fields.title as Val).integrity).toBe("external");
+    expect(card.fields.args).toBeUndefined();
+    expect(JSON.stringify(plain(screen))).not.toContain("Lo que no ve nadie");
     // A collection closed to the models says only that something is open.
-    const closed = screenOf(store, {
+    const shut = screenOf(store, {
       open: { kind: "collection", id: typeOf("privado").id },
       inbox: [],
       chosen: [],
     });
-    expect(plain(closed as Val)).toEqual({ open: { kind: "collection" } });
+    expect(plain(shut as Val)).toEqual({ open: { kind: "collection" } });
   });
 
   it("«¿qué me pide el de arriba?»: the planner sees the first card as a handle, and its plan answers with it", async () => {
@@ -128,7 +142,7 @@ describe("the screen as data (F9, task 85)", () => {
           component: "text",
           data: {
             template: lit("Te pide: {a}"),
-            a: { ref: "$screen.inbox[0].args.values.titulo" },
+            a: { ref: "$screen.inbox[0].title" },
           },
         },
       ],
@@ -147,7 +161,7 @@ describe("the screen as data (F9, task 85)", () => {
     expect(JSON.stringify(r.replies)).toContain("Revisar las actas");
     // The planner got the card by its handle: never the mail's words themselves.
     const input = JSON.stringify(planner.requests[0]?.input);
-    expect(input).toContain('"$handle":"$screen.inbox[0].args.values","integrity":"external"');
+    expect(input).toContain('"$handle":"$screen.inbox[0].title","integrity":"external"');
     expect(input).not.toContain("Revisar las actas");
   });
 

@@ -597,23 +597,36 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
 **Cómo quedó la primera parte (2026-11-06, la 85; A-20).**
 - **Abrir:**
   - el círculo abajo a la derecha (en el escritorio) y `Ctrl+E` abren la conversación en una ventana sobre lo que haya
-    abierto (C4), la misma conversación de siempre;
-  - «Llevar a la derecha» la acopla en el sitio de la Bandeja, y abrir la Bandeja la vuelve a dejar flotando;
-  - «Ampliar» lleva a la pantalla Conversación, y `Esc` la cierra antes que nada de lo de debajo;
+    abierto (C4), la misma conversación de siempre; `Ctrl+E` no hace nada con Ajustes, la búsqueda o la papelera
+    abiertos;
+  - «Llevar a la derecha» la acopla en el sitio de la Bandeja; acoplada, cede ante cualquier otro panel a la derecha
+    (la Bandeja, un registro): flota a su lado hasta que se cierra, y vuelve. Lo que se estaba escribiendo se queda;
+  - «Ampliar» lleva a la pantalla Conversación; `Esc`, con el foco dentro, la cierra antes que nada de lo de debajo
+    (con el foco en otro sitio, `Esc` es de ese sitio);
   - con un panel a la derecha, la ventana y el círculo se quedan a su lado.
 - **Lo que ve:**
-  - con cada mensaje, la app manda referencias: lo abierto, las tarjetas de la Bandeja si está abierta (en su orden,
-    la de arriba la primera) y las filas elegidas en sus tablas;
+  - con cada mensaje, la app manda referencias: lo abierto, las tarjetas de la Bandeja cuando se ve (su panel o su
+    pantalla; en su orden, la de arriba la primera) y las filas elegidas en sus tablas;
   - el servidor las convierte en valores con lo que hay en el almacén, a través de la vista de los modelos
-    (`apps/server/src/screen.ts`): nada de lo cerrado, y lo de fuera y lo opaco como asas;
+    (`apps/server/src/screen.ts`):
+    - una fila, por referencia (su id, su colección y su título): el resto lo lee el plan con `entities.get`, si
+      puede; nada de una colección o una fila cerrada u opaca;
+    - una tarjeta, como la da `inbox.pending`: su título como palabras de fuera (un asa), su colección, cuándo y
+      quién; nunca lo que escribiría;
   - el planificador lo ve como «screen» y su plan lo nombra como `$screen`. Así «¿qué me pide el de arriba?» contesta
     con la primera tarjeta sin que el modelo lea las palabras del correo.
 - **Falta:**
-  - `data-boni-ref` en los componentes: los bloques visibles con sus cifras, las filas visibles y el foco;
+  - `data-boni-ref` en los componentes: los bloques visibles con sus cifras, las filas visibles, la vista con sus
+    filtros y el foco;
   - Señalar (`Ctrl+Shift+E`);
-  - las acciones de pantalla, y resaltar mientras actúa;
-  - el círculo en el teléfono;
-  - de una pregunta de la Bandeja, más que su id.
+  - las acciones de pantalla, y resaltar y decirlo en sus pasos mientras actúa;
+  - «Ver en el mapa» en un turno (F8, con F9);
+  - de una pregunta de la Bandeja, más que su id;
+  - de la ventana (§3.2 de `conversacion.md`): moverla, soltar archivos en ella, y que lo escrito no se pierda al
+    cerrarla;
+  - el círculo en el teléfono y como widget del escritorio;
+  - la decisión 3 de `conversacion.md` (la ventana, superficie por defecto): la fila «Conversación» abre aún la
+    pantalla entera.
 
 **Ejemplos.**
 

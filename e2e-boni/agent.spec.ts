@@ -74,19 +74,34 @@ test("Boni over the screen (F9, task 85): Ctrl+E and the circle open the convers
   const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
   await expect(box).toBeFocused();
   await expect(circle).toHaveCount(0);
+  // Esc is the window's with the focus in it; with the focus elsewhere it is that place's.
+  await page.locator(".doc-title, h1").first().click();
+  await page.keyboard.press("Escape");
+  await expect(win).toBeVisible();
+  await box.click();
   await page.keyboard.press("Escape");
   await expect(win).toHaveCount(0);
-  // Again from the circle; docked to the right it takes the Bandeja's place, which takes it back.
-  await circle.click();
-  await win.getByRole("button", { name: "Llevar a la derecha" }).click();
-  await expect(page.locator("aside.boni-docked")).toBeVisible();
+  // Ajustes keeps the keyboard: Ctrl+E opens nothing under it.
+  await page.keyboard.press("Control+,");
+  await page.keyboard.press("Control+e");
   await expect(win).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  // Again from the circle; docked to the right it takes the Bandeja's place, what was being written kept.
+  await circle.click();
+  await box.fill("un borrador");
+  await win.getByRole("button", { name: "Llevar a la derecha" }).click();
+  const docked = page.getByRole("complementary", { name: "Boni" });
+  await expect(docked).toBeVisible();
+  await expect(win).toHaveCount(0);
+  await expect(docked.getByRole("textbox", { name: "Escribe a Boni…" })).toHaveValue("un borrador");
+  // The Bandeja back on the right: the window floats beside it, the draft still there.
   await page
     .locator(".topbar")
     .getByRole("button", { name: /^Bandeja/ })
     .click();
   await expect(page.locator(".inbox-panel .inbox-card")).toHaveCount(2);
   await expect(win).toBeVisible();
+  await expect(box).toHaveValue("un borrador");
   // With the Bandeja open the message goes with what is on screen: its cards as it shows them, the oldest first.
   await box.fill("¿qué me pide el de arriba?");
   await box.press("Enter");
@@ -110,6 +125,24 @@ test("Boni over the screen (F9, task 85): Ctrl+E and the circle open the convers
   await expect(win).toHaveCount(0);
   await expect(page.locator(".content .chat-layout")).toBeVisible();
   await expect(circle).toHaveCount(0);
+  // The Bandeja's own screen puts its cards on the screen too.
+  await page
+    .locator(".chat-tools")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  await page.keyboard.press("Control+e");
+  await box.fill("¿y la segunda?");
+  await box.press("Enter");
+  // The same conversation as always: its first answer, and this one.
+  await expect(win.locator(".turn-answer")).toHaveCount(2);
+  // The second message's body, once it is recorded (by its text, never by its place in the list).
+  const second = async () =>
+    (await requests(page, "POST api/agent/turn ")).find((r) => r.includes("¿y la segunda?")) ?? "";
+  await expect.poll(second).not.toBe("");
+  expect(JSON.parse((await second()).split(" ").slice(2).join(" ")).screen).toMatchObject({
+    open: { kind: "inbox" },
+    inbox: [{ id: "c1" }, { id: "c9" }],
+  });
 });
 
 test("a reply is painted by the code, and what came from outside is only text", async ({

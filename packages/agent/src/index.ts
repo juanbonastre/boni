@@ -140,6 +140,7 @@ export {
   neutralize,
   type OriginReader,
   type PendingProposal,
+  pendingVal,
   type RecordOrigin,
   readStore,
   type ToolDef,

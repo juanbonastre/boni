@@ -768,7 +768,9 @@ async function answerAgent(
       // What is on Juan's screen as he writes (F9): the app's references, made into values by the server.
       const refs = b.screen === undefined || b.screen === null ? null : screenRefs(b.screen);
       if (b.screen !== undefined && b.screen !== null && !refs) return bad();
-      const screen = refs ? screenOf(store, refs) : null;
+      const screen = refs
+        ? screenOf(store, refs, { mailAccount: host.mailAccountOf?.(who.account) ?? null })
+        : null;
       const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;
       const live = liveId(b.live);
       const r = await agent.turn({

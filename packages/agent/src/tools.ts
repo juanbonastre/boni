@@ -291,6 +291,44 @@ export class ToolRegistry {
 
 // ---------------------------------------------------------------- entities as values
 
+/**
+ * A proposal waiting in the Bandeja as a model may see it (`inbox.pending`, and the screen's cards, F9): its title as
+ * a reader's words from what it read (from outside), its collection by the name a model knows it by, when, who, the
+ * record that started it and its run; never what it would write. Null for one whose collection the models may not see.
+ */
+export function pendingVal(p: PendingProposal, store: ReadStore): Val | null {
+  const code = codeLabel("inbox");
+  const types = store.schema().types;
+  const def = p.type ? types[p.type] : undefined;
+  if (p.type && !def) return null;
+  const m = p.input ? store.get(p.input) : null;
+  return rec(
+    {
+      id: leaf(p.id, code),
+      // A reader's words from what it read (a mail): marked as from outside.
+      title: leaf(p.title, label("external", "personal", [{ kind: "model", id: p.id }])),
+      collection: leaf(def ? typeName(def) : null, code),
+      proposed: leaf(new Date(p.created).toISOString(), code),
+      by: leaf(p.by, code),
+      who: p.flow ? leaf(p.flow.name, flowLabel(p.flow.id)) : leaf(null, code),
+      run: leaf(p.run, code),
+      flow: p.flow
+        ? rec(
+            {
+              id: leaf(p.flow.id, code),
+              name: leaf(p.flow.name, flowLabel(p.flow.id)),
+              version: leaf(p.flow.version, code),
+            },
+            code,
+          )
+        : leaf(null, code),
+      input:
+        m && m.entity.deleted === undefined ? entityVal(m, types[m.entity.type]) : leaf(null, code),
+    },
+    code,
+  );
+}
+
 /** An entity as a record: one value per field (by key) with that field's label, read at this version. */
 export function entityVal(s: StoredEntity, def: TypeDef | undefined): Val {
   const code = codeLabel("store");
@@ -592,44 +630,12 @@ export function coreTools(): ToolRegistry {
       const words = a.text ? fold(str(a.text)).split(/\s+/).filter(Boolean) : [];
       const limit = optNum(a.limit, 20, 50);
       const code = codeLabel("inbox");
-      const types = store.schema().types;
       const out: Val[] = [];
       for (const p of origin.pending()) {
         if (out.length >= limit) break;
-        // One for a collection the models may not see is not theirs to see either.
-        const def = p.type ? types[p.type] : undefined;
-        if (p.type && !def) continue;
         if (!words.every((w) => fold(p.title).includes(w))) continue;
-        const m = p.input ? store.get(p.input) : null;
-        out.push(
-          rec(
-            {
-              id: leaf(p.id, code),
-              // A reader's words from what it read (a mail): marked as from outside.
-              title: leaf(p.title, label("external", "personal", [{ kind: "model", id: p.id }])),
-              collection: leaf(def ? typeName(def) : null, code),
-              proposed: leaf(new Date(p.created).toISOString(), code),
-              by: leaf(p.by, code),
-              who: p.flow ? leaf(p.flow.name, flowLabel(p.flow.id)) : leaf(null, code),
-              run: leaf(p.run, code),
-              flow: p.flow
-                ? rec(
-                    {
-                      id: leaf(p.flow.id, code),
-                      name: leaf(p.flow.name, flowLabel(p.flow.id)),
-                      version: leaf(p.flow.version, code),
-                    },
-                    code,
-                  )
-                : leaf(null, code),
-              input:
-                m && m.entity.deleted === undefined
-                  ? entityVal(m, types[m.entity.type])
-                  : leaf(null, code),
-            },
-            code,
-          ),
-        );
+        const v = pendingVal(p, store);
+        if (v) out.push(v);
       }
       return list(out, code);
     },

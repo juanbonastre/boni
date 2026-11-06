@@ -5,8 +5,20 @@
  * outside reaches a model as a handle and nothing of a collection closed to the models is there. Never what the app
  * says a thing is: only what the store holds.
  */
-import { codeLabel, entityVal, leaf, list, plain, readStore, rec, type Val } from "@boni/agent";
+import {
+  codeLabel,
+  deepLabel,
+  entityVal,
+  leaf,
+  list,
+  pendingVal,
+  readStore,
+  rec,
+  typeName,
+  type Val,
+} from "@boni/agent";
 import type { UserStore } from "@boni/store";
+import { pendingFacts } from "./origin.ts";
 
 /** The most cards and rows a screen gives: what a person sees at once, not a list to read. */
 const MAX_CARDS = 20;
@@ -65,53 +77,67 @@ export function screenRefs(b: unknown): ScreenRefs | null {
   return { open, inbox, chosen };
 }
 
-/** The screen as the planner gets it: null when nothing on it is worth saying. */
-export function screenOf(store: UserStore, refs: ScreenRefs): Val | null {
+/**
+ * The screen as the planner gets it: null when nothing on it is worth saying. A record by reference (its id, its
+ * collection, its title): the planner reads the rest with `entities.get`, as it may; one of a collection or a row
+ * closed or opaque to the models is not on it. A card as `inbox.pending` gives it (`pendingVal`): its title as a
+ * reader's words from outside, never what it would write.
+ */
+export function screenOf(
+  store: UserStore,
+  refs: ScreenRefs,
+  o: { mailAccount: string | null } = { mailAccount: null },
+): Val | null {
   const view = readStore(store);
   const code = codeLabel("screen");
   const visible = view.schema().types;
-  // A record as the models may see it; one they may not see is not on the screen.
   const record = (id: string): Val | null => {
     const s = view.get(id);
     if (!s || s.entity.deleted !== undefined) return null;
-    return entityVal(s, visible[s.entity.type] ?? store.schema().types[s.entity.type]);
-  };
-  // A proposal waiting in the Bandeja: what it would do, with what it would write as its labels let it through;
-  // nothing of a collection the models may no longer see.
-  const card = (id: string): Val | null => {
-    const p = store.journal.proposal(id);
-    if (!p || p.status !== "pending") return null;
-    const values = ((p.args as { values?: Record<string, unknown> } | null)?.values ??
-      {}) as Record<string, Val>;
-    const type = values.type ? plain(values.type) : null;
-    const closed =
-      typeof type === "string" &&
-      !Object.values(visible).some((t) => t.key === type || t.id === type);
+    const def = visible[s.entity.type] ?? store.schema().types[s.entity.type];
+    const whole = entityVal(s, def);
+    // What only code may compute with (an opaque collection's, a closing rule's) is not on the screen (§4.7).
+    if (whole.t !== "rec" || deepLabel(whole).noModel) return null;
+    const titleKey = def?.fields.find((f) => f.id === def.titleField)?.key;
+    const title = titleKey ? whole.fields[titleKey] : undefined;
     return rec(
       {
-        kind: leaf("proposal", code),
-        id: leaf(p.id, code),
-        tool: leaf(p.tool, code),
-        ...(closed ? {} : { args: rec(values, code) }),
+        id: whole.fields.id as Val,
+        type: whole.fields.type as Val,
+        ...(title ? { title } : {}),
       },
       code,
     );
   };
+  const facts = refs.inbox.some((c) => c.kind === "proposal")
+    ? new Map(pendingFacts(store, o).map((p) => [p.id, p]))
+    : new Map();
+  const card = (id: string): Val | null => {
+    const fact = facts.get(id);
+    const v = fact ? pendingVal(fact, view) : null;
+    return v?.t === "rec" ? rec({ kind: leaf("proposal", code), ...v.fields }, code) : null;
+  };
   const fields: Record<string, Val> = {};
-  const o = refs.open;
-  if (o) {
-    const open: Record<string, Val> = { kind: leaf(o.kind, code) };
-    const def = o.kind === "collection" && o.id ? visible[o.id] : undefined;
+  const open = refs.open;
+  if (open) {
+    const what: Record<string, Val> = { kind: leaf(open.kind, code) };
+    const def = open.kind === "collection" && open.id ? visible[open.id] : undefined;
     if (def && !def.system) {
-      open.collection = leaf(def.key, code);
-      open.name = leaf(def.name, def.label);
+      // By the name the models know it by (a collection named from outside, by its id).
+      what.collection = leaf(typeName(def), code);
+      what.name = leaf(def.name, def.label);
     }
-    const r = (o.kind === "row" || o.kind === "page") && o.id ? record(o.id) : null;
-    if (r) open.record = r;
-    const c = o.kind === "proposal" && o.id ? card(o.id) : null;
-    if (c) open.proposal = c;
+    const r = (open.kind === "row" || open.kind === "page") && open.id ? record(open.id) : null;
+    if (r) what.record = r;
+    if (open.kind === "proposal" && open.id) {
+      const c = (facts.size ? facts : new Map(pendingFacts(store, o).map((p) => [p.id, p]))).get(
+        open.id,
+      );
+      const v = c ? pendingVal(c, view) : null;
+      if (v) what.proposal = v;
+    }
     // What is open and closed to the models says only that something is open.
-    fields.open = rec(open, code);
+    fields.open = rec(what, code);
   }
   const cards = refs.inbox.flatMap((c) => {
     if (c.kind === "question") {

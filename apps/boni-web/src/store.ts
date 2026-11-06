@@ -1529,13 +1529,15 @@ export function screenNow(): ScreenRefs {
         : (v.id ?? null);
   return {
     open: { kind: v.kind, id },
-    inbox: s.inboxOpen
-      ? inboxOrder(s.inbox, s.requests)
-          .slice(0, 20)
-          .map((x) =>
-            "p" in x ? { kind: "proposal", id: x.p.id } : { kind: "question", id: x.r.id },
-          )
-      : [],
+    // The Bandeja's cards when they are on the screen: its panel, or its own screen.
+    inbox:
+      s.inboxOpen || v.kind === "inbox"
+        ? inboxOrder(s.inbox, s.requests)
+            .slice(0, 20)
+            .map((x) =>
+              "p" in x ? { kind: "proposal", id: x.p.id } : { kind: "question", id: x.r.id },
+            )
+        : [],
     chosen: [...new Set(Object.values(s.chosenRows).flat())].slice(0, 50),
   };
 }
@@ -1549,7 +1551,8 @@ export const setChosenRows = (table: string, ids: readonly string[]) =>
 
 /**
  * The conversation over the screen (F9, C4): `Ctrl+E` and the circle open it over what is open, or close it; on the
- * Conversación screen it is already there. Docked to the right it takes the Bandeja's place, which can come back.
+ * Conversación screen it is already there. Docked to the right it takes the Bandeja's place; another panel there
+ * (the Bandeja back, a record) floats it beside until it closes.
  */
 export function openBoniWindow(mode: "float" | "right" = "float") {
   if (get().view.kind === "chat") return;
@@ -1733,11 +1736,7 @@ export async function loadInbox() {
 }
 let inboxSeen: Set<string> | null = null;
 export const toggleInbox = (open = !get().inboxOpen) => {
-  // The right column is one: a window docked there floats again over what is open (F9).
-  set({
-    inboxOpen: open,
-    ...(open && get().boniWindow === "right" ? { boniWindow: "float" } : {}),
-  });
+  set({ inboxOpen: open });
   if (open) void loadInbox();
 };
 /** Accepting one proposal (never all at once: each is looked at, docs/nucleo.md 7.5). */

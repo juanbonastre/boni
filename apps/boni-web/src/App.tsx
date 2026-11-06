@@ -62,7 +62,11 @@ export function App() {
   const trashOpen = useStore((s) => s.trash != null);
   // In a narrow window the side panel takes the sidebar's room while it is open (the charts keep theirs).
   const narrow = useMedia("(max-width: 1100px)");
-  const showSidebar = sidebarOpen && !(narrow && (panelOpen || inboxOpen));
+  // Boni's window docked to the right is a side panel too (F9).
+  const docked = useStore(
+    (s) => s.boniWindow === "right" && s.panel == null && !s.inboxOpen && s.view.kind !== "chat",
+  );
+  const showSidebar = sidebarOpen && !(narrow && (panelOpen || inboxOpen || docked));
   // What the main area shows rises into place, again when another page takes its place (4b «Motion», I-14).
   // A new page is shown at once with a temporary id, then with the server's: the same page, it rises once.
   const enter = useEnterFlip(
@@ -147,6 +151,8 @@ function useShortcuts(mobile: boolean) {
       // conversation's own screen, to its box.
       if (e.key.toLowerCase() === "e" && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
         e.preventDefault();
+        // Not under Ajustes, the search or the trash: what is open over everything keeps the keyboard.
+        if (s.settingsOpen || s.findOpen || s.trash != null) return;
         if (s.view.kind === "chat")
           document.querySelector<HTMLTextAreaElement>(".chat-layout textarea")?.focus();
         else toggleBoniWindow();

@@ -28,22 +28,29 @@ export function BoniCircle() {
   );
 }
 
-/** The conversation over what is open, or docked to the right. */
+/**
+ * The conversation over what is open, or docked to the right. Docked, it gives way to any other panel on the right
+ * (the Bandeja, a record): it floats beside it until that closes, and docks again. One element either way, so what
+ * Juan was writing stays.
+ */
 export function BoniWindow() {
   const t = useStore((s) => s.t);
   const mode = useStore((s) => s.boniWindow);
   const onChat = useStore((s) => s.view.kind === "chat");
+  const otherRight = useStore((s) => s.panel != null || s.inboxOpen);
   const box = useRef<HTMLElement | null>(null);
   const open = mode !== "closed" && !onChat;
-  // `Esc` closes it before anything under it (in the capture: the page's own `Esc` does not go back); a menu or a
-  // dialog of its own closes first.
+  const docked = mode === "right" && !otherRight;
+  // `Esc` with the focus in it closes it before anything under it (in the capture: the page's own `Esc` does not go
+  // back); a menu of its own closes first. With the focus elsewhere `Esc` is that place's.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       const st = useStore.getState();
       if (e.key !== "Escape" || e.defaultPrevented || st.settingsOpen || st.findOpen) return;
+      if (!box.current?.contains(document.activeElement)) return;
       const inner = (e.target as HTMLElement | null)?.closest?.(
-        "[role=menu], [role=listbox], .chat-drawer",
+        "[role=menu], [role=listbox], .chat-drawer, .pop-box",
       );
       if (inner) return;
       e.preventDefault();
@@ -52,24 +59,30 @@ export function BoniWindow() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, [open]);
-  // Opened or moved, what Juan types goes to it.
+  // Opened, what Juan types goes to it.
   useEffect(() => {
     if (open) box.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus();
-  }, [open, mode]);
+  }, [open]);
   if (!open) return null;
-  const right = mode === "right";
-  const body = (
-    <>
+  return (
+    <section
+      ref={(n) => {
+        box.current = n;
+      }}
+      className={docked ? "side-panel boni-docked" : "boni-window"}
+      role={docked ? "complementary" : "dialog"}
+      aria-label={t("boni.title")}
+    >
       <header className="panel-head boni-window-head">
         <h2>{t("boni.title")}</h2>
         <button
           type="button"
           className="icon-btn"
-          onClick={() => openBoniWindow(right ? "float" : "right")}
-          title={t(right ? "boni.float" : "boni.dock")}
-          aria-label={t(right ? "boni.float" : "boni.dock")}
+          onClick={() => openBoniWindow(docked ? "float" : "right")}
+          title={t(docked ? "boni.float" : "boni.dock")}
+          aria-label={t(docked ? "boni.float" : "boni.dock")}
         >
-          {right ? (
+          {docked ? (
             <PictureInPicture2 size={16} strokeWidth={1.8} />
           ) : (
             <PanelRight size={16} strokeWidth={1.8} />
@@ -97,28 +110,6 @@ export function BoniWindow() {
       <div className="boni-window-body">
         <ChatView compact />
       </div>
-    </>
-  );
-  return right ? (
-    <aside
-      ref={(n) => {
-        box.current = n;
-      }}
-      className="side-panel boni-docked"
-      aria-label={t("boni.title")}
-    >
-      {body}
-    </aside>
-  ) : (
-    <section
-      ref={(n) => {
-        box.current = n;
-      }}
-      className="boni-window"
-      role="dialog"
-      aria-label={t("boni.title")}
-    >
-      {body}
     </section>
   );
 }

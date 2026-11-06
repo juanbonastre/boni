@@ -584,11 +584,14 @@ contraseña ni un código aquí» under a question.
   Ctrl+E»), and `Ctrl+E` in Boni's windows, typing or not, open the conversation over what is open: a 400 × 600 px
   window with a 12 px radius and the shadow of a popover, growing out of the circle in 200 ms (none with reduced
   motion), the same conversation as always in its compact form, with what Juan types going to its box. Its head says
-  «Boni» with three icons: «Llevar a la derecha» (it becomes a side panel in the Bandeja's place; opening the Bandeja
-  makes it float again, and the button turns into «Que flote sobre la pantalla»), «Ampliar» (the Conversación screen)
-  and «Cerrar · Esc». `Esc` closes it before anything under it goes back. With a panel on the right (the Bandeja, a
-  record), the circle and the window stay beside it, never over its cards. Each message goes with what is on the
-  screen, by reference (what is open, the Bandeja's cards in its order, the rows chosen); the phone has no circle yet.
+  «Boni» with three icons: «Llevar a la derecha» (it becomes a side panel in the Bandeja's place, and the button turns
+  into «Que flote sobre la pantalla»; docked, it gives way to any other panel on the right, floating beside it until
+  that closes, what was being written kept), «Ampliar» (the Conversación screen) and «Cerrar · Esc». `Esc` with the
+  focus in it closes it before anything under it goes back; with the focus elsewhere `Esc` is that place's. `Ctrl+E`
+  does nothing under Ajustes, the search or the trash. With a panel on the right (the Bandeja, a record), the circle
+  and the window stay beside it, never over its cards. Each message goes with what is on the
+  screen, by reference (what is open, the Bandeja's cards in its order when it is seen, the rows chosen); the phone
+  has no circle yet.
 - **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a
   "Conversación" row at the top of the sidebar (with the number of proposals waiting), the third tab on the phone.
   **Its history as other AIs show it** (docs/conversacion.md 3.1; Juan, 2026-10-31): on the left of the conversation, a

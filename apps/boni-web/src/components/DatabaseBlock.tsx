@@ -1084,6 +1084,8 @@ function TableView({
       const el = e.target as HTMLElement | null;
       if (el?.closest("input:not([type='checkbox']), textarea, select, [contenteditable='true']"))
         return;
+      // In Boni's window (F9) Esc is the window's.
+      if (el?.closest(".boni-window, .boni-docked")) return;
       if (document.querySelector(".pop-box, .modal, .find-box")) return;
       if (e.key === "Escape") setPicked(new Set());
       else if (e.key === "Delete" || e.key === "Backspace") remove([...picked]);
