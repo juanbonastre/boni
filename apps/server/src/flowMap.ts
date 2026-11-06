@@ -364,7 +364,7 @@ function makeMap(
           : null,
     });
     // «Traer correo»: the connector brings to it what it found, and its «Guardar en Correos» keeps it in Correos.
-    if (on.connector === "mail" && mailCol) {
+    if (f.id === FETCH_FLOW && on.connector === "mail" && mailCol) {
       edge({ from: "conn:mail", to: id, kind: "brings", n: brought, outside: true });
       edge({
         from: id,

@@ -595,6 +595,15 @@ export function checkFlow(
   for (const s of steps)
     if (s.op === "call" && typeof s.tool === "string" && registry.get(s.tool)?.record && !byRecord)
       problems.push({ step: s.id, at: null, code: "piece-needs-record" });
+  // «Traer correo» (D-50) brings the mail with its «Guardar en Correos», always: without it (or with it only on a
+  // condition, or once per item), what the connector found would never be brought, and every look would be a run.
+  if ((flow.trigger as { connector?: unknown } | null)?.connector === "mail") {
+    const saves = steps.some(
+      (s) =>
+        s.op === "call" && s.tool === "mail.save" && s.when === undefined && s.each === undefined,
+    );
+    if (!saves) problems.push({ step: null, at: "trigger", code: "fetch-needs-save" });
+  }
   // A flow never starts another (docs/flujos.md §4.3): `flows.run` is the planner's, in the user's turn.
   for (const s of steps)
     if (
@@ -899,7 +908,13 @@ export function saveUserFlow(
   if (latest.version !== edit.base) return { error: "conflict" };
   if (problems.length) return { error: "invalid" };
   const trigger = edit.trigger ?? latest.trigger;
-  if (id === MAIL_FLOW && JSON.stringify(trigger) !== JSON.stringify(latest.trigger))
+  // Boni's «Leer correo» and «Traer correo» keep what starts them; only «Traer correo» is started by the connector.
+  if (
+    (id === MAIL_FLOW || id === FETCH_FLOW) &&
+    JSON.stringify(trigger) !== JSON.stringify(latest.trigger)
+  )
+    return { error: "trigger" };
+  if (id !== FETCH_FLOW && (trigger as { connector?: unknown } | null)?.connector !== undefined)
     return { error: "trigger" };
   return {
     flow: store.journal.saveFlow({

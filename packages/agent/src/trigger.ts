@@ -33,7 +33,7 @@ export function triggerOk(trigger: unknown): boolean {
   if (!trigger || typeof trigger !== "object" || Array.isArray(trigger)) return false;
   const t = trigger as Record<string, unknown>;
   if (typeof t.created === "string") return t.created === "correo";
-  if (t.connector !== undefined) return t.connector === "mail";
+  if (t.connector !== undefined) return t.connector === "mail" && Object.keys(t).length === 1;
   if (t.manual === true) {
     if (t.inputs === undefined) return true;
     return (

@@ -206,7 +206,7 @@ versiones y «Volver al de Boni». Los de hoy, con su disparador:
 
 | Flujo | Disparador | Pasos que se verían | Hoy, en el código |
 |---|---|---|---|
-| Traer correo | Cada 5 minutos | Buzón (pieza: carpeta, cada cuánto) → guardar en Correos, con sus adjuntos, el original, la invitación y el hilo | `Mails.start` |
+| Traer correo | Llega correo al buzón (el conector mira cada 5 minutos) | Guardar en Correos (pieza), con sus adjuntos, el original, la invitación y el hilo | Un flujo de Boni desde el 2026-11-06 (D-50); `Mails.run` |
 | Leer correo | Llega un correo | Reglas de la guía → Lo pendiente del remitente → Invitación → Lectora → Decisora → Rellenadora → Relaciones → Crear en la elegida → Plegar hilo → Bandeja → Aceptar solas | `mailPlan` y el código de alrededor |
 | Revisar la guía | 20 decisiones nuevas o «Revisar ahora»; una vez al día como mucho | Reglas que ya muestran sus correcciones (pieza) → Revisora → Medir releyendo (45 al día) → Sugerencia | `mailReview.ts` |
 | Aprender | Las decisiones de Juan | Señales → Sugerencia o «Solo» | `learning.ts`, `autoAccept.ts` |
@@ -281,8 +281,15 @@ preguntas · 0,41 €»):
   - Su paso es «Guardar en Correos», una pieza que guarda el correo nuevo con sus adjuntos, el original, la
     invitación (leída de su `.ics`) y el hilo. Así se ve lo que antes pasaba escondido al traer el correo.
   - Solo una mirada que encuentra correo nuevo es una ejecución; las demás no dejan nada en el Registro ni en el mapa.
-    El repaso único del correo perdido (la 34) trae lo que encuentra sin ejecución.
-  - Apagado, no se mira el buzón y no se trae nada; lo que esperaba a ser leído se lee igual.
+    El repaso único del correo perdido (la 34) va dentro de esa ejecución cuando coincide con correo nuevo; si no,
+    trae lo que encuentra sin ejecución.
+  - Apagado, no se mira el buzón, no se trae nada y Ajustes → Correo dice «Traer correo está apagado»; lo que esperaba a
+    ser leído se lee igual.
+  - Su disparador no se cambia (el servidor lo guarda como el de «Leer correo»), y solo «Traer correo» lo tiene.
+  - La lista de comprobación pide «Guardar en Correos» sin condición. Si una versión guardada de otra forma para antes
+    de él, hace una ejecución, Ajustes dice «Traer correo paró sin traer el correo» y no hace más hasta que el flujo
+    cambie. Un corte del buzón a medias termina la ejecución y se dice como antes.
+  - En «Probar», «Guardar en Correos» sabe que es una prueba y no trae nada.
   - Sin modelos para la cuenta, el correo se trae igual, sin ejecución.
   - En el mapa, el correo va del conector a «Traer correo» y de ahí a Correos. El Recorrido de una lectura pasa por
     él.

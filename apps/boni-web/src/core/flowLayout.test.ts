@@ -290,6 +290,10 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     const leer = map.nodes[5] as MapNodeLike;
     expect(groupOf(leer, "trigger")).toBe("on:created:correo");
     expect(groupOf(map.nodes[6] as MapNodeLike, "trigger")).toBe("on:manual");
+    // Boni's «Traer correo» is started by the mail connector, never «by the user».
+    expect(groupOf({ ...leer, trigger: { connector: "mail" } } as MapNodeLike, "trigger")).toBe(
+      "on:connector:mail",
+    );
     expect(groupOf(map.nodes[7] as MapNodeLike, "trigger")).toBe("on:boni");
     expect(groupOf(map.nodes[10] as MapNodeLike, "trigger")).toBeNull();
     expect(groupOf(map.nodes[2] as MapNodeLike, "collection")).toBe("in:col:trabajo");

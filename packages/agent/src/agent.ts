@@ -1636,7 +1636,11 @@ export class Agent {
       ...(tool.effect === "flow" ? { flows: this.flowStarter(st) } : {}),
       ...(tool.effect === "flow_save" ? { flowWriter: this.flowWriter() } : {}),
       ...(tool.effect === "piece"
-        ? { pieces: this.o.pieces?.() ?? null, proposals: () => (st.dry ? [] : st.proposals) }
+        ? {
+            pieces: this.o.pieces?.() ?? null,
+            proposals: () => (st.dry ? [] : st.proposals),
+            dry: !!st.dry,
+          }
         : {}),
       ...(tool.effect === "read" && this.o.origin ? { origin: this.o.origin } : {}),
     });

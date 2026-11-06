@@ -96,6 +96,8 @@ export interface MailState {
   tried?: Record<string, number>;
   /** The one-off rescans done (`RESCAN`). */
   rescans?: string[];
+  /** The version of «Traer correo» that ran without bringing the mail (D-50): no run until it changes. */
+  fetchStopped?: number;
 }
 /**
  * Juan's reading guide (docs/nucleo.md 7.4b, point 2), kept with the mailbox's settings and encrypted the
@@ -801,6 +803,8 @@ export class Mails {
   private reviewing = new Set<number>();
   /** What a look at an account's mailbox found, for «Traer correo»'s «Guardar en Correos» to bring in its run. */
   private bringing = new Map<number, () => Promise<number>>();
+  /** What failed while «Guardar en Correos» brought it (the run stops; the look says it, as before). */
+  private bringError = new Map<number, unknown>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   private readonly tz: string;
@@ -866,12 +870,19 @@ export class Mails {
         if (!made.length || !autoOn(st, AUTO_AREA)) return leaf(0, CODE);
         return leaf(await acceptAlone(st, this.o.host.agent(account), made, this.now()), CODE);
       },
-      save: async () => {
-        // What the look at the mailbox found, once; nothing waiting (a run some other way): nothing brought.
-        const bring = this.bringing.get(account);
+      save: async (dry) => {
+        // What the look at the mailbox found, once; in «Probar», or with nothing waiting (a run some other way),
+        // nothing is brought.
+        const bring = dry ? null : this.bringing.get(account);
         if (!bring) return leaf(0, CODE);
         this.bringing.delete(account);
-        return leaf(await bring(), CODE);
+        try {
+          return leaf(await bring(), CODE);
+        } catch (e) {
+          // The run stops with the step's error (never left running); the look sets `lastError` as before.
+          this.bringError.set(account, e);
+          throw new ToolError("mail-fetch");
+        }
       },
     };
   }
@@ -1562,9 +1573,24 @@ export class Mails {
     const store = this.o.host.store(account);
     // Boni's «Traer correo» (docs/sistema.md §4.2): turned off, the mailbox is not looked at and nothing is brought;
     // what waits to be read is read all the same («Leer correo» is a flow of its own).
-    const fetching = this.fetchFlow(store);
-    if (!fetching.enabled) {
-      st.lastCheck = this.now();
+    // A flow that cannot be kept current never stops the mail: it is brought as before, with no run.
+    let fetching: FlowRow | null = null;
+    try {
+      fetching = this.fetchFlow(store);
+    } catch (e) {
+      console.warn(`mail ${account}: «Traer correo» not kept (${(e as Error).message})`);
+    }
+    // Off, or stopped at this version without bringing the mail (D-50): the mailbox is not looked at, Ajustes says
+    // why, and no run is made until it is turned on or changed.
+    const idle = !fetching
+      ? null
+      : !fetching.enabled
+        ? "fetch-off"
+        : st.fetchStopped === fetching.version
+          ? "fetch-stopped"
+          : null;
+    if (idle) {
+      st.lastError = idle;
       this.saveState(account, st);
       await this.propose(account, s, st);
       return st;
@@ -1603,6 +1629,7 @@ export class Mails {
         st.lastUid = 0;
       }
       const reader = r;
+      let rescanned = false;
       /** What «Guardar en Correos» does: the mail found, kept with its attachments, original, invitation and thread. */
       const bring = async (): Promise<number> => {
         for (const uid of rescan) {
@@ -1622,6 +1649,7 @@ export class Mails {
           st.count++;
         }
         if (rescan.length) console.log(`mail ${account}: ${made.length} mails brought in again`);
+        rescanned = true;
         for (const uid of uids.slice(0, this.o.perCheck ?? 50)) {
           const f = await reader.fetch(uid, FETCH_MAX);
           st.lastUid = Math.max(st.lastUid, uid);
@@ -1642,27 +1670,41 @@ export class Mails {
         }
         return made.length;
       };
-      if (!restart) st.rescans = [...new Set([...(st.rescans ?? []), RESCAN.id])];
       // «Traer correo» (docs/sistema.md §4.2, D-50): only a look that finds new mail is a run of it, and its «Guardar
       // en Correos» brings the mail. Without the agent (no models for this account) the mail is brought all the same,
       // with no run; with the flow off, nothing is brought (above, before the mailbox is opened). The look back for
       // mail lost before (task 34's rescan, once) brings what it finds with no run of its own.
-      const agent = uids.length ? this.agentOf(account) : null;
+      const agent = uids.length && fetching ? this.agentOf(account) : null;
+      let stopped = false;
       if (uids.length || rescan.length) {
-        if (agent) {
+        if (agent && fetching) {
           this.bringing.set(account, bring);
+          let ran: Awaited<ReturnType<typeof agent.background>> | null = null;
           try {
-            await agent.background(fetching.plan, {}, [], undefined, {
+            ran = await agent.background(fetching.plan, {}, [], undefined, {
               id: FETCH_FLOW,
               version: fetching.version,
               by: fetching.by,
             });
           } finally {
-            this.bringing.delete(account);
+            // The piece never took what was found: the run stopped before «Guardar en Correos».
+            stopped = this.bringing.delete(account);
           }
+          const failed = this.bringError.get(account);
+          this.bringError.delete(account);
+          if (failed) throw failed;
+          if (stopped) {
+            st.fetchStopped = fetching.version;
+            console.warn(
+              `mail ${account}: «Traer correo» v${fetching.version} ran without bringing the mail (${ran?.status ?? "?"}): no run until it changes`,
+            );
+          } else delete st.fetchStopped;
         } else await bring();
       }
-      st.lastError = null;
+      // The look back of task 34, once: done when it ran (or there was nothing to look back at).
+      if (!restart && (rescanned || !rescan.length))
+        st.rescans = [...new Set([...(st.rescans ?? []), RESCAN.id])];
+      st.lastError = stopped ? "fetch-stopped" : null;
     } catch (e) {
       st.lastError = e instanceof MailError ? e.code : e instanceof ImapError ? e.code : "failed";
       if (!(e instanceof MailError || e instanceof ImapError))

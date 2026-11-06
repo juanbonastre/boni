@@ -9,6 +9,7 @@ import {
   drawnRun,
   ensureFlow,
   exprText,
+  FETCH_FLOW,
   flowCatalog,
   flowsView,
   flowView,
@@ -16,6 +17,7 @@ import {
   MAIL_FLOW,
   revertFlow,
   saveUserFlow,
+  triggerOk,
   typeKeysOf,
 } from "./flows.ts";
 import { foldDays, mailPlan } from "./mail.ts";
@@ -624,6 +626,70 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     expect(
       checkFlow(store, registry, { trigger: { created: "correo" }, plan: none }, o).problems,
     ).toEqual([]);
+    store.close();
+  });
+
+  it("«Traer correo» (D-50): its checklist wants «Guardar en Correos» always, its trigger is kept and only its own, and «Probar» brings nothing", async () => {
+    const store = withTypes();
+    const save = { id: "save", op: "call", tool: "mail.save", args: {} };
+    const trigger = { connector: "mail" };
+    const check = (steps: unknown[]) =>
+      checkFlow(store, registry, { trigger, plan: { version: 1, steps } }, o).problems;
+    expect(check([save])).toEqual([]);
+    // Without it, with it only on a condition, or once per item: what the connector found would never be brought.
+    for (const steps of [
+      [{ id: "n", op: "call", tool: "notify", args: { text: { lit: "Hola" } } }],
+      [{ ...save, when: { ref: "$x" } }],
+    ])
+      expect(check(steps)).toContainEqual({ step: null, at: "trigger", code: "fetch-needs-save" });
+    // The connector's trigger is well formed alone, and only «Traer correo» has it.
+    expect(triggerOk({ connector: "mail" })).toBe(true);
+    expect(triggerOk({ connector: "mail", schedule: { every: "hour" } })).toBe(false);
+    expect(triggerOk({ connector: "otro" })).toBe(false);
+    ensureFlow(
+      store,
+      {
+        id: FETCH_FLOW,
+        name: "Traer correo",
+        trigger,
+        plan: { version: 1, steps: [save] },
+        by: "preset",
+      },
+      1000,
+    );
+    expect(
+      saveUserFlow(
+        store,
+        FETCH_FLOW,
+        { base: 1, plan: { version: 1, steps: [save] }, trigger: { schedule: { every: "hour" } } },
+        [],
+        2000,
+      ),
+    ).toEqual({ error: "trigger" });
+    const other = createFlow(store, { name: "Otro" }, 3000);
+    if (!other) throw new Error("no flow");
+    expect(
+      saveUserFlow(
+        store,
+        other.id,
+        { base: 1, plan: { version: 1, steps: [] }, trigger },
+        [],
+        4000,
+      ),
+    ).toEqual({ error: "trigger" });
+    // «Probar»: the piece knows the run is dry, and the host brings nothing.
+    const seen: boolean[] = [];
+    const piece = registry.all().find((x) => x.name === "mail.save");
+    if (!piece) throw new Error("no mail.save");
+    const pieces = {
+      save: async (dry: boolean) => {
+        seen.push(dry);
+        return leaf(0, CODE_LABEL);
+      },
+    };
+    await piece.run({ pieces, proposals: () => [], dry: true } as never, {} as never, CODE_LABEL);
+    await piece.run({ pieces, proposals: () => [], dry: false } as never, {} as never, CODE_LABEL);
+    expect(seen).toEqual([true, false]);
     store.close();
   });
 
