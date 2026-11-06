@@ -1,5 +1,5 @@
 /** (test) Flows kept as data (docs/flujos.md, F1): the mail reading saved as «Leer correo», drawn and counted. */
-import { checkPlan, coreTools } from "@boni/agent";
+import { checkPlan, coreTools, leaf } from "@boni/agent";
 import { label } from "@boni/entities";
 import { openUserStore } from "@boni/store";
 import { describe, expect, it } from "vitest";
@@ -18,8 +18,10 @@ import {
   saveUserFlow,
   typeKeysOf,
 } from "./flows.ts";
-import { mailPlan } from "./mail.ts";
+import { foldDays, mailPlan } from "./mail.ts";
 import { withPieces } from "./pieces.ts";
+
+const CODE_LABEL = label("own", "public", [{ kind: "code", id: "test" }]);
 
 const TARGETS = [
   { key: "docencia", name: "Docencia", option: "Docencia", date: "date", id: "t_docencia" },
@@ -38,18 +40,19 @@ describe("flows (docs/flujos.md, F1)", () => {
     const plan = planOf();
     expect(JSON.stringify(plan)).toBe(JSON.stringify(planOf()));
     // What the code worked out around the models (the guide's rule, what waits, the relations) is Boni's pieces,
-    // steps of the plan (docs/sistema.md §4.2): no longer inputs.
+    // steps of the plan (docs/sistema.md §4.2): no longer inputs. In the order the plan first takes them: the
+    // collections it writes in, when «Buscar relaciones» runs, after the Decisora.
     expect(inputsOf(plan).map((i) => `${i.id}:${i.what}`)).toEqual([
       "mail:record",
       "asked:value",
       "again:value",
-      "writes:list",
       "text:text",
       "modules:modules",
       "userIn:value",
       "guide:guide",
       "options:options",
       "subject:text",
+      "writes:list",
     ]);
     expect(
       (plan as { steps: { id: string; tool?: string }[] }).steps
@@ -248,7 +251,7 @@ describe("flows (docs/flujos.md, F1)", () => {
     }
     j.step({
       run: "run-1",
-      step: "n_tasks",
+      step: "n",
       kind: "call",
       decision: "propose",
       rule: "P4",
@@ -257,7 +260,7 @@ describe("flows (docs/flujos.md, F1)", () => {
     });
     j.step({
       run: "run-1",
-      step: "n_tasks",
+      step: "n",
       kind: "call",
       decision: "propose",
       rule: "P4",
@@ -299,7 +302,7 @@ describe("flows (docs/flujos.md, F1)", () => {
     expect(byId.get("c")?.deps).toContain("r");
     // «Crear en la elegida» (docs/sistema.md §4.2): one «Crear» in the collection the decider chose, among those
     // its `case` writes; no step per collection.
-    const create = byId.get("n_tasks");
+    const create = byId.get("n");
     expect(create).toMatchObject({
       op: "call",
       what: "entities.create",
@@ -521,7 +524,7 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     store.close();
   });
 
-  it("with several collections, «Leer correo» creates in the chosen one: one «Rellenadora» and one «Crear» per kind of thing (docs/sistema.md §4.2)", () => {
+  it("with several collections, «Leer correo» creates in the chosen one: one «Rellenadora» and one «Crear» for everything it reads, the invitation apart (docs/sistema.md §4.2)", () => {
     const store = withTypes();
     const targets = [
       {
@@ -565,19 +568,86 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     const c = checkFlow(store, registry, { trigger: { created: "correo" }, plan }, o);
     expect(c.problems).toEqual([]);
     const creates = plan.steps.filter((x) => x.tool === "entities.create");
-    expect(creates.map((x) => x.id)).toEqual(["n_tasks", "n_events", "inv_create"]);
+    // One «Crear» for every thing the reader found, its tasks and its events (Juan, 2026-11-06: «Haz la B»), and
+    // the invitation's own: no model reads it.
+    expect(creates.map((x) => x.id)).toEqual(["n", "inv_create"]);
     for (const x of creates) expect(typeKeysOf(x.args?.type)).toEqual(["tarea", "correo"]);
-    // One «Rellenadora» per kind of thing, over the fields of the collection chosen.
+    expect((creates[0] as { each?: unknown }).each).toEqual({ ref: "$r.all" });
+    // One «Rellenadora», over the fields of the collection chosen.
     const fills = plan.steps.filter((x) => x.reader === "fill");
-    expect(fills.map((x) => x.id)).toEqual(["n_tasks_f", "n_events_f"]);
+    expect(fills.map((x) => x.id)).toEqual(["n_f"]);
+    expect((fills[0] as { each?: unknown }).each).toEqual({ ref: "$r.all" });
     expect(fills[0]?.params).toMatchObject({ fields: { ref: "$fill" } });
     // A rule of the guide is the decider's answer, so the choice is always «Decisora»'s.
     expect(plan.steps.find((x) => x.reader === "classify")?.params?.given).toEqual({
       ref: "$only",
     });
-    // No step per collection: «Leer correo» reads in about a dozen steps, whatever the collections.
-    expect(plan.steps.length).toBe(14);
+    // No step per collection or per kind: «Leer correo» reads in a dozen steps, whatever the collections.
+    expect(plan.steps.length).toBe(12);
+    // In the order of docs/sistema.md §4.2: Lectora → Decisora → Rellenadora → Buscar relaciones → Crear; then
+    // «Plegar hilo» with its days as a setting of its step, and «Aceptar solas».
+    expect(plan.steps.map((x) => x.id)).toEqual([
+      "m",
+      "only",
+      "known",
+      "inv",
+      "r",
+      "c",
+      "n_f",
+      "prefill",
+      "n",
+      "inv_create",
+      "fold",
+      "alone",
+    ]);
+    expect(plan.steps.find((x) => x.id === "fold")).toMatchObject({ args: { days: { lit: 60 } } });
+    // A kind that goes elsewhere (a route to a fixed collection) keeps the others walking their own list.
+    const routed = mailPlan(targets, {
+      guide: true,
+      modules: ["tasks", "events"],
+      boundModules: true,
+      routes: { events: { propose: { collection: "t_tarea" } } },
+      fixed: [targets[0] as (typeof targets)[number]],
+    }) as { steps: { id: string; tool?: string; each?: unknown }[] };
+    expect(
+      routed.steps.filter((x) => x.tool === "entities.create").map((x) => [x.id, x.each]),
+    ).toEqual([
+      ["n_tasks", { ref: "$r.tasks" }],
+      ["f_events", { ref: "$r.events" }],
+    ]);
+    // «Buscar relaciones» still comes before the first «Crear».
+    const ids = routed.steps.map((x) => x.id);
+    expect(ids.indexOf("prefill")).toBe(ids.indexOf("n_tasks") - 1);
+    // With no kind to read (an extension with no reader modules), nothing reads a choice no decider made: a plan
+    // that passes the checklist, as before (the independent review of «Haz la B»).
+    const none = mailPlan(targets, { guide: true, modules: [], boundModules: true });
+    expect(
+      checkFlow(store, registry, { trigger: { created: "correo" }, plan: none }, o).problems,
+    ).toEqual([]);
     store.close();
+  });
+
+  it("«Plegar hilo» looks back the days its step says (its setting, task 83), 60 when it says none or a wrong one", async () => {
+    const seen: (number | undefined)[] = [];
+    const pieces = {
+      fold: (_mail: string, _again: boolean, _made: readonly string[], days?: number) => {
+        seen.push(days);
+        return leaf(0, CODE_LABEL);
+      },
+    };
+    const fold = registry.all().find((x) => x.name === "inbox.fold");
+    if (!fold) throw new Error("no fold");
+    const c = { pieces, proposals: () => ["p1"] } as never;
+    await fold.run(
+      c,
+      { mail: leaf("e_1", CODE_LABEL), days: leaf(7, CODE_LABEL) } as never,
+      CODE_LABEL,
+    );
+    await fold.run(c, { mail: leaf("e_1", CODE_LABEL) } as never, CODE_LABEL);
+    expect(seen).toEqual([7, undefined]);
+    // The code keeps it within a year and a day, whatever the step says.
+    expect([7, 0, 400, 2.5].map(foldDays)).toEqual([7, 60, 60, 60]);
+    expect(foldDays("7")).toBe(60);
   });
 
   it("its checklist says what the run would refuse, step by step, and what each step may take", () => {

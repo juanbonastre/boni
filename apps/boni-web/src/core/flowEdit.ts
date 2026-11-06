@@ -4,7 +4,7 @@
  * fields follow their roles and the inputs of that collection (`$fill.<key>`, `$prefill.<key>`) follow its key. The
  * server checks the result (`checkFlow`); nothing here decides what is allowed.
  */
-import type { FlowCatalog, FlowPlan, FlowStep } from "./agent.ts";
+import type { FlowCatalog, FlowPlan, FlowStep, MailGuide, MailRule } from "./agent.ts";
 
 export type Expr =
   | { lit: string | number | boolean | null }
@@ -39,6 +39,61 @@ export function typeKeysOf(v: unknown): string[] {
     keys.push(key);
   }
   return [...new Set(keys)];
+}
+
+/**
+ * The collections a decider's choice sends things to (docs/sistema.md §4.2, «Crear en la elegida»; D-48): the
+ * collection of each other step (a record's `type`, a reader's `collection`) that is a `case` over its `choice` (never
+ * a `case` that gives a field's key), and, in a plan of a lane per choice (before «Crear en la elegida»), the collection
+ * of each step that runs only when its choice is one option; in the order they come, none when no step goes by it.
+ */
+export function decidesAmong(plan: FlowPlan, stepId: string): string[] {
+  const choice = `$${stepId}.choice`;
+  const byChoice = (x: unknown) => (x as { ref?: unknown } | undefined)?.ref === choice;
+  const overChoice = (v: unknown) =>
+    isObj(v) && v.fn === "case" && Array.isArray(v.args) && byChoice(v.args[0]);
+  /** A step's condition is «its choice is this option» (alone or among others joined by `and`). */
+  const inLane = (when: unknown): boolean => {
+    if (!isObj(when) || !Array.isArray(when.args)) return false;
+    if (when.fn === "and") return when.args.some(inLane);
+    return when.fn === "eq" && when.args.some(byChoice);
+  };
+  const keys: string[] = [];
+  for (const s of plan.steps) {
+    if (s.id === stepId) continue;
+    const type = isObj(s.args) ? s.args.type : undefined;
+    const collection = isObj(s.params) ? s.params.collection : undefined;
+    for (const c of [type, collection]) if (overChoice(c)) keys.push(...typeKeysOf(c));
+    if (inLane(s.when) && isExpr(type) && "lit" in type) keys.push(...typeKeysOf(type));
+  }
+  return [...new Set(keys)];
+}
+
+/**
+ * The rules of the reading guide that choose one of a decider's collections (`keys`) without a model, in the guide's
+ * order: those that send a sender to one of them, and that no earlier rule takes first (the server's `ruleFor`: the
+ * first that matches wins; «@dominio» matches every address that ends so).
+ */
+export function guideRulesFor(
+  guide: MailGuide,
+  keys: readonly string[],
+  keyOfId: (id: string) => string | null | undefined,
+): MailRule[] {
+  const low = (s: string) => s.trim().toLowerCase();
+  const shadowed = (i: number) => {
+    const from = low(guide.rules[i]?.from ?? "");
+    return guide.rules.slice(0, i).some((r) => {
+      const earlier = low(r.from);
+      return earlier.startsWith("@") ? from.endsWith(earlier) : from === earlier;
+    });
+  };
+  return guide.rules.filter(
+    (r, i) =>
+      r.action === "collection" &&
+      !!r.collection &&
+      keys.includes(keyOfId(r.collection) ?? "") &&
+      !shadowed(i),
+  );
 }
 
 /** Names said as a person lists them: «Tarea, Evento o Persona» (`or` is the language's word, with its spaces). */

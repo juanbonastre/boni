@@ -19,7 +19,9 @@ import {
 } from "../core/flowEdit.ts";
 import { stepName as nameOfStep, stepDesc } from "../core/runText.ts";
 import { useStore } from "../store.ts";
+import { DeciderFacts } from "./DeciderFacts.tsx";
 import { ExprField } from "./ExprField.tsx";
+import { PieceFacts } from "./PieceFacts.tsx";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
 type Refs = readonly { ref: string; t: string }[];
@@ -438,6 +440,17 @@ export function FlowStepPanel({
         });
         return desc ? <p className="flow-step-desc muted">{desc}</p> : null;
       })()}
+      {/* The decider: what it chooses among and the guide's rules that choose for it (task 83). */}
+      {step.op === "read" && step.reader === "classify" && (
+        <DeciderFacts
+          plan={plan}
+          step={step.id}
+          nameOfKey={(k) => catalog.collections.find((c) => c.key === k)?.name}
+          keyOfId={(id) => catalog.collections.find((c) => c.id === id)?.key}
+        />
+      )}
+      {/* A piece's own setting that lives elsewhere: «Aceptar solas»' «Solo» switch (task 83). */}
+      {step.op === "call" && <PieceFacts step={step} />}
       {problems.length > 0 && (
         <ul className="flow-problems" aria-label={t("flows.problems")}>
           {problems.map((p) => (

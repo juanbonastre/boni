@@ -450,7 +450,7 @@ async function serveFlows(
   });
   const detail = (fid: string, days = 7) => {
     const types = Object.values(store.schema().types);
-    return flowView(
+    const v = flowView(
       store,
       fid,
       Date.now(),
@@ -458,6 +458,11 @@ async function serveFlows(
       (tool) => host.toolTitle(tool),
       (key) => types.find((t) => t.key === key)?.name ?? null,
     );
+    if (!v) return v;
+    // The key of the collection the mail's connector brings records to: a trigger on it says «viene del conector
+    // Correo» (docs/sistema.md §4.2), the editor's draft as much as the saved version.
+    const mailType = host.mailTypeOf?.(who.account) ?? null;
+    return { ...v, mailKey: types.find((t) => t.id === mailType)?.key ?? null };
   };
   if (route !== "GET /api/agent/flows" && route !== "GET /api/agent/flows/:id" && !mine)
     return send(res, 403, { error: "personal-device-only" });
@@ -466,7 +471,7 @@ async function serveFlows(
       host.mailFlowCurrent?.(who.account);
       return send(res, 200, { flows: flowsView(store) });
     case "GET /api/agent/flows/catalog":
-      return send(res, 200, flowCatalog(host.tools, store, forEditor().modules));
+      return send(res, 200, flowCatalog(host.tools, store, forEditor().modules, { ids: true }));
     case "POST /api/agent/flows/check": {
       const b = (await bodyOf(req)) as { trigger?: unknown; plan?: unknown };
       return send(

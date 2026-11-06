@@ -397,7 +397,14 @@ export interface FlowCatalog {
   fns: Record<string, [number, number]>;
   limits: { steps: number; each: number; nesting: number };
   /** The collections a model may see (the ones a flow may name), with their fields and roles. */
-  collections: { key: string; name: string; parent: string | null; fields: CatalogField[] }[];
+  collections: {
+    /** Its id, for the app only: what a rule of the reading guide names it by (the decider's panel, task 83). */
+    id?: string;
+    key: string;
+    name: string;
+    parent: string | null;
+    fields: CatalogField[];
+  }[];
   /** The mail extension's modules (what read_message gives, per module). */
   modules: string[];
 }
@@ -419,11 +426,16 @@ const READER_OUT: Record<string, Shape> = {
   label_each: rec({ choices: list(TEXT()), counts: list(rec({ option: TEXT(), n: NUM() })) }),
 };
 
-/** The editor's catalog: what a node may be (the registry's tools, the readers, the rest of the plan language). */
+/**
+ * The editor's catalog: what a node may be (the registry's tools, the readers, the rest of the plan language). Each
+ * collection's id only for the app (`ids`: a rule of the reading guide names a collection by it); a model is told
+ * collections by key, the only way a flow names one.
+ */
 export function flowCatalog(
   registry: ToolRegistry,
   store: UserStore,
   modules: readonly string[],
+  o: { ids?: boolean } = {},
 ): FlowCatalog {
   const v = planVocabulary();
   const readers: FlowCatalog["readers"] = {};
@@ -451,6 +463,7 @@ export function flowCatalog(
     fns: v.fns,
     limits: v.limits,
     collections: visibleTypes(store).map((def) => ({
+      ...(o.ids ? { id: def.id } : {}),
       key: def.key,
       name: def.name,
       parent: def.parent ? (store.schema().types[def.parent]?.key ?? null) : null,

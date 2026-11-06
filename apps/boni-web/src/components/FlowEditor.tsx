@@ -156,7 +156,17 @@ type StepCard = Node<
   },
   "step"
 >;
-type TriggerCard = Node<{ text: string; inputs: string[]; bad: boolean; on: boolean }, "trigger">;
+type TriggerCard = Node<
+  {
+    text: string;
+    /** What brings the records that start it, in words («Viene del conector Correo»), or null. */
+    via: string | null;
+    inputs: string[];
+    bad: boolean;
+    on: boolean;
+  },
+  "trigger"
+>;
 type Card = StepCard | TriggerCard;
 
 /** What a test says a step would have done, in words: «Propondría: Crear en Docencia «…»». */
@@ -297,8 +307,9 @@ const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) 
         </span>
         <span className="fl-name">{data.text}</span>
       </div>
-      {data.inputs.length > 0 && (
+      {(data.via || data.inputs.length > 0) && (
         <div className="fl-body">
+          {data.via && <div className="fl-line muted fl-via">{data.via}</div>}
           {data.inputs.map((i) => (
             <div key={i} className="fl-line fl-input">
               <span>{inputName(t, i)}</span>
@@ -338,6 +349,7 @@ function OrderEdge(p: EdgeProps<Edge<OrderData>>) {
         {d.lane && (
           <div
             className="fl-lane"
+            title={d.lane}
             style={{
               transform: `translate(-50%, -100%) translate(${p.targetX}px, ${p.targetY - 6}px)`,
             }}
@@ -409,12 +421,24 @@ function nodesOf(
     const r = ran.get(s.id) ?? {};
     const ranN = Object.entries(r).reduce((a, [k, b]) => (k === "end" ? a : a + b), 0);
     const tried = test ? (test.steps[s.id] ?? null) : undefined;
-    const detailText = stepDetail(t, s, s.op === "call" ? collection(s) : null);
+    // A piece of Boni says so on its card, and whether it only reads or changes the Bandeja (F7: its effect class).
+    const tool = s.op === "call" ? catalog?.tools.find((x) => x.name === s.tool) : undefined;
+    const piece =
+      tool?.effect === "piece"
+        ? t(tool.changes ? "flows.piece.changes" : "flows.piece.reads")
+        : null;
+    const detailText =
+      [stepDetail(t, s, s.op === "call" ? collection(s) : null), piece]
+        .filter(Boolean)
+        .join(" · ") || null;
     const lines = (detailText ? 1 : 0) + (tried ? 1 : 0) + (ranN > 0 && !tried ? 1 : 0);
     return { s, r, tried, detailText, height: stepHeight(lines) };
   });
   const heights = new Map(cards.map((c) => [c.s.id, c.height]));
-  const triggerHeight = 40 + Math.min(inputs.length, 9) * LINE + 8;
+  // The draft's trigger, not the saved one's: changed to another collection, the line goes at once.
+  const starts = (draft.trigger as { created?: unknown } | null)?.created;
+  const via = detail.mailKey && starts === detail.mailKey ? t("flows.trigger.viaMail") : null;
+  const triggerHeight = 40 + (Math.min(inputs.length, 9) + (via ? 1 : 0)) * LINE + 8;
   const l = stepLayout(draft.plan.steps, {
     trigger: { id: TRIGGER, height: triggerHeight },
     width: WIDTH,
@@ -435,6 +459,7 @@ function nodesOf(
           draft.trigger,
           (k) => catalog?.collections.find((c) => c.key === k)?.name,
         ),
+        via,
         inputs,
         bad: problems.some((p) => p.step === null && p.at === "trigger"),
         on: selected === TRIGGER,

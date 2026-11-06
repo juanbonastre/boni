@@ -98,8 +98,9 @@ fases siguen de F7 a F13.
   `read_message` con los módulos y la guía → `classify` (si hay varias colecciones) → por cada elemento, `fill` y
   `entities.create` con `zip`; lo que el código decide antes (las relaciones por el remitente, D-38; la invitación
   de un `.ics`) entra como valores vinculados (`$prefill`, `$inv`). Ya es un flujo; solo que está escrito en código.
-  Desde el 2026-11-06 crea en la elegida (`docs/sistema.md` §4.2): una «Rellenadora» y un «Crear» por clase de cosa,
-  no uno por colección. La colección sale de `case($c.choice, opción, clave…)`, con cada opción y su colección
+  Desde el 2026-11-06 crea en la elegida (`docs/sistema.md` §4.2): una «Rellenadora» y un «Crear» para todo lo que
+  encuentra la lectora (`$r.all`, sus tareas y sus eventos en una lista), y el «Crear» de la invitación aparte (D-49);
+  nunca uno por colección. La colección sale de `case($c.choice, opción, clave…)`, con cada opción y su colección
   escritas en el plan (D-48); la regla de la guía llega a la Decisora como `given` (su respuesta, sin modelo); y
   `fill` recibe con `collection` los campos de esa colección, que el código elige entre los suyos antes de que nada
   llegue al modelo (sus campos siguen con la etiqueta del código, R1).

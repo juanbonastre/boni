@@ -101,8 +101,10 @@ import {
   toast,
   useStore,
 } from "../store.ts";
+import { DeciderFacts } from "./DeciderFacts.tsx";
 import { triggerText } from "./FlowEditor.tsx";
 import { inputName, stepDetail } from "./FlowStepPanel.tsx";
+import { PieceFacts } from "./PieceFacts.tsx";
 import { MenuRow, PointMenu, PopButton } from "./Popover.tsx";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
@@ -1605,6 +1607,8 @@ function Canvas({
         desc: t("map.triggerDesc"),
         model: null,
         numbers: null,
+        decider: null,
+        piece: null,
       };
     const node = drawnNode.steps.find((x) => x.id === picked);
     if (!node) return null;
@@ -1624,6 +1628,11 @@ function Canvas({
         node.calls && node.calls > 0
           ? `${t(node.calls === 1 ? "map.calls.one" : "map.callsShort", { n: node.calls })}${node.cost ? ` · ${money(node.cost)}` : ""}`
           : null,
+      // The decider says what it chooses among and the guide's rules that choose for it (task 83).
+      decider: role === "decider" && drawnNode.plan ? { plan: drawnNode.plan, id: node.id } : null,
+      // A piece's own settings: «Aceptar solas»' «Solo» switch, «Plegar hilo»'s days (task 83).
+      piece:
+        node.op === "call" ? (drawnNode.plan?.steps.find((x) => x.id === node.id) ?? null) : null,
     };
   })();
   // The box chosen stays in view when its panel narrows the canvas: moved just enough, the zoom kept.
@@ -1965,6 +1974,15 @@ function Canvas({
                 )}
               </dl>
             )}
+            {pickedStep?.decider && (
+              <DeciderFacts
+                plan={pickedStep.decider.plan}
+                step={pickedStep.decider.id}
+                nameOfKey={keyName}
+                keyOfId={(id) => map.nodes.find((n) => n.id === `col:${id}`)?.key}
+              />
+            )}
+            {pickedStep?.piece && <PieceFacts step={pickedStep.piece} />}
             {run && (
               <RunHere
                 run={run}

@@ -1848,94 +1848,145 @@ export const FLOW_DETAIL = {
   preset: 3,
 };
 
-/** «Leer correo» creating in the chosen collection (docs/sistema.md §4.2): one «Rellenadora» and one «Crear», the
- * collection from `case` over the decider's choice, as `mailPlan` writes it with two collections. */
-const chosenKey = {
-  fn: "case",
-  args: [
-    { ref: "$c.choice" },
-    { lit: "Docencia (p. ej.: Corregir exámenes)" },
-    { lit: "docencia" },
-    { lit: "Gestiones (p. ej.: Renovar el DNI)" },
-    { lit: "gestiones" },
-  ],
-};
-export const FLOW_PLAN_CHOSEN = {
-  version: 1,
-  steps: [
-    FLOW_PLAN.steps[0],
-    FLOW_PLAN.steps[1],
-    {
-      id: "c",
-      op: "read",
-      reader: "classify",
-      input: { ref: "$text" },
-      params: { options: { ref: "$options" }, given: { ref: "$only" } },
-      when: { ref: "$r.all" },
-    },
-    {
-      id: "n_tasks_f",
-      op: "read",
-      reader: "fill",
-      each: { ref: "$r.tasks" },
-      when: { ref: "$c.choice" },
-      input: {
-        fn: "concat",
-        args: [{ ref: "$text" }, { lit: "\n\nElemento: " }, { ref: "$item.title" }],
+/** «Leer correo» creating in the chosen collection (docs/sistema.md §4.2): one «Rellenadora» and one «Crear» for
+ * everything the reader found (`$r.all`), the collection from `case` over the decider's choice, as `mailPlan` writes
+ * it with the collections given (each option the decider reads and its collection's key); the decider asks when
+ * unsure and takes a rule of the guide as its answer (`given`). */
+const chosenPlan = (options: [string, string][]) => {
+  const chosenKey = {
+    fn: "case",
+    args: [{ ref: "$c.choice" }, ...options.flatMap(([o, k]) => [{ lit: o }, { lit: k }])],
+  };
+  const mail = { ref: "$mail" };
+  return {
+    version: 1,
+    steps: [
+      FLOW_PLAN.steps[0],
+      // Boni's pieces, as `mailPlan` writes them (docs/sistema.md §4.2): the sender's rule first.
+      { id: "only", op: "call", tool: "mail.rule", args: { mail } },
+      FLOW_PLAN.steps[1],
+      {
+        id: "c",
+        op: "read",
+        reader: "classify",
+        input: { ref: "$text" },
+        params: {
+          options: { ref: "$options" },
+          ask: { lit: "¿A qué colección va este correo?" },
+          given: { ref: "$only" },
+        },
+        when: { ref: "$r.all" },
       },
-      params: { fields: { ref: "$fill" }, collection: chosenKey },
-    },
-    {
-      id: "n_tasks",
-      op: "call",
-      tool: "entities.create",
-      each: { ref: "$r.tasks" },
-      zip: { ref: "$n_tasks_f" },
-      when: { ref: "$c.choice" },
-      why: { ref: "$item.quote" },
-      args: {
-        type: chosenKey,
-        values: {
-          fn: "merge",
-          args: [
-            { fn: "pick", args: [{ ref: "$prefill" }, chosenKey] },
-            { ref: "$zip.values" },
-            {
-              fn: "obj",
-              args: [
-                { lit: "title" },
-                { ref: "$item.title" },
-                { lit: "body" },
-                { ref: "$zip.note" },
-              ],
-            },
-          ],
+      {
+        id: "n_f",
+        op: "read",
+        reader: "fill",
+        each: { ref: "$r.all" },
+        when: { ref: "$c.choice" },
+        input: {
+          fn: "concat",
+          args: [{ ref: "$text" }, { lit: "\n\nElemento: " }, { ref: "$item.title" }],
+        },
+        params: { fields: { ref: "$fill" }, collection: chosenKey },
+      },
+      {
+        id: "n",
+        op: "call",
+        tool: "entities.create",
+        each: { ref: "$r.all" },
+        zip: { ref: "$n_f" },
+        when: { ref: "$c.choice" },
+        why: { ref: "$item.quote" },
+        args: {
+          type: chosenKey,
+          values: {
+            fn: "merge",
+            args: [
+              { fn: "pick", args: [{ ref: "$prefill" }, chosenKey] },
+              { ref: "$zip.values" },
+              {
+                fn: "obj",
+                args: [
+                  { lit: "title" },
+                  { ref: "$item.title" },
+                  { lit: "body" },
+                  { ref: "$zip.note" },
+                ],
+              },
+            ],
+          },
         },
       },
-    },
-  ],
+      // One thread, one proposal, over the days its setting says; then «Aceptar solas».
+      { id: "fold", op: "call", tool: "inbox.fold", args: { mail, days: { lit: 60 } } },
+      { id: "alone", op: "call", tool: "inbox.accept_alone", args: {} },
+    ],
+  };
+};
+export const FLOW_PLAN_CHOSEN = chosenPlan([
+  ["Docencia (p. ej.: Corregir exámenes)", "docencia"],
+  ["Gestiones (p. ej.: Renovar el DNI)", "gestiones"],
+]);
+/** The same over the map's collections, Tarea and Evento (MAP_CHOSEN). */
+const FLOW_PLAN_CHOSEN_MAP = chosenPlan([
+  ["Tarea (p. ej.: Preparar la reunión)", "tarea"],
+  ["Evento (p. ej.: Cena de empresa)", "evento"],
+]);
+/** Juan's reading guide (invented): a rule that skips a list, one that the list's rule takes first, and two that send
+ * a sender to a collection (Gestiones in the editor's fixtures, Tarea on the map's). */
+export const GUIDE_RULES = {
+  guide: {
+    instructions: "",
+    rules: [
+      { id: "r1", from: "@lista.example.com", action: "skip" },
+      {
+        id: "r4",
+        from: "boletin@lista.example.com",
+        action: "collection",
+        collection: "t_gestiones",
+      },
+      {
+        id: "r2",
+        from: "secretaria.ejemplo@universidad.example",
+        action: "collection",
+        collection: "t_gestiones",
+      },
+      {
+        id: "r3",
+        from: "coordinacion.ejemplo@universidad.example",
+        action: "collection",
+        collection: "t_01tarea",
+      },
+    ],
+    examples: [],
+  },
 };
 export const FLOW_DETAIL_CHOSEN = {
   ...FLOW_DETAIL,
-  inputs: [...FLOW_DETAIL.inputs, { id: "options", what: "list" }, { id: "only", what: "value" }],
+  inputs: [...FLOW_DETAIL.inputs, { id: "options", what: "list" }],
+  // The mail's connector brings records to «correo»: the trigger says so (docs/sistema.md §4.2).
+  mailKey: "correo",
   nodes: [
     FLOW_DETAIL.nodes[0],
+    flowStep("only", "call", "mail.rule", { title: "Regla del remitente", deps: ["mail"] }),
     FLOW_DETAIL.nodes[1],
     flowStep("c", "read", "classify", { when: true, deps: ["text", "options", "only", "r"] }),
-    flowStep("n_tasks_f", "read", "fill", {
+    flowStep("n_f", "read", "fill", {
       each: true,
       when: true,
       deps: ["text", "r", "fill", "c"],
       ran: { allow: 12 },
     }),
-    flowStep("n_tasks", "call", "entities.create", {
+    flowStep("n", "call", "entities.create", {
       title: "Crear",
       each: true,
       when: true,
-      deps: ["r", "n_tasks_f", "prefill", "c"],
+      deps: ["r", "n_f", "prefill", "c"],
       ran: { propose: 12 },
       into: ["Docencia", "Gestiones"],
     }),
+    flowStep("fold", "call", "inbox.fold", { title: "Plegar hilo", deps: ["mail"] }),
+    flowStep("alone", "call", "inbox.accept_alone", { title: "Aceptar solas" }),
   ],
   plan: FLOW_PLAN_CHOSEN,
 };
@@ -2260,6 +2311,41 @@ export const MAP = {
     mapEdge("actor:user", "col:t_libro", "writes", 3),
   ],
 };
+/** The map with «Leer correo» creating in the chosen collection, Tarea or Evento (task 83: the decider's panel). */
+export const MAP_CHOSEN = {
+  ...MAP,
+  nodes: MAP.nodes.map((n) =>
+    n.id === "flow:leer-correo"
+      ? {
+          ...n,
+          plan: FLOW_PLAN_CHOSEN_MAP,
+          steps: [
+            flowStep("m", "call", "entities.get", { title: "Leer", ran: { allow: 42 } }),
+            flowStep("r", "read", "read_message", { ran: { allow: 42 }, calls: 42, cost: 0.21 }),
+            flowStep("c", "read", "classify", {
+              when: true,
+              ran: { allow: 30 },
+              calls: 30,
+              cost: 0.05,
+            }),
+            flowStep("n_f", "read", "fill", { each: true, when: true, ran: { allow: 12 } }),
+            flowStep("n", "call", "entities.create", {
+              title: "Crear",
+              each: true,
+              when: true,
+              ran: { propose: 12 },
+              into: ["Tarea", "Evento"],
+            }),
+            flowStep("fold", "call", "inbox.fold", { title: "Plegar hilo", ran: { allow: 42 } }),
+            flowStep("alone", "call", "inbox.accept_alone", {
+              title: "Aceptar solas",
+              ran: { allow: 42 },
+            }),
+          ],
+        }
+      : n,
+  ),
+};
 /** A reading of a mail recommending books: it proposed two to Libros, one accepted (the e2e fixtures' «Libros»). */
 export const RUN_BOOK = {
   ...RUN_MAIL,
@@ -2384,7 +2470,17 @@ export const FLOW_CATALOG = {
       args: [
         { name: "mail", role: "entity", required: true },
         { name: "again", role: "value", required: false },
+        // Its setting (task 83): how many days back a thread's earlier proposals count.
+        { name: "days", role: "value", required: false },
       ],
+    },
+    {
+      name: "inbox.accept_alone",
+      title: "Aceptar solas",
+      effect: "piece",
+      record: true,
+      changes: true,
+      args: [],
     },
     {
       name: "flows.run",
@@ -2412,6 +2508,7 @@ export const FLOW_CATALOG = {
   limits: { steps: 40, each: 50, nesting: 3 },
   collections: [
     {
+      id: "t_docencia",
       key: "docencia",
       name: "Docencia",
       parent: null,
@@ -2421,6 +2518,7 @@ export const FLOW_CATALOG = {
       ],
     },
     {
+      id: "t_gestiones",
       key: "gestiones",
       name: "Gestiones",
       parent: null,
@@ -2432,6 +2530,7 @@ export const FLOW_CATALOG = {
     },
     // The mail's own collection (its key is what «Leer correo» starts on): «Llega a Correos».
     {
+      id: "t_01m6correo",
       key: "correo",
       name: "Correos",
       parent: null,

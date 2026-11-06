@@ -961,6 +961,9 @@ export interface FlowDetailView extends FlowSummary {
   plan: FlowPlan;
   /** Boni's own version of it, when it has one («Volver al de Boni»). */
   preset: number | null;
+  /** The key of the collection the mail's connector brings records to (a trigger on it «viene del conector Correo»),
+   * or null; servers before 0.8.114 say none. */
+  mailKey?: string | null;
 }
 /** A flow's plan as the editor holds it (docs/flujos.md: the plan language, `packages/agent` plan.ts). */
 export interface FlowPlan {
@@ -986,6 +989,8 @@ export interface FlowCatalog {
   fns: Record<string, [number, number]>;
   limits: { steps: number; each: number; nesting: number };
   collections: {
+    /** Its id (a guide's rule names a collection by it); servers before 0.8.114 send none. */
+    id?: string;
     key: string;
     name: string;
     parent: string | null;
@@ -1175,6 +1180,7 @@ export function parseFlowCatalog(b: unknown): FlowCatalog | null {
       typeof c.key === "string"
         ? [
             {
+              ...(typeof c.id === "string" ? { id: c.id.slice(0, 80) } : {}),
               key: c.key,
               name: strOf(c.name, 120) ?? c.key,
               parent: strOf(c.parent, 80),
@@ -1323,6 +1329,7 @@ export function parseFlowDetail(b: unknown): FlowDetailView | null {
     versions,
     plan: planOf(b.plan),
     preset: typeof b.preset === "number" ? b.preset : null,
+    mailKey: strOf(b.mailKey, 80),
   };
 }
 
