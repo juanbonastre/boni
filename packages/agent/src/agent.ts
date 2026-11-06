@@ -132,8 +132,9 @@ Expressions. Every value in "args", "params", "data", "input", "prompt", "option
   punctuation): use it for any value the user gave, such as a title, a name or an address.
 - {"ref": "$id.path"}: an earlier result: "$s1", "$s1.items[0].titulo", "$item.email".
 - {"fn": name, "args": [...]}: one of count, sum, min, max, pick, item, field, filter_eq, concat, obj, merge, list, length,
-  eq, ne, gt, lt, and, or, not, today, add_days. Its args are lit, quote or ref ONLY: never another fn. To combine, add a
-  step. obj(key, value, key, value...) builds the "values" of entities.create and entities.update (field keys);
+  eq, ne, gt, lt, and, or, not, today, add_days, case. Its args are lit, quote or ref ONLY: never another fn. To combine,
+  add a step. obj(key, value, key, value...) builds the "values" of entities.create and entities.update (field keys);
+  case(value, a, x, b, y...) is x when value is a, y when b, else null;
   merge(a, b...) joins records into one, a later field with a value winning;
   field(list, key) is the list of that field of each item; count(list); eq/gt/lt(a, b); list(a, b, ...) builds a list
   (the "options" of a classify reader, for example).
@@ -1750,6 +1751,37 @@ export class Agent {
     const input = this.evalExpr(st, step.input);
     const params: Record<string, Val> = {};
     for (const [k, e] of Object.entries(step.params ?? {})) params[k] = this.evalExpr(st, e);
+    // classify's `given` (docs/sistema.md §4.2): a choice already made, one of its options (a rule of the user's
+    // reading guide names the collection); it is the answer, and no model is asked.
+    if (step.reader === "classify" && params.given !== undefined) {
+      const given = params.given;
+      delete params.given;
+      const g = plain(given);
+      if (g !== null && g !== "") {
+        const o = params.options ? plain(params.options) : null;
+        if (typeof g !== "string" || !Array.isArray(o) || !o.includes(g))
+          throw new Stop("reader-bad-given");
+        this.log(st, step, "read", "allow", "P1", { reader: step.reader, given: true });
+        return rec({ choice: given }, deepLabel(given));
+      }
+    }
+    // fill over the collection a choice names (`collection`, «Crear en la elegida»): of the code's fields per
+    // collection (`$fill`), that one's, picked here before anything reaches a model, so the reader gets only those
+    // fields with the code's own label; what chose them is the step's control, as for any step.
+    if (step.reader === "fill" && params.collection !== undefined) {
+      const k = plain(params.collection);
+      const per = params.fields;
+      delete params.collection;
+      const one = typeof k === "string" && per?.t === "rec" ? per.fields[k] : undefined;
+      if (!one) throw new Stop("reader-bad-fields");
+      params.fields = one;
+      // A collection with nothing to fill: nothing to ask, as a plan with no fill step for it.
+      const list_ = plain(one);
+      if (Array.isArray(list_) && list_.length === 0) {
+        this.log(st, step, "read", "allow", "P1", { reader: step.reader, nothing: true });
+        return fromJson({ values: {}, note: null }, deepLabel(one));
+      }
+    }
     // classify's `ask`: what to ask Juan when the decider is unsure (Juan, 2026-10-24). It is never a reader's
     // input: taken out before anything reaches a model.
     const askPrompt = step.reader === "classify" ? params.ask : undefined;

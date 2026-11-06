@@ -438,5 +438,6 @@ describe("Boni's map, computed (F8; A-16)", () => {
     const ms = performance.now() - t0;
     expect(m.nodes.find((n) => n.id === "flow:leer-correo")?.runs).toBeGreaterThan(900);
     expect(ms).toBeLessThan(1500);
-  });
+    // What is measured is the map (above); writing a year of runs first takes longer than vitest's 5 s on CI's machine.
+  }, 30_000);
 });

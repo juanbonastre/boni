@@ -7,6 +7,7 @@ import {
   FLOW_CHANGE,
   FLOW_CHECK,
   FLOW_DETAIL,
+  FLOW_DETAIL_CHOSEN,
   FLOW_DETAIL_SAVED,
   FLOW_PROPOSAL,
   FLOW_SUMMARY,
@@ -756,6 +757,33 @@ test("«Flujos»: the editor draws a flow and changes it: a step's collection, s
   await expect
     .poll(async () => (await requests(page, "GET api/agent/flows/leer-correo")).length)
     .toBeGreaterThan(1);
+});
+
+test("«Leer correo» creating in the chosen collection: one «Rellenadora» and one «Crear», said «En la elegida», no lanes (docs/sistema.md §4.2)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS],
+      "GET api/agent/flows/:id": [FLOW_DETAIL_CHOSEN],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+    },
+  });
+  await openFlow(page);
+  const canvas = page.locator(".flow-editor .flow-canvas");
+  const crear = canvas.locator(".fl-node", { hasText: "Crear" });
+  await expect(crear).toContainText("En la elegida");
+  // No step per collection, and no lanes.
+  await expect(canvas.locator(".fl-node", { hasText: "Crear" })).toHaveCount(1);
+  await expect(canvas.locator(".fl-lane")).toHaveCount(0);
+  // Its panel says among which, in words: chosen by the decider, not here.
+  await crear.locator(".fl-name").click();
+  await expect(page.locator(".flow-chosen")).toHaveText(
+    "La que elija la Decisora: Docencia o Gestiones",
+  );
+  await page.screenshot({ path: `${SHOTS}/flow-chosen.png` });
 });
 
 test("the editor gives control (task 70): «Añadir paso» with a search and groups, a node's right button, «Entra» and «Sale», tried up to a step", async ({

@@ -870,7 +870,10 @@ contraseña ni un código aquí» under a question.
   to the next with a «+» on it (shown on hover; none into a lane) that puts a new step there, and, for the chosen
   step, its values' arrows dashed in `--accent` round the right side, the steps it takes them from ringed. A card's
   line says what it works in and over («Tarea · cada tarea», «Tarea · cada evento», «Tarea · la invitación»), one
-  row per line (the whole line in its panel and its tooltip). Nothing is dragged, nothing of where things are is kept,
+  row per line (the whole line in its panel and its tooltip). A step that writes in the collection the decider chose
+  («Crear en la elegida», docs/sistema.md §4.2) says «En la elegida · cada tarea», and its panel's «Colección» says
+  among which, in words («La que elija la Decisora: Tarea, Evento o Persona»), not as a list to choose from: Boni's
+  «Leer correo» has one «Rellenadora» and one «Crear» per kind of thing, and no lanes. Nothing is dragged, nothing of where things are is kept,
   no «Ordenar»: looking never asks to save. The wheel scrolls the canvas (Ctrl or a pinch zooms); it opens fitted to
   its first eight boxes at a size to read (at most 100 %), the rest a scroll below. An arrow drawn from one node to
   another asks where the second uses the first's value

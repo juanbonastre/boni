@@ -102,10 +102,12 @@ export function callFn(name: string, args: Val[], today: string): Val {
     }
     case "obj": {
       // obj(key1, value1, key2, value2...): the values keep their own labels (each field is
-      // written with its label); the record itself is the planner's.
+      // written with its label); the record itself is the planner's. A key that is null leaves its pair out: a
+      // field the chosen collection does not have (case(…) gives no key for it).
       if (args.length % 2) throw new FnError("wrong-arguments");
       const fields: Record<string, Val> = {};
       for (let i = 0; i < args.length; i += 2) {
+        if (plain(args[i] as Val) === null) continue;
         const given = key(args[i] as Val);
         const k = /^[a-z_$][a-z0-9_]{0,40}$/.test(given) ? given : asKey(given);
         if (!/^[a-z_$][a-z0-9_]{0,40}$/.test(k) || Object.hasOwn(fields, k))
@@ -154,6 +156,19 @@ export function callFn(name: string, args: Val[], today: string): Val {
       // what the code found (task 51: a relation the mail plainly names).
       const hit = args.find(truthy);
       return hit ? { ...hit, label: join(deepLabel(hit), lab), derived: true } : out(null);
+    }
+    case "case": {
+      // case(value, option1, result1, option2, result2…): the result whose option is the value, else null. What a
+      // plan does with one of a few answers it knows (docs/sistema.md §4.2, «Crear en la elegida»: the collection a
+      // choice names), every option and result written in the plan (D-48). The result carries what chose it.
+      if (args.length % 2 === 0) throw new FnError("wrong-arguments");
+      const want = plain(a);
+      for (let i = 1; i < args.length; i += 2)
+        if (same(plain(args[i] as Val), want)) {
+          const hit = args[i + 1] as Val;
+          return { ...hit, label: join(deepLabel(hit), lab), derived: true };
+        }
+      return out(null);
     }
     case "not":
       return out(!truthy(a));

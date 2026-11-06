@@ -890,6 +890,8 @@ export interface FlowStepNode {
   args: string[];
   deps: string[];
   ran: Record<string, number>;
+  /** «Crear en la elegida»: the collections it chooses among, by name. */
+  into?: string[];
 }
 export interface FlowDetailView extends FlowSummary {
   inputs: { id: string; what: string }[];
@@ -1201,6 +1203,7 @@ function parseFlowNode(n: unknown): FlowStepNode | null {
     args: strsOf(n.args, 40).map((a) => a.slice(0, 300)),
     deps: strsOf(n.deps, 40),
     ran,
+    ...(Array.isArray(n.into) ? { into: strsOf(n.into, 20).map((x) => x.slice(0, 80)) } : {}),
   };
 }
 const parseInputs = (v: unknown) =>

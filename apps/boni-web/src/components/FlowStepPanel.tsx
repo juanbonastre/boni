@@ -8,7 +8,15 @@
  */
 import { Trash2, X } from "lucide-react";
 import type { FlowCatalog, FlowPlan, FlowProblem, FlowStep } from "../core/agent.ts";
-import { changeCollection, type Expr, isExpr, refsUsed, setAt } from "../core/flowEdit.ts";
+import {
+  changeCollection,
+  type Expr,
+  isExpr,
+  listText,
+  refsUsed,
+  setAt,
+  typeKeysOf,
+} from "../core/flowEdit.ts";
 import { useStore } from "../store.ts";
 import { ExprField } from "./ExprField.tsx";
 
@@ -243,6 +251,23 @@ export function FlowStepPanel({
         </label>
         {(tool?.args ?? []).map((a) => {
           const label = argName(t, a.name);
+          const among = a.role === "type" ? typeKeysOf(args[a.name]) : [];
+          // «Crear en la elegida» (docs/sistema.md §4.2): the collection the decider chose, among these; Boni's
+          // «Leer correo» lists the collections a mail may go to.
+          if (among.length > 1)
+            return (
+              <div className="flow-setting" key={a.name}>
+                <span className="flow-setting-name">{label}</span>
+                <span className="flow-chosen">
+                  {t("flows.chosenAmong", {
+                    list: listText(
+                      among.map((k) => catalog.collections.find((c) => c.key === k)?.name ?? k),
+                      t("list.or"),
+                    ),
+                  })}
+                </span>
+              </div>
+            );
           if (a.role === "type")
             return (
               <label className="flow-setting" key={a.name}>

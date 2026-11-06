@@ -1657,6 +1657,7 @@ const flowStep = (
     args: string[];
     deps: string[];
     ran: Record<string, number>;
+    into: string[];
   }> = {},
 ) => ({
   id,
@@ -1776,6 +1777,98 @@ export const FLOW_DETAIL = {
   plan: FLOW_PLAN,
   layout: null,
   preset: 3,
+};
+
+/** «Leer correo» creating in the chosen collection (docs/sistema.md §4.2): one «Rellenadora» and one «Crear», the
+ * collection from `case` over the decider's choice, as `mailPlan` writes it with two collections. */
+const chosenKey = {
+  fn: "case",
+  args: [
+    { ref: "$c.choice" },
+    { lit: "Docencia (p. ej.: Corregir exámenes)" },
+    { lit: "docencia" },
+    { lit: "Gestiones (p. ej.: Renovar el DNI)" },
+    { lit: "gestiones" },
+  ],
+};
+export const FLOW_PLAN_CHOSEN = {
+  version: 1,
+  steps: [
+    FLOW_PLAN.steps[0],
+    FLOW_PLAN.steps[1],
+    {
+      id: "c",
+      op: "read",
+      reader: "classify",
+      input: { ref: "$text" },
+      params: { options: { ref: "$options" }, given: { ref: "$only" } },
+      when: { ref: "$r.all" },
+    },
+    {
+      id: "n_tasks_f",
+      op: "read",
+      reader: "fill",
+      each: { ref: "$r.tasks" },
+      when: { ref: "$c.choice" },
+      input: {
+        fn: "concat",
+        args: [{ ref: "$text" }, { lit: "\n\nElemento: " }, { ref: "$item.title" }],
+      },
+      params: { fields: { ref: "$fill" }, collection: chosenKey },
+    },
+    {
+      id: "n_tasks",
+      op: "call",
+      tool: "entities.create",
+      each: { ref: "$r.tasks" },
+      zip: { ref: "$n_tasks_f" },
+      when: { ref: "$c.choice" },
+      why: { ref: "$item.quote" },
+      args: {
+        type: chosenKey,
+        values: {
+          fn: "merge",
+          args: [
+            { fn: "pick", args: [{ ref: "$prefill" }, chosenKey] },
+            { ref: "$zip.values" },
+            {
+              fn: "obj",
+              args: [
+                { lit: "title" },
+                { ref: "$item.title" },
+                { lit: "body" },
+                { ref: "$zip.note" },
+              ],
+            },
+          ],
+        },
+      },
+    },
+  ],
+};
+export const FLOW_DETAIL_CHOSEN = {
+  ...FLOW_DETAIL,
+  inputs: [...FLOW_DETAIL.inputs, { id: "options", what: "list" }, { id: "only", what: "value" }],
+  nodes: [
+    FLOW_DETAIL.nodes[0],
+    FLOW_DETAIL.nodes[1],
+    flowStep("c", "read", "classify", { when: true, deps: ["text", "options", "only", "r"] }),
+    flowStep("n_tasks_f", "read", "fill", {
+      each: true,
+      when: true,
+      deps: ["text", "r", "fill", "c"],
+      ran: { allow: 12 },
+    }),
+    flowStep("n_tasks", "call", "entities.create", {
+      title: "Crear",
+      each: true,
+      when: true,
+      deps: ["r", "n_tasks_f", "prefill", "c"],
+      ran: { propose: 12 },
+      into: ["Docencia", "Gestiones"],
+    }),
+  ],
+  plan: FLOW_PLAN_CHOSEN,
 };
 
 /**
