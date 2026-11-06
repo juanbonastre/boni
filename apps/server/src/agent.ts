@@ -306,11 +306,11 @@ export class AgentHost {
     for (const [id, l] of this.lives) if (l.at < old) this.lives.delete(id);
   }
 
-  /** Today's civil day in the server's zone (YYYY-MM-DD): a scheduled flow's `$today` (docs/flujos.md F4). */
   /** The zone the account's days are in (the server's). */
   get tz(): string {
     return this.o.tz ?? "Europe/Madrid";
   }
+  /** Today's civil day in the server's zone (YYYY-MM-DD): a scheduled flow's `$today` (docs/flujos.md F4). */
   today(): string {
     return dayToIso(todayIn(this.o.tz ?? "Europe/Madrid", this.o.now?.() ?? Date.now()));
   }

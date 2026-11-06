@@ -453,7 +453,9 @@ export function makeApp(opts: ServerOptions): App {
         );
       // A flow turned on from «Flujos» passes the same checklist as in its editor.
       const flowProblems = (f: { trigger: unknown; plan: unknown }) => {
-        const host = opts.agent as AgentHost;
+        const host = opts.agent;
+        // With no agent here its checklist cannot be made: a flow is not turned on blind.
+        if (!host) return [{ step: null, at: null, code: "no-agent" }];
         return checkFlow(store, host.tools, f, {
           modules: host.mailModulesOf?.(s.user.id) ?? ["tasks", "events"],
           mailType: host.mailTypeOf?.(s.user.id) ?? null,

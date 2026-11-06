@@ -232,8 +232,9 @@ function makeMap(
 
   // The proposals of the period, by who made them and the collection.
   const proposed = new Map<string, { made: number; accepted: number }>();
-  for (const p of j.proposalsByFlow(from, to)) {
-    const who = p.flow ? `flow:${p.flow}` : p.turn ? "boni:chat" : null;
+  for (const p of j.proposalsByRun(from, to)) {
+    // Whose: the owner of its run, as the runs are counted (a reading before F1, with no flow, is «Leer correo»'s).
+    const who = owner.get(p.run) ?? null;
     const type = p.type ? byKey.get(p.type) : undefined;
     if (!who) continue;
     for (const k of [`${who}|`, ...(type ? [`${who}|${type}`] : [])]) {

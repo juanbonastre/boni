@@ -42,6 +42,18 @@ async function openModels(page: Page) {
 }
 
 /** «Flujos» → its table → a flow on a page of its own (docs/sistema.md §4.4: «Flujos» is one of Boni's collections). */
+/** A canvas that has stopped moving (it brings a step just added into view with a short motion). */
+async function settled(page: Page) {
+  await expect
+    .poll(async () => {
+      const a = await page.locator(".flow-canvas .react-flow__viewport").getAttribute("style");
+      await page.waitForTimeout(120);
+      const b = await page.locator(".flow-canvas .react-flow__viewport").getAttribute("style");
+      return a === b;
+    })
+    .toBe(true);
+}
+
 async function openFlow(page: Page, name = "Leer correo") {
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
   const table = page.getByRole("tab", { name: "Tabla" });
@@ -317,7 +329,11 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
 
   await page.getByRole("tab", { name: "Mapa" }).click();
   const map = page.locator(".mp-stage");
-  const card = (name: string) => map.locator(".mp-card", { hasText: name });
+  // A card by its own name (a flow's line may name another: «Llega a Correos»).
+  const card = (name: string) =>
+    map.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
   // Everything joined to something, pages only when asked for: the mail coming in, the collections, the flows,
   // Boni's own work, Juan and Claude.
   for (const name of [
@@ -365,7 +381,6 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await expect(page.locator(".mp-centre")).toContainText("Leer correo");
   await expect(card("Gastos")).toHaveCount(0);
   await expect(card("Correos")).toBeVisible();
-  await expect(card("Correo").first()).toBeVisible();
   await expect(card("Tarea")).toBeVisible();
   // Two before: the connector that brings the mails too.
   await expect(map.locator(".mp-card.connector")).toHaveCount(0);
@@ -379,6 +394,9 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await page.screenshot({ path: `${SHOTS}/flows-map-steps.png` });
   await page.getByRole("button", { name: "Quitar del centro" }).click();
   await expect(card("Gastos")).toBeVisible();
+  // Its panel closed: nothing chosen, every arrow says its words.
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  await expect(panel).toHaveCount(0);
 
   // Filters: with pages (Agenda shows Tarea); only what changes data (no «lee», and a page only shows).
   await page.getByRole("button", { name: "Filtros" }).click();
@@ -397,8 +415,8 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await expect
     .poll(async () => (await requests(page, "GET api/agent/map")).at(-1))
     .toContain("days=30");
-  // «Abrir» a flow: its page, with the way back to «Flujos».
-  await card("Leer correo").locator(".mp-name").click();
+  // «Abrir» a flow (unfolded: its frame's name chooses it): its page, with the way back to «Flujos».
+  await map.locator(".mp-frame.flow .mp-frame-label", { hasText: "Leer correo" }).click();
   await panel.getByRole("button", { name: "Abrir" }).click();
   await expect(page.locator(".flow-crumbs")).toContainText("Leer correo");
   await page.locator(".flow-crumbs").getByRole("button", { name: "Flujos" }).click();
@@ -713,6 +731,7 @@ test("steps connected by dragging as a person does (task 78): a step's dot to an
   await page.keyboard.press("Enter");
   await expect(nodes).toHaveCount(6);
   await expect(node("notify")).toBeVisible();
+  await settled(page);
   // A step's dot shows under the pointer; dragged to anywhere on another step, it asks where that one uses its value.
   await node("m").hover();
   const dot = node("m").locator(".react-flow__handle.source:not(.fl-hidden-handle)");
@@ -737,6 +756,7 @@ test("steps connected by dragging as a person does (task 78): a step's dot to an
   await expect(link).toHaveCount(0);
   await expect(edges).toHaveCount(before + 1);
   // Left on the canvas: a new step there, which then says where it takes the value.
+  await settled(page);
   await node("r").hover();
   const start = await center(
     node("r").locator(".react-flow__handle.source:not(.fl-hidden-handle)"),

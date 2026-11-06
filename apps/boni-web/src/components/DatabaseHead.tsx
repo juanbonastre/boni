@@ -132,6 +132,9 @@ export function ViewTabs({ views, layouts }: { views: ViewsControl; layouts: Lay
             type="button"
             role="tab"
             aria-selected={v.id === views.active}
+            // Its name even where only its icon shows (a narrow window).
+            aria-label={v.name}
+            title={v.name}
             className={`db-view-tab${v.id === views.active ? " on" : ""}`}
             onClick={() => views.onSwitch(v.id)}
             onDoubleClick={() => setRenaming(v.id)}

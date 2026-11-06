@@ -8,6 +8,8 @@ import {
   CARD_DETAILED,
   confirmTurn,
   EXTENSIONS,
+  FLOW_CATALOG,
+  FLOW_CHECK,
   FLOW_DETAIL,
   FLOWS,
   GUIDE,
@@ -481,6 +483,55 @@ for (const language of ["es", "en"] as const) {
     await converse(page, l, issues, "phone");
     expect(issues).toEqual([]);
   });
+}
+
+/** «Flujos» (F8): its table, its map with a node's panel, its filters open and a flow unfolded, and a flow's page. */
+const FLOWS_TEXT = {
+  es: { nav: "Flujos", table: "Tabla", map: "Mapa", filters: "Filtros", steps: "Ver los pasos" },
+  en: { nav: "Flows", table: "Table", map: "Map", filters: "Filters", steps: "Show the steps" },
+};
+for (const language of ["es", "en"] as const) {
+  for (const width of [1440, 900]) {
+    test(`«Flujos», its map and a flow's page fit (${language}, ${width} px)`, async ({ page }) => {
+      const l = FLOWS_TEXT[language];
+      await page.setViewportSize({ width, height: 860 });
+      await openApp(page, "/?still", {
+        language,
+        agent: {
+          "GET api/agent/map": [MAP],
+          "GET api/agent/models": [MODELS_EVALUATED],
+          "GET api/agent/flows": [FLOWS],
+          "GET api/agent/flows/:id": [FLOW_DETAIL],
+          "GET api/agent/flows/catalog": [FLOW_CATALOG],
+          "POST api/agent/flows/check": [FLOW_CHECK],
+        },
+      });
+      const issues: string[] = [];
+      await page.locator(".sidebar").getByRole("button", { name: l.nav, exact: true }).click();
+      await page.locator(".db-table tbody tr").first().waitFor();
+      issues.push(...(await audit(page, `${width} flows table`)));
+      await page.getByRole("tab", { name: l.map }).click();
+      await page.locator(".mp-card").first().waitFor();
+      issues.push(...(await audit(page, `${width} flows map`)));
+      await page.locator(".mp-card.flow .mp-name").first().click();
+      await page.locator(".mp-panel").waitFor();
+      await page.locator(".mp-panel").getByRole("button", { name: l.steps }).click();
+      await page.locator(".mp-step").first().waitFor();
+      issues.push(...(await audit(page, `${width} flows map panel`)));
+      await page.getByRole("button", { name: l.filters }).click();
+      issues.push(...(await audit(page, `${width} flows map filters`)));
+      await page.keyboard.press("Escape");
+      await page.getByRole("tab", { name: l.table }).click();
+      await page
+        .locator(".db-table tbody tr")
+        .first()
+        .getByText(/Leer correo/)
+        .click();
+      await page.locator(".flow-editor .fl-node").first().waitFor();
+      issues.push(...(await audit(page, `${width} flow page`)));
+      expect(issues).toEqual([]);
+    });
+  }
 }
 
 /** «Modelos»: every section opened, a role's cases and the panel to change it; the template pages. */

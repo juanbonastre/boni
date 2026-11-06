@@ -186,6 +186,7 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   expect(Math.abs(opened.y - (at.y + 10))).toBeLessThan(6);
   await expect(menu.getByRole("menuitemradio")).toHaveText([
     "Abrir",
+    "Ver en el mapa",
     "Cambiar nombre",
     "Copiar enlace",
     "Borrar",
@@ -218,6 +219,7 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
     expect(Math.abs(opened.y - (at.y + 10))).toBeLessThan(6);
     await expect(menu.getByRole("menuitemradio")).toHaveText([
       "Abrir",
+      "Ver en el mapa",
       "Cambiar nombre",
       "Copiar enlace",
       "Borrar",

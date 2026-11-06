@@ -184,10 +184,12 @@ export interface Lens {
   /** How many arrows back and forth from the centre (Infinity: all). */
   before: number;
   after: number;
-  /** Only flows and Boni's work with a model, only what changes data, only flows that are on, pages too. */
+  /** Only flows and Boni's work with a model, only what changes data, only flows that are on, only what happened in
+   * the period (an arrow with a number), pages too. */
   ai: boolean;
   writes: boolean;
   on: boolean;
+  happened: boolean;
   pages: boolean;
 }
 export const LENS: Lens = {
@@ -197,6 +199,7 @@ export const LENS: Lens = {
   ai: false,
   writes: false,
   on: false,
+  happened: false,
   pages: false,
 };
 /** The arrows that change data or start what does. */
@@ -226,7 +229,11 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
   let nodes = map.nodes.filter(keep);
   const ids = new Set(nodes.map((n) => n.id));
   let edges = map.edges.filter(
-    (e) => ids.has(e.from) && ids.has(e.to) && (!lens.writes || CHANGES.has(e.kind)),
+    (e) =>
+      ids.has(e.from) &&
+      ids.has(e.to) &&
+      (!lens.writes || CHANGES.has(e.kind)) &&
+      (!lens.happened || (e.n ?? 0) > 0),
   );
   if (lens.center && ids.has(lens.center)) {
     const reach = new Set<string>([lens.center]);
@@ -257,9 +264,9 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
   return { nodes, edges };
 }
 
-/** How the map gathers its nodes into frames (docs/sistema.md §4.4): none, by what starts the flows, by the
- * collection they are inside, by what came together (the package). */
-export type Grouping = "none" | "trigger" | "collection" | "pack";
+/** How the map gathers its nodes into frames (docs/sistema.md §4.4): none, by what starts the flows, by flow (each
+ * unfolded into its steps, its own frame), by the collection they are inside, by what came together (the package). */
+export type Grouping = "none" | "trigger" | "flow" | "collection" | "pack";
 
 /** The frame a node goes in under a grouping, or null. Triggers by their kind; Boni's own work, Boni's. */
 export function groupOf(n: MapNodeLike, by: Grouping): string | null {

@@ -800,9 +800,10 @@ contraseña ni un código aquí» under a question.
   bar: **«Buscar en el mapa»** (by name; Enter takes the first) puts a node **in the centre**, then a chip «En el
   centro · Tarea ×» and **«Antes»** and **«Después»** (1 | 2 | Todo arrows back and forth, dbt's `+model+`);
   **«Agrupar»** (Sin agrupar; Por disparador, frames «Llega a Correos», «Disparado por el usuario», «De Boni»; Por
-  colección, a frame for each collection that holds others; Por paquete, «Correo» round its connector, collection,
-  flow and reviewer); **«Filtros»** (Solo con IA, Solo lo que escribe, Solo lo encendido, Con páginas; Todos los pasos
-  unfolds every flow), with a count on the button when any is on; and the period (7 días | 30 días). The lenses, the
+  flujo, every flow unfolded into its steps; Por colección, a frame for each collection that holds others; Por paquete,
+  «Correo» round its connector, collection, flow and reviewer); **«Filtros»** (Solo con IA, Solo lo que escribe, Solo
+  lo encendido, Solo lo que pasó, an arrow with a number in the period; Con páginas), with a count on the button when
+  any is on; and the period (7 días | 30 días). The lenses, the
   grouping and the period are kept on the device; «Flujos»' own filter and search take flows off the map too.
   Hovering a card lights its arrows and quiets the rest; a click shows its panel docked on the right (300 px; a sheet
   at the bottom on the phone): its name and kind, its numbers («7 propuestas · 4 aceptadas», «21 llamadas a
@@ -812,8 +813,12 @@ contraseña ni un código aquí» under a question.
   A box chosen out of view is brought to the middle. An unfolded flow is a frame with its steps inside, laid out as
   its editor lays them out, its arrows leaving from the steps that make them. The map fits what it shows whenever its
   boxes move, never on a hover. **«Ver en el mapa»** (I-25), in the right-click menus of a collection, a page, a row,
-  a block and a flow, in a run's «Recorrido» and on a proposal's page, opens it with that in the centre and its panel
-  open.
+  a block over a collection and a flow, in a run's «Recorrido» and on a proposal's page, opens it with that in the
+  centre and its panel open; a page put in the centre shows the pages while it is there; what the map does not have
+  (a page none of whose blocks shows a collection) says «No sale en el mapa» and opens it whole. From a run (its
+  Recorrido, a proposal) **the run is drawn on it**: its flow unfolded, each step with what came of it («Hecho»,
+  «Propuesto», «No se ejecutó»), what ran ringed in `--accent`, what did not faded, and a chip «Ejecución · 6 nov,
+  00:52 ×» to take it away.
 - **A flow's page** (F8): «Flujos › Leer correo» above it (the crumb goes back to «Flujos») with the period (7 días |
   30 días) on its right, then the editor, its canvas taking the window's height.
 - **The flow editor** (F2, `docs/flujos.md` §4.5; n8n's canvas and node panel and Dify's checklist as references):

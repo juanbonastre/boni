@@ -71,6 +71,7 @@ import {
   openPage,
   showChat,
   showFlow,
+  toast,
   useStore,
 } from "../store.ts";
 import { triggerText } from "./FlowEditor.tsx";
@@ -81,7 +82,7 @@ import { runStepLine } from "./RunCanvas.tsx";
 type T = (k: string, p?: Record<string, string | number>) => string;
 const PERIODS = [7, 30] as const;
 const DEPTHS = [1, 2, Number.POSITIVE_INFINITY] as const;
-const GROUPS: readonly Grouping[] = ["none", "trigger", "collection", "pack"];
+const GROUPS: readonly Grouping[] = ["none", "trigger", "flow", "collection", "pack"];
 const W = 212;
 const STEP_W = 196;
 const STEP_H = 50;
@@ -110,6 +111,7 @@ function readKept(): Kept {
         ai: l.ai === true,
         writes: l.writes === true,
         on: l.on === true,
+        happened: l.happened === true,
         pages: l.pages === true,
       },
       group: GROUPS.includes(v.group as Grouping) ? (v.group as Grouping) : "none",
@@ -282,7 +284,8 @@ const Frame = memo(function Frame({ data }: NodeProps<Node<FrameData, "frame">>)
   return (
     <div className={`mp-frame ${data.kind}`}>
       <Handle type="target" position={Position.Left} id="l" />
-      <span className="mp-frame-label">{data.label}</span>
+      {/* An unfolded flow's name chooses it (a press on it is a click, not the start of a pan). */}
+      <span className={`mp-frame-label${data.kind === "flow" ? " nopan" : ""}`}>{data.label}</span>
       <Handle type="source" position={Position.Right} id="r" />
     </div>
   );
@@ -501,19 +504,24 @@ function Canvas({
   const asked = useStore((s) => (s.view.kind === "flows" ? (s.view.map ?? null) : null));
   const [center, setCenter] = useState<string | null>(asked?.center ?? null);
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const [all, setAll] = useState(false);
   const [selected, setSelected] = useState<string | null>(asked?.center ?? null);
   const [hover, setHover] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [byRole, setByRole] = useState<Record<string, string>>({});
   // A run on the map (§4.4, «una ejecución encima»): its flow unfolded, each step with what came of it.
   const [run, setRun] = useState<RunDetail | null>(null);
-  const { fitView, getNode, getViewport, setCenter: centreOn } = useReactFlow();
+  const { fitView, getNode, getViewport, setViewport } = useReactFlow();
   // «Ver en el mapa»: this in the centre, chosen; the pages shown when it is one.
+  // Pages shown for a page put in the centre, only while it is there (the device's «Con páginas» stays as it was).
+  const [pagesHere, setPagesHere] = useState(false);
   useEffect(() => {
     if (!asked) return;
-    setCenter(asked.center);
-    setSelected(asked.center);
+    // Something the map does not have (a page no block of which shows a collection): the map, and it says so.
+    const known = !asked.center || map.nodes.some((n) => n.id === asked.center);
+    if (!known) toast(t("map.notOnIt"));
+    setCenter(known ? asked.center : null);
+    setSelected(known ? asked.center : null);
+    setPagesHere(!!asked.pages && known);
     setRun(null);
     if (asked.run)
       agentApi.runDetail(asked.run).then(
@@ -524,8 +532,6 @@ function Canvas({
         },
         () => undefined,
       );
-    if (asked.pages && !kept.lens.pages)
-      setKept((k) => ({ ...k, lens: { ...k.lens, pages: true } }));
   }, [asked?.n]);
   useEffect(() => {
     agentApi.models().then(
@@ -549,7 +555,7 @@ function Canvas({
       hour: "2-digit",
       minute: "2-digit",
     }).format(ms);
-  const lens: Lens = { ...kept.lens, center };
+  const lens: Lens = { ...kept.lens, pages: kept.lens.pages || (pagesHere && !!center), center };
   const nameOf = useMemo(() => new Map(map.nodes.map((n) => [n.id, mapNodeName(t, n)])), [map, t]);
   // A collection's name by its key: what a trigger names.
   const keyName = (key: string) =>
@@ -563,9 +569,20 @@ function Canvas({
   }, [map, only]);
   const view = useMemo(
     () => lensOf(base, lens),
-    [base, lens.center, lens.before, lens.after, lens.ai, lens.writes, lens.on, lens.pages],
+    [
+      base,
+      lens.center,
+      lens.before,
+      lens.after,
+      lens.ai,
+      lens.writes,
+      lens.on,
+      lens.pages,
+      lens.happened,
+    ],
   );
-  const unfolded = (id: string) => all || open.has(id);
+  // «Agrupar por flujo»: every flow unfolded, its steps in its frame.
+  const unfolded = (id: string) => kept.group === "flow" || open.has(id);
 
   const graph = useMemo(() => {
     // The boxes: a card per node; an unfolded flow a frame with its steps in the order they run.
@@ -596,7 +613,7 @@ function Canvas({
       if (g) groups.set(n.id, g);
     }
     return { boxes, inner, layout: mapLayout(boxes, view.edges, groups) };
-  }, [view, open, all, kept.group, byRole, run]);
+  }, [view, open, kept.group, byRole, run]);
 
   // The arrows next to what the pointer is on, or what is chosen; the rest go quiet.
   const focus = hover ?? selected;
@@ -772,7 +789,7 @@ function Canvas({
   }, [graph, view, near, focus, selected, center, nameOf, t, byRole, lang, run]);
 
   const chosen = selected ? map.nodes.find((n) => n.id === selected) : undefined;
-  // The box chosen stays in view when its panel narrows the canvas: moved to the middle if it is out, the zoom kept.
+  // The box chosen stays in view when its panel narrows the canvas: moved just enough, the zoom kept.
   const stage = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!selected) return;
@@ -785,13 +802,16 @@ function Canvas({
       const h = n.measured?.height ?? 60;
       const x0 = n.position.x * v.zoom + v.x;
       const y0 = n.position.y * v.zoom + v.y;
-      const inside =
-        x0 >= 0 && y0 >= 0 && x0 + w * v.zoom <= box.width && y0 + h * v.zoom <= box.height;
-      if (!inside)
-        void centreOn(n.position.x + w / 2, n.position.y + h / 2, { zoom: v.zoom, duration: 200 });
+      // Just enough to show it: the rest stays where it was.
+      const m = 24;
+      const x1 = x0 + w * v.zoom;
+      const y1 = y0 + h * v.zoom;
+      const dx = x0 < m ? m - x0 : x1 > box.width - m ? box.width - m - x1 : 0;
+      const dy = y0 < m ? m - y0 : y1 > box.height - m ? box.height - m - y1 : 0;
+      if (dx || dy) void setViewport({ x: v.x + dx, y: v.y + dy, zoom: v.zoom }, { duration: 200 });
     }, 60);
     return () => clearTimeout(id);
-  }, [selected, getNode, getViewport, centreOn]);
+  }, [selected, getNode, getViewport, setViewport]);
   const label = (e: MapEdge) =>
     `${t(`map.edge.${e.kind}`)}${e.n !== null && e.n > 0 ? ` · ${e.n}` : ""}`;
   const open_ = (n: MapNode) => {
@@ -811,7 +831,9 @@ function Canvas({
     });
   const setLens = (l: Partial<Kept["lens"]>) =>
     setKept((k) => ({ ...k, lens: { ...k.lens, ...l } }));
-  const filters = (["ai", "writes", "on", "pages"] as const).filter((k) => kept.lens[k]).length;
+  const filters = (["ai", "writes", "on", "happened", "pages"] as const).filter(
+    (k) => kept.lens[k],
+  ).length;
   const findable = useMemo(
     () =>
       base.nodes
@@ -920,7 +942,7 @@ function Canvas({
         >
           {() => (
             <div className="menu-list mp-filters" role="group" aria-label={t("map.filters")}>
-              {(["ai", "writes", "on", "pages"] as const).map((k) => (
+              {(["ai", "writes", "on", "happened", "pages"] as const).map((k) => (
                 <label key={k} className="menu-item mp-check">
                   <input
                     type="checkbox"
@@ -930,11 +952,6 @@ function Canvas({
                   <span className="menu-text">{t(`map.filter.${k}`)}</span>
                 </label>
               ))}
-              <MenuSep />
-              <label className="menu-item mp-check">
-                <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />
-                <span className="menu-text">{t("map.allSteps")}</span>
-              </label>
             </div>
           )}
         </PopButton>

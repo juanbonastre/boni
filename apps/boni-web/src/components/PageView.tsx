@@ -1083,11 +1083,14 @@ const TURN_INTO: TextKind[] = [
 /** The collection a block shows (a number, a chart, a table): «Ver en el mapa» puts it in the centre. */
 const blockCollection = (block: Block): string | null => {
   const b = block as { collection?: unknown; source?: unknown };
-  return typeof b.collection === "string"
-    ? b.collection
-    : typeof b.source === "string"
-      ? b.source
-      : null;
+  const id =
+    typeof b.collection === "string"
+      ? b.collection
+      : typeof b.source === "string"
+        ? b.source
+        : null;
+  // Boni's own records (Uso de la IA's blocks) are on no map: they are not the user's data.
+  return id && !id.startsWith("t_sys_") ? id : null;
 };
 
 function BlockMenu({ block, page, close }: { block: Block; page: Page; close: () => void }) {

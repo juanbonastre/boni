@@ -204,6 +204,17 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     );
   });
 
+  it("only what happened in the period: an arrow with no number goes, and what it alone joined", () => {
+    const quiet = {
+      ...map,
+      edges: map.edges.map((x) =>
+        x.kind === "writes" && x.from === "actor:user" ? { ...x, n: 0 } : x,
+      ),
+    };
+    expect(ids(lensOf(quiet, { ...LENS, happened: true }))).not.toContain("actor:user");
+    expect(ids(lensOf(quiet, { ...LENS, happened: true }))).toContain("flow:leer");
+  });
+
   it("filters: only what is on, only with a model, only what changes data", () => {
     expect(ids(lensOf(map, { ...LENS, on: true }))).not.toContain("flow:apuntar");
     expect(ids(lensOf(map, { ...LENS, ai: true }))).not.toContain("flow:apuntar");
@@ -224,6 +235,8 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     expect(groupOf(map.nodes[4] as MapNodeLike, "collection")).toBeNull();
     expect(groupOf(leer, "pack")).toBe("pack:correo");
     expect(groupOf(leer, "none")).toBeNull();
+    // By flow: each unfolded in its own frame, nothing else framed.
+    expect(groupOf(leer, "flow")).toBeNull();
   });
 
   it("lays the map out left to right, a frame around each group, the same every time", () => {

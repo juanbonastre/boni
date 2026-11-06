@@ -28,6 +28,7 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -810,8 +811,32 @@ function Canvas({
   const target = linking ? draft.plan.steps.find((s) => s.id === linking.to) : undefined;
   // The boxes as React Flow's state, measured once and kept (core/useKeptNodes.ts).
   const { nodes, onNodesChange } = useKeptNodes(made);
+  // The step chosen (one just added at the end, say) is brought into view when it is out of it, the zoom kept.
+  const { getNode, getViewport, setViewport } = useReactFlow();
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!selected) return;
+    const id = setTimeout(() => {
+      const n = getNode(selected);
+      const area = box.current?.getBoundingClientRect();
+      if (!n || !area) return;
+      const v = getViewport();
+      const w = n.measured?.width ?? WIDTH;
+      const h = n.measured?.height ?? 60;
+      const x0 = n.position.x * v.zoom + v.x;
+      const y0 = n.position.y * v.zoom + v.y;
+      // Just enough to show it, as a list scrolls to its chosen row: the rest stays where it was.
+      const m = 24;
+      const x1 = x0 + w * v.zoom;
+      const y1 = y0 + h * v.zoom;
+      const dx = x0 < m ? m - x0 : x1 > area.width - m ? area.width - m - x1 : 0;
+      const dy = y0 < m ? m - y0 : y1 > area.height - m ? area.height - m - y1 : 0;
+      if (dx || dy) void setViewport({ x: v.x + dx, y: v.y + dy, zoom: v.zoom }, { duration: 200 });
+    }, 80);
+    return () => clearTimeout(id);
+  }, [selected, getNode, getViewport, setViewport]);
   return (
-    <div className={`flow-canvas flow-editing${connecting ? " connecting" : ""}`}>
+    <div className={`flow-canvas flow-editing${connecting ? " connecting" : ""}`} ref={box}>
       <ReactFlow
         nodes={nodes}
         onNodesChange={onNodesChange}

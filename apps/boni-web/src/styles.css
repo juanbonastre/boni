@@ -9817,6 +9817,8 @@ button.rows-panel-row:hover {
 .mp-frame.flow .mp-frame-label {
   color: var(--text);
   font-size: 13px;
+  cursor: pointer;
+  pointer-events: all;
 }
 .mp-edge {
   stroke: var(--line-strong);

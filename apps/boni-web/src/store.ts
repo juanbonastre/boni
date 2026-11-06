@@ -2860,10 +2860,9 @@ export const showFlows = () => set({ view: { kind: "flows" }, panel: null });
 export const showFlow = (id: string) => set({ view: { kind: "flows", flow: id }, panel: null });
 let mapAsks = 0;
 /**
- * «Ver en el mapa» (docs/sistema.md §4.4; I-18): «Flujos» on its map, with this in the centre (a map node's id:
- * `col:<collection>`, `flow:<id>`, `page:<id>`, `boni:chat`…); `pages`: with the pages shown (a page or a block).
+ * «Ver en el mapa» of a row: a flow's row its flow, a row of «Mis datos» what it is (Boni's own records are on no
+ * map), any other its collection.
  */
-/** «Ver en el mapa» of a row: a flow's row its flow, a row of «Mis datos» what it is, any other its collection. */
 export function showMapOf(type: string, row: string) {
   if (type === SYS.flows.id) {
     const flow = flowRowTarget(row);
@@ -2872,12 +2871,17 @@ export function showMapOf(type: string, row: string) {
   if (type === SYS.data.id) {
     const id = dataRowTarget(row);
     if (!id) return showMap(null);
-    return get().dataTypes?.some((x) => x.id === id && !x.system)
-      ? showMap(`col:${id}`)
-      : showMap(`page:${id}`, { pages: true });
+    const def = get().dataTypes?.find((x) => x.id === id);
+    if (def?.system) return showMap(null);
+    return def ? showMap(`col:${id}`) : showMap(`page:${id}`, { pages: true });
   }
   showMap(`col:${type}`);
 }
+/**
+ * «Ver en el mapa» (docs/sistema.md §4.4; I-25): «Flujos» on its map, with this in the centre (a map node's id:
+ * `col:<collection>`, `flow:<id>`, `page:<id>`, `boni:chat`…); `pages`: with the pages shown while it is there (a page);
+ * `run`: that run drawn on it.
+ */
 export const showMap = (center: string | null, o: { pages?: boolean; run?: string } = {}) =>
   set({
     view: {

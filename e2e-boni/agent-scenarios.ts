@@ -1972,7 +1972,7 @@ export const FLOW_CATALOG = {
     // Boni's pieces (docs/sistema.md §4.2, F7): the code that works on the mail, offered in a flow a mail starts.
     {
       name: "mail.rule",
-      title: "Reglas de la guía",
+      title: "Regla del remitente",
       effect: "piece",
       record: true,
       args: [
