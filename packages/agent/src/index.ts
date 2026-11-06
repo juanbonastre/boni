@@ -138,6 +138,7 @@ export {
   type Net,
   neutralize,
   type OriginReader,
+  type PendingProposal,
   type RecordOrigin,
   readStore,
   type ToolDef,

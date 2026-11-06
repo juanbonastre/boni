@@ -47,7 +47,7 @@ import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
-import { originFacts, recordOrigin } from "./origin.ts";
+import { originFacts, pendingFacts, recordOrigin } from "./origin.ts";
 import { withPieces } from "./pieces.ts";
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
@@ -240,6 +240,10 @@ export class AgentHost {
         origin: {
           of: (id) =>
             originFacts(this.store(account), id, {
+              mailAccount: this.mailAccountOf?.(account) ?? null,
+            }),
+          pending: () =>
+            pendingFacts(this.store(account), {
               mailAccount: this.mailAccountOf?.(account) ?? null,
             }),
         },

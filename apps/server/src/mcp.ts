@@ -31,7 +31,7 @@ import { checkFlow, flowCatalog, stepsOf } from "./flows.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
-import { originFacts } from "./origin.ts";
+import { originFacts, pendingFacts } from "./origin.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { withPieces } from "./pieces.ts";
 import { proposals, propose } from "./proposals.ts";
@@ -325,6 +325,8 @@ const READS = new Set([
   "search",
   "query",
   "read",
+  "origin",
+  "inbox",
   "recent_changes",
   "extensions_describe",
 ]);
@@ -591,6 +593,48 @@ const TOOLS: Tool[] = [
         accepted: iso(o.proposal?.decided ?? null),
         alone: o.proposal?.alone ?? false,
       };
+    },
+  },
+  {
+    name: "inbox",
+    description:
+      "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed, who proposed it (a flow reading a mail, the conversation) and the note that started it (a mail, as read gives it). `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
+    inputSchema: obj({
+      text: { type: "string", description: "Words of its title" },
+      limit: { type: "number", description: "At most 50 (default 20)" },
+    }),
+    call(c, a) {
+      const v = view(c);
+      const fold = (s: string) =>
+        s
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+      const words = fold(optStr(a.text, "text", 300) ?? "")
+        .split(/\s+/)
+        .filter(Boolean);
+      const limit = Math.min(Math.max(Number(a.limit) || 20, 1), 50);
+      const iso = (ms: number) => new Date(ms).toISOString();
+      const seen = (t: string | null) => {
+        if (!t) return true;
+        const l = v.level(t);
+        return !closedToAi(l) && l !== "opaque" && !!v.ro.schema().types[t];
+      };
+      return pendingFacts(c.store, { mailAccount: c.mailAccount })
+        .filter((p) => seen(p.type) && words.every((w) => fold(p.title).includes(w)))
+        .slice(0, limit)
+        .map((p) => {
+          const input = p.input ? v.ro.get(p.input) : null;
+          return {
+            id: p.id,
+            title: p.title,
+            collection: p.type ? (c.store.schema().types[p.type]?.name ?? null) : null,
+            proposed: iso(p.created),
+            by: p.by,
+            flow: p.flow,
+            input: input && input.entity.deleted === undefined ? v.asNote(input, false) : null,
+          };
+        });
     },
   },
   {

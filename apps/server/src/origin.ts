@@ -4,7 +4,7 @@
  * it; one the user, an assistant by the MCP, an import or the mail's connector wrote says who and when. The app draws
  * the run on the map; nothing here is a model's word.
  */
-import type { RecordOrigin } from "@boni/agent";
+import type { PendingProposal, RecordOrigin } from "@boni/agent";
 import type { ProposalRow, RunRow, UserStore } from "@boni/store";
 import { aloneRuns } from "./autoAccept.ts";
 import { mapOwnerOf } from "./flowMap.ts";
@@ -45,6 +45,27 @@ function proposedTitle(p: ProposalRow): string {
   return text(row?.value ?? v.title);
 }
 
+/**
+ * Who ran a run, its flow and the record that started it: a reading from before flows (no flow on its run) is «Leer
+ * correo»'s, as the map counts it, started by the mail its plan read first.
+ */
+function ranBy(
+  store: UserStore,
+  run: RunRow,
+  mailAccount: string | null,
+): { by: Origin["by"]; flow: string | null; input: string | null } {
+  const by: Origin["by"] = run.flow
+    ? "flow"
+    : run.turn || run.origin === "turn"
+      ? "chat"
+      : whatOf(store, run, mailAccount).kind === "mail"
+        ? "flow"
+        : "boni";
+  const flow = run.flow ?? (by === "flow" ? MAIL_FLOW : null);
+  const input = run.input ?? (by === "flow" ? mailOfRun(store, run.id) : null);
+  return { by, flow, input };
+}
+
 /** Where a record comes from, or null when the store has no such record. */
 export function recordOrigin(
   store: UserStore,
@@ -66,13 +87,9 @@ export function recordOrigin(
     alone = aloneRuns(store).has(run.id);
     run = proposal ? j.run(proposal.run) : null;
   }
+  const ran = run ? ranBy(store, run, o.mailAccount) : null;
   const by = (): Origin["by"] => {
-    if (run) {
-      if (run.flow) return "flow";
-      if (run.turn || run.origin === "turn") return "chat";
-      if (whatOf(store, run, o.mailAccount).kind === "mail") return "flow";
-      return "boni";
-    }
+    if (ran) return ran.by;
     if (made.by.startsWith("user")) return "user";
     if (made.by.startsWith("mcp:")) return "assistant";
     if (made.by === "import") return "import";
@@ -80,11 +97,9 @@ export function recordOrigin(
     return "boni";
   };
   const who = by();
-  // A reading from before flows (no flow on its run) is «Leer correo»'s, as the map counts it.
-  const flow = run ? (run.flow ?? (who === "flow" ? MAIL_FLOW : null)) : null;
+  const flow = ran?.flow ?? null;
   const input = (() => {
-    // The record its trigger bound; a mail's reading from before flows, the mail its plan read first.
-    const at = run ? (run.input ?? (who === "flow" ? mailOfRun(store, run.id) : null)) : null;
+    const at = ran?.input ?? null;
     const s = at ? store.get(at) : null;
     const t = s ? store.schema().types[s.entity.type] : undefined;
     if (!at || !s || !t) return null;
@@ -141,4 +156,36 @@ export function originFacts(
       ? { created: x.proposal.created, decided: x.proposal.decided, alone: x.proposal.alone }
       : null,
   };
+}
+
+/** The proposals waiting in the Bandeja, newest first, each with who proposed it and from what (`inbox.pending`). */
+export function pendingFacts(
+  store: UserStore,
+  o: { mailAccount: string | null },
+): PendingProposal[] {
+  const j = store.journal;
+  const types = Object.values(store.schema().types);
+  return j
+    .proposals("pending")
+    .slice()
+    .sort((a, b) => b.created - a.created)
+    .map((p) => {
+      const run = j.run(p.run);
+      const ran = run ? ranBy(store, run, o.mailAccount) : null;
+      const key = (p.args as { values?: { type?: { value?: unknown } } }).values?.type?.value;
+      const type =
+        typeof key === "string" ? types.find((t) => t.key === key || t.id === key) : undefined;
+      const flow = ran?.flow ? j.flow(ran.flow) : null;
+      return {
+        id: p.id,
+        title: proposedTitle(p),
+        type: type?.id ?? null,
+        created: p.created,
+        by: ran?.by ?? "boni",
+        flow: ran?.flow
+          ? { id: ran.flow, name: flow?.name ?? ran.flow, version: run?.flowVersion ?? null }
+          : null,
+        input: ran?.input ?? null,
+      };
+    });
 }

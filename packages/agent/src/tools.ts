@@ -133,8 +133,22 @@ export interface RecordOrigin {
   /** It came through the Bandeja: when it was proposed and decided, and whether Boni accepted it alone. */
   proposal: { created: number; decided: number | null; alone: boolean } | null;
 }
+/** A proposal waiting in the Bandeja, with where it comes from (`inbox.pending`). */
+export interface PendingProposal {
+  id: string;
+  /** Its title as the Bandeja shows it: a reader's words, from what it read. */
+  title: string;
+  /** The collection it would go to (its id), when the tool says one. */
+  type: string | null;
+  created: number;
+  by: RecordOrigin["by"];
+  flow: RecordOrigin["flow"];
+  input: string | null;
+}
 export interface OriginReader {
   of(id: string): RecordOrigin | null;
+  /** The proposals waiting in the Bandeja, newest first. */
+  pending(): readonly PendingProposal[];
 }
 export interface Notifier {
   /** To the devices of this account only: the recipient is the code's, never an argument. */
@@ -540,6 +554,66 @@ export function coreTools(): ToolRegistry {
         },
         code,
       );
+    },
+  });
+  r.register({
+    name: "inbox.pending",
+    effect: "read",
+    title: "En la Bandeja",
+    describe:
+      "The proposals waiting in Juan's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed (proposed), who proposed it (by: flow or chat; flow.name) and the record that started it (input: the mail, as entities.get gives it). text: only those whose title has these words. Juan accepts or rejects them himself",
+    args: {
+      text: { role: "query", describe: "words of its title" },
+      limit: { role: "limit", describe: "at most this many (default 20, max 50)" },
+    },
+    run({ store, origin }, a) {
+      if (!origin) throw new ToolError("not-available");
+      const fold = (s: string) =>
+        s
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+      const words = a.text ? fold(str(a.text)).split(/\s+/).filter(Boolean) : [];
+      const limit = optNum(a.limit, 20, 50);
+      const code = codeLabel("inbox");
+      const types = store.schema().types;
+      const out: Val[] = [];
+      for (const p of origin.pending()) {
+        if (out.length >= limit) break;
+        // One for a collection the models may not see is not theirs to see either.
+        const def = p.type ? types[p.type] : undefined;
+        if (p.type && !def) continue;
+        if (!words.every((w) => fold(p.title).includes(w))) continue;
+        const m = p.input ? store.get(p.input) : null;
+        out.push(
+          rec(
+            {
+              id: leaf(p.id, code),
+              // A reader's words from what it read (a mail): marked as from outside.
+              title: leaf(p.title, label("external", "personal", [{ kind: "model", id: p.id }])),
+              collection: leaf(def ? typeName(def) : null, code),
+              proposed: leaf(new Date(p.created).toISOString(), code),
+              by: leaf(p.by, code),
+              flow: p.flow
+                ? rec(
+                    {
+                      id: leaf(p.flow.id, code),
+                      name: leaf(p.flow.name, flowLabel(p.flow.id)),
+                      version: leaf(p.flow.version, code),
+                    },
+                    code,
+                  )
+                : leaf(null, code),
+              input:
+                m && m.entity.deleted === undefined
+                  ? entityVal(m, types[m.entity.type])
+                  : leaf(null, code),
+            },
+            code,
+          ),
+        );
+      }
+      return list(out, code);
     },
   });
   r.register({

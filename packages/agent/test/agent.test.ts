@@ -571,6 +571,7 @@ describe("the agent, with a planner that behaves", () => {
               proposal: { created: at(9), decided: at(9, 5), alone: false },
             }
           : null,
+      pending: () => [],
     };
     // Juan asks «¿De dónde viene «Comprar pan»?» (task 86: the planner could only look for mails with that name).
     const plan = {
@@ -626,6 +627,74 @@ describe("the agent, with a planner that behaves", () => {
     env.store.setAiAccess("t_tarea", "visible", "portatil");
     const other = leaf(env.ids.ana as string, codeLabel("prueba"));
     expect(() => tool.run(caps as never, { id: other }, codeLabel("prueba"))).toThrow(ToolError);
+  });
+
+  it("says where a proposal waiting in the Bandeja comes from: the flow and its mail, found by its title's words (inbox.pending)", async () => {
+    env = makeEnv([
+      {
+        asunto: "Compra para la cena",
+        de: "ana.ejemplo@example.com",
+        cuerpo: "¿Puedes comprar pan mañana?",
+      },
+    ]);
+    const at = (h: number) => Date.UTC(2026, 9, 19, h);
+    const origin = {
+      of: () => null,
+      pending: () => [
+        {
+          id: "p_01m6pan",
+          title: "Comprar pan para la cena",
+          type: "t_tarea",
+          created: at(9),
+          by: "flow" as const,
+          flow: { id: "leer-correo", name: "Leer correo", version: 3 },
+          input: env.ids.mail0 as string,
+        },
+        {
+          id: "p_01m6taller",
+          title: "Llamar al taller",
+          type: "t_tarea",
+          created: at(8),
+          by: "chat" as const,
+          flow: null,
+          input: null,
+        },
+      ],
+    };
+    // Juan's question, as he asked it (task 86): a proposal is not a record yet, so it is found in the Bandeja.
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "p", op: "call", tool: "inbox.pending", args: { text: { quote: "pan" } } },
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: {
+            template: lit("«{a}» lo propuso {b} al leer «{c}»."),
+            a: ref("$p[0].title"),
+            b: ref("$p[0].flow.name"),
+            c: ref("$p[0].input.asunto"),
+          },
+        },
+      ],
+    };
+    const ask = () =>
+      env.agent(fakePlanner([plan]), undefined, { origin }).turn({
+        text: "¿De dónde viene la tarea propuesta en la bandeja de «pan»?",
+        origin: PERSONAL,
+      });
+    const res = await ask();
+    expect([res.status, res.error]).toEqual(["done", null]);
+    const data = res.replies[0]?.data ?? {};
+    expect(data.a).toMatchObject({ value: "Comprar pan para la cena" });
+    expect(data.b).toMatchObject({ value: "Leer correo" });
+    expect(data.c).toMatchObject({ value: "Compra para la cena" });
+    // Its title is a reader's words from a mail: never above what came from outside.
+    expect(data.a).toMatchObject({ integrity: "external" });
+    // Into a collection the models may not see, a proposal is not theirs to see either.
+    env.store.setAiAccess("t_tarea", "restricted", "portatil");
+    expect((await ask()).status).toBe("stopped");
   });
 
   it("writes what a run does with its id, so the journal tells what happened and why", async () => {

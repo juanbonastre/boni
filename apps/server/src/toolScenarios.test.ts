@@ -37,6 +37,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
       test: "says where a record comes from: the flow that proposed it, its mail as the models may see it, and the «Aceptar» (entities.origin)",
     },
   ],
+  "inbox.pending": [
+    {
+      file: AGENT,
+      test: "says where a proposal waiting in the Bandeja comes from: the flow and its mail, found by its title's words (inbox.pending)",
+    },
+  ],
   "entities.search": [
     {
       file: AGENT,
