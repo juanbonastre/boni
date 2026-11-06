@@ -62,6 +62,7 @@ import type {
   MapNode,
   MapView,
   Origin,
+  RecordView,
   RunDetail,
 } from "../core/agent.ts";
 import { deviceZone } from "../core/clock.ts";
@@ -76,7 +77,17 @@ import {
   mapLayout,
   stepLayout,
 } from "../core/flowLayout.ts";
-import { moneyText, runCopy, runStepLine, runWords, stepDesc, stepName } from "../core/runText.ts";
+import {
+  mapNodeName,
+  moneyText,
+  runCopy,
+  runStatusLine,
+  runStepLine,
+  runWords,
+  stepDesc,
+  stepName,
+  valueText,
+} from "../core/runText.ts";
 import { useKeptNodes } from "../core/useKeptNodes.ts";
 import { phoneLayout } from "../host.ts";
 import {
@@ -96,7 +107,6 @@ import { MenuRow, PointMenu, PopButton } from "./Popover.tsx";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
 const PERIODS = [7, 30] as const;
-const DEPTHS = [1, 2, Number.POSITIVE_INFINITY] as const;
 /** Every box above every arrow, a lit one too (task 90: «líneas que tapan items»): an arrow passes behind a box. */
 const BOX_Z = 3;
 const GROUPS: readonly Grouping[] = ["none", "trigger", "flow", "collection", "pack"];
@@ -109,6 +119,7 @@ const TRIGGER = "trigger";
 const TRIGGER_H = 54;
 const FRAME_PAD = 14;
 const KEPT = "boni:mapLens";
+const WAY_HIDDEN = "boni:mapWayHidden";
 
 /** What the map keeps on this device between visits: its filters, its grouping, its period (not its centre). */
 interface Kept {
@@ -157,15 +168,7 @@ function keep(k: Kept) {
   } catch {}
 }
 
-/** A node's name: its own (a collection, a flow, a page, an assistant), or Boni's word for it. */
-export function mapNodeName(t: T, n: MapNode): string {
-  if (n.kind === "actor" && n.code === "assistant")
-    return t("map.node.assistant", { name: n.name ?? "" });
-  if (n.name) return n.name;
-  return t(`map.node.${n.code ?? n.kind}`);
-}
-
-/** A step of a flow on the map, as the editor names it. */
+/** A node's icon, by its kind. */
 function KindIcon({ n, size = 14 }: { n: Pick<MapNode, "kind" | "code">; size?: number }) {
   const p = { size, strokeWidth: 1.8, "aria-hidden": true } as const;
   if (n.kind === "connector") return <Mail {...p} />;
@@ -254,7 +257,8 @@ type StepData = {
   desc: string | null;
   dim: boolean;
   /** With a run on the map: what came of this step in it, and whether it ran. */
-  run?: { line: string; state: "ran" | "idle" | "bad" };
+  /** What came of it in the run on the map, and that run's own calls and cost (in orange). */
+  run?: { line: string; state: "ran" | "idle" | "bad"; own?: string | null };
   /** Its place along the run's way (the light reaches it in that order). */
   wayI?: number;
 };
@@ -355,7 +359,12 @@ const StepCard = memo(function StepCard({ data }: NodeProps<Node<StepData, "step
             : data.step.detail}
         </div>
       )}
-      {data.run && <div className="mp-line mp-run-line">{data.run.line}</div>}
+      {data.run && (
+        <div className="mp-line mp-run-line">
+          {data.run.line}
+          {data.run.own && <span className="mp-run-own"> · {data.run.own}</span>}
+        </div>
+      )}
       <Handle type="source" position={Position.Bottom} id="b" />
       <Handle type="source" position={Position.Right} id="r" />
     </div>
@@ -428,11 +437,232 @@ function MapEdgeView(p: EdgeProps<Edge<EdgeData>>) {
             style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
             title={d.outside ? t("map.outside") : d.kind === "order" ? d.label : undefined}
           >
+            {d.outside && <Mail size={9} strokeWidth={2} aria-hidden className="mp-outside-mark" />}
             {d.label}
           </div>
         </EdgeLabelRenderer>
       )}
     </>
+  );
+}
+
+/**
+ * What a step gave the next one, said as a person reads it (task 91, Juan: «lo que ha enviado al siguiente paso de
+ * forma legible»): a list as its items (a thing by its title and its day), a record as its fields by name, a value as
+ * text, a day or an instant as a date. A model's words stay text: nothing becomes a link or markup.
+ */
+function Readable({ v, depth = 0 }: { v: unknown; depth?: number }) {
+  const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language);
+  const name = (k: string) => {
+    const x = t(`run.out.${k}`);
+    return x === `run.out.${k}` ? k.replace(/_/g, " ") : x;
+  };
+  if (v === null || v === undefined || v === "") return <span className="muted">—</span>;
+  if (typeof v !== "object") return <span>{valueText(v, lang)}</span>;
+  if (depth > 3) return <span>{JSON.stringify(v).slice(0, 300)}</span>;
+  if (Array.isArray(v)) {
+    if (!v.length) return <span className="muted">{t("run.out.none")}</span>;
+    return (
+      <ul className="mp-out-list">
+        {v.slice(0, 20).map((x, i) => (
+          <li key={i}>
+            {isRecord(x) && typeof x.title === "string" ? (
+              <>
+                <strong>{x.title}</strong>
+                <Readable
+                  v={Object.fromEntries(Object.entries(x).filter(([k]) => k !== "title"))}
+                  depth={depth + 1}
+                />
+              </>
+            ) : (
+              <Readable v={x} depth={depth + 1} />
+            )}
+          </li>
+        ))}
+        {v.length > 20 && <li className="muted">{t("way.more", { n: v.length - 20 })}</li>}
+      </ul>
+    );
+  }
+  const entries = Object.entries(v as Record<string, unknown>).filter(
+    ([, x]) => x !== null && x !== undefined && x !== "" && !(Array.isArray(x) && !x.length),
+  );
+  if (!entries.length) return null;
+  return (
+    <dl className="mp-out">
+      {entries.slice(0, 20).map(([k, x]) => (
+        <div key={k}>
+          <dt>{name(k)}</dt>
+          <dd>
+            <Readable v={x} depth={depth + 1} />
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** A proposal as the Bandeja showed it: its title, where it goes and what became of it, its fields by name. */
+function ProposalOut({ p, collection }: { p: RunDetail["proposals"][number]; collection: string }) {
+  const t = useStore((s) => s.t);
+  const lang = useStore((s) => s.settings.language);
+  const rows = (p.rows ?? []).filter((r) => r.name !== "title" && r.value !== p.title);
+  return (
+    <div className="mp-out-card">
+      <div>
+        <strong>«{p.title || "…"}»</strong>
+        <span className="muted">
+          {collection ? ` · ${collection}` : ""} · {t(`log.proposal.${p.status}`)}
+        </span>
+      </div>
+      {rows.length > 0 && (
+        <dl className="mp-out">
+          {rows.map((r) => (
+            <div key={r.name}>
+              <dt>{r.name}</dt>
+              <dd>{valueText(r.value, lang)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+/** A record of the user's: its title and its fields by name. */
+function RecordOut({ r }: { r: RecordView }) {
+  const lang = useStore((s) => s.settings.language);
+  return (
+    <div className="mp-out-card">
+      <div>
+        <strong>{r.title || "…"}</strong>
+        <span className="muted"> · {r.collection}</span>
+      </div>
+      {r.fields.length > 0 && (
+        <dl className="mp-out">
+          {r.fields.map((f) => (
+            <div key={f.name}>
+              <dt>{f.name}</dt>
+              <dd>{valueText(f.value, lang)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What came out of a box in the run on the map (task 91, Juan: «en la tarea, los datos de la fila generada; en la
+ * bandeja, esa tarjeta generada»): the mail that started it, what a step gave the next one, the proposals in the
+ * Bandeja, the record a collection got. In orange, as all that is this run's.
+ */
+function RunHere({
+  run,
+  node,
+  step,
+  collectionName,
+  money,
+}: {
+  run: RunDetail & { owner: string };
+  node: MapNode;
+  step: string | null;
+  collectionName: (type: string | null) => string;
+  money: (usd: number) => string;
+}) {
+  const t = useStore((s) => s.t);
+  const mail = run.input ? (
+    <RecordOut
+      r={{
+        id: run.input.id,
+        title: run.input.title,
+        collection: run.input.collection,
+        fields: run.input.fields ?? [],
+      }}
+    />
+  ) : null;
+  let body: React.ReactNode = null;
+  if (node.id === run.owner && step === TRIGGER) body = mail;
+  else if (node.id === run.owner && step) {
+    const s = run.steps.find((x) => x.id === step);
+    const made = run.proposals.filter((p) => p.step === step);
+    body = s ? (
+      <>
+        <p className="mp-out-line">
+          {runStepLine(t, s)}
+          {s.calls ? (
+            <span>
+              {" · "}
+              {t(s.calls === 1 ? "map.calls.one" : "map.callsShort", { n: s.calls })}
+              {s.cost ? ` · ${money(s.cost)}` : ""}
+            </span>
+          ) : null}
+        </p>
+        {s.output !== null && s.output !== undefined ? (
+          <Readable v={s.output} />
+        ) : s.answers.length ? (
+          <pre className="mp-out-text">{s.answers.join("\n")}</pre>
+        ) : null}
+        {s.what === "entities.get" && !made.length && mail}
+        {made.map((p) => (
+          <ProposalOut key={p.id ?? p.title} p={p} collection={collectionName(p.type)} />
+        ))}
+      </>
+    ) : (
+      <p className="mp-out-line">{t("run.node.never")}</p>
+    );
+  } else if (node.id === run.owner) {
+    const calls = run.steps.reduce((n, x) => n + (x.calls ?? 0), 0);
+    const cost = run.steps.reduce((n, x) => n + (x.cost ?? 0), 0);
+    body = (
+      <p className="mp-out-line">
+        {runStatusLine(t, run.status)}
+        {calls ? ` · ${t(calls === 1 ? "map.calls.one" : "map.callsShort", { n: calls })}` : ""}
+        {cost ? ` · ${money(cost)}` : ""}
+      </p>
+    );
+  } else if (node.kind === "connector" || (run.input && node.id === `col:${run.input.type}`))
+    body = mail;
+  else if (node.id === "boni:inbox")
+    body = run.proposals.length ? (
+      run.proposals.map((p) => (
+        <ProposalOut key={p.id ?? p.title} p={p} collection={collectionName(p.type)} />
+      ))
+    ) : (
+      <p className="mp-out-line muted">{t("run.out.none")}</p>
+    );
+  else if (node.kind === "collection") {
+    const type = node.id.slice("col:".length);
+    const here = run.proposals.filter((p) => p.type === type);
+    const wrote = run.changes.filter((c) => c.type === type);
+    body =
+      here.length || wrote.length ? (
+        <>
+          {here.map((p) =>
+            p.record ? (
+              <RecordOut key={p.id ?? p.title} r={p.record} />
+            ) : (
+              <p key={p.id ?? p.title} className="mp-out-line">
+                «{p.title || "…"}» · {t(`run.out.proposal.${p.status}`)}
+              </p>
+            ),
+          )}
+          {wrote.map((c) => (
+            <p key={`${c.action}:${c.title}`} className="mp-out-line">
+              {t(`log.change.${c.action}`, { title: c.title, collection: c.collection })}
+            </p>
+          ))}
+        </>
+      ) : null;
+  }
+  if (!body) return null;
+  return (
+    <section className="mp-here" aria-label={t("run.out.here")}>
+      <h4>{t("run.out.here")}</h4>
+      {body}
+    </section>
   );
 }
 
@@ -573,16 +803,20 @@ function MapFind({
 function Depth({
   label,
   value,
+  max,
   onChange,
 }: {
   label: string;
   value: number;
+  /** How far the map reaches from its centre at most: past it, nothing more is shown. */
+  max: number;
   onChange: (n: number) => void;
 }) {
   const t = useStore((s) => s.t);
-  const last = DEPTHS.length;
-  const at = Number.isFinite(value) ? Math.min(Math.max(1, value), last - 1) : last;
-  const said = at === last ? t("map.all") : String(at);
+  const top = Math.max(1, max);
+  // «Todo» is the deepest the centre reaches, said by its number (task 91, Juan: «"5 (max)"»).
+  const at = Number.isFinite(value) ? Math.min(Math.max(1, value), top) : top;
+  const said = at === top ? t("map.depthMax", { n: top }) : String(at);
   return (
     <div className="mp-depth">
       <span className="muted small" aria-hidden="true">
@@ -591,14 +825,16 @@ function Depth({
       <input
         type="range"
         min={1}
-        max={last}
+        max={top}
         step={1}
         value={at}
+        disabled={top === 1}
         aria-label={label}
         aria-valuetext={said}
         onChange={(e) => {
           const n = Number(e.target.value);
-          onChange(n >= last ? Number.POSITIVE_INFINITY : n);
+          // The deepest stays the deepest when the map grows.
+          onChange(n >= top ? Number.POSITIVE_INFINITY : n);
         }}
       />
       <span className="mp-depth-value small">{said}</span>
@@ -666,12 +902,15 @@ function RunWay({
   owner,
   when,
   money,
+  onHide,
 }: {
   run: RunDetail;
   story: { title: string; origin: Origin } | null;
   owner: string;
   when: (ms: number) => string;
   money: (usd: number) => string;
+  /** «Ocultar» (task 91, Juan: «se debería poder ocultar»): a chip «Explicación» brings it back. */
+  onHide: () => void;
 }) {
   const t = useStore((s) => s.t);
   // Its words, as the Registro says them (core/runText.ts), under «Detalles»; «Copiar» puts them in the clipboard.
@@ -722,7 +961,18 @@ function RunWay({
       className="mp-way"
       aria-label={story ? t("origin.title", { title: story.title || "…" }) : t("map.run")}
     >
-      <h4>{story ? t("origin.title", { title: story.title || "…" }) : t("way.title")}</h4>
+      <div className="mp-way-head">
+        <h4>{story ? t("origin.title", { title: story.title || "…" }) : t("way.title")}</h4>
+        <button
+          type="button"
+          className="icon-btn tiny"
+          aria-label={t("way.hide")}
+          title={t("way.hide")}
+          onClick={onHide}
+        >
+          <X size={13} strokeWidth={1.8} />
+        </button>
+      </div>
       <ol>
         {lines.map((l, i) => (
           <li key={i}>{l}</li>
@@ -795,6 +1045,19 @@ function Canvas({
   const [center, setCenter] = useState<string | null>(asked?.center ?? null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(asked?.center ?? null);
+  // The run's «Explicación», hidden on this device until shown again (task 91).
+  const [wayHidden, setWayHidden] = useState(() => localStorage.getItem(WAY_HIDDEN) === "1");
+  const hideWay = (h: boolean) => {
+    setWayHidden(h);
+    try {
+      if (h) localStorage.setItem(WAY_HIDDEN, "1");
+      else localStorage.removeItem(WAY_HIDDEN);
+    } catch {
+      // A private window keeps nothing: it is hidden until the map is left.
+    }
+  };
+  // A step of the chosen flow, when a step was clicked: its own panel (task 91).
+  const [picked, setPicked] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [byRole, setByRole] = useState<Record<string, string>>({});
@@ -869,57 +1132,45 @@ function Canvas({
     const col = (type: string | null | undefined) => (type ? [`col:${type}`] : []);
     const nodes = new Set<string>([owner]);
     const edges = new Set<string>();
-    // Each box's place along the way, from where it came in to where it ended: the light reaches them in this order.
-    const order = new Map<string, number>();
-    const at = (id: string) => {
-      if (!order.has(id)) order.set(id, order.size);
-    };
-    const add = (from: string, to: string, kind: string) => {
-      nodes.add(from);
-      nodes.add(to);
-      edges.add(`${from}>${to}>${kind}`);
+    // What brought it, in order (the mail's connector, the collection it came into), and where it ended.
+    const from: string[] = [];
+    const accepted: string[] = [];
+    const wrote: string[] = [];
+    const add = (a: string, b: string, kind: string) => {
+      nodes.add(a);
+      nodes.add(b);
+      edges.add(`${a}>${b}>${kind}`);
     };
     for (const c of col(run.input?.type)) {
-      // What brought it: the mail's connector.
       for (const e of map.edges)
         if (e.to === c && e.kind === "brings") {
           add(e.from, c, "brings");
-          at(e.from);
+          from.push(e.from);
         }
-      at(c);
+      from.push(c);
       add(c, owner, "starts");
     }
-    for (const r of run.read) for (const c of col(r.type)) add(c, owner, "reads");
-    at(owner);
-    // Its steps that ran, in the order they ran (what never ran, or was skipped, stays off the way).
-    const ran = new Set(
-      run.steps.filter((x) => x.decision !== null && x.decision !== "skip").map((x) => x.id),
-    );
-    // Those it passed by without doing them (their condition said no): faded, but the way goes on through their
-    // place, so it never breaks between two steps that ran.
-    const passed = new Set(run.steps.filter((x) => x.decision === "skip").map((x) => x.id));
-    at(`step:${owner}:${TRIGGER}`);
-    for (const x of run.steps) if (ran.has(x.id) || passed.has(x.id)) at(`step:${owner}:${x.id}`);
+    // What it read (what was pending, the people a mail names) is not where it went (task 91: every collection lit).
     // An «Aceptar» writes out of the Bandeja: its arrow is «aceptadas».
-    const wrote = owner === "boni:inbox" ? "accepts" : "writes";
-    if (run.proposals.length) {
-      add(owner, "boni:inbox", "proposes");
-      at("boni:inbox");
-    }
+    const wroteBy = owner === "boni:inbox" ? "accepts" : "writes";
+    if (run.proposals.length) add(owner, "boni:inbox", "proposes");
     for (const p of run.proposals)
       if (p.status === "accepted")
         for (const c of col(p.type)) {
           add("boni:inbox", c, "accepts");
-          at(c);
+          if (!accepted.includes(c)) accepted.push(c);
         }
     for (const w of run.changes)
       for (const c of col(w.type)) {
-        add(owner, c, wrote);
-        at(c);
+        add(owner, c, wroteBy);
+        if (!wrote.includes(c)) wrote.push(c);
       }
-    // The steps that proposed: the arrow into the Bandeja leaves from them.
+    // The steps that did something, in the order they ran; what was skipped or never reached is not on the way.
+    const did = run.steps
+      .filter((x) => x.decision !== null && x.decision !== "skip")
+      .map((x) => x.id);
     const proposed = new Set(run.steps.filter((x) => x.decision === "propose").map((x) => x.id));
-    return { nodes, edges, order, ran, passed, proposed, owner };
+    return { nodes, edges, from, accepted, wrote, did, ran: new Set(did), proposed, owner };
   }, [run, map.edges]);
   // A run's flow drawn as it ran: the version it ran when that is not the flow's latest (review of task 90: a reading
   // of the version before «Crear en la elegida» lost its way after the Decisora), its boxes and its steps by its plan.
@@ -948,6 +1199,15 @@ function Canvas({
       lens.happened,
     ],
   );
+  // How far the centre reaches: the depth past which the map shows nothing more (task 91: the slider goes to it).
+  const deepest = useMemo(() => {
+    if (!center) return 1;
+    const o = { ...lens, before: Number.POSITIVE_INFINITY, after: Number.POSITIVE_INFINITY };
+    const all = lensOf(drawn, o).nodes.length;
+    for (let k = 1; k < 12; k++)
+      if (lensOf(drawn, { ...o, before: k, after: k }).nodes.length >= all) return k;
+    return 12;
+  }, [drawn, center, lens.ai, lens.writes, lens.on, lens.pages, lens.happened]);
   // «Agrupar por flujo»: every flow unfolded, its steps in its frame.
   const unfolded = (id: string) => kept.group === "flow" || open.has(id);
 
@@ -986,6 +1246,81 @@ function Canvas({
     );
     return { boxes, inner, layout: mapLayout(boxes, view.edges, groups, left) };
   }, [view, open, kept.group, byRole, run]);
+
+  /**
+   * The way's places, from where it came in to where it ended (task 91, Juan: «que se vea la animación desde principio
+   * a fin»): the connector, the collection, what started the flow, each step that did something and, between two of
+   * them, the shortest way along the canvas's arrows (never another lane's: «se activan para todas las líneas»), the
+   * Bandeja after the step that proposed, the collection after the Bandeja. A light goes along them in this order.
+   */
+  const wayOrder = useMemo(() => {
+    if (!way) return null;
+    const pos = new Map<string, number>();
+    const lit = new Set<string>();
+    const put = (id: string, at: number) => {
+      if (!pos.has(id)) pos.set(id, at);
+    };
+    let i = 0;
+    for (const id of way.from) put(id, i++);
+    const frame = graph.inner.get(way.owner);
+    const stepId = (x: string) => `step:${way.owner}:${x}`;
+    let last = i;
+    if (frame) {
+      const next = new Map<string, string[]>();
+      for (const k of frame.links) next.set(k.from, [...(next.get(k.from) ?? []), k.to]);
+      const pathTo = (a: string, b: string): string[] | null => {
+        const back = new Map<string, string>([[a, a]]);
+        const queue = [a];
+        while (queue.length) {
+          const x = queue.shift() as string;
+          if (x === b) break;
+          for (const y of next.get(x) ?? [])
+            if (!back.has(y)) {
+              back.set(y, x);
+              queue.push(y);
+            }
+        }
+        if (!back.has(b)) return null;
+        const path = [b];
+        while (path[0] !== a) path.unshift(back.get(path[0] as string) as string);
+        return path;
+      };
+      const at = new Map<string, number>([[TRIGGER, i]]);
+      const miles = [TRIGGER, ...way.did.filter((x) => frame.at.has(x))];
+      for (let m = 1; m < miles.length; m++) {
+        const to = miles[m] as string;
+        // From the latest step that leads to it (a step in another lane went on from the choice before it).
+        for (let k = m - 1; k >= 0; k--) {
+          const a = miles[k] as string;
+          const path = pathTo(a, to);
+          if (!path) continue;
+          let p = at.get(a) ?? i;
+          for (let q = 1; q < path.length; q++) {
+            lit.add(`${path[q - 1]}>${path[q]}`);
+            p++;
+            if (!at.has(path[q] as string)) at.set(path[q] as string, p);
+          }
+          break;
+        }
+      }
+      for (const [x, p] of at) put(stepId(x), p);
+      last = Math.max(i, ...at.values());
+    } else {
+      put(way.owner, i);
+      last = i;
+    }
+    // The Bandeja after the step that proposed (or the flow), the collections after it; where it wrote, after its end.
+    if (way.nodes.has("boni:inbox") && way.owner !== "boni:inbox") {
+      const by = [...way.proposed].map((x) => pos.get(stepId(x)) ?? -1);
+      const b = (by.length && Math.max(...by) >= 0 ? Math.max(...by) : last) + 1;
+      put("boni:inbox", b);
+      for (const c of way.accepted) put(c, b + 1);
+    } else if (way.owner === "boni:inbox") {
+      for (const c of way.accepted) put(c, last + 1);
+    }
+    for (const c of way.wrote) put(c, last + 1);
+    return { pos, lit, max: Math.max(0, ...pos.values()) };
+  }, [way, graph]);
 
   // The arrows next to what the pointer is on, or what is chosen; the rest go quiet. Not for the centre: what the map
   // shows then is already what comes before and after it, and all of it says something. With a run on the map, its
@@ -1063,7 +1398,7 @@ function Canvas({
                 .join(" · "),
               dim: dimHere,
               way: onWay,
-              wayI: way?.order.get(`step:${n.id}:${TRIGGER}`),
+              wayI: wayOrder?.pos.get(`step:${n.id}:${TRIGGER}`),
             },
             draggable: false,
             className: "nopan",
@@ -1098,13 +1433,14 @@ function Canvas({
               },
               name: stepName(t, node),
               model: role ? (byRole[role] ?? null) : null,
+              // The period's numbers, when no run is on it (with one, its own, in orange: «datos generales» apart).
               numbers:
-                node.calls && node.calls > 0
+                !ran && node.calls && node.calls > 0
                   ? `${t(node.calls === 1 ? "map.calls.one" : "map.callsShort", { n: node.calls })}${node.cost ? ` · ${money(node.cost)}` : ""}`
                   : null,
               desc: stepDesc(t, node),
               dim: dimHere,
-              wayI: way?.order.get(`step:${n.id}:${s.id}`),
+              wayI: wayOrder?.pos.get(`step:${n.id}:${s.id}`),
               ...(ran
                 ? (() => {
                     const r = ran.find((x) => x.id === s.id);
@@ -1115,6 +1451,9 @@ function Canvas({
                       run: {
                         line: runStepLine(t, r),
                         state: bad ? ("bad" as const) : idle ? ("idle" as const) : ("ran" as const),
+                        own: r.calls
+                          ? `${t(r.calls === 1 ? "map.calls.one" : "map.callsShort", { n: r.calls })}${r.cost ? ` · ${money(r.cost)}` : ""}`
+                          : null,
                       },
                     };
                   })()
@@ -1125,10 +1464,9 @@ function Canvas({
             zIndex: BOX_Z,
           });
         }
-        // The run went from one step to the next where both ran or were passed by (the trigger always runs).
-        const went = (id: string) => id === TRIGGER || !!way?.ran.has(id) || !!way?.passed.has(id);
+        // The run's way between its steps: the arrows it went along (see `wayOrder`).
         for (const k of l.links) {
-          const lit = onWay && went(k.from) && went(k.to);
+          const lit = onWay && !!wayOrder?.lit.has(`${k.from}>${k.to}`);
           rfEdges.push({
             id: `order:${n.id}:${k.from}>${k.to}`,
             source: `step:${n.id}:${k.from}`,
@@ -1143,7 +1481,7 @@ function Canvas({
               hot: false,
               dim: false,
               order: true,
-              ...(lit ? { way: true, wayI: way?.order.get(`step:${n.id}:${k.to}`) } : {}),
+              ...(lit ? { way: true, wayI: wayOrder?.pos.get(`step:${n.id}:${k.to}`) } : {}),
             },
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
             zIndex: 1,
@@ -1164,7 +1502,7 @@ function Canvas({
           hot: n.id === selected,
           dim: near ? !near.has(n.id) : !!way && !way.nodes.has(n.id),
           way: !near && !!way && way.nodes.has(n.id),
-          wayI: way?.order.get(n.id),
+          wayI: wayOrder?.pos.get(n.id),
           centre: n.id === center,
           open: false,
           onFold: (id) =>
@@ -1226,7 +1564,9 @@ function Canvas({
               outside: e.outside,
               hot,
               dim,
-              ...(onWay ? { way: true, wayI: way?.order.get(e.to) ?? way?.order.get(e.from) } : {}),
+              ...(onWay
+                ? { way: true, wayI: wayOrder?.pos.get(to) ?? wayOrder?.pos.get(e.to) ?? 0 }
+                : {}),
             },
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
             zIndex: hot ? 2 : 0,
@@ -1234,9 +1574,40 @@ function Canvas({
         }
     }
     return { nodes: out, edges: rfEdges };
-  }, [graph, view, near, focus, selected, center, nameOf, t, byRole, lang, run, way]);
+  }, [graph, view, near, focus, selected, center, nameOf, t, byRole, lang, run, way, wayOrder]);
 
   const chosen = selected ? map.nodes.find((n) => n.id === selected) : undefined;
+  // The step clicked in the chosen flow, by its name, what it does, its model and the period's numbers.
+  const pickedStep = (() => {
+    if (!chosen || !picked || chosen.kind !== "flow") return null;
+    const drawnNode = drawn.nodes.find((n) => n.id === chosen.id) ?? chosen;
+    if (picked === TRIGGER)
+      return {
+        name: chosen.trigger ? triggerText(t, chosen.trigger, keyName) : t("flows.on.manual"),
+        desc: t("map.triggerDesc"),
+        model: null,
+        numbers: null,
+      };
+    const node = drawnNode.steps.find((x) => x.id === picked);
+    if (!node) return null;
+    const role =
+      node.op === "read"
+        ? node.what === "classify"
+          ? "decider"
+          : node.what === "review_reading"
+            ? "reviewer"
+            : "reader"
+        : null;
+    return {
+      name: stepName(t, node),
+      desc: stepDesc(t, node),
+      model: role ? (byRole[role] ?? null) : null,
+      numbers:
+        node.calls && node.calls > 0
+          ? `${t(node.calls === 1 ? "map.calls.one" : "map.callsShort", { n: node.calls })}${node.cost ? ` · ${money(node.cost)}` : ""}`
+          : null,
+    };
+  })();
   // The box chosen stays in view when its panel narrows the canvas: moved just enough, the zoom kept.
   const stage = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -1299,7 +1670,7 @@ function Canvas({
   const ready = useNodesInitialized();
   const placed = `${nodes
     .map((n) => `${n.id}@${Math.round(n.position.x)},${Math.round(n.position.y)}`)
-    .join("|")}${run ? "|run" : ""}`;
+    .join("|")}${run && !wayHidden ? "|run" : ""}`;
   const fitted = useRef<string | null>(null);
   useEffect(() => {
     if (!ready || !placed || fitted.current === placed) return;
@@ -1343,6 +1714,7 @@ function Canvas({
             <Depth
               label={t("map.depth")}
               value={kept.lens.before}
+              max={deepest}
               onChange={(n) => setLens({ before: n, after: n })}
             />
           </>
@@ -1430,15 +1802,30 @@ function Canvas({
           ))}
         </div>
       </div>
-      <div className={`mp-stage${chosen ? " with-panel" : ""}`} ref={stage}>
-        {run && (
+      <div
+        className={`mp-stage${chosen ? " with-panel" : ""}`}
+        ref={stage}
+        style={wayOrder ? ({ "--way-n": wayOrder.max } as React.CSSProperties) : undefined}
+      >
+        {/* Whose numbers they are: the period's; in orange, the run's (task 91). */}
+        <div className="mp-legend muted">
+          <span>{t("map.legend.period", { n: kept.days })}</span>
+          {run && <span className="mp-legend-run">{t("map.legend.run")}</span>}
+        </div>
+        {run && !wayHidden && (
           <RunWay
             run={run}
             story={story}
             owner={nameOf.get(run.owner) ?? ""}
             when={when}
             money={money}
+            onHide={() => hideWay(true)}
           />
+        )}
+        {run && wayHidden && (
+          <button type="button" className="chip mp-way-chip" onClick={() => hideWay(false)}>
+            {t("way.show")}
+          </button>
         )}
         {view.nodes.length === 0 ? (
           <div className="mp-empty">
@@ -1470,9 +1857,11 @@ function Canvas({
             fitView
             fitViewOptions={{ padding: 0.06, maxZoom: 1 }}
             onNodeClick={(_, n) => {
-              const id = n.type === "step" ? n.id.split(":").slice(1, 3).join(":") : n.id;
+              const inFlow = n.type === "step" || n.type === "trig";
+              const id = inFlow ? n.id.split(":").slice(1, 3).join(":") : n.id;
               if (n.type === "frame" && !id.startsWith("flow:")) return;
               setSelected(id);
+              setPicked(inFlow ? n.id.split(":").slice(3).join(":") : null);
             }}
             onNodeDoubleClick={(_, n) => {
               const id = n.type === "step" ? n.id.split(":").slice(1, 3).join(":") : n.id;
@@ -1495,7 +1884,10 @@ function Canvas({
               if (!map.nodes.some((x) => x.id === id)) return;
               setMenu({ x: e.clientX, y: e.clientY, id });
             }}
-            onPaneClick={() => setSelected(null)}
+            onPaneClick={() => {
+              setSelected(null);
+              setPicked(null);
+            }}
             proOptions={{ hideAttribution: true }}
           >
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
@@ -1509,10 +1901,14 @@ function Canvas({
                 <KindIcon n={chosen} size={16} />
               </span>
               <div className="mp-panel-title">
-                <h3>{nameOf.get(chosen.id)}</h3>
+                <h3>{pickedStep ? pickedStep.name : nameOf.get(chosen.id)}</h3>
                 <span className="muted small">
-                  {t(`map.kind.${chosen.kind}`)}
-                  {chosen.kind === "flow" && chosen.boni ? ` · ${t("flows.group.boni")}` : ""}
+                  {pickedStep
+                    ? t("map.stepOf", { name: nameOf.get(chosen.id) ?? "" })
+                    : t(`map.kind.${chosen.kind}`)}
+                  {!pickedStep && chosen.kind === "flow" && chosen.boni
+                    ? ` · ${t("flows.group.boni")}`
+                    : ""}
                 </span>
               </div>
               <button
@@ -1525,36 +1921,63 @@ function Canvas({
                 <X size={15} strokeWidth={1.8} />
               </button>
             </div>
-            <dl className="mp-facts">
-              {lineOf(t, chosen, money, keyName).map((l) => (
-                <dd key={l}>{l}</dd>
-              ))}
-              {chosen.kind === "flow" && (
-                <dd>{chosen.on ? t("flows.enabled") : t("flows.disabled")}</dd>
-              )}
-              {chosen.proposals > 0 && (
-                <dd>{t("map.proposals", { n: chosen.proposals, a: chosen.accepted })}</dd>
-              )}
-              {chosen.rejected > 0 && <dd>{t("map.rejected", { n: chosen.rejected })}</dd>}
-              {chosen.calls > 0 && <dd>{t("map.calls", { n: chosen.calls })}</dd>}
-              {modelsOf(chosen, byRole).length > 0 && (
-                <dd>{modelsOf(chosen, byRole).join(" · ")}</dd>
-              )}
-            </dl>
-            <Joined
-              title={t("map.in")}
-              list={map.edges
-                .filter((e) => e.to === chosen.id)
-                .map((e) => ({ id: e.from, name: nameOf.get(e.from) ?? e.from, label: label(e) }))}
-              onPick={(id) => setSelected(id)}
-            />
-            <Joined
-              title={t("map.out")}
-              list={map.edges
-                .filter((e) => e.from === chosen.id)
-                .map((e) => ({ id: e.to, name: nameOf.get(e.to) ?? e.to, label: label(e) }))}
-              onPick={(id) => setSelected(id)}
-            />
+            {pickedStep ? (
+              <dl className="mp-facts">
+                {pickedStep.desc && <dd>{pickedStep.desc}</dd>}
+                {pickedStep.model && <dd>{pickedStep.model}</dd>}
+                {pickedStep.numbers && (
+                  <dd>{t("map.inPeriod", { what: pickedStep.numbers, n: kept.days })}</dd>
+                )}
+              </dl>
+            ) : (
+              <dl className="mp-facts">
+                {lineOf(t, chosen, money, keyName).map((l) => (
+                  <dd key={l}>{l}</dd>
+                ))}
+                {chosen.kind === "flow" && (
+                  <dd>{chosen.on ? t("flows.enabled") : t("flows.disabled")}</dd>
+                )}
+                {chosen.proposals > 0 && (
+                  <dd>{t("map.proposals", { n: chosen.proposals, a: chosen.accepted })}</dd>
+                )}
+                {chosen.rejected > 0 && <dd>{t("map.rejected", { n: chosen.rejected })}</dd>}
+                {chosen.calls > 0 && <dd>{t("map.calls", { n: chosen.calls })}</dd>}
+                {modelsOf(chosen, byRole).length > 0 && (
+                  <dd>{modelsOf(chosen, byRole).join(" · ")}</dd>
+                )}
+              </dl>
+            )}
+            {run && (
+              <RunHere
+                run={run}
+                node={chosen}
+                step={chosen.id === run.owner ? picked : null}
+                collectionName={(type) => (type ? (nameOf.get(`col:${type}`) ?? "") : "")}
+                money={money}
+              />
+            )}
+            {!pickedStep && (
+              <Joined
+                title={t("map.in")}
+                list={map.edges
+                  .filter((e) => e.to === chosen.id)
+                  .map((e) => ({
+                    id: e.from,
+                    name: nameOf.get(e.from) ?? e.from,
+                    label: label(e),
+                  }))}
+                onPick={(id) => setSelected(id)}
+              />
+            )}
+            {!pickedStep && (
+              <Joined
+                title={t("map.out")}
+                list={map.edges
+                  .filter((e) => e.from === chosen.id)
+                  .map((e) => ({ id: e.to, name: nameOf.get(e.to) ?? e.to, label: label(e) }))}
+                onPick={(id) => setSelected(id)}
+              />
+            )}
             <div className="mp-actions">
               {center !== chosen.id && (
                 <button type="button" className="btn small" onClick={() => setCenter(chosen.id)}>

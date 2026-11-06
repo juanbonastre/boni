@@ -168,9 +168,15 @@ describe("a run's trace from the journal and the audit (task 52)", () => {
       ["r", "extract_tasks", "allow", null, ["m"]],
       ["n0", "entities.create", "propose", "P4", ["r"]],
     ]);
-    // The reader's answer belongs to the read step, as text.
+    // The reader's answer belongs to the read step, as text and as it was answered (what it gave the next step),
+    // with its calls and their cost in this run (task 91).
     expect(d?.steps[1]?.answers).toEqual(['{"items":[{"title":"Revisar actas"}]}']);
-    expect(d?.steps[0]?.answers).toEqual([]);
+    expect(d?.steps[1]).toMatchObject({
+      calls: 1,
+      cost: 0.002,
+      output: { items: [{ title: "Revisar actas" }] },
+    });
+    expect(d?.steps[0]).toMatchObject({ answers: [], calls: 0, cost: 0, output: null });
     // Each collection by its name and its id: the map draws the way the run went (docs/sistema.md §4.4).
     expect(d?.read).toEqual([
       { collection: "Correos", type: "t_correo", titles: ["Actas de FUP 1"], n: 1 },
@@ -185,13 +191,28 @@ describe("a run's trace from the journal and the audit (task 52)", () => {
       },
     ]);
     expect(made.entity.id).toBeTruthy();
-    expect(d?.proposals).toEqual([{ title: "Revisar actas", status: "pending", type: "t_tarea" }]);
+    // Each proposal as the Bandeja showed it, by the step that made it (the only one that proposed, for one made
+    // before proposals kept their step).
+    expect(d?.proposals).toEqual([
+      {
+        id: "p1",
+        title: "Revisar actas",
+        status: "pending",
+        type: "t_tarea",
+        created: 1400,
+        decided: null,
+        rows: [{ name: "title", value: "Revisar actas" }],
+        step: "n0",
+        record: null,
+      },
+    ]);
     // A reading from before flows: the mail its plan read first started it.
     expect(d?.input).toEqual({
       id: expect.any(String),
       title: "Actas de FUP 1",
       collection: "Correos",
       type: "t_correo",
+      fields: [],
     });
     // Moved to another collection as it was accepted: it says where it went, not where it was proposed.
     j.addProposal({
@@ -208,10 +229,27 @@ describe("a run's trace from the journal and the audit (task 52)", () => {
       created: 1450,
     });
     j.setProposal("p2", "accepted", 1460, { type: { from: "tarea", to: "correo" } });
-    expect(traceOf(store, "r1")?.proposals.at(-1)).toEqual({
+    // Its «Aceptar»: a run of its own that keeps it and made the record (task 91: the collection's panel shows it).
+    j.startRun({
+      id: "r_acepta",
+      turn: null,
+      origin: "accepted",
+      device: null,
+      started: 1460,
+      proposal: "p2",
+    });
+    const kept = store.create(
+      "t_correo",
+      { f_asunto: { value: "Actas", label: own } },
+      { actor: "agent", run: "r_acepta" },
+    );
+    expect(traceOf(store, "r1")?.proposals.at(-1)).toMatchObject({
+      id: "p2",
       title: "Actas",
       status: "accepted",
       type: "t_correo",
+      decided: 1460,
+      record: { id: kept.entity.id, title: "Actas", collection: "Correos", fields: [] },
     });
     expect(d?.decisions).toEqual([{ area: "fill", p: 0.8, outcome: "do", result: null }]);
     expect(d?.models).toEqual([

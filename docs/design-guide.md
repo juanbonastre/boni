@@ -582,7 +582,9 @@ contraseña ni un código aquí» under a question.
 - **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a
   "Conversación" row at the top of the sidebar (with the number of proposals waiting), the third tab on the phone.
   **Its history as other AIs show it** (docs/conversacion.md 3.1; Juan, 2026-10-31): on the left of the conversation, a
-  240 px column with «Nueva conversación», a search and the conversations by when they were used («Hoy», «Ayer», «Los
+  240 px column (task 92: widened by dragging its edge, 180–440 px, or with the arrow keys on its grip, and folded with
+  the button beside «Nueva conversación» to a narrow rail that shows it again; both kept on the device) with «Nueva
+  conversación», a search and the conversations by when they were used («Hoy», «Ayer», «Los
   últimos 7 días», «Este mes», «Antes»); the open one is shaded, and a row shows its pencil (rename in place) and its
   bin (to the trash) on hover. A new conversation starts empty and is made with its first message, whose first words
   are its title. On the phone the list is a drawer from the left. **A turn as it happens**
@@ -813,9 +815,10 @@ contraseña ni un código aquí» under a question.
   accepted it counts where it went. Without a centre
   it shows everything joined to something (a node alone says nothing), pages only with «Con páginas». Over it, one
   bar: **«Buscar en el mapa»** (by name; Enter takes the first) puts a node **in the centre**, then a chip «En el
-  centro · Tarea ×» and **«Profundidad»**, one slider (1 · 2 · Todo, its value said beside it: arrows back and forth
-  at once, dbt's `+model+`; task 90, Juan, 2026-11-06: «una sola barra deslizante», instead of «Antes» and
-  «Después»);
+  centro · Tarea ×» and **«Profundidad»**, one slider (140 px) from 1 to as deep as the centre reaches, its value said
+  beside it, the deepest as «5 (máx.)» (arrows back and forth at once, dbt's `+model+`; task 90, Juan, 2026-11-06: «una
+  sola barra deslizante», instead of «Antes» and «Después»; task 91: «el número con un máximo»; a depth saved by «Antes»
+  is read as one);
   **«Agrupar»** (Sin agrupar; Por disparador, frames «Llega a Correos», «Disparado por el usuario», «De Boni»; Por
   flujo, every flow unfolded into its steps; Por colección, a frame for each collection that holds others; Por paquete,
   «Correo» round its connector, collection, flow and reviewer); **«Filtros»** (Solo con IA, Solo lo que escribe, Solo
@@ -835,7 +838,11 @@ contraseña ni un código aquí» under a question.
   0,21 US$», also when its model is not known). A lane's name over its column is cut with «…» to its lane's width,
   the whole in its tooltip, so two lanes' names never overlap. Every box sits above every arrow, and an arrow's words
   show only where they cover no box and no other words: the rest when one of its ends is pointed at (a run's way
-  too). The map fits what it shows whenever its
+  too). What carries a mail's words has a small mail in its words («Lleva texto de fuera» on hover), never a colour of
+  its own (task 91: Juan read the pink arrows as something lit). Under the map, on the right, whose numbers they are:
+  «Las cifras son de los últimos 7 días» and, with a run on it, «En naranja, lo de esta ejecución» in `--c2`. A click
+  on a step opens its own panel: its name, «Paso de «Leer correo»», what it does, its model and «42 llamadas · 0,21 US$
+  en 7 días». The map fits what it shows whenever its
   boxes move, never on a hover. **«Ver en el mapa»** (I-25), in the right-click menus of a collection, a page, a row,
   a block over a collection and a flow, opens it with that in the centre and its panel open (an Inbox card's menu has
   «Abrir propuesta» and «Recorrido»; text chosen in the card keeps the browser's own menu); a page put in the centre shows the pages while it is there; what the map does not have
@@ -844,11 +851,23 @@ contraseña ni un código aquí» under a question.
   recorrido»): from the Registro, an Inbox card's menu, a proposal's page and a turn of the conversation, the run is
   drawn on it, its whole way on the map whatever the depth, over the version of its flow it ran (an earlier one when
   the flow changed since): its flow unfolded from what started it, each step with what came of it («Hecho», «Propuesto», «No se
-  ejecutó», «Parado: una regla de seguridad lo impide»), what did not run faded; **its way in orange** (`--c2`), from
-  the trigger and the connector through its steps, the Bandeja and on to the collection where what it proposed was
-  accepted or where it wrote: each box and arrow on it with an orange border, lit in its turn along the way (110 ms
-  apart) and a light moving along its arrows (dashes, 1.1 s), still when the system asks for less motion; the rest
-  quiet. A card over the top left corner, «Por dónde fue», tells it in words («Empezó con «Reunión con secretaría el
+  ejecutó», «Parado: una regla de seguridad lo impide») and, in orange, its own calls and their cost («Hecho · 1
+  llamada · 0,0021 US$»; the period's numbers leave the step while a run is on it), what did not run faded; **its way in
+  orange** (`--c2`), from the mail's connector through the collection, what started the flow, each step that did
+  something and, between two of them, the shortest way along the canvas's arrows (never another lane's: task 91, «se
+  activan para todas las líneas»), the Bandeja after the step that proposed and the collection after it (what the
+  run only read is not on its way). **A light goes along it again and again** (task 91: «una animación constante… de
+  forma lenta… desde principio a fin»): each box and arrow glows in its turn, 0.7 s apart, the cycle as long as the
+  way plus three steps, and the arrows' dashes move slowly (2.6 s); still when the system asks for less motion; the
+  rest quiet. **What came out of each box**, in its panel, under «En esta ejecución» in an orange frame (task 91: «en
+  la tarea, los datos de la fila generada; en la bandeja, esa tarjeta generada; dentro de algún paso, lo que ha enviado
+  al siguiente paso de forma legible»): the mail (its subject and first fields) on the connector, the collection and
+  the trigger; a step's line, its calls and cost, and what it gave the next one, said as a person reads it (a list as
+  its items by title, a record as its fields by name, «Eligió: Gestiones», a day as «23 oct 2026», never JSON); the
+  proposal a «Crear» made; the Bandeja's card for each proposal with its fields and what became of it; a
+  collection's record as it was saved, its fields by name, or «espera en la Bandeja». A model's words stay text. A card
+  over the top left corner, **«Explicación»** (task 91, formerly «Por dónde fue»), with «×» to hide it (kept hidden on
+  the device; a chip «Explicación» brings it back, and the map fits below it while it is there), tells it in words («Empezó con «Reunión con secretaría el
   jueves» (Correos)», «Leer correo (v3) · 20 oct, 11:05», «Propuso «Preparar la reunión» · aceptada», «Escribió
   «Café» en Gastos»; three of each, then «y 2 más»), with **«Detalles»** (each step in the Registro's words and what it
   does, what a model answered, «Leyó», «Decisiones», «Modelos»; «Menos» folds it) and «Copiar»; and a chip «Ejecución · 6 nov,
@@ -861,6 +880,14 @@ contraseña ni un código aquí» under a question.
   before flows, whose mail is the one its plan read first); one
   written by hand, by an assistant, by an import or by the connector says so in a notice («Lo escribiste tú, en
   portatil, el 21 oct, 19:45»), with no map.
+- **A run drawn in the conversation** (task 92; Juan, 2026-11-06: «dibujar el diagrama metiendo esa vista de mapa
+  dentro del chat, de una forma sencilla; ya si quiero tocar opciones haría clic en un botón de ampliar»): the reply
+  component «run» (the planner gives it a run that `entities.origin` or `inbox.pending` named) draws its way as the
+  map does, in a row that wraps: the mail's connector, the collection with «Reunión con secretaría el jueves», the flow
+  with what came of it, the Bandeja with «Preparar la reunión» · aceptada, the collection where it went, each box in
+  orange with an arrow before it and the same light going along them again and again; «Ampliar» under it opens the
+  map with the run on it. Its names are the map's; who proposed something is said by its name («lo propuso Leer
+  correo»), never by a code.
 - **A flow's page** (F8): «Flujos › Leer correo» above it (the crumb goes back to «Flujos») with the period (7 días |
   30 días) on its right, then the editor, its canvas taking the window's height.
 - **The flow editor** (F2, `docs/flujos.md` §4.5; n8n's canvas and node panel and Dify's checklist as references):

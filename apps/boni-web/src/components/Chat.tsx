@@ -8,6 +8,8 @@ import {
   ListChecks,
   ListPlus,
   MessageSquarePlus,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   ShieldCheck,
   Square,
@@ -65,6 +67,7 @@ import {
   useStore,
 } from "../store.ts";
 import { ProposalCard, RequestCard, useInboxQueue } from "./InboxCards.tsx";
+import { RunPath } from "./RunPath.tsx";
 
 /**
  * The conversation with Boni's agent (docs/nucleo.md, 7.14; docs/conversacion.md). Everything here is painted by
@@ -91,9 +94,65 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
   }, [chat, live]);
+  // The conversations on the left: folded away or widened by dragging, kept on this device (task 92).
+  const [width, setWidth] = useState(listWidth);
+  const [folded, setFolded] = useState(() => kept(LIST_FOLDED) === "1");
+  const fold = (f: boolean) => {
+    setFolded(f);
+    keep(LIST_FOLDED, f ? "1" : null);
+  };
+  const widen = (w: number) => {
+    const x = Math.round(Math.min(LIST_MAX, Math.max(LIST_MIN, w)));
+    setWidth(x);
+    keep(LIST_WIDTH, String(x));
+  };
+  const drag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const from = e.clientX;
+    const was = width;
+    const move = (ev: PointerEvent) => widen(was + ev.clientX - from);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   return (
     <div className={`chat-layout${compact ? " compact" : ""}`}>
-      {!compact && <ConversationList />}
+      {!compact &&
+        (folded ? (
+          <div className="chat-list-rail">
+            <button
+              type="button"
+              className="icon-btn"
+              aria-label={t("chats.show")}
+              title={t("chats.show")}
+              onClick={() => fold(false)}
+            >
+              <PanelLeftOpen size={16} strokeWidth={1.8} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <ConversationList width={width} onFold={() => fold(true)} />
+            <div
+              className="chat-list-grip"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t("chats.width")}
+              aria-valuenow={width}
+              aria-valuemin={LIST_MIN}
+              aria-valuemax={LIST_MAX}
+              tabIndex={0}
+              onPointerDown={drag}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft") widen(width - 16);
+                if (e.key === "ArrowRight") widen(width + 16);
+              }}
+            />
+          </>
+        ))}
       {compact && list && (
         <>
           {/* The phone's conversations: a drawer from the left over a scrim (Claude's, ChatGPT's); a tap outside or
@@ -201,8 +260,41 @@ function groupOf(last: number, now: string): "today" | "yesterday" | "week" | "m
           : "older";
 }
 
+/** How wide the conversations' list is on the desktop, and whether it is folded: kept on this device (task 92). */
+const LIST_WIDTH = "boni:chatListWidth";
+const LIST_FOLDED = "boni:chatListFolded";
+const LIST_MIN = 180;
+const LIST_MAX = 440;
+const kept = (k: string): string | null => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const keep = (k: string, v: string | null) => {
+  try {
+    if (v === null) localStorage.removeItem(k);
+    else localStorage.setItem(k, v);
+  } catch {
+    // A private window keeps nothing: it is as it was until the app is closed.
+  }
+};
+const listWidth = () => {
+  const n = Number(kept(LIST_WIDTH));
+  return n >= LIST_MIN && n <= LIST_MAX ? n : 240;
+};
+
 /** Juan's conversations, the latest first, by when they were used (docs/conversacion.md 3.1). */
-function ConversationList({ onPick }: { onPick?: () => void }) {
+function ConversationList({
+  onPick,
+  width,
+  onFold,
+}: {
+  onPick?: () => void;
+  width?: number;
+  onFold?: () => void;
+}) {
   const t = useStore((s) => s.t);
   const all = useStore((s) => s.conversations);
   const open = useStore((s) => s.conversationId);
@@ -222,19 +314,36 @@ function ConversationList({ onPick }: { onPick?: () => void }) {
     return [...out.entries()];
   }, [all, query]);
   return (
-    <nav className="chat-list" aria-label={t("chats.title")}>
-      <button
-        type="button"
-        className="btn chat-new"
-        disabled={busy}
-        onClick={() => {
-          newConversation();
-          onPick?.();
-        }}
-      >
-        <MessageSquarePlus size={15} strokeWidth={1.8} />
-        {t("chats.new")}
-      </button>
+    <nav
+      className="chat-list"
+      aria-label={t("chats.title")}
+      style={width ? { flexBasis: width, width } : undefined}
+    >
+      <div className="chat-list-head">
+        <button
+          type="button"
+          className="btn chat-new"
+          disabled={busy}
+          onClick={() => {
+            newConversation();
+            onPick?.();
+          }}
+        >
+          <MessageSquarePlus size={15} strokeWidth={1.8} />
+          {t("chats.new")}
+        </button>
+        {onFold && (
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t("chats.hide")}
+            title={t("chats.hide")}
+            onClick={onFold}
+          >
+            <PanelLeftClose size={16} strokeWidth={1.8} />
+          </button>
+        )}
+      </div>
       <input
         className="input chat-search"
         type="search"
@@ -913,6 +1022,11 @@ function ReplyView({ reply }: { reply: Reply }) {
           ))}
         </div>
       );
+    }
+    case "run": {
+      // A run drawn in the conversation, with «Ampliar» to the map (task 92); its id is a tool's, never a model's word.
+      const id = d.run?.t === "v" && typeof d.run.value === "string" ? d.run.value : null;
+      return id ? <RunPath run={id} caption={caption} /> : null;
     }
     case "chart": {
       const outside = allOutside([d.labels, d.values].filter((x): x is Painted => Boolean(x)));

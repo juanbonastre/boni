@@ -359,6 +359,10 @@ me imagino que en el servidor dará una respuesta buena, con más texto, gráfic
 - **Las respuestas pueden traer una gráfica:** el componente `chart` del plan, con etiquetas y los números que dieron las
   herramientas (barras o una línea). Se pide al planificador que conteste como una persona: primero una frase, luego lo
   que ayude a verlo.
+- **Las respuestas pueden traer un recorrido** (la 92, 2026-11-06): el componente `run` del plan dibuja el camino de
+  una ejecución que dio una herramienta (`entities.origin`, `inbox.pending`), como lo dibuja el mapa, con «Ampliar» que
+  abre el mapa con ella encima. Juan, al preguntar de dónde venía una tarea de la Bandeja: «podría también dibujar el
+  diagrama metiendo esa vista de mapa dentro del chat, de una forma sencilla».
 - **Pendiente:** evaluar el planificador con el prompt nuevo, a mano y con presupuesto.
 
 La maqueta 3 junta lo que se ve de C3 a C5: la ventana flotante con la conciliación dentro, la barra con su etiqueta

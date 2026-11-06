@@ -144,6 +144,7 @@ describe("«¿De dónde viene?» (F8)", () => {
       flow: { id: "leer-correo", name: "Leer correo", version: 3 },
       input: w.mail,
       proposal: { created: NOW - 29 * MIN, decided: NOW - 10 * MIN, alone: false },
+      run: "r_lectura_01",
     });
     expect(originFacts(store, w.claude, { mailAccount: null })).toMatchObject({
       by: "assistant",
@@ -167,6 +168,9 @@ describe("«¿De dónde viene?» (F8)", () => {
     expect(got.out).toMatchObject({
       id: w.accepted,
       by: "flow",
+      // Who in a word, and the run that proposed it (task 92).
+      who: "Leer correo",
+      run: "r_lectura_01",
       flow: { name: "Leer correo", version: 3 },
       input: { id: w.mail, collection: "Correo", title: "Reunión el jueves" },
       proposed: new Date(NOW - 29 * MIN).toISOString(),
@@ -209,6 +213,7 @@ describe("«¿De dónde viene?» (F8)", () => {
         by: "flow",
         flow: { id: "leer-correo", name: "leer-correo", version: 3 },
         input: w.mail,
+        run: "r_lectura_01",
       },
     ]);
     // The MCP's «inbox», for a session that may only read.

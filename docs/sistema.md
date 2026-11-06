@@ -355,6 +355,17 @@ La lista de comprobación avisa de lo demás antes de encender.
   «Copiar» toman su nombre de un solo sitio («Lectora», «Crear», «Regla del remitente»), nunca el id de una herramienta,
   una referencia `$` o el código de una regla; cada paso dice en una línea lo que hace; por qué paró, con palabras («una
   regla de seguridad lo impide»), y el código solo en «Copiar».
+- **El recorrido, segunda vuelta** (la 91, Juan, 2026-11-06, al probar la 36): el camino va por los pasos que hicieron
+  algo y, entre dos, por el trayecto más corto de las flechas del lienzo, nunca por las calles que no tomó (antes se
+  encendían todas); lo que la ejecución solo leyó no es su camino; una luz lo recorre una y otra vez, despacio, del
+  conector a la colección. Al pulsar una caja se ve lo que salió de ella en esa ejecución: el correo, lo que cada paso
+  dio al siguiente (la respuesta del modelo, guardada con su paso), la tarjeta de la Bandeja, la fila que quedó al
+  aceptarla. Lo de esa ejecución va en naranja, sus llamadas y su coste también; lo demás son las cifras del periodo,
+  dicho debajo del mapa. «Profundidad» llega a su máximo («5 (máx.)»), «Explicación» se oculta, y lo de fuera se marca
+  con un sobre en la flecha y no con un color.
+- **El recorrido en la conversación** (la 92): la respuesta «run» del lenguaje de planes dibuja el camino de una
+  ejecución que dieron `entities.origin` o `inbox.pending`, con «Ampliar» al mapa; esas herramientas dicen quién por su
+  nombre (`who`) y dan su ejecución (`run`). La lista de conversaciones se pliega y se ensancha.
 - **Las llamadas y el coste de cada paso** (lo que la revisión de F8 echó en falta): cada llamada a un modelo guarda el
   paso en el que contestó (la migración 19; las de antes del 2026-11-06 no lo tienen), y cada paso que piensa dice en el
   mapa y en el editor sus llamadas y su coste del periodo («42 llamadas · 0,21 US$»), contados con un índice que no lee

@@ -37,15 +37,39 @@ export interface RunDetail {
     title: string | null;
     /** What the models answered in it (a reader's, the decider's), as text: the user's own content. */
     answers: string[];
+    /** Its model calls in this run and what they cost (task 91: «todo lo que sea de un recorrido concreto»). */
+    calls: number;
+    cost: number;
+    /** What it gave the next step, as the model answered it (one answer, or one per item): shown as text. */
+    output: unknown;
   }[];
   /** What it read, per collection (its name, and its id as `type`): some titles and how many entities. */
   read: { collection: string; type: string; titles: string[]; n: number }[];
   /** What it changed, each entity by its title and collection, and whether that was undone. */
   changes: { action: string; title: string; collection: string; type: string; undone: boolean }[];
-  /** The proposals it made, by title, state and the collection each would write in (its id; null: none). */
-  proposals: { title: string; status: string; type: string | null }[];
-  /** The record that started it (a mail), by its title and collection: the map draws the way from it. */
-  input: { id: string; title: string; collection: string; type: string } | null;
+  /**
+   * The proposals it made, by title, state and the collection each would write in (its id; null: none); each with its
+   * rows as the Bandeja showed them, the step that made it, and the record it became once accepted (task 91).
+   */
+  proposals: {
+    id: string;
+    title: string;
+    status: string;
+    type: string | null;
+    created: number;
+    decided: number | null;
+    rows: { name: string; value: string }[];
+    step: string | null;
+    record: RecordView | null;
+  }[];
+  /** The record that started it (a mail), by its title and collection, with its first fields: the way starts there. */
+  input: {
+    id: string;
+    title: string;
+    collection: string;
+    type: string;
+    fields: { name: string; value: string }[];
+  } | null;
   /** Its decisions (docs/fiabilidad.md): the area, the confidence, what came of it and whether it was right. */
   decisions: { area: string; p: number; outcome: string; result: string | null }[];
   /** The models it called: role, model, tokens and cost (null when unknown). */
@@ -67,6 +91,49 @@ const text = (v: unknown, max: number) =>
 const TITLES = 8;
 const CHANGES = 50;
 const ANSWER = 4000;
+/** An answer bigger than this is said as text only (its `answers`). */
+const OUTPUT = 16_000;
+const FIELDS = 12;
+
+/** A record as the panel of a box shows it: its title, collection and fields by their names, as text. */
+export interface RecordView {
+  id: string;
+  title: string;
+  collection: string;
+  fields: { name: string; value: string }[];
+}
+
+/** A record's fields as text, by their names: an option by its name, a related record by its title. */
+export function recordView(store: UserStore, id: string, max = FIELDS): RecordView | null {
+  const s = store.get(id);
+  const types = store.schema().types;
+  const t = s ? types[s.entity.type] : undefined;
+  if (!s || !t || s.entity.deleted !== undefined) return null;
+  const shown = (f: (typeof t.fields)[number], v: unknown): string => {
+    const one = (x: unknown): string => {
+      if (f.type === "select" || f.type === "multiselect")
+        return f.options?.find((o) => o.id === x)?.name ?? String(x);
+      if (f.type === "relation" && typeof x === "string") {
+        const r = store.get(x);
+        const rt = r ? types[r.entity.type] : undefined;
+        return r && rt ? String(r.entity.values[rt.titleField] ?? "") : "";
+      }
+      if (typeof x === "boolean") return x ? "✓" : "✗";
+      return typeof x === "string" || typeof x === "number" ? String(x) : JSON.stringify(x);
+    };
+    return (Array.isArray(v) ? v.map(one).filter(Boolean).join(", ") : one(v)).slice(0, 200);
+  };
+  const fields: { name: string; value: string }[] = [];
+  for (const f of t.fields) {
+    if (fields.length >= max) break;
+    if (f.hidden || f.archived || f.id === t.titleField || f.type === "file") continue;
+    const v = s.entity.values[f.id];
+    if (v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length)) continue;
+    const value = shown(f, v);
+    if (value) fields.push({ name: f.name, value });
+  }
+  return { id, title: text(s.entity.values[t.titleField], 120), collection: t.name, fields };
+}
 
 /** The names a plan's step refers to (`$name`, `$name.field`), in its arguments, condition and iteration. */
 export function refsOf(step: unknown): string[] {
@@ -118,21 +185,28 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
   const plan = r.plan as { steps?: Record<string, unknown>[] } | null;
   const planSteps = plan?.steps ?? [];
   const stepIds = new Set(planSteps.map((s) => String(s.id)));
-  // A model's answer belongs to the step logged right after it (the step ran it): between the steps before it and
-  // its own last log line.
+  // A model's answer belongs to the step it answered in: kept with the call since 2026-11-06 (migration 19); before,
+  // the step logged right after it (the step ran it), between the steps before it and its own last log line.
   let before = 0;
+  const costOf = (c: (typeof calls)[number]) => {
+    const u = isObj(c.usage) ? c.usage : {};
+    return typeof u.cost === "number" && Number.isFinite(u.cost) ? u.cost : 0;
+  };
   const steps = planSteps.map((s) => {
     const sid = String(s.id);
     const mine = logged.filter((x) => x.step === sid);
     const last = mine.at(-1);
     const error = mine.find((x) => x.kind === "error")?.detail as { code?: string } | undefined;
     const endAt = mine.reduce((m, x) => Math.max(m, x.at), 0);
-    const answers = mine.length
-      ? calls
-          .filter((c) => c.role !== "planner" && c.at > before && c.at <= endAt)
-          .map((c) => text(JSON.stringify(c.response), ANSWER))
-          .filter(Boolean)
-      : [];
+    const its = calls.filter((c) =>
+      c.step
+        ? c.step === sid
+        : mine.length > 0 && c.role !== "planner" && c.at > before && c.at <= endAt,
+    );
+    const answers = its.map((c) => text(JSON.stringify(c.response), ANSWER)).filter(Boolean);
+    const said = its.map((c) => c.response).filter((x) => x !== null && x !== undefined);
+    const whole = said.length === 1 ? said[0] : said.length ? said : null;
+    const output = whole !== null && JSON.stringify(whole).length <= OUTPUT ? whole : null;
     if (endAt) before = Math.max(before, endAt);
     const refs = new Set<string>();
     for (const [k, v] of Object.entries(s)) if (k !== "id") refsIn(v, refs);
@@ -160,6 +234,9 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
       uses: [...refs].filter((h) => h !== sid && !stepIds.has(h) && h !== "item" && h !== "zip"),
       title: null,
       answers,
+      calls: its.length,
+      cost: its.reduce((n, c) => n + costOf(c), 0),
+      output,
     };
   });
   // What it read: the audit's accesses of the run, by collection.
@@ -188,18 +265,50 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
       undone: op.undone,
     }));
   const byKey = new Map(Object.values(types).map((t) => [t.key, t.id]));
+  // The steps that proposed: a proposal made before its step was kept with it belongs to the one there was.
+  const proposing = steps.filter((s) => s.decision === "propose").map((s) => s.id);
+  // Who accepted each: the run of its «Aceptar» (it keeps the proposal since 2026-11-06; before, the one at that time).
+  const acceptRun = (pid: string, decided: number | null) => {
+    if (decided === null) return null;
+    const near = j.runsIn(decided - 5000, decided + 5000).filter((x) => x.origin === "accepted");
+    return near.find((x) => x.proposal === pid) ?? near.find((x) => !x.proposal) ?? null;
+  };
   const proposals = j.proposalsOf(id).map((p) => {
-    const rows = (p.view as { rows?: { arg: string; value?: unknown }[]; title?: unknown }) ?? {};
+    const rows =
+      (p.view as {
+        rows?: { arg: string; value?: unknown; name?: unknown; detail?: unknown }[];
+        title?: unknown;
+      }) ?? {};
     // The collection's key: where it was accepted when the user moved it, else where it was proposed (the agent
     // stores a labelled value in `values.type`).
     const v = isObj(p.args) && isObj(p.args.values) ? p.args.values.type : null;
     const raw = isObj(v) ? v.value : v;
     const moved = p.status === "accepted" ? p.edits?.type?.to : undefined;
     const key = typeof moved === "string" ? moved : typeof raw === "string" ? raw : null;
+    const step = isObj(p.args) && typeof p.args.step === "string" ? p.args.step : null;
+    const accepted = p.status === "accepted" ? acceptRun(p.id, p.decided) : null;
+    const made = accepted
+      ? store.runOps(accepted.id).find((op) => op.kind === "create")
+      : undefined;
     return {
+      id: p.id,
       title: text(rows.rows?.find((x) => x.arg === "values.title")?.value ?? rows.title, 120),
       status: p.status,
       type: key ? (byKey.get(key) ?? (types[key] ? key : null)) : null,
+      created: p.created,
+      decided: p.decided,
+      // As the Bandeja showed it: each field by its name (or its key), an option or a record by its name.
+      rows: (rows.rows ?? [])
+        .filter(
+          (x) => x.arg !== "type" && x.value !== undefined && x.value !== null && x.value !== "",
+        )
+        .slice(0, FIELDS)
+        .map((x) => ({
+          name: text(x.name ?? x.arg.replace(/^values\./, ""), 60),
+          value: text(x.detail ?? x.value, 200),
+        })),
+      step: step ?? (proposing.length === 1 ? (proposing[0] as string) : null),
+      record: made ? recordView(store, made.target) : null,
     };
   });
   // What started it: the record its trigger bound; a mail's reading from before flows, the mail its plan read first.
@@ -238,7 +347,10 @@ export function traceOf(store: UserStore, id: string): RunDetail | null {
     read: [...read.values()],
     changes,
     proposals,
-    input: inputId && started ? { id: inputId, ...started } : null,
+    input:
+      inputId && started
+        ? { id: inputId, ...started, fields: recordView(store, inputId, 4)?.fields ?? [] }
+        : null,
     decisions,
     models,
   };

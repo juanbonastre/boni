@@ -4,7 +4,8 @@
  * of it, and in one line what it does; what it read, wrote, proposed and decided, and its models with their cost. The
  * Registro, the map's run card and «Copiar» say it so. Text from a mail or a model stays text.
  */
-import type { RunDetail, RunStep } from "./agent.ts";
+import type { MapNode, RunDetail, RunStep } from "./agent.ts";
+import { deviceZone } from "./clock.ts";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
 const or = (t: T, k: string, fallback: string) => {
@@ -149,4 +150,39 @@ export function runCopy(t: T, d: RunDetail, w: RunWords, when: string): string {
     ).flatMap(([name, items]) => (items.length ? [`${name}:`, ...items.map((x) => `- ${x}`)] : [])),
   ];
   return lines.join("\n");
+}
+
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
+const CIVIL_DAY = /^\d{4}-\d{2}-\d{2}$/;
+/**
+ * A value as text, as a person reads it: an instant or a day as a date in the user's language and zone, never in ISO
+ * form (Juan, 2026-11-02); the rest as it is.
+ */
+export function valueText(v: unknown, lang: string): string {
+  const locale = lang === "en" ? "en-GB" : "es-ES";
+  if (typeof v === "string" && INSTANT.test(v)) {
+    const ms = Date.parse(v);
+    if (!Number.isNaN(ms))
+      return new Intl.DateTimeFormat(locale, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: deviceZone(),
+      }).format(ms);
+  }
+  if (typeof v === "string" && CIVIL_DAY.test(v)) {
+    const [y, m, d] = v.split("-").map(Number);
+    return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(
+      Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1),
+    );
+  }
+  if (typeof v === "boolean") return v ? "✓" : "✗";
+  return typeof v === "string" || typeof v === "number" ? String(v) : JSON.stringify(v);
+}
+
+/** A map node's name: its own (a collection, a flow, a page, an assistant), or Boni's word for it (the map, a chat). */
+export function mapNodeName(t: T, n: Pick<MapNode, "kind" | "code" | "name">): string {
+  if (n.kind === "actor" && n.code === "assistant")
+    return t("map.node.assistant", { name: n.name ?? "" });
+  if (n.name) return n.name;
+  return t(`map.node.${n.code ?? n.kind}`);
 }

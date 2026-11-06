@@ -585,6 +585,8 @@ const TOOLS: Tool[] = [
       return {
         id: s.entity.id,
         by: o.by,
+        who: o.flow?.name ?? o.device,
+        run: o.run,
         at: iso(o.at),
         device: o.device,
         flow: o.flow,
@@ -631,6 +633,8 @@ const TOOLS: Tool[] = [
             collection: p.type ? (c.store.schema().types[p.type]?.name ?? null) : null,
             proposed: iso(p.created),
             by: p.by,
+            who: p.flow?.name ?? null,
+            run: p.run,
             flow: p.flow,
             input: input && input.entity.deleted === undefined ? v.asNote(input, false) : null,
           };
