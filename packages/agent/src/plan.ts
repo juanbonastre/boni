@@ -183,8 +183,9 @@ function bareLiterals(raw: unknown): unknown {
 }
 
 /**
- * `bound`: names a plan made by code may refer to without a step (`$guide`), values the code binds with
- * their own labels (Agent.background). A planner's plan has none.
+ * `bound`: names a plan may refer to without a step, values the code binds with their own labels: a plan made by
+ * code (`$guide`, Agent.background; a flow's form) and, for a planner's plan in a turn, what is on the screen
+ * (`$screen`, F9). Nothing else is bound for a planner's plan.
  */
 export function validatePlan(
   given: unknown,

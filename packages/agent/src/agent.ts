@@ -101,7 +101,10 @@ user asks to run one of them, one call to flows.run with its id (and inputs as o
 appear in this turn, after the user confirms it. When the user asks for something to happen on its own (every Monday,
 each morning, a button with a form), one call to flows.save with the flow written whole (its trigger and plan as
 {"lit": {...}} objects, the plan in this same language) and a short text reply saying it waits in the inbox: it is
-only proposed, the user turns it on by accepting it. A flow never runs or saves another flow.
+only proposed, the user turns it on by accepting it. A flow never runs or saves another flow. "screen", when there is
+one: what Boni's app shows the user as he writes (the page, collection or record open, the inbox's cards in the order
+he sees them, the first at the top, the rows he chose). "This", "the one at the top", "the second one" mean what is
+there; use its values as {"ref": "$screen..."} with the path the input shows.
 
 The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "id" (lowercase letters, digits, _) and
 one "op":
@@ -833,6 +836,12 @@ export class Agent {
      * (the form's values, his own) and its literals his when he saved it. Checked like any plan of a turn.
      */
     flow?: { id: string; version: number; by: string; plan: unknown; bind: Record<string, Val> };
+    /**
+     * What the user has on screen as he writes (docs/sistema.md §4.7, F9): what the server built from the app's
+     * references through the models' view, each value with its label. The planner sees it and its plan may name it
+     * as `$screen`; nothing of it is the user's word.
+     */
+    screen?: Val;
   }): Promise<TurnResult> {
     const run = randomUUID();
     const turn = { id: randomUUID(), text: req.text.slice(0, 8000) };
@@ -853,6 +862,7 @@ export class Agent {
     );
     st.live = req.live;
     st.planner = req.planner;
+    if (req.screen && !req.flow) st.env.set("screen", req.screen);
     this.emit(st, { type: "start", run });
     this.active.set(run, st);
     // The turn is kept before it is planned: a device that reloads sees it, running.
@@ -1106,6 +1116,8 @@ export class Agent {
             inputs: (runnableNames(f.trigger) ?? []).filter((n) => n !== "today"),
           }))
       : [];
+    // What is on screen (F9): as the models' view lets it through, by `$screen` refs.
+    const screen = st.env.get("screen");
     return {
       request: st.turn.text,
       today: this.today(),
@@ -1114,6 +1126,7 @@ export class Agent {
       history: past,
       memories: this.memories(),
       ...(flows.length ? { flows } : {}),
+      ...(screen ? { screen: toPlannerView(screen, "$screen") } : {}),
     };
   }
 
@@ -1140,6 +1153,8 @@ export class Agent {
       .filter((_h, i, all) => !(st.turnRecord && i === all.length - 1))
       .slice(-10)
       .flatMap((h) => h.replies.flatMap((r) => Object.values(r.data)));
+    const screen = st.env.get("screen");
+    if (screen) vals.push(screen);
     const seen = exposure(vals, "planner", (e) => this.o.store.get(e)?.entity.type);
     const def = this.o.store.schema().types.memory;
     const f = def?.fields.find((x) => x.key === "text");
@@ -1272,11 +1287,13 @@ export class Agent {
       );
     // Deferred tools (7.11) wait until the catalogue is long enough to need them: today the planner
     // gets every tool it may use, with its arguments.
+    // What the code bound for this turn (the screen, F9) the plan may name.
+    const bound = st.env.has("screen") ? ["screen"] : [];
     let out = await ask({});
-    let v = validatePlan(out, this.catalogView(st.origin), st.turn.text);
+    let v = validatePlan(out, this.catalogView(st.origin), st.turn.text, bound);
     if (!v.ok) {
       out = await ask({ previous_errors: v.errors });
-      v = validatePlan(out, this.catalogView(st.origin), st.turn.text);
+      v = validatePlan(out, this.catalogView(st.origin), st.turn.text, bound);
     }
     if (!v.ok) throw new Stop("plan-invalid");
     return v.plan;

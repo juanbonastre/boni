@@ -56,6 +56,7 @@ import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
+import { screenOf, screenRefs } from "./screen.ts";
 
 /**
  * The conversation API (docs/nucleo.md, 7; plan PR 11), on the tailnet entry only. Each account has
@@ -63,7 +64,8 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  * (identity) is the turn's origin: a confirmation only counts from a personal device. Without a
  * model provider configured the agent is off and every route answers 503 { error: "agent-off" }.
  *
- *   POST /api/agent/turn     { text, conversation?, live? } -> TurnResult (replies, pending, proposals, notices)
+ *   POST /api/agent/turn     { text, conversation?, live?, screen? } -> TurnResult (replies, pending, proposals,
+ *                            notices); `screen`: what is on the app's screen, by reference (screen.ts, F9)
  *                            `conversation`: one of the list's (else the device's own, as before the list);
  *                            `live`: an id the device made, to watch the turn as it runs (GET .../live/:id)
  *   POST /api/agent/answer   { run, ask, choice | text, live? }
@@ -763,6 +765,12 @@ async function answerAgent(
           }),
         );
       if (!c) return bad();
+      // What is on Juan's screen as he writes (F9): the app's references, made into values by the server.
+      const refs = b.screen === undefined || b.screen === null ? null : screenRefs(b.screen);
+      if (b.screen !== undefined && b.screen !== null && !refs) return bad();
+      const screen = refs
+        ? screenOf(store, refs, { mailAccount: host.mailAccountOf?.(who.account) ?? null })
+        : null;
       const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;
       const live = liveId(b.live);
       const r = await agent.turn({
@@ -771,6 +779,7 @@ async function answerAgent(
         conversation: c.id,
         ...(live ? { live: host.liveStart(who.account, live) } : {}),
         ...(planner ? { planner } : {}),
+        ...(screen ? { screen } : {}),
       });
       return send(res, 200, after(r));
     }

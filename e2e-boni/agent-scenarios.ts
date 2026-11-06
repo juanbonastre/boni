@@ -11,6 +11,24 @@ const v = (value: unknown, integrity: string, sensitivity = "public") => ({
 export const RTL = String.fromCodePoint(0x202e);
 export const ZW = String.fromCodePoint(0x200b);
 
+/** «¿Qué me pide el de arriba?» with the Bandeja open (F9, task 85): the first card's title, painted as from outside. */
+export const TOP_CARD_REPLY = {
+  run: "r9",
+  status: "done",
+  replies: [
+    {
+      component: "text",
+      data: {
+        template: v("Te pide: {a}", "model"),
+        a: v("Revisar actas", "external", "personal"),
+      },
+    },
+  ],
+  pending: null,
+  proposals: [],
+  notices: [],
+  error: null,
+};
 export const TEXT_REPLY = {
   run: "r1",
   status: "done",

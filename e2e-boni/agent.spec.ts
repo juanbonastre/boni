@@ -31,6 +31,7 @@ import {
   RUNS_EXPLAINED,
   STOPPED,
   TEXT_REPLY,
+  TOP_CARD_REPLY,
   VISIBILITY,
 } from "./agent-scenarios.ts";
 import { emit, iconsWhole, openApp, recorded } from "./fixtures.ts";
@@ -54,6 +55,95 @@ async function ask(page: Page, text: string) {
   await box.fill(text);
   await box.press("Enter");
 }
+
+test("Boni over the screen (F9, task 85): Ctrl+E and the circle open the conversation over what is open, Esc closes it, it docks to the right and widens; what is on screen goes with each message, the Bandeja's cards in its order", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [TOP_CARD_REPLY],
+      "GET api/agent/proposals": [{ proposals: [CARD_FUNCTION, CARD_DETAILED] }],
+    },
+  });
+  // The circle at the bottom right of any screen but the conversation's; Ctrl+E opens it over what is open.
+  const circle = page.getByRole("button", { name: "Boni · Ctrl+E" });
+  await expect(circle).toBeVisible();
+  await page.keyboard.press("Control+e");
+  const win = page.getByRole("dialog", { name: "Boni" });
+  const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
+  await expect(box).toBeFocused();
+  await expect(circle).toHaveCount(0);
+  // Esc is the window's with the focus in it; with the focus elsewhere it is that place's.
+  await page.locator(".doc-title, h1").first().click();
+  await page.keyboard.press("Escape");
+  await expect(win).toBeVisible();
+  await box.click();
+  await page.keyboard.press("Escape");
+  await expect(win).toHaveCount(0);
+  // Ajustes keeps the keyboard: Ctrl+E opens nothing under it.
+  await page.keyboard.press("Control+,");
+  await page.keyboard.press("Control+e");
+  await expect(win).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  // Again from the circle; docked to the right it takes the Bandeja's place, what was being written kept.
+  await circle.click();
+  await box.fill("un borrador");
+  await win.getByRole("button", { name: "Llevar a la derecha" }).click();
+  const docked = page.getByRole("complementary", { name: "Boni" });
+  await expect(docked).toBeVisible();
+  await expect(win).toHaveCount(0);
+  await expect(docked.getByRole("textbox", { name: "Escribe a Boni…" })).toHaveValue("un borrador");
+  // The Bandeja back on the right: the window floats beside it, the draft still there.
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  await expect(page.locator(".inbox-panel .inbox-card")).toHaveCount(2);
+  await expect(win).toBeVisible();
+  await expect(box).toHaveValue("un borrador");
+  // With the Bandeja open the message goes with what is on screen: its cards as it shows them, the oldest first.
+  await box.fill("¿qué me pide el de arriba?");
+  await box.press("Enter");
+  await expect(win.locator(".turn-answer")).toContainText("Te pide: Revisar actas");
+  const sent = await requests(page, "POST api/agent/turn ");
+  expect(JSON.parse(sent[0]?.split(" ").slice(2).join(" ") ?? "{}")).toMatchObject({
+    text: "¿qué me pide el de arriba?",
+    screen: {
+      // What is open: the page the app started on.
+      open: { kind: "page", id: "gastos" },
+      inbox: [
+        { kind: "proposal", id: "c1" },
+        { kind: "proposal", id: "c9" },
+      ],
+      chosen: [],
+    },
+  });
+  await page.screenshot({ path: `${SHOTS}/boni-window.png` });
+  // «Ampliar»: the conversation on its own screen, where there is no circle.
+  await win.getByRole("button", { name: "Ampliar" }).click();
+  await expect(win).toHaveCount(0);
+  await expect(page.locator(".content .chat-layout")).toBeVisible();
+  await expect(circle).toHaveCount(0);
+  // The Bandeja's own screen puts its cards on the screen too.
+  await page
+    .locator(".chat-tools")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  await page.keyboard.press("Control+e");
+  await box.fill("¿y la segunda?");
+  await box.press("Enter");
+  // The same conversation as always: its first answer, and this one.
+  await expect(win.locator(".turn-answer")).toHaveCount(2);
+  // The second message's body, once it is recorded (by its text, never by its place in the list).
+  const second = async () =>
+    (await requests(page, "POST api/agent/turn ")).find((r) => r.includes("¿y la segunda?")) ?? "";
+  await expect.poll(second).not.toBe("");
+  expect(JSON.parse((await second()).split(" ").slice(2).join(" ")).screen).toMatchObject({
+    open: { kind: "inbox" },
+    inbox: [{ id: "c1" }, { id: "c9" }],
+  });
+});
 
 test("a reply is painted by the code, and what came from outside is only text", async ({
   page,
