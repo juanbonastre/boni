@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { CALLS_BY_STEP } from "./journal.ts";
 import { openUserStore } from "./store.ts";
 
 const cleanups: (() => void)[] = [];
@@ -142,15 +143,11 @@ describe("a flow's steps: their model calls (task 90)", () => {
     // Served by the index that covers what it sums: the rows with the texts are never read.
     const db = new DatabaseSync(path);
     try {
+      // The method's own statement, not a copy of it.
       const plan = (
-        db
-          .prepare(
-            `EXPLAIN QUERY PLAN SELECT c.step AS step, count(*) AS calls, sum(coalesce(json_extract(c.usage, '$.cost'), 0)) AS cost
-             FROM runs r JOIN model_calls c ON c.run = r.id
-             WHERE r.flow = ? AND r.started >= ? AND r.started < ? AND r.origin != 'test' AND c.step IS NOT NULL
-             GROUP BY c.step`,
-          )
-          .all("leer-correo", 0, 1) as { detail: string }[]
+        db.prepare(`EXPLAIN QUERY PLAN ${CALLS_BY_STEP}`).all("leer-correo", 0, 1) as {
+          detail: string;
+        }[]
       )
         .map((r) => r.detail)
         .join("; ");

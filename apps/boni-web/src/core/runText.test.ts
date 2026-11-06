@@ -5,6 +5,7 @@ import type { RunDetail, RunStep } from "./agent.ts";
 import {
   moneyText,
   runCopy,
+  runStatusLine,
   runStepLine,
   runWords,
   stepDesc,
@@ -76,7 +77,7 @@ describe("a run in words", () => {
     );
     expect(stepDesc(t, { op: "call", what: "mail.rule" })).toMatch(/^Si tu guía dice no leer/);
     expect(stepDesc(t, { op: "call", what: "mail.send" })).toBeNull();
-    expect(stepDesc(t, { op: "ask", what: "" })).toBeNull();
+    expect(stepDesc(t, { op: "ask", what: "" })).toBe("Te pregunta y espera tu respuesta.");
   });
 
   it("says why a step stopped in words: a safety rule, Juan's stop or a fault; never the rule's code", () => {
@@ -84,6 +85,19 @@ describe("a run in words", () => {
     expect(whyText(t, "P20")).toBe("una regla de seguridad lo impide");
     expect(whyText(t, "stopped-by-juan")).toBe("lo paraste tú");
     expect(whyText(t, "bad-ref")).toBe("un fallo al hacerlo");
+    // What a model may read is a rule too (R…); the day's budget and a request's limits are limits, not rules.
+    expect(whyText(t, "R1-private-data-to-reader")).toBe("una regla de seguridad lo impide");
+    expect(whyText(t, "P13-daily-budget")).toBe("se llegó al límite de gasto de hoy");
+    expect(whyText(t, "P12-steps")).toBe("se llegó a un límite de la petición");
+    // A whole run: in words on screen, with its code only in «Copiar».
+    expect(runStatusLine(t, "done")).toBe("Hecho");
+    expect(runStatusLine(t, "stopped")).toBe("Parado");
+    expect(runStatusLine(t, "stopped:R1-private-data-to-reader")).toBe(
+      "Parado: una regla de seguridad lo impide",
+    );
+    expect(runStatusLine(t, "stopped:R1-private-data-to-reader", true)).toBe(
+      "Parado: una regla de seguridad lo impide (R1-private-data-to-reader)",
+    );
     expect(runStepLine(t, { error: "P2-untrusted-destination", decision: "deny" })).toBe(
       "Parado: una regla de seguridad lo impide",
     );
@@ -126,7 +140,13 @@ describe("a run in words", () => {
     expect(w.models).toEqual(["Planificador · m-ejemplo · 1200 → 80 · 0,004 US$"]);
     // «Copiar»: the same words; the rule's code only there, in brackets, to fix what failed.
     const copied = runCopy(t, d, w, "20 oct 13:30");
+    // Its first line: the run's status in words, its code beside it (never «{why}» or a raw status).
+    expect(copied.split("\n")[0]).toBe(
+      "Boni · Recorrido · Parado · 20 oct 13:30 (con texto de tus datos)",
+    );
     expect(copied).toContain("1. Buscar «informe» — Hecho");
+    // What each step does, under it.
+    expect(copied).toContain("   Busca registros por las palabras de su texto.");
     expect(copied).toContain(
       "2. Enviar correo — Parado: una regla de seguridad lo impide (P2-untrusted-destination)",
     );

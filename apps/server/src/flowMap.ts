@@ -181,7 +181,7 @@ function makeMap(
   const edge = (e: MapEdge) => {
     const k = `${e.from}>${e.to}>${e.kind}`;
     const was = edges.get(k);
-    if (!was) edges.set(k, { ...e, ...(e.steps ? { steps: [...e.steps] } : {}) });
+    if (!was) edges.set(k, { ...e, ...(e.steps ? { steps: [...new Set(e.steps)] } : {}) });
     else {
       was.n = was.n === null && e.n === null ? null : (was.n ?? 0) + (e.n ?? 0);
       was.outside ||= e.outside;
@@ -390,19 +390,20 @@ function makeMap(
     }
     // What a flow a mail starts writes carries the mail's words.
     const outside = !!starts && starts === mailCol;
-    const proposing: string[] = [];
+    // Each proposing step once: one that chooses among collections is named once for each («Crear en la elegida»).
+    const proposing = new Set<string>();
     for (const { type, kind, steps } of named.values()) {
       if (kind === "reads")
         edge({ from: colId(type), to: id, kind, n: null, steps, outside: false });
       else if (kind === "proposes") {
         // Into the Bandeja: one arrow with every step that proposes, and where each proposal goes.
         intoOf(id).add(type);
-        proposing.push(...steps);
+        for (const x of steps) proposing.add(x);
       } else edge({ from: id, to: colId(type), kind, n: null, steps, outside });
     }
     // The steps in the order they run.
     const at = new Map(stepsOf(f.plan).map((x, i) => [x.id, i]));
-    proposing.sort((a, b) => (at.get(a) ?? 0) - (at.get(b) ?? 0));
+    const ordered = [...proposing].sort((a, b) => (at.get(a) ?? 0) - (at.get(b) ?? 0));
     const goes = into.get(id);
     if (goes?.size) {
       edge({
@@ -410,7 +411,7 @@ function makeMap(
         to: INBOX,
         kind: "proposes",
         n: p?.made ?? 0,
-        ...(proposing.length ? { steps: proposing } : {}),
+        ...(ordered.length ? { steps: ordered } : {}),
         outside,
         into: [...goes].map(colId).sort(),
         per: perOf(id, goes),

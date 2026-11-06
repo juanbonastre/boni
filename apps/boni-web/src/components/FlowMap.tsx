@@ -65,7 +65,7 @@ import type {
   RunDetail,
 } from "../core/agent.ts";
 import { deviceZone } from "../core/clock.ts";
-import { typeKeysOf } from "../core/flowEdit.ts";
+import { refsUsed, typeKeysOf } from "../core/flowEdit.ts";
 import {
   choiceOf,
   type Grouping,
@@ -91,7 +91,7 @@ import {
   useStore,
 } from "../store.ts";
 import { triggerText } from "./FlowEditor.tsx";
-import { stepDetail } from "./FlowStepPanel.tsx";
+import { inputName, stepDetail } from "./FlowStepPanel.tsx";
 import { MenuRow, PointMenu, PopButton } from "./Popover.tsx";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
@@ -106,7 +106,7 @@ const STEP_H = 50;
 const FRAME_HEAD = 46;
 /** An unfolded flow's first box: what starts it, as in its editor. */
 const TRIGGER = "trigger";
-const TRIGGER_H = 40;
+const TRIGGER_H = 54;
 const FRAME_PAD = 14;
 const KEPT = "boni:mapLens";
 
@@ -124,10 +124,12 @@ function readKept(): Kept {
     const l = (v.lens ?? {}) as Partial<Lens>;
     const depth = (d: unknown, fallback: number) =>
       d === null ? Number.POSITIVE_INFINITY : typeof d === "number" && d > 0 ? d : fallback;
+    // One depth (task 90): what «Antes» kept, for both ways; «Después» alone is no longer a control.
+    const d = depth(l.before, 1);
     return {
       lens: {
-        before: depth(l.before, 1),
-        after: depth(l.after, 1),
+        before: d,
+        after: d,
         ai: l.ai === true,
         writes: l.writes === true,
         on: l.on === true,
@@ -256,7 +258,7 @@ type StepData = {
   /** Its place along the run's way (the light reaches it in that order). */
   wayI?: number;
 };
-type TrigData = { text: string; dim: boolean; way: boolean; wayI?: number };
+type TrigData = { text: string; brings: string; dim: boolean; way: boolean; wayI?: number };
 type RFNode =
   | Node<CardData, "card">
   | Node<FrameData, "frame">
@@ -346,10 +348,10 @@ const StepCard = memo(function StepCard({ data }: NodeProps<Node<StepData, "step
         </span>
         <span className="mp-name">{data.name}</span>
       </div>
-      {(data.model || data.step.detail) && (
+      {(data.model || data.numbers || data.step.detail) && (
         <div className="mp-line">
-          {data.model
-            ? `${data.model}${data.numbers ? ` · ${data.numbers}` : ""}`
+          {data.model || data.numbers
+            ? [data.model, data.numbers].filter(Boolean).join(" · ")
             : data.step.detail}
         </div>
       )}
@@ -360,7 +362,19 @@ const StepCard = memo(function StepCard({ data }: NodeProps<Node<StepData, "step
   );
 });
 
-/** An unfolded flow's first box: what starts it («Llega a Correos»), as its editor shows it. */
+/** What a flow's trigger brings: the names its steps read that no step makes («mail», «text»), in their order. */
+function bringsOf(steps: readonly FlowStep[]): string[] {
+  const own = new Set([...steps.map((s) => s.id), "item", "zip"]);
+  const out: string[] = [];
+  for (const s of steps)
+    for (const r of refsUsed(s)) {
+      const name = /^\$([A-Za-z_][A-Za-z0-9_]*)/.exec(r)?.[1];
+      if (name && !own.has(name) && !out.includes(name)) out.push(name);
+    }
+  return out;
+}
+
+/** An unfolded flow's first box: what starts it («Llega a Correos») and what it brings, as its editor shows it. */
 const TrigCard = memo(function TrigCard({ data }: NodeProps<Node<TrigData, "trig">>) {
   return (
     <div
@@ -375,6 +389,7 @@ const TrigCard = memo(function TrigCard({ data }: NodeProps<Node<TrigData, "trig
         </span>
         <span className="mp-name">{data.text}</span>
       </div>
+      {data.brings && <div className="mp-line">{data.brings}</div>}
       <Handle type="source" position={Position.Bottom} id="b" />
     </div>
   );
@@ -441,24 +456,29 @@ export function wordsWhereFree(nodes: RFNode[], edges: Edge<EdgeData>[]): Edge<E
     .map((n) => ({ x: n.position.x, y: n.position.y, ...size(n) }));
   const placed: Box[] = [];
   const hidden = new Set<string>();
-  const first = (e: Edge<EdgeData>) => (e.data?.hot ? 0 : e.data?.way ? 1 : 2);
+  // Pointed at (a hover, the chosen box): said, whatever it covers, for as long as it is pointed at. A run's way is
+  // placed first, but its words cover nothing either.
+  const pointed = (e: Edge<EdgeData>) => !!e.data?.hot && !e.data?.way;
+  const first = (e: Edge<EdgeData>) => (pointed(e) ? 0 : e.data?.way ? 1 : 2);
   for (const e of [...edges].sort((a, b) => first(a) - first(b))) {
     const d = e.data;
-    if (!d?.label || d.dim || d.order) continue;
+    if (!d?.label || d.dim) continue;
     const from = byId.get(e.source);
     const to = byId.get(e.target);
     if (!from || !to) continue;
     const f = size(from);
     const g = size(to);
-    const sx = e.sourceHandle === "b" ? from.position.x + f.w / 2 : from.position.x + f.w;
-    const sy = e.sourceHandle === "b" ? from.position.y + f.h : from.position.y + f.h / 2;
-    const tx = to.position.x;
-    const ty = to.position.y + g.h / 2;
-    // The pill: 10.5 px words and its padding.
-    const w = d.label.length * 5.8 + 14;
+    const down = e.sourceHandle === "b";
+    const sx = down ? from.position.x + f.w / 2 : from.position.x + f.w;
+    const sy = down ? from.position.y + f.h : from.position.y + f.h / 2;
+    // Into a step from above (a lane's arrow), or into a box from the left.
+    const tx = e.targetHandle === "t" ? to.position.x + g.w / 2 : to.position.x;
+    const ty = e.targetHandle === "t" ? to.position.y : to.position.y + g.h / 2;
+    // The pill: 10.5 px words and its padding; a lane's name at most 180 px.
+    const w = Math.min(d.label.length * 5.8 + 14, d.order ? 180 : Number.POSITIVE_INFINITY);
     const h = 18;
     const r = { x: (sx + tx) / 2 - w / 2, y: (sy + ty) / 2 - h / 2, w, h };
-    if (!d.hot && (boxes.some((b) => meets(r, b)) || placed.some((b) => meets(r, b))))
+    if (!pointed(e) && (boxes.some((b) => meets(r, b)) || placed.some((b) => meets(r, b))))
       hidden.add(e.id);
     else placed.push(r);
   }
@@ -714,6 +734,7 @@ function RunWay({
             {w.steps.map((x) => (
               <li key={x.id}>
                 <strong>{x.name}</strong> — {x.line}
+                {x.desc && <span className="mp-way-desc muted">{x.desc}</span>}
                 {x.answers.map((a, i) => (
                   <pre key={i}>{a}</pre>
                 ))}
@@ -840,59 +861,6 @@ function Canvas({
     const ids = new Set(nodes.map((n) => n.id));
     return { ...map, nodes, edges: map.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
   }, [map, only]);
-  const view = useMemo(
-    () => lensOf(base, lens),
-    [
-      base,
-      lens.center,
-      lens.before,
-      lens.after,
-      lens.ai,
-      lens.writes,
-      lens.on,
-      lens.pages,
-      lens.happened,
-    ],
-  );
-  // «Agrupar por flujo»: every flow unfolded, its steps in its frame.
-  const unfolded = (id: string) => kept.group === "flow" || open.has(id);
-
-  const graph = useMemo(() => {
-    // The boxes: a card per node; an unfolded flow a frame with its steps in the order they run.
-    const inner = new Map<string, ReturnType<typeof stepLayout>>();
-    const boxes = view.nodes.map((n) => {
-      if (n.kind === "flow" && unfolded(n.id) && n.plan?.steps.length) {
-        // A run's line under each step of the flow it is a run of.
-        const runLine = run?.owner === n.id ? 17 : 0;
-        const l = stepLayout(n.plan.steps, {
-          trigger: { id: TRIGGER, height: TRIGGER_H },
-          width: STEP_W,
-          height: () => STEP_H + runLine,
-          gapY: 22,
-          gapX: 18,
-          laneHead: 22,
-        });
-        inner.set(n.id, l);
-        return {
-          id: n.id,
-          width: Math.max(W, l.width + 2 * FRAME_PAD),
-          height: FRAME_HEAD + l.height + FRAME_PAD,
-        };
-      }
-      return { id: n.id, width: W, height: heightOf(n, modelsOf(n, byRole).length) };
-    });
-    const groups = new Map<string, string>();
-    for (const n of view.nodes) {
-      const g = groupOf(n, kept.group);
-      if (g) groups.set(n.id, g);
-    }
-    // Who acts sits on the left: the user, the assistants, the conversation.
-    const left = new Set(
-      view.nodes.filter((n) => n.kind === "actor" || n.code === "chat").map((n) => n.id),
-    );
-    return { boxes, inner, layout: mapLayout(boxes, view.edges, groups, left) };
-  }, [view, open, kept.group, byRole, run]);
-
   // The way a run on the map went (§4.4, «una ejecución encima»): what started it, its flow or the conversation, what
   // it read, the Bandeja and where what it proposed was accepted, where it wrote. The rest goes quiet.
   const way = useMemo(() => {
@@ -953,6 +921,72 @@ function Canvas({
     const proposed = new Set(run.steps.filter((x) => x.decision === "propose").map((x) => x.id));
     return { nodes, edges, order, ran, passed, proposed, owner };
   }, [run, map.edges]);
+  // A run's flow drawn as it ran: the version it ran when that is not the flow's latest (review of task 90: a reading
+  // of the version before «Crear en la elegida» lost its way after the Decisora), its boxes and its steps by its plan.
+  const drawn = useMemo(() => {
+    if (!run?.drawn) return base;
+    const d = run.drawn;
+    return {
+      ...base,
+      nodes: base.nodes.map((n) =>
+        n.id === run.owner ? { ...n, plan: d.plan, steps: d.steps } : n,
+      ),
+    };
+  }, [base, run]);
+  const view = useMemo(
+    () => lensOf(drawn, { ...lens, ...(way ? { keep: way.nodes } : {}) }),
+    [
+      drawn,
+      way,
+      lens.center,
+      lens.before,
+      lens.after,
+      lens.ai,
+      lens.writes,
+      lens.on,
+      lens.pages,
+      lens.happened,
+    ],
+  );
+  // «Agrupar por flujo»: every flow unfolded, its steps in its frame.
+  const unfolded = (id: string) => kept.group === "flow" || open.has(id);
+
+  const graph = useMemo(() => {
+    // The boxes: a card per node; an unfolded flow a frame with its steps in the order they run.
+    const inner = new Map<string, ReturnType<typeof stepLayout>>();
+    const boxes = view.nodes.map((n) => {
+      if (n.kind === "flow" && unfolded(n.id) && n.plan?.steps.length) {
+        // A run's line under each step of the flow it is a run of.
+        const runLine = run?.owner === n.id ? 17 : 0;
+        const l = stepLayout(n.plan.steps, {
+          trigger: { id: TRIGGER, height: TRIGGER_H },
+          width: STEP_W,
+          height: () => STEP_H + runLine,
+          gapY: 22,
+          gapX: 18,
+          laneHead: 22,
+        });
+        inner.set(n.id, l);
+        return {
+          id: n.id,
+          width: Math.max(W, l.width + 2 * FRAME_PAD),
+          height: FRAME_HEAD + l.height + FRAME_PAD,
+        };
+      }
+      return { id: n.id, width: W, height: heightOf(n, modelsOf(n, byRole).length) };
+    });
+    const groups = new Map<string, string>();
+    for (const n of view.nodes) {
+      const g = groupOf(n, kept.group);
+      if (g) groups.set(n.id, g);
+    }
+    // Who acts sits on the left: the user, the assistants, the conversation.
+    const left = new Set(
+      view.nodes.filter((n) => n.kind === "actor" || n.code === "chat").map((n) => n.id),
+    );
+    return { boxes, inner, layout: mapLayout(boxes, view.edges, groups, left) };
+  }, [view, open, kept.group, byRole, run]);
+
   // The arrows next to what the pointer is on, or what is chosen; the rest go quiet. Not for the centre: what the map
   // shows then is already what comes before and after it, and all of it says something. With a run on the map, its
   // way (a hover still shows what is next to something).
@@ -1024,6 +1058,9 @@ function Canvas({
             position: { x: cx + tp.x, y: top + tp.y },
             data: {
               text: n.trigger ? triggerText(t, n.trigger, keyName) : t("flows.on.manual"),
+              brings: bringsOf(n.plan.steps)
+                .map((x) => inputName(t, x))
+                .join(" · "),
               dim: dimHere,
               way: onWay,
               wayI: way?.order.get(`step:${n.id}:${TRIGGER}`),
@@ -1147,13 +1184,16 @@ function Canvas({
     // trigger; what it proposes leaves it once (task 90: one arrow per step crossed the other lanes), from the steps
     // that proposed when a run of it is on the map.
     const ends = (id: string, steps: string[], e: MapEdge, from: boolean) => {
-      if (!graph.inner.has(id)) return [id];
+      const frame = graph.inner.get(id);
+      if (!frame) return [id];
       if (!from && e.kind === "starts") return [`step:${id}:${TRIGGER}`];
+      // Each step once, and only those its frame draws (a run of an earlier version has its own).
+      const here = [...new Set(steps)].filter((x) => frame.at.has(x));
       if (from && e.kind === "proposes") {
-        const did = way?.owner === id ? steps.filter((x) => way.proposed.has(x)) : [];
+        const did = way?.owner === id ? here.filter((x) => way.proposed.has(x)) : [];
         return did.length ? did.map((x) => `step:${id}:${x}`) : [id];
       }
-      return steps.length ? steps.map((x) => `step:${id}:${x}`) : [id];
+      return here.length ? here.map((x) => `step:${id}:${x}`) : [id];
     };
     for (const e of view.edges) {
       // Into the Bandeja with a collection in the centre: what went to that collection (§4.4: «Leer correo

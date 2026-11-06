@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { coreTools, EFFECTS } from "@boni/agent";
+import { coreTools, EFFECTS, READERS } from "@boni/agent";
 import { describe, expect, it } from "vitest";
 import { withPieces } from "./pieces.ts";
 
@@ -188,5 +188,23 @@ describe("every tool a model can call has its scenario (A-18)", () => {
         .map((t) => t.effect as string),
     );
     expect(EFFECTS.filter((e) => !used.has(e))).toEqual(NO_TOOL_YET);
+  });
+});
+
+describe("every step a flow may have says in one line what it does (I-27)", () => {
+  it("each tool of the registry and each reader has its `flow.desc` line, in Spanish and in English", () => {
+    const words = readFileSync(join(ROOT, "apps/boni-web/src/i18n.ts"), "utf8");
+    const steps = [
+      ...withPieces(coreTools())
+        .all()
+        .map((t) => t.name),
+      ...READERS,
+      "op.ask",
+      "op.reply",
+    ];
+    const missing = steps.filter(
+      (s) => (words.match(new RegExp(`"flow\\.desc\\.${escapeRe(s)}":`, "g")) ?? []).length !== 2,
+    );
+    expect(missing).toEqual([]);
   });
 });

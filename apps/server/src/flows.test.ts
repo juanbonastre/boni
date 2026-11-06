@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkFlow,
   createFlow,
+  drawnRun,
   ensureFlow,
   exprText,
   flowCatalog,
@@ -63,6 +64,69 @@ describe("flows (docs/flujos.md, F1)", () => {
     ]);
     // The mail's id is bound, never written in the plan.
     expect(JSON.stringify(plan)).not.toContain("e_");
+  });
+
+  it("a run of an earlier version is drawn over its own steps, and one from before flows over the plan it ran (task 90's review)", () => {
+    const store = openUserStore(":memory:");
+    const save = (plan: unknown, at: number) =>
+      ensureFlow(
+        store,
+        { id: MAIL_FLOW, name: "Leer correo", trigger: { created: "correo" }, plan, by: "preset" },
+        at,
+      );
+    // Before «Crear en la elegida»: a «Rellenadora» and a «Crear» per collection, with other ids.
+    const old = {
+      version: 1,
+      steps: [
+        { id: "r", op: "read", reader: "read_message", input: { ref: "$text" } },
+        {
+          id: "n0_tasks",
+          op: "call",
+          tool: "entities.create",
+          each: { ref: "$r.tasks" },
+          args: {
+            type: { lit: "docencia" },
+            values: { fn: "obj", args: [{ lit: "title" }, { ref: "$item.title" }] },
+          },
+        },
+      ],
+    };
+    expect(save(old, 1000).version).toBe(1);
+    expect(save(planOf(), 2000).version).toBe(2);
+    const run = (id: string, version: number | null, plan: unknown) => {
+      store.journal.startRun({
+        id,
+        turn: null,
+        origin: "background",
+        device: null,
+        started: 3000,
+        ...(version !== null ? { flow: MAIL_FLOW, flowVersion: version } : {}),
+      });
+      store.journal.setPlan(id, plan);
+      return store.journal.run(id) as NonNullable<ReturnType<typeof store.journal.run>>;
+    };
+    const titles: Record<string, string> = { "entities.create": "Crear" };
+    const draw = (r: ReturnType<typeof run>, owner: string | null = `flow:${MAIL_FLOW}`) =>
+      drawnRun(
+        store,
+        r,
+        owner,
+        (t) => titles[t] ?? null,
+        (k) => (k === "docencia" ? "Docencia" : null),
+      );
+    const earlier = draw(run("r_v1", 1, old));
+    expect(earlier?.version).toBe(1);
+    expect(earlier?.steps.map((x) => [x.id, x.title, x.detail])).toEqual([
+      ["r", null, null],
+      ["n0_tasks", "Crear", "Docencia"],
+    ]);
+    // The latest version: drawn as the map has it.
+    expect(draw(run("r_v2", 2, planOf()))).toBeNull();
+    // From before flows: over the plan it ran.
+    expect(draw(run("r_antes", null, old))?.steps.map((x) => x.id)).toEqual(["r", "n0_tasks"]);
+    // Not a flow's run: nothing to draw.
+    expect(draw(run("r_chat", null, old), "boni:chat")).toBeNull();
+    store.close();
   });
 
   it("is saved as a version once per distinct plan; a run says its flow", () => {

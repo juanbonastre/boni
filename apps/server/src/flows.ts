@@ -24,7 +24,7 @@ import {
 export { manualInputs, newFlowId, originOf, triggerOk };
 
 import { type FieldDef, rolesOf, type TypeDef } from "@boni/entities";
-import type { FlowRow, UserStore } from "@boni/store";
+import type { FlowRow, RunRow, UserStore } from "@boni/store";
 
 export const MAIL_FLOW = "leer-correo";
 
@@ -1208,5 +1208,32 @@ export function flowProposalView(
             .map((n) => ({ ...n, change: "removed" as const }))
         : []),
     ],
+  };
+}
+
+/**
+ * A run of a flow drawn as it ran (the review of task 90): when the version it ran is not the flow's latest (a reading
+ * from before «Crear en la elegida» renamed its steps, or one from before flows), its plan and its steps as the editor
+ * names them, so the map draws the run over its own boxes; null when the map's flow is the one it ran.
+ */
+export function drawnRun(
+  store: UserStore,
+  run: RunRow,
+  owner: string | null,
+  titleOf: (tool: string) => string | null,
+  typeName: (key: string) => string | null,
+): { version: number | null; plan: unknown; steps: FlowNode[] } | null {
+  if (!owner?.startsWith("flow:")) return null;
+  const id = owner.slice("flow:".length);
+  const latest = store.journal.flow(id);
+  if (!latest || (run.flow === id && run.flowVersion === latest.version)) return null;
+  const v =
+    run.flow === id && run.flowVersion !== null ? store.journal.flow(id, run.flowVersion) : null;
+  const plan = v?.plan ?? run.plan;
+  if (!stepsOf(plan).length) return null;
+  return {
+    version: v?.version ?? null,
+    plan,
+    steps: nodesOf(plan, v?.trigger ?? latest.trigger, titleOf, typeName),
   };
 }
