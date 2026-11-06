@@ -25,7 +25,7 @@ export const READERS = [
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
-export const REPLY_COMPONENTS = ["text", "number", "list", "table", "chart"] as const;
+export const REPLY_COMPONENTS = ["text", "number", "list", "table", "chart", "run"] as const;
 
 /**
  * A call's `why` is what its proposal shows as its reason (a reader's quote), never an argument of the tool.
@@ -94,6 +94,8 @@ const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> 
   table: ["rows", "fields", "caption"],
   // Bars (or a line) of numbers the tools gave, one per label: `kind` "bar" or "line".
   chart: ["labels", "values", "kind", "unit", "caption"],
+  // A run drawn in the conversation (task 92): its way from what started it to where it ended, «Ampliar» to the map.
+  run: ["run", "caption"],
 };
 
 /**
@@ -356,7 +358,7 @@ export function validatePlan(
         if (!onlyKeys(s, [...common, "component", "data"])) errors.push(`${where}: unknown-key`);
         if (!(REPLY_COMPONENTS as readonly unknown[]).includes(s.component))
           errors.push(`${where}: unknown-component`);
-        else
+        else {
           checkArgs(
             `${where}.data`,
             s.data ?? {},
@@ -364,6 +366,11 @@ export function validatePlan(
             [],
             inEach,
           );
+          // The run a reply draws is one a tool gave (I-29): a reference, never a model's own id.
+          const run = isObj(s.data) ? s.data.run : undefined;
+          if (s.component === "run" && !(isObj(run) && typeof run.ref === "string"))
+            errors.push(`${where}.data: run-not-from-a-tool`);
+        }
         break;
       }
       default:

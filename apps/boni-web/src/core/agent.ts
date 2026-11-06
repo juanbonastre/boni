@@ -36,7 +36,7 @@ export type Painted =
   | { t: "rec"; fields: Record<string, Painted>; integrity: string };
 
 export interface Reply {
-  component: "text" | "number" | "list" | "table" | "chart";
+  component: "text" | "number" | "list" | "table" | "chart" | "run";
   data: Record<string, Painted>;
 }
 export interface ConfirmRow {
@@ -432,6 +432,18 @@ export interface RunStep {
   answers: string[];
   /** The words of Juan's request it took as they were (its quotes: «informe»), the one part of its arguments said. */
   said?: string[];
+  /** Its model calls in this run and their cost (task 91: what is this run's, in orange). */
+  calls?: number;
+  cost?: number;
+  /** What it gave the next step, as the model answered it: Juan's own content, painted as text. */
+  output?: unknown;
+}
+/** A record as a box's panel shows it: its title, collection and fields by their names, as text. */
+export interface RecordView {
+  id: string;
+  title: string;
+  collection: string;
+  fields: { name: string; value: string }[];
 }
 /** A run step by step («Recorrido», task 52): all from the journal and the audit, painted as text. */
 export interface RunDetail {
@@ -449,9 +461,26 @@ export interface RunDetail {
   /** Each with its collection's name and id (`type`, empty when unknown): the map draws the way the run went. */
   read: { collection: string; type: string; titles: string[]; n: number }[];
   changes: { action: string; title: string; collection: string; type: string; undone: boolean }[];
-  proposals: { title: string; status: string; type: string | null }[];
+  /** Each with its rows as the Bandeja showed them, the step that made it and the record it became (task 91). */
+  proposals: {
+    id?: string;
+    title: string;
+    status: string;
+    type: string | null;
+    created?: number;
+    decided?: number | null;
+    rows?: { name: string; value: string }[];
+    step?: string | null;
+    record?: RecordView | null;
+  }[];
   /** The record that started it (a mail): its title is outside text, painted as text. */
-  input: { id: string; title: string; collection: string; type: string } | null;
+  input: {
+    id: string;
+    title: string;
+    collection: string;
+    type: string;
+    fields?: { name: string; value: string }[];
+  } | null;
   /** The node of the map it belongs to (`flow:…`, `boni:chat`, `boni:review`, `boni:inbox`); null: none. */
   owner: string | null;
   /** Its flow as it ran, when that is not the flow's latest version: the map draws the run over these boxes. */
@@ -795,6 +824,29 @@ const MAP_EDGES: readonly MapEdgeKind[] = [
   "shows",
 ];
 const MAP_ID = /^(conn|col|flow|boni|actor|page):[A-Za-z0-9_.:@-]{1,120}$/;
+/** Name and value pairs, as text (a record's fields, a proposal's rows). */
+function namedValues(v: unknown): { name: string; value: string }[] {
+  return Array.isArray(v)
+    ? v
+        .filter(isObj)
+        .slice(0, 20)
+        .map((x) => ({
+          name: typeof x.name === "string" ? x.name.slice(0, 60) : "",
+          value: typeof x.value === "string" ? x.value.slice(0, 200) : "",
+        }))
+        .filter((x) => x.name && x.value)
+    : [];
+}
+function recordViewOf(v: unknown): RecordView | null {
+  if (!isObj(v) || typeof v.id !== "string") return null;
+  return {
+    id: v.id.slice(0, 80),
+    title: typeof v.title === "string" ? v.title.slice(0, 120) : "",
+    collection: typeof v.collection === "string" ? v.collection.slice(0, 80) : "",
+    fields: namedValues(v.fields),
+  };
+}
+
 export function parseMap(b: unknown): MapView | null {
   if (!isObj(b) || !Array.isArray(b.nodes) || !Array.isArray(b.edges)) return null;
   const nodes: MapNode[] = [];
@@ -1519,7 +1571,7 @@ export function parseConfirmView(v: unknown): ConfirmView | null {
   return { tool, title, rows };
 }
 
-const COMPONENTS = new Set(["text", "number", "list", "table", "chart"]);
+const COMPONENTS = new Set(["text", "number", "list", "table", "chart", "run"]);
 
 export function parseTurn(v: unknown): TurnResult {
   if (!isObj(v)) throw new ApiError(0, "bad-answer", "bad answer");
@@ -3129,6 +3181,9 @@ export class AgentApi {
         deps: strs(x.deps).slice(0, 40),
         uses: strs(x.uses).slice(0, 40),
         answers: strs(x.answers).map((a) => a.slice(0, 4000)),
+        calls: typeof x.calls === "number" ? x.calls : 0,
+        cost: typeof x.cost === "number" && Number.isFinite(x.cost) ? x.cost : 0,
+        output: x.output ?? null,
         said: isObj(x.args)
           ? Object.values(x.args).flatMap((v) =>
               isObj(v) && typeof v.quote === "string" ? [`«${v.quote.slice(0, 120)}»`] : [],
@@ -3149,9 +3204,15 @@ export class AgentApi {
         undone: x.undone === true,
       })),
       proposals: list(b.proposals, (x) => ({
+        id: str(x.id, 80) ?? undefined,
         title: str(x.title, 120) ?? "",
         status: str(x.status, 20) ?? "",
         type: str(x.type, 80),
+        created: typeof x.created === "number" ? x.created : undefined,
+        decided: typeof x.decided === "number" ? x.decided : null,
+        rows: namedValues(x.rows),
+        step: str(x.step, 40),
+        record: recordViewOf(x.record),
       })),
       input: isObj(b.input)
         ? {
@@ -3159,6 +3220,7 @@ export class AgentApi {
             title: str(b.input.title, 120) ?? "",
             collection: str(b.input.collection, 80) ?? "",
             type: str(b.input.type, 80) ?? "",
+            fields: namedValues(b.input.fields),
           }
         : null,
       owner: typeof b.owner === "string" && MAP_ID.test(b.owner) ? b.owner : null,

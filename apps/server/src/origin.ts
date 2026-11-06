@@ -155,6 +155,7 @@ export function originFacts(
     proposal: x.proposal
       ? { created: x.proposal.created, decided: x.proposal.decided, alone: x.proposal.alone }
       : null,
+    run: x.run?.id ?? null,
   };
 }
 
@@ -186,6 +187,7 @@ export function pendingFacts(
           ? { id: ran.flow, name: flow?.name ?? ran.flow, version: run?.flowVersion ?? null }
           : null,
         input: ran?.input ?? null,
+        run: run?.id ?? null,
       };
     });
 }

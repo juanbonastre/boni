@@ -59,7 +59,7 @@ import {
   ToolError,
   type ToolRegistry,
 } from "./tools.ts";
-import { type RunDetail, traceOf } from "./trace.ts";
+import { type RunDetail, smallJson, traceOf } from "./trace.ts";
 import { newFlowId, originOf, runnableNames, triggerOk } from "./trigger.ts";
 import {
   at,
@@ -117,11 +117,12 @@ one "op":
 - {"id", "op": "ask", "control": "choice" | "text", "prompt": expr, "options": expr}: ask the user, only when a
   later step needs the answer (the plan waits for it; an offer at the end of an answer goes in the text, never here);
   choice options must be a list. Never ask for passwords or codes.
-- {"id", "op": "reply", "component": "text" | "number" | "list" | "table" | "chart", "data": {...}}: what the user
-  sees. text: template, a, b, c, d; number: value, unit, caption; list: items, fields, caption, group (a field of the
-  items: one section per value, in the items' order; items with an id and a type open their record); table: rows,
+- {"id", "op": "reply", "component": "text" | "number" | "list" | "table" | "chart" | "run", "data": {...}}: what the
+  user sees. text: template, a, b, c, d; number: value, unit, caption; list: items, fields, caption, group (a field of
+  the items: one section per value, in the items' order; items with an id and a type open their record); table: rows,
   fields, caption; chart: labels (a list of names), values (a list of numbers from tools, one per label), kind ("bar"
-  or "line"), unit, caption.
+  or "line"), unit, caption; run: run (a run's id, as entities.origin or inbox.pending give it), caption: draws where
+  it came from and where it went, after the text that says it (when the user asks where something comes from).
 Any step may have "when": expr (it runs only if the value is not empty: anything but null, false, 0, "" or an empty
 list; a path that does not exist counts as empty, so "when": {"ref": "$s1.items[1]"} asks "is there a second one?")
 and "each": {"ref": "$step"} (once per item of that list, the item is "$item"; at most 50). "when" is checked once,
@@ -1547,6 +1548,8 @@ export class Agent {
             values: Object.fromEntries(Object.entries(args).map(([k, v]) => [k, freeze(v)])),
             origins,
             ...(why ? { why: freeze(why) } : {}),
+            // The step that made it: the map's run shows it in that step's panel.
+            step: step.id,
           },
           view: confirmView(tool, args, readStore(this.o.store)),
           sources: [
@@ -1774,7 +1777,11 @@ export class Agent {
         const o = params.options ? plain(params.options) : null;
         if (typeof g !== "string" || !Array.isArray(o) || !o.includes(g))
           throw new Stop("reader-bad-given");
-        this.log(st, step, "read", "allow", "P1", { reader: step.reader, given: true });
+        this.log(st, step, "read", "allow", "P1", {
+          reader: step.reader,
+          given: true,
+          out: { choice: plain(given) },
+        });
         return rec({ choice: given }, deepLabel(given));
       }
     }
@@ -2072,6 +2079,13 @@ export class Agent {
     this.log(st, step, "read", "allow", "P1", {
       reader: step.reader,
       ...(relative ? { relativeDay: relative } : {}),
+      // What it gave the next step, cut to what the map's panel shows (task 91: «lo que ha enviado al siguiente paso»);
+      // a mail's reading by its kinds of thing, without `all`, which repeats them.
+      out: smallJson(
+        checked && typeof checked === "object" && !Array.isArray(checked) && "all" in checked
+          ? Object.fromEntries(Object.entries(checked).filter(([k]) => k !== "all"))
+          : checked,
+      ),
     });
     const out = fromJson(checked as Json, outLabel);
     return step.reader === "summarize_each" ? withSources(out, input, options) : out;

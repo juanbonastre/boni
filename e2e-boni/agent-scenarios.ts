@@ -211,6 +211,28 @@ export const DONE = {
   error: null,
 };
 
+/** «¿De dónde viene…?» answered in words and drawn in the conversation (task 92): the reply «run» with a tool's run. */
+export const ORIGIN_TURN = {
+  run: "run-c9",
+  status: "done",
+  replies: [
+    {
+      component: "text",
+      data: {
+        template: v("«{a}» lo propuso {b} al leer «{c}».", "model"),
+        a: v("Preparar la reunión", "external", "personal"),
+        b: v("Leer correo", "user"),
+        c: v("Reunión con secretaría el jueves", "external", "personal"),
+      },
+    },
+    { component: "run", data: { run: v("run-3", "own") } },
+  ],
+  pending: null,
+  proposals: [],
+  notices: [],
+  error: null,
+};
+
 export const ASK_TURN = {
   run: "r-ask",
   status: "waiting",
@@ -619,6 +641,7 @@ export const RUN_MAIL = {
     title: "Reunión con secretaría el jueves",
     collection: "Correos",
     type: "t_01m6correo",
+    fields: [{ name: "De", value: "secretaria.ejemplo@example.com" }],
   },
   read: [
     {
@@ -628,7 +651,31 @@ export const RUN_MAIL = {
       n: 1,
     },
   ],
-  proposals: [{ title: "Preparar la reunión", status: "accepted", type: "t_01tarea" }],
+  // As the Bandeja showed it, the step that made it and the record it became (task 91).
+  proposals: [
+    {
+      id: "p_01m6reunion",
+      title: "Preparar la reunión",
+      status: "accepted",
+      type: "t_01tarea",
+      created: 1760954700000,
+      decided: 1760958300000,
+      rows: [
+        { name: "Título", value: "Preparar la reunión" },
+        { name: "Fecha", value: "2026-10-23" },
+      ],
+      step: "n0_tasks",
+      record: {
+        id: "e_01m6tarea0001",
+        title: "Preparar la reunión",
+        collection: "Tarea",
+        fields: [
+          { name: "Fecha", value: "2026-10-23" },
+          { name: "Estado", value: "Pendiente" },
+        ],
+      },
+    },
+  ],
   // Where the map draws it, as the server says.
   owner: "flow:leer-correo",
   steps: [
@@ -656,6 +703,22 @@ export const RUN_MAIL = {
       deps: [],
       uses: ["text"],
       answers: [],
+      // What it gave the next step, and its call in this run (task 91).
+      calls: 1,
+      cost: 0.0021,
+      // As the step keeps it: the reading for Juan by its kinds of thing.
+      output: {
+        tasks: [
+          {
+            title: "Preparar la reunión",
+            due: "2026-10-23",
+            start: null,
+            end: null,
+            quote: "¿Puedes prepararla?",
+          },
+        ],
+        events: [],
+      },
     },
     {
       id: "n0_tasks_f",
@@ -1953,6 +2016,96 @@ export const RUN_MAIL_OLD = {
         detail: "Docencia",
         each: true,
       }),
+    ],
+  },
+};
+const choose = (value: string) => ({ fn: "eq", args: [{ ref: "$c.choice" }, { lit: value }] });
+const LANES_PLAN = {
+  version: 1,
+  steps: [
+    { id: "m", op: "call", tool: "entities.get", args: { id: { ref: "$mail" } } },
+    { id: "r", op: "read", reader: "read_message", input: { ref: "$text" } },
+    { id: "c", op: "read", reader: "classify", input: { ref: "$text" } },
+    {
+      id: "n0_tasks",
+      op: "call",
+      tool: "entities.create",
+      when: choose("Docencia"),
+      each: { ref: "$r.tasks" },
+      args: { type: { lit: "docencia" }, values: { ref: "$item" } },
+    },
+    {
+      id: "n1_tasks",
+      op: "call",
+      tool: "entities.create",
+      when: choose("Gestiones"),
+      each: { ref: "$r.tasks" },
+      args: { type: { lit: "gestiones" }, values: { ref: "$item" } },
+    },
+    { id: "fold", op: "call", tool: "inbox.fold", args: { mail: { ref: "$mail" } } },
+  ],
+};
+export const RUN_MAIL_LANES = {
+  ...RUN_MAIL,
+  id: "run-5",
+  flowVersion: 6,
+  // It read Evento (what was pending there) without going there: Evento is not on its way.
+  read: [...RUN_MAIL.read, { collection: "Evento", type: "t_01evento", titles: [], n: 3 }],
+  proposals: [{ ...RUN_MAIL.proposals[0], step: "n1_tasks" }],
+  steps: [
+    ...RUN_MAIL.steps.filter((x) => x.id === "m" || x.id === "r"),
+    {
+      ...RUN_MAIL.steps[1],
+      id: "c",
+      what: "classify",
+      calls: 1,
+      cost: 0.0004,
+      output: { choice: "Gestiones" },
+    },
+    {
+      ...RUN_MAIL.steps[0],
+      id: "n0_tasks",
+      what: "entities.create",
+      title: "Crear",
+      decision: "skip",
+      rule: null,
+    },
+    {
+      ...RUN_MAIL.steps[0],
+      id: "n1_tasks",
+      what: "entities.create",
+      title: "Crear",
+      decision: "propose",
+      rule: "P7",
+    },
+    {
+      ...RUN_MAIL.steps[0],
+      id: "fold",
+      what: "inbox.fold",
+      title: "Plegar hilo",
+      decision: "allow",
+    },
+  ],
+  drawn: {
+    version: 6,
+    plan: LANES_PLAN,
+    steps: [
+      flowStep("m", "call", "entities.get", { title: "Leer" }),
+      flowStep("r", "read", "read_message"),
+      flowStep("c", "read", "classify"),
+      flowStep("n0_tasks", "call", "entities.create", {
+        title: "Crear",
+        detail: "Docencia",
+        when: true,
+        each: true,
+      }),
+      flowStep("n1_tasks", "call", "entities.create", {
+        title: "Crear",
+        detail: "Gestiones",
+        when: true,
+        each: true,
+      }),
+      flowStep("fold", "call", "inbox.fold", { title: "Plegar hilo" }),
     ],
   },
 };

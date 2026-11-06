@@ -292,8 +292,9 @@ viaja el texto de un correo y dónde deja de ser una propuesta para ser un dato 
 **Cómo se abre.** Siempre desde algo, nunca entero: con 22 colecciones y una docena de flujos, entero no se lee.
 
 - **En el centro:** lo que se elija, con un buscador o con el clic derecho → «Ver en el mapa» desde cualquier sitio.
-- **Profundidad:** 1, 2 o todo, hacia atrás y hacia delante a la vez, como el linaje de dbt o de Dagster (primero
-  fueron «Antes» y «Después»; una sola barra desde la 90).
+- **Profundidad:** de 1 a lo más lejos que llega el centro («5 (máx.)»), hacia atrás y hacia delante a la vez, como el
+  linaje de dbt o de Dagster (primero fueron «Antes» y «Después»; una sola barra desde la 90, hasta su máximo desde la
+  91).
 - **Agrupar por:** disparador, flujo, colección o paquete.
 - **Filtros:** solo los pasos con IA, solo lo que escribe, solo lo encendido, solo lo que ha pasado en 7 o 30 días.
 - **Una ejecución encima:** desde el Registro, una fila o una tarjeta, el camino que siguió, con lo que salió de cada
@@ -350,11 +351,23 @@ La lista de comprobación avisa de lo demás antes de encender.
   menos movimiento). Su camino está entero en el mapa sea cual sea la «Profundidad», y una ejecución de una versión
   anterior de su flujo se dibuja sobre la suya (sus pasos, como corrieron: tras «Crear en la elegida», las lecturas de
   antes tenían otros pasos). El Registro lo dice con palabras, sin dibujo; la tarjeta del mapa, con «Detalles» (cada
-  paso con lo que hace) y «Copiar». Lo que lleva texto de fuera va en `--c5`, para no confundirse con el naranja.
+  paso con lo que hace) y «Copiar». Lo que lleva texto de fuera se marca con un sobre en sus palabras y una línea punteada, sin color propio (la 91:
+  el rosa se leía como algo encendido).
 - **Un paso se llama igual en todas partes** (I-27): el editor, el mapa, la vista previa de un flujo, el Registro y
   «Copiar» toman su nombre de un solo sitio («Lectora», «Crear», «Regla del remitente»), nunca el id de una herramienta,
   una referencia `$` o el código de una regla; cada paso dice en una línea lo que hace; por qué paró, con palabras («una
   regla de seguridad lo impide»), y el código solo en «Copiar».
+- **El recorrido, segunda vuelta** (la 91, Juan, 2026-11-06, al probar la 36): el camino va por los pasos que hicieron
+  algo y, entre dos, por el trayecto más corto de las flechas del lienzo, nunca por las calles que no tomó (antes se
+  encendían todas); lo que la ejecución solo leyó no es su camino; una luz lo recorre una y otra vez, despacio, del
+  conector a la colección. Al pulsar una caja se ve lo que salió de ella en esa ejecución: el correo, lo que cada paso
+  dio al siguiente (guardado con el paso desde la 91; de antes, sacado de la respuesta del modelo), la tarjeta de la Bandeja, la fila que quedó al
+  aceptarla. Lo de esa ejecución va en naranja, sus llamadas y su coste también; lo demás son las cifras del periodo,
+  dicho debajo del mapa. «Profundidad» llega a su máximo («5 (máx.)»), «Explicación» se oculta, y lo de fuera se marca
+  con un sobre en la flecha y no con un color.
+- **El recorrido en la conversación** (la 92): la respuesta «run» del lenguaje de planes dibuja el camino de una
+  ejecución que dieron `entities.origin` o `inbox.pending`, con «Ampliar» al mapa; esas herramientas dicen quién por su
+  nombre (`who`) y dan su ejecución (`run`). La lista de conversaciones se pliega y se ensancha.
 - **Las llamadas y el coste de cada paso** (lo que la revisión de F8 echó en falta): cada llamada a un modelo guarda el
   paso en el que contestó (la migración 19; las de antes del 2026-11-06 no lo tienen), y cada paso que piensa dice en el
   mapa y en el editor sus llamadas y su coste del periodo («42 llamadas · 0,21 US$»), contados con un índice que no lee

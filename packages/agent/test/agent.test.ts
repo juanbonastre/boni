@@ -569,6 +569,7 @@ describe("the agent, with a planner that behaves", () => {
               flow: { id: "leer-correo", name: "Leer correo", version: 3 },
               input: env.ids.mail0 as string,
               proposal: { created: at(9), decided: at(9, 5), alone: false },
+              run: "r_lectura_01",
             }
           : null,
       pending: () => [],
@@ -585,11 +586,13 @@ describe("the agent, with a planner that behaves", () => {
           component: "text",
           data: {
             template: lit("Lo propuso {a} al leer «{b}»; lo aceptaste el {c}."),
-            a: ref("$o.flow.name"),
+            a: ref("$o.who"),
             b: ref("$o.input.asunto"),
             c: ref("$o.accepted"),
           },
         },
+        // Drawn in the conversation: its way, with «Ampliar» to the map (task 92).
+        { id: "w", op: "reply", component: "run", data: { run: ref("$o.run") } },
       ],
     };
     const ask = () =>
@@ -599,8 +602,13 @@ describe("the agent, with a planner that behaves", () => {
     const res = await ask();
     expect([res.status, res.error]).toEqual(["done", null]);
     const data = res.replies[0]?.data ?? {};
+    // Who, by the flow's name (task 92: it said «lo propuso flow»).
     expect(data.a).toMatchObject({ value: "Leer correo" });
     expect(data.c).toMatchObject({ value: "2026-10-19T09:05:00.000Z" });
+    expect(res.replies[1]).toMatchObject({
+      component: "run",
+      data: { run: { value: "r_lectura_01" } },
+    });
     // The mail's words as they came (the reply marks them as from outside, as any mail's).
     expect(data.b).toMatchObject({ value: "Compra para la cena" });
     // The mail closed to the models: the origin does not name it, and the plan that reads it stops there.
@@ -649,6 +657,7 @@ describe("the agent, with a planner that behaves", () => {
           by: "flow" as const,
           flow: { id: "leer-correo", name: "Leer correo", version: 3 },
           input: env.ids.mail0 as string,
+          run: "r_lectura_02",
         },
         {
           id: "p_01m6taller",
@@ -658,6 +667,7 @@ describe("the agent, with a planner that behaves", () => {
           by: "chat" as const,
           flow: null,
           input: null,
+          run: "r_turno_01",
         },
       ],
     };
@@ -673,7 +683,7 @@ describe("the agent, with a planner that behaves", () => {
           data: {
             template: lit("«{a}» lo propuso {b} al leer «{c}»."),
             a: ref("$p[0].title"),
-            b: ref("$p[0].flow.name"),
+            b: ref("$p[0].who"),
             c: ref("$p[0].input.asunto"),
           },
         },
@@ -728,6 +738,13 @@ describe("the agent, with a planner that behaves", () => {
     expect(calls[0]).toMatchObject({ role: "planner", step: null });
     expect(calls.slice(1).every((c) => c.role === "reader")).toBe(true);
     expect([...new Set(calls.slice(1).map((c) => c.step))]).toEqual(["s", "f"]);
+    // What each reading gave the next step is kept with it (task 91): the map's panel says it.
+    const kept = env.store.journal
+      .steps(res.run)
+      .filter((x) => x.step === "f")
+      .map((x) => (x.detail as { out?: unknown } | null)?.out)
+      .find((x) => x !== undefined);
+    expect(kept).toMatchObject({ choices: ["a"] });
   });
 
   it("writes what a run does with its id, so the journal tells what happened and why", async () => {

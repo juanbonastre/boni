@@ -21,9 +21,11 @@ import {
   MODELS_EVALUATING,
   MODELS_USED,
   ORIGIN_MAIL,
+  ORIGIN_TURN,
   ORIGIN_USER,
   RUN_BOOK,
   RUN_MAIL,
+  RUN_MAIL_LANES,
   RUN_MAIL_OLD,
   RUNS,
 } from "./agent-scenarios.ts";
@@ -369,6 +371,19 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await expect(card("Tarea")).toContainText("128 elementos");
   // An arrow's verb and its number; what carries a mail's words is marked.
   await expect(map.locator(".mp-edge-label", { hasText: "trae · 42" })).toHaveClass(/outside/);
+  // Marked by a small mail, never by a colour of its own (task 91: «líneas rosas… no sé por qué están resaltadas»).
+  await expect(
+    map.locator(".mp-edge-label", { hasText: "trae · 42" }).locator(".mp-outside-mark"),
+  ).toHaveCount(1);
+  expect(
+    await map
+      .locator(".mp-edge-label", { hasText: "trae · 42" })
+      .evaluate((e) => getComputedStyle(e).color),
+  ).toBe(
+    await map
+      .locator(".mp-edge-label", { hasText: "tus decisiones · 9" })
+      .evaluate((e) => getComputedStyle(e).color),
+  );
   // What «Leer correo» proposes waits in the Bandeja; out of it, what was accepted into each collection.
   await expect(map.locator(".mp-edge-label", { hasText: "propone · 12" })).toBeVisible();
   await expect(map.locator(".mp-edge-label", { hasText: "aceptadas · 7" })).toBeVisible();
@@ -514,11 +529,12 @@ test("«Ver en el mapa» from a collection's menu puts it in the centre; a searc
   await expect(page.locator(".mp-find-list [role=option]").first()).toContainText("Correo");
   await page.keyboard.press("Enter");
   await expect(page.locator(".mp-centre")).toContainText("Correo");
-  await page.getByRole("slider", { name: "Profundidad" }).fill("3");
-  await expect(page.getByRole("slider", { name: "Profundidad" })).toHaveAttribute(
-    "aria-valuetext",
-    "Todo",
-  );
+  // As deep as the mail reaches, said by its number (task 91: «"5 (max)"», not «Todo»).
+  const depth = page.getByRole("slider", { name: "Profundidad" });
+  const top = Number(await depth.getAttribute("max"));
+  expect(top).toBeGreaterThan(2);
+  await depth.fill(String(top));
+  await expect(depth).toHaveAttribute("aria-valuetext", `${top} (máx.)`);
   // The way to the Bandeja and on to the guide's reviewer, which learns from the decisions (task 84's criterion).
   for (const name of ["Correos", "Leer correo", "Bandeja", "Tarea", "Evento", "Revisar la guía"])
     await expect(map.locator(".mp-card", { hasText: name }).first()).toBeVisible();
@@ -602,7 +618,7 @@ test("a run on the map (F8, task 90): the Registro's «Recorrido» is the map, i
   await page.emulateMedia({ reducedMotion: null });
   // Its way across the map, told in its card: the mail it read, the run, what it proposed and what became of it.
   const way = page.locator(".mp-way");
-  await expect(way.locator("h4")).toHaveText("Por dónde fue");
+  await expect(way.locator("h4")).toHaveText("Explicación");
   await expect(way.locator("ol").first().locator(":scope > li")).toHaveText([
     "Empezó con «Reunión con secretaría el jueves» (Correos)",
     /^Leer correo \(v3\) · 20 oct/,
@@ -643,6 +659,47 @@ test("a run on the map (F8, task 90): the Registro's «Recorrido» is the map, i
         .filter((w) => boxes.some((b) => meet(w, b))).length;
     }),
   ).toBe(0);
+  // A light that goes along the way again and again, slowly, from the connector to the collection (task 91).
+  const glow = await steps
+    .filter({ hasText: "Lectora" })
+    .evaluate((e) => getComputedStyle(e).animationName);
+  expect(glow).toBe("mp-way-glow");
+  expect(await card("Correo").evaluate((e) => getComputedStyle(e).animationName)).toBe(
+    "mp-way-glow",
+  );
+  expect(await moving()).toContain("mp-way-line");
+  // This run's own calls and cost on its step, in orange; the period's numbers said as such.
+  await expect(steps.filter({ hasText: "Lectora" }).locator(".mp-run-own")).toHaveText(
+    /1 llamada · 0,0021\sUS\$$/,
+  );
+  await expect(page.locator(".mp-legend")).toContainText("Las cifras son de los últimos 7 días");
+  await expect(page.locator(".mp-legend")).toContainText("En naranja, lo de esta ejecución");
+  // What came out of each box, in its panel: what the reader gave the next step, the Bandeja's card, Tarea's row.
+  await steps.filter({ hasText: "Lectora" }).click();
+  const panel = page.locator(".mp-panel");
+  await expect(panel.locator("h3")).toHaveText("Lectora");
+  await expect(panel).toContainText("Paso de «Leer correo»");
+  // What it does in one line (I-27), and the period's numbers said as such.
+  await expect(panel).toContainText("Lee el correo y saca lo que te pide hacer");
+  await expect(panel).toContainText(/42 llamadas · 0,21\sUS\$ en 7 días/);
+  const here = panel.locator(".mp-here");
+  await expect(here.locator("h4")).toHaveText("En esta ejecución");
+  await expect(here).toContainText("Tareas");
+  await expect(here).toContainText("Preparar la reunión");
+  await expect(here).toContainText("23 oct 2026");
+  await expect(here).not.toContainText("2026-10-23");
+  await card("Bandeja").locator(".mp-name").click();
+  await expect(panel.locator(".mp-here .mp-out-card")).toContainText("«Preparar la reunión»");
+  await expect(panel.locator(".mp-here .mp-out-card")).toContainText("aceptada");
+  await card("Tarea").locator(".mp-name").click();
+  await expect(panel.locator(".mp-here .mp-out-card")).toContainText("Estado");
+  await expect(panel.locator(".mp-here .mp-out-card")).toContainText("Pendiente");
+  await panel.getByRole("button", { name: "Cerrar" }).click();
+  // «Explicación», hidden and shown again.
+  await way.getByRole("button", { name: "Ocultar la explicación" }).click();
+  await expect(way).toHaveCount(0);
+  await page.getByRole("button", { name: "Explicación" }).click();
+  await expect(way.locator("h4")).toHaveText("Explicación");
   await page.screenshot({ path: `${SHOTS}/flows-map-run.png` });
   // Taken away: the flow stays unfolded, its steps without the run.
   await page.getByRole("button", { name: "Quitar la ejecución" }).click();
@@ -681,6 +738,176 @@ test("a reading of an earlier version of its flow is drawn over its own steps, i
   await expect(page.locator(".mp-stage .mp-edge.way").first()).toBeAttached();
 });
 
+test("a reading over a lane per collection lights only the lane it took, never the others, nor the steps it skipped (task 91)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/runs": [RUNS],
+      "GET api/agent/runs/:id": [RUN_MAIL_LANES],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
+  await page.locator(".log-list li").first().locator(".log-head").click();
+  await page.locator(".log-detail").getByRole("button", { name: "Recorrido" }).click();
+  await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
+  const stage = page.locator(".mp-stage");
+  const edge = (from: string, to: string) =>
+    stage.locator(`[data-id="order:flow:leer-correo:${from}>${to}"] path.mp-edge`);
+  // The Decisora chose Gestiones: the way goes down its lane, then on to «Plegar hilo».
+  await expect(edge("c", "n1_tasks")).toHaveClass(/way/);
+  await expect(edge("n1_tasks", "fold")).toHaveClass(/way/);
+  // Docencia's lane, skipped, is not lit.
+  await expect(edge("c", "n0_tasks")).not.toHaveClass(/way/);
+  await expect(edge("n0_tasks", "fold")).not.toHaveClass(/way/);
+  // What it only read is not where it went.
+  await expect(
+    stage.locator(".mp-card", { has: page.locator(".mp-name", { hasText: /^Evento$/ }) }),
+  ).not.toHaveClass(/way/);
+  const steps = stage.locator(".mp-step");
+  await expect(steps.filter({ hasText: "Docencia" })).toHaveClass(/run-idle/);
+  await expect(steps.filter({ hasText: "Gestiones" })).toHaveClass(/run-ran/);
+  // The Decisora's panel says what it chose.
+  await steps.filter({ hasText: "Decisora" }).click();
+  await expect(page.locator(".mp-panel .mp-here")).toContainText("Eligió");
+  await expect(page.locator(".mp-panel .mp-here")).toContainText("Gestiones");
+});
+
+test("«¿De dónde viene?» in the conversation: who by name, its way drawn in the chat, «Ampliar» to the map; the list folds and widens (task 92)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [ORIGIN_TURN],
+      "GET api/agent/runs/:id": [RUN_MAIL],
+      "GET api/agent/runs": [RUNS],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  const box = page.getByRole("textbox", { name: /Escribe/ });
+  await box.click();
+  await page.keyboard.type("¿De dónde viene «Preparar la reunión»?", { delay: 5 });
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".reply-text").last()).toContainText("lo propuso Leer correo");
+  // Its way, drawn in the chat as the map draws it: from the mail's connector to Tarea, where it was accepted.
+  const way = page.getByRole("group", { name: "El recorrido de la ejecución" });
+  await expect(way.locator(".run-path-box strong")).toHaveText([
+    "Correo",
+    "Correos",
+    "Leer correo",
+    "Bandeja",
+    "Tarea",
+  ]);
+  await expect(way.locator(".run-path-box").nth(1)).toContainText(
+    "«Reunión con secretaría el jueves»",
+  );
+  await expect(way.locator(".run-path-box").nth(3)).toContainText(
+    "«Preparar la reunión» · aceptada",
+  );
+  expect(
+    await way
+      .locator(".run-path-box")
+      .first()
+      .evaluate((e) => getComputedStyle(e).animationName),
+  ).toBe("mp-way-glow");
+  await page.screenshot({ path: `${SHOTS}/chat-run-path.png` });
+  // The conversations' list: folded away and shown again; widened by its grip, kept after a reload.
+  const list = page.getByRole("navigation", { name: "Conversaciones" });
+  await page.getByRole("button", { name: "Ocultar las conversaciones" }).click();
+  await expect(list).toHaveCount(0);
+  await page.getByRole("button", { name: "Mostrar las conversaciones" }).click();
+  await expect(list).toBeVisible();
+  const before = (await list.boundingBox())?.width ?? 0;
+  const grip = page.getByRole("separator", { name: "Ancho de la lista de conversaciones" });
+  const g = await grip.boundingBox();
+  if (!g) throw new Error("the grip is on screen");
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 90, g.y + g.height / 2, { steps: 6 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await list.boundingBox())?.width ?? 0)
+    .toBeGreaterThan(before + 60);
+  await grip.focus();
+  await page.keyboard.press("ArrowLeft");
+  const wide = String(Math.round(before + 90 - 16));
+  await expect(grip).toHaveAttribute("aria-valuenow", wide);
+  // «Ampliar»: the map with the run on it.
+  await way.getByRole("button", { name: "Ampliar" }).click();
+  await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
+  // Its width and its fold are kept on this device: after a reload, as they were.
+  await page.reload();
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await expect(grip).toHaveAttribute("aria-valuenow", wide);
+  await page.getByRole("button", { name: "Ocultar las conversaciones" }).click();
+  await page.reload();
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await expect(page.getByRole("button", { name: "Mostrar las conversaciones" })).toBeVisible();
+  await expect(list).toHaveCount(0);
+});
+
+test("a proposal still in the Bandeja is drawn up to the collection it would go to; a run a model wrote is not drawn (task 92, I-29)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const waiting = {
+    ...RUN_MAIL,
+    proposals: [{ ...RUN_MAIL.proposals[0], status: "pending", decided: null, record: null }],
+  };
+  const madeUp = {
+    ...ORIGIN_TURN,
+    run: "run-c10",
+    replies: [
+      ORIGIN_TURN.replies[0],
+      {
+        component: "run",
+        data: { run: { t: "v", value: "run-3", integrity: "model", sensitivity: "public" } },
+      },
+    ],
+  };
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [ORIGIN_TURN, madeUp],
+      "GET api/agent/runs/:id": [waiting],
+      "GET api/agent/runs": [RUNS],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  const box = page.getByRole("textbox", { name: /Escribe/ });
+  await box.click();
+  await page.keyboard.type("¿De dónde viene la tarea de la bandeja?", { delay: 5 });
+  await page.keyboard.press("Enter");
+  const way = page.getByRole("group", { name: "El recorrido de la ejecución" });
+  await expect(way.locator(".run-path-box strong")).toHaveText([
+    "Correo",
+    "Correos",
+    "Leer correo",
+    "Bandeja",
+    "Tarea",
+  ]);
+  // Where it waits to go: dashed and still, «espera en la Bandeja»; the mail's words marked as from outside.
+  await expect(way.locator(".run-path-box.waits")).toContainText("espera en la Bandeja");
+  await expect(way.locator(".run-path-ext").first()).toHaveAttribute("title", /Viene de fuera/);
+  // A run id a model wrote is not drawn.
+  await box.click();
+  await page.keyboard.type("¿Y esta otra?", { delay: 5 });
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".reply-text")).toHaveCount(2);
+  await expect(page.getByRole("group", { name: "El recorrido de la ejecución" })).toHaveCount(1);
+});
+
 test("an Inbox card's right button (I-17, I-25): open it, or its Recorrido, which is its run on the map", async ({
   page,
 }) => {
@@ -707,7 +934,7 @@ test("an Inbox card's right button (I-17, I-25): open it, or its Recorrido, whic
   await expect(menu.getByRole("menuitemradio")).toHaveText(["Abrir propuesta", "Recorrido"]);
   await menu.getByRole("menuitemradio", { name: "Recorrido" }).click();
   await expect(page.locator(".mp-centre").first()).toContainText("Leer correo");
-  await expect(page.locator(".mp-way h4")).toHaveText("Por dónde fue");
+  await expect(page.locator(".mp-way h4")).toHaveText("Explicación");
   // Its page has it too: «Abrir propuesta», then «Recorrido» there (the Bandeja's panel is still open).
   await expect(card).toBeVisible();
   await card.locator("h3").click({ button: "right" });

@@ -132,6 +132,8 @@ export interface RecordOrigin {
   input: string | null;
   /** It came through the Bandeja: when it was proposed and decided, and whether Boni accepted it alone. */
   proposal: { created: number; decided: number | null; alone: boolean } | null;
+  /** The run that made or proposed it: a reply «run» draws it (task 92). */
+  run: string | null;
 }
 /** A proposal waiting in the Bandeja, with where it comes from (`inbox.pending`). */
 export interface PendingProposal {
@@ -144,6 +146,7 @@ export interface PendingProposal {
   by: RecordOrigin["by"];
   flow: RecordOrigin["flow"];
   input: string | null;
+  run: string | null;
 }
 export interface OriginReader {
   of(id: string): RecordOrigin | null;
@@ -514,7 +517,7 @@ export function coreTools(): ToolRegistry {
     effect: "read",
     title: "De dónde viene",
     describe:
-      "Where a record comes from (Juan asks «¿de dónde viene?», «¿quién lo apuntó?»): who made it (by: flow, chat, user, assistant, import, connector, boni), when (at), on which device, the flow whose run made or proposed it (flow.name), the record that started that run (input: the mail, as entities.get gives it), and when it was proposed and accepted from the inbox (proposed, accepted; alone: Boni accepted it on its own)",
+      "Where a record comes from (Juan asks «¿de dónde viene?», «¿quién lo apuntó?»): who made it, in a word (who: the flow's name, the assistant's or the device's; when null, say by in words: chat is the conversation, user is Juan himself, boni is Boni on its own, import an import, connector the mail's connector; never show by's code), when (at), the flow whose run made or proposed it (flow.name), the record that started that run (input: the mail, as entities.get gives it), when it was proposed and accepted from the inbox (proposed, accepted; alone: Boni accepted it on its own), and its run (a reply «run» draws it)",
     args: { id: { role: "entity", required: true, describe: "entity id" } },
     run({ store, origin }, a) {
       const id = str(a.id);
@@ -534,6 +537,9 @@ export function coreTools(): ToolRegistry {
       return rec(
         {
           by: leaf(o.by, code),
+          // Who, in a word: the flow by its name, the assistant or the device; never the code `by` says it with.
+          who: o.flow ? leaf(o.flow.name, flowLabel(o.flow.id)) : leaf(o.device, code),
+          run: leaf(o.run, code),
           at: when(o.at),
           device: leaf(o.device, code),
           flow: o.flow
@@ -561,7 +567,7 @@ export function coreTools(): ToolRegistry {
     effect: "read",
     title: "En la Bandeja",
     describe:
-      "The proposals waiting in Juan's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed (proposed), who proposed it (by: flow or chat; flow.name) and the record that started it (input: the mail, as entities.get gives it). text: only those whose title has these words. Juan accepts or rejects them himself",
+      "The proposals waiting in Juan's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed (proposed), who proposed it in a word (who: the flow's name; when null, by in words: chat is the conversation, boni is Boni on its own; never show by's code), the record that started it (input: the mail, as entities.get gives it) and its run (a reply «run» draws it). text: only those whose title has these words. Juan accepts or rejects them himself",
     args: {
       text: { role: "query", describe: "words of its title" },
       limit: { role: "limit", describe: "at most this many (default 20, max 50)" },
@@ -594,6 +600,8 @@ export function coreTools(): ToolRegistry {
               collection: leaf(def ? typeName(def) : null, code),
               proposed: leaf(new Date(p.created).toISOString(), code),
               by: leaf(p.by, code),
+              who: p.flow ? leaf(p.flow.name, flowLabel(p.flow.id)) : leaf(null, code),
+              run: leaf(p.run, code),
               flow: p.flow
                 ? rec(
                     {
