@@ -5,6 +5,54 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-06 (thirty-sixth) — server 0.8.112 · Boni desktop 0.4.80 · Boni Android
+
+Needs:
+- The server, 0.8.112, to deploy. It brings «Crear en la elegida», each step's calls, the Recorrido on the map and
+  «¿De dónde viene?» for the AI and the MCP. Its store gains a column and an index (migrations 19 and 20: the step
+  each model call answered in), made on its first start.
+- Boni desktop 0.4.80 (`release/boni_0.4.80_amd64.deb`), to install after the server: it asks for each step's calls
+  and draws the run on the map.
+- Boni Android from main, through Obtainium.
+
+What you saw when you tried 35, done in one batch: tasks 83 (#356) and 90 (#357), and «¿De dónde viene?» from task 86
+(#358).
+
+- **A run's «Recorrido» is the map.** In the Registro, on a Bandeja card (right button) and on a proposal's page,
+  «Recorrido» opens the map with the run on it:
+  - its flow begins with what started it (⚡ «Llega a Correos»), as in the editor;
+  - its way is drawn in orange, from the mail's connector through each step it took, the Bandeja and the collection
+    where you accepted what it proposed;
+  - each box lights in its turn and a light runs along the arrows (still if your system asks for less motion);
+  - what never ran is faded.
+  The card «Por dónde fue» tells it in words, with «Detalles» (each step, what it read, the models) and «Copiar». The
+  Registro keeps the words only. To try: Conversación → Registro → a reading of mail → «Recorrido».
+- **One name per step, everywhere**: the editor, the map, the Registro and «Copiar» say «Lectora», «Crear», «Regla
+  del remitente», never `entities.get` or «P20». Each step says in one line what it does, and why a step stopped is
+  said in words («una regla de seguridad lo impide»).
+- **«Leer correo» creates in the chosen collection**: a «Rellenadora» and a «Crear» per kind of thing (tasks, events)
+  instead of one per collection. The Decisora chooses among the collections it may write in. The step says «La que
+  elija la Decisora: …» with your collections, and the map draws its arrows to each. To try: Flujos → Leer correo,
+  and «Probar» with a mail.
+- **«Profundidad»**: one slider (1 · 2 · Todo) instead of «Antes» and «Después».
+- **No overlaps**: a lane is named after its collection («Tarea»), an arrow's words show only where they cover no box
+  or other words (the rest when you point at either end), and boxes stay above the arrows. Also with «Por flujo».
+- **Each step's calls and cost** in the period, on the map and on a flow's page: «42 llamadas · 0,21 US$». They count
+  from today: older calls did not keep their step.
+- **«¿De dónde viene?» in the conversation and for Claude**: the planner can now ask where a record comes from (the
+  flow, its mail, when you accepted it) and what waits in the Bandeja with where each proposal comes from, instead of
+  searching mails with that name. The MCP has `origin` and `inbox`. To try: in the conversation, «¿De dónde viene la
+  tarea propuesta en la bandeja de «…»?», or ask the same of a task that came from a mail.
+- **On the phone**, «Recorrido» opens the map in «Páginas», and Back returns to where you were.
+- **Readings from before this release** are drawn over the version of «Leer correo» they ran, so their way is whole
+  even though «Crear en la elegida» renamed its steps.
+- **Mail's words on the map** are now marked in pink (`--c5`), so they are not mistaken for a run's orange way.
+- An independent review compared both tasks with the design. What it found is fixed (#359), except:
+  - the Decisora's panel does not yet list its collections and the guide's rules;
+  - the editor's lane names are not cut to their width.
+  Decided while building it, yours to change: «Leer correo» keeps one «Rellenadora» and one «Crear» per kind of thing
+  (tasks, events), plus the invitation's own, not one for everything.
+
 ## 2026-11-06 (thirty-fifth) — server 0.8.111 · Boni desktop 0.4.79 · Boni Android
 
 Needs:
