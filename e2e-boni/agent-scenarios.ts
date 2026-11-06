@@ -1758,6 +1758,8 @@ export const FLOW_DETAIL = {
       args: ["input: $text"],
       deps: ["text", "modules", "userIn", "known", "guide"],
       ran: { allow: 42 },
+      calls: 42,
+      cost: 0.21,
     }),
     flowStep("n0_tasks_f", "read", "fill", {
       each: true,
@@ -1903,6 +1905,57 @@ const mapEdge = (from: string, to: string, kind: string, n: number | null, more 
   outside: false,
   ...more,
 });
+/**
+ * A reading of an earlier version of «Leer correo» (v2, before «Crear en la elegida»): its steps had other ids, so
+ * the server sends that version to draw it over (task 90's review: drawn over the latest, its way broke).
+ */
+const OLD_PLAN = {
+  version: 1,
+  steps: [
+    { id: "m", op: "call", tool: "entities.get", args: { id: { ref: "$mail" } } },
+    { id: "r", op: "read", reader: "read_message", input: { ref: "$text" } },
+    {
+      id: "n0_docencia_f",
+      op: "read",
+      reader: "fill",
+      input: { ref: "$item" },
+      each: { ref: "$r.tasks" },
+    },
+    {
+      id: "n0_docencia",
+      op: "call",
+      tool: "entities.create",
+      each: { ref: "$r.tasks" },
+      args: { type: { lit: "docencia" }, values: { ref: "$item" } },
+    },
+  ],
+};
+export const RUN_MAIL_OLD = {
+  ...RUN_MAIL,
+  id: "run-4",
+  flowVersion: 2,
+  steps: RUN_MAIL.steps.map((s) =>
+    s.id === "n0_tasks_f"
+      ? { ...s, id: "n0_docencia_f" }
+      : s.id === "n0_tasks"
+        ? { ...s, id: "n0_docencia" }
+        : s,
+  ),
+  drawn: {
+    version: 2,
+    plan: OLD_PLAN,
+    steps: [
+      flowStep("m", "call", "entities.get", { title: "Leer" }),
+      flowStep("r", "read", "read_message"),
+      flowStep("n0_docencia_f", "read", "fill", { each: true }),
+      flowStep("n0_docencia", "call", "entities.create", {
+        title: "Crear",
+        detail: "Docencia",
+        each: true,
+      }),
+    ],
+  },
+};
 export const MAP = {
   days: 7,
   from: 1761300000000,

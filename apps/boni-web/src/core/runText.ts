@@ -24,8 +24,9 @@ export function stepName(t: T, s: { op: string; what: string; title?: string | n
   return s.what;
 }
 
-/** What a step does, in one line (`flow.desc.<reader or tool>`), or null when Boni has none for it. */
+/** What a step does, in one line (`flow.desc.<reader or tool>`, a question's or a reply's), or null when none. */
 export function stepDesc(t: T, s: Pick<RunStep, "op" | "what">): string | null {
+  if (s.op === "ask" || s.op === "reply") return or(t, `flow.desc.op.${s.op}`, "") || null;
   if (s.op !== "read" && s.op !== "call") return null;
   const k = `flow.desc.${s.what}`;
   const v = t(k);
@@ -37,8 +38,24 @@ export function stepDesc(t: T, s: Pick<RunStep, "op" | "what">): string | null {
  * itself is the policy's and the engine's, not the user's: only «Copiar» carries it, to fix what failed.
  */
 export function whyText(t: T, code: string): string {
-  if (/^P\d+(-|$)/.test(code)) return t("run.why.rule");
+  // The day's budget for models (P13) and a request's own limits (P12) are limits, not safety rules.
+  if (/^P13(-|$)/.test(code)) return t("run.why.budget");
+  if (/^P12(-|$)/.test(code)) return t("run.why.limit");
+  // The policy's rules (P…) and the readers' (R…: what a model may read).
+  if (/^[PR]\d+(-|$)/.test(code)) return t("run.why.rule");
   return or(t, `run.why.${code}`, t("run.why.fault"));
+}
+
+/** What came of a whole run, in a word or two: «Hecho», «Parado: …» (its code only where it helps, `withCode`). */
+export function runStatusLine(t: T, status: string, withCode = false): string {
+  if (status === "done") return t("run.node.allow");
+  if (status === "stopped" || status.startsWith("stopped:")) {
+    const code = status.slice("stopped:".length);
+    if (status === "stopped" || !code) return t("run.node.deny");
+    const why = whyText(t, code);
+    return t("run.node.stopped", { why: withCode ? `${why} (${code})` : why });
+  }
+  return or(t, `log.status.${status}`, status);
 }
 
 /** What came of a step in a run, in a word or two (no rule codes: they are the policy's, not the user's). */
@@ -113,11 +130,12 @@ export function moneyText(lang: string, usd: number): string {
 /** The run as text to paste in a chat (`Copiar`): the same words, one per line. */
 export function runCopy(t: T, d: RunDetail, w: RunWords, when: string): string {
   const lines = [
-    `Boni · ${t("log.trace")} · ${runStepLine(t, { error: null, decision: d.status === "done" ? "allow" : d.status })} · ${when} (${t("log.copyNote")})`,
+    `Boni · ${t("log.trace")} · ${runStatusLine(t, d.status, true)} · ${when} (${t("log.copyNote")})`,
     ...(d.request !== null ? [`${t("log.request")}: ${d.request}`] : []),
     `${t("log.steps")}:`,
     ...w.steps.flatMap((s, i) => [
       `${i + 1}. ${s.name} — ${s.line}${s.code ? ` (${s.code})` : ""}`,
+      ...(s.desc ? [`   ${s.desc}`] : []),
       ...s.answers.map((a) => `   ${t("log.answer")}: ${a}`),
     ]),
     ...(

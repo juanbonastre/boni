@@ -9900,8 +9900,10 @@ button.rows-panel-row:hover {
 .mp-edge.shows {
   stroke-width: 1;
 }
+/* What carries a mail's words: in `--c5`, never mistaken for a run's orange way (task 90); on the way, its words keep
+   the mark. */
 .mp-edge.outside {
-  stroke: var(--c4);
+  stroke: var(--c5);
 }
 .mp-edge.hot {
   stroke: var(--accent);
@@ -9927,12 +9929,16 @@ button.rows-panel-row:hover {
   pointer-events: none;
 }
 .mp-edge-label.outside {
-  border-color: color-mix(in srgb, var(--c4) 60%, transparent);
-  color: var(--c4);
+  border-color: color-mix(in srgb, var(--c5) 60%, transparent);
+  color: var(--c5);
 }
 .mp-edge-label.hot {
   border-color: var(--accent);
   color: var(--text);
+}
+.mp-edge-label.outside.hot {
+  border-color: var(--c5);
+  color: var(--c5);
 }
 .mp-edge-label.order {
   background: var(--accent-soft);
@@ -10162,6 +10168,10 @@ button.rows-panel-row:hover {
   overflow-wrap: anywhere;
   font-size: 11.5px;
   color: var(--muted);
+}
+.mp-way-desc {
+  display: block;
+  font-size: 11.5px;
 }
 .mp-way-block ul {
   margin: 2px 0 0;

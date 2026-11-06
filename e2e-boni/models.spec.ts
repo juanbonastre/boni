@@ -24,6 +24,7 @@ import {
   ORIGIN_USER,
   RUN_BOOK,
   RUN_MAIL,
+  RUN_MAIL_OLD,
   RUNS,
 } from "./agent-scenarios.ts";
 import { openApp, openInTree, recorded, TEMPLATE } from "./fixtures.ts";
@@ -423,7 +424,10 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   // step with its calls and their cost in the period; what each does in its tooltip.
   await panel.getByRole("button", { name: "Ver los pasos" }).click();
   await expect(map.locator(".mp-frame.flow")).toContainText("Leer correo");
-  await expect(map.locator(".mp-trig")).toHaveText("Llega a Correos");
+  await expect(map.locator(".mp-trig .mp-name")).toHaveText("Llega a Correos");
+  // What it brings, as the editor names it (never `$mail`).
+  await expect(map.locator(".mp-trig")).toContainText("Correo · Texto");
+  await expect(map.locator(".mp-trig")).not.toContainText("$");
   await expect(map.locator(".mp-step:not(.mp-trig)")).toHaveCount(4);
   const lectora = map.locator(".mp-step", { hasText: "Lectora" });
   await expect(lectora).toContainText("42 llamadas · 0,21 US$");
@@ -568,7 +572,7 @@ test("a run on the map (F8, task 90): the Registro's «Recorrido» is the map, i
   await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
   const steps = page.locator(".mp-stage .mp-step");
   // From what started it, as the Registro and the editor say it: the trigger, then its four steps.
-  await expect(page.locator(".mp-stage .mp-trig")).toHaveText("Llega a Correos");
+  await expect(page.locator(".mp-stage .mp-trig .mp-name")).toHaveText("Llega a Correos");
   await expect(steps).toHaveCount(5);
   // The way it went, in orange: what ran with what came of it, what did not run faded.
   await expect(page.locator(".mp-stage .mp-trig")).toHaveClass(/run-ran/);
@@ -616,9 +620,29 @@ test("a run on the map (F8, task 90): the Registro's «Recorrido» is the map, i
     map.locator(".mp-card", {
       has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
     });
-  for (const name of ["Correos", "Bandeja", "Tarea"]) await expect(card(name)).toHaveClass(/way/);
+  // From the connector that brought the mail, whatever the depth (1 here), to where it ended.
+  await expect(page.getByRole("slider", { name: "Profundidad" })).toHaveAttribute(
+    "aria-valuetext",
+    "1",
+  );
+  for (const name of ["Correo", "Correos", "Bandeja", "Tarea"])
+    await expect(card(name)).toHaveClass(/way/);
   await expect(card("Evento")).toHaveClass(/dim/);
   await expect(map.locator(".mp-edge-label", { hasText: "aceptadas · 7" })).toBeVisible();
+  // No words over a box, the way's included.
+  expect(
+    await page.evaluate(() => {
+      const box = (e: Element) => e.getBoundingClientRect();
+      const meet = (a: DOMRect, b: DOMRect) =>
+        a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const boxes = [...document.querySelectorAll(".mp-stage .react-flow__node")]
+        .filter((n) => !n.classList.contains("react-flow__node-frame"))
+        .map(box);
+      return [...document.querySelectorAll(".mp-stage .mp-edge-label")]
+        .map(box)
+        .filter((w) => boxes.some((b) => meet(w, b))).length;
+    }),
+  ).toBe(0);
   await page.screenshot({ path: `${SHOTS}/flows-map-run.png` });
   // Taken away: the flow stays unfolded, its steps without the run.
   await page.getByRole("button", { name: "Quitar la ejecución" }).click();
@@ -626,6 +650,35 @@ test("a run on the map (F8, task 90): the Registro's «Recorrido» is the map, i
   await expect(page.locator(".mp-way")).toHaveCount(0);
   await expect(steps.filter({ hasText: "Lectora" })).not.toHaveClass(/run-ran/);
   await expect(card("Evento")).not.toHaveClass(/dim/);
+});
+
+test("a reading of an earlier version of its flow is drawn over its own steps, its way whole (task 90's review)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/runs": [RUNS],
+      "GET api/agent/runs/:id": [RUN_MAIL_OLD],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
+  await page.locator(".log-list li").first().locator(".log-head").click();
+  await page.locator(".log-detail").getByRole("button", { name: "Recorrido" }).click();
+  await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
+  // Its own steps (v2), not the latest's: what it filled and created lit, its proposal leaving from its «Crear».
+  const steps = page.locator(".mp-stage .mp-step");
+  await expect(steps).toHaveCount(5);
+  await expect(steps.filter({ hasText: "Crear" })).toContainText("Docencia");
+  await expect(steps.filter({ hasText: "Crear" })).toContainText("Propuesto");
+  await expect(steps.filter({ hasText: "Crear" })).toHaveClass(/run-ran/);
+  await expect(steps.filter({ hasText: "No llegó" })).toHaveCount(0);
+  await expect(page.locator(".mp-way li").nth(1)).toContainText("Leer correo (v2)");
+  await expect(page.locator(".mp-stage .mp-edge.way").first()).toBeAttached();
 });
 
 test("an Inbox card's right button (I-17, I-25): open it, or its Recorrido, which is its run on the map", async ({
@@ -655,6 +708,16 @@ test("an Inbox card's right button (I-17, I-25): open it, or its Recorrido, whic
   await menu.getByRole("menuitemradio", { name: "Recorrido" }).click();
   await expect(page.locator(".mp-centre").first()).toContainText("Leer correo");
   await expect(page.locator(".mp-way h4")).toHaveText("Por dónde fue");
+  // Its page has it too: «Abrir propuesta», then «Recorrido» there (the Bandeja's panel is still open).
+  await expect(card).toBeVisible();
+  await card.locator("h3").click({ button: "right" });
+  await page
+    .getByRole("dialog", { name: "Opciones de la propuesta" })
+    .getByRole("menuitemradio", { name: "Abrir propuesta" })
+    .click();
+  await page.getByRole("button", { name: "Quitar la ejecución" }).waitFor({ state: "detached" });
+  await page.locator(".proposal-page").getByRole("button", { name: "Recorrido" }).click();
+  await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
 });
 
 test("«¿De dónde viene?» from a row: the reading that proposed it on the map, its mail and the «Aceptar» (F8)", async ({
@@ -757,6 +820,10 @@ test("«Flujos»: the editor draws a flow and changes it: a step's collection, s
   });
   for (const text of ["Docencia", "12 veces", "12 propuestas", "Para cada"])
     await expect(create).toContainText(text);
+  // A model's step with its calls and their cost in the period (task 90).
+  await expect(
+    canvas.locator(".fl-node", { has: page.locator(".fl-name", { hasText: /^Lectora$/ }) }),
+  ).toContainText("42 llamadas · 0,21 US$");
   const save = page.getByRole("button", { name: "Guardar", exact: true });
   await expect(save).toBeDisabled();
   // Its collection changed in its panel: the fields follow their roles, the collection's inputs its key.
@@ -819,7 +886,7 @@ test("«Flujos»: the editor draws a flow and changes it: a step's collection, s
     .toBeGreaterThan(1);
 });
 
-test("«Leer correo» creating in the chosen collection: one «Rellenadora» and one «Crear», said «En la elegida», no lanes (docs/sistema.md §4.2)", async ({
+test("«Leer correo» creating in the chosen collection: a «Rellenadora» and a «Crear» for its kind of thing, said «En la elegida», no lanes (docs/sistema.md §4.2)", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

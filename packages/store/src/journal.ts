@@ -301,6 +301,16 @@ export interface Journal {
   spend(day: string, key: string, n: number): void;
 }
 
+/**
+ * Each step's model calls of a flow in a period (the map, a flow's page): the flow's runs of the period by their index
+ * (flow, started), then their calls by `model_calls_step`, which covers what is summed, so no row with a model's
+ * texts is read (A-15). Its query plan is checked in `journal.test.ts`.
+ */
+export const CALLS_BY_STEP = `SELECT c.step AS step, count(*) AS calls, sum(coalesce(json_extract(c.usage, '$.cost'), 0)) AS cost
+  FROM runs r JOIN model_calls c ON c.run = r.id
+  WHERE r.flow = ? AND r.started >= ? AND r.started < ? AND r.origin != 'test' AND c.step IS NOT NULL
+  GROUP BY c.step`;
+
 const j = (v: unknown) => JSON.stringify(v ?? null);
 const p = (s: unknown) => (typeof s === "string" ? JSON.parse(s) : null);
 
@@ -822,14 +832,7 @@ export function openJournal(db: DatabaseSync): Journal {
     },
     callsByStep: (flow, from, to) =>
       db
-        .prepare(
-          // The flow's runs of the period by their index (flow, started), then their calls by `model_calls_step`,
-          // which covers what is summed: no row with a model's texts is read (A-15).
-          `SELECT c.step AS step, count(*) AS calls, sum(coalesce(json_extract(c.usage, '$.cost'), 0)) AS cost
-           FROM runs r JOIN model_calls c ON c.run = r.id
-           WHERE r.flow = ? AND r.started >= ? AND r.started < ? AND r.origin != 'test' AND c.step IS NOT NULL
-           GROUP BY c.step`,
-        )
+        .prepare(CALLS_BY_STEP)
         .all(flow, from, to)
         .map((r) => ({ step: r.step as string, calls: Number(r.calls), cost: Number(r.cost) })),
     proposalsDecidedByRun: (from, to) =>

@@ -32,6 +32,7 @@ import { flowMap, mapOwnerOf } from "./flowMap.ts";
 import {
   checkFlow,
   createFlow,
+  drawnRun,
   flowCatalog,
   flowProposalView,
   flowsView,
@@ -1017,7 +1018,18 @@ async function answerAgent(
       const store = host.store(who.account);
       const r = store.journal.run(d.id);
       const owner = r ? mapOwnerOf(store, r, host.mailAccountOf?.(who.account) ?? null) : null;
-      return send(res, 200, { ...d, owner });
+      // Drawn over its own version when that is not the flow's latest (its steps by their names then).
+      const types = Object.values(store.schema().types);
+      const drawn = r
+        ? drawnRun(
+            store,
+            r,
+            owner,
+            (tool) => host.toolTitle(tool),
+            (key) => types.find((t) => t.key === key)?.name ?? null,
+          )
+        : null;
+      return send(res, 200, { ...d, owner, drawn });
     }
     case "GET /api/agent/origin/:id": {
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });

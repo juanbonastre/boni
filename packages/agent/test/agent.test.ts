@@ -697,6 +697,39 @@ describe("the agent, with a planner that behaves", () => {
     expect((await ask()).status).toBe("stopped");
   });
 
+  it("keeps the step each model answered in, so a flow's steps count their calls (task 90); the planner's has none", async () => {
+    env = makeEnv();
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "m", op: "call", tool: "entities.query", args: { type: lit("tarea") } },
+        { id: "s", op: "read", reader: "summarize_each", input: ref("$m.items") },
+        {
+          id: "f",
+          op: "read",
+          reader: "label_each",
+          input: ref("$m.items"),
+          params: { options: { fn: "list", args: [lit("a"), lit("b")] } },
+        },
+        {
+          id: "r",
+          op: "reply",
+          component: "list",
+          data: { items: ref("$s.items"), fields: lit("line") },
+        },
+      ],
+    };
+    const reader = fakePlanner([{ items: [{ line: "Comprar pan, mañana" }] }, { choices: ["a"] }]);
+    const res = await env
+      .agent(fakePlanner([plan]), reader)
+      .turn({ text: "¿Qué tengo pendiente?", origin: PERSONAL });
+    expect([res.status, res.error]).toEqual(["done", null]);
+    const calls = env.store.journal.modelCalls(res.run);
+    expect(calls[0]).toMatchObject({ role: "planner", step: null });
+    expect(calls.slice(1).every((c) => c.role === "reader")).toBe(true);
+    expect([...new Set(calls.slice(1).map((c) => c.step))]).toEqual(["s", "f"]);
+  });
+
   it("writes what a run does with its id, so the journal tells what happened and why", async () => {
     env = makeEnv();
     const planner = fakePlanner([
@@ -743,11 +776,6 @@ describe("the agent, with a planner that behaves", () => {
       .agent(fakePlanner([plan]), reader)
       .turn({ text: "¿Qué tengo pendiente?", origin: PERSONAL });
     expect([res.status, res.error]).toEqual(["done", null]);
-    // Each model call says the step it answered in (a flow's steps count their calls, task 90); the planner's, none.
-    const calls = env.store.journal.modelCalls(res.run);
-    expect(calls[0]).toMatchObject({ role: "planner", step: null });
-    expect(calls.slice(1).every((c) => c.role === "reader")).toBe(true);
-    expect([...new Set(calls.slice(1).map((c) => c.step))]).toEqual(["s", "f"]);
     const prose = reader.requests[0];
     if (!prose) throw new Error("the reader was called");
     expect(String((prose.input as { content?: string }).content)).toContain(

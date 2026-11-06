@@ -454,6 +454,8 @@ export interface RunDetail {
   input: { id: string; title: string; collection: string; type: string } | null;
   /** The node of the map it belongs to (`flow:…`, `boni:chat`, `boni:review`, `boni:inbox`); null: none. */
   owner: string | null;
+  /** Its flow as it ran, when that is not the flow's latest version: the map draws the run over these boxes. */
+  drawn?: { version: number | null; plan: FlowPlan; steps: FlowStepNode[] } | null;
   decisions: { area: string; p: number; outcome: string; result: string | null }[];
   models: {
     role: string;
@@ -3160,6 +3162,14 @@ export class AgentApi {
           }
         : null,
       owner: typeof b.owner === "string" && MAP_ID.test(b.owner) ? b.owner : null,
+      drawn:
+        isObj(b.drawn) && isObj(b.drawn.plan) && Array.isArray(b.drawn.steps)
+          ? {
+              version: typeof b.drawn.version === "number" ? b.drawn.version : null,
+              plan: planOf(b.drawn.plan),
+              steps: b.drawn.steps.map(parseFlowNode).filter((x): x is FlowStepNode => x !== null),
+            }
+          : null,
       decisions: list(b.decisions, (x) => ({
         area: str(x.area, 40) ?? "",
         p: num(x.p),

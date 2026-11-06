@@ -75,6 +75,7 @@ describe("principles (docs/principios.md)", () => {
     // a reader to its name, so they cannot drift apart (task 90: «Crear», «Regla del remitente», `entities.get`).
     for (const file of [
       "components/FlowStepPanel.tsx",
+      "components/FlowEditor.tsx",
       "components/FlowMap.tsx",
       "components/FlowPreview.tsx",
       "components/Chat.tsx",

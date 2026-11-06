@@ -800,7 +800,8 @@ contraseña ni un código aquí» under a question.
   assistant («Asistente · claude-ejemplo · Por el MCP»), a page. An arrow per verb, its words in a pill: «trae · 42»,
   «pone en marcha · 42», «lee», «escribe · 61», «propone · 12» (dashed, into the Bandeja), «aceptadas · 7» (out of it,
   to each collection), «decides · 11» (yours, in it), «tus decisiones · 11» (to the guide's reviewer), «mejora»,
-  «muestra»; one that carries a mail's words in `--c4` («Lleva texto de fuera» on hover); one going back, right to
+  «muestra»; one that carries a mail's words in `--c5` («Lleva texto de fuera» on hover; `--c4` until task 90, too near
+  a run's orange), its words keeping the mark when lit; one going back, right to
   left (what you or the conversation read, a lesson to an earlier flow), says its words only when it is lit, so they
   never cover a card's name. The Bandeja is crossed, not
   counted: «Profundidad: 1» of Evento shows the Bandeja and, in the same step, the flows that propose into Evento (not
@@ -827,27 +828,30 @@ contraseña ni un código aquí» under a question.
   and number), and «Poner en el centro», «Ver los pasos» / «Plegar los pasos» on a flow and «Abrir» (primary: a flow's
   page, a collection's, a page, the conversation); a double click opens it; the right button gives the same as a menu.
   A box chosen out of view is brought to the middle. An unfolded flow is a frame with its steps inside, laid out as
-  its editor lays them out, **from what starts it** (a first box with ⚡ and «Llega a Correos», as the editor's
-  trigger), its arrows leaving from the steps that make them; each step by the name the editor gives it («Lectora»,
+  its editor lays them out, **from what starts it** (a first box with ⚡, «Llega a Correos» and what it brings,
+  «Correo · Texto», as the editor's trigger), its arrows leaving from the steps that make them; each step by the name the editor gives it («Lectora»,
   «Crear», «Regla del remitente»: never a tool's id), what it does in one line in its tooltip («Elige la colección; si
   duda, te pregunta en la Bandeja.»), and a model's step with its calls and their cost in the period («42 llamadas ·
-  0,21 US$»). A lane's name over its column is cut with «…» to its lane's width, the whole in its tooltip, so two
-  lanes' names never overlap. The map fits what it shows whenever its
+  0,21 US$», also when its model is not known). A lane's name over its column is cut with «…» to its lane's width,
+  the whole in its tooltip, so two lanes' names never overlap. Every box sits above every arrow, and an arrow's words
+  show only where they cover no box and no other words: the rest when one of its ends is pointed at (a run's way
+  too). The map fits what it shows whenever its
   boxes move, never on a hover. **«Ver en el mapa»** (I-25), in the right-click menus of a collection, a page, a row,
   a block over a collection and a flow, opens it with that in the centre and its panel open (an Inbox card's menu has
   «Abrir propuesta» and «Recorrido»; text chosen in the card keeps the browser's own menu); a page put in the centre shows the pages while it is there; what the map does not have
   (a page none of whose blocks shows a collection) says «No sale en el mapa» and opens it whole. **A run's
   «Recorrido» is the map** (I-25, task 90; Juan, 2026-11-06: «teniendo el mapa, no tiene sentido tener lo del
   recorrido»): from the Registro, an Inbox card's menu, a proposal's page and a turn of the conversation, the run is
-  drawn on it: its flow unfolded from what started it, each step with what came of it («Hecho», «Propuesto», «No se
+  drawn on it, its whole way on the map whatever the depth, over the version of its flow it ran (an earlier one when
+  the flow changed since): its flow unfolded from what started it, each step with what came of it («Hecho», «Propuesto», «No se
   ejecutó», «Parado: una regla de seguridad lo impide»), what did not run faded; **its way in orange** (`--c2`), from
   the trigger and the connector through its steps, the Bandeja and on to the collection where what it proposed was
   accepted or where it wrote: each box and arrow on it with an orange border, lit in its turn along the way (110 ms
   apart) and a light moving along its arrows (dashes, 1.1 s), still when the system asks for less motion; the rest
   quiet. A card over the top left corner, «Por dónde fue», tells it in words («Empezó con «Reunión con secretaría el
   jueves» (Correos)», «Leer correo (v3) · 20 oct, 11:05», «Propuso «Preparar la reunión» · aceptada», «Escribió
-  «Café» en Gastos»; three of each, then «y 2 más»), with **«Detalles»** (each step in the Registro's words, what a
-  model answered, «Leyó», «Decisiones», «Modelos»; «Menos» folds it) and «Copiar»; and a chip «Ejecución · 6 nov,
+  «Café» en Gastos»; three of each, then «y 2 más»), with **«Detalles»** (each step in the Registro's words and what it
+  does, what a model answered, «Leyó», «Decisiones», «Modelos»; «Menos» folds it) and «Copiar»; and a chip «Ejecución · 6 nov,
   00:52 ×» that takes both away. **«¿De dónde viene?»**, in a
   row's right-click menu (not in Boni's own collections), asks the server who made the record: one a flow or the
   conversation proposed or wrote opens the map with that run drawn on it and the card titled «¿De dónde viene
@@ -949,7 +953,10 @@ contraseña ni un código aquí» under a question.
   ejecutó», «No llegó», «Acaba aquí», «Parado: una regla de seguridad lo impide», «Parado: lo paraste tú») and what it
   does in one muted line; a model's answer folded under its step, as text; then «Leyó», «Hizo», «Propuso»,
   «Decisiones» and «Modelos» («Planificador · m-ejemplo · 1200 → 80 · 0,004 US$»). No tool id, `$` reference or
-  rule code on screen: «Copiar» alone adds the code after why it stopped («(P2-untrusted-destination)»), to fix it.
+  rule code on screen: «Copiar» alone adds the code after why it stopped («(P2-untrusted-destination)»), to fix it,
+  with each step's line of what it does under it and the run's own status in words on its first line. A stop says
+  why in words: «una regla de seguridad lo impide» (the policy's rules and what a model may read), «se llegó al límite
+  de gasto de hoy», «se llegó a un límite de la petición», «lo paraste tú», «un fallo al hacerlo».
 - **Ajustes → Modelos** (again its place, 2026-11-06: the tab «Modelos» of «Flujos», task 59b, is gone with its declared
   canvas; what every model does and costs is on the map's flows and steps, `docs/sistema.md` §4.4): what configures
   the models: «Usos», a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor),

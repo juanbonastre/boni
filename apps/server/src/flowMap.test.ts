@@ -388,6 +388,53 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(owner("dry1")).toBeNull();
   });
 
+  it("a step that creates in the chosen collection («Crear en la elegida», D-48): one «propone» into the Bandeja, each step once, into every collection it may choose", () => {
+    const w = world();
+    const choose = (tasks: string, events: string) => ({
+      fn: "case",
+      args: [
+        { ref: "$c.choice" },
+        { lit: "Tarea" },
+        { lit: tasks },
+        { lit: "Evento" },
+        { lit: events },
+      ],
+    });
+    store.journal.saveFlow({
+      id: "leer-elegida",
+      name: "Leer y elegir",
+      trigger: { created: keyOf(w.correo) },
+      inputs: [],
+      plan: {
+        version: 1,
+        steps: [
+          { id: "r", op: "read", reader: "read_message", input: { ref: "$text" } },
+          { id: "c", op: "read", reader: "classify", input: { ref: "$text" } },
+          {
+            id: "n_tasks",
+            op: "call",
+            tool: "entities.create",
+            each: { ref: "$r.tasks" },
+            args: {
+              type: choose(keyOf(w.tarea), keyOf(w.evento)),
+              values: { fn: "obj", args: [{ lit: "title" }, { ref: "$item.title" }] },
+            },
+          },
+        ],
+      },
+      layout: null,
+      by: "preset",
+      enabled: true,
+      created: NOW - 40 * DAY,
+    });
+    const m = mapOf(7, w.correo);
+    const out = m.edges.filter((e) => e.from === "flow:leer-elegida" && e.kind === "proposes");
+    expect(out).toHaveLength(1);
+    expect(out[0]?.to).toBe("boni:inbox");
+    expect(out[0]?.steps).toEqual(["n_tasks"]);
+    expect(out[0]?.into).toEqual([`col:${w.evento}`, `col:${w.tarea}`].sort());
+  });
+
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {
     world();
     const m = mapOf(7, null);

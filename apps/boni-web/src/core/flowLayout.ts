@@ -201,6 +201,8 @@ export interface Lens {
   on: boolean;
   happened: boolean;
   pages: boolean;
+  /** What stays on the map whatever the depth: a run's way, from the connector to where it ended (task 90). */
+  keep?: ReadonlySet<string>;
 }
 export const LENS: Lens = {
   center: null,
@@ -311,6 +313,7 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
     };
     walk("up", lens.before);
     walk("down", lens.after);
+    for (const id of lens.keep ?? []) if (ids.has(id)) reach.add(id);
     nodes = nodes.filter((n) => reach.has(n.id));
     // Through the Bandeja, only the arrows of what goes where the lens reached (the conversation's proposals in
     // Libros are not on the way of Tarea's).
