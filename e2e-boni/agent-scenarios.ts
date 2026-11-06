@@ -565,6 +565,7 @@ export const RUN_2 = {
       id: "s1",
       op: "call",
       what: "entities.search",
+      title: "Buscar",
       args: { text: { quote: "informe" } },
       decision: "allow",
       rule: "P1",
@@ -576,6 +577,7 @@ export const RUN_2 = {
       id: "s2",
       op: "call",
       what: "mail.send",
+      title: "Enviar correo",
       args: { to: { ref: "$s1[0].de" }, body: { lit: "Aquí lo tienes" } },
       decision: "stopped",
       rule: null,
@@ -1658,6 +1660,8 @@ const flowStep = (
     deps: string[];
     ran: Record<string, number>;
     into: string[];
+    calls: number;
+    cost: number;
   }> = {},
 ) => ({
   id,
@@ -1957,7 +1961,7 @@ export const MAP = {
       plan: FLOW_PLAN,
       steps: [
         flowStep("m", "call", "entities.get", { title: "Leer", ran: { allow: 42 } }),
-        flowStep("r", "read", "read_message", { ran: { allow: 42 } }),
+        flowStep("r", "read", "read_message", { ran: { allow: 42 }, calls: 42, cost: 0.21 }),
         flowStep("n0_tasks_f", "read", "fill", { each: true, ran: { allow: 12 } }),
         flowStep("n0_tasks", "call", "entities.create", {
           title: "Crear",

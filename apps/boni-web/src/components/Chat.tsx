@@ -26,13 +26,13 @@ import {
   type Pending,
   type Reply,
   type RunDetail,
-  type RunStep,
   type RunSummary,
   reveal,
   type StepWords,
   textOf,
 } from "../core/agent.ts";
 import { deviceZone, today } from "../core/clock.ts";
+import { moneyText, runCopy, runWords } from "../core/runText.ts";
 import type { T } from "../i18n.ts";
 import {
   agentErrorText,
@@ -50,7 +50,6 @@ import {
   openConversation,
   openRecord,
   openSettings,
-  openTrace,
   proposeFromMail,
   removeConversation,
   renameConversation,
@@ -58,7 +57,7 @@ import {
   showAudit,
   showInbox,
   showLog,
-  showMap,
+  showRun,
   stopTurn,
   toast,
   toggleChatList,
@@ -66,7 +65,6 @@ import {
   useStore,
 } from "../store.ts";
 import { ProposalCard, RequestCard, useInboxQueue } from "./InboxCards.tsx";
-import { RunCanvas } from "./RunCanvas.tsx";
 
 /**
  * The conversation with Boni's agent (docs/nucleo.md, 7.14; docs/conversacion.md). Everything here is painted by
@@ -640,7 +638,7 @@ function Turn({ entry }: { entry: ChatEntry }) {
           </button>
         )}
         {r?.run && (
-          <button type="button" className="link-btn turn-trace" onClick={() => openTrace(r.run)}>
+          <button type="button" className="link-btn turn-trace" onClick={() => showRun(r.run)}>
             {t("log.trace")}
           </button>
         )}
@@ -1323,29 +1321,6 @@ export function LogView() {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null | "loading">(null);
   const [groups, setGroups] = useState<Set<string>>(new Set());
-  // Arrived through «Recorrido» (a turn, a proposal, the map): that run opens by itself.
-  const openRun = useStore((s) => s.openRun);
-  const [asked, setAsked] = useState<string | null>(null);
-  useEffect(() => {
-    if (!openRun) return;
-    useStore.setState({ openRun: null });
-    setOpen(openRun);
-    setAsked(openRun);
-    setDetail("loading");
-    void loadRunDetail(openRun).then(setDetail);
-  }, [openRun]);
-  // Asked for inside a folded group of quiet runs: the group unfolds, once.
-  useEffect(() => {
-    if (!asked) return;
-    for (const e of logEntries(runs))
-      if (!("run" in e) && e.quiet.some((r) => r.id === asked)) {
-        const first = (e.quiet[0] as RunSummary).id;
-        setGroups((g) => (g.has(first) ? g : new Set([...g, first])));
-        setAsked(null);
-      }
-  }, [asked, runs]);
-  // One older than the latest runs (a record's «¿De dónde viene?» of last month) is shown on top, by itself.
-  const listed = !!open && runs.some((r) => r.id === open);
   const when = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
     dateStyle: "short",
     timeStyle: "short",
@@ -1391,11 +1366,6 @@ export function LogView() {
       )}
       {accuracy.length > 0 && <Accuracy t={t} areas={accuracy} lang={lang} />}
       <ul className="log-list">
-        {open && !listed && (
-          <li className="log-run log-asked">
-            <RunSteps t={t} detail={detail} />
-          </li>
-        )}
         {logEntries(runs).map((e) => {
           if ("run" in e) return line(e.run);
           const first = e.quiet[0] as RunSummary;
@@ -1437,89 +1407,48 @@ export function LogView() {
  * journal and the audit; «Copiar» puts it in the clipboard to paste in a chat.
  */
 function RunSteps({ t, detail }: { t: T; detail: RunDetail | null | "loading" }) {
+  const lang = useStore((s) => s.settings.language);
   if (detail === "loading") return <p className="muted small log-detail">{t("log.loading")}</p>;
   if (!detail) return <p className="muted small log-detail">{t("log.noDetail")}</p>;
-  const decisionText = (s: RunStep) =>
-    `${s.error ? agentErrorText(t, s.error) : t(`log.decision.${s.decision ?? "none"}` as Parameters<T>[0])}${s.rule ? ` (${s.rule})` : ""}`;
-  const areaName = (a: string) => {
-    const key = `log.area.${a}` as Parameters<T>[0];
-    const v = t(key);
-    return v === key ? a : v;
-  };
-  const read = detail.read.map(
-    (r) =>
-      `${r.collection}: ${r.titles.map((x) => `«${x}»`).join(", ")}${r.n > r.titles.length ? ` +${r.n - r.titles.length}` : ""}`,
-  );
-  const did = detail.changes.map(
-    (c) =>
-      `${t(`log.change.${c.action}` as Parameters<T>[0], { title: c.title, collection: c.collection })}${c.undone ? ` ${t("log.change.undone")}` : ""}`,
-  );
-  const proposed = detail.proposals.map(
-    (p) => `«${p.title}» · ${t(`log.proposal.${p.status}` as Parameters<T>[0])}`,
-  );
-  const decided = detail.decisions.map(
-    (d) =>
-      `${areaName(d.area)} · ${Math.round(d.p * 100)} % · ${t(`log.outcome.${d.outcome}` as Parameters<T>[0])}${d.result ? ` · ${t(`log.judged.${d.result}` as Parameters<T>[0])}` : ""}`,
-  );
-  const models = detail.models.map(
-    (m) =>
-      `${m.role} · ${m.model} · ${m.input} → ${m.output}${m.cost !== null ? ` · ${m.cost.toFixed(4)} $` : ""}`,
-  );
+  // Its words, as the map's card and «Copiar» say them (core/runText.ts): the drawing is the map's (task 90).
+  const money = (usd: number) => moneyText(lang, usd);
+  const w = runWords(t, detail, money);
   const copy = () => {
-    const lines = [
-      `Boni · ${t("log.trace")} · ${detail.status}${detail.started ? ` · ${new Date(detail.started).toISOString()}` : ""} (${t("log.copyNote")})`,
-      ...(detail.request !== null ? [`${t("log.request")}: ${detail.request}`] : []),
-      `${t("log.steps")}:`,
-      ...detail.steps.flatMap((s, i) => [
-        `${i + 1}. ${s.what} — ${decisionText(s)}${s.deps.length ? ` ← ${s.deps.join(", ")}` : ""}${s.args ? ` · ${s.args}` : ""}`,
-        ...s.answers.map((a) => `   ${t("log.answer")}: ${a}`),
-      ]),
-      ...[
-        [t("log.read"), read],
-        [t("log.did"), did],
-        [t("log.proposed"), proposed],
-        [t("log.decisions"), decided],
-        [t("log.models"), models],
-      ].flatMap(([name, items]) =>
-        (items as string[]).length ? [`${name}:`, ...(items as string[]).map((x) => `- ${x}`)] : [],
-      ),
-    ];
-    void navigator.clipboard.writeText(lines.join("\n")).then(() => toast(t("log.copied")));
+    const when = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
+      dateStyle: "short",
+      timeStyle: "short",
+      timeZone: deviceZone(),
+    }).format(detail.started);
+    void navigator.clipboard
+      .writeText(runCopy(t, detail, w, when))
+      .then(() => toast(t("log.copied")));
   };
   return (
     <div className="log-detail small trace">
       <div className="trace-tools">
+        {/* Its drawing: the map, with the way it went lit (docs/sistema.md §4.4; task 90). */}
+        <button type="button" className="link-btn small" onClick={() => showRun(detail.id)}>
+          <Workflow size={13} strokeWidth={1.8} />
+          {t("log.trace")}
+        </button>
         <button type="button" className="link-btn small" onClick={copy}>
           <Copy size={13} strokeWidth={1.8} />
           {t("log.copy")}
         </button>
-        {/* Where this run sits among the rest (docs/sistema.md §4.4): its flow, or the conversation. */}
-        <button
-          type="button"
-          className="link-btn small"
-          onClick={() =>
-            showMap(detail.flow ? `flow:${detail.flow}` : "boni:chat", { run: detail.id })
-          }
-        >
-          <Workflow size={13} strokeWidth={1.8} />
-          {t("map.show")}
-        </button>
       </div>
       {detail.request !== null && <p className="log-request">{detail.request}</p>}
-      <RunCanvas detail={detail} />
       <ol className="log-steps">
-        {detail.steps.map((s) => (
+        {w.steps.map((s, i) => (
           <li
             key={s.id}
             id={`trace-step-${s.id}`}
-            className={s.error ? "log-step failed" : "log-step"}
+            className={detail.steps[i]?.error ? "log-step failed" : "log-step"}
           >
-            <span className="log-step-what">{s.what}</span>{" "}
-            <span className="muted">{decisionText(s)}</span>
-            {s.deps.length > 0 && <span className="muted trace-deps"> ← {s.deps.join(", ")}</span>}
-            {s.args && <code className="log-args">{s.args}</code>}
-            {s.answers.map((a, i) => (
-              <details key={`${s.id}-${i}`} className="trace-answer">
+            <span className="log-step-what">{s.name}</span>{" "}
+            <span className="muted">— {s.line}</span>
+            {s.desc && <span className="log-step-desc muted">{s.desc}</span>}
+            {s.answers.map((a, k) => (
+              <details key={`${s.id}-${k}`} className="trace-answer">
                 <summary>{t("log.answer")}</summary>
                 <pre>{a}</pre>
               </details>
@@ -1527,11 +1456,11 @@ function RunSteps({ t, detail }: { t: T; detail: RunDetail | null | "loading" })
           </li>
         ))}
       </ol>
-      <TraceBlock name={t("log.read")} items={read} />
-      <TraceBlock name={t("log.did")} items={did} />
-      <TraceBlock name={t("log.proposed")} items={proposed} />
-      <TraceBlock name={t("log.decisions")} items={decided} />
-      <TraceBlock name={t("log.models")} items={models} />
+      <TraceBlock name={t("log.read")} items={w.read} />
+      <TraceBlock name={t("log.did")} items={w.did} />
+      <TraceBlock name={t("log.proposed")} items={w.proposed} />
+      <TraceBlock name={t("log.decisions")} items={w.decided} />
+      <TraceBlock name={t("log.models")} items={w.models} />
     </div>
   );
 }

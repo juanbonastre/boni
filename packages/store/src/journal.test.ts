@@ -87,6 +87,81 @@ describe("the journal's model calls by when (task 43)", () => {
   });
 });
 
+describe("a flow's steps: their model calls (task 90)", () => {
+  it("counts each step's calls and cost in a period, its tries and other flows apart, from an index (A-15)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "boni-journal-"));
+    const path = join(dir, "user.db");
+    const store = openUserStore(path);
+    cleanups.push(() => {
+      store.close();
+      rmSync(dir, { recursive: true, force: true });
+    });
+    const j = store.journal;
+    const start = Date.UTC(2026, 9, 1);
+    // A model's texts as big as a mail's reading: the rows that hold them must not be read to count.
+    const big = "x".repeat(20_000);
+    const run = (id: string, flow: string, origin: string, at: number) =>
+      j.startRun({ id, turn: null, origin, device: null, started: at, flow, flowVersion: 1 });
+    const call = (r: string, step: string | null, cost: number, at: number) =>
+      j.modelCall({
+        run: r,
+        role: step ? "reader" : "planner",
+        provider: "anthropic",
+        model: "claude-haiku-4-5",
+        promptHash: "h",
+        request: { text: big },
+        response: { text: big },
+        usage: { input: 1000, output: 100, cost },
+        at,
+        step,
+      });
+    store.batch(() => {
+      for (let i = 0; i < 30; i++) {
+        const at = start + i * DAY;
+        run(`m${i}`, "leer-correo", "background", at);
+        call(`m${i}`, "r", 0.002, at + 10);
+        if (i % 3 === 0) call(`m${i}`, "n0_tasks_f", 0.001, at + 20);
+      }
+      // A try of the editor, another flow, a planner's call and one before the period: none counts.
+      run("t1", "leer-correo", "test", start + DAY);
+      call("t1", "r", 0.5, start + DAY + 10);
+      run("o1", "otro", "background", start + DAY);
+      call("o1", "r", 0.5, start + DAY + 10);
+      run("p1", "leer-correo", "background", start + 2 * DAY);
+      call("p1", null, 0.5, start + 2 * DAY + 10);
+      run("old", "leer-correo", "background", start - DAY);
+      call("old", "r", 0.5, start - DAY + 10);
+    });
+    const got = j
+      .callsByStep("leer-correo", start, start + 30 * DAY)
+      .sort((a, b) => a.step.localeCompare(b.step));
+    expect(got.map((x) => ({ ...x, cost: Math.round(x.cost * 1000) / 1000 }))).toEqual([
+      { step: "n0_tasks_f", calls: 10, cost: 0.01 },
+      { step: "r", calls: 30, cost: 0.06 },
+    ]);
+    // Served by the index that covers what it sums: the rows with the texts are never read.
+    const db = new DatabaseSync(path);
+    try {
+      const plan = (
+        db
+          .prepare(
+            `EXPLAIN QUERY PLAN SELECT c.step AS step, count(*) AS calls, sum(coalesce(json_extract(c.usage, '$.cost'), 0)) AS cost
+             FROM runs r JOIN model_calls c ON c.run = r.id
+             WHERE r.flow = ? AND r.started >= ? AND r.started < ? AND r.origin != 'test' AND c.step IS NOT NULL
+             GROUP BY c.step`,
+          )
+          .all("leer-correo", 0, 1) as { detail: string }[]
+      )
+        .map((r) => r.detail)
+        .join("; ");
+      expect(plan).toContain("COVERING INDEX model_calls_step");
+      expect(plan).toContain("runs_flow");
+    } finally {
+      db.close();
+    }
+  });
+});
+
 describe("flows (docs/flujos.md, F1)", () => {
   it("keeps a flow as versions, the latest being the flow; a run says which it executed", () => {
     const dir = mkdtempSync(join(tmpdir(), "boni-journal-"));

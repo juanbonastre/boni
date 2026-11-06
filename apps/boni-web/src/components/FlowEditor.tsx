@@ -69,7 +69,8 @@ import {
   takeValue,
   typeKeysOf,
 } from "../core/flowEdit.ts";
-import { segmentsOf, stepLayout } from "../core/flowLayout.ts";
+import { choiceOf, segmentsOf, stepLayout } from "../core/flowLayout.ts";
+import { moneyText, stepDesc, whyText } from "../core/runText.ts";
 import { useKeptNodes } from "../core/useKeptNodes.ts";
 import { agentApi, errorText, runFlowInChat, showMap, toast, useStore } from "../store.ts";
 import {
@@ -141,6 +142,10 @@ type StepCard = Node<
     step: FlowStep;
     name: string;
     detail: string | null;
+    /** What it does, in one line (its tooltip). */
+    desc: string | null;
+    /** Its model calls of the period and their cost, in words. */
+    cost: string | null;
     ran: Record<string, number>;
     bad: boolean;
     on: boolean;
@@ -212,7 +217,7 @@ export function testLine(t: T, x: TestStepView): string {
     return x.piece?.piece === "mail.rule" ? t("flows.piece.ruleSkip") : t("run.node.end");
   if (x.decision === "skip") return t("flows.test.skipped");
   if (x.decision === "deny" || x.decision === "stopped")
-    return t("flows.test.stopped", { why: x.rule ?? x.error ?? "" });
+    return t("flows.test.stopped", { why: whyText(t, x.rule ?? x.error ?? "") });
   if (x.piece) return pieceLine(t, x.piece);
   const o = x.out;
   if (o.t === "list") return t(o.n === 1 ? "flows.test.items.one" : "flows.test.items", { n: o.n });
@@ -243,6 +248,7 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
   return (
     <div
       className={`fl-card ${step.op === "read" ? "model" : "code"}${data.bad ? " bad" : ""}${data.on ? " on" : ""}${data.test === null ? " idle" : ""}${data.feeds ? " feeds" : ""}`}
+      title={data.desc ? `${data.name} — ${data.desc}` : data.name}
     >
       <Handle type="target" position={Position.Top} id="t" />
       <Handle type="target" position={Position.Right} id="ri" className="fl-hidden-handle" />
@@ -270,6 +276,7 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
               {data.ran.propose ? ` · ${t("flows.proposed", { n: data.ran.propose })}` : ""}
               {data.ran.deny ? ` · ${t("flows.denied", { n: data.ran.deny })}` : ""}
               {data.ran.end ? ` · ${t("flows.ended", { n: data.ran.end })}` : ""}
+              {data.cost ? ` · ${data.cost}` : ""}
             </div>
           )}
         </div>
@@ -386,6 +393,8 @@ function nodesOf(
       : givenNames(draft.trigger);
   const ids = new Set(draft.plan.steps.map((s) => s.id));
   const ran = new Map(detail.nodes.map((n) => [n.id, n.ran]));
+  const numbers = new Map(detail.nodes.map((n) => [n.id, n]));
+  const lang = useStore.getState().settings.language;
   const bad = new Set(problems.map((p) => p.step ?? TRIGGER));
   const collection = (s: FlowStep) => {
     const keys = typeKeysOf((s.args as Record<string, unknown> | undefined)?.type);
@@ -448,6 +457,16 @@ function nodesOf(
               ? (detail.nodes.find((n) => n.id === s.id)?.title ?? stepName(t, s, catalog))
               : stepName(t, s, catalog),
           detail: detailText,
+          desc: stepDesc(t, {
+            op: s.op,
+            what: String(s.op === "read" ? s.reader : s.op === "call" ? s.tool : s.op),
+          }),
+          cost: (() => {
+            const x = numbers.get(s.id);
+            return x?.calls
+              ? `${t(x.calls === 1 ? "map.calls.one" : "map.callsShort", { n: x.calls })}${x.cost ? ` · ${moneyText(lang, x.cost)}` : ""}`
+              : null;
+          })(),
           ran: r,
           bad: bad.has(s.id),
           on: selected === s.id,
@@ -466,6 +485,18 @@ function nodesOf(
     ),
   );
   const plusLabel = t("flows.addHere");
+  // A lane by the collection its steps write in («Tarea»), not the whole option the decider read.
+  const lanes = new Map<string, string>();
+  for (const st of draft.plan.steps) {
+    const c = choiceOf(st as never);
+    if (!c || lanes.has(c.value)) continue;
+    const keys = typeKeysOf((st.args as Record<string, unknown> | undefined)?.type);
+    if (keys.length === 1)
+      lanes.set(
+        c.value,
+        catalog?.collections.find((x) => x.key === keys[0])?.name ?? (keys[0] as string),
+      );
+  }
   const edges: Edge[] = l.links.map((k) => ({
     id: `o:${k.from}>${k.to}`,
     source: k.from,
@@ -474,7 +505,7 @@ function nodesOf(
     targetHandle: "t",
     type: "order",
     data: {
-      lane: k.lane ?? null,
+      lane: k.lane ? (lanes.get(k.lane) ?? k.lane) : null,
       before: catalog && onPlus && !inLane.has(k.to) ? k.to : null,
       onPlus: onPlus ?? (() => undefined),
       plusLabel,

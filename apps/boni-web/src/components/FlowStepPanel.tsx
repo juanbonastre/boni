@@ -17,28 +17,23 @@ import {
   setAt,
   typeKeysOf,
 } from "../core/flowEdit.ts";
+import { stepName as nameOfStep, stepDesc } from "../core/runText.ts";
 import { useStore } from "../store.ts";
 import { ExprField } from "./ExprField.tsx";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
 type Refs = readonly { ref: string; t: string }[];
 
-/** A step's name in a word or two: a reader's as the flows name it, a tool's title, a question, a reply. */
+/** A step of a plan by its name (core/runText.ts, the same everywhere, I-27): a tool's title from the catalogue. */
 export function stepName(
   t: T,
   s: { op: string; [k: string]: unknown },
   catalog: FlowCatalog | null,
 ): string {
-  if (s.op === "read") {
-    const k = `flow.node.${String(s.reader)}`;
-    const name = t(k);
-    return name === k ? String(s.reader) : name;
-  }
-  if (s.op === "call")
-    return catalog?.tools.find((x) => x.name === s.tool)?.title ?? String(s.tool);
-  if (s.op === "ask") return t("flows.op.ask");
-  if (s.op === "reply") return t("flows.op.reply");
-  return String(s.op);
+  const what = String(s.op === "read" ? s.reader : s.op === "call" ? s.tool : s.op);
+  const title =
+    s.op === "call" ? (catalog?.tools.find((x) => x.name === s.tool)?.title ?? null) : null;
+  return nameOfStep(t, { op: s.op, what, title });
 }
 
 /** What a step goes over, in words: «cada tarea» (its `each`), «la invitación» (it runs only with one); null. */
@@ -435,6 +430,14 @@ export function FlowStepPanel({
           <X size={14} strokeWidth={1.8} />
         </button>
       </div>
+      {/* What it does, in one line (task 90: «Regla del remitente» or «Ya propuesto» alone said little). */}
+      {(() => {
+        const desc = stepDesc(t, {
+          op: String(step.op),
+          what: String(step.op === "read" ? step.reader : step.op === "call" ? step.tool : step.op),
+        });
+        return desc ? <p className="flow-step-desc muted">{desc}</p> : null;
+      })()}
       {problems.length > 0 && (
         <ul className="flow-problems" aria-label={t("flows.problems")}>
           {problems.map((p) => (

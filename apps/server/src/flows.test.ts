@@ -168,6 +168,19 @@ describe("flows (docs/flujos.md, F1)", () => {
       j.step({ run, step: "m", kind: "call", decision: "allow", rule: "P1", detail: null, at });
       j.step({ run, step: "r", kind: "read", decision: "allow", rule: "P1", detail: null, at });
       j.step({ run, step: "c", kind: "read", decision: "allow", rule: "P1", detail: null, at });
+      // Its reading's model call, on its step (task 90); the planner's has none.
+      j.modelCall({
+        run,
+        role: "reader",
+        provider: "anthropic",
+        model: "claude-haiku-4-5",
+        promptHash: "h",
+        request: {},
+        response: {},
+        usage: { input: 900, output: 60, cost: 0.0021 },
+        at: at + 1,
+        step: "r",
+      });
     }
     j.step({
       run: "run-1",
@@ -213,7 +226,10 @@ describe("flows (docs/flujos.md, F1)", () => {
       title: null,
       when: false,
       each: false,
+      calls: 2,
+      cost: 0.0042,
     });
+    expect(byId.get("m")?.calls).toBeUndefined();
     expect(byId.get("r")?.deps.sort()).toEqual(["guide", "known", "modules", "text", "userIn"]);
     expect(byId.get("c")).toMatchObject({ op: "read", what: "classify", when: true });
     expect(byId.get("c")?.deps).toContain("r");

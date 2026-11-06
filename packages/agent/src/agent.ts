@@ -340,6 +340,8 @@ interface RunState {
   origin: Origin;
   plan: Plan;
   pc: number;
+  /** The step being run, for the model calls it makes (the journal keeps which step answered). */
+  stepNow?: string | null;
   iter: number;
   partial: Val[];
   control: Label | null;
@@ -1208,6 +1210,7 @@ export class Agent {
         response: res.json,
         usage: res.usage,
         at: this.now(),
+        step: st.stepNow ?? null,
       });
       throw new Stop("stopped-by-juan");
     }
@@ -1221,6 +1224,7 @@ export class Agent {
       response: res.json,
       usage: res.usage,
       at: this.now(),
+      step: st.stepNow ?? null,
     });
     this.audit(st, {
       by: `model:${req.role}:${provider.id}/${res.model}`,
@@ -1433,7 +1437,12 @@ export class Agent {
       case "call":
         return this.execCall(st, step, control);
       case "read":
-        return this.execRead(st, step, control);
+        st.stepNow = step.id;
+        try {
+          return await this.execRead(st, step, control);
+        } finally {
+          st.stepNow = null;
+        }
       case "ask":
         return this.execAsk(st, step, control);
       case "reply": {

@@ -77,6 +77,7 @@ import {
   type LoginAnswer,
   type LoginForm,
   openUrl,
+  phoneLayout,
   type SettingsPatch,
 } from "./host.ts";
 import { type T, translator } from "./i18n.ts";
@@ -137,6 +138,8 @@ export type View =
         run?: string;
         /** «¿De dónde viene?»: the record asked about (its title) and where it comes from. */
         origin?: { title: string; origin: Origin };
+        /** On the phone, where it was asked from (the Registro, the Bandeja): Back returns there. */
+        back?: { tab: Tab; view: View };
         n: number;
       };
     }
@@ -326,8 +329,6 @@ interface State {
   /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
   inboxOpen: boolean;
   runs: RunSummary[];
-  /** A run the Registro opens on arrival («Recorrido» from a turn or a proposal, task 52). */
-  openRun: string | null;
   /** The Registro's «Acierto»: Boni's decisions per area (docs/fiabilidad.md). */
   accuracy: AreaAccuracy[];
   /** «Aprender» (docs/preferencias.md §5): whether Boni's learners may suggest anything on their own. */
@@ -453,7 +454,6 @@ export const useStore = create<State>(() => ({
   decideErrors: {},
   inboxOpen: false,
   runs: [],
-  openRun: null,
   accuracy: [],
   learning: true,
   autoAccept: null,
@@ -813,8 +813,10 @@ export function goBack(): boolean {
   else if (s.view.kind === "chart" && s.view.drill) setChartDrill(null);
   else if (s.view.kind === "chart") showHome();
   else if (s.view.kind === "inbox" || s.view.kind === "log") showChat();
-  // A flow's page goes back to «Flujos».
+  // A flow's page goes back to «Flujos»; the map asked for from another place, back to it.
   else if (s.view.kind === "flows" && s.view.flow) showFlows();
+  else if (s.view.kind === "flows" && s.view.map?.back)
+    set({ tab: s.view.map.back.tab, view: s.view.map.back.view });
   // The phone's «Páginas» goes back a step at a time: a record to its collection, a collection or a page to the tree.
   else if (s.tab === "pages" && s.view.kind === "row") {
     void flushRowBody();
@@ -1322,11 +1324,6 @@ export const showInbox = () => set({ view: { kind: "inbox" } });
 export const showLog = () => {
   set({ view: { kind: "log" } });
   void loadRuns();
-};
-/** «Recorrido»: the Registro with that run open (from a turn of the chat or a proposal's page). */
-export const openTrace = (run: string) => {
-  set({ openRun: run });
-  showLog();
 };
 
 /** Why a run stopped, in words: a fixed code from the server, never its data. */
@@ -2893,8 +2890,13 @@ export function showMapOf(type: string, row: string) {
 export const showMap = (
   center: string | null,
   o: { pages?: boolean; run?: string; origin?: { title: string; origin: Origin } } = {},
-) =>
+) => {
+  const s = get();
+  // On the phone «Flujos» lives in «Páginas»: the map opens there, and Back returns to where it was asked from (a
+  // run's «Recorrido» in the Registro or the Bandeja, task 90).
+  const away = phoneLayout() && s.tab !== "pages";
   set({
+    ...(away ? { tab: "pages" as const } : {}),
     view: {
       kind: "flows",
       map: {
@@ -2903,12 +2905,21 @@ export const showMap = (
         // A run drawn on it (§4.4, «una ejecución encima»): its flow unfolded, the way it went.
         ...(o.run ? { run: o.run } : {}),
         ...(o.origin ? { origin: o.origin } : {}),
+        ...(away ? { back: { tab: s.tab, view: s.view } } : {}),
         n: ++mapAsks,
       },
     },
     panel: null,
     settingsOpen: false,
   });
+};
+
+/**
+ * A run's «Recorrido» (task 90; Juan, 2026-11-06: «teniendo el mapa, no tiene sentido tener lo del recorrido»): the
+ * map with that run drawn on it, centred on where it belongs (its flow, the conversation, the reviewer, the Bandeja),
+ * its words in its card. The Registro keeps the list of runs and each one's words.
+ */
+export const showRun = (run: string) => showMap(null, { run });
 
 /**
  * «¿De dónde viene?» of a record (docs/sistema.md §4.4): what a flow or the conversation proposed or wrote, on the map

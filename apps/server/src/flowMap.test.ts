@@ -400,8 +400,10 @@ describe("Boni's map, computed (F8; A-16)", () => {
   it("is computed in time with a year of mail (A-15)", () => {
     const w = world();
     const type = keyOf(w.tarea);
+    let inPeriod = 0;
     for (let i = 0; i < 12_000; i++) {
       const at = NOW - (i % 365) * DAY - (i % 7) * 60_000;
+      if (at >= NOW - 30 * DAY && at < NOW) inPeriod++;
       store.journal.startRun({
         id: `y${i}`,
         turn: null,
@@ -427,16 +429,21 @@ describe("Boni's map, computed (F8; A-16)", () => {
         provider: "anthropic",
         model: "claude-haiku-4-5",
         promptHash: "h",
-        request: { kind: "read_message" },
+        // As big as a mail's reading: counting a step's calls never reads these texts (task 90).
+        request: { kind: "read_message", text: "x".repeat(6000) },
         response: {},
         usage: { input: 100, output: 10, cost: 0.001 },
         at,
+        step: "r",
       });
     }
     const t0 = performance.now();
     const m = mapOf(30, w.correo);
     const ms = performance.now() - t0;
-    expect(m.nodes.find((n) => n.id === "flow:leer-correo")?.runs).toBeGreaterThan(900);
+    const leer = m.nodes.find((n) => n.id === "flow:leer-correo");
+    expect(leer?.runs).toBeGreaterThan(900);
+    // Its reading's calls of the period, on its step.
+    expect(leer?.steps?.find((s) => s.id === "r")?.calls).toBe(inPeriod);
     expect(ms).toBeLessThan(1500);
     // What is measured is the map (above); writing a year of runs first takes longer than vitest's 5 s on CI's machine.
   }, 30_000);

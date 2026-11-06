@@ -63,6 +63,8 @@ export interface ModelCallRow {
   response: unknown;
   usage: unknown;
   at: number;
+  /** The step of the run it answered in (a reader, the decider of a fill or a choice); none for the planner. */
+  step?: string | null;
 }
 export interface ProposalRow {
   id: string;
@@ -265,6 +267,12 @@ export interface Journal {
   proposalAcceptedNear(at: number, ms: number): ProposalRow | null;
   /** The proposals decided in a period, by the run that made them and what was decided (whose decisions teach). */
   proposalsDecidedByRun(from: number, to: number): { run: string; status: string; n: number }[];
+  /** A flow's model calls of a period by the step they answered in, with their cost (US dollars); no dry runs. */
+  callsByStep(
+    flow: string,
+    from: number,
+    to: number,
+  ): { step: string; calls: number; cost: number }[];
   /**
    * The proposals made in a period by their run, the collection they propose in (its key, as the tool's arguments
    * say it) and what became of them (the map's arrows: each run's owner, a flow or the conversation, says whose).
@@ -533,7 +541,7 @@ export function openJournal(db: DatabaseSync): Journal {
       Number(
         db
           .prepare(
-            "INSERT INTO model_calls (run, role, provider, model, prompt_hash, request, response, usage, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO model_calls (run, role, provider, model, prompt_hash, request, response, usage, at, step) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           )
           .run(
             r.run,
@@ -545,6 +553,7 @@ export function openJournal(db: DatabaseSync): Journal {
             j(r.response),
             j(r.usage),
             r.at,
+            r.step ?? null,
           ).lastInsertRowid,
       ),
     modelCalls: (run) =>
@@ -561,6 +570,7 @@ export function openJournal(db: DatabaseSync): Journal {
           response: p(r.response),
           usage: p(r.usage),
           at: r.at as number,
+          step: (r.step as string | null) ?? null,
         })),
     modelCallById: (id) => {
       const r = db.prepare("SELECT * FROM model_calls WHERE rowid = ?").get(id);
@@ -810,6 +820,18 @@ export function openJournal(db: DatabaseSync): Journal {
         .get(at - ms, at + ms, at) as Record<string, unknown> | undefined;
       return r ? proposalOf(r) : null;
     },
+    callsByStep: (flow, from, to) =>
+      db
+        .prepare(
+          // The flow's runs of the period by their index (flow, started), then their calls by `model_calls_step`,
+          // which covers what is summed: no row with a model's texts is read (A-15).
+          `SELECT c.step AS step, count(*) AS calls, sum(coalesce(json_extract(c.usage, '$.cost'), 0)) AS cost
+           FROM runs r JOIN model_calls c ON c.run = r.id
+           WHERE r.flow = ? AND r.started >= ? AND r.started < ? AND r.origin != 'test' AND c.step IS NOT NULL
+           GROUP BY c.step`,
+        )
+        .all(flow, from, to)
+        .map((r) => ({ step: r.step as string, calls: Number(r.calls), cost: Number(r.cost) })),
     proposalsDecidedByRun: (from, to) =>
       db
         .prepare(

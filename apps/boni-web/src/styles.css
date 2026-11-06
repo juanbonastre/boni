@@ -3081,6 +3081,11 @@ html.widget-page body {
   flex-direction: column;
   gap: 4px;
 }
+/* A step's line of what it does, under its name (task 90); a stopped step's name in red. */
+.log-step-desc {
+  display: block;
+  font-size: 12px;
+}
 .log-step.failed .log-step-what {
   color: var(--bad);
 }
@@ -9089,6 +9094,12 @@ button.rows-panel-row:hover {
   font-size: 11.5px;
   font-weight: 600;
 }
+/* A step's panel: what it does, in one line under its name. */
+.flow-step-desc {
+  margin: -4px 0 10px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
 /* «Crear en la elegida»: the collections it chooses among, said, not chosen here. */
 .flow-chosen {
   font-size: 12.5px;
@@ -9611,6 +9622,16 @@ button.rows-panel-row:hover {
 .mp-group select {
   width: auto;
 }
+.mp-depth input[type="range"] {
+  width: 96px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.mp-depth-value {
+  min-width: 3ch;
+  font-variant-numeric: tabular-nums;
+}
 .mp-count {
   min-width: 16px;
   padding: 0 4px;
@@ -9918,6 +9939,10 @@ button.rows-panel-row:hover {
   border-color: transparent;
   color: var(--accent);
   font-weight: 600;
+  /* A lane's name fits over its lane (task 90: «Tarea (p. ej.: …)» overlapped the next). */
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .mp-empty {
   flex: 1;
@@ -10048,6 +10073,21 @@ button.rows-panel-row:hover {
   height: calc(100dvh - 470px);
   min-height: 320px;
 }
+/* On the phone a run's card sits above the map, the whole width, never over it; the page scrolls (task 90). */
+.m-flows .mp-stage:has(> .mp-way) {
+  flex-direction: column;
+  height: auto;
+}
+.m-flows .mp-stage > .mp-way {
+  position: static;
+  max-width: none;
+  margin: 8px 8px 0;
+  box-shadow: none;
+}
+.m-flows .mp-stage:has(> .mp-way) > .react-flow {
+  flex: none;
+  height: max(320px, calc(100dvh - 470px));
+}
 .m-flows .flow-crumbs {
   margin-top: 0;
 }
@@ -10059,10 +10099,77 @@ button.rows-panel-row:hover {
   height: calc(100vh - 300px);
 }
 
-/* A run on the map (§4.4): its steps that ran in `--accent`, what never ran faded, a stop in `--bad`. */
-.mp-step.run-ran {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+/* A run on the map (§4.4; task 90, Juan, 2026-11-06: «resaltar… con otro color como anaranjado y con una animación
+   elegante»): its way in orange (`--c2`), from where it came in to where it ended, each box lit in its turn along it
+   (`--way-i`) and a light moving along its arrows; what never ran faded, a stop in `--bad`. No motion when the system
+   asks for less. */
+.mp-step.run-ran,
+.mp-card.way {
+  border-color: var(--c2);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c2) 30%, transparent);
+  animation: mp-way-in 480ms ease-out both;
+  animation-delay: calc(var(--way-i, 0) * 110ms);
+}
+.mp-edge.way {
+  stroke: var(--c2);
+  stroke-width: 2.4;
+  stroke-dasharray: 7 6;
+  opacity: 1;
+  animation:
+    mp-way-flow 1.1s linear infinite,
+    mp-way-in 480ms ease-out both;
+  animation-delay: 0s, calc(var(--way-i, 0) * 110ms);
+}
+@keyframes mp-way-in {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes mp-way-flow {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mp-step.run-ran,
+  .mp-card.way,
+  .mp-edge.way {
+    animation: none;
+  }
+}
+/* An unfolded flow's first box: what starts it. */
+.mp-trig {
+  min-height: 0;
+}
+.mp-trig .mp-name {
+  font-weight: 600;
+}
+/* The run's card: its words under «Detalles», its tools at the bottom. */
+.mp-way-more {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 42vh;
+  overflow: auto;
+  align-self: stretch;
+}
+.mp-way-more pre {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.mp-way-block ul {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}
+.mp-way-tools {
+  display: flex;
+  gap: 12px;
 }
 .mp-step.run-idle {
   opacity: 0.45;

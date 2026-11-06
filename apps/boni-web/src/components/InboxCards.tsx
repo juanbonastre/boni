@@ -33,11 +33,10 @@ import {
   loadInbox,
   mailboxHost,
   openProposal,
-  openTrace,
   openWebmail,
   peekMail,
   rejectProposal,
-  showMap,
+  showRun,
   toggleInbox,
   useStore,
 } from "../store.ts";
@@ -575,21 +574,13 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
                   void openProposal(p.id);
                 }}
               />
+              {/* Its Recorrido: the map with the run that proposed it drawn on it (task 90). */}
               {p.run && (
                 <MenuRow
                   label={t("log.trace")}
                   onClick={() => {
                     close();
-                    openTrace(p.run as string);
-                  }}
-                />
-              )}
-              {p.run && (
-                <MenuRow
-                  label={t("map.show")}
-                  onClick={() => {
-                    close();
-                    showMap(p.madeBy ? `flow:${p.madeBy}` : "boni:chat", { run: p.run as string });
+                    showRun(p.run as string);
                   }}
                 />
               )}
@@ -1145,24 +1136,14 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
         <div className="pp-title-row">
           <h2 className="pp-title">{c?.title ?? headline(t, p, c)}</h2>
           {fix.button}
+          {/* Its Recorrido: the map with the run that proposed it drawn on it (task 90). */}
           {p.run && (
             <button
               type="button"
               className="btn ghost small"
-              onClick={() => openTrace(p.run as string)}
+              onClick={() => showRun(p.run as string)}
             >
               {t("log.trace")}
-            </button>
-          )}
-          {p.run && (
-            <button
-              type="button"
-              className="btn ghost small"
-              onClick={() =>
-                showMap(p.madeBy ? `flow:${p.madeBy}` : "boni:chat", { run: p.run as string })
-              }
-            >
-              {t("map.show")}
             </button>
           )}
         </div>

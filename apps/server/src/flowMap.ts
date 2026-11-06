@@ -325,6 +325,7 @@ function makeMap(
         return t ? (nodes.get(colId(t))?.name ?? null) : null;
       },
       counts,
+      j.callsByStep(f.id, from, to),
     );
     const p = proposed.get(`${id}|`);
     const starts =

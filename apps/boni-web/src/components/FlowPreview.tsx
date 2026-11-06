@@ -24,6 +24,7 @@ import { Bot, Braces, HelpCircle, MessageSquare, Zap } from "lucide-react";
 import { memo, useEffect, useMemo } from "react";
 import type { FlowProposalView } from "../core/agent.ts";
 import { stepLayout } from "../core/flowLayout.ts";
+import { stepName } from "../core/runText.ts";
 import { useStore } from "../store.ts";
 import { triggerText } from "./FlowEditor.tsx";
 import { inputName } from "./FlowStepPanel.tsx";
@@ -37,18 +38,8 @@ type StepCard = Node<{ step: Step; name: string }, "step">;
 type TriggerCard = Node<{ inputs: string[]; text: string }, "trigger">;
 type Card = StepCard | TriggerCard;
 
-/** A step's name as the flow editor gives it. */
-function nameOf(t: T, s: Step): string {
-  if (s.op === "read") {
-    const k = `flow.node.${s.what}`;
-    const v = t(k);
-    return v === k ? s.what : v;
-  }
-  if (s.op === "call") return s.title ?? s.what;
-  if (s.op === "ask") return t("flows.op.ask");
-  if (s.op === "reply") return t("flows.op.reply");
-  return s.what;
-}
+/** A step's name as the flow editor gives it (one rule for every place, I-27). */
+const nameOf = (t: T, s: Step): string => stepName(t, s);
 
 const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
   const t = useStore((s) => s.t);
