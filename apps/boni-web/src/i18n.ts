@@ -565,6 +565,9 @@ const es = {
     "Crea el registro; si lo que lleva viene de fuera, lo deja en la Bandeja.",
   "flow.desc.entities.update": "Cambia unos campos de un registro.",
   "flow.desc.entities.query": "Busca registros de una colección.",
+  "flow.desc.entities.origin":
+    "Dice de dónde viene un registro: quién lo hizo y cuándo, el flujo, su correo y el «Aceptar».",
+  "flow.desc.inbox.pending": "Lo que espera en la Bandeja, con quién lo propuso y de qué correo.",
   "flow.desc.notify": "Te avisa con una notificación.",
   "flow.desc.mail.rule":
     "Si tu guía dice no leer a este remitente, la lectura acaba aquí; si dice a qué colección va, ya está elegida.",
@@ -2572,6 +2575,9 @@ const en: Record<Key, string> = {
     "Makes the record; when what it carries comes from outside, it leaves it in the Inbox.",
   "flow.desc.entities.update": "Changes some fields of a record.",
   "flow.desc.entities.query": "Looks for records of a collection.",
+  "flow.desc.entities.origin":
+    "Says where a record comes from: who made it and when, the flow, its mail and the «Aceptar».",
+  "flow.desc.inbox.pending": "What waits in the Inbox, with who proposed it and from which mail.",
   "flow.desc.notify": "Tells you with a notification.",
   "flow.desc.mail.rule":
     "If your guide says not to read this sender, the reading ends here; if it says which collection, that one is chosen.",
