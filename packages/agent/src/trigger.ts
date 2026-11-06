@@ -24,11 +24,16 @@ export function runnableNames(trigger: unknown): string[] | null {
   return null;
 }
 
-/** Whether a trigger is one Boni knows, and well formed: a new mail, by hand with a form, or on a schedule. */
+/**
+ * Whether a trigger is one Boni knows, and well formed: a new mail, by hand with a form, on a schedule, or new mail in
+ * the mailbox (`connector: "mail"`, Boni's «Traer correo», docs/sistema.md §4.2: the connector looks every few
+ * minutes, and only a look that finds mail starts a run). Neither a record nor the connector's starts it by hand.
+ */
 export function triggerOk(trigger: unknown): boolean {
   if (!trigger || typeof trigger !== "object" || Array.isArray(trigger)) return false;
   const t = trigger as Record<string, unknown>;
   if (typeof t.created === "string") return t.created === "correo";
+  if (t.connector !== undefined) return t.connector === "mail" && Object.keys(t).length === 1;
   if (t.manual === true) {
     if (t.inputs === undefined) return true;
     return (

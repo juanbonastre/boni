@@ -59,9 +59,23 @@ export function RunPath({ run: id, caption }: { run: string; caption?: React.Rea
   }[] = [];
   if (d.input) {
     const into = `col:${d.input.type}`;
-    // What brought it: the mail's connector.
-    const brings = map?.edges.find((e) => e.kind === "brings" && e.to === into);
+    // What brought it: the mail's connector, straight in or through Boni's «Traer correo» (D-50).
+    const edges = map?.edges ?? [];
+    const brings = edges.find((e) => e.kind === "brings" && e.to === into);
+    const through = brings
+      ? null
+      : edges.find(
+          (e) =>
+            e.kind === "writes" &&
+            e.to === into &&
+            edges.some((x) => x.kind === "brings" && x.to === e.from),
+        );
+    const conn = through ? edges.find((x) => x.kind === "brings" && x.to === through.from) : null;
     if (brings) boxes.push({ id: brings.from, name: name(brings.from, ""), line: null });
+    if (through && conn) {
+      boxes.push({ id: conn.from, name: name(conn.from, ""), line: null });
+      boxes.push({ id: through.from, name: name(through.from, ""), line: null });
+    }
     boxes.push({
       id: into,
       name: d.input.collection,

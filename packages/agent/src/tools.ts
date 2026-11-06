@@ -177,7 +177,7 @@ export interface Caps {
   flow_save: { store: ReadStore; flows: FlowWriter };
   /** What the server gives Boni's pieces for this account (opaque here: the core knows no app, A-02), and the
    * proposals this run has made so far. */
-  piece: { pieces: unknown; proposals: () => readonly string[] };
+  piece: { pieces: unknown; proposals: () => readonly string[]; dry: boolean };
 }
 
 export interface ToolDef<E extends Effect = Effect> {
@@ -928,6 +928,8 @@ export interface CapsContext {
   pieces?: unknown;
   /** The proposals the run has made so far (a piece folds or accepts them). */
   proposals?: () => readonly string[];
+  /** The run is «Probar»'s (a piece that changes something knows it, and changes nothing). */
+  dry?: boolean;
   /** Where a record comes from (the server's, docs/sistema.md §4.4). */
   origin?: OriginReader;
 }
@@ -1253,7 +1255,7 @@ export function makeCaps(c: CapsContext): Caps {
         },
       },
     },
-    piece: { pieces: c.pieces ?? null, proposals: c.proposals ?? (() => []) },
+    piece: { pieces: c.pieces ?? null, proposals: c.proposals ?? (() => []), dry: !!c.dry },
   };
 }
 

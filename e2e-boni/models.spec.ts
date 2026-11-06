@@ -19,6 +19,7 @@ import {
   GUIDE_RULES,
   MAP,
   MAP_CHOSEN,
+  MAP_FETCH,
   MODELS,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
@@ -740,6 +741,35 @@ test("a reading of an earlier version of its flow is drawn over its own steps, i
   await expect(steps.filter({ hasText: "No llegó" })).toHaveCount(0);
   await expect(page.locator(".mp-way li").nth(1)).toContainText("Leer correo (v2)");
   await expect(page.locator(".mp-stage .mp-edge.way").first()).toBeAttached();
+});
+
+test("with Boni's «Traer correo», a reading's way goes from the mail's connector through «Traer correo» to Correos (D-50)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/runs": [RUNS],
+      "GET api/agent/runs/:id": [RUN_MAIL],
+      "GET api/agent/map": [MAP_FETCH],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  await page.getByRole("button", { name: /^Conversación/ }).click();
+  await page.getByRole("button", { name: "Registro", exact: true }).last().click();
+  await page.locator(".log-list li").first().locator(".log-head").click();
+  await page.locator(".log-detail").getByRole("button", { name: "Recorrido" }).click();
+  const stage = page.locator(".mp-stage");
+  const card = (name: string) =>
+    stage.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
+  for (const name of ["Correo", "Traer correo", "Correos"])
+    await expect(card(name), name).toHaveClass(/way/);
+  const edge = (id: string) => stage.locator(`[data-id="${id}"] path.mp-edge`);
+  await expect(edge("conn:mail>flow:traer-correo>brings")).toHaveClass(/way/);
+  await expect(edge("flow:traer-correo>col:t_01m6correo>writes")).toHaveClass(/way/);
 });
 
 test("a reading over a lane per collection lights only the lane it took, never the others, nor the steps it skipped (task 91)", async ({

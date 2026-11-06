@@ -206,7 +206,7 @@ versiones y «Volver al de Boni». Los de hoy, con su disparador:
 
 | Flujo | Disparador | Pasos que se verían | Hoy, en el código |
 |---|---|---|---|
-| Traer correo | Cada 5 minutos | Buzón (pieza: carpeta, cada cuánto) → guardar en Correos, con sus adjuntos, el original, la invitación y el hilo | `Mails.start` |
+| Traer correo | Llega correo al buzón (el conector mira cada 5 minutos) | Guardar en Correos (pieza), con sus adjuntos, el original, la invitación y el hilo | Un flujo de Boni desde el 2026-11-06 (D-50); `Mails.run` |
 | Leer correo | Llega un correo | Reglas de la guía → Lo pendiente del remitente → Invitación → Lectora → Decisora → Rellenadora → Relaciones → Crear en la elegida → Plegar hilo → Bandeja → Aceptar solas | `mailPlan` y el código de alrededor |
 | Revisar la guía | 20 decisiones nuevas o «Revisar ahora»; una vez al día como mucho | Reglas que ya muestran sus correcciones (pieza) → Revisora → Medir releyendo (45 al día) → Sugerencia | `mailReview.ts` |
 | Aprender | Las decisiones de Juan | Señales → Sugerencia o «Solo» | `learning.ts`, `autoAccept.ts` |
@@ -275,6 +275,25 @@ preguntas · 0,41 €»):
     - «Bandeja» como paso: ya es una caja del mapa, y como paso no haría nada;
     - los números de preguntas por paso;
     - «Probar» comparando con la versión que corre.
+- **«Traer correo» es un flujo de Boni** (D-50; Juan dejó la decisión en «como tú recomendarías»):
+  - Su disparador es «Llega correo al buzón». El conector mira el buzón cada 5 minutos; la carpeta está en Ajustes →
+    Correo.
+  - Su paso es «Guardar en Correos», una pieza que guarda el correo nuevo con sus adjuntos, el original, la
+    invitación (leída de su `.ics`) y el hilo. Así se ve lo que antes pasaba escondido al traer el correo.
+  - Solo una mirada que encuentra correo nuevo es una ejecución; las demás no dejan nada en el Registro ni en el mapa.
+    El repaso único del correo perdido (la 34) va dentro de esa ejecución cuando coincide con correo nuevo; si no,
+    trae lo que encuentra sin ejecución.
+  - Apagado, no se mira el buzón, no se trae nada y Ajustes → Correo dice «Traer correo está apagado»; lo que esperaba a
+    ser leído se lee igual.
+  - Su disparador no se cambia (el servidor lo guarda como el de «Leer correo»), y solo «Traer correo» lo tiene.
+  - La lista de comprobación pide «Guardar en Correos» sin condición. Si una versión guardada de otra forma para antes
+    de él, hace una ejecución, Ajustes dice «Traer correo paró sin traer el correo» y no hace más hasta que el flujo
+    cambie. Un corte del buzón a medias termina la ejecución y se dice como antes.
+  - En «Probar», «Guardar en Correos» sabe que es una prueba y no trae nada.
+  - Sin modelos para la cuenta, el correo se trae igual, sin ejecución.
+  - En el mapa, el correo va del conector a «Traer correo» y de ahí a Correos. El Recorrido de una lectura pasa por
+    él.
+  - Falta: «Revisar la guía», «Aprender», «Conversación» y «Aviso del presupuesto» como flujos.
 
 ### 4.3 Los disparadores
 
@@ -609,7 +628,7 @@ con sus datos (`AGENTS.md`, paso 4).
 
 | Fase | Qué | Criterio de hecho (lo que verá Juan) |
 |---|---|---|
-| F7 Lo de Boni, a la vista (la 83; primera parte en main el 2026-11-05: «Leer correo» con sus piezas como pasos, A-19 y D-47, el disparador con nombres de persona, el lienzo encajado al abrir y «Probar con…»; el 2026-11-06, las piezas con nombres de verbo, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», y «Probar» diciendo lo que encontró cada una; «Crear en la elegida» el 2026-11-06 (la colección con `case`, D-48: una «Rellenadora» y un «Crear» para todo lo que lee la Lectora y el de la invitación aparte, D-49, y el panel de la Decisora con sus colecciones y las reglas de la guía: «Leer correo» pasa de 27 pasos a 12; y lo que dejó la revisión de la primera parte: «Buscar relaciones» en su orden, los ajustes de las piezas en su panel, su clase en la tarjeta y el disparador que dice que viene del conector Correo, salvo «Bandeja» como paso, las preguntas por paso y «Probar» comparando con la versión que corre); faltan los demás flujos de Boni: Traer correo, Revisar la guía, Aprender, Conversación, Aviso del presupuesto) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo y Revisar la guía son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
+| F7 Lo de Boni, a la vista (la 83; primera parte en main el 2026-11-05: «Leer correo» con sus piezas como pasos, A-19 y D-47, el disparador con nombres de persona, el lienzo encajado al abrir y «Probar con…»; el 2026-11-06, las piezas con nombres de verbo, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», y «Probar» diciendo lo que encontró cada una; «Crear en la elegida» el 2026-11-06 (la colección con `case`, D-48: una «Rellenadora» y un «Crear» para todo lo que lee la Lectora y el de la invitación aparte, D-49, y el panel de la Decisora con sus colecciones y las reglas de la guía: «Leer correo» pasa de 27 pasos a 12; y lo que dejó la revisión de la primera parte: «Buscar relaciones» en su orden, los ajustes de las piezas en su panel, su clase en la tarjeta y el disparador que dice que viene del conector Correo, salvo «Bandeja» como paso, las preguntas por paso y «Probar» comparando con la versión que corre); «Traer correo» como flujo de Boni (D-50); faltan los demás flujos de Boni: Revisar la guía, Aprender, Conversación, Aviso del presupuesto) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo y Revisar la guía son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
 | F8 El mapa (la 84; en main y hecha el 2026-11-06: Juan la probó con sus datos, «bastante bien lo que veo», y lo que vio fue a la 90, en main el mismo día: el Recorrido es el mapa, el camino en naranja desde el disparador, un nombre por paso, «Profundidad», las llamadas y el coste de cada paso. En la 84: «Flujos» como colección con «Tabla \| Mapa», el mapa calculado con en el centro, antes y después, agrupar, filtros y periodo, una ejecución encima con su camino por el mapa, «¿De dónde viene?» desde una fila, la Bandeja como nodo con «aceptadas» y la revisora en el camino del correo, «Ver en el mapa» en los menús (el de una tarjeta de la Bandeja, «Recorrido» desde la 90), fuera «Modelos» y `pipeline.ts`; además el lienzo de un flujo que se ordena solo, I-26, y «Flujos» en el teléfono para mirar y ejecutar. Faltan, según la revisión independiente: el disparador, el modelo, el bloque y el botón como nodos propios; lo de fuera marcado por sus etiquetas y no por de dónde arranca el flujo; el conector y el paquete «Correo» leídos de la extensión y no escritos en el código; «Ver en el mapa» en un turno (con F9); y el mapa entero al abrirlo, que §4.4 no quería: se dejó así por «un solo flujo donde se ve todo y vamos agrupando, filtrando», y Juan decide) | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
 | F9 Boni sobre la pantalla (la 85) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
 | F10 Una lista de acciones (la 86; adelantada el 2026-11-06 una: «¿De dónde viene?», en el menú de una fila, en la conversación con `entities.origin` e `inbox.pending` y en el MCP con `origin` e `inbox`) | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta |

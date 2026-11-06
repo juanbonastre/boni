@@ -935,7 +935,11 @@ contraseña ni un código aquí» under a question.
   366, else 60; «1 día»); «Aceptar solas» shows «Solo» with the switch of Ajustes → Decisiones (the same one, asked
   again each time its panel opens), greyed until earned, and under it, muted, what Ajustes says of it («Apagado por
   Boni el …», «Todavía no se lo ha ganado»), nothing when earned. A trigger whose records the mail's connector brings
-  says so under its name, muted, as its draft says: «Viene del conector Correo». Nothing is dragged, nothing of where things are is kept,
+  says so under its name, muted, as its draft says: «Viene del conector Correo». Boni's «Traer correo» (D-50) starts
+  with «Llega correo al buzón», a trigger that is not changed in its panel (as a record's) nor run by hand, and its
+  one step, «Guardar en Correos», says «De Boni · guarda en Correos» (a piece that changes something says what, in
+  its own words, when it has them); on the map the mail goes from the connector to «Traer correo» and on to Correos,
+  and a reading's Recorrido lights that way too. Nothing is dragged, nothing of where things are is kept,
   no «Ordenar»: looking never asks to save. The wheel scrolls the canvas (Ctrl or a pinch zooms); it opens fitted to
   its first eight boxes at a size to read (at most 100 %), the rest a scroll below. An arrow drawn from one node to
   another asks where the second uses the first's value

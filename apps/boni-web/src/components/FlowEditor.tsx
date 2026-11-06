@@ -110,6 +110,8 @@ export function triggerText(
 ): string {
   if (typeof on.created === "string")
     return t("flows.on.created", { what: nameOf?.(on.created) ?? on.created });
+  // Boni's «Traer correo» (docs/sistema.md §4.2): the mail connector found new mail.
+  if (on.connector === "mail") return t("flows.on.connector.mail");
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
     const at = typeof s.at === "string" ? s.at : "08:00";
@@ -423,10 +425,16 @@ function nodesOf(
     const tried = test ? (test.steps[s.id] ?? null) : undefined;
     // A piece of Boni says so on its card, and whether it only reads or changes the Bandeja (F7: its effect class).
     const tool = s.op === "call" ? catalog?.tools.find((x) => x.name === s.tool) : undefined;
+    // What a piece that changes something changes, in its own words when it has them («guarda en Correos»).
+    const own = tool ? `flows.piece.changes.${tool.name}` : "";
     const piece =
-      tool?.effect === "piece"
-        ? t(tool.changes ? "flows.piece.changes" : "flows.piece.reads")
-        : null;
+      tool?.effect !== "piece"
+        ? null
+        : !tool.changes
+          ? t("flows.piece.reads")
+          : t(own) !== own
+            ? t(own)
+            : t("flows.piece.changes");
     const detailText =
       [stepDetail(t, s, s.op === "call" ? collection(s) : null), piece]
         .filter(Boolean)
@@ -1066,7 +1074,8 @@ function TriggerPanel({
   onClose: () => void;
 }) {
   const t = useStore((s) => s.t);
-  const fixed = typeof draft.trigger.created === "string";
+  // What a record or the mail connector starts is not changed here (Boni's «Leer correo» and «Traer correo»).
+  const fixed = typeof draft.trigger.created === "string" || draft.trigger.connector === "mail";
   const names = formNames(draft.trigger);
   const schedule =
     draft.trigger.schedule && typeof draft.trigger.schedule === "object"

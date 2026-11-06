@@ -1160,14 +1160,35 @@ function Canvas({
       nodes.add(b);
       edges.add(`${a}>${b}>${kind}`);
     };
-    for (const c of col(run.input?.type)) {
-      for (const e of map.edges)
-        if (e.to === c && e.kind === "brings") {
-          add(e.from, c, "brings");
+    /** A flow a connector starts (Boni's «Traer correo», D-50): what it brings in. */
+    const byConnector = (id: string) => map.edges.some((x) => x.to === id && x.kind === "brings");
+    /** What brought something into a box: a connector straight in, or through the flow it starts. */
+    const bringIn = (to: string) => {
+      for (const e of map.edges) {
+        if (e.to !== to) continue;
+        if (e.kind === "brings") {
+          add(e.from, to, "brings");
+          from.push(e.from);
+        } else if (e.kind === "writes" && e.from !== owner && byConnector(e.from)) {
+          bringIn(e.from);
+          add(e.from, to, "writes");
           from.push(e.from);
         }
+      }
+    };
+    for (const c of col(run.input?.type)) {
+      bringIn(c);
       from.push(c);
       add(c, owner, "starts");
+    }
+    // A run of «Traer correo» itself: the connector before it, and the collection it keeps the mail in after it.
+    if (!run.input && byConnector(owner)) {
+      bringIn(owner);
+      for (const e of map.edges)
+        if (e.from === owner && e.kind === "writes") {
+          add(owner, e.to, "writes");
+          if (!wrote.includes(e.to)) wrote.push(e.to);
+        }
     }
     // What it read (what was pending, the people a mail names) is not where it went (task 91: every collection lit).
     // An «Aceptar» writes out of the Bandeja: its arrow is «aceptadas».
@@ -1366,6 +1387,7 @@ function Canvas({
       if (v === "boni") return t("map.group.boni");
       if (v === "schedule") return t("flows.on.scheduled");
       if (v === "manual") return t("flows.on.manual");
+      if (v === "connector:mail") return t("flows.on.connector.mail");
       if (v.startsWith("created:")) {
         const key = v.slice("created:".length);
         return t("flows.on.created", { what: keyName(key) ?? key });

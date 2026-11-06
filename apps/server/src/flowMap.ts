@@ -12,7 +12,7 @@
 import type { RunRow, UserStore } from "@boni/store";
 import { AUTO_AREA } from "./autoAccept.ts";
 import { userTypes } from "./data.ts";
-import { type FlowNode, MAIL_FLOW, nodesOf, stepsOf, typeKeysOf } from "./flows.ts";
+import { FETCH_FLOW, type FlowNode, MAIL_FLOW, nodesOf, stepsOf, typeKeysOf } from "./flows.ts";
 import { getPage, listPages } from "./pages.ts";
 import { timed } from "./perf.ts";
 import { whatOf } from "./runInfo.ts";
@@ -299,14 +299,19 @@ function makeMap(
   const perOf = (who: string, types: Set<string>) =>
     Object.fromEntries([...types].map((t) => [colId(t), proposed.get(`${who}|${t}`)?.made ?? 0]));
 
-  // The mail connector: it brings each mail into its collection.
+  // The mail connector: it brings each mail into its collection, through Boni's «Traer correo» when the account has
+  // it (docs/sistema.md §4.2, D-50: connector → «Traer correo» → Correos), straight in when it has not.
   const activity = recentActivity(store, { now: o.now, tz: o.tz, days: o.days });
+  const brought = mailCol
+    ? activity
+        .filter((a) => a.by.startsWith("connector") && a.type === mailCol)
+        .reduce((n, a) => n + a.writes, 0)
+    : 0;
+  const fetchFlow = mailCol ? j.flow(FETCH_FLOW) : null;
   if (mailCol) {
     node({ id: "conn:mail", kind: "connector", name: null, code: "mail", pack: "correo" });
-    const brought = activity
-      .filter((a) => a.by.startsWith("connector") && a.type === mailCol)
-      .reduce((n, a) => n + a.writes, 0);
-    edge({ from: "conn:mail", to: colId(mailCol), kind: "brings", n: brought, outside: true });
+    if (!fetchFlow)
+      edge({ from: "conn:mail", to: colId(mailCol), kind: "brings", n: brought, outside: true });
   }
 
   // The flows: what starts each, what its steps read and write, and how it ran.
@@ -314,7 +319,7 @@ function makeMap(
   for (const f of flows) {
     const id = `flow:${f.id}`;
     const on = (f.trigger ?? {}) as Record<string, unknown>;
-    const background = typeof on.created === "string" || !!on.schedule;
+    const background = typeof on.created === "string" || !!on.schedule || !!on.connector;
     const counts = j.stepCountsOf(f.id, from, to);
     const steps = nodesOf(
       f.plan,
@@ -353,8 +358,25 @@ function makeMap(
       boni: j.flowVersions(f.id).some((v) => v.by === "preset"),
       plan: f.plan,
       steps,
-      pack: f.id === MAIL_FLOW || (!!starts && starts === mailCol) ? "correo" : null,
+      pack:
+        f.id === MAIL_FLOW || f.id === FETCH_FLOW || (!!starts && starts === mailCol)
+          ? "correo"
+          : null,
     });
+    // «Traer correo»: the connector brings to it what it found, and its «Guardar en Correos» keeps it in Correos.
+    if (f.id === FETCH_FLOW && on.connector === "mail" && mailCol) {
+      edge({ from: "conn:mail", to: id, kind: "brings", n: brought, outside: true });
+      edge({
+        from: id,
+        to: colId(mailCol),
+        kind: "writes",
+        n: brought,
+        steps: stepsOf(f.plan)
+          .filter((s) => s.op === "call" && s.tool === "mail.save")
+          .map((s) => s.id),
+        outside: true,
+      });
+    }
     if (known(starts)) {
       // The steps that read the record that started it take it from the trigger.
       edge({

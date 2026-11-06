@@ -147,6 +147,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
       test: "with «Solo» on, a proposal like the ones Juan always kept is accepted in its own reading, a step of the flow",
     },
   ],
+  "mail.save": [
+    {
+      file: MAIL,
+      test: "brings the mail through its piece «Guardar en Correos»: a look that finds mail is a run, one that finds none is not, and turned off it brings nothing",
+    },
+  ],
 };
 /**
  * Effects no tool of the registry has yet, with their policy ready (docs/nucleo.md §7.5): a write with no Undo
