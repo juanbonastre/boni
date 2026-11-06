@@ -3,6 +3,34 @@ import { callFn } from "./fns.ts";
 import { codeLabel, leaf, modelLabel, plain, rec } from "./values.ts";
 
 describe("the plan's functions", () => {
+  it("case: the result for the option the value is, else null; it carries what chose it («Crear en la elegida»)", () => {
+    const choice = leaf("Evento (p. ej.: Dentista)", modelLabel("run-1"));
+    const lit = (v: string) => leaf(v, codeLabel("plan"));
+    const args = [
+      lit("Tarea (p. ej.: Llamar)"),
+      lit("tarea"),
+      lit("Evento (p. ej.: Dentista)"),
+      lit("evento"),
+    ];
+    const got = callFn("case", [choice, ...args], "2026-11-06");
+    expect(plain(got)).toBe("evento");
+    expect(got.label.integrity).toBe("model");
+    expect(got.t === "v" && got.derived).toBe(true);
+    expect(
+      plain(callFn("case", [leaf("Otra", modelLabel("run-1")), ...args], "2026-11-06")),
+    ).toBeNull();
+    // An option without its result is refused.
+    expect(() => callFn("case", [choice, lit("Tarea")], "2026-11-06")).toThrow("wrong-arguments");
+  });
+  it("obj leaves out a pair whose key is null: a field the chosen collection does not have", () => {
+    const code = codeLabel("plan");
+    const got = callFn(
+      "obj",
+      [leaf("title", code), leaf("Dentista", code), leaf(null, code), leaf("2026-11-07", code)],
+      "2026-11-06",
+    );
+    expect(plain(got)).toEqual({ title: "Dentista" });
+  });
   it("first: the first value that is not empty, keeping its own label; none: null (task 51)", () => {
     const reader = leaf("e_reader", codeLabel("reader"));
     const code = leaf("e_code", codeLabel("prefill"));

@@ -333,11 +333,20 @@ export function mailPlan(
       },
     },
   ];
-  // The collection the reading goes to: the one a rule of the guide names for this sender (`$only`), else the
-  // decider's choice; with one collection there is nothing to choose.
-  const choice = { fn: "first", args: [{ ref: "$only" }, { ref: "$c.choice" }] };
-  const goesTo = (t: Target) =>
-    targets.length > 1 ? { fn: "eq", args: [choice, { lit: t.option }] } : null;
+  // The collection the reading goes to: the one a rule of the guide names for this sender (`$only`, the decider's
+  // `given`), else the decider's choice; with one collection there is nothing to choose.
+  const choosing = targets.length > 1;
+  const choice = { ref: "$c.choice" };
+  /** Of each collection the decider may choose, what the plan needs of it (its key, a field's key), as `case`: the
+   * options and what each gives, written in the plan (D-48: one of a literal list), null for one it has not. */
+  const per = (of: (t: Target) => string | null | undefined) => {
+    const pairs = targets.flatMap((t) => {
+      const v = of(t);
+      return v ? [{ lit: t.option }, { lit: v }] : [];
+    });
+    return pairs.length ? { fn: "case", args: [choice, ...pairs] } : null;
+  };
+  const chosenKey = per((t) => t.key);
   // Each item's other fields and its note (reader `fill`, Jev when there is one): read with the mail and the
   // item, walked along the items when creating (`zip`).
   const fillStep = (id: string, module: string, t: Target, when?: unknown) => ({
@@ -391,7 +400,60 @@ export function mailPlan(
     };
     return filled ? [fillStep(`${id}_f`, module, t, when), step] : [step];
   };
-  if (chosen.length && targets.length > 1) {
+  /** A day, a start and an end into the chosen collection's own fields for them (none: left out). */
+  const dated = (values: [unknown, unknown, unknown]) =>
+    (
+      [
+        [per((t) => t.date), values[0]],
+        [per((t) => t.time), values[1]],
+        [per((t) => t.endTime), values[2]],
+      ] as const
+    ).flatMap(([k, v]) => (k ? [k, v] : []));
+  /** «Crear en la elegida»: the item's fields read for the chosen collection (only when one has fields to fill),
+   * then the record in it: the relations the code found for it, what was filled, the item's own title and day. */
+  const createInChosen = (id: string, module: string) => {
+    const filled = targets.some((t) => t.fill?.length);
+    const fill = {
+      id: `${id}_f`,
+      op: "read",
+      reader: "fill",
+      each: { ref: `$r.${module}` },
+      when: choice,
+      input: fillStep(`${id}_f`, module, targets[0] as Target).input,
+      params: { fields: { ref: "$fill" }, collection: chosenKey },
+    };
+    const own = {
+      fn: "obj",
+      args: [
+        { lit: "title" },
+        { ref: "$item.title" },
+        ...dated([{ ref: "$item.due" }, { ref: "$item.start" }, { ref: "$item.end" }]),
+        ...(filled ? [{ lit: "body" }, { ref: "$zip.note" }] : []),
+      ],
+    };
+    const step = {
+      id,
+      op: "call",
+      tool: "entities.create",
+      each: { ref: `$r.${module}` },
+      ...(filled ? { zip: { ref: `$${id}_f` } } : {}),
+      when: choice,
+      why: { ref: "$item.quote" },
+      args: {
+        type: chosenKey,
+        values: {
+          fn: "merge",
+          args: [
+            { fn: "pick", args: [{ ref: "$prefill" }, chosenKey] },
+            ...(filled ? [{ ref: "$zip.values" }] : []),
+            own,
+          ],
+        },
+      },
+    };
+    return filled ? [fill, step] : [step];
+  };
+  if (chosen.length && choosing) {
     // With an invitation the collection is chosen even when the reader finds nothing else.
     const found = o.invitation
       ? { fn: "or", args: [{ ref: "$r.all" }, { ref: "$inv.uid" }] }
@@ -418,14 +480,20 @@ export function mailPlan(
               },
             }
           : {}),
+        // A rule of the guide already says where it goes: that is the choice, and no model is asked.
+        given: { ref: "$only" },
       },
-      // A rule of the guide already says where it goes: nothing to choose.
-      when: { fn: "and", args: [found, { fn: "not", args: [{ ref: "$only" }] }] },
+      when: found,
     });
   }
-  targets.forEach((t, i) => {
-    for (const module of chosen) steps.push(...create(`n${i}_${module}`, module, t, goesTo(t)));
-  });
+  if (choosing)
+    // «Crear en la elegida» (docs/sistema.md §4.2): one «Rellenadora» and one «Crear» per kind of thing the reader
+    // finds, in the collection chosen; each collection's own fields come from `case`, all of them in the plan.
+    for (const module of chosen) steps.push(...createInChosen(`n_${module}`, module));
+  else
+    targets.forEach((t, i) => {
+      for (const module of chosen) steps.push(...create(`n${i}_${module}`, module, t, null));
+    });
   for (const module of modules) {
     const r = route(module);
     if (!("propose" in r) || r.propose === "chosen") continue;
@@ -459,9 +527,26 @@ export function mailPlan(
   });
   if (o.invitation) {
     const r = route(o.invitation);
-    if ("propose" in r && r.propose === "chosen")
+    if ("propose" in r && r.propose === "chosen" && choosing) {
+      // The invitation's event in the chosen collection, as any other proposal.
+      const owns = [
+        { lit: "title" },
+        { ref: "$inv.titulo" },
+        ...dated([{ ref: "$inv.dia" }, { ref: "$inv.inicio" }, { ref: "$inv.fin" }]),
+        { lit: "body" },
+        { ref: "$inv.nota" },
+      ];
+      steps.push({
+        id: "inv_create",
+        op: "call",
+        tool: "entities.create",
+        when: { fn: "and", args: [{ ref: "$inv.uid" }, choice] },
+        why: { ref: "$inv.linea" },
+        args: { type: chosenKey, values: { fn: "obj", args: owns } },
+      });
+    } else if ("propose" in r && r.propose === "chosen")
       targets.forEach((t, i) => {
-        steps.push(invite(`inv${i}`, t, goesTo(t) ?? undefined));
+        steps.push(invite(`inv${i}`, t));
       });
     else if ("propose" in r) {
       const t = o.fixed?.find((x) => x.id === r.propose.collection);

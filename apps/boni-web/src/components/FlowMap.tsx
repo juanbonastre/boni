@@ -828,7 +828,14 @@ function Canvas({
             type: "step",
             position: { x: cx + p.x, y: top + p.y },
             data: {
-              step: { ...node, detail: stepDetail(t, s, node.detail) },
+              step: {
+                ...node,
+                detail: stepDetail(
+                  t,
+                  s,
+                  node.detail ?? (node.into?.length ? t("flows.inChosen") : null),
+                ),
+              },
               name: stepNodeName(t, node),
               model: role ? (byRole[role] ?? null) : null,
               dim: near ? !near.has(n.id) : !!way && !way.nodes.has(n.id),

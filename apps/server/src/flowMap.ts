@@ -12,7 +12,7 @@
 import type { RunRow, UserStore } from "@boni/store";
 import { AUTO_AREA } from "./autoAccept.ts";
 import { userTypes } from "./data.ts";
-import { type FlowNode, MAIL_FLOW, nodesOf, stepsOf } from "./flows.ts";
+import { type FlowNode, MAIL_FLOW, nodesOf, stepsOf, typeKeysOf } from "./flows.ts";
 import { getPage, listPages } from "./pages.ts";
 import { timed } from "./perf.ts";
 import { whatOf } from "./runInfo.ts";
@@ -110,10 +110,6 @@ const DAY = 24 * 60 * 60_000;
 const INBOX = "boni:inbox";
 const READS = new Set(["entities.query", "entities.search", "entities.aggregate", "entities.get"]);
 const WRITES = new Set(["entities.create", "entities.update", "entities.delete"]);
-const litOf = (v: unknown): string | null =>
-  v && typeof v === "object" && typeof (v as { lit?: unknown }).lit === "string"
-    ? (v as { lit: string }).lit
-    : null;
 /** The role a reader's model plays (packages/agent models.ts). */
 const roleOf = (reader: string) =>
   reader === "classify" ? "decider" : reader === "review_reading" ? "reviewer" : "reader";
@@ -373,9 +369,6 @@ function makeMap(
     const named = new Map<string, { type: string; kind: MapEdgeKind; steps: string[] }>();
     for (const s of stepsOf(f.plan)) {
       if (s.op !== "call" || typeof s.tool !== "string") continue;
-      const key = litOf((s.args as Record<string, unknown> | undefined)?.type);
-      const type = key ? byKey.get(key) : undefined;
-      if (!known(type)) continue;
       const kind: MapEdgeKind | null = READS.has(s.tool)
         ? "reads"
         : WRITES.has(s.tool)
@@ -384,10 +377,15 @@ function makeMap(
             : "writes"
           : null;
       if (!kind) continue;
-      const k = `${type}|${kind}`;
-      const was = named.get(k);
-      if (was) was.steps.push(s.id);
-      else named.set(k, { type, kind, steps: [s.id] });
+      // Its collection, or each of those it chooses among («Crear en la elegida»: one of a literal list, D-48).
+      for (const key of typeKeysOf((s.args as Record<string, unknown> | undefined)?.type)) {
+        const type = byKey.get(key);
+        if (!known(type)) continue;
+        const k = `${type}|${kind}`;
+        const was = named.get(k);
+        if (was) was.steps.push(s.id);
+        else named.set(k, { type, kind, steps: [s.id] });
+      }
     }
     // What a flow a mail starts writes carries the mail's words.
     const outside = !!starts && starts === mailCol;

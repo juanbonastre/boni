@@ -98,6 +98,11 @@ fases siguen de F7 a F13.
   `read_message` con los módulos y la guía → `classify` (si hay varias colecciones) → por cada elemento, `fill` y
   `entities.create` con `zip`; lo que el código decide antes (las relaciones por el remitente, D-38; la invitación
   de un `.ics`) entra como valores vinculados (`$prefill`, `$inv`). Ya es un flujo; solo que está escrito en código.
+  Desde el 2026-11-06 crea en la elegida (`docs/sistema.md` §4.2): una «Rellenadora» y un «Crear» por clase de cosa,
+  no uno por colección. La colección sale de `case($c.choice, opción, clave…)`, con cada opción y su colección
+  escritas en el plan (D-48); la regla de la guía llega a la Decisora como `given` (su respuesta, sin modelo); y
+  `fill` recibe con `collection` los campos de esa colección, que el código elige entre los suyos antes de que nada
+  llegue al modelo (sus campos siguen con la etiqueta del código, R1).
 - **Las extensiones** (`docs/extensiones.md`; `apps/server/src/extensions.ts`): un manifiesto con `flows`
   (`{ on: { created: "correo" }, plan: "read-and-propose" }`), `routes`, módulos de lectura, y (§11) funciones puras
   en una caja sin red ni disco, con sus pruebas; propuestas por un modelo (`extensions_propose`), probadas
@@ -164,7 +169,7 @@ Es lo que el intérprete sabe ejecutar, y nada más (falla en cerrado, como el r
 Y en cada nodo, como ajustes y no como nodos aparte: **«Solo si»** (`when`), **«Para cada»** (`each`, con `zip`),
 y el porqué que ve la tarjeta (`why`). Las expresiones se editan con un selector de lo que llega de los nodos
 anteriores (`$m.asunto`, `$r.tasks`, `$item.title`), tipado desde la forma de cada salida (el esquema del lector o
-de la herramienta), y las funciones puras como una lista corta (`concat`, `first`, `list`, `obj`, `eq`, `or`…), con
+de la herramienta), y las funciones puras como una lista corta (`concat`, `first`, `list`, `obj`, `eq`, `or`, `case`…), con
 sus argumentos a su vez con el selector. Nunca texto libre que se evalúe.
 
 ### 4.3 Disparadores

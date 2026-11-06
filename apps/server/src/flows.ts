@@ -96,14 +96,33 @@ export const stepsOf = (plan: unknown): Step[] => {
     : [];
 };
 
+/**
+ * The collections a step's `type` names, by key: its literal, or the results of a `case` over literals (one of a
+ * literal list, D-48: «Crear en la elegida», docs/sistema.md §4.2); none when it is worked out otherwise.
+ */
+export function typeKeysOf(v: unknown): string[] {
+  const one = litOf(v);
+  if (one) return [one];
+  const e = v as { fn?: unknown; args?: unknown } | null;
+  if (!e || typeof e !== "object" || e.fn !== "case" || !Array.isArray(e.args)) return [];
+  const args = e.args as unknown[];
+  if (args.length < 3 || args.length % 2 === 0) return [];
+  const keys: string[] = [];
+  for (let i = 1; i < args.length; i += 2) {
+    const key = litOf(args[i + 1]);
+    if (!litOf(args[i]) || !key) return [];
+    keys.push(key);
+  }
+  return [...new Set(keys)];
+}
+
 /** The collections a plan writes in or takes per-collection inputs for (`$fill.<key>`, `type` of a record), by key. */
 export function collectionKeysOf(plan: unknown): string[] {
   const keys = new Set<string>();
   for (const s of stepsOf(plan)) {
-    if (s.op === "call" && typeof s.tool === "string" && s.tool.startsWith("entities.")) {
-      const t = litOf((s.args as Record<string, unknown> | undefined)?.type);
-      if (t) keys.add(t);
-    }
+    if (s.op === "call" && typeof s.tool === "string" && s.tool.startsWith("entities."))
+      for (const t of typeKeysOf((s.args as Record<string, unknown> | undefined)?.type))
+        keys.add(t);
     const scan = (v: unknown): void => {
       if (Array.isArray(v)) for (const x of v) scan(x);
       else if (v && typeof v === "object") {
@@ -190,6 +209,8 @@ export interface FlowNode {
   title: string | null;
   /** A word more: the collection a record is made in, the reader's question… */
   detail: string | null;
+  /** «Crear en la elegida»: the collections it chooses among, by name (one: `detail` names it). */
+  into?: string[];
   when: boolean;
   each: boolean;
   /** The step's arguments as text lines (`type: tarea`, `input: $text`), for its panel. */
@@ -275,8 +296,9 @@ export function nodesOf(
             ? { prompt: s.prompt, options: s.options }
             : s.data
     ) as Record<string, unknown> | undefined;
-    const typeLit =
-      op === "call" ? litOf((s.args as Record<string, unknown> | undefined)?.type) : null;
+    const keys =
+      op === "call" ? typeKeysOf((s.args as Record<string, unknown> | undefined)?.type) : [];
+    const typeLit = keys.length === 1 ? (keys[0] as string) : null;
     const ran: Record<string, number> = {};
     for (const c of counts) if (c.step === s.id) ran[c.decision] = (ran[c.decision] ?? 0) + c.n;
     return {
@@ -285,6 +307,7 @@ export function nodesOf(
       what,
       title: op === "call" ? titleOf(what) : null,
       detail: typeLit ? (typeName(typeLit) ?? typeLit) : null,
+      ...(keys.length > 1 ? { into: keys.map((k) => typeName(k) ?? k) } : {}),
       when: s.when !== undefined,
       each: s.each !== undefined,
       args: Object.entries(args ?? {})
@@ -521,16 +544,18 @@ export function checkFlow(
       if (s.op !== "call" || typeof s.tool !== "string" || !s.tool.startsWith("entities."))
         continue;
       const given = (s.args as Record<string, unknown> | undefined)?.type;
-      const t = litOf(given);
-      if (t && !visible.has(t))
+      const keys = typeKeysOf(given);
+      const hidden = keys.find((t) => !visible.has(t));
+      if (hidden)
         problems.push({
           step: s.id,
           at: "args.type",
-          code: all.has(t) ? "closed-collection" : "unknown-collection",
+          code: all.has(hidden) ? "closed-collection" : "unknown-collection",
         });
-      // The collection a step reads or writes is written in it, never worked out as it runs: so the map says where a
-      // flow writes before it runs (docs/sistema.md §4.4, D-48; Home Assistant's «Related» misses what a variable picks).
-      else if (given !== undefined && !t)
+      // The collection a step reads or writes is written in it, or chosen among some written in it (`case`), never
+      // worked out as it runs: so the map says where a flow writes before it runs (docs/sistema.md §4.4, D-48; Home
+      // Assistant's «Related» misses what a variable picks).
+      else if (given !== undefined && !keys.length)
         problems.push({ step: s.id, at: "args.type", code: "collection-not-literal" });
     }
   }

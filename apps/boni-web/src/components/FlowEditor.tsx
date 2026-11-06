@@ -67,6 +67,7 @@ import {
   removeStep,
   slotsOf,
   takeValue,
+  typeKeysOf,
 } from "../core/flowEdit.ts";
 import { segmentsOf, stepLayout } from "../core/flowLayout.ts";
 import { useKeptNodes } from "../core/useKeptNodes.ts";
@@ -387,11 +388,11 @@ function nodesOf(
   const ran = new Map(detail.nodes.map((n) => [n.id, n.ran]));
   const bad = new Set(problems.map((p) => p.step ?? TRIGGER));
   const collection = (s: FlowStep) => {
-    const a = s.args as Record<string, unknown> | undefined;
-    const k = a?.type && typeof a.type === "object" ? (a.type as { lit?: unknown }).lit : null;
-    return typeof k === "string"
-      ? (catalog?.collections.find((c) => c.key === k)?.name ?? k)
-      : null;
+    const keys = typeKeysOf((s.args as Record<string, unknown> | undefined)?.type);
+    // «Crear en la elegida»: the collection the decider chose, among those its `case` writes.
+    if (keys.length > 1) return t("flows.inChosen");
+    const k = keys[0];
+    return k ? (catalog?.collections.find((c) => c.key === k)?.name ?? k) : null;
   };
   const chosen = draft.plan.steps.find((s) => s.id === selected);
   const feeds = new Set(chosen ? depsOf(chosen) : []);

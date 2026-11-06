@@ -56,6 +56,7 @@ export const FNS: Readonly<Record<string, [number, number]>> = {
   concat: [1, 40],
   list: [1, 20],
   obj: [2, 40],
+  case: [3, 41],
   merge: [2, 8],
   length: [1, 1],
   eq: [2, 2],
@@ -73,13 +74,15 @@ export const MAX_STEPS = 40;
 export const MAX_EACH = 50;
 const READER_PARAMS: Readonly<Record<ReaderKind, string[]>> = {
   extract_tasks: ["known"],
-  classify: ["options", "question", "ask"],
+  // `given`: a choice already made (one of the options): the answer, with no model (docs/sistema.md §4.2).
+  classify: ["options", "question", "ask", "given"],
   summarize: [],
   rewrite: ["instruction"],
   answer_about: ["question"],
   read_message: ["modules", "user_in", "known", "guide"],
   review_reading: ["options"],
-  fill: ["fields"],
+  // `collection`: of `fields` per collection, the one a choice names («Crear en la elegida»).
+  fill: ["fields", "collection"],
   summarize_each: ["options", "question"],
   label_each: ["options", "question"],
 };

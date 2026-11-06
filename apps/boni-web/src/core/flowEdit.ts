@@ -20,6 +20,33 @@ export const isExpr = (v: unknown): v is Expr =>
 /** The inputs whose name is followed by a collection's key (docs/flujos.md §4.1). */
 export const PER_COLLECTION = ["fill", "prefill"];
 
+/**
+ * The collections a step's `type` names, by key (apps/server flows.ts `typeKeysOf`): its literal, or the results of
+ * a `case` over literals («Crear en la elegida», docs/sistema.md §4.2: one of a literal list, D-48).
+ */
+export function typeKeysOf(v: unknown): string[] {
+  const lit = (x: unknown) =>
+    isExpr(x) && "lit" in x && typeof x.lit === "string" ? (x.lit as string) : null;
+  const one = lit(v);
+  if (one) return [one];
+  if (!isExpr(v) || !("fn" in v) || v.fn !== "case" || !Array.isArray(v.args)) return [];
+  const args = v.args as unknown[];
+  if (args.length < 3 || args.length % 2 === 0) return [];
+  const keys: string[] = [];
+  for (let i = 1; i < args.length; i += 2) {
+    const key = lit(args[i + 1]);
+    if (!lit(args[i]) || !key) return [];
+    keys.push(key);
+  }
+  return [...new Set(keys)];
+}
+
+/** Names said as a person lists them: «Tarea, Evento o Persona» (`or` is the language's word, with its spaces). */
+export function listText(names: readonly string[], or: string): string {
+  if (names.length < 2) return names.join("");
+  return `${names.slice(0, -1).join(", ")}${or}${names[names.length - 1]}`;
+}
+
 /** A step id not used yet: the base, or the base and a number. */
 export function newStepId(plan: FlowPlan, base: string): string {
   const clean =

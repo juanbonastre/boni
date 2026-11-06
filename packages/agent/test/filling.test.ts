@@ -10,7 +10,7 @@ import {
   readFields,
 } from "../src/filling.ts";
 import { fakePlanner, type ModelRequest, ScriptedProvider } from "../src/providers.ts";
-import { leaf } from "../src/values.ts";
+import { leaf, list, modelLabel, rec } from "../src/values.ts";
 import { type Env, makeEnv, OWN } from "./fixture.ts";
 
 /** Invented fields: a select, a relation-like choice and a checkbox. */
@@ -378,5 +378,147 @@ describe("the fill reader in a plan (agent.ts)", () => {
         })
       ).error,
     ).toBe("reader-bad-fields");
+  });
+
+  // «Crear en la elegida» (docs/sistema.md §4.2): one fill step over the fields of the collection a choice names.
+  const perCollection = (evento: FillField[] = []) =>
+    rec(
+      { tarea: codeFields(), evento: codeFields(evento) },
+      label("own", "personal", [{ kind: "code", id: "fill" }]),
+    );
+  // As «Leer correo» writes it: what was filled as a whole record, whatever the collection's fields are.
+  const chosenPlan = (collection: unknown) => ({
+    ...plan,
+    steps: plan.steps.map((s) =>
+      s.id === "f"
+        ? { ...s, params: { fields: { ref: "$fill" }, collection } }
+        : s.id === "c"
+          ? {
+              ...s,
+              args: {
+                type: { lit: "tarea" },
+                values: {
+                  fn: "merge",
+                  args: [
+                    { ref: "$zip.values" },
+                    {
+                      fn: "obj",
+                      args: [
+                        { lit: "titulo" },
+                        { ref: "$item.title" },
+                        { lit: "body" },
+                        { ref: "$zip.note" },
+                      ],
+                    },
+                  ],
+                },
+              },
+            }
+          : s,
+    ),
+  });
+
+  it("over the chosen collection: only its fields reach the reader, with the code's label, though a model chose it", async () => {
+    const e = prepare();
+    const reader = new ScriptedProvider("fake", (req) => {
+      const r = reading(req);
+      if (r) return r;
+      expect((req.input as { fields: unknown }).fields).toEqual([
+        { id: "f0", name: "Prioridad", options: ["Alta", "Baja"] },
+        { id: "f1", name: "Hecho", checkbox: true },
+      ]);
+      return { values: { f0: "Alta", f1: null }, note: "En la carpeta." };
+    });
+    // What chose it is a model's answer: it picks among the code's fields, and is never sent to the reader.
+    const res = await e.agent(fakePlanner([]), reader).background(chosenPlan({ ref: "$where" }), {
+      fill: perCollection(),
+      where: leaf("tarea", modelLabel("run-0")),
+    });
+    expect(res.error).toBeNull();
+    const [rows] = rowsOf(e);
+    expect(rows?.find((r) => r.arg === "values.prioridad")?.value).toBe("o_alta");
+    expect(rows?.find((r) => r.arg === "values.body")?.value).toBe("En la carpeta.");
+  });
+
+  it("over a chosen collection with nothing to fill, no model is asked, as with no fill step", async () => {
+    const e = prepare();
+    const reader = new ScriptedProvider("fake", (req) => reading(req) ?? { values: {}, note: "x" });
+    const res = await e
+      .agent(fakePlanner([]), reader)
+      .background(chosenPlan({ lit: "evento" }), { fill: perCollection([]) });
+    expect(res.error).toBeNull();
+    // Only the reading of the message: the fill step asked nothing.
+    expect(reader.requests).toHaveLength(1);
+    const [rows] = rowsOf(e);
+    expect(rows?.some((r) => r.arg === "values.body")).toBe(false);
+    // A collection the code bound no fields for stops it.
+    const none = await e
+      .agent(fakePlanner([]), reader)
+      .background(chosenPlan({ lit: "libro" }), { fill: perCollection() });
+    expect(none.error).toBe("reader-bad-fields");
+  });
+});
+
+describe("classify with a choice already made (`given`)", () => {
+  let env: Env | undefined;
+  afterEach(() => env?.close());
+  const code = label("own", "public", [{ kind: "code", id: "options" }]);
+  const options = list([leaf("Tarea", code), leaf("Evento", code)], code);
+  const plan = {
+    version: 1,
+    steps: [
+      { id: "m", op: "call", tool: "entities.query", args: { type: { lit: "correo" } } },
+      {
+        id: "c",
+        op: "read",
+        reader: "classify",
+        input: { ref: "$m.items[0].cuerpo" },
+        params: { options: { ref: "$opts" }, given: { ref: "$rule" } },
+      },
+      {
+        id: "t",
+        op: "call",
+        tool: "entities.create",
+        when: { ref: "$c.choice" },
+        args: {
+          type: {
+            fn: "case",
+            args: [
+              { ref: "$c.choice" },
+              { lit: "Tarea" },
+              { lit: "tarea" },
+              { lit: "Evento" },
+              { lit: "evento" },
+            ],
+          },
+          values: { fn: "obj", args: [{ lit: "titulo" }, { ref: "$c.choice" }] },
+        },
+      },
+    ],
+  };
+
+  it("a rule's choice is the answer and no model is asked; without one, the model chooses", async () => {
+    env = makeEnv([{ asunto: "Hola", de: "a@example.com", cuerpo: "Una reunión el jueves." }]);
+    const reader = new ScriptedProvider("fake", () => ({ choice: "Evento" }));
+    const agent = env.agent(fakePlanner([]), reader);
+    const ruled = await agent.background(plan, {
+      opts: options,
+      rule: leaf("Tarea", code),
+    });
+    expect(ruled.error).toBeNull();
+    expect(reader.requests).toHaveLength(0);
+    const typeOf = () =>
+      (env?.store.journal.proposals("pending") ?? []).map(
+        (p) => (p.args as { values: { type: { value: string } } }).values.type.value,
+      );
+    expect(typeOf()).toEqual(["tarea"]);
+    // No rule (null): the model is asked, and its answer goes on in the same way.
+    const asked = await agent.background(plan, { opts: options, rule: leaf(null, code) });
+    expect(asked.error).toBeNull();
+    expect(reader.requests).toHaveLength(1);
+    expect(typeOf().sort()).toEqual(["evento", "tarea"]);
+    // A given that is not one of the options stops it.
+    const off = await agent.background(plan, { opts: options, rule: leaf("Libros", code) });
+    expect(off.error).toBe("reader-bad-given");
   });
 });
