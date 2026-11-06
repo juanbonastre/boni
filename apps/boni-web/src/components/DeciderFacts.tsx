@@ -51,6 +51,8 @@ export function DeciderFacts({
   const collectionName = (id: string | undefined) =>
     (id && (nameOfId(id) ?? dataTypes?.find((d) => d.id === id)?.name)) || null;
   const rules = (guide?.rules ?? []).filter((r) => r.action === "collection");
+  // Nothing to say (a decider of another flow, no guide): no block at all.
+  if (!among.length && !(byGuide && guide)) return null;
   return (
     <section className="decider-facts" aria-label={t("flows.decider.title")}>
       {among.length > 0 && (

@@ -612,5 +612,34 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
       1,
     );
     expect((await call(token, "POST", "/api/agent/flows/al-llegar/run", {})).status).toBe(409);
+    // What brings the records that start it (docs/sistema.md §4.2: «viene del conector Correo»): the mail's
+    // connector when they arrive at the mail's collection, nothing for any other collection.
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    host.store(1).applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_correo_via",
+          key: "correo",
+          name: "Correos",
+          fields: [
+            { id: "t_correo_via_t", key: "asunto", name: "Asunto", type: "text", label: own },
+          ],
+          titleField: "t_correo_via_t",
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const via = async () =>
+      ((await (await call(token, "GET", "/api/agent/flows/al-llegar")).json()) as { via: unknown })
+        .via;
+    host.mailTypeOf = () => "t_correo_via";
+    expect(await via()).toBe("mail");
+    host.mailTypeOf = () => "t_otra";
+    expect(await via()).toBeNull();
+    host.mailTypeOf = null;
   });
 });

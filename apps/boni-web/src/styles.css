@@ -9133,6 +9133,25 @@ button.rows-panel-row:hover {
   gap: 0 6px;
   min-width: 0;
 }
+/* A piece's own settings in its panel (task 83): «Aceptar solas»' «Solo» switch, «Plegar hilo»'s days. */
+.piece-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.piece-facts p {
+  margin: 0;
+}
+.piece-facts-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
 /* «Crear en la elegida»: the collections it chooses among, said, not chosen here. */
 .flow-chosen {
   font-size: 12.5px;
@@ -9544,8 +9563,12 @@ button.rows-panel-row:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
+/* A lane's name, cut to the lane's width (task 90's review): the whole name in its tooltip. */
 .fl-lane {
   position: absolute;
+  max-width: 184px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--accent-soft);
@@ -9553,7 +9576,6 @@ button.rows-panel-row:hover {
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
-  pointer-events: none;
 }
 .fl-plus {
   position: absolute;

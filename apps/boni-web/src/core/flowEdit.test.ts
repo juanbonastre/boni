@@ -264,3 +264,32 @@ describe("the decider's panel (task 83)", () => {
     expect(decidesAmong(plan, "r")).toEqual([]);
   });
 });
+
+describe("the decider's panel over an older version (a lane per collection)", () => {
+  it("says the collection of each step that runs only for one of its options", () => {
+    const choose = (v: string) => ({ fn: "eq", args: [{ ref: "$c.choice" }, { lit: v }] });
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "c", op: "read", reader: "classify", input: { ref: "$text" } },
+        {
+          id: "n0_tasks",
+          op: "call",
+          tool: "entities.create",
+          when: choose("Docencia"),
+          args: { type: { lit: "docencia" }, values: { ref: "$item" } },
+        },
+        {
+          id: "n1_tasks",
+          op: "call",
+          tool: "entities.create",
+          when: { fn: "and", args: [{ ref: "$inv.uid" }, choose("Gestiones")] },
+          args: { type: { lit: "gestiones" }, values: { ref: "$item" } },
+        },
+        // A step for every choice is no lane's.
+        { id: "fold", op: "call", tool: "inbox.fold", args: { mail: { ref: "$mail" } } },
+      ],
+    } as unknown as FlowPlan;
+    expect(decidesAmong(plan, "c")).toEqual(["docencia", "gestiones"]);
+  });
+});

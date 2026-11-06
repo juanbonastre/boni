@@ -20,8 +20,9 @@ export interface MailPieces {
   invitation(mail: string): Promise<Val>;
   /** The relations the mail plainly names, for each collection the flow writes in (by key). */
   relations(mail: string, keys: readonly string[]): Val;
-  /** One thread, one proposal: what this run proposed again the same gives way (D-29). How many changed. */
-  fold(mail: string, again: boolean, proposals: readonly string[]): Val;
+  /** One thread, one proposal: what this run proposed again the same gives way (D-29), looking `days` back (its
+   * setting; 60 when the step gives none). How many changed. */
+  fold(mail: string, again: boolean, proposals: readonly string[], days?: number): Val;
   /** «Solo» for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are accepted. */
   acceptAlone(proposals: readonly string[]): Promise<Val>;
 }
@@ -129,8 +130,21 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
     args: {
       mail,
       again: { role: "value", describe: "the user asked to read it again: nothing is folded" },
+      days: {
+        role: "value",
+        describe:
+          "how many days back the thread's earlier proposals count (1 to 366; 60 when not given)",
+      },
     },
-    run: (c, a) => host(c.pieces).fold(text(a.mail), yes(a.again), c.proposals()),
+    run: (c, a) => {
+      const days = a.days ? plain(a.days) : null;
+      return host(c.pieces).fold(
+        text(a.mail),
+        yes(a.again),
+        c.proposals(),
+        typeof days === "number" ? days : undefined,
+      );
+    },
   });
   r.register({
     name: "inbox.accept_alone",

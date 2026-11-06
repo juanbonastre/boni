@@ -21,6 +21,7 @@ import { stepName as nameOfStep, stepDesc } from "../core/runText.ts";
 import { useStore } from "../store.ts";
 import { DeciderFacts } from "./DeciderFacts.tsx";
 import { ExprField } from "./ExprField.tsx";
+import { PieceFacts } from "./PieceFacts.tsx";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
 type Refs = readonly { ref: string; t: string }[];
@@ -448,6 +449,8 @@ export function FlowStepPanel({
           nameOfId={(id) => catalog.collections.find((c) => c.id === id)?.name}
         />
       )}
+      {/* A piece's own setting that lives elsewhere: «Aceptar solas»' «Solo» switch (task 83). */}
+      {step.op === "call" && <PieceFacts step={step} editor />}
       {problems.length > 0 && (
         <ul className="flow-problems" aria-label={t("flows.problems")}>
           {problems.map((p) => (

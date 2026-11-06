@@ -244,6 +244,12 @@ export function userIn(mailbox: string, para: unknown, cc: unknown): UserIn {
 /** The modules a mail is read with (docs/nucleo.md 7.4b): what it asks the user to do, and to attend. */
 export const MAIL_MODULES = ["tasks", "events"];
 
+/** How many days back «Plegar hilo» looks in a thread (task 46), unless its step says otherwise (F7: its setting). */
+export const FOLD_DAYS = 60;
+/** The days a «Plegar hilo» step asks for, within 1 and a year; its default otherwise. */
+export const foldDays = (v: unknown): number =>
+  typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 366 ? v : FOLD_DAYS;
+
 /**
  * The background plan for one mail (docs/nucleo.md 7.4b, 7.12; the preset of the flow «Leer correo», docs/flujos.md):
  * read the mail once with `read_message` (its headers and text, where the user is among its recipients, the
@@ -306,13 +312,6 @@ export function mailPlan(
         ...(o.invitation
           ? [{ id: "inv", op: "call", tool: "mail.invitation", args: { mail } }]
           : []),
-        // The collections the plan writes in come from the code (`$writes`): a step's collection changes in one place.
-        {
-          id: "prefill",
-          op: "call",
-          tool: "mail.relations",
-          args: { mail, types: { ref: "$writes" } },
-        },
       ]
     : [];
   const steps: unknown[] = [
@@ -556,12 +555,29 @@ export function mailPlan(
       if (t) steps.push(invite("inv_f", t));
     }
   }
-  // Boni's pieces after the proposals: one thread, one proposal (D-29), then «Aceptar solas» when «Solo» is on.
-  if (withPieces)
+  if (withPieces) {
+    // «Buscar relaciones» (piece) after the «Rellenadora», right before the first «Crear», as docs/sistema.md §4.2
+    // orders them; the collections it looks in come from the code (`$writes`): a step's collection changes in one
+    // place.
+    const first = steps.findIndex((s) => (s as { tool?: unknown }).tool === "entities.create");
+    steps.splice(first < 0 ? steps.length : first, 0, {
+      id: "prefill",
+      op: "call",
+      tool: "mail.relations",
+      args: { mail, types: { ref: "$writes" } },
+    });
+    // Boni's pieces after the proposals: one thread, one proposal (D-29), over the days its setting says; then
+    // «Aceptar solas» when «Solo» is on.
     steps.push(
-      { id: "fold", op: "call", tool: "inbox.fold", args: { mail, again: { ref: "$again" } } },
+      {
+        id: "fold",
+        op: "call",
+        tool: "inbox.fold",
+        args: { mail, again: { ref: "$again" }, days: { lit: FOLD_DAYS } },
+      },
       { id: "alone", op: "call", tool: "inbox.accept_alone", args: {} },
     );
+  }
   return { version: 1, steps };
 }
 
@@ -838,8 +854,8 @@ export class Mails {
       },
       invitation: async (id) => this.invitationOf(account, mailOf(id)),
       relations: (id, keys) => rec(this.relationsOf(account, store(), mailOf(id), keys), CODE),
-      fold: (id, again, proposals) =>
-        leaf(again ? 0 : this.foldThread(account, store(), mailOf(id), [...proposals]), CODE),
+      fold: (id, again, proposals, days) =>
+        leaf(again ? 0 : this.foldThread(account, store(), mailOf(id), [...proposals], days), CODE),
       acceptAlone: async (proposals) => {
         const st = store();
         const made = proposals.filter((p) => st.journal.proposal(p)?.status !== "stale");
@@ -2153,17 +2169,18 @@ export class Mails {
    * cuando debería ser una sola»): what a reply proposes again the same (title, day and hours) is dropped, from
    * whoever it comes; what it changes (another day or hour) takes the place of the earlier pending proposal, and
    * the new one keeps what it was (`before`), so the card says «Antes: …». Decided by code over the thread's
-   * proposals of the last 60 days, never by the reader.
+   * proposals of the last `days` (60, or what the step «Plegar hilo» says), never by the reader.
    */
   private foldThread(
     account: number,
     store: UserStore,
     e: NonNullable<ReturnType<UserStore["get"]>>,
     made: string[],
+    days = FOLD_DAYS,
   ): number {
     const hilo = e.entity.values.f_hilo;
     if (typeof hilo !== "string" || !hilo || !made.length) return 0;
-    const since = this.now() - 60 * 86_400_000;
+    const since = this.now() - foldDays(days) * 86_400_000;
     const mails = new Set(
       store
         .list(e.entity.type)

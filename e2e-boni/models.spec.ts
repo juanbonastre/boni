@@ -1,6 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
+  ACCURACY,
+  ACCURACY_ON,
   CARD_DETAILED,
   DONE,
   FLOW_CATALOG,
@@ -778,6 +780,11 @@ test("a reading over a lane per collection lights only the lane it took, never t
   await steps.filter({ hasText: "Decisora" }).click();
   await expect(page.locator(".mp-panel .mp-here")).toContainText("Eligió");
   await expect(page.locator(".mp-panel .mp-here")).toContainText("Gestiones");
+  // A piece on the way (task 83's Recorrido with pieces): «Plegar hilo» ran, lit, its panel with its days.
+  await expect(steps.filter({ hasText: "Plegar hilo" })).toHaveClass(/run-ran/);
+  await steps.filter({ hasText: "Plegar hilo" }).click();
+  await expect(page.locator(".mp-panel h3")).toHaveText("Plegar hilo");
+  await expect(page.locator(".mp-panel .piece-facts")).toHaveText("Mira 60 días atrás en el hilo.");
 });
 
 test("«¿De dónde viene?» in the conversation: who by name, its way drawn in the chat, «Ampliar» to the map; the list folds and widens (task 92)", async ({
@@ -1126,10 +1133,21 @@ test("«Leer correo» creating in the chosen collection: one «Rellenadora» and
       "GET api/agent/flows/catalog": [FLOW_CATALOG],
       "POST api/agent/flows/check": [FLOW_CHECK],
       "GET api/mail/guide": [GUIDE_RULES],
+      "GET api/agent/decisions": [ACCURACY],
+      "PUT api/agent/decisions/:area": [ACCURACY_ON],
     },
   });
   await openFlow(page);
   const canvas = page.locator(".flow-editor .flow-canvas");
+  // What starts it comes from the mail's connector, and Boni's pieces say so on their card, with what they change
+  // (docs/sistema.md §4.2; the review of F7's first part).
+  await expect(canvas.locator(".fl-node.source")).toContainText("Viene del conector Correo");
+  await expect(canvas.locator(".fl-node", { hasText: "Regla del remitente" })).toContainText(
+    "De Boni · lee",
+  );
+  await expect(canvas.locator(".fl-node", { hasText: "Plegar hilo" })).toContainText(
+    "De Boni · cambia la Bandeja",
+  );
   const crear = canvas.locator(".fl-node", { hasText: "Crear" });
   await expect(crear).toContainText("En la elegida · cada cosa");
   await expect(canvas.locator(".fl-node", { hasText: "Rellenadora" })).toContainText("cada cosa");
@@ -1162,6 +1180,73 @@ test("«Leer correo» creating in the chosen collection: one «Rellenadora» and
   await expect(facts).not.toContainText("t_01tarea");
   await expect(facts).not.toContainText("@lista.example.com");
   await page.screenshot({ path: `${SHOTS}/flow-decider.png` });
+  // The pieces' own settings (task 83): «Plegar hilo»'s days, a setting of its step…
+  await canvas.locator(".fl-node", { hasText: "Plegar hilo" }).locator(".fl-name").click();
+  const stepPanel = page.locator(".flow-step-panel");
+  await expect(
+    stepPanel.locator(".flow-setting", { hasText: "Días" }).locator("input"),
+  ).toHaveValue("60");
+  // …and «Aceptar solas»' «Solo», the very switch of Ajustes → Decisiones.
+  await canvas.locator(".fl-node", { hasText: "Aceptar solas" }).locator(".fl-name").click();
+  const solo = stepPanel.locator(".piece-facts").getByRole("checkbox", { name: "Solo" });
+  await expect(solo).not.toBeChecked();
+  await solo.check();
+  await expect
+    .poll(async () => requests(page, "PUT api/agent/decisions"))
+    .toEqual(['PUT api/agent/decisions/mail.accept {"auto":true}']);
+  await expect(solo).toBeChecked();
+  await expect(stepPanel.locator(".piece-facts")).toContainText("Ajustes → Decisiones");
+});
+
+test("the editor cuts a lane's name to the lane's width, the whole name in its tooltip (task 90)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const long =
+    "Una opción con un nombre muy largo que no cabe en su calle (p. ej.: Corregir exámenes; Revisar actas)";
+  const choose = (v: string) => ({ fn: "eq", args: [{ ref: "$c.choice" }, { lit: v }] });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS],
+      "GET api/agent/flows/:id": [
+        {
+          ...FLOW_DETAIL,
+          nodes: [],
+          plan: {
+            version: 1,
+            steps: [
+              { id: "c", op: "read", reader: "classify", input: { ref: "$text" } },
+              {
+                id: "a",
+                op: "call",
+                tool: "notify",
+                when: choose(long),
+                args: { text: { lit: "Uno" } },
+              },
+              {
+                id: "b",
+                op: "call",
+                tool: "notify",
+                when: choose("Otra"),
+                args: { text: { lit: "Dos" } },
+              },
+            ],
+          },
+        },
+      ],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+    },
+  });
+  await openFlow(page);
+  const lane = page.locator(".flow-canvas .fl-lane", { hasText: "Una opción" });
+  await expect(lane).toHaveAttribute("title", long);
+  const fits = await lane.evaluate((e) => ({
+    width: e.getBoundingClientRect().width,
+    cut: e.scrollWidth > e.clientWidth,
+  }));
+  expect(fits.width).toBeLessThanOrEqual(200);
+  expect(fits.cut).toBe(true);
 });
 
 test("the decider's panel on the map: what it chooses among and the guide's rules that choose for it (task 83)", async ({
@@ -1177,6 +1262,7 @@ test("the decider's panel on the map: what it chooses among and the guide's rule
       "GET api/agent/flows/catalog": [FLOW_CATALOG],
       "POST api/agent/flows/check": [FLOW_CHECK],
       "GET api/mail/guide": [GUIDE_RULES],
+      "GET api/agent/decisions": [ACCURACY],
     },
   });
   await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
@@ -1202,6 +1288,11 @@ test("the decider's panel on the map: what it chooses among and the guide's rule
   await map.locator(".mp-step", { hasText: "Lectora" }).click();
   await expect(panel.locator("h3")).toHaveText("Lectora");
   await expect(panel.locator(".decider-facts")).toHaveCount(0);
+  // The pieces' settings on the map too: «Plegar hilo»'s days, «Aceptar solas»' «Solo» (task 83).
+  await map.locator(".mp-step", { hasText: "Plegar hilo" }).click();
+  await expect(panel.locator(".piece-facts")).toHaveText("Mira 60 días atrás en el hilo.");
+  await map.locator(".mp-step", { hasText: "Aceptar solas" }).click();
+  await expect(panel.locator(".piece-facts").getByRole("checkbox", { name: "Solo" })).toBeVisible();
 });
 
 test("the editor gives control (task 70): «Añadir paso» with a search and groups, a node's right button, «Entra» and «Sale», tried up to a step", async ({

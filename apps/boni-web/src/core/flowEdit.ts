@@ -43,10 +43,13 @@ export function typeKeysOf(v: unknown): string[] {
 
 /**
  * The collections a decider's choice sends things to (docs/sistema.md §4.2, «Crear en la elegida»; D-48): the keys
- * of every `case` over its `choice` in the other steps, in the order they come; none when no step goes by its choice.
+ * of every `case` over its `choice` in the other steps, and, in a plan of a lane per choice (before «Crear en la
+ * elegida»), the collection of each step that runs only when its choice is one option; in the order they come, none
+ * when no step goes by its choice.
  */
 export function decidesAmong(plan: FlowPlan, stepId: string): string[] {
   const choice = `$${stepId}.choice`;
+  const byChoice = (x: unknown) => (x as { ref?: unknown } | undefined)?.ref === choice;
   const keys: string[] = [];
   const walk = (v: unknown): void => {
     if (Array.isArray(v)) {
@@ -54,15 +57,22 @@ export function decidesAmong(plan: FlowPlan, stepId: string): string[] {
       return;
     }
     if (!isObj(v)) return;
-    if (
-      v.fn === "case" &&
-      Array.isArray(v.args) &&
-      (v.args[0] as { ref?: unknown } | undefined)?.ref === choice
-    )
+    if (v.fn === "case" && Array.isArray(v.args) && byChoice(v.args[0]))
       keys.push(...typeKeysOf(v));
     for (const x of Object.values(v)) walk(x);
   };
-  for (const s of plan.steps) if (s.id !== stepId) walk(s);
+  /** A step's condition is «its choice is this option» (alone or among others joined by `and`). */
+  const inLane = (when: unknown): boolean => {
+    if (!isObj(when) || !Array.isArray(when.args)) return false;
+    if (when.fn === "and") return when.args.some(inLane);
+    return when.fn === "eq" && when.args.some(byChoice);
+  };
+  for (const s of plan.steps) {
+    if (s.id === stepId) continue;
+    walk(s);
+    const type = isObj(s.args) ? s.args.type : undefined;
+    if (inLane(s.when) && isExpr(type) && "lit" in type) keys.push(...typeKeysOf(type));
+  }
   return [...new Set(keys)];
 }
 

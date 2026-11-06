@@ -450,7 +450,7 @@ async function serveFlows(
   });
   const detail = (fid: string, days = 7) => {
     const types = Object.values(store.schema().types);
-    return flowView(
+    const v = flowView(
       store,
       fid,
       Date.now(),
@@ -458,6 +458,12 @@ async function serveFlows(
       (tool) => host.toolTitle(tool),
       (key) => types.find((t) => t.key === key)?.name ?? null,
     );
+    if (!v) return v;
+    // What brings the records that start it (docs/sistema.md §4.2: «Llega un correo… viene del conector Correo»).
+    const created = (v.trigger as { created?: unknown } | null)?.created;
+    const starts = typeof created === "string" ? types.find((t) => t.key === created)?.id : null;
+    const mailType = host.mailTypeOf?.(who.account) ?? null;
+    return { ...v, via: starts && starts === mailType ? ("mail" as const) : null };
   };
   if (route !== "GET /api/agent/flows" && route !== "GET /api/agent/flows/:id" && !mine)
     return send(res, 403, { error: "personal-device-only" });

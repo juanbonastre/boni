@@ -1857,10 +1857,13 @@ const chosenPlan = (options: [string, string][]) => {
     fn: "case",
     args: [{ ref: "$c.choice" }, ...options.flatMap(([o, k]) => [{ lit: o }, { lit: k }])],
   };
+  const mail = { ref: "$mail" };
   return {
     version: 1,
     steps: [
       FLOW_PLAN.steps[0],
+      // Boni's pieces, as `mailPlan` writes them (docs/sistema.md §4.2): the sender's rule first.
+      { id: "only", op: "call", tool: "mail.rule", args: { mail } },
       FLOW_PLAN.steps[1],
       {
         id: "c",
@@ -1914,6 +1917,9 @@ const chosenPlan = (options: [string, string][]) => {
           },
         },
       },
+      // One thread, one proposal, over the days its setting says; then «Aceptar solas».
+      { id: "fold", op: "call", tool: "inbox.fold", args: { mail, days: { lit: 60 } } },
+      { id: "alone", op: "call", tool: "inbox.accept_alone", args: {} },
     ],
   };
 };
@@ -1950,9 +1956,12 @@ export const GUIDE_RULES = {
 };
 export const FLOW_DETAIL_CHOSEN = {
   ...FLOW_DETAIL,
-  inputs: [...FLOW_DETAIL.inputs, { id: "options", what: "list" }, { id: "only", what: "value" }],
+  inputs: [...FLOW_DETAIL.inputs, { id: "options", what: "list" }],
+  // What starts it comes from the mail's connector (docs/sistema.md §4.2).
+  via: "mail",
   nodes: [
     FLOW_DETAIL.nodes[0],
+    flowStep("only", "call", "mail.rule", { title: "Regla del remitente", deps: ["mail"] }),
     FLOW_DETAIL.nodes[1],
     flowStep("c", "read", "classify", { when: true, deps: ["text", "options", "only", "r"] }),
     flowStep("n_f", "read", "fill", {
@@ -1969,6 +1978,8 @@ export const FLOW_DETAIL_CHOSEN = {
       ran: { propose: 12 },
       into: ["Docencia", "Gestiones"],
     }),
+    flowStep("fold", "call", "inbox.fold", { title: "Plegar hilo", deps: ["mail"] }),
+    flowStep("alone", "call", "inbox.accept_alone", { title: "Aceptar solas" }),
   ],
   plan: FLOW_PLAN_CHOSEN,
 };
@@ -2318,6 +2329,11 @@ export const MAP_CHOSEN = {
               ran: { propose: 12 },
               into: ["Tarea", "Evento"],
             }),
+            flowStep("fold", "call", "inbox.fold", { title: "Plegar hilo", ran: { allow: 42 } }),
+            flowStep("alone", "call", "inbox.accept_alone", {
+              title: "Aceptar solas",
+              ran: { allow: 42 },
+            }),
           ],
         }
       : n,
@@ -2447,7 +2463,17 @@ export const FLOW_CATALOG = {
       args: [
         { name: "mail", role: "entity", required: true },
         { name: "again", role: "value", required: false },
+        // Its setting (task 83): how many days back a thread's earlier proposals count.
+        { name: "days", role: "value", required: false },
       ],
+    },
+    {
+      name: "inbox.accept_alone",
+      title: "Aceptar solas",
+      effect: "piece",
+      record: true,
+      changes: true,
+      args: [],
     },
     {
       name: "flows.run",

@@ -913,7 +913,8 @@ contraseña ni un código aquí» under a question.
   falta»), a click selects the step. The canvas lays itself out (I-26; 2026-11-06: «Leer correo» opened in a heap,
   positions left over from an older version, «Aceptar solas» on top and «Guardar» lit with nothing changed): the
   trigger on top, the steps downwards in the order they run, those that run only for one choice side by side in lanes
-  named by the choice (an `--accent-soft` pill over each lane's first step: «Tarea», «Evento»), a grey arrow from each
+  named by the choice (an `--accent-soft` pill over each lane's first step: «Tarea», «Evento»; cut with «…» at the
+  lane's width, 184 px, the whole name in its tooltip), a grey arrow from each
   to the next with a «+» on it (shown on hover; none into a lane) that puts a new step there, and, for the chosen
   step, its values' arrows dashed in `--accent` round the right side, the steps it takes them from ringed. A card's
   line says what it works in and over («Tarea · cada tarea», «Tarea · cada evento», «Tarea · la invitación»), one
@@ -927,7 +928,12 @@ contraseña ni un código aquí» under a question.
   «Por tu guía, sin preguntar al modelo:» (11.5 px, semibold, `--text-2`) over one row per rule that sends a sender to
   a collection: the address as Juan wrote it (it breaks anywhere) and «→ Tarea» muted; a collection it no longer
   knows is «→ otra colección», never its id; with none, «Tu guía no manda ningún remitente a una colección.». A rule
-  that skips a sender is «Regla del remitente»'s, not listed here. Nothing is dragged, nothing of where things are is kept,
+  that skips a sender is «Regla del remitente»'s, not listed here. A piece of Boni's card says so in its line, with
+  what it may change: «De Boni · lee», «De Boni · cambia la Bandeja». A piece's settings are in its panel (task 83):
+  «Plegar hilo»'s «Días» is a setting of its step like any other; «Aceptar solas» shows «Solo» with the switch of
+  Ajustes → Decisiones (the same one, greyed until earned) and «El mismo interruptor que en Ajustes → Decisiones.»
+  muted; on the map, «Plegar hilo»'s panel says «Mira 60 días atrás en el hilo.». A trigger whose records the mail's
+  connector brings says so under its name, muted: «Viene del conector Correo». Nothing is dragged, nothing of where things are is kept,
   no «Ordenar»: looking never asks to save. The wheel scrolls the canvas (Ctrl or a pinch zooms); it opens fitted to
   its first eight boxes at a size to read (at most 100 %), the rest a scroll below. An arrow drawn from one node to
   another asks where the second uses the first's value
