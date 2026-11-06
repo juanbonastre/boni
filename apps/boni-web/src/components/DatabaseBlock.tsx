@@ -39,6 +39,7 @@ import {
   fieldEditable,
 } from "../core/agent.ts";
 import type { SystemColumns } from "../core/audit.ts";
+import { phoneLayout } from "../host.ts";
 import type { T } from "../i18n.ts";
 import {
   addRow,
@@ -56,6 +57,7 @@ import {
   setNotesInTree,
   showFlow,
   showMapOf,
+  showOrigin,
   toast,
   useStore,
 } from "../store.ts";
@@ -173,6 +175,10 @@ export function DatabaseBlock({
         ? { ...l, icon: <MapIcon size={14} strokeWidth={1.8} />, name: t("flows.map") }
         : l,
   );
+  // What can be added to: the user's collections, Boni's that a person changes; «Flujos» not on the phone, where a
+  // flow is looked at and run, never made or changed (docs/sistema.md §4.4): its rows are read only there.
+  const lookOnly = flows && phoneLayout();
+  const canAdd = (!type?.system || !!type.editable) && !lookOnly;
   const add = async (values: Record<string, DataValue> = {}) => {
     const row = await addRow(source, values);
     // A new flow opens in its editor.
@@ -252,7 +258,7 @@ export function DatabaseBlock({
             <ViewOptions type={type} view={view} onView={onView} views={views} layouts={layouts} />
           )}
         </div>
-        {(!type?.system || type.editable) && (
+        {canAdd && (
           <button type="button" className="btn primary small" onClick={() => void add()}>
             <Plus size={14} strokeWidth={2} />
             {t("db.new")}
@@ -293,13 +299,14 @@ export function DatabaseBlock({
       ) : view.layout === "table" ? (
         <TableView
           type={type}
+          lookOnly={lookOnly}
           rows={rows}
           ghosts={data.ghosts ?? []}
           fields={shown}
           titles={data.titles}
           system={view.system ?? []}
           columns={data.columns ?? {}}
-          onAdd={() => void add()}
+          onAdd={canAdd ? () => void add() : null}
           picked={picked}
           onPick={setPicked}
           onHide={(f) => onView({ ...view, hide: [...(view.hide ?? []), f] })}
@@ -932,8 +939,15 @@ const widthOf = (f: DataField, title: boolean) => (title ? 280 : (WIDTH_OF[f.typ
 const SEL = 36;
 const TOOLS = 44;
 
+/** One of Boni's collections as it is where nothing of it is changed: no box to choose, no menu, no cell to edit. */
+function readOnlyOf(type: DataType): DataType {
+  const { editable: _changed, ...rest } = type;
+  return rest;
+}
+
 function TableView({
   type,
+  lookOnly = false,
   rows,
   ghosts,
   fields,
@@ -946,13 +960,16 @@ function TableView({
   onHide,
 }: {
   type: DataType;
+  /** Only to look at (Boni's «Flujos» on the phone): a title opens its row, nothing is chosen, renamed or edited. */
+  lookOnly?: boolean;
   rows: DataRow[];
   ghosts: DataRow[];
   fields: DataField[];
   titles: Record<string, string>;
   system: SystemColumn[];
   columns: Record<string, SystemColumns>;
-  onAdd: () => void;
+  /** «Nuevo» under its rows; null: nothing is added here. */
+  onAdd: (() => void) | null;
   picked: Set<string>;
   onPick: React.Dispatch<React.SetStateAction<Set<string>>>;
   /** «Ocultar» in a column's menu: this view stops showing it. */
@@ -989,7 +1006,7 @@ function TableView({
   const width = (key: string, base: number) => widths?.[key] ?? base;
   // Boni's own tables are read only: no boxes, no menu, no tools (their rows have nothing to be done with); in
   // «Mis datos», a row is a collection or a page, opened and deleted as one.
-  const pickable = !type.system || !!type.editable;
+  const pickable = !lookOnly && (!type.system || !!type.editable);
   const total = (pickable ? SEL + TOOLS : 0) + cols.reduce((n, c) => n + width(c.key, c.base), 0);
   const grab = (key: string, from: number) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -1299,11 +1316,13 @@ function TableView({
                 {ordered.map((f) => (
                   <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
                     {/* Boni's records: text; in «Mis datos» a title opens what it is, the rest as Cell says. */}
-                    {type.system && !type.editable ? (
+                    {type.system && (!type.editable || lookOnly) && f.id !== type.titleField ? (
+                      <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
+                    ) : type.system && !type.editable ? (
                       <span className="db-ro">{ghostText(f, r.values[f.id], locale)}</span>
                     ) : f.id === type.titleField ? (
                       <TitleCell
-                        type={type}
+                        type={lookOnly ? readOnlyOf(type) : type}
                         field={f}
                         row={r}
                         renaming={renaming === r.id}
@@ -1351,7 +1370,7 @@ function TableView({
           })}
         </tbody>
       </table>
-      {(!type.system || type.editable) && (
+      {onAdd && (
         <button type="button" className="db-add-row" onClick={onAdd}>
           <Plus size={14} strokeWidth={1.8} />
           {t("db.new")}
@@ -1424,6 +1443,17 @@ function RowMenu({
                   showMapOf(row.type ?? type.id, row.id);
                 }}
               />
+              {/* Where a record comes from (docs/sistema.md §4.4): Boni's own records come from nowhere. */}
+              {!type.system && (
+                <MenuRow
+                  label={t("origin.ask")}
+                  onClick={() => {
+                    close();
+                    const title = row.values[type.titleField];
+                    void showOrigin(row.id, typeof title === "string" ? title : "");
+                  }}
+                />
+              )}
               <MenuRow
                 label={t("db.rename")}
                 onClick={() => {

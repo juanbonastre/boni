@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Page, test } from "@playwright/test";
 import {
+  CARD_DETAILED,
   DONE,
   FLOW_CATALOG,
   FLOW_CHANGE,
@@ -18,6 +19,9 @@ import {
   MODELS_EVALUATED,
   MODELS_EVALUATING,
   MODELS_USED,
+  ORIGIN_MAIL,
+  ORIGIN_USER,
+  RUN_BOOK,
   RUN_MAIL,
   RUNS,
 } from "./agent-scenarios.ts";
@@ -346,10 +350,13 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
     "Apuntar gasto",
     "Conversación",
     "Revisar la guía",
+    "Bandeja",
     "Tú",
     "Asistente · claude-ejemplo",
   ])
     await expect(card(name).first()).toBeVisible();
+  // The Bandeja: what waits in it now.
+  await expect(card("Bandeja")).toContainText("3 esperan");
   await expect(card("Agenda")).toHaveCount(0);
   // Each node with its numbers; Boni's own flow says so; a flow's models.
   const leer = card("Leer correo");
@@ -360,7 +367,10 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await expect(card("Tarea")).toContainText("128 elementos");
   // An arrow's verb and its number; what carries a mail's words is marked.
   await expect(map.locator(".mp-edge-label", { hasText: "trae · 42" })).toHaveClass(/outside/);
-  await expect(map.locator(".mp-edge-label", { hasText: "propone · 8" })).toBeVisible();
+  // What «Leer correo» proposes waits in the Bandeja; out of it, what was accepted into each collection.
+  await expect(map.locator(".mp-edge-label", { hasText: "propone · 12" })).toBeVisible();
+  await expect(map.locator(".mp-edge-label", { hasText: "aceptadas · 7" })).toBeVisible();
+  await expect(map.locator(".mp-edge-label", { hasText: "tus decisiones · 9" })).toBeVisible();
   await expect(map.locator(".mp-edge-label", { hasText: "escribe · 61" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/flows-map.png` });
 
@@ -372,7 +382,7 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await expect(panel.getByRole("region", { name: "Entra" })).toContainText(
     "Correos · pone en marcha · 42",
   );
-  await expect(panel.getByRole("region", { name: "Sale" })).toContainText("Tarea · propone · 8");
+  await expect(panel.getByRole("region", { name: "Sale" })).toContainText("Bandeja · propone · 12");
   await expect(card("Gastos")).toHaveClass(/dim/);
   await page.screenshot({ path: `${SHOTS}/flows-map-panel.png` });
 
@@ -443,10 +453,13 @@ test("«Ver en el mapa» from a collection's menu puts it in the centre; a searc
   await expect(page.getByRole("tab", { name: "Mapa" })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".mp-centre")).toContainText("Libros");
   const map = page.locator(".mp-stage");
-  // One arrow before it: who writes in it, with how many.
-  await expect(map.locator(".mp-card")).toHaveCount(2);
+  // One arrow before it: who writes in it, with how many; through the Bandeja, the reading that proposes books
+  // there, with what it proposed to Libros (1), not to every collection (12).
+  await expect(map.locator(".mp-card")).toHaveCount(4);
   await expect(map.locator(".mp-card", { hasText: "Tú" })).toBeVisible();
   await expect(map.locator(".mp-edge-label", { hasText: "escribe · 3" })).toBeVisible();
+  await expect(map.locator(".mp-edge-label", { hasText: "propone · 1" })).toBeVisible();
+  await expect(map.locator(".mp-edge-label", { hasText: "aceptadas · 1" })).toBeVisible();
   await expect(page.locator(".mp-panel h3")).toHaveText("Libros");
   // A search puts another in the centre: «¿qué pasa cuando llega un correo?», all after the mail.
   await page.getByRole("button", { name: "Quitar del centro" }).click();
@@ -460,9 +473,33 @@ test("«Ver en el mapa» from a collection's menu puts it in the centre; a searc
     .getByRole("radiogroup", { name: "Después" })
     .getByRole("radio", { name: "Todo" })
     .click();
-  for (const name of ["Correos", "Leer correo", "Tarea", "Evento"])
+  // The way to the Bandeja and on to the guide's reviewer, which learns from the decisions (task 84's criterion).
+  for (const name of ["Correos", "Leer correo", "Bandeja", "Tarea", "Evento", "Revisar la guía"])
     await expect(map.locator(".mp-card", { hasText: name }).first()).toBeVisible();
+  // What the conversation proposes into Gastos goes through the Bandeja too, but not on the mail's way.
   await expect(map.locator(".mp-card", { hasText: "Gastos" })).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/flows-map-mail.png` });
+
+  // «¿Quién escribe en Evento?» (docs/sistema.md §4.4): one arrow before it, the Bandeja crossed to who proposes.
+  await page.getByRole("button", { name: "Quitar del centro" }).click();
+  await find.click();
+  await page.keyboard.type("Evento", { delay: 15 });
+  await page.keyboard.press("Enter");
+  await page.getByRole("radiogroup", { name: "Antes" }).getByRole("radio", { name: "1" }).click();
+  await page.getByRole("radiogroup", { name: "Después" }).getByRole("radio", { name: "1" }).click();
+  // A card by its own name (a flow's line names another: «Llega a Correos»).
+  const card = (name: string) =>
+    map.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
+  for (const name of ["Evento", "Bandeja", "Leer correo", "Asistente · claude-ejemplo"])
+    await expect(card(name)).toBeVisible();
+  for (const name of ["Conversación", "Gastos", "Tarea", "Correos"])
+    await expect(card(name)).toHaveCount(0);
+  await expect(map.locator(".mp-edge-label", { hasText: "aceptadas · 2" })).toBeVisible();
+  // Its own number into Evento (§4.4: «Leer correo (propone, 23)»), not the reading's total.
+  await expect(map.locator(".mp-edge-label", { hasText: "propone · 3" })).toBeVisible();
+  await expect(map.locator(".mp-edge-label", { hasText: "propone · 12" })).toHaveCount(0);
 });
 
 test("a run on the map (F8, «una ejecución encima»): from its Recorrido, its flow unfolded with what each step did", async ({
@@ -491,11 +528,122 @@ test("a run on the map (F8, «una ejecución encima»): from its Recorrido, its 
   await expect(steps.filter({ hasText: "Lectora" })).toContainText("Hecho");
   await expect(steps.filter({ hasText: "Rellenadora" })).toHaveClass(/run-idle/);
   await expect(steps.filter({ hasText: "Crear" })).toContainText("Propuesto");
+  // Its way across the map, told in its card: the mail it read, the run, what it proposed and what became of it.
+  const way = page.locator(".mp-way");
+  await expect(way.locator("h4")).toHaveText("Por dónde fue");
+  await expect(way.locator("li")).toHaveText([
+    "Empezó con «Reunión con secretaría el jueves» (Correos)",
+    /^Leer correo \(v3\) · 20 oct/,
+    "Propuso «Preparar la reunión» · aceptada",
+  ]);
+  // On the map, the way lit: from Correos through the Bandeja to Tarea, where it was accepted; Evento goes quiet.
+  const map = page.locator(".mp-stage");
+  const card = (name: string) =>
+    map.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
+  for (const name of ["Correos", "Bandeja", "Tarea"]) await expect(card(name)).toHaveClass(/way/);
+  await expect(card("Evento")).toHaveClass(/dim/);
+  await expect(map.locator(".mp-edge-label", { hasText: "aceptadas · 7" })).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/flows-map-run.png` });
   // Taken away: the flow stays unfolded, its steps without the run.
   await page.getByRole("button", { name: "Quitar la ejecución" }).click();
   await expect(page.locator(".mp-run-chip")).toHaveCount(0);
+  await expect(page.locator(".mp-way")).toHaveCount(0);
   await expect(steps.filter({ hasText: "Lectora" })).not.toHaveClass(/run-ran/);
+  await expect(card("Evento")).not.toHaveClass(/dim/);
+});
+
+test("an Inbox card's right button (I-17, I-25): open it, its Recorrido, or its run on the map", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/proposals": [
+        { proposals: [{ ...CARD_DETAILED, run: "run-3", madeBy: "leer-correo" }] },
+      ],
+      "GET api/agent/runs": [RUNS],
+      "GET api/agent/runs/:id": [RUN_MAIL],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await card.locator("h3").click({ button: "right" });
+  const menu = page.getByRole("dialog", { name: "Opciones de la propuesta" });
+  await expect(menu.getByRole("menuitemradio")).toHaveText([
+    "Abrir propuesta",
+    "Recorrido",
+    "Ver en el mapa",
+  ]);
+  await menu.getByRole("menuitemradio", { name: "Ver en el mapa" }).click();
+  await expect(page.locator(".mp-centre").first()).toContainText("Leer correo");
+  await expect(page.locator(".mp-way h4")).toHaveText("Por dónde fue");
+});
+
+test("«¿De dónde viene?» from a row: the reading that proposed it on the map, its mail and the «Aceptar» (F8)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/origin/:id": [ORIGIN_MAIL, ORIGIN_USER],
+      "GET api/agent/runs": [RUNS],
+      "GET api/agent/runs/:id": [RUN_BOOK],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/flows": [FLOWS],
+    },
+  });
+  const libros = () =>
+    page
+      .locator(".sidebar")
+      .getByRole("list", { name: "Páginas" })
+      .getByRole("button", { name: "Libros", exact: true })
+      .click();
+  await libros();
+  const rows = page.locator(".db-table tbody tr");
+  // A book a mail recommended: «Leer correo» proposed it to Libros, and Juan accepted it.
+  await rows.filter({ hasText: "Pedro Páramo" }).click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "¿De dónde viene?" }).click();
+  await expect(page.locator(".topbar h1")).toHaveText("Flujos");
+  await expect(page.locator(".mp-centre").first()).toContainText("Leer correo");
+  // Told in words over the map: the mail, the reading, its own proposal (and how many more), the «Aceptar».
+  const way = page.locator(".mp-way");
+  await expect(way.locator("h4")).toHaveText("¿De dónde viene «Pedro Páramo»?");
+  await expect(way.locator("li")).toHaveText([
+    "Empezó con «Libros para el club de lectura» (Correos)",
+    /^Leer correo \(v3\) · 20 oct/,
+    "Lo propuso como «Pedro Páramo»",
+    "y propuso 1 más",
+    /^Lo aceptaste · 20 oct.*13:30$/,
+  ]);
+  // Its flow unfolded with what each step did; its way lit through the Bandeja to Libros, where it is.
+  const map = page.locator(".mp-stage");
+  await expect(map.locator(".mp-step", { hasText: "Lectora" })).toHaveClass(/run-ran/);
+  const card = (name: string) =>
+    map.locator(".mp-card", {
+      has: page.locator(".mp-name", { hasText: new RegExp(`^${name}$`) }),
+    });
+  for (const name of ["Correos", "Bandeja", "Libros"]) await expect(card(name)).toHaveClass(/way/);
+  await expect(card("Tarea")).toHaveClass(/dim/);
+  await page.screenshot({ path: `${SHOTS}/flows-map-origin.png` });
+  // «Ver el Recorrido»: the run in the Registro, though older than its latest runs.
+  await way.getByRole("button", { name: "Ver el Recorrido" }).click();
+  await expect(page.locator(".log-asked .log-detail")).toBeVisible();
+
+  // One written by hand says who and where, in a notice; the map is not opened for it.
+  await libros();
+  await rows.filter({ hasText: "Pedro Páramo" }).click({ button: "right" });
+  await page.getByRole("menuitemradio", { name: "¿De dónde viene?" }).click();
+  await expect(page.getByText(/Lo escribiste tú, en portatil, el 21 oct.*19:45/)).toBeVisible();
+  await expect(page.locator(".db-table")).toBeVisible();
 });
 
 test("«Flujos»: the editor draws a flow and changes it: a step's collection, saved as his version, back to Boni's; a step added", async ({

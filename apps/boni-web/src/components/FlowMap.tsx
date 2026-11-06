@@ -41,6 +41,7 @@ import {
   Database,
   FileText,
   HelpCircle,
+  Inbox,
   Mail,
   MessageSquare,
   Plug,
@@ -53,7 +54,8 @@ import {
   X,
 } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { FlowStepNode, MapEdge, MapNode, MapView, RunDetail } from "../core/agent.ts";
+import type { FlowStepNode, MapEdge, MapNode, MapView, Origin, RunDetail } from "../core/agent.ts";
+import { deviceZone } from "../core/clock.ts";
 import {
   type Grouping,
   groupOf,
@@ -64,19 +66,22 @@ import {
   stepLayout,
 } from "../core/flowLayout.ts";
 import { useKeptNodes } from "../core/useKeptNodes.ts";
+import { phoneLayout } from "../host.ts";
 import {
   agentApi,
   errorText,
   openCollection,
   openPage,
+  openTrace,
   showChat,
   showFlow,
+  showInbox,
   toast,
   useStore,
 } from "../store.ts";
 import { triggerText } from "./FlowEditor.tsx";
 import { stepDetail } from "./FlowStepPanel.tsx";
-import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
+import { MenuRow, PointMenu, PopButton } from "./Popover.tsx";
 import { runStepLine } from "./RunCanvas.tsx";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
@@ -163,7 +168,13 @@ function KindIcon({ n, size = 14 }: { n: Pick<MapNode, "kind" | "code">; size?: 
   if (n.kind === "flow") return <Workflow {...p} />;
   if (n.kind === "page") return <FileText {...p} />;
   if (n.kind === "boni")
-    return n.code === "review" ? <Sparkles {...p} /> : <MessageSquare {...p} />;
+    return n.code === "review" ? (
+      <Sparkles {...p} />
+    ) : n.code === "inbox" ? (
+      <Inbox {...p} />
+    ) : (
+      <MessageSquare {...p} />
+    );
   if (n.code === "assistant") return <Plug {...p} />;
   if (n.code === "import") return <Upload {...p} />;
   return <User {...p} />;
@@ -190,6 +201,13 @@ function lineOf(
   keyName: (key: string) => string | undefined,
 ): string[] {
   const out: string[] = [];
+  // The Bandeja: what waits in it now.
+  if (n.kind === "boni" && n.code === "inbox")
+    return [
+      n.pending
+        ? t(n.pending === 1 ? "map.pending.one" : "map.pending", { n: n.pending })
+        : t("map.pending.none"),
+    ];
   if (n.kind === "collection")
     out.push(t(n.rows === 1 ? "map.rows.one" : "map.rows", { n: n.rows ?? 0 }));
   if (n.kind === "flow" && n.trigger) out.push(triggerText(t, n.trigger, keyName));
@@ -213,6 +231,8 @@ type CardData = {
   models: string[];
   hot: boolean;
   dim: boolean;
+  /** On the way of the run drawn on the map. */
+  way: boolean;
   centre: boolean;
   open: boolean;
   onFold: (id: string) => void;
@@ -233,7 +253,7 @@ const MapCard = memo(function MapCard({ data }: NodeProps<Node<CardData, "card">
   const n = data.node;
   return (
     <div
-      className={`mp-card ${n.kind}${data.hot ? " hot" : ""}${data.dim ? " dim" : ""}${data.centre ? " centre" : ""}${n.kind === "flow" && !n.on ? " off" : ""}`}
+      className={`mp-card ${n.kind}${data.hot ? " hot" : ""}${data.dim ? " dim" : ""}${data.way ? " way" : ""}${data.centre ? " centre" : ""}${n.kind === "flow" && !n.on ? " off" : ""}`}
       title={data.name}
     >
       <Handle type="target" position={Position.Left} id="l" />
@@ -488,6 +508,80 @@ function Joined({
   );
 }
 
+/** At most this many of a run's proposals or changes are named in its card; the rest are counted. */
+const NAMED = 3;
+
+/**
+ * The way a run went, in words over the map (docs/sistema.md §4.4): what started it, who ran it and when, what it
+ * proposed and what became of each, what it wrote; asked from a record («¿De dónde viene?»), that record and its
+ * «Aceptar». Titles from a mail are its words: painted as text.
+ */
+function RunWay({
+  run,
+  story,
+  owner,
+  when,
+}: {
+  run: RunDetail;
+  story: { title: string; origin: Origin } | null;
+  owner: string;
+  when: (ms: number) => string;
+}) {
+  const t = useStore((s) => s.t);
+  const named = <X,>(xs: X[], line: (x: X) => string) => [
+    ...xs.slice(0, NAMED).map(line),
+    ...(xs.length > NAMED ? [t("way.more", { n: xs.length - NAMED })] : []),
+  ];
+  const lines = [
+    ...(run.input
+      ? [t("way.from", { title: run.input.title || "…", collection: run.input.collection })]
+      : []),
+    run.flowVersion !== null
+      ? t("way.runV", { name: owner, v: run.flowVersion, when: when(run.started) })
+      : t("way.run", { name: owner, when: when(run.started) }),
+    // Asked from a record: its own proposal, then how many more the run made; else the run's, a few by name.
+    ...(story?.origin.proposal
+      ? [
+          t("way.proposedThis", { title: story.origin.proposal.title || story.title || "…" }),
+          ...(run.proposals.length > 1
+            ? [t("way.proposedMore", { n: run.proposals.length - 1 })]
+            : []),
+        ]
+      : named(run.proposals, (p) =>
+          t("way.proposed", { title: p.title || "…", status: t(`log.proposal.${p.status}`) }),
+        )),
+    ...named(run.changes, (c) =>
+      t(c.undone ? "way.wroteUndone" : "way.wrote", {
+        title: c.title || "…",
+        collection: c.collection,
+      }),
+    ),
+  ];
+  const decided = story?.origin.proposal?.decided ?? null;
+  if (decided !== null)
+    lines.push(
+      t(story?.origin.proposal?.alone ? "origin.alone" : "origin.accepted", {
+        when: when(decided),
+      }),
+    );
+  return (
+    <section
+      className="mp-way"
+      aria-label={story ? t("origin.title", { title: story.title || "…" }) : t("map.run")}
+    >
+      <h4>{story ? t("origin.title", { title: story.title || "…" }) : t("way.title")}</h4>
+      <ol>
+        {lines.map((l, i) => (
+          <li key={i}>{l}</li>
+        ))}
+      </ol>
+      <button type="button" className="link-btn small" onClick={() => openTrace(run.id)}>
+        {t("origin.trace")}
+      </button>
+    </section>
+  );
+}
+
 function Canvas({
   map,
   only,
@@ -509,7 +603,9 @@ function Canvas({
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [byRole, setByRole] = useState<Record<string, string>>({});
   // A run on the map (§4.4, «una ejecución encima»): its flow unfolded, each step with what came of it.
-  const [run, setRun] = useState<RunDetail | null>(null);
+  const [run, setRun] = useState<(RunDetail & { owner: string }) | null>(null);
+  // «¿De dónde viene?» of a record: its title and where it comes from, told over the run that made it.
+  const [story, setStory] = useState<{ title: string; origin: Origin } | null>(null);
   const { fitView, getNode, getViewport, setViewport } = useReactFlow();
   // «Ver en el mapa»: this in the centre, chosen; the pages shown when it is one.
   // Pages shown for a page put in the centre, only while it is there (the device's «Con páginas» stays as it was).
@@ -520,18 +616,25 @@ function Canvas({
     const known = !asked.center || map.nodes.some((n) => n.id === asked.center);
     if (!known) toast(t("map.notOnIt"));
     setCenter(known ? asked.center : null);
-    setSelected(known ? asked.center : null);
+    // A run is told in its own card: no node's panel over it.
+    setSelected(known && !asked.run ? asked.center : null);
     setPagesHere(!!asked.pages && known);
     setRun(null);
-    if (asked.run)
+    setStory(asked.origin ?? null);
+    if (asked.run) {
+      const centre = asked.center;
       agentApi.runDetail(asked.run).then(
         (d) => {
           if (!d) return;
-          setRun(d);
-          if (d.flow) setOpen((o) => new Set([...o, `flow:${d.flow}`]));
+          // Whose run it is, as the server counts it (its flow, the conversation, the reviewer, the Bandeja for an
+          // «Aceptar»); from an older server, its flow or what it was asked from.
+          const owner = d.owner ?? (d.flow ? `flow:${d.flow}` : (centre ?? "boni:chat"));
+          setRun({ ...d, owner });
+          if (owner.startsWith("flow:")) setOpen((o) => new Set([...o, owner]));
         },
         () => undefined,
       );
+    }
   }, [asked?.n]);
   useEffect(() => {
     agentApi.models().then(
@@ -554,6 +657,7 @@ function Canvas({
       month: "short",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: deviceZone(),
     }).format(ms);
   const lens: Lens = { ...kept.lens, pages: kept.lens.pages || (pagesHere && !!center), center };
   const nameOf = useMemo(() => new Map(map.nodes.map((n) => [n.id, mapNodeName(t, n)])), [map, t]);
@@ -590,7 +694,7 @@ function Canvas({
     const boxes = view.nodes.map((n) => {
       if (n.kind === "flow" && unfolded(n.id) && n.plan?.steps.length) {
         // A run's line under each step of the flow it is a run of.
-        const runLine = run && `flow:${run.flow}` === n.id ? 17 : 0;
+        const runLine = run?.owner === n.id ? 17 : 0;
         const l = stepLayout(n.plan.steps, {
           width: STEP_W,
           height: () => STEP_H + runLine,
@@ -612,11 +716,44 @@ function Canvas({
       const g = groupOf(n, kept.group);
       if (g) groups.set(n.id, g);
     }
-    return { boxes, inner, layout: mapLayout(boxes, view.edges, groups) };
+    // Who acts sits on the left: the user, the assistants, the conversation.
+    const left = new Set(
+      view.nodes.filter((n) => n.kind === "actor" || n.code === "chat").map((n) => n.id),
+    );
+    return { boxes, inner, layout: mapLayout(boxes, view.edges, groups, left) };
   }, [view, open, kept.group, byRole, run]);
 
-  // The arrows next to what the pointer is on, or what is chosen; the rest go quiet.
-  const focus = hover ?? selected;
+  // The way a run on the map went (§4.4, «una ejecución encima»): what started it, its flow or the conversation, what
+  // it read, the Bandeja and where what it proposed was accepted, where it wrote. The rest goes quiet.
+  const way = useMemo(() => {
+    if (!run) return null;
+    const owner = run.owner;
+    const col = (type: string | null | undefined) => (type ? [`col:${type}`] : []);
+    const nodes = new Set<string>([owner]);
+    const edges = new Set<string>();
+    const add = (from: string, to: string, kind: string) => {
+      nodes.add(from);
+      nodes.add(to);
+      edges.add(`${from}>${to}>${kind}`);
+    };
+    for (const c of col(run.input?.type)) {
+      add(c, owner, "starts");
+      // What brought it: the mail's connector.
+      for (const e of map.edges) if (e.to === c && e.kind === "brings") add(e.from, c, "brings");
+    }
+    for (const r of run.read) for (const c of col(r.type)) add(c, owner, "reads");
+    // An «Aceptar» writes out of the Bandeja: its arrow is «aceptadas».
+    const wrote = owner === "boni:inbox" ? "accepts" : "writes";
+    for (const w of run.changes) for (const c of col(w.type)) add(owner, c, wrote);
+    if (run.proposals.length) add(owner, "boni:inbox", "proposes");
+    for (const p of run.proposals)
+      if (p.status === "accepted") for (const c of col(p.type)) add("boni:inbox", c, "accepts");
+    return { nodes, edges };
+  }, [run, map.edges]);
+  // The arrows next to what the pointer is on, or what is chosen; the rest go quiet. Not for the centre: what the map
+  // shows then is already what comes before and after it, and all of it says something. With a run on the map, its
+  // way (a hover still shows what is next to something).
+  const focus = hover ?? (way || selected === center ? null : selected);
   const near = useMemo(() => {
     if (!focus) return null;
     const s = new Set<string>([focus]);
@@ -672,7 +809,7 @@ function Canvas({
         const cx = at.x + box.width / 2;
         const top = at.y + FRAME_HEAD;
         // The run on the map, when it is one of this flow's.
-        const ran = run && `flow:${run.flow}` === n.id ? run.steps : null;
+        const ran = run?.owner === n.id ? run.steps : null;
         const byId = new Map(n.steps.map((s) => [s.id, s]));
         for (const s of n.plan.steps) {
           const p = l.at.get(s.id);
@@ -694,7 +831,7 @@ function Canvas({
               step: { ...node, detail: stepDetail(t, s, node.detail) },
               name: stepNodeName(t, node),
               model: role ? (byRole[role] ?? null) : null,
-              dim: !!near && !near.has(n.id),
+              dim: near ? !near.has(n.id) : !!way && !way.nodes.has(n.id),
               ...(ran
                 ? (() => {
                     const r = ran.find((x) => x.id === s.id);
@@ -747,7 +884,8 @@ function Canvas({
           lines: lineOf(t, n, money, keyName),
           models,
           hot: n.id === selected,
-          dim: !!near && !near.has(n.id),
+          dim: near ? !near.has(n.id) : !!way && !way.nodes.has(n.id),
+          way: !near && !!way && way.nodes.has(n.id),
           centre: n.id === center,
           open: false,
           onFold: (id) =>
@@ -766,12 +904,19 @@ function Canvas({
     const ends = (id: string, steps: string[]) =>
       graph.inner.has(id) && steps.length ? steps.map((s) => `step:${id}:${s}`) : [id];
     for (const e of view.edges) {
-      const label = `${t(`map.edge.${e.kind}`)}${e.n !== null && e.n > 0 ? ` · ${e.n.toLocaleString(lang === "en" ? "en-GB" : "es-ES")}` : ""}`;
-      const hot = !!focus && (e.from === focus || e.to === focus);
-      const dim = !!focus && !hot;
+      // Into the Bandeja with a collection in the centre: what went to that collection (§4.4: «Leer correo
+      // (propone, 23)» for Evento), not to all.
+      const n = center && e.per && center in e.per ? (e.per[center] ?? 0) : e.n;
+      const label = `${t(`map.edge.${e.kind}`)}${n !== null && n > 0 ? ` · ${n.toLocaleString(lang === "en" ? "en-GB" : "es-ES")}` : ""}`;
+      const onWay = !focus && !!way && way.edges.has(`${e.from}>${e.to}>${e.kind}`);
+      const hot = focus ? e.from === focus || e.to === focus : onWay;
+      const dim = focus ? !hot : !!way && !onWay;
+      // An arrow that leaves from (or reaches) several steps says its words once, on the first of them.
+      let said = false;
       for (const from of ends(e.from, e.steps))
         for (const to of ends(e.to, e.steps)) {
-          const once = from !== e.from || to !== e.to;
+          const words = said ? "" : label;
+          said = true;
           rfEdges.push({
             id: `${from}>${to}>${e.kind}`,
             source: from,
@@ -779,14 +924,14 @@ function Canvas({
             sourceHandle: "r",
             targetHandle: "l",
             type: "map",
-            data: { label: once && !hot ? "" : label, kind: e.kind, outside: e.outside, hot, dim },
+            data: { label: words, kind: e.kind, outside: e.outside, hot, dim },
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
             zIndex: hot ? 2 : 0,
           });
         }
     }
     return { nodes: out, edges: rfEdges };
-  }, [graph, view, near, focus, selected, center, nameOf, t, byRole, lang, run]);
+  }, [graph, view, near, focus, selected, center, nameOf, t, byRole, lang, run, way]);
 
   const chosen = selected ? map.nodes.find((n) => n.id === selected) : undefined;
   // The box chosen stays in view when its panel narrows the canvas: moved just enough, the zoom kept.
@@ -819,9 +964,10 @@ function Canvas({
     else if (n.kind === "collection") openCollection(n.id.slice("col:".length));
     else if (n.kind === "page") openPage(n.id.slice("page:".length));
     else if (n.code === "chat") showChat();
+    else if (n.code === "inbox") showInbox();
   };
   const canOpen = (n: MapNode) =>
-    ["flow", "collection", "page"].includes(n.kind) || n.code === "chat";
+    ["flow", "collection", "page"].includes(n.kind) || n.code === "chat" || n.code === "inbox";
   const fold = (id: string) =>
     setOpen((o) => {
       const x = new Set(o);
@@ -856,7 +1002,13 @@ function Canvas({
     // A moment later, once React Flow has the new places too; a new measure in between starts the wait again.
     const id = setTimeout(() => {
       fitted.current = placed;
-      void fitView({ padding: 0.06, maxZoom: 1, duration: 200 });
+      // On the phone, never so small that a card cannot be read: the middle of it, the rest a finger away.
+      void fitView({
+        padding: 0.06,
+        maxZoom: 1,
+        ...(phoneLayout() ? { minZoom: 0.5 } : {}),
+        duration: 200,
+      });
     }, 80);
     return () => clearTimeout(id);
   }, [placed, ready, fitView]);
@@ -907,7 +1059,10 @@ function Canvas({
               className="icon-btn tiny"
               aria-label={t("map.runClear")}
               title={t("map.runClear")}
-              onClick={() => setRun(null)}
+              onClick={() => {
+                setRun(null);
+                setStory(null);
+              }}
             >
               <X size={13} strokeWidth={2} />
             </button>
@@ -971,6 +1126,7 @@ function Canvas({
         </div>
       </div>
       <div className={`mp-stage${chosen ? " with-panel" : ""}`} ref={stage}>
+        {run && <RunWay run={run} story={story} owner={nameOf.get(run.owner) ?? ""} when={when} />}
         {view.nodes.length === 0 ? (
           <div className="mp-empty">
             <p>{t("map.empty")}</p>
@@ -1066,6 +1222,7 @@ function Canvas({
               {chosen.proposals > 0 && (
                 <dd>{t("map.proposals", { n: chosen.proposals, a: chosen.accepted })}</dd>
               )}
+              {chosen.rejected > 0 && <dd>{t("map.rejected", { n: chosen.rejected })}</dd>}
               {chosen.calls > 0 && <dd>{t("map.calls", { n: chosen.calls })}</dd>}
               {modelsOf(chosen, byRole).length > 0 && (
                 <dd>{modelsOf(chosen, byRole).join(" · ")}</dd>

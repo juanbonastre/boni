@@ -154,7 +154,9 @@ export type MapEdgeKind =
   | "reads"
   | "writes"
   | "proposes"
+  | "accepts"
   | "decides"
+  | "learns"
   | "improves"
   | "shows";
 /** A node of the map as the server computes it (apps/server flowMap.ts), with what the lenses look at. */
@@ -167,6 +169,8 @@ export interface MapNodeLike {
   pack?: string | null;
   trigger?: unknown;
   boni?: boolean;
+  /** The Bandeja: what goes through it is followed to where it goes, as if it were not a step of its own. */
+  through?: boolean;
 }
 export interface MapEdgeLike {
   from: string;
@@ -175,6 +179,12 @@ export interface MapEdgeLike {
   n: number | null;
   steps?: string[];
   outside: boolean;
+  /** An arrow into the Bandeja: the collections what it carries goes to, and how many to each. */
+  into?: string[];
+  per?: Record<string, number>;
+  /** «tus decisiones»: what proposes, through the Bandeja, the decisions that teach (the reviewer learns from the
+   * mail's alone). */
+  via?: string[];
 }
 
 /** What the map shows of everything (docs/sistema.md §4.4): its centre, how far before and after, its filters. */
@@ -208,14 +218,18 @@ const CHANGES: ReadonlySet<MapEdgeKind> = new Set([
   "starts",
   "writes",
   "proposes",
+  "accepts",
   "decides",
+  "learns",
   "improves",
 ]);
 
 /**
  * What the lens leaves of the map: the nodes its filters keep, then, with a centre, those within `before` arrows
  * upstream and `after` downstream of it; without one, every node joined to another (a node alone says nothing). The
- * centre always stays, even alone.
+ * centre always stays, even alone. The Bandeja is crossed, not counted (docs/sistema.md §4.4: «Antes: 1» of Evento
+ * is «Leer correo (propone)», through the Bandeja): what reaches it goes on, in the same step, to the collections its
+ * arrow carries proposals to, and back from a collection only to those that propose into it.
  */
 export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
   map: { nodes: readonly N[]; edges: readonly E[] },
@@ -225,7 +239,10 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
     n.id === lens.center ||
     ((n.kind !== "page" || lens.pages) &&
       (!lens.on || n.kind !== "flow" || n.on !== false) &&
-      (!lens.ai || (n.kind !== "flow" && n.kind !== "boni") || (n.roles?.length ?? 0) > 0));
+      (!lens.ai ||
+        n.through ||
+        (n.kind !== "flow" && n.kind !== "boni") ||
+        (n.roles?.length ?? 0) > 0));
   let nodes = map.nodes.filter(keep);
   const ids = new Set(nodes.map((n) => n.id));
   let edges = map.edges.filter(
@@ -237,18 +254,57 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
   );
   if (lens.center && ids.has(lens.center)) {
     const reach = new Set<string>([lens.center]);
+    const through = new Set(nodes.filter((n) => n.through).map((n) => n.id));
     const walk = (dir: "up" | "down", hops: number) => {
       let front = [lens.center as string];
+      // Who the Bandeja was reached from, going down: what proposes into it (by name), or anything else («any»).
+      const entered = new Map<string, Set<string> | "any">();
+      const enter = (box: string, from: string | "any") => {
+        const was = entered.get(box);
+        if (was === "any") return;
+        if (from === "any") entered.set(box, "any");
+        else entered.set(box, new Set([...(was ?? []), from]));
+      };
       for (let h = 0; h < hops && front.length; h++) {
         const next: string[] = [];
+        const reached = (id: string) => {
+          if (reach.has(id)) return;
+          reach.add(id);
+          next.push(id);
+        };
         for (const id of front)
           for (const e of edges) {
+            // The Bandeja's own arrows to its collections are followed only through it, from what proposes; what
+            // its decisions teach («tus decisiones»), only from what those decisions are about (`via`).
+            if (through.has(id) && id !== lens.center) {
+              if (dir === "down" && e.from === id && e.kind === "accepts") continue;
+              if (dir === "up" && e.to === id && e.kind === "proposes") continue;
+              if (dir === "down" && e.from === id && e.kind === "learns" && e.via) {
+                const from = entered.get(id);
+                if (from !== "any" && ![...(from ?? [])].some((x) => e.via?.includes(x))) continue;
+              }
+            }
             const other =
               dir === "up" ? (e.to === id ? e.from : null) : e.from === id ? e.to : null;
-            if (other && !reach.has(other)) {
-              reach.add(other);
-              next.push(other);
+            if (!other) continue;
+            reached(other);
+            if (!through.has(other)) continue;
+            // Through the Bandeja, in the same step: on to where these proposals go, back to who proposes here (or
+            // to what the reviewer's lessons come from).
+            if (dir === "down") {
+              enter(other, e.kind === "proposes" ? id : "any");
+              for (const x of edges)
+                if (x.from === other && x.kind === "accepts" && e.into?.includes(x.to))
+                  reached(x.to);
             }
+            if (dir === "up")
+              for (const x of edges)
+                if (
+                  x.to === other &&
+                  x.kind === "proposes" &&
+                  (x.into?.includes(id) || (e.kind === "learns" && e.via?.includes(x.from)))
+                )
+                  reached(x.from);
           }
         front = next;
       }
@@ -256,7 +312,23 @@ export function lensOf<N extends MapNodeLike, E extends MapEdgeLike>(
     walk("up", lens.before);
     walk("down", lens.after);
     nodes = nodes.filter((n) => reach.has(n.id));
-    edges = edges.filter((e) => reach.has(e.from) && reach.has(e.to));
+    // Through the Bandeja, only the arrows of what goes where the lens reached (the conversation's proposals in
+    // Libros are not on the way of Tarea's).
+    const centre = lens.center;
+    const kept = edges.filter((e) => reach.has(e.from) && reach.has(e.to));
+    edges = kept.filter((e) => {
+      if (e.from === centre || e.to === centre) return true;
+      if (e.kind === "proposes" && through.has(e.to))
+        return (
+          (e.into ?? []).some((c) => reach.has(c)) ||
+          kept.some((x) => x.kind === "learns" && x.from === e.to && !!x.via?.includes(e.from))
+        );
+      if (e.kind === "accepts" && through.has(e.from))
+        return kept.some(
+          (x) => x.kind === "proposes" && x.to === e.from && (x.into ?? []).includes(e.to),
+        );
+      return true;
+    });
   } else {
     const joined = new Set(edges.flatMap((e) => [e.from, e.to]));
     nodes = nodes.filter((n) => joined.has(n.id));
@@ -274,7 +346,8 @@ export function groupOf(n: MapNodeLike, by: Grouping): string | null {
   if (by === "collection")
     return n.kind === "collection" ? (n.parent ? `in:${n.parent}` : null) : null;
   if (by === "trigger") {
-    if (n.kind === "boni") return "on:boni";
+    // The Bandeja is started by nothing: it is where proposals wait.
+    if (n.kind === "boni") return n.through ? null : "on:boni";
     if (n.kind !== "flow") return null;
     const t = (n.trigger ?? {}) as Record<string, unknown>;
     if (typeof t.created === "string") return `on:created:${t.created}`;
@@ -304,6 +377,9 @@ export function mapLayout(
   boxes: readonly MapBox[],
   edges: readonly { from: string; to: string }[],
   groups: ReadonlyMap<string, string> = new Map(),
+  /** Who acts (the user, an assistant, the conversation): on the left with what they write, what they read coming
+   * back to them, not pushing them to the right of everything they look at. */
+  left: ReadonlySet<string> = new Set(),
 ): MapLayout {
   const at = new Map<string, { x: number; y: number }>();
   const frames: MapLayout["frames"] = [];
@@ -331,7 +407,10 @@ export function mapLayout(
       g.setParent(id, f);
     }
     for (const e of edges)
-      if (e.from !== e.to && ids.has(e.from) && ids.has(e.to)) g.setEdge(e.from, e.to);
+      if (e.from !== e.to && ids.has(e.from) && ids.has(e.to)) {
+        if (left.has(e.to) && !left.has(e.from)) g.setEdge(e.to, e.from);
+        else g.setEdge(e.from, e.to);
+      }
     dagre.layout(g);
     for (const b of boxes) {
       const n = g.node(b.id);

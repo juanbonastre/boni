@@ -1203,6 +1203,8 @@ function runTitle(t: T, r: RunSummary): string {
       return r.alone ? t("log.what.alone") : t("log.what.accepted");
     case "test":
       return t("log.what.test", { name: w.flow });
+    case "flow":
+      return w.flow;
     default:
       return t(`log.origin.${r.origin}`);
   }
@@ -1321,15 +1323,29 @@ export function LogView() {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<RunDetail | null | "loading">(null);
   const [groups, setGroups] = useState<Set<string>>(new Set());
-  // Arrived through «Recorrido» (a turn, a proposal): that run opens by itself.
+  // Arrived through «Recorrido» (a turn, a proposal, the map): that run opens by itself.
   const openRun = useStore((s) => s.openRun);
+  const [asked, setAsked] = useState<string | null>(null);
   useEffect(() => {
     if (!openRun) return;
     useStore.setState({ openRun: null });
     setOpen(openRun);
+    setAsked(openRun);
     setDetail("loading");
     void loadRunDetail(openRun).then(setDetail);
   }, [openRun]);
+  // Asked for inside a folded group of quiet runs: the group unfolds, once.
+  useEffect(() => {
+    if (!asked) return;
+    for (const e of logEntries(runs))
+      if (!("run" in e) && e.quiet.some((r) => r.id === asked)) {
+        const first = (e.quiet[0] as RunSummary).id;
+        setGroups((g) => (g.has(first) ? g : new Set([...g, first])));
+        setAsked(null);
+      }
+  }, [asked, runs]);
+  // One older than the latest runs (a record's «¿De dónde viene?» of last month) is shown on top, by itself.
+  const listed = !!open && runs.some((r) => r.id === open);
   const when = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
     dateStyle: "short",
     timeStyle: "short",
@@ -1375,6 +1391,11 @@ export function LogView() {
       )}
       {accuracy.length > 0 && <Accuracy t={t} areas={accuracy} lang={lang} />}
       <ul className="log-list">
+        {open && !listed && (
+          <li className="log-run log-asked">
+            <RunSteps t={t} detail={detail} />
+          </li>
+        )}
         {logEntries(runs).map((e) => {
           if ("run" in e) return line(e.run);
           const first = e.quiet[0] as RunSummary;

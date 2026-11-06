@@ -2,13 +2,15 @@
  * Boni's map (docs/sistema.md §4.4, F8): everything that brings, starts, reads and writes the account's data, as one
  * graph computed from what is saved and what happened, never declared by hand (it replaces the «Modelos» canvas of
  * task 59b and its hand-made `pipeline.ts`). The nodes: the mail connector, the collections, the flows (each with its
- * steps, for the app to unfold), Boni's own work that is not a flow yet (the conversation, the guide's reviewer), the
- * user, the assistants by the MCP and the pages. The arrows: what the flows' saved plans name (a step's collection is
- * a literal: D-48), what the journal says the runs proposed and changed, and what the audit says each one wrote in
- * the period. Each node and arrow carries its numbers of the last days; the app words Boni's own nodes and the
- * arrows (i18n), a collection, a flow and a page by their own names.
+ * steps, for the app to unfold), the Bandeja (what is proposed waits there until it is accepted), Boni's own work
+ * that is not a flow yet (the conversation, the guide's reviewer), the user, the assistants by the MCP and the pages.
+ * The arrows: what the flows' saved plans name (a step's collection is a literal: D-48), what the journal says the
+ * runs proposed, what was accepted and what they changed, and what the audit says each one wrote in the period. Each
+ * node and arrow carries its numbers of the last days; the app words Boni's own nodes and the arrows (i18n), a
+ * collection, a flow and a page by their own names.
  */
 import type { RunRow, UserStore } from "@boni/store";
+import { AUTO_AREA } from "./autoAccept.ts";
 import { userTypes } from "./data.ts";
 import { type FlowNode, MAIL_FLOW, nodesOf, stepsOf } from "./flows.ts";
 import { getPage, listPages } from "./pages.ts";
@@ -23,8 +25,14 @@ export type MapEdgeKind =
   | "starts"
   | "reads"
   | "writes"
+  /** Into the Bandeja: what a flow in the background or the conversation proposes waits there. */
   | "proposes"
+  /** Out of the Bandeja: what was accepted into a collection. */
+  | "accepts"
+  /** The user's decisions in the Bandeja. */
   | "decides"
+  /** What the guide's reviewer learns from: the decisions taken in the Bandeja. */
+  | "learns"
   | "improves"
   | "shows";
 
@@ -34,7 +42,7 @@ export interface MapNode {
   /** A collection's, a flow's, a page's or an assistant's own name; null for Boni's own nodes (the app names them by
    * `code`). */
   name: string | null;
-  /** Boni's own nodes by what they are: `mail` (connector), `chat` and `review` (Boni's work), `user`, `import`,
+  /** Boni's own nodes by what they are: `mail` (connector), `chat`, `review` and `inbox` (Boni's), `user`, `import`,
    * `assistant` (actors). */
   code: string | null;
   icon?: string;
@@ -46,9 +54,14 @@ export interface MapNode {
   /** The models that answered in the period, and the roles its steps ask for (the app names the role's model). */
   models?: string[];
   roles?: string[];
-  /** Proposals made in the period and how many were accepted. */
+  /** Proposals made in the period and how many were accepted (and, the Bandeja, rejected). */
   proposals?: number;
   accepted?: number;
+  rejected?: number;
+  /** The Bandeja: how many proposals wait in it now. */
+  pending?: number;
+  /** The Bandeja: what goes through it is followed to where it goes (the lens crosses it with the arrow's `into`). */
+  through?: boolean;
   /** A collection: its key (what a trigger names), its rows, and the collection it is inside (for grouping). */
   key?: string;
   rows?: number;
@@ -75,6 +88,13 @@ export interface MapEdge {
   steps?: string[];
   /** It carries what came from outside (a mail's text): docs/nucleo.md §4.2. */
   outside: boolean;
+  /** An arrow into the Bandeja: the collections what it proposes goes to (only those are after it, through it), and
+   * how many went to each in the period (with a collection in the centre, its number is that one's). */
+  into?: string[];
+  per?: Record<string, number>;
+  /** «tus decisiones»: the flows whose proposals' decisions teach the reviewer (the lens crosses the Bandeja to it
+   * only from them). */
+  via?: string[];
 }
 
 export interface MapView {
@@ -86,6 +106,8 @@ export interface MapView {
 }
 
 const DAY = 24 * 60 * 60_000;
+/** The Bandeja's node. */
+const INBOX = "boni:inbox";
 const READS = new Set(["entities.query", "entities.search", "entities.aggregate", "entities.get"]);
 const WRITES = new Set(["entities.create", "entities.update", "entities.delete"]);
 const litOf = (v: unknown): string | null =>
@@ -105,6 +127,22 @@ function collectionsOfSpec(spec: unknown, out = new Set<string>()): Set<string> 
       else collectionsOfSpec(v, out);
     }
   return out;
+}
+
+/**
+ * The node of the map a run belongs to: its flow, the conversation, the guide's reviewer, the Bandeja (an
+ * «Aceptar»), «Leer correo» for a reading from before flows; null for what the map does not draw (a dry run).
+ */
+export function mapOwnerOf(store: UserStore, r: RunRow, mailAccount: string | null): string | null {
+  // A dry run («Probar») is no run of anything: it wrote nothing and counts nowhere.
+  if (r.origin === "test") return null;
+  if (r.flow) return `flow:${r.flow}`;
+  if (r.turn) return "boni:chat";
+  const kind = whatOf(store, r, mailAccount).kind;
+  if (kind === "accepted") return INBOX;
+  if (kind === "review" || kind === "measure") return "boni:review";
+  if (kind === "mail") return `flow:${MAIL_FLOW}`;
+  return null;
 }
 
 export function flowMap(
@@ -178,16 +216,11 @@ function makeMap(
   // The runs of the period: by flow, the conversation's turns, Boni's own work.
   const runs = j.runsIn(from, to);
   const runOf = new Map<string, RunRow>(runs.map((r) => [r.id, r]));
-  /** The node a run counts at: its flow, the conversation, the reviewer; null for what the map does not draw. */
+  /** The node a run counts at: its flow, the conversation, the reviewer; an «Aceptar» counts nowhere (the Bandeja
+   * says what it accepted). */
   const ownerOf = (r: RunRow): string | null => {
-    // A dry run («Probar») is no run of anything: it wrote nothing and counts nowhere.
-    if (r.origin === "test") return null;
-    if (r.flow) return `flow:${r.flow}`;
-    if (r.turn) return "boni:chat";
-    const kind = whatOf(store, r, o.mailAccount).kind;
-    if (kind === "review" || kind === "measure") return "boni:review";
-    if (kind === "mail") return `flow:${MAIL_FLOW}`;
-    return null;
+    const at = mapOwnerOf(store, r, o.mailAccount);
+    return at === INBOX ? null : at;
   };
   const owner = new Map<string, string | null>();
   for (const r of runs) owner.set(r.id, ownerOf(r));
@@ -230,20 +263,45 @@ function makeMap(
     };
   };
 
-  // The proposals of the period, by who made them and the collection.
-  const proposed = new Map<string, { made: number; accepted: number }>();
+  // The proposals of the period, by who made them and the collection; and, through the Bandeja, by collection.
+  const proposed = new Map<string, { made: number; accepted: number; rejected: number }>();
+  const add = (k: string, status: string, n: number) => {
+    const x = proposed.get(k) ?? { made: 0, accepted: 0, rejected: 0 };
+    x.made += n;
+    if (status === "accepted") x.accepted += n;
+    if (status === "rejected") x.rejected += n;
+    proposed.set(k, x);
+  };
   for (const p of j.proposalsByRun(from, to)) {
     // Whose: the owner of its run, as the runs are counted (a reading before F1, with no flow, is «Leer correo»'s).
     const who = owner.get(p.run) ?? null;
     const type = p.type ? byKey.get(p.type) : undefined;
     if (!who) continue;
-    for (const k of [`${who}|`, ...(type ? [`${who}|${type}`] : [])]) {
-      const x = proposed.get(k) ?? { made: 0, accepted: 0 };
-      x.made += p.n;
-      if (p.status === "accepted") x.accepted += p.n;
-      proposed.set(k, x);
+    add(`${who}|`, p.status, p.n);
+    add("|", p.status, p.n);
+    if (type) {
+      add(`${who}|${type}`, p.status, p.n);
+      add(`|${type}`, p.status, p.n);
     }
   }
+  /** The collections each one's proposals went to (or its plan says they would), and those a mail's words reach. */
+  const into = new Map<string, Set<string>>();
+  const intoOf = (who: string) => {
+    let x = into.get(who);
+    if (!x) {
+      x = new Set();
+      into.set(who, x);
+    }
+    return x;
+  };
+  for (const k of proposed.keys()) {
+    const [who, type] = k.split("|") as [string, string];
+    if (who && type && known(type)) intoOf(who).add(type);
+  }
+  const outsideInto = new Set<string>();
+  /** How many of one's proposals went to each collection in the period. */
+  const perOf = (who: string, types: Set<string>) =>
+    Object.fromEntries([...types].map((t) => [colId(t), proposed.get(`${who}|${t}`)?.made ?? 0]));
 
   // The mail connector: it brings each mail into its collection.
   const activity = recentActivity(store, { now: o.now, tz: o.tz, days: o.days });
@@ -331,19 +389,34 @@ function makeMap(
       if (was) was.steps.push(s.id);
       else named.set(k, { type, kind, steps: [s.id] });
     }
+    // What a flow a mail starts writes carries the mail's words.
+    const outside = !!starts && starts === mailCol;
+    const proposing: string[] = [];
     for (const { type, kind, steps } of named.values()) {
       if (kind === "reads")
         edge({ from: colId(type), to: id, kind, n: null, steps, outside: false });
-      else
-        edge({
-          from: id,
-          to: colId(type),
-          kind,
-          n: kind === "proposes" ? (proposed.get(`${id}|${type}`)?.made ?? 0) : null,
-          steps,
-          // What a flow a mail starts writes carries the mail's words.
-          outside: !!starts && starts === mailCol,
-        });
+      else if (kind === "proposes") {
+        // Into the Bandeja: one arrow with every step that proposes, and where each proposal goes.
+        intoOf(id).add(type);
+        proposing.push(...steps);
+      } else edge({ from: id, to: colId(type), kind, n: null, steps, outside });
+    }
+    // The steps in the order they run.
+    const at = new Map(stepsOf(f.plan).map((x, i) => [x.id, i]));
+    proposing.sort((a, b) => (at.get(a) ?? 0) - (at.get(b) ?? 0));
+    const goes = into.get(id);
+    if (goes?.size) {
+      edge({
+        from: id,
+        to: INBOX,
+        kind: "proposes",
+        n: p?.made ?? 0,
+        ...(proposing.length ? { steps: proposing } : {}),
+        outside,
+        into: [...goes].map(colId).sort(),
+        per: perOf(id, goes),
+      });
+      if (outside) for (const t of goes) outsideInto.add(t);
     }
   }
 
@@ -359,17 +432,17 @@ function makeMap(
     proposals: chat?.made ?? 0,
     accepted: chat?.accepted ?? 0,
   });
-  for (const t of mine) {
-    const made = proposed.get(`boni:chat|${t.id}`);
-    if (made?.made)
-      edge({
-        from: "boni:chat",
-        to: colId(t.id),
-        kind: "proposes",
-        n: made.made,
-        outside: false,
-      });
-  }
+  const chatInto = into.get("boni:chat") ?? new Set<string>();
+  if (chat?.made)
+    edge({
+      from: "boni:chat",
+      to: INBOX,
+      kind: "proposes",
+      n: chat.made,
+      outside: false,
+      into: [...chatInto].map(colId).sort(),
+      per: perOf("boni:chat", chatInto),
+    });
   // What the conversation's turns changed (confirmed by the user, or his own collections' writes): from their runs.
   const turnWrites = new Map<string, number>();
   for (const r of runs) {
@@ -388,6 +461,59 @@ function makeMap(
     const [who, type] = k.split("|") as [string, string];
     edge({ from: who, to: colId(type), kind: "writes", n, outside: false });
   }
+  // The Bandeja (docs/sistema.md §4.4: «Leer correo → Bandeja → Juan acepta → Tarea y Evento»): what is proposed
+  // waits in it; out of it, what was accepted into each collection; the user's decisions in it teach the reviewer.
+  const all = proposed.get("|");
+  const pending = j.proposals("pending").length;
+  const goesSomewhere = [...into.values()].some((x) => x.size > 0);
+  // The user's decisions of the period: what was accepted or rejected, but not what Boni accepted alone («Solo»,
+  // docs/fiabilidad.md); those on «Leer correo»'s proposals are the ones the reviewer learns from.
+  const alone = store.journal
+    .decisions(AUTO_AREA, 1000)
+    .filter((d) => d.outcome === "do" && d.at >= from && d.at < to).length;
+  const ranBefore = new Map<string, string | null>();
+  const whose = (run: string) => {
+    if (owner.has(run)) return owner.get(run) ?? null;
+    if (!ranBefore.has(run)) {
+      const r = j.run(run);
+      ranBefore.set(run, r ? ownerOf(r) : null);
+    }
+    return ranBefore.get(run) ?? null;
+  };
+  let decisions = 0;
+  let mailDecisions = 0;
+  for (const d of j.proposalsDecidedByRun(from, to)) {
+    if (d.status !== "accepted" && d.status !== "rejected") continue;
+    decisions += d.n;
+    if (whose(d.run) === `flow:${MAIL_FLOW}`) mailDecisions += d.n;
+  }
+  decisions = Math.max(0, decisions - alone);
+  mailDecisions = Math.max(0, mailDecisions - alone);
+  if (goesSomewhere || pending > 0) {
+    node({
+      id: INBOX,
+      kind: "boni",
+      name: null,
+      code: "inbox",
+      ...numbers(INBOX),
+      roles: [],
+      proposals: all?.made ?? 0,
+      accepted: all?.accepted ?? 0,
+      rejected: all?.rejected ?? 0,
+      pending,
+      through: true,
+    });
+    const reached = new Set([...into.values()].flatMap((x) => [...x]));
+    for (const t of [...reached].sort())
+      edge({
+        from: INBOX,
+        to: colId(t),
+        kind: "accepts",
+        n: proposed.get(`|${t}`)?.accepted ?? 0,
+        outside: outsideInto.has(t),
+      });
+    edge({ from: "actor:user", to: INBOX, kind: "decides", n: decisions, outside: false });
+  }
   if (mailCol || (stats.get("boni:review")?.runs ?? 0) > 0) {
     node({
       id: "boni:review",
@@ -398,13 +524,13 @@ function makeMap(
       roles: ["reviewer"],
       pack: "correo",
     });
-    const decided = j.proposalsDecided(from, to);
     edge({
-      from: "actor:user",
+      from: INBOX,
       to: "boni:review",
-      kind: "decides",
-      n: (decided.accepted ?? 0) + (decided.rejected ?? 0),
+      kind: "learns",
+      n: mailDecisions,
       outside: false,
+      via: [`flow:${MAIL_FLOW}`],
     });
     if (nodes.has(`flow:${MAIL_FLOW}`))
       edge({

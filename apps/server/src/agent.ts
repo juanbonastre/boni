@@ -28,7 +28,7 @@ import { aloneRuns, measure } from "./autoAccept.ts";
 import { setProtection } from "./data.ts";
 import { ensurePresets, installed, setEnabled } from "./extensions.ts";
 import type { ExternalItem } from "./externalItems.ts";
-import { flowMap } from "./flowMap.ts";
+import { flowMap, mapOwnerOf } from "./flowMap.ts";
 import {
   checkFlow,
   createFlow,
@@ -47,6 +47,7 @@ import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
+import { recordOrigin } from "./origin.ts";
 import { withPieces } from "./pieces.ts";
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
@@ -81,6 +82,8 @@ import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
  *                                               what came of it (runInfo.ts), and `autoAccept`: how often
  *                                               Boni would have accepted alone, and been right (autoAccept.ts)
  *   GET  /api/agent/runs/:id                 -> RunDetail: the request and each step (a personal device only)
+ *   GET  /api/agent/origin/:id               -> Origin: who made a record and from what, the run that proposed it
+ *                                               («¿De dónde viene?», origin.ts; a personal device only)
  *   POST /api/agent/runs/:id/undo            -> { undone } every operation of that run
  *   GET  /api/agent/conversations            -> { conversations } Juan's conversations, the latest first
  *   POST /api/agent/conversations            { title? } -> { conversation } a new one
@@ -998,7 +1001,20 @@ async function answerAgent(
     case "GET /api/agent/runs/:id": {
       if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
       const d = agent.runDetail(params.id ?? "");
-      return d ? send(res, 200, d) : send(res, 404, { error: "not-found" });
+      if (!d) return send(res, 404, { error: "not-found" });
+      // Where the map draws it: its flow, the conversation, the reviewer, the Bandeja (docs/sistema.md §4.4).
+      const store = host.store(who.account);
+      const r = store.journal.run(d.id);
+      const owner = r ? mapOwnerOf(store, r, host.mailAccountOf?.(who.account) ?? null) : null;
+      return send(res, 200, { ...d, owner });
+    }
+    case "GET /api/agent/origin/:id": {
+      if (who.trust !== "personal") return send(res, 403, { error: "personal-device-only" });
+      const store = host.store(who.account);
+      const o = recordOrigin(store, params.id ?? "", {
+        mailAccount: host.mailAccountOf?.(who.account) ?? null,
+      });
+      return o ? send(res, 200, o) : send(res, 404, { error: "not-found" });
     }
     case "POST /api/agent/runs/:id/undo":
       try {

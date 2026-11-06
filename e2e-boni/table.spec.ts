@@ -187,6 +187,7 @@ test("rows chosen by their box, the margin, Ctrl and Shift; deleted together wit
   await expect(menu.getByRole("menuitemradio")).toHaveText([
     "Abrir",
     "Ver en el mapa",
+    "¿De dónde viene?",
     "Cambiar nombre",
     "Copiar enlace",
     "Borrar",
@@ -220,6 +221,7 @@ test("the right button on a card (task 42): the board's, the gallery's and the l
     await expect(menu.getByRole("menuitemradio")).toHaveText([
       "Abrir",
       "Ver en el mapa",
+      "¿De dónde viene?",
       "Cambiar nombre",
       "Copiar enlace",
       "Borrar",

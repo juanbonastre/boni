@@ -9710,6 +9710,44 @@ button.rows-panel-row:hover {
 .mp-card.centre {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* On the way of the run drawn on the map: its outline in the accent, as the steps that ran. */
+.mp-card.way {
+  border-color: var(--accent);
+}
+/* The way a run went, told in words over the map's top left corner (docs/design-guide.md «The map»). */
+.mp-way {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: min(340px, calc(100% - 20px));
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+.mp-way h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mp-way ol {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--text-2, var(--text));
+}
+.mp-way li {
+  overflow-wrap: anywhere;
+}
 .mp-card.dim,
 .mp-step.dim {
   opacity: 0.35;
@@ -9999,9 +10037,10 @@ button.rows-panel-row:hover {
 .m-flows .mp-find .input {
   width: 100%;
 }
+/* Above the tab bar, whatever the toolbar takes (three lines on a phone). */
 .m-flows .mp-stage {
-  height: calc(100vh - 330px);
-  min-height: 340px;
+  height: calc(100dvh - 470px);
+  min-height: 320px;
 }
 .m-flows .flow-crumbs {
   margin-top: 0;

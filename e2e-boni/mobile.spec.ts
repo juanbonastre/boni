@@ -1,6 +1,17 @@
 import { mkdirSync } from "node:fs";
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { LONG_SENDER, MAIL, PROPOSALS } from "./agent-scenarios.ts";
+import {
+  FLOW_CATALOG,
+  FLOW_CHECK,
+  FLOW_DETAIL,
+  FLOW_TEST,
+  FLOWS,
+  LONG_SENDER,
+  MAIL,
+  MAP,
+  MODELS,
+  PROPOSALS,
+} from "./agent-scenarios.ts";
 import { EXAMPLES, emit, iconsWhole, openApp, recorded } from "./fixtures.ts";
 
 /**
@@ -492,6 +503,57 @@ test("Boni on the phone: a greeting with things to try; its conversations in a d
   await page.screenshot({ path: `${SHOTS}/phone-chats.png` });
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
+});
+
+test("«Flujos» on the phone (F8): the map to look at, a flow to try or run, never changed", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/map": [MAP],
+      "GET api/agent/flows": [FLOWS],
+      "GET api/agent/flows/:id": [FLOW_DETAIL],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+      "POST api/agent/flows/:id/test": [FLOW_TEST],
+    },
+  });
+  await tab(page, "Páginas");
+  // Under «De Boni» in «Páginas».
+  await page.locator(".m-item-main", { hasText: "Flujos" }).tap();
+  // Its two views, as on the computer; no «Nuevo»: a flow is made on the computer.
+  await expect(page.getByRole("tab", { name: "Mapa" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Nuevo" })).toHaveCount(0);
+  await page.getByRole("tab", { name: "Mapa" }).tap();
+  const map = page.locator(".mp-stage");
+  await expect(map.locator(".mp-card", { hasText: "Bandeja" })).toBeVisible();
+  // Nothing wider than the phone; never so small that a card cannot be read (its middle, the rest a finger away).
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(412);
+  await expect
+    .poll(async () => {
+      const m = await map
+        .locator(".react-flow__viewport")
+        .evaluate((el) => getComputedStyle(el).transform);
+      return Number(/matrix\(([^,]+)/.exec(m)?.[1] ?? 0);
+    })
+    .toBeGreaterThanOrEqual(0.5);
+  await page.screenshot({ path: `${SHOTS}/phone-flows-map.png` });
+  // A flow's page: looked at, tried or run; never changed (no «Guardar», no «Añadir paso»).
+  await page.getByRole("tab", { name: "Tabla" }).tap();
+  await page.getByText("Leer correo", { exact: true }).first().tap();
+  await expect(page.locator(".flow-crumbs")).toContainText("Leer correo");
+  await expect(page.locator(".flow-editor .fl-node").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Guardar" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Añadir paso" })).toHaveCount(0);
+  // Tried on the phone: «Probar» runs it dry and each step says what it did.
+  await page.getByRole("button", { name: "Probar", exact: true }).tap();
+  await expect(page.locator(".flow-test-bar")).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/phone-flow.png` });
+  // Back in «Flujos», its rows are not renamed, deleted or changed here (§4.4: edited on the computer).
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tab", { name: "Tabla" })).toBeVisible();
+  await expect(page.locator(".db-table .db-check")).toHaveCount(0);
 });
 
 test("the Bandeja is a place: its proposals under its large title", async ({ page }) => {

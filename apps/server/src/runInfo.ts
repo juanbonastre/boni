@@ -21,6 +21,8 @@ export type RunWhat =
   | { kind: "accepted" }
   /** «Probar» on a flow (docs/flujos.md F3): a dry run, nothing written. */
   | { kind: "test"; flow: string }
+  /** A run of a flow that is no reading of a mail (on its schedule, or by hand), by the flow's name. */
+  | { kind: "flow"; flow: string }
   | { kind: "other" };
 
 export interface RunChange {
@@ -90,9 +92,12 @@ export function whatOf(
   if (r.origin === "accepted") return { kind: "accepted" };
   if (r.origin === "test")
     return { kind: "test", flow: (r.flow && store.journal.flow(r.flow)?.name) || "" };
+  const flowName = () => (r.flow && store.journal.flow(r.flow)?.name) || "";
   if (r.origin === "turn" || r.turn) {
     const planner = store.journal.modelCalls(r.id).find((m) => m.role === "planner");
     const req = (planner?.request as { input?: { request?: unknown } } | undefined)?.input?.request;
+    // A flow run by hand has no request of its own: its flow names it.
+    if (!text(req) && flowName()) return { kind: "flow", flow: flowName() };
     return { kind: "request", text: text(req, 300) };
   }
   if (r.origin === "background") {
@@ -114,6 +119,7 @@ export function whatOf(
       return { kind: "mail", subject: seen.subject, from: seen.from, account: mailAccount };
     }
   }
+  if (flowName()) return { kind: "flow", flow: flowName() };
   return { kind: "other" };
 }
 

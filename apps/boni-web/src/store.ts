@@ -31,6 +31,7 @@ import {
   type MailGuide,
   type MailInput,
   type MailView,
+  type Origin,
   type Page,
   type PageInfo,
   type Planner,
@@ -130,7 +131,14 @@ export type View =
   | {
       kind: "flows";
       flow?: string;
-      map?: { center: string | null; pages?: boolean; run?: string; n: number };
+      map?: {
+        center: string | null;
+        pages?: boolean;
+        run?: string;
+        /** «¿De dónde viene?»: the record asked about (its title) and where it comes from. */
+        origin?: { title: string; origin: Origin };
+        n: number;
+      };
     }
   | { kind: "audit"; filter: AuditFilter }
   /** One collection on a page of its own (its protection is unlocked only here). */
@@ -2882,7 +2890,10 @@ export function showMapOf(type: string, row: string) {
  * `col:<collection>`, `flow:<id>`, `page:<id>`, `boni:chat`…); `pages`: with the pages shown while it is there (a page);
  * `run`: that run drawn on it.
  */
-export const showMap = (center: string | null, o: { pages?: boolean; run?: string } = {}) =>
+export const showMap = (
+  center: string | null,
+  o: { pages?: boolean; run?: string; origin?: { title: string; origin: Origin } } = {},
+) =>
   set({
     view: {
       kind: "flows",
@@ -2891,12 +2902,49 @@ export const showMap = (center: string | null, o: { pages?: boolean; run?: strin
         ...(o.pages ? { pages: true } : {}),
         // A run drawn on it (§4.4, «una ejecución encima»): its flow unfolded, the way it went.
         ...(o.run ? { run: o.run } : {}),
+        ...(o.origin ? { origin: o.origin } : {}),
         n: ++mapAsks,
       },
     },
     panel: null,
     settingsOpen: false,
   });
+
+/**
+ * «¿De dónde viene?» of a record (docs/sistema.md §4.4): what a flow or the conversation proposed or wrote, on the map
+ * with that run drawn on it and the way it came told in words; what someone wrote, said in a notice.
+ */
+export async function showOrigin(id: string, title: string) {
+  const t = get().t;
+  let o: Origin | null = null;
+  try {
+    o = await agentApi.origin(id);
+  } catch (e) {
+    return toast(errorText(t, e));
+  }
+  if (!o) return toast(t("origin.none"));
+  if (o.run)
+    return showMap(o.run.owner ?? (o.run.flow ? `flow:${o.run.flow}` : "boni:chat"), {
+      run: o.run.id,
+      origin: { title, origin: o },
+    });
+  toast(originText(t, o));
+}
+
+/** Who wrote a record no run made, in words («Lo escribiste tú, en portatil, el 5 nov 12:10»). */
+export function originText(t: T, o: Origin): string {
+  const when = new Intl.DateTimeFormat(get().settings.language === "en" ? "en-GB" : "es-ES", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: deviceZone(),
+  }).format(o.at);
+  if (o.by === "user")
+    return o.device ? t("origin.user.on", { device: o.device, when }) : t("origin.user", { when });
+  if (o.by === "assistant") return t("origin.assistant", { name: o.device ?? "", when });
+  return t(`origin.${o.by}`, { when });
+}
 
 /**
  * The sidebar's folding, kept on this device: `sections` lists the folded sections, `branches` the unfolded

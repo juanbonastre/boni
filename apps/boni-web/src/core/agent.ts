@@ -444,9 +444,14 @@ export interface RunDetail {
   flowVersion: number | null;
   inputs: string[];
   steps: RunStep[];
-  read: { collection: string; titles: string[]; n: number }[];
-  changes: { action: string; title: string; collection: string; undone: boolean }[];
-  proposals: { title: string; status: string }[];
+  /** Each with its collection's name and id (`type`, empty when unknown): the map draws the way the run went. */
+  read: { collection: string; type: string; titles: string[]; n: number }[];
+  changes: { action: string; title: string; collection: string; type: string; undone: boolean }[];
+  proposals: { title: string; status: string; type: string | null }[];
+  /** The record that started it (a mail): its title is outside text, painted as text. */
+  input: { id: string; title: string; collection: string; type: string } | null;
+  /** The node of the map it belongs to (`flow:…`, `boni:chat`, `boni:review`, `boni:inbox`); null: none. */
+  owner: string | null;
   decisions: { area: string; p: number; outcome: string; result: string | null }[];
   models: {
     role: string;
@@ -457,6 +462,77 @@ export interface RunDetail {
     cost: number | null;
     at: number;
   }[];
+}
+
+/** Who made a record and from what («¿De dónde viene?», apps/server origin.ts). */
+export interface Origin {
+  by: "flow" | "chat" | "user" | "assistant" | "import" | "connector" | "boni";
+  at: number;
+  /** The user's device, or the assistant's name. */
+  device: string | null;
+  /** The run that made or proposed it, and the node of the map it belongs to. */
+  run: {
+    id: string;
+    flow: string | null;
+    flowVersion: number | null;
+    started: number;
+    owner: string | null;
+  } | null;
+  /** The record that started that run (a mail): outside text, painted as text. */
+  input: { id: string; title: string; collection: string } | null;
+  /** It came through the Bandeja: what was proposed (its title, outside text), when, and accepted (by the user, or
+   * by Boni alone). */
+  proposal: { title: string; created: number; decided: number | null; alone: boolean } | null;
+}
+const ORIGIN_BY: readonly Origin["by"][] = [
+  "flow",
+  "chat",
+  "user",
+  "assistant",
+  "import",
+  "connector",
+  "boni",
+];
+export function parseOrigin(b: unknown): Origin | null {
+  if (!isObj(b)) return null;
+  const by = ORIGIN_BY.find((x) => x === b.by);
+  if (!by || typeof b.at !== "number") return null;
+  const r = isObj(b.run) ? b.run : null;
+  const i = isObj(b.input) ? b.input : null;
+  const p = isObj(b.proposal) ? b.proposal : null;
+  const s = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : null);
+  return {
+    by,
+    at: b.at,
+    device: s(b.device, 60),
+    run:
+      r && typeof r.id === "string" && typeof r.started === "number"
+        ? {
+            id: r.id.slice(0, 80),
+            flow: s(r.flow, 80),
+            flowVersion: typeof r.flowVersion === "number" ? r.flowVersion : null,
+            started: r.started,
+            owner: typeof r.owner === "string" && MAP_ID.test(r.owner) ? r.owner : null,
+          }
+        : null,
+    input:
+      i && typeof i.id === "string"
+        ? {
+            id: i.id.slice(0, 80),
+            title: s(i.title, 120) ?? "",
+            collection: s(i.collection, 80) ?? "",
+          }
+        : null,
+    proposal:
+      p && typeof p.created === "number"
+        ? {
+            title: s(p.title, 120) ?? "",
+            created: p.created,
+            decided: typeof p.decided === "number" ? p.decided : null,
+            alone: p.alone === true,
+          }
+        : null,
+  };
 }
 
 /** A plan expression as text: a literal as it is, a quote of the request in quotes, a reference by name. */
@@ -493,6 +569,8 @@ export type RunWhat =
   | { kind: "review" }
   | { kind: "accepted" }
   | { kind: "test"; flow: string }
+  /** A run of a flow (on its schedule, or by hand), by the flow's name. */
+  | { kind: "flow"; flow: string }
   | { kind: "other" };
 /** How often Boni would have accepted alone over Juan's last decisions, and been right (the server's rule). */
 export interface AutoAccept {
@@ -552,6 +630,8 @@ function runWhat(v: unknown): RunWhat | undefined {
       return { kind: v.kind };
     case "test":
       return { kind: "test", flow: s(v.flow, 80) };
+    case "flow":
+      return { kind: "flow", flow: s(v.flow, 80) };
     default:
       return { kind: "other" };
   }
@@ -674,6 +754,9 @@ export interface MapNode extends MapNodeLike {
   roles: string[];
   proposals: number;
   accepted: number;
+  /** The Bandeja: rejected in the period, and waiting now. */
+  rejected: number;
+  pending: number;
   /** A collection's key (what a trigger names). */
   key: string | null;
   rows: number | null;
@@ -701,7 +784,9 @@ const MAP_EDGES: readonly MapEdgeKind[] = [
   "reads",
   "writes",
   "proposes",
+  "accepts",
   "decides",
+  "learns",
   "improves",
   "shows",
 ];
@@ -730,6 +815,9 @@ export function parseMap(b: unknown): MapView | null {
       roles: strs(n.roles, 8).filter((r) => /^[a-z]{1,20}$/.test(r)),
       proposals: numOf(n.proposals),
       accepted: numOf(n.accepted),
+      rejected: numOf(n.rejected),
+      pending: numOf(n.pending),
+      through: n.through === true,
       key: strOf(n.key, 80),
       rows: typeof n.rows === "number" ? n.rows : null,
       parent: typeof n.parent === "string" && MAP_ID.test(n.parent) ? n.parent : null,
@@ -759,6 +847,21 @@ export function parseMap(b: unknown): MapView | null {
         ? e.steps.filter((x): x is string => typeof x === "string" && ID_RE.test(x))
         : [],
       outside: e.outside === true,
+      ...(Array.isArray(e.into)
+        ? { into: e.into.filter((x): x is string => typeof x === "string" && ids.has(x)) }
+        : {}),
+      ...(isObj(e.per)
+        ? {
+            per: Object.fromEntries(
+              Object.entries(e.per).filter(
+                (x): x is [string, number] => ids.has(x[0]) && typeof x[1] === "number",
+              ),
+            ),
+          }
+        : {}),
+      ...(Array.isArray(e.via)
+        ? { via: e.via.filter((x): x is string => typeof x === "string" && ids.has(x)) }
+        : {}),
     });
   }
   return { days: numOf(b.days, 7), nodes, edges };
@@ -3018,6 +3121,7 @@ export class AgentApi {
       })),
       read: list(b.read, (x) => ({
         collection: str(x.collection, 80) ?? "",
+        type: str(x.type, 80) ?? "",
         titles: strs(x.titles).map((y) => y.slice(0, 80)),
         n: num(x.n),
       })),
@@ -3025,12 +3129,23 @@ export class AgentApi {
         action: str(x.action, 20) ?? "",
         title: str(x.title, 80) ?? "",
         collection: str(x.collection, 80) ?? "",
+        type: str(x.type, 80) ?? "",
         undone: x.undone === true,
       })),
       proposals: list(b.proposals, (x) => ({
         title: str(x.title, 120) ?? "",
         status: str(x.status, 20) ?? "",
+        type: str(x.type, 80),
       })),
+      input: isObj(b.input)
+        ? {
+            id: str(b.input.id, 80) ?? "",
+            title: str(b.input.title, 120) ?? "",
+            collection: str(b.input.collection, 80) ?? "",
+            type: str(b.input.type, 80) ?? "",
+          }
+        : null,
+      owner: typeof b.owner === "string" && MAP_ID.test(b.owner) ? b.owner : null,
       decisions: list(b.decisions, (x) => ({
         area: str(x.area, 40) ?? "",
         p: num(x.p),
@@ -3047,6 +3162,11 @@ export class AgentApi {
         at: num(x.at),
       })),
     };
+  }
+  /** «¿De dónde viene?» of a record (docs/sistema.md §4.4): who made it, and the run that proposed it. */
+  async origin(id: string): Promise<Origin | null> {
+    const b = await this.call("GET", `origin/${encodeURIComponent(id)}`);
+    return parseOrigin(b);
   }
   private mailOf = (b: unknown) => (isObj(b) ? parseMail(b.mail) : null);
   mail = async () => this.mailOf(await this.call("GET", "", undefined, "api/mail"));

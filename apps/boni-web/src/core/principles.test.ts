@@ -54,8 +54,13 @@ describe("principles (docs/principios.md)", () => {
       "components/InboxCards.tsx",
     ])
       expect(readFileSync(join(SRC, file), "utf8"), file).toContain('t("map.show")');
+    // And a row's «¿De dónde viene?»: the run that made it, drawn on the map.
+    expect(readFileSync(join(SRC, "components/DatabaseBlock.tsx"), "utf8")).toContain(
+      't("origin.ask")',
+    );
     for (const lang of ["es", "en"] as const)
-      expect(translator(lang)("map.show"), lang).not.toBe("map.show");
+      for (const k of ["map.show", "origin.ask", "origin.title", "map.node.inbox"])
+        expect(translator(lang)(k), `${lang} ${k}`).not.toBe(k);
   });
 
   it("I-02: every label of the block catalogue has its text in both languages", () => {

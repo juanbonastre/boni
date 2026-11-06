@@ -611,6 +611,24 @@ export const RUN_MAIL = {
   flow: "leer-correo",
   flowVersion: 3,
   inputs: ["mail", "text"],
+  // The mail it read, what it proposed and where that went: the way the map draws (docs/sistema.md §4.4).
+  input: {
+    id: "e_01m6mail0001",
+    title: "Reunión con secretaría el jueves",
+    collection: "Correos",
+    type: "t_01m6correo",
+  },
+  read: [
+    {
+      collection: "Correos",
+      type: "t_01m6correo",
+      titles: ["Reunión con secretaría el jueves"],
+      n: 1,
+    },
+  ],
+  proposals: [{ title: "Preparar la reunión", status: "accepted", type: "t_01tarea" }],
+  // Where the map draws it, as the server says.
+  owner: "flow:leer-correo",
   steps: [
     {
       id: "m",
@@ -1887,6 +1905,17 @@ export const MAP = {
       roles: ["reviewer"],
       pack: "correo",
     }),
+    // The Bandeja: what «Leer correo» and the conversation propose waits in it.
+    mapNode({
+      id: "boni:inbox",
+      kind: "boni",
+      code: "inbox",
+      proposals: 14,
+      accepted: 10,
+      rejected: 2,
+      pending: 3,
+      through: true,
+    }),
     mapNode({ id: "actor:user", kind: "actor", code: "user" }),
     mapNode({
       id: "actor:mcp:claude-ejemplo",
@@ -1901,25 +1930,88 @@ export const MAP = {
   edges: [
     mapEdge("conn:mail", "col:t_01m6correo", "brings", 42, { outside: true }),
     mapEdge("col:t_01m6correo", "flow:leer-correo", "starts", 42, { outside: true }),
-    mapEdge("flow:leer-correo", "col:t_01tarea", "proposes", 8, {
+    mapEdge("flow:leer-correo", "boni:inbox", "proposes", 12, {
       outside: true,
       steps: ["n0_tasks"],
+      into: ["col:t_01evento", "col:t_01tarea", "col:t_libro"],
+      per: { "col:t_01tarea": 8, "col:t_01evento": 3, "col:t_libro": 1 },
     }),
-    mapEdge("flow:leer-correo", "col:t_01evento", "proposes", 4, {
-      outside: true,
-      steps: ["n0_tasks"],
+    mapEdge("boni:chat", "boni:inbox", "proposes", 2, {
+      into: ["col:t_01gastos"],
+      per: { "col:t_01gastos": 2 },
     }),
+    mapEdge("boni:inbox", "col:t_01tarea", "accepts", 7, { outside: true }),
+    mapEdge("boni:inbox", "col:t_01evento", "accepts", 2, { outside: true }),
+    mapEdge("boni:inbox", "col:t_01gastos", "accepts", 1),
+    mapEdge("boni:inbox", "col:t_libro", "accepts", 1, { outside: true }),
     mapEdge("flow:apuntar-gasto", "col:t_01gastos", "writes", 3),
     mapEdge("boni:chat", "col:t_01tarea", "writes", 2),
     mapEdge("col:t_01gastos", "boni:chat", "reads", 30),
     mapEdge("actor:user", "col:t_01tarea", "writes", 14),
     mapEdge("actor:user", "col:t_01gastos", "writes", 61),
-    mapEdge("actor:user", "boni:review", "decides", 11),
+    mapEdge("actor:user", "boni:inbox", "decides", 11),
+    mapEdge("boni:inbox", "boni:review", "learns", 9, { via: ["flow:leer-correo"] }),
     mapEdge("boni:review", "flow:leer-correo", "improves", 1),
     mapEdge("actor:mcp:claude-ejemplo", "col:t_01evento", "writes", 2),
     mapEdge("col:t_01tarea", "page:p_01agenda", "shows", null),
     mapEdge("actor:user", "col:t_libro", "writes", 3),
   ],
+};
+/** A reading of a mail recommending books: it proposed two to Libros, one accepted (the e2e fixtures' «Libros»). */
+export const RUN_BOOK = {
+  ...RUN_MAIL,
+  id: "run-4",
+  input: {
+    id: "e_01m6mail0002",
+    title: "Libros para el club de lectura",
+    collection: "Correos",
+    type: "t_01m6correo",
+  },
+  read: [
+    {
+      collection: "Correos",
+      type: "t_01m6correo",
+      titles: ["Libros para el club de lectura"],
+      n: 1,
+    },
+  ],
+  proposals: [
+    { title: "Pedro Páramo", status: "accepted", type: "t_libro" },
+    { title: "Rayuela", status: "rejected", type: "t_libro" },
+  ],
+};
+/** «¿De dónde viene?» of a book «Leer correo» proposed and Juan accepted (apps/server origin.ts). */
+export const ORIGIN_MAIL = {
+  by: "flow",
+  at: Date.UTC(2026, 9, 20, 11, 30),
+  device: null,
+  run: {
+    id: "run-4",
+    flow: "leer-correo",
+    flowVersion: 3,
+    started: Date.UTC(2026, 9, 20, 9, 5),
+    owner: "flow:leer-correo",
+  },
+  input: {
+    id: "e_01m6mail0002",
+    title: "Libros para el club de lectura",
+    collection: "Correos",
+  },
+  proposal: {
+    title: "Pedro Páramo",
+    created: Date.UTC(2026, 9, 20, 9, 5, 3),
+    decided: Date.UTC(2026, 9, 20, 11, 30),
+    alone: false,
+  },
+};
+/** «¿De dónde viene?» of a record Juan wrote himself. */
+export const ORIGIN_USER = {
+  by: "user",
+  at: Date.UTC(2026, 9, 21, 17, 45),
+  device: "portatil",
+  run: null,
+  input: null,
+  proposal: null,
 };
 /** After «Guardar»: the user's version, Boni's still in the history. */
 export const FLOW_DETAIL_SAVED = {

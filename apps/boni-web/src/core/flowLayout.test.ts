@@ -126,14 +126,21 @@ const n = (
   kind,
   ...more,
 });
-const e = (from: string, to: string, kind: MapEdgeLike["kind"]): MapEdgeLike => ({
+const e = (
+  from: string,
+  to: string,
+  kind: MapEdgeLike["kind"],
+  more: Partial<MapEdgeLike> = {},
+): MapEdgeLike => ({
   from,
   to,
   kind,
   n: 1,
   outside: false,
+  ...more,
 });
-/** A map like Juan's: the mail coming in, «Leer correo», his flow by hand, the conversation, a page. */
+/** A map like Juan's: the mail coming in, «Leer correo», his flow by hand, the conversation, a page; what is
+ * proposed waits in the Bandeja, whose decisions teach the guide's reviewer. */
 const map = {
   nodes: [
     n("conn:mail", "connector"),
@@ -151,12 +158,20 @@ const map = {
     n("boni:chat", "boni", { roles: ["planner"] }),
     n("actor:user", "actor"),
     n("page:agenda", "page"),
+    n("boni:inbox", "boni", { through: true }),
+    n("boni:review", "boni", { roles: ["reviewer"], pack: "correo" }),
   ],
   edges: [
     e("conn:mail", "col:correo", "brings"),
     e("col:correo", "flow:leer", "starts"),
-    e("flow:leer", "col:tarea", "proposes"),
-    e("flow:leer", "col:evento", "proposes"),
+    e("flow:leer", "boni:inbox", "proposes", { into: ["col:tarea", "col:evento"] }),
+    e("boni:chat", "boni:inbox", "proposes", { into: ["col:libros"] }),
+    e("boni:inbox", "col:tarea", "accepts"),
+    e("boni:inbox", "col:evento", "accepts"),
+    e("boni:inbox", "col:libros", "accepts"),
+    e("actor:user", "boni:inbox", "decides"),
+    e("boni:inbox", "boni:review", "learns", { via: ["flow:leer"] }),
+    e("boni:review", "flow:leer", "improves"),
     e("flow:apuntar", "col:tarea", "writes"),
     e("boni:chat", "col:tarea", "writes"),
     e("col:tarea", "boni:chat", "reads"),
@@ -174,18 +189,37 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
         "col:correo",
         "col:tarea",
         "col:evento",
+        "col:libros",
         "flow:leer",
         "flow:apuntar",
         "boni:chat",
+        "boni:inbox",
+        "boni:review",
         "actor:user",
       ].sort(),
     );
     expect(ids(lensOf(map, { ...LENS, pages: true }))).toContain("page:agenda");
   });
 
-  it("«¿Quién escribe en Tarea?»: Tarea in the centre, one arrow back", () => {
+  it("«¿Quién escribe en Tarea?»: Tarea in the centre, one arrow back, the Bandeja crossed", () => {
     const v = lensOf(map, { ...LENS, center: "col:tarea", before: 1, after: 0 });
-    expect(ids(v)).toEqual(["actor:user", "boni:chat", "col:tarea", "flow:apuntar", "flow:leer"]);
+    expect(ids(v)).toEqual([
+      "actor:user",
+      "boni:chat",
+      "boni:inbox",
+      "col:tarea",
+      "flow:apuntar",
+      "flow:leer",
+    ]);
+    // Through the Bandeja only what proposes into Tarea: the conversation's proposals go to Libros.
+    expect(v.edges.some((x) => x.from === "flow:leer" && x.to === "boni:inbox")).toBe(true);
+    expect(v.edges.some((x) => x.from === "boni:chat" && x.to === "boni:inbox")).toBe(false);
+    // «Antes: 1» of Evento (docs/sistema.md §4.4): «Leer correo (propone)», not the conversation.
+    expect(ids(lensOf(map, { ...LENS, center: "col:evento", before: 1, after: 0 }))).toEqual([
+      "boni:inbox",
+      "col:evento",
+      "flow:leer",
+    ]);
   });
 
   it("«¿Qué pasa cuando llega un correo?»: the connector in the centre, everything after it", () => {
@@ -195,21 +229,45 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
       before: 0,
       after: Number.POSITIVE_INFINITY,
     });
+    // To the Bandeja and on to Tarea and Evento, the reviewer its decisions teach, and what reads Tarea.
     expect(ids(v)).toEqual(
-      ["boni:chat", "col:correo", "col:evento", "col:tarea", "conn:mail", "flow:leer"].sort(),
+      [
+        "boni:chat",
+        "boni:inbox",
+        "boni:review",
+        "col:correo",
+        "col:evento",
+        "col:libros",
+        "col:tarea",
+        "conn:mail",
+        "flow:leer",
+      ].sort(),
     );
     // Two arrows after: the mail, its collection and the flow it starts, no further.
     expect(ids(lensOf(map, { ...LENS, center: "conn:mail", before: 0, after: 2 }))).toEqual(
       ["col:correo", "conn:mail", "flow:leer"].sort(),
+    );
+    // The conversation's proposals teach no reviewer: through the Bandeja, only to where they go.
+    expect(ids(lensOf(map, { ...LENS, center: "boni:chat", before: 0, after: 3 }))).not.toContain(
+      "boni:review",
+    );
+    expect(ids(lensOf(map, { ...LENS, center: "flow:leer", before: 0, after: 2 }))).toContain(
+      "boni:review",
+    );
+    // What the reviewer learns from, back through the Bandeja: the reading whose proposals were decided.
+    const learns = lensOf(map, { ...LENS, center: "boni:review", before: 1, after: 0 });
+    expect(ids(learns)).toEqual(["boni:inbox", "boni:review", "flow:leer"]);
+    expect(learns.edges.some((x) => x.from === "flow:leer" && x.to === "boni:inbox")).toBe(true);
+    // Three: the Bandeja, and through it where the reading's proposals go, in the same step.
+    expect(ids(lensOf(map, { ...LENS, center: "conn:mail", before: 0, after: 3 }))).toEqual(
+      ["boni:inbox", "col:correo", "col:evento", "col:tarea", "conn:mail", "flow:leer"].sort(),
     );
   });
 
   it("only what happened in the period: an arrow with no number goes, and what it alone joined", () => {
     const quiet = {
       ...map,
-      edges: map.edges.map((x) =>
-        x.kind === "writes" && x.from === "actor:user" ? { ...x, n: 0 } : x,
-      ),
+      edges: map.edges.map((x) => (x.from === "actor:user" ? { ...x, n: 0 } : x)),
     };
     expect(ids(lensOf(quiet, { ...LENS, happened: true }))).not.toContain("actor:user");
     expect(ids(lensOf(quiet, { ...LENS, happened: true }))).toContain("flow:leer");
@@ -219,6 +277,8 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     expect(ids(lensOf(map, { ...LENS, on: true }))).not.toContain("flow:apuntar");
     expect(ids(lensOf(map, { ...LENS, ai: true }))).not.toContain("flow:apuntar");
     expect(ids(lensOf(map, { ...LENS, ai: true }))).toContain("boni:chat");
+    // The Bandeja is no work with or without a model: it stays, and the way through it.
+    expect(ids(lensOf(map, { ...LENS, ai: true }))).toContain("boni:inbox");
     const w = lensOf(map, { ...LENS, writes: true });
     expect(w.edges.some((x) => x.kind === "reads")).toBe(false);
     expect(w.edges.some((x) => x.kind === "proposes")).toBe(true);
@@ -231,6 +291,7 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     expect(groupOf(leer, "trigger")).toBe("on:created:correo");
     expect(groupOf(map.nodes[6] as MapNodeLike, "trigger")).toBe("on:manual");
     expect(groupOf(map.nodes[7] as MapNodeLike, "trigger")).toBe("on:boni");
+    expect(groupOf(map.nodes[10] as MapNodeLike, "trigger")).toBeNull();
     expect(groupOf(map.nodes[2] as MapNodeLike, "collection")).toBe("in:col:trabajo");
     expect(groupOf(map.nodes[4] as MapNodeLike, "collection")).toBeNull();
     expect(groupOf(leer, "pack")).toBe("pack:correo");
@@ -261,5 +322,10 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
       expect(p.y).toBeGreaterThanOrEqual(frame?.y ?? 0);
     }
     expect(mapLayout(boxes, v.edges, groups)).toEqual(l);
+    // Who acts on the left: the conversation reads Tarea, and still sits before it, as what it writes.
+    const acting = mapLayout(boxes, v.edges, groups, new Set(["boni:chat", "actor:user"]));
+    const pos = (id: string) => acting.at.get(id) as { x: number; y: number };
+    expect(pos("boni:chat").x).toBeLessThan(pos("col:tarea").x);
+    expect(pos("actor:user").x).toBeLessThan(pos("col:tarea").x);
   });
 });

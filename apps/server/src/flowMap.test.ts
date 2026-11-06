@@ -5,8 +5,9 @@ import { ensureSystemTypes } from "@boni/agent";
 import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { AUTO_AREA } from "./autoAccept.ts";
 import { createCollection, createRow } from "./data.ts";
-import { flowMap, type MapEdge, type MapView } from "./flowMap.ts";
+import { flowMap, type MapEdge, type MapView, mapOwnerOf } from "./flowMap.ts";
 import { createPage } from "./pages.ts";
 
 /**
@@ -29,6 +30,17 @@ afterEach(() => {
 });
 
 const keyOf = (id: string) => store.schema().types[id]?.key as string;
+/** A proposal's arguments as the agent stores them: each a labelled value (packages/agent values.ts). */
+const proposalArgs = (type: string, title: string) => ({
+  values: {
+    type: { t: "v", value: type, label: { integrity: "own", secrecy: "personal", sources: [] } },
+    values: {
+      t: "rec",
+      fields: { title: { t: "v", value: title, label: { integrity: "own", sources: [] } } },
+    },
+  },
+  origins: [],
+});
 const create = (id: string, type: string) => ({
   id,
   op: "call",
@@ -137,7 +149,7 @@ function world() {
       id,
       run: r,
       tool: "entities.create",
-      args: { type, values: { title: id } },
+      args: proposalArgs(type, id),
       view: {},
       sources: ["mail:x"],
       created: at,
@@ -203,6 +215,7 @@ describe("Boni's map, computed (F8; A-16)", () => {
       "flow:apuntar-k2",
       "boni:chat",
       "boni:review",
+      "boni:inbox",
       "actor:user",
       "actor:mcp:claude",
     ])
@@ -219,26 +232,51 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(edgeOf(m, `col:${w.persona}`, "flow:leer-correo", "reads")).toMatchObject({
       steps: ["p"],
     });
-    expect(edgeOf(m, "flow:leer-correo", `col:${w.tarea}`, "proposes")).toMatchObject({
-      n: 2,
-      steps: ["n0", "inv0"],
+    // What it proposes waits in the Bandeja: one arrow with every step that proposes and where they go, its number
+    // the flow's proposals (3: two in Tarea, one in Evento), counted once.
+    expect(edgeOf(m, "flow:leer-correo", "boni:inbox", "proposes")).toMatchObject({
+      n: 3,
+      steps: ["n0", "n1", "inv0"],
+      outside: true,
+      into: [`col:${w.evento}`, `col:${w.tarea}`].sort(),
+      // With a collection in the centre, what went to that one.
+      per: { [`col:${w.tarea}`]: 2, [`col:${w.evento}`]: 1 },
+    });
+    expect(m.nodes.find((n) => n.id === "flow:leer-correo")?.proposals).toBe(3);
+    // Out of the Bandeja, what was accepted into each collection: the mail's words go on with it.
+    expect(edgeOf(m, "boni:inbox", `col:${w.tarea}`, "accepts")).toMatchObject({
+      n: 1,
       outside: true,
     });
-    // The flow's proposals are its arrows' (3 = 2 in Tarea + 1 in Evento), never one per step.
-    const proposes = m.edges.filter((e) => e.from === "flow:leer-correo" && e.kind === "proposes");
-    expect(proposes.reduce((n, e) => n + (e.n ?? 0), 0)).toBe(
-      m.nodes.find((n) => n.id === "flow:leer-correo")?.proposals,
-    );
-    expect(edgeOf(m, "flow:leer-correo", `col:${w.evento}`, "proposes")?.n).toBe(1);
+    expect(edgeOf(m, "boni:inbox", `col:${w.evento}`, "accepts")?.n).toBe(0);
+    expect(m.nodes.find((n) => n.id === "boni:inbox")).toMatchObject({
+      proposals: 4,
+      accepted: 1,
+      rejected: 1,
+      // Waiting now, whenever proposed.
+      pending: 3,
+      through: true,
+    });
     // His flow by hand writes (a turn of his), the conversation proposes and writes what he confirmed.
     expect(edgeOf(m, "flow:apuntar-k2", `col:${w.tarea}`, "writes")).toMatchObject({ n: null });
-    expect(edgeOf(m, "boni:chat", `col:${w.libros}`, "proposes")?.n).toBe(1);
+    expect(edgeOf(m, "boni:chat", "boni:inbox", "proposes")).toMatchObject({
+      n: 1,
+      into: [`col:${w.libros}`],
+    });
+    expect(edgeOf(m, "boni:inbox", `col:${w.libros}`, "accepts")).toMatchObject({
+      n: 0,
+      outside: false,
+    });
     expect(edgeOf(m, "boni:chat", `col:${w.tarea}`, "writes")?.n).toBe(1);
     // Who wrote by the audit: Juan from his apps, Claude through the MCP.
     expect(edgeOf(m, "actor:user", `col:${w.tarea}`, "writes")?.n).toBe(2);
     expect(edgeOf(m, "actor:mcp:claude", `col:${w.evento}`, "writes")?.n).toBe(1);
-    // The guide's reviewer learns from his decisions and improves the reading.
-    expect(edgeOf(m, "actor:user", "boni:review", "decides")?.n).toBe(2);
+    // His decisions in the Bandeja teach the guide's reviewer, which improves the reading.
+    expect(edgeOf(m, "actor:user", "boni:inbox", "decides")?.n).toBe(2);
+    expect(edgeOf(m, "boni:inbox", "boni:review", "learns")).toMatchObject({
+      n: 2,
+      via: ["flow:leer-correo"],
+    });
     expect(edgeOf(m, "boni:review", "flow:leer-correo", "improves")).toBeTruthy();
     // A page shows what its blocks count.
     const page = m.nodes.find((n) => n.kind === "page");
@@ -282,12 +320,72 @@ describe("Boni's map, computed (F8; A-16)", () => {
     const w = world();
     const month = mapOf(30, w.correo);
     expect(edgeOf(month, `col:${w.correo}`, "flow:leer-correo", "starts")?.n).toBe(4);
-    expect(edgeOf(month, "flow:leer-correo", `col:${w.tarea}`, "proposes")?.n).toBe(3);
+    expect(edgeOf(month, "flow:leer-correo", "boni:inbox", "proposes")?.n).toBe(4);
+    expect(edgeOf(month, "boni:inbox", `col:${w.tarea}`, "accepts")?.n).toBe(1);
     const none = mapOf(7, null);
     expect(none.nodes.some((n) => n.id === "conn:mail")).toBe(false);
     expect(none.nodes.some((n) => n.id === "boni:review")).toBe(false);
     // Still started by its collection, by key.
     expect(edgeOf(none, `col:${w.correo}`, "flow:leer-correo", "starts")?.outside).toBe(false);
+  });
+
+  it("decisions are the user's (not Boni's «Solo»); the reviewer learns from the mail's; an edited one counts where it went", () => {
+    const w = world();
+    // Boni accepted p2 alone; Juan rejected the conversation's p4, and moved p5 from Tarea to Evento as he accepted it.
+    store.journal.setProposal("p2", "accepted", NOW - DAY);
+    store.journal.addDecision({
+      id: "d_solo_1",
+      run: "m2",
+      area: AUTO_AREA,
+      cost: "B",
+      p: 0.97,
+      outcome: "do",
+      detail: { proposal: "p2", run: "acc_p2" },
+      at: NOW - DAY,
+    });
+    store.journal.setProposal("p4", "rejected", NOW - DAY);
+    store.journal.addProposal({
+      id: "p5",
+      run: "m1",
+      tool: "entities.create",
+      args: proposalArgs(keyOf(w.tarea), "Cena"),
+      view: {},
+      sources: ["mail:x"],
+      created: NOW - DAY,
+    });
+    store.journal.setProposal("p5", "accepted", NOW - DAY + 1000, {
+      type: { from: keyOf(w.tarea), to: keyOf(w.evento) },
+    });
+    const m = mapOf(7, w.correo);
+    // p1, p2, p3, p4 and p5 decided, less Boni's p2: four are his.
+    expect(edgeOf(m, "actor:user", "boni:inbox", "decides")?.n).toBe(4);
+    // Of the mail's (p1, p2, p3, p5), less Boni's: three teach the reviewer; the conversation's p4 does not.
+    expect(edgeOf(m, "boni:inbox", "boni:review", "learns")?.n).toBe(3);
+    // p5 went to Evento: accepted there, not in Tarea (p1 and Boni's p2 are Tarea's).
+    expect(edgeOf(m, "boni:inbox", `col:${w.evento}`, "accepts")?.n).toBe(1);
+    expect(edgeOf(m, "boni:inbox", `col:${w.tarea}`, "accepts")?.n).toBe(2);
+  });
+
+  it("says where each run is drawn: its flow, the conversation, the Bandeja for an «Aceptar»", () => {
+    world();
+    store.journal.startRun({
+      id: "acc1",
+      turn: null,
+      origin: "accepted",
+      device: null,
+      started: NOW,
+      proposal: "p1",
+    });
+    const owner = (id: string) =>
+      mapOwnerOf(
+        store,
+        store.journal.run(id) as NonNullable<ReturnType<typeof store.journal.run>>,
+        null,
+      );
+    expect(owner("m1")).toBe("flow:leer-correo");
+    expect(owner("t1")).toBe("boni:chat");
+    expect(owner("acc1")).toBe("boni:inbox");
+    expect(owner("dry1")).toBeNull();
   });
 
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {
@@ -318,7 +416,7 @@ describe("Boni's map, computed (F8; A-16)", () => {
           id: `yp${i}`,
           run: `y${i}`,
           tool: "entities.create",
-          args: { type, values: {} },
+          args: proposalArgs(type, `yp${i}`),
           view: {},
           sources: ["mail:x"],
           created: at,

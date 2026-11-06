@@ -1389,6 +1389,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
             .replace(/\/audit\/rows\/[^/]+$/, "/audit/rows/:id")
             .replace(/\/models\/keys\/[^/]+$/, "/models/keys/:connection")
             .replace(/\/live\/[^/]+$/, "/live/:id")
+            .replace(/\/origin\/[^/]+$/, "/origin/:id")
             .replace(/\/flows\/(?!catalog$|check$)[^/]+$/, "/flows/:id")
             .replace(/\/flows\/[^/]+\/(enabled|revert|run|test)$/, "/flows/:id/$1")
             .replace(/\/mail\/webmail\/[^/]+$/, "/mail/webmail/:id")}`;
