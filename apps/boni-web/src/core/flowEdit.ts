@@ -41,6 +41,31 @@ export function typeKeysOf(v: unknown): string[] {
   return [...new Set(keys)];
 }
 
+/**
+ * The collections a decider's choice sends things to (docs/sistema.md §4.2, «Crear en la elegida»; D-48): the keys
+ * of every `case` over its `choice` in the other steps, in the order they come; none when no step goes by its choice.
+ */
+export function decidesAmong(plan: FlowPlan, stepId: string): string[] {
+  const choice = `$${stepId}.choice`;
+  const keys: string[] = [];
+  const walk = (v: unknown): void => {
+    if (Array.isArray(v)) {
+      for (const x of v) walk(x);
+      return;
+    }
+    if (!isObj(v)) return;
+    if (
+      v.fn === "case" &&
+      Array.isArray(v.args) &&
+      (v.args[0] as { ref?: unknown } | undefined)?.ref === choice
+    )
+      keys.push(...typeKeysOf(v));
+    for (const x of Object.values(v)) walk(x);
+  };
+  for (const s of plan.steps) if (s.id !== stepId) walk(s);
+  return [...new Set(keys)];
+}
+
 /** Names said as a person lists them: «Tarea, Evento o Persona» (`or` is the language's word, with its spaces). */
 export function listText(names: readonly string[], or: string): string {
   if (names.length < 2) return names.join("");

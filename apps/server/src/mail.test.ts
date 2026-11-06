@@ -768,6 +768,139 @@ describe("tasks a mail asks for", () => {
     sdb.close();
     rmSync(d, { recursive: true, force: true });
   });
+
+  it("a task and an event of one mail go to the chosen collection through one «Rellenadora» and one «Crear», each with its day and hours (Juan, 2026-11-06)", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-one-create-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const readers: string[] = [];
+    const reader = new ScriptedProvider("fake", (req) => {
+      if (/choose the one option/.test(req.system)) {
+        readers.push("classify");
+        return { choice: "Agenda" };
+      }
+      if (/after "Elemento:"/.test(req.system)) {
+        readers.push("fill");
+        // Only the meeting is important, as its words say.
+        return {
+          values: { f0: JSON.stringify(req.input).includes("Reunión de seguimiento") },
+          note: null,
+        };
+      }
+      readers.push("read_message");
+      // The model's own order: the event first, then the task.
+      return {
+        items: [
+          {
+            quote: "Nos vemos el jueves de 10 a 11, es importante",
+            actor: "recipient",
+            kind: "event",
+            title: "Reunión de seguimiento",
+            due: "2026-10-22",
+            start: "10:00",
+            end: "11:00",
+          },
+          {
+            quote: "Tráeme el informe el miércoles",
+            actor: "recipient",
+            kind: "task",
+            title: "Llevar el informe",
+            due: "2026-10-21",
+          },
+        ],
+      };
+    });
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    for (const [id, key, name] of [
+      ["t_agenda", "agenda", "Agenda"],
+      ["t_gestiones", "gestiones", "Gestiones"],
+    ] as const)
+      store.applySchema(
+        {
+          op: "create_type",
+          type: {
+            id,
+            key,
+            name,
+            fields: [
+              { id: `${id}_t`, key: "titulo", name: "Título", type: "text", label: own },
+              { id: `${id}_d`, key: "fecha", name: "Fecha", type: "date", label: own },
+              { id: `${id}_h`, key: "hora", name: "Hora de inicio", type: "time", label: own },
+              { id: `${id}_f`, key: "hora_fin", name: "Hora de fin", type: "time", label: own },
+              {
+                id: `${id}_i`,
+                key: "importante",
+                name: "Importante",
+                type: "checkbox",
+                label: own,
+              },
+            ],
+            titleField: `${id}_t`,
+            roles: { date: `${id}_d`, time: `${id}_h`, endTime: `${id}_f` },
+            sensitivity: "personal",
+            schemaVersion: 1,
+            label: own,
+          },
+        },
+        { actor: "user" },
+      );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      tz: "Europe/Madrid",
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 11;
+    box.mails = new Map([
+      [
+        1,
+        mail(
+          24,
+          "Seguimiento",
+          "Nos vemos el jueves de 10 a 11, es importante. Tráeme el informe el miércoles.",
+        ),
+      ],
+    ]);
+    await m.save(1, { host: "imap.example.com", user: "juan@example.com", password: APP_PASSWORD });
+    await m.save(1, { collections: ["t_agenda", "t_gestiones"] });
+    expect(await m.check(1)).toMatchObject({ count: 1, lastError: null });
+    // One «Rellenadora» read each of the two things; one «Crear» proposed both, in the collection chosen.
+    expect(readers).toEqual(["read_message", "classify", "fill", "fill"]);
+    const pending = store.journal.proposals("pending");
+    expect(pending.map((p) => (p.args as { step?: string }).step)).toEqual(["n", "n"]);
+    const rows = pending
+      .map((p) =>
+        Object.fromEntries(
+          (p.view as { rows: { arg: string; value: string }[] }).rows.map((r) => [r.arg, r.value]),
+        ),
+      )
+      .sort((a, b) => String(a["values.title"]).localeCompare(String(b["values.title"])));
+    // Each with its own: the task its day, the event its day and hours; what the «Rellenadora» read of each.
+    expect(rows).toEqual([
+      {
+        type: "agenda",
+        "values.title": "Llevar el informe",
+        "values.fecha": "2026-10-21",
+        "values.importante": "false",
+      },
+      {
+        type: "agenda",
+        "values.title": "Reunión de seguimiento",
+        "values.fecha": "2026-10-22",
+        "values.hora": "10:00",
+        "values.hora_fin": "11:00",
+        "values.importante": "true",
+      },
+    ]);
+    expect(store.list("t_agenda")).toHaveLength(0);
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
 });
 
 describe("a calendar invitation (task 45)", () => {

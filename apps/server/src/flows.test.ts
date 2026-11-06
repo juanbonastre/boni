@@ -248,7 +248,7 @@ describe("flows (docs/flujos.md, F1)", () => {
     }
     j.step({
       run: "run-1",
-      step: "n_tasks",
+      step: "n",
       kind: "call",
       decision: "propose",
       rule: "P4",
@@ -257,7 +257,7 @@ describe("flows (docs/flujos.md, F1)", () => {
     });
     j.step({
       run: "run-1",
-      step: "n_tasks",
+      step: "n",
       kind: "call",
       decision: "propose",
       rule: "P4",
@@ -299,7 +299,7 @@ describe("flows (docs/flujos.md, F1)", () => {
     expect(byId.get("c")?.deps).toContain("r");
     // «Crear en la elegida» (docs/sistema.md §4.2): one «Crear» in the collection the decider chose, among those
     // its `case` writes; no step per collection.
-    const create = byId.get("n_tasks");
+    const create = byId.get("n");
     expect(create).toMatchObject({
       op: "call",
       what: "entities.create",
@@ -521,7 +521,7 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     store.close();
   });
 
-  it("with several collections, «Leer correo» creates in the chosen one: one «Rellenadora» and one «Crear» per kind of thing (docs/sistema.md §4.2)", () => {
+  it("with several collections, «Leer correo» creates in the chosen one: one «Rellenadora» and one «Crear» for everything it reads, the invitation apart (docs/sistema.md §4.2)", () => {
     const store = withTypes();
     const targets = [
       {
@@ -565,18 +565,36 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     const c = checkFlow(store, registry, { trigger: { created: "correo" }, plan }, o);
     expect(c.problems).toEqual([]);
     const creates = plan.steps.filter((x) => x.tool === "entities.create");
-    expect(creates.map((x) => x.id)).toEqual(["n_tasks", "n_events", "inv_create"]);
+    // One «Crear» for every thing the reader found, its tasks and its events (Juan, 2026-11-06: «Haz la B»), and
+    // the invitation's own: no model reads it.
+    expect(creates.map((x) => x.id)).toEqual(["n", "inv_create"]);
     for (const x of creates) expect(typeKeysOf(x.args?.type)).toEqual(["tarea", "correo"]);
-    // One «Rellenadora» per kind of thing, over the fields of the collection chosen.
+    expect((creates[0] as { each?: unknown }).each).toEqual({ ref: "$r.all" });
+    // One «Rellenadora», over the fields of the collection chosen.
     const fills = plan.steps.filter((x) => x.reader === "fill");
-    expect(fills.map((x) => x.id)).toEqual(["n_tasks_f", "n_events_f"]);
+    expect(fills.map((x) => x.id)).toEqual(["n_f"]);
+    expect((fills[0] as { each?: unknown }).each).toEqual({ ref: "$r.all" });
     expect(fills[0]?.params).toMatchObject({ fields: { ref: "$fill" } });
     // A rule of the guide is the decider's answer, so the choice is always «Decisora»'s.
     expect(plan.steps.find((x) => x.reader === "classify")?.params?.given).toEqual({
       ref: "$only",
     });
-    // No step per collection: «Leer correo» reads in about a dozen steps, whatever the collections.
-    expect(plan.steps.length).toBe(14);
+    // No step per collection or per kind: «Leer correo» reads in a dozen steps, whatever the collections.
+    expect(plan.steps.length).toBe(12);
+    // A kind that goes elsewhere (a route to a fixed collection) keeps the others walking their own list.
+    const routed = mailPlan(targets, {
+      guide: true,
+      modules: ["tasks", "events"],
+      boundModules: true,
+      routes: { events: { propose: { collection: "t_tarea" } } },
+      fixed: [targets[0] as (typeof targets)[number]],
+    }) as { steps: { id: string; tool?: string; each?: unknown }[] };
+    expect(
+      routed.steps.filter((x) => x.tool === "entities.create").map((x) => [x.id, x.each]),
+    ).toEqual([
+      ["n_tasks", { ref: "$r.tasks" }],
+      ["f_events", { ref: "$r.events" }],
+    ]);
     store.close();
   });
 

@@ -101,6 +101,7 @@ import {
   toast,
   useStore,
 } from "../store.ts";
+import { DeciderFacts } from "./DeciderFacts.tsx";
 import { triggerText } from "./FlowEditor.tsx";
 import { inputName, stepDetail } from "./FlowStepPanel.tsx";
 import { MenuRow, PointMenu, PopButton } from "./Popover.tsx";
@@ -1605,6 +1606,7 @@ function Canvas({
         desc: t("map.triggerDesc"),
         model: null,
         numbers: null,
+        decider: null,
       };
     const node = drawnNode.steps.find((x) => x.id === picked);
     if (!node) return null;
@@ -1624,6 +1626,8 @@ function Canvas({
         node.calls && node.calls > 0
           ? `${t(node.calls === 1 ? "map.calls.one" : "map.callsShort", { n: node.calls })}${node.cost ? ` · ${money(node.cost)}` : ""}`
           : null,
+      // The decider says what it chooses among and the guide's rules that choose for it (task 83).
+      decider: role === "decider" && drawnNode.plan ? { plan: drawnNode.plan, id: node.id } : null,
     };
   })();
   // The box chosen stays in view when its panel narrows the canvas: moved just enough, the zoom kept.
@@ -1964,6 +1968,14 @@ function Canvas({
                   <dd>{modelsOf(chosen, byRole).join(" · ")}</dd>
                 )}
               </dl>
+            )}
+            {pickedStep?.decider && (
+              <DeciderFacts
+                plan={pickedStep.decider.plan}
+                step={pickedStep.decider.id}
+                nameOfKey={keyName}
+                nameOfId={(id) => nameOf.get(`col:${id}`)}
+              />
             )}
             {run && (
               <RunHere

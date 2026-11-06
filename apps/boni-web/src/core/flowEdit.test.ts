@@ -4,6 +4,7 @@ import type { FlowCatalog, FlowPlan } from "./agent.ts";
 import {
   addStep,
   changeCollection,
+  decidesAmong,
   depsOf,
   duplicateStep,
   exprText,
@@ -211,5 +212,55 @@ describe("the flow editor's changes (docs/flujos.md, F2)", () => {
     ).toBe(
       'merge($prefill.gestiones, $zip.values, obj("title", $item.title, "fecha", $item.due, "body", $zip.note))',
     );
+  });
+});
+
+describe("the decider's panel (task 83)", () => {
+  it("says the collections its choice sends things to, from the `case` over it, in their order and once", () => {
+    const chosen = {
+      fn: "case",
+      args: [
+        { ref: "$c.choice" },
+        { lit: "Tarea (p. ej.: Llamar al taller)" },
+        { lit: "tarea" },
+        { lit: "Evento (p. ej.: Cena de empresa)" },
+        { lit: "evento" },
+      ],
+    };
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "r", op: "read", reader: "read_message", input: { ref: "$text" } },
+        { id: "c", op: "read", reader: "classify", input: { ref: "$text" }, params: {} },
+        {
+          id: "n_f",
+          op: "read",
+          reader: "fill",
+          each: { ref: "$r.all" },
+          input: { ref: "$text" },
+          params: { collection: chosen },
+        },
+        {
+          id: "n",
+          op: "call",
+          tool: "entities.create",
+          each: { ref: "$r.all" },
+          args: { type: chosen, values: { ref: "$item" } },
+        },
+        // Another decider's choice is not this one's.
+        {
+          id: "x",
+          op: "call",
+          tool: "entities.create",
+          args: {
+            type: { fn: "case", args: [{ ref: "$d.choice" }, { lit: "Otra" }, { lit: "persona" }] },
+            values: { ref: "$item" },
+          },
+        },
+      ],
+    } as unknown as FlowPlan;
+    expect(decidesAmong(plan, "c")).toEqual(["tarea", "evento"]);
+    expect(decidesAmong(plan, "d")).toEqual(["persona"]);
+    expect(decidesAmong(plan, "r")).toEqual([]);
   });
 });

@@ -14,7 +14,9 @@ import {
   FLOW_TEST,
   FLOWS,
   FLOWS_WITH_SUMMARY,
+  GUIDE_RULES,
   MAP,
+  MAP_CHOSEN,
   MODELS,
   MODELS_CATALOGUE,
   MODELS_EVALUATED,
@@ -1113,7 +1115,7 @@ test("«Flujos»: the editor draws a flow and changes it: a step's collection, s
     .toBeGreaterThan(1);
 });
 
-test("«Leer correo» creating in the chosen collection: a «Rellenadora» and a «Crear» for its kind of thing, said «En la elegida», no lanes (docs/sistema.md §4.2)", async ({
+test("«Leer correo» creating in the chosen collection: one «Rellenadora» and one «Crear» for everything it reads, said «En la elegida · cada cosa», no lanes (docs/sistema.md §4.2)", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -1123,13 +1125,15 @@ test("«Leer correo» creating in the chosen collection: a «Rellenadora» and a
       "GET api/agent/flows/:id": [FLOW_DETAIL_CHOSEN],
       "GET api/agent/flows/catalog": [FLOW_CATALOG],
       "POST api/agent/flows/check": [FLOW_CHECK],
+      "GET api/mail/guide": [GUIDE_RULES],
     },
   });
   await openFlow(page);
   const canvas = page.locator(".flow-editor .flow-canvas");
   const crear = canvas.locator(".fl-node", { hasText: "Crear" });
-  await expect(crear).toContainText("En la elegida");
-  // No step per collection, and no lanes.
+  await expect(crear).toContainText("En la elegida · cada cosa");
+  await expect(canvas.locator(".fl-node", { hasText: "Rellenadora" })).toContainText("cada cosa");
+  // No step per collection or per kind, and no lanes.
   await expect(canvas.locator(".fl-node", { hasText: "Crear" })).toHaveCount(1);
   await expect(canvas.locator(".fl-lane")).toHaveCount(0);
   // Its panel says among which, in words: chosen by the decider, not here.
@@ -1138,6 +1142,66 @@ test("«Leer correo» creating in the chosen collection: a «Rellenadora» and a
     "La que elija la Decisora: Docencia o Gestiones",
   );
   await page.screenshot({ path: `${SHOTS}/flow-chosen.png` });
+  // The decider's panel (task 83; Juan: «dentro de los detalles del modelo veo las reglas que tiene»): what it
+  // chooses among and the guide's rules that choose for it; a rule that skips a sender
+  // is not its own.
+  await canvas.locator(".fl-node", { hasText: "Decisora" }).locator(".fl-name").click();
+  const facts = page.locator(".flow-step-panel .decider-facts");
+  await expect(facts).toContainText("Elige entre Docencia o Gestiones.");
+  // That it asks when unsure, its line above says once.
+  await expect(facts).not.toContainText("Si duda");
+  await expect(facts.locator(".decider-facts-title")).toHaveText(
+    "Por tu guía, sin preguntar al modelo:",
+  );
+  const rules = facts.locator(".decider-facts-rules li");
+  await expect(rules).toHaveCount(2);
+  await expect(rules.nth(0)).toContainText("secretaria.ejemplo@universidad.example");
+  await expect(rules.nth(0)).toContainText("→ Gestiones");
+  // A collection it no longer knows is said as such, never by its id.
+  await expect(rules.nth(1)).toContainText("→ otra colección");
+  await expect(facts).not.toContainText("t_01tarea");
+  await expect(facts).not.toContainText("@lista.example.com");
+  await page.screenshot({ path: `${SHOTS}/flow-decider.png` });
+});
+
+test("the decider's panel on the map: what it chooses among and the guide's rules that choose for it (task 83)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/models": [MODELS],
+      "GET api/agent/map": [MAP_CHOSEN],
+      "GET api/agent/flows": [FLOWS_WITH_SUMMARY],
+      "GET api/agent/flows/:id": [FLOW_DETAIL_CHOSEN],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG],
+      "POST api/agent/flows/check": [FLOW_CHECK],
+      "GET api/mail/guide": [GUIDE_RULES],
+    },
+  });
+  await page.locator(".sidebar").getByRole("button", { name: "Flujos", exact: true }).click();
+  await page.getByRole("tab", { name: "Mapa" }).click();
+  const map = page.locator(".mp-stage");
+  await map
+    .locator(".mp-card", { has: page.locator(".mp-name", { hasText: /^Leer correo$/ }) })
+    .locator(".mp-name")
+    .click();
+  const panel = page.locator(".mp-panel");
+  await panel.getByRole("button", { name: "Ver los pasos" }).click();
+  await map.locator(".mp-step", { hasText: "Decisora" }).click();
+  await expect(panel.locator("h3")).toHaveText("Decisora");
+  const facts = panel.locator(".decider-facts");
+  await expect(facts).toContainText("Elige entre Tarea o Evento.");
+  await expect(facts).not.toContainText("Si duda");
+  const rules = facts.locator(".decider-facts-rules li");
+  await expect(rules).toHaveCount(2);
+  await expect(rules.nth(1)).toContainText("coordinacion.ejemplo@universidad.example");
+  await expect(rules.nth(1)).toContainText("→ Tarea");
+  await expect(facts).not.toContainText("@lista.example.com");
+  // Another step's panel says none of it.
+  await map.locator(".mp-step", { hasText: "Lectora" }).click();
+  await expect(panel.locator("h3")).toHaveText("Lectora");
+  await expect(panel.locator(".decider-facts")).toHaveCount(0);
 });
 
 test("the editor gives control (task 70): «Añadir paso» with a search and groups, a node's right button, «Entra» and «Sale», tried up to a step", async ({

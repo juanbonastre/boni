@@ -986,6 +986,8 @@ export interface FlowCatalog {
   fns: Record<string, [number, number]>;
   limits: { steps: number; each: number; nesting: number };
   collections: {
+    /** Its id (a guide's rule names a collection by it); servers before 0.8.114 send none. */
+    id?: string;
     key: string;
     name: string;
     parent: string | null;
@@ -1175,6 +1177,7 @@ export function parseFlowCatalog(b: unknown): FlowCatalog | null {
       typeof c.key === "string"
         ? [
             {
+              ...(typeof c.id === "string" ? { id: c.id.slice(0, 80) } : {}),
               key: c.key,
               name: strOf(c.name, 120) ?? c.key,
               parent: strOf(c.parent, 80),

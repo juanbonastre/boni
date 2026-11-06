@@ -397,7 +397,14 @@ export interface FlowCatalog {
   fns: Record<string, [number, number]>;
   limits: { steps: number; each: number; nesting: number };
   /** The collections a model may see (the ones a flow may name), with their fields and roles. */
-  collections: { key: string; name: string; parent: string | null; fields: CatalogField[] }[];
+  collections: {
+    /** Its id: what a rule of the reading guide names it by (the decider's panel, task 83). */
+    id: string;
+    key: string;
+    name: string;
+    parent: string | null;
+    fields: CatalogField[];
+  }[];
   /** The mail extension's modules (what read_message gives, per module). */
   modules: string[];
 }
@@ -451,6 +458,7 @@ export function flowCatalog(
     fns: v.fns,
     limits: v.limits,
     collections: visibleTypes(store).map((def) => ({
+      id: def.id,
       key: def.key,
       name: def.name,
       parent: def.parent ? (store.schema().types[def.parent]?.key ?? null) : null,

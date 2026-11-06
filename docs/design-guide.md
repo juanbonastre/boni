@@ -918,9 +918,16 @@ contraseña ni un código aquí» under a question.
   step, its values' arrows dashed in `--accent` round the right side, the steps it takes them from ringed. A card's
   line says what it works in and over («Tarea · cada tarea», «Tarea · cada evento», «Tarea · la invitación»), one
   row per line (the whole line in its panel and its tooltip). A step that writes in the collection the decider chose
-  («Crear en la elegida», docs/sistema.md §4.2) says «En la elegida · cada tarea», and its panel's «Colección» says
+  («Crear en la elegida», docs/sistema.md §4.2) says «En la elegida · cada cosa», and its panel's «Colección» says
   among which, in words («La que elija la Decisora: Tarea, Evento o Persona»), not as a list to choose from: Boni's
-  «Leer correo» has one «Rellenadora» and one «Crear» per kind of thing, and no lanes. Nothing is dragged, nothing of where things are is kept,
+  «Leer correo» has one «Rellenadora» and one «Crear» for everything the reader finds («cada cosa»), the invitation's
+  «Crear» apart («la invitación»), and no lanes (D-49). The decider's panel, here and on the map (task 83), says under
+  its line (which already says it asks when unsure) what it chooses among («Elige entre Tarea, Evento o Persona.»,
+  from the `case` over its choice) and, when it takes the guide's rule as its answer,
+  «Por tu guía, sin preguntar al modelo:» (11.5 px, semibold, `--text-2`) over one row per rule that sends a sender to
+  a collection: the address as Juan wrote it (it breaks anywhere) and «→ Tarea» muted; a collection it no longer
+  knows is «→ otra colección», never its id; with none, «Tu guía no manda ningún remitente a una colección.». A rule
+  that skips a sender is «Regla del remitente»'s, not listed here. Nothing is dragged, nothing of where things are is kept,
   no «Ordenar»: looking never asks to save. The wheel scrolls the canvas (Ctrl or a pinch zooms); it opens fitted to
   its first eight boxes at a size to read (at most 100 %), the rest a scroll below. An arrow drawn from one node to
   another asks where the second uses the first's value

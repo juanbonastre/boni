@@ -9101,6 +9101,38 @@ button.rows-panel-row:hover {
   font-size: 12.5px;
   line-height: 1.4;
 }
+/* The decider's panel (task 83): what it chooses among, whether it asks, and the guide's rules that choose for it. */
+.decider-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.decider-facts p {
+  margin: 0;
+}
+.decider-facts-title {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.decider-facts-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.decider-facts-rules li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+}
 /* «Crear en la elegida»: the collections it chooses among, said, not chosen here. */
 .flow-chosen {
   font-size: 12.5px;
