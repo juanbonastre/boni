@@ -2346,6 +2346,37 @@ export const MAP_CHOSEN = {
       : n,
   ),
 };
+/** The map with Boni's «Traer correo» (D-50), as the server draws it: connector → «Traer correo» → Correos. */
+export const MAP_FETCH = {
+  ...MAP,
+  nodes: [
+    ...MAP.nodes,
+    mapNode({
+      id: "flow:traer-correo",
+      kind: "flow",
+      name: "Traer correo",
+      trigger: { connector: "mail" },
+      on: true,
+      by: "preset",
+      boni: true,
+      runs: 30,
+      last: 1761900000000,
+      pack: "correo",
+      plan: { version: 1, steps: [{ id: "save", op: "call", tool: "mail.save", args: {} }] },
+      steps: [
+        flowStep("save", "call", "mail.save", { title: "Guardar en Correos", ran: { allow: 30 } }),
+      ],
+    }),
+  ],
+  edges: [
+    ...MAP.edges.filter((e) => !(e.from === "conn:mail" && e.kind === "brings")),
+    mapEdge("conn:mail", "flow:traer-correo", "brings", 42, { outside: true }),
+    mapEdge("flow:traer-correo", "col:t_01m6correo", "writes", 42, {
+      outside: true,
+      steps: ["save"],
+    }),
+  ],
+};
 /** A reading of a mail recommending books: it proposed two to Libros, one accepted (the e2e fixtures' «Libros»). */
 export const RUN_BOOK = {
   ...RUN_MAIL,

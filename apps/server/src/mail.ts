@@ -32,7 +32,7 @@ import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import type { Feeds } from "./feeds.ts";
-import { collectionKeysOf, ensureFlow, inputsOf, MAIL_FLOW, stepsOf } from "./flows.ts";
+import { collectionKeysOf, ensureFlow, FETCH_FLOW, inputsOf, MAIL_FLOW, stepsOf } from "./flows.ts";
 import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
 import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
 import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
@@ -799,6 +799,8 @@ export class Mails {
   private busy = new Map<number, Promise<MailState>>();
   private queued = new Map<number, Promise<MailState>>();
   private reviewing = new Set<number>();
+  /** What a look at an account's mailbox found, for «Traer correo»'s «Guardar en Correos» to bring in its run. */
+  private bringing = new Map<number, () => Promise<number>>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   private readonly tz: string;
@@ -863,6 +865,13 @@ export class Mails {
         const made = proposals.filter((p) => st.journal.proposal(p)?.status !== "stale");
         if (!made.length || !autoOn(st, AUTO_AREA)) return leaf(0, CODE);
         return leaf(await acceptAlone(st, this.o.host.agent(account), made, this.now()), CODE);
+      },
+      save: async () => {
+        // What the look at the mailbox found, once; nothing waiting (a run some other way): nothing brought.
+        const bring = this.bringing.get(account);
+        if (!bring) return leaf(0, CODE);
+        this.bringing.delete(account);
+        return leaf(await bring(), CODE);
       },
     };
   }
@@ -1551,6 +1560,15 @@ export class Mails {
     const st = this.state(account);
     if (!s || !this.o.host.hasData || !this.enabled(account)) return st;
     const store = this.o.host.store(account);
+    // Boni's «Traer correo» (docs/sistema.md §4.2): turned off, the mailbox is not looked at and nothing is brought;
+    // what waits to be read is read all the same («Leer correo» is a flow of its own).
+    const fetching = this.fetchFlow(store);
+    if (!fetching.enabled) {
+      st.lastCheck = this.now();
+      this.saveState(account, st);
+      await this.propose(account, s, st);
+      return st;
+    }
     const made: string[] = [];
     let r: ImapReader | null = null;
     try {
@@ -1584,41 +1602,65 @@ export class Mails {
         st.uidValidity = box.uidValidity;
         st.lastUid = 0;
       }
-      for (const uid of rescan) {
-        const f = await r.fetch(uid, FETCH_MAX);
-        if (!f) continue;
-        const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
-        // Without a Message-ID a mail cannot be told from one already in: left out.
-        if (!m.messageId || known.has(m.messageId)) continue;
-        const id = this.keepOne(account, store, def, m, f.internalDate, {
-          raw: f.raw,
-          size: f.size,
-          gmailThread: f.gmailThread,
-        });
-        if (!id) continue;
-        known.add(m.messageId);
-        made.push(id);
-        st.count++;
-      }
-      if (rescan.length) console.log(`mail ${account}: ${made.length} mails brought in again`);
-      if (!restart) st.rescans = [...new Set([...(st.rescans ?? []), RESCAN.id])];
-      for (const uid of uids.slice(0, this.o.perCheck ?? 50)) {
-        const f = await r.fetch(uid, FETCH_MAX);
-        st.lastUid = Math.max(st.lastUid, uid);
-        if (!f) continue;
-        const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
-        if (m.messageId && known.has(m.messageId)) continue;
-        // One mail that cannot be kept never stops the others (task 34: it stopped the check, and was lost).
-        const id = timed("a mail kept", 300, () =>
-          this.keepOne(account, store, def, m, f.internalDate, {
+      const reader = r;
+      /** What «Guardar en Correos» does: the mail found, kept with its attachments, original, invitation and thread. */
+      const bring = async (): Promise<number> => {
+        for (const uid of rescan) {
+          const f = await reader.fetch(uid, FETCH_MAX);
+          if (!f) continue;
+          const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
+          // Without a Message-ID a mail cannot be told from one already in: left out.
+          if (!m.messageId || known.has(m.messageId)) continue;
+          const id = this.keepOne(account, store, def, m, f.internalDate, {
             raw: f.raw,
             size: f.size,
             gmailThread: f.gmailThread,
-          }),
-        );
-        if (!id) continue;
-        made.push(id);
-        st.count++;
+          });
+          if (!id) continue;
+          known.add(m.messageId);
+          made.push(id);
+          st.count++;
+        }
+        if (rescan.length) console.log(`mail ${account}: ${made.length} mails brought in again`);
+        for (const uid of uids.slice(0, this.o.perCheck ?? 50)) {
+          const f = await reader.fetch(uid, FETCH_MAX);
+          st.lastUid = Math.max(st.lastUid, uid);
+          if (!f) continue;
+          const m = parseMessage(f.raw, f.raw.length < f.size, { keep: ATTACHMENT_MAX });
+          if (m.messageId && known.has(m.messageId)) continue;
+          // One mail that cannot be kept never stops the others (task 34: it stopped the check, and was lost).
+          const id = timed("a mail kept", 300, () =>
+            this.keepOne(account, store, def, m, f.internalDate, {
+              raw: f.raw,
+              size: f.size,
+              gmailThread: f.gmailThread,
+            }),
+          );
+          if (!id) continue;
+          made.push(id);
+          st.count++;
+        }
+        return made.length;
+      };
+      if (!restart) st.rescans = [...new Set([...(st.rescans ?? []), RESCAN.id])];
+      // «Traer correo» (docs/sistema.md §4.2, D-50): only a look that finds new mail is a run of it, and its «Guardar
+      // en Correos» brings the mail. Without the agent (no models for this account) the mail is brought all the same,
+      // with no run; with the flow off, nothing is brought (above, before the mailbox is opened). The look back for
+      // mail lost before (task 34's rescan, once) brings what it finds with no run of its own.
+      const agent = uids.length ? this.agentOf(account) : null;
+      if (uids.length || rescan.length) {
+        if (agent) {
+          this.bringing.set(account, bring);
+          try {
+            await agent.background(fetching.plan, {}, [], undefined, {
+              id: FETCH_FLOW,
+              version: fetching.version,
+              by: fetching.by,
+            });
+          } finally {
+            this.bringing.delete(account);
+          }
+        } else await bring();
       }
       st.lastError = null;
     } catch (e) {
@@ -1708,12 +1750,44 @@ export class Mails {
     const s = this.settings(account);
     if (!s) return;
     try {
+      this.fetchFlow(this.o.host.store(account));
       const c = this.planContext(account, s);
       if (c) this.mailFlow(c);
     } catch (e) {
       console.warn(
         `mail ${account}: «Leer correo» not brought up to date (${(e as Error).message})`,
       );
+    }
+  }
+
+  /**
+   * Boni's «Traer correo» (docs/sistema.md §4.2, D-50): new mail in the mailbox, brought into the mail's collection by
+   * its piece «Guardar en Correos». The latest version when the user saved one, else Boni's, saved only when it changed.
+   */
+  private fetchFlow(store: UserStore): FlowRow {
+    return ensureFlow(
+      store,
+      {
+        id: FETCH_FLOW,
+        name: "Traer correo",
+        trigger: { connector: "mail" },
+        plan: {
+          version: 1,
+          steps: [{ id: "save", op: "call", tool: "mail.save", args: {} }],
+        },
+        by: "preset",
+      },
+      this.now(),
+    );
+  }
+
+  /** The account's agent, or null when it has no models (then «Traer correo» brings the mail with no run). */
+  private agentOf(account: number): ReturnType<AgentHost["agent"]> | null {
+    if (!this.o.host.on) return null;
+    try {
+      return this.o.host.agent(account);
+    } catch {
+      return null;
     }
   }
 

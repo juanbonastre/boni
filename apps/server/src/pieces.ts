@@ -25,10 +25,14 @@ export interface MailPieces {
   fold(mail: string, again: boolean, proposals: readonly string[], days?: number): Val;
   /** «Solo» for the mail's proposals (docs/fiabilidad.md §3.4): the ones like those Juan always kept are accepted. */
   acceptAlone(proposals: readonly string[]): Promise<Val>;
+  /** «Traer correo»'s «Guardar en Correos»: the new mail the connector found in the mailbox, brought into the mail's
+   * collection with its attachments, its original, its invitation and its thread. How many came (0 with none found). */
+  save(): Promise<Val>;
 }
 
 /** The pieces' names, as a flow's steps call them. */
 export const PIECES = [
+  "mail.save",
   "mail.rule",
   "mail.known",
   "mail.invitation",
@@ -156,6 +160,18 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
       "with «Solo» on, accepts the proposals of this run that are like the ones the user always kept as they were",
     args: {},
     run: (c) => host(c.pieces).acceptAlone(c.proposals()),
+  });
+  // «Traer correo» (docs/sistema.md §4.2): what the mail connector found, kept. It changes the mail's collection, so
+  // only in its flow's own run, and «Probar» says it without bringing anything (P20).
+  r.register({
+    name: "mail.save",
+    effect: "piece",
+    changes: true,
+    title: "Guardar en Correos",
+    describe:
+      "brings the new mail the mailbox has into the mail's collection, with its attachments, its original, its calendar invitation (read from its .ics) and its thread; how many came",
+    args: {},
+    run: (c) => host(c.pieces).save(),
   });
   return r;
 }

@@ -27,6 +27,8 @@ import { type FieldDef, rolesOf, type TypeDef } from "@boni/entities";
 import type { FlowRow, RunRow, UserStore } from "@boni/store";
 
 export const MAIL_FLOW = "leer-correo";
+/** Boni's «Traer correo» (docs/sistema.md §4.2): new mail in the mailbox, brought into the mail's collection. */
+export const FETCH_FLOW = "traer-correo";
 
 /** What a flow's trigger binds to its plan by name, each with what it is (for the trigger's node). */
 export interface FlowInput {
@@ -356,11 +358,13 @@ const cut = (s: string) => (s.length > 60 ? `${s.slice(0, 57)}…` : s);
 
 // ------------------------------------------------------------------ triggers
 
-/** What starts a flow (docs/flujos.md §4.3): a new mail, by hand with a form, or on a schedule. */
+/** What starts a flow (docs/flujos.md §4.3): a new mail, by hand with a form, on a schedule, or new mail in the
+ * mailbox (Boni's «Traer correo»: it binds nothing; its piece brings what the connector found). */
 export type Trigger =
   | { created: string }
   | { manual: true; inputs?: { name: string }[] }
-  | { schedule: { every: "day" | "week" | "hour"; at?: string; day?: number } };
+  | { schedule: { every: "day" | "week" | "hour"; at?: string; day?: number } }
+  | { connector: "mail" };
 
 /** The names a trigger binds to the plan. */
 export function triggerNames(trigger: unknown): string[] {

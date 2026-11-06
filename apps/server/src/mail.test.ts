@@ -15,7 +15,7 @@ import { AUTO_AREA, setAutoState } from "./autoAccept.ts";
 import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
-import { MAIL_FLOW, revertFlow, saveUserFlow } from "./flows.ts";
+import { FETCH_FLOW, MAIL_FLOW, revertFlow, saveUserFlow } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { inboxCard } from "./inboxCard.ts";
 import { LoginGuard } from "./limits.ts";
@@ -902,6 +902,75 @@ describe("tasks a mail asks for", () => {
       "Tráeme el informe el miércoles",
     ]);
     expect(store.list("t_agenda")).toHaveLength(0);
+    h.close();
+    sdb.close();
+    rmSync(d, { recursive: true, force: true });
+  });
+});
+
+describe("«Traer correo», Boni's flow (docs/sistema.md §4.2, D-50)", () => {
+  it("brings the mail through its piece «Guardar en Correos»: a look that finds mail is a run, one that finds none is not, and turned off it brings nothing", async () => {
+    const d = mkdtempSync(join(tmpdir(), "boni-mail-fetch-flow-"));
+    const sdb = openDb(join(d, "system.db"));
+    addUser(sdb, "juan", PASSWORD);
+    const reader = new ScriptedProvider("fake", () => ({ items: [] }));
+    const h = new AgentHost({ dataDir: d, providers: { planner: reader, reader } });
+    const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
+    const store = h.store(1);
+    store.applySchema(
+      {
+        op: "create_type",
+        type: {
+          id: "t_agenda",
+          key: "agenda",
+          name: "Agenda",
+          fields: [
+            { id: "t_agenda_t", key: "titulo", name: "Título", type: "text", label: own },
+            { id: "t_agenda_d", key: "fecha", name: "Fecha", type: "date", label: own },
+          ],
+          titleField: "t_agenda_t",
+          roles: { date: "t_agenda_d" },
+          sensitivity: "personal",
+          schemaVersion: 1,
+          label: own,
+        },
+      },
+      { actor: "user" },
+    );
+    const m = new Mails({
+      db: sdb,
+      key,
+      host: h,
+      now: () => NOW,
+      connect: () => new Socket().connect(imapPort, "127.0.0.1"),
+    });
+    box.uidValidity = 13;
+    box.mails = new Map([[1, mail(27, "Uno", "El primero.")]]);
+    await m.save(1, { host: "imap.example.com", user: "juan@example.com", password: APP_PASSWORD });
+    await m.save(1, { collections: ["t_agenda"] });
+    const runs = () => store.journal.runs().filter((r) => r.flow === FETCH_FLOW);
+    expect(await m.check(1)).toMatchObject({ count: 1, lastError: null });
+    // Boni's flow, started by the mail connector, with its one step: it brought the mail.
+    expect(store.journal.flow(FETCH_FLOW)).toMatchObject({
+      name: "Traer correo",
+      by: "preset",
+      trigger: { connector: "mail" },
+    });
+    expect(runs()).toHaveLength(1);
+    expect(
+      store.journal.steps(runs()[0]?.id ?? "").map((x) => [x.step, x.decision, x.rule]),
+    ).toEqual([["save", "allow", "P20"]]);
+    // A look that finds nothing new is not a run of it.
+    expect(await m.check(1)).toMatchObject({ count: 1, lastError: null });
+    expect(runs()).toHaveLength(1);
+    // Turned off, the mailbox is not looked at: nothing is brought; on again, what waited comes.
+    store.journal.setFlowEnabled(FETCH_FLOW, false);
+    box.mails.set(2, mail(28, "Dos", "El segundo."));
+    expect(await m.check(1)).toMatchObject({ count: 1 });
+    expect(runs()).toHaveLength(1);
+    store.journal.setFlowEnabled(FETCH_FLOW, true);
+    expect(await m.check(1)).toMatchObject({ count: 2, lastError: null });
+    expect(runs()).toHaveLength(2);
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

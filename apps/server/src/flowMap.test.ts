@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTO_AREA } from "./autoAccept.ts";
 import { createCollection, createRow } from "./data.ts";
 import { flowMap, type MapEdge, type MapView, mapOwnerOf } from "./flowMap.ts";
+import { ensureFlow, FETCH_FLOW } from "./flows.ts";
 import { createPage } from "./pages.ts";
 
 /**
@@ -433,6 +434,39 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(out[0]?.to).toBe("boni:inbox");
     expect(out[0]?.steps).toEqual(["n_tasks"]);
     expect(out[0]?.into).toEqual([`col:${w.evento}`, `col:${w.tarea}`].sort());
+  });
+
+  it("with Boni's «Traer correo», the mail goes connector → «Traer correo» → Correos, never straight in (D-50)", () => {
+    const w = world();
+    ensureFlow(
+      store,
+      {
+        id: FETCH_FLOW,
+        name: "Traer correo",
+        trigger: { connector: "mail" },
+        plan: { version: 1, steps: [{ id: "save", op: "call", tool: "mail.save", args: {} }] },
+        by: "preset",
+      },
+      NOW,
+    );
+    const m = mapOf(7, w.correo);
+    expect(m.nodes.find((n) => n.id === `flow:${FETCH_FLOW}`)).toMatchObject({
+      kind: "flow",
+      name: "Traer correo",
+      pack: "correo",
+    });
+    expect(edgeOf(m, "conn:mail", `flow:${FETCH_FLOW}`, "brings")).toMatchObject({
+      n: 1,
+      outside: true,
+    });
+    expect(edgeOf(m, `flow:${FETCH_FLOW}`, `col:${w.correo}`, "writes")).toMatchObject({
+      n: 1,
+      steps: ["save"],
+      outside: true,
+    });
+    expect(edgeOf(m, "conn:mail", `col:${w.correo}`, "brings")).toBeUndefined();
+    // What «Leer correo» starts on is still the mail's collection.
+    expect(edgeOf(m, `col:${w.correo}`, "flow:leer-correo", "starts")).toBeDefined();
   });
 
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {

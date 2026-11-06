@@ -34,6 +34,8 @@ const DAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "
 export function triggerWords(trigger: unknown, typeName: (key: string) => string | null): string {
   const on = (trigger ?? {}) as Record<string, unknown>;
   if (typeof on.created === "string") return `Llega a ${typeName(on.created) ?? on.created}`;
+  // Boni's «Traer correo» (as the editor says it, `flows.on.connector.mail`).
+  if (on.connector === "mail") return "Llega correo al buzón";
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
     const at = typeof s.at === "string" ? s.at : "08:00";
