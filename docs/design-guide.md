@@ -800,7 +800,9 @@ contraseña ni un código aquí» under a question.
   assistant («Asistente · claude-ejemplo · Por el MCP»), a page. An arrow per verb, its words in a pill: «trae · 42»,
   «pone en marcha · 42», «lee», «escribe · 61», «propone · 12» (dashed, into the Bandeja), «aceptadas · 7» (out of it,
   to each collection), «decides · 11» (yours, in it), «tus decisiones · 11» (to the guide's reviewer), «mejora»,
-  «muestra»; one that carries a mail's words in `--c4` («Lleva texto de fuera» on hover). The Bandeja is crossed, not
+  «muestra»; one that carries a mail's words in `--c4` («Lleva texto de fuera» on hover); one going back, right to
+  left (what you or the conversation read, a lesson to an earlier flow), says its words only when it is lit, so they
+  never cover a card's name. The Bandeja is crossed, not
   counted: «Antes: 1» of Evento shows the Bandeja and, in the same step, the flows that propose into Evento (not those
   that propose elsewhere), each «propone» with what went to Evento (not its total), so «who writes in Evento» still
   reads «Leer correo (propone · 3)»; «Después: Todo» of the mail goes Correo → Correos → Leer correo → Bandeja →

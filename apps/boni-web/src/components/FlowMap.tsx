@@ -911,11 +911,15 @@ function Canvas({
       const onWay = !focus && !!way && way.edges.has(`${e.from}>${e.to}>${e.kind}`);
       const hot = focus ? e.from === focus || e.to === focus : onWay;
       const dim = focus ? !hot : !!way && !onWay;
+      // An arrow going back (right to left: what someone who acts reads, a lesson to an earlier flow) crosses the
+      // boxes in between: its words only when it is lit, never over a card's name.
+      const back =
+        (graph.layout.at.get(e.from)?.x ?? 0) > (graph.layout.at.get(e.to)?.x ?? 0) && !hot;
       // An arrow that leaves from (or reaches) several steps says its words once, on the first of them.
       let said = false;
       for (const from of ends(e.from, e.steps))
         for (const to of ends(e.to, e.steps)) {
-          const words = said ? "" : label;
+          const words = said || back ? "" : label;
           said = true;
           rfEdges.push({
             id: `${from}>${to}>${e.kind}`,

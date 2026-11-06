@@ -412,11 +412,20 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await page.getByRole("button", { name: "Filtros" }).click();
   await page.getByRole("checkbox", { name: "Con páginas" }).check();
   await expect(card("Agenda")).toBeVisible();
-  await expect(map.locator(".mp-edge-label", { hasText: "lee · 30" })).toBeVisible();
-  await page.getByRole("checkbox", { name: "Solo lo que escribe" }).check();
+  await page.keyboard.press("Escape");
+  // An arrow going back (the conversation reads Gastos) says its words when one of its ends is pointed at.
   await expect(map.locator(".mp-edge-label", { hasText: "lee · 30" })).toHaveCount(0);
+  await card("Conversación").hover();
+  await expect(map.locator(".mp-edge-label", { hasText: "lee · 30" })).toBeVisible();
+  await page.mouse.move(5, 5);
+  await page.getByRole("button", { name: "Filtros" }).click();
+  await page.getByRole("checkbox", { name: "Solo lo que escribe" }).check();
   await expect(card("Agenda")).toHaveCount(0);
   await page.keyboard.press("Escape");
+  // No «lee» even when its end is pointed at: the arrow is gone.
+  await card("Conversación").hover();
+  await expect(map.locator(".mp-edge-label", { hasText: "lee · 30" })).toHaveCount(0);
+  await page.mouse.move(5, 5);
   // Grouped by collection: Tarea and Evento in a frame named after the collection they are inside.
   await page.getByRole("combobox", { name: "Agrupar" }).selectOption("collection");
   await expect(map.locator(".mp-frame.group", { hasText: "Trabajo" })).toBeVisible();
