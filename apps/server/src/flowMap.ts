@@ -12,7 +12,15 @@
 import type { RunRow, UserStore } from "@boni/store";
 import { AUTO_AREA } from "./autoAccept.ts";
 import { userTypes } from "./data.ts";
-import { FETCH_FLOW, type FlowNode, MAIL_FLOW, nodesOf, stepsOf, typeKeysOf } from "./flows.ts";
+import {
+  FETCH_FLOW,
+  type FlowNode,
+  MAIL_FLOW,
+  nodesOf,
+  REVIEW_FLOW,
+  stepsOf,
+  typeKeysOf,
+} from "./flows.ts";
 import { getPage, listPages } from "./pages.ts";
 import { timed } from "./perf.ts";
 import { whatOf } from "./runInfo.ts";
@@ -136,7 +144,9 @@ export function mapOwnerOf(store: UserStore, r: RunRow, mailAccount: string | nu
   if (r.turn) return "boni:chat";
   const kind = whatOf(store, r, mailAccount).kind;
   if (kind === "accepted") return INBOX;
-  if (kind === "review" || kind === "measure") return "boni:review";
+  // The reviewer's work: Boni's «Revisar la guía» when the account has it (D-51), its own box before.
+  if (kind === "review" || kind === "measure")
+    return store.journal.flow(REVIEW_FLOW) ? `flow:${REVIEW_FLOW}` : "boni:review";
   if (kind === "mail") return `flow:${MAIL_FLOW}`;
   return null;
 }
@@ -319,7 +329,8 @@ function makeMap(
   for (const f of flows) {
     const id = `flow:${f.id}`;
     const on = (f.trigger ?? {}) as Record<string, unknown>;
-    const background = typeof on.created === "string" || !!on.schedule || !!on.connector;
+    const background =
+      typeof on.created === "string" || !!on.schedule || !!on.connector || !!on.learning;
     const counts = j.stepCountsOf(f.id, from, to);
     const steps = nodesOf(
       f.plan,
@@ -359,7 +370,10 @@ function makeMap(
       plan: f.plan,
       steps,
       pack:
-        f.id === MAIL_FLOW || f.id === FETCH_FLOW || (!!starts && starts === mailCol)
+        f.id === MAIL_FLOW ||
+        f.id === FETCH_FLOW ||
+        f.id === REVIEW_FLOW ||
+        (!!starts && starts === mailCol)
           ? "correo"
           : null,
     });
@@ -536,32 +550,38 @@ function makeMap(
       });
     edge({ from: "actor:user", to: INBOX, kind: "decides", n: decisions, outside: false });
   }
-  if (mailCol || (stats.get("boni:review")?.runs ?? 0) > 0) {
-    node({
-      id: "boni:review",
-      kind: "boni",
-      name: null,
-      code: "review",
-      ...numbers("boni:review"),
-      roles: ["reviewer"],
-      pack: "correo",
-    });
-    edge({
-      from: INBOX,
-      to: "boni:review",
-      kind: "learns",
-      n: mailDecisions,
-      outside: false,
-      via: [`flow:${MAIL_FLOW}`],
-    });
-    if (nodes.has(`flow:${MAIL_FLOW}`))
-      edge({
-        from: "boni:review",
-        to: `flow:${MAIL_FLOW}`,
-        kind: "improves",
-        n: numbers("boni:review").runs,
-        outside: false,
+  // The guide's reviewer: Boni's flow «Revisar la guía» when the account has it (D-51; drawn with the flows), else
+  // its own box.
+  const reviewer = j.flow(REVIEW_FLOW) ? `flow:${REVIEW_FLOW}` : "boni:review";
+  if (mailCol || (stats.get(reviewer)?.runs ?? 0) > 0) {
+    if (reviewer === "boni:review")
+      node({
+        id: "boni:review",
+        kind: "boni",
+        name: null,
+        code: "review",
+        ...numbers("boni:review"),
+        roles: ["reviewer"],
+        pack: "correo",
       });
+    if (nodes.has(reviewer)) {
+      edge({
+        from: INBOX,
+        to: reviewer,
+        kind: "learns",
+        n: mailDecisions,
+        outside: false,
+        via: [`flow:${MAIL_FLOW}`],
+      });
+      if (nodes.has(`flow:${MAIL_FLOW}`))
+        edge({
+          from: reviewer,
+          to: `flow:${MAIL_FLOW}`,
+          kind: "improves",
+          n: numbers(reviewer).runs,
+          outside: false,
+        });
+    }
   }
 
   // Who wrote and read in the period, by the audit: the user, the assistants by the MCP, an import; what a turn of

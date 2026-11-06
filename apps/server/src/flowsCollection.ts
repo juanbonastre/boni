@@ -36,6 +36,8 @@ export function triggerWords(trigger: unknown, typeName: (key: string) => string
   if (typeof on.created === "string") return `Llega a ${typeName(on.created) ?? on.created}`;
   // Boni's «Traer correo» (as the editor says it, `flows.on.connector.mail`).
   if (on.connector === "mail") return "Llega correo al buzón";
+  // Boni's «Revisar la guía» (`flows.on.learning.mail`).
+  if (on.learning === "mail") return "Cuando tus decisiones lo piden";
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
     const at = typeof s.at === "string" ? s.at : "08:00";

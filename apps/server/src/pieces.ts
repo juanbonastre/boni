@@ -29,11 +29,21 @@ export interface MailPieces {
    * collection with its attachments, its original, its invitation and its thread. How many came (0 with none found,
    * and in «Probar», `dry`, which brings nothing). */
   save(dry: boolean): Promise<Val>;
+  /** «Revisar la guía»'s «Tus decisiones»: Juan's decisions as the reviewer reads them (external text), the
+   * collections it may name, how many, and the rules the code found. */
+  reviewDecisions(dry: boolean): Val;
+  /** «Medir releyendo»: the reviewer's answer checked and measured by reading mail again (in «Probar», only how much). */
+  reviewMeasure(reading: unknown, dry: boolean): Promise<Val>;
+  /** «Sugerencia»: whether the measured candidate gets more right, and so waits for Juan (never in «Probar»). */
+  reviewSuggest(dry: boolean): Val;
 }
 
 /** The pieces' names, as a flow's steps call them. */
 export const PIECES = [
   "mail.save",
+  "guide.decisions",
+  "guide.measure",
+  "guide.suggest",
   "mail.rule",
   "mail.known",
   "mail.invitation",
@@ -173,6 +183,35 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
       "brings the new mail the mailbox has into the mail's collection, with its attachments, its original, its calendar invitation (read from its .ics) and its thread; how many came",
     args: {},
     run: (c) => host(c.pieces).save(!!c.dry),
+  });
+  // «Revisar la guía» (docs/sistema.md §4.2, D-51): what the reviewer learns from, the measure, the suggestion.
+  r.register({
+    name: "guide.decisions",
+    effect: "piece",
+    title: "Tus decisiones",
+    describe:
+      "the user's decisions on the proposals that came from mail, as the reviewer reads them (someone else's text), the collections it may name, how many, and the rules the code already found",
+    args: {},
+    run: (c) => host(c.pieces).reviewDecisions(!!c.dry),
+  });
+  r.register({
+    name: "guide.measure",
+    effect: "piece",
+    title: "Medir releyendo",
+    describe:
+      "the reviewer's answer, each rule checked against the decisions, measured by reading decided mail again with today's guide and with the new one; in a test, only how much it would read",
+    args: { reading: { role: "value", describe: "the reviewer's answer: rules and decision ids" } },
+    run: (c, a) => host(c.pieces).reviewMeasure(a.reading ? plain(a.reading) : null, !!c.dry),
+  });
+  r.register({
+    name: "guide.suggest",
+    effect: "piece",
+    changes: true,
+    title: "Sugerencia",
+    describe:
+      "keeps the measured suggestion when it gets more of the user's decisions right; it waits for the user in Ajustes → Correo",
+    args: {},
+    run: (c) => host(c.pieces).reviewSuggest(!!c.dry),
   });
   return r;
 }

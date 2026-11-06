@@ -29,6 +29,8 @@ import type { FlowRow, RunRow, UserStore } from "@boni/store";
 export const MAIL_FLOW = "leer-correo";
 /** Boni's «Traer correo» (docs/sistema.md §4.2): new mail in the mailbox, brought into the mail's collection. */
 export const FETCH_FLOW = "traer-correo";
+/** Boni's «Revisar la guía» (docs/sistema.md §4.2): Juan's decisions on mail proposals, read by the reviewer. */
+export const REVIEW_FLOW = "revisar-guia";
 
 /** What a flow's trigger binds to its plan by name, each with what it is (for the trigger's node). */
 export interface FlowInput {
@@ -364,7 +366,8 @@ export type Trigger =
   | { created: string }
   | { manual: true; inputs?: { name: string }[] }
   | { schedule: { every: "day" | "week" | "hour"; at?: string; day?: number } }
-  | { connector: "mail" };
+  | { connector: "mail" }
+  | { learning: "mail" };
 
 /** The names a trigger binds to the plan. */
 export function triggerNames(trigger: unknown): string[] {
@@ -908,13 +911,18 @@ export function saveUserFlow(
   if (latest.version !== edit.base) return { error: "conflict" };
   if (problems.length) return { error: "invalid" };
   const trigger = edit.trigger ?? latest.trigger;
-  // Boni's «Leer correo» and «Traer correo» keep what starts them; only «Traer correo» is started by the connector.
+  // Boni's «Leer correo», «Traer correo» and «Revisar la guía» keep what starts them; only «Traer correo» is started by
+  // the connector, only «Revisar la guía» by Juan's decisions.
   if (
-    (id === MAIL_FLOW || id === FETCH_FLOW) &&
+    (id === MAIL_FLOW || id === FETCH_FLOW || id === REVIEW_FLOW) &&
     JSON.stringify(trigger) !== JSON.stringify(latest.trigger)
   )
     return { error: "trigger" };
-  if (id !== FETCH_FLOW && (trigger as { connector?: unknown } | null)?.connector !== undefined)
+  const on = (trigger ?? {}) as { connector?: unknown; learning?: unknown };
+  if (
+    (id !== FETCH_FLOW && on.connector !== undefined) ||
+    (id !== REVIEW_FLOW && on.learning !== undefined)
+  )
     return { error: "trigger" };
   return {
     flow: store.journal.saveFlow({

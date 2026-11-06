@@ -625,6 +625,11 @@ const es = {
     "Lo que una respuesta del mismo hilo repite no sale otra vez en la Bandeja.",
   "flow.desc.inbox.accept_alone":
     "Con «Solo» encendido, acepta solas las propuestas como las que siempre aceptas.",
+  "flow.desc.guide.decisions":
+    "Tus decisiones sobre las propuestas del correo, como las lee la Revisora, y las reglas que ya halló el código.",
+  "flow.desc.guide.measure":
+    "Relee correos que ya decidiste con la guía de hoy y con la nueva, y cuenta cuál acierta más.",
+  "flow.desc.guide.suggest": "Si la nueva acierta más, la deja esperándote en Ajustes → Correo.",
   "flow.desc.mail.save":
     "Guarda en Correos el correo nuevo del buzón, con sus adjuntos, el original, la invitación y el hilo.",
   "flow.desc.read_message": "Lee el correo y saca lo que te pide hacer o a lo que tienes que ir.",
@@ -885,6 +890,7 @@ const es = {
   "flows.piece.reads": "De Boni · lee",
   "flows.piece.changes": "De Boni · cambia la Bandeja",
   "flows.piece.changes.mail.save": "De Boni · guarda en Correos",
+  "flows.piece.changes.guide.suggest": "De Boni · deja una sugerencia",
   "flows.piece.foldDays.one": "Mira 1 día atrás en el hilo.",
   "flows.piece.foldDays": "Mira {n} días atrás en el hilo.",
   "flows.arg.values": "Valores",
@@ -961,6 +967,7 @@ const es = {
   "flows.on.schedule": "Cada {when}",
   "flows.on.manual": "Disparado por el usuario",
   "flows.on.connector.mail": "Llega correo al buzón",
+  "flows.on.learning.mail": "Cuando tus decisiones lo piden",
   "flows.on.other": "Disparador",
   "flows.ran": "{n} veces",
   "flows.ran.one": "1 vez",
@@ -2718,6 +2725,12 @@ const en: Record<Key, string> = {
     "What a reply in the same thread repeats does not appear again in the Inbox.",
   "flow.desc.inbox.accept_alone":
     "With «Solo» on, accepts alone the proposals like those you always accept.",
+  "flow.desc.guide.decisions":
+    "Your decisions on the mail's proposals, as the reviewer reads them, and the rules the code already found.",
+  "flow.desc.guide.measure":
+    "Reads mail you already decided again with today's guide and with the new one, and counts which gets more right.",
+  "flow.desc.guide.suggest":
+    "When the new one gets more right, it waits for you in Settings → Mail.",
   "flow.desc.mail.save":
     "Keeps the mailbox's new mail in Correos, with its attachments, its original, its invitation and its thread.",
   "flow.desc.read_message": "Reads the mail and finds what it asks you to do or to go to.",
@@ -2978,6 +2991,7 @@ const en: Record<Key, string> = {
   "flows.piece.reads": "Boni's · reads",
   "flows.piece.changes": "Boni's · changes the Inbox",
   "flows.piece.changes.mail.save": "Boni's · keeps in Correos",
+  "flows.piece.changes.guide.suggest": "Boni's · leaves a suggestion",
   "flows.piece.foldDays.one": "Looks 1 day back in the thread.",
   "flows.piece.foldDays": "Looks {n} days back in the thread.",
   "flows.arg.values": "Values",
@@ -3054,6 +3068,7 @@ const en: Record<Key, string> = {
   "flows.on.schedule": "Every {when}",
   "flows.on.manual": "Triggered by the user",
   "flows.on.connector.mail": "Mail arrives in the mailbox",
+  "flows.on.learning.mail": "When your decisions call for it",
   "flows.on.other": "Trigger",
   "flows.ran": "{n} times",
   "flows.ran.one": "once",

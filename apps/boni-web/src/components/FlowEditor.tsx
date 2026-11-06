@@ -112,6 +112,8 @@ export function triggerText(
     return t("flows.on.created", { what: nameOf?.(on.created) ?? on.created });
   // Boni's «Traer correo» (docs/sistema.md §4.2): the mail connector found new mail.
   if (on.connector === "mail") return t("flows.on.connector.mail");
+  // Boni's «Revisar la guía»: Juan's decisions ask for a review.
+  if (on.learning === "mail") return t("flows.on.learning.mail");
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
     const at = typeof s.at === "string" ? s.at : "08:00";
@@ -1075,7 +1077,10 @@ function TriggerPanel({
 }) {
   const t = useStore((s) => s.t);
   // What a record or the mail connector starts is not changed here (Boni's «Leer correo» and «Traer correo»).
-  const fixed = typeof draft.trigger.created === "string" || draft.trigger.connector === "mail";
+  const fixed =
+    typeof draft.trigger.created === "string" ||
+    draft.trigger.connector === "mail" ||
+    draft.trigger.learning === "mail";
   const names = formNames(draft.trigger);
   const schedule =
     draft.trigger.schedule && typeof draft.trigger.schedule === "object"

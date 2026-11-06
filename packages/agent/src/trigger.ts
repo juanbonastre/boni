@@ -34,6 +34,8 @@ export function triggerOk(trigger: unknown): boolean {
   const t = trigger as Record<string, unknown>;
   if (typeof t.created === "string") return t.created === "correo";
   if (t.connector !== undefined) return t.connector === "mail" && Object.keys(t).length === 1;
+  // Boni's «Revisar la guía»: Juan's decisions ask for a review (D-51).
+  if (t.learning !== undefined) return t.learning === "mail" && Object.keys(t).length === 1;
   if (t.manual === true) {
     if (t.inputs === undefined) return true;
     return (

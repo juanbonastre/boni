@@ -15,6 +15,7 @@ import {
   flowView,
   inputsOf,
   MAIL_FLOW,
+  REVIEW_FLOW,
   revertFlow,
   saveUserFlow,
   triggerOk,
@@ -690,6 +691,38 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     await piece.run({ pieces, proposals: () => [], dry: true } as never, {} as never, CODE_LABEL);
     await piece.run({ pieces, proposals: () => [], dry: false } as never, {} as never, CODE_LABEL);
     expect(seen).toEqual([true, false]);
+    store.close();
+  });
+
+  it("«Revisar la guía» (D-51): its trigger is Juan's decisions, well formed alone, kept, and only its own", () => {
+    const store = withTypes();
+    const trigger = { learning: "mail" };
+    expect(triggerOk(trigger)).toBe(true);
+    expect(triggerOk({ learning: "mail", manual: true })).toBe(false);
+    expect(triggerOk({ learning: "otro" })).toBe(false);
+    const plan = {
+      version: 1,
+      steps: [{ id: "d", op: "call", tool: "guide.decisions", args: {} }],
+    };
+    ensureFlow(
+      store,
+      { id: REVIEW_FLOW, name: "Revisar la guía", trigger, plan, by: "preset" },
+      1000,
+    );
+    expect(
+      saveUserFlow(store, REVIEW_FLOW, { base: 1, plan, trigger: { manual: true } }, [], 2000),
+    ).toEqual({ error: "trigger" });
+    const other = createFlow(store, { name: "Otro" }, 3000);
+    if (!other) throw new Error("no flow");
+    expect(
+      saveUserFlow(
+        store,
+        other.id,
+        { base: 1, plan: { version: 1, steps: [] }, trigger },
+        [],
+        4000,
+      ),
+    ).toEqual({ error: "trigger" });
     store.close();
   });
 
