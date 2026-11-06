@@ -896,6 +896,11 @@ describe("tasks a mail asks for", () => {
         "values.importante": "true",
       },
     ]);
+    // Each keeps its own words as its reason, the event's too.
+    expect(pending.map((p) => (p.args as { why?: { value: string } }).why?.value).sort()).toEqual([
+      "Nos vemos el jueves de 10 a 11, es importante",
+      "Tráeme el informe el miércoles",
+    ]);
     expect(store.list("t_agenda")).toHaveLength(0);
     h.close();
     sdb.close();

@@ -923,17 +923,19 @@ contraseña ni un código aquí» under a question.
   among which, in words («La que elija la Decisora: Tarea, Evento o Persona»), not as a list to choose from: Boni's
   «Leer correo» has one «Rellenadora» and one «Crear» for everything the reader finds («cada cosa»), the invitation's
   «Crear» apart («la invitación»), and no lanes (D-49). The decider's panel, here and on the map (task 83), says under
-  its line (which already says it asks when unsure) what it chooses among («Elige entre Tarea, Evento o Persona.»,
-  from the `case` over its choice) and, when it takes the guide's rule as its answer,
-  «Por tu guía, sin preguntar al modelo:» (11.5 px, semibold, `--text-2`) over one row per rule that sends a sender to
-  a collection: the address as Juan wrote it (it breaks anywhere) and «→ Tarea» muted; a collection it no longer
-  knows is «→ otra colección», never its id; with none, «Tu guía no manda ningún remitente a una colección.». A rule
-  that skips a sender is «Regla del remitente»'s, not listed here. A piece of Boni's card says so in its line, with
-  what it may change: «De Boni · lee», «De Boni · cambia la Bandeja». A piece's settings are in its panel (task 83):
-  «Plegar hilo»'s «Días» is a setting of its step like any other; «Aceptar solas» shows «Solo» with the switch of
-  Ajustes → Decisiones (the same one, greyed until earned) and «El mismo interruptor que en Ajustes → Decisiones.»
-  muted; on the map, «Plegar hilo»'s panel says «Mira 60 días atrás en el hilo.». A trigger whose records the mail's
-  connector brings says so under its name, muted: «Viene del conector Correo». Nothing is dragged, nothing of where things are is kept,
+  its line (which already says it asks when unsure) what it chooses among («Elige entre Tarea, Evento y Persona.»,
+  from the `case` over the collection of the steps after it) and, when it takes «Regla del remitente»'s answer,
+  «Reglas de tu guía» (11.5 px, semibold, `--text-2`) over one row per rule that chooses for it: one that sends a
+  sender to one of its collections and that no earlier rule takes first (the first that matches wins); the address as
+  Juan wrote it (it breaks anywhere) and «→ Tarea» muted. With none, no heading; with nothing to say, no block (no
+  explanations in the app, §5). A rule that skips a sender is «Regla del remitente»'s, not listed here. A piece of
+  Boni's card says so in its line, with what it may change: «De Boni · lee», «De Boni · cambia la Bandeja». A piece's
+  settings are in its panel (task 83): «Plegar hilo»'s «Días» is a setting of its step like any other, and its panel,
+  here and on the map, says the days the server takes («Mira 60 días atrás en el hilo.»; a whole number from 1 to
+  366, else 60; «1 día»); «Aceptar solas» shows «Solo» with the switch of Ajustes → Decisiones (the same one, asked
+  again each time its panel opens), greyed until earned, and under it, muted, what Ajustes says of it («Apagado por
+  Boni el …», «Todavía no se lo ha ganado»), nothing when earned. A trigger whose records the mail's connector brings
+  says so under its name, muted, as its draft says: «Viene del conector Correo». Nothing is dragged, nothing of where things are is kept,
   no «Ordenar»: looking never asks to save. The wheel scrolls the canvas (Ctrl or a pinch zooms); it opens fitted to
   its first eight boxes at a size to read (at most 100 %), the rest a scroll below. An arrow drawn from one node to
   another asks where the second uses the first's value

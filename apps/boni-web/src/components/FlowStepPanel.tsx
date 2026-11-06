@@ -446,11 +446,11 @@ export function FlowStepPanel({
           plan={plan}
           step={step.id}
           nameOfKey={(k) => catalog.collections.find((c) => c.key === k)?.name}
-          nameOfId={(id) => catalog.collections.find((c) => c.id === id)?.name}
+          keyOfId={(id) => catalog.collections.find((c) => c.id === id)?.key}
         />
       )}
       {/* A piece's own setting that lives elsewhere: «Aceptar solas»' «Solo» switch (task 83). */}
-      {step.op === "call" && <PieceFacts step={step} editor />}
+      {step.op === "call" && <PieceFacts step={step} />}
       {problems.length > 0 && (
         <ul className="flow-problems" aria-label={t("flows.problems")}>
           {problems.map((p) => (

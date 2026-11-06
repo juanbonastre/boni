@@ -961,8 +961,9 @@ export interface FlowDetailView extends FlowSummary {
   plan: FlowPlan;
   /** Boni's own version of it, when it has one («Volver al de Boni»). */
   preset: number | null;
-  /** The connector that brings the records that start it («Correo»), or null; servers before 0.8.114 say none. */
-  via?: "mail" | null;
+  /** The key of the collection the mail's connector brings records to (a trigger on it «viene del conector Correo»),
+   * or null; servers before 0.8.114 say none. */
+  mailKey?: string | null;
 }
 /** A flow's plan as the editor holds it (docs/flujos.md: the plan language, `packages/agent` plan.ts). */
 export interface FlowPlan {
@@ -1328,7 +1329,7 @@ export function parseFlowDetail(b: unknown): FlowDetailView | null {
     versions,
     plan: planOf(b.plan),
     preset: typeof b.preset === "number" ? b.preset : null,
-    via: b.via === "mail" ? "mail" : null,
+    mailKey: strOf(b.mailKey, 80),
   };
 }
 

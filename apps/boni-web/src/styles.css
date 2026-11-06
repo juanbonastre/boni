@@ -9563,8 +9563,10 @@ button.rows-panel-row:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
-/* A lane's name, cut to the lane's width (task 90's review): the whole name in its tooltip. */
+/* A lane's name, cut to the lane's width (task 90's review): the whole name in its tooltip, so it takes the pointer
+   (xyflow's label layer lets none through). */
 .fl-lane {
+  pointer-events: all;
   position: absolute;
   max-width: 184px;
   overflow: hidden;

@@ -489,8 +489,10 @@ export function mailPlan(
     // «Crear en la elegida» (docs/sistema.md §4.2): one «Rellenadora» and one «Crear» for every thing the reader
     // finds (`$r.all`: its tasks and its events in one list; Juan, 2026-11-06), in the collection chosen; each
     // collection's own fields come from `case`, all of them in the plan. When a kind goes elsewhere (a route to a
-    // fixed collection, or none), each kind that goes to the chosen one walks its own list.
-    if (chosen.length === modules.length) steps.push(...createInChosen("n", "all"));
+    // fixed collection, or none), each kind that goes to the chosen one walks its own list; with no kind to read,
+    // nothing is created (and no step reads a choice no decider made).
+    if (chosen.length > 0 && chosen.length === modules.length)
+      steps.push(...createInChosen("n", "all"));
     else for (const module of chosen) steps.push(...createInChosen(`n_${module}`, module));
   } else
     targets.forEach((t, i) => {

@@ -1979,7 +1979,7 @@ function Canvas({
                 plan={pickedStep.decider.plan}
                 step={pickedStep.decider.id}
                 nameOfKey={keyName}
-                nameOfId={(id) => nameOf.get(`col:${id}`)}
+                keyOfId={(id) => map.nodes.find((n) => n.id === `col:${id}`)?.key}
               />
             )}
             {pickedStep?.piece && <PieceFacts step={pickedStep.piece} />}

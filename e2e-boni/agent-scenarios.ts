@@ -1932,12 +1932,19 @@ const FLOW_PLAN_CHOSEN_MAP = chosenPlan([
   ["Tarea (p. ej.: Preparar la reunión)", "tarea"],
   ["Evento (p. ej.: Cena de empresa)", "evento"],
 ]);
-/** Juan's reading guide with a rule that skips a list and two that send a sender to a collection (invented). */
+/** Juan's reading guide (invented): a rule that skips a list, one that the list's rule takes first, and two that send
+ * a sender to a collection (Gestiones in the editor's fixtures, Tarea on the map's). */
 export const GUIDE_RULES = {
   guide: {
     instructions: "",
     rules: [
       { id: "r1", from: "@lista.example.com", action: "skip" },
+      {
+        id: "r4",
+        from: "boletin@lista.example.com",
+        action: "collection",
+        collection: "t_gestiones",
+      },
       {
         id: "r2",
         from: "secretaria.ejemplo@universidad.example",
@@ -1957,8 +1964,8 @@ export const GUIDE_RULES = {
 export const FLOW_DETAIL_CHOSEN = {
   ...FLOW_DETAIL,
   inputs: [...FLOW_DETAIL.inputs, { id: "options", what: "list" }],
-  // What starts it comes from the mail's connector (docs/sistema.md §4.2).
-  via: "mail",
+  // The mail's connector brings records to «correo»: the trigger says so (docs/sistema.md §4.2).
+  mailKey: "correo",
   nodes: [
     FLOW_DETAIL.nodes[0],
     flowStep("only", "call", "mail.rule", { title: "Regla del remitente", deps: ["mail"] }),

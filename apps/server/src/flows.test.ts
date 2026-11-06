@@ -618,6 +618,12 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     // «Buscar relaciones» still comes before the first «Crear».
     const ids = routed.steps.map((x) => x.id);
     expect(ids.indexOf("prefill")).toBe(ids.indexOf("n_tasks") - 1);
+    // With no kind to read (an extension with no reader modules), nothing reads a choice no decider made: a plan
+    // that passes the checklist, as before (the independent review of «Haz la B»).
+    const none = mailPlan(targets, { guide: true, modules: [], boundModules: true });
+    expect(
+      checkFlow(store, registry, { trigger: { created: "correo" }, plan: none }, o).problems,
+    ).toEqual([]);
     store.close();
   });
 

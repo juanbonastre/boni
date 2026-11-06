@@ -435,7 +435,9 @@ function nodesOf(
     return { s, r, tried, detailText, height: stepHeight(lines) };
   });
   const heights = new Map(cards.map((c) => [c.s.id, c.height]));
-  const via = detail.via === "mail" ? t("flows.trigger.viaMail") : null;
+  // The draft's trigger, not the saved one's: changed to another collection, the line goes at once.
+  const starts = (draft.trigger as { created?: unknown } | null)?.created;
+  const via = detail.mailKey && starts === detail.mailKey ? t("flows.trigger.viaMail") : null;
   const triggerHeight = 40 + (Math.min(inputs.length, 9) + (via ? 1 : 0)) * LINE + 8;
   const l = stepLayout(draft.plan.steps, {
     trigger: { id: TRIGGER, height: triggerHeight },

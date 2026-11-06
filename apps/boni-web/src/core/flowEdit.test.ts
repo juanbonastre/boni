@@ -8,6 +8,7 @@ import {
   depsOf,
   duplicateStep,
   exprText,
+  guideRulesFor,
   moveAfter,
   newStep,
   newStepId,
@@ -291,5 +292,83 @@ describe("the decider's panel over an older version (a lane per collection)", ()
       ],
     } as unknown as FlowPlan;
     expect(decidesAmong(plan, "c")).toEqual(["docencia", "gestiones"]);
+  });
+});
+
+describe("what the decider's panel says (the review of task 83)", () => {
+  const chosen = (keys: [string, string][]) => ({
+    fn: "case",
+    args: [{ ref: "$c.choice" }, ...keys.flatMap(([o, k]) => [{ lit: o }, { lit: k }])],
+  });
+  it("names the collections a step writes in or reads for, never a `case` that gives a field's key", () => {
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "c", op: "read", reader: "classify", input: { ref: "$text" } },
+        {
+          id: "n",
+          op: "call",
+          tool: "entities.create",
+          args: {
+            type: chosen([
+              ["Tarea", "tarea"],
+              ["Evento", "evento"],
+            ]),
+            // The day goes to each collection's own date field: keys of fields, not collections.
+            values: {
+              fn: "obj",
+              args: [
+                chosen([
+                  ["Tarea", "dia"],
+                  ["Evento", "fecha"],
+                ]),
+                { ref: "$item.due" },
+              ],
+            },
+          },
+        },
+      ],
+    } as unknown as FlowPlan;
+    expect(decidesAmong(plan, "c")).toEqual(["tarea", "evento"]);
+  });
+
+  it("lists the guide's rules that choose one of its collections and that no earlier rule takes first", () => {
+    const guide = {
+      instructions: "",
+      examples: [],
+      rules: [
+        { id: "r1", from: "@lista.example.com", action: "skip" as const },
+        // Taken first by the list's rule: never applies.
+        {
+          id: "r2",
+          from: "boletin@lista.example.com",
+          action: "collection" as const,
+          collection: "t_tarea",
+        },
+        { id: "r3", from: "Ana@Example.com", action: "collection" as const, collection: "t_tarea" },
+        // The same sender again: the first one wins.
+        {
+          id: "r4",
+          from: "ana@example.com",
+          action: "collection" as const,
+          collection: "t_evento",
+        },
+        // A collection it does not choose among.
+        {
+          id: "r5",
+          from: "jefe@example.com",
+          action: "collection" as const,
+          collection: "t_agenda",
+        },
+        {
+          id: "r6",
+          from: "@colegio.example",
+          action: "collection" as const,
+          collection: "t_evento",
+        },
+      ],
+    };
+    const keyOf = (id: string) => ({ t_tarea: "tarea", t_evento: "evento" })[id] ?? null;
+    expect(guideRulesFor(guide, ["tarea", "evento"], keyOf).map((r) => r.id)).toEqual(["r3", "r6"]);
   });
 });

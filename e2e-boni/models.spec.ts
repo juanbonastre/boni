@@ -1161,31 +1161,28 @@ test("«Leer correo» creating in the chosen collection: one «Rellenadora» and
   );
   await page.screenshot({ path: `${SHOTS}/flow-chosen.png` });
   // The decider's panel (task 83; Juan: «dentro de los detalles del modelo veo las reglas que tiene»): what it
-  // chooses among and the guide's rules that choose for it; a rule that skips a sender
-  // is not its own.
+  // chooses among, and only the guide's rules that choose for it: not one that skips a sender, not one an earlier
+  // rule takes first, not one to a collection it does not choose among.
   await canvas.locator(".fl-node", { hasText: "Decisora" }).locator(".fl-name").click();
   const facts = page.locator(".flow-step-panel .decider-facts");
-  await expect(facts).toContainText("Elige entre Docencia o Gestiones.");
+  await expect(facts).toContainText("Elige entre Docencia y Gestiones.");
   // That it asks when unsure, its line above says once.
   await expect(facts).not.toContainText("Si duda");
-  await expect(facts.locator(".decider-facts-title")).toHaveText(
-    "Por tu guía, sin preguntar al modelo:",
-  );
+  await expect(facts.locator(".decider-facts-title")).toHaveText("Reglas de tu guía");
   const rules = facts.locator(".decider-facts-rules li");
-  await expect(rules).toHaveCount(2);
+  await expect(rules).toHaveCount(1);
   await expect(rules.nth(0)).toContainText("secretaria.ejemplo@universidad.example");
   await expect(rules.nth(0)).toContainText("→ Gestiones");
-  // A collection it no longer knows is said as such, never by its id.
-  await expect(rules.nth(1)).toContainText("→ otra colección");
-  await expect(facts).not.toContainText("t_01tarea");
-  await expect(facts).not.toContainText("@lista.example.com");
+  for (const out of ["@lista.example.com", "boletin@", "coordinacion.", "t_01tarea"])
+    await expect(facts).not.toContainText(out);
   await page.screenshot({ path: `${SHOTS}/flow-decider.png` });
-  // The pieces' own settings (task 83): «Plegar hilo»'s days, a setting of its step…
+  // The pieces' own settings (task 83): «Plegar hilo»'s days, a setting of its step, and what the server takes…
   await canvas.locator(".fl-node", { hasText: "Plegar hilo" }).locator(".fl-name").click();
   const stepPanel = page.locator(".flow-step-panel");
   await expect(
     stepPanel.locator(".flow-setting", { hasText: "Días" }).locator("input"),
   ).toHaveValue("60");
+  await expect(stepPanel.locator(".piece-facts")).toHaveText("Mira 60 días atrás en el hilo.");
   // …and «Aceptar solas»' «Solo», the very switch of Ajustes → Decisiones.
   await canvas.locator(".fl-node", { hasText: "Aceptar solas" }).locator(".fl-name").click();
   const solo = stepPanel.locator(".piece-facts").getByRole("checkbox", { name: "Solo" });
@@ -1195,7 +1192,8 @@ test("«Leer correo» creating in the chosen collection: one «Rellenadora» and
     .poll(async () => requests(page, "PUT api/agent/decisions"))
     .toEqual(['PUT api/agent/decisions/mail.accept {"auto":true}']);
   await expect(solo).toBeChecked();
-  await expect(stepPanel.locator(".piece-facts")).toContainText("Ajustes → Decisiones");
+  // Earned: nothing said under it (no explanations in the app).
+  await expect(stepPanel.locator(".piece-facts p")).toHaveCount(0);
 });
 
 test("the editor cuts a lane's name to the lane's width, the whole name in its tooltip (task 90)", async ({
@@ -1247,6 +1245,8 @@ test("the editor cuts a lane's name to the lane's width, the whole name in its t
   }));
   expect(fits.width).toBeLessThanOrEqual(200);
   expect(fits.cut).toBe(true);
+  // The pill takes the pointer, so its tooltip shows (xyflow's label layer lets none through).
+  expect(await lane.evaluate((e) => getComputedStyle(e).pointerEvents)).not.toBe("none");
 });
 
 test("the decider's panel on the map: what it chooses among and the guide's rules that choose for it (task 83)", async ({
@@ -1277,13 +1277,15 @@ test("the decider's panel on the map: what it chooses among and the guide's rule
   await map.locator(".mp-step", { hasText: "Decisora" }).click();
   await expect(panel.locator("h3")).toHaveText("Decisora");
   const facts = panel.locator(".decider-facts");
-  await expect(facts).toContainText("Elige entre Tarea o Evento.");
+  await expect(facts).toContainText("Elige entre Tarea y Evento.");
   await expect(facts).not.toContainText("Si duda");
+  // Only the rule to one of its collections (Tarea); Gestiones is not among them here.
   const rules = facts.locator(".decider-facts-rules li");
-  await expect(rules).toHaveCount(2);
-  await expect(rules.nth(1)).toContainText("coordinacion.ejemplo@universidad.example");
-  await expect(rules.nth(1)).toContainText("→ Tarea");
+  await expect(rules).toHaveCount(1);
+  await expect(rules.nth(0)).toContainText("coordinacion.ejemplo@universidad.example");
+  await expect(rules.nth(0)).toContainText("→ Tarea");
   await expect(facts).not.toContainText("@lista.example.com");
+  await expect(facts).not.toContainText("secretaria.");
   // Another step's panel says none of it.
   await map.locator(".mp-step", { hasText: "Lectora" }).click();
   await expect(panel.locator("h3")).toHaveText("Lectora");

@@ -11,7 +11,7 @@ import { AgentHost } from "./agent.ts";
 import { addUser, sessionUser } from "./auth.ts";
 import { type Db, openDb } from "./db.ts";
 import { Feeds } from "./feeds.ts";
-import { ensureFlow } from "./flows.ts";
+import { ensureFlow, flowCatalog } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
 
@@ -612,8 +612,9 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
       1,
     );
     expect((await call(token, "POST", "/api/agent/flows/al-llegar/run", {})).status).toBe(409);
-    // What brings the records that start it (docs/sistema.md §4.2: «viene del conector Correo»): the mail's
-    // connector when they arrive at the mail's collection, nothing for any other collection.
+    // What brings the records that start it (docs/sistema.md §4.2: «viene del conector Correo»): the key of the
+    // collection the mail's connector fills, the editor's to compare with its draft's trigger; none without a mail.
+    // The catalog gives the app each collection's id (a guide's rule names one by it); the MCP's gives none.
     const own = label("user", "personal", [{ kind: "user-edit", id: "ejemplo" }]);
     host.store(1).applySchema(
       {
@@ -633,13 +634,23 @@ describe("flows over the API (docs/flujos.md, F2)", () => {
       },
       { actor: "user" },
     );
-    const via = async () =>
-      ((await (await call(token, "GET", "/api/agent/flows/al-llegar")).json()) as { via: unknown })
-        .via;
+    const mailKey = async () =>
+      (
+        (await (await call(token, "GET", "/api/agent/flows/al-llegar")).json()) as {
+          mailKey: unknown;
+        }
+      ).mailKey;
     host.mailTypeOf = () => "t_correo_via";
-    expect(await via()).toBe("mail");
+    expect(await mailKey()).toBe("correo");
     host.mailTypeOf = () => "t_otra";
-    expect(await via()).toBeNull();
+    expect(await mailKey()).toBeNull();
     host.mailTypeOf = null;
+    const catalog = (await (await call(token, "GET", "/api/agent/flows/catalog")).json()) as {
+      collections: { id?: string; key: string }[];
+    };
+    expect(catalog.collections.find((c) => c.key === "correo")?.id).toBe("t_correo_via");
+    expect(
+      flowCatalog(host.tools, host.store(1), ["tasks"]).collections.every((c) => !("id" in c)),
+    ).toBe(true);
   });
 });
