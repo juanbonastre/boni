@@ -1,4 +1,4 @@
-import { type Agent, leaf } from "@boni/agent";
+import { leaf } from "@boni/agent";
 import { label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import type { GuideExample, MailGuide, MailRule, Target } from "./mail.ts";
@@ -264,9 +264,9 @@ export function score(ds: readonly Decision[], produced: Map<string, string[]>):
 }
 
 /** The context the reviewer needs from Mails. */
+/** What a review works on (the flow «Revisar la guía»'s pieces, D-51). */
 export interface ReviewHost {
   store: UserStore;
-  agent: Agent;
   guide: MailGuide;
   targets: Target[];
   ds: Decision[];
@@ -376,37 +376,4 @@ export async function measureCandidate(
   const before = score(on, await produce(h.guide));
   const after = score(on, await produce(c.guide));
   return { before, after, total: on.length };
-}
-
-/** The reviewer's own plan: its reader over the decisions, the collections it may name as options. */
-export const reviewPlan = (targets: readonly Target[]) => ({
-  version: 1,
-  steps: [
-    {
-      id: "r",
-      op: "read",
-      reader: "review_reading",
-      input: { ref: "$decisions" },
-      params: { options: { fn: "list", args: targets.map((t) => ({ lit: t.name })) } },
-    },
-  ],
-});
-
-/** One review: a suggestion that gets more of Juan's decisions right, or null (the stages above, in a row). */
-export async function review(h: ReviewHost): Promise<Suggestion | null> {
-  const input = reviewInput(h.ds, h.targets);
-  if (!input) return null;
-  const r = await h.agent.background(reviewPlan(h.targets), { decisions: input }, ["r"]);
-  const c = reviewCandidate(h, r.kept?.r as ReviewerAnswer | undefined);
-  if (!c) return null;
-  const m = await measureCandidate(h, c);
-  if (m.after <= m.before) return null;
-  return {
-    id: `g-${h.now}-${r.run.slice(0, 8)}`,
-    rules: c.rules,
-    examples: c.examples,
-    ...m,
-    at: h.now,
-    run: r.run,
-  };
 }

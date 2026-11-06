@@ -219,6 +219,18 @@ export function pieceLine(t: T, p: PieceSaid): string {
     case "inbox.fold":
     case "inbox.accept_alone":
       return t("flows.piece.notInTest");
+    case "mail.save":
+      return t("flows.piece.saveInTest");
+    case "guide.suggest":
+      return t("flows.piece.suggestInTest");
+    case "guide.decisions":
+      return t("flows.piece.decisions", { n: p.n, found: p.found });
+    case "guide.measure":
+      return p.would !== null
+        ? t("flows.piece.measureWould", { n: p.would, rules: p.rules, examples: p.examples })
+        : p.after !== null && p.total !== null
+          ? t("flows.piece.measured", { after: p.after, before: p.before ?? 0, total: p.total })
+          : t("flows.piece.measureNone");
   }
 }
 

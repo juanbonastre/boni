@@ -208,7 +208,7 @@ versiones y «Volver al de Boni». Los de hoy, con su disparador:
 |---|---|---|---|
 | Traer correo | Llega correo al buzón (el conector mira cada 5 minutos) | Guardar en Correos (pieza), con sus adjuntos, el original, la invitación y el hilo | Un flujo de Boni desde el 2026-11-06 (D-50); `Mails.run` |
 | Leer correo | Llega un correo | Reglas de la guía → Lo pendiente del remitente → Invitación → Lectora → Decisora → Rellenadora → Relaciones → Crear en la elegida → Plegar hilo → Bandeja → Aceptar solas | `mailPlan` y el código de alrededor |
-| Revisar la guía | Cuando tus decisiones lo piden: 20 decisiones nuevas o «Revisar ahora»; una vez al día como mucho | Tus decisiones (pieza, con las reglas que ya muestran sus correcciones) → Revisora → Medir releyendo (pieza) → Sugerencia (pieza) | Un flujo de Boni desde el 2026-11-06 (D-51); `mailReview.ts` |
+| Revisar la guía | Cuando tus decisiones lo piden: 20 decisiones nuevas o «Revisar ahora»; una vez al día como mucho | Tus decisiones (pieza, con las reglas que ya muestran sus correcciones) → Revisora → Medir releyendo (pieza, 45 al día) → Sugerencia (pieza) | Un flujo de Boni desde el 2026-11-06 (D-51); `mailReview.ts` |
 | Aprender | Las decisiones de Juan | Señales → Sugerencia o «Solo» | `learning.ts`, `autoAccept.ts` |
 | Conversación | Un mensaje de Juan | Contexto (historial, memoria, colecciones, pantalla) → Agente → el plan que escribió → Respuesta | `agent.ts` |
 | Aviso del presupuesto | El gasto en IA del mes pasa del aviso | Avisar | `agent.ts` |
@@ -297,15 +297,22 @@ preguntas · 0,41 €»):
   - Su disparador es «Cuando tus decisiones lo piden», con las condiciones de siempre: 20 decisiones nuevas o
     «Revisar ahora», y una vez al día como mucho.
   - Sus pasos son las fases de la revisora de siempre:
-    - «Tus decisiones» (pieza): tus decisiones como las lee la Revisora, y las reglas que ya halló el código;
+    - «Tus decisiones» (pieza): tus decisiones como las lee la Revisora, y cuántas reglas halló ya el código (las
+      mide «Medir releyendo» con lo que diga la Revisora);
     - la «Revisora» (su modelo);
     - «Medir releyendo» (pieza): relee correos decididos con la guía de hoy y con la nueva;
     - «Sugerencia» (pieza): la deja esperándote en Ajustes → Correo solo si acierta más.
   - La sugerencia cuelga de esa ejecución.
-  - Apagado, o sin modelos, la revisora no mira; con pocas decisiones no hay revisión (ni ejecución).
-  - En «Probar», la Revisora lee de verdad (una llamada). «Medir releyendo» solo dice cuántos correos releería, y
-    «Sugerencia» no guarda nada.
-  - En el mapa es ese flujo: aprende de la Bandeja y mejora «Leer correo». Las relecturas al medir cuentan en él.
+  - Apagado, o sin modelos, la revisora no mira y nada cuenta como revisado; «Revisar ahora» dice «Revisar la guía
+    está apagado». Con pocas decisiones no hay revisión (ni ejecución).
+  - Si la Revisora para (una respuesta que el código no acepta, un modelo caído), no se mide nada y las reglas que
+    halló el código no se apartan: se prueban en la siguiente.
+  - En «Probar», la Revisora lee de verdad (una llamada) si hay decisiones bastantes. «Medir releyendo» solo dice
+    cuántos correos releería, y «Sugerencia» no guarda nada. Una prueba nunca toca una revisión en marcha.
+  - Su lista de comprobación pide «Medir releyendo» y «Sugerencia» sin condición. Sus piezas solo están en él, y
+    «Guardar en Correos» solo en «Traer correo». Al duplicarlo, la copia empieza a mano.
+  - En el mapa es ese flujo: aprende de la Bandeja y mejora «Leer correo». Las relecturas al medir cuentan en sus
+    llamadas y su coste, nunca como ejecuciones suyas.
   - Falta, como flujos:
     - «Aprender» y «Conversación»: su trabajo ya se ve en el mapa (la Bandeja y la conversación). Como flujos con
       pasos piden diseño (la conversación como flujo es la F11);

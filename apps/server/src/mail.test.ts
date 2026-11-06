@@ -15,6 +15,7 @@ import { AUTO_AREA, setAutoState } from "./autoAccept.ts";
 import { type Db, openDb } from "./db.ts";
 import { ensurePresets, extension, installed, MAIL_EXTENSION, setEnabled } from "./extensions.ts";
 import { Feeds } from "./feeds.ts";
+import { flowMap } from "./flowMap.ts";
 import { FETCH_FLOW, MAIL_FLOW, REVIEW_FLOW, revertFlow, saveUserFlow } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { inboxCard } from "./inboxCard.ts";
@@ -1652,10 +1653,22 @@ describe("the reviewer (docs/nucleo.md 7.4b, point 3)", () => {
     const run = runs()[0]?.id ?? "";
     expect([...new Set(store.journal.steps(run).map((x) => x.step))]).toEqual(["d", "r", "m", "s"]);
     expect(s?.run).toBe(run);
-    // Turned off, the reviewer does not look.
+    // On the map, one run of it: the mail it read again to measure counts in it, never as runs of their own.
+    const map = flowMap(store, {
+      now: Date.now(),
+      days: 7,
+      tz: "Europe/Madrid",
+      mailType: m.state(1).type,
+      mailAccount: null,
+    });
+    expect(map.nodes.find((n) => n.id === `flow:${REVIEW_FLOW}`)?.runs).toBe(1);
+    // Turned off, the reviewer does not look, and nothing counts as looked at.
+    const looked = m.state(1).reviewedAt;
     store.journal.setFlowEnabled(REVIEW_FLOW, false);
+    expect(m.reviewOff(1)).toBe(true);
     expect(await m.reviewNow(1)).toBeNull();
     expect(runs()).toHaveLength(1);
+    expect(m.state(1).reviewedAt).toBe(looked);
     h.close();
     sdb.close();
     rmSync(d, { recursive: true, force: true });

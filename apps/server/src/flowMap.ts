@@ -137,7 +137,13 @@ function collectionsOfSpec(spec: unknown, out = new Set<string>()): Set<string> 
  * The node of the map a run belongs to: its flow, the conversation, the guide's reviewer, the Bandeja (an
  * «Aceptar»), «Leer correo» for a reading from before flows; null for what the map does not draw (a dry run).
  */
-export function mapOwnerOf(store: UserStore, r: RunRow, mailAccount: string | null): string | null {
+export function mapOwnerOf(
+  store: UserStore,
+  r: RunRow,
+  mailAccount: string | null,
+  /** Whether the account has «Revisar la guía» (asked once by a caller that asks for many runs). */
+  hasReview: boolean = !!store.journal.flow(REVIEW_FLOW),
+): string | null {
   // A dry run («Probar») is no run of anything: it wrote nothing and counts nowhere.
   if (r.origin === "test") return null;
   if (r.flow) return `flow:${r.flow}`;
@@ -146,7 +152,7 @@ export function mapOwnerOf(store: UserStore, r: RunRow, mailAccount: string | nu
   if (kind === "accepted") return INBOX;
   // The reviewer's work: Boni's «Revisar la guía» when the account has it (D-51), its own box before.
   if (kind === "review" || kind === "measure")
-    return store.journal.flow(REVIEW_FLOW) ? `flow:${REVIEW_FLOW}` : "boni:review";
+    return hasReview ? `flow:${REVIEW_FLOW}` : "boni:review";
   if (kind === "mail") return `flow:${MAIL_FLOW}`;
   return null;
 }
@@ -224,8 +230,9 @@ function makeMap(
   const runOf = new Map<string, RunRow>(runs.map((r) => [r.id, r]));
   /** The node a run counts at: its flow, the conversation, the reviewer; an «Aceptar» counts nowhere (the Bandeja
    * says what it accepted). */
+  const hasReview = !!j.flow(REVIEW_FLOW);
   const ownerOf = (r: RunRow): string | null => {
-    const at = mapOwnerOf(store, r, o.mailAccount);
+    const at = mapOwnerOf(store, r, o.mailAccount, hasReview);
     return at === INBOX ? null : at;
   };
   const owner = new Map<string, string | null>();
@@ -246,6 +253,8 @@ function makeMap(
     const id = owner.get(r.id);
     if (!id) continue;
     const s = statOf(id);
+    // A reading «Medir releyendo» starts is part of its review: its calls count there, never as a run of its own.
+    if (id === `flow:${REVIEW_FLOW}` && r.flow !== REVIEW_FLOW) continue;
     s.runs++;
     s.last = Math.max(s.last ?? 0, r.started);
   }

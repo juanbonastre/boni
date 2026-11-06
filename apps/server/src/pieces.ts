@@ -4,7 +4,9 @@
  * piece is a tool of the effect `piece`: it runs only in a flow (P20), never in a plan a model writes for a turn,
  * and those that change the inbox (folding a thread, accepting alone) only in the flow's own background run (in
  * «Probar» they are said, not run). What each does is the code it was before; the flow only says where it runs.
- * Each piece works on the record that started its flow (`record`: only in a flow a record starts).
+ * The mail's pieces work on the record that started their flow (`record`: only in a flow a record starts); «Guardar en
+ * Correos» on what the mail connector found («Traer correo», D-50); the review's on a review under way («Revisar la
+ * guía», D-51).
  */
 import { plain, ToolError, type ToolRegistry, type Val } from "@boni/agent";
 

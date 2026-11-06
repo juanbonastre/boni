@@ -25,9 +25,10 @@ export function runnableNames(trigger: unknown): string[] | null {
 }
 
 /**
- * Whether a trigger is one Boni knows, and well formed: a new mail, by hand with a form, on a schedule, or new mail in
- * the mailbox (`connector: "mail"`, Boni's «Traer correo», docs/sistema.md §4.2: the connector looks every few
- * minutes, and only a look that finds mail starts a run). Neither a record nor the connector's starts it by hand.
+ * Whether a trigger is one Boni knows, and well formed: a new mail, by hand with a form, on a schedule, new mail in the
+ * mailbox (`connector: "mail"`, Boni's «Traer correo», D-50: only a look that finds mail starts a run), or Juan's
+ * decisions calling for a review (`learning: "mail"`, Boni's «Revisar la guía», D-51). None of the last three is
+ * run by hand.
  */
 export function triggerOk(trigger: unknown): boolean {
   if (!trigger || typeof trigger !== "object" || Array.isArray(trigger)) return false;

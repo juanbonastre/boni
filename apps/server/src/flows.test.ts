@@ -723,6 +723,31 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
         4000,
       ),
     ).toEqual({ error: "trigger" });
+    // «Duplicar» gives a copy that starts by hand: the trigger stays Boni's flow's alone.
+    expect(createFlow(store, { name: "Copia", from: REVIEW_FLOW }, 5000)?.trigger).toEqual({
+      manual: true,
+    });
+    // Its checklist wants «Medir releyendo» and «Sugerencia» always; the review's pieces, and «Guardar en Correos»,
+    // only in their own flow.
+    const call = (id: string, tool: string) => ({ id, op: "call", tool, args: {} });
+    const check = (t: unknown, steps: unknown[]) =>
+      checkFlow(store, registry, { trigger: t, plan: { version: 1, steps } }, o).problems;
+    expect(check(trigger, [call("m", "guide.measure"), call("s", "guide.suggest")])).toEqual([]);
+    expect(check(trigger, [call("m", "guide.measure")])).toContainEqual({
+      step: null,
+      at: "trigger",
+      code: "review-needs-steps",
+    });
+    expect(check({ manual: true }, [call("m", "guide.measure")])).toContainEqual({
+      step: "m",
+      at: null,
+      code: "piece-needs-decisions",
+    });
+    expect(check({ manual: true }, [call("g", "mail.save")])).toContainEqual({
+      step: "g",
+      at: null,
+      code: "piece-needs-mailbox",
+    });
     store.close();
   });
 
