@@ -608,20 +608,22 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
   await page.locator(".log-list li").nth(1).locator(".log-head").click();
   const detail = page.locator(".log-detail");
   await expect(detail.locator(".log-request")).toHaveText("Reenvía el informe a quien me lo pidió");
+  // Each step by the name the map gives it, the words of the request it took, and what came of it; never a tool's
+  // id, a `$` reference or a rule's code (task 90).
   await expect(detail.locator(".log-step")).toHaveCount(2);
-  await expect(detail.locator(".log-step").first()).toContainText("entities.search");
-  await expect(detail.locator(".log-step").first()).toContainText("«informe»");
-  await expect(detail.locator(".log-step.failed")).toContainText("mail.send");
-  await expect(detail.locator(".log-step.failed")).toContainText("P2");
-  // Nothing the run read becomes a link or an image (the canvas library's own credit is the one link).
-  await expect(detail.locator("a:not(.react-flow__attribution a), img")).toHaveCount(0);
-  // «Recorrido» (task 52, on the flow canvas since docs/flujos.md F3): the steps as nodes (the stopped one in red,
-  // fed by the first), what it read and decided as text, and «Copiar» puts the whole as text in the clipboard.
-  const run = detail.locator(".run-canvas");
-  await expect(run.locator(".fl-node")).toHaveCount(2);
-  await expect(run.locator(".fl-card.bad")).toContainText("mail.send");
-  await expect(run.locator(".fl-card.bad")).toContainText("Parado");
-  await expect(run.locator(".react-flow__edge")).toHaveCount(1);
+  await expect(detail.locator(".log-step").first()).toContainText("Buscar «informe»");
+  await expect(detail.locator(".log-step.failed")).toContainText(
+    "Enviar correo — Parado: una regla de seguridad lo impide",
+  );
+  await expect(detail).not.toContainText("mail.send");
+  await expect(detail).not.toContainText("$s1");
+  await expect(detail).not.toContainText("P2");
+  // Nothing the run read becomes a link or an image.
+  await expect(detail.locator("a, img")).toHaveCount(0);
+  // Its drawing is the map's («Recorrido»): no canvas here; what it read and decided as text, and «Copiar» puts the
+  // whole as text in the clipboard.
+  await expect(detail.locator(".react-flow")).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "Recorrido" })).toBeVisible();
   await expect(detail.locator(".trace-block", { hasText: "Leyó" })).toContainText(
     "Correos: «Informe mensual»",
   );
@@ -629,13 +631,17 @@ test("the log: what each request did, and Undo for it", async ({ page }) => {
     "Colección · 60 % · preguntó",
   );
   await expect(detail.locator(".trace-block", { hasText: "Modelos" })).toContainText(
-    "planner · m-ejemplo · 1200 → 80 · 0.0040 $",
+    "Planificador · m-ejemplo · 1200 → 80",
   );
   await detail.getByRole("button", { name: "Copiar" }).click();
   await expect(page.locator(".toast")).toContainText("Copiado");
   const copied = await page.evaluate(() => (window as unknown as { __copied?: string }).__copied);
   expect(copied).toContain("Reenvía el informe a quien me lo pidió");
-  expect(copied).toContain("2. mail.send");
+  // The rule's code only here, to fix what failed.
+  expect(copied).toContain(
+    "2. Enviar correo — Parado: una regla de seguridad lo impide (P2-untrusted-destination)",
+  );
+  expect(copied).not.toContain("mail.send");
   expect(copied).toContain("Leyó:");
   expect(copied).toContain("con texto de tus datos");
   // A stopped request may have left changes: it has Undo too.

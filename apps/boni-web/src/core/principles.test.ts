@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   CATALOGUE,
@@ -42,25 +42,51 @@ describe("principles (docs/principios.md)", () => {
     expect(found).toEqual([]);
   });
 
-  it("I-25: «Ver en el mapa» is in the menus of what the map knows, and in a run's path and a proposal", () => {
-    // A collection and a page in the sidebar, a row, a block, a flow's «⋯», a run's path, an Inbox proposal.
+  it("I-25: «Ver en el mapa» is in the menus of what the map knows; a run's «Recorrido» is that run on the map", () => {
+    // A collection and a page in the sidebar, a row, a block, a flow's «⋯».
     for (const file of [
       "components/CollectionTree.tsx",
       "components/Sidebar.tsx",
       "components/DatabaseBlock.tsx",
       "components/PageView.tsx",
       "components/FlowEditor.tsx",
-      "components/Chat.tsx",
-      "components/InboxCards.tsx",
     ])
       expect(readFileSync(join(SRC, file), "utf8"), file).toContain('t("map.show")');
+    // A run's «Recorrido» (the Registro, an Inbox card and its page) opens it on the map; no drawing of its own
+    // (task 90; Juan, 2026-11-06: «teniendo el mapa, no tiene sentido tener lo del recorrido»).
+    for (const file of ["components/Chat.tsx", "components/InboxCards.tsx"]) {
+      const src = readFileSync(join(SRC, file), "utf8");
+      expect(src, file).toContain("showRun(");
+      expect(src, file).toContain('t("log.trace")');
+      expect(src, file).not.toMatch(/RunCanvas|openTrace/);
+    }
+    expect(existsSync(join(SRC, "components/RunCanvas.tsx"))).toBe(false);
     // And a row's «¿De dónde viene?»: the run that made it, drawn on the map.
     expect(readFileSync(join(SRC, "components/DatabaseBlock.tsx"), "utf8")).toContain(
       't("origin.ask")',
     );
     for (const lang of ["es", "en"] as const)
-      for (const k of ["map.show", "origin.ask", "origin.title", "map.node.inbox"])
+      for (const k of ["map.show", "log.trace", "origin.ask", "origin.title", "map.node.inbox"])
         expect(translator(lang)(k), `${lang} ${k}`).not.toBe(k);
+  });
+
+  it("I-27: a step has one name everywhere, from one place, and what a run did is said in words", () => {
+    // The editor, the map, a flow's preview and the Registro name a step through core/runText.ts; nothing else maps
+    // a reader to its name, so they cannot drift apart (task 90: «Crear», «Regla del remitente», `entities.get`).
+    for (const file of [
+      "components/FlowStepPanel.tsx",
+      "components/FlowMap.tsx",
+      "components/FlowPreview.tsx",
+      "components/Chat.tsx",
+    ])
+      expect(readFileSync(join(SRC, file), "utf8"), file).toContain('from "../core/runText.ts"');
+    const naming = files(SRC).filter(
+      (f) =>
+        /\.tsx?$/.test(f) &&
+        !f.endsWith(".test.ts") &&
+        readFileSync(f, "utf8").includes("`flow.node.${"),
+    );
+    expect(naming.map((f) => f.slice(SRC.length + 1))).toEqual(["core/runText.ts"]);
   });
 
   it("I-02: every label of the block catalogue has its text in both languages", () => {

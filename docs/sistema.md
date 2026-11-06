@@ -2,7 +2,8 @@
 
 **Decidido por Juan el 2026-11-05: «Las recomendadas»** (las nueve de §10), con un cambio: el atajo de Boni sobre la
 pantalla es `Ctrl+E`, no `Ctrl+J` (§4.7). Las fases F7 a F13 son las tareas 83 a 89 (§8): la primera parte de F7 está
-en main desde el 2026-11-05 y F8 (el mapa) desde el 2026-11-06 (§4.4, «Cómo quedó»).
+en main desde el 2026-11-05 y F8 (el mapa) en main y hecha desde el 2026-11-06, con lo que Juan vio al probarla (la
+90; §4.4, «Cómo quedó»).
 
 Propuesta (2026-11-05). Juan: «Creo que la aplicación de Boni ha crecido bastante y de una forma poco
 planificada, sobre todo por mi parte… Hasta ahora hemos metido la vista de flujos y modelos de la aplicación pero no
@@ -85,7 +86,7 @@ de Boni se ve, quién puede hacer cada cosa y desde dónde.
 | Planes, intérprete y políticas | `nucleo.md` §7.2 y §7.5; `plan.ts`, `agent.ts`, `policy.ts` | Todo lo que hace un modelo es un plan que el código interpreta bajo P1–P19. Es la base de lo que sigue y no cambia |
 | Flujos como datos | `flujos.md` F1–F6; `apps/server/src/flows.ts` | Plan con disparador, por versiones; editor; «Probar» en seco; horarios; la IA solo propone flujos; quién lee y escribe cada colección (D-41 a D-45) |
 | «Leer correo» corre desde su flujo | `mail.ts` (`mailFlow`), D-42 | La lectura de cada correo ya es un plan guardado |
-| El Recorrido | `trace.ts`, D-39, F3 | Una ejecución paso a paso, pintada sobre el lienzo de su flujo |
+| El Recorrido | `trace.ts`, D-39, F3 | Una ejecución paso a paso; desde la 90, con palabras en el Registro y dibujada sobre el mapa |
 | «Mis datos» como colección con «Diagrama» | F6b; D-04, D-40, D-45 | Una vista que se calcula del esquema y de la auditoría, nunca a mano |
 | Extensiones con funciones en una caja | `extensiones.md` §11; E1–E3; A-08 a A-10 | Código de un modelo, aislado, que solo Juan activa |
 | La conversación guardada y en vivo | `conversacion.md` C1 y C2 | Turnos con sus pasos, parar, Deshacer por turno |
@@ -291,7 +292,8 @@ viaja el texto de un correo y dónde deja de ser una propuesta para ser un dato 
 **Cómo se abre.** Siempre desde algo, nunca entero: con 22 colecciones y una docena de flujos, entero no se lee.
 
 - **En el centro:** lo que se elija, con un buscador o con el clic derecho → «Ver en el mapa» desde cualquier sitio.
-- **Antes y después:** 1, 2 o todo, como el linaje de dbt o de Dagster.
+- **Profundidad:** 1, 2 o todo, hacia atrás y hacia delante a la vez, como el linaje de dbt o de Dagster (primero
+  fueron «Antes» y «Después»; una sola barra desde la 90).
 - **Agrupar por:** disparador, flujo, colección o paquete.
 - **Filtros:** solo los pasos con IA, solo lo que escribe, solo lo encendido, solo lo que ha pasado en 7 o 30 días.
 - **Una ejecución encima:** desde el Registro, una fila o una tarjeta, el camino que siguió, con lo que salió de cada
@@ -315,7 +317,7 @@ La lista de comprobación avisa de lo demás antes de encender.
 - «¿Qué pasa cuando llega un correo?»: Correo (conector) → Correos → Leer correo (con sus pasos) → Bandeja → Juan
   acepta → Tarea y Evento; y, en vuelta, Juan → sus decisiones → Revisar la guía → la guía → Leer correo. Cada nodo
   con sus números de la semana.
-- Clic derecho en la colección Evento → «Ver en el mapa», «Antes: 1»: Leer correo (propone, 23), Conversación (crea,
+- Clic derecho en la colección Evento → «Ver en el mapa», «Profundidad: 1»: Leer correo (propone, 23), Conversación (crea,
   4), Boni Calendar (Juan, 61), Claude por el MCP (2).
 - Clic derecho en una tarea → «¿De dónde viene?»: el correo, la lectura que la propuso (Leer correo v3), lo que
   contestó cada modelo y el «Aceptar» de Juan.
@@ -329,7 +331,7 @@ La lista de comprobación avisa de lo demás antes de encender.
   cuando llega un correo?» no llegaba ni a la Bandeja ni a la revisora): lo que un flujo en segundo plano o la
   conversación propone entra en ella («propone · 12», discontinua) y sale a cada colección lo aceptado («aceptadas ·
   7»); tus decisiones en ella («decides · 11») van a la revisora («tus decisiones · 11»), que mejora «Leer correo».
-  Para que «Antes: 1» de Evento siga diciendo quién la escribe, el mapa la cruza sin contarla: desde Evento llega a la
+  Para que «Profundidad: 1» de Evento siga diciendo quién la escribe, el mapa la cruza sin contarla: desde Evento llega a la
   Bandeja y, en el mismo paso, a lo que propone en Evento, no a lo que propone en otra colección, con lo que propuso
   en Evento (cada flecha que entra en la Bandeja dice a qué colecciones van sus propuestas y cuántas a cada una).
   «decides» son tus decisiones (no lo que Boni aceptó solo); «tus decisiones», las de las propuestas del correo, las
@@ -337,11 +339,26 @@ La lista de comprobación avisa de lo demás antes de encender.
   flechas, y así lo que escribes por tu cuenta no inunda el camino del correo.
 - **Una ejecución encima, por todo el mapa**: desde su Recorrido, una propuesta o una fila, su flujo desplegado con lo
   que salió de cada paso y su camino encendido (el conector y la colección del correo, el flujo, la Bandeja, la colección
-  donde se aceptó lo que propuso, donde escribió), con una tarjeta que lo cuenta con palabras y lleva al Recorrido.
+  donde se aceptó lo que propuso, donde escribió), con una tarjeta que lo cuenta con palabras.
+- **El Recorrido es el mapa** (la 90, Juan, 2026-11-06, al probarlo: «teniendo el mapa, no tiene sentido tener lo del
+  recorrido»; el del Registro empezaba en el disparador y el del mapa en el conector, con otros nombres para los mismos
+  pasos): el lienzo propio de una ejecución (F3) desaparece; su «Recorrido», desde el Registro, una tarjeta de la
+  Bandeja, la página de una propuesta o un turno, la abre en el mapa. Su flujo desplegado empieza en lo que lo empezó
+  (una primera caja con el disparador, como en el editor), y su camino va en naranja, del disparador y el conector a
+  donde acabó, cada caja y flecha encendida a su turno y una luz que corre por sus flechas (quieta si el sistema pide
+  menos movimiento). El Registro lo dice con palabras, sin dibujo; la tarjeta del mapa, con «Detalles» y «Copiar».
+- **Un paso se llama igual en todas partes** (I-27): el editor, el mapa, la vista previa de un flujo, el Registro y
+  «Copiar» toman su nombre de un solo sitio («Lectora», «Crear», «Regla del remitente»), nunca el id de una herramienta,
+  una referencia `$` o el código de una regla; cada paso dice en una línea lo que hace; por qué paró, con palabras («una
+  regla de seguridad lo impide»), y el código solo en «Copiar».
+- **Las llamadas y el coste de cada paso** (lo que la revisión de F8 echó en falta): cada llamada a un modelo guarda el
+  paso en el que contestó (la migración 19; las de antes del 2026-11-06 no lo tienen), y cada paso que piensa dice en el
+  mapa y en el editor sus llamadas y su coste del periodo («42 llamadas · 0,21 US$»), contados con un índice que no lee
+  los textos (A-15).
 - **«¿De dónde viene?»** está en el menú de una fila: lo que propuso un flujo lleva a la ejecución que lo propuso, a su
   correo y al «Aceptar» (aceptar una propuesta guarda desde el 2026-11-06 qué propuesta aplicó; las de antes se
   encuentran por la hora); lo que escribió alguien lo dice en un aviso. Lo que contestó cada modelo está en los pasos
-  de la ejecución y en su Recorrido.
+  de la ejecución, en el Registro y en «Detalles» de su tarjeta en el mapa.
 - **Los modelos van en los pasos**: cada flujo dice sus modelos y lo que costaron en el periodo; desplegado, cada paso
   que piensa dice su modelo. Lo que no es flujo todavía (la conversación, la revisora de la guía) son nodos de Boni con
   sus números del diario, hasta que F7 los haga flujos.
@@ -505,7 +522,7 @@ parámetros, a dónde va cada cosa, qué botón lanza qué) pasa a ser dato. Los
   scripts la usan. Sus usuarios cuentan su límite: no ve lo que pasa por una variable o una plantilla. → La regla del
   literal (§4.4).
 - **dbt y Dagster:** el linaje se abre desde un nodo, con cuánto antes y cuánto después (`+modelo+`), nunca entero. →
-  «En el centro», «Antes» y «Después».
+  «En el centro» y «Profundidad».
 - **Grafana y Metabase:** valores del panel, arriba, que filtran sus bloques (las variables de Grafana, los filtros
   enlazados a tarjetas de Metabase). → Los valores de una página.
 - **Notion:** automatizaciones de base de datos (cuando se añade o se cambia una página) y botones con acciones;
@@ -540,7 +557,7 @@ con sus datos (`AGENTS.md`, paso 4).
 | Fase | Qué | Criterio de hecho (lo que verá Juan) |
 |---|---|---|
 | F7 Lo de Boni, a la vista (la 83; primera parte en main el 2026-11-05: «Leer correo» con sus piezas como pasos, A-19 y D-47, el disparador con nombres de persona, el lienzo encajado al abrir y «Probar con…»; el 2026-11-06, las piezas con nombres de verbo, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», y «Probar» diciendo lo que encontró cada una; «Crear en la elegida» el 2026-11-06 (una «Rellenadora» y un «Crear» por clase de cosa, la colección con `case`, D-48: «Leer correo» pasa de 27 pasos a 14); faltan los demás flujos de Boni: Traer correo, Revisar la guía, Aprender, Conversación, Aviso del presupuesto) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo y Revisar la guía son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
-| F8 El mapa (la 84; en main el 2026-11-06: «Flujos» como colección con «Tabla \| Mapa», el mapa calculado con en el centro, antes y después, agrupar, filtros y periodo, una ejecución encima con su camino por el mapa, «¿De dónde viene?» desde una fila, la Bandeja como nodo con «aceptadas» y la revisora en el camino del correo, «Ver en el mapa» en los menús (también el de una tarjeta de la Bandeja), fuera «Modelos» y `pipeline.ts`; además el lienzo de un flujo que se ordena solo, I-26, y «Flujos» en el teléfono para mirar y ejecutar. Faltan, según la revisión independiente: el disparador, el modelo, el bloque y el botón como nodos propios; lo de fuera marcado por sus etiquetas y no por de dónde arranca el flujo; las llamadas y el coste de cada paso; el conector y el paquete «Correo» leídos de la extensión y no escritos en el código; «Ver en el mapa» en un turno (con F9); y el mapa entero al abrirlo, que §4.4 no quería: se dejó así por «un solo flujo donde se ve todo y vamos agrupando, filtrando», y Juan decide) | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
+| F8 El mapa (la 84; en main y hecha el 2026-11-06: Juan la probó con sus datos, «bastante bien lo que veo», y lo que vio fue a la 90, en main el mismo día: el Recorrido es el mapa, el camino en naranja desde el disparador, un nombre por paso, «Profundidad», las llamadas y el coste de cada paso. En la 84: «Flujos» como colección con «Tabla \| Mapa», el mapa calculado con en el centro, antes y después, agrupar, filtros y periodo, una ejecución encima con su camino por el mapa, «¿De dónde viene?» desde una fila, la Bandeja como nodo con «aceptadas» y la revisora en el camino del correo, «Ver en el mapa» en los menús (también el de una tarjeta de la Bandeja), fuera «Modelos» y `pipeline.ts`; además el lienzo de un flujo que se ordena solo, I-26, y «Flujos» en el teléfono para mirar y ejecutar. Faltan, según la revisión independiente: el disparador, el modelo, el bloque y el botón como nodos propios; lo de fuera marcado por sus etiquetas y no por de dónde arranca el flujo; el conector y el paquete «Correo» leídos de la extensión y no escritos en el código; «Ver en el mapa» en un turno (con F9); y el mapa entero al abrirlo, que §4.4 no quería: se dejó así por «un solo flujo donde se ve todo y vamos agrupando, filtrando», y Juan decide) | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
 | F9 Boni sobre la pantalla (la 85) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
 | F10 Una lista de acciones (la 86) | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta |
 | F11 Páginas conectadas (la 87) | Valores y el bloque «Control»; botones con acción o flujo; enlaces con valores; el chat de la página (la 79, C5) | En Gastos, cambiar Categoría cambia las gráficas; en su chat, «¿cuánto gasté en restaurantes en octubre?» pone los valores y contesta con la cifra |

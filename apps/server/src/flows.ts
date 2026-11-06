@@ -219,6 +219,9 @@ export interface FlowNode {
   deps: string[];
   /** How the step went in the period: how many times it ran, by the policy's decision. */
   ran: Record<string, number>;
+  /** Its model calls of the period and what they cost (US dollars), when it asks a model. */
+  calls?: number;
+  cost?: number;
 }
 export interface FlowDetail extends FlowSummary {
   inputs: FlowInput[];
@@ -256,7 +259,14 @@ export function flowView(
     steps: stepsOf(f.plan).length,
     ...store.journal.flowRuns(f.id),
     inputs: inputsOf(f.plan, f.trigger),
-    nodes: nodesOf(f.plan, f.trigger, titleOf, typeName, counts),
+    nodes: nodesOf(
+      f.plan,
+      f.trigger,
+      titleOf,
+      typeName,
+      counts,
+      store.journal.callsByStep(id, now - days * DAY, now),
+    ),
     days,
     versions: versions.map((v) => ({ version: v.version, by: v.by, created: v.created })),
     plan: f.plan,
@@ -271,6 +281,7 @@ export function nodesOf(
   titleOf: (tool: string) => string | null,
   typeName: (key: string) => string | null,
   counts: readonly { step: string; decision: string; n: number }[] = [],
+  calls: readonly { step: string; calls: number; cost: number }[] = [],
 ): FlowNode[] {
   const steps = stepsOf(plan);
   const ids = new Set(steps.map((s) => s.id));
@@ -301,6 +312,7 @@ export function nodesOf(
     const typeLit = keys.length === 1 ? (keys[0] as string) : null;
     const ran: Record<string, number> = {};
     for (const c of counts) if (c.step === s.id) ran[c.decision] = (ran[c.decision] ?? 0) + c.n;
+    const asked = calls.find((c) => c.step === s.id);
     return {
       id: s.id,
       op,
@@ -315,6 +327,7 @@ export function nodesOf(
         .map(([k, v]) => `${k}: ${exprText(v)}`),
       deps: refsOf(s).filter((r) => r !== s.id && (ids.has(r) || inputs.some((i) => i.id === r))),
       ran,
+      ...(asked ? { calls: asked.calls, cost: Math.round(asked.cost * 10000) / 10000 } : {}),
     };
   });
 }

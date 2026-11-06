@@ -430,6 +430,8 @@ export interface RunStep {
   uses: string[];
   /** What the models answered in it, as text (Juan's own content; never markup). */
   answers: string[];
+  /** The words of Juan's request it took as they were (its quotes: «informe»), the one part of its arguments said. */
+  said?: string[];
 }
 /** A run step by step («Recorrido», task 52): all from the journal and the audit, painted as text. */
 export interface RunDetail {
@@ -892,6 +894,9 @@ export interface FlowStepNode {
   ran: Record<string, number>;
   /** «Crear en la elegida»: the collections it chooses among, by name. */
   into?: string[];
+  /** Its model calls of the period and their cost (US dollars), when it asks a model. */
+  calls?: number;
+  cost?: number;
 }
 export interface FlowDetailView extends FlowSummary {
   inputs: { id: string; what: string }[];
@@ -1204,6 +1209,7 @@ function parseFlowNode(n: unknown): FlowStepNode | null {
     deps: strsOf(n.deps, 40),
     ran,
     ...(Array.isArray(n.into) ? { into: strsOf(n.into, 20).map((x) => x.slice(0, 80)) } : {}),
+    ...(typeof n.calls === "number" ? { calls: numOf(n.calls), cost: numOf(n.cost) } : {}),
   };
 }
 const parseInputs = (v: unknown) =>
@@ -3121,6 +3127,11 @@ export class AgentApi {
         deps: strs(x.deps).slice(0, 40),
         uses: strs(x.uses).slice(0, 40),
         answers: strs(x.answers).map((a) => a.slice(0, 4000)),
+        said: isObj(x.args)
+          ? Object.values(x.args).flatMap((v) =>
+              isObj(v) && typeof v.quote === "string" ? [`«${v.quote.slice(0, 120)}»`] : [],
+            )
+          : [],
       })),
       read: list(b.read, (x) => ({
         collection: str(x.collection, 80) ?? "",

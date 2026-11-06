@@ -408,7 +408,7 @@ contraseña ni un código aquí» under a question.
   model, calls by use), «Actividad» (reads and changes, by day, who, in which collection, the table of Boni's activity,
   a link to «Registro») and «Registro» (runs, their duration and cost, a daily chart and the table) come with every
   account as ordinary pages of ordinary blocks, over Boni's own read-only collections («Llamadas a modelos», «Actividad
-  de Boni», «Ejecuciones»). A run opens to its «Recorrido» (task 52): a diagram of its steps left to right by what each reads from, the verdict in the outline (red where the policy stopped or denied it, dashed where it went to the inbox, faint where it never ran), each step with its rule and what the models answered (folded, as text), then «Leyó», «Hizo», «Propuso», «Decisiones» and «Modelos» as short lists; «Copiar» puts it all in the clipboard as text, headed as carrying text of his data; «Recorrido» also opens from a turn of the chat and from a proposal's page. Nothing in it is a link or markup. A link block opens only a real page and says if its destination is gone. Under the page's
+  de Boni», «Ejecuciones»). A run opens to its steps in words (task 52; task 90: each step by the editor's name, what came of it and what it does, never a rule's code), then «Leyó», «Hizo», «Propuso», «Decisiones» and «Modelos» as short lists; «Copiar» puts it all in the clipboard as text, headed as carrying text of his data; «Recorrido» draws it on the map (as from a turn of the chat and from a proposal's page). Nothing in it is a link or markup. A link block opens only a real page and says if its destination is gone. Under the page's
   name, «De Boni»; once changed, «Modificada», which opens the list of changes (+ added, − removed, ✎ changed, ⤢ another
   size, ↕ where the blocks are) and «Restaurar la de Boni» (Undo in the notice and Ctrl+Z). Removed, a template stays
   removed (the trash brings it back).
@@ -803,16 +803,18 @@ contraseña ni un código aquí» under a question.
   «muestra»; one that carries a mail's words in `--c4` («Lleva texto de fuera» on hover); one going back, right to
   left (what you or the conversation read, a lesson to an earlier flow), says its words only when it is lit, so they
   never cover a card's name. The Bandeja is crossed, not
-  counted: «Antes: 1» of Evento shows the Bandeja and, in the same step, the flows that propose into Evento (not those
-  that propose elsewhere), each «propone» with what went to Evento (not its total), so «who writes in Evento» still
-  reads «Leer correo (propone · 3)»; «Después: Todo» of the mail goes Correo → Correos → Leer correo → Bandeja →
-  Tarea, Evento and → Revisar la guía → Leer correo. «decides» counts your decisions, not what Boni accepted alone
+  counted: «Profundidad: 1» of Evento shows the Bandeja and, in the same step, the flows that propose into Evento (not
+  those that propose elsewhere), each «propone» with what went to Evento (not its total), so «who writes in Evento»
+  still reads «Leer correo (propone · 3)»; «Profundidad: Todo» of the mail goes Correo → Correos → Leer correo →
+  Bandeja → Tarea, Evento and → Revisar la guía → Leer correo. «decides» counts your decisions, not what Boni accepted alone
   («Solo»); «tus decisiones» only those on the mail's proposals (the reviewer learns from nothing else), and the lens
   goes from the Bandeja to the reviewer only from «Leer correo». What you moved to another collection as you
   accepted it counts where it went. Without a centre
   it shows everything joined to something (a node alone says nothing), pages only with «Con páginas». Over it, one
   bar: **«Buscar en el mapa»** (by name; Enter takes the first) puts a node **in the centre**, then a chip «En el
-  centro · Tarea ×» and **«Antes»** and **«Después»** (1 | 2 | Todo arrows back and forth, dbt's `+model+`);
+  centro · Tarea ×» and **«Profundidad»**, one slider (1 · 2 · Todo, its value said beside it: arrows back and forth
+  at once, dbt's `+model+`; task 90, Juan, 2026-11-06: «una sola barra deslizante», instead of «Antes» and
+  «Después»);
   **«Agrupar»** (Sin agrupar; Por disparador, frames «Llega a Correos», «Disparado por el usuario», «De Boni»; Por
   flujo, every flow unfolded into its steps; Por colección, a frame for each collection that holds others; Por paquete,
   «Correo» round its connector, collection, flow and reviewer); **«Filtros»** (Solo con IA, Solo lo que escribe, Solo
@@ -825,19 +827,28 @@ contraseña ni un código aquí» under a question.
   and number), and «Poner en el centro», «Ver los pasos» / «Plegar los pasos» on a flow and «Abrir» (primary: a flow's
   page, a collection's, a page, the conversation); a double click opens it; the right button gives the same as a menu.
   A box chosen out of view is brought to the middle. An unfolded flow is a frame with its steps inside, laid out as
-  its editor lays them out, its arrows leaving from the steps that make them. The map fits what it shows whenever its
+  its editor lays them out, **from what starts it** (a first box with ⚡ and «Llega a Correos», as the editor's
+  trigger), its arrows leaving from the steps that make them; each step by the name the editor gives it («Lectora»,
+  «Crear», «Regla del remitente»: never a tool's id), what it does in one line in its tooltip («Elige la colección; si
+  duda, te pregunta en la Bandeja.»), and a model's step with its calls and their cost in the period («42 llamadas ·
+  0,21 US$»). A lane's name over its column is cut with «…» to its lane's width, the whole in its tooltip, so two
+  lanes' names never overlap. The map fits what it shows whenever its
   boxes move, never on a hover. **«Ver en el mapa»** (I-25), in the right-click menus of a collection, a page, a row,
-  a block over a collection, a flow and an Inbox card (with «Abrir propuesta» and «Recorrido»; text chosen in the card
-  keeps the browser's own menu), in a run's «Recorrido» and on a proposal's page, opens it with that in the
-  centre and its panel open; a page put in the centre shows the pages while it is there; what the map does not have
-  (a page none of whose blocks shows a collection) says «No sale en el mapa» and opens it whole. From a run (its
-  Recorrido, a proposal) **the run is drawn on it**: its flow unfolded, each step with what came of it («Hecho»,
-  «Propuesto», «No se ejecutó»), what ran ringed in `--accent`, what did not faded; **its way across the map** lit
-  (the mail's connector and collection, the flow, the Bandeja and the collection where what it proposed was accepted,
-  where it wrote, an `--accent` border on each card) and the rest quiet; a card over the top left corner, «Por dónde
-  fue», telling it in words («Empezó con «Reunión con secretaría el jueves» (Correos)», «Leer correo (v3) · 20 oct,
-  11:05», «Propuso «Preparar la reunión» · aceptada», «Escribió «Café» en Gastos»; three of each, then «y 2 más»)
-  with «Ver el Recorrido»; and a chip «Ejecución · 6 nov, 00:52 ×» that takes both away. **«¿De dónde viene?»**, in a
+  a block over a collection and a flow, opens it with that in the centre and its panel open (an Inbox card's menu has
+  «Abrir propuesta» and «Recorrido»; text chosen in the card keeps the browser's own menu); a page put in the centre shows the pages while it is there; what the map does not have
+  (a page none of whose blocks shows a collection) says «No sale en el mapa» and opens it whole. **A run's
+  «Recorrido» is the map** (I-25, task 90; Juan, 2026-11-06: «teniendo el mapa, no tiene sentido tener lo del
+  recorrido»): from the Registro, an Inbox card's menu, a proposal's page and a turn of the conversation, the run is
+  drawn on it: its flow unfolded from what started it, each step with what came of it («Hecho», «Propuesto», «No se
+  ejecutó», «Parado: una regla de seguridad lo impide»), what did not run faded; **its way in orange** (`--c2`), from
+  the trigger and the connector through its steps, the Bandeja and on to the collection where what it proposed was
+  accepted or where it wrote: each box and arrow on it with an orange border, lit in its turn along the way (110 ms
+  apart) and a light moving along its arrows (dashes, 1.1 s), still when the system asks for less motion; the rest
+  quiet. A card over the top left corner, «Por dónde fue», tells it in words («Empezó con «Reunión con secretaría el
+  jueves» (Correos)», «Leer correo (v3) · 20 oct, 11:05», «Propuso «Preparar la reunión» · aceptada», «Escribió
+  «Café» en Gastos»; three of each, then «y 2 más»), with **«Detalles»** (each step in the Registro's words, what a
+  model answered, «Leyó», «Decisiones», «Modelos»; «Menos» folds it) and «Copiar»; and a chip «Ejecución · 6 nov,
+  00:52 ×» that takes both away. **«¿De dónde viene?»**, in a
   row's right-click menu (not in Boni's own collections), asks the server who made the record: one a flow or the
   conversation proposed or wrote opens the map with that run drawn on it and the card titled «¿De dónde viene
   «Pedro Páramo»?»: the mail it started with, the run, «Lo propuso como «Pedro Páramo»» (and «y propuso 1 más»), and
@@ -932,14 +943,13 @@ contraseña ni un código aquí» under a question.
   as the editor draws it: the trigger with what it gives, each step named, its arrows), what it adds with an
   `--accent` border and «Nuevo», what it changes with a dashed one and «Cambiado», what it takes away faded and
   struck with «Quitado»; «Activar» (primary) and «Rechazar».
-- **The Recorrido on the canvas** (F3, task 59c): a run of the Registro (and a proposal's «Recorrido») is drawn
-  as a flow's canvas, read only, laid out as the editor lays out its flow (downwards in the order the run went, at
-  most 100 %): the trigger with what it bound when the plan took values from outside, each step named as the editor
-  names it, and its line: «Hecho», «Propuesto», «Parado
-  (P2)», «No se ejecutó», «No llegó», «Acaba aquí» (F7: a piece of Boni ended the run there, done, such as «Regla
-  del remitente» for a sender it never reads), with the first words a model answered under it. It replaces the SVG diagram of
-  task 52; the steps' list, «Leyó», «Hizo», «Propuso», «Decisiones», «Modelos» and «Copiar» stay below it, with «Ver
-  en el mapa» beside «Copiar» (its flow, or the conversation, in the centre).
+- **A run in the Registro** (task 90, I-27): in words only, with no drawing of its own (its drawing is the map's,
+  «Recorrido»): «Recorrido» and «Copiar» on top, the request, then each step by the name the editor and the map give
+  it, with the words of the request it took («Buscar «informe»»), what came of it («Hecho», «Propuesto», «No se
+  ejecutó», «No llegó», «Acaba aquí», «Parado: una regla de seguridad lo impide», «Parado: lo paraste tú») and what it
+  does in one muted line; a model's answer folded under its step, as text; then «Leyó», «Hizo», «Propuso»,
+  «Decisiones» and «Modelos» («Planificador · m-ejemplo · 1200 → 80 · 0,004 US$»). No tool id, `$` reference or
+  rule code on screen: «Copiar» alone adds the code after why it stopped («(P2-untrusted-destination)»), to fix it.
 - **Ajustes → Modelos** (again its place, 2026-11-06: the tab «Modelos» of «Flujos», task 59b, is gone with its declared
   canvas; what every model does and costs is on the map's flows and steps, `docs/sistema.md` §4.4): what configures
   the models: «Usos», a card per use with a one-word name and its icon (Agente, Lector, Decisor, Revisor),

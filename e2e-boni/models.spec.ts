@@ -304,7 +304,7 @@ test("a template page is modified like any page, its changes listed, restored as
   await expect(pill).toHaveText("Modificada");
 });
 
-test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map computed, with its numbers, its panel, its centre, before and after, a flow's steps, filters, groups and its period (F8)", async ({
+test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map computed, with its numbers, its panel, its centre, its depth, a flow's steps, filters, groups and its period (F8)", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -372,7 +372,26 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await expect(map.locator(".mp-edge-label", { hasText: "propone · 12" })).toBeVisible();
   await expect(map.locator(".mp-edge-label", { hasText: "aceptadas · 7" })).toBeVisible();
   await expect(map.locator(".mp-edge-label", { hasText: "tus decisiones · 9" })).toBeVisible();
+  // No arrow's words over a box, nor over other words (task 90: «líneas que tapan items»): those that would be say
+  // them when their arrow is lit. Yours into Gastos crosses «Apuntar gasto»: said when Gastos is pointed at.
+  const covered = () =>
+    page.evaluate(() => {
+      const box = (e: Element) => e.getBoundingClientRect();
+      const meet = (a: DOMRect, b: DOMRect) =>
+        a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const boxes = [...document.querySelectorAll(".mp-stage .react-flow__node")]
+        .filter((n) => !n.classList.contains("react-flow__node-frame"))
+        .map(box);
+      const words = [...document.querySelectorAll(".mp-stage .mp-edge-label")].map(box);
+      return words.filter(
+        (w, i) => boxes.some((b) => meet(w, b)) || words.slice(i + 1).some((x) => meet(w, x)),
+      ).length;
+    });
+  expect(await covered()).toBe(0);
+  await expect(map.locator(".mp-edge-label", { hasText: "escribe · 61" })).toHaveCount(0);
+  await card("Gastos").hover();
   await expect(map.locator(".mp-edge-label", { hasText: "escribe · 61" })).toBeVisible();
+  await page.mouse.move(5, 5);
   await page.screenshot({ path: `${SHOTS}/flows-map.png` });
 
   // A click shows its panel: what comes in, what goes out, its numbers; the rest of the map goes quiet.
@@ -387,21 +406,29 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await expect(card("Gastos")).toHaveClass(/dim/);
   await page.screenshot({ path: `${SHOTS}/flows-map-panel.png` });
 
-  // «Poner en el centro»: one arrow before and one after it; «Todo» after it, all it leads to.
+  // «Poner en el centro»: one arrow before and one after it.
   await panel.getByRole("button", { name: "Poner en el centro" }).click();
   await expect(page.locator(".mp-centre")).toContainText("Leer correo");
   await expect(card("Gastos")).toHaveCount(0);
   await expect(card("Correos")).toBeVisible();
   await expect(card("Tarea")).toBeVisible();
-  // Two before: the connector that brings the mails too.
+  // One slider, «Profundidad», back and forth (task 90): at 2, the connector that brings the mails too.
   await expect(map.locator(".mp-card.connector")).toHaveCount(0);
-  await page.getByRole("radiogroup", { name: "Antes" }).getByRole("radio", { name: "2" }).click();
+  const depth = page.getByRole("slider", { name: "Profundidad" });
+  await expect(depth).toHaveAttribute("aria-valuetext", "1");
+  await depth.fill("2");
   await expect(map.locator(".mp-card.connector")).toHaveCount(1);
-  // Its steps, in the order they run, inside its frame; its arrow out of the step that makes it.
+  await expect(page.getByRole("radiogroup", { name: "Antes" })).toHaveCount(0);
+  // Its steps, in the order they run, inside its frame, from what starts it, as the editor draws them; a model's
+  // step with its calls and their cost in the period; what each does in its tooltip.
   await panel.getByRole("button", { name: "Ver los pasos" }).click();
   await expect(map.locator(".mp-frame.flow")).toContainText("Leer correo");
-  await expect(map.locator(".mp-step")).toHaveCount(4);
-  await expect(map.locator(".mp-step", { hasText: "Lectora" })).toBeVisible();
+  await expect(map.locator(".mp-trig")).toHaveText("Llega a Correos");
+  await expect(map.locator(".mp-step:not(.mp-trig)")).toHaveCount(4);
+  const lectora = map.locator(".mp-step", { hasText: "Lectora" });
+  await expect(lectora).toContainText("42 llamadas · 0,21 US$");
+  await expect(lectora).toHaveAttribute("title", /Lee el correo y saca lo que te pide hacer/);
+  await expect(map.locator(".mp-step", { hasText: "entities" })).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/flows-map-steps.png` });
   await page.getByRole("button", { name: "Quitar del centro" }).click();
   await expect(card("Gastos")).toBeVisible();
@@ -427,6 +454,10 @@ test("«Flujos» is one of Boni's collections: «Tabla» and «Mapa»; the map c
   await card("Conversación").hover();
   await expect(map.locator(".mp-edge-label", { hasText: "lee · 30" })).toHaveCount(0);
   await page.mouse.move(5, 5);
+  // Every flow unfolded («Por flujo»): still no words over a box or over other words.
+  await page.getByRole("combobox", { name: "Agrupar" }).selectOption("flow");
+  await expect(map.locator(".mp-frame.flow").first()).toBeVisible();
+  await expect.poll(covered).toBe(0);
   // Grouped by collection: Tarea and Evento in a frame named after the collection they are inside.
   await page.getByRole("combobox", { name: "Agrupar" }).selectOption("collection");
   await expect(map.locator(".mp-frame.group", { hasText: "Trabajo" })).toBeVisible();
@@ -479,10 +510,11 @@ test("«Ver en el mapa» from a collection's menu puts it in the centre; a searc
   await expect(page.locator(".mp-find-list [role=option]").first()).toContainText("Correo");
   await page.keyboard.press("Enter");
   await expect(page.locator(".mp-centre")).toContainText("Correo");
-  await page
-    .getByRole("radiogroup", { name: "Después" })
-    .getByRole("radio", { name: "Todo" })
-    .click();
+  await page.getByRole("slider", { name: "Profundidad" }).fill("3");
+  await expect(page.getByRole("slider", { name: "Profundidad" })).toHaveAttribute(
+    "aria-valuetext",
+    "Todo",
+  );
   // The way to the Bandeja and on to the guide's reviewer, which learns from the decisions (task 84's criterion).
   for (const name of ["Correos", "Leer correo", "Bandeja", "Tarea", "Evento", "Revisar la guía"])
     await expect(map.locator(".mp-card", { hasText: name }).first()).toBeVisible();
@@ -495,8 +527,7 @@ test("«Ver en el mapa» from a collection's menu puts it in the centre; a searc
   await find.click();
   await page.keyboard.type("Evento", { delay: 15 });
   await page.keyboard.press("Enter");
-  await page.getByRole("radiogroup", { name: "Antes" }).getByRole("radio", { name: "1" }).click();
-  await page.getByRole("radiogroup", { name: "Después" }).getByRole("radio", { name: "1" }).click();
+  await page.getByRole("slider", { name: "Profundidad" }).fill("1");
   // A card by its own name (a flow's line names another: «Llega a Correos»).
   const card = (name: string) =>
     map.locator(".mp-card", {
@@ -512,7 +543,7 @@ test("«Ver en el mapa» from a collection's menu puts it in the centre; a searc
   await expect(map.locator(".mp-edge-label", { hasText: "propone · 12" })).toHaveCount(0);
 });
 
-test("a run on the map (F8, «una ejecución encima»): from its Recorrido, its flow unfolded with what each step did", async ({
+test("a run on the map (F8, task 90): the Registro's «Recorrido» is the map, its flow unfolded from what started it, its way in orange", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -528,24 +559,57 @@ test("a run on the map (F8, «una ejecución encima»): from its Recorrido, its 
   await page.getByRole("button", { name: /^Conversación/ }).click();
   await page.getByRole("button", { name: "Registro", exact: true }).last().click();
   await page.locator(".log-list li").first().locator(".log-head").click();
-  await page.locator(".log-detail").getByRole("button", { name: "Ver en el mapa" }).click();
+  // The Registro says it in words; its drawing is the map's: one «Recorrido», no canvas of its own.
+  const detail = page.locator(".log-detail");
+  await expect(detail.locator(".react-flow")).toHaveCount(0);
+  await expect(detail.locator(".log-step").first()).toContainText("Leer — Hecho");
+  await detail.getByRole("button", { name: "Recorrido" }).click();
   await expect(page.locator(".mp-centre").first()).toContainText("Leer correo");
   await expect(page.locator(".mp-run-chip")).toContainText("Ejecución");
   const steps = page.locator(".mp-stage .mp-step");
-  await expect(steps).toHaveCount(4);
-  // The way it went: what ran in `--accent` with what came of it, what did not run faded.
+  // From what started it, as the Registro and the editor say it: the trigger, then its four steps.
+  await expect(page.locator(".mp-stage .mp-trig")).toHaveText("Llega a Correos");
+  await expect(steps).toHaveCount(5);
+  // The way it went, in orange: what ran with what came of it, what did not run faded.
+  await expect(page.locator(".mp-stage .mp-trig")).toHaveClass(/run-ran/);
   await expect(steps.filter({ hasText: "Lectora" })).toHaveClass(/run-ran/);
   await expect(steps.filter({ hasText: "Lectora" })).toContainText("Hecho");
   await expect(steps.filter({ hasText: "Rellenadora" })).toHaveClass(/run-idle/);
   await expect(steps.filter({ hasText: "Crear" })).toContainText("Propuesto");
+  const orange = await steps
+    .filter({ hasText: "Lectora" })
+    .evaluate((e) => getComputedStyle(e).borderTopColor);
+  const c2 = await page.evaluate(() => {
+    const probe = document.createElement("div");
+    probe.style.color = "var(--c2)";
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  expect(orange).toBe(c2);
+  // Its arrows on the way move (a light along them); still when the system asks for less motion.
+  const wayEdges = page.locator(".mp-stage .mp-edge.way");
+  await expect.poll(() => wayEdges.count()).toBeGreaterThan(2);
+  const moving = () => wayEdges.last().evaluate((e) => getComputedStyle(e).animationName);
+  expect(await moving()).toContain("mp-way-flow");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await moving()).toBe("none");
+  await page.emulateMedia({ reducedMotion: null });
   // Its way across the map, told in its card: the mail it read, the run, what it proposed and what became of it.
   const way = page.locator(".mp-way");
   await expect(way.locator("h4")).toHaveText("Por dónde fue");
-  await expect(way.locator("li")).toHaveText([
+  await expect(way.locator("ol").first().locator(":scope > li")).toHaveText([
     "Empezó con «Reunión con secretaría el jueves» (Correos)",
     /^Leer correo \(v3\) · 20 oct/,
     "Propuso «Preparar la reunión» · aceptada",
   ]);
+  // «Detalles»: each step in the same words, what it read and its models; «Copiar» the whole.
+  await way.getByRole("button", { name: "Detalles" }).click();
+  await expect(way.locator(".mp-way-more li").first()).toContainText("Leer — Hecho");
+  await expect(way.locator(".mp-way-more")).not.toContainText("entities.");
+  await way.getByRole("button", { name: "Menos" }).click();
+  await expect(way.locator(".mp-way-more")).toHaveCount(0);
   // On the map, the way lit: from Correos through the Bandeja to Tarea, where it was accepted; Evento goes quiet.
   const map = page.locator(".mp-stage");
   const card = (name: string) =>
@@ -564,7 +628,7 @@ test("a run on the map (F8, «una ejecución encima»): from its Recorrido, its 
   await expect(card("Evento")).not.toHaveClass(/dim/);
 });
 
-test("an Inbox card's right button (I-17, I-25): open it, its Recorrido, or its run on the map", async ({
+test("an Inbox card's right button (I-17, I-25): open it, or its Recorrido, which is its run on the map", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -587,12 +651,8 @@ test("an Inbox card's right button (I-17, I-25): open it, its Recorrido, or its 
   const card = page.locator(".inbox-panel .inbox-card").first();
   await card.locator("h3").click({ button: "right" });
   const menu = page.getByRole("dialog", { name: "Opciones de la propuesta" });
-  await expect(menu.getByRole("menuitemradio")).toHaveText([
-    "Abrir propuesta",
-    "Recorrido",
-    "Ver en el mapa",
-  ]);
-  await menu.getByRole("menuitemradio", { name: "Ver en el mapa" }).click();
+  await expect(menu.getByRole("menuitemradio")).toHaveText(["Abrir propuesta", "Recorrido"]);
+  await menu.getByRole("menuitemradio", { name: "Recorrido" }).click();
   await expect(page.locator(".mp-centre").first()).toContainText("Leer correo");
   await expect(page.locator(".mp-way h4")).toHaveText("Por dónde fue");
 });
@@ -644,9 +704,9 @@ test("«¿De dónde viene?» from a row: the reading that proposed it on the map
   for (const name of ["Correos", "Bandeja", "Libros"]) await expect(card(name)).toHaveClass(/way/);
   await expect(card("Tarea")).toHaveClass(/dim/);
   await page.screenshot({ path: `${SHOTS}/flows-map-origin.png` });
-  // «Ver el Recorrido»: the run in the Registro, though older than its latest runs.
-  await way.getByRole("button", { name: "Ver el Recorrido" }).click();
-  await expect(page.locator(".log-asked .log-detail")).toBeVisible();
+  // Its run in words, there: «Detalles» (the Recorrido is the map itself).
+  await way.getByRole("button", { name: "Detalles" }).click();
+  await expect(way.locator(".mp-way-more")).toContainText("Lectora");
 
   // One written by hand says who and where, in a notice; the map is not opened for it.
   await libros();

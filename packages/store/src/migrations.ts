@@ -313,6 +313,12 @@ export const MIGRATIONS: (string | ((db: DatabaseSync) => void))[] = [
   // 18: the proposal an «accepted» run applied («¿De dónde viene?», docs/sistema.md §4.4): from a record to the run
   // that proposed it.
   "ALTER TABLE runs ADD COLUMN proposal TEXT",
+  // 19: the step of its run a model answered in, so each step of a flow says its calls and their cost (docs/sistema.md
+  // §4.4); null for a planner's call and for those before 2026-11-06.
+  "ALTER TABLE model_calls ADD COLUMN step TEXT",
+  // 20: each step's calls counted from an index, never from the rows with their texts (A-15): the map and a flow's
+  // page ask it on every request.
+  "CREATE INDEX model_calls_step ON model_calls(run, step, usage) WHERE step IS NOT NULL",
 ];
 
 export function migrate(db: DatabaseSync): void {

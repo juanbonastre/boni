@@ -52,11 +52,22 @@ import {
   User,
   Workflow,
   X,
+  Zap,
 } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { FlowStepNode, MapEdge, MapNode, MapView, Origin, RunDetail } from "../core/agent.ts";
+import type {
+  FlowStep,
+  FlowStepNode,
+  MapEdge,
+  MapNode,
+  MapView,
+  Origin,
+  RunDetail,
+} from "../core/agent.ts";
 import { deviceZone } from "../core/clock.ts";
+import { typeKeysOf } from "../core/flowEdit.ts";
 import {
+  choiceOf,
   type Grouping,
   groupOf,
   LENS,
@@ -65,6 +76,7 @@ import {
   mapLayout,
   stepLayout,
 } from "../core/flowLayout.ts";
+import { moneyText, runCopy, runStepLine, runWords, stepDesc, stepName } from "../core/runText.ts";
 import { useKeptNodes } from "../core/useKeptNodes.ts";
 import { phoneLayout } from "../host.ts";
 import {
@@ -72,7 +84,6 @@ import {
   errorText,
   openCollection,
   openPage,
-  openTrace,
   showChat,
   showFlow,
   showInbox,
@@ -82,16 +93,20 @@ import {
 import { triggerText } from "./FlowEditor.tsx";
 import { stepDetail } from "./FlowStepPanel.tsx";
 import { MenuRow, PointMenu, PopButton } from "./Popover.tsx";
-import { runStepLine } from "./RunCanvas.tsx";
 
 type T = (k: string, p?: Record<string, string | number>) => string;
 const PERIODS = [7, 30] as const;
 const DEPTHS = [1, 2, Number.POSITIVE_INFINITY] as const;
+/** Every box above every arrow, a lit one too (task 90: «líneas que tapan items»): an arrow passes behind a box. */
+const BOX_Z = 3;
 const GROUPS: readonly Grouping[] = ["none", "trigger", "flow", "collection", "pack"];
 const W = 212;
 const STEP_W = 196;
 const STEP_H = 50;
 const FRAME_HEAD = 46;
+/** An unfolded flow's first box: what starts it, as in its editor. */
+const TRIGGER = "trigger";
+const TRIGGER_H = 40;
 const FRAME_PAD = 14;
 const KEPT = "boni:mapLens";
 
@@ -149,18 +164,6 @@ export function mapNodeName(t: T, n: MapNode): string {
 }
 
 /** A step of a flow on the map, as the editor names it. */
-function stepNodeName(t: T, s: FlowStepNode): string {
-  if (s.op === "read") {
-    const k = `flow.node.${s.what}`;
-    const v = t(k);
-    return v === k ? s.what : v;
-  }
-  if (s.op === "call") return s.title ?? s.what;
-  if (s.op === "ask") return t("flows.op.ask");
-  if (s.op === "reply") return t("flows.op.reply");
-  return s.op;
-}
-
 function KindIcon({ n, size = 14 }: { n: Pick<MapNode, "kind" | "code">; size?: number }) {
   const p = { size, strokeWidth: 1.8, "aria-hidden": true } as const;
   if (n.kind === "connector") return <Mail {...p} />;
@@ -231,8 +234,9 @@ type CardData = {
   models: string[];
   hot: boolean;
   dim: boolean;
-  /** On the way of the run drawn on the map. */
+  /** On the way of the run drawn on the map, and its place along it. */
   way: boolean;
+  wayI?: number;
   centre: boolean;
   open: boolean;
   onFold: (id: string) => void;
@@ -242,11 +246,22 @@ type StepData = {
   step: FlowStepNode;
   name: string;
   model: string | null;
+  /** Its model calls of the period and their cost, in words. */
+  numbers: string | null;
+  /** What it does, in one line (its tooltip). */
+  desc: string | null;
   dim: boolean;
   /** With a run on the map: what came of this step in it, and whether it ran. */
   run?: { line: string; state: "ran" | "idle" | "bad" };
+  /** Its place along the run's way (the light reaches it in that order). */
+  wayI?: number;
 };
-type RFNode = Node<CardData, "card"> | Node<FrameData, "frame"> | Node<StepData, "step">;
+type TrigData = { text: string; dim: boolean; way: boolean; wayI?: number };
+type RFNode =
+  | Node<CardData, "card">
+  | Node<FrameData, "frame">
+  | Node<StepData, "step">
+  | Node<TrigData, "trig">;
 
 const MapCard = memo(function MapCard({ data }: NodeProps<Node<CardData, "card">>) {
   const t = useStore((s) => s.t);
@@ -255,6 +270,7 @@ const MapCard = memo(function MapCard({ data }: NodeProps<Node<CardData, "card">
     <div
       className={`mp-card ${n.kind}${data.hot ? " hot" : ""}${data.dim ? " dim" : ""}${data.way ? " way" : ""}${data.centre ? " centre" : ""}${n.kind === "flow" && !n.on ? " off" : ""}`}
       title={data.name}
+      style={data.way ? ({ "--way-i": data.wayI ?? 0 } as React.CSSProperties) : undefined}
     >
       <Handle type="target" position={Position.Left} id="l" />
       <div className="mp-head">
@@ -315,7 +331,12 @@ const StepCard = memo(function StepCard({ data }: NodeProps<Node<StepData, "step
   return (
     <div
       className={`mp-step ${data.step.op}${data.dim ? " dim" : ""}${data.run ? ` run-${data.run.state}` : ""}`}
-      title={data.name}
+      title={data.desc ? `${data.name} — ${data.desc}` : data.name}
+      style={
+        data.run?.state === "ran"
+          ? ({ "--way-i": data.wayI ?? 0 } as React.CSSProperties)
+          : undefined
+      }
     >
       <Handle type="target" position={Position.Top} id="t" />
       <Handle type="target" position={Position.Left} id="l" />
@@ -326,11 +347,35 @@ const StepCard = memo(function StepCard({ data }: NodeProps<Node<StepData, "step
         <span className="mp-name">{data.name}</span>
       </div>
       {(data.model || data.step.detail) && (
-        <div className="mp-line">{data.model ?? data.step.detail}</div>
+        <div className="mp-line">
+          {data.model
+            ? `${data.model}${data.numbers ? ` · ${data.numbers}` : ""}`
+            : data.step.detail}
+        </div>
       )}
       {data.run && <div className="mp-line mp-run-line">{data.run.line}</div>}
       <Handle type="source" position={Position.Bottom} id="b" />
       <Handle type="source" position={Position.Right} id="r" />
+    </div>
+  );
+});
+
+/** An unfolded flow's first box: what starts it («Llega a Correos»), as its editor shows it. */
+const TrigCard = memo(function TrigCard({ data }: NodeProps<Node<TrigData, "trig">>) {
+  return (
+    <div
+      className={`mp-step mp-trig${data.dim ? " dim" : ""}${data.way ? " run-ran" : ""}`}
+      title={data.text}
+      style={data.way ? ({ "--way-i": data.wayI ?? 0 } as React.CSSProperties) : undefined}
+    >
+      <Handle type="target" position={Position.Left} id="l" />
+      <div className="mp-head">
+        <span className="mp-icon">
+          <Zap size={13} strokeWidth={1.8} aria-hidden />
+        </span>
+        <span className="mp-name">{data.text}</span>
+      </div>
+      <Handle type="source" position={Position.Bottom} id="b" />
     </div>
   );
 });
@@ -342,6 +387,9 @@ type EdgeData = {
   hot: boolean;
   dim: boolean;
   order?: boolean;
+  /** On a run's way: lit, its light moving along it, in its place along the way. */
+  way?: boolean;
+  wayI?: number;
 };
 function MapEdgeView(p: EdgeProps<Edge<EdgeData>>) {
   const t = useStore((s) => s.t);
@@ -355,14 +403,15 @@ function MapEdgeView(p: EdgeProps<Edge<EdgeData>>) {
         id={p.id}
         path={path}
         markerEnd={p.markerEnd}
-        className={`mp-edge ${d.kind}${d.outside ? " outside" : ""}${d.hot ? " hot" : ""}${d.dim ? " dim" : ""}`}
+        className={`mp-edge ${d.kind}${d.outside ? " outside" : ""}${d.hot ? " hot" : ""}${d.dim ? " dim" : ""}${d.way ? " way" : ""}`}
+        style={d.way ? ({ "--way-i": d.wayI ?? 0 } as React.CSSProperties) : undefined}
       />
       {d.label && !d.dim && (
         <EdgeLabelRenderer>
           <div
             className={`mp-edge-label ${d.kind}${d.outside ? " outside" : ""}${d.hot ? " hot" : ""}`}
             style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
-            title={d.outside ? t("map.outside") : undefined}
+            title={d.outside ? t("map.outside") : d.kind === "order" ? d.label : undefined}
           >
             {d.label}
           </div>
@@ -372,7 +421,55 @@ function MapEdgeView(p: EdgeProps<Edge<EdgeData>>) {
   );
 }
 
-const NODE_TYPES: NodeTypes = { card: MapCard, frame: Frame, step: StepCard };
+type Box = { x: number; y: number; w: number; h: number };
+const meets = (a: Box, b: Box) =>
+  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/**
+ * An arrow says its words only where they cover no box and no other arrow's words (task 90; Juan, 2026-11-06: «líneas
+ * que tapan items, texto… que se solapan»): the rest say them when lit (a hover, the chosen box). The words sit where
+ * React Flow puts them, half way between the arrow's two ends; a run's way is placed first.
+ */
+export function wordsWhereFree(nodes: RFNode[], edges: Edge<EdgeData>[]): Edge<EdgeData>[] {
+  const size = (n: RFNode) => ({
+    w: n.measured?.width ?? n.width ?? 0,
+    h: n.measured?.height ?? n.height ?? 0,
+  });
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const boxes: Box[] = nodes
+    .filter((n) => n.type !== "frame")
+    .map((n) => ({ x: n.position.x, y: n.position.y, ...size(n) }));
+  const placed: Box[] = [];
+  const hidden = new Set<string>();
+  const first = (e: Edge<EdgeData>) => (e.data?.hot ? 0 : e.data?.way ? 1 : 2);
+  for (const e of [...edges].sort((a, b) => first(a) - first(b))) {
+    const d = e.data;
+    if (!d?.label || d.dim || d.order) continue;
+    const from = byId.get(e.source);
+    const to = byId.get(e.target);
+    if (!from || !to) continue;
+    const f = size(from);
+    const g = size(to);
+    const sx = e.sourceHandle === "b" ? from.position.x + f.w / 2 : from.position.x + f.w;
+    const sy = e.sourceHandle === "b" ? from.position.y + f.h : from.position.y + f.h / 2;
+    const tx = to.position.x;
+    const ty = to.position.y + g.h / 2;
+    // The pill: 10.5 px words and its padding.
+    const w = d.label.length * 5.8 + 14;
+    const h = 18;
+    const r = { x: (sx + tx) / 2 - w / 2, y: (sy + ty) / 2 - h / 2, w, h };
+    if (!d.hot && (boxes.some((b) => meets(r, b)) || placed.some((b) => meets(r, b))))
+      hidden.add(e.id);
+    else placed.push(r);
+  }
+  return hidden.size
+    ? edges.map((e) =>
+        hidden.has(e.id) ? { ...e, data: { ...(e.data as EdgeData), label: "" } } : e,
+      )
+    : edges;
+}
+
+const NODE_TYPES: NodeTypes = { card: MapCard, frame: Frame, step: StepCard, trig: TrigCard };
 const EDGE_TYPES: EdgeTypes = { map: MapEdgeView };
 
 /** The heights of a node's card by what it shows. */
@@ -449,6 +546,10 @@ function MapFind({
 }
 
 /** How far before or after the centre: one or two arrows, or all. */
+/**
+ * How far the map reaches from its centre, back and forth: one slider (Juan, 2026-11-06: «una sola barra deslizante con
+ * título "Profundidad"»), from one arrow to all of them, its value said beside it.
+ */
 function Depth({
   label,
   value,
@@ -459,23 +560,28 @@ function Depth({
   onChange: (n: number) => void;
 }) {
   const t = useStore((s) => s.t);
+  const last = DEPTHS.length;
+  const at = Number.isFinite(value) ? Math.min(Math.max(1, value), last - 1) : last;
+  const said = at === last ? t("map.all") : String(at);
   return (
     <div className="mp-depth">
-      <span className="muted small">{label}</span>
-      <div className="segmented small" role="radiogroup" aria-label={label}>
-        {DEPTHS.map((d) => (
-          <button
-            key={d}
-            type="button"
-            role="radio"
-            aria-checked={value === d}
-            className={value === d ? "on" : ""}
-            onClick={() => onChange(d)}
-          >
-            {Number.isFinite(d) ? d : t("map.all")}
-          </button>
-        ))}
-      </div>
+      <span className="muted small" aria-hidden="true">
+        {label}
+      </span>
+      <input
+        type="range"
+        min={1}
+        max={last}
+        step={1}
+        value={at}
+        aria-label={label}
+        aria-valuetext={said}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          onChange(n >= last ? Number.POSITIVE_INFINITY : n);
+        }}
+      />
+      <span className="mp-depth-value small">{said}</span>
     </div>
   );
 }
@@ -508,6 +614,24 @@ function Joined({
   );
 }
 
+/**
+ * Each lane of a flow by the collection its steps write in («Tarea»), when one of them writes in a single written
+ * collection; else as its choice says it (the decider's whole option, «Tarea (p. ej.: …)», is too long for a pill).
+ */
+function laneNames(
+  steps: readonly FlowStep[],
+  keyName: (key: string) => string | undefined,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const s of steps) {
+    const c = choiceOf(s as never);
+    if (!c || out.has(c.value)) continue;
+    const keys = typeKeysOf((s as { args?: Record<string, unknown> }).args?.type);
+    if (keys.length === 1) out.set(c.value, keyName(keys[0] as string) ?? (keys[0] as string));
+  }
+  return out;
+}
+
 /** At most this many of a run's proposals or changes are named in its card; the rest are counted. */
 const NAMED = 3;
 
@@ -521,13 +645,22 @@ function RunWay({
   story,
   owner,
   when,
+  money,
 }: {
   run: RunDetail;
   story: { title: string; origin: Origin } | null;
   owner: string;
   when: (ms: number) => string;
+  money: (usd: number) => string;
 }) {
   const t = useStore((s) => s.t);
+  // Its words, as the Registro says them (core/runText.ts), under «Detalles»; «Copiar» puts them in the clipboard.
+  const [more, setMore] = useState(false);
+  const w = runWords(t, run, money);
+  const copy = () =>
+    void navigator.clipboard
+      .writeText(runCopy(t, run, w, when(run.started)))
+      .then(() => toast(t("log.copied")));
   const named = <X,>(xs: X[], line: (x: X) => string) => [
     ...xs.slice(0, NAMED).map(line),
     ...(xs.length > NAMED ? [t("way.more", { n: xs.length - NAMED })] : []),
@@ -575,9 +708,51 @@ function RunWay({
           <li key={i}>{l}</li>
         ))}
       </ol>
-      <button type="button" className="link-btn small" onClick={() => openTrace(run.id)}>
-        {t("origin.trace")}
-      </button>
+      {more && (
+        <div className="mp-way-more">
+          <ol>
+            {w.steps.map((x) => (
+              <li key={x.id}>
+                <strong>{x.name}</strong> — {x.line}
+                {x.answers.map((a, i) => (
+                  <pre key={i}>{a}</pre>
+                ))}
+              </li>
+            ))}
+          </ol>
+          {(
+            [
+              [t("log.read"), w.read],
+              [t("log.decisions"), w.decided],
+              [t("log.models"), w.models],
+            ] as const
+          ).map(([name, items]) =>
+            items.length ? (
+              <div key={name} className="mp-way-block">
+                <span className="muted">{name}</span>
+                <ul>
+                  {items.map((x) => (
+                    <li key={x}>{x}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null,
+          )}
+        </div>
+      )}
+      <div className="mp-way-tools">
+        <button
+          type="button"
+          className="link-btn small"
+          aria-expanded={more}
+          onClick={() => setMore((m) => !m)}
+        >
+          {more ? t("way.less") : t("way.details")}
+        </button>
+        <button type="button" className="link-btn small" onClick={copy}>
+          {t("log.copy")}
+        </button>
+      </div>
     </section>
   );
 }
@@ -631,6 +806,8 @@ function Canvas({
           const owner = d.owner ?? (d.flow ? `flow:${d.flow}` : (centre ?? "boni:chat"));
           setRun({ ...d, owner });
           if (owner.startsWith("flow:")) setOpen((o) => new Set([...o, owner]));
+          // «Recorrido» (task 90): asked with no centre, it is centred on where the run belongs.
+          if (!centre && map.nodes.some((x) => x.id === owner)) setCenter(owner);
         },
         () => undefined,
       );
@@ -642,15 +819,7 @@ function Canvas({
       () => undefined,
     );
   }, []);
-  const usd = useMemo(
-    () =>
-      new Intl.NumberFormat(lang === "en" ? "en-GB" : "es-ES", {
-        style: "currency",
-        currency: "USD",
-      }),
-    [lang],
-  );
-  const money = (n: number) => usd.format(n);
+  const money = (n: number) => moneyText(lang, n);
   const when = (ms: number) =>
     new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "es-ES", {
       day: "numeric",
@@ -696,6 +865,7 @@ function Canvas({
         // A run's line under each step of the flow it is a run of.
         const runLine = run?.owner === n.id ? 17 : 0;
         const l = stepLayout(n.plan.steps, {
+          trigger: { id: TRIGGER, height: TRIGGER_H },
           width: STEP_W,
           height: () => STEP_H + runLine,
           gapY: 22,
@@ -731,24 +901,57 @@ function Canvas({
     const col = (type: string | null | undefined) => (type ? [`col:${type}`] : []);
     const nodes = new Set<string>([owner]);
     const edges = new Set<string>();
+    // Each box's place along the way, from where it came in to where it ended: the light reaches them in this order.
+    const order = new Map<string, number>();
+    const at = (id: string) => {
+      if (!order.has(id)) order.set(id, order.size);
+    };
     const add = (from: string, to: string, kind: string) => {
       nodes.add(from);
       nodes.add(to);
       edges.add(`${from}>${to}>${kind}`);
     };
     for (const c of col(run.input?.type)) {
-      add(c, owner, "starts");
       // What brought it: the mail's connector.
-      for (const e of map.edges) if (e.to === c && e.kind === "brings") add(e.from, c, "brings");
+      for (const e of map.edges)
+        if (e.to === c && e.kind === "brings") {
+          add(e.from, c, "brings");
+          at(e.from);
+        }
+      at(c);
+      add(c, owner, "starts");
     }
     for (const r of run.read) for (const c of col(r.type)) add(c, owner, "reads");
+    at(owner);
+    // Its steps that ran, in the order they ran (what never ran, or was skipped, stays off the way).
+    const ran = new Set(
+      run.steps.filter((x) => x.decision !== null && x.decision !== "skip").map((x) => x.id),
+    );
+    // Those it passed by without doing them (their condition said no): faded, but the way goes on through their
+    // place, so it never breaks between two steps that ran.
+    const passed = new Set(run.steps.filter((x) => x.decision === "skip").map((x) => x.id));
+    at(`step:${owner}:${TRIGGER}`);
+    for (const x of run.steps) if (ran.has(x.id) || passed.has(x.id)) at(`step:${owner}:${x.id}`);
     // An «Aceptar» writes out of the Bandeja: its arrow is «aceptadas».
     const wrote = owner === "boni:inbox" ? "accepts" : "writes";
-    for (const w of run.changes) for (const c of col(w.type)) add(owner, c, wrote);
-    if (run.proposals.length) add(owner, "boni:inbox", "proposes");
+    if (run.proposals.length) {
+      add(owner, "boni:inbox", "proposes");
+      at("boni:inbox");
+    }
     for (const p of run.proposals)
-      if (p.status === "accepted") for (const c of col(p.type)) add("boni:inbox", c, "accepts");
-    return { nodes, edges };
+      if (p.status === "accepted")
+        for (const c of col(p.type)) {
+          add("boni:inbox", c, "accepts");
+          at(c);
+        }
+    for (const w of run.changes)
+      for (const c of col(w.type)) {
+        add(owner, c, wrote);
+        at(c);
+      }
+    // The steps that proposed: the arrow into the Bandeja leaves from them.
+    const proposed = new Set(run.steps.filter((x) => x.decision === "propose").map((x) => x.id));
+    return { nodes, edges, order, ran, passed, proposed, owner };
   }, [run, map.edges]);
   // The arrows next to what the pointer is on, or what is chosen; the rest go quiet. Not for the centre: what the map
   // shows then is already what comes before and after it, and all of it says something. With a run on the map, its
@@ -810,7 +1013,27 @@ function Canvas({
         const top = at.y + FRAME_HEAD;
         // The run on the map, when it is one of this flow's.
         const ran = run?.owner === n.id ? run.steps : null;
+        const onWay = way?.owner === n.id;
         const byId = new Map(n.steps.map((s) => [s.id, s]));
+        const dimHere = near ? !near.has(n.id) : !!way && !way.nodes.has(n.id);
+        const tp = l.at.get(TRIGGER);
+        if (tp)
+          out.push({
+            id: `step:${n.id}:${TRIGGER}`,
+            type: "trig",
+            position: { x: cx + tp.x, y: top + tp.y },
+            data: {
+              text: n.trigger ? triggerText(t, n.trigger, keyName) : t("flows.on.manual"),
+              dim: dimHere,
+              way: onWay,
+              wayI: way?.order.get(`step:${n.id}:${TRIGGER}`),
+            },
+            draggable: false,
+            className: "nopan",
+            zIndex: BOX_Z,
+          });
+        // A lane by the collection its steps write in («Tarea»), not the whole option the decider read.
+        const lanes = laneNames(n.plan.steps, keyName);
         for (const s of n.plan.steps) {
           const p = l.at.get(s.id);
           const node = byId.get(s.id);
@@ -836,9 +1059,15 @@ function Canvas({
                   node.detail ?? (node.into?.length ? t("flows.inChosen") : null),
                 ),
               },
-              name: stepNodeName(t, node),
+              name: stepName(t, node),
               model: role ? (byRole[role] ?? null) : null,
-              dim: near ? !near.has(n.id) : !!way && !way.nodes.has(n.id),
+              numbers:
+                node.calls && node.calls > 0
+                  ? `${t(node.calls === 1 ? "map.calls.one" : "map.callsShort", { n: node.calls })}${node.cost ? ` · ${money(node.cost)}` : ""}`
+                  : null,
+              desc: stepDesc(t, node),
+              dim: dimHere,
+              wayI: way?.order.get(`step:${n.id}:${s.id}`),
               ...(ran
                 ? (() => {
                     const r = ran.find((x) => x.id === s.id);
@@ -856,10 +1085,13 @@ function Canvas({
             },
             draggable: false,
             className: "nopan",
-            zIndex: 1,
+            zIndex: BOX_Z,
           });
         }
-        for (const k of l.links)
+        // The run went from one step to the next where both ran or were passed by (the trigger always runs).
+        const went = (id: string) => id === TRIGGER || !!way?.ran.has(id) || !!way?.passed.has(id);
+        for (const k of l.links) {
+          const lit = onWay && went(k.from) && went(k.to);
           rfEdges.push({
             id: `order:${n.id}:${k.from}>${k.to}`,
             source: `step:${n.id}:${k.from}`,
@@ -868,16 +1100,18 @@ function Canvas({
             targetHandle: "t",
             type: "map",
             data: {
-              label: k.lane ?? "",
+              label: k.lane ? (lanes.get(k.lane) ?? k.lane) : "",
               kind: "order",
               outside: false,
               hot: false,
               dim: false,
               order: true,
+              ...(lit ? { way: true, wayI: way?.order.get(`step:${n.id}:${k.to}`) } : {}),
             },
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
             zIndex: 1,
           });
+        }
         continue;
       }
       const models = modelsOf(n, byRole);
@@ -893,6 +1127,7 @@ function Canvas({
           hot: n.id === selected,
           dim: near ? !near.has(n.id) : !!way && !way.nodes.has(n.id),
           way: !near && !!way && way.nodes.has(n.id),
+          wayI: way?.order.get(n.id),
           centre: n.id === center,
           open: false,
           onFold: (id) =>
@@ -905,11 +1140,21 @@ function Canvas({
         draggable: false,
         // A press on a box is a click on it, not the start of a pan (the canvas pans from its background).
         className: "nopan",
+        zIndex: BOX_Z,
       });
     }
-    // An arrow to or from an unfolded flow goes to the steps that make it, when it says them.
-    const ends = (id: string, steps: string[]) =>
-      graph.inner.has(id) && steps.length ? steps.map((s) => `step:${id}:${s}`) : [id];
+    // An arrow to or from an unfolded flow goes to the steps that make it, when it says them; what starts it, to its
+    // trigger; what it proposes leaves it once (task 90: one arrow per step crossed the other lanes), from the steps
+    // that proposed when a run of it is on the map.
+    const ends = (id: string, steps: string[], e: MapEdge, from: boolean) => {
+      if (!graph.inner.has(id)) return [id];
+      if (!from && e.kind === "starts") return [`step:${id}:${TRIGGER}`];
+      if (from && e.kind === "proposes") {
+        const did = way?.owner === id ? steps.filter((x) => way.proposed.has(x)) : [];
+        return did.length ? did.map((x) => `step:${id}:${x}`) : [id];
+      }
+      return steps.length ? steps.map((x) => `step:${id}:${x}`) : [id];
+    };
     for (const e of view.edges) {
       // Into the Bandeja with a collection in the centre: what went to that collection (§4.4: «Leer correo
       // (propone, 23)» for Evento), not to all.
@@ -924,18 +1169,25 @@ function Canvas({
         (graph.layout.at.get(e.from)?.x ?? 0) > (graph.layout.at.get(e.to)?.x ?? 0) && !hot;
       // An arrow that leaves from (or reaches) several steps says its words once, on the first of them.
       let said = false;
-      for (const from of ends(e.from, e.steps))
-        for (const to of ends(e.to, e.steps)) {
+      for (const from of ends(e.from, e.steps, e, true))
+        for (const to of ends(e.to, e.steps, e, false)) {
           const words = said || back ? "" : label;
           said = true;
           rfEdges.push({
             id: `${from}>${to}>${e.kind}`,
             source: from,
             target: to,
-            sourceHandle: "r",
+            sourceHandle: from.endsWith(`:${TRIGGER}`) ? "b" : "r",
             targetHandle: "l",
             type: "map",
-            data: { label: words, kind: e.kind, outside: e.outside, hot, dim },
+            data: {
+              label: words,
+              kind: e.kind,
+              outside: e.outside,
+              hot,
+              dim,
+              ...(onWay ? { way: true, wayI: way?.order.get(e.to) ?? way?.order.get(e.from) } : {}),
+            },
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
             zIndex: hot ? 2 : 0,
           });
@@ -1001,21 +1253,27 @@ function Canvas({
 
   // The boxes as React Flow's state, measured once and kept (core/useKeptNodes.ts).
   const { nodes, onNodesChange } = useKeptNodes(made);
+  const shownEdges = useMemo(() => wordsWhereFree(nodes, edges), [nodes, edges]);
   // Fitted when the boxes on the canvas move (a new centre, a grouping, a flow unfolded) and all are measured: never on a
   // hover, which only redraws them, and a fit then would move them under the pointer in the middle of a click.
   const ready = useNodesInitialized();
-  const placed = nodes
+  const placed = `${nodes
     .map((n) => `${n.id}@${Math.round(n.position.x)},${Math.round(n.position.y)}`)
-    .join("|");
+    .join("|")}${run ? "|run" : ""}`;
   const fitted = useRef<string | null>(null);
   useEffect(() => {
     if (!ready || !placed || fitted.current === placed) return;
     // A moment later, once React Flow has the new places too; a new measure in between starts the wait again.
     const id = setTimeout(() => {
       fitted.current = placed;
+      // A run's card over the top left corner never covers what it tells (task 90: its card hid the flow's name):
+      // the map fits below it (on the phone the card is above the map, not over it).
+      const card = stage.current?.querySelector<HTMLElement>(".mp-way");
+      const over = !!card && getComputedStyle(card).position === "absolute";
+      const top = card && over ? Math.round(card.getBoundingClientRect().height + 20) : 0;
       // On the phone, never so small that a card cannot be read: the middle of it, the rest a finger away.
       void fitView({
-        padding: 0.06,
+        padding: top ? { top: `${top}px`, right: "6%", bottom: "6%", left: "6%" } : 0.06,
         maxZoom: 1,
         ...(phoneLayout() ? { minZoom: 0.5 } : {}),
         duration: 200,
@@ -1041,15 +1299,11 @@ function Canvas({
                 <X size={13} strokeWidth={2} />
               </button>
             </span>
+            {/* One depth, back and forth (Juan, 2026-11-06: «una sola barra… "Profundidad"»). */}
             <Depth
-              label={t("map.before")}
+              label={t("map.depth")}
               value={kept.lens.before}
-              onChange={(n) => setLens({ before: n })}
-            />
-            <Depth
-              label={t("map.after")}
-              value={kept.lens.after}
-              onChange={(n) => setLens({ after: n })}
+              onChange={(n) => setLens({ before: n, after: n })}
             />
           </>
         ) : (
@@ -1137,7 +1391,15 @@ function Canvas({
         </div>
       </div>
       <div className={`mp-stage${chosen ? " with-panel" : ""}`} ref={stage}>
-        {run && <RunWay run={run} story={story} owner={nameOf.get(run.owner) ?? ""} when={when} />}
+        {run && (
+          <RunWay
+            run={run}
+            story={story}
+            owner={nameOf.get(run.owner) ?? ""}
+            when={when}
+            money={money}
+          />
+        )}
         {view.nodes.length === 0 ? (
           <div className="mp-empty">
             <p>{t("map.empty")}</p>
@@ -1156,7 +1418,7 @@ function Canvas({
           <ReactFlow
             nodes={nodes}
             onNodesChange={onNodesChange}
-            edges={edges}
+            edges={shownEdges}
             nodeTypes={NODE_TYPES}
             edgeTypes={EDGE_TYPES}
             nodesDraggable={false}
