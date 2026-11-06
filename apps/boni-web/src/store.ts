@@ -2000,8 +2000,12 @@ export async function saveMail(input: MailInput): Promise<MailView | { error: st
 export async function reviewMail(): Promise<MailView | null> {
   try {
     return await agent.reviewMail();
-  } catch {
-    toast(useStore.getState().t("mail.error.failed"));
+  } catch (e) {
+    // «Revisar la guía» is off, or there are no models: said as such (D-51).
+    const t = useStore.getState().t;
+    toast(
+      e instanceof ApiError && e.status === 409 ? t("mail.review.off") : t("mail.error.failed"),
+    );
     return null;
   }
 }

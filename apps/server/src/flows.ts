@@ -29,6 +29,8 @@ import type { FlowRow, RunRow, UserStore } from "@boni/store";
 export const MAIL_FLOW = "leer-correo";
 /** Boni's «Traer correo» (docs/sistema.md §4.2): new mail in the mailbox, brought into the mail's collection. */
 export const FETCH_FLOW = "traer-correo";
+/** Boni's «Revisar la guía» (docs/sistema.md §4.2): Juan's decisions on mail proposals, read by the reviewer. */
+export const REVIEW_FLOW = "revisar-guia";
 
 /** What a flow's trigger binds to its plan by name, each with what it is (for the trigger's node). */
 export interface FlowInput {
@@ -364,7 +366,8 @@ export type Trigger =
   | { created: string }
   | { manual: true; inputs?: { name: string }[] }
   | { schedule: { every: "day" | "week" | "hour"; at?: string; day?: number } }
-  | { connector: "mail" };
+  | { connector: "mail" }
+  | { learning: "mail" };
 
 /** The names a trigger binds to the plan. */
 export function triggerNames(trigger: unknown): string[] {
@@ -595,6 +598,26 @@ export function checkFlow(
   for (const s of steps)
     if (s.op === "call" && typeof s.tool === "string" && registry.get(s.tool)?.record && !byRecord)
       problems.push({ step: s.id, at: null, code: "piece-needs-record" });
+  // «Guardar en Correos» only in «Traer correo»; the review's pieces only in «Revisar la guía» (D-50, D-51): elsewhere
+  // nothing would give them what they work on, and a scheduled run could meddle with a review under way.
+  const startedBy = (flow.trigger ?? {}) as { connector?: unknown; learning?: unknown };
+  for (const s of steps) {
+    if (s.op !== "call" || typeof s.tool !== "string") continue;
+    if (s.tool === "mail.save" && startedBy.connector !== "mail")
+      problems.push({ step: s.id, at: null, code: "piece-needs-mailbox" });
+    if (s.tool.startsWith("guide.") && startedBy.learning !== "mail")
+      problems.push({ step: s.id, at: null, code: "piece-needs-decisions" });
+  }
+  // «Revisar la guía» measures and suggests, always: without them a review would spend the reviewer's call and its
+  // rereading for nothing.
+  if (startedBy.learning === "mail") {
+    const always = (tool: string) =>
+      steps.some(
+        (s) => s.op === "call" && s.tool === tool && s.when === undefined && s.each === undefined,
+      );
+    if (!always("guide.measure") || !always("guide.suggest"))
+      problems.push({ step: null, at: "trigger", code: "review-needs-steps" });
+  }
   // «Traer correo» (D-50) brings the mail with its «Guardar en Correos», always: without it (or with it only on a
   // condition, or once per item), what the connector found would never be brought, and every look would be a run.
   if ((flow.trigger as { connector?: unknown } | null)?.connector === "mail") {
@@ -875,10 +898,13 @@ export function createFlow(
 ): FlowRow | null {
   const from = o.from ? store.journal.flow(o.from) : null;
   if (o.from && !from) return null;
+  // A copy of «Traer correo» or «Revisar la guía» starts by hand: their triggers are only theirs (D-50, D-51).
+  const on = (from?.trigger ?? {}) as { connector?: unknown; learning?: unknown };
+  const boniOnly = on.connector !== undefined || on.learning !== undefined;
   return store.journal.saveFlow({
     id: newFlowId(o.name),
     name: o.name,
-    trigger: from ? from.trigger : { manual: true },
+    trigger: from && !boniOnly ? from.trigger : { manual: true },
     inputs: from ? from.inputs : [],
     plan: from ? from.plan : { version: 1, steps: [] },
     layout: null,
@@ -908,13 +934,18 @@ export function saveUserFlow(
   if (latest.version !== edit.base) return { error: "conflict" };
   if (problems.length) return { error: "invalid" };
   const trigger = edit.trigger ?? latest.trigger;
-  // Boni's «Leer correo» and «Traer correo» keep what starts them; only «Traer correo» is started by the connector.
+  // Boni's «Leer correo», «Traer correo» and «Revisar la guía» keep what starts them; only «Traer correo» is started by
+  // the connector, only «Revisar la guía» by Juan's decisions.
   if (
-    (id === MAIL_FLOW || id === FETCH_FLOW) &&
+    (id === MAIL_FLOW || id === FETCH_FLOW || id === REVIEW_FLOW) &&
     JSON.stringify(trigger) !== JSON.stringify(latest.trigger)
   )
     return { error: "trigger" };
-  if (id !== FETCH_FLOW && (trigger as { connector?: unknown } | null)?.connector !== undefined)
+  const on = (trigger ?? {}) as { connector?: unknown; learning?: unknown };
+  if (
+    (id !== FETCH_FLOW && on.connector !== undefined) ||
+    (id !== REVIEW_FLOW && on.learning !== undefined)
+  )
     return { error: "trigger" };
   return {
     flow: store.journal.saveFlow({
@@ -989,7 +1020,20 @@ export type PieceSaid =
     }
   | { piece: "mail.relations"; found: { field: string; title: string }[] }
   | { piece: "inbox.fold"; n: number }
-  | { piece: "inbox.accept_alone"; n: number };
+  | { piece: "inbox.accept_alone"; n: number }
+  | { piece: "mail.save"; n: number }
+  | { piece: "guide.decisions"; n: number; found: number }
+  | {
+      piece: "guide.measure";
+      rules: number;
+      examples: number;
+      /** In «Probar»: how much mail it would read again; the measure itself otherwise. */
+      would: number | null;
+      before: number | null;
+      after: number | null;
+      total: number | null;
+    }
+  | { piece: "guide.suggest"; n: number };
 
 /** What a step of a test did: the policy's decision, what it gave, and what it would have done. */
 export interface TestStep {
@@ -1110,7 +1154,32 @@ function pieceSaid(store: UserStore, tool: string, out: unknown): PieceSaid | un
     }
     case "inbox.fold":
     case "inbox.accept_alone":
+    case "mail.save":
       return { piece: tool, n: paintedNumber(out) };
+    // «Revisar la guía» (D-51): how many decisions and rules found; what it would read again; never a suggestion.
+    case "guide.decisions":
+      return {
+        piece: tool,
+        n: paintedNumber(paintedField(out, "decisions")),
+        found: paintedNumber(paintedField(out, "found")),
+      };
+    case "guide.measure": {
+      const num = (k: string) => {
+        const x = paintedField(out, k);
+        return x === undefined ? null : paintedNumber(x);
+      };
+      return {
+        piece: tool,
+        rules: num("rules") ?? 0,
+        examples: num("examples") ?? 0,
+        would: num("would"),
+        before: num("before"),
+        after: num("after"),
+        total: num("total"),
+      };
+    }
+    case "guide.suggest":
+      return { piece: tool, n: 0 };
     default:
       return undefined;
   }

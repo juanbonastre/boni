@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AUTO_AREA } from "./autoAccept.ts";
 import { createCollection, createRow } from "./data.ts";
 import { flowMap, type MapEdge, type MapView, mapOwnerOf } from "./flowMap.ts";
-import { ensureFlow, FETCH_FLOW } from "./flows.ts";
+import { ensureFlow, FETCH_FLOW, REVIEW_FLOW } from "./flows.ts";
 import { createPage } from "./pages.ts";
 
 /**
@@ -467,6 +467,30 @@ describe("Boni's map, computed (F8; A-16)", () => {
     expect(edgeOf(m, "conn:mail", `col:${w.correo}`, "brings")).toBeUndefined();
     // What «Leer correo» starts on is still the mail's collection.
     expect(edgeOf(m, `col:${w.correo}`, "flow:leer-correo", "starts")).toBeDefined();
+  });
+
+  it("with Boni's «Revisar la guía», the reviewer is that flow: it learns from the Bandeja and improves «Leer correo» (D-51)", () => {
+    const w = world();
+    ensureFlow(
+      store,
+      {
+        id: REVIEW_FLOW,
+        name: "Revisar la guía",
+        trigger: { learning: "mail" },
+        plan: { version: 1, steps: [{ id: "d", op: "call", tool: "guide.decisions", args: {} }] },
+        by: "preset",
+      },
+      NOW,
+    );
+    const m = mapOf(7, w.correo);
+    expect(m.nodes.some((n) => n.id === "boni:review")).toBe(false);
+    expect(m.nodes.find((n) => n.id === `flow:${REVIEW_FLOW}`)).toMatchObject({
+      kind: "flow",
+      name: "Revisar la guía",
+      pack: "correo",
+    });
+    expect(edgeOf(m, "boni:inbox", `flow:${REVIEW_FLOW}`, "learns")).toBeDefined();
+    expect(edgeOf(m, `flow:${REVIEW_FLOW}`, "flow:leer-correo", "improves")).toBeDefined();
   });
 
   it("arrows join only nodes the map has, and every flow is in it, on or off", () => {

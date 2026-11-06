@@ -32,10 +32,30 @@ import { AUTO_AREA, acceptAlone, autoOn } from "./autoAccept.ts";
 import type { Db } from "./db.ts";
 import { extension, MAIL_EXTENSION } from "./extensions.ts";
 import type { Feeds } from "./feeds.ts";
-import { collectionKeysOf, ensureFlow, FETCH_FLOW, inputsOf, MAIL_FLOW, stepsOf } from "./flows.ts";
+import {
+  collectionKeysOf,
+  ensureFlow,
+  FETCH_FLOW,
+  inputsOf,
+  MAIL_FLOW,
+  REVIEW_FLOW,
+  stepsOf,
+} from "./flows.ts";
 import { feedHas, invitationLine, invitationOf } from "./invitation.ts";
 import { GUIDE_AREA, GUIDE_COST, learningOn, mayReview, TRIED_FOR } from "./learning.ts";
-import { type Decision, decisions, review, ruleCandidates, type Suggestion } from "./mailReview.ts";
+import {
+  type Decision,
+  decisions,
+  measureCandidate,
+  measuredMail,
+  type ReviewCandidate,
+  type ReviewerAnswer,
+  type ReviewHost,
+  reviewCandidate,
+  reviewInput,
+  ruleCandidates,
+  type Suggestion,
+} from "./mailReview.ts";
 import { dueField, fillFields, type Target, TargetMemo } from "./mailTargets.ts";
 import { readRows } from "./money/sheets.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
@@ -796,6 +816,35 @@ export interface MailsOptions {
 /** How long a Gmail thread not found is not looked for again (`Mails.webmail`). */
 const MISS_TTL = 10 * 60_000;
 
+/** A review under way (D-51): what its pieces work on, and what each leaves for the next. */
+interface ReviewCtx {
+  host: ReviewHost;
+  /** What «Medir releyendo» measured: the candidate with its numbers. */
+  measured?: { candidate: ReviewCandidate; before: number; after: number; total: number };
+  chosen?: boolean;
+}
+
+/**
+ * Boni's «Revisar la guía» (docs/sistema.md §4.2, D-51): «Tus decisiones» → «Revisora» (the reviewer's model) →
+ * «Medir releyendo» → «Sugerencia». What it learns from and what it suggests are the pieces' (mail.ts `piecesFor`).
+ */
+const REVIEW_PLAN = {
+  version: 1,
+  steps: [
+    { id: "d", op: "call", tool: "guide.decisions", args: {} },
+    {
+      id: "r",
+      op: "read",
+      reader: "review_reading",
+      input: { ref: "$d.lines" },
+      params: { options: { ref: "$d.options" } },
+      when: { ref: "$d.lines" },
+    },
+    { id: "m", op: "call", tool: "guide.measure", args: { reading: { ref: "$r" } } },
+    { id: "s", op: "call", tool: "guide.suggest", args: {} },
+  ],
+};
+
 export class Mails {
   private o: MailsOptions;
   private busy = new Map<number, Promise<MailState>>();
@@ -805,6 +854,8 @@ export class Mails {
   private bringing = new Map<number, () => Promise<number>>();
   /** What failed while «Guardar en Correos» brought it (the run stops; the look says it, as before). */
   private bringError = new Map<number, unknown>();
+  /** A review under way, for the pieces of «Revisar la guía» (D-51). */
+  private reviewCtx = new Map<number, ReviewCtx>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   private readonly tz: string;
@@ -869,6 +920,70 @@ export class Mails {
         const made = proposals.filter((p) => st.journal.proposal(p)?.status !== "stale");
         if (!made.length || !autoOn(st, AUTO_AREA)) return leaf(0, CODE);
         return leaf(await acceptAlone(st, this.o.host.agent(account), made, this.now()), CODE);
+      },
+      reviewDecisions: (dry) => {
+        // A test works on a context of its own, never on a review under way (A-19).
+        const ctx = dry ? this.reviewTry(account) : this.reviewCtx.get(account);
+        const names = ctx ? ctx.host.targets.map((t) => leaf(t.name, CODE)) : [];
+        return rec(
+          {
+            lines: (ctx && reviewInput(ctx.host.ds, ctx.host.targets)) || leaf(null, CODE),
+            options: list(names, CODE),
+            decisions: leaf(ctx?.host.ds.length ?? 0, CODE),
+            found: leaf(ctx?.host.candidates?.length ?? 0, CODE),
+          },
+          CODE,
+        );
+      },
+      reviewMeasure: async (reading, dry) => {
+        const ctx = dry ? this.reviewTry(account) : this.reviewCtx.get(account);
+        if (!ctx) return leaf(null, CODE);
+        // A malformed answer (a user's version feeding it something else) is no answer: the code's rules only.
+        const r = reading as Partial<ReviewerAnswer> | null;
+        const answer =
+          r && typeof r === "object" && Array.isArray(r.rules) && Array.isArray(r.examples)
+            ? (r as ReviewerAnswer)
+            : null;
+        const n = (x: number) => leaf(x, CODE);
+        try {
+          const c = reviewCandidate(ctx.host, answer);
+          if (!c) return rec({ rules: n(0), examples: n(0) }, CODE);
+          // «Probar»: how much mail it would read again, never read (a measure is many model calls).
+          if (dry)
+            return rec(
+              {
+                rules: n(c.rules.length),
+                examples: n(c.examples.length),
+                would: n(measuredMail(ctx.host.ds, c).length),
+              },
+              CODE,
+            );
+          const m = await measureCandidate(ctx.host, c);
+          // The candidate and its measure together: what «Sugerencia» chooses is what was measured.
+          ctx.measured = { candidate: c, ...m };
+          return rec(
+            {
+              rules: n(c.rules.length),
+              examples: n(c.examples.length),
+              before: n(m.before),
+              after: n(m.after),
+              total: n(m.total),
+            },
+            CODE,
+          );
+        } catch (e) {
+          // The run ends with the step's error, never left running.
+          if (e instanceof ToolError) throw e;
+          console.warn(`mail ${account}: «Medir releyendo» failed (${(e as Error).message})`);
+          throw new ToolError("review-measure");
+        }
+      },
+      reviewSuggest: (dry) => {
+        const ctx = dry ? null : this.reviewCtx.get(account);
+        const m = ctx?.measured;
+        const better = !!m && m.after > m.before;
+        if (ctx && better) ctx.chosen = true;
+        return leaf(better, CODE);
       },
       save: async (dry) => {
         // What the look at the mailbox found, once; in «Probar», or with nothing waiting (a run some other way),
@@ -1142,6 +1257,8 @@ export class Mails {
       const s = this.settings(account);
       const st = this.state(account);
       if (!s || !st.type || !this.o.host.on) return null;
+      // Off, or without models, the reviewer does not look: nothing counts as looked at (D-51).
+      if (this.reviewOff(account)) return null;
       const store = this.o.host.store(account);
       const guide = this.guide(account);
       const targets = this.targets(store, s);
@@ -1173,21 +1290,56 @@ export class Mails {
           `mail ${account}: the reviewer looks on its own (${candidates().length} found by code)`,
         );
       }
-      const suggestion = await review({
+      const host = {
         store,
-        agent: this.o.host.agent(account),
         guide,
         targets,
         ds: theDs(),
-        read: (mail, g) => this.readOnce(account, mail, g),
+        read: (mail: string, g: MailGuide) => this.readOnce(account, mail, g),
         now: this.now(),
         excluded,
         candidates: candidates(),
-      });
+      };
+      // «Revisar la guía» (docs/sistema.md §4.2, D-51): Boni's flow, its steps the pieces over this review; off, or
+      // without models, the reviewer does not look. With too few decisions there is nothing to review (no run).
+      const flow = this.reviewFlow(store);
+      const agent = this.agentOf(account);
+      let suggestion: Suggestion | null = null;
+      // What the code found is parked for a week only when it was measured (a review whose «Revisora» stopped
+      // measured nothing: it is tried again next time).
+      let measured = false;
+      if (flow?.enabled && agent && reviewInput(host.ds, host.targets)) {
+        const ctx: ReviewCtx = { host };
+        this.reviewCtx.set(account, ctx);
+        let ran: Awaited<ReturnType<typeof agent.background>> | null = null;
+        try {
+          ran = await agent.background(flow.plan, {}, ["r"], undefined, {
+            id: REVIEW_FLOW,
+            version: flow.version,
+            by: flow.by,
+          });
+        } finally {
+          this.reviewCtx.delete(account);
+        }
+        // Kept only when «Sugerencia» chose it: the measured candidate that gets more of his decisions right.
+        const m = ctx.measured;
+        measured = !!m;
+        if (ran && ctx.chosen && m && m.after > m.before)
+          suggestion = {
+            id: `g-${host.now}-${ran.run.slice(0, 8)}`,
+            rules: m.candidate.rules,
+            examples: m.candidate.examples,
+            before: m.before,
+            after: m.after,
+            total: m.total,
+            at: host.now,
+            run: ran.run,
+          };
+      }
       const after = this.state(account);
       after.reviewedAt = this.now();
       // What the code found and did not make the cut waits a week before it is measured again.
-      const dropped = candidates();
+      const dropped = measured ? candidates() : [];
       if (!suggestion && dropped.length)
         after.tried = Object.fromEntries(
           [...tried, ...dropped.map((r) => [r.from, this.now()] as [string, number])].slice(-200),
@@ -1793,6 +1945,7 @@ export class Mails {
     if (!s) return;
     try {
       this.fetchFlow(this.o.host.store(account));
+      this.reviewFlow(this.o.host.store(account));
       const c = this.planContext(account, s);
       if (c) this.mailFlow(c);
     } catch (e) {
@@ -1821,6 +1974,59 @@ export class Mails {
       },
       this.now(),
     );
+  }
+
+  /** Boni's «Revisar la guía» (D-51), kept as «Traer correo» is; null when it cannot be kept. */
+  private reviewFlow(store: UserStore): FlowRow | null {
+    try {
+      return ensureFlow(
+        store,
+        {
+          id: REVIEW_FLOW,
+          name: "Revisar la guía",
+          trigger: { learning: "mail" },
+          plan: REVIEW_PLAN,
+          by: "preset",
+        },
+        this.now(),
+      );
+    } catch (e) {
+      console.warn(`mail: «Revisar la guía» not kept (${(e as Error).message})`);
+      return null;
+    }
+  }
+
+  /** «Revisar la guía» is off, or the account has no models: no review (D-51; Ajustes says so for «Revisar ahora»). */
+  reviewOff(account: number): boolean {
+    if (!this.o.host.hasData) return true;
+    const flow = this.reviewFlow(this.o.host.store(account));
+    return !flow?.enabled || !this.agentOf(account);
+  }
+
+  /** «Probar» of «Revisar la guía»: what a review would work on now (nothing is kept, nothing measured). */
+  private reviewTry(account: number): ReviewCtx | null {
+    const s = this.settings(account);
+    const st = this.state(account);
+    if (!s || !st.type) return null;
+    const store = this.o.host.store(account);
+    const guide = this.guide(account);
+    const targets = this.targets(store, s);
+    const now = this.now();
+    const tried = Object.entries(st.tried ?? {}).filter(([, at]) => now - at < TRIED_FOR);
+    const excluded = new Set([...(st.refused ?? []), ...tried.map(([from]) => from)]);
+    const ds = decisions(store, st.type, (v) => userIn(s.user, v.f_para, v.f_cc));
+    return {
+      host: {
+        store,
+        guide,
+        targets,
+        ds,
+        read: (mail, g) => this.readOnce(account, mail, g),
+        now,
+        excluded,
+        candidates: ruleCandidates(ds, targets, guide, excluded),
+      },
+    };
   }
 
   /** The account's agent, or null when it has no models (then «Traer correo» brings the mail with no run). */

@@ -15,6 +15,7 @@ import {
   flowView,
   inputsOf,
   MAIL_FLOW,
+  REVIEW_FLOW,
   revertFlow,
   saveUserFlow,
   triggerOk,
@@ -690,6 +691,63 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     await piece.run({ pieces, proposals: () => [], dry: true } as never, {} as never, CODE_LABEL);
     await piece.run({ pieces, proposals: () => [], dry: false } as never, {} as never, CODE_LABEL);
     expect(seen).toEqual([true, false]);
+    store.close();
+  });
+
+  it("«Revisar la guía» (D-51): its trigger is Juan's decisions, well formed alone, kept, and only its own", () => {
+    const store = withTypes();
+    const trigger = { learning: "mail" };
+    expect(triggerOk(trigger)).toBe(true);
+    expect(triggerOk({ learning: "mail", manual: true })).toBe(false);
+    expect(triggerOk({ learning: "otro" })).toBe(false);
+    const plan = {
+      version: 1,
+      steps: [{ id: "d", op: "call", tool: "guide.decisions", args: {} }],
+    };
+    ensureFlow(
+      store,
+      { id: REVIEW_FLOW, name: "Revisar la guía", trigger, plan, by: "preset" },
+      1000,
+    );
+    expect(
+      saveUserFlow(store, REVIEW_FLOW, { base: 1, plan, trigger: { manual: true } }, [], 2000),
+    ).toEqual({ error: "trigger" });
+    const other = createFlow(store, { name: "Otro" }, 3000);
+    if (!other) throw new Error("no flow");
+    expect(
+      saveUserFlow(
+        store,
+        other.id,
+        { base: 1, plan: { version: 1, steps: [] }, trigger },
+        [],
+        4000,
+      ),
+    ).toEqual({ error: "trigger" });
+    // «Duplicar» gives a copy that starts by hand: the trigger stays Boni's flow's alone.
+    expect(createFlow(store, { name: "Copia", from: REVIEW_FLOW }, 5000)?.trigger).toEqual({
+      manual: true,
+    });
+    // Its checklist wants «Medir releyendo» and «Sugerencia» always; the review's pieces, and «Guardar en Correos»,
+    // only in their own flow.
+    const call = (id: string, tool: string) => ({ id, op: "call", tool, args: {} });
+    const check = (t: unknown, steps: unknown[]) =>
+      checkFlow(store, registry, { trigger: t, plan: { version: 1, steps } }, o).problems;
+    expect(check(trigger, [call("m", "guide.measure"), call("s", "guide.suggest")])).toEqual([]);
+    expect(check(trigger, [call("m", "guide.measure")])).toContainEqual({
+      step: null,
+      at: "trigger",
+      code: "review-needs-steps",
+    });
+    expect(check({ manual: true }, [call("m", "guide.measure")])).toContainEqual({
+      step: "m",
+      at: null,
+      code: "piece-needs-decisions",
+    });
+    expect(check({ manual: true }, [call("g", "mail.save")])).toContainEqual({
+      step: "g",
+      at: null,
+      code: "piece-needs-mailbox",
+    });
     store.close();
   });
 

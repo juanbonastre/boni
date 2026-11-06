@@ -356,6 +356,7 @@ export function groupOf(n: MapNodeLike, by: Grouping): string | null {
     if (typeof t.created === "string") return `on:created:${t.created}`;
     // Boni's «Traer correo»: the mail connector starts it (never «by the user»).
     if (t.connector === "mail") return "on:connector:mail";
+    if (t.learning === "mail") return "on:learning:mail";
     if (t.schedule) return "on:schedule";
     return "on:manual";
   }

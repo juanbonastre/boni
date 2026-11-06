@@ -807,6 +807,8 @@ export function makeApp(opts: ServerOptions): App {
       }
       if (route === "POST /api/mail/review") {
         if (!mails.view(id)) return send(res, 404, { error: "not-configured" });
+        // «Revisar la guía» off, or no models: Ajustes says so (D-51).
+        if (mails.reviewOff(id)) return send(res, 409, { error: "review-off" });
         await mails.reviewNow(id);
         return send(res, 200, { mail: mails.view(id) });
       }

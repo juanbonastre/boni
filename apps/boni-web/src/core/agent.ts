@@ -1018,7 +1018,20 @@ export type PieceSaid =
     }
   | { piece: "mail.relations"; found: { field: string; title: string }[] }
   | { piece: "inbox.fold"; n: number }
-  | { piece: "inbox.accept_alone"; n: number };
+  | { piece: "inbox.accept_alone"; n: number }
+  | { piece: "mail.save"; n: number }
+  | { piece: "guide.decisions"; n: number; found: number }
+  | {
+      piece: "guide.measure";
+      rules: number;
+      examples: number;
+      /** In «Probar»: how much mail it would read again; the measure itself otherwise. */
+      would: number | null;
+      before: number | null;
+      after: number | null;
+      total: number | null;
+    }
+  | { piece: "guide.suggest"; n: number };
 function parsePiece(v: unknown): PieceSaid | undefined {
   if (!isObj(v)) return undefined;
   switch (v.piece) {
@@ -1027,7 +1040,23 @@ function parsePiece(v: unknown): PieceSaid | undefined {
     case "mail.known":
     case "inbox.fold":
     case "inbox.accept_alone":
+    case "mail.save":
+    case "guide.suggest":
       return { piece: v.piece, n: numOf(v.n) };
+    case "guide.decisions":
+      return { piece: v.piece, n: numOf(v.n), found: numOf(v.found) };
+    case "guide.measure": {
+      const maybe = (x: unknown) => (typeof x === "number" ? x : null);
+      return {
+        piece: v.piece,
+        rules: numOf(v.rules),
+        examples: numOf(v.examples),
+        would: maybe(v.would),
+        before: maybe(v.before),
+        after: maybe(v.after),
+        total: maybe(v.total),
+      };
+    }
     case "mail.invitation":
       return {
         piece: v.piece,

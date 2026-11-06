@@ -122,6 +122,8 @@ function runTitle(w: RunWhat): string {
       return "Revisión de la guía";
     case "accepted":
       return "Propuesta aceptada";
+    case "flow":
+      return w.flow;
     default:
       return "Ejecución";
   }

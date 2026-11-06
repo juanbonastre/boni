@@ -1,4 +1,4 @@
-import { type Agent, leaf } from "@boni/agent";
+import { leaf } from "@boni/agent";
 import { label } from "@boni/entities";
 import type { UserStore } from "@boni/store";
 import type { GuideExample, MailGuide, MailRule, Target } from "./mail.ts";
@@ -264,9 +264,9 @@ export function score(ds: readonly Decision[], produced: Map<string, string[]>):
 }
 
 /** The context the reviewer needs from Mails. */
+/** What a review works on (the flow «Revisar la guía»'s pieces, D-51). */
 export interface ReviewHost {
   store: UserStore;
-  agent: Agent;
   guide: MailGuide;
   targets: Target[];
   ds: Decision[];
@@ -279,10 +279,26 @@ export interface ReviewHost {
   candidates?: readonly MailRule[];
 }
 
-/** One review: a suggestion that gets more of Juan's decisions right, or null. */
-export async function review(h: ReviewHost): Promise<Suggestion | null> {
-  const { ds } = h;
-  if (ds.length < MIN_DECISIONS || !h.targets.length) return null;
+/** The reviewer's answer as its reader gives it: rules from the catalogue and the ids of decisions to learn from. */
+export interface ReviewerAnswer {
+  rules: { from: string; action: string; collection: string | null }[];
+  examples: string[];
+}
+
+/** What a review would suggest before it is measured: its rules and examples, and the guide they make. */
+export interface ReviewCandidate {
+  rules: MailRule[];
+  examples: GuideExample[];
+  guide: MailGuide;
+}
+
+/**
+ * «Tus decisiones» (the flow «Revisar la guía», docs/sistema.md §4.2): Juan's decisions as the reviewer reads them,
+ * one line each. Their text quotes other people's mail: external, like the mail itself. Null with too few decisions
+ * or no collection to send mail to (nothing to review).
+ */
+export function reviewInput(ds: readonly Decision[], targets: readonly Target[]) {
+  if (ds.length < MIN_DECISIONS || !targets.length) return null;
   const lines = ds.map((d) =>
     [
       d.id,
@@ -298,30 +314,18 @@ export async function review(h: ReviewHost): Promise<Suggestion | null> {
         : []),
     ].join(" | "),
   );
-  // Their text quotes other people's mail: external, like the mail itself.
-  const input = leaf(
-    lines.join("\n"),
-    label("external", "personal", [{ kind: "mail", id: "review" }]),
-  );
-  const r = await h.agent.background(
-    {
-      version: 1,
-      steps: [
-        {
-          id: "r",
-          op: "read",
-          reader: "review_reading",
-          input: { ref: "$decisions" },
-          params: { options: { fn: "list", args: h.targets.map((t) => ({ lit: t.name })) } },
-        },
-      ],
-    },
-    { decisions: input },
-    ["r"],
-  );
-  const out = r.kept?.r as
-    | { rules: { from: string; action: string; collection: string | null }[]; examples: string[] }
-    | undefined;
+  return leaf(lines.join("\n"), label("external", "personal", [{ kind: "mail", id: "review" }]));
+}
+
+/**
+ * What the reviewer's answer and the rules found by code make (each rule checked against the decisions, the examples
+ * built from Juan's own choices), or null when there is nothing to measure.
+ */
+export function reviewCandidate(
+  h: Pick<ReviewHost, "store" | "guide" | "targets" | "ds" | "excluded" | "candidates">,
+  out: ReviewerAnswer | null | undefined,
+): ReviewCandidate | null {
+  const { ds } = h;
   const found = h.candidates ?? [];
   if (!out && !found.length) return null;
   const rules = [
@@ -338,33 +342,38 @@ export async function review(h: ReviewHost): Promise<Suggestion | null> {
     .map((m) => exampleOf(h.store, m, ds))
     .filter((e): e is GuideExample => !!e && !have.has(e.id) && !h.excluded.has(e.id));
   if (!rules.length && !examples.length) return null;
-  const candidate: MailGuide = {
-    ...h.guide,
-    rules: [...h.guide.rules, ...rules],
-    examples: [...h.guide.examples, ...examples].slice(-10),
+  return {
+    rules,
+    examples,
+    guide: {
+      ...h.guide,
+      rules: [...h.guide.rules, ...rules],
+      examples: [...h.guide.examples, ...examples].slice(-10),
+    },
   };
-  // Measured on the latest decided mail, never on the mail the examples come from.
-  const shown = new Set(examples.map((e) => e.id.slice(2)));
-  const measured = [...new Set(ds.map((d) => d.mail).reverse())]
+}
+
+/** The mail a candidate is measured on: the latest decided, never the mail its examples come from. */
+export function measuredMail(ds: readonly Decision[], c: ReviewCandidate): string[] {
+  const shown = new Set(c.examples.map((e) => e.id.slice(2)));
+  return [...new Set(ds.map((d) => d.mail).reverse())]
     .filter((m) => !shown.has(m))
     .slice(0, MEASURE);
-  const on = ds.filter((d) => measured.includes(d.mail));
+}
+
+/** «Medir releyendo»: how many of Juan's decisions today's guide and the candidate get right, reading that mail again. */
+export async function measureCandidate(
+  h: Pick<ReviewHost, "ds" | "guide" | "read">,
+  c: ReviewCandidate,
+): Promise<{ before: number; after: number; total: number }> {
+  const measured = measuredMail(h.ds, c);
+  const on = h.ds.filter((d) => measured.includes(d.mail));
   const produce = async (g: MailGuide) => {
     const p = new Map<string, string[]>();
     for (const m of measured) p.set(m, (await h.read(m, g)) ?? []);
     return p;
   };
   const before = score(on, await produce(h.guide));
-  const after = score(on, await produce(candidate));
-  if (after <= before) return null;
-  return {
-    id: `g-${h.now}-${r.run.slice(0, 8)}`,
-    rules,
-    examples,
-    before,
-    after,
-    total: on.length,
-    at: h.now,
-    run: r.run,
-  };
+  const after = score(on, await produce(c.guide));
+  return { before, after, total: on.length };
 }

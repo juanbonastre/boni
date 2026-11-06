@@ -294,6 +294,10 @@ describe("the map's lenses (docs/sistema.md §4.4)", () => {
     expect(groupOf({ ...leer, trigger: { connector: "mail" } } as MapNodeLike, "trigger")).toBe(
       "on:connector:mail",
     );
+    // «Revisar la guía» is started by Juan's decisions.
+    expect(groupOf({ ...leer, trigger: { learning: "mail" } } as MapNodeLike, "trigger")).toBe(
+      "on:learning:mail",
+    );
     expect(groupOf(map.nodes[7] as MapNodeLike, "trigger")).toBe("on:boni");
     expect(groupOf(map.nodes[10] as MapNodeLike, "trigger")).toBeNull();
     expect(groupOf(map.nodes[2] as MapNodeLike, "collection")).toBe("in:col:trabajo");

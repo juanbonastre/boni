@@ -15,6 +15,9 @@ const ROOT = join(import.meta.dirname, "..", "..", "..");
 const AGENT = "packages/agent/test/agent.test.ts";
 const MAIL = "apps/server/src/mail.test.ts";
 
+/** The flow «Revisar la guía»'s pieces, all three in one review (D-51). */
+const REVIEW_TEST =
+  "«Revisar la guía» is Boni's flow: a review is a run of its four steps, and turned off there is none (D-51)";
 const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "entities.query": [
     {
@@ -147,6 +150,9 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
       test: "with «Solo» on, a proposal like the ones Juan always kept is accepted in its own reading, a step of the flow",
     },
   ],
+  "guide.decisions": [{ file: MAIL, test: REVIEW_TEST }],
+  "guide.measure": [{ file: MAIL, test: REVIEW_TEST }],
+  "guide.suggest": [{ file: MAIL, test: REVIEW_TEST }],
   "mail.save": [
     {
       file: MAIL,
