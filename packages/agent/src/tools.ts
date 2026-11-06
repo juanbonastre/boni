@@ -165,7 +165,7 @@ export interface Net {
 
 export interface Caps {
   /** `origin`: where a record comes from (`entities.origin`), when the server gives it. */
-  read: { store: ReadStore; origin?: OriginReader };
+  read: { store: ReadStore; origin?: OriginReader; now?: () => number };
   write: { store: ReadStore; writer: Writer };
   write_irreversible: { store: ReadStore; writer: Writer };
   egress: { store: ReadStore; net: Pick<Net, "fetchText"> };
@@ -672,20 +672,37 @@ export function coreTools(): ToolRegistry {
     name: "entities.search",
     effect: "read",
     title: "Buscar",
-    describe: "Entities whose text has these words",
+    describe:
+      "Entities whose text has these words anywhere (a mention is not what it is about); with since, only those that came in the last that many days, newest first",
     args: {
       text: { role: "query", required: true, describe: "words to look for" },
       type: { role: "type", describe: "only this type" },
       limit: { role: "limit", describe: "at most this many (default 20, max 100)" },
+      since: {
+        role: "limit",
+        describe:
+          "only those that came in (were made) in the last this many days, newest first (1 to 365)",
+      },
     },
-    run({ store }, a) {
+    run({ store, now }, a) {
       const def = a.type ? typeByKey(store, str(a.type)) : undefined;
+      const limit = optNum(a.limit, 20, 100);
+      // Recent (task 71; Juan, 2026-11-05: «creo que me ofreció correos de más»): looked for among many, kept those
+      // that came in within the days asked, newest first, then cut to the limit.
+      const days = a.since ? optNum(a.since, 14, 365) : 0;
       const ids = store.search(str(a.text), {
         ...(def ? { type: def.id } : {}),
-        limit: optNum(a.limit, 20, 100),
+        limit: days ? 500 : limit,
       });
       const types = store.schema().types;
-      const items = ids.map((id) => store.get(id)).filter((s): s is StoredEntity => s !== null);
+      let items = ids.map((id) => store.get(id)).filter((s): s is StoredEntity => s !== null);
+      if (days) {
+        const from = (now ?? Date.now)() - days * 86_400_000;
+        items = items
+          .filter((s) => s.entity.created >= from)
+          .sort((x, y) => y.entity.created - x.entity.created)
+          .slice(0, limit);
+      }
       // Which entities matched says something about their text: the list carries their labels.
       const l = items.length
         ? join(
@@ -1205,7 +1222,7 @@ export function makeCaps(c: CapsContext): Caps {
   };
   const net = c.net ?? noNet;
   return {
-    read: { store: ro, ...(c.origin ? { origin: c.origin } : {}) },
+    read: { store: ro, now: c.now, ...(c.origin ? { origin: c.origin } : {}) },
     write: { store: ro, writer },
     write_irreversible: { store: ro, writer },
     egress: {

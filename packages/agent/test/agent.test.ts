@@ -1961,3 +1961,50 @@ describe("a flow a model proposes (flows.save, docs/flujos.md F5)", () => {
     expect(r.error).toBe("plan-invalid");
   });
 });
+
+describe("what is recent (task 71; Juan, 2026-11-05: «creo que me ofreció correos de más»)", () => {
+  it("entities.search with since: only what came in within the days asked, newest first, then the limit", () => {
+    const DAY = 86_400_000;
+    const today = Date.UTC(2026, 10, 5, 10);
+    let clock = today - 40 * DAY;
+    env = makeEnv([], { now: () => clock });
+    const l = label("external", "personal", [{ kind: "mail", id: "m" }], true);
+    const mail = (asunto: string, cuerpo: string, daysAgo: number) => {
+      clock = today - daysAgo * DAY;
+      env.store.create(
+        "t_correo",
+        {
+          f_asunto: { value: asunto, label: l },
+          f_de: { value: "tutor.ejemplo@universidad.example", label: l },
+          f_cuerpo: { value: cuerpo, label: l },
+        },
+        { actor: "connector" },
+      );
+    };
+    mail("Asignación de tutor personal", "Te asignamos tutor personal.", 40);
+    mail("Tutor personal: cita", "¿Nos vemos el martes con tu tutor personal?", 3);
+    mail("Tutor personal: horario", "El horario del tutor personal cambia.", 1);
+    const search = env.registry.get("entities.search");
+    if (!search) throw new Error("no search");
+    const titles = (since?: number, limit?: number) =>
+      (
+        plain(
+          search.run(
+            { store: env.store, now: () => today } as never,
+            {
+              text: leaf("tutor personal", codeLabel("t")),
+              ...(since ? { since: leaf(since, codeLabel("t")) } : {}),
+              ...(limit ? { limit: leaf(limit, codeLabel("t")) } : {}),
+            },
+            codeLabel("t"),
+          ) as never,
+        ) as { asunto: string }[]
+      ).map((x) => x.asunto);
+    // Without since, every mail that has the words, the old one too.
+    expect(titles()).toHaveLength(3);
+    // The last 14 days: the two recent, newest first; the limit after that.
+    expect(titles(14)).toEqual(["Tutor personal: horario", "Tutor personal: cita"]);
+    expect(titles(14, 1)).toEqual(["Tutor personal: horario"]);
+    expect(titles(2)).toEqual(["Tutor personal: horario"]);
+  });
+});
