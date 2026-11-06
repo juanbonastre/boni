@@ -52,7 +52,9 @@ const type = (
  * newsletter, one from a secretariat), all invented.
  */
 function evalStore(dir: string): UserStore {
-  const store = openUserStore(join(dir, "user.db"), { now: () => EVAL_NOW });
+  // The store's clock: the evaluation's day, moved back only for the mail that came in weeks ago (task 71).
+  let clock = EVAL_NOW;
+  const store = openUserStore(join(dir, "user.db"), { now: () => clock });
   ensureSystemTypes(store);
   const sys = { actor: "import" as const };
   store.applySchema(
@@ -175,6 +177,43 @@ function evalStore(dir: string): UserStore {
       `e_mail${i}`,
     );
   });
+  // Task 71 (Juan, 2026-11-05: «le pregunté sobre correos relacionados con tutor personal y creo que me ofreció
+  // correos de más»): one recent mail about it, a form's receipt that only names it, and one from weeks ago.
+  const later: [string, string, string, number][] = [
+    [
+      "Tutor personal: cita",
+      "tutor.ejemplo@universidad.example",
+      "Hola, como tu tutor personal te propongo vernos el jueves a las 11 para ver cómo llevas el curso.",
+      2,
+    ],
+    [
+      "Respuesta registrada: Formulario de tutor personal",
+      "formularios-noreply@formularios.example",
+      "Gracias por rellenar el formulario «Solicitud de tutor personal». Se ha registrado tu respuesta.",
+      1,
+    ],
+    [
+      "Asignación de tutor personal",
+      "secretaria.ejemplo@universidad.example.es",
+      "Te comunicamos que se te ha asignado un tutor personal para este curso.",
+      40,
+    ],
+  ];
+  later.forEach(([asunto, de, cuerpo, daysAgo], i) => {
+    const l = label("external", "personal", [{ kind: "mail", id: `t${i}` }], true);
+    clock = EVAL_NOW - daysAgo * 86_400_000;
+    store.create(
+      "t_correo",
+      {
+        f_asunto: { value: asunto, label: l },
+        f_de: { value: de, label: l },
+        f_cuerpo: { value: cuerpo, label: l },
+      },
+      { actor: "connector" },
+      `e_tutor${i}`,
+    );
+  });
+  clock = EVAL_NOW;
   return store;
 }
 
@@ -315,6 +354,22 @@ const CASES: {
     request: "¿Quién me ha escrito de la secretaría?",
     check: (r) =>
       r.status === "done" && /secretar/i.test(saidText(r)) ? "" : "the secretariat's mail not said",
+  },
+  {
+    // Task 71: only the recent mail about it, never the one from weeks ago (nor, better, the form's receipt).
+    request: "¿Tengo algún correo reciente de tutor personal?",
+    check: (r) => {
+      const said = JSON.stringify(r.replies);
+      return r.status !== "done"
+        ? `status ${r.status}`
+        : !said.includes("Tutor personal: cita")
+          ? "not the recent one"
+          : said.includes("Asignación de tutor personal")
+            ? "the one from weeks ago too"
+            : "";
+    },
+    shows: (r) =>
+      JSON.stringify(r.replies).includes("Respuesta registrada") ? "the form's receipt too" : "",
   },
   {
     // Every mail labelled in one call (label_each), the counts in a chart (Juan, 2026-11-02).

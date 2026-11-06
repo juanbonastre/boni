@@ -51,6 +51,10 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
       file: AGENT,
       test: "every task of every mail in one loop, a mail with none included (the plan the real planner wrote)",
     },
+    {
+      file: AGENT,
+      test: "entities.search with since: only what came in within the days asked, newest first, then the limit",
+    },
   ],
   "schema.describe": [
     {

@@ -640,7 +640,7 @@ Reglas en código sobre el registro (P11 y alertas de patrones raros), no un mod
 con modelo: de otro proveedor o local, y vigilando llamadas a herramientas, no respuestas (plan, sección 3).
 
 ### 7.9 Primeras herramientas
-- **Leer:** `entities.query`, `entities.get`, `entities.aggregate`, `entities.search` (FTS), `schema.describe`.
+- **Leer:** `entities.query`, `entities.get`, `entities.aggregate`, `entities.search` (FTS; con `since`, solo lo que llegó en esos días y lo más nuevo primero: «reciente» son 14 días si no se dice otra cosa, la 71), `schema.describe`.
 - **Escribir:** `entities.create`, `entities.update`, `entities.delete` (papelera), `links.set`.
 - **Esquema y vistas:** `schema.create_type`, `schema.add_field`…, `views.create`, `views.update`.
 - **Otras:**

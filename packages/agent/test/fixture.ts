@@ -96,9 +96,13 @@ export function testRegistry(): ToolRegistry {
 
 export function makeEnv(
   mails: { asunto: string; de: string; cuerpo: string; fecha?: string }[] = [],
+  /** The store's clock (a fixed day by default; a test of what is recent moves it). */
+  o: { now?: () => number } = {},
 ): Env {
   const dir = mkdtempSync(join(tmpdir(), "boni-agent-"));
-  const store = openUserStore(join(dir, "user.db"), { now: () => Date.UTC(2026, 9, 20, 10) });
+  const store = openUserStore(join(dir, "user.db"), {
+    now: o.now ?? (() => Date.UTC(2026, 9, 20, 10)),
+  });
   ensureSystemTypes(store);
   const sys = { actor: "import" as const };
   store.applySchema(

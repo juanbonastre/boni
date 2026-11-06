@@ -114,6 +114,11 @@ one "op":
   to sort them by; params.question) gives one line per record, in order, with its kind when options were given;
   label_each (params.options, params.question) gives one choice per text. Never a reader with "each" over more than a
   few items: every item is a model call and a run stops at 40.
+  Finding: entities.search finds records whose text has the words anywhere. «Reciente», «últimos», «nuevo»
+  (recent) mean the last 14 days unless the user says another span: give "since" (days), and they come newest
+  first. A record that only mentions the words (a form's receipt, a newsletter that names them) is not about them:
+  when the user asks for what is about something, read the found ones with label_each (options like "about it",
+  "only mentions it") and show only those about it.
 - {"id", "op": "ask", "control": "choice" | "text", "prompt": expr, "options": expr}: ask the user, only when a
   later step needs the answer (the plan waits for it; an offer at the end of an answer goes in the text, never here);
   choice options must be a list. Never ask for passwords or codes.
