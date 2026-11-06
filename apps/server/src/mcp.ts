@@ -31,6 +31,7 @@ import { checkFlow, flowCatalog, stepsOf } from "./flows.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
+import { originFacts, pendingFacts } from "./origin.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { withPieces } from "./pieces.ts";
 import { proposals, propose } from "./proposals.ts";
@@ -64,6 +65,8 @@ const MAX_TEXT = 200_000;
 interface Ctx {
   store: UserStore;
   device: string;
+  /** The account's mailbox, so a reading of mail from before flows is still known as «Leer correo»'s. */
+  mailAccount: string | null;
   now: () => number;
   /** What this session may do (an assistant's token, `cli.ts token --scope`); null: everything. */
   scope: readonly Scope[] | null;
@@ -322,6 +325,8 @@ const READS = new Set([
   "search",
   "query",
   "read",
+  "origin",
+  "inbox",
   "recent_changes",
   "extensions_describe",
 ]);
@@ -562,6 +567,74 @@ const TOOLS: Tool[] = [
     call(c, a) {
       const v = view(c);
       return v.asNote(v.find(a), true);
+    },
+  },
+  {
+    name: "origin",
+    description:
+      "Where a note comes from (Juan's «¿De dónde viene?»): who made it (by: flow, chat, user, assistant, import, connector, boni), when, on which device, the flow whose run made or proposed it, the note that started that run (a mail, as read gives it), and when it was proposed and accepted in Boni's inbox (alone: Boni accepted it on its own). By id, or by collection and exact title.",
+    inputSchema: obj(REF),
+    call(c, a) {
+      const v = view(c);
+      const s = v.find(a);
+      const o = originFacts(c.store, s.entity.id, { mailAccount: c.mailAccount });
+      if (!o) throw new ToolFail("not found (or not for a model)");
+      const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
+      // The note that started it, only as a model may see it.
+      const input = o.input ? v.ro.get(o.input) : null;
+      return {
+        id: s.entity.id,
+        by: o.by,
+        at: iso(o.at),
+        device: o.device,
+        flow: o.flow,
+        input: input && input.entity.deleted === undefined ? v.asNote(input, false) : null,
+        proposed: iso(o.proposal?.created ?? null),
+        accepted: iso(o.proposal?.decided ?? null),
+        alone: o.proposal?.alone ?? false,
+      };
+    },
+  },
+  {
+    name: "inbox",
+    description:
+      "The proposals waiting in Boni's inbox (Bandeja), newest first, each with where it comes from: its title and collection, when it was proposed, who proposed it (a flow reading a mail, the conversation) and the note that started it (a mail, as read gives it). `text`: only those whose title has these words. Juan accepts or rejects them in Boni.",
+    inputSchema: obj({
+      text: { type: "string", description: "Words of its title" },
+      limit: { type: "number", description: "At most 50 (default 20)" },
+    }),
+    call(c, a) {
+      const v = view(c);
+      const fold = (s: string) =>
+        s
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+      const words = fold(optStr(a.text, "text", 300) ?? "")
+        .split(/\s+/)
+        .filter(Boolean);
+      const limit = Math.min(Math.max(Number(a.limit) || 20, 1), 50);
+      const iso = (ms: number) => new Date(ms).toISOString();
+      const seen = (t: string | null) => {
+        if (!t) return true;
+        const l = v.level(t);
+        return !closedToAi(l) && l !== "opaque" && !!v.ro.schema().types[t];
+      };
+      return pendingFacts(c.store, { mailAccount: c.mailAccount })
+        .filter((p) => seen(p.type) && words.every((w) => fold(p.title).includes(w)))
+        .slice(0, limit)
+        .map((p) => {
+          const input = p.input ? v.ro.get(p.input) : null;
+          return {
+            id: p.id,
+            title: p.title,
+            collection: p.type ? (c.store.schema().types[p.type]?.name ?? null) : null,
+            proposed: iso(p.created),
+            by: p.by,
+            flow: p.flow,
+            input: input && input.entity.deleted === undefined ? v.asNote(input, false) : null,
+          };
+        });
     },
   },
   {
@@ -1225,8 +1298,9 @@ export async function mcpAnswer(
   body: unknown,
   now: () => number = Date.now,
   scope: readonly Scope[] | null = null,
+  mailAccount: string | null = null,
 ): Promise<unknown | null> {
-  const c: Ctx = { store, device, now, run: "", seen: [], scope };
+  const c: Ctx = { store, device, now, run: "", seen: [], scope, mailAccount };
   if (Array.isArray(body)) {
     const out: unknown[] = [];
     for (const m of body) {

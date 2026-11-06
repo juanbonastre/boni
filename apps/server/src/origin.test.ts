@@ -6,7 +6,8 @@ import { label } from "@boni/entities";
 import { openUserStore, type UserStore } from "@boni/store";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCollection, createRow } from "./data.ts";
-import { recordOrigin } from "./origin.ts";
+import { mcpAnswer } from "./mcp.ts";
+import { originFacts, pendingFacts, recordOrigin } from "./origin.ts";
 
 /**
  * «¿De dónde viene?» (docs/sistema.md §4.4, F8): from a record to who made it, and, when a flow proposed it, to the
@@ -121,6 +122,124 @@ describe("«¿De dónde viene?» (F8)", () => {
     expect(recordOrigin(store, w.older, { mailAccount: null })?.proposal?.created).toBe(
       NOW - 28 * MIN,
     );
+  });
+
+  it("the same for a model: the planner's facts and the MCP's «origin», the mail only as a model may see it (task 86)", async () => {
+    const w = world();
+    store.journal.saveFlow({
+      id: "leer-correo",
+      name: "Leer correo",
+      trigger: { created: "correo" },
+      inputs: [],
+      plan: { version: 1, steps: [] },
+      layout: null,
+      by: "preset",
+      enabled: true,
+      created: NOW - 40 * 24 * 60 * MIN,
+    });
+    expect(originFacts(store, w.accepted, { mailAccount: null })).toEqual({
+      by: "flow",
+      at: NOW,
+      device: null,
+      flow: { id: "leer-correo", name: "Leer correo", version: 3 },
+      input: w.mail,
+      proposal: { created: NOW - 29 * MIN, decided: NOW - 10 * MIN, alone: false },
+    });
+    expect(originFacts(store, w.claude, { mailAccount: null })).toMatchObject({
+      by: "assistant",
+      device: "claude-ejemplo",
+      flow: null,
+      input: null,
+      proposal: null,
+    });
+    const origin = async (id: string) => {
+      const r = (await mcpAnswer(store, "claude-ejemplo", {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "origin", arguments: { id } },
+      })) as { result: { content: { text: string }[]; isError: boolean } };
+      const text = r.result.content[0]?.text ?? "null";
+      return { error: r.result.isError, out: r.result.isError ? text : JSON.parse(text) };
+    };
+    const got = await origin(w.accepted);
+    expect(got.error).toBe(false);
+    expect(got.out).toMatchObject({
+      id: w.accepted,
+      by: "flow",
+      flow: { name: "Leer correo", version: 3 },
+      input: { id: w.mail, collection: "Correo", title: "Reunión el jueves" },
+      proposed: new Date(NOW - 29 * MIN).toISOString(),
+      accepted: new Date(NOW - 10 * MIN).toISOString(),
+      alone: false,
+    });
+    // Closed to the models, the mail is not named; a record closed to them has no origin to give.
+    const types = Object.values(store.schema().types);
+    const correo = types.find((t) => t.name === "Correo")?.id as string;
+    const tarea = types.find((t) => t.name === "Tarea")?.id as string;
+    store.setAiAccess(correo, "restricted", "portatil");
+    expect((await origin(w.accepted)).out.input).toBeNull();
+    store.setAiAccess(tarea, "restricted", "portatil");
+    expect(await origin(w.accepted)).toEqual({
+      error: true,
+      out: "not found (or not for a model)",
+    });
+  });
+
+  it("what waits in the Bandeja, for a model: who proposed each and from what mail, by its title's words; none into a collection closed to them (task 86)", async () => {
+    const w = world();
+    const tarea = Object.values(store.schema().types).find((t) => t.name === "Tarea");
+    const correo = Object.values(store.schema().types).find((t) => t.name === "Correo");
+    if (!tarea || !correo) throw new Error("the world has Tarea and Correo");
+    store.journal.addProposal({
+      id: "p_03",
+      run: "r_lectura_01",
+      tool: "entities.create",
+      args: { values: { type: { t: "v", value: tarea.key } }, origins: [] },
+      view: { title: "Crear", rows: [{ arg: "values.title", value: "Reservar la sala" }] },
+      sources: [`entity:${w.mail}`],
+      created: NOW - 27 * MIN,
+    });
+    expect(pendingFacts(store, { mailAccount: null })).toEqual([
+      {
+        id: "p_03",
+        title: "Reservar la sala",
+        type: tarea.id,
+        created: NOW - 27 * MIN,
+        by: "flow",
+        flow: { id: "leer-correo", name: "leer-correo", version: 3 },
+        input: w.mail,
+      },
+    ]);
+    // The MCP's «inbox», for a session that may only read.
+    const inbox = async (args: Record<string, unknown>) => {
+      const r = (await mcpAnswer(
+        store,
+        "claude-ejemplo",
+        { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "inbox", arguments: args } },
+        () => NOW,
+        ["read"],
+      )) as { result: { content: { text: string }[]; isError: boolean } };
+      expect(r.result.isError).toBe(false);
+      return JSON.parse(r.result.content[0]?.text ?? "null");
+    };
+    expect(await inbox({ text: "sala" })).toMatchObject([
+      {
+        id: "p_03",
+        title: "Reservar la sala",
+        collection: "Tarea",
+        proposed: new Date(NOW - 27 * MIN).toISOString(),
+        by: "flow",
+        flow: { id: "leer-correo", version: 3 },
+        input: { id: w.mail, collection: "Correo", title: "Reunión el jueves" },
+      },
+    ]);
+    expect(await inbox({ text: "taller" })).toEqual([]);
+    // Its mail closed to the models is not named; a collection closed to them has nothing in the Bandeja for them.
+    store.setAiAccess(correo.id, "restricted", "portatil");
+    expect((await inbox({}))[0]?.input).toBeNull();
+    store.setAiAccess(tarea.id, "restricted", "portatil");
+    expect(await inbox({})).toEqual([]);
   });
 
   it("a reading from before flows: «Leer correo»'s, with the mail its plan read first", () => {
