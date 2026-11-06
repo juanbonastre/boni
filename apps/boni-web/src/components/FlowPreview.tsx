@@ -1,6 +1,6 @@
 /**
  * A flow a model proposed, drawn in the inbox (docs/flujos.md F5): its trigger with what it gives, each step named as
- * the flow editor names it with its word more (the collection), an arrow for each value a step takes from another;
+ * the flow editor names it with its word more (the collection), downwards in the order they run as the editor draws them;
  * against the flow it changes, what it adds in `--accent`, what it changes with a dashed `--accent` border, what it
  * takes away struck and faded. Read only.
  */
@@ -23,7 +23,7 @@ import "@xyflow/react/dist/style.css";
 import { Bot, Braces, HelpCircle, MessageSquare, Zap } from "lucide-react";
 import { memo, useEffect, useMemo } from "react";
 import type { FlowProposalView } from "../core/agent.ts";
-import { flowLayout } from "../core/flowLayout.ts";
+import { stepLayout } from "../core/flowLayout.ts";
 import { useStore } from "../store.ts";
 import { triggerText } from "./FlowEditor.tsx";
 import { inputName } from "./FlowStepPanel.tsx";
@@ -115,22 +115,18 @@ function Canvas({ flow }: { flow: FlowProposalView }) {
   const t = useStore((s) => s.t);
   const { fitView } = useReactFlow();
   const { nodes, edges } = useMemo(() => {
-    const ids = new Set(flow.nodes.map((n) => n.id));
-    const inputs = new Set(flow.inputs.map((i) => i.id));
-    const links: { from: string; to: string }[] = [];
-    for (const s of flow.nodes) {
-      let fromTrigger = false;
-      for (const d of s.deps) {
-        if (ids.has(d)) links.push({ from: d, to: s.id });
-        else if (inputs.has(d)) fromTrigger = true;
-      }
-      if (fromTrigger) links.push({ from: TRIGGER, to: s.id });
-    }
-    const boxes = [
-      { id: TRIGGER, width: WIDTH, height: 40 + Math.min(flow.inputs.length, 9) * 18 + 8 },
-      ...flow.nodes.map((s) => ({ id: s.id, width: WIDTH, height: s.detail ? 72 : 52 })),
-    ];
-    const at = flowLayout(boxes, links);
+    // Downwards in the order its steps run, as the flow editor draws it (docs/sistema.md §4.4).
+    const l = stepLayout(
+      flow.nodes.map((s) => ({ id: s.id, op: s.op })),
+      {
+        trigger: { id: TRIGGER, height: 40 + Math.min(flow.inputs.length, 9) * 18 + 8 },
+        width: WIDTH,
+        height: (id) => (flow.nodes.find((s) => s.id === id)?.detail ? 72 : 52),
+        gapY: 30,
+      },
+    );
+    const at = l.at;
+    const links = l.links;
     const nodes: Card[] = [
       {
         id: TRIGGER,
@@ -155,12 +151,12 @@ function Canvas({ flow }: { flow: FlowProposalView }) {
       target: e.to,
       type: "smoothstep",
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-      className: "fl-edge",
+      className: "fl-edge order",
     }));
     return { nodes, edges };
   }, [flow, t]);
   useEffect(() => {
-    requestAnimationFrame(() => void fitView({ padding: 0.08 }));
+    requestAnimationFrame(() => void fitView({ padding: 0.08, maxZoom: 1 }));
   }, [fitView]);
   return (
     <div className="flow-canvas flow-preview">
@@ -169,6 +165,7 @@ function Canvas({ flow }: { flow: FlowProposalView }) {
         edges={edges}
         nodeTypes={NODE_TYPES}
         fitView
+        fitViewOptions={{ padding: 0.08, maxZoom: 1 }}
         minZoom={0.2}
         maxZoom={1.4}
         nodesDraggable={false}

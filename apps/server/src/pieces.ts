@@ -57,7 +57,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
     name: "mail.rule",
     effect: "piece",
     record: true,
-    title: "Reglas de la guía",
+    title: "Regla del remitente",
     describe:
       "the guide's rule for the mail's sender: the collection it sends it to (an option) or null; a rule that says never to read the sender ends the run unless the user asked for this mail",
     args: {
@@ -73,7 +73,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
     name: "mail.known",
     effect: "piece",
     record: true,
-    title: "Lo pendiente",
+    title: "Ya propuesto",
     describe:
       "what the mail's sender has waiting in the inbox, and its invitation's title: the reader leaves them out",
     args: {
@@ -89,7 +89,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
     name: "mail.invitation",
     effect: "piece",
     record: true,
-    title: "Invitación",
+    title: "Leer invitación",
     describe:
       "the event of a calendar invitation in the mail, read from its .ics by code (uid, titulo, dia, inicio, fin, nota, linea); no uid when an external calendar already has it",
     args: { mail },
@@ -99,7 +99,7 @@ export function withPieces(r: ToolRegistry): ToolRegistry {
     name: "mail.relations",
     effect: "piece",
     record: true,
-    title: "Relaciones",
+    title: "Buscar relaciones",
     describe:
       "for each collection the flow writes in (by key), the relations the mail plainly names: the sender by name, a record whose title its words carry",
     args: {

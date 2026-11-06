@@ -1,5 +1,5 @@
 // The phone's «Páginas» as lists for a finger (docs/design-guide.md, «El móvil»): the library, and a collection's records.
-import { Check, ChevronRight, Database, FileText, Search, Trash2 } from "lucide-react";
+import { Check, ChevronRight, Database, FileText, Search, Trash2, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { DataRow } from "../core/agent.ts";
 import {
@@ -11,6 +11,7 @@ import {
   openFind,
   openPage,
   openRow,
+  showFlows,
   toast,
   useStore,
 } from "../store.ts";
@@ -86,6 +87,21 @@ export function MobileLibrary() {
           </ul>
         </section>
       )}
+      {/* Boni's own: «Flujos», to look at the map and run a flow (it is edited on the computer; docs/sistema.md §4.4). */}
+      <section>
+        <h2 className="m-label">{t("map.group.boni")}</h2>
+        <ul className="m-group">
+          <li className="m-item">
+            <button type="button" className="m-item-main row" onClick={() => showFlows()}>
+              <span className="m-item-icon">
+                <Workflow size={20} strokeWidth={1.8} />
+              </span>
+              <span className="m-item-title">{t("nav.flows")}</span>
+              <ChevronRight size={18} strokeWidth={1.8} className="m-chev" />
+            </button>
+          </li>
+        </ul>
+      </section>
     </main>
   );
 }

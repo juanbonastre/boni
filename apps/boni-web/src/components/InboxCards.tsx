@@ -37,6 +37,7 @@ import {
   openWebmail,
   peekMail,
   rejectProposal,
+  showMap,
   toggleInbox,
   useStore,
 } from "../store.ts";
@@ -1109,6 +1110,17 @@ function ProposalPageOf({ p, onDone }: { p: Proposal; onDone?: () => void }) {
               onClick={() => openTrace(p.run as string)}
             >
               {t("log.trace")}
+            </button>
+          )}
+          {p.run && (
+            <button
+              type="button"
+              className="btn ghost small"
+              onClick={() =>
+                showMap(p.madeBy ? `flow:${p.madeBy}` : "boni:chat", { run: p.run as string })
+              }
+            >
+              {t("map.show")}
             </button>
           )}
         </div>

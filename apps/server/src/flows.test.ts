@@ -326,6 +326,27 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     store.close();
   });
 
+  it("the collection a step reads or writes is written in it, never worked out as it runs (D-48; docs/sistema.md §4.4)", () => {
+    const store = withTypes();
+    const step = (type: unknown) => ({
+      id: "a",
+      op: "call",
+      tool: "entities.create",
+      args: { type, values: { fn: "obj", args: [{ lit: "title" }, { lit: "Una" }] } },
+    });
+    const flow = (type: unknown) => ({
+      trigger: { manual: true },
+      plan: { version: 1, steps: [step(type)] },
+    });
+    expect(checkFlow(store, registry, flow({ lit: "tarea" }), o).problems).toEqual([]);
+    // Picked as it runs (a value of an earlier step, a form's field): the map could not say where it writes.
+    expect(checkFlow(store, registry, flow({ ref: "$coleccion" }), o).problems).toContainEqual({
+      step: "a",
+      at: "args.type",
+      code: "collection-not-literal",
+    });
+  });
+
   it("a piece of Boni is only in a flow a record starts, never in a model's plan (P20; docs/sistema.md §4.2)", () => {
     const store = withTypes();
     const piece = { id: "g", op: "call", tool: "mail.rule", args: { mail: { ref: "$mail" } } };
@@ -352,7 +373,7 @@ describe("the flow editor (docs/flujos.md, F2)", () => {
     ).toMatchObject({
       effect: "piece",
       record: true,
-      title: "Reglas de la guía",
+      title: "Regla del remitente",
     });
     expect(
       checkPlan({ version: 1, steps: [piece] }, registry, { kind: "turn", trust: "personal" }, [

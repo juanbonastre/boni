@@ -1,4 +1,4 @@
-import { ChevronRight, Eye, EyeOff, Plus, Workflow, X } from "lucide-react";
+import { ChevronRight, Eye, EyeOff, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   AI_LEVELS,
@@ -39,7 +39,6 @@ import {
   setDecisionAuto,
   setLearning,
   setWidgetHidden,
-  showFlows,
   suggestedDevice,
   toast,
   useStore,
@@ -47,6 +46,7 @@ import {
 } from "../store.ts";
 import { ACCENT } from "./Chart.tsx";
 import { whoName } from "./Dash.tsx";
+import { ModelsSettings } from "./ModelsSettings.tsx";
 import { MenuRow, PopButton } from "./Popover.tsx";
 
 /** Settings (Boni Calendar's modal): account, appearance and, on the desktop, the tray and the widgets. */
@@ -129,19 +129,8 @@ export function SettingsModal() {
           >
             <h3>{t(`settings.section.${section}`)}</h3>
             {section === "account" && <Account />}
-            {section === "models" && (
-              <button
-                type="button"
-                className="btn settings-open-models"
-                onClick={() => {
-                  close();
-                  showFlows("models");
-                }}
-              >
-                <Workflow size={14} strokeWidth={1.8} aria-hidden />
-                {t("nav.flows")}
-              </button>
-            )}
+            {/* What configures the models (D-05); what they do is on the map's steps (docs/sistema.md §4.4). */}
+            {section === "models" && <ModelsSettings />}
             {section === "ai" && <AiVisibility />}
             {section === "decisions" && <Decisions />}
             {section === "extensions" && <Extensions />}

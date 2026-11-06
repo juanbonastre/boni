@@ -255,6 +255,14 @@ export interface Journal {
   /** The proposals made in a period, and those decided in it by what was decided. */
   proposalsMade(from: number, to: number): number;
   proposalsDecided(from: number, to: number): Record<string, number>;
+  /**
+   * The proposals made in a period by the flow of their run (null: a run of no flow, a turn of the conversation), the
+   * collection they propose in (its key, as the tool's arguments say it) and what became of them (the map's arrows).
+   */
+  proposalsByFlow(
+    from: number,
+    to: number,
+  ): { flow: string | null; turn: boolean; type: string | null; status: string; n: number }[];
   /** Each model call in a period (oldest first): what Boni shows as its read-only collection «Llamadas a modelos». */
   modelCallsIn(from: number, to: number): ModelCallUse[];
   /** The last model call's number (0 with none): it changes whenever one is recorded. */
@@ -764,6 +772,22 @@ export function openJournal(db: DatabaseSync): Journal {
             .get(from, to) as { n: number }
         ).n,
       ),
+    proposalsByFlow: (from, to) =>
+      db
+        .prepare(
+          `SELECT r.flow AS flow, r.turn IS NOT NULL AS turn, json_extract(p.args, '$.type') AS type,
+             p.status AS status, count(*) AS n
+           FROM proposals p JOIN runs r ON r.id = p.run
+           WHERE p.created >= ? AND p.created < ? GROUP BY r.flow, turn, type, p.status`,
+        )
+        .all(from, to)
+        .map((r) => ({
+          flow: (r.flow as string | null) ?? null,
+          turn: Number(r.turn) === 1,
+          type: typeof r.type === "string" ? r.type : null,
+          status: r.status as string,
+          n: Number(r.n),
+        })),
     proposalsDecided: (from, to) =>
       Object.fromEntries(
         (

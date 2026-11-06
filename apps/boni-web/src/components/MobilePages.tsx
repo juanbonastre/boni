@@ -1,5 +1,6 @@
 // The phone's «Páginas» tab (Juan, 2026-10-30): one's data on the phone, as lists for a finger.
 import { useStore } from "../store.ts";
+import { FlowsView } from "./FlowsView.tsx";
 import { MobileLibrary, MobileList } from "./MobileLists.tsx";
 import { PageView } from "./PageView.tsx";
 import { RowView } from "./RowView.tsx";
@@ -22,6 +23,13 @@ export function MobilePages() {
     return (
       <div className="m-scroll m-row">
         <PageView />
+      </div>
+    );
+  // «Flujos»: its views and a flow's page, to look at and run (edited on the computer).
+  if (view.kind === "flows")
+    return (
+      <div className="m-scroll m-flows">
+        <FlowsView />
       </div>
     );
   return <MobileLibrary />;

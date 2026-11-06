@@ -42,6 +42,22 @@ describe("principles (docs/principios.md)", () => {
     expect(found).toEqual([]);
   });
 
+  it("I-25: «Ver en el mapa» is in the menus of what the map knows, and in a run's path and a proposal", () => {
+    // A collection and a page in the sidebar, a row, a block, a flow's «⋯», a run's path, an Inbox proposal.
+    for (const file of [
+      "components/CollectionTree.tsx",
+      "components/Sidebar.tsx",
+      "components/DatabaseBlock.tsx",
+      "components/PageView.tsx",
+      "components/FlowEditor.tsx",
+      "components/Chat.tsx",
+      "components/InboxCards.tsx",
+    ])
+      expect(readFileSync(join(SRC, file), "utf8"), file).toContain('t("map.show")');
+    for (const lang of ["es", "en"] as const)
+      expect(translator(lang)("map.show"), lang).not.toBe("map.show");
+  });
+
   it("I-02: every label of the block catalogue has its text in both languages", () => {
     const labels = new Set<string>();
     for (const k of CATALOGUE) {

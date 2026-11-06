@@ -13,6 +13,7 @@ import {
   Square,
   Trash2,
   Undo2,
+  Workflow,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -57,6 +58,7 @@ import {
   showAudit,
   showInbox,
   showLog,
+  showMap,
   stopTurn,
   toast,
   toggleChatList,
@@ -1469,6 +1471,17 @@ function RunSteps({ t, detail }: { t: T; detail: RunDetail | null | "loading" })
         <button type="button" className="link-btn small" onClick={copy}>
           <Copy size={13} strokeWidth={1.8} />
           {t("log.copy")}
+        </button>
+        {/* Where this run sits among the rest (docs/sistema.md §4.4): its flow, or the conversation. */}
+        <button
+          type="button"
+          className="link-btn small"
+          onClick={() =>
+            showMap(detail.flow ? `flow:${detail.flow}` : "boni:chat", { run: detail.id })
+          }
+        >
+          <Workflow size={13} strokeWidth={1.8} />
+          {t("map.show")}
         </button>
       </div>
       {detail.request !== null && <p className="log-request">{detail.request}</p>}

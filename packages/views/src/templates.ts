@@ -63,6 +63,36 @@ export const SYS = {
     /** What a person changes in a row (the rest is computed). */
     editable: ["f_titulo", "f_madre", "f_nivel", "f_barra"],
   },
+  /**
+   * «Flujos» (docs/sistema.md §4.4, F8): a row per flow of the account, Boni's and the user's, with what starts it,
+   * whether it is on and how it ran. Its views are «Tabla» and «Mapa» (the map, the layout `diagram` of this
+   * collection). A row's name and state are the flow's: changed in place, as in its editor.
+   */
+  flows: {
+    id: "t_sys_flujos",
+    title: "f_titulo",
+    trigger: "f_disparador",
+    state: "f_estado",
+    by: "f_de",
+    steps: "f_pasos",
+    runs: "f_ejecuciones",
+    last: "f_ultima",
+    version: "f_version",
+    /** «Estado». */
+    on: "o_estado_encendido",
+    off: "o_estado_apagado",
+    /** «De». */
+    boni: "o_de_boni",
+    user: "o_de_tu",
+    /** «Disparador»: what kind of thing starts it. */
+    record: "o_disp_llega",
+    schedule: "o_disp_horario",
+    manual: "o_disp_mano",
+    /** A row's id: this, then the flow's own id. */
+    row: "sys_flow_",
+    /** What a person changes in a row (the rest is computed). */
+    editable: ["f_titulo", "f_estado"],
+  },
 } as const;
 
 /** The level options of «Mis datos» by level, and back. */
@@ -80,6 +110,9 @@ export const dataRowFixed = (values: Record<string, unknown>): readonly string[]
 /** A row of «Mis datos» as the id of what it is (a collection's, a page's); null for any other row. */
 export const dataRowTarget = (row: string): string | null =>
   row.startsWith(SYS.data.row) ? row.slice(SYS.data.row.length) : null;
+/** A row of «Flujos» as its flow's id; null for any other row. */
+export const flowRowTarget = (row: string): string | null =>
+  row.startsWith(SYS.flows.row) ? row.slice(SYS.flows.row.length) : null;
 
 const at = (row: string, col: number, w: number, h?: "s" | "m" | "l") => ({
   row,

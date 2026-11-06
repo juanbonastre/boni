@@ -12,7 +12,8 @@ import { RenameInput } from "./CollectionTree.tsx";
 import { FilterEditor, filterText, opsFor } from "./DatabaseBlock.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
-export type Layouts = { id: DatabaseView["layout"]; icon: ReactNode }[];
+/** The layouts a view may take, each with its icon and, where a collection names it its own way («Mapa»), its name. */
+export type Layouts = { id: DatabaseView["layout"]; icon: ReactNode; name?: string }[];
 
 /** The layouts as tiles, the view's one marked: the settings' «Diseño» and a page block's tab. */
 export function LayoutTiles({
@@ -37,7 +38,7 @@ export function LayoutTiles({
           onClick={() => onPick(l.id)}
         >
           {l.icon}
-          <span>{t(`db.layouts.${l.id}`)}</span>
+          <span>{l.name ?? t(`db.layouts.${l.id}`)}</span>
         </button>
       ))}
     </div>
@@ -68,7 +69,9 @@ export function LayoutTab({
         label={
           <>
             {layouts.find((l) => l.id === view.layout)?.icon}
-            <span>{t(`db.layouts.${view.layout}`)}</span>
+            <span>
+              {layouts.find((l) => l.id === view.layout)?.name ?? t(`db.layouts.${view.layout}`)}
+            </span>
           </>
         }
       >
@@ -164,7 +167,7 @@ export function ViewTabs({ views, layouts }: { views: ViewsControl; layouts: Lay
                   }}
                 >
                   {l.icon}
-                  <span>{t(`db.layouts.${l.id}`)}</span>
+                  <span>{l.name ?? t(`db.layouts.${l.id}`)}</span>
                 </button>
               ))}
             </div>

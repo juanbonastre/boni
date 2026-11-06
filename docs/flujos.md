@@ -107,7 +107,7 @@ fases siguen de F7 a F13.
   plantilla más un horario), creados desde un turno con confirmación (P8), ejecutados como segundo plano (P7);
   mini-apps y atajos como especificaciones, nunca desde contenido externo (P16). (Había una herramienta
   `jobs.create` que guardaba un trabajo y nada lo ejecutaba; F4b la quitó: el programador son los flujos programados.)
-- **«Modelos»** (59b): el flujo declarado en `packages/agent/src/pipeline.ts`, con la prueba que obliga a que cada
+- **«Modelos»** (59b; sustituido el 2026-11-06 por el mapa calculado de «Flujos», `docs/sistema.md` §4.4, F8): el flujo declarado en `pipeline.ts`, con la prueba que obliga a que cada
   lector, papel, herramienta, clase de ejecución y área de decisión tenga su nodo (A-16), dibujado con React Flow y
   dagre de arriba abajo con los números del diario, y lo que configura los modelos debajo.
 - **«Mis datos»** (59a): las colecciones como diagrama (tarjetas, marcos de madres, flechas por relación), calculado

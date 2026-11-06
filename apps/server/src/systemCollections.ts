@@ -30,7 +30,15 @@ export const SYS_ACTIVITY = SYS.activity.id;
 export const SYS_RUNS = SYS.runs.id;
 /** «Mis datos» (myData.ts): made apart, on each read, over these (it lists them too). */
 export const SYS_DATA = SYS.data.id;
-export const SYSTEM_COLLECTIONS = [SYS_CALLS, SYS_ACTIVITY, SYS_RUNS, SYS_DATA] as const;
+/** «Flujos» (flowsCollection.ts): made apart, on each read, from the account's flows. */
+export const SYS_FLOWS_ID = SYS.flows.id;
+export const SYSTEM_COLLECTIONS = [
+  SYS_CALLS,
+  SYS_ACTIVITY,
+  SYS_RUNS,
+  SYS_DATA,
+  SYS_FLOWS_ID,
+] as const;
 export const isSystemCollection = (id: string) =>
   (SYSTEM_COLLECTIONS as readonly string[]).includes(id);
 

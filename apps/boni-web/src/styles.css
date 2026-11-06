@@ -3095,6 +3095,7 @@ html.widget-page body {
 .trace-tools {
   display: flex;
   justify-content: flex-end;
+  gap: 14px;
 }
 .trace-tools .link-btn {
   display: inline-flex;
@@ -4734,7 +4735,8 @@ body:has(.toast) .db-selinfo {
   max-width: 100%;
 }
 .content.is-collection .db-calendar,
-.content.is-collection .data-stage {
+.content.is-collection .data-stage,
+.content.is-collection .mp {
   width: 100vw;
   max-width: 100%;
 }
@@ -8776,7 +8778,7 @@ button.rows-panel-row:hover {
   font-size: 9px;
 }
 
-/* «Modelos» (task 59b): the declared flow as a canvas, in Boni's colours. */
+/* A flow's canvas (the editor, a run's path, a proposed flow): Boni's colours. */
 .flow-canvas {
   position: relative;
   height: 760px;
@@ -8793,12 +8795,6 @@ button.rows-panel-row:hover {
 }
 .flow-canvas .react-flow__node.model {
   cursor: pointer;
-}
-.flow-arrange {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 5;
 }
 .fl-card {
   position: relative;
@@ -8899,8 +8895,12 @@ button.rows-panel-row:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* One row per line: the canvas places each box by its lines (the whole text is in its panel and its tooltip). */
 .fl-line {
   line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .flow-canvas .react-flow__edge-path {
   stroke: var(--line-strong);
@@ -8940,26 +8940,9 @@ button.rows-panel-row:hover {
   color: var(--muted);
   font-size: 9px;
 }
-.models-config {
-  margin-top: 18px;
-}
-.settings-open-models {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-/* «Flujos» (docs/flujos.md, F1): the flows' rows, a flow's canvas and a step's panel. */
-.flows-table .cols-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.flows-row.on td {
-  background: var(--accent-soft);
-}
+/* «Flujos» (docs/flujos.md, F1; docs/sistema.md §4.4, F8): a flow's page, its canvas and a step's panel. */
 .flow-detail {
-  margin-top: 16px;
+  margin-top: 8px;
 }
 .flow-title {
   margin: 0;
@@ -9048,9 +9031,6 @@ button.rows-panel-row:hover {
 .flow-name:hover,
 .flow-name:focus {
   border-color: var(--line-strong);
-}
-.flow-period {
-  margin-top: 14px;
 }
 .flow-checklist {
   list-style: none;
@@ -9245,7 +9225,8 @@ button.rows-panel-row:hover {
   align-items: baseline;
   min-width: 0;
 }
-.flow-io-list code {
+.flow-io-list code,
+.flow-io-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -9438,4 +9419,611 @@ button.rows-panel-row:hover {
 }
 .data-diagram.editable.connecting .dg-card .react-flow__handle.target {
   opacity: 1;
+}
+
+/* A flow on a page of its own (docs/sistema.md §4.4): the way back to «Flujos» and its period above the editor; the
+   canvas takes the window's height. */
+.flow-page .doc {
+  max-width: none;
+}
+.flow-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.flow-crumbs .link-btn {
+  color: var(--muted);
+}
+.flow-crumbs .link-btn:hover {
+  color: var(--text);
+}
+.flow-crumb-here {
+  color: var(--text);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.segmented.small button {
+  padding: 3px 9px;
+  font-size: 12px;
+}
+.flow-page .flow-canvas {
+  height: calc(100vh - 210px);
+  min-height: 420px;
+}
+.flow-page .flow-step-panel {
+  max-height: calc(100vh - 210px);
+}
+/* Whose version runs: Boni's (kept up to date) or his own. */
+.flow-whose {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.flow-whose.boni {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* The run's order and the values the chosen step takes (docs/sistema.md §4.4). */
+.flow-canvas .fl-edge.order {
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.flow-canvas .fl-edge.data {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+.fl-hidden-handle {
+  pointer-events: none;
+}
+.flow-editing .fl-card .react-flow__handle.fl-hidden-handle,
+.flow-editing .react-flow__node:hover .fl-card .react-flow__handle.fl-hidden-handle {
+  opacity: 0;
+}
+.fl-card.feeds {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.fl-lane {
+  position: absolute;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.fl-plus {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--muted);
+  cursor: pointer;
+  pointer-events: all;
+  opacity: 0;
+  transition:
+    opacity 120ms,
+    color 120ms,
+    border-color 120ms;
+}
+.flow-canvas:hover .fl-plus {
+  opacity: 0.75;
+}
+.fl-plus:hover,
+.fl-plus:focus-visible {
+  opacity: 1;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Boni's map (docs/sistema.md §4.4, F8): the view «Mapa» of «Flujos». */
+.mp {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mp-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.mp-bar .spacer {
+  flex: 1;
+}
+.mp-find {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+.mp-find .input {
+  width: 240px;
+}
+.mp-find-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: 300px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+}
+.mp-find-list .menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+.mp-centre {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 12px;
+}
+.mp-centre strong {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-depth,
+.mp-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mp-group select {
+  width: auto;
+}
+.mp-count {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+}
+.mp-filters {
+  padding: 4px;
+}
+.mp-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.mp-stage {
+  position: relative;
+  display: flex;
+  height: calc(100vh - 290px);
+  min-height: 460px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.mp-stage > .react-flow {
+  flex: 1;
+  min-width: 0;
+}
+.mp-stage .react-flow__background {
+  color: var(--line-strong);
+}
+.mp-stage .react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.mp-stage .react-flow__controls button {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  fill: var(--text);
+}
+.mp-stage .react-flow__node {
+  cursor: pointer;
+}
+.mp-stage .react-flow__handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.mp-loading {
+  height: calc(100vh - 290px);
+}
+.mp-card,
+.mp-step {
+  position: relative;
+  width: 212px;
+  padding-bottom: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  transition:
+    opacity 140ms,
+    border-color 140ms,
+    box-shadow 140ms;
+}
+.mp-step {
+  width: 196px;
+}
+.mp-card.flow,
+.mp-card.boni {
+  border-color: var(--accent);
+}
+.mp-card.flow.off {
+  border-color: var(--line-strong);
+  border-style: dashed;
+}
+.mp-card.collection {
+  background: var(--surface);
+}
+.mp-card.connector,
+.mp-card.actor,
+.mp-card.page {
+  background: var(--surface);
+  border-style: dashed;
+}
+.mp-card.hot {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.mp-card.centre {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.mp-card.dim,
+.mp-step.dim {
+  opacity: 0.35;
+}
+.mp-step.read {
+  border-color: var(--accent);
+}
+.mp-step.call {
+  border-style: dashed;
+}
+.mp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  font-weight: 600;
+}
+.mp-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.mp-card.flow .mp-icon,
+.mp-card.boni .mp-icon,
+.mp-step.read .mp-icon {
+  color: var(--accent);
+}
+.mp-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-fold {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.mp-fold:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.mp-line {
+  padding: 0 10px;
+  line-height: 17px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px 10px 0;
+}
+.mp-tag {
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 15px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-tag.boni {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mp-tag.model {
+  font-family: var(--mono, monospace);
+}
+.mp-frame {
+  width: 100%;
+  height: 100%;
+  border-radius: 12px;
+  border: 1px dashed var(--line-strong);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.mp-frame.flow {
+  border: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+.mp-frame-label {
+  position: absolute;
+  top: 9px;
+  left: 14px;
+  right: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-frame.flow .mp-frame-label {
+  color: var(--text);
+  font-size: 13px;
+}
+.mp-edge {
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+  fill: none;
+  transition:
+    opacity 140ms,
+    stroke 140ms;
+}
+.mp-edge.proposes {
+  stroke-dasharray: 6 4;
+}
+.mp-edge.reads,
+.mp-edge.shows {
+  stroke-width: 1;
+}
+.mp-edge.outside {
+  stroke: var(--c4);
+}
+.mp-edge.hot {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.mp-edge.dim {
+  opacity: 0.2;
+}
+/* An arrow's words stay over the boxes they pass by. */
+.mp-stage .react-flow__edgelabel-renderer {
+  z-index: 4;
+}
+.mp-edge-label {
+  position: absolute;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 16px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.mp-edge-label.outside {
+  border-color: color-mix(in srgb, var(--c4) 60%, transparent);
+  color: var(--c4);
+}
+.mp-edge-label.hot {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.mp-edge-label.order {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+.mp-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 100%;
+  color: var(--muted);
+}
+/* A node's panel, docked on the right: the canvas narrows instead of hiding under it. */
+.mp-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 10px;
+  width: 300px;
+  padding: 12px 14px;
+  overflow: auto;
+  border-left: 1px solid var(--line-strong);
+  background: var(--surface-2);
+}
+.mp-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.mp-panel-title {
+  flex: 1;
+  min-width: 0;
+}
+.mp-panel-title h3 {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.mp-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  font-size: 12px;
+}
+.mp-facts dd {
+  margin: 0;
+  color: var(--text-2);
+}
+.mp-joined h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.mp-joined ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+.mp-joined li {
+  padding: 2px 0;
+}
+.mp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+.mp-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* On the phone the map is to look at (docs/sistema.md §4.4): the bar wraps, the panel is a sheet at the bottom. */
+@media (max-width: 760px) {
+  .mp-find .input {
+    width: 100%;
+  }
+  .mp-find {
+    flex: 1;
+  }
+  .mp-stage {
+    height: calc(100vh - 230px);
+    min-height: 380px;
+  }
+  .mp-stage.with-panel {
+    flex-direction: column;
+  }
+  .mp-panel {
+    width: auto;
+    max-height: 50%;
+    border-left: 0;
+    border-top: 1px solid var(--line-strong);
+  }
+  .flow-page .flow-canvas {
+    height: calc(100vh - 240px);
+  }
+}
+
+/* «Flujos» on the phone (docs/sistema.md §4.4): to look at the map and run a flow; nothing is made or changed here. */
+.m-flows .content.page-doc {
+  padding: 8px 12px 24px;
+}
+.m-flows .content.page-doc .doc {
+  width: 100%;
+  min-width: 0;
+}
+.m-flows .cols-title {
+  font-size: 24px;
+  margin: 4px 0 8px;
+}
+.m-flows .db-head > .btn.primary,
+.m-flows .db-tools {
+  display: none;
+}
+.m-flows .mp-bar {
+  gap: 6px 8px;
+}
+.m-flows .mp-find {
+  flex: 1 1 100%;
+}
+.m-flows .mp-find .input {
+  width: 100%;
+}
+.m-flows .mp-stage {
+  height: calc(100vh - 330px);
+  min-height: 340px;
+}
+.m-flows .flow-crumbs {
+  margin-top: 0;
+}
+.m-flows .flow-toolbar {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.m-flows .flow-page .flow-canvas {
+  height: calc(100vh - 300px);
+}
+
+/* A run on the map (§4.4): its steps that ran in `--accent`, what never ran faded, a stop in `--bad`. */
+.mp-step.run-ran {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.mp-step.run-idle {
+  opacity: 0.45;
+}
+.mp-step.run-bad {
+  border-color: var(--bad);
+}
+.mp-run-line {
+  color: var(--text);
+  font-weight: 500;
 }

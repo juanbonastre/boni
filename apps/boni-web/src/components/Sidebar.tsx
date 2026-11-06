@@ -30,6 +30,7 @@ import {
   showAllPages,
   showChat,
   showFlows,
+  showMap,
   toggleFold,
   toggleSidebar,
   useStore,
@@ -340,6 +341,13 @@ export function PageTree({
               onClick={() => {
                 close();
                 void duplicatePage(p.id);
+              }}
+            />
+            <MenuRow
+              label={t("map.show")}
+              onClick={() => {
+                close();
+                showMap(`page:${p.id}`, { pages: true });
               }}
             />
             <MenuSep />

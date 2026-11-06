@@ -21,6 +21,7 @@ import {
   type SystemColumns,
 } from "./audit.ts";
 import { type BlockResult, type DataBlock, parseBlockResults } from "./blocks.ts";
+import type { MapEdgeKind, MapEdgeLike, MapKind, MapNodeLike } from "./flowLayout.ts";
 import { tracked } from "./wait.ts";
 
 /**
@@ -125,6 +126,8 @@ export interface Proposal {
   created: number;
   /** The run that made it («Recorrido», task 52); missing from an older server. */
   run: string | null;
+  /** The flow whose run made it (null: a turn of the conversation, or an older server): «Ver en el mapa». */
+  madeBy?: string | null;
   /** What the inbox shows of it, made by the server's code (apps/server/src/inboxCard.ts). */
   card: InboxCard | null;
   /** A flow a model proposed (docs/flujos.md F5): drawn by the server, with what it changes. */
@@ -654,64 +657,111 @@ function choiceOf(v: Record<string, unknown>): ModelChoice | null {
   const connection = oneOf(MODEL_CONNECTIONS, v.connection);
   return connection ? { connection, model: s200(v.model, 120), zdr: v.zdr === true } : null;
 }
-/** The flow Boni declares, with the journal's numbers of the last days on it («Modelos», task 59b). */
-export type FlowKind = "source" | "model" | "code" | "inbox" | "user" | "store";
-export interface FlowNode {
-  id: string;
-  kind: FlowKind;
-  role: ModelRole | null;
-  calls: number;
-  /** US dollars, of the calls whose cost is known. */
-  cost: number;
-  last: number | null;
-  runs: number;
-  accuracy: { judged: number; right: number } | null;
-}
-export interface FlowEdge {
-  from: string;
-  to: string;
-  what: string;
-  /** How many went through, or null when the server has no number for this arrow. */
-  n: number | null;
-}
-export interface FlowView {
-  days: number;
-  from: number;
-  to: number;
-  nodes: FlowNode[];
-  edges: FlowEdge[];
-}
-const FLOW_KINDS: readonly FlowKind[] = ["source", "model", "code", "inbox", "user", "store"];
 const numOf = (v: unknown, d = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : d);
-export function parseFlow(b: unknown): FlowView | null {
+
+/** Boni's map (docs/sistema.md §4.4, F8; the server's `flowMap`): what brings, starts, reads and writes the data. */
+export interface MapNode extends MapNodeLike {
+  /** A collection's, a flow's, a page's or an assistant's own name; null for Boni's own (named by `code`). */
+  name: string | null;
+  code: string | null;
+  icon: string;
+  runs: number;
+  last: number | null;
+  calls: number;
+  /** US dollars. */
+  cost: number;
+  models: string[];
+  roles: string[];
+  proposals: number;
+  accepted: number;
+  /** A collection's key (what a trigger names). */
+  key: string | null;
+  rows: number | null;
+  parent: string | null;
+  trigger: Record<string, unknown> | null;
+  on: boolean;
+  by: string | null;
+  boni: boolean;
+  plan: FlowPlan | null;
+  steps: FlowStepNode[];
+  pack: string | null;
+}
+export interface MapEdge extends MapEdgeLike {
+  steps: string[];
+}
+export interface MapView {
+  days: number;
+  nodes: MapNode[];
+  edges: MapEdge[];
+}
+const MAP_KINDS: readonly MapKind[] = ["connector", "collection", "flow", "boni", "actor", "page"];
+const MAP_EDGES: readonly MapEdgeKind[] = [
+  "brings",
+  "starts",
+  "reads",
+  "writes",
+  "proposes",
+  "decides",
+  "improves",
+  "shows",
+];
+const MAP_ID = /^(conn|col|flow|boni|actor|page):[A-Za-z0-9_.:@-]{1,120}$/;
+export function parseMap(b: unknown): MapView | null {
   if (!isObj(b) || !Array.isArray(b.nodes) || !Array.isArray(b.edges)) return null;
-  const nodes: FlowNode[] = [];
+  const nodes: MapNode[] = [];
   for (const n of b.nodes) {
-    if (!isObj(n) || typeof n.id !== "string" || !/^[a-z_]{1,40}$/.test(n.id)) continue;
-    const kind = FLOW_KINDS.find((k) => k === n.kind);
+    if (!isObj(n) || typeof n.id !== "string" || !MAP_ID.test(n.id)) continue;
+    const kind = MAP_KINDS.find((k) => k === n.kind);
     if (!kind) continue;
-    const role = MODEL_ROLES.find((r) => r === n.role) ?? null;
-    const a = isObj(n.accuracy) ? n.accuracy : null;
+    const strs = (v: unknown, max: number) =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, max) : [];
+    const plan = isObj(n.plan) ? planOf(n.plan) : null;
     nodes.push({
       id: n.id,
       kind,
-      role,
+      name: strOf(n.name, 120),
+      code: strOf(n.code, 40),
+      icon: strOf(n.icon, 8) ?? "",
+      runs: numOf(n.runs),
+      last: typeof n.last === "number" ? n.last : null,
       calls: numOf(n.calls),
       cost: numOf(n.cost),
-      last: typeof n.last === "number" ? n.last : null,
-      runs: numOf(n.runs),
-      accuracy: a ? { judged: numOf(a.judged), right: numOf(a.right) } : null,
+      models: strs(n.models, 8).map((m) => m.slice(0, 80)),
+      roles: strs(n.roles, 8).filter((r) => /^[a-z]{1,20}$/.test(r)),
+      proposals: numOf(n.proposals),
+      accepted: numOf(n.accepted),
+      key: strOf(n.key, 80),
+      rows: typeof n.rows === "number" ? n.rows : null,
+      parent: typeof n.parent === "string" && MAP_ID.test(n.parent) ? n.parent : null,
+      trigger: isObj(n.trigger) ? n.trigger : null,
+      on: n.on !== false,
+      by: strOf(n.by, 20),
+      boni: n.boni === true,
+      plan,
+      steps: Array.isArray(n.steps)
+        ? n.steps.map(parseFlowNode).filter((x): x is FlowStepNode => x !== null)
+        : [],
+      pack: strOf(n.pack, 40),
     });
   }
   const ids = new Set(nodes.map((n) => n.id));
-  const edges: FlowEdge[] = [];
+  const edges: MapEdge[] = [];
   for (const e of b.edges) {
     if (!isObj(e) || typeof e.from !== "string" || typeof e.to !== "string") continue;
-    if (!ids.has(e.from) || !ids.has(e.to)) continue;
-    const what = typeof e.what === "string" && /^[a-z_]{1,40}$/.test(e.what) ? e.what : "";
-    edges.push({ from: e.from, to: e.to, what, n: typeof e.n === "number" ? e.n : null });
+    const kind = MAP_EDGES.find((k) => k === e.kind);
+    if (!kind || !ids.has(e.from) || !ids.has(e.to)) continue;
+    edges.push({
+      from: e.from,
+      to: e.to,
+      kind,
+      n: typeof e.n === "number" ? e.n : null,
+      steps: Array.isArray(e.steps)
+        ? e.steps.filter((x): x is string => typeof x === "string" && ID_RE.test(x))
+        : [],
+      outside: e.outside === true,
+    });
   }
-  return { days: numOf(b.days, 7), from: numOf(b.from), to: numOf(b.to), nodes, edges };
+  return { days: numOf(b.days, 7), nodes, edges };
 }
 
 /** A flow (docs/flujos.md): a plan with a trigger kept as data, as the list shows it. */
@@ -743,9 +793,8 @@ export interface FlowDetailView extends FlowSummary {
   nodes: FlowStepNode[];
   days: number;
   versions: { version: number; by: string; created: number }[];
-  /** The plan itself (what the editor changes) and where the user left each node. */
+  /** The plan itself: what the editor changes (its canvas lays itself out). */
   plan: FlowPlan;
-  layout: Record<string, { x: number; y: number }> | null;
   /** Boni's own version of it, when it has one («Volver al de Boni»). */
   preset: number | null;
 }
@@ -787,11 +836,56 @@ export type TestOut =
   | { t: "number"; value: number }
   | { t: "record"; text: string | null; n: number | null }
   | { t: "none" };
+/** What one of Boni's pieces found in a test (the server's `PieceSaid`), for its line on the canvas. */
+export type PieceSaid =
+  | { piece: "mail.rule"; to: string | null }
+  | { piece: "mail.known"; n: number }
+  | {
+      piece: "mail.invitation";
+      title: string | null;
+      day: string | null;
+      start: string | null;
+      held: boolean;
+    }
+  | { piece: "mail.relations"; found: { field: string; title: string }[] }
+  | { piece: "inbox.fold"; n: number }
+  | { piece: "inbox.accept_alone"; n: number };
+function parsePiece(v: unknown): PieceSaid | undefined {
+  if (!isObj(v)) return undefined;
+  switch (v.piece) {
+    case "mail.rule":
+      return { piece: v.piece, to: strOf(v.to, 120) };
+    case "mail.known":
+    case "inbox.fold":
+    case "inbox.accept_alone":
+      return { piece: v.piece, n: numOf(v.n) };
+    case "mail.invitation":
+      return {
+        piece: v.piece,
+        title: strOf(v.title, 200),
+        day: strOf(v.day, 20),
+        start: strOf(v.start, 10),
+        held: v.held === true,
+      };
+    case "mail.relations":
+      return {
+        piece: v.piece,
+        found: (Array.isArray(v.found) ? v.found : [])
+          .filter(isObj)
+          .slice(0, 6)
+          .map((f) => ({ field: strOf(f.field, 80) ?? "", title: strOf(f.title, 160) ?? "" })),
+      };
+    default:
+      return undefined;
+  }
+}
 export interface TestStepView {
   decision: string | null;
   rule: string | null;
   error: string | null;
   out: TestOut;
+  /** One of Boni's pieces: what it found. */
+  piece?: PieceSaid;
   would: {
     decision: string;
     rule: string | null;
@@ -827,6 +921,7 @@ export function parseFlowTest(b: unknown): FlowTestView | null {
       rule: strOf(v.rule, 20),
       error: strOf(v.error, 80),
       out: parseOut(v.out),
+      ...(parsePiece(v.piece) ? { piece: parsePiece(v.piece) as PieceSaid } : {}),
       would: (Array.isArray(v.would) ? v.would : []).filter(isObj).map((w) => ({
         decision: strOf(w.decision, 20) ?? "",
         rule: strOf(w.rule, 20),
@@ -964,13 +1059,6 @@ const planOf = (v: unknown): FlowPlan =>
         ),
       }
     : { version: 1, steps: [] };
-const layoutOf = (v: unknown): FlowDetailView["layout"] => {
-  if (!isObj(v)) return null;
-  const out: Record<string, { x: number; y: number }> = {};
-  for (const [k, p] of Object.entries(v))
-    if (isObj(p) && typeof p.x === "number" && typeof p.y === "number") out[k] = { x: p.x, y: p.y };
-  return out;
-};
 const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
 function parseFlowSummary(v: unknown): FlowSummary | null {
   if (!isObj(v) || typeof v.id !== "string" || !ID_RE.test(v.id) || typeof v.name !== "string")
@@ -1068,7 +1156,6 @@ export function parseFlowDetail(b: unknown): FlowDetailView | null {
     days: numOf(b.days, 7),
     versions,
     plan: planOf(b.plan),
-    layout: layoutOf(b.layout),
     preset: typeof b.preset === "number" ? b.preset : null,
   };
 }
@@ -2247,6 +2334,7 @@ export class AgentApi {
           sources: strs(p.sources),
           created: typeof p.created === "number" ? p.created : 0,
           run: str(p.run, 80),
+          madeBy: str(p.madeBy, 80),
           card: parseCard(p.card),
           ...(p.tool === "flows.save" && parseFlowProposal(p.flow)
             ? { flow: parseFlowProposal(p.flow) }
@@ -2316,9 +2404,9 @@ export class AgentApi {
   answerRequest = async (id: string, a: { choice: number } | { text: string }) =>
     parseTurn(await this.call("POST", `requests/${encodeURIComponent(id)}/answer`, a));
   models = async () => parseModels(await this.call("GET", "models"));
-  /** The declared flow with its numbers of the last `days` («Modelos», task 59b). */
-  flow = async (days: number) =>
-    parseFlow(await this.call("GET", `pipeline?days=${Math.max(1, Math.round(days))}`));
+  /** Boni's map with its numbers of the last `days` (docs/sistema.md §4.4, F8). */
+  map = async (days: number) =>
+    parseMap(await this.call("GET", `map?days=${Math.max(1, Math.round(days))}`));
   /** The account's flows (docs/flujos.md), and one of them drawn with the last `days`' numbers. */
   flows = async () => parseFlows(await this.call("GET", "flows"));
   /** The flow editor (docs/flujos.md, F2): its catalog, its checklist, and the user's changes. */
@@ -2334,7 +2422,6 @@ export class AgentApi {
       name: string;
       trigger: unknown;
       plan: FlowPlan;
-      layout: Record<string, { x: number; y: number }> | null;
     },
   ) => parseFlowDetail(await this.call("PUT", `flows/${encodeURIComponent(id)}`, body));
   setFlowEnabled = async (id: string, enabled: boolean) =>

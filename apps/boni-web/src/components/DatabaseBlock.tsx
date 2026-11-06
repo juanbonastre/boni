@@ -2,6 +2,7 @@ import {
   type DatabaseFilter,
   type DatabaseView,
   dataRowTarget,
+  flowRowTarget,
   matchesFilters,
   SYS,
   SYSTEM_COLUMNS,
@@ -17,6 +18,7 @@ import {
   LayoutGrid,
   List,
   ListFilter,
+  Map as MapIcon,
   Maximize2,
   Network,
   Paperclip,
@@ -52,6 +54,8 @@ import {
   resetColumnWidth,
   setColumnWidth,
   setNotesInTree,
+  showFlow,
+  showMapOf,
   toast,
   useStore,
 } from "../store.ts";
@@ -67,6 +71,7 @@ import {
   ViewTabs,
 } from "./DatabaseHead.tsx";
 import { DataDiagram } from "./DataDiagram.tsx";
+import { FlowMap } from "./FlowMap.tsx";
 import { BackRow, MenuRow, MenuSep, NextRow, PointMenu, PopButton } from "./Popover.tsx";
 import { ProtectionMenu } from "./Protection.tsx";
 
@@ -159,10 +164,20 @@ export function DatabaseBlock({
   const more = sorted.length - rows.length;
   const shown = type?.fields.filter((f) => !view.hide?.includes(f.id)) ?? [];
   const titleField = type?.fields.find((f) => f.id === type.titleField);
-  // Boni's own records have no diagram: they are not the user's data (F6); «Mis datos» is all of it.
-  const layouts = LAYOUTS.filter((l) => l.id !== "diagram" || !type?.system || !!type.editable);
+  // Boni's own records have no diagram: they are not the user's data (F6); «Mis datos» is all of it, and «Flujos»'
+  // diagram is Boni's map (docs/sistema.md §4.4).
+  const flows = type?.id === SYS.flows.id;
+  const layouts = LAYOUTS.filter((l) => l.id !== "diagram" || !type?.system || !!type.editable).map(
+    (l) =>
+      flows && l.id === "diagram"
+        ? { ...l, icon: <MapIcon size={14} strokeWidth={1.8} />, name: t("flows.map") }
+        : l,
+  );
   const add = async (values: Record<string, DataValue> = {}) => {
-    await addRow(source, values);
+    const row = await addRow(source, values);
+    // A new flow opens in its editor.
+    const made = flows && row ? flowRowTarget(row.id) : null;
+    if (made) showFlow(made);
   };
   return (
     <section className="db" aria-label={type?.name ?? t("db.title")}>
@@ -253,7 +268,16 @@ export function DatabaseBlock({
           onDone={() => setBar((b) => ({ what: null, n: b.n }))}
         />
       ) : null}
-      {view.layout === "diagram" && type?.id === SYS.data.id ? (
+      {view.layout === "diagram" && flows ? (
+        // «Flujos»: Boni's map; the flows its filter or its search leaves out are not on it.
+        <FlowMap
+          only={
+            data && (view.filter?.length || q)
+              ? new Set(sorted.flatMap((r) => flowRowTarget(r.id) ?? []))
+              : undefined
+          }
+        />
+      ) : view.layout === "diagram" && type?.id === SYS.data.id ? (
         // «Mis datos»: every collection, the ones its filter leaves out dimmed (docs/flujos.md §4.7, F6b).
         <DataDiagram
           only={
@@ -639,7 +663,9 @@ function ViewOptions({
             )}
             <NextRow
               label={LABEL.layout}
-              value={t(`db.layouts.${view.layout}`)}
+              value={
+                layouts.find((l) => l.id === view.layout)?.name ?? t(`db.layouts.${view.layout}`)
+              }
               onClick={() => setPanel("layout")}
             />
             <NextRow
@@ -1392,6 +1418,13 @@ function RowMenu({
                 }}
               />
               <MenuRow
+                label={t("map.show")}
+                onClick={() => {
+                  close();
+                  showMapOf(row.type ?? type.id, row.id);
+                }}
+              />
+              <MenuRow
                 label={t("db.rename")}
                 onClick={() => {
                   close();
@@ -1604,6 +1637,14 @@ function ghostText(f: DataField, v: DataValue | undefined, locale: string): stri
       year: "numeric",
       timeZone: "UTC",
     }).format(new Date(`${v}T12:00:00Z`));
+  // An instant (a flow's last run): day and time as the device says them.
+  if (f.type === "datetime" && typeof v === "string" && !Number.isNaN(Date.parse(v)))
+    return new Intl.DateTimeFormat(locale, {
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date(v));
   if (f.type === "select") return f.options?.find((o) => o.id === v)?.name ?? String(v);
   if (f.type === "checkbox") return v === true ? "✓" : "";
   return typeof v === "string" || typeof v === "number" ? String(v) : "";

@@ -1,16 +1,25 @@
 /**
- * The flow editor (docs/flujos.md, F2): a flow's canvas where the user adds, removes, moves and connects steps (an
- * arrow uses one step's value in another), a step's panel with its settings from the catalog, the trigger's panel,
- * the checklist the server computes as he edits, and the flow's actions: save (a version, only with an empty
- * checklist), discard, on or off, run by hand, versions, back to Boni's, duplicate, delete. Everything is the user's
- * from a personal device; a model only proposes flows (D-41). Docs: docs/design-guide.md «Flujos».
+ * The flow editor (docs/flujos.md, F2): a flow's canvas where the user adds, removes and connects steps (an arrow
+ * dragged from one step to another uses its value there), a step's panel with its settings from the catalog, the
+ * trigger's panel, the checklist the server computes as he edits, and the flow's actions: save (a version, only with
+ * an empty checklist), discard, on or off, try, run by hand, versions, back to Boni's, duplicate, «Ver en el mapa»,
+ * delete. The canvas lays itself out (docs/sistema.md §4.4; Juan, 2026-11-05: «Leer correo» opened in a heap): the
+ * steps downwards in the order they run, those that run for one choice side by side (`core/flowLayout.ts`), a «+»
+ * between two to put one there, and the arrows of the values a step takes drawn only for the step chosen. Nothing of
+ * where things are is kept, so moving nothing never asks to save. Everything is the user's from a personal device; a
+ * model only proposes flows (D-41). Docs: docs/design-guide.md «Flujos».
  */
 import {
   Background,
   BackgroundVariant,
+  BaseEdge,
   type Connection,
   Controls,
   type Edge,
+  EdgeLabelRenderer,
+  type EdgeProps,
+  type EdgeTypes,
+  getSmoothStepPath,
   Handle,
   MarkerType,
   type Node,
@@ -19,10 +28,6 @@ import {
   Position,
   ReactFlow,
   ReactFlowProvider,
-  useEdgesState,
-  useNodesInitialized,
-  useNodesState,
-  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -30,7 +35,6 @@ import {
   Braces,
   FlaskConical,
   HelpCircle,
-  LayoutGrid,
   ListFilter,
   MessageSquare,
   MoreHorizontal,
@@ -48,12 +52,14 @@ import type {
   FlowProblem,
   FlowStep,
   FlowTestView,
+  PieceSaid,
   TestStepView,
 } from "../core/agent.ts";
 import {
   addStep,
   depsOf,
   duplicateStep,
+  insertStep,
   type NodeKind,
   newStep,
   planUpTo,
@@ -61,9 +67,17 @@ import {
   slotsOf,
   takeValue,
 } from "../core/flowEdit.ts";
-import { flowLayout } from "../core/flowLayout.ts";
-import { agentApi, errorText, runFlowInChat, toast, useStore } from "../store.ts";
-import { argName, FlowStepPanel, inputName, problemText, stepName } from "./FlowStepPanel.tsx";
+import { segmentsOf, stepLayout } from "../core/flowLayout.ts";
+import { useKeptNodes } from "../core/useKeptNodes.ts";
+import { agentApi, errorText, runFlowInChat, showMap, toast, useStore } from "../store.ts";
+import {
+  argName,
+  FlowStepPanel,
+  inputName,
+  problemText,
+  stepDetail,
+  stepName,
+} from "./FlowStepPanel.tsx";
 import { MenuRow, MenuSep, PointMenu, PopButton } from "./Popover.tsx";
 
 const WIDTH = 200;
@@ -74,19 +88,25 @@ interface Draft {
   name: string;
   trigger: Record<string, unknown>;
   plan: FlowPlan;
-  layout: Record<string, { x: number; y: number }> | null;
 }
 const draftOf = (d: FlowDetailView): Draft => ({
   name: d.name,
   trigger: d.trigger,
   plan: d.plan,
-  layout: d.layout,
 });
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
-/** What starts a flow, in a few words: «Nuevo correo», a schedule, by hand. */
-export function triggerText(t: T, on: Record<string, unknown>): string {
-  if (typeof on.created === "string") return t("flows.on.created", { what: on.created });
+/**
+ * What starts a flow, in a few words: «Llega a Correo», a schedule, «A mano» (as «Flujos»' «Disparador» says it).
+ * `nameOf`: a collection's name by its key, where it is known.
+ */
+export function triggerText(
+  t: T,
+  on: Record<string, unknown>,
+  nameOf?: (key: string) => string | null | undefined,
+): string {
+  if (typeof on.created === "string")
+    return t("flows.on.created", { what: nameOf?.(on.created) ?? on.created });
   if (on.schedule && typeof on.schedule === "object") {
     const s = on.schedule as { every?: unknown; at?: unknown; day?: unknown };
     const at = typeof s.at === "string" ? s.at : "08:00";
@@ -124,6 +144,8 @@ type StepCard = Node<
     on: boolean;
     /** «Probar»: what this step did in the dry run (null: it did not run), or undefined without a test. */
     test?: TestStepView | null;
+    /** The chosen step takes a value of this one. */
+    feeds: boolean;
   },
   "step"
 >;
@@ -147,13 +169,49 @@ export function testLines(t: T, x: TestStepView): string[] {
   return x.would.length ? x.would.slice(0, 20).map((w) => wouldText(t, w)) : [testLine(t, x)];
 }
 
+/** A day of an invitation («2026-11-06») as the canvas says it: «06/11». */
+const dayText = (d: string | null) =>
+  d && d.length >= 10 ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "";
+
+/** What one of Boni's pieces found in a test, in words (docs/sistema.md §4.2; Juan, 2026-11-05: «Hecho» said nothing). */
+export function pieceLine(t: T, p: PieceSaid): string {
+  switch (p.piece) {
+    case "mail.rule":
+      return p.to ? t("flows.piece.ruleTo", { to: p.to }) : t("flows.piece.ruleNone");
+    case "mail.known":
+      return p.n === 0
+        ? t("flows.piece.knownNone")
+        : t(p.n === 1 ? "flows.piece.known.one" : "flows.piece.known", { n: p.n });
+    case "mail.invitation":
+      if (p.held) return t("flows.piece.invHeld");
+      if (!p.title) return t("flows.piece.invNone");
+      return [p.title, [dayText(p.day), p.start ?? ""].filter(Boolean).join(" ")]
+        .filter(Boolean)
+        .join(" · ");
+    case "mail.relations":
+      return p.found.length
+        ? p.found
+            .slice(0, 2)
+            .map((f) => `${f.field}: ${f.title}`)
+            .join(" · ")
+        : t("flows.piece.relNone");
+    case "inbox.fold":
+    case "inbox.accept_alone":
+      return t("flows.piece.notInTest");
+  }
+}
+
 /** A step's line in a test: what it would do, what it gave, or why it did not run. */
 export function testLine(t: T, x: TestStepView): string {
   const w = x.would[0];
   if (w) return wouldText(t, w);
+  // A piece that ended the run there: the sender's rule says not to read it.
+  if (x.decision === "end")
+    return x.piece?.piece === "mail.rule" ? t("flows.piece.ruleSkip") : t("run.node.end");
   if (x.decision === "skip") return t("flows.test.skipped");
   if (x.decision === "deny" || x.decision === "stopped")
     return t("flows.test.stopped", { why: x.rule ?? x.error ?? "" });
+  if (x.piece) return pieceLine(t, x.piece);
   const o = x.out;
   if (o.t === "list") return t(o.n === 1 ? "flows.test.items.one" : "flows.test.items", { n: o.n });
   if (o.t === "number") return `→ ${o.value}`;
@@ -182,9 +240,10 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
     );
   return (
     <div
-      className={`fl-card ${step.op === "read" ? "model" : "code"}${data.bad ? " bad" : ""}${data.on ? " on" : ""}${data.test === null ? " idle" : ""}`}
+      className={`fl-card ${step.op === "read" ? "model" : "code"}${data.bad ? " bad" : ""}${data.on ? " on" : ""}${data.test === null ? " idle" : ""}${data.feeds ? " feeds" : ""}`}
     >
-      <Handle type="target" position={Position.Top} />
+      <Handle type="target" position={Position.Top} id="t" />
+      <Handle type="target" position={Position.Right} id="ri" className="fl-hidden-handle" />
       <div className="fl-head">
         <span className="fl-icon">{icon}</span>
         <span className="fl-name">{data.name}</span>
@@ -193,8 +252,16 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
       </div>
       {(data.detail || ran > 0 || data.test) && (
         <div className="fl-body">
-          {data.detail && <div className="fl-line">{data.detail}</div>}
-          {data.test && <div className="fl-line fl-test">{testLine(t, data.test)}</div>}
+          {data.detail && (
+            <div className="fl-line" title={data.detail}>
+              {data.detail}
+            </div>
+          )}
+          {data.test && (
+            <div className="fl-line fl-test" title={testLine(t, data.test)}>
+              {testLine(t, data.test)}
+            </div>
+          )}
           {ran > 0 && !data.test && (
             <div className="fl-line muted">
               {t(ran === 1 ? "flows.ran.one" : "flows.ran", { n: ran })}
@@ -205,7 +272,8 @@ const StepView = memo(function StepView({ data }: NodeProps<StepCard>) {
           )}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} />
+      <Handle type="source" position={Position.Bottom} id="b" />
+      <Handle type="source" position={Position.Right} id="ro" className="fl-hidden-handle" />
     </div>
   );
 });
@@ -229,14 +297,77 @@ const TriggerView = memo(function TriggerView({ data }: NodeProps<TriggerCard>) 
           ))}
         </div>
       )}
-      <Handle type="source" position={Position.Bottom} isConnectable={false} />
+      <Handle type="source" position={Position.Bottom} id="b" isConnectable={false} />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="ro"
+        className="fl-hidden-handle"
+        isConnectable={false}
+      />
     </div>
   );
 });
 
 const NODE_TYPES: NodeTypes = { step: StepView, trigger: TriggerView };
 
-/** The nodes of a draft: the trigger first, then each step; where the user left them, else laid out. */
+/** An arrow of the run's order: the choice a lane is for, over its first step, and a «+» to put a step there. */
+type OrderData = {
+  lane: string | null;
+  /** The step a new one goes before (null: none goes here, inside a lane). */
+  before: string | null;
+  onPlus: (before: string, x: number, y: number) => void;
+  plusLabel: string;
+};
+function OrderEdge(p: EdgeProps<Edge<OrderData>>) {
+  const d = p.data as OrderData;
+  const [path, lx, ly] = getSmoothStepPath({ ...p, borderRadius: 10 });
+  return (
+    <>
+      <BaseEdge id={p.id} path={path} markerEnd={p.markerEnd} className="fl-edge order" />
+      <EdgeLabelRenderer>
+        {d.lane && (
+          <div
+            className="fl-lane"
+            style={{
+              transform: `translate(-50%, -100%) translate(${p.targetX}px, ${p.targetY - 6}px)`,
+            }}
+          >
+            {d.lane}
+          </div>
+        )}
+        {d.before && (
+          <button
+            type="button"
+            className="fl-plus nodrag nopan"
+            style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
+            title={d.plusLabel}
+            aria-label={d.plusLabel}
+            onClick={(e) => d.onPlus(d.before as string, e.clientX, e.clientY)}
+          >
+            <Plus size={12} strokeWidth={2.2} />
+          </button>
+        )}
+      </EdgeLabelRenderer>
+    </>
+  );
+}
+/** An arrow of a value the chosen step takes: drawn on the right, round the steps in between. */
+function DataEdge(p: EdgeProps) {
+  const [path] = getSmoothStepPath({ ...p, borderRadius: 12, offset: 28 });
+  return <BaseEdge id={p.id} path={path} markerEnd={p.markerEnd} className="fl-edge data" />;
+}
+const EDGE_TYPES: EdgeTypes = { order: OrderEdge, data: DataEdge };
+
+/** A step's card's height, by the lines it shows (the layout needs it before the card is drawn). */
+const LINE = 18;
+const stepHeight = (lines: number) => 38 + lines * LINE + (lines ? 6 : 0);
+
+/**
+ * The nodes of a draft and their arrows: the trigger first, then each step downwards in the order it runs, laid out
+ * by `stepLayout` (nothing is placed by hand); the run's order as arrows with a «+» between two steps, and, for the
+ * chosen step, an arrow from each step or input it takes a value from.
+ */
 function nodesOf(
   t: T,
   draft: Draft,
@@ -245,27 +376,13 @@ function nodesOf(
   problems: readonly FlowProblem[],
   selected: string | null,
   test: FlowTestView | null,
+  onPlus: ((before: string, x: number, y: number) => void) | null,
 ): { nodes: Card[]; edges: Edge[] } {
   const inputs =
     typeof draft.trigger.created === "string"
       ? detail.inputs.map((i) => i.id)
       : givenNames(draft.trigger);
   const ids = new Set(draft.plan.steps.map((s) => s.id));
-  const links: { from: string; to: string }[] = [];
-  for (const s of draft.plan.steps) {
-    let fromTrigger = false;
-    for (const d of depsOf(s)) {
-      if (ids.has(d)) links.push({ from: d, to: s.id });
-      else fromTrigger = true;
-    }
-    if (fromTrigger) links.push({ from: TRIGGER, to: s.id });
-  }
-  const boxes = [
-    { id: TRIGGER, width: WIDTH, height: 40 + Math.min(inputs.length, 9) * 18 + 8 },
-    ...draft.plan.steps.map((s) => ({ id: s.id, width: WIDTH, height: 84 })),
-  ];
-  const auto = flowLayout(boxes, links);
-  const at = (id: string) => draft.layout?.[id] ?? auto.get(id) ?? { x: 0, y: 0 };
   const ran = new Map(detail.nodes.map((n) => [n.id, n.ran]));
   const bad = new Set(problems.map((p) => p.step ?? TRIGGER));
   const collection = (s: FlowStep) => {
@@ -275,23 +392,50 @@ function nodesOf(
       ? (catalog?.collections.find((c) => c.key === k)?.name ?? k)
       : null;
   };
+  const chosen = draft.plan.steps.find((s) => s.id === selected);
+  const feeds = new Set(chosen ? depsOf(chosen) : []);
+  const cards = draft.plan.steps.map((s) => {
+    const r = ran.get(s.id) ?? {};
+    const ranN = Object.entries(r).reduce((a, [k, b]) => (k === "end" ? a : a + b), 0);
+    const tried = test ? (test.steps[s.id] ?? null) : undefined;
+    const detailText = stepDetail(t, s, s.op === "call" ? collection(s) : null);
+    const lines = (detailText ? 1 : 0) + (tried ? 1 : 0) + (ranN > 0 && !tried ? 1 : 0);
+    return { s, r, tried, detailText, height: stepHeight(lines) };
+  });
+  const heights = new Map(cards.map((c) => [c.s.id, c.height]));
+  const triggerHeight = 40 + Math.min(inputs.length, 9) * LINE + 8;
+  const l = stepLayout(draft.plan.steps, {
+    trigger: { id: TRIGGER, height: triggerHeight },
+    width: WIDTH,
+    height: (id) => heights.get(id) ?? stepHeight(0),
+    gapY: 34,
+    gapX: 28,
+    laneHead: 26,
+  });
+  const at = (id: string) => l.at.get(id) ?? { x: 0, y: 0 };
   const nodes: Card[] = [
     {
       id: TRIGGER,
       type: "trigger",
       position: at(TRIGGER),
       data: {
-        text: triggerText(t, draft.trigger),
+        text: triggerText(
+          t,
+          draft.trigger,
+          (k) => catalog?.collections.find((c) => c.key === k)?.name,
+        ),
         inputs,
         bad: problems.some((p) => p.step === null && p.at === "trigger"),
         on: selected === TRIGGER,
       },
-      className: "fl-node source",
+      // A press on a box is a click (it opens its panel), not the start of a pan: nothing on the canvas is dragged.
+      className: "fl-node source nopan",
       deletable: false,
       connectable: false,
+      draggable: false,
     },
-    ...draft.plan.steps.map(
-      (s): StepCard => ({
+    ...cards.map(
+      ({ s, r, tried, detailText }): StepCard => ({
         id: s.id,
         type: "step",
         position: at(s.id),
@@ -301,25 +445,59 @@ function nodesOf(
             s.op === "call" && !catalog
               ? (detail.nodes.find((n) => n.id === s.id)?.title ?? stepName(t, s, catalog))
               : stepName(t, s, catalog),
-          detail: s.op === "call" ? collection(s) : null,
-          ran: ran.get(s.id) ?? {},
+          detail: detailText,
+          ran: r,
           bad: bad.has(s.id),
           on: selected === s.id,
-          ...(test ? { test: test.steps[s.id] ?? null } : {}),
+          feeds: feeds.has(s.id),
+          ...(test ? { test: tried ?? null } : {}),
         },
-        className: `fl-node ${s.op === "read" ? "model" : "code"}`,
+        className: `fl-node ${s.op === "read" ? "model" : "code"} nopan`,
+        draggable: false,
       }),
     ),
   ];
-  const edges: Edge[] = links.map((e) => ({
-    id: `${e.from}>${e.to}`,
-    source: e.from,
-    target: e.to,
-    type: "smoothstep",
-    markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
-    className: "fl-edge",
+  // A step inside a lane takes no «+» before it (a new one there would run for every choice).
+  const inLane = new Set(
+    segmentsOf(draft.plan.steps).flatMap((g) =>
+      g.kind === "lanes" ? g.lanes.flatMap((x) => x.steps) : [],
+    ),
+  );
+  const plusLabel = t("flows.addHere");
+  const edges: Edge[] = l.links.map((k) => ({
+    id: `o:${k.from}>${k.to}`,
+    source: k.from,
+    target: k.to,
+    sourceHandle: "b",
+    targetHandle: "t",
+    type: "order",
+    data: {
+      lane: k.lane ?? null,
+      before: catalog && onPlus && !inLane.has(k.to) ? k.to : null,
+      onPlus: onPlus ?? (() => undefined),
+      plusLabel,
+    } satisfies OrderData,
+    markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
     deletable: false,
+    selectable: false,
   }));
+  if (chosen) {
+    const from = new Set<string>();
+    for (const d of depsOf(chosen)) from.add(ids.has(d) ? d : TRIGGER);
+    for (const f of from)
+      edges.push({
+        id: `d:${f}>${chosen.id}`,
+        source: f,
+        target: chosen.id,
+        sourceHandle: "ro",
+        targetHandle: "ri",
+        type: "data",
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+        deletable: false,
+        selectable: false,
+        zIndex: 5,
+      });
+  }
   return { nodes, edges };
 }
 
@@ -562,12 +740,12 @@ function Canvas({
   test,
   onSelect,
   onPlan,
-  onLayout,
   onDuplicate,
   onRemove,
   onTestUpTo,
   canTestUpTo,
-  onAddAt,
+  onAdd,
+  readOnly = false,
 }: {
   draft: Draft;
   detail: FlowDetailView;
@@ -577,83 +755,88 @@ function Canvas({
   test: FlowTestView | null;
   onSelect: (id: string | null) => void;
   onPlan: (p: FlowPlan) => void;
-  onLayout: (l: Record<string, { x: number; y: number }> | null) => void;
   onDuplicate: (id: string) => void;
   onRemove: (id: string) => void;
   onTestUpTo: (id: string) => void;
   /** Whether the flow can be tried as far as that step now (no test running, no problem up to it). */
   canTestUpTo: (id: string) => boolean;
-  /** A new step of that kind where the canvas was clicked (after `after`, or where «Añadir paso» puts one): its id. */
-  onAddAt: (kind: NodeKind, at: { x: number; y: number }, after: string | null) => string;
+  /** A new step of that kind: before `before` (the «+» between two), else after `after` or the chosen one; its id. */
+  onAdd: (kind: NodeKind, where: { before?: string; after?: string | null }) => string;
+  /** To look at and run, not to change (the phone; docs/sistema.md §4.4). */
+  readOnly?: boolean;
 }) {
   const t = useStore((s) => s.t);
   // The right button on a node: its actions where the pointer is (task 70); «Abrir» opens its panel.
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Card>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const { fitView, screenToFlowPosition } = useReactFlow();
-  // Fitted once its nodes are measured, and again for another flow: fitted before, the first nodes were not there
-  // yet and the canvas opened too far out to read (2026-11-05, task 70).
-  const measured = useNodesInitialized();
-  const fittedFor = useRef<string | null>(null);
   const [linking, setLinking] = useState<{ from: string; to: string } | null>(null);
   // An arrow being drawn: every step shows where it lands (task 78).
   const [connecting, setConnecting] = useState(false);
-  // The right button on the canvas, or an arrow left on it: «Añadir paso» there (task 78; from: the step it takes a
-  // value of).
+  // The canvas's right button, an arrow left on it, or a «+» between two steps: «Añadir paso» there (task 78).
   const [adding, setAdding] = useState<{
     x: number;
     y: number;
-    at: { x: number; y: number };
     from: string | null;
+    before: string | null;
   } | null>(null);
-  useEffect(() => {
-    const g = nodesOf(t, draft, detail, catalog, check?.problems ?? [], selected, test);
-    setNodes(g.nodes);
-    setEdges(g.edges);
-  }, [t, draft, detail, catalog, check, selected, test, setNodes, setEdges]);
-  useEffect(() => {
-    if (!measured || !nodes.length || fittedFor.current === detail.id) return;
-    fittedFor.current = detail.id;
-    requestAnimationFrame(() => void fitView({ padding: 0.06, duration: 200 }));
-  }, [measured, nodes.length, detail.id, fitView]);
-  const keepPositions = useCallback(() => {
-    const out: Record<string, { x: number; y: number }> = {};
-    for (const n of nodes) out[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
-    onLayout(out);
-  }, [nodes, onLayout]);
+  const { nodes: made, edges } = useMemo(
+    () =>
+      nodesOf(
+        t,
+        draft,
+        detail,
+        catalog,
+        check?.problems ?? [],
+        selected,
+        test,
+        readOnly ? null : (before, x, y) => setAdding({ x, y, from: null, before }),
+      ),
+    [t, draft, detail, catalog, check, selected, test, readOnly],
+  );
+  // Fitted as it opens (React Flow waits for the boxes to be measured; a new flow is a new canvas): the top of a long
+  // flow at a size to read, the rest a scroll below (2026-11-05: «Leer correo» fitted whole was too small to read).
+  const fit = useMemo(
+    () => ({
+      nodes: made
+        .slice()
+        .sort((a, b) => a.position.y - b.position.y)
+        .slice(0, 8)
+        .map((n) => ({ id: n.id })),
+      padding: 0.12,
+      maxZoom: 1,
+      minZoom: 0.55,
+    }),
+    [],
+  );
   const target = linking ? draft.plan.steps.find((s) => s.id === linking.to) : undefined;
+  // The boxes as React Flow's state, measured once and kept (core/useKeptNodes.ts).
+  const { nodes, onNodesChange } = useKeptNodes(made);
   return (
     <div className={`flow-canvas flow-editing${connecting ? " connecting" : ""}`}>
       <ReactFlow
         nodes={nodes}
+        onNodesChange={onNodesChange}
         edges={edges}
         nodeTypes={NODE_TYPES}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeDragStop={keepPositions}
+        edgeTypes={EDGE_TYPES}
+        nodesDraggable={false}
+        nodesConnectable={!readOnly}
         onNodeClick={(_, n) => onSelect(n.id)}
         onNodeContextMenu={(e, n) => {
           e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY, id: n.id });
+          if (!readOnly) setMenu({ x: e.clientX, y: e.clientY, id: n.id });
         }}
         onPaneClick={() => onSelect(null)}
         onPaneContextMenu={(e) => {
           e.preventDefault();
-          if (!catalog) return;
-          setAdding({
-            x: e.clientX,
-            y: e.clientY,
-            at: screenToFlowPosition({ x: e.clientX, y: e.clientY }),
-            from: null,
-          });
+          if (!catalog || readOnly) return;
+          setAdding({ x: e.clientX, y: e.clientY, from: null, before: null });
         }}
         onConnectStart={() => setConnecting(true)}
         onConnect={(c: Connection) => {
           if (!c.source || !c.target || c.source === TRIGGER || c.source === c.target) return;
           setLinking({ from: c.source, to: c.target });
         }}
-        // Left anywhere on a step, the arrow lands on it (its dot is small); left on the canvas, a new step there
+        // Left anywhere on a step, the arrow lands on it (its dot is small); left on the canvas, a new step after it
         // takes its value (n8n's way; Juan, 2026-11-05: «no puedo conectarlo entre ellos»).
         onConnectEnd={(e, state) => {
           setConnecting(false);
@@ -673,13 +856,7 @@ function Canvas({
           const pane = document
             .elementFromPoint(p.clientX, p.clientY)
             ?.closest(".react-flow__pane");
-          if (pane && catalog)
-            setAdding({
-              x: p.clientX,
-              y: p.clientY,
-              at: screenToFlowPosition({ x: p.clientX, y: p.clientY }),
-              from,
-            });
+          if (pane && catalog) setAdding({ x: p.clientX, y: p.clientY, from, before: null });
         }}
         onNodesDelete={(gone) => {
           let p = draft.plan;
@@ -687,26 +864,20 @@ function Canvas({
           onPlan(p);
           onSelect(null);
         }}
-        deleteKeyCode="Delete"
+        deleteKeyCode={readOnly ? null : "Delete"}
         fitView
+        fitViewOptions={fit}
+        panOnScroll
+        zoomOnScroll={false}
+        zoomOnPinch
         minZoom={0.2}
         maxZoom={1.6}
         edgesFocusable={false}
+        proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={18} size={1} />
         <Controls showInteractive={false} />
       </ReactFlow>
-      <button
-        type="button"
-        className="btn small flow-arrange"
-        onClick={() => {
-          onLayout(null);
-          requestAnimationFrame(() => void fitView({ padding: 0.06, duration: 200 }));
-        }}
-      >
-        <LayoutGrid size={14} strokeWidth={1.8} aria-hidden />
-        {t("data.arrange")}
-      </button>
       {menu && (
         <PointMenu x={menu.x} y={menu.y} label={t("flows.nodeMenu")} onClose={() => setMenu(null)}>
           {(close) => (
@@ -763,7 +934,10 @@ function Canvas({
               catalog={catalog}
               byRecord={typeof draft.trigger.created === "string"}
               onPick={(kind) => {
-                const id = onAddAt(kind, adding.at, adding.from);
+                const id = onAdd(
+                  kind,
+                  adding.before ? { before: adding.before } : { after: adding.from },
+                );
                 if (adding.from) setLinking({ from: adding.from, to: id });
                 close();
               }}
@@ -799,11 +973,13 @@ function Canvas({
 function TriggerPanel({
   draft,
   detail,
+  catalog,
   onTrigger,
   onClose,
 }: {
   draft: Draft;
   detail: FlowDetailView;
+  catalog: FlowCatalog | null;
   onTrigger: (t: Record<string, unknown>) => void;
   onClose: () => void;
 }) {
@@ -830,7 +1006,13 @@ function TriggerPanel({
       </div>
       {fixed ? (
         <>
-          <p>{triggerText(t, draft.trigger)}</p>
+          <p>
+            {triggerText(
+              t,
+              draft.trigger,
+              (k) => catalog?.collections.find((c) => c.key === k)?.name,
+            )}
+          </p>
           <ul className="flow-args">
             {detail.inputs.map((i) => (
               <li key={i.id}>
@@ -1029,12 +1211,15 @@ export function FlowEditor({
   catalog,
   onChanged,
   onOpen,
+  readOnly = false,
 }: {
   detail: FlowDetailView;
   catalog: FlowCatalog | null;
   onChanged: (d: FlowDetailView | null) => void;
   /** Another flow to show (the copy just made). */
   onOpen: (id: string) => void;
+  /** On the phone a flow is looked at, tried and run; it is changed on the computer (docs/sistema.md §4.4). */
+  readOnly?: boolean;
 }) {
   const t = useStore((s) => s.t);
   const lang = useStore((s) => s.settings.language);
@@ -1128,7 +1313,6 @@ export function FlowEditor({
         name: draft.name.trim() || detail.name,
         trigger: draft.trigger,
         plan: draft.plan,
-        layout: draft.layout,
       }),
     );
   const add = (kind: NodeKind) => {
@@ -1138,36 +1322,26 @@ export function FlowEditor({
     setPlan(addStep(draft.plan, step, after));
     setSelected(step.id);
   };
-  // The canvas's right button or an arrow left on it (task 78): the step where it was, after `after` when an arrow
-  // came from it, else where «Añadir paso» puts one; chosen.
-  const addAt = (kind: NodeKind, at: { x: number; y: number }, after: string | null) => {
+  // A step added from the canvas (task 78): before the step a «+» between two was pressed over, after the step an
+  // arrow came from, else after the one chosen or at the end; chosen.
+  const addFrom = (kind: NodeKind, where: { before?: string; after?: string | null }) => {
     const step = newStep(draft.plan, kind);
-    const where =
-      after ??
-      (selected && selected !== TRIGGER ? selected : (draft.plan.steps.at(-1)?.id ?? null));
-    setDraft((d) => ({
-      ...d,
-      plan: addStep(d.plan, step, where),
-      layout: { ...(d.layout ?? {}), [step.id]: { x: Math.round(at.x), y: Math.round(at.y) } },
-    }));
+    setDraft((d) => {
+      if (where.before) return { ...d, plan: insertStep(d.plan, step, where.before) };
+      const after =
+        where.after ??
+        (selected && selected !== TRIGGER ? selected : (d.plan.steps.at(-1)?.id ?? null));
+      return { ...d, plan: addStep(d.plan, step, after) };
+    });
     setSelected(step.id);
     return step.id;
   };
   // The right button's «Duplicar»: the copy right after it, chosen.
   const duplicate = (id: string) => {
     const r = duplicateStep(draft.plan, id);
-    const copy = r.id;
-    if (!copy) return;
-    // Where the user left the original, the copy a little below and to the right of it.
-    setDraft((d) => {
-      const at = d.layout?.[id];
-      return {
-        ...d,
-        plan: r.plan,
-        layout: at && d.layout ? { ...d.layout, [copy]: { x: at.x + 32, y: at.y + 32 } } : d.layout,
-      };
-    });
-    setSelected(copy);
+    if (!r.id) return;
+    setPlan(r.plan);
+    setSelected(r.id);
   };
   // As far as a step: not while a test or a change runs, nor with a problem in it, before it or in the trigger.
   const canTestUpTo = (id: string) => {
@@ -1200,9 +1374,18 @@ export function FlowEditor({
         <input
           className="flow-name"
           aria-label={t("flows.name")}
+          readOnly={readOnly}
           value={draft.name}
           onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value.slice(0, 80) }))}
         />
+        {detail.preset !== null && (
+          <span
+            className={`flow-whose${detail.by === "preset" ? " boni" : ""}`}
+            title={detail.by === "preset" ? t("flows.whose.boniTip") : t("flows.whose.yoursTip")}
+          >
+            {detail.by === "preset" ? t("flows.group.boni") : t("flows.whose.yours")}
+          </span>
+        )}
         <label className="toggle-row">
           <input
             type="checkbox"
@@ -1214,7 +1397,7 @@ export function FlowEditor({
           />
           <span>{detail.enabled ? t("flows.enabled") : t("flows.disabled")}</span>
         </label>
-        {catalog && (
+        {catalog && !readOnly && (
           <PopButton
             label={
               <>
@@ -1272,7 +1455,7 @@ export function FlowEditor({
           </button>
         )}
         <span className="spacer" />
-        {dirty && (
+        {dirty && !readOnly && (
           <button
             type="button"
             className="btn small"
@@ -1282,14 +1465,16 @@ export function FlowEditor({
             {t("flows.discard")}
           </button>
         )}
-        <button
-          type="button"
-          className="btn primary small"
-          disabled={!dirty || busy || problems.length > 0}
-          onClick={() => void save()}
-        >
-          {t("flows.save")}
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            className="btn primary small"
+            disabled={!dirty || busy || problems.length > 0}
+            onClick={() => void save()}
+          >
+            {t("flows.save")}
+          </button>
+        )}
         <PopButton
           label={<MoreHorizontal size={16} strokeWidth={1.8} />}
           title={t("page.more")}
@@ -1297,65 +1482,80 @@ export function FlowEditor({
         >
           {(close) => (
             <>
-              <p className="menu-head">{t("flows.versions")}</p>
-              {detail.versions.slice(0, 12).map((v) => (
-                <MenuRow
-                  key={v.version}
-                  on={v.version === detail.version}
-                  label={`v${v.version} · ${t(`flows.by.${v.by}`)} · ${when(v.created)}`}
-                  onClick={() => {
-                    close();
-                    if (v.version !== detail.version)
-                      void act(() => agentApi.revertFlow(detail.id, { version: v.version }));
-                  }}
-                />
-              ))}
-              <MenuSep />
-              {detail.preset !== null && detail.by !== "preset" && (
-                <MenuRow
-                  label={t("flows.backToBoni")}
-                  onClick={() => {
-                    close();
-                    void act(() => agentApi.revertFlow(detail.id, { preset: true }));
-                  }}
-                />
+              {!readOnly && (
+                <>
+                  <p className="menu-head">{t("flows.versions")}</p>
+                  {detail.versions.slice(0, 12).map((v) => (
+                    <MenuRow
+                      key={v.version}
+                      on={v.version === detail.version}
+                      label={`v${v.version} · ${t(`flows.by.${v.by}`)} · ${when(v.created)}`}
+                      onClick={() => {
+                        close();
+                        if (v.version !== detail.version)
+                          void act(() => agentApi.revertFlow(detail.id, { version: v.version }));
+                      }}
+                    />
+                  ))}
+                  <MenuSep />
+                  {detail.preset !== null && detail.by !== "preset" && (
+                    <MenuRow
+                      label={t("flows.backToBoni")}
+                      onClick={() => {
+                        close();
+                        void act(() => agentApi.revertFlow(detail.id, { preset: true }));
+                      }}
+                    />
+                  )}
+                </>
               )}
               <MenuRow
-                label={t("flows.duplicate")}
+                label={t("map.show")}
                 onClick={() => {
                   close();
-                  void (async () => {
-                    try {
-                      const copy = await agentApi.createFlow(
-                        t("flows.copyOf", { name: detail.name }),
-                        detail.id,
-                      );
-                      if (copy) onOpen(copy.id);
-                    } catch (e) {
-                      setError(errorText(t, e));
-                    }
-                  })();
+                  showMap(`flow:${detail.id}`);
                 }}
               />
-              {detail.preset === null && (
-                <MenuRow
-                  danger
-                  label={confirmDelete ? t("flows.deleteSure") : t("flows.delete")}
-                  onClick={() => {
-                    if (!confirmDelete) return setConfirmDelete(true);
-                    close();
-                    setConfirmDelete(false);
-                    void (async () => {
-                      try {
-                        await agentApi.deleteFlow(detail.id);
-                        toast(t("flows.deleted", { name: detail.name }));
-                        onChanged(null);
-                      } catch (e) {
-                        setError(errorText(t, e));
-                      }
-                    })();
-                  }}
-                />
+              {!readOnly && (
+                <>
+                  <MenuRow
+                    label={t("flows.duplicate")}
+                    onClick={() => {
+                      close();
+                      void (async () => {
+                        try {
+                          const copy = await agentApi.createFlow(
+                            t("flows.copyOf", { name: detail.name }),
+                            detail.id,
+                          );
+                          if (copy) onOpen(copy.id);
+                        } catch (e) {
+                          setError(errorText(t, e));
+                        }
+                      })();
+                    }}
+                  />
+                  {detail.preset === null && (
+                    <MenuRow
+                      danger
+                      label={confirmDelete ? t("flows.deleteSure") : t("flows.delete")}
+                      onClick={() => {
+                        if (!confirmDelete) return setConfirmDelete(true);
+                        close();
+                        setConfirmDelete(false);
+                        void (async () => {
+                          try {
+                            await agentApi.deleteFlow(detail.id);
+                            toast(t("flows.deleted", { name: detail.name }));
+                            onChanged(null);
+                          } catch (e) {
+                            setError(errorText(t, e));
+                          }
+                        })();
+                      }}
+                    />
+                  )}
+                </>
               )}
             </>
           )}
@@ -1459,7 +1659,6 @@ export function FlowEditor({
             test={test}
             onSelect={setSelected}
             onPlan={setPlan}
-            onLayout={(layout) => setDraft((d) => ({ ...d, layout }))}
             onDuplicate={duplicate}
             onRemove={(id) => {
               setPlan(removeStep(draft.plan, id));
@@ -1467,18 +1666,20 @@ export function FlowEditor({
             }}
             onTestUpTo={startTest}
             canTestUpTo={canTestUpTo}
-            onAddAt={addAt}
+            onAdd={addFrom}
+            readOnly={readOnly}
           />
         </ReactFlowProvider>
-        {selected === TRIGGER && (
+        {selected === TRIGGER && !readOnly && (
           <TriggerPanel
             draft={draft}
             detail={detail}
+            catalog={catalog}
             onTrigger={(trigger) => setDraft((d) => ({ ...d, trigger }))}
             onClose={() => setSelected(null)}
           />
         )}
-        {step && catalog && (
+        {step && catalog && !readOnly && (
           <FlowStepPanel
             step={step}
             plan={draft.plan}
@@ -1493,6 +1694,7 @@ export function FlowEditor({
                 : null
             }
             problems={problems.filter((p) => p.step === step.id)}
+            byRecord={byRecord}
             onPlan={setPlan}
             onRemove={() => {
               setPlan(removeStep(draft.plan, step.id));

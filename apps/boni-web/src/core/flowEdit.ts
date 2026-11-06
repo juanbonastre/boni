@@ -70,6 +70,14 @@ export function addStep(plan: FlowPlan, step: FlowStep, after?: string | null): 
   return { ...plan, steps };
 }
 
+/** The plan with `step` right before `before` (where the canvas's «+» between two steps was pressed). */
+export function insertStep(plan: FlowPlan, step: FlowStep, before: string): FlowPlan {
+  const steps = [...plan.steps];
+  const i = steps.findIndex((s) => s.id === before);
+  steps.splice(i >= 0 ? i : steps.length, 0, step);
+  return { ...plan, steps };
+}
+
 /**
  * The plan with a copy of that step right after it, under an id of its own, and that id (what took the original's
  * value keeps it; task 70, the node's menu).
