@@ -5,6 +5,52 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-06 (thirty-fifth) — server 0.8.111 · Boni desktop 0.4.79 · Boni Android
+
+Needs:
+- The server, 0.8.111, to deploy: the map, «¿De dónde viene?» and «Flujos» as one of Boni's collections. Its store
+  gains a column (migration 18: what an «Aceptar» applied), made on its first start.
+- Boni desktop 0.4.79 (`release/boni_0.4.79_amd64.deb`), to install after the server: it asks for the map and the
+  origins, which 0.8.110 does not have.
+- Boni Android from main, through Obtainium.
+
+F8, the map (task 84), with a flow's canvas that lays itself out and task 83's pieces named by what they do. You
+asked to think these diagrams and the section again from scratch, usable, and not half done. (#354)
+
+- **«Flujos» is one of Boni's collections**, with «Tabla» and «Mapa» as its views. Each flow opens on a page of its
+  own («Flujos › Leer correo»); «Nuevo» makes one by hand. «Modelos» is no longer a tab: what configures the models is
+  in Ajustes → Modelos again, and what they do and cost is on the map.
+- **The map, computed** from your flows, the journal and the audit of 7 or 30 days. It shows the mail coming in, your
+  collections, the flows (they unfold into their steps), the Bandeja, the conversation, the guide's reviewer, you and
+  Claude through the MCP, and, if you ask, your pages. It reads left to right, with each arrow's verb and number.
+  - Put anything in the centre (a search, or «Ver en el mapa» in a right-click menu, also on a Bandeja card), with
+    «Antes» and «Después» (1 | 2 | Todo).
+  - Group it by trigger, flow, collection or package; filter it (with AI, what writes, what is on, what happened,
+    with pages).
+  - A click opens a box's panel: what comes in and goes out, its numbers, «Poner en el centro», «Abrir».
+  - The Bandeja is crossed, not counted: «Antes: 1» of Evento still says who writes in it, with what each proposed
+    there.
+  - To try: right-click Tarea in the sidebar → «Ver en el mapa». Then search «Correo» and pick «Después: Todo»: the
+    mail's way to the Bandeja, to Tarea and Evento, and to the reviewer.
+- **«¿De dónde viene?»**, in a row's right-click menu:
+  - A record a flow proposed opens the map with that run drawn on it: its way lit, each step with what came of it, and
+    a card with the mail, the reading, what it proposed and when you accepted it.
+  - One you or Claude wrote says so in a notice.
+  - To try: a task that came from a mail.
+- **A flow's canvas lays itself out**: its steps downwards in the order they run, a choice's steps side by side, a «+»
+  between two. Nothing of where boxes are is kept, so «Leer correo» no longer opens in a heap and looking never asks to
+  «Guardar». The Recorrido draws a run the same way.
+- **Boni's pieces say what they do** («Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones»).
+  «Probar» says what each found («Va a Tarea», «2 ya propuestos»).
+- **On the phone**, «Páginas» lists «Flujos» under «De Boni»: the map to look at, a flow to try or run; nothing is
+  made, renamed or deleted there.
+- **Fixed on the way**: every collection opened on its first view after a restart; the Registro did not show a run
+  asked for when it was older than its latest; a flow's run was called «Segundo plano».
+- Still in task 84: the trigger, the model, a block and a button as boxes of their own; each step's calls and cost;
+  «Ver en el mapa» on a turn of the conversation (with F9). Decided while building it, yours to change: the map opens
+  whole («un solo flujo donde se ve todo»), and you are not «after» the mail (your decisions are the words of the
+  Bandeja's arrows).
+
 ## 2026-11-05 (thirty-fourth) — server 0.8.110 · Boni desktop 0.4.78 · Boni Android
 
 Needs:
