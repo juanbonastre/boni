@@ -29,6 +29,7 @@ import {
   createCollectionNamed,
   dismissProposal,
   dismissRequest,
+  inboxOrder,
   loadDataTypes,
   loadInbox,
   mailboxHost,
@@ -108,12 +109,7 @@ export function InboxPanel({ under = false }: { under?: boolean }) {
 export function useInboxQueue(): ({ p: Proposal } | { r: InboxRequest })[] {
   const inbox = useStore((s) => s.inbox);
   const requests = useStore((s) => s.requests);
-  return [
-    ...inbox.map((p) => ({ p, at: p.created })),
-    ...requests.map((r) => ({ r, at: r.created })),
-  ]
-    .sort((a, b) => a.at - b.at)
-    .map((x) => ("p" in x ? { p: x.p } : { r: x.r }));
+  return inboxOrder(inbox, requests);
 }
 
 /** The top bar's way into the inbox: its count, the panel open or closed. */

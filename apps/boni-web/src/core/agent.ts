@@ -1483,6 +1483,17 @@ const parseDecisions = (b: unknown): DecisionsView => ({
   areas: parseAreas(b),
   learning: !(isObj(b) && b.learning === false),
 });
+/**
+ * What is on the screen as Juan writes (docs/sistema.md §4.7, F9; task 85), by reference only: what is open, the
+ * Bandeja's cards in the order it shows them, the rows he chose. The server makes them values from what the store
+ * holds, through the models' view.
+ */
+export interface ScreenRefs {
+  open: { kind: string; id: string | null } | null;
+  inbox: { kind: "proposal" | "question"; id: string }[];
+  chosen: string[];
+}
+
 /** The areas of `GET /api/agent/decisions` (and of the PUT that turns a switch). */
 function parseAreas(b: unknown): AreaAccuracy[] {
   const areas = isObj(b) && Array.isArray(b.areas) ? b.areas : [];
@@ -2442,13 +2453,15 @@ export class AgentApi {
     return parsed;
   }
 
-  /** `live`: an id the device makes to watch the turn while it runs (`live()`). */
-  turn = async (text: string, conversation?: string, live?: string) =>
+  /** `live`: an id the device makes to watch the turn while it runs (`live()`); `screen`: what is on the screen, by
+   * reference (F9; servers before 0.8.114 ignore it). */
+  turn = async (text: string, conversation?: string, live?: string, screen?: ScreenRefs) =>
     parseTurn(
       await this.call("POST", "turn", {
         text,
         ...(conversation ? { conversation } : {}),
         ...(live ? { live } : {}),
+        ...(screen ? { screen } : {}),
       }),
     );
   answer = async (

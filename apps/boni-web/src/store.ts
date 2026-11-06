@@ -41,6 +41,7 @@ import {
   type Reply,
   type RunDetail,
   type RunSummary,
+  type ScreenRefs,
   type StepWords,
   type TodayItem,
   type Tree,
@@ -328,6 +329,10 @@ interface State {
   decideErrors: Record<string, { text: string; gone: boolean }>;
   /** The inbox as a panel on the right (Juan, 2026-10-22): opens by itself when something new arrives. */
   inboxOpen: boolean;
+  /** The conversation over the screen (docs/sistema.md §4.7, F9): a window over what is open, or docked to the right. */
+  boniWindow: "closed" | "float" | "right";
+  /** Rows chosen in each table on screen (its selection), by the table: the screen gives them to Boni (F9). */
+  chosenRows: Record<string, string[]>;
   runs: RunSummary[];
   /** The Registro's «Acierto»: Boni's decisions per area (docs/fiabilidad.md). */
   accuracy: AreaAccuracy[];
@@ -453,6 +458,8 @@ export const useStore = create<State>(() => ({
   deciding: {},
   decideErrors: {},
   inboxOpen: false,
+  boniWindow: "closed",
+  chosenRows: {},
   runs: [],
   accuracy: [],
   learning: true,
@@ -1487,7 +1494,74 @@ export async function sendTurn(text: string) {
     } catch {
       // A server without the list: the device keeps a conversation of its own there, as before.
     }
-  await agentCall(id, (live) => agent.turn(request, conversation ?? CONVERSATION, live));
+  const screen = screenNow();
+  await agentCall(id, (live) => agent.turn(request, conversation ?? CONVERSATION, live, screen));
+}
+
+/**
+ * The Bandeja's cards in the order it shows them (Juan, 2026-10-24, option A): proposals and questions mixed, the
+ * oldest first, at the top. The panel and the screen (F9) both read it.
+ */
+export function inboxOrder(
+  inbox: readonly Proposal[],
+  requests: readonly InboxRequest[],
+): ({ p: Proposal } | { r: InboxRequest })[] {
+  return [
+    ...inbox.map((p) => ({ p, at: p.created })),
+    ...requests.map((r) => ({ r, at: r.created })),
+  ]
+    .sort((a, b) => a.at - b.at)
+    .map((x) => ("p" in x ? { p: x.p } : { r: x.r }));
+}
+
+/**
+ * What is on the screen as Juan writes (docs/sistema.md §4.7, F9; task 85), by reference: what is open, the Bandeja's
+ * cards when it is open, in its order, and the rows chosen in its tables. The server makes them values.
+ */
+export function screenNow(): ScreenRefs {
+  const s = get();
+  const v = s.view as { kind: string; id?: string; type?: string; flow?: string };
+  const id =
+    v.kind === "collection"
+      ? (v.type ?? null)
+      : v.kind === "flows"
+        ? (v.flow ?? null)
+        : (v.id ?? null);
+  return {
+    open: { kind: v.kind, id },
+    inbox: s.inboxOpen
+      ? inboxOrder(s.inbox, s.requests)
+          .slice(0, 20)
+          .map((x) =>
+            "p" in x ? { kind: "proposal", id: x.p.id } : { kind: "question", id: x.r.id },
+          )
+      : [],
+    chosen: [...new Set(Object.values(s.chosenRows).flat())].slice(0, 50),
+  };
+}
+
+/** A table's chosen rows, for the screen (F9); none when it closes. */
+export const setChosenRows = (table: string, ids: readonly string[]) =>
+  set((s) => {
+    const rest = Object.fromEntries(Object.entries(s.chosenRows).filter(([k]) => k !== table));
+    return { chosenRows: ids.length ? { ...rest, [table]: [...ids] } : rest };
+  });
+
+/**
+ * The conversation over the screen (F9, C4): `Ctrl+E` and the circle open it over what is open, or close it; on the
+ * Conversación screen it is already there. Docked to the right it takes the Bandeja's place, which can come back.
+ */
+export function openBoniWindow(mode: "float" | "right" = "float") {
+  if (get().view.kind === "chat") return;
+  set({ boniWindow: mode, ...(mode === "right" ? { inboxOpen: false } : {}) });
+}
+export const closeBoniWindow = () => set({ boniWindow: "closed" });
+export const toggleBoniWindow = () =>
+  get().boniWindow === "closed" ? openBoniWindow() : closeBoniWindow();
+/** «Ampliar»: the conversation on its own screen, the window closed. */
+export function widenBoniWindow() {
+  set({ boniWindow: "closed" });
+  showChat();
 }
 /**
  * A flow run by hand (docs/flujos.md, F2): a turn of a new conversation, so its replies, questions and confirmations
@@ -1659,7 +1733,11 @@ export async function loadInbox() {
 }
 let inboxSeen: Set<string> | null = null;
 export const toggleInbox = (open = !get().inboxOpen) => {
-  set({ inboxOpen: open });
+  // The right column is one: a window docked there floats again over what is open (F9).
+  set({
+    inboxOpen: open,
+    ...(open && get().boniWindow === "right" ? { boniWindow: "float" } : {}),
+  });
   if (open) void loadInbox();
 };
 /** Accepting one proposal (never all at once: each is looked at, docs/nucleo.md 7.5). */

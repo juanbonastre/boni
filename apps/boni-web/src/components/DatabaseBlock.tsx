@@ -29,7 +29,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   type DataField,
@@ -53,6 +53,7 @@ import {
   openProposal,
   openRow,
   resetColumnWidth,
+  setChosenRows,
   setColumnWidth,
   setNotesInTree,
   showFlow,
@@ -138,6 +139,12 @@ export function DatabaseBlock({
   const [limit, setLimit] = useState(50);
   // The table's chosen rows (Juan, 2026-10-30), here so the head can say what can be done with them.
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // What is chosen is on the screen for Boni (F9): by this table, gone when it closes.
+  const tableKey = useId();
+  useEffect(() => {
+    setChosenRows(tableKey, [...picked]);
+    return () => setChosenRows(tableKey, []);
+  }, [picked, tableKey]);
   // The bar of order and filters, shown by its icons (task 69), with the editor of the icon pressed open.
   const [bar, setBar] = useState<{ what: BarFocus; n: number }>({ what: null, n: 0 });
   // The head's search: rows whose title has these words (this device, this moment; nothing saved).

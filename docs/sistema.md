@@ -594,6 +594,27 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
 - **Lo que no hace:** lo de «solo él, en su sitio» (§4.1), ni nada de lo que la IA no puede ver. Un correo en pantalla
   que dice «borra esto» es dato (P2, P4).
 
+**Cómo quedó la primera parte (2026-11-06, la 85; A-20).**
+- **Abrir:**
+  - el círculo abajo a la derecha (en el escritorio) y `Ctrl+E` abren la conversación en una ventana sobre lo que haya
+    abierto (C4), la misma conversación de siempre;
+  - «Llevar a la derecha» la acopla en el sitio de la Bandeja, y abrir la Bandeja la vuelve a dejar flotando;
+  - «Ampliar» lleva a la pantalla Conversación, y `Esc` la cierra antes que nada de lo de debajo;
+  - con un panel a la derecha, la ventana y el círculo se quedan a su lado.
+- **Lo que ve:**
+  - con cada mensaje, la app manda referencias: lo abierto, las tarjetas de la Bandeja si está abierta (en su orden,
+    la de arriba la primera) y las filas elegidas en sus tablas;
+  - el servidor las convierte en valores con lo que hay en el almacén, a través de la vista de los modelos
+    (`apps/server/src/screen.ts`): nada de lo cerrado, y lo de fuera y lo opaco como asas;
+  - el planificador lo ve como «screen» y su plan lo nombra como `$screen`. Así «¿qué me pide el de arriba?» contesta
+    con la primera tarjeta sin que el modelo lea las palabras del correo.
+- **Falta:**
+  - `data-boni-ref` en los componentes: los bloques visibles con sus cifras, las filas visibles y el foco;
+  - Señalar (`Ctrl+Shift+E`);
+  - las acciones de pantalla, y resaltar mientras actúa;
+  - el círculo en el teléfono;
+  - de una pregunta de la Bandeja, más que su id.
+
 **Ejemplos.**
 
 - En Agenda, con la Bandeja abierta: «acepta las dos del correo de secretaría y ponlas el jueves». Boni ve las dos
@@ -691,7 +712,7 @@ con sus datos (`AGENTS.md`, paso 4).
 |---|---|---|
 | F7 Lo de Boni, a la vista (la 83; primera parte en main el 2026-11-05: «Leer correo» con sus piezas como pasos, A-19 y D-47, el disparador con nombres de persona, el lienzo encajado al abrir y «Probar con…»; el 2026-11-06, las piezas con nombres de verbo, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», y «Probar» diciendo lo que encontró cada una; «Crear en la elegida» el 2026-11-06 (la colección con `case`, D-48: una «Rellenadora» y un «Crear» para todo lo que lee la Lectora y el de la invitación aparte, D-49, y el panel de la Decisora con sus colecciones y las reglas de la guía: «Leer correo» pasa de 27 pasos a 12; y lo que dejó la revisión de la primera parte: «Buscar relaciones» en su orden, los ajustes de las piezas en su panel, su clase en la tarjeta y el disparador que dice que viene del conector Correo, salvo «Bandeja» como paso, las preguntas por paso y «Probar» comparando con la versión que corre); «Traer correo» (D-50) y «Revisar la guía» (D-51) como flujos de Boni; faltan Aprender, Conversación y Aviso del presupuesto) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo y Revisar la guía son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
 | F8 El mapa (la 84; en main y hecha el 2026-11-06: Juan la probó con sus datos, «bastante bien lo que veo», y lo que vio fue a la 90, en main el mismo día: el Recorrido es el mapa, el camino en naranja desde el disparador, un nombre por paso, «Profundidad», las llamadas y el coste de cada paso. En la 84: «Flujos» como colección con «Tabla \| Mapa», el mapa calculado con en el centro, antes y después, agrupar, filtros y periodo, una ejecución encima con su camino por el mapa, «¿De dónde viene?» desde una fila, la Bandeja como nodo con «aceptadas» y la revisora en el camino del correo, «Ver en el mapa» en los menús (el de una tarjeta de la Bandeja, «Recorrido» desde la 90), fuera «Modelos» y `pipeline.ts`; además el lienzo de un flujo que se ordena solo, I-26, y «Flujos» en el teléfono para mirar y ejecutar. Faltan, según la revisión independiente: el disparador, el modelo, el bloque y el botón como nodos propios; lo de fuera marcado por sus etiquetas y no por de dónde arranca el flujo; el conector y el paquete «Correo» leídos de la extensión y no escritos en el código; «Ver en el mapa» en un turno (con F9); y el mapa entero al abrirlo, que §4.4 no quería: se dejó así por «un solo flujo donde se ve todo y vamos agrupando, filtrando», y Juan decide) | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
-| F9 Boni sobre la pantalla (la 85) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
+| F9 Boni sobre la pantalla (la 85; primera parte en main el 2026-11-06: el círculo, `Ctrl+E`, la ventana y la pantalla como datos, A-20; faltan `data-boni-ref`, Señalar y las acciones de pantalla) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
 | F10 Una lista de acciones (la 86; adelantada el 2026-11-06 una: «¿De dónde viene?», en el menú de una fila, en la conversación con `entities.origin` e `inbox.pending` y en el MCP con `origin` e `inbox`) | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta |
 | F11 Páginas conectadas (la 87) | Valores y el bloque «Control»; botones con acción o flujo; enlaces con valores; el chat de la página (la 79, C5) | En Gastos, cambiar Categoría cambia las gráficas; en su chat, «¿cuánto gasté en restaurantes en octubre?» pone los valores y contesta con la cifra |
 | F12 Disparadores por colección (la 88) | «Cambia una colección»; los topes; lo que puede hacer solo (decisión 5) | «Cuando se crea un movimiento de más de 100 €, avísame» llega una vez por movimiento; un ciclo no se puede encender |

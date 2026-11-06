@@ -2,6 +2,7 @@ import { MoreHorizontal, PanelLeft, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AllPagesView } from "./components/AllPages.tsx";
 import { AuditView } from "./components/Audit.tsx";
+import { BoniCircle, BoniWindow } from "./components/BoniWindow.tsx";
 import { ChartCard } from "./components/ChartCard.tsx";
 import { ChatView, InboxView, LogView } from "./components/Chat.tsx";
 import { CollectionView } from "./components/Collections.tsx";
@@ -37,6 +38,7 @@ import {
   showChat,
   showLog,
   showStart,
+  toggleBoniWindow,
   toggleSidebar,
   useStore,
 } from "./store.ts";
@@ -78,6 +80,9 @@ export function App() {
       {panelOpen && <SidePanel />}
       {/* Under a mail seen from a card it stays as it was (its cards, what was unfolded), back when that closes. */}
       <InboxPanel under={panelOpen} />
+      {/* Boni over the screen (F9): the circle, and the conversation over what is open or docked to the right. */}
+      <BoniWindow />
+      <BoniCircle />
       {settingsOpen && <SettingsModal />}
       {findOpen && <QuickFind />}
       {trashOpen && <TrashDialog />}
@@ -136,6 +141,15 @@ function useShortcuts(mobile: boolean) {
       if (e.key === "," && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         openSettings(!s.settingsOpen);
+        return;
+      }
+      // Boni over the screen (docs/sistema.md §4.7, F9): `Ctrl+E` in Boni's windows, typing or not; on the
+      // conversation's own screen, to its box.
+      if (e.key.toLowerCase() === "e" && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        if (s.view.kind === "chat")
+          document.querySelector<HTMLTextAreaElement>(".chat-layout textarea")?.focus();
+        else toggleBoniWindow();
         return;
       }
       if (typing || e.ctrlKey || e.metaKey || e.altKey || s.settingsOpen) return;

@@ -131,6 +131,7 @@ export {
   EFFECTS,
   EndRun,
   ensureSystemTypes,
+  entityVal,
   type FlowStarter,
   type FlowWriter,
   fieldName,
