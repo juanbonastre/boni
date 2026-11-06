@@ -5,6 +5,48 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-06 (thirty-seventh) — server 0.8.113 · Boni desktop 0.4.81 · Boni Android
+
+Needs:
+- The server, 0.8.113, to deploy. It says what came out of each step, the run's own costs, who in a word, and the
+  «run» reply.
+- Boni desktop 0.4.81 (`release/boni_0.4.81_amd64.deb`), to install after the server.
+- Boni Android from main, through Obtainium.
+
+What you saw when you tried 36: tasks 91 and 92 (#361).
+
+- **Only the way it took, again and again.**
+  - A run on the map lights the steps that did something and, between two of them, the shortest way along the
+    arrows: never the lanes it did not take.
+  - What it only read is not lit.
+  - A light goes along the whole way, slowly and again and again, from the mail's connector to the collection. It
+    stays still if your system asks for less motion.
+- **What came out of each box**, in its panel under «En esta ejecución»:
+  - the mail;
+  - what the Lectora found;
+  - what the Decisora chose;
+  - what the Rellenadora filled;
+  - the Bandeja's card;
+  - the record it became once accepted.
+
+  It is said in words, never as the model's raw answer. A click on a step opens its own panel. Readings from before
+  this release are worked out from the models' answers.
+- **The run's own costs in orange**: on each step, «1 llamada · 0,002 US$». Under the map, «Las cifras son de los
+  últimos 7 días» says the rest are the period's.
+- **«Profundidad»** slides up to how deep the centre reaches («5 (máx.)»).
+- **«Explicación»** replaces «Por dónde fue» and has «×» to hide it.
+- **No pink arrows**: what carries a mail's words has a small mail in its words and a dotted line.
+- **In the conversation**, «¿De dónde viene «…»?»:
+  - says who by name («lo propuso Leer correo»);
+  - draws its way under the answer, from the mail to the Bandeja and to its collection (dashed while it waits);
+  - has «Ampliar» to open the map with it.
+
+  To try: ask it of a task in the Bandeja.
+- **The conversations' list** folds with the button beside «Nueva conversación» and widens by dragging its edge. Both
+  are kept on the device.
+- An independent review compared both tasks with the design; what it found is fixed in the same PR. Still in the queue:
+  the Decisora's panel listing its collections and the guide's rules, and the editor's lane names cut to their width.
+
 ## 2026-11-06 (thirty-sixth) — server 0.8.112 · Boni desktop 0.4.80 · Boni Android
 
 Needs:
