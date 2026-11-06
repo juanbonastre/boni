@@ -114,10 +114,13 @@ export function confirmView(
   const rows: ConfirmRow[] = [];
   for (const [name, v] of Object.entries(args)) {
     const role = tool.args[name]?.role ?? "?";
+    // What the tool's own code keeps only to make the call (a function's data and the fingerprint of its set, task
+    // 93): never a row; the rows say what the call does.
+    if (tool.hide?.includes(name)) continue;
     if (v.t === "rec" && store) {
       for (const [key, fv] of Object.entries(v.fields)) {
         // A field with no value (a task without a due day) is simply not set: no row saying "null".
-        if (plain(fv) === null) continue;
+        if (plain(fv) === null || tool.hide?.includes(`${name}.${key}`)) continue;
         const f = def?.fields.find((x) => x.key === key);
         const extra: Partial<ConfirmRow> = f && trusted(f.label) ? { name: f.name } : {};
         // An option by its name, an entry it points to by its title (Juan's own, else the id alone).

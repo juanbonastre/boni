@@ -556,9 +556,14 @@ describe("flows through Boni's MCP (docs/flujos.md F5)", () => {
       collections: { key: string }[];
       language: { readers: Record<string, unknown> };
       flows: unknown[];
+      extension_functions: { how: string; active: unknown[] };
     };
     const names = d.tools.map((t) => t.name);
     expect(names).toContain("entities.create");
+    // «Función» and «Aplicar cambios» (task 93), and how a step names an active function (none here).
+    expect(names).toEqual(expect.arrayContaining(["function.run", "function.apply"]));
+    expect(d.extension_functions.how).toContain('"funcion": {"lit": "<id>"}');
+    expect(d.extension_functions.active).toEqual([]);
     expect(names).not.toContain("flows.run");
     expect(names).not.toContain("flows.save");
     expect(d.collections.map((c) => c.key)).toContain("proyecto");

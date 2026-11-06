@@ -583,8 +583,8 @@ function nodesOf(
 
 /**
  * The node kinds «Añadir paso» offers, in groups by what they do (docs/flujos.md §4.5; task 70): Leer, Decidir,
- * Datos, Avisar, Preguntar, Responder, the rest, and Boni's pieces («De Boni», docs/sistema.md §4.2) in a flow a
- * record starts (`byRecord`), the only one they work in.
+ * Datos, Avisar, Preguntar, Responder, «Funciones» when an extension's function is active (task 93), the rest, and
+ * Boni's pieces («De Boni», docs/sistema.md §4.2) in a flow a record starts (`byRecord`), the only one they work in.
  */
 function kindsOf(
   catalog: FlowCatalog,
@@ -599,6 +599,8 @@ function kindsOf(
     x.name.startsWith("entities.") || x.name.startsWith("schema.") || x.effect === "memory";
   const isNotice = (x: { effect: string }) => x.effect === "notify";
   const isPiece = (x: { effect: string }) => x.effect === "piece";
+  // «Función» and «Aplicar cambios» (task 93): offered when there is an active function to name.
+  const isFunction = (x: { name: string }) => x.name.startsWith("function.");
   const call = (x: { name: string }) => ({
     kind: { op: "call", tool: x.name } as NodeKind,
     name: x.name,
@@ -623,8 +625,14 @@ function kindsOf(
       })),
     },
     {
+      group: "functions",
+      items: catalog.functions.length ? tools.filter(isFunction).map(call) : [],
+    },
+    {
       group: "other",
-      items: tools.filter((x) => !isData(x) && !isNotice(x) && !isPiece(x)).map(call),
+      items: tools
+        .filter((x) => !isData(x) && !isNotice(x) && !isPiece(x) && !isFunction(x))
+        .map(call),
     },
     { group: "boni", items: byRecord ? tools.filter((x) => isPiece(x) && x.record).map(call) : [] },
   ];

@@ -491,6 +491,43 @@ paquete se ve como grupo en el mapa («De Correo», «De Conciliación», «Tuyo
 propone o se activa, y con sus ajustes, si los tiene, en Ajustes con su nombre. La seguridad no cambia: nada se activa
 solo (A-10), el código de una función sigue en la caja (A-08) y nunca escribe (A-09).
 
+**Cómo quedó el paso «Función» (2026-11-06, la 93; Juan eligió «A: a la Bandeja»; D-52).**
+- Son dos pasos:
+  - **«Función»** corre en la caja una función de una extensión activa, nombrada en el paso tal cual («banco/importar»),
+    sobre lo que declaró que lee y lo que el paso le da («Datos»). Dice lo que cambiaría (cuántas nuevas y cambiadas,
+    sus preguntas y su resumen) y no escribe nada (A-09). Todo lo que dice lleva la etiqueta de lo que leyó: un número
+    suyo nunca llega a un modelo como si fuera de Boni. Guarda lo que necesita para volver a correrla igual (sus datos,
+    que cuentan otra vez en el tope de una ejecución y van enteros con la propuesta, su día y su semilla) y la huella
+    de su conjunto, nunca el conjunto.
+  - **«Aplicar cambios»** toma su resultado entero y es una escritura como cualquier otra:
+    - no se fía de lo que le da un plan: vuelve a correr la función (A-09, «se repite») sobre lo que hay ahora y hace su
+      conjunto solo si es el propuesto (la misma huella) y si lo que Juan lee es lo que corre (el nombre de la función,
+      su resumen, sus números y sus preguntas), con lo que leyó del almacén; si no, no hace nada y, si era una
+      propuesta, «Ya no vale» en la Bandeja (nunca queda aceptada sin hacer nada);
+    - en un flujo en segundo plano, el conjunto entero espera en la Bandeja como una sola propuesta: «Banco ·
+      importar: 2 nuevos» (su nombre y su resumen), con sus números y sus preguntas por nombre, nunca el JSON;
+    - aceptada, se hace en esa ejecución, toda o nada (una transacción: un valor que una colección no admite detiene
+      el conjunto entero), y Deshacer la quita entera; si al aceptarla la caja no contesta, no se hace nada y vuelve a
+      esperar en la Bandeja;
+    - a mano, decide la política (lo que hace una función nunca es palabra de Juan), contando cada fila: con muchas
+      (más de 20, P11) pide confirmar antes; aceptada en la Bandeja no se pregunta otra vez;
+    - lo que ningún modelo puede leer (lo que leyó de una colección opaca) nunca va a una colección más abierta (A-09).
+- En «Probar», «Función» corre en la caja (es pura) y dice su resumen; «Aplicar cambios» dice lo que haría.
+- La lista de comprobación pide la función por su nombre literal y activa, y «Aplicar cambios» sobre una «Función».
+- En el editor, «Añadir paso» los ofrece en el grupo «Funciones» cuando hay alguna función activa; el panel de
+  «Función» elige entre ellas y enseña su código y los nombres de sus pruebas, para leerlos.
+- El MCP (`flows_describe`) dice qué funciones activas puede nombrar un paso y cómo.
+- Falta:
+  - la colección «Funciones» (siguen en el manifiesto de su extensión);
+  - correr sus pruebas desde el panel (las nombra; pasaron al activarla y pasan en cada versión);
+  - contestar las preguntas de una función (la tarjeta las dice; no se aplican);
+  - la tarjeta en seco al subir un extracto (§11.1 de `extensiones.md`: hace falta el disparador «al subir un
+    fichero»);
+  - la lista de comprobación de un flujo que se acepta desde una conversación no pide aún la función literal (lo
+    hace la del editor y la del MCP); «Aplicar cambios» no depende de ella: nunca hace un conjunto que no dé la
+    función;
+  - en el mapa, las colecciones que lee y escribe una función.
+
 **Ejemplos.**
 
 - **Correo:** el conector Correo (el buzón), la colección Correos, los flujos Traer correo, Leer correo y Revisar la

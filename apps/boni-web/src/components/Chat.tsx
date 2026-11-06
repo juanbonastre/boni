@@ -1169,6 +1169,18 @@ function argLabel(t: T, arg: string, role: string): string {
 /** "values.autor" -> "autor": a record's field without a name from the schema. */
 const fieldKey = (arg: string) => (arg.includes(".") ? arg.slice(arg.indexOf(".") + 1) : null);
 
+/** What an extension's function would change (task 93, D-52): its rows by their names, never by their keys. */
+const FUNCTION_ROWS = new Set([
+  "cambios.nombre",
+  "cambios.resumen",
+  "cambios.nuevas",
+  "cambios.cambiadas",
+  "cambios.preguntas",
+]);
+/** A row of what a function would change, by its name («Nuevas»); null for any other row. */
+export const functionRowName = (t: T, arg: string): string | null =>
+  FUNCTION_ROWS.has(arg) ? t(`inbox.row.${arg}`) : null;
+
 /** "Enviar correo" -> "enviar correo", for the middle of a sentence. */
 const lower = (s: string) => (s ? s[0]?.toLowerCase() + s.slice(1) : s);
 
@@ -1202,7 +1214,9 @@ export function CallRows({ view }: { view: ConfirmView }) {
     <dl className="confirm-rows">
       {view.rows.map((r) => (
         <div key={r.arg} className="confirm-row">
-          <dt>{r.name ?? fieldKey(r.arg) ?? argLabel(t, r.arg, r.role)}</dt>
+          <dt>
+            {r.name ?? functionRowName(t, r.arg) ?? fieldKey(r.arg) ?? argLabel(t, r.arg, r.role)}
+          </dt>
           <dd>
             <div className={`confirm-value${r.integrity === "external" ? " ext" : ""}`}>
               {r.detail ? (

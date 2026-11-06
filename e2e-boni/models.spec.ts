@@ -6,6 +6,7 @@ import {
   CARD_DETAILED,
   DONE,
   FLOW_CATALOG,
+  FLOW_CATALOG_FUNCTIONS,
   FLOW_CHANGE,
   FLOW_CHECK,
   FLOW_DETAIL,
@@ -1668,6 +1669,58 @@ test("a daily summary drawn without code: the trigger «Programado», every day 
   await page.getByRole("button", { name: "Añadir paso" }).click();
   await expect(page.getByRole("menuitemradio", { name: "Avisar" })).toBeVisible();
   await expect(page.getByRole("menuitemradio", { name: "Ejecutar flujo" })).toHaveCount(0);
+  // With no extension's function active, nothing to name: no «Funciones» (task 93).
+  await expect(page.getByRole("menuitemradio", { name: "Función", exact: true })).toHaveCount(0);
+});
+
+test("«Función» as a step (task 93, D-52): «Añadir paso» offers it under «Funciones»; its panel chooses an active function and shows its code and its tests, to read", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "GET api/agent/flows": [FLOWS_WITH_SUMMARY],
+      "GET api/agent/flows/:id": [FLOW_SUMMARY],
+      "GET api/agent/flows/catalog": [FLOW_CATALOG_FUNCTIONS],
+      "POST api/agent/flows/check": [{ problems: [], refs: {} }],
+      "PUT api/agent/flows/:id": [{ ...FLOW_SUMMARY, version: 2 }],
+    },
+  });
+  await openFlow(page, "Resumen diario");
+  await page.getByRole("button", { name: "Añadir paso" }).click();
+  const add = page.getByRole("dialog", { name: "Añadir paso" });
+  const group = add.locator(".flow-kind-group", {
+    has: page.locator(".menu-head", { hasText: "Funciones" }),
+  });
+  await expect(group.getByRole("menuitemradio")).toHaveText(["Función", "Aplicar cambios"]);
+  await group.getByRole("menuitemradio", { name: "Función", exact: true }).click();
+  const panel = page.locator(".flow-step-panel");
+  await expect(panel.locator("h3")).toHaveText("Función");
+  // The active functions by their names; the chosen one's code and its tests, folded, to read (never edited here).
+  const fn = panel.getByRole("combobox", { name: "Función" });
+  await expect(fn.locator("option")).toHaveText(["Nada", "Banco · importar"]);
+  await fn.selectOption("banco/importar");
+  await panel.locator(".flow-fn-code summary", { hasText: "Código" }).click();
+  await expect(panel.locator(".flow-fn-code pre")).toContainText("function importar(input)");
+  await expect(panel.locator(".flow-fn-code").locator("textarea, [contenteditable]")).toHaveCount(
+    0,
+  );
+  await panel.locator(".flow-fn-code summary", { hasText: "Pruebas (1)" }).click();
+  await expect(panel.locator(".flow-fn-tests li")).toHaveText(["dos líneas dan dos movimientos"]);
+  await page.screenshot({ path: `${SHOTS}/flow-function-step.png` });
+  // Saved, the step names the function literally (D-48, D-52).
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  const body = await page.waitForFunction(() =>
+    ((window as unknown as { __bodies?: string[] }).__bodies ?? []).find((b) =>
+      b.startsWith("PUT api/agent/flows/resumen-diario "),
+    ),
+  );
+  const sent = JSON.parse(String(await body.jsonValue()).replace(/^PUT \S+ /, "")) as {
+    plan: { steps: { tool?: string; args?: Record<string, unknown> }[] };
+  };
+  expect(sent.plan.steps.find((s) => s.tool === "function.run")?.args?.funcion).toEqual({
+    lit: "banco/importar",
+  });
 });
 
 test("a flow a model proposed waits in the inbox, drawn with what it changes; «Activar» turns it on", async ({

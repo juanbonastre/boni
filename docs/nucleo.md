@@ -235,6 +235,9 @@ interface Label {
 - **Aceptar una propuesta no lava la etiqueta.** El valor que viene de un correo sigue siendo `external` después de que
   Juan pulse "Aceptar". Lo que cambia es que la acción queda autorizada. Juan sí puede **reescribir** un campo a mano, y
   entonces pasa a `user`.
+- **Una propuesta aceptada es una que hizo lo que dice.** Si su ejecución se para sin hacer nada, vuelve a esperar en la
+  Bandeja; si se para porque lo que cambiaría ha cambiado desde entonces (lo dice la herramienta: una función que ya no
+  da el mismo conjunto), queda «Ya no vale», como cuando cambia aquello de lo que salió (la 93).
 - **La sensibilidad solo sube sola.** El agente y la importación pueden subirla; bajarla es un ajuste de Juan con
   confirmación.
 - **El esquema también lleva etiqueta.** Los nombres de tipos, campos y opciones son texto que el planificador ve. Si un
@@ -580,7 +583,7 @@ Es una función pura: `decide(call, ctx) → allow | deny(motivo) | confirm(vist
 | P8 | `flow` (ejecutar un flujo suyo, `flows.run`); antes también `schedule` (`jobs.create`, quitado en F4b: los trabajos programados son flujos que solo se proponen, P19) | solo desde un turno de Juan, con confirm; nunca desde segundo plano, una mini-app, una propuesta aceptada ni contenido externo |
 | P9 | `memory` con algún argumento `external` | deny (el contenido externo nunca escribe en la memoria) |
 | P10 | `schema` | allow con aviso y Deshacer en un turno de Juan; propose si viene de contenido externo o de la jardinería; borrar datos de un campo, confirm |
-| P11 | Secuencias sospechosas (muchas lecturas sensibles y luego `egress`; más de N escrituras en una ejecución) | la ejecución se para y pide confirm |
+| P11 | Secuencias sospechosas (muchas lecturas sensibles y luego `egress`; más de N escrituras en una ejecución, contando cada fila de una llamada que escribe varias, como los cambios de una función; lo que Juan aceptó en la Bandeja ya lo vio entero y no se pregunta otra vez) | la ejecución se para y pide confirm |
 | P12 | Límites por ejecución: pasos, llamadas a modelos, bytes de salida, coste | deny al superarlos |
 | P13 | Límites por día en segundo plano: llamadas a lectores por día y por remitente, coste diario; el trabajo que decide y limita el propio código (la revisora volviendo a leer correo ya decidido para medir una guía, como mucho una vez al día) cuenta en el día y en su propio cupo (45 lecturas), nunca en el de cada remitente ni en el del correo nuevo (tarea 37) | lo que pase del límite espera al día siguiente o a que Juan lo pida; avisa una vez |
 | P14 | Un destino (`destination`, `url`, `path`, `recipient`) que es un valor derivado (4.2) | deny |

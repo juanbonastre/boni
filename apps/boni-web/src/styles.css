@@ -9152,6 +9152,25 @@ button.rows-panel-row:hover {
   gap: 8px;
   font-weight: 600;
 }
+/* «Función»'s code (task 93): to read, never edited here. */
+.flow-fn-code {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.flow-fn-code pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+}
+.flow-fn-tests {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
 /* «Crear en la elegida»: the collections it chooses among, said, not chosen here. */
 .flow-chosen {
   font-size: 12.5px;

@@ -390,6 +390,50 @@ export const CARD_DETAILED = {
     context: DAYS("2026-10-29", ["2026-10-28", "2026-10-30"]),
   },
 };
+/** What an extension's function would change, waiting in the Bandeja as one proposal (task 93, D-52): every value
+ * as text, as `confirmView` paints it. */
+const fnRow = (arg: string, value: string, integrity = "own") => ({
+  arg,
+  role: "content",
+  value,
+  integrity,
+  sources: ["code"],
+  marks: [],
+});
+export const CARD_FUNCTION = {
+  id: "c9",
+  tool: "function.apply",
+  view: {
+    tool: "function.apply",
+    title: "Aplicar cambios",
+    // What it keeps to run it again (its id, its data, its fingerprint) the server never sends as rows.
+    rows: [
+      fnRow("cambios.nombre", "Banco · importar", "model"),
+      fnRow("cambios.resumen", "2 nuevos", "model"),
+      fnRow("cambios.nuevas", "2", "model"),
+      fnRow("cambios.cambiadas", "0", "model"),
+      fnRow("cambios.preguntas", "¿La cena del 3 es la del extracto anterior?", "model"),
+    ],
+  },
+  sources: ["extension:banco/importar"],
+  created: 4,
+  card: {
+    action: "other",
+    collection: null,
+    collectionId: null,
+    kind: "item",
+    title: "Banco · importar: 2 nuevos",
+    day: null,
+    start: null,
+    end: null,
+    source: null,
+    why: null,
+    familiar: 0,
+    complete: true,
+    mode: "detailed",
+    context: [],
+  },
+};
 /**
  * A meeting from mail going to the events (the agenda fixture, `agenda: true`), that took the place of an earlier
  * proposal at another hour (task 46): its kind, day and hours can be corrected (task 47).
@@ -2522,6 +2566,22 @@ export const FLOW_CATALOG = {
         { name: "inputs", role: "content", required: false },
       ],
     },
+    // «Función» and «Aplicar cambios» (task 93): offered under «Funciones» only with an active function to name.
+    {
+      name: "function.run",
+      title: "Función",
+      effect: "read",
+      args: [
+        { name: "funcion", role: "option", required: true },
+        { name: "datos", role: "content", required: false },
+      ],
+    },
+    {
+      name: "function.apply",
+      title: "Aplicar cambios",
+      effect: "write",
+      args: [{ name: "cambios", role: "content", required: true }],
+    },
   ],
   readers: {
     read_message: {
@@ -2569,6 +2629,18 @@ export const FLOW_CATALOG = {
     },
   ],
   modules: ["tasks", "events"],
+};
+/** The catalog with an active extension's function (task 93): «Funciones» in «Añadir paso», its code and tests. */
+export const FLOW_CATALOG_FUNCTIONS = {
+  ...FLOW_CATALOG,
+  functions: [
+    {
+      id: "banco/importar",
+      name: "Banco · importar",
+      code: 'function importar(input) {\n  return { summary: "0 nuevos", changes: [] };\n}',
+      tests: ["dos líneas dan dos movimientos"],
+    },
+  ],
 };
 /** The checklist with nothing missing, and the values each step may take (a few). */
 export const FLOW_CHECK = {

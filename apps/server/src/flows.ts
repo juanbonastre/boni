@@ -25,6 +25,7 @@ export { manualInputs, newFlowId, originOf, triggerOk };
 
 import { type FieldDef, rolesOf, type TypeDef } from "@boni/entities";
 import type { FlowRow, RunRow, UserStore } from "@boni/store";
+import { activeFunction, activeFunctions } from "./functionSteps.ts";
 
 export const MAIL_FLOW = "leer-correo";
 /** Boni's «Traer correo» (docs/sistema.md §4.2): new mail in the mailbox, brought into the mail's collection. */
@@ -403,6 +404,8 @@ export interface FlowCatalog {
   replies: Record<string, string[]>;
   fns: Record<string, [number, number]>;
   limits: { steps: number; each: number; nesting: number };
+  /** The active extensions' functions («extension/name»), their names, their code and their tests (task 93). */
+  functions: { id: string; name: string; code: string; tests: string[] }[];
   /** The collections a model may see (the ones a flow may name), with their fields and roles. */
   collections: {
     /** Its id, for the app only: what a rule of the reading guide names it by (the decider's panel, task 83). */
@@ -469,6 +472,8 @@ export function flowCatalog(
     replies: v.replies,
     fns: v.fns,
     limits: v.limits,
+    // The active extensions' functions a «Función» step may name, with their code to read (task 93).
+    functions: activeFunctions(store),
     collections: visibleTypes(store).map((def) => ({
       ...(o.ids ? { id: def.id } : {}),
       key: def.key,
@@ -598,6 +603,25 @@ export function checkFlow(
   for (const s of steps)
     if (s.op === "call" && typeof s.tool === "string" && registry.get(s.tool)?.record && !byRecord)
       problems.push({ step: s.id, at: null, code: "piece-needs-record" });
+  // «Función» names an active extension's function, literally (D-48: what a step does is written in it); «Aplicar
+  // cambios» takes a «Función» step's result whole (task 93).
+  for (const s of steps) {
+    if (s.op !== "call") continue;
+    const a = (s.args ?? {}) as Record<string, unknown>;
+    if (s.tool === "function.run") {
+      const id = (a.funcion as { lit?: unknown } | undefined)?.lit;
+      if (typeof id !== "string" || !activeFunction(store, id))
+        problems.push({ step: s.id, at: "args.funcion", code: "function-unknown" });
+    }
+    if (s.tool === "function.apply") {
+      const ref = (a.cambios as { ref?: unknown } | undefined)?.ref;
+      const head =
+        typeof ref === "string" ? /^\$([A-Za-z_][A-Za-z0-9_]*)$/.exec(ref)?.[1] : undefined;
+      const from = head ? steps.find((x) => x.id === head) : undefined;
+      if (!from || from.op !== "call" || from.tool !== "function.run")
+        problems.push({ step: s.id, at: "args.cambios", code: "apply-needs-function" });
+    }
+  }
   // «Guardar en Correos» only in «Traer correo»; the review's pieces only in «Revisar la guía» (D-50, D-51): elsewhere
   // nothing would give them what they work on, and a scheduled run could meddle with a review under way.
   const startedBy = (flow.trigger ?? {}) as { connector?: unknown; learning?: unknown };
@@ -1074,7 +1098,8 @@ function textOfPainted(p: unknown): string | null {
   if (v.t === "v")
     return typeof v.value === "string" ? short(v.value) : v.value == null ? null : String(v.value);
   if (v.t === "rec" && v.fields) {
-    for (const k of ["choice", "title", "text", "titulo", "line"])
+    // A function's step says its summary (task 93).
+    for (const k of ["choice", "title", "text", "titulo", "line", "resumen"])
       if (k in v.fields) return textOfPainted(v.fields[k]);
     return null;
   }

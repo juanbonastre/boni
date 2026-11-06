@@ -40,7 +40,7 @@ import {
   toggleInbox,
   useStore,
 } from "../store.ts";
-import { CallRows, ValueText } from "./Chat.tsx";
+import { CallRows, functionRowName, ValueText } from "./Chat.tsx";
 import { Cell } from "./DatabaseBlock.tsx";
 import { triggerText } from "./FlowEditor.tsx";
 import { FlowPreview } from "./FlowPreview.tsx";
@@ -934,7 +934,9 @@ function FieldRows({
         const ignored = r.arg === "ignored" || r.arg.startsWith("ignored");
         const name = ignored
           ? t("inbox.notApplied")
-          : (r.name ?? r.arg.replace(/^values\./, "").replace(/^id$/, t("inbox.element")));
+          : (r.name ??
+            functionRowName(t, r.arg) ??
+            r.arg.replace(/^values\./, "").replace(/^id$/, t("inbox.element")));
         const value = r.detail ?? r.value;
         const text =
           typeof value === "string"
