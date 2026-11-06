@@ -36,7 +36,7 @@ export type Painted =
   | { t: "rec"; fields: Record<string, Painted>; integrity: string };
 
 export interface Reply {
-  component: "text" | "number" | "list" | "table" | "chart" | "run";
+  component: "text" | "number" | "list" | "table" | "chart" | "run" | "open";
   data: Record<string, Painted>;
 }
 export interface ConfirmRow {
@@ -1635,7 +1635,7 @@ export function parseConfirmView(v: unknown): ConfirmView | null {
   return { tool, title, rows };
 }
 
-const COMPONENTS = new Set(["text", "number", "list", "table", "chart", "run"]);
+const COMPONENTS = new Set(["text", "number", "list", "table", "chart", "run", "open"]);
 
 export function parseTurn(v: unknown): TurnResult {
   if (!isObj(v)) throw new ApiError(0, "bad-answer", "bad answer");

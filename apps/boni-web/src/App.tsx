@@ -80,6 +80,7 @@ export function App() {
       <div className="main" data-enter={enter}>
         <TopBar />
         <Content />
+        <BoniLit />
       </div>
       {panelOpen && <SidePanel />}
       {/* Under a mail seen from a card it stays as it was (its cards, what was unfolded), back when that closes. */}
@@ -108,6 +109,12 @@ export function App() {
       )}
     </div>
   );
+}
+
+/** What Boni just opened on the screen (F9), lit for a moment: again each time it opens something. */
+function BoniLit() {
+  const lit = useStore((s) => s.lit);
+  return lit ? <div key={lit} className="boni-lit" aria-hidden="true" /> : null;
 }
 
 function useMedia(query: string): boolean {

@@ -52,6 +52,7 @@ import {
   openConversation,
   openRecord,
   openSettings,
+  openTarget,
   proposeFromMail,
   removeConversation,
   renameConversation,
@@ -973,6 +974,7 @@ function ListItem({
 
 function ReplyView({ reply }: { reply: Reply }) {
   const t = useStore((s) => s.t);
+  const dataTypes = useStore((s) => s.dataTypes);
   const d = reply.data;
   const caption = d.caption ? <div className="reply-caption">{textOf(d.caption)}</div> : null;
   switch (reply.component) {
@@ -1032,6 +1034,24 @@ function ReplyView({ reply }: { reply: Reply }) {
           ))}
         </div>
       );
+    }
+    case "open": {
+      // What Boni opened on the screen (F9), said in the code's words: the opening itself happened once, when the
+      // turn came (`openFromReplies`), never when the conversation is read again; what it may not open, unsaid.
+      const target = openTarget(reply, dataTypes);
+      const what = !target
+        ? null
+        : target.kind === "place"
+          ? t(`chat.place.${target.place}`)
+          : target.kind === "collection"
+            ? target.type.name
+            : (target.title ?? t("inbox.element"));
+      return what ? (
+        <p className="reply-opened">
+          {t("chat.opened", { what })}
+          {caption}
+        </p>
+      ) : null;
     }
     case "run": {
       // A run drawn in the conversation, with «Ampliar» to the map (task 92): only one a tool gave (the code's own

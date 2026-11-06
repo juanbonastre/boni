@@ -44,4 +44,58 @@ describe("a plan's expressions", () => {
     expect(lit.ok).toBe(false);
     expect(lit.ok ? [] : lit.errors).toContain("step 2.data: run-not-from-a-tool");
   });
+
+  it("an «open» reply opens one thing: a collection, a record a tool gave, or a place of the app by its name (F9)", () => {
+    const opened = (data: Record<string, unknown>) => ({
+      version: 1,
+      steps: [
+        { id: "o", op: "call", tool: "entities.create", args: { type: { lit: "x" } } },
+        { id: "w", op: "reply", component: "open", data },
+      ],
+    });
+    const errors = (data: Record<string, unknown>) => {
+      const v = validatePlan(opened(data), catalog, "ábreme Agenda");
+      return v.ok ? [] : v.errors;
+    };
+    expect(errors({ collection: { lit: "agenda" } })).toEqual([]);
+    expect(errors({ record: { ref: "$o" } })).toEqual([]);
+    expect(errors({ place: { lit: "inbox" } })).toEqual([]);
+    expect(errors({ record: { lit: "e_123" } })).toContain("step 2.data: record-not-from-a-tool");
+    expect(errors({ place: { lit: "ajustes" } })).toContain("step 2.data: unknown-place");
+    expect(errors({ collection: { lit: "agenda" }, place: { lit: "inbox" } })).toContain(
+      "step 2.data: open-one-thing",
+    );
+    expect(errors({ caption: { lit: "nada" } })).toContain("step 2.data: open-one-thing");
+    // One opening per answer, never once per item: what the conversation says it opened is what it opened.
+    const twice = validatePlan(
+      {
+        version: 1,
+        steps: [
+          { id: "a", op: "reply", component: "open", data: { place: { lit: "inbox" } } },
+          { id: "b", op: "reply", component: "open", data: { place: { lit: "log" } } },
+        ],
+      },
+      catalog,
+      "ábreme la Bandeja y el Registro",
+    );
+    expect(twice.ok ? [] : twice.errors).toContain("step 2: open-once");
+    const each = validatePlan(
+      {
+        version: 1,
+        steps: [
+          { id: "o", op: "call", tool: "entities.create", args: { type: { lit: "x" } } },
+          {
+            id: "w",
+            op: "reply",
+            component: "open",
+            each: { ref: "$o" },
+            data: { record: { ref: "$item" } },
+          },
+        ],
+      },
+      catalog,
+      "ábrelas todas",
+    );
+    expect(each.ok ? [] : each.errors).toContain("step 2: open-once");
+  });
 });

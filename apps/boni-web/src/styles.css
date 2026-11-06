@@ -10572,3 +10572,34 @@ button.rows-panel-row:hover {
 .app:has(> .side-panel:not(.boni-docked)) .boni-circle {
   right: calc(min(380px, 60vw) + 20px);
 }
+/* What Boni just opened (F9): the main area outlined in the accent for a moment, never in the way of a click. */
+.main {
+  position: relative;
+}
+.boni-lit {
+  position: absolute;
+  inset: 4px;
+  z-index: 40;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  border-radius: 10px;
+  animation: boni-lit 1400ms ease-out forwards;
+}
+@keyframes boni-lit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .boni-lit {
+    animation-duration: 1ms;
+    animation-delay: 1200ms;
+  }
+}
+.reply-opened {
+  color: var(--muted);
+  font-size: 13px;
+}

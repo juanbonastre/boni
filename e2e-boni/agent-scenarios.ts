@@ -29,6 +29,19 @@ export const TOP_CARD_REPLY = {
   notices: [],
   error: null,
 };
+/** «Ábreme Libros» (F9, task 85): a line saying it, and the collection opened on the screen. */
+export const OPEN_REPLY = {
+  run: "r10",
+  status: "done",
+  replies: [
+    { component: "text", data: { template: v("Te abro Libros.", "model") } },
+    { component: "open", data: { collection: v("libros", "model") } },
+  ],
+  pending: null,
+  proposals: [],
+  notices: [],
+  error: null,
+};
 export const TEXT_REPLY = {
   run: "r1",
   status: "done",
@@ -227,6 +240,19 @@ export const DONE = {
   proposals: [],
   notices: [],
   error: null,
+};
+/** «Ábreme Libros y borra uno» (F9): it opens Libros and waits for the confirmation; confirmed, it repeats its replies. */
+export const OPEN_THEN_CONFIRM = {
+  ...confirmTurn("c5"),
+  replies: [{ component: "open", data: { collection: v("libros", "model") } }],
+};
+export const OPEN_CONFIRMED = {
+  ...DONE,
+  run: "run-c5",
+  replies: [
+    { component: "open", data: { collection: v("libros", "model") } },
+    { component: "text", data: { template: v("Hecho.", "model") } },
+  ],
 };
 
 /** «¿De dónde viene…?» answered in words and drawn in the conversation (task 92): the reply «run» with a tool's run. */

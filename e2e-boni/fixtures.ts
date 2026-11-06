@@ -195,6 +195,7 @@ export async function openApp(page: Page, url = "/", opts: Options = {}): Promis
       // The user's collections as databases (apps/server/src/data.ts), kept in memory.
       const libros = {
         id: "t_libro",
+        key: "libros",
         name: "Libros",
         icon: "📚",
         titleField: "f_titulo",
