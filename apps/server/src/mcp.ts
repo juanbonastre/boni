@@ -28,6 +28,7 @@ import { type DatabaseFilter, filterErrors, matchesFilters } from "@boni/views";
 import { relationId, relationTargets } from "./byName.ts";
 import { CATALOGUE, installed } from "./extensions.ts";
 import { checkFlow, flowCatalog, stepsOf } from "./flows.ts";
+import { withFunctionSteps } from "./functionSteps.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
@@ -333,7 +334,7 @@ const READS = new Set([
 const PROPOSES = new Set(["extensions_propose", "extensions_test"]);
 /** The tools a flow may use: the same registry the server's agents have (docs/flujos.md, D-41). */
 // The core's tools and Boni's pieces (docs/sistema.md §4.2), as the server's agents have them.
-const REGISTRY = withPieces(coreTools()).freeze();
+const REGISTRY = withFunctionSteps(withPieces(coreTools())).freeze();
 const scopeOf = (name: string): Scope =>
   READS.has(name) ? "read" : PROPOSES.has(name) ? "extensions:propose" : "write";
 const mayUse = (c: Ctx, name: string) => !c.scope || c.scope.includes(scopeOf(name));
@@ -1125,7 +1126,7 @@ const TOOLS: Tool[] = [
   {
     name: "flows_describe",
     description:
-      "What Boni's flows may be made of and Juan's flows: the plan language (readers, questions, replies, functions, limits), the tools a step may call with their arguments, the collections a flow may read and write (by key, with their fields), the triggers, and each flow with its trigger and plan. A flow is proposed with flows_propose; Juan turns it on by accepting it in Boni.",
+      "What Boni's flows may be made of and Juan's flows: the plan language (readers, questions, replies, functions, limits), the tools a step may call with their arguments, the active extensions' functions a «Función» step may run, the collections a flow may read and write (by key, with their fields), the triggers, and each flow with its trigger and plan. A flow is proposed with flows_propose; Juan turns it on by accepting it in Boni.",
     inputSchema: obj({}),
     call(c) {
       const catalog = flowCatalog(REGISTRY, c.store, ["tasks", "events"]);
@@ -1140,6 +1141,11 @@ const TOOLS: Tool[] = [
           limits: catalog.limits,
         },
         tools: catalog.tools.filter((t) => t.effect !== "flow" && t.effect !== "flow_save"),
+        // What a «Función» step may name (task 93): the active extensions' functions, by id.
+        extension_functions: {
+          how: '«Función» is {"op": "call", "tool": "function.run", "args": {"funcion": {"lit": "<id>"}, "datos": <what it gets as its data>}}: it runs the function in the box and gives back what it would change (nuevas, cambiadas, preguntas, resumen), writing nothing; «Aplicar cambios» is {"op": "call", "tool": "function.apply", "args": {"cambios": {"ref": "$<that step\'s id>"}}}, a write the policy decides (in the background, one proposal for the whole set).',
+          active: catalog.functions.map((f) => ({ id: f.id, name: f.name, tests: f.tests })),
+        },
         collections: catalog.collections,
         triggers: {
           manual:

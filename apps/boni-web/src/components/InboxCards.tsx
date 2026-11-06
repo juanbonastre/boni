@@ -934,7 +934,10 @@ function FieldRows({
         const ignored = r.arg === "ignored" || r.arg.startsWith("ignored");
         const name = ignored
           ? t("inbox.notApplied")
-          : (r.name ?? r.arg.replace(/^values\./, "").replace(/^id$/, t("inbox.element")));
+          : (r.name ??
+            (FUNCTION_ROWS.has(r.arg)
+              ? t(`inbox.row.${r.arg}`)
+              : r.arg.replace(/^values\./, "").replace(/^id$/, t("inbox.element"))));
         const value = r.detail ?? r.value;
         const text =
           typeof value === "string"
@@ -952,6 +955,15 @@ function FieldRows({
     </dl>
   );
 }
+
+/** What an extension's function would change (task 93, D-52): its rows by their names, never by their keys. */
+const FUNCTION_ROWS = new Set([
+  "cambios.funcion",
+  "cambios.resumen",
+  "cambios.nuevas",
+  "cambios.cambiadas",
+  "cambios.preguntas",
+]);
 
 /**
  * A mail's two icons at the end of its card's line (tasks 68 and 74), on a proposal's card and a question's: the mail

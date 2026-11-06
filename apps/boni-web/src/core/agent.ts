@@ -988,6 +988,9 @@ export interface FlowCatalog {
   replies: Record<string, string[]>;
   fns: Record<string, [number, number]>;
   limits: { steps: number; each: number; nesting: number };
+  /** The active extensions' functions a «Función» step may name, with their code and their tests' names (task 93);
+   * servers before 0.8.114 send none. */
+  functions: { id: string; name: string; code: string; tests: string[] }[];
   collections: {
     /** Its id (a guide's rule names a collection by it); servers before 0.8.114 send none. */
     id?: string;
@@ -1205,6 +1208,20 @@ export function parseFlowCatalog(b: unknown): FlowCatalog | null {
           nesting: numOf(b.limits.nesting, 3),
         }
       : { steps: 40, each: 50, nesting: 3 },
+    functions: (Array.isArray(b.functions) ? b.functions : []).filter(isObj).flatMap((f) =>
+      typeof f.id === "string"
+        ? [
+            {
+              id: f.id.slice(0, 120),
+              name: strOf(f.name, 160) ?? f.id,
+              code: strOf(f.code, 200_000) ?? "",
+              tests: (Array.isArray(f.tests) ? f.tests : [])
+                .slice(0, 100)
+                .flatMap((x) => (typeof x === "string" ? [x.slice(0, 200)] : [])),
+            },
+          ]
+        : [],
+    ),
     collections: (Array.isArray(b.collections) ? b.collections : []).filter(isObj).flatMap((c) =>
       typeof c.key === "string"
         ? [

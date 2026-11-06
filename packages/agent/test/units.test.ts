@@ -386,6 +386,18 @@ describe("the policy engine", () => {
         sensitiveReads: 0,
       }),
     ).toEqual({ kind: "confirm", rule: "P11" });
+    // One call that writes many rows (an extension's change set, task 93) counts each; accepted in the Bandeja,
+    // Juan has seen it whole and is not asked again.
+    const many = {
+      ...call("entities.create", { type: leaf("tarea", model), values }),
+      rows: 25,
+    };
+    expect(decide(many, turn, counters)).toEqual({ kind: "confirm", rule: "P11" });
+    expect(decide({ ...many, rows: 3 }, turn, counters)).toEqual({ kind: "allow", rule: "P1" });
+    expect(decide(many, { kind: "accepted", trust: "personal" }, counters)).toEqual({
+      kind: "allow",
+      rule: "P1",
+    });
     expect(decide({ tool: null, args: {}, control: null }, turn, counters)).toMatchObject({
       kind: "deny",
       rule: "P0",

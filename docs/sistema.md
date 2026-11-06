@@ -491,6 +491,29 @@ paquete se ve como grupo en el mapa («De Correo», «De Conciliación», «Tuyo
 propone o se activa, y con sus ajustes, si los tiene, en Ajustes con su nombre. La seguridad no cambia: nada se activa
 solo (A-10), el código de una función sigue en la caja (A-08) y nunca escribe (A-09).
 
+**Cómo quedó el paso «Función» (2026-11-06, la 93; Juan eligió «A: a la Bandeja»; D-52).**
+- Son dos pasos:
+  - **«Función»** corre en la caja una función de una extensión activa, nombrada en el paso tal cual («banco/importar»),
+    sobre lo que declaró que lee y lo que el paso le da («Datos»). Dice lo que cambiaría (cuántas nuevas, cambiadas y
+    preguntas) y no escribe nada (A-09).
+  - **«Aplicar cambios»** toma su resultado entero y es una escritura como cualquier otra:
+    - en un flujo en segundo plano, el conjunto entero espera en la Bandeja como una sola propuesta, con su resumen de
+      título y sus números (nunca el JSON);
+    - aceptada, se comprueba otra vez (solo lo que la función declaró, nada de lo que leyó ha cambiado) y se hace en esa
+      ejecución, que Deshacer quita entera, toda o nada (una transacción: un valor que una colección no admite detiene
+      el conjunto entero);
+    - a mano, decide la política (lo que hace una función nunca es palabra de Juan), contando cada fila: con muchas
+      (más de 20, P11) pide confirmar antes; aceptada en la Bandeja no se pregunta otra vez;
+    - lo que ningún modelo puede leer (lo que leyó de una colección opaca) nunca va a una colección más abierta (A-09).
+- En «Probar», «Función» corre en la caja (es pura) y «Aplicar cambios» dice lo que haría.
+- La lista de comprobación pide la función por su nombre literal y activa, y «Aplicar cambios» sobre una «Función».
+- En el editor, «Añadir paso» los ofrece en el grupo «Funciones» cuando hay alguna función activa; el panel de
+  «Función» elige entre ellas y enseña su código y los nombres de sus pruebas, para leerlos.
+- Falta:
+  - la colección «Funciones» (siguen en el manifiesto de su extensión);
+  - correr sus pruebas desde el panel (las nombra; pasaron al activarla y pasan en cada versión);
+  - en el mapa, las colecciones que lee y escribe una función.
+
 **Ejemplos.**
 
 - **Correo:** el conector Correo (el buzón), la colección Correos, los flujos Traer correo, Leer correo y Revisar la

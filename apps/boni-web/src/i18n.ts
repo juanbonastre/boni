@@ -323,6 +323,11 @@ const es = {
   "inbox.notApplied": "No se aplica",
   "ghost.proposed": "Propuesta",
   "inbox.element": "Elemento",
+  "inbox.row.cambios.funcion": "Función",
+  "inbox.row.cambios.resumen": "Resumen",
+  "inbox.row.cambios.nuevas": "Nuevas",
+  "inbox.row.cambios.cambiadas": "Cambiadas",
+  "inbox.row.cambios.preguntas": "Preguntas",
   "inbox.open": "Abrir propuesta",
   "inbox.menu": "Opciones de la propuesta",
   "inbox.stale":
@@ -632,6 +637,10 @@ const es = {
   "flow.desc.guide.measure":
     "Relee correos que ya decidiste con la guía de hoy y con la nueva, y cuenta cuál acierta más.",
   "flow.desc.guide.suggest": "Si la nueva acierta más, la deja esperándote en Ajustes → Correo.",
+  "flow.desc.function.run":
+    "Corre en la caja una función de una extensión activa y dice lo que cambiaría, sin escribir nada.",
+  "flow.desc.function.apply":
+    "Aplica lo que dio una «Función»: en segundo plano te espera en la Bandeja como una sola propuesta.",
   "flow.desc.mail.save":
     "Guarda en Correos el correo nuevo del buzón, con sus adjuntos, el original, la invitación y el hilo.",
   "flow.desc.read_message": "Lee el correo y saca lo que te pide hacer o a lo que tienes que ir.",
@@ -804,6 +813,7 @@ const es = {
   "flows.group.notify": "Avisar",
   "flows.group.ask": "Preguntar",
   "flows.group.reply": "Responder",
+  "flows.group.functions": "Funciones",
   "flows.group.boni": "De Boni",
   "flows.testWith": "Probar con…",
   "flows.findMail": "Buscar correo",
@@ -891,6 +901,13 @@ const es = {
   "flows.arg.again": "Otra vez",
   "flows.arg.types": "Colecciones",
   "flows.arg.days": "Días",
+  "flows.arg.funcion": "Función",
+  "flows.arg.datos": "Datos",
+  "flows.arg.cambios": "Cambios",
+  "flows.function.code": "Código",
+  "flows.function.tests": "Pruebas ({n})",
+  "flows.problem.function-unknown": "No es una función de una extensión activa",
+  "flows.problem.apply-needs-function": "Necesita el resultado de un paso «Función»",
   "flows.trigger.viaMail": "Viene del conector Correo",
   "flows.piece.reads": "De Boni · lee",
   "flows.piece.changes": "De Boni · cambia la Bandeja",
@@ -2433,6 +2450,11 @@ const en: Record<Key, string> = {
   "inbox.notApplied": "Not applied",
   "ghost.proposed": "Proposed",
   "inbox.element": "Item",
+  "inbox.row.cambios.funcion": "Function",
+  "inbox.row.cambios.resumen": "Summary",
+  "inbox.row.cambios.nuevas": "New",
+  "inbox.row.cambios.cambiadas": "Changed",
+  "inbox.row.cambios.preguntas": "Questions",
   "inbox.open": "Open proposal",
   "inbox.menu": "Proposal options",
   "inbox.stale":
@@ -2743,6 +2765,10 @@ const en: Record<Key, string> = {
     "Reads mail you already decided again with today's guide and with the new one, and counts which gets more right.",
   "flow.desc.guide.suggest":
     "When the new one gets more right, it waits for you in Settings → Mail.",
+  "flow.desc.function.run":
+    "Runs an active extension's function in the box and says what it would change, writing nothing.",
+  "flow.desc.function.apply":
+    "Applies what a «Función» gave: in the background it waits for you in the Inbox as one proposal.",
   "flow.desc.mail.save":
     "Keeps the mailbox's new mail in Correos, with its attachments, its original, its invitation and its thread.",
   "flow.desc.read_message": "Reads the mail and finds what it asks you to do or to go to.",
@@ -2915,6 +2941,7 @@ const en: Record<Key, string> = {
   "flows.group.notify": "Notify",
   "flows.group.ask": "Ask",
   "flows.group.reply": "Reply",
+  "flows.group.functions": "Functions",
   "flows.group.boni": "Boni's",
   "flows.testWith": "Try with…",
   "flows.findMail": "Find a mail",
@@ -3003,6 +3030,13 @@ const en: Record<Key, string> = {
   "flows.arg.again": "Again",
   "flows.arg.types": "Collections",
   "flows.arg.days": "Days",
+  "flows.arg.funcion": "Function",
+  "flows.arg.datos": "Data",
+  "flows.arg.cambios": "Changes",
+  "flows.function.code": "Code",
+  "flows.function.tests": "Tests ({n})",
+  "flows.problem.function-unknown": "Not a function of an active extension",
+  "flows.problem.apply-needs-function": "Needs a «Función» step's result",
   "flows.trigger.viaMail": "Comes from the Mail connector",
   "flows.piece.reads": "Boni's · reads",
   "flows.piece.changes": "Boni's · changes the Inbox",

@@ -600,7 +600,9 @@ export function inboxCard(
   const title =
     textOf(
       row("values.title")?.value ??
-        row(`values.${def?.fields.find((f) => f.id === def.titleField)?.key ?? ""}`)?.value,
+        row(`values.${def?.fields.find((f) => f.id === def.titleField)?.key ?? ""}`)?.value ??
+        // What an extension's function would change (task 93): its summary, in its own words.
+        row("cambios.resumen")?.value,
     ) || null;
   const kind: InboxCard["kind"] = times.length ? "event" : day ? "task" : "item";
   // What a day holds: his own records and, with them, the external calendars' events (task 51).

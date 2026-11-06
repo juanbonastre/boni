@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { coreTools, EFFECTS, READERS } from "@boni/agent";
 import { describe, expect, it } from "vitest";
+import { withFunctionSteps } from "./functionSteps.ts";
 import { withPieces } from "./pieces.ts";
 
 /**
@@ -14,6 +15,7 @@ import { withPieces } from "./pieces.ts";
 const ROOT = join(import.meta.dirname, "..", "..", "..");
 const AGENT = "packages/agent/test/agent.test.ts";
 const MAIL = "apps/server/src/mail.test.ts";
+const FUNCTIONS = "apps/server/src/functionSteps.test.ts";
 
 /** The flow «Revisar la guía»'s pieces, all three in one review (D-51). */
 const REVIEW_TEST =
@@ -154,6 +156,22 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
       test: "with «Solo» on, a proposal like the ones Juan always kept is accepted in its own reading, a step of the flow",
     },
   ],
+  "function.run": [
+    {
+      file: FUNCTIONS,
+      test: "in the background its changes wait in the Bandeja as one proposal, applied when Juan accepts it",
+    },
+    {
+      file: FUNCTIONS,
+      test: "«Probar» runs the function and says what it would change, writing nothing and proposing nothing",
+    },
+  ],
+  "function.apply": [
+    {
+      file: FUNCTIONS,
+      test: "in the background its changes wait in the Bandeja as one proposal, applied when Juan accepts it",
+    },
+  ],
   "guide.decisions": [{ file: MAIL, test: REVIEW_TEST }],
   "guide.measure": [{ file: MAIL, test: REVIEW_TEST }],
   "guide.suggest": [{ file: MAIL, test: REVIEW_TEST }],
@@ -174,7 +192,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 describe("every tool a model can call has its scenario (A-18)", () => {
   // The server's registry: the core's tools and Boni's pieces.
-  const tools = withPieces(coreTools())
+  const tools = withFunctionSteps(withPieces(coreTools()))
     .all()
     .map((t) => t.name)
     .sort();
@@ -199,7 +217,7 @@ describe("every tool a model can call has its scenario (A-18)", () => {
 
   it("every effect has a tool that runs it, or is one no tool has yet", () => {
     const used = new Set(
-      withPieces(coreTools())
+      withFunctionSteps(withPieces(coreTools()))
         .all()
         .map((t) => t.effect as string),
     );
@@ -211,7 +229,7 @@ describe("every step a flow may have says in one line what it does (I-27)", () =
   it("each tool of the registry and each reader has its `flow.desc` line, in Spanish and in English", () => {
     const words = readFileSync(join(ROOT, "apps/boni-web/src/i18n.ts"), "utf8");
     const steps = [
-      ...withPieces(coreTools())
+      ...withFunctionSteps(withPieces(coreTools()))
         .all()
         .map((t) => t.name),
       ...READERS,

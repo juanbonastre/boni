@@ -25,6 +25,8 @@ export interface Call {
   flow?: boolean;
   /** «Probar»: nothing is written, proposed or confirmed; what a step would do is said. */
   dry?: boolean;
+  /** How many rows the call writes, when more than one (an extension's change set, task 93): P11 counts each. */
+  rows?: number;
 }
 export interface RunCounters {
   writes: number;
@@ -148,7 +150,10 @@ export function decide(
         if (!personal) return propose("P6");
       }
       if (tool.alwaysConfirm || tool.effect === "write_irreversible") return confirmOr("P5");
-      if (counters.writes >= limits.maxWrites) return confirmOr("P11");
+      // Every row a call writes counts (a function's change set, as `decideApply` counts it); what Juan accepted in
+      // the Bandeja he has seen whole, so accepting it is not asked again.
+      const rows = origin.kind === "accepted" ? 0 : Math.max(0, (call.rows ?? 1) - 1);
+      if (counters.writes + rows >= limits.maxWrites) return confirmOr("P11");
       if (inTurn || origin.kind === "miniapp") return allow("P1");
       return deny("P0", "unforeseen");
     }

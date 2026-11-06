@@ -44,6 +44,8 @@ import {
   testView,
   triggerNames,
 } from "./flows.ts";
+import { withFunctionSteps } from "./functionSteps.ts";
+import type { Runner } from "./functions.ts";
 import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from "./inboxCard.ts";
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
@@ -131,7 +133,7 @@ export class AgentHost {
   /** The providers each account's agent was last given (they change when Juan chooses other models). */
   private used = new Map<number, Providers>();
   // The core's tools and Boni's pieces (docs/sistema.md §4.2): a piece runs only in a flow (P20).
-  private registry: ToolRegistry = withPieces(coreTools()).freeze();
+  private registry: ToolRegistry = withFunctionSteps(withPieces(coreTools())).freeze();
   /** The tools every agent of this server has (the flow editor's catalog, docs/flujos.md). */
   get tools(): ToolRegistry {
     return this.registry;
@@ -169,6 +171,8 @@ export class AgentHost {
   overBudget: ((account: number) => boolean) | null = null;
   /** What Boni's pieces work with for an account (mail.ts `piecesFor`, set by the mail when it starts). */
   pieces: ((account: number) => unknown) | null = null;
+  /** The box an extension's function runs in (the real one when null; a stand-in in tests). */
+  sandboxRun: Runner | null = null;
   /** Brings Boni's «Leer correo» up to date for an account (mail.ts `keepFlowCurrent`), before «Flujos» shows it. */
   mailFlowCurrent: ((account: number) => void) | null = null;
   /** «Modelos» (models.ts): its routes are served here, under /api/agent/models. */
@@ -237,6 +241,11 @@ export class AgentHost {
         // A reader of mail in the conversation reads with Juan's guide, as the background reading does.
         readingGuide: () => this.readingGuideOf?.(account) ?? null,
         pieces: () => this.pieces?.(account) ?? null,
+        // The steps «Función» and «Aplicar cambios» (task 93): this account's store, and the box.
+        functions: () => ({
+          store: () => this.store(account),
+          ...(this.sandboxRun ? { run: this.sandboxRun } : {}),
+        }),
         // «¿De dónde viene?» for the planner (`entities.origin`): what the app draws on the map, as facts.
         origin: {
           of: (id) =>

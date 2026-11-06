@@ -53,6 +53,7 @@ const CATALOG: FlowCatalog = {
   replies: { text: ["template", "a"] },
   fns: { obj: [2, 40], merge: [2, 8] },
   limits: { steps: 40, each: 50, nesting: 3 },
+  functions: [],
   collections: [
     {
       key: "gestiones",

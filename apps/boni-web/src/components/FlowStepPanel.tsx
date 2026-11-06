@@ -249,6 +249,50 @@ export function FlowStepPanel({
         {(tool?.args ?? []).map((a) => {
           const label = argName(t, a.name);
           const among = a.role === "type" ? typeKeysOf(args[a.name]) : [];
+          // «Función» (task 93): one of the active extensions' functions, by its name, and its code to read.
+          if (step.tool === "function.run" && a.name === "funcion") {
+            const chosen = litOf(args.funcion);
+            const fn = catalog.functions.find((f) => f.id === chosen);
+            return (
+              <div className="flow-setting" key={a.name}>
+                <label className="flow-setting-name" htmlFor={`fn-${step.id}`}>
+                  {label}
+                </label>
+                <select
+                  id={`fn-${step.id}`}
+                  value={chosen ?? ""}
+                  onChange={(e) =>
+                    set(["args", "funcion"], e.target.value ? { lit: e.target.value } : undefined)
+                  }
+                >
+                  <option value="">{t("flows.expr.none")}</option>
+                  {catalog.functions.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                  {chosen && !fn && <option value={chosen}>{chosen}</option>}
+                </select>
+                {fn && (
+                  <details className="flow-fn-code">
+                    <summary>{t("flows.function.code")}</summary>
+                    <pre>{fn.code}</pre>
+                  </details>
+                )}
+                {/* Its tests, by name: they passed when Juan activated it, and they run on every version. */}
+                {fn && fn.tests.length > 0 && (
+                  <details className="flow-fn-code">
+                    <summary>{t("flows.function.tests", { n: fn.tests.length })}</summary>
+                    <ul className="flow-fn-tests">
+                      {fn.tests.map((name) => (
+                        <li key={name}>{name}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            );
+          }
           // «Crear en la elegida» (docs/sistema.md §4.2): the collection the decider chose, among these; Boni's
           // «Leer correo» lists the collections a mail may go to.
           if (among.length > 1)

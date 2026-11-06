@@ -415,7 +415,7 @@ siendo lo primero; las funciones son para lo que no cabe en ellas.
 | `functions` | Nombre, código (JavaScript), su hash, esquema de entrada y de salida, límites | `leer_revolut`, `leer_ing` (bytes → líneas), `importar`, `cerrar_mes` |
 | `tests` | Ejemplos de entrada y salida que deben pasar antes de activar y en cada versión | Extractos inventados con su resultado |
 | `needs.reads` | Colecciones (y carpetas de Archivos) que sus funciones reciben; las privadas, una a una | Movimiento, Deuda, Categorías, Reglas, `extractos/` |
-| `flows`, `routes` | Una función como paso de un flujo; su resultado como cambios, tarjetas o propuestas | Al subir un extracto: `importar` en seco → tarjeta "18 nuevas, 4 unidas, 1 dudosa"; botón «Cerrar mes» |
+| `flows`, `routes` | Una función como paso de un flujo; su resultado como cambios, tarjetas o propuestas (los pasos «Función» y «Aplicar cambios», la 93: `docs/sistema.md` §4.5) | Al subir un extracto: `importar` en seco → tarjeta "18 nuevas, 4 unidas, 1 dudosa"; botón «Cerrar mes» |
 | `learning` | Como hoy | Una categoría corregida propone una Regla |
 
 ### 11.2 Quién escribe, quién activa

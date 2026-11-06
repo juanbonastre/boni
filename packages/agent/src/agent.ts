@@ -303,6 +303,8 @@ export interface AgentOptions {
   readingGuide?: () => Val | null;
   /** What the server gives Boni's pieces for this account (docs/sistema.md §4.2): opaque to the core (A-02). */
   pieces?: () => unknown;
+  /** What the steps that run an extension's function get (the server's, task 93). */
+  functions?: () => unknown;
   /** Where a record comes from, from the server's log and journal (`entities.origin`, docs/sistema.md §4.4). */
   origin?: OriginReader;
   /**
@@ -1482,8 +1484,16 @@ export class Agent {
     const args = control
       ? Object.fromEntries(Object.entries(raw).map(([k, v]) => [k, taint(v, control)]))
       : raw;
+    const rows = tool?.rows?.(args);
     const d: Decision = decide(
-      { tool, args, control, flow: !!st.flowRun, dry: !!st.dry },
+      {
+        tool,
+        args,
+        control,
+        flow: !!st.flowRun,
+        dry: !!st.dry,
+        ...(rows !== undefined ? { rows } : {}),
+      },
       st.origin,
       st.counters,
       this.limits,
@@ -1647,6 +1657,7 @@ export class Agent {
             dry: !!st.dry,
           }
         : {}),
+      ...(tool.functions ? { functions: this.o.functions?.() ?? null } : {}),
       ...(tool.effect === "read" && this.o.origin ? { origin: this.o.origin } : {}),
     });
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
@@ -1666,7 +1677,8 @@ export class Agent {
         target: { effect: tool.effect },
         seen: exposure([result], "clear", (e) => this.o.store.get(e)?.entity.type),
       });
-    if (writes) st.counters.writes++;
+    // A call that writes many rows (a function's change set) counts each for P11.
+    if (writes) st.counters.writes += Math.max(1, tool.rows?.(args) ?? 1);
     if (tool.effect === "schema" && !st.notices.some((n) => n.code === "schema-changed"))
       st.notices.push({ code: "schema-changed" });
     if (tool.effect === "memory") {

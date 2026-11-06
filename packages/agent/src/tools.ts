@@ -165,8 +165,8 @@ export interface Net {
 
 export interface Caps {
   /** `origin`: where a record comes from (`entities.origin`), when the server gives it. */
-  read: { store: ReadStore; origin?: OriginReader; now?: () => number };
-  write: { store: ReadStore; writer: Writer };
+  read: { store: ReadStore; origin?: OriginReader; now?: () => number; functions?: unknown };
+  write: { store: ReadStore; writer: Writer; functions?: unknown };
   write_irreversible: { store: ReadStore; writer: Writer };
   egress: { store: ReadStore; net: Pick<Net, "fetchText"> };
   send: { store: ReadStore; net: Pick<Net, "send"> };
@@ -194,6 +194,12 @@ export interface ToolDef<E extends Effect = Effect> {
   changes?: boolean;
   /** A piece that works on the record that started the flow: only in a flow a record starts (`created`). */
   record?: boolean;
+  /** It runs an extension's function (the steps «Función» and «Aplicar cambios», task 93): its caps carry the
+   * server's functions (`functions`), as a piece's carry Boni's pieces. */
+  functions?: boolean;
+  /** How many rows one call writes, when it may be more than one (a function's change set, task 93): the policy
+   * counts each for P11. */
+  rows?(args: Readonly<Record<string, Val>>): number;
   run(caps: Caps[E], args: Readonly<Record<string, Val>>, extra: Label): Val | Promise<Val>;
 }
 
@@ -943,6 +949,8 @@ export interface CapsContext {
   flowWriter?: FlowWriter;
   /** What the server gives Boni's pieces for this account (docs/sistema.md §4.2). */
   pieces?: unknown;
+  /** What the server gives the steps that run an extension's function (task 93), for this account. */
+  functions?: unknown;
   /** The proposals the run has made so far (a piece folds or accepts them). */
   proposals?: () => readonly string[];
   /** The run is «Probar»'s (a piece that changes something knows it, and changes nothing). */
@@ -1222,8 +1230,13 @@ export function makeCaps(c: CapsContext): Caps {
   };
   const net = c.net ?? noNet;
   return {
-    read: { store: ro, now: c.now, ...(c.origin ? { origin: c.origin } : {}) },
-    write: { store: ro, writer },
+    read: {
+      store: ro,
+      now: c.now,
+      ...(c.origin ? { origin: c.origin } : {}),
+      ...(c.functions !== undefined ? { functions: c.functions } : {}),
+    },
+    write: { store: ro, writer, ...(c.functions !== undefined ? { functions: c.functions } : {}) },
     write_irreversible: { store: ro, writer },
     egress: {
       store: ro,

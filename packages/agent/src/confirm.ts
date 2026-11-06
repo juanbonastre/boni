@@ -116,8 +116,10 @@ export function confirmView(
     const role = tool.args[name]?.role ?? "?";
     if (v.t === "rec" && store) {
       for (const [key, fv] of Object.entries(v.fields)) {
-        // A field with no value (a task without a due day) is simply not set: no row saying "null".
-        if (plain(fv) === null) continue;
+        // A field with no value (a task without a due day) is simply not set: no row saying "null"; nor one that is
+        // a whole object (what a function would change, kept for applying it, task 93): never a row of JSON.
+        const whole = plain(fv);
+        if (whole === null || (typeof whole === "object" && !Array.isArray(whole))) continue;
         const f = def?.fields.find((x) => x.key === key);
         const extra: Partial<ConfirmRow> = f && trusted(f.label) ? { name: f.name } : {};
         // An option by its name, an entry it points to by its title (Juan's own, else the id alone).

@@ -9,6 +9,7 @@ import {
   CARD_COMPACT,
   CARD_DETAILED,
   CARD_EVENT,
+  CARD_FUNCTION,
   CARD_LINKED,
   CARD_MAIL,
   CARD_TIME,
@@ -380,6 +381,32 @@ test("the inbox panel: cards say what, from where and the day around it; it open
   );
   await expect(wide.locator(".inbox-col").nth(1).locator(".mini-day")).toHaveCount(3);
   await page.screenshot({ path: `${SHOTS}/inbox-page-two-columns.png` });
+});
+
+test("what an extension's function would change waits in the Bandeja as one card: its summary, its numbers by name, never JSON (task 93, D-52)", async ({
+  page,
+}) => {
+  await openApp(page, "/?still", {
+    agent: { "GET api/agent/proposals": [{ proposals: [CARD_FUNCTION] }] },
+  });
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const card = page.locator(".inbox-panel .inbox-card").first();
+  await expect(card).toContainText("2 nuevos");
+  await card.getByRole("button", { name: "Abrir propuesta" }).click();
+  const fields = page.locator(".proposal-page .inbox-fields");
+  await expect(fields.locator("dt")).toHaveText([
+    "Función",
+    "Resumen",
+    "Nuevas",
+    "Cambiadas",
+    "Preguntas",
+  ]);
+  await expect(fields.locator("dd")).toHaveText(["banco/importar", "2 nuevos", "2", "0", "0"]);
+  await expect(page.locator(".proposal-page")).not.toContainText("cambios.");
+  await expect(page.locator(".proposal-page")).not.toContainText("{");
 });
 
 test("a proposal opens on a page of its own: its values, why, where from, and the mail itself", async ({
