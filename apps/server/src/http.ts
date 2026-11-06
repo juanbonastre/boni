@@ -419,6 +419,7 @@ export function makeApp(opts: ServerOptions): App {
         body,
         opts.now ?? Date.now,
         s.scope,
+        opts.agent.mailAccountOf?.(s.user.id) ?? null,
       );
       if (out === null) {
         res.writeHead(202, { ...CORS, ...SAFE });

@@ -31,6 +31,12 @@ const SCENARIOS: Record<string, { file: string; test: string }[]> = {
   "entities.aggregate": [
     { file: AGENT, test: "answers about data with numbers the code computed" },
   ],
+  "entities.origin": [
+    {
+      file: AGENT,
+      test: "says where a record comes from: the flow that proposed it, its mail as the models may see it, and the «Aceptar» (entities.origin)",
+    },
+  ],
   "entities.search": [
     {
       file: AGENT,

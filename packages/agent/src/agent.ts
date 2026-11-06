@@ -51,6 +51,7 @@ import {
   type FlowWriter,
   makeCaps,
   type Net,
+  type OriginReader,
   readStore,
   type StepWords,
   stepWords,
@@ -296,6 +297,8 @@ export interface AgentOptions {
   readingGuide?: () => Val | null;
   /** What the server gives Boni's pieces for this account (docs/sistema.md §4.2): opaque to the core (A-02). */
   pieces?: () => unknown;
+  /** Where a record comes from, from the server's log and journal (`entities.origin`, docs/sistema.md §4.4). */
+  origin?: OriginReader;
   /**
    * The month's spending against Juan's budget (Juan, 2026-10-24: 10 € a month): at the limit, background work
    * calls no model (P13); his own requests go on.
@@ -1632,6 +1635,7 @@ export class Agent {
       ...(tool.effect === "piece"
         ? { pieces: this.o.pieces?.() ?? null, proposals: () => (st.dry ? [] : st.proposals) }
         : {}),
+      ...(tool.effect === "read" && this.o.origin ? { origin: this.o.origin } : {}),
     });
     const capFor = caps[tool.effect] as Caps[typeof tool.effect];
     let result: Val;

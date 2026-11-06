@@ -137,6 +137,8 @@ export {
   makeCaps,
   type Net,
   neutralize,
+  type OriginReader,
+  type RecordOrigin,
   readStore,
   type ToolDef,
   ToolError,

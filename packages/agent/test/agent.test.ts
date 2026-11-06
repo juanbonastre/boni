@@ -3,7 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ProviderError } from "../src/anthropic.ts";
 import { fakePlanner } from "../src/providers.ts";
 import { guideValue } from "../src/reading.ts";
-import { leaf, rec } from "../src/values.ts";
+import { makeCaps, ToolError } from "../src/tools.ts";
+import { codeLabel, leaf, plain, rec } from "../src/values.ts";
 import { type Env, makeEnv, PERSONAL } from "./fixture.ts";
 
 let env: Env;
@@ -546,6 +547,85 @@ describe("the agent, with a planner that behaves", () => {
     ]);
     expect(d?.steps[1]?.args).toMatchObject({ key: { lit: "autor" } });
     expect(Object.values(env.store.schema().types).some((t) => t.key === "revistas")).toBe(false);
+  });
+
+  it("says where a record comes from: the flow that proposed it, its mail as the models may see it, and the «Aceptar» (entities.origin)", async () => {
+    env = makeEnv([
+      {
+        asunto: "Compra para la cena",
+        de: "ana.ejemplo@example.com",
+        cuerpo: "¿Puedes comprar pan mañana?",
+      },
+    ]);
+    const at = (h: number, m = 0) => Date.UTC(2026, 9, 19, h, m);
+    const task = env.ids.tarea1 as string;
+    const origin = {
+      of: (id: string) =>
+        id === task
+          ? {
+              by: "flow" as const,
+              at: at(9, 5),
+              device: null,
+              flow: { id: "leer-correo", name: "Leer correo", version: 3 },
+              input: env.ids.mail0 as string,
+              proposal: { created: at(9), decided: at(9, 5), alone: false },
+            }
+          : null,
+    };
+    // Juan asks «¿De dónde viene «Comprar pan»?» (task 86: the planner could only look for mails with that name).
+    const plan = {
+      version: 1,
+      steps: [
+        { id: "s", op: "call", tool: "entities.search", args: { text: { quote: "Comprar pan" } } },
+        { id: "o", op: "call", tool: "entities.origin", args: { id: ref("$s[0].id") } },
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: {
+            template: lit("Lo propuso {a} al leer «{b}»; lo aceptaste el {c}."),
+            a: ref("$o.flow.name"),
+            b: ref("$o.input.asunto"),
+            c: ref("$o.accepted"),
+          },
+        },
+      ],
+    };
+    const ask = () =>
+      env
+        .agent(fakePlanner([plan]), undefined, { origin })
+        .turn({ text: "¿De dónde viene «Comprar pan»?", origin: PERSONAL });
+    const res = await ask();
+    expect([res.status, res.error]).toEqual(["done", null]);
+    const data = res.replies[0]?.data ?? {};
+    expect(data.a).toMatchObject({ value: "Leer correo" });
+    expect(data.c).toMatchObject({ value: "2026-10-19T09:05:00.000Z" });
+    // The mail's words as they came (the reply marks them as from outside, as any mail's).
+    expect(data.b).toMatchObject({ value: "Compra para la cena" });
+    // The mail closed to the models: the origin does not name it, and the plan that reads it stops there.
+    env.store.setAiAccess("t_correo", "restricted", "portatil");
+    const closed = await ask();
+    expect(closed.status).toBe("stopped");
+    const tool = env.registry.get("entities.origin");
+    if (!tool) throw new Error("entities.origin is registered");
+    const caps = makeCaps({
+      store: env.store,
+      run: "r-origen",
+      now: () => Date.UTC(2026, 9, 20, 10),
+      origin,
+    }).read;
+    const id = leaf(task, codeLabel("prueba"));
+    expect(plain(await tool.run(caps as never, { id }, codeLabel("prueba")))).toMatchObject({
+      by: "flow",
+      input: null,
+      accepted: "2026-10-19T09:05:00.000Z",
+    });
+    // A record the models may not see has no origin for them; nor one Boni cannot trace.
+    env.store.setAiAccess("t_tarea", "restricted", "portatil");
+    expect(() => tool.run(caps as never, { id }, codeLabel("prueba"))).toThrow(ToolError);
+    env.store.setAiAccess("t_tarea", "visible", "portatil");
+    const other = leaf(env.ids.ana as string, codeLabel("prueba"));
+    expect(() => tool.run(caps as never, { id: other }, codeLabel("prueba"))).toThrow(ToolError);
   });
 
   it("writes what a run does with its id, so the journal tells what happened and why", async () => {

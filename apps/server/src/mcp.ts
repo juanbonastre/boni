@@ -31,6 +31,7 @@ import { checkFlow, flowCatalog, stepsOf } from "./flows.ts";
 import { applyChangeSet, callFunction, decideApply, dryRun, runTests } from "./functions.ts";
 import { type MoneyFiles, reconcileClose, reconcileImport } from "./money/service.ts";
 import { storeFiles } from "./money/storeFiles.ts";
+import { originFacts } from "./origin.ts";
 import { FILE_FIELD, FOLDER_FIELD, mimeOf } from "./paths.ts";
 import { withPieces } from "./pieces.ts";
 import { proposals, propose } from "./proposals.ts";
@@ -64,6 +65,8 @@ const MAX_TEXT = 200_000;
 interface Ctx {
   store: UserStore;
   device: string;
+  /** The account's mailbox, so a reading of mail from before flows is still known as «Leer correo»'s. */
+  mailAccount: string | null;
   now: () => number;
   /** What this session may do (an assistant's token, `cli.ts token --scope`); null: everything. */
   scope: readonly Scope[] | null;
@@ -562,6 +565,32 @@ const TOOLS: Tool[] = [
     call(c, a) {
       const v = view(c);
       return v.asNote(v.find(a), true);
+    },
+  },
+  {
+    name: "origin",
+    description:
+      "Where a note comes from (Juan's «¿De dónde viene?»): who made it (by: flow, chat, user, assistant, import, connector, boni), when, on which device, the flow whose run made or proposed it, the note that started that run (a mail, as read gives it), and when it was proposed and accepted in Boni's inbox (alone: Boni accepted it on its own). By id, or by collection and exact title.",
+    inputSchema: obj(REF),
+    call(c, a) {
+      const v = view(c);
+      const s = v.find(a);
+      const o = originFacts(c.store, s.entity.id, { mailAccount: c.mailAccount });
+      if (!o) throw new ToolFail("not found (or not for a model)");
+      const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
+      // The note that started it, only as a model may see it.
+      const input = o.input ? v.ro.get(o.input) : null;
+      return {
+        id: s.entity.id,
+        by: o.by,
+        at: iso(o.at),
+        device: o.device,
+        flow: o.flow,
+        input: input && input.entity.deleted === undefined ? v.asNote(input, false) : null,
+        proposed: iso(o.proposal?.created ?? null),
+        accepted: iso(o.proposal?.decided ?? null),
+        alone: o.proposal?.alone ?? false,
+      };
     },
   },
   {
@@ -1225,8 +1254,9 @@ export async function mcpAnswer(
   body: unknown,
   now: () => number = Date.now,
   scope: readonly Scope[] | null = null,
+  mailAccount: string | null = null,
 ): Promise<unknown | null> {
-  const c: Ctx = { store, device, now, run: "", seen: [], scope };
+  const c: Ctx = { store, device, now, run: "", seen: [], scope, mailAccount };
   if (Array.isArray(body)) {
     const out: unknown[] = [];
     for (const m of body) {

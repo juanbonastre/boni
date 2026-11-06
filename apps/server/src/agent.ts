@@ -47,7 +47,7 @@ import { type InboxCard, inboxCard, inboxContext, judgeTime, timeOnAccept } from
 import { learningOn, setLearning } from "./learning.ts";
 import { mailOfRun } from "./mailReview.ts";
 import { type AccountModels, type PlannerChoice, serveModels } from "./models.ts";
-import { recordOrigin } from "./origin.ts";
+import { originFacts, recordOrigin } from "./origin.ts";
 import { withPieces } from "./pieces.ts";
 import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
@@ -236,6 +236,13 @@ export class AgentHost {
         // A reader of mail in the conversation reads with Juan's guide, as the background reading does.
         readingGuide: () => this.readingGuideOf?.(account) ?? null,
         pieces: () => this.pieces?.(account) ?? null,
+        // «¿De dónde viene?» for the planner (`entities.origin`): what the app draws on the map, as facts.
+        origin: {
+          of: (id) =>
+            originFacts(this.store(account), id, {
+              mailAccount: this.mailAccountOf?.(account) ?? null,
+            }),
+        },
         ...(this.o.tz ? { tz: this.o.tz } : {}),
         ...(this.o.now ? { now: this.o.now } : {}),
         // To this account's devices only: the recipient is the code's (7.9).

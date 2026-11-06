@@ -4,6 +4,7 @@
  * it; one the user, an assistant by the MCP, an import or the mail's connector wrote says who and when. The app draws
  * the run on the map; nothing here is a model's word.
  */
+import type { RecordOrigin } from "@boni/agent";
 import type { ProposalRow, RunRow, UserStore } from "@boni/store";
 import { aloneRuns } from "./autoAccept.ts";
 import { mapOwnerOf } from "./flowMap.ts";
@@ -111,6 +112,33 @@ export function recordOrigin(
           decided: proposal.decided,
           alone,
         }
+      : null,
+  };
+}
+
+/**
+ * The same, for a model (the planner's `entities.origin`, the MCP's `origin`; task 86: asked «¿De dónde viene?» in the
+ * conversation, the planner could only look for mails with that name): the flow by its name, and the record that started
+ * the run by its id alone, so that whoever reads it reads it as the models may see it.
+ */
+export function originFacts(
+  store: UserStore,
+  id: string,
+  o: { mailAccount: string | null },
+): RecordOrigin | null {
+  const x = recordOrigin(store, id, o);
+  if (!x) return null;
+  const flow = x.run?.flow ? store.journal.flow(x.run.flow) : null;
+  return {
+    by: x.by,
+    at: x.at,
+    device: x.device,
+    flow: x.run?.flow
+      ? { id: x.run.flow, name: flow?.name ?? x.run.flow, version: x.run.flowVersion }
+      : null,
+    input: x.input?.id ?? null,
+    proposal: x.proposal
+      ? { created: x.proposal.created, decided: x.proposal.decided, alone: x.proposal.alone }
       : null,
   };
 }

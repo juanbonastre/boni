@@ -23,6 +23,7 @@ import {
   asKey,
   codeLabel,
   deepLabel,
+  flowLabel,
   type Json,
   leaf,
   leafFrom,
@@ -114,6 +115,27 @@ export interface FlowWriter {
 export interface FlowStarter {
   run(flow: Val, inputs: Val | undefined): Promise<Val>;
 }
+/**
+ * Where a record comes from («¿De dónde viene?», docs/sistema.md §4.4), as the server reads it from its operation log
+ * and journal (the core knows no app, A-02): facts the code keeps, never a model's word.
+ */
+export interface RecordOrigin {
+  /** Who made it: a flow's run, the conversation, the user, an assistant by the MCP, an import, the mail's connector,
+   * or Boni's own code. */
+  by: "flow" | "chat" | "user" | "assistant" | "import" | "connector" | "boni";
+  at: number;
+  /** The user's device, or the assistant's name. */
+  device: string | null;
+  /** The flow whose run made or proposed it. */
+  flow: { id: string; name: string; version: number | null } | null;
+  /** The record that started that run (a mail), by id: the tool reads it as the models may see it. */
+  input: string | null;
+  /** It came through the Bandeja: when it was proposed and decided, and whether Boni accepted it alone. */
+  proposal: { created: number; decided: number | null; alone: boolean } | null;
+}
+export interface OriginReader {
+  of(id: string): RecordOrigin | null;
+}
 export interface Notifier {
   /** To the devices of this account only: the recipient is the code's, never an argument. */
   notify(text: Val): void;
@@ -125,7 +147,8 @@ export interface Net {
 }
 
 export interface Caps {
-  read: { store: ReadStore };
+  /** `origin`: where a record comes from (`entities.origin`), when the server gives it. */
+  read: { store: ReadStore; origin?: OriginReader };
   write: { store: ReadStore; writer: Writer };
   write_irreversible: { store: ReadStore; writer: Writer };
   egress: { store: ReadStore; net: Pick<Net, "fetchText"> };
@@ -473,6 +496,53 @@ export function coreTools(): ToolRegistry {
     },
   });
   r.register({
+    name: "entities.origin",
+    effect: "read",
+    title: "De dónde viene",
+    describe:
+      "Where a record comes from (Juan asks «¿de dónde viene?», «¿quién lo apuntó?»): who made it (by: flow, chat, user, assistant, import, connector, boni), when (at), on which device, the flow whose run made or proposed it (flow.name), the record that started that run (input: the mail, as entities.get gives it), and when it was proposed and accepted from the inbox (proposed, accepted; alone: Boni accepted it on its own)",
+    args: { id: { role: "entity", required: true, describe: "entity id" } },
+    run({ store, origin }, a) {
+      const id = str(a.id);
+      const s = store.get(id);
+      if (!s || s.entity.deleted !== undefined) throw new ToolError("not-found");
+      const o = origin?.of(id);
+      if (!o) throw new ToolError("not-found");
+      const code = codeLabel("origin");
+      const when = (ms: number | null) =>
+        leaf(ms === null ? null : new Date(ms).toISOString(), code);
+      // What started it, only as the models may see it: closed to them, it is not named.
+      const m = o.input ? store.get(o.input) : null;
+      const input =
+        m && m.entity.deleted === undefined
+          ? entityVal(m, store.schema().types[m.entity.type])
+          : leaf(null, code);
+      return rec(
+        {
+          by: leaf(o.by, code),
+          at: when(o.at),
+          device: leaf(o.device, code),
+          flow: o.flow
+            ? rec(
+                {
+                  id: leaf(o.flow.id, code),
+                  // A flow's name is Juan's, or Boni's: he saved it (D-41).
+                  name: leaf(o.flow.name, flowLabel(o.flow.id)),
+                  version: leaf(o.flow.version, code),
+                },
+                code,
+              )
+            : leaf(null, code),
+          input,
+          proposed: when(o.proposal?.created ?? null),
+          accepted: when(o.proposal?.decided ?? null),
+          alone: leaf(o.proposal?.alone ?? false, code),
+        },
+        code,
+      );
+    },
+  });
+  r.register({
     name: "entities.aggregate",
     effect: "read",
     title: "Calcular",
@@ -776,6 +846,8 @@ export interface CapsContext {
   pieces?: unknown;
   /** The proposals the run has made so far (a piece folds or accepts them). */
   proposals?: () => readonly string[];
+  /** Where a record comes from (the server's, docs/sistema.md §4.4). */
+  origin?: OriginReader;
 }
 
 const lowIntegrity = (l: Label) => l.integrity === "model" || l.integrity === "external";
@@ -1049,7 +1121,7 @@ export function makeCaps(c: CapsContext): Caps {
   };
   const net = c.net ?? noNet;
   return {
-    read: { store: ro },
+    read: { store: ro, ...(c.origin ? { origin: c.origin } : {}) },
     write: { store: ro, writer },
     write_irreversible: { store: ro, writer },
     egress: {
