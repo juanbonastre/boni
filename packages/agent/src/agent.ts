@@ -2637,8 +2637,21 @@ export class Agent {
     );
     st.preset.set("accept", into ? { id: leaf(into, mine), values: args.values as Val } : args);
     this.o.store.journal.setProposal(id, "accepted", this.now(), changed);
+    const r = await this.advance(st);
+    // An accepted proposal is one that did what it says. Its run stopped with nothing done: what it would change
+    // has changed since, found by the tool itself (an extension's function that no longer gives the same set, task
+    // 93), and it is stale, as when what it came from changed; any other stop (the box did not answer) leaves it
+    // waiting again. Neither is a decision of Juan's: what the reading decided is judged only once it is made.
+    if (r.status === "stopped" && !r.changed) {
+      if (r.error === "tool-stale") {
+        this.o.store.journal.setProposal(id, "stale", this.now());
+        return { ...r, error: "stale" };
+      }
+      this.o.store.journal.reopenProposal(id);
+      return r;
+    }
     if (o.judge !== false) this.judge(p.run, changed);
-    return this.advance(st);
+    return r;
   }
 
   /**

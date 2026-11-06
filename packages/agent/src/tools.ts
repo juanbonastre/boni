@@ -200,6 +200,10 @@ export interface ToolDef<E extends Effect = Effect> {
   /** How many rows one call writes, when it may be more than one (a function's change set, task 93): the policy
    * counts each for P11. */
   rows?(args: Readonly<Record<string, Val>>): number;
+  /** What a confirmation and a proposal leave out of the arguments (`arg` or `arg.field`), declared by the tool's own
+   * code, never by a plan: what it keeps only to make the call, which says nothing to Juan (a function's data and the
+   * fingerprint of its set, task 93). The policy still sees them whole. */
+  hide?: readonly string[];
   run(caps: Caps[E], args: Readonly<Record<string, Val>>, extra: Label): Val | Promise<Val>;
 }
 

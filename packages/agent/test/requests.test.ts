@@ -185,8 +185,18 @@ describe("classify asks Juan only when the decider is unsure", () => {
     const [d] = env.store.journal.decisionsOf(sure.run);
     expect(d).toMatchObject({ area: "choice", cost: "A", p: 0.7, outcome: "do", result: null });
     expect(d?.detail).toEqual({ options: 2, choice: "Gestiones" });
-    // Juan moves the proposal to another collection: the choice was wrong.
-    await a.acceptProposal(sure.proposals[0] as string, "personal", { type: "contacto" });
+    // Juan moves the proposal to another collection: the choice was wrong. An acceptance that makes nothing (a
+    // contact has no «titulo») is no decision: the proposal waits again, unjudged (task 93).
+    const id = sure.proposals[0] as string;
+    const failed = await a.acceptProposal(id, "personal", { type: "contacto" });
+    expect(failed.status).toBe("stopped");
+    expect(env.store.journal.proposal(id)?.status).toBe("pending");
+    expect(env.store.journal.decisionsOf(sure.run)[0]?.result).toBeNull();
+    await a.acceptProposal(id, "personal", {
+      type: "contacto",
+      values: { titulo: null, nombre: "Entrega de actas" },
+    });
+    expect(env.store.journal.proposal(id)?.status).toBe("accepted");
     expect(env.store.journal.decisionsOf(sure.run)[0]?.result).toBe("wrong");
     // Unsure: asked, and never judged (Juan chose).
     const unsure = await env

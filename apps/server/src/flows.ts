@@ -1098,7 +1098,8 @@ function textOfPainted(p: unknown): string | null {
   if (v.t === "v")
     return typeof v.value === "string" ? short(v.value) : v.value == null ? null : String(v.value);
   if (v.t === "rec" && v.fields) {
-    for (const k of ["choice", "title", "text", "titulo", "line"])
+    // A function's step says its summary (task 93).
+    for (const k of ["choice", "title", "text", "titulo", "line", "resumen"])
       if (k in v.fields) return textOfPainted(v.fields[k]);
     return null;
   }

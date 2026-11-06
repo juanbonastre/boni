@@ -946,8 +946,9 @@ contraseña ni un código aquí» under a question.
   «Aplicar cambios» only while an extension's function is active, chooses among them in a select («Banco ·
   importar»), with «Código» under it (a `<details>`, the code in a scroll of at most 240 px, to read, never to edit)
   and «Pruebas (n)», its tests' names; «Aplicar cambios» takes its result whole, and in the Bandeja its card is
-  titled by the function's summary («2 nuevos») with its numbers as rows by name («Nuevas», «Cambiadas»,
-  «Preguntas»), never JSON or a key. Nothing is dragged, nothing of where things are is kept, no «Ordenar»: looking
+  titled by the function's name and its summary («Banco · importar: 2 nuevos») with its numbers and its questions
+  as rows by name («Función», «Resumen», «Nuevas», «Cambiadas», «Preguntas»), never JSON or a key; one that no longer
+  gives the same set says «Ya no vale» when accepted. Nothing is dragged, nothing of where things are is kept, no «Ordenar»: looking
   never asks to save. The wheel scrolls the canvas (Ctrl or a pinch zooms); it opens fitted to
   its first eight boxes at a size to read (at most 100 %), the rest a scroll below. An arrow drawn from one node to
   another asks where the second uses the first's value

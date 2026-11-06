@@ -235,6 +235,9 @@ interface Label {
 - **Aceptar una propuesta no lava la etiqueta.** El valor que viene de un correo sigue siendo `external` después de que
   Juan pulse "Aceptar". Lo que cambia es que la acción queda autorizada. Juan sí puede **reescribir** un campo a mano, y
   entonces pasa a `user`.
+- **Una propuesta aceptada es una que hizo lo que dice.** Si su ejecución se para sin hacer nada, vuelve a esperar en la
+  Bandeja; si se para porque lo que cambiaría ha cambiado desde entonces (lo dice la herramienta: una función que ya no
+  da el mismo conjunto), queda «Ya no vale», como cuando cambia aquello de lo que salió (la 93).
 - **La sensibilidad solo sube sola.** El agente y la importación pueden subirla; bajarla es un ajuste de Juan con
   confirmación.
 - **El esquema también lleva etiqueta.** Los nombres de tipos, campos y opciones son texto que el planificador ve. Si un

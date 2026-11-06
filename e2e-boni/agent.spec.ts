@@ -394,7 +394,7 @@ test("what an extension's function would change waits in the Bandeja as one card
     .getByRole("button", { name: /^Bandeja/ })
     .click();
   const card = page.locator(".inbox-panel .inbox-card").first();
-  await expect(card).toContainText("2 nuevos");
+  await expect(card).toContainText("Banco · importar: 2 nuevos");
   await card.getByRole("button", { name: "Abrir propuesta" }).click();
   const fields = page.locator(".proposal-page .inbox-fields");
   await expect(fields.locator("dt")).toHaveText([
@@ -404,7 +404,13 @@ test("what an extension's function would change waits in the Bandeja as one card
     "Cambiadas",
     "Preguntas",
   ]);
-  await expect(fields.locator("dd")).toHaveText(["banco/importar", "2 nuevos", "2", "0", "0"]);
+  await expect(fields.locator("dd")).toHaveText([
+    "Banco · importar",
+    "2 nuevos",
+    "2",
+    "0",
+    "¿La cena del 3 es la del extracto anterior?",
+  ]);
   await expect(page.locator(".proposal-page")).not.toContainText("cambios.");
   await expect(page.locator(".proposal-page")).not.toContainText("{");
 });

@@ -406,12 +406,13 @@ export const CARD_FUNCTION = {
   view: {
     tool: "function.apply",
     title: "Aplicar cambios",
+    // What it keeps to run it again (its id, its data, its fingerprint) the server never sends as rows.
     rows: [
-      fnRow("cambios.funcion", "banco/importar"),
+      fnRow("cambios.nombre", "Banco · importar", "model"),
       fnRow("cambios.resumen", "2 nuevos", "model"),
-      fnRow("cambios.nuevas", "2"),
-      fnRow("cambios.cambiadas", "0"),
-      fnRow("cambios.preguntas", "0"),
+      fnRow("cambios.nuevas", "2", "model"),
+      fnRow("cambios.cambiadas", "0", "model"),
+      fnRow("cambios.preguntas", "¿La cena del 3 es la del extracto anterior?", "model"),
     ],
   },
   sources: ["extension:banco/importar"],
@@ -421,7 +422,7 @@ export const CARD_FUNCTION = {
     collection: null,
     collectionId: null,
     kind: "item",
-    title: "2 nuevos",
+    title: "Banco · importar: 2 nuevos",
     day: null,
     start: null,
     end: null,
