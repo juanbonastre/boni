@@ -469,7 +469,8 @@ export function flowCatalog(
     })),
     readers,
     asks: v.asks,
-    replies: v.replies,
+    // «Abrir» is the conversation's (F9): a flow on its own has no screen to open it on.
+    replies: Object.fromEntries(Object.entries(v.replies).filter(([k]) => k !== "open")),
     fns: v.fns,
     limits: v.limits,
     // The active extensions' functions a «Función» step may name, with their code to read (task 93).

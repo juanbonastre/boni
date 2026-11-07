@@ -34,6 +34,7 @@ import {
   type Origin,
   type Page,
   type PageInfo,
+  type Painted,
   type Planner,
   type Proposal,
   type ProposalView,
@@ -333,6 +334,8 @@ interface State {
   boniWindow: "closed" | "float" | "right";
   /** Rows chosen in each table on screen (its selection), by the table: the screen gives them to Boni (F9). */
   chosenRows: Record<string, string[]>;
+  /** When Boni last opened something on the screen (F9): the main area lights for a moment. */
+  lit: number;
   runs: RunSummary[];
   /** The Registro's «Acierto»: Boni's decisions per area (docs/fiabilidad.md). */
   accuracy: AreaAccuracy[];
@@ -460,6 +463,7 @@ export const useStore = create<State>(() => ({
   inboxOpen: false,
   boniWindow: "closed",
   chosenRows: {},
+  lit: 0,
   runs: [],
   accuracy: [],
   learning: true,
@@ -1460,6 +1464,8 @@ async function agentCall(id: string, call: (live: string) => Promise<TurnResult>
     });
     if (r.pending?.kind === "confirm") set((s) => ({ confirmFlip: !s.confirmFlip }));
     if (r.proposals.length) void loadInbox();
+    // Once per turn: an answer or a confirmation repeats the run's replies, its «open» already done.
+    if (!entry?.result?.replies.some((x) => x.component === "open")) openFromReplies(r.replies);
   } catch (e) {
     const code = e instanceof ApiError ? e.code : null;
     patchEntry(id, {
@@ -1540,6 +1546,79 @@ export function screenNow(): ScreenRefs {
         : [],
     chosen: [...new Set(Object.values(s.chosenRows).flat())].slice(0, 50),
   };
+}
+
+/** What Boni's «open» reply opens (F9), when it may: never what something from outside chose. */
+export type OpenTarget =
+  | { kind: "place"; place: "inbox" | "flows" | "log" | "data" }
+  | { kind: "collection"; type: DataType }
+  | { kind: "record"; id: string; title: string | null };
+
+/**
+ * An «open» reply's target (F9; I-30), the same for opening it and for saying it: a place of the app by its fixed
+ * name, a collection by the key the planner knows it by, a record only as a tool or the screen gave it (the code's
+ * own id). Nothing whose value or whose step's condition came from outside.
+ */
+export function openTarget(r: Reply, types: readonly DataType[] | null): OpenTarget | null {
+  const outside = (p: Painted | undefined) =>
+    !p || p.integrity === "external" || p.integrity === "ambient";
+  const d = r.data;
+  const text = (p: Painted | undefined) =>
+    p?.t === "v" && typeof p.value === "string" ? p.value : null;
+  if (d.place) {
+    const place = text(d.place);
+    return !outside(d.place) &&
+      (place === "inbox" || place === "flows" || place === "log" || place === "data")
+      ? { kind: "place", place }
+      : null;
+  }
+  if (d.collection) {
+    const key = text(d.collection);
+    const type = key ? types?.find((x) => x.key === key || `type_${x.id}` === key) : undefined;
+    return type && !outside(d.collection) ? { kind: "collection", type } : null;
+  }
+  const rec = d.record?.t === "rec" && !outside(d.record) ? d.record : null;
+  const id = rec?.fields.id;
+  if (!rec || id?.t !== "v" || id.integrity !== "own" || typeof id.value !== "string") return null;
+  // Its title by its collection's title field (a tool's record), or as the screen gave it.
+  const typeKey = text(rec.fields.type);
+  const def = typeKey
+    ? types?.find((x) => x.key === typeKey || `type_${x.id}` === typeKey)
+    : undefined;
+  const titleKey = def?.fields.find((f) => f.id === def.titleField)?.key;
+  const title = text(rec.fields.title) ?? (titleKey ? text(rec.fields[titleKey]) : null);
+  return { kind: "record", id: id.value, title };
+}
+
+/**
+ * Boni over the screen (F9): what a turn that just came asks to open, opened once and lit; never when a conversation
+ * is read again, nor when its run goes on (an answer, a confirmation repeat its replies). On the phone, in the tab
+ * that shows it. From the Conversación screen the conversation goes on in the window, over what it opened.
+ */
+function openFromReplies(replies: readonly Reply[]) {
+  const r = replies.find((x) => x.component === "open");
+  const s = get();
+  const target = r ? openTarget(r, s.dataTypes) : null;
+  if (!target) return;
+  const fromChat = s.view.kind === "chat";
+  if (target.kind === "place") {
+    if (target.place === "inbox") showInbox();
+    else if (target.place === "flows") showFlows();
+    else if (target.place === "log") showLog();
+    else showAllPages();
+  } else if (target.kind === "collection") openCollection(target.type.id);
+  else void openRowById(target.id);
+  const tab: Tab =
+    target.kind === "place" && target.place === "inbox"
+      ? "inbox"
+      : target.kind === "place" && target.place === "log"
+        ? "boni"
+        : "pages";
+  set({
+    lit: Date.now(),
+    ...(fromChat ? { boniWindow: "float" as const } : {}),
+    ...(phoneLayout() ? { tab } : {}),
+  });
 }
 
 /** A table's chosen rows, for the screen (F9); none when it closes. */

@@ -591,7 +591,9 @@ contraseña ni un código aquí» under a question.
   does nothing under Ajustes, the search or the trash. With a panel on the right (the Bandeja, a record), the circle
   and the window stay beside it, never over its cards. Each message goes with what is on the
   screen, by reference (what is open, the Bandeja's cards in its order when it is seen, the rows chosen); the phone
-  has no circle yet.
+  has no circle yet. When Boni opens something («ábreme Libros», I-30) the main area is outlined in `--accent` (2 px,
+  10 px radius) for 1.4 s, fading, never in the way of a click; the conversation says «Abierto: Libros» in `--muted`;
+  from the Conversación screen it goes on in the window, over what it opened.
 - **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a
   "Conversación" row at the top of the sidebar (with the number of proposals waiting), the third tab on the phone.
   **Its history as other AIs show it** (docs/conversacion.md 3.1; Juan, 2026-10-31): on the left of the conversation, a

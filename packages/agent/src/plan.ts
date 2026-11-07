@@ -25,7 +25,17 @@ export const READERS = [
 ] as const;
 export type ReaderKind = (typeof READERS)[number];
 export const ASK_CONTROLS = ["choice", "text"] as const;
-export const REPLY_COMPONENTS = ["text", "number", "list", "table", "chart", "run"] as const;
+export const REPLY_COMPONENTS = [
+  "text",
+  "number",
+  "list",
+  "table",
+  "chart",
+  "run",
+  "open",
+] as const;
+/** The places of the app an «open» reply may name (F9): the Bandeja, «Flujos», the Registro, «Mis datos». */
+export const OPEN_PLACES = ["inbox", "flows", "log", "data"] as const;
 
 /**
  * A call's `why` is what its proposal shows as its reason (a reader's quote), never an argument of the tool.
@@ -96,6 +106,8 @@ const REPLY_DATA: Readonly<Record<(typeof REPLY_COMPONENTS)[number], string[]>> 
   chart: ["labels", "values", "kind", "unit", "caption"],
   // A run drawn in the conversation (task 92): its way from what started it to where it ended, «Ampliar» to the map.
   run: ["run", "caption"],
+  // Boni over the screen (F9): what to open on the user's screen, one of the three; the app opens it once, lit.
+  open: ["collection", "record", "place", "caption"],
 };
 
 /**
@@ -207,6 +219,8 @@ export function validatePlan(
   const seen = new Set<string>(bound);
   // Whether the step being checked walks a second list along its `each` (`$zip`).
   let zipped = false;
+  // «Open» replies so far (F9): one per plan.
+  let opens = 0;
 
   const checkAtom = (where: string, a: unknown, inEach: boolean) => {
     if (!isObj(a) || Object.keys(a).length !== 1) return errors.push(`${where}: bad-expression`);
@@ -371,6 +385,28 @@ export function validatePlan(
           const run = isObj(s.data) ? s.data.run : undefined;
           if (s.component === "run" && !(isObj(run) && typeof run.ref === "string"))
             errors.push(`${where}.data: run-not-from-a-tool`);
+          // What an «open» opens (F9): one thing; a record a tool or the screen gave (a reference, never a model's
+          // own id), a place of the app by its fixed name.
+          if (s.component === "open") {
+            const d = isObj(s.data) ? s.data : {};
+            const named = ["collection", "record", "place"].filter((k) => k in d);
+            if (named.length !== 1) errors.push(`${where}.data: open-one-thing`);
+            // One opening per answer, never once per item: what the conversation says it opened is what it opened.
+            if (inEach || opens++ > 0) errors.push(`${where}: open-once`);
+            const record = d.record;
+            if (record !== undefined && !(isObj(record) && typeof record.ref === "string"))
+              errors.push(`${where}.data: record-not-from-a-tool`);
+            const place = d.place;
+            if (
+              place !== undefined &&
+              !(
+                isObj(place) &&
+                typeof place.lit === "string" &&
+                (OPEN_PLACES as readonly string[]).includes(place.lit)
+              )
+            )
+              errors.push(`${where}.data: unknown-place`);
+          }
         }
         break;
       }

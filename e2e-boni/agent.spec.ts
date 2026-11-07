@@ -23,6 +23,9 @@ import {
   LONG_SENDER,
   MAIL,
   MAIL_SUGGESTED,
+  OPEN_CONFIRMED,
+  OPEN_REPLY,
+  OPEN_THEN_CONFIRM,
   PROPOSALS,
   REQUESTS,
   RTL,
@@ -143,6 +146,47 @@ test("Boni over the screen (F9, task 85): Ctrl+E and the circle open the convers
     open: { kind: "inbox" },
     inbox: [{ id: "c1" }, { id: "c9" }],
   });
+});
+
+test("«ábreme Libros» (F9, task 85): Boni opens it on the screen, lit, once; the conversation goes on in the window", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", { agent: { "POST api/agent/turn": [OPEN_REPLY] } });
+  await ask(page, "ábreme Libros");
+  // The collection on the screen, lit for a moment, and the conversation over it in the window.
+  await expect(page.locator(".topbar")).toContainText("Libros");
+  await expect(page.locator(".main .boni-lit")).toHaveCount(1);
+  const win = page.getByRole("dialog", { name: "Boni" });
+  await expect(win.locator(".reply-opened")).toHaveText("Abierto: Libros");
+  await page.screenshot({ path: `${SHOTS}/boni-open.png` });
+  // Read again, the conversation says what it opened and opens nothing.
+  await win.getByRole("button", { name: "Ampliar" }).click();
+  await expect(page.locator(".content .reply-opened")).toHaveText("Abierto: Libros");
+  await expect(page.locator(".content .chat-layout")).toBeVisible();
+});
+
+test("what Boni opened is not opened again when its run goes on: a confirmation repeats its replies, never its opening (F9)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [OPEN_THEN_CONFIRM],
+      "POST api/agent/confirm": [OPEN_CONFIRMED],
+    },
+  });
+  await ask(page, "ábreme Libros y borra el primero");
+  await expect(page.locator(".topbar")).toContainText("Libros");
+  // Juan goes elsewhere before confirming; confirmed, the screen stays where he is.
+  await page.locator(".sidebar").getByRole("button", { name: "Gastos" }).first().click();
+  await expect(page.locator(".topbar")).toContainText("Gastos");
+  const win = page.getByRole("dialog", { name: "Boni" });
+  const accept = win.locator(".confirm-card").getByRole("button", { name: /^Sí,/ });
+  await expect(accept).toBeEnabled();
+  await accept.click();
+  await expect(win.locator(".turn-answer").last()).toContainText("Hecho.");
+  await expect(page.locator(".topbar")).toContainText("Gastos");
 });
 
 test("a reply is painted by the code, and what came from outside is only text", async ({
