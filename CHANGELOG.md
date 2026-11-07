@@ -5,6 +5,31 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-07 (thirty-eighth) — server 0.8.114 · Boni desktop 0.4.82 · Boni Android
+
+Needs:
+- The server, 0.8.114, to deploy. It brings the «Función» steps, the screen as data and «Abrir».
+- Boni desktop 0.4.82 (`release/boni_0.4.82_amd64.deb`), to install after the server.
+- Boni Android from main, through Obtainium.
+
+What it brings (#363–#369):
+- **«Leer correo»** with one «Rellenadora» and one «Crear» for everything the Lectora finds, in the collection the
+  Decisora chooses (D-49). The Decisora's panel says which collections it chooses among, and the guide's rules that
+  choose for it.
+- **«Traer correo»** (D-50) and **«Revisar la guía»** (D-51) are Boni's own flows, with their triggers and their
+  steps on the map.
+- **«Reciente»** in the conversation: the last days first, and what a mail is about (task 71).
+- **The «Función» step** (task 93, D-52): an extension's function as a step of a flow.
+  - In the background, its changes wait in the Bandeja as one card: «Banco · importar: 2 nuevos».
+  - Accepted, it runs again and is made only if it still gives that, and Deshacer takes it back whole.
+  - By hand, more than 20 rows ask first.
+- **Boni over the screen** (task 85, A-20, I-30):
+  - the circle at the bottom right and `Ctrl+E` open the conversation over what is open; dock it to the right,
+    widen it, or close it with `Esc`;
+  - with the Bandeja open, «¿qué me pide el de arriba?» answers about the first card;
+  - «ábreme Libros» opens it, lit.
+- Still missing: pointing at a chart (`Ctrl+Shift+E`) and the other screen actions (`docs/sistema.md` §4.7).
+
 ## 2026-11-06 (thirty-seventh) — server 0.8.113 · Boni desktop 0.4.81 · Boni Android
 
 Needs:
