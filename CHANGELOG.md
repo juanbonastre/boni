@@ -5,6 +5,33 @@ One entry per release: what Juan can try, and what each app needs. The server's 
 Calendar's desktop app is `apps/calendar-desktop` (`release/boni-calendar-desktop_0.8.N_amd64.deb`); the Android apps
 come from the CI's APK (Obtainium). Older releases: the Boni note «Boni: registro y relevos anteriores».
 
+## 2026-11-11 (thirty-ninth) — server 0.8.115 · Boni desktop 0.4.83 · Boni Android
+
+Needs:
+- The server, 0.8.115, to deploy. It says what each thing pointed at is, from what the store holds.
+- Boni desktop 0.4.83 (`release/boni_0.4.83_amd64.deb`), to install after the server.
+- Boni Android from main, through Obtainium. Nothing of this release shows on the phone: pointing is the desktop's.
+
+What it brings (#371–#372):
+- **Señalar** (task 85, third part; A-21, I-31, I-32): `Ctrl+Shift+E`, or «Señalar» in the bar of Boni's window,
+  makes the pointer one that points.
+  - What it can take is outlined under it: a block of a page, a row in any view of a collection, a card of the
+    Bandeja. A click adds it to the bar as a chip («Gráfica: Gasto del mes»); dragging takes several.
+  - Boni gets what it is from the server, never from the app: a chart with what it counts and its numbers (the charts
+    of «Gastos» with the same numbers Juan sees), a row and a card by reference.
+  - What is closed to the AI comes only as «closed», and what is no longer there as «gone». When rows closed to the AI
+    change a block's numbers, it says they are partial.
+  - While it points nothing on the screen answers the pointer but Boni's window; `Esc` stops.
+  - To try: on «Gastos», `Ctrl+Shift+E`, a click on a chart, and «¿qué es esto?» or «¿cuál es la categoría más
+    alta?»; in a collection, drag over a few rows and ask about them.
+- **What is being written to Boni is kept** when its window closes, widens or docks: a draft per conversation, with
+  its text and its chips.
+- Still missing of task 85 (`docs/sistema.md` §4.7): pointing at nodes of the map and at a paragraph of a note, the
+  sent message showing what was pointed at, the other screen actions (scroll, highlight, filter), the circle on the
+  phone. Of task 83: «Aviso del presupuesto» as a flow of Boni, and what becomes of «Aprender».
+- Not tested with a real model: how the planner uses what was pointed at. If an answer ignores it, its steps in the
+  Registro say what it read.
+
 ## 2026-11-07 (thirty-eighth) — server 0.8.114 · Boni desktop 0.4.82 · Boni Android
 
 Needs:
