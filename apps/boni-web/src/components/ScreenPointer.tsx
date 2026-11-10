@@ -3,7 +3,9 @@
  * the next message is about. What can be pointed at lights under it (a block of a page, a row, a card of the
  * Bandeja: whatever carries a `data-boni-ref`); a click takes the one under it, dragging takes the ones the rectangle
  * holds (`inBox`), and they go to the bar as chips, by reference. While it is on nothing on the screen answers the
- * pointer (no click opens, no drag moves): only Boni's own window does, and the wheel still scrolls. `Esc` leaves it, and does nothing else.
+ * pointer (no click opens, no drag moves): only Boni's own window does, and the wheel still scrolls. `Esc` leaves
+ * it, and does nothing else. A gesture the pointer began is its own to the end: neither its release nor a second
+ * click right after it (a double click) reaches what is under it.
  */
 import { useEffect } from "react";
 import {
@@ -24,27 +26,66 @@ const DRAG_PX = 6;
 /** Where a thing is looked for under the rectangle, across the part of it the rectangle crosses. */
 const PROBES = [1 / 6, 1 / 2, 5 / 6];
 
-/** What a press that the pointer took still sends when the button is let go. */
-const REST = ["mouseup", "click", "dblclick", "auxclick", "contextmenu"];
+/** What a pointer's press, its release and what follows them send. */
+const PRESS = [
+  "pointerdown",
+  "mousedown",
+  "pointerup",
+  "mouseup",
+  "click",
+  "dblclick",
+  "auxclick",
+  "contextmenu",
+];
+/** As long as a double click may take (the systems' own are 400 to 500 ms), and as far as its two clicks may be. */
+const REST_MS = 500;
+const REST_PX = 10;
+const eat = (e: Event) => {
+  e.preventDefault();
+  e.stopImmediatePropagation();
+};
 /**
- * The rest of a gesture the pointer took belongs to nothing on the screen either. Taking something ends pointing at
- * once (on the button's release), and the click that follows that release would reach what is under it with no
- * pointer left to stop it: it is stopped here, apart from the pointing's own life, until the next press (a new
- * gesture) or a moment later.
+ * The rest of a gesture the pointer took reaches nothing. Taking something ends pointing at once (on the button's
+ * release at `x`, `y`), and the click that follows that release would reach what is under it with no pointer left to
+ * stop it; so would the second click of a double click, on a card's «Aceptar» or on Boni's own window, just opened
+ * under the pointer. For a moment after the release no press is heard there, apart from the pointing's own life; a
+ * press anywhere else is a new one, and is heard (the bar's «Señalar», a chip's «×»).
  */
-function swallowRest() {
-  const eat = (e: Event) => {
-    e.preventDefault();
-    e.stopImmediatePropagation();
+function swallowRest(x: number, y: number) {
+  const here = (e: Event) => {
+    if (e instanceof MouseEvent && Math.hypot(e.clientX - x, e.clientY - y) <= REST_PX) eat(e);
   };
   const off = () => {
     clearTimeout(timer);
-    for (const name of REST) window.removeEventListener(name, eat, true);
-    window.removeEventListener("pointerdown", off, true);
+    for (const name of PRESS) window.removeEventListener(name, here, true);
+    if (heardAgain === off) heardAgain = null;
   };
-  for (const name of REST) window.addEventListener(name, eat, true);
-  window.addEventListener("pointerdown", off, true);
-  const timer = setTimeout(off, 400);
+  heardAgain?.();
+  for (const name of PRESS) window.addEventListener(name, here, true);
+  const timer = setTimeout(off, REST_MS);
+  heardAgain = off;
+}
+/** Ends that moment early: pointing again is a new gesture, heard from its first press. */
+let heardAgain: (() => void) | null = null;
+/**
+ * Pointing ended with the button still down (`Esc`, `Ctrl+Shift+E` or Ajustes in the middle of a drag): its release
+ * is still the pointer's, and so is what follows it.
+ */
+function swallowRelease() {
+  const done = (e: Event) => {
+    off();
+    if (!(e instanceof PointerEvent) || e.type !== "pointerup") return;
+    eat(e);
+    swallowRest(e.clientX, e.clientY);
+  };
+  const off = () => {
+    window.removeEventListener("pointerup", done, true);
+    window.removeEventListener("pointercancel", done, true);
+    window.removeEventListener("blur", done);
+  };
+  window.addEventListener("pointerup", done, true);
+  window.addEventListener("pointercancel", done, true);
+  window.addEventListener("blur", done);
 }
 
 const pointedOf = (el: HTMLElement): Pointed | null => {
@@ -64,7 +105,11 @@ export function ScreenPointer() {
       setPointing(false);
     };
     window.addEventListener("keydown", esc, true);
-    return () => window.removeEventListener("keydown", esc, true);
+    return () => {
+      window.removeEventListener("keydown", esc, true);
+      // The pointer goes away with the desktop's layout (a window made narrow): pointing does not wait for it.
+      setPointing(false);
+    };
   }, []);
   // Pointing is over a screen: it ends when something else takes it (Ajustes, the search, the trash, the
   // conversation's own screen), where there is nothing to point at and a click must be a click.
@@ -76,6 +121,7 @@ export function ScreenPointer() {
   }, [active, covered]);
   useEffect(() => {
     if (!active) return;
+    heardAgain?.();
     const root = document.documentElement;
     root.setAttribute("data-boni-pointing", "");
     let marked: HTMLElement[] = [];
@@ -196,15 +242,17 @@ export function ScreenPointer() {
     const up = (e: PointerEvent) => {
       if (!from) return;
       swallow(e);
-      swallowRest();
       const dragged = !!band;
       const els = dragged
         ? taken(e.clientX, e.clientY)
         : [under(document.elementFromPoint(e.clientX, e.clientY))].flatMap((el) => el ?? []);
       endDrag();
-      // A click on nothing leaves the pointer on, for the next try.
-      if (els.length) take(els);
-      else mark([]);
+      // A click on nothing leaves the pointer on, for the next try. Something taken ends pointing here, with the
+      // button just let go: what follows that release is not for what is under it.
+      if (els.length) {
+        swallowRest(e.clientX, e.clientY);
+        take(els);
+      } else mark([]);
     };
     /** Nothing under the pointer answers it while it points: no click opens, no drag moves, no menu comes. */
     const inert = (e: Event) => {
@@ -233,6 +281,8 @@ export function ScreenPointer() {
     return () => {
       root.removeAttribute("data-boni-pointing");
       mark([]);
+      // Ended with the button down: what is under the pointer does not get the release, nor its click.
+      if (from) swallowRelease();
       endDrag();
       document.removeEventListener("pointerdown", down, true);
       document.removeEventListener("pointermove", move, true);

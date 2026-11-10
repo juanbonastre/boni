@@ -611,7 +611,9 @@ contraseña ni un código aquí» under a question.
     (three rows, not their table).
   - **Nothing else answers the pointer** meanwhile but Boni's own window: no click opens, no drag moves, no menu
     comes, and a block's handles and a chart's controls stay away. The wheel scrolls; a click on nothing keeps
-    pointing; `Esc` stops and does nothing else.
+    pointing; `Esc` stops and does nothing else. A gesture that began pointing is the pointer's to its end: the
+    click that takes something, the second click of a double click (for half a second, within 10 px) and the
+    release after an `Esc` in the middle of a drag reach nothing under them; a click anywhere else is heard at once.
   - **Chips** above the text of the bar (Material Design 3, «Chips», input chips: a discrete thing the person added,
     as a contact in a mail's «To», taken off from the chip itself): «Gráfica: Gasto del mes», its kind and its name
     cut to a line, 12.5 px on a 14 % `--accent` tint with a 6 px radius and an 18 px «×». Each thing once, twenty at

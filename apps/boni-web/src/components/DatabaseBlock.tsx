@@ -1699,7 +1699,8 @@ const titleOf = (type: DataType, r: DataRow) => {
 /**
  * A row can be pointed at for Boni (F9, `Ctrl+Shift+E`) wherever a view shows it (a table's line, a card, a day's
  * entry): its reference, and a chip saying its collection and its name. A proposal drawn among the rows is the
- * Bandeja's card, pointed at as that.
+ * Bandeja's card, pointed at as that. Not a row of Boni's own records (its calls, its activity): they are not
+ * Juan's data, and nothing of them goes to a model.
  */
 const pointRow = (t: T, type: DataType, r: DataRow) =>
   r.ghost
@@ -1707,7 +1708,9 @@ const pointRow = (t: T, type: DataType, r: DataRow) =>
         { kind: "proposal", id: r.ghost },
         chipTitle(t("inbox.kind.proposal"), titleOf(type, r)),
       )
-    : pointAttrs({ kind: "row", id: r.id }, chipTitle(type.name, titleOf(type, r)));
+    : type.system
+      ? {}
+      : pointAttrs({ kind: "row", id: r.id }, chipTitle(type.name, titleOf(type, r)));
 
 // ---------------------------------------------------------------- a cell, edited in place
 

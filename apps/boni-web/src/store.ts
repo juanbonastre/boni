@@ -68,6 +68,14 @@ import {
   type Shortcut,
   type Widget,
 } from "./core/contract.ts";
+import {
+  type Draft,
+  type Drafts,
+  draftIn,
+  madeDraft,
+  withDraft,
+  withoutDraft,
+} from "./core/drafts.ts";
 import * as F from "./core/formLogic.ts";
 import {
   addPointed,
@@ -264,10 +272,10 @@ interface State {
   /** The conversation open in the chat; null: a new one, made with its first message. */
   conversationId: string | null;
   /**
-   * What Juan is writing to each conversation and has not sent (`NEW_DRAFT`: the one not made yet): its text and
-   * what he pointed at for it. The same on its screen and in its window, kept when either closes (F9).
+   * What Juan is writing to each conversation and has not sent (core/drafts.ts): its text and what he pointed at
+   * for it. The same on its screen and in its window, kept when either closes (F9).
    */
-  chatDrafts: Record<string, Draft>;
+  chatDrafts: Drafts;
   /** Pointing (`Ctrl+Shift+E`, F9): the pointer marks what the next message is about. */
   pointing: boolean;
   /** The turn running now, as it goes (3.5). */
@@ -1496,26 +1504,11 @@ async function agentCall(id: string, call: (live: string) => Promise<TurnResult>
 }
 const LIVE_POLL_MS = 350;
 
-/** A message not sent yet: its text and what Juan pointed at for it (`Ctrl+Shift+E`). */
-export interface Draft {
-  text: string;
-  pointed: Pointed[];
-}
-const NEW_DRAFT = "new";
-const NO_DRAFT: Draft = { text: "", pointed: [] };
-const draftKey = (s: Pick<State, "conversationId">) => s.conversationId ?? NEW_DRAFT;
-/** The open conversation's unsent message. */
+/** The open conversation's unsent message (core/drafts.ts): its text and what Juan pointed at for it. */
 export const draftOf = (s: Pick<State, "conversationId" | "chatDrafts">): Draft =>
-  s.chatDrafts[draftKey(s)] ?? NO_DRAFT;
-function putDraft(change: (d: Draft) => Draft) {
-  set((s) => {
-    const k = draftKey(s);
-    const next = change(s.chatDrafts[k] ?? NO_DRAFT);
-    const { [k]: _was, ...rest } = s.chatDrafts;
-    // An empty one is no draft: nothing is kept of a conversation nothing is being written to.
-    return { chatDrafts: next.text || next.pointed.length ? { ...rest, [k]: next } : rest };
-  });
-}
+  draftIn(s.chatDrafts, s.conversationId);
+const putDraft = (change: (d: Draft) => Draft) =>
+  set((s) => ({ chatDrafts: withDraft(s.chatDrafts, s.conversationId, change) }));
 export const setDraftText = (text: string) => putDraft((d) => ({ ...d, text }));
 /** Takes a chip off the bar. */
 export const unpoint = (key: string) =>
@@ -1527,7 +1520,9 @@ export const unpoint = (key: string) =>
 export function pointAt(more: readonly Pointed[]) {
   if (more.length) putDraft((d) => ({ ...d, pointed: addPointed(d.pointed, more) }));
   set({ pointing: false });
-  openBoniWindow(get().boniWindow === "right" ? "right" : "float");
+  // Open as it was left: an open one stays where it is (docked, it would take the Bandeja's place and put away the
+  // card just pointed at).
+  if (get().boniWindow === "closed") openBoniWindow();
 }
 /**
  * Pointing on or off (`Ctrl+Shift+E`, the bar's «Señalar»): on the desktop, over a screen with something to point at
@@ -1558,9 +1553,11 @@ export async function sendTurn(text: string) {
       conversation = made.id;
       // Its title, as the server will give it from this first message (its first words).
       const title = request.length <= 60 ? request : `${request.slice(0, 57).trimEnd()}…`;
+      // What Juan wrote on while the server made it is this conversation's draft now.
       set((s) => ({
         conversationId: made.id,
         conversations: [{ ...made, title }, ...(s.conversations ?? [])],
+        chatDrafts: madeDraft(s.chatDrafts, made.id),
       }));
     } catch {
       // A server without the list: the device keeps a conversation of its own there, as before.
@@ -1819,13 +1816,10 @@ export async function renameConversation(id: string, title: string) {
 export async function removeConversation(id: string) {
   try {
     await agent.deleteConversation(id);
-    set((s) => {
-      const { [id]: _draft, ...drafts } = s.chatDrafts;
-      return {
-        conversations: (s.conversations ?? []).filter((x) => x.id !== id),
-        chatDrafts: drafts,
-      };
-    });
+    set((s) => ({
+      conversations: (s.conversations ?? []).filter((x) => x.id !== id),
+      chatDrafts: withoutDraft(s.chatDrafts, id),
+    }));
     if (get().conversationId === id) newConversation();
     toast(get().t("chats.deleted"));
   } catch (e) {
@@ -1839,15 +1833,11 @@ export async function chooseModel(model: string) {
     if (!id) {
       const made = await agent.newConversation();
       id = made.id;
-      // What was being written to the conversation not made yet is this one's now.
-      set((s) => {
-        const { [NEW_DRAFT]: draft, ...drafts } = s.chatDrafts;
-        return {
-          conversationId: made.id,
-          conversations: [made, ...(s.conversations ?? [])],
-          chatDrafts: draft ? { ...drafts, [made.id]: draft } : drafts,
-        };
-      });
+      set((s) => ({
+        conversationId: made.id,
+        conversations: [made, ...(s.conversations ?? [])],
+        chatDrafts: madeDraft(s.chatDrafts, made.id),
+      }));
     }
     const c = await agent.updateConversation(id, { model });
     if (c)

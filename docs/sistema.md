@@ -635,7 +635,8 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
     - un bloque de una página (un número, unas barras, una gráfica, una gráfica de las primeras páginas, una vista de
       una colección, un texto, un botón, un enlace, una subpágina, un archivo);
     - una fila, en cualquier vista de una colección (la línea de una tabla, una tarjeta de un tablero o una galería,
-      una línea de una lista, una entrada de un calendario);
+      una línea de una lista, una entrada de un calendario); no las de los registros de Boni (sus llamadas, su
+      actividad), que no son datos de Juan;
     - una tarjeta de la Bandeja (una propuesta o una pregunta), también la propuesta que se dibuja entre las filas.
   - un clic añade lo señalado a la barra como una ficha («Gráfica: Gasto del mes»: qué es y cómo se llama), abre la
     ventana y deja el cursor en ella; arrastrar dibuja un rectángulo y añade lo que coge:
@@ -645,10 +646,15 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
   - mientras señala, nada de la pantalla responde al puntero (ni un clic abre, ni un arrastre mueve, ni sale un menú):
     solo la ventana de Boni, y la rueda sigue desplazando. Un clic donde no hay nada que señalar no hace nada y el
     puntero sigue señalando. `Esc` deja de señalar y no hace nada más;
+  - un gesto que empezó señalando es del puntero hasta el final: ni el clic con el que se coge algo ni el segundo de
+    un doble clic llegan a lo que hay debajo (el «Aceptar» de una tarjeta, un botón), y soltar el botón después de un
+    `Esc` en mitad de un arrastre tampoco. Un clic en otro sitio vale al momento;
+  - con la ventana acoplada a la derecha y la Bandeja abierta, señalar una tarjeta deja las dos como están;
   - la ficha se quita con su «×». Lo señalado es parte del mensaje que se está escribiendo: se guarda con él, por
     conversación, y se va con él al enviarlo;
   - lo que se está escribiendo no se pierde al cerrar la ventana, ni al ampliarla o llevarla a la derecha: es un
-    borrador por conversación, con su texto y sus fichas;
+    borrador por conversación, con su texto y sus fichas (`core/drafts.ts`). Lo que se escribe mientras el servidor
+    hace una conversación nueva es de esa conversación, no de la siguiente;
   - la app manda solo referencias (`{kind: "block", page, block}`, `{kind: "row", id}`, `{kind: "proposal" |
     "question", id}`) y el servidor dice qué es cada una con lo que hay en el almacén, en `$screen.pointed`, en el
     orden en que se señaló (`apps/server/src/screen.ts`):
@@ -661,21 +667,27 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
     - una vista de una colección, con su colección y su vista (la distribución, el grupo, el orden y los filtros);
   - las cifras se calculan en el servidor sobre las filas que los modelos pueden leer, y llevan la etiqueta de lo
     que leyeron (los campos que usa el bloque, en cada fila): lo de fuera llega como asa, igual que una suma de
-    `entities.aggregate`. Una fila cerrada por una regla no cuenta; una colección con miles de filas se lee una vez
-    para todos los bloques señalados (A-15);
+    `entities.aggregate`. Una colección con miles de filas se lee una vez para todos los bloques señalados (A-15);
+  - una fila cerrada por una regla no cuenta. Cuando eso hace que las cifras no sean las que Juan ve en pantalla,
+    el bloque lo dice (`partial`), para que Boni no dé un total que él no ve; nunca cuántas filas ni cuáles. Una
+    regla que cierra filas que el bloque no cuenta no cambia nada, y no se dice;
   - una gráfica de las primeras páginas (las del dinero) da las mismas cifras que ve Juan: el mismo código
-    (`V1Service.computeOver`) sobre el dinero tal como lo ven los modelos (`MoneyReads`). Si una colección que
-    cuenta está cerrada u opaca, no hay gráfica;
+    (`V1Service.computeOver`) sobre el dinero tal como lo ven los modelos (`MoneyReads`), con la colección que
+    cuenta para seguir mirando con las herramientas. Si una colección que cuenta está cerrada u opaca, no hay
+    gráfica; si se le quitó alguna fila, lo que nombra su filtro (una categoría, una persona) no se dice;
   - lo que los modelos no pueden ver (un bloque de una colección cerrada u opaca, una fila cerrada, una propuesta a
-    una colección cerrada, algo que ya no está) llega solo como `{kind: "closed"}`: Boni puede decir que está
-    cerrado, y no sabe nada más.
+    una colección cerrada) llega solo como `{kind: "closed"}`: Boni puede decir que está cerrado, y no sabe nada
+    más. Lo que ya no está (una tarjeta decidida desde que se señaló, una fila o un bloque borrados), como `{kind:
+    "gone"}`. Las referencias solo las manda la app, nunca un modelo: distinguir las dos cosas no sirve para tantear.
 - **Falta:**
   - señalar nodos (del mapa y del lienzo de un flujo): espera a las acciones de flujos (F10), que es cuando Boni
     podrá hacer algo con uno;
   - señalar un párrafo de una nota (el texto de un registro): sus bloques se hacen al leerla y no tienen referencia;
   - que el mensaje enviado enseñe lo que se señaló con él;
-  - `data-boni-ref` en lo que no se señala: los bloques y las filas visibles sin señalarlos, la vista con sus
-    filtros y el foco;
+  - `data-boni-ref` en lo demás (los nodos, la pantalla de una gráfica, la página de un registro, la barra lateral),
+    y lo que se ve sin señalarlo: los bloques y las filas visibles, la vista con sus filtros, el foco y lo abierto
+    en el panel de la derecha (un correo, un registro);
+  - abrir la ventana con la última conversación tras reiniciar la app (hoy, una nueva);
   - las demás acciones de pantalla (desplazarse, resaltar una fila o un bloque, filtrar la vista), que pasen por la
     política; resaltar lo que toca, no toda el área, y decirlo en sus pasos mientras actúa («Abriendo Agenda»);
   - el ejemplo de «Flujos»: abrir una ejecución sobre el mapa con el paso que la paró resaltado;

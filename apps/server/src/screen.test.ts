@@ -315,7 +315,7 @@ describe("the screen as data (F9, task 85)", () => {
     });
     expect(pointed[4]).toEqual({ kind: "button", page: page.id, block: "go", title: "Apuntar" });
     expect(JSON.stringify(pointed)).not.toContain("Forged");
-    // What cannot be said (a line, a block that is not there, a page that is not one) says only that.
+    // A line says only that it is one; a block or a page that is not there, that it is gone.
     const none = screenOf(store, {
       open: null,
       inbox: [],
@@ -327,11 +327,11 @@ describe("the screen as data (F9, task 85)", () => {
       ],
     });
     expect(plain(none as Val)).toEqual({
-      pointed: [{ kind: "closed" }, { kind: "closed" }, { kind: "closed" }],
+      pointed: [{ kind: "line", page: page.id, block: "line" }, { kind: "gone" }, { kind: "gone" }],
     });
   });
 
-  it("nothing closed or opaque to the models is pointed at: a block, a row or a card of it says only «closed»", () => {
+  it("nothing closed or opaque to the models is pointed at: a block, a row or a card of it says only «closed», and what is no longer there, «gone»", () => {
     const { store, typeOf, rowOf, proposal, closed } = setUp();
     const number = (id: string, key: string) => ({
       id,
@@ -362,6 +362,8 @@ describe("the screen as data (F9, task 85)", () => {
         { kind: "proposal", id: proposal },
         { kind: "proposal", id: closed },
         { kind: "question", id: "q_nada" },
+        { kind: "row", id: "e_nada" },
+        { kind: "proposal", id: "p_nada" },
       ],
     });
     if (screen?.t !== "rec" || screen.fields.pointed?.t !== "list") throw new Error("no screen");
@@ -376,7 +378,9 @@ describe("the screen as data (F9, task 85)", () => {
       "closed",
       "proposal",
       "closed",
-      "closed",
+      "gone",
+      "gone",
+      "gone",
     ]);
     expect(said[0]).toMatchObject({ collection: "tarea", total: 1 });
     // A row, by reference: the planner reads the rest with its tools, and an «open» reply may name it whole.
@@ -396,6 +400,20 @@ describe("the screen as data (F9, task 85)", () => {
     expect(all).not.toContain("Lo que solo el código ve");
     expect(all).not.toContain("privado");
     expect(all).not.toContain("opaca");
+    // A row sent to the trash and a card decided since they were pointed at are gone, not closed.
+    const row = rowOf("tarea");
+    store.remove(row, { actor: "user" });
+    host?.agent(1).rejectProposal(proposal);
+    const later = screenOf(store, {
+      open: null,
+      inbox: [],
+      chosen: [],
+      pointed: [
+        { kind: "row", id: row },
+        { kind: "proposal", id: proposal },
+      ],
+    });
+    expect(plain(later as Val)).toEqual({ pointed: [{ kind: "gone" }, { kind: "gone" }] });
   });
 
   it("a block's numbers count only the rows the models may read, and carry the label of what they read", () => {
@@ -429,9 +447,10 @@ describe("the screen as data (F9, task 85)", () => {
     if (before?.t !== "rec" || before.fields.pointed?.t !== "list") throw new Error("no screen");
     const block = before.fields.pointed.items[0];
     if (block?.t !== "rec") throw new Error("no block");
-    // What Juan's notes said (imported): the planner may read it.
+    // What Juan's notes said (imported): the planner may read it. Nothing is left out: nothing says so.
     expect(deepLabel(block.fields.values as Val).integrity).toBe("imported");
     expect(deepLabel(block.fields.values as Val).noModel).toBeUndefined();
+    expect(block.fields.partial).toBeUndefined();
     // Juan closes a part of the collection to the models (a rule): its rows are not counted here.
     store.setAiRule(
       {
@@ -442,7 +461,41 @@ describe("the screen as data (F9, task 85)", () => {
       "portatil",
     );
     const after = plain(screenOf(store, refs) as Val) as { pointed: Record<string, unknown>[] };
-    expect(after.pointed[0]).toMatchObject({ labels: ["Leído"], values: [2], total: 2 });
+    // Its numbers are no longer the ones on Juan's screen (3 books): it says so, never how many nor which.
+    expect(after.pointed[0]).toMatchObject({
+      labels: ["Leído"],
+      values: [2],
+      total: 2,
+      partial: true,
+    });
+    // A rule that closes rows the block does not count changes nothing of it: nothing to say.
+    const page2 = createPage(store, {
+      title: "Leídos",
+      spec: {
+        version: 1,
+        blocks: [
+          {
+            id: "read",
+            type: "number",
+            collection: libro.id,
+            measure: "count",
+            filterField: estado?.id,
+            filterValue: estado?.options?.find((x) => x.name === "Leído")?.id,
+            period: "all",
+          },
+        ],
+      },
+    });
+    const only = plain(
+      screenOf(store, {
+        open: null,
+        inbox: [],
+        chosen: [],
+        pointed: [{ kind: "block", page: page2.id, block: "read" }],
+      }) as Val,
+    ) as { pointed: Record<string, unknown>[] };
+    expect(only.pointed[0]).toMatchObject({ kind: "number", total: 2 });
+    expect(only.pointed[0]).not.toHaveProperty("partial");
   });
 
   it("«¿cuánto suma esto?»: the planner reads the block pointed at, and its plan answers with its number", async () => {
@@ -649,13 +702,21 @@ describe("a chart of the first pages pointed at (F9, task 85)", () => {
     });
     const chart = (id: string): SavedChart | null => {
       const spec = svc.savedChart(1, id);
-      return spec ? { spec, over: (m) => svc.computeOver(m, spec) } : null;
+      return spec
+        ? { spec, collection: "t_movimiento", over: (m) => svc.computeOver(m, spec) }
+        : null;
     };
     const page = createPage(store, {
       title: "Gastos",
-      spec: { version: 1, blocks: [{ id: "b3", type: "chart", chart: "spending-by-category" }] },
+      spec: {
+        version: 1,
+        blocks: [
+          { id: "b3", type: "chart", chart: "spending-by-category" },
+          { id: "b5", type: "chart", chart: "eating-out" },
+        ],
+      },
     });
-    const pointed = () =>
+    const pointed = (block = "b3") =>
       (
         plain(
           screenOf(
@@ -664,7 +725,7 @@ describe("a chart of the first pages pointed at (F9, task 85)", () => {
               open: { kind: "page", id: page.id },
               inbox: [],
               chosen: [],
-              pointed: [{ kind: "block", page: page.id, block: "b3" }],
+              pointed: [{ kind: "block", page: page.id, block }],
             },
             { mailAccount: null, today: "2026-10-19", chart },
           ) as Val,
@@ -683,6 +744,8 @@ describe("a chart of the first pages pointed at (F9, task 85)", () => {
         page: page.id,
         block: "b3",
         title: "Gasto del mes",
+        // The collection it counts, by the key the tools take.
+        collection: "movimiento",
         period: "this_month",
         group: "group",
         unit: mine.unit,
@@ -691,6 +754,17 @@ describe("a chart of the first pages pointed at (F9, task 85)", () => {
         values: mine.series[0]?.points.map((x) => x.value),
       });
       expect(got?.total).toBe(82.5);
+      expect(got).not.toHaveProperty("partial");
+      // A chart with a filter says what it names, while nothing of the money is kept from the models.
+      expect(pointed("b5")).toMatchObject({
+        title: "Comida fuera",
+        period: "last_months",
+        months: 12,
+        filter: [
+          { field: "category", op: "prefix", values: ["comida/", "bebida/cafe", "bebida/alcohol"] },
+          { field: "category", op: "not_prefix", values: ["comida/supermercado"] },
+        ],
+      });
     } finally {
       store.close();
     }
@@ -710,8 +784,18 @@ describe("a chart of the first pages pointed at (F9, task 85)", () => {
         },
         "portatil",
       );
-      expect(pointed()).toMatchObject({ kind: "chart", total: 70 });
+      // Other numbers than the ones on Juan's screen (82.5): it says so; and its filter no longer says what it
+      // names, which may be a row kept from the models.
+      expect(pointed()).toMatchObject({ kind: "chart", total: 70, partial: true });
+      expect(pointed("b5")).toMatchObject({
+        filter: [
+          { field: "category", op: "prefix" },
+          { field: "category", op: "not_prefix" },
+        ],
+      });
+      expect(JSON.stringify(pointed("b5"))).not.toContain("supermercado");
       store.removeAiRule(rule, "portatil");
+      expect(pointed()).not.toHaveProperty("partial");
       // Opaque: only code computes with it; nothing of it is on the screen.
       store.setAiAccess("t_movimiento", "opaque", "portatil");
       expect(pointed()).toEqual({ kind: "closed" });
@@ -735,7 +819,7 @@ describe("a chart of the first pages pointed at (F9, task 85)", () => {
         },
         { mailAccount: null, chart: () => null },
       );
-      expect(plain(gone as Val)).toEqual({ pointed: [{ kind: "closed" }] });
+      expect(plain(gone as Val)).toEqual({ pointed: [{ kind: "gone" }] });
     } finally {
       store.close();
     }

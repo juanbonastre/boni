@@ -334,7 +334,9 @@ export function makeApp(opts: ServerOptions): App {
   if (opts.agent)
     opts.agent.savedChart = (account, id) => {
       const spec = v1.savedChart(account, id);
-      return spec ? { spec, over: (money) => v1.computeOver(money, spec) } : null;
+      return spec
+        ? { spec, collection: "t_movimiento", over: (money) => v1.computeOver(money, spec) }
+        : null;
     };
   const hasMoney = () => listUsers(db).some((u) => moneyStore(u.id) !== null);
   // Captures that could not be written yet, and the apps told when their money changes.

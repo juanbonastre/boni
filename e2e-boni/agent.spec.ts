@@ -228,6 +228,33 @@ test("Señalar (F9, task 85): Ctrl+Shift+E lights what the pointer is over, a cl
   await expect(page.locator(".modal, .side-panel:not(.boni-docked), .capture-form")).toHaveCount(0);
   await win.getByRole("button", { name: "Quitar: Botón: Apuntar gasto" }).click();
   await expect(chips).toHaveCount(2);
+  // Nor does a double click press it: its second click comes with pointing already over, and reaches nothing.
+  await page.keyboard.press("Control+Shift+e");
+  await page.locator('[data-block="b1"]').getByRole("button", { name: "Apuntar gasto" }).dblclick();
+  await expect(chips).toHaveCount(3);
+  await expect(page.locator(".modal, .side-panel:not(.boni-docked), .capture-form")).toHaveCount(0);
+  await expect(page.locator(".doc-title")).toHaveValue("Gastos");
+  // A click anywhere else is a click at once: the chip's «×».
+  await win.getByRole("button", { name: "Quitar: Botón: Apuntar gasto" }).click();
+  await expect(chips).toHaveCount(2);
+  // `Esc` in the middle of a drag ends pointing; letting the button go over the same button does not press it.
+  const cafe = await page
+    .locator('[data-block="b2"]')
+    .getByRole("button", { name: "Café" })
+    .boundingBox();
+  if (!cafe) throw new Error("the button is not on screen");
+  await page.keyboard.press("Control+Shift+e");
+  await page.mouse.move(cafe.x + 6, cafe.y + cafe.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(cafe.x + cafe.width - 6, cafe.y + cafe.height / 2, { steps: 4 });
+  await expect(page.locator(".boni-point-band")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(html).not.toHaveAttribute("data-boni-pointing", "");
+  await expect(page.locator(".boni-point-band")).toHaveCount(0);
+  await page.mouse.up();
+  await expect(chips).toHaveCount(2);
+  await expect(page.locator(".modal, .side-panel:not(.boni-docked), .capture-form")).toHaveCount(0);
+  await expect(page.locator(".toast")).toHaveCount(0);
   // Esc leaves pointing and nothing else: the window stays, with what was written and pointed at.
   await box.fill("¿por qué sube?");
   await page.keyboard.press("Control+Shift+e");
@@ -272,7 +299,7 @@ test("Señalar (F9, task 85): the rows a drag crosses in a table and a card of t
   await page.setViewportSize({ width: 1440, height: 900 });
   await openApp(page, "/?still", {
     agent: {
-      "POST api/agent/turn": [TOP_CARD_REPLY],
+      "POST api/agent/turn": [TOP_CARD_REPLY, TEXT_REPLY],
       "GET api/agent/proposals": [{ proposals: [CARD_FUNCTION, CARD_DETAILED] }],
     },
   });
@@ -312,22 +339,58 @@ test("Señalar (F9, task 85): the rows a drag crosses in a table and a card of t
   // No row was chosen nor opened by the drag: the table is as it was.
   await expect(page.locator(".db-table tbody tr.selected")).toHaveCount(0);
   await expect(rows).toHaveCount(3);
-  // A card of the Bandeja, pointed at with a click: it is not opened, accepted nor rejected.
+  // A card of the Bandeja, lit under the pointer and taken with a click on its «Aceptar»: it is not accepted (nor
+  // opened, nor rejected), and nothing is asked of the server.
+  const decided = async () =>
+    (await recorded(page)).requests.filter((r) =>
+      /^(POST|PUT|DELETE) api\/agent\/proposals/.test(r),
+    );
+  const before = (await decided()).length;
   await page.keyboard.press("Control+Shift+e");
-  await cards.first().locator("h3").click();
+  await cards.first().hover();
+  await expect(cards.first()).toHaveAttribute("data-boni-pointed", "");
+  await cards.first().getByRole("button", { name: "Aceptar", exact: true }).click();
   await expect(chips).toHaveCount(3);
   await expect(chips.nth(2)).toHaveText(/^Propuesta: ./);
   await expect(cards).toHaveCount(2);
   await expect(page.locator(".db-table")).toBeVisible();
+  expect((await decided()).length).toBe(before);
+  // Docked to the right the window gives way to the Bandeja; pointing at a card leaves both as they are.
+  await win.getByRole("button", { name: "Llevar a la derecha" }).click();
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  await expect(cards).toHaveCount(2);
+  await page.keyboard.press("Control+Shift+e");
+  await cards.nth(1).locator("h3").click();
+  await expect(chips).toHaveCount(4);
+  await expect(cards).toHaveCount(2);
   const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
   await expect(box).toBeFocused();
   await box.fill("¿qué tienen que ver?");
   await box.press("Enter");
-  expect((await turnWith(page, "¿qué tienen que ver?")).screen.pointed).toEqual([
+  const sent = (await turnWith(page, "¿qué tienen que ver?")).screen;
+  expect(sent.pointed).toEqual([
     { kind: "row", id: ids[0] },
     { kind: "row", id: ids[1] },
     { kind: "proposal", id: "c1" },
+    { kind: "proposal", id: "c9" },
   ]);
+  // The Bandeja was still open: its cards went with the message, in its order.
+  expect(sent.inbox).toEqual([
+    { kind: "proposal", id: "c1" },
+    { kind: "proposal", id: "c9" },
+  ]);
+  // A row chosen in the table (its checkbox) goes with the next message as chosen, by its id; nothing is pointed at.
+  await expect(win.locator(".turn-answer")).toHaveCount(1);
+  await rows.nth(2).hover();
+  await rows.nth(2).locator(".sel-col .db-check").check();
+  await box.fill("¿y la elegida?");
+  await box.press("Enter");
+  const next = (await turnWith(page, "¿y la elegida?")).screen;
+  expect(next.chosen).toEqual([ids[2]]);
+  expect(next.pointed).toBeUndefined();
 });
 
 test("«ábreme Libros» (F9, task 85): Boni opens it on the screen, lit, once; the conversation goes on in the window", async ({

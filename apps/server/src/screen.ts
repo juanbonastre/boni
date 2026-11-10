@@ -19,7 +19,7 @@ import {
   typeName,
   type Val,
 } from "@boni/agent";
-import { type FieldDef, join, type Label, type TypeDef } from "@boni/entities";
+import { ancestors, branch, type FieldDef, join, type Label, type TypeDef } from "@boni/entities";
 import type { StoredEntity, UserStore } from "@boni/store";
 import {
   blockDateField,
@@ -79,6 +79,8 @@ export interface ScreenRefs {
 /** A saved chart of the first pages (the v1 API's): its spec, and its numbers over the money a source gives. */
 export interface SavedChart {
   spec: ChartSpec;
+  /** The collection it counts (its id), when it is one of the account's. */
+  collection?: string;
   over(money: MoneySource): ChartData;
 }
 
@@ -230,14 +232,25 @@ export function screenOf(
   if (chosen.length) fields.chosen = list(chosen, code);
   if (refs.pointed?.length) {
     const blocks = pointedBlocks(store, view, visible, code, record, o);
-    // Something closed to the models (or gone) says only that it is: Boni can say so, and learns nothing of it.
-    const shut = rec({ kind: leaf("closed", code) }, code);
+    // Something closed to the models says only that it is: Boni can say so, and learns nothing of it. So does what
+    // is no longer there (a card decided since it was pointed at, a row or a block deleted), which is another
+    // thing to say. Only the app sends these references, never a model: telling the two apart probes nothing.
+    const said = (why: Missing): Val => rec({ kind: leaf(why, code) }, code);
+    const there = (id: string) => {
+      const s = store.get(id);
+      return !!s && s.entity.deleted === undefined;
+    };
     const pointed = refs.pointed.map((p) => {
-      if (p.kind === "block") return blocks(p.page, p.block) ?? shut;
-      if (p.kind === "proposal") return card(p.id) ?? shut;
-      if (p.kind === "question") return question(p.id) ?? shut;
+      if (p.kind === "block") {
+        const b = blocks(p.page, p.block);
+        return typeof b === "string" ? said(b) : b;
+      }
+      if (p.kind === "proposal") return card(p.id) ?? said(facts.has(p.id) ? "closed" : "gone");
+      if (p.kind === "question") return question(p.id) ?? said("gone");
       const r = record(p.id);
-      return r?.t === "rec" ? rec({ kind: leaf("row", code), ...r.fields }, code) : shut;
+      return r?.t === "rec"
+        ? rec({ kind: leaf("row", code), ...r.fields }, code)
+        : said(there(p.id) ? "closed" : "gone");
     });
     fields.pointed = list(pointed, code);
   }
@@ -246,6 +259,12 @@ export function screenOf(
 
 type ReadView = ReturnType<typeof readStore>;
 type Types = Readonly<Record<string, TypeDef>>;
+/** Why something pointed at is not on the screen: the models may not see it, or it is no longer there. */
+type Missing = "closed" | "gone";
+
+/** What a chart's numbers are, to tell whether two of them say the same. */
+const numbersOf = (d: ChartData) =>
+  JSON.stringify([d.total, d.series.map((x) => x.points.map((p) => [p.key, p.value]))]);
 
 /** The label of everything read, joined a few at a time: a collection has thousands of rows. */
 function joined(first: Label, rest: readonly Label[]): Label {
@@ -255,9 +274,9 @@ function joined(first: Label, rest: readonly Label[]): Label {
 }
 
 /**
- * A block of a page as the planner gets it when Juan points at it; null when the models may not see it (its page or
- * its collection closed or opaque to them, or gone). A collection's rows are read once for all the blocks pointed
- * at in a message (A-15: his thousands of records, never once per block).
+ * A block of a page as the planner gets it when Juan points at it; «closed» when the models may not see it (its page
+ * or its collection closed or opaque to them), «gone» when it is no longer there. A collection's rows are read once
+ * for all the blocks pointed at in a message (A-15: his thousands of records, never once per block).
  */
 function pointedBlocks(
   store: UserStore,
@@ -266,7 +285,7 @@ function pointedBlocks(
   code: Label,
   record: (id: string) => Val | null,
   o: { today?: string; chart?: (id: string) => SavedChart | null },
-): (page: string, block: string) => Val | null {
+): (page: string, block: string) => Val | Missing {
   const today = o.today ?? new Date().toISOString().slice(0, 10);
   const levels = store.aiAccess();
   /** A collection the models read whole values of: there, not Boni's own, and neither closed nor opaque. */
@@ -288,18 +307,34 @@ function pointedBlocks(
     }
     return rows;
   };
-  const pages = new Map<string, { blocks: PageBlock[]; by: Label } | null>();
+  const pages = new Map<string, { blocks: PageBlock[]; by: Label } | Missing>();
   const pageOf = (id: string) => {
-    if (!pages.has(id)) {
-      const s = view.get(id);
-      const page = s && readable(s) ? getPage(store, id) : null;
+    let page = pages.get(id);
+    if (!page) {
+      const whole = getPage(store, id);
+      const s = whole ? view.get(id) : null;
       // Who wrote the page says who wrote its blocks' words.
-      pages.set(
-        id,
-        s && page ? { blocks: page.spec.blocks, by: joined(code, Object.values(s.labels)) } : null,
-      );
+      page = !whole
+        ? "gone"
+        : s && readable(s)
+          ? { blocks: whole.spec.blocks, by: joined(code, Object.values(s.labels)) }
+          : "closed";
+      pages.set(id, page);
     }
-    return pages.get(id) ?? null;
+    return page;
+  };
+  /**
+   * Whether a collection may keep rows from the models: a rule on its branch, or a collection inside it with a
+   * level of its own. Without either, what the models read of it is all of it, and it is not read again to check.
+   */
+  const rules = store.aiRules();
+  const schema = store.schema();
+  const mayHide = (id: string) => {
+    const line = new Set([id, ...ancestors(schema, id), ...branch(schema, id)]);
+    return (
+      rules.some((r) => line.has(r.type)) ||
+      branch(schema, id).some((x) => (levels[x] ?? "visible") !== "visible")
+    );
   };
   const key = (def: TypeDef, id: string | undefined): FieldDef | undefined =>
     id ? def.fields.find((f) => f.id === id && !f.archived) : undefined;
@@ -382,7 +417,19 @@ function pointedBlocks(
       return String(s.entity.values[t.titleField] ?? "");
     };
     const result = computeBlock(b, visible, () => rows.map((s) => s.entity), { today, titleOf });
-    if ("data" in result) Object.assign(out, figures(result.data, joined(code, read)));
+    if (!("data" in result)) return out;
+    Object.assign(out, figures(result.data, joined(code, read)));
+    // Rows the models may not read are not in its numbers. When that makes them other than the ones on Juan's
+    // screen, it says so (`partial`), so Boni does not give a total he does not see; never how many, nor which.
+    if (mayHide(def.id)) {
+      const all = store.list(def.id, { deep: true });
+      const whole =
+        all.length === rows.length
+          ? null
+          : computeBlock(b, visible, () => all.map((s) => s.entity), { today });
+      if (whole && "data" in whole && numbersOf(whole.data) !== numbersOf(result.data))
+        out.partial = leaf(true, code);
+    }
     return out;
   };
 
@@ -390,9 +437,11 @@ function pointedBlocks(
    * The money as the models may read it, with the label of every row it gave. `shut` once it asked for a collection
    * they may not read: its numbers would be others than the ones Juan sees, so there are none.
    */
-  const moneyAsSeen = (): { money: MoneySource; label: () => Label; shut: () => boolean } => {
+  const moneyAsSeen = () => {
     const read: Label[] = [];
     let shut = false;
+    /** A row the money asked for was kept from it (a rule's, a record of a closed collection it names). */
+    let held = false;
     const seen = (s: StoredEntity | null): StoredEntity | null => {
       if (!s || !readable(s)) return null;
       for (const l of Object.values(s.labels)) read.push(l);
@@ -403,31 +452,52 @@ function pointedBlocks(
         shut = true;
         return [];
       }
-      return view.list(type).flatMap((s) => (seen(s) ? [s] : []));
+      const rows = view.list(type).flatMap((s) => (seen(s) ? [s] : []));
+      if (mayHide(type) && rows.length !== store.list(type).length) held = true;
+      return rows;
     };
     const reads: MoneyReads = {
       // The whole schema: what the money needs is asked for by name, and refused here when it is closed.
       schema: () => store.schema(),
       get: (id) => {
         const s = view.get(id);
-        return s && open(s.entity.type) ? seen(s) : null;
+        const got = s && open(s.entity.type) ? seen(s) : null;
+        if (!got && store.get(id)) held = true;
+        return got;
       },
       list: (type) => listOf(type),
       entities: (type) => listOf(type).map((s) => s.entity),
     };
-    return { money: new StoreMoney(reads), label: () => joined(code, read), shut: () => shut };
+    return {
+      money: new StoreMoney(reads),
+      label: () => joined(code, read),
+      shut: () => shut,
+      held: () => held,
+    };
   };
 
   /** A chart of the first pages: what its spec says it counts, and its numbers over the money the models may read. */
-  const savedChart = (id: string, by: Label): Record<string, Val> | null => {
+  const savedChart = (id: string, by: Label): Record<string, Val> | Missing => {
     const chart = o.chart?.(id);
-    if (!chart) return null;
+    if (!chart) return "gone";
     const spec = chart.spec;
+    const { money, label, shut, held } = moneyAsSeen();
+    let data: ChartData | null = null;
+    try {
+      data = chart.over(money);
+    } catch {
+      // Its numbers cannot be made (the money is not in Boni, a spec the engine refuses): what it is, without them.
+    }
+    // A collection it counts is closed to the models: as any block of a closed collection, it is not on the screen.
+    if (shut()) return "closed";
     const out: Record<string, Val> = {
       title: leaf(spec.title, by),
       measure: leaf(spec.measure ?? "", code),
       period: leaf(spec.period.kind, code),
     };
+    // The collection it counts, to look further with the tools.
+    const counted = chart.collection ? open(chart.collection) : null;
+    if (counted) out.collection = leaf(typeName(counted), code);
     if (spec.period.months) out.months = leaf(spec.period.months, code);
     if (spec.period.days) out.days = leaf(spec.period.days, code);
     if (spec.x?.field)
@@ -436,12 +506,13 @@ function pointedBlocks(
         code,
       );
     if (spec.split?.field) out.split = leaf(spec.split.field, code);
+    // What its filter names (a category, a person) may be a row kept from the models: said only when none was.
     const rules = (spec.filters ?? []).map((r) =>
       rec(
         {
           field: leaf(r.field, code),
           op: leaf(r.op, code),
-          ...(r.values
+          ...(r.values && !held()
             ? {
                 values: list(
                   r.values.map((x) => leaf(x, by)),
@@ -454,16 +525,17 @@ function pointedBlocks(
       ),
     );
     if (rules.length) out.filter = list(rules, code);
-    const { money, label, shut } = moneyAsSeen();
-    let data: ChartData | null = null;
-    try {
-      data = chart.over(money);
-    } catch {
-      // Its numbers cannot be made (the money is not in Boni, a spec the engine refuses): what it is, without them.
+    if (!data) return out;
+    Object.assign(out, figures(data, label()));
+    // As a data block: when the rows kept from the models make its numbers other than Juan's, it says so.
+    if (held()) {
+      try {
+        if (numbersOf(chart.over(new StoreMoney(store))) !== numbersOf(data))
+          out.partial = leaf(true, code);
+      } catch {
+        // Juan's own cannot be made either: nothing to compare with.
+      }
     }
-    // A collection it counts is closed to the models: as any block of a closed collection, it is not on the screen.
-    if (shut()) return null;
-    if (data) Object.assign(out, figures(data, label()));
     return out;
   };
 
@@ -503,10 +575,11 @@ function pointedBlocks(
 
   return (pageId, blockId) => {
     const page = pageOf(pageId);
-    const b = page?.blocks.find((x) => x.id === blockId);
-    if (!page || !b) return null;
+    if (typeof page === "string") return page;
+    const b = page.blocks.find((x) => x.id === blockId);
+    if (!b) return "gone";
     const by = page.by;
-    const said = (kind: string, more: Record<string, Val>): Val =>
+    const said = (kind: string, more: Record<string, Val> = {}): Val =>
       rec(
         { kind: leaf(kind, code), page: leaf(pageId, code), block: leaf(blockId, code), ...more },
         code,
@@ -515,11 +588,11 @@ function pointedBlocks(
       const more = dataBlock(b, by);
       return more
         ? said(b.type === "graph" ? "chart" : b.type, { title: leaf(b.title ?? "", by), ...more })
-        : null;
+        : "closed";
     }
     if (b.type === "chart") {
       const more = savedChart(b.chart, by);
-      return more ? said("chart", more) : null;
+      return typeof more === "string" ? more : said("chart", more);
     }
     if (b.type === "database") {
       const def = open(b.source);
@@ -529,7 +602,7 @@ function pointedBlocks(
             name: leaf(def.name, def.label),
             view: viewOf(def, b.view, by),
           })
-        : null;
+        : "closed";
     }
     if (TEXT_BLOCKS.has(b.type) && "text" in b)
       return said("text", { text: leaf(b.text.slice(0, MAX_TEXT), by) });
@@ -537,9 +610,13 @@ function pointedBlocks(
     if (b.type === "link")
       return said("link", { title: leaf(b.title ?? "", by), to: leaf(b.to, by) });
     if (b.type === "page" || b.type === "file") {
-      const r = record(b.type === "page" ? b.page : b.file);
-      return r ? said(b.type, { record: r }) : null;
+      const id = b.type === "page" ? b.page : b.file;
+      const r = record(id);
+      if (r) return said(b.type, { record: r });
+      const s = store.get(id);
+      return s && s.entity.deleted === undefined ? "closed" : "gone";
     }
-    return null;
+    // A line, or a kind of block that says nothing of its own.
+    return said(b.type === "divider" ? "line" : "block");
   };
 }

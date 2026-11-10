@@ -106,9 +106,10 @@ one: what Boni's app shows the user as he writes (the page, collection or record
 he sees them, the first at the top, the rows he chose) and, in "pointed", what he pointed at for this message, in his
 order: a row, a card of the inbox, or a block of a page with its kind (number, bars, chart, view, text, button, link,
 page, file), what it counts (collection, measure, field, group, period, filter: use them as the tools' arguments to
-look further) and its numbers (total, or labels and values, one value per label). Kind "closed" is something you may
-not see: say that it is closed to you. "This", "the one at the top", "the second one" mean what is there, what he
-pointed at first; use its values as {"ref": "$screen..."} with the path the input shows.
+look further) and its numbers (total, or labels and values, one value per label; "partial": rows closed to you are
+left out of them, so they are not the ones he sees: say so). Kind "closed" is something you may not see: say that it
+is closed to you; kind "gone" is no longer there. "This", "the one at the top", "the second one" mean what is there,
+what he pointed at first; use its values as {"ref": "$screen..."} with the path the input shows.
 
 The plan: {"version": 1, "steps": [...]}, at most 40 steps, each with a unique "id" (lowercase letters, digits, _) and
 one "op":
