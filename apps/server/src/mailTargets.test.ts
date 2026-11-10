@@ -23,7 +23,9 @@ afterEach(() => {
 
 /** Invented data shaped like Juan's: an agenda of 3,000 dated records, 100 people, tasks that point to people. */
 function env(): UserStore {
-  const store = openUserStore(":memory:");
+  // Keep the fixture's due days ahead of creation, with distinct timestamps for its latest examples.
+  let now = Date.parse("2026-10-20T12:00:00Z");
+  const store = openUserStore(":memory:", { now: () => now++ });
   cleanups.push(() => store.close());
   store.applySchema(
     {
