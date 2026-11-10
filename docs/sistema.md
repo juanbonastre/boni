@@ -606,7 +606,7 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
   - con un panel a la derecha, la ventana y el círculo se quedan a su lado.
 - **Lo que ve:**
   - con cada mensaje, la app manda referencias: lo abierto, las tarjetas de la Bandeja cuando se ve (su panel o su
-    pantalla; en su orden, la de arriba la primera) y las filas elegidas en sus tablas;
+    pantalla; en su orden, la de arriba la primera), las filas elegidas en sus tablas y lo señalado (abajo);
   - el servidor las convierte en valores con lo que hay en el almacén, a través de la vista de los modelos
     (`apps/server/src/screen.ts`):
     - una fila, por referencia (su id, su colección y su título): el resto lo lee el plan con `entities.get`, si
@@ -628,17 +628,72 @@ Reúne C4 (la ventana), C7 (el círculo, sin la voz) y el asistente que ve la pa
     la pestaña que lo enseña, sin el resalte;
   - un flujo que se ejecuta a mano también puede abrir (es un turno de Juan), aunque el editor no lo ofrece: un flujo
     solo no tiene pantalla.
+- **Señalar (tercera parte, 2026-11-10; A-21, I-31):**
+  - `Ctrl+Shift+E`, o «Señalar» en la barra de la ventana, convierte el puntero en uno que señala: una cruz sobre la
+    pantalla, y lo que se puede señalar queda con el borde de acento al pasar por encima. Se puede señalar lo que
+    lleva su `data-boni-ref`:
+    - un bloque de una página (un número, unas barras, una gráfica, una gráfica de las primeras páginas, una vista de
+      una colección, un texto, un botón, un enlace, una subpágina, un archivo);
+    - una fila, en cualquier vista de una colección (la línea de una tabla, una tarjeta de un tablero o una galería,
+      una línea de una lista, una entrada de un calendario); no las de los registros de Boni (sus llamadas, su
+      actividad), que no son datos de Juan;
+    - una tarjeta de la Bandeja (una propuesta o una pregunta), también la propuesta que se dibuja entre las filas.
+  - un clic añade lo señalado a la barra como una ficha («Gráfica: Gasto del mes»: qué es y cómo se llama), abre la
+    ventana y deja el cursor en ella; arrastrar dibuja un rectángulo y añade lo que coge:
+    - lo que queda entero dentro cuenta como una cosa (una tabla, no sus filas);
+    - lo que solo cruza cede ante lo que tiene dentro (tres filas de una tabla, no la tabla);
+    - como mucho veinte por mensaje, cada cosa una vez.
+  - mientras señala, nada de la pantalla responde al puntero (ni un clic abre, ni un arrastre mueve, ni sale un menú):
+    solo la ventana de Boni, y la rueda sigue desplazando. Un clic donde no hay nada que señalar no hace nada y el
+    puntero sigue señalando. `Esc` deja de señalar y no hace nada más;
+  - un gesto que empezó señalando es del puntero hasta el final: ni el clic con el que se coge algo ni el segundo de
+    un doble clic llegan a lo que hay debajo (el «Aceptar» de una tarjeta, un botón), y soltar el botón después de un
+    `Esc` en mitad de un arrastre tampoco. Un clic en otro sitio vale al momento;
+  - con la ventana acoplada a la derecha y la Bandeja abierta, señalar una tarjeta deja las dos como están;
+  - la ficha se quita con su «×». Lo señalado es parte del mensaje que se está escribiendo: se guarda con él, por
+    conversación, y se va con él al enviarlo;
+  - lo que se está escribiendo no se pierde al cerrar la ventana, ni al ampliarla o llevarla a la derecha: es un
+    borrador por conversación, con su texto y sus fichas (`core/drafts.ts`). Lo que se escribe mientras el servidor
+    hace una conversación nueva es de esa conversación, no de la siguiente;
+  - la app manda solo referencias (`{kind: "block", page, block}`, `{kind: "row", id}`, `{kind: "proposal" |
+    "question", id}`) y el servidor dice qué es cada una con lo que hay en el almacén, en `$screen.pointed`, en el
+    orden en que se señaló (`apps/server/src/screen.ts`):
+    - una fila, por referencia, como las elegidas; una tarjeta, como las de la Bandeja;
+    - un bloque, con lo que es (`kind`: `number`, `bars`, `chart`, `view`, `text`, `button`, `link`, `page`, `file`),
+      su título, su página y su bloque;
+    - un número, unas barras o una gráfica, además con **su consulta** (la colección, la medida, el campo, el grupo,
+      el periodo, la fecha y el filtro, con las claves que el planificador usa en sus herramientas) y **sus cifras**
+      (el total, y los nombres y los valores de sus puntos, hasta 60);
+    - una vista de una colección, con su colección y su vista (la distribución, el grupo, el orden y los filtros);
+  - las cifras se calculan en el servidor sobre las filas que los modelos pueden leer, y llevan la etiqueta de lo
+    que leyeron (los campos que usa el bloque, en cada fila): lo de fuera llega como asa, igual que una suma de
+    `entities.aggregate`. Una colección con miles de filas se lee una vez para todos los bloques señalados (A-15);
+  - una fila cerrada por una regla no cuenta. Cuando eso hace que las cifras no sean las que Juan ve en pantalla,
+    el bloque lo dice (`partial`), para que Boni no dé un total que él no ve; nunca cuántas filas ni cuáles. Una
+    regla que cierra filas que el bloque no cuenta no cambia nada, y no se dice;
+  - una gráfica de las primeras páginas (las del dinero) da las mismas cifras que ve Juan: el mismo código
+    (`V1Service.computeOver`) sobre el dinero tal como lo ven los modelos (`MoneyReads`), con la colección que
+    cuenta para seguir mirando con las herramientas. Si una colección que cuenta está cerrada u opaca, no hay
+    gráfica; si se le quitó alguna fila, lo que nombra su filtro (una categoría, una persona) no se dice;
+  - lo que los modelos no pueden ver (un bloque de una colección cerrada u opaca, una fila cerrada, una propuesta a
+    una colección cerrada) llega solo como `{kind: "closed"}`: Boni puede decir que está cerrado, y no sabe nada
+    más. Lo que ya no está (una tarjeta decidida desde que se señaló, una fila o un bloque borrados), como `{kind:
+    "gone"}`. Las referencias solo las manda la app, nunca un modelo: distinguir las dos cosas no sirve para tantear.
 - **Falta:**
-  - `data-boni-ref` en los componentes: los bloques visibles con sus cifras, las filas visibles, la vista con sus
-    filtros y el foco;
-  - Señalar (`Ctrl+Shift+E`);
+  - señalar nodos (del mapa y del lienzo de un flujo): espera a las acciones de flujos (F10), que es cuando Boni
+    podrá hacer algo con uno;
+  - señalar un párrafo de una nota (el texto de un registro): sus bloques se hacen al leerla y no tienen referencia;
+  - que el mensaje enviado enseñe lo que se señaló con él;
+  - `data-boni-ref` en lo demás (los nodos, la pantalla de una gráfica, la página de un registro, la barra lateral),
+    y lo que se ve sin señalarlo: los bloques y las filas visibles, la vista con sus filtros, el foco y lo abierto
+    en el panel de la derecha (un correo, un registro);
+  - abrir la ventana con la última conversación tras reiniciar la app (hoy, una nueva);
   - las demás acciones de pantalla (desplazarse, resaltar una fila o un bloque, filtrar la vista), que pasen por la
     política; resaltar lo que toca, no toda el área, y decirlo en sus pasos mientras actúa («Abriendo Agenda»);
   - el ejemplo de «Flujos»: abrir una ejecución sobre el mapa con el paso que la paró resaltado;
   - «Ver en el mapa» en un turno (F8, con F9);
   - de una pregunta de la Bandeja, más que su id;
-  - de la ventana (§3.2 de `conversacion.md`): moverla, soltar archivos en ella, y que lo escrito no se pierda al
-    cerrarla;
+  - de la ventana (§3.2 de `conversacion.md`): moverla y soltar archivos en ella;
   - el círculo en el teléfono y como widget del escritorio;
   - la decisión 3 de `conversacion.md` (la ventana, superficie por defecto): la fila «Conversación» abre aún la
     pantalla entera.
@@ -740,7 +795,7 @@ con sus datos (`AGENTS.md`, paso 4).
 |---|---|---|
 | F7 Lo de Boni, a la vista (la 83; primera parte en main el 2026-11-05: «Leer correo» con sus piezas como pasos, A-19 y D-47, el disparador con nombres de persona, el lienzo encajado al abrir y «Probar con…»; el 2026-11-06, las piezas con nombres de verbo, «Regla del remitente», «Ya propuesto», «Leer invitación», «Buscar relaciones», y «Probar» diciendo lo que encontró cada una; «Crear en la elegida» el 2026-11-06 (la colección con `case`, D-48: una «Rellenadora» y un «Crear» para todo lo que lee la Lectora y el de la invitación aparte, D-49, y el panel de la Decisora con sus colecciones y las reglas de la guía: «Leer correo» pasa de 27 pasos a 12; y lo que dejó la revisión de la primera parte: «Buscar relaciones» en su orden, los ajustes de las piezas en su panel, su clase en la tarjeta y el disparador que dice que viene del conector Correo, salvo «Bandeja» como paso, las preguntas por paso y «Probar» comparando con la versión que corre); «Traer correo» (D-50) y «Revisar la guía» (D-51) como flujos de Boni; faltan Aprender, Conversación y Aviso del presupuesto) | Los flujos de Boni de §4.2 con sus piezas; «Leer correo» con «Crear en la elegida»; el disparador con nombres de persona; el lienzo encajado al abrir | En «Flujos», «Leer correo» enseña cada paso que corre hoy; Traer correo y Revisar la guía son flujos con su disparador; el correo se lee igual (las pruebas de `mail.test.ts` sin cambios); la lectura de uno de sus correos se ve paso a paso |
 | F8 El mapa (la 84; en main y hecha el 2026-11-06: Juan la probó con sus datos, «bastante bien lo que veo», y lo que vio fue a la 90, en main el mismo día: el Recorrido es el mapa, el camino en naranja desde el disparador, un nombre por paso, «Profundidad», las llamadas y el coste de cada paso. En la 84: «Flujos» como colección con «Tabla \| Mapa», el mapa calculado con en el centro, antes y después, agrupar, filtros y periodo, una ejecución encima con su camino por el mapa, «¿De dónde viene?» desde una fila, la Bandeja como nodo con «aceptadas» y la revisora en el camino del correo, «Ver en el mapa» en los menús (el de una tarjeta de la Bandeja, «Recorrido» desde la 90), fuera «Modelos» y `pipeline.ts`; además el lienzo de un flujo que se ordena solo, I-26, y «Flujos» en el teléfono para mirar y ejecutar. Faltan, según la revisión independiente: el disparador, el modelo, el bloque y el botón como nodos propios; lo de fuera marcado por sus etiquetas y no por de dónde arranca el flujo; el conector y el paquete «Correo» leídos de la extensión y no escritos en el código; «Ver en el mapa» en un turno (con F9); y el mapa entero al abrirlo, que §4.4 no quería: se dejó así por «un solo flujo donde se ve todo y vamos agrupando, filtrando», y Juan decide) | El grafo calculado; «Flujos» como colección con «Tabla \| Mapa»; en el centro, antes y después, agrupar y filtros; una ejecución encima; «Ver en el mapa» en los menús; fuera «Modelos» y `pipeline.ts` | Clic derecho en Tarea → quién la escribe, con sus números; «¿Qué pasa cuando llega un correo?» enseña el camino hasta la Bandeja y la revisora |
-| F9 Boni sobre la pantalla (la 85; primera parte en main el 2026-11-06: el círculo, `Ctrl+E`, la ventana y la pantalla como datos, A-20; segunda, «Abrir» resaltando, I-30; faltan `data-boni-ref`, Señalar y las demás acciones de pantalla) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
+| F9 Boni sobre la pantalla (la 85; primera parte en main el 2026-11-06: el círculo, `Ctrl+E`, la ventana y la pantalla como datos, A-20; segunda, «Abrir» resaltando, I-30; tercera, el 2026-11-10: Señalar bloques, filas y tarjetas con un clic o arrastrando, las fichas, la consulta y las cifras de lo señalado y el borrador que no se pierde, A-21 e I-31; faltan señalar nodos y párrafos de una nota, `data-boni-ref` en lo que no se señala, las demás acciones de pantalla y lo demás de «Falta» en §4.7) | El círculo y `Ctrl+E`; la ventana (C4); `data-boni-ref` y el contexto de pantalla; señalar; las acciones de pantalla; resaltar. Con las herramientas de hoy | Con la Bandeja abierta, «¿qué me pide el de arriba?» contesta sobre esa tarjeta; señalando una gráfica, Boni sabe cuál es; «ábreme Agenda» la abre |
 | F10 Una lista de acciones (la 86; adelantada el 2026-11-06 una: «¿De dónde viene?», en el menú de una fila, en la conversación con `entities.origin` e `inbox.pending` y en el MCP con `origin` e `inbox`) | Por áreas (datos, páginas y vistas, Bandeja, flujos, calendarios, conectores), cada una a la vez en la app, en «Añadir paso», en Boni sobre la pantalla y en el MCP; la prueba de paridad | «Hazme una página Gastos con el gasto por categoría» la hace, con Deshacer; «acepta estas dos» pinta su tarjeta |
 | F11 Páginas conectadas (la 87) | Valores y el bloque «Control»; botones con acción o flujo; enlaces con valores; el chat de la página (la 79, C5) | En Gastos, cambiar Categoría cambia las gráficas; en su chat, «¿cuánto gasté en restaurantes en octubre?» pone los valores y contesta con la cifra |
 | F12 Disparadores por colección (la 88) | «Cambia una colección»; los topes; lo que puede hacer solo (decisión 5) | «Cuando se crea un movimiento de más de 100 €, avísame» llega una vez por movimiento; un ciclo no se puede encender |

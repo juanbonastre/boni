@@ -13,6 +13,7 @@ import { PageView, Welcome } from "./components/PageView.tsx";
 import { MenuRow, MenuSep, PopButton } from "./components/Popover.tsx";
 import { QuickFind, TrashDialog } from "./components/QuickFind.tsx";
 import { RowView } from "./components/RowView.tsx";
+import { ScreenPointer } from "./components/ScreenPointer.tsx";
 import { SettingsModal } from "./components/SettingsModal.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { SidePanel } from "./components/SidePanel.tsx";
@@ -39,6 +40,7 @@ import {
   showLog,
   showStart,
   toggleBoniWindow,
+  togglePointing,
   toggleSidebar,
   useStore,
 } from "./store.ts";
@@ -76,6 +78,8 @@ export function App() {
   if (mobile) return <MobileApp />;
   return (
     <div className={`app${showSidebar ? "" : " no-sidebar"}`}>
+      {/* Pointing (F9): the first of all, so its `Esc` is heard before any other's. */}
+      <ScreenPointer />
       {showSidebar && <Sidebar />}
       <div className="main" data-enter={enter}>
         <TopBar />
@@ -152,6 +156,12 @@ function useShortcuts(mobile: boolean) {
       if (e.key === "," && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         openSettings(!s.settingsOpen);
+        return;
+      }
+      // Pointing (§4.7, F9): `Ctrl+Shift+E` turns the pointer into one that marks what the next message is about.
+      if (e.key.toLowerCase() === "e" && (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        togglePointing();
         return;
       }
       // Boni over the screen (docs/sistema.md §4.7, F9): `Ctrl+E` in Boni's windows, typing or not; on the

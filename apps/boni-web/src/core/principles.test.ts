@@ -42,6 +42,22 @@ describe("principles (docs/principios.md)", () => {
     expect(found).toEqual([]);
   });
 
+  it("I-32: Boni acts on the screen with the app's own actions, never with a simulated click", () => {
+    // What Boni does on the screen (F9: it opens a collection, a record, a place) calls what a button of the app
+    // calls. So no code of the app makes a pointer's event, and `.click()` is only where a file is chosen or saved
+    // (the browser's own dialog, started by Juan's click).
+    const allowed = new Set(["/host.ts", "/components/MobileCreate.tsx"]);
+    const found: string[] = [];
+    for (const f of files(SRC)) {
+      const code = readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+      const name = f.slice(SRC.length);
+      if (/new\s+(Mouse|Pointer)Event\s*\(/.test(code))
+        found.push(`${name}: a pointer's event made by code`);
+      if (/\.click\(\)/.test(code) && !allowed.has(name)) found.push(`${name}: .click()`);
+    }
+    expect(found).toEqual([]);
+  });
+
   it("I-25: «Ver en el mapa» is in the menus of what the map knows; a run's «Recorrido» is that run on the map", () => {
     // A collection and a page in the sidebar, a row, a block, a flow's «⋯».
     for (const file of [

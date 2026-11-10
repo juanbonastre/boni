@@ -39,6 +39,7 @@ import {
   fieldEditable,
 } from "../core/agent.ts";
 import type { SystemColumns } from "../core/audit.ts";
+import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import { phoneLayout } from "../host.ts";
 import type { T } from "../i18n.ts";
 import {
@@ -1231,7 +1232,7 @@ function TableView({
         <tbody>
           {/* Pending proposals first, dashed: read only, accepted or rejected here (Juan, 2026-10-22). */}
           {ghosts.map((r) => (
-            <tr key={r.id} className="ghost-row">
+            <tr key={r.id} className="ghost-row" {...pointRow(t, type, r)}>
               {pickable && <td className="sel-col" />}
               {ordered.map((f) => (
                 <td key={f.id} className={f.id === type.titleField ? "is-title" : undefined}>
@@ -1288,6 +1289,7 @@ function TableView({
               <tr
                 key={r.id}
                 data-row={r.id}
+                {...pointRow(t, type, r)}
                 className={
                   [on && "selected", lit === r.id && "lit"].filter(Boolean).join(" ") || undefined
                 }
@@ -1693,6 +1695,22 @@ const titleOf = (type: DataType, r: DataRow) => {
   const v = r.values[type.titleField];
   return typeof v === "string" ? v : "";
 };
+
+/**
+ * A row can be pointed at for Boni (F9, `Ctrl+Shift+E`) wherever a view shows it (a table's line, a card, a day's
+ * entry): its reference, and a chip saying its collection and its name. A proposal drawn among the rows is the
+ * Bandeja's card, pointed at as that. Not a row of Boni's own records (its calls, its activity): they are not
+ * Juan's data, and nothing of them goes to a model.
+ */
+const pointRow = (t: T, type: DataType, r: DataRow) =>
+  r.ghost
+    ? pointAttrs(
+        { kind: "proposal", id: r.ghost },
+        chipTitle(t("inbox.kind.proposal"), titleOf(type, r)),
+      )
+    : type.system
+      ? {}
+      : pointAttrs({ kind: "row", id: r.id }, chipTitle(type.name, titleOf(type, r)));
 
 // ---------------------------------------------------------------- a cell, edited in place
 
@@ -2171,6 +2189,7 @@ function BoardView({
               <div
                 key={r.id}
                 className={`db-card${dragging === r.id ? " dragging" : ""}${cards.open === r.id ? " menu-open" : ""}`}
+                {...pointRow(t, type, r)}
                 // A card moves to another column only when its value is one a person changes.
                 draggable={cards.renaming !== r.id && fieldEditable(type, group.id, r)}
                 onContextMenu={cards.onMenu(r)}
@@ -2287,6 +2306,7 @@ function CardsView({
         <div
           key={r.id}
           className={`${gallery ? "db-card" : "db-list-row"}${cards.open === r.id ? " menu-open" : ""}`}
+          {...pointRow(t, type, r)}
           onContextMenu={cards.onMenu(r)}
         >
           <CardBody
@@ -2499,6 +2519,7 @@ function CalendarView({
                   key={it.row.id}
                   type="button"
                   className={`db-cal-item${week ? " tall" : ""}${it.row.ghost ? " ghost" : ""}`}
+                  {...pointRow(t, it.type, it.row)}
                   style={{ ["--c" as string]: it.color }}
                   title={it.row.ghost ? t("ghost.proposed") : undefined}
                   onClick={() =>

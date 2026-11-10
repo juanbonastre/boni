@@ -294,23 +294,44 @@ export class V1Service {
       if (e instanceof SpecError) throw new Invalid(e.message);
       throw e;
     }
-    const [movements, debts, kindOf] = this.read(
-      c,
-      (f) => [f.movements(), f.debts(), kindsOf(f)] as const,
+    const data = this.computeOver(
+      this.read(c, (f) => f),
+      spec,
+      drill,
     );
+    const { stale, ...rest } = data;
+    return { ...rest, computed_at: this.nowIso(), stale };
+  }
+
+  /**
+   * A chart's numbers over the money a source gives: the account's own (`compute`), or what the models may see of
+   * it (a chart pointed at on the screen, F9). One definition, so both give the same numbers from the same rows.
+   */
+  computeOver(fin: MoneySource, spec: V1ChartSpec, drill: string | null = null) {
+    let movements: ReturnType<MoneySource["movements"]>;
+    let debts: ReturnType<MoneySource["debts"]>;
+    let kindOf: KindOf;
     try {
-      const data = computeChart(moneyProfile, spec, moneyRecords(movements, debts, kindOf), {
+      [movements, debts, kindOf] = [fin.movements(), fin.debts(), kindsOf(fin)];
+    } catch (e) {
+      throw new Unavailable(e instanceof Error ? e.message : String(e));
+    }
+    try {
+      return computeChart(moneyProfile, spec, moneyRecords(movements, debts, kindOf), {
         today: this.today(),
         monthsWithData: monthsWithData(movements),
         drill,
         stale: false,
       });
-      const { stale, ...rest } = data;
-      return { ...rest, computed_at: this.nowIso(), stale };
     } catch (e) {
       if (e instanceof SpecError) throw new Invalid(e.message);
       throw e;
     }
+  }
+
+  /** A saved chart of the account (its spec), for the screen (F9): null when there is none by that id. */
+  savedChart(account: number, id: string): V1ChartSpec | null {
+    return this.store.chart(account, id);
   }
 
   chartData(c: Caller, id: string, drill: string | null) {

@@ -56,7 +56,7 @@ import { acceptEdits, intoOf, linkOf, mergeInto } from "./proposalEdits.ts";
 import { activate, previousVersion, proposals, reject, revert } from "./proposals.ts";
 import { bodyOf, CORS, SAFE, send } from "./reply.ts";
 import { proposalsByRun, type RunInfo, runInfo } from "./runInfo.ts";
-import { screenOf, screenRefs } from "./screen.ts";
+import { type SavedChart, screenOf, screenRefs } from "./screen.ts";
 
 /**
  * The conversation API (docs/nucleo.md, 7; plan PR 11), on the tailnet entry only. Each account has
@@ -147,6 +147,8 @@ export class AgentHost {
   private listeners = new Map<number, Set<(event: string, data: unknown) => void>>();
   /** The account's mailbox as the inbox names it (its address), when it has one (mail.ts). */
   mailAccountOf: ((account: number) => string | null) | null = null;
+  /** A saved chart of the account's first pages (the v1 API's), for one pointed at on the screen (F9; http.ts). */
+  savedChart: ((account: number, id: string) => SavedChart | null) | null = null;
   /** The account's external calendars' events on some days (externalItems.ts), for the inbox's cards (task 51). */
   externalItems: ((account: number, days: readonly string[]) => ExternalItem[]) | null = null;
   /** The field a record of a collection keeps its link to an external event in, made if missing («Enlazar», task 51). */
@@ -769,7 +771,11 @@ async function answerAgent(
       const refs = b.screen === undefined || b.screen === null ? null : screenRefs(b.screen);
       if (b.screen !== undefined && b.screen !== null && !refs) return bad();
       const screen = refs
-        ? screenOf(store, refs, { mailAccount: host.mailAccountOf?.(who.account) ?? null })
+        ? screenOf(store, refs, {
+            mailAccount: host.mailAccountOf?.(who.account) ?? null,
+            today: host.today(),
+            chart: (id) => host.savedChart?.(who.account, id) ?? null,
+          })
         : null;
       const planner = c.model ? (host.plannerFor?.(who.account, c.model) ?? undefined) : undefined;
       const live = liveId(b.live);

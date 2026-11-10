@@ -4,17 +4,48 @@
  * right in the Bandeja's place («Llevar a la derecha»), widens to the Conversación screen («Ampliar») and closes with
  * `Esc`. What is on the screen goes with each message, by reference (`screenNow`).
  */
-import { Maximize2, MessageCircle, PanelRight, PictureInPicture2, X } from "lucide-react";
+import {
+  Maximize2,
+  MessageCircle,
+  MousePointerClick,
+  PanelRight,
+  PictureInPicture2,
+  X,
+} from "lucide-react";
 import { useEffect, useRef } from "react";
-import { closeBoniWindow, openBoniWindow, useStore, widenBoniWindow } from "../store.ts";
+import {
+  closeBoniWindow,
+  openBoniWindow,
+  setPointing,
+  useStore,
+  widenBoniWindow,
+} from "../store.ts";
 import { ChatView } from "./Chat.tsx";
 
-/** The circle: Boni, on every screen but the conversation's own. */
+/**
+ * The circle: Boni, on every screen but the conversation's own. While the pointer points (`Ctrl+Shift+E`) it says
+ * so, and a click on it stops: with the window closed it is the sign, besides the pointer, that the screen is not
+ * answering clicks (the window's «Señalar» is when it is open).
+ */
 export function BoniCircle() {
   const t = useStore((s) => s.t);
   const mode = useStore((s) => s.boniWindow);
   const onChat = useStore((s) => s.view.kind === "chat");
+  const pointing = useStore((s) => s.pointing);
   if (onChat || mode !== "closed") return null;
+  if (pointing)
+    return (
+      <button
+        type="button"
+        className="boni-circle pointing"
+        onClick={() => setPointing(false)}
+        aria-pressed="true"
+        title={t("point.start")}
+        aria-label={t("point.start")}
+      >
+        <MousePointerClick size={20} strokeWidth={1.8} />
+      </button>
+    );
   return (
     <button
       type="button"

@@ -22,6 +22,7 @@ import {
 } from "./audit.ts";
 import { type BlockResult, type DataBlock, parseBlockResults } from "./blocks.ts";
 import type { MapEdgeKind, MapEdgeLike, MapKind, MapNodeLike } from "./flowLayout.ts";
+import type { PointedRef } from "./pointing.ts";
 import { tracked } from "./wait.ts";
 
 /**
@@ -1485,13 +1486,15 @@ const parseDecisions = (b: unknown): DecisionsView => ({
 });
 /**
  * What is on the screen as Juan writes (docs/sistema.md §4.7, F9; task 85), by reference only: what is open, the
- * Bandeja's cards in the order it shows them, the rows he chose. The server makes them values from what the store
- * holds, through the models' view.
+ * Bandeja's cards in the order it shows them, the rows he chose, what he pointed at. The server makes them values
+ * from what the store holds, through the models' view.
  */
 export interface ScreenRefs {
   open: { kind: string; id: string | null } | null;
   inbox: { kind: "proposal" | "question"; id: string }[];
   chosen: string[];
+  /** What Juan pointed at for this message (`Ctrl+Shift+E`): blocks of a page, rows, cards. */
+  pointed?: PointedRef[];
 }
 
 /** The areas of `GET /api/agent/decisions` (and of the PUT that turns a switch). */

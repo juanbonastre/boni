@@ -14,6 +14,7 @@ import { Feeds } from "./feeds.ts";
 import { ensureFlow, flowCatalog } from "./flows.ts";
 import { type App, makeApp, serve } from "./http.ts";
 import { LoginGuard } from "./limits.ts";
+import { createPage } from "./pages.ts";
 
 /** The conversation API over HTTP with a scripted planner (no model, no network). */
 const PASSWORD = "una contraseña larga de ejemplo";
@@ -139,6 +140,71 @@ describe("the conversation API", () => {
       undone: 1,
     });
     expect(host.store(1).list("t_tarea").length).toBe(1);
+  });
+
+  it("a turn goes with what is on the screen: the references posted reach the plan as what the store holds (F9)", async () => {
+    const token = await login(base, "juan");
+    // A page as the first Boni's home left it: a chart of the account's saved ones, and a line of text.
+    const page = createPage(host.store(1), {
+      title: "Gastos",
+      spec: {
+        version: 1,
+        blocks: [
+          { id: "b3", type: "chart", chart: "spending-by-category" },
+          { id: "b9", type: "text", text: "Lo que se va en comida" },
+        ],
+      },
+    });
+    plans.push({
+      version: 1,
+      steps: [
+        {
+          id: "r",
+          op: "reply",
+          component: "text",
+          data: {
+            template: lit("{a} · {b} · {c} · {d}"),
+            a: { ref: "$screen.pointed[0].title" },
+            b: { ref: "$screen.pointed[1].title" },
+            c: { ref: "$screen.pointed[2].text" },
+            d: { ref: "$screen.pointed[3].kind" },
+          },
+        },
+      ],
+    });
+    const r = await post(base, token, "/api/agent/turn", {
+      text: "¿qué es esto?",
+      screen: {
+        open: { kind: "page", id: page.id },
+        inbox: [],
+        chosen: [],
+        pointed: [
+          // What the app says of a thing counts for nothing: only its reference does.
+          { kind: "block", page: page.id, block: "b3", title: "Otra cosa" },
+          { kind: "row", id: "e_pan" },
+          { kind: "block", page: page.id, block: "b9" },
+          { kind: "row", id: "e_nada" },
+        ],
+      },
+    });
+    expect(r.status).toBe(200);
+    const said = JSON.stringify(await r.json());
+    // The saved chart's own name (the server's, through the app's wiring), the row's title, the page's words.
+    expect(said).toContain("Gasto del mes");
+    expect(said).toContain("Comprar pan");
+    expect(said).toContain("Lo que se va en comida");
+    expect(said).toContain("gone");
+    expect(said).not.toContain("Otra cosa");
+    // What is not a reference is refused whole.
+    for (const pointed of [
+      [{ kind: "node", id: "n1" }],
+      [{ page: page.id, block: "b3" }],
+      ["e_pan"],
+    ])
+      expect(
+        (await post(base, token, "/api/agent/turn", { text: "¿y esto?", screen: { pointed } }))
+          .status,
+      ).toBe(400);
   });
 
   it("confirms from the device that asked, and not from another account", async () => {
