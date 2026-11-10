@@ -92,6 +92,10 @@ test("Boni over the screen (F9, task 85): Ctrl+E and the circle open the convers
   // Again from the circle; docked to the right it takes the Bandeja's place, what was being written kept.
   await circle.click();
   await box.fill("un borrador");
+  await box.press("Escape");
+  await expect(win).toHaveCount(0);
+  await circle.click();
+  await expect(box).toHaveValue("un borrador");
   await win.getByRole("button", { name: "Llevar a la derecha" }).click();
   const docked = page.getByRole("complementary", { name: "Boni" });
   await expect(docked).toBeVisible();
@@ -146,6 +150,172 @@ test("Boni over the screen (F9, task 85): Ctrl+E and the circle open the convers
     open: { kind: "inbox" },
     inbox: [{ id: "c1" }, { id: "c9" }],
   });
+});
+
+/** The message a turn was sent with (its body), found by its text. */
+const turnWith = async (page: Page, text: string) => {
+  const find = async () =>
+    (await requests(page, "POST api/agent/turn ")).find((r) => r.includes(text)) ?? "";
+  await expect.poll(find).not.toBe("");
+  return JSON.parse((await find()).split(" ").slice(2).join(" "));
+};
+
+test("Señalar (F9, task 85): Ctrl+Shift+E lights what the pointer is over, a click or a drag adds it to the bar as chips, and it goes with the message by reference; nothing under the pointer is clicked, and Esc leaves it and does nothing else", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: { "POST api/agent/turn": [TOP_CARD_REPLY, TEXT_REPLY] },
+  });
+  const html = page.locator("html");
+  const chart = page.locator('[data-block="b3"]');
+  await expect(chart).toBeVisible();
+  // The pointer marks: what it is over is lit, a chart of the page.
+  await page.keyboard.press("Control+Shift+e");
+  await expect(html).toHaveAttribute("data-boni-pointing", "");
+  await chart.hover();
+  await expect(chart).toHaveAttribute("data-boni-pointed", "");
+  await page.screenshot({ path: `${SHOTS}/boni-pointing.png` });
+  // A click takes it: a chip in the bar, the conversation over the page to write about it. The chart's own click
+  // (it opens its screen) did nothing: the page is still there.
+  await chart.click();
+  const win = page.getByRole("dialog", { name: "Boni" });
+  const chips = win.locator(".chat-chip");
+  await expect(chips).toHaveText(["Gráfica: Gasto del mes"]);
+  await expect(html).not.toHaveAttribute("data-boni-pointing", "");
+  await expect(page.locator("[data-boni-pointed]")).toHaveCount(0);
+  await expect(page.locator(".doc-title")).toHaveValue("Gastos");
+  const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
+  await expect(box).toBeFocused();
+  // «Señalar», in the bar: dragging a rectangle over two more charts takes both.
+  const pointBtn = win.getByRole("button", { name: "Señalar · Ctrl+Shift+E" });
+  await expect(pointBtn).toHaveAttribute("aria-pressed", "false");
+  await pointBtn.click();
+  await expect(pointBtn).toHaveAttribute("aria-pressed", "true");
+  const b4 = await page.locator('[data-block="b4"]').boundingBox();
+  const b5 = await page.locator('[data-block="b5"]').boundingBox();
+  if (!b4 || !b5) throw new Error("the charts are not on screen");
+  const from = { x: Math.min(b4.x, b5.x) + 30, y: Math.min(b4.y, b5.y) + 30 };
+  const to = {
+    x: Math.max(b4.x + b4.width, b5.x + b5.width) - 30,
+    y: Math.max(b4.y, b5.y) + 60,
+  };
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 8 });
+  await expect(page.locator(".boni-point-band")).toBeVisible();
+  await expect(page.locator("[data-boni-pointed]")).toHaveCount(2);
+  await page.screenshot({ path: `${SHOTS}/boni-pointing-drag.png` });
+  await page.mouse.up();
+  await expect(page.locator(".boni-point-band")).toHaveCount(0);
+  await expect(chips).toHaveText([
+    "Gráfica: Gasto del mes",
+    "Gráfica: Gasto por mes",
+    "Gráfica: Comida fuera",
+  ]);
+  // A chip is taken off with its «×».
+  await win.getByRole("button", { name: "Quitar: Gráfica: Gasto por mes" }).click();
+  await expect(chips).toHaveCount(2);
+  // Esc leaves pointing and nothing else: the window stays, with what was written and pointed at.
+  await box.fill("¿por qué sube?");
+  await page.keyboard.press("Control+Shift+e");
+  await expect(html).toHaveAttribute("data-boni-pointing", "");
+  await page.keyboard.press("Escape");
+  await expect(html).not.toHaveAttribute("data-boni-pointing", "");
+  await expect(win).toBeVisible();
+  // Closed and opened again, the message is as it was left: its text and its chips.
+  await page.keyboard.press("Escape");
+  await expect(win).toHaveCount(0);
+  await page.keyboard.press("Control+e");
+  await expect(box).toHaveValue("¿por qué sube?");
+  await expect(chips).toHaveCount(2);
+  await page.screenshot({ path: `${SHOTS}/boni-pointed-chips.png` });
+  // Sent: the chips go with the message, by reference and in their order, and the bar is clean again.
+  await box.press("Enter");
+  await expect(chips).toHaveCount(0);
+  expect((await turnWith(page, "¿por qué sube?")).screen.pointed).toEqual([
+    { kind: "block", page: "gastos", block: "b3" },
+    { kind: "block", page: "gastos", block: "b5" },
+  ]);
+  // The next message points at nothing.
+  await expect(win.locator(".turn-answer")).toHaveCount(1);
+  await box.fill("¿y ahora?");
+  await box.press("Enter");
+  expect((await turnWith(page, "¿y ahora?")).screen.pointed).toBeUndefined();
+  // A click where there is nothing to take leaves the pointer on, and clicks nothing.
+  await page.keyboard.press("Control+Shift+e");
+  await page.locator(".sidebar").getByRole("button", { name: "Libros", exact: true }).click();
+  await expect(html).toHaveAttribute("data-boni-pointing", "");
+  await expect(page.locator(".doc-title")).toHaveValue("Gastos");
+  // The conversation's own screen has nothing to point at: `Ctrl+Shift+E` does nothing there.
+  await page.keyboard.press("Escape");
+  await win.getByRole("button", { name: "Ampliar" }).click();
+  await page.keyboard.press("Control+Shift+e");
+  await expect(html).not.toHaveAttribute("data-boni-pointing", "");
+});
+
+test("Señalar (F9, task 85): the rows a drag crosses in a table and a card of the Bandeja, each by reference", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openApp(page, "/?still", {
+    agent: {
+      "POST api/agent/turn": [TOP_CARD_REPLY],
+      "GET api/agent/proposals": [{ proposals: [CARD_FUNCTION, CARD_DETAILED] }],
+    },
+  });
+  await page
+    .locator(".sidebar")
+    .getByRole("list", { name: "Páginas" })
+    .getByRole("button", { name: "Libros", exact: true })
+    .click();
+  const rows = page.locator(".db-table tbody tr[data-row]");
+  await expect(rows).toHaveCount(3);
+  const ids = await rows.evaluateAll((els) => els.map((el) => el.getAttribute("data-row")));
+  const titles = await rows.evaluateAll((els) =>
+    els.map((el) => el.getAttribute("data-boni-title")),
+  );
+  await page
+    .locator(".topbar")
+    .getByRole("button", { name: /^Bandeja/ })
+    .click();
+  const cards = page.locator(".inbox-panel .inbox-card");
+  await expect(cards).toHaveCount(2);
+  // A drag across the first two rows takes them, not the table they are in, nor the third.
+  await page.keyboard.press("Control+Shift+e");
+  const first = await rows.nth(0).boundingBox();
+  const second = await rows.nth(1).boundingBox();
+  if (!first || !second) throw new Error("the rows are not on screen");
+  await page.mouse.move(first.x + 80, first.y + first.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(first.x + 160, second.y + second.height / 2, { steps: 6 });
+  await expect(rows.nth(0)).toHaveAttribute("data-boni-pointed", "");
+  await expect(rows.nth(1)).toHaveAttribute("data-boni-pointed", "");
+  await expect(page.locator("[data-boni-pointed]")).toHaveCount(2);
+  await page.mouse.up();
+  const win = page.getByRole("dialog", { name: "Boni" });
+  const chips = win.locator(".chat-chip");
+  await expect(chips).toHaveText([titles[0] ?? "", titles[1] ?? ""]);
+  expect(titles[0]).toMatch(/^Libros: ./);
+  // No row was chosen nor opened by the drag: the table is as it was.
+  await expect(page.locator(".db-table tbody tr.selected")).toHaveCount(0);
+  await expect(rows).toHaveCount(3);
+  // A card of the Bandeja, pointed at with a click: it is not opened, accepted nor rejected.
+  await page.keyboard.press("Control+Shift+e");
+  await cards.first().locator("h3").click();
+  await expect(chips).toHaveCount(3);
+  await expect(chips.nth(2)).toHaveText(/^Propuesta: ./);
+  await expect(cards).toHaveCount(2);
+  await expect(page.locator(".db-table")).toBeVisible();
+  const box = win.getByRole("textbox", { name: "Escribe a Boni…" });
+  await expect(box).toBeFocused();
+  await box.fill("¿qué tienen que ver?");
+  await box.press("Enter");
+  expect((await turnWith(page, "¿qué tienen que ver?")).screen.pointed).toEqual([
+    { kind: "row", id: ids[0] },
+    { kind: "row", id: ids[1] },
+    { kind: "proposal", id: "c1" },
+  ]);
 });
 
 test("«ábreme Libros» (F9, task 85): Boni opens it on the screen, lit, once; the conversation goes on in the window", async ({

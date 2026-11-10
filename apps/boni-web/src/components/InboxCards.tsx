@@ -21,6 +21,8 @@ import type {
   InboxRequest,
   Proposal,
 } from "../core/agent.ts";
+import { textOf } from "../core/agent.ts";
+import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import { webmailOf } from "../core/webmail.ts";
 import {
   acceptProposal,
@@ -406,7 +408,13 @@ function FlowProposalCard({ p, flow }: { p: Proposal; flow: FlowProposalView }) 
       t("inbox.flow.same")
     : t(steps === 1 ? "inbox.flow.steps.one" : "inbox.flow.steps", { n: steps });
   return (
-    <section className="card proposal inbox-card detailed flow-proposal">
+    <section
+      className="card proposal inbox-card detailed flow-proposal"
+      {...pointAttrs(
+        { kind: "proposal", id: p.id },
+        chipTitle(t("inbox.kind.proposal"), flow.changes?.name ?? flow.name),
+      )}
+    >
       <p className="inbox-kind">
         <Inbox size={12} strokeWidth={1.8} aria-hidden="true" />
         {t("inbox.kind.flow")}
@@ -552,6 +560,11 @@ function RecordProposalCard({ p, wide = false }: { p: Proposal; wide?: boolean }
   return (
     <section
       className={`card proposal inbox-card${more ? " detailed" : " compact"}${two ? " two" : ""}`}
+      // A card can be pointed at for Boni (F9, `Ctrl+Shift+E`), by reference.
+      {...pointAttrs(
+        { kind: "proposal", id: p.id },
+        chipTitle(t("inbox.kind.proposal"), c?.title || where),
+      )}
       onContextMenu={(e) => {
         // Text chosen in the card keeps the browser's own menu (to copy it).
         if (window.getSelection()?.toString()) return;
@@ -676,7 +689,13 @@ export function RequestCard({ r }: { r: InboxRequest }) {
   const days = Math.round((r.expires - Date.now()) / DAY_MS);
   const about = r.about;
   return (
-    <section className="card inbox-card request-card">
+    <section
+      className="card inbox-card request-card"
+      {...pointAttrs(
+        { kind: "question", id: r.id },
+        chipTitle(t("inbox.kind.question"), textOf(r.ask.prompt)),
+      )}
+    >
       <p className="inbox-kind">
         <HelpCircle size={12} strokeWidth={1.8} aria-hidden="true" />
         {t("inbox.kind.question")} ·{" "}

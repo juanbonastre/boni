@@ -29,6 +29,7 @@ import {
   type Where,
 } from "../core/grid.ts";
 import { PALETTE } from "../core/palette.ts";
+import { chipTitle, pointAttrs } from "../core/pointing.ts";
 import {
   duplicated,
   indented,
@@ -920,6 +921,38 @@ function BlockRow({
     : kindName(t, catalogueKind(block.type), block.type);
   const target = drag && drag.over === block.id && drag.id !== block.id ? drag.where : null;
   const clickRows = CLICK_ROWS.has(block.type);
+  // A block of a page can be pointed at for Boni (F9, `Ctrl+Shift+E`), by reference: its chip says its kind and
+  // its name. A note's text has no blocks of its own to name (they are made as it is read), and a line says nothing.
+  const onPage = useStore((s) => s.page?.id === page.id);
+  const named = useStore((s) =>
+    block.type === "chart"
+      ? (s.chartSpecs.find((c) => c.id === block.chart)?.title ?? "")
+      : block.type === "database"
+        ? (s.dataTypes?.find((d) => d.id === block.source)?.name ?? "")
+        : block.type === "page"
+          ? (s.pages?.find((p) => p.id === block.page)?.title ?? "")
+          : "",
+  );
+  const pointable =
+    onPage && block.type !== "divider"
+      ? pointAttrs(
+          { kind: "block", page: page.id, block: block.id },
+          chipTitle(
+            name,
+            isDataBlock(block)
+              ? (block.title ?? "")
+              : isText(block)
+                ? block.text
+                : block.type === "action"
+                  ? block.label
+                  : block.type === "link"
+                    ? (block.title ?? "")
+                    : block.type === "file"
+                      ? block.name
+                      : named,
+          ),
+        )
+      : {};
   const openAt = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -970,6 +1003,7 @@ function BlockRow({
         clickRows ? " blk-clickable" : ""
       }${lit ? " by-who" : ""}`}
       data-block={block.id}
+      {...pointable}
       style={
         {
           ...(indentOf(block) ? { marginLeft: indentOf(block) * 26 } : {}),

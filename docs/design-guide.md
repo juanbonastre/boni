@@ -590,10 +590,34 @@ contraseña ni un código aquí» under a question.
   focus in it closes it before anything under it goes back; with the focus elsewhere `Esc` is that place's. `Ctrl+E`
   does nothing under Ajustes, the search or the trash. With a panel on the right (the Bandeja, a record), the circle
   and the window stay beside it, never over its cards. Each message goes with what is on the
-  screen, by reference (what is open, the Bandeja's cards in its order when it is seen, the rows chosen); the phone
-  has no circle yet. When Boni opens something («ábreme Libros», I-30) the main area is outlined in `--accent` (2 px,
+  screen, by reference (what is open, the Bandeja's cards in its order when it is seen, the rows chosen, what was
+  pointed at); the phone has no circle yet. What is being written to a conversation (its text and its chips) is its
+  draft: it stays when the window closes, widens or docks. When Boni opens something («ábreme Libros», I-30) the main area is outlined in `--accent` (2 px,
   10 px radius) for 1.4 s, fading, never in the way of a click; the conversation says «Abierto: Libros» in `--muted`;
   from the Conversación screen it goes on in the window, over what it opened.
+- **Pointing** (F9, task 85; `ScreenPointer.tsx`, `core/pointing.ts`; docs/sistema.md §4.7; I-31): `Ctrl+Shift+E`, or
+  «Señalar» in the window's bar (a 28 px icon button beside the model, `--accent` on a 14 % tint while it is on),
+  makes the pointer one that marks what the next message is about: a block of a page, a row in any view, a card of
+  the Bandeja.
+  - **A mode, shown twice.** Nielsen Norman Group, «Modes in User Interfaces: When They Help and When They Hurt»:
+    the active mode must be clearly indicated, with at least two visual indicators (a highlighted mode control and
+    a cursor change). So the pointer is a crosshair over the screen (Apple HIG, «Pointing devices»: the cross says a
+    precise rectangular selection is possible; people expect a change of the pointer to be useful), and the bar's
+    «Señalar» is lit or, with the window closed, the circle shows the pointer's icon inside an `--accent` ring (a
+    click on it stops).
+  - **What it would take is outlined** under the pointer: 2 px `--accent`, 2 px away; a table's row inside it, over a
+    10 % tint. A click takes it. A drag draws a rectangle (1 px `--accent` over a 12 % tint) and takes what it holds:
+    a thing wholly inside it as one (a table, not its rows), and one it only crosses gives way to what it has inside
+    (three rows, not their table).
+  - **Nothing else answers the pointer** meanwhile but Boni's own window: no click opens, no drag moves, no menu
+    comes, and a block's handles and a chart's controls stay away. The wheel scrolls; a click on nothing keeps
+    pointing; `Esc` stops and does nothing else.
+  - **Chips** above the text of the bar (Material Design 3, «Chips», input chips: a discrete thing the person added,
+    as a contact in a mail's «To», taken off from the chip itself): «Gráfica: Gasto del mes», its kind and its name
+    cut to a line, 12.5 px on a 14 % `--accent` tint with a 6 px radius and an 18 px «×». Each thing once, twenty at
+    most; they go with the message.
+  - **Where Boni departs:** NN/g prefers a mode held with a key (spring-loaded) where it fits. Dragging across rows
+    with `Ctrl+Shift` held is a strain, so this one is a toggle that ends by itself as soon as something is taken.
 - **The conversation with Boni's agent** (Boni; `apps/boni-web/src/components/Chat.tsx`, docs/nucleo.md 7.14): a
   "Conversación" row at the top of the sidebar (with the number of proposals waiting), the third tab on the phone.
   **Its history as other AIs show it** (docs/conversacion.md 3.1; Juan, 2026-10-31): on the left of the conversation, a

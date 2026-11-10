@@ -15,8 +15,14 @@ const DEBTS = "t_deuda";
 export const CATEGORIES = "t_categoria";
 const EXTRACTS = "extractos";
 
+/**
+ * What the money reads of a store: its schema and its records. The whole store, or what the models may see of it
+ * (a chart pointed at on the screen, apps/server/src/screen.ts): the same code gives both.
+ */
+export type MoneyReads = Pick<UserStore, "schema" | "get" | "list" | "entities">;
+
 /** A record's title, or "" (deleted or gone). */
-export function titleOf(store: UserStore, id: unknown): string {
+export function titleOf(store: MoneyReads, id: unknown): string {
   const e = typeof id === "string" ? store.get(id)?.entity : undefined;
   const t = e ? store.schema().types[e.type] : undefined;
   return e && t && e.deleted === undefined ? String(e.values[t.titleField] ?? "") : "";
@@ -26,7 +32,7 @@ export function titleOf(store: UserStore, id: unknown): string {
  * Boni's records of a type with their properties by name (an option by its name, a category by its name, any
  * other relation by the ids it points to). What the reconciliation and the charts read.
  */
-export function storeNotes(store: UserStore): (typeId: string) => MoneyNote[] {
+export function storeNotes(store: MoneyReads): (typeId: string) => MoneyNote[] {
   const types = () => store.schema().types;
   const prop = (f: FieldDef, v: unknown): unknown => {
     if (v === undefined || v === null) return null;

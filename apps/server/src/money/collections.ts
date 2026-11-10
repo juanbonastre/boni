@@ -1,6 +1,6 @@
 import type { UserStore } from "@boni/store";
 import { type CategoryKind, kindByName } from "@boni/views";
-import { CATEGORIES, titleOf } from "./book.ts";
+import { CATEGORIES, type MoneyReads, titleOf } from "./book.ts";
 import { type Rule, rulePattern, sortRules } from "./reconcile.ts";
 
 /**
@@ -15,13 +15,13 @@ const MOVEMENTS = "t_movimiento";
 const KINDS: CategoryKind[] = ["gasto", "ingreso", "otro"];
 const kindOption = (k: CategoryKind) => `o_${k}`;
 
-const has = (store: UserStore, type: string) => {
+const has = (store: MoneyReads, type: string) => {
   const t = store.schema().types[type];
   return !!t && !t.archived;
 };
 
 /** Whether the money uses its collections: a movement's category points to Categorías. */
-export function moneyCollectionsOn(store: UserStore): boolean {
+export function moneyCollectionsOn(store: MoneyReads): boolean {
   const f = store
     .schema()
     .types[MOVEMENTS]?.fields.find((x) => !x.archived && x.name === "category");
@@ -29,7 +29,7 @@ export function moneyCollectionsOn(store: UserStore): boolean {
 }
 
 /** The account's categories (name and kind), by name; null before they are a collection. */
-export function categoryRows(store: UserStore): { name: string; kind: CategoryKind }[] | null {
+export function categoryRows(store: MoneyReads): { name: string; kind: CategoryKind }[] | null {
   if (!moneyCollectionsOn(store)) return null;
   const byOption = new Map(KINDS.map((k) => [kindOption(k), k]));
   return store

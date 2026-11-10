@@ -1,6 +1,6 @@
 import type { UserStore } from "@boni/store";
 import type { CategoryKind, Debt, Movement } from "@boni/views";
-import { storeNotes, titleOf } from "../money/book.ts";
+import { type MoneyReads, storeNotes, titleOf } from "../money/book.ts";
 import { categoryRows } from "../money/collections.ts";
 import { type Person, parseDebt, parseMovement } from "./finanzas.ts";
 
@@ -40,12 +40,13 @@ const oldLink = (s: string) => /^\[\[([^\]|#]+)/.exec(s)?.[1]?.trim() ?? s;
 /**
  * The money read from Boni itself (Juan, 2026-10-23: no more vault): each movement and debt from its properties
  * by name (`parseMovement`, `parseDebt`), named by its id; a movement's people by their names, so the charts
- * group and label them as people.
+ * group and label them as people. Over the whole store, or over what the models may see of it (`MoneyReads`: a
+ * chart pointed at on the screen, F9); only the whole store has a fingerprint.
  */
 export class StoreMoney implements MoneySource {
   // No parameter properties: the server runs TypeScript with Node's type stripping (AGENTS.md).
-  private store: UserStore;
-  constructor(store: UserStore) {
+  private store: MoneyReads & Partial<Pick<UserStore, "stamp">>;
+  constructor(store: MoneyReads & Partial<Pick<UserStore, "stamp">>) {
     this.store = store;
   }
 
@@ -111,8 +112,8 @@ export class StoreMoney implements MoneySource {
   fingerprint(): string {
     return [MOVEMENTS, DEBTS]
       .map((t) => {
-        const s = this.store.stamp(t);
-        return `${t}:${s.count}:${s.updated}`;
+        const s = this.store.stamp?.(t);
+        return `${t}:${s?.count ?? 0}:${s?.updated ?? 0}`;
       })
       .join("|");
   }

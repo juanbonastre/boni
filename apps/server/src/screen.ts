@@ -1,14 +1,16 @@
 /**
  * What Juan has on screen as he writes (docs/sistema.md §4.7, F9; task 85). The app sends references only: what is
- * open, the Bandeja's cards in the order he sees them (the first at the top), the rows he chose. From them the server
- * builds what the planner gets, through the models' view (`readStore`): each value with its label, so what came from
- * outside reaches a model as a handle and nothing of a collection closed to the models is there. Never what the app
- * says a thing is: only what the store holds.
+ * open, the Bandeja's cards in the order he sees them (the first at the top), the rows he chose, and what he pointed
+ * at (`Ctrl+Shift+E`: a block of a page, a row, a card). From them the server builds what the planner gets, through
+ * the models' view (`readStore`): each value with its label, so what came from outside reaches a model as a handle
+ * and nothing of a collection closed to the models is there. Never what the app says a thing is: only what the store
+ * holds.
  */
 import {
   codeLabel,
   deepLabel,
   entityVal,
+  fieldName,
   leaf,
   list,
   pendingVal,
@@ -17,12 +19,30 @@ import {
   typeName,
   type Val,
 } from "@boni/agent";
-import type { UserStore } from "@boni/store";
+import { type FieldDef, join, type Label, type TypeDef } from "@boni/entities";
+import type { StoredEntity, UserStore } from "@boni/store";
+import {
+  blockDateField,
+  type ChartData,
+  type ChartSpec,
+  computeBlock,
+  type DataBlock,
+  type DatabaseView,
+  type PageBlock,
+} from "@boni/views";
+import type { MoneyReads } from "./money/book.ts";
 import { pendingFacts } from "./origin.ts";
+import { getPage } from "./pages.ts";
+import { type MoneySource, StoreMoney } from "./v1/storeMoney.ts";
 
 /** The most cards and rows a screen gives: what a person sees at once, not a list to read. */
 const MAX_CARDS = 20;
 const MAX_ROWS = 50;
+/** The most things pointed at in one message, and the most points of a chart given with it. */
+export const MAX_POINTED = 20;
+const MAX_POINTS = 60;
+/** The most of a text block given (a page's paragraph; the rest is read with the page). */
+const MAX_TEXT = 2000;
 /** What may be open (the app's views). */
 const KINDS = new Set([
   "home",
@@ -39,6 +59,12 @@ const KINDS = new Set([
   "chart",
 ]);
 
+/** Something pointed at, by reference: a block of a page, a row, a card of the Bandeja. */
+export type PointedRef =
+  | { kind: "block"; page: string; block: string }
+  | { kind: "row"; id: string }
+  | { kind: "proposal" | "question"; id: string };
+
 /** The app's references to what is on its screen. */
 export interface ScreenRefs {
   open: { kind: string; id: string | null } | null;
@@ -46,12 +72,34 @@ export interface ScreenRefs {
   inbox: { kind: "proposal" | "question"; id: string }[];
   /** Rows Juan chose (a table's selection), by id. */
   chosen: string[];
+  /** What he pointed at for this message (`Ctrl+Shift+E`), in the order he did. */
+  pointed?: PointedRef[];
+}
+
+/** A saved chart of the first pages (the v1 API's): its spec, and its numbers over the money a source gives. */
+export interface SavedChart {
+  spec: ChartSpec;
+  over(money: MoneySource): ChartData;
 }
 
 const id80 = (x: unknown): string | null =>
   typeof x === "string" && x.length > 0 && x.length <= 80 ? x : null;
 const isObj = (x: unknown): x is Record<string, unknown> =>
   !!x && typeof x === "object" && !Array.isArray(x);
+
+function pointedRef(x: unknown): PointedRef | null {
+  if (!isObj(x)) return null;
+  if (x.kind === "block") {
+    const page = id80(x.page);
+    const block = id80(x.block);
+    return page && block ? { kind: "block", page, block } : null;
+  }
+  if (x.kind === "row" || x.kind === "proposal" || x.kind === "question") {
+    const id = id80(x.id);
+    return id ? { kind: x.kind, id } : null;
+  }
+  return null;
+}
 
 /** The references as the app sent them, bounded; null when they are not references. */
 export function screenRefs(b: unknown): ScreenRefs | null {
@@ -74,19 +122,44 @@ export function screenRefs(b: unknown): ScreenRefs | null {
     if (!id) return null;
     chosen.push(id);
   }
-  return { open, inbox, chosen };
+  const pointed: PointedRef[] = [];
+  for (const x of Array.isArray(b.pointed) ? b.pointed.slice(0, MAX_POINTED) : []) {
+    const ref = pointedRef(x);
+    if (!ref) return null;
+    pointed.push(ref);
+  }
+  return { open, inbox, chosen, ...(pointed.length ? { pointed } : {}) };
 }
+
+/** The text blocks of a page: what they say is the page's own words. */
+const TEXT_BLOCKS = new Set([
+  "heading",
+  "text",
+  "bullet",
+  "numbered",
+  "todo",
+  "toggle",
+  "quote",
+  "callout",
+  "code",
+]);
+const GROUP_TIME: Record<string, string> = { "@day": "day", "@week": "week", "@month": "month" };
 
 /**
  * The screen as the planner gets it: null when nothing on it is worth saying. A record by reference (its id, its
  * collection, its title): the planner reads the rest with `entities.get`, as it may; one of a collection or a row
  * closed or opaque to the models is not on it. A card as `inbox.pending` gives it (`pendingVal`): its title as a
- * reader's words from outside, never what it would write.
+ * reader's words from outside, never what it would write. What was pointed at, in its order: a row and a card as
+ * those; a block of a page as what it is (its kind, its title, the collection it shows), what it counts (its
+ * measure, its field, its group, its period, its filter, by the keys the planner knows) and its numbers, computed
+ * here over the rows the models may read; something closed to the models says only that it is closed.
  */
 export function screenOf(
   store: UserStore,
   refs: ScreenRefs,
-  o: { mailAccount: string | null } = { mailAccount: null },
+  o: { mailAccount: string | null; today?: string; chart?: (id: string) => SavedChart | null } = {
+    mailAccount: null,
+  },
 ): Val | null {
   const view = readStore(store);
   const code = codeLabel("screen");
@@ -109,13 +182,21 @@ export function screenOf(
       code,
     );
   };
-  const facts = refs.inbox.some((c) => c.kind === "proposal")
-    ? new Map(pendingFacts(store, o).map((p) => [p.id, p]))
-    : new Map();
+  const wantsFacts =
+    refs.inbox.some((c) => c.kind === "proposal") ||
+    refs.open?.kind === "proposal" ||
+    !!refs.pointed?.some((p) => p.kind === "proposal");
+  const facts = wantsFacts ? new Map(pendingFacts(store, o).map((p) => [p.id, p])) : new Map();
   const card = (id: string): Val | null => {
     const fact = facts.get(id);
     const v = fact ? pendingVal(fact, view) : null;
     return v?.t === "rec" ? rec({ kind: leaf("proposal", code), ...v.fields }, code) : null;
+  };
+  const question = (id: string): Val | null => {
+    const q = store.journal.request(id);
+    return q?.status === "pending"
+      ? rec({ kind: leaf("question", code), id: leaf(q.id, code) }, code)
+      : null;
   };
   const fields: Record<string, Val> = {};
   const open = refs.open;
@@ -130,9 +211,7 @@ export function screenOf(
     const r = (open.kind === "row" || open.kind === "page") && open.id ? record(open.id) : null;
     if (r) what.record = r;
     if (open.kind === "proposal" && open.id) {
-      const c = (facts.size ? facts : new Map(pendingFacts(store, o).map((p) => [p.id, p]))).get(
-        open.id,
-      );
+      const c = facts.get(open.id);
       const v = c ? pendingVal(c, view) : null;
       if (v) what.proposal = v;
     }
@@ -140,13 +219,7 @@ export function screenOf(
     fields.open = rec(what, code);
   }
   const cards = refs.inbox.flatMap((c) => {
-    if (c.kind === "question") {
-      const q = store.journal.request(c.id);
-      return q?.status === "pending"
-        ? [rec({ kind: leaf("question", code), id: leaf(q.id, code) }, code)]
-        : [];
-    }
-    const v = card(c.id);
+    const v = c.kind === "question" ? question(c.id) : card(c.id);
     return v ? [v] : [];
   });
   if (cards.length) fields.inbox = list(cards, code);
@@ -155,5 +228,318 @@ export function screenOf(
     return r ? [r] : [];
   });
   if (chosen.length) fields.chosen = list(chosen, code);
+  if (refs.pointed?.length) {
+    const blocks = pointedBlocks(store, view, visible, code, record, o);
+    // Something closed to the models (or gone) says only that it is: Boni can say so, and learns nothing of it.
+    const shut = rec({ kind: leaf("closed", code) }, code);
+    const pointed = refs.pointed.map((p) => {
+      if (p.kind === "block") return blocks(p.page, p.block) ?? shut;
+      if (p.kind === "proposal") return card(p.id) ?? shut;
+      if (p.kind === "question") return question(p.id) ?? shut;
+      const r = record(p.id);
+      return r?.t === "rec" ? rec({ kind: leaf("row", code), ...r.fields }, code) : shut;
+    });
+    fields.pointed = list(pointed, code);
+  }
   return Object.keys(fields).length ? rec(fields, code) : null;
+}
+
+type ReadView = ReturnType<typeof readStore>;
+type Types = Readonly<Record<string, TypeDef>>;
+
+/** The label of everything read, joined a few at a time: a collection has thousands of rows. */
+function joined(first: Label, rest: readonly Label[]): Label {
+  let out = first;
+  for (let i = 0; i < rest.length; i += 1000) out = join(out, ...rest.slice(i, i + 1000));
+  return out;
+}
+
+/**
+ * A block of a page as the planner gets it when Juan points at it; null when the models may not see it (its page or
+ * its collection closed or opaque to them, or gone). A collection's rows are read once for all the blocks pointed
+ * at in a message (A-15: his thousands of records, never once per block).
+ */
+function pointedBlocks(
+  store: UserStore,
+  view: ReadView,
+  visible: Types,
+  code: Label,
+  record: (id: string) => Val | null,
+  o: { today?: string; chart?: (id: string) => SavedChart | null },
+): (page: string, block: string) => Val | null {
+  const today = o.today ?? new Date().toISOString().slice(0, 10);
+  const levels = store.aiAccess();
+  /** A collection the models read whole values of: there, not Boni's own, and neither closed nor opaque. */
+  const open = (id: string): TypeDef | null => {
+    const def = visible[id];
+    return def && !def.system && !def.archived && (levels[id] ?? "visible") === "visible"
+      ? def
+      : null;
+  };
+  /** A row a model may read (an opaque one, a collection's or a rule's, is only for code: not on the screen). */
+  const readable = (s: StoredEntity) => !Object.values(s.labels).some((l) => l.noModel);
+  const rowsCache = new Map<string, StoredEntity[]>();
+  const rowsOf = (type: string): StoredEntity[] => {
+    let rows = rowsCache.get(type);
+    if (!rows) {
+      // A collection's numbers count her daughters' records too (docs/clases.md §2.3), those the models may read.
+      rows = view.list(type, { deep: true }).filter(readable);
+      rowsCache.set(type, rows);
+    }
+    return rows;
+  };
+  const pages = new Map<string, { blocks: PageBlock[]; by: Label } | null>();
+  const pageOf = (id: string) => {
+    if (!pages.has(id)) {
+      const s = view.get(id);
+      const page = s && readable(s) ? getPage(store, id) : null;
+      // Who wrote the page says who wrote its blocks' words.
+      pages.set(
+        id,
+        s && page ? { blocks: page.spec.blocks, by: joined(code, Object.values(s.labels)) } : null,
+      );
+    }
+    return pages.get(id) ?? null;
+  };
+  const key = (def: TypeDef, id: string | undefined): FieldDef | undefined =>
+    id ? def.fields.find((f) => f.id === id && !f.archived) : undefined;
+
+  /** A chart's numbers as the planner may use them: its total, and its points as names and values, in their order. */
+  const figures = (data: ChartData, l: Label): Record<string, Val> => {
+    const out: Record<string, Val> = { unit: leaf(data.unit, code) };
+    // What it says under its name: the days it counts, in words («octubre 2026 - hasta hoy»).
+    if (data.subtitle) out.span = leaf(data.subtitle, l);
+    if (data.total !== null) out.total = leaf(data.total, l);
+    if (data.previous_total !== null) out.previous_total = leaf(data.previous_total, l);
+    const series = data.kind === "number" ? [] : data.series;
+    const first = series[0];
+    if (!first) return out;
+    out.labels = list(
+      first.points.slice(0, MAX_POINTS).map((p) => leaf(p.label, l)),
+      l,
+    );
+    const values = (s: (typeof series)[number]) =>
+      list(
+        s.points.slice(0, MAX_POINTS).map((p) => leaf(p.value, l)),
+        l,
+      );
+    if (series.length === 1) out.values = values(first);
+    else
+      out.series = list(
+        series.map((s) => rec({ name: leaf(s.name, l), values: values(s) }, l)),
+        l,
+      );
+    if (first.points.length > MAX_POINTS) out.more = leaf(first.points.length - MAX_POINTS, code);
+    return out;
+  };
+
+  /** A number, a bar list or a chart over a collection: what it counts, and its numbers. */
+  const dataBlock = (b: DataBlock, by: Label): Record<string, Val> | null => {
+    const def = open(b.collection);
+    if (!def) return null;
+    // As the engine reads it (`blockChartSpec`): a sum or an average needs its field, else it counts.
+    const of = key(def, b.measure && b.measure !== "count" ? b.field : undefined);
+    const out: Record<string, Val> = {
+      collection: leaf(typeName(def), code),
+      measure: leaf(of ? (b.measure ?? "count") : "count", code),
+      period: leaf(b.period ?? "all", code),
+    };
+    if (of) out.field = leaf(fieldName(of), code);
+    const group = b.type === "number" ? undefined : b.groupBy;
+    const groupField = key(def, group);
+    if (group && GROUP_TIME[group]) out.group = leaf(GROUP_TIME[group], code);
+    else if (groupField) out.group = leaf(fieldName(groupField), code);
+    const dateField = key(def, blockDateField(b, def, visible));
+    if (dateField) out.date = leaf(fieldName(dateField), code);
+    const filterField = key(def, b.filterValue ? b.filterField : undefined);
+    if (filterField) {
+      const option = filterField.options?.find((x) => x.id === b.filterValue);
+      out.filter = rec(
+        {
+          field: leaf(fieldName(filterField), code),
+          equals: option ? leaf(option.name, option.label) : leaf(b.filterValue ?? "", by),
+        },
+        code,
+      );
+    }
+    // The label of its numbers: every value they were computed from (each row's fields it reads, the names of its
+    // groups), as `entities.aggregate` labels a sum.
+    const used = [dateField, of, groupField, filterField].filter((f): f is FieldDef => !!f);
+    const read: Label[] = [def.label, ...used.map((f) => f.label)];
+    for (const f of used) for (const x of f.options ?? []) read.push(x.label);
+    const rows = rowsOf(def.id);
+    for (const s of rows)
+      for (const f of used) {
+        const l = s.labels[f.id];
+        if (l) read.push(l);
+      }
+    const titleOf = (id: string) => {
+      const s = view.get(id);
+      const t = s && readable(s) ? visible[s.entity.type] : undefined;
+      if (!s || !t) return "";
+      const l = s.labels[t.titleField];
+      if (l) read.push(l);
+      return String(s.entity.values[t.titleField] ?? "");
+    };
+    const result = computeBlock(b, visible, () => rows.map((s) => s.entity), { today, titleOf });
+    if ("data" in result) Object.assign(out, figures(result.data, joined(code, read)));
+    return out;
+  };
+
+  /**
+   * The money as the models may read it, with the label of every row it gave. `shut` once it asked for a collection
+   * they may not read: its numbers would be others than the ones Juan sees, so there are none.
+   */
+  const moneyAsSeen = (): { money: MoneySource; label: () => Label; shut: () => boolean } => {
+    const read: Label[] = [];
+    let shut = false;
+    const seen = (s: StoredEntity | null): StoredEntity | null => {
+      if (!s || !readable(s)) return null;
+      for (const l of Object.values(s.labels)) read.push(l);
+      return s;
+    };
+    const listOf = (type: string) => {
+      if (!open(type)) {
+        shut = true;
+        return [];
+      }
+      return view.list(type).flatMap((s) => (seen(s) ? [s] : []));
+    };
+    const reads: MoneyReads = {
+      // The whole schema: what the money needs is asked for by name, and refused here when it is closed.
+      schema: () => store.schema(),
+      get: (id) => {
+        const s = view.get(id);
+        return s && open(s.entity.type) ? seen(s) : null;
+      },
+      list: (type) => listOf(type),
+      entities: (type) => listOf(type).map((s) => s.entity),
+    };
+    return { money: new StoreMoney(reads), label: () => joined(code, read), shut: () => shut };
+  };
+
+  /** A chart of the first pages: what its spec says it counts, and its numbers over the money the models may read. */
+  const savedChart = (id: string, by: Label): Record<string, Val> | null => {
+    const chart = o.chart?.(id);
+    if (!chart) return null;
+    const spec = chart.spec;
+    const out: Record<string, Val> = {
+      title: leaf(spec.title, by),
+      measure: leaf(spec.measure ?? "", code),
+      period: leaf(spec.period.kind, code),
+    };
+    if (spec.period.months) out.months = leaf(spec.period.months, code);
+    if (spec.period.days) out.days = leaf(spec.period.days, code);
+    if (spec.x?.field)
+      out.group = leaf(
+        spec.x.field === "date" ? (spec.x.granularity ?? "date") : spec.x.field,
+        code,
+      );
+    if (spec.split?.field) out.split = leaf(spec.split.field, code);
+    const rules = (spec.filters ?? []).map((r) =>
+      rec(
+        {
+          field: leaf(r.field, code),
+          op: leaf(r.op, code),
+          ...(r.values
+            ? {
+                values: list(
+                  r.values.map((x) => leaf(x, by)),
+                  by,
+                ),
+              }
+            : {}),
+        },
+        code,
+      ),
+    );
+    if (rules.length) out.filter = list(rules, code);
+    const { money, label, shut } = moneyAsSeen();
+    let data: ChartData | null = null;
+    try {
+      data = chart.over(money);
+    } catch {
+      // Its numbers cannot be made (the money is not in Boni, a spec the engine refuses): what it is, without them.
+    }
+    // A collection it counts is closed to the models: as any block of a closed collection, it is not on the screen.
+    if (shut()) return null;
+    if (data) Object.assign(out, figures(data, label()));
+    return out;
+  };
+
+  const viewOf = (def: TypeDef, v: DatabaseView, by: Label): Val => {
+    const out: Record<string, Val> = { layout: leaf(v.layout, code) };
+    const group = key(def, v.group);
+    if (group) out.group = leaf(fieldName(group), code);
+    const sort = key(def, v.sort?.field);
+    if (sort)
+      out.sort = rec(
+        { field: leaf(fieldName(sort), code), desc: leaf(!!v.sort?.desc, code) },
+        code,
+      );
+    const rules = (v.filter ?? []).flatMap((r) => {
+      const f = key(def, r.field);
+      if (!f) return [];
+      const value = (r as { value?: unknown }).value;
+      const option = typeof value === "string" ? f.options?.find((x) => x.id === value) : undefined;
+      return [
+        rec(
+          {
+            field: leaf(fieldName(f), code),
+            op: leaf(String(r.op), code),
+            ...(option
+              ? { value: leaf(option.name, option.label) }
+              : typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+                ? { value: leaf(value, by) }
+                : {}),
+          },
+          code,
+        ),
+      ];
+    });
+    if (rules.length) out.filter = list(rules, code);
+    return rec(out, code);
+  };
+
+  return (pageId, blockId) => {
+    const page = pageOf(pageId);
+    const b = page?.blocks.find((x) => x.id === blockId);
+    if (!page || !b) return null;
+    const by = page.by;
+    const said = (kind: string, more: Record<string, Val>): Val =>
+      rec(
+        { kind: leaf(kind, code), page: leaf(pageId, code), block: leaf(blockId, code), ...more },
+        code,
+      );
+    if (b.type === "number" || b.type === "bars" || b.type === "graph") {
+      const more = dataBlock(b, by);
+      return more
+        ? said(b.type === "graph" ? "chart" : b.type, { title: leaf(b.title ?? "", by), ...more })
+        : null;
+    }
+    if (b.type === "chart") {
+      const more = savedChart(b.chart, by);
+      return more ? said("chart", more) : null;
+    }
+    if (b.type === "database") {
+      const def = open(b.source);
+      return def
+        ? said("view", {
+            collection: leaf(typeName(def), code),
+            name: leaf(def.name, def.label),
+            view: viewOf(def, b.view, by),
+          })
+        : null;
+    }
+    if (TEXT_BLOCKS.has(b.type) && "text" in b)
+      return said("text", { text: leaf(b.text.slice(0, MAX_TEXT), by) });
+    if (b.type === "action") return said("button", { title: leaf(b.label, by) });
+    if (b.type === "link")
+      return said("link", { title: leaf(b.title ?? "", by), to: leaf(b.to, by) });
+    if (b.type === "page" || b.type === "file") {
+      const r = record(b.type === "page" ? b.page : b.file);
+      return r ? said(b.type, { record: r }) : null;
+    }
+    return null;
+  };
 }

@@ -298,6 +298,22 @@ test("a page of numbers and charts from a collection: each block's panel from th
   await expect(panel.locator("h2")).toHaveText("Cifra");
   await panel.getByRole("button", { name: "Cerrar" }).click();
   await shot(w, "grid");
+  // Señalar (F9, task 85) in the real app: with `Ctrl+Shift+E` the number under the pointer is lit and a click takes
+  // it to the bar as a chip, by its kind and its name; its own click (it lists what it counts) does nothing.
+  await w.keyboard.press("Control+Shift+e");
+  await number.hover();
+  await expect(number).toHaveAttribute("data-boni-pointed", "");
+  await number.locator(".kpi-value").click();
+  const boni = w.getByRole("dialog", { name: "Boni" });
+  await expect(boni.locator(".chat-chip")).toHaveText(["Cifra: Cosas"]);
+  await expect(panel).toHaveCount(0);
+  await expect(boni.getByRole("textbox", { name: "Escribe a Boni…" })).toBeFocused();
+  await shot(w, "pointed");
+  // The chip off and the window away, for what comes next.
+  await boni.getByRole("button", { name: "Quitar: Cifra: Cosas" }).click();
+  await expect(boni.locator(".chat-chip")).toHaveCount(0);
+  await w.keyboard.press("Escape");
+  await expect(boni).toHaveCount(0);
 });
 
 test("a zone moved into Boni: marked as private, its attachment opened from the app", async () => {

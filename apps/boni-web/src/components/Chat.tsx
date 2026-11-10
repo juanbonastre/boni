@@ -8,6 +8,7 @@ import {
   ListChecks,
   ListPlus,
   MessageSquarePlus,
+  MousePointerClick,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -16,6 +17,7 @@ import {
   Trash2,
   Undo2,
   Workflow,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -34,6 +36,7 @@ import {
   textOf,
 } from "../core/agent.ts";
 import { deviceZone, today } from "../core/clock.ts";
+import { pointKey } from "../core/pointing.ts";
 import { moneyText, runCopy, runWords } from "../core/runText.ts";
 import type { T } from "../i18n.ts";
 import {
@@ -43,6 +46,7 @@ import {
   chooseModel,
   confirmPending,
   declinePending,
+  draftOf,
   type LiveStep,
   loadConversations,
   loadInbox,
@@ -57,6 +61,7 @@ import {
   removeConversation,
   renameConversation,
   sendTurn,
+  setDraftText,
   showAudit,
   showInbox,
   showLog,
@@ -64,7 +69,9 @@ import {
   stopTurn,
   toast,
   toggleChatList,
+  togglePointing,
   undoRun,
+  unpoint,
   useStore,
 } from "../store.ts";
 import { ProposalCard, RequestCard, useInboxQueue } from "./InboxCards.tsx";
@@ -247,7 +254,7 @@ export function ChatView({ compact = false }: { compact?: boolean }) {
           ))}
           <div ref={end} />
         </div>
-        <Composer />
+        <Composer inWindow={compact} />
       </div>
     </div>
   );
@@ -445,10 +452,14 @@ function ConversationList({
  */
 const keepFocus = (e: React.PointerEvent) => e.preventDefault();
 
-function Composer() {
+function Composer({ inWindow }: { inWindow: boolean }) {
   const t = useStore((s) => s.t);
   const busy = useStore((s) => s.chatBusy);
-  const [text, setText] = useState("");
+  // What is being written to this conversation: on its screen and in its window, kept when either closes.
+  const draft = useStore(draftOf);
+  const text = draft.text;
+  const pointed = draft.pointed;
+  const pointing = useStore((s) => s.pointing);
   const area = useRef<HTMLTextAreaElement | null>(null);
   // As tall as its text, up to a few lines; then it scrolls.
   useEffect(() => {
@@ -460,7 +471,7 @@ function Composer() {
   const send = () => {
     if (!text.trim() || busy) return;
     void sendTurn(text);
-    setText("");
+    setDraftText("");
   };
   return (
     <form
@@ -470,6 +481,26 @@ function Composer() {
         send();
       }}
     >
+      {/* What Juan pointed at for this message (F9): each a reference, taken off with its «×». */}
+      {pointed.length > 0 && (
+        <ul className="chat-pointed" aria-label={t("point.list")}>
+          {pointed.map((p) => (
+            <li key={pointKey(p.ref)} className="chat-chip">
+              <span className="chat-chip-text">{p.title}</span>
+              <button
+                type="button"
+                className="chat-chip-x"
+                onPointerDown={keepFocus}
+                onClick={() => unpoint(pointKey(p.ref))}
+                title={t("point.remove")}
+                aria-label={`${t("point.remove")}: ${p.title}`}
+              >
+                <X size={12} strokeWidth={2} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <textarea
         ref={area}
         value={text}
@@ -477,7 +508,7 @@ function Composer() {
         maxLength={8000}
         placeholder={t("chat.placeholder")}
         aria-label={t("chat.placeholder")}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => setDraftText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
@@ -487,6 +518,20 @@ function Composer() {
       />
       <div className="chat-composer-row">
         <ModelChip />
+        {/* Over a screen there is something to point at: the pointer marks what the message is about. */}
+        {inWindow && (
+          <button
+            type="button"
+            className={`icon-btn chat-point${pointing ? " on" : ""}`}
+            onPointerDown={keepFocus}
+            onClick={togglePointing}
+            aria-pressed={pointing}
+            title={t("point.start")}
+            aria-label={t("point.start")}
+          >
+            <MousePointerClick size={15} strokeWidth={1.8} />
+          </button>
+        )}
         <span className="spacer" />
         {busy ? (
           <button

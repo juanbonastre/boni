@@ -10603,3 +10603,93 @@ button.rows-panel-row:hover {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* Pointing (docs/sistema.md §4.7, F9; `Ctrl+Shift+E` or the bar's «Señalar»): over the screen the pointer is a
+   crosshair (Boni's own window keeps its own), what it would take is outlined in the accent, and a drag draws its
+   rectangle. A block's own handles stay away meanwhile: nothing under the pointer is for clicking. */
+html[data-boni-pointing] .app > :not(.boni-window, .boni-docked, .boni-circle),
+html[data-boni-pointing] .app > :not(.boni-window, .boni-docked, .boni-circle) * {
+  cursor: crosshair !important;
+}
+html[data-boni-pointing] .blk-gutter,
+html[data-boni-pointing] .blk-resize {
+  visibility: hidden;
+}
+html[data-boni-pointing] .chart-card .card-controls {
+  display: none;
+}
+html[data-boni-pointing] .chart-row:hover {
+  background: none;
+}
+[data-boni-pointed] {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* Rows touch each other: a row's outline goes inside it, over a tint of the accent. */
+tr[data-boni-pointed] {
+  outline-offset: -2px;
+}
+tr[data-boni-pointed] > td {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.boni-point-band {
+  position: fixed;
+  z-index: 94;
+  pointer-events: none;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+/* What was pointed at, in the bar: a chip per thing («Gráfica: Gasto por día»), taken off with its «×». */
+.chat-pointed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 2px;
+  padding: 0;
+  list-style: none;
+}
+.chat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 1px 2px 1px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.chat-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-chip-x {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.chat-chip-x:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.chat-point.on {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+/* The circle while the pointer points, with the window closed: the mode's own sign, ringed. */
+.boni-circle.pointing {
+  box-shadow:
+    0 0 0 3px var(--surface),
+    0 0 0 5px var(--accent),
+    var(--shadow);
+}
