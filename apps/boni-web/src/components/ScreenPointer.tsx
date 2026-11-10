@@ -24,6 +24,29 @@ const DRAG_PX = 6;
 /** Where a thing is looked for under the rectangle, across the part of it the rectangle crosses. */
 const PROBES = [1 / 6, 1 / 2, 5 / 6];
 
+/** What a press that the pointer took still sends when the button is let go. */
+const REST = ["mouseup", "click", "dblclick", "auxclick", "contextmenu"];
+/**
+ * The rest of a gesture the pointer took belongs to nothing on the screen either. Taking something ends pointing at
+ * once (on the button's release), and the click that follows that release would reach what is under it with no
+ * pointer left to stop it: it is stopped here, apart from the pointing's own life, until the next press (a new
+ * gesture) or a moment later.
+ */
+function swallowRest() {
+  const eat = (e: Event) => {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  };
+  const off = () => {
+    clearTimeout(timer);
+    for (const name of REST) window.removeEventListener(name, eat, true);
+    window.removeEventListener("pointerdown", off, true);
+  };
+  for (const name of REST) window.addEventListener(name, eat, true);
+  window.addEventListener("pointerdown", off, true);
+  const timer = setTimeout(off, 400);
+}
+
 const pointedOf = (el: HTMLElement): Pointed | null => {
   const ref = readRef(el.getAttribute("data-boni-ref"));
   return ref ? { ref, title: el.getAttribute("data-boni-title") ?? "" } : null;
@@ -173,6 +196,7 @@ export function ScreenPointer() {
     const up = (e: PointerEvent) => {
       if (!from) return;
       swallow(e);
+      swallowRest();
       const dragged = !!band;
       const els = dragged
         ? taken(e.clientX, e.clientY)

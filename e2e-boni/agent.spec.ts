@@ -216,6 +216,18 @@ test("Señalar (F9, task 85): Ctrl+Shift+E lights what the pointer is over, a cl
   // A chip is taken off with its «×».
   await win.getByRole("button", { name: "Quitar: Gráfica: Gasto por mes" }).click();
   await expect(chips).toHaveCount(2);
+  // A button pointed at is not pressed: the click that takes it ends pointing, and still is not the button's own.
+  await page.keyboard.press("Control+Shift+e");
+  await page.locator('[data-block="b1"]').getByRole("button", { name: "Apuntar gasto" }).click();
+  await expect(chips).toHaveText([
+    "Gráfica: Gasto del mes",
+    "Gráfica: Comida fuera",
+    "Botón: Apuntar gasto",
+  ]);
+  await expect(page.locator(".doc-title")).toHaveValue("Gastos");
+  await expect(page.locator(".modal, .side-panel:not(.boni-docked), .capture-form")).toHaveCount(0);
+  await win.getByRole("button", { name: "Quitar: Botón: Apuntar gasto" }).click();
+  await expect(chips).toHaveCount(2);
   // Esc leaves pointing and nothing else: the window stays, with what was written and pointed at.
   await box.fill("¿por qué sube?");
   await page.keyboard.press("Control+Shift+e");
